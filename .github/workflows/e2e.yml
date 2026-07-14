@@ -23,6 +23,115 @@ jobs:
       - run: npm ci
       - run: npm run check:i18n
 
+  # ── REQUIRED GATE ────────────────────────────────────────────────────────────
+  # This is the job that should decide a merge. It is small, it is fast, and every
+  # assertion in it is one that must never be red.
+  #
+  # The full suite below is 200 tests and 50 of them fail — all pre-existing, none
+  # caused by the harness (docs/audit/E2E-FIRST-FULL-RUN.md, issues #746-#749). A
+  # backlog that size cannot be the gate: it would block every unrelated PR from
+  # day one, and the first thing anyone would do is learn to bypass it. A required
+  # check people bypass is worse than none, because it looks like protection.
+  #
+  # No continue-on-error. No `|| true`. If this goes red, something real broke.
+  smoke:
+    name: Smoke (required)
+    runs-on: ubuntu-latest
+    needs: i18n-check
+    timeout-minutes: 25
+    env:
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+      BASE_URL: http://localhost:3000
+      PLAYWRIGHT_BASE_URL: http://localhost:3000
+      NEXT_PUBLIC_SENTRY_DSN: ""
+      SENTRY_AUTH_TOKEN: ""
+      NEXT_PUBLIC_DEMO_OTP: "true"
+      DEMO_OTP: "true"
+      NAILIQ_TEST_BYPASS_SLUG_PIN: "1"
+      DISABLE_OUTBOUND_SMS: "1"
+      AI_PREFILL_E2E_MOCK: "services"
+      TWILIO_ACCOUNT_SID: ""
+      TWILIO_AUTH_TOKEN: ""
+      RESEND_API_KEY: ""
+      STRIPE_SECRET_KEY: ""
+      ANTHROPIC_API_KEY: ""
+      OPENAI_API_KEY: ""
+      WIX_API_KEY: ""
+      TZ: America/Los_Angeles
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pre-flight — is the schema baseline present?
+        id: preflight
+        run: |
+          if [ -f supabase/bootstrap/schema.sql ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::supabase/bootstrap/schema.sql is missing — the smoke gate cannot build a database, and it will not fall back to production."
+            exit 1
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+      - name: Start Supabase (local, throwaway)
+        run: |
+          set -euo pipefail
+          mv supabase/migrations /tmp/migrations-parked
+          mkdir -p supabase/migrations
+          supabase start --exclude studio,edge-runtime,logflare,vector
+          rm -rf supabase/migrations
+          mv /tmp/migrations-parked supabase/migrations
+      - name: Guard, baseline, parity, seed
+        run: |
+          set -euo pipefail
+          supabase status -o env > /tmp/sb.env
+          set -a; . /tmp/sb.env; set +a
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=${API_URL}"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${ANON_KEY}"
+            echo "SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}"
+            echo "DB_URL=${DB_URL}"
+          } >> "$GITHUB_ENV"
+          echo "::add-mask::${SERVICE_ROLE_KEY}"
+          echo "::add-mask::${ANON_KEY}"
+          INTERNAL_SECRET="$(openssl rand -hex 24)"
+          echo "::add-mask::${INTERNAL_SECRET}"
+          echo "INTERNAL_API_SECRET=${INTERNAL_SECRET}" >> "$GITHUB_ENV"
+
+          NEXT_PUBLIC_SUPABASE_URL="${API_URL}" SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY}" \
+            npx tsx -e "import('./e2e/helpers/guardProduction').then(g => { g.assertNotProductionFromEnv(); console.log('✓ guard: not production'); })"
+          bash scripts/apply-baseline.sh "${DB_URL}"
+          DB_URL="${DB_URL}" npx tsx scripts/check-schema-parity.ts
+          npx tsx scripts/seed-e2e.ts
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - name: Start server
+        run: |
+          mkdir -p tmp
+          nohup npx next start > tmp/next-server.log 2>&1 &
+          npx --yes wait-on http://localhost:3000 --timeout 30000 --interval 500 || {
+            echo "::error::Server did not respond within 30s"
+            tail -n 200 tmp/next-server.log || true
+            exit 1
+          }
+      - name: Run smoke tests
+        run: npx playwright test e2e/smoke --project=chromium --reporter=list
+      - name: Server log (on failure)
+        if: failure()
+        run: tail -n 150 tmp/next-server.log || true
+      - name: Sweep
+        if: always()
+        run: npx tsx scripts/e2e-sweep.ts
+      - name: Stop Supabase and destroy the database
+        if: always()
+        run: supabase stop --no-backup
+
+  # ── FULL REGRESSION (reports, does not gate) ─────────────────────────────────
   e2e:
     name: E2E (Playwright) — ${{ matrix.name }}
     runs-on: ubuntu-latest
@@ -319,6 +428,21 @@ jobs:
         run: npx playwright test ${{ matrix.testpath }} ${{ steps.projects.outputs.flag }} --reporter=list,html,json
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
+      - name: Next server log (the app's side of a failed test)
+        # A Playwright failure tells you what the BROWSER saw. When the page says
+        # "Could not complete booking. Please try again.", that is the app's
+        # catch-all — the actual cause is a stack trace on the server, and without
+        # it you are reduced to guessing which of a dozen things threw.
+        if: always() && steps.preflight.outputs.configured == 'true'
+        run: |
+          echo "── tail of next-server.log ──"
+          tail -n 150 tmp/next-server.log || echo "(no server log)"
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.preflight.outputs.configured == 'true'
+        with:
+          name: next-server-log-shard-${{ matrix.shard }}
+          path: tmp/next-server.log
+          retention-days: 14
       - name: Sweep E2E fixtures (runs even when the job is cancelled)
         # Kept, though the local database makes it close to redundant now: the
         # container is destroyed with the job, so nothing can survive anyway.
