@@ -1,5 +1,48 @@
 # NailIQ — E2E chạy đầy đủ lần đầu tiên
 
+> ## 🔴 ĐÍNH CHÍNH (2026-07-14) — SỐ LIỆU DƯỚI ĐÂY ĐÃ SAI
+>
+> Tài liệu này kết luận **"0 lỗi hạ tầng — 50 lỗi đều là bug sản phẩm có sẵn"**. **Kết luận đó SAI, và sai theo hướng tự bào chữa.**
+>
+> **Nguyên nhân bị bỏ sót:** CSP của app chỉ cho phép `connect-src https://*.supabase.co`. Chạy với Supabase local (`http://127.0.0.1:54321`), trình duyệt **âm thầm chặn mọi request tới database**. Server không ném lỗi gì, nên app hiện thông báo chung chung và **nguyên nhân vô hình** trừ khi mở console trình duyệt.
+>
+> **Đã vá:** PR #751 — `next.config.ts` suy ra origin Supabase từ `NEXT_PUBLIC_SUPABASE_URL`. **No-op trên production** (chỉ thêm lại host mà `*.supabase.co` vốn đã cho phép), kèm 21 unit test khoá chiều an toàn: không phát wildcard, không thể inject CSP directive.
+>
+> ### Số liệu THẬT sau bản vá
+>
+> | | Trong tài liệu này (SAI) | **Thật** |
+> |---|---|---|
+> | Pass | 146 | **155** |
+> | **Fail** | **50** | **40** |
+> | Skip | 4 | 5 |
+> | **Lỗi hạ tầng** | **"0"** | **10 — do PR #745 của em** |
+>
+> **[Issue #747](https://github.com/bepnhobencha-rgb/nailiq/issues/747) — "picker không loại khung giờ bận, nghi double-booking, HIGH" — ĐÃ ĐÓNG: báo động giả do chính em tạo ra.** RPC bị CSP chặn chính là `public_booking_occupancy_for_range` — thứ cho picker biết giờ nào đã bận. Bị chặn → picker tưởng mọi giờ đều trống. **Picker hoàn toàn bình thường, không có double-booking.**
+>
+> **Cũng tự khỏi, không cần sửa gì:** `Complete booking end-to-end` ✓ · `booking-errors` conflict-1/conflict-3/edge-19/edge-20 ✓ · `booking-security` sec-1/sec-2/xss-3 ✓ · `group-booking/happy-path` ✓
+>
+> ### Vì sao em kết luận sai
+>
+> Em kiểm hai thứ và **cả hai đều đúng**: RPC `create_public_booking` chạy tốt khi gọi thẳng, và `submitPublicBooking` không đọc biến môi trường nào có thể ném lỗi. Nhưng **cả hai đều lạc đề** — trang **không hề chạm tới được database**. Em dừng lại ở đúng chỗ tự thấy mình vô can.
+>
+> Thứ vạch trần nó là **trace trình duyệt**, chỉ được bật vì bản nháp đầu của booking smoke bị đỏ và em muốn biết tại sao. **Cổng smoke lập công trước cả khi kịp xanh.**
+>
+> ### 40 lỗi còn lại — CHƯA phân loại xong
+>
+> Điều duy nhất đã chứng minh về chúng: **chúng không do CSP** (vẫn đỏ sau bản vá). **Chưa** chứng minh chúng là bug sản phẩm. Có thể là test lỗi thời, có thể là bug thật, có thể là thiếu sót hạ tầng khác mà em chưa tìm ra — **đúng như CSP đã từng là**. Gọi cả 40 cái là *"pre-existing product bug"* bây giờ sẽ lặp lại đúng sai lầm vừa rồi.
+>
+> | Nhóm | Số |
+> |---|---|
+> | `booking-otp` — luồng OTP (`always_otp`), khác luồng thường vốn đã pass | 7 |
+> | `landing-funnel` — `/register` không thấy heading `sign in or sign up` | 7 |
+> | `group-booking` — `guest-placeholder` nhận `"Test Guest"` thay vì `"Guest 1"` | 15 |
+> | `content/copy-check` | 2 |
+> | `booking-validation` | 1 |
+> | `accessibility/a11y` — **bug a11y thật** trên `/register` | 1 |
+> | `receptionist-center` | 6 |
+>
+> Phần còn lại của tài liệu giữ nguyên **làm hồ sơ, không phải làm sự thật**. Số liệu đúng: **155 pass / 40 fail / 5 skip**.
+
 **Ngày:** 2026-07-14 · **CI run:** [29323852182](https://github.com/bepnhobencha-rgb/nailiq/actions/runs/29323852182) · **PR:** #745 (**chưa merge**)
 
 Đây là lần đầu tiên trong lịch sử dự án E2E chạy được **toàn bộ suite** — trên một database riêng, **không đụng production**.
