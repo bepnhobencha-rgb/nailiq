@@ -31,17 +31,33 @@ const isHttpsOrigin = (process.env.NEXT_PUBLIC_SITE_URL ?? "").startsWith("https
  * production it re-adds the host that `*.supabase.co` already covered, so the
  * policy is unchanged there.
  */
-function supabaseConnectSrc(): string[] {
-  const raw = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
-  if (!raw) return [];
-  let origin: string;
+export function supabaseConnectSrc(
+  raw: string | undefined = process.env.NEXT_PUBLIC_SUPABASE_URL,
+): string[] {
+  const value = (raw ?? "").trim();
+  if (!value) return [];
+
+  let url: URL;
   try {
-    origin = new URL(raw).origin;
+    url = new URL(value);
   } catch {
-    return [];
+    return []; // Garbage in, nothing out — never a malformed CSP.
   }
-  const ws = origin.replace(/^http/, "ws"); // Realtime rides the same origin.
-  return [origin, ws];
+
+  // Only http(s). A `data:` or `javascript:` URL yields origin "null", and
+  // pushing the literal string `null` into connect-src is the kind of sloppiness
+  // that becomes a finding later. Anything that is not a real network origin is
+  // simply not an origin we need to allow.
+  if (url.protocol !== "http:" && url.protocol !== "https:") return [];
+
+  const { origin } = url;
+  // `origin` is scheme://host[:port] and by construction cannot contain a space
+  // or a semicolon, so it cannot break out of the directive and inject another
+  // one. That is the property that makes this safe to build from an env var.
+  if (/[\s;,']/.test(origin)) return [];
+
+  // Realtime rides the same origin: http→ws, https→wss.
+  return [origin, origin.replace(/^http/, "ws")];
 }
 
 const nextConfig: NextConfig = {
