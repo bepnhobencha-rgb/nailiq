@@ -25,7 +25,20 @@ const PRODUCTION = {
   tables: 81,
   columns: 1064,
   policies: 101,
-  functions: 253,
+  /**
+   * APP functions only — 65.
+   *
+   * `select count(*) from pg_proc where nspname='public'` says 253 on production,
+   * and that number is a trap: 188 of them belong to EXTENSIONS (pgcrypto,
+   * btree_gist, pg_trgm, uuid-ossp), which production happens to have installed
+   * into `public` while a clean install puts them in `extensions`. Counting them
+   * made the local database look 188 functions short of a schema it had in fact
+   * reproduced exactly.
+   *
+   * Verified on production: 253 total = 188 extension-owned + 65 app-owned.
+   * The query below excludes anything a `pg_depend` extension edge points at.
+   */
+  functions: 65,
   triggers: 24,
   indexes: 265,
 } as const;
@@ -79,8 +92,12 @@ function main() {
       "select count(*) from information_schema.columns where table_schema='public'",
     ),
     policies: num("select count(*) from pg_policies where schemaname='public'"),
+    // App functions only — exclude anything an extension owns (see PRODUCTION).
     functions: num(
-      "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'",
+      "select count(*) from pg_proc p " +
+        "join pg_namespace n on n.oid=p.pronamespace " +
+        "left join pg_depend d on d.objid=p.oid and d.deptype='e' " +
+        "where n.nspname='public' and d.objid is null",
     ),
     triggers: num(
       "select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and not t.tgisinternal",
@@ -117,6 +134,42 @@ function main() {
     );
     if (!exists) failed = true;
     console.log(`  ${exists ? "✓" : "✗"} function ${f}`);
+  }
+
+  // ── Grant matrix ──────────────────────────────────────────────────────────
+  // Policies without grants are a locked door in a wall with no doorway: the
+  // request never reaches RLS, it dies at "permission denied for table salons".
+  // Worse is the other direction — a blanket `GRANT ALL TO anon` would make the
+  // test database MORE permissive than production, and the security specs would
+  // pass while a real leak went unnoticed.
+  //
+  // Production, measured: anon and authenticated reach 75 of the 81 tables;
+  // service_role reaches all 81. The six anon cannot touch are the sensitive
+  // ones (client_ai_summaries, otp_send_log, payment_disputes, rate_limits,
+  // salon_clients, scheduled_notifications) — that gap IS the PII protection,
+  // and it has to survive into the test database intact.
+  //
+  // The first dump here was taken with --no-privileges and produced 0 grants.
+  // Everything above still went green. That is why this check exists.
+  console.log("\n── Grant matrix ──\n");
+  const GRANTS = { anon: 75, authenticated: 75, service_role: 81 } as const;
+  for (const [role, want] of Object.entries(GRANTS)) {
+    const got = num(
+      `select count(distinct table_name) from information_schema.role_table_grants
+        where table_schema='public' and grantee='${role}'`,
+    );
+    const ok = got === want;
+    if (!ok) failed = true;
+    console.log(
+      `  ${ok ? "✓" : "✗"} ${role.padEnd(14)} ${String(got).padStart(3)} / ${want} tables` +
+        (ok
+          ? ""
+          : got === 0
+            ? "   ← no grants at all: was the dump taken with --no-privileges?"
+            : got > want
+              ? "   ← MORE permissive than production. The security specs would lie."
+              : "   ← fewer than production; requests will die at permission denied"),
+    );
   }
 
   // RLS enablement is the one that silently ruins a test suite: the tables are

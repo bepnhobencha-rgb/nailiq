@@ -221,8 +221,16 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY}" \
             npx tsx -e "import('./e2e/helpers/guardProduction').then(g => { g.assertNotProductionFromEnv(); console.log('✓ guard: not production'); })"
 
-          echo "→ applying supabase/bootstrap/schema.sql to the empty local database"
-          psql "${DB_URL}" -v ON_ERROR_STOP=1 -f supabase/bootstrap/schema.sql
+          # prelude first: it creates the roles (anon, authenticated, service_role,
+          # dashboard_user, supabase_admin, supabase_auth_admin) and the extensions
+          # that the dump ASSUMES already exist. Without them the dump dies partway
+          # through and leaves a half-built schema — tables present, policies
+          # missing — which is the worst outcome available: the suite goes green
+          # against a database that isolates nothing.
+          echo "→ prelude (roles + extensions)"
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -q -f supabase/bootstrap/prelude.sql
+          echo "→ schema baseline"
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -q -f supabase/bootstrap/schema.sql
       - name: Schema parity check
         if: steps.preflight.outputs.configured == 'true'
         # A baseline that applied without error can still be missing half the
@@ -397,7 +405,8 @@ jobs:
           echo "::add-mask::${ANON_KEY}"
           NEXT_PUBLIC_SUPABASE_URL="${API_URL}" SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY}" \
             npx tsx -e "import('./e2e/helpers/guardProduction').then(g => { g.assertNotProductionFromEnv(); console.log('✓ guard: not production'); })"
-          psql "${DB_URL}" -v ON_ERROR_STOP=1 -f supabase/bootstrap/schema.sql
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -q -f supabase/bootstrap/prelude.sql
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -q -f supabase/bootstrap/schema.sql
       - name: Seed E2E fixtures
         if: steps.preflight.outputs.configured == 'true'
         run: npx tsx scripts/seed-e2e.ts

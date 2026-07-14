@@ -61,8 +61,17 @@ supabase/.temp/
 # Wix backfill scratch
 tmp/
 
-# Schema dump for the E2E test database. Uncomment the negation once the dump
-# has been verified data-free (see supabase/bootstrap/README.md) — until then,
-# an accidental `git add` of a dump that slipped in real rows would publish
-# customer data to a PUBLIC repo.
+# Schema dump for the E2E test database.
+#
+# supabase/bootstrap/schema.sql IS committed: it was verified data-free by
+# scripts/verify-schema-dump.ts (0 COPY blocks, 0 top-level INSERTs, no
+# credentials) and cross-checked by hand. It is what builds the throwaway test
+# database, so CI cannot run without it.
+#
+# Anything ELSE that lands in this directory stays ignored. A future dump taken
+# with the wrong flags, or a scratch file, must not reach a PUBLIC repo holding
+# 11,226 real customers by accident. Un-ignore a new file only after
+# `npx tsx scripts/verify-schema-dump.ts <file>` passes.
 supabase/bootstrap/*.sql
+!supabase/bootstrap/schema.sql
+!supabase/bootstrap/prelude.sql

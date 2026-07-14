@@ -93,6 +93,61 @@ describe("verify-schema-dump — does not cry wolf on a correct dump", () => {
   });
 });
 
+describe("verify-schema-dump — an INSERT inside a function body is SOURCE, not data", () => {
+  /**
+   * The first version of this checker failed the real dump on 8 lines, all of
+   * them PL/pgSQL. Every one was an INSERT inside a function body — the
+   * function's source code, which inserts nothing until the app calls the RPC.
+   *
+   * That is precisely the cry-wolf failure this file exists to prevent, and it
+   * shipped anyway. pg_dump only ever emits real rows at top level, never inside
+   * a dollar-quoted body, so the state has to be tracked.
+   */
+  const FUNCTION_WITH_INSERT = `
+CREATE FUNCTION public.upsert_client_profile(p_phone text, p_name text) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+  v_digits text;
+BEGIN
+  v_digits := regexp_replace(coalesce(p_phone, ''), '\\D', '', 'g');
+
+  INSERT INTO public.client_profiles (phone, name, visit_count)
+  VALUES (v_digits, p_name, 1)
+  ON CONFLICT (phone) DO UPDATE SET name = excluded.name;
+
+  RETURN gen_random_uuid();
+END;
+$$;
+`;
+
+  it("does not flag an INSERT inside a $$ … $$ body", () => {
+    expect(scanDump(FUNCTION_WITH_INSERT)).toEqual([]);
+  });
+
+  it("does not flag an INSERT inside a $tag$ … $tag$ body", () => {
+    const tagged = FUNCTION_WITH_INSERT.replace(/\$\$/g, "$fn$");
+    expect(scanDump(tagged)).toEqual([]);
+  });
+
+  it("still flags a REAL top-level INSERT that follows a function body", () => {
+    // The state must close correctly, or one function would blind the rest of
+    // the file — a dump could then smuggle rows in after any CREATE FUNCTION.
+    const sql = `${FUNCTION_WITH_INSERT}\nINSERT INTO public.bookings (id) VALUES (1);\n`;
+    const f = scanDump(sql);
+    expect(f).toHaveLength(1);
+    expect(f[0].rule).toBe("insert-data");
+  });
+
+  it("still flags a secret hardcoded INSIDE a function body", () => {
+    // Credentials count everywhere. A key pasted into a function is a real leak,
+    // and a body is where people forget to look.
+    const key = ["sk", "live", "51Abcdefghijklmnopqrstuvwx"].join("_");
+    const sql = `CREATE FUNCTION f() RETURNS void AS $$\nBEGIN\n  PERFORM http_post('x', '${key}');\nEND;\n$$;`;
+    expect(scanDump(sql).length).toBeGreaterThan(0);
+  });
+});
+
 describe("verify-schema-dump — catches what actually matters", () => {
   it("fails on COPY … FROM stdin (bulk customer rows)", () => {
     const f = scanDump(

@@ -78,11 +78,48 @@ const DATA_STATEMENTS: ReadonlyArray<{ rule: string; re: RegExp }> = [
   { rule: "insert-data", re: /^\s*INSERT\s+INTO\b/i },
 ];
 
+/**
+ * Dollar-quoted bodies ($$ … $$, $tag$ … $tag$) hold FUNCTION SOURCE, not data.
+ *
+ * This distinction is the difference between a useful gate and a useless one. A
+ * correct schema-only dump of NailIQ contains dozens of lines like:
+ *
+ *     CREATE FUNCTION public.upsert_client(...) AS $$
+ *     BEGIN
+ *       INSERT INTO public.client_profiles (phone, name, email, ...)
+ *       VALUES (v_digits, v_name, v_email, ...);
+ *     END;
+ *     $$;
+ *
+ * That INSERT is the function's SOURCE CODE. It inserts nothing at dump time; it
+ * runs when the app calls the RPC. Flagging it is exactly the cry-wolf failure
+ * this checker was written to avoid — and the first version did it anyway, on 8
+ * lines of a perfectly clean dump.
+ *
+ * pg_dump only ever emits real rows at TOP LEVEL (COPY blocks, or INSERT with
+ * --inserts). Never inside a dollar-quoted body. So: track the quoting state and
+ * only look for data statements outside one.
+ *
+ * Secrets are still checked INSIDE bodies — a key someone hardcoded into a
+ * function is a real leak, and it is a place people forget to look.
+ */
+function scanDollarQuotes(line: string, openTag: string | null): string | null {
+  const tokens = line.match(/\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$/g);
+  if (!tokens) return openTag;
+  let tag = openTag;
+  for (const t of tokens) {
+    if (tag === null) tag = t;
+    else if (t === tag) tag = null; // a body closes only on its OWN tag
+  }
+  return tag;
+}
+
 export function scanDump(sql: string): Finding[] {
   const findings: Finding[] = [];
   const lines = sql.split("\n");
 
   let insideCopyBlock = false;
+  let dollarTag: string | null = null;
 
   lines.forEach((line, i) => {
     const lineNo = i + 1;
@@ -90,20 +127,26 @@ export function scanDump(sql: string): Finding[] {
     // A COPY block runs until a lone "\." — every line between is customer data.
     if (insideCopyBlock) {
       if (line.trim() === "\\.") insideCopyBlock = false;
-      return; // already reported at the COPY header; do not spam a finding per row
+      return; // reported at the COPY header; do not emit one finding per row
     }
 
-    for (const { rule, re } of DATA_STATEMENTS) {
-      if (re.test(line)) {
-        findings.push({
-          line: lineNo,
-          rule,
-          detail: `${line.trim().slice(0, 70)}… — this statement carries ROWS. Re-run the dump with --schema-only.`,
-        });
-        if (rule === "copy-data") insideCopyBlock = true;
+    const wasInsideBody = dollarTag !== null;
+
+    // Data statements only count at top level (see the note above).
+    if (!wasInsideBody) {
+      for (const { rule, re } of DATA_STATEMENTS) {
+        if (re.test(line)) {
+          findings.push({
+            line: lineNo,
+            rule,
+            detail: `${line.trim().slice(0, 70)}… — this statement carries ROWS. Re-run the dump with --schema-only.`,
+          });
+          if (rule === "copy-data") insideCopyBlock = true;
+        }
       }
     }
 
+    // Credentials count everywhere, including inside a function body.
     for (const { rule, re } of SECRET_SHAPES) {
       if (re.test(line)) {
         // Never echo the value itself — this output can land in a CI log.
@@ -114,6 +157,8 @@ export function scanDump(sql: string): Finding[] {
         });
       }
     }
+
+    dollarTag = scanDollarQuotes(line, dollarTag);
   });
 
   return findings;
