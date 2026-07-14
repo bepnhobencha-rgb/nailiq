@@ -147,15 +147,27 @@ test.describe("@smoke — the flows that must never break", () => {
     await page.getByTestId("sms-consent").check();
     await page.getByRole("button", { name: "Confirm booking" }).click();
 
-    // The exact words the product shows when the server action fails. Asserting
-    // its ABSENCE is what stops this test passing while booking is broken.
-    await expect(
-      page.getByText(/Could not complete booking/i),
-    ).toHaveCount(0);
+    // Race the two possible outcomes rather than asserting the absence of the
+    // error first.
+    //
+    // My first cut checked `expect(errorAlert).toHaveCount(0)` immediately after
+    // the click — which passes trivially, because the server has not answered
+    // yet. It is the shape of assertion that looks rigorous and proves nothing,
+    // and it nearly led me to the wrong conclusion about WHY booking fails.
+    //
+    // Waiting for "success OR failure" is honest: whichever the product actually
+    // does, we see it, and if it is the failure we say so in the error message
+    // instead of reporting a bare "booking-success not found" 20 seconds later.
+    const success = page.getByTestId("booking-success");
+    const failure = page.getByText(/Could not complete booking/i);
 
-    await expect(page.getByTestId("booking-success")).toBeVisible({
-      timeout: 20_000,
-    });
+    await expect(success.or(failure).first()).toBeVisible({ timeout: 20_000 });
+
+    await expect(
+      failure,
+      "the product REFUSED the booking — it showed 'Could not complete booking'",
+    ).toHaveCount(0);
+    await expect(success).toBeVisible();
 
     expect(failedBookingCalls, "a booking request returned 4xx/5xx").toEqual([]);
 
