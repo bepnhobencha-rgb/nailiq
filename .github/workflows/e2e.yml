@@ -64,9 +64,25 @@ jobs:
             name: "receptionist-center"
             testpath: "e2e/receptionist-center"
     env:
-      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      # ⚠️ TEST/STAGING Supabase ONLY.
+      #
+      # These used to be the PRODUCTION project's secrets, which meant every CI
+      # run wrote rows into the live database — that is how five
+      # `*.test.invalid` auth users (two active `founder` superadmins) and three
+      # `e2e-*` salons ended up in production next to real salons. See
+      # docs/audit/E2E-PRODUCTION-CONTAINMENT.md.
+      #
+      # `TEST_SUPABASE_*` are intentionally NOT configured yet. Until a
+      # dedicated test project exists they resolve to empty, and the "Decide
+      # which specs to run" step below drops the suite to db-free mode instead
+      # of silently reaching for production. e2e/helpers/guardProduction.ts is
+      # the second lock: it aborts the run outright if these ever point at the
+      # production project ref.
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.TEST_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.TEST_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.TEST_SUPABASE_SERVICE_ROLE_KEY }}
+      # Pins the run to one project ref. Any mismatch aborts the suite.
+      E2E_EXPECTED_PROJECT_REF: ${{ vars.TEST_SUPABASE_PROJECT_REF }}
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
       BASE_URL: http://localhost:3000
       PLAYWRIGHT_BASE_URL: http://localhost:3000
@@ -125,15 +141,23 @@ jobs:
           echo "::notice::Production server up after pre-flight check"
       - name: Decide which specs to run
         id: scope
+        # Full (DB-writing) E2E requires a DEDICATED test Supabase project.
+        # When one is not configured we run only the specs that never touch a
+        # database, and we say so loudly. What we must never do is quietly fall
+        # back to the production project — that was the old behaviour and it
+        # seeded live data on every run.
         run: |
-          if [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+          if [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ] && [ -n "${E2E_EXPECTED_PROJECT_REF:-}" ]; then
             echo "specs=" >> "$GITHUB_OUTPUT"
             echo "mode=full" >> "$GITHUB_OUTPUT"
-            echo "::notice::SUPABASE_SERVICE_ROLE_KEY present — running full E2E suite"
+            echo "::notice::Test Supabase project configured (ref ${E2E_EXPECTED_PROJECT_REF}) — running full E2E suite"
+          elif [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ] && [ -z "${E2E_EXPECTED_PROJECT_REF:-}" ]; then
+            echo "::error::A service-role key is set but TEST_SUPABASE_PROJECT_REF is not. Refusing to run DB tests against an unpinned project."
+            exit 1
           else
             echo "specs=e2e/content e2e/accessibility" >> "$GITHUB_OUTPUT"
             echo "mode=db-free" >> "$GITHUB_OUTPUT"
-            echo "::warning::SUPABASE_SERVICE_ROLE_KEY missing — skipping DB-dependent specs (running i18n/copy + a11y only)"
+            echo "::warning::No TEST Supabase project configured — DB-dependent E2E specs are SKIPPED (running content + a11y only). Configure TEST_SUPABASE_URL / TEST_SUPABASE_ANON_KEY / TEST_SUPABASE_SERVICE_ROLE_KEY + vars.TEST_SUPABASE_PROJECT_REF to restore full coverage. The production project must never be used here."
           fi
       - name: Decide which project(s) to run
         id: projects
@@ -163,6 +187,18 @@ jobs:
           fi
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
+      - name: Sweep E2E fixtures (runs even when the job is cancelled)
+        # THE backstop. Cleanup used to live only in `test.afterAll()`, and this
+        # workflow sets `concurrency: cancel-in-progress: true` — so a newer push
+        # killed the Playwright process, `afterAll` never fired, and the fixtures
+        # leaked permanently. A workflow step survives what an in-process hook
+        # cannot.
+        #
+        # The script refuses to run against production, deletes only rows that
+        # carry an explicit E2E marker (`e2e-*@nailiq.test.invalid` users,
+        # `e2e-*` salon slugs), and is idempotent.
+        if: always()
+        run: npx tsx scripts/e2e-sweep.ts
       - name: Summarize results
         if: always()
         run: node scripts/playwright-summary.js >> "$GITHUB_STEP_SUMMARY" || true
@@ -184,9 +220,14 @@ jobs:
     permissions:
       contents: write
     env:
-      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      # TEST/STAGING Supabase ONLY — same rule as the `e2e` job above. The
+      # visual suite also held the production service-role key, so it too could
+      # write to the live database. guardProduction.ts aborts the run if these
+      # ever resolve to the production project ref.
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.TEST_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.TEST_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.TEST_SUPABASE_SERVICE_ROLE_KEY }}
+      E2E_EXPECTED_PROJECT_REF: ${{ vars.TEST_SUPABASE_PROJECT_REF }}
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
       BASE_URL: http://localhost:3000
       PLAYWRIGHT_BASE_URL: http://localhost:3000
