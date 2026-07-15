@@ -248,3 +248,16 @@ Chi tiết đầy đủ: **`docs/audit/E2E-40-FAILURES-CLASSIFICATION.md`**. Tó
 - Chi tiết: `docs/audit/E2E-PUBLIC-BOOKING-GATE-REMEDIATION.md`.
 - **21 lỗi còn lại:** 8 OTP-gate (booking-otp 7 + otp-gate 1, nhóm OTP riêng) + 7
   landing-funnel (RC-7) + 5 Receptionist Center + 1 a11y `/register` (RC-8, product bug thật).
+
+---
+
+## 10. CHUẨN HOÁ CHROMIUM/MOBILE (NHÓM 22, 2026-07-15)
+
+Số 175/21/4 của PR #753 là **chromium-only** (PR checks chạy chromium). Main full E2E chạy
+**chromium + mobile** → không so trực tiếp được. Chi tiết + 3 lỗi mobile-only:
+[`E2E-MOBILE-FAILURES.md`](./E2E-MOBILE-FAILURES.md).
+
+- **Chromium (chính thức):** 200 / **175 pass / 21 fail / 4 skip**.
+- **Mobile:** đo riêng trên main; 3 lỗi mobile-only (feature-flag-toggle superadmin race, bv-2
+  gate timing, landing mobile-menu RC-7) — **không do PR #753**, đã có từ trước.
+- **Quy tắc từ nay:** báo cáo E2E tách Chromium / Mobile / Combined.

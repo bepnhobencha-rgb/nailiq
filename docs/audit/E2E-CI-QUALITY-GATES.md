@@ -82,3 +82,26 @@ Lúc đó thêm vào danh sách required:
 - `E2E (Playwright) — receptionist-center`
 
 Chi tiết cấu hình: [`BRANCH-PROTECTION-AND-SMOKE-GATE.md`](./BRANCH-PROTECTION-AND-SMOKE-GATE.md)
+
+---
+
+## 6. Project chromium vs mobile (chuẩn hoá NHÓM 22, 2026-07-15)
+
+E2E chạy 2 Playwright project: **`chromium`** (desktop) và **`mobile`** (WebKit). **Không phải
+gate nào cũng chạy cả hai** — nên KHÔNG so số chromium-only của PR với run chromium+mobile của main.
+
+| Gate | Project chạy | Required (merge gate)? |
+|---|---|---|
+| **Smoke (required)** | chromium | **Có** |
+| **Build & Type Check** | — (tsc/build) | **Có** |
+| **Security Audit** | — (secret scan) | **Có** |
+| **PR full E2E** | **chromium-only** | Không |
+| **Main full E2E (push)** | chromium **+ mobile** | Không |
+
+**Hệ quả báo cáo bắt buộc:** mọi số E2E phải tách **Chromium / Mobile / Combined**. Số PR
+(chromium) chỉ so được với chromium; mobile chỉ đo trên main. Baseline mobile ở
+[`E2E-MOBILE-FAILURES.md`](./E2E-MOBILE-FAILURES.md).
+
+**Lưu ý fail-fast:** matrix `[non-RC, receptionist-center]` bật fail-fast → khi non-RC fail,
+RC shard bị **cancelled**, nên RC (đặc biệt RC mobile) có thể không có số. Muốn số RC đầy đủ:
+rerun riêng job RC (`gh run rerun --job <rc-job-id>`).
