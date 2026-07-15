@@ -474,8 +474,12 @@ export function BookingTypeSwitcher({
       )}
       {entryLoading ? <span className="sr-only">…</span> : null}
 
-      {/* Name input: shown for new customers and returning ones before OTP.
-          After OTP verify the profile supplies the name → input hidden. */}
+      {/* Name input: shown ONLY for a NEW (unrecognized) customer, who must
+          supply a name. A RECOGNIZED customer never sees it at the gate — the
+          anon lookup returns no name (privacy S1), so there is nothing to show,
+          and they don't retype it here: the name comes from their verified
+          profile after OTP (OTP salons) or is collected at the info step
+          (non-OTP salons). Deliberate — see commit 3772b39. */}
       {entryPhone && !entryLoading && !entryCustomer ? (
         <div className="mt-3">
           <label

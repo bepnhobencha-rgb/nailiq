@@ -135,8 +135,9 @@ test.describe("Group booking — validation errors", () => {
     // CTA should flip enabled. Email is optional so empty is OK.
     await walkToStep5(page);
     await page.getByTestId("group-primary-phone").fill("+16045551234");
-    // SMS consent is now required to enable the CTA (QA BUG-03).
-    await page.getByTestId("group-sms-consent").check();
+    // SMS consent is still required to enable the CTA (QA BUG-03) — it is now
+    // collected once at the phone-first gate (walkToStep5 → gotoGroupFlow), so
+    // by step 5 it is already satisfied and the step-5 checkbox is not shown.
     await expect(page.getByTestId("group-confirm")).toBeEnabled();
   });
 });

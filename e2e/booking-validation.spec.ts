@@ -86,12 +86,13 @@ test.describe("Booking validation — info step", () => {
       await setReactInputValue(phoneInput, fmt);
 
       if (!gateUnlocked) {
-        // First valid phone: satisfy gate prerequisites so the flow can mount.
-        // SMS consent + name persist in BookingTypeSwitcher state across phone changes.
-        await smsConsent.waitFor({ state: "visible", timeout: 8_000 });
-        if (await nameInput.isVisible()) {
-          await nameInput.fill("Test Guest");
-        }
+        // First valid phone: satisfy the gate so the flow can mount. Wait on the
+        // NAME input, not the consent checkbox — the checkbox renders on load and
+        // resolves instantly, so the old `if (nameInput.isVisible())` ran before
+        // the ~400ms customer lookup revealed the name input, left the name empty,
+        // and the gate stayed closed. Name + consent persist across phone changes.
+        await nameInput.waitFor({ state: "visible", timeout: 8_000 });
+        await nameInput.fill("Test Guest");
         await smsConsent.check();
         gateUnlocked = true;
       }

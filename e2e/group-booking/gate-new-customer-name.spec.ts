@@ -36,7 +36,9 @@ test.describe("Phone-first gate — new customer name", () => {
     await expect(page.getByTestId("booking-phone-gate")).toBeVisible();
 
     // New phone → no recognition → the name field appears.
-    await page.getByTestId("booking-entry-phone").fill(`+${NEW_PHONE}`);
+    // CountryPhoneField's inner input takes the 10-digit NATIONAL number; the
+    // full E.164 would be sliced to a bogus area code and rejected.
+    await page.getByTestId("booking-entry-phone").fill(NEW_PHONE.slice(-10));
     await expect(page.getByTestId("booking-entry-name")).toBeVisible({
       timeout: 10_000,
     });
@@ -50,6 +52,10 @@ test.describe("Phone-first gate — new customer name", () => {
     );
     // Let the debounced commit land so the flow picks the name up.
     await page.waitForTimeout(600);
+
+    // SMS consent is the third gate requirement (phone + name + consent) before
+    // the flow mounts — without it booking-type-group never renders.
+    await page.getByTestId("sms-consent").check();
 
     // Into the group flow → Guest 1 is pre-filled with the typed name.
     await page.getByTestId("booking-type-group").click();

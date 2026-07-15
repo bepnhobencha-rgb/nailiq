@@ -346,6 +346,12 @@ export async function cleanupTestUser(userId: string) {
  */
 export const GATE_PHONE_DIGITS = "16045550000";
 export const GATE_PHONE = `+${GATE_PHONE_DIGITS}`;
+/**
+ * The new-customer name typed at the gate by `completeBookingEntryGate`. Exported
+ * so specs can assert on the value the product pre-fills (e.g. the group flow
+ * seeds member 0 with the organizer's gate name) without hardcoding the literal.
+ */
+export const GATE_NAME = "Test Guest";
 
 /**
  * Set a controlled React input's value via the native setter + a bubbling
@@ -373,42 +379,65 @@ export async function setReactInputValue(
 }
 
 /**
+ * Clear the phone-first entry gate on an already-loaded public booking page.
+ *
+ * This is the single source of truth for "how a test gets through the gate",
+ * shared by the individual flow (`gotoBookingServiceStep`), the group flow
+ * (`gotoGroupFlow`), and any spec that seeds its own phone (e.g. the OTP suite).
+ * When the product changes what the gate demands, this is the ONE place to
+ * update — the reason 25 specs drifted was that each hand-rolled the gate.
+ *
+ * The gate opens (`flowReady` in BookingTypeSwitcher) only once ALL of these
+ * hold — this helper satisfies them without weakening any of them:
+ *  1. Phone — CountryPhoneField's inner input takes the 10-digit NATIONAL
+ *     number (no country code). Passing the full E.164 (`+1604…`) makes the
+ *     formatter slice it to a bogus area code and the gate never opens — the
+ *     exact bug that sank the hand-rolled specs. We derive national = last 10.
+ *  2. Name — a NEW customer must type ≥2 chars (a recognized profile skips this
+ *     and `nameOk` is auto-true). The name input only appears after the ~400ms
+ *     customer lookup, so we wait on IT, never on the consent checkbox (which
+ *     renders on load and would resolve instantly, filling the name too early).
+ *  3. SMS consent — required by Twilio A2P 10DLC / TCPA / CASL. Ticked here, at
+ *     the gate, which is where the product now collects it. Never skipped.
+ *
+ * @param opts.phone  E.164 digits of the gate phone (default GATE_PHONE_DIGITS).
+ * @param opts.name   New-customer name to type (default "Test Guest").
+ * @param opts.keepProfile  Skip the new-customer reset (default: delete the
+ *   profile first so the phone is treated as a new customer).
+ */
+export async function completeBookingEntryGate(
+  page: Page,
+  opts?: { phone?: string; name?: string; keepProfile?: boolean },
+): Promise<void> {
+  const digits = (opts?.phone ?? GATE_PHONE_DIGITS).replace(/\D/g, "");
+  if (!opts?.keepProfile) {
+    // A NEW customer keeps the name input visible (a recognized profile hides
+    // it) and keeps Guest placeholders/name pre-fills at their defaults.
+    await supabase.from("client_profiles").delete().eq("phone", digits);
+  }
+  const phoneInput = page.getByTestId("booking-entry-phone");
+  await phoneInput.waitFor({ state: "visible", timeout: 15_000 });
+  // National number only — the last 10 digits, never the E.164 country code.
+  await setReactInputValue(phoneInput, digits.slice(-10));
+
+  const nameInput = page.getByTestId("booking-entry-name");
+  await nameInput.waitFor({ state: "visible", timeout: 8_000 });
+  await nameInput.fill(opts?.name ?? GATE_NAME);
+  await page.getByTestId("sms-consent").check();
+}
+
+/**
  * Navigate to a salon's public booking page and clear the phone-first entry
  * gate so the individual booking flow mounts and the service step renders.
  * Mirrors `gotoGroupFlow` for the non-group (individual) flow: the service
- * tiles only exist once a valid phone is entered at the gate.
- *
- * Gate requirements (as of PR #487 + CountryPhoneField):
- *  1. Phone — CountryPhoneField's inner input expects the 10-digit national
- *     number (no country code). GATE_PHONE_DIGITS = "16045550000"; national = "6045550000".
- *  2. Name — for a new customer (no profile) the name input appears after the
- *     400ms customer-lookup debounce; fill ≥2 chars so nameOk = true.
- *  3. SMS consent — gateReady = validPhone && nameOk && smsConsent; the flow
- *     only renders (service tiles mount) once all three are satisfied.
+ * tiles only exist once the gate (phone + name + SMS consent) is cleared.
  */
 export async function gotoBookingServiceStep(
   page: Page,
   slug: string,
 ): Promise<void> {
-  // Keep the gate phone a NEW customer so the info-step name stays default.
-  await supabase.from("client_profiles").delete().eq("phone", GATE_PHONE_DIGITS);
   await page.goto(`/${slug}`);
-  const phoneInput = page.getByTestId("booking-entry-phone");
-  await phoneInput.waitFor({ state: "visible", timeout: 15_000 });
-  // National number only — CountryPhoneField's inner input, not the full E164.
-  await setReactInputValue(phoneInput, GATE_PHONE_DIGITS.slice(1));
-
-  // Wait on the NAME input, not the consent checkbox. The checkbox is rendered
-  // immediately (Twilio requires the disclosure to be visible on load), so it
-  // is no longer a synchronisation point for the ~400ms customer lookup —
-  // waiting on it returned instantly and the name was filled before the input
-  // existed, leaving the gate closed. The profile was deleted above, so this
-  // phone is a new customer and the name input is guaranteed to appear.
-  const nameInput = page.getByTestId("booking-entry-name");
-  await nameInput.waitFor({ state: "visible", timeout: 8_000 });
-  await nameInput.fill("Test Guest");
-  await page.getByTestId("sms-consent").check();
-
+  await completeBookingEntryGate(page);
   await page
     .locator('[data-testid="service-tile-select"]')
     .first()

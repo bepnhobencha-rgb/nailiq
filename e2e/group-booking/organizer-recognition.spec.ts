@@ -89,8 +89,8 @@ test.describe("Group booking — organizer recognition + QR", () => {
     await expect(greeting).toBeVisible({ timeout: 10_000 });
     await expect(greeting).not.toContainText(ORGANIZER_NAME);
 
-    // Submit → success.
-    await page.getByTestId("group-sms-consent").check();
+    // Submit → success. SMS consent was given at the phone-first gate
+    // (gotoGroupFlow), so the step-5 checkbox is not rendered here.
     await page.getByTestId("group-confirm").click();
     await expect(page.getByTestId("booking-group-success")).toBeVisible({
       timeout: 15_000,
