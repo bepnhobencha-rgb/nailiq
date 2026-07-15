@@ -80,19 +80,21 @@ cùng root cause RC-7 đã track).
 
 ### Mobile (baseline riêng — chỉ đo trên main full E2E)
 - **non-RC shard:** pass **113** · fail **19** · skip **2** (134). ✅ đo được.
-- **RC shard:** **KHÔNG đo được.** Matrix `[non-RC, RC]` bật **fail-fast**; non-RC luôn đỏ
-  (honest red) và — vì mobile làm shard chạy lâu gấp đôi — non-RC kết thúc-fail TRƯỚC khi RC
-  xong → RC shard bị **cancelled** mọi lần (kể cả khi rerun riêng job RC). Lấy được RC mobile
-  đòi **fail-fast: false** trong workflow — **thay đổi config, ngoài scope NHÓM 22.**
+- **RC shard:** **KHÔNG đo được (tới khi PR #757 merge).**
+  > **Đính chính (NHÓM 23):** ban đầu quy sai cho **fail-fast**. Thực tế `fail-fast: false`
+  > **đã bật sẵn** (`e2e.yml:158`). Nguyên nhân RC bị cắt là **`timeout-minutes: 65`**: trên
+  > push-to-main shard chạy chromium+mobile, và mobile RC fail retry ~45s mỗi cái → vượt 65
+  > phút. Bằng chứng run sạch `29438056294` (mới nhất, không bị chen): RC chạy 17:49:55 →
+  > 18:55:31 = **65m36s** = đúng timeout. Fix ở **PR #757** (65 → 120).
 - **Mobile-only fails (non-RC, ngoài tập chromium): 3** — feature-flag-toggle, bv-2,
-  landing mobile-menu. (RC mobile có thể có thêm — chưa đo.)
+  landing mobile-menu. (RC mobile có thể có thêm — sẽ đo được sau khi #757 merge.)
 
 ### Combined (chromium + mobile — chỉ trên main full E2E)
 - **Chromium (đầy đủ):** 200 / 175 / 21 / 4.
-- **Mobile:** non-RC 134 / 113 / 19 / 2 **+ RC chưa đo** → **combined mobile chưa tính đủ.**
-- **Combined chính xác chưa lập được** vì thiếu RC mobile. Đây là **giới hạn đo lường** (không
-  bịa số): cần một run `fail-fast: false` để RC mobile chạy hết. Đề xuất cho nhóm sau, KHÔNG
-  tự đổi trong NHÓM 22.
+- **Mobile:** non-RC 134 / 113 / 19 / 2 **+ RC chưa đo (timeout)** → **combined mobile chưa
+  đủ tới khi #757 merge.**
+- **Combined chính xác chưa lập được** vì thiếu RC mobile — **giới hạn đo lường** (không bịa
+  số). Lấy đủ số cần **PR #757** (nâng timeout) merge rồi quan sát push-to-main kế tiếp.
 
 > **Chromium RC (tham chiếu, suy từ branch run chromium):** non-RC chromium 115/16/3 + tổng
 > chromium 175/21/4 → RC chromium ≈ 60/5/1. Mobile RC không có số tương ứng.

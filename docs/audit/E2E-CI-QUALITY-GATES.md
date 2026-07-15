@@ -102,6 +102,8 @@ gate nào cũng chạy cả hai** — nên KHÔNG so số chromium-only của PR
 (chromium) chỉ so được với chromium; mobile chỉ đo trên main. Baseline mobile ở
 [`E2E-MOBILE-FAILURES.md`](./E2E-MOBILE-FAILURES.md).
 
-**Lưu ý fail-fast:** matrix `[non-RC, receptionist-center]` bật fail-fast → khi non-RC fail,
-RC shard bị **cancelled**, nên RC (đặc biệt RC mobile) có thể không có số. Muốn số RC đầy đủ:
-rerun riêng job RC (`gh run rerun --job <rc-job-id>`).
+**Lưu ý RC shard bị cắt (đính chính NHÓM 23):** matrix `[non-RC, receptionist-center]` **đã**
+`fail-fast: false` — non-RC fail KHÔNG huỷ RC. RC bị cắt là do **`timeout-minutes: 65`**: trên
+push-to-main shard chạy chromium+mobile và mobile RC fail retry ~45s mỗi cái → vượt 65 phút
+(run sạch `29438056294`: RC chạy đúng 65m36s rồi bị killed). Fix ở **PR #757** (timeout 65→120).
+Trước khi #757 merge, RC mobile chưa có số đầy đủ.
