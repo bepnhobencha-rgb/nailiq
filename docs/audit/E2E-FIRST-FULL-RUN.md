@@ -230,3 +230,21 @@ Chi tiết đầy đủ: **`docs/audit/E2E-40-FAILURES-CLASSIFICATION.md`**. Tó
   đọc-lại-DB xanh chứng minh booking hoàn tất và picker slot đúng.
 - **P0 kế tiếp:** cụm phone gate của Public Booking (17 test, RC-1..RC-6) — chuyển spec sang
   helper chuẩn `gotoBookingServiceStep`. Thuần test-side.
+
+---
+
+## 9. CẬP NHẬT NHÓM 20/21 (2026-07-15) — sửa cụm Public Booking Gate (PR #753)
+
+**Trước:** 155 pass / 40 fail / 5 skip. **Sau (branch PR #753, CI Supabase Local):**
+**175 pass / 21 fail / 4 skip** — +20 pass, 40 → 21 fail, **0 regression** (mọi lỗi còn lại
+đều thuộc tập baseline).
+
+- **18 test sửa** (thuần test-side): 15 gate (copy-check 2, bv-2 1, group consent ×6 file,
+  guest-placeholder RC-4 ×2, gate-new-customer-name, phone-first-gate) + 3 privacy
+  `guest-name-not-recognized`.
+- **Source đổi duy nhất:** 1 comment ở `BookingTypeSwitcher.tsx:477-478` (khớp hành vi thật —
+  khách đã nhận diện không thấy name input ở gate; điều tra git xác nhận code có chủ đích,
+  commit `3772b39`). **0 thay đổi business logic.**
+- Chi tiết: `docs/audit/E2E-PUBLIC-BOOKING-GATE-REMEDIATION.md`.
+- **21 lỗi còn lại:** 8 OTP-gate (booking-otp 7 + otp-gate 1, nhóm OTP riêng) + 7
+  landing-funnel (RC-7) + 5 Receptionist Center + 1 a11y `/register` (RC-8, product bug thật).
