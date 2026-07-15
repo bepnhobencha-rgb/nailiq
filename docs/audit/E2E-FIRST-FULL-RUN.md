@@ -215,3 +215,18 @@ Có 2 lựa chọn, cần anh quyết:
 ## 7. XÁC NHẬN PHẠM VI NHÓM 14
 
 ✅ Không sửa lỗi UI · ✅ Không đổi selector · ✅ Không skip test · ✅ Không thêm retry che lỗi · ✅ Không giảm assertion · ✅ Không merge · ✅ Không deploy · ✅ Không sửa gì trong nhóm này (kể cả hạ tầng — vì không có lỗi hạ tầng nào).
+
+---
+
+## 8. CẬP NHẬT NHÓM 19 (2026-07-14) — phân loại xong 40 lỗi
+
+Chi tiết đầy đủ: **`docs/audit/E2E-40-FAILURES-CLASSIFICATION.md`**. Tóm tắt đính chính:
+
+- **Số chính thức: 155 pass / 40 fail / 5 skip** (không phải "50 lỗi" — con số đó là ước
+  lượng trước CSP-fix). 40/40 deterministic, 0 flaky thuần.
+- **39/40 là test tụt hậu so với sản phẩm. Đúng 1 lỗi sản phẩm thật** (RC-8: nhãn ô mật khẩu
+  `/register`, Medium). Không Critical, không High.
+- **Rủi ro #1 cũ (#747 "double-booking") — ĐÃ RÚT, là báo động giả do CSP tự gây ra.** Smoke
+  đọc-lại-DB xanh chứng minh booking hoàn tất và picker slot đúng.
+- **P0 kế tiếp:** cụm phone gate của Public Booking (17 test, RC-1..RC-6) — chuyển spec sang
+  helper chuẩn `gotoBookingServiceStep`. Thuần test-side.

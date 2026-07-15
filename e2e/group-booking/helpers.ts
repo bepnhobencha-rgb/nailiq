@@ -11,7 +11,7 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Page } from "@playwright/test";
 
-import { seedTestSalon } from "../helpers/db";
+import { completeBookingEntryGate, seedTestSalon } from "../helpers/db";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -192,25 +192,12 @@ export function nextSundayYmd(): string {
 export const GATE_PHONE_DIGITS = "16045550000";
 
 export async function gotoGroupFlow(page: Page, slug: string): Promise<void> {
-  // Keep the gate phone a NEW customer so Guest names stay default.
-  await supabase.from("client_profiles").delete().eq("phone", GATE_PHONE_DIGITS);
   await page.goto(`/${slug}`);
-  // Phone-first gate: phone must be entered before the group toggle appears.
-  await page
-    .getByTestId("booking-entry-phone")
-    .waitFor({ state: "visible", timeout: 15_000 });
-  // CountryPhoneField's inner input expects the national number (no country code).
-  // GATE_PHONE_DIGITS = "16045550000" (E164 digits); national = last 10 digits.
-  await page.getByTestId("booking-entry-phone").fill(GATE_PHONE_DIGITS.slice(1));
-
-  // Gate requires name + SMS consent before flowReady = true (PR #487).
-  // Wait on the name input: the consent checkbox now renders on load, so it no
-  // longer gates on the customer lookup and cannot be used to await it. The
-  // profile was deleted above, so the name input is guaranteed to appear.
-  const nameInput = page.getByTestId("booking-entry-name");
-  await nameInput.waitFor({ state: "visible", timeout: 8_000 });
-  await nameInput.fill("Test Guest");
-  await page.getByTestId("sms-consent").check();
+  // Phone-first gate (phone + name + SMS consent) — the group toggle only
+  // mounts once the gate is cleared. Shared with the individual flow so the
+  // gate contract lives in exactly one place. GATE_PHONE_DIGITS is a NEW
+  // customer, so Guest names stay at their defaults.
+  await completeBookingEntryGate(page, { phone: GATE_PHONE_DIGITS });
 
   await page
     .getByTestId("booking-type-group")

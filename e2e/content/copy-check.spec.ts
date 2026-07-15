@@ -16,9 +16,8 @@ import { userEn, userVi } from "@/shared/i18n/user";
 
 import {
   cleanupTestSalon,
-  GATE_PHONE,
+  completeBookingEntryGate,
   seedTestSalon,
-  setReactInputValue,
 } from "../helpers/db";
 
 /**
@@ -99,13 +98,10 @@ test.describe("Copy & i18n live-render check", () => {
     for (const lang of ["en", "vi"] as const) {
       test(`/${COPY_SLUG}?lang=${lang}`, async ({ page }) => {
         await page.goto(`/${COPY_SLUG}?lang=${lang}`);
-        // Phone-first entry gate (PR #328): the service step only renders after
-        // a valid phone is entered. Clear the gate so the booking UI (the copy
-        // we're scanning) appears. Use React's native setter — locator.fill()'s
-        // CDP path bypasses the gate's onChange on WebKit.
-        const phoneInput = page.getByTestId("booking-entry-phone");
-        await phoneInput.waitFor({ state: "visible", timeout: 20_000 });
-        await setReactInputValue(phoneInput, GATE_PHONE);
+        // Phone-first entry gate (PR #328): the service step only renders once
+        // the gate (phone + name + SMS consent) is cleared. Use the shared
+        // helper so the copy we're scanning appears.
+        await completeBookingEntryGate(page);
         // Public booking page keeps a Supabase WebSocket alive — networkidle
         // never fires. Wait for the booking UI to appear instead.
         await page.waitForSelector(

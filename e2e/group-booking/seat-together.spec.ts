@@ -75,7 +75,8 @@ async function bookGroupOfTwo(
     .getByTestId("group-step-confirm-panel")
     .waitFor({ state: "visible" });
   await page.getByTestId("group-primary-phone").fill(phone);
-  await page.getByTestId("group-sms-consent").check();
+  // SMS consent was given at the phone-first gate (gotoGroupFlow); the step-5
+  // checkbox is not rendered once consent is already satisfied.
   await page.getByTestId("group-confirm").click();
   await expect(page.getByTestId("booking-group-success")).toBeVisible({
     timeout: 15_000,
@@ -156,7 +157,8 @@ test.describe("Group booking — seat together / couple", () => {
         .getByTestId("group-step-confirm-panel")
         .waitFor({ state: "visible" });
       await page.getByTestId("group-primary-phone").fill("+16045550222");
-      await page.getByTestId("group-sms-consent").check();
+      // SMS consent was given at the phone-first gate (gotoGroupFlow); the
+      // step-5 checkbox is not rendered once consent is already satisfied.
       await page.getByTestId("group-confirm").click();
       await expect(page.getByTestId("booking-group-success")).toBeVisible({
         timeout: 15_000,

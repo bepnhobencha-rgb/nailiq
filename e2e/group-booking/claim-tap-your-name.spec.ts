@@ -62,7 +62,8 @@ test.describe("Party Link — tap your name", () => {
       .getByTestId("group-step-confirm-panel")
       .waitFor({ state: "visible" });
     await page.getByTestId("group-primary-phone").fill("+16045551234");
-    await page.getByTestId("group-sms-consent").check();
+    // SMS consent was given at the phone-first gate (gotoGroupFlow), so the
+    // step-5 checkbox is not rendered here — asserting on it would hang.
     await page.getByTestId("group-confirm").click();
     await expect(page.getByTestId("booking-group-success")).toBeVisible({
       timeout: 15_000,

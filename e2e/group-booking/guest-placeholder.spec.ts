@@ -12,9 +12,8 @@
  */
 import { expect, test } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
-import { cleanupTestSalon } from "../helpers/db";
+import { cleanupTestSalon, GATE_NAME } from "../helpers/db";
 import {
-  fillMemberCard,
   gotoGroupFlow,
   nextOpenDateYmd,
   pickDateInCalendar,
@@ -85,11 +84,13 @@ test("member name fields are pre-filled with Guest N placeholders", async ({ pag
 
   await page.getByTestId("group-step-service-panel").waitFor({ state: "visible" });
 
-  // Both name fields should be pre-filled with "Guest 1" / "Guest 2"
+  // Member 0 is the organizer: their gate-captured name pre-fills slot 1
+  // (BookingGroupFlow seeds member 0 with initialName). The remaining, still
+  // unclaimed slots keep their "Guest N" placeholder — so member 1 = "Guest 2".
   const name0 = await page.getByTestId("group-member-0-name").inputValue();
   const name1 = await page.getByTestId("group-member-1-name").inputValue();
 
-  expect(name0).toMatch(/guest\s*1|khách\s*1/i);
+  expect(name0).toBe(GATE_NAME);
   expect(name1).toMatch(/guest\s*2|khách\s*2/i);
 });
 
@@ -97,7 +98,8 @@ test("member name fields are pre-filled with Guest N placeholders", async ({ pag
 
 test("group booking succeeds when member names are not manually edited", async ({ page }) => {
   await completeFlowWithoutNames(page);
-  await page.getByTestId("group-sms-consent").check();
+  // SMS consent was given at the phone-first gate (gotoGroupFlow); the step-5
+  // checkbox is not rendered once consent is already satisfied.
   await page.getByTestId("group-confirm").click();
 
   // Success screen
@@ -131,7 +133,8 @@ test("organizer phone is not copied as member names", async ({ page }) => {
 
 test("DB stores Guest placeholder when organizer leaves names as default", async ({ page }) => {
   await completeFlowWithoutNames(page);
-  await page.getByTestId("group-sms-consent").check();
+  // SMS consent was given at the phone-first gate (gotoGroupFlow); the step-5
+  // checkbox is not rendered once consent is already satisfied.
   await page.getByTestId("group-confirm").click();
 
   await expect(page.getByTestId("booking-group-success")).toBeVisible({ timeout: 20_000 });
@@ -177,9 +180,9 @@ test("party link member hint is shown in step 2", async ({ page }) => {
   ).toBeVisible({ timeout: 5_000 });
 });
 
-// ─── Test: Larger group generates correct Guest N names ───────────
+// ─── Test: Larger group numbers the unclaimed slots correctly ─────
 
-test("3-person group generates Guest 1, Guest 2, Guest 3", async ({ page }) => {
+test("3-person group: organizer + Guest 2 + Guest 3", async ({ page }) => {
   await gotoGroupFlow(page, SLUG);
 
   await page.getByTestId("group-size-3").click();
@@ -191,7 +194,8 @@ test("3-person group generates Guest 1, Guest 2, Guest 3", async ({ page }) => {
   const name1 = await page.getByTestId("group-member-1-name").inputValue();
   const name2 = await page.getByTestId("group-member-2-name").inputValue();
 
-  expect(name0).toMatch(/1/);
+  // Member 0 = organizer's gate name; members 1..n keep sequential Guest N.
+  expect(name0).toBe(GATE_NAME);
   expect(name1).toMatch(/2/);
   expect(name2).toMatch(/3/);
 });

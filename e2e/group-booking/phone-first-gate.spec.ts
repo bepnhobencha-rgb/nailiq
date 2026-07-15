@@ -48,10 +48,16 @@ test.describe("Phone-first entry gate", () => {
     // Enter the returning customer's phone → recognized, but PRIVACY (S1):
     // the greeting is generic and must NOT reveal the stored name to anyone
     // who merely types a phone number.
-    await page.getByTestId("booking-entry-phone").fill(`+${PHONE}`);
+    // CountryPhoneField's inner input takes the 10-digit NATIONAL number; the
+    // full E.164 would be sliced to a bogus area code and rejected.
+    await page.getByTestId("booking-entry-phone").fill(PHONE.slice(-10));
     const recognized = page.getByTestId("booking-entry-recognized");
     await expect(recognized).toBeVisible({ timeout: 10_000 });
     await expect(recognized).not.toContainText(NAME);
+
+    // A recognized customer satisfies the name requirement from their profile,
+    // but SMS consent is still required before the flow mounts.
+    await page.getByTestId("sms-consent").check();
 
     // Switch to Individual → the flow should start on service selection
     // (phone step skipped because the gate already captured it).

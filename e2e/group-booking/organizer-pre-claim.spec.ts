@@ -74,7 +74,8 @@ test.describe("Group booking — organizer slot pre-claimed", () => {
     // "I'm also getting a service" is on by default.
     await expect(page.getByTestId("group-organizer-is-guest")).toBeVisible();
     await page.getByTestId("group-primary-phone").fill(`+${ORG_PHONE}`);
-    await page.getByTestId("group-sms-consent").check();
+    // SMS consent was given at the phone-first gate (gotoGroupFlow), so the
+    // step-5 checkbox is not rendered here — asserting on it would hang.
     await page.getByTestId("group-confirm").click();
     await expect(page.getByTestId("booking-group-success")).toBeVisible({
       timeout: 15_000,
