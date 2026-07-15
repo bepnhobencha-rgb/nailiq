@@ -7,9 +7,10 @@ import { seedGroupTestSalon } from "./helpers";
 /**
  * Privacy (S1): the public phone gate must NEVER surface a stored name —
  * real OR a "Guest N"/"Khách N" placeholder — to anyone who simply types a
- * phone number. Every recognized phone gets a GENERIC "Welcome back!" plus
- * the name field (so the customer supplies their own name); the stored name
- * is only ever revealed after OTP verification, never at the gate.
+ * phone number. A recognized phone gets a GENERIC "Welcome back!" and no name
+ * field at all (the gate hides it for recognized customers — BookingTypeSwitcher
+ * `!entryCustomer`), so there is nothing that could leak the stored name. The
+ * name is only ever revealed/collected after OTP verification, never at the gate.
  */
 
 const SLUG = "e2e-guestname";
@@ -61,40 +62,45 @@ test.describe("Gate — no stored name is surfaced pre-OTP (privacy S1)", () => 
     await page.goto(`/${SLUG}`);
     await expect(page.getByTestId("booking-phone-gate")).toBeVisible();
 
-    await page.getByTestId("booking-entry-phone").fill(`+${POLLUTED_PHONE}`);
-    // Recognized generically + name field shown; the "Guest 1" placeholder
-    // (like any stored name) is never surfaced.
-    await expect(page.getByTestId("booking-entry-name")).toBeVisible({
-      timeout: 10_000,
-    });
+    // National number — the full E.164 would be sliced to a bogus area code
+    // and the lookup would never fire.
+    await page.getByTestId("booking-entry-phone").fill(POLLUTED_PHONE.slice(-10));
+    // Recognized generically; the "Guest 1" placeholder (like any stored name)
+    // is never surfaced. The name input is hidden at the gate for a recognized
+    // customer (BookingTypeSwitcher `!entryCustomer`), so there is no field that
+    // could leak the stored name.
     const recognized = page.getByTestId("booking-entry-recognized");
-    await expect(recognized).toBeVisible();
+    await expect(recognized).toBeVisible({ timeout: 10_000 });
     await expect(recognized).not.toContainText("Guest 1");
+    await expect(page.getByTestId("booking-entry-name")).not.toBeVisible();
   });
 
   test("real-name profile → generic greeting, name withheld pre-OTP", async ({
     page,
   }) => {
     await page.goto(`/${SLUG}`);
-    await page.getByTestId("booking-entry-phone").fill(`+${REAL_PHONE}`);
+    await page.getByTestId("booking-entry-phone").fill(REAL_PHONE.slice(-10));
     const recognized = page.getByTestId("booking-entry-recognized");
     await expect(recognized).toBeVisible({ timeout: 10_000 });
-    // The real stored name must NOT leak to a phone-only lookup.
+    // The real stored name must NOT leak to a phone-only lookup — neither in the
+    // greeting nor via a pre-filled name field (which is hidden for a recognized
+    // customer at the gate).
     await expect(recognized).not.toContainText("Real Name");
-    await expect(page.getByTestId("booking-entry-name")).toBeVisible();
+    await expect(page.getByTestId("booking-entry-name")).not.toBeVisible();
   });
 
   test("profile with a past real name → still withheld at the gate", async ({
     page,
   }) => {
     await page.goto(`/${SLUG}`);
-    await page.getByTestId("booking-entry-phone").fill(`+${FALLBACK_PHONE}`);
+    await page.getByTestId("booking-entry-phone").fill(FALLBACK_PHONE.slice(-10));
     // Neither the placeholder ("Khách 2") nor the real booking name
-    // ("Linda Real") is surfaced — recognition stays generic.
+    // ("Linda Real") is surfaced — recognition stays generic, and the name
+    // input is hidden at the gate so nothing can leak through a pre-fill.
     const recognized = page.getByTestId("booking-entry-recognized");
     await expect(recognized).toBeVisible({ timeout: 10_000 });
     await expect(recognized).not.toContainText("Linda Real");
     await expect(recognized).not.toContainText("Khách 2");
-    await expect(page.getByTestId("booking-entry-name")).toBeVisible();
+    await expect(page.getByTestId("booking-entry-name")).not.toBeVisible();
   });
 });

@@ -63,22 +63,24 @@ Hoãn vì:
    dịch vụ. Cần **viết lại**, không phải chỉnh gate.
 Đây đúng "luồng OTP thuộc nhóm khác" đã được dặn không chạm trong PR này.
 
-### 3 test — mâu thuẫn source, DỪNG & BÁO
-`group-booking/guest-name-not-recognized.spec.ts` (3) khẳng định: với phone **đã nhận diện**,
-`booking-entry-name` hiện (để khách tự nhập tên). Nhưng:
-- **Comment** `BookingTypeSwitcher.tsx:477-478`: *"Name input: shown for new customers **and
-  returning ones before OTP**."* → khớp test.
-- **Code** `:479`: `{entryPhone && !entryLoading && !entryCustomer ? (…name input…) : null}`
-  → `!entryCustomer` **ẩn** name input cho khách đã nhận diện. → nghịch test.
+### 3 test — mâu thuẫn source, đã ĐIỀU TRA & CHỐT (Phương án B)
+`group-booking/guest-name-not-recognized.spec.ts` (3) từng khẳng định: với phone **đã nhận
+diện**, `booking-entry-name` hiện. Comment `BookingTypeSwitcher.tsx:477-478` nói vậy, nhưng
+code `:479` (`!entryCustomer`) lại **ẩn** name input cho khách đã nhận diện.
 
-Comment và code đá nhau. Nếu "sửa" test để mong name input **ẩn** mà thực ra code đúng-theo-
-comment (tức đang có bug ẩn name input cho khách cũ), ta sẽ **che mất một product bug**. Theo
-yêu cầu NHÓM 20 ("Nếu source và tài liệu mâu thuẫn, dừng và báo trước khi sửa test"), **để
-nguyên 3 test**, chờ chốt: name input CÓ nên hiện cho khách đã nhận diện trước OTP không?
-- Nếu **có** (comment đúng) → đây là **product bug** (code dòng 479 sai), test giữ nguyên, mở
-  issue sửa source.
-- Nếu **không** (code đúng) → cập nhật comment + 3 test (bỏ assert name-input, giữ assert
-  privacy "không lộ tên").
+**Điều tra git kết luận:** code đến **sau** comment 32 phút cùng ngày —
+- `50542e4` (13:02) viết comment, lúc đó điều kiện là `!entryCustomer?.name`.
+- `3772b39` (13:34) *"fix(booking): skip name input for returning customers at gate"* đổi thành
+  `!entryCustomer` **nhưng quên sửa comment**.
+
+→ **Code có chủ đích, comment stale — KHÔNG phải product bug.** Ẩn name input không chặn
+booking, không ép tên rỗng: khách cũ ở salon OTP-ON lấy tên sau gate-OTP; salon OTP-OFF nhập
+tên ở bước **info** (có validate, submit chặn tên rỗng). API lookup không trả name (privacy S1).
+
+**Chốt Phương án B (Huy duyệt):** giữ code, **sửa comment `:477-478` cho khớp hành vi** (chỉ
+comment, không đụng logic) + sửa 3 test: bỏ assert name-input-visible, thêm
+`booking-entry-name` **`.not.toBeVisible()`**, **giữ nguyên** mọi assert privacy (recognized
+không lộ tên). Cũng sửa bug E.164→national trong 3 test này.
 
 ## Xác nhận môi trường
 
