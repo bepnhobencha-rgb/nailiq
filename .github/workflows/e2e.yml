@@ -153,7 +153,15 @@ jobs:
     name: E2E (Playwright) — ${{ matrix.name }}
     runs-on: ubuntu-latest
     needs: i18n-check
-    timeout-minutes: 65
+    # 120, not 65: on push-to-main the shard runs chromium AND mobile, and the
+    # receptionist-center shard's mobile failures each retry once at ~45s. At 65
+    # the RC shard was KILLED mid-run at exactly 65m (run 29438056294: RC started
+    # 17:49:55, cancelled 18:55:31) — so mobile RC numbers were never captured
+    # and "cancelled" was misread as fail-fast/concurrency. fail-fast is already
+    # false; this is a pure time budget. Raising it lets every shard finish and
+    # report honestly — it hides nothing (the suite stays red), it just stops a
+    # slow-but-legitimate shard from being cut off before it reports.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
