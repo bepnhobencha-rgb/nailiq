@@ -261,3 +261,12 @@ Số 175/21/4 của PR #753 là **chromium-only** (PR checks chạy chromium). M
 - **Mobile:** đo riêng trên main; 3 lỗi mobile-only (feature-flag-toggle superadmin race, bv-2
   gate timing, landing mobile-menu RC-7) — **không do PR #753**, đã có từ trước.
 - **Quy tắc từ nay:** báo cáo E2E tách Chromium / Mobile / Combined.
+
+---
+
+## 12. CẬP NHẬT NHÓM 26 (2026-07-16) — RC-8 accessibility đã sửa
+
+PR #760 (merge `a96e073`, deploy `dpl_HGAW8ktw8ojEWtPiNQSXSFQRegCh` READY) thêm `<label>` cho ô
+mật khẩu `/register` → **RC-8 (product bug thật duy nhất) đã đóng**. Chromium non-RC **16 → 15
+fail**, 0 fail mới. Required checks xanh; production `/register` render label (EN verified SSR).
+15 fail chromium non-RC còn lại: booking-otp 7 (#754) + landing-funnel 7 (RC-7, #748) + otp-gate 1.
