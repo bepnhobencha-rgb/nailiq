@@ -427,6 +427,36 @@ export async function completeBookingEntryGate(
 }
 
 /**
+ * Complete the GATE OTP step for a `phone_otp_enabled` salon.
+ *
+ * The product moved OTP to the entry gate (commit `a4042c5` "gate-first OTP"):
+ * once phone + name + SMS consent are satisfied, `GateOtpInline` renders inside
+ * the phone card and the flow (service step / group toggle) stays locked until
+ * the code is verified — `flowReady = gateReady && (!phoneOtpEnabled ||
+ * gateOtpDone)`. This drives that widget; call it AFTER `completeBookingEntryGate`
+ * (or the per-spec gate fill) and BEFORE waiting for the flow to unlock. On a
+ * non-OTP salon there is no GateOtpInline, so do NOT call this there.
+ *
+ * Requires DEMO_OTP (magic code `000000`) — no real SMS is sent.
+ */
+export async function completeGateOtp(
+  page: Page,
+  opts?: { code?: string },
+): Promise<void> {
+  // idle stage → click "Send code" (fires /api/booking-otp/send).
+  await page
+    .getByTestId("booking-gate-otp-send")
+    .waitFor({ state: "visible", timeout: 15_000 });
+  await page.getByTestId("booking-gate-otp-send").click();
+
+  // sent stage → the code input appears; 6 digits auto-fires verifyCode()
+  // (GateOtpInline.onCodeChange), so no explicit verify click is needed.
+  const codeInput = page.getByTestId("booking-gate-otp-input");
+  await codeInput.waitFor({ state: "visible", timeout: 15_000 });
+  await setReactInputValue(codeInput, opts?.code ?? "000000");
+}
+
+/**
  * Navigate to a salon's public booking page and clear the phone-first entry
  * gate so the individual booking flow mounts and the service step renders.
  * Mirrors `gotoGroupFlow` for the non-group (individual) flow: the service
