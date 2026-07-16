@@ -11,7 +11,7 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Page } from "@playwright/test";
 
-import { completeBookingEntryGate, seedTestSalon } from "../helpers/db";
+import { completeBookingEntryGate, completeGateOtp, seedTestSalon } from "../helpers/db";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -191,13 +191,21 @@ export function nextSundayYmd(): string {
  *  their own phone later. */
 export const GATE_PHONE_DIGITS = "16045550000";
 
-export async function gotoGroupFlow(page: Page, slug: string): Promise<void> {
+export async function gotoGroupFlow(
+  page: Page,
+  slug: string,
+  opts?: { otp?: boolean },
+): Promise<void> {
   await page.goto(`/${slug}`);
   // Phone-first gate (phone + name + SMS consent) — the group toggle only
   // mounts once the gate is cleared. Shared with the individual flow so the
   // gate contract lives in exactly one place. GATE_PHONE_DIGITS is a NEW
   // customer, so Guest names stay at their defaults.
   await completeBookingEntryGate(page, { phone: GATE_PHONE_DIGITS });
+
+  // OTP-on salon: the gate demands a code before the toggle appears, and the
+  // verified session threads into the group flow so Confirm is not re-gated.
+  if (opts?.otp) await completeGateOtp(page);
 
   await page
     .getByTestId("booking-type-group")
