@@ -387,6 +387,15 @@ export function SocialAuthButtons({
           {/* Password section — visible while showPassword is true */}
           {passwordSupported && showPassword ? (
             <div id={passwordSectionId} className="flex flex-col gap-3">
+              {/* Visible, persistent label — an accessible name that survives
+                  typing (a placeholder disappears on input and leaves screen-
+                  reader + low-vision users without the field's purpose). */}
+              <label
+                htmlFor="password-input"
+                className="text-sm font-semibold text-nq-foreground"
+              >
+                {t.passwordLabel}
+              </label>
               <Input
                 id="password-input"
                 type="password"
