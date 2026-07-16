@@ -11,7 +11,7 @@ export function LandingTrustStrip() {
     [language],
   );
 
-  const items = [t.made, t.pipeda, t.freeToStart, t.bilingual];
+  const items = [t.designed, t.keepPos, t.bilingual, t.made];
 
   return (
     <div className="border-y border-nq-border/20 bg-nq-surface/20 py-3">

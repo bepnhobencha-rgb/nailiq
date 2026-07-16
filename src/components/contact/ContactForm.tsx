@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useMemo } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
@@ -8,6 +8,17 @@ import { submitContactInquiry } from "@/shared/contact/submitContactInquiry";
 import { cn } from "@/shared/lib/cn";
 
 type FormState = "idle" | "success";
+type PosValue = "" | "square" | "clover" | "toast" | "other" | "none";
+type PlanValue = "" | "monthly" | "annual" | "unsure";
+
+function readQueryParam(name: string): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return new URLSearchParams(window.location.search).get(name) ?? "";
+  } catch {
+    return "";
+  }
+}
 
 export function ContactForm() {
   const { language } = useUserLanguage();
@@ -19,6 +30,10 @@ export function ContactForm() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [salon, setSalon] = useState("");
+  const [pos, setPos] = useState<PosValue>("");
+  const [posOther, setPosOther] = useState("");
+  const [plan, setPlan] = useState<PlanValue>("");
+  const [intent, setIntent] = useState<"pilot" | "demo" | "">("");
   const [message, setMessage] = useState("");
   // Hidden honeypot — real users leave it untouched.
   const [botField, setBotField] = useState("");
@@ -31,6 +46,19 @@ export function ContactForm() {
   const [bannerError, setBannerError] = useState<string | null>(null);
   const [state, setState] = useState<FormState>("idle");
   const [pending, startTransition] = useTransition();
+
+  // Hydrate optional prefills from URL: /contact?intent=pilot&plan=monthly
+  // Client-only + one-shot: safer than useSearchParams (avoids requiring a
+  // Suspense boundary in the caller) and cheaper than useSyncExternalStore
+  // for a single mount-time read that never changes afterward.
+  useEffect(() => {
+    const rawIntent = readQueryParam("intent");
+    const rawPlan = readQueryParam("plan");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot mount hydration; URL params never change while mounted
+    if (rawIntent === "pilot" || rawIntent === "demo") setIntent(rawIntent);
+    if (rawPlan === "monthly" || rawPlan === "annual" || rawPlan === "unsure")
+      setPlan(rawPlan);
+  }, []);
 
   function validate(): boolean {
     const errs: typeof fieldErrors = {};
@@ -52,6 +80,10 @@ export function ContactForm() {
         name: name.trim(),
         email: email.trim(),
         salon: salon.trim() || undefined,
+        pos: pos || undefined,
+        posOther: pos === "other" ? posOther.trim() || undefined : undefined,
+        plan: plan || undefined,
+        intent: intent || undefined,
         message: message.trim(),
         _botField: botField,
       });
@@ -59,11 +91,7 @@ export function ContactForm() {
         setState("success");
         return;
       }
-      // Map server-side reasons back to copy. Server already
-      // mirrors client-side checks, so a `reason` here generally
-      // means a server-only path (rate limit, Resend down).
-      if (res.reason === "rate_limited")
-        setBannerError(t.errors.rateLimited);
+      if (res.reason === "rate_limited") setBannerError(t.errors.rateLimited);
       else if (res.reason === "invalid_email")
         setFieldErrors((s) => ({ ...s, email: t.errors.emailInvalid }));
       else if (res.reason === "invalid_name")
@@ -94,6 +122,9 @@ export function ContactForm() {
             setName("");
             setEmail("");
             setSalon("");
+            setPos("");
+            setPosOther("");
+            setPlan("");
             setMessage("");
             setFieldErrors({});
             setBannerError(null);
@@ -107,6 +138,13 @@ export function ContactForm() {
     );
   }
 
+  const intentBannerCopy =
+    intent === "pilot"
+      ? t.intentPilot
+      : intent === "demo"
+        ? t.intentDemo
+        : null;
+
   return (
     <form
       onSubmit={onSubmit}
@@ -115,11 +153,21 @@ export function ContactForm() {
       data-testid="contact-form"
       className="rounded-2xl border border-nq-border/40 bg-nq-surface/40 p-6 md:p-8"
     >
+      {intentBannerCopy ? (
+        <div
+          data-testid={`contact-intent-${intent}`}
+          className="mb-6 rounded-xl border border-nq-primary/30 bg-nq-primary/10 px-4 py-3 text-sm text-nq-primary-soft"
+        >
+          {intentBannerCopy}
+        </div>
+      ) : null}
+
       <h2 className="text-xl font-semibold text-nq-foreground md:text-2xl">
         {t.formHeading}
       </h2>
 
       <div className="mt-6 space-y-5">
+        {/* Name */}
         <div>
           <label
             htmlFor="contact-name"
@@ -158,6 +206,7 @@ export function ContactForm() {
           ) : null}
         </div>
 
+        {/* Email */}
         <div>
           <label
             htmlFor="contact-email"
@@ -196,6 +245,7 @@ export function ContactForm() {
           ) : null}
         </div>
 
+        {/* Salon */}
         <div>
           <label
             htmlFor="contact-salon"
@@ -215,6 +265,101 @@ export function ContactForm() {
           />
         </div>
 
+        {/* Current POS */}
+        <fieldset>
+          <legend className="mb-2 block text-sm font-medium text-nq-foreground">
+            {t.posLabel}
+          </legend>
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                { key: "square", label: t.posOptions.square },
+                { key: "clover", label: t.posOptions.clover },
+                { key: "toast", label: t.posOptions.toast },
+                { key: "other", label: t.posOptions.other },
+                { key: "none", label: t.posOptions.none },
+              ] as const
+            ).map((opt) => {
+              const active = pos === opt.key;
+              return (
+                <label
+                  key={opt.key}
+                  className={cn(
+                    "inline-flex cursor-pointer items-center gap-2 rounded-full border px-4 py-2 text-sm transition",
+                    active
+                      ? "border-nq-primary/60 bg-nq-primary/15 text-nq-primary-soft"
+                      : "border-nq-border/40 bg-nq-surface/40 text-nq-muted hover:text-nq-foreground",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="pos"
+                    value={opt.key}
+                    checked={active}
+                    onChange={() => setPos(opt.key)}
+                    className="sr-only"
+                    data-testid={`contact-pos-${opt.key}`}
+                  />
+                  {opt.label}
+                </label>
+              );
+            })}
+          </div>
+          {pos === "other" ? (
+            <input
+              id="contact-pos-other"
+              type="text"
+              value={posOther}
+              onChange={(e) => setPosOther(e.target.value)}
+              maxLength={80}
+              placeholder={t.posOtherPlaceholder}
+              aria-label={t.posOtherLabel}
+              className="mt-3 w-full rounded-xl border border-nq-border/40 bg-nq-bg/50 px-4 py-3 text-base text-nq-foreground placeholder:text-nq-muted/50 focus:outline-none focus:ring-2 focus:ring-nq-primary/50"
+            />
+          ) : null}
+        </fieldset>
+
+        {/* Plan preference */}
+        <fieldset>
+          <legend className="mb-2 block text-sm font-medium text-nq-foreground">
+            {t.planLabel}
+          </legend>
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                { key: "monthly", label: t.planOptions.monthly },
+                { key: "annual", label: t.planOptions.annual },
+                { key: "unsure", label: t.planOptions.unsure },
+              ] as const
+            ).map((opt) => {
+              const active = plan === opt.key;
+              return (
+                <label
+                  key={opt.key}
+                  className={cn(
+                    "inline-flex cursor-pointer items-center gap-2 rounded-full border px-4 py-2 text-sm transition",
+                    active
+                      ? "border-nq-primary/60 bg-nq-primary/15 text-nq-primary-soft"
+                      : "border-nq-border/40 bg-nq-surface/40 text-nq-muted hover:text-nq-foreground",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="plan"
+                    value={opt.key}
+                    checked={active}
+                    onChange={() => setPlan(opt.key)}
+                    className="sr-only"
+                    data-testid={`contact-plan-${opt.key}`}
+                  />
+                  {opt.label}
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+
+        {/* Message */}
         <div>
           <label
             htmlFor="contact-message"
@@ -253,9 +398,7 @@ export function ContactForm() {
         </div>
 
         {/* Honeypot — hidden from sighted + assistive tech, but
-            scrapers/bots that fill every input get a silent drop.
-            `tabIndex={-1}` + `autoComplete="off"` keep real users
-            from accidentally tabbing into it. */}
+            scrapers/bots that fill every input get a silent drop. */}
         <div
           aria-hidden
           style={{

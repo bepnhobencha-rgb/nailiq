@@ -10,8 +10,34 @@ const NAME_MAX = 100;
 const SALON_MAX = 200;
 const MESSAGE_MAX = 4000;
 const EMAIL_MAX = 254;
+const POS_OTHER_MAX = 80;
 
 const CONTACT_INBOX = "thehuytgvn@gmail.com";
+
+/**
+ * Founder Pilot form fields (all optional). Additive on the existing
+ * contact pipeline: they are serialized into the outbound email
+ * subject/body so we do not need a DB migration for the pilot launch.
+ */
+export type ContactPos = "square" | "clover" | "toast" | "other" | "none";
+export type ContactPlan = "monthly" | "annual" | "unsure";
+export type ContactIntent = "pilot" | "demo";
+
+function isPos(v: unknown): v is ContactPos {
+  return (
+    v === "square" ||
+    v === "clover" ||
+    v === "toast" ||
+    v === "other" ||
+    v === "none"
+  );
+}
+function isPlan(v: unknown): v is ContactPlan {
+  return v === "monthly" || v === "annual" || v === "unsure";
+}
+function isIntent(v: unknown): v is ContactIntent {
+  return v === "pilot" || v === "demo";
+}
 
 export type ContactInquiryResult =
   | { ok: true }
@@ -44,12 +70,24 @@ function escapeHtml(s: string): string {
  *
  * Reply-To is set to the submitter's email so the team can hit
  * "reply" in their email client directly.
+ *
+ * Founder Pilot fields (`pos`, `posOther`, `plan`, `intent`) are
+ * optional. When present they are inlined into the email subject
+ * and body — no schema change required.
  */
 export async function submitContactInquiry(input: {
   name: string;
   email: string;
   salon?: string;
   message: string;
+  /** Founder Pilot: current POS system. */
+  pos?: string;
+  /** Founder Pilot: free-text POS name when `pos === "other"`. */
+  posOther?: string;
+  /** Founder Pilot: preferred pricing option. */
+  plan?: string;
+  /** Founder Pilot: `pilot` or `demo` — set by the CTA that opened the form. */
+  intent?: string;
   /** Hidden honeypot field. Real users leave it empty; bots fill it. */
   _botField?: string;
 }): Promise<ContactInquiryResult> {
@@ -80,6 +118,18 @@ export async function submitContactInquiry(input: {
 
   const salon = (input.salon ?? "").trim().slice(0, SALON_MAX);
 
+  const posRaw = typeof input.pos === "string" ? input.pos.trim() : "";
+  const pos: ContactPos | null = isPos(posRaw) ? posRaw : null;
+  const posOther =
+    pos === "other"
+      ? (input.posOther ?? "").trim().slice(0, POS_OTHER_MAX)
+      : "";
+  const planRaw = typeof input.plan === "string" ? input.plan.trim() : "";
+  const plan: ContactPlan | null = isPlan(planRaw) ? planRaw : null;
+  const intentRaw =
+    typeof input.intent === "string" ? input.intent.trim() : "";
+  const intent: ContactIntent | null = isIntent(intentRaw) ? intentRaw : null;
+
   try {
     const hdrs = await headers();
     const blocked = await isRateLimited(RATE_LIMIT_IDS.contactSubmit, {
@@ -105,29 +155,58 @@ export async function submitContactInquiry(input: {
       name,
       email,
       salon,
+      pos,
+      posOther,
+      plan,
+      intent,
       messagePreview: message.slice(0, 80),
     });
     return { ok: true };
   }
 
+  const posLabel =
+    pos === "other" && posOther
+      ? `Other — ${posOther}`
+      : pos
+        ? pos.charAt(0).toUpperCase() + pos.slice(1)
+        : "—";
+  const planLabel = plan
+    ? plan === "unsure"
+      ? "Not sure"
+      : plan === "monthly"
+        ? "Monthly Pilot"
+        : "Annual Pilot"
+    : "—";
+  const intentPrefix = intent === "pilot"
+    ? "[Founder Pilot] "
+    : intent === "demo"
+      ? "[Demo request] "
+      : "";
+
   const subject = salon
-    ? `Contact form: ${name} (${salon})`
-    : `Contact form: ${name}`;
+    ? `${intentPrefix}Contact form: ${name} (${salon})`
+    : `${intentPrefix}Contact form: ${name}`;
   const text = [
-    `Name:  ${name}`,
-    `Email: ${email}`,
-    `Salon: ${salon || "—"}`,
+    `Name:   ${name}`,
+    `Email:  ${email}`,
+    `Salon:  ${salon || "—"}`,
+    `POS:    ${posLabel}`,
+    `Plan:   ${planLabel}`,
+    `Intent: ${intent ?? "—"}`,
     "",
     "Message:",
     message,
   ].join("\n");
   const html = `<!doctype html>
 <html><body style="font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color: #111; line-height: 1.6;">
-  <h2 style="margin: 0 0 16px;">New contact-form inquiry</h2>
+  <h2 style="margin: 0 0 16px;">${intentPrefix ? escapeHtml(intentPrefix.trim()) + " " : ""}New contact-form inquiry</h2>
   <table style="border-collapse: collapse; margin: 0 0 20px;">
     <tr><td style="padding: 4px 12px 4px 0; color: #666; font-weight: 600;">Name</td><td style="padding: 4px 0;">${escapeHtml(name)}</td></tr>
     <tr><td style="padding: 4px 12px 4px 0; color: #666; font-weight: 600;">Email</td><td style="padding: 4px 0;"><a href="mailto:${escapeHtml(email)}" style="color: #D4AF37;">${escapeHtml(email)}</a></td></tr>
     <tr><td style="padding: 4px 12px 4px 0; color: #666; font-weight: 600;">Salon</td><td style="padding: 4px 0;">${escapeHtml(salon || "—")}</td></tr>
+    <tr><td style="padding: 4px 12px 4px 0; color: #666; font-weight: 600;">POS</td><td style="padding: 4px 0;">${escapeHtml(posLabel)}</td></tr>
+    <tr><td style="padding: 4px 12px 4px 0; color: #666; font-weight: 600;">Plan</td><td style="padding: 4px 0;">${escapeHtml(planLabel)}</td></tr>
+    <tr><td style="padding: 4px 12px 4px 0; color: #666; font-weight: 600;">Intent</td><td style="padding: 4px 0;">${escapeHtml(intent ?? "—")}</td></tr>
   </table>
   <p style="margin: 0 0 8px; color: #666; font-weight: 600;">Message:</p>
   <div style="white-space: pre-wrap; padding: 16px; background: #f7f5ef; border-left: 3px solid #D4AF37; border-radius: 4px;">${escapeHtml(message)}</div>

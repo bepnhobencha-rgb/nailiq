@@ -152,12 +152,18 @@ export type UserMessages = {
       homeBookmarkSuffix: string;
     };
   };
-  /** Marketing landing page (`/`) — full copy across all sections.
-   * Wired through `useUserLanguage` so the EN/VI toggle in the nav
-   * actually re-renders the page content. */
+  /** Marketing landing page (`/`) — Founder Pilot positioning
+   *  (multi-POS, Done-For-You salon setup). Wired through
+   *  `useUserLanguage` so the EN/VI toggle in the nav actually
+   *  re-renders the page content.
+   *
+   *  Restructured for the Founder Pilot launch: legacy keys
+   *  (`pain`, `features`, `pricing.plans[]`, `trustStrip.pipeda`
+   *  etc.) removed to keep i18n honest about what the page shows. */
   landing: {
     nav: {
       signIn: string;
+      /** Primary nav CTA — now "Apply for Founder Pilot" (was "Try free"). */
       tryFree: string;
       langAriaLabel: string;
       openMenu: string;
@@ -168,91 +174,118 @@ export type UserMessages = {
       h1Line1: string;
       h1Gold: string;
       subline: string;
+      /** "Keep your current POS." trust line under the subline. */
+      posSupport: string;
+      /** "We set it up. We train your team. You stay focused on your clients." */
+      valueStatement: string;
       ctaPrimary: string;
       ctaSecondary: string;
       microtrust: string;
     };
-    pain: {
+    problem: {
       eyebrow: string;
       h2: string;
-      lede: string;
-      stat1: { label: string; body: string };
-      stat2: { label: string; body: string };
-      stat3: { display: string; sub: string; label: string; body: string };
+      items: ReadonlyArray<string>;
+      conclusion: string;
     };
-    features: {
+    doneForYou: {
       eyebrow: string;
       h2: string;
-      booking: { title: string; body: string };
-      queue: { title: string; body: string };
-      center: { title: string; body: string };
+      items: ReadonlyArray<{
+        title: string;
+        body: string;
+        bullets: ReadonlyArray<string>;
+      }>;
+    };
+    keepPos: {
+      eyebrow: string;
+      h2: string;
+      intro: string;
+      square: { title: string; body: string };
+      other: { title: string; body: string };
+      custom: { title: string; body: string };
+      trustNote: string;
+      /** Renders below the three cards to note POS names are shown as text (no logos). */
+      logoNote: string;
     };
     howItWorks: {
       eyebrow: string;
       h2: string;
-      step1: { title: string; body: string; preview: string };
-      step2: { title: string; body: string; preview: string };
-      step3: { title: string; body: string; preview: string };
+      step1: { title: string; body: string; list: ReadonlyArray<string> };
+      step2: { title: string; body: string; list: ReadonlyArray<string> };
+      step3: { title: string; body: string; list: ReadonlyArray<string> };
+      step4: { title: string; body: string; list: ReadonlyArray<string> };
+      timelineNote: string;
       bottomCta: string;
-    };
-    socialProof: {
-      eyebrow: string;
-      h2: string;
-      sub: string;
-      /** B4 (QA 2026-05-13) — testimonial quotes were hardcoded
-       *  EN strings in `LandingSocialProof.tsx`, so VI visitors
-       *  saw English copy. Moving them to i18n so they participate
-       *  in the locale switch. Two entries is the current count;
-       *  add to the array to render more cards without touching
-       *  the component. */
-      quotes: ReadonlyArray<{
-        initials: string;
-        body: string;
-        author: string;
-        venue: string;
-      }>;
-    };
-    trustStrip: {
-      made: string;
-      pipeda: string;
-      freeToStart: string;
-      bilingual: string;
     };
     pricing: {
       eyebrow: string;
       h2: string;
       sub: string;
-      perMonth: string;
-      taxNote: string;
-      ccNotice: string;
-      /** Migration note rendered under the Pro CTA (below `ccNotice`).
-       *  Task #10 — pricing v2: "Switching from another tool? First 3
-       *  months free." Calls out the migration discount inline so it
-       *  doesn't get lost in the FAQ. */
-      proMigrationNote: string;
-      plans: ReadonlyArray<{
-        /** "free" | "pro" | "studio" | "enterprise" — component keys on this
-         *  for the Pro glow + Enterprise contact-CTA path. */
-        id: string;
+      perMonthLabel: string;
+      setupLabel: string;
+      plusLabel: string;
+      /** Two Founder Pilot cards. Monthly + Annual. Included list is
+       *  intentionally identical between them — different price shape,
+       *  same service scope. */
+      monthly: {
         name: string;
-        price: string;
-        /** Badge text (e.g. "Most Popular"). Null means no badge, but a spacer is rendered for vertical alignment. */
-        badge: string | null;
-        features: ReadonlyArray<string>;
+        setupPrice: string;
+        monthlyPrice: string;
+        commitment: string;
+        included: ReadonlyArray<string>;
         cta: string;
-      }>;
-      /** Add-ons rail rendered below the four pricing cards. Three cards:
-       *  extra SMS credits, extra location, and the one-time branded
-       *  digital-card design package. */
-      addons: {
-        sectionTitle: string;
-        sms: { name: string; price: string; description: string };
-        location: { name: string; price: string; description: string };
-        branding: { name: string; price: string; description: string };
+        commitmentNote: string;
+      };
+      annual: {
+        name: string;
+        badge: string;
+        price: string;
+        description: string;
+        included: ReadonlyArray<string>;
+        cta: string;
+        savingsLine: string;
       };
     };
-    /** FAQ accordion — addresses pre-purchase friction from
-     *  salon owner conversations. Click each Q to reveal A. */
+    posScope: {
+      eyebrow: string;
+      h2: string;
+      intro: string;
+      includedTitle: string;
+      includedItems: ReadonlyArray<string>;
+      supportedTitle: string;
+      supportedItems: ReadonlyArray<string>;
+      notIncludedTitle: string;
+      notIncludedItems: ReadonlyArray<string>;
+      closing: string;
+    };
+    clearScope: {
+      eyebrow: string;
+      h2: string;
+      notIncludedTitle: string;
+      items: ReadonlyArray<string>;
+      closing: string;
+      supportPricingTitle: string;
+      supportPricing: string;
+    };
+    smsFairUse: {
+      eyebrow: string;
+      h2: string;
+      included: string;
+      explanations: ReadonlyArray<string>;
+    };
+    paymentDisclaimer: {
+      eyebrow: string;
+      title: string;
+      body: string;
+      squareNote: string;
+    };
+    whyJoin: {
+      eyebrow: string;
+      h2: string;
+      items: ReadonlyArray<string>;
+      renewalNotice: string;
+    };
     faq: {
       eyebrow: string;
       h2: string;
@@ -261,10 +294,22 @@ export type UserMessages = {
       footerText: string;
       footerCta: string;
     };
-    /** /contact page (extends from `landing.footer.contact` label). */
+    trustStrip: {
+      designed: string;
+      keepPos: string;
+      bilingual: string;
+      made: string;
+    };
+    /** /contact page — extended with optional POS + package preference
+     *  fields for the Founder Pilot apply/demo flow. Fields are optional;
+     *  when set, they are serialized into the outbound email so we keep
+     *  a single delivery pipeline (Resend → team inbox, no DB migration). */
     contact: {
       pageTitle: string;
       lede: string;
+      /** Intent banners — rendered when `?intent=pilot|demo` is in the URL. */
+      intentPilot: string;
+      intentDemo: string;
       formHeading: string;
       nameLabel: string;
       namePlaceholder: string;
@@ -272,6 +317,22 @@ export type UserMessages = {
       emailPlaceholder: string;
       salonLabel: string;
       salonPlaceholder: string;
+      posLabel: string;
+      posOptions: {
+        square: string;
+        clover: string;
+        toast: string;
+        other: string;
+        none: string;
+      };
+      posOtherLabel: string;
+      posOtherPlaceholder: string;
+      planLabel: string;
+      planOptions: {
+        monthly: string;
+        annual: string;
+        unsure: string;
+      };
       messageLabel: string;
       messagePlaceholder: string;
       submit: string;
@@ -287,11 +348,9 @@ export type UserMessages = {
         rateLimited: string;
         serverError: string;
       };
-      /** Demo-request CTA box rendered below the form. */
       demoHeading: string;
       demoBody: string;
       demoCta: string;
-      /** Direct-email fallback rendered below the demo CTA. */
       directEmailHeading: string;
       directEmailBody: string;
       backToHome: string;
@@ -299,9 +358,12 @@ export type UserMessages = {
     finalCta: {
       eyebrow: string;
       h2: string;
-      sub: string;
+      body: string;
+      supportingLine: string;
       ctaPrimary: string;
       ctaSecondary: string;
+      trustNote: string;
+      finalLegalNote: string;
     };
     footer: {
       about: string;
@@ -2359,266 +2421,459 @@ export const userEn: UserMessages = {
       closeMenu: "Close menu",
     },
     hero: {
-      eyebrow: "Trusted by salons in Canada, the US & Vietnam",
-      h1Line1: "Less than one manicure a month.",
-      h1Gold: "Your salon runs itself.",
+      eyebrow: "FOUNDER PILOT · LIMITED TO 5 SALONS",
+      h1Line1: "Your Salon’s Website, Booking and Operations —",
+      h1Gold: "Set Up for You",
       subline:
-        "Vietnamese-first. AI-powered. No missed bookings, ever.",
-      ctaPrimary: "Try free for 14 days",
-      ctaSecondary: "See how it works ↓",
-      microtrust: "No credit card · 14-day trial · Setup in 2 minutes",
+        "NailIQ helps nail salons launch a professional website, online booking, staff schedules and essential salon operations without having to configure everything themselves.",
+      posSupport:
+        "Keep your current POS. NailIQ can work alongside Square, Clover, Toast or another payment system.",
+      valueStatement:
+        "We set it up. We train your team. You stay focused on your clients.",
+      ctaPrimary: "Apply for Founder Pilot",
+      ctaSecondary: "Book a Free Demo",
+      microtrust:
+        "Designed for nail salons · Keep your existing POS · Vietnamese-friendly support",
     },
-    pain: {
-      eyebrow: "The Problem",
-      h2: "You’re losing money right now",
-      lede:
-        "Every salon owner we’ve talked to has the same three holes in the bucket. Here’s the math.",
-      stat1: {
-        label: "Lost from missed calls",
-        body:
-          "Phones ring while staff are busy. Each unanswered call is a booking that walks down the block to your competitor.",
-      },
-      stat2: {
-        label: "Don’t rebook after first visit",
-        body:
-          "Without an easy booking link, returning customers default to whoever has online slots — even if they loved you.",
-      },
-      stat3: {
-        display: "Walk-ins",
-        sub: "leave",
-        label: "When you’re too busy to take them",
-        body:
-          "No queue means walk-ins guess at wait times, get frustrated, and leave. A live queue keeps them — and your revenue.",
-      },
+    problem: {
+      eyebrow: "Why NailIQ",
+      h2: "Technology Should Save You Time — Not Create More Work",
+      items: [
+        "Too many phone calls to book or reschedule appointments.",
+        "Staff schedules change frequently and are hard to keep in sync.",
+        "Services, prices and durations are difficult to keep organized.",
+        "Generic booking tools still require owners to configure everything themselves.",
+        "Website, booking and salon operations often feel disconnected.",
+        "Owners may already have a POS but still need a better booking workflow.",
+        "Busy salon owners do not have time to manage complicated software.",
+      ],
+      conclusion:
+        "NailIQ provides both the platform and the implementation support needed to get your salon running without forcing you to replace your current POS.",
     },
-    features: {
-      eyebrow: "Features",
-      h2: "Everything a nail salon needs",
-      booking: {
-        title: "Online Booking",
-        body:
-          "Your booking link, open 24/7. Clients pick service, staff, and time without calling — works on any phone, no app install.",
+    doneForYou: {
+      eyebrow: "What’s Included",
+      h2: "More Than Software — A Done-For-You Salon Setup",
+      items: [
+        {
+          title: "Branded Website",
+          body: "A professional online presence that reflects your salon.",
+          bullets: [
+            "Template-based website with up to five pages",
+            "Mobile-friendly design",
+            "Services, contact information and booking access",
+            "One language",
+            "Up to two consolidated revision rounds",
+          ],
+        },
+        {
+          title: "Online Booking",
+          body: "A booking flow your clients can complete on any phone.",
+          bullets: [
+            "Services, prices and durations",
+            "Booking policies",
+            "Customer booking flow",
+            "OTP verification when enabled",
+            "Booking dashboard access",
+          ],
+        },
+        {
+          title: "Staff and Scheduling",
+          body: "Staff, skills and availability configured on your behalf.",
+          bullets: [
+            "Staff profiles",
+            "Skills and eligible services",
+            "Working hours",
+            "Breaks",
+            "Days off",
+            "Booking availability",
+          ],
+        },
+        {
+          title: "POS-Compatible Workflow",
+          body: "Keep the payment system your salon already runs.",
+          bullets: [
+            "Continue using the salon’s current POS",
+            "NailIQ manages website, booking and salon scheduling",
+            "Payments may continue through Square, Clover, Toast or another POS",
+            "Direct data synchronization depends on the integration currently supported",
+          ],
+        },
+        {
+          title: "Square Setup Assistance",
+          body: "Where eligible, we help connect Square features NailIQ currently supports.",
+          bullets: [
+            "Connect one eligible existing Square account where supported",
+            "Technical connection assistance",
+            "Square Physical Gift Card setup assistance",
+            "Square eGift Card setup assistance",
+            "Subject to Square eligibility and technical availability",
+          ],
+        },
+        {
+          title: "Training and Launch",
+          body: "A guided go-live so your team is ready on day one.",
+          bullets: [
+            "One 60-minute online training session",
+            "Guided test booking",
+            "Up to 90 minutes of remote go-live support",
+          ],
+        },
+        {
+          title: "Ongoing Support",
+          body: "Small updates and Vietnamese-friendly support included.",
+          bullets: [
+            "Vietnamese-friendly support",
+            "Up to 30 minutes of small updates per month",
+            "Additional work available after written approval and quote",
+          ],
+        },
+      ],
+    },
+    keepPos: {
+      eyebrow: "Multi-POS",
+      h2: "Keep the POS You Already Use",
+      intro:
+        "NailIQ does not require your salon to replace its current POS system.",
+      square: {
+        title: "Square Connection Support",
+        body: "Eligible Square users may receive connection assistance and support for selected Square features currently supported by NailIQ, including Square Gift Card setup assistance where applicable.",
       },
-      queue: {
-        title: "Walk-in Queue",
-        body:
-          "Real-time queue management. No chaos during busy hours — see who’s next at a glance, and customers always know their wait.",
+      other: {
+        title: "Use NailIQ Alongside Your Existing POS",
+        body: "Salons using Clover, Toast or another POS can still use NailIQ for their website, online booking, staff schedules, booking policies, OTP and salon operations while continuing to process payments through their current POS.",
       },
-      center: {
-        title: "Receptionist Center",
-        body:
-          "Live grid showing all bookings and walk-ins. Reschedule, reassign staff, and resolve conflicts in seconds, not minutes.",
+      custom: {
+        title: "Need a Direct Integration?",
+        body: "Direct synchronization with Clover, Toast or another POS is not included in the Founder Pilot. It requires technical review, API availability, platform permissions, partner approval where required and separate pricing.",
       },
+      trustNote:
+        "No POS change is required to use NailIQ’s core website, booking and scheduling features.",
+      logoNote:
+        "POS provider names are shown as text. NailIQ is not affiliated with Square, Clover or Toast and does not display third-party logos without verified usage rights.",
     },
     howItWorks: {
-      eyebrow: "Get Started",
-      h2: "Live in 15 minutes",
+      eyebrow: "Process",
+      h2: "From Setup to Go-Live in Four Steps",
       step1: {
-        // B2 (QA 2026-05-13) — landing claimed "Sign up with your
-        // phone — OTP verification" but the prod register surface
-        // ships email magic-link as the recommended path
-        // (`smsEnabled=false` on the current SMS-disabled config).
-        // Switching the headline + body so the landing matches the
-        // experience the customer actually lands on.
-        title: "Sign up with your email",
-        body: "Instant access via magic link — no app, no password.",
-        preview:
-          "You’ll see — a sign-in link in your inbox, then your dashboard.",
+        title: "Share Your Salon Information",
+        body: "You provide the details we need to configure NailIQ for your salon.",
+        list: [
+          "Logo",
+          "Business information",
+          "Services",
+          "Prices",
+          "Durations",
+          "Staff",
+          "Skills",
+          "Working schedules",
+          "Policies",
+          "Current POS",
+        ],
       },
       step2: {
-        title: "Add services and staff",
-        body:
-          "Pre-loaded templates speed it up. Most salons finish in 10 minutes.",
-        preview:
-          "You’ll see — your menu live and ready to take bookings.",
+        title: "We Configure NailIQ",
+        body: "NailIQ builds and configures your salon workspace end-to-end.",
+        list: [
+          "Website",
+          "Booking",
+          "Staff schedules",
+          "Booking policies",
+          "OTP when enabled",
+          "Supported POS workflow",
+        ],
       },
       step3: {
-        title: "Share your booking link",
-        body:
-          "Copy your nailiq.ca/your-salon URL. Send to clients via Zalo, SMS, or stick on the front desk.",
-        preview: "You’ll see — your first booking land within hours.",
+        title: "Review and Test",
+        body: "You review the setup and confirm everything works with your POS.",
+        list: [
+          "Review the website",
+          "Review services and staff",
+          "Complete an approved test booking",
+          "Verify the dashboard",
+          "Confirm how NailIQ works alongside the existing POS",
+        ],
       },
-      bottomCta: "Ready when you are. Try free for 14 days",
-    },
-    socialProof: {
-      eyebrow: "Trusted By",
-      h2: "What salon owners say",
-      sub: "Early access feedback",
-      quotes: [
-        {
-          initials: "LN",
-          body:
-            "Perfect for busy salons. We stopped losing walk-ins because the queue is right there on iPad. Front desk finally has a clear picture.",
-          author: "Lan Nguyen, Owner",
-          venue: "Nails by Lan · Toronto",
-        },
-        {
-          initials: "TM",
-          body:
-            "Vietnamese support saved us. Our customers book themselves now in Vietnamese and our phone barely rings — in a good way.",
-          author: "Thuy Mai, Owner",
-          venue: "Saigon Nail Studio · Houston, TX",
-        },
-        {
-          initials: "PN",
-          body:
-            "Setup took 10 minutes — I was skeptical but it really is that fast. The walk-in list is visible to everyone and the chaos at our front desk is finally gone.",
-          author: "Phuong Nguyen, Owner",
-          venue: "Pink Nails Studio · Vancouver, BC",
-        },
-        {
-          initials: "JH",
-          body:
-            "The bilingual booking link changed everything. Our older Vietnamese clients who couldn't figure out our old system now book themselves without calling.",
-          author: "Jennifer Ho, Owner",
-          venue: "Lotus Nails · Calgary, AB",
-        },
-      ],
-    },
-    trustStrip: {
-      made: "Made in Vancouver, BC 🇨🇦",
-      pipeda: "PIPEDA Compliant",
-      freeToStart: "Free to start — no card",
-      bilingual: "Vietnamese & English",
+      step4: {
+        title: "Training and Go-Live",
+        body: "We train your team and support the launch.",
+        list: [
+          "Train the salon owner or designated manager",
+          "Support the planned go-live remotely",
+          "Help address initial usage issues within the included scope",
+        ],
+      },
+      timelineNote:
+        "Typical setup takes approximately 7–14 business days after all required information, approvals and third-party access have been received.",
+      bottomCta: "Apply for Founder Pilot",
     },
     pricing: {
-      eyebrow: "Pricing",
-      h2: "Simple, transparent pricing",
-      sub: "No hidden fees. Upgrade or cancel anytime.",
-      perMonth: "/month",
-      taxNote: "+ GST/HST (and PST where applicable). Prices in CAD.",
-      ccNotice: "No credit card required",
-      proMigrationNote: "Switching from another tool? First 3 months free.",
-      plans: [
-        {
-          id: "free",
-          name: "Free",
-          price: "$0",
-          badge: null,
-          features: [
-            "1 staff member",
-            "Up to 50 bookings/month",
-            "Online booking link",
-            "Walk-in queue",
-            "Vietnamese & English",
-            "AI Menu Scanner (setup only)",
-          ],
-          cta: "Get started free",
-        },
-        {
-          id: "pro",
-          name: "Pro",
-          price: "$39",
-          badge: "Most Popular",
-          features: [
-            "Everything in Free",
-            "Unlimited bookings & staff",
-            "Real-time receptionist center",
-            "Smart AI Upsell",
-            "Auto review requests",
-            "Owner reports & analytics",
-            "Cancel anytime",
-          ],
-          cta: "Start 14-day free trial",
-        },
-        {
-          id: "studio",
-          name: "Studio",
-          price: "$99",
-          badge: "Best Value",
-          features: [
-            "Everything in Pro",
-            "AI Review Defense (1-click approve)",
-            "Loyalty stamp cards & Gift Cards",
-            "Staff performance reports",
-            "CRM & client history",
-            "SMS marketing (100 msgs/month)",
-            "Priority support",
-          ],
-          cta: "Start 14-day free trial",
-        },
-        {
-          id: "enterprise",
-          name: "Enterprise",
-          price: "$199",
-          badge: "For Chains",
-          features: [
-            "Everything in Studio",
-            "Voice AI (English + Vietnamese) (coming soon)",
-            "Multi-location management",
-            "Staff payroll & commission (coming soon)",
-            "T4 tax export (coming soon)",
-            "AI inventory management (coming soon)",
-            "Unlimited SMS",
-            "Dedicated onboarding",
-          ],
-          cta: "Contact us",
-        },
-      ],
-      addons: {
-        sectionTitle: "Need more? Add what you need.",
-        sms: {
-          name: "SMS Extra",
-          price: "$20 / 500 messages",
-          description: "Extra SMS credits for any plan",
-        },
-        location: {
-          name: "Extra Location",
-          price: "$49/month per location",
-          description: "Add another salon location",
-        },
-        branding: {
-          name: "Branded Digital Card",
-          price: "$199 one-time",
-          description: "Custom luxury branding package",
-        },
+      eyebrow: "Founder Pilot Pricing",
+      h2: "Founder Pilot Pricing",
+      sub: "Special introductory pricing for the first five participating salons.",
+      perMonthLabel: "/month",
+      setupLabel: "setup",
+      plusLabel: "plus",
+      monthly: {
+        name: "Founder Pilot Monthly",
+        setupPrice: "$499 CAD",
+        monthlyPrice: "$99 CAD",
+        commitment: "Minimum six-month commitment",
+        included: [
+          "One salon",
+          "One location",
+          "One brand",
+          "Up to 10 staff members",
+          "Up to 75 services",
+          "One language",
+          "Template-based website with up to 5 pages",
+          "Up to two consolidated website revision rounds",
+          "Online booking setup",
+          "Staff schedules, breaks and days off",
+          "Booking policies",
+          "OTP setup when enabled",
+          "Use NailIQ alongside the salon’s existing POS",
+          "One eligible Square connection where supported",
+          "Square Gift Card setup assistance where applicable",
+          "Booking QR code",
+          "Gift Card QR code where applicable",
+          "One 60-minute online training session",
+          "Up to 90 minutes remote go-live support",
+          "Up to 30 minutes of small updates per month",
+          "Up to 250 SMS segments per month under fair-use terms",
+        ],
+        cta: "Apply for Monthly Pilot",
+        commitmentNote:
+          "Minimum six-month total: $1,093 CAD before applicable taxes and third-party fees.",
       },
+      annual: {
+        name: "Founder Pilot Annual",
+        badge: "BEST VALUE",
+        price: "$1,399 CAD",
+        description: "Setup and 12 months included",
+        included: [
+          "One salon",
+          "One location",
+          "One brand",
+          "Up to 10 staff members",
+          "Up to 75 services",
+          "One language",
+          "Template-based website with up to 5 pages",
+          "Up to two consolidated website revision rounds",
+          "Online booking setup",
+          "Staff schedules, breaks and days off",
+          "Booking policies",
+          "OTP setup when enabled",
+          "Use NailIQ alongside the salon’s existing POS",
+          "One eligible Square connection where supported",
+          "Square Gift Card setup assistance where applicable",
+          "Booking QR code",
+          "Gift Card QR code where applicable",
+          "One 60-minute online training session",
+          "Up to 90 minutes remote go-live support",
+          "Up to 30 minutes of small updates per month",
+          "Up to 250 SMS segments per month under fair-use terms",
+        ],
+        cta: "Apply for Annual Pilot",
+        savingsLine:
+          "Save $288 compared with paying the setup fee plus 12 monthly payments.",
+      },
+    },
+    posScope: {
+      eyebrow: "POS Compatibility",
+      h2: "POS Compatibility",
+      intro:
+        "NailIQ’s core website, booking and scheduling features can be used alongside Square, Clover, Toast or other POS systems.",
+      includedTitle: "Included for all eligible Founder Pilot salons",
+      includedItems: [
+        "NailIQ website",
+        "NailIQ online booking",
+        "NailIQ staff scheduling",
+        "NailIQ booking policies",
+        "NailIQ OTP where enabled",
+        "Continued use of the salon’s current POS for payment processing",
+      ],
+      supportedTitle: "Included only where currently supported",
+      supportedItems: [
+        "One eligible Square account connection",
+        "Selected Square setup assistance",
+        "Square Gift Card setup assistance",
+      ],
+      notIncludedTitle: "Not included",
+      notIncludedItems: [
+        "Direct Clover synchronization",
+        "Direct Toast synchronization",
+        "Direct integration with another POS",
+        "POS inventory synchronization",
+        "POS payment synchronization",
+        "POS order synchronization",
+        "POS data migration",
+        "Custom connector development",
+      ],
+      closing:
+        "Direct non-Square POS integrations require separate technical review, written scope approval and pricing.",
+    },
+    clearScope: {
+      eyebrow: "Scope",
+      h2: "Clear Pricing. No Hidden Promises.",
+      notIncludedTitle: "Not included in Founder Pilot pricing",
+      items: [
+        "Domain registration",
+        "Third-party hosting fees where applicable",
+        "Square processing fees or hardware",
+        "Clover processing fees or hardware",
+        "Toast processing fees or hardware",
+        "Fees charged by another POS provider",
+        "Physical Gift Card printing",
+        "Gift Card load or processing fees",
+        "SMS usage above included limits",
+        "SMS phone-number fees",
+        "A2P, sender-registration or compliance fees",
+        "Photography",
+        "Video production",
+        "Logo design",
+        "Advanced image editing",
+        "Advanced copywriting",
+        "Translation",
+        "Additional languages",
+        "Advanced SEO",
+        "Paid advertising",
+        "Social media management",
+        "Complex data migration",
+        "Custom reports",
+        "New software features",
+        "New third-party integrations",
+        "Direct Clover integration",
+        "Direct Toast integration",
+        "Other POS connector development",
+        "Work beyond included support limits",
+      ],
+      closing:
+        "Additional work is estimated, quoted and approved in writing before it begins.",
+      supportPricingTitle: "Additional support",
+      supportPricing:
+        "Additional support starts at $95 CAD per hour with a 30-minute minimum. After the first 30 minutes, time may be billed in 15-minute increments.",
+    },
+    smsFairUse: {
+      eyebrow: "SMS Included",
+      h2: "SMS Fair Use",
+      included: "Up to 250 SMS segments per month under fair-use terms.",
+      explanations: [
+        "One customer message may use multiple SMS segments.",
+        "Message length, emoji, Unicode and special characters may increase segment usage.",
+        "Additional usage may be billed separately.",
+        "OTP or transactional consent does not automatically constitute marketing consent.",
+      ],
+    },
+    paymentDisclaimer: {
+      eyebrow: "Notice",
+      title: "Payment Provider Notice",
+      body: "Square, Clover, Toast and other POS or payment platforms are independent third-party service providers. Each salon maintains its own provider account and is responsible for provider fees, transactions, disputes, chargebacks, hardware, account approval and Gift Card obligations. NailIQ provides website, booking and technical setup assistance within its supported scope but does not hold salon funds, approve transactions or control third-party service availability.",
+      squareNote:
+        "Square connection and Gift Card assistance are available only where currently supported and for eligible Square accounts.",
+    },
+    whyJoin: {
+      eyebrow: "Founder Pilot Benefits",
+      h2: "Why Join the Founder Pilot?",
+      items: [
+        "Founder pricing protected for the first 12 months",
+        "Direct onboarding assistance",
+        "Keep your existing POS",
+        "Early access to selected workflow improvements",
+        "Opportunity to provide product feedback",
+        "Priority attention during the initial rollout",
+        "Vietnamese-friendly support",
+        "Limited to five salons to maintain onboarding quality",
+      ],
+      renewalNotice:
+        "Renewal pricing after the first 12 months may change based on the current pricing schedule. Salons will receive at least 30 days’ written notice.",
     },
     faq: {
       eyebrow: "FAQ",
-      h2: "Questions salon owners ask before they switch",
+      h2: "Questions Salon Owners Ask",
       sub: "If your question isn't here, message us — we reply within one business day.",
       items: [
         {
-          q: "Do I need to install an app?",
-          a: "No. NailIQ runs in any web browser on phone, tablet, or laptop. Your customers also book without installing anything — they just open your booking link.",
+          q: "Is NailIQ only booking software?",
+          a: "No. NailIQ combines software with implementation support. We help configure the website, services, staff schedules, booking rules and currently supported integrations.",
         },
         {
-          q: "Can I cancel anytime?",
-          a: "Yes. No contract, no minimum term. Cancel from your dashboard and your subscription stops at the end of the current billing month.",
+          q: "Do I have to enter everything myself?",
+          a: "No. The salon provides complete and accurate information, and NailIQ performs the initial configuration within the Founder Pilot scope.",
+        },
+        {
+          q: "Do I need to replace my current POS?",
+          a: "No. You may continue using Square, Clover, Toast or another POS for payments while using NailIQ for your website, booking, staff schedules and salon operations.",
+        },
+        {
+          q: "Does NailIQ integrate with Clover?",
+          a: "You can use NailIQ alongside Clover without replacing Clover. Direct Clover synchronization is not included in the Founder Pilot and requires a separate technical review and quote.",
+        },
+        {
+          q: "Does NailIQ integrate with Toast?",
+          a: "You can use NailIQ alongside Toast or another POS for booking and salon operations. Direct Toast synchronization is not included and may depend on platform access, technical feasibility and separate pricing.",
+        },
+        {
+          q: "Does NailIQ replace Square?",
+          a: "No. Square remains the salon’s independent payment provider. NailIQ may connect with supported Square features but does not replace Square or hold salon funds.",
+        },
+        {
+          q: "What Square assistance is included?",
+          a: "For eligible salons, NailIQ may assist with connecting one supported Square account and setting up selected Square Gift Card features. Square fees, account approval, disputes, chargebacks and hardware remain the salon’s responsibility.",
+        },
+        {
+          q: "Can NailIQ integrate with any POS?",
+          a: "NailIQ’s core booking, website and scheduling features can operate alongside most POS systems. Direct data synchronization depends on the POS provider’s API, permissions, partner requirements and technical compatibility.",
+        },
+        {
+          q: "Are SMS messages unlimited?",
+          a: "No. Founder Pilot includes up to 250 SMS segments per month under fair-use terms. A message may use multiple segments depending on its length and characters. Additional usage may be billed separately.",
+        },
+        {
+          q: "Can I request custom features?",
+          a: "New features, custom reports and new integrations are outside the Founder Pilot scope and require separate review and pricing.",
         },
         {
           q: "How long does setup take?",
-          a: "About 15 minutes for most salons. Pre-loaded service templates and staff defaults speed it up — you just confirm what's already there and tweak prices.",
+          a: "Typical setup takes approximately 7–14 business days after NailIQ receives all required salon information, approvals and third-party access.",
         },
         {
-          q: "Does NailIQ support Vietnamese?",
-          a: "Yes — the full owner and receptionist UI is bilingual EN/VN, and the customer-facing booking page auto-detects language. We're the only salon platform built Vietnamese-first.",
+          q: "Can I cancel?",
+          a: "The Monthly Pilot has a minimum six-month commitment. The Annual Pilot covers 12 months. The full service scope and terms are provided before enrollment.",
         },
         {
-          q: "Are there transaction fees?",
-          a: "No per-booking or per-customer fees. The monthly subscription is the only charge from NailIQ. If you accept card payments through a third party (Square, Stripe), their processing fees apply separately.",
+          q: "Does the package include a website?",
+          a: "Yes. Founder Pilot includes a template-based website with up to five pages, one language and up to two consolidated revision rounds.",
         },
         {
-          q: "Do customers need to download an app to book?",
-          a: "No. Customers tap your booking link and book in the browser — works on iPhone, Android, and desktop without an install.",
+          q: "Can NailIQ support multiple locations?",
+          a: "Founder Pilot pricing covers one salon and one location. Multi-location businesses require a separate assessment and quote.",
         },
         {
-          q: "Can I import my customers from Booksy or another tool?",
-          a: "Yes — CSV import is supported. Email support@nailiq.ca with your export and we'll help you map the columns. For full migrations, the first 3 months are free.",
+          q: "Is tax included?",
+          a: "Published prices are in Canadian dollars and exclude applicable taxes and third-party fees unless stated otherwise.",
         },
         {
-          q: "What happens if my internet is slow?",
-          a: "The receptionist center caches recent bookings and walk-ins, so basic operations keep working through short outages. Heavy actions (creating a new booking, syncing edits) need a connection to complete.",
+          q: "What information does NailIQ need before setup begins?",
+          a: "The salon must provide complete business information, services, prices, durations, staff details, schedules, policies, branding materials and relevant third-party access. The setup timeline begins after the required information has been received.",
         },
       ],
       footerText: "Still have questions?",
       footerCta: "Contact us →",
     },
+    trustStrip: {
+      designed: "Designed for nail salons",
+      keepPos: "Keep your existing POS",
+      bilingual: "Vietnamese-friendly support",
+      made: "Made in Vancouver, BC 🇨🇦",
+    },
     contact: {
       pageTitle: "Contact us",
       lede:
         "Based in Vancouver, BC, Canada. We aim to respond within one business day.",
+      intentPilot:
+        "Founder Pilot application. Tell us about your salon and current POS — we’ll follow up to schedule onboarding.",
+      intentDemo:
+        "Demo request. Share your salon details and preferred language — we’ll follow up to schedule a 15-minute screen-share.",
       formHeading: "Send us a message",
       nameLabel: "Your name",
       namePlaceholder: "Jane Nguyen",
@@ -2626,9 +2881,25 @@ export const userEn: UserMessages = {
       emailPlaceholder: "jane@yoursalon.com",
       salonLabel: "Salon name (optional)",
       salonPlaceholder: "Saigon Nail Studio",
+      posLabel: "Current POS (optional)",
+      posOptions: {
+        square: "Square",
+        clover: "Clover",
+        toast: "Toast",
+        other: "Other",
+        none: "None",
+      },
+      posOtherLabel: "POS name",
+      posOtherPlaceholder: "e.g. Boulevard, Vagaro…",
+      planLabel: "Preferred option (optional)",
+      planOptions: {
+        monthly: "Monthly Pilot",
+        annual: "Annual Pilot",
+        unsure: "Not sure",
+      },
       messageLabel: "Message",
       messagePlaceholder:
-        "I'd love to learn how NailIQ handles walk-in queue during busy hours…",
+        "Tell us about your salon, current tools, and what you’d like NailIQ to help you set up…",
       submit: "Send message",
       submitting: "Sending…",
       successHeading: "Message sent",
@@ -2655,12 +2926,17 @@ export const userEn: UserMessages = {
       backToHome: "← Back to home",
     },
     finalCta: {
-      eyebrow: "One last thing",
-      h2: "Replace your receptionist for less than $39/month.",
-      sub:
-        "14-day free trial. No credit card. Setup in 2 minutes.",
-      ctaPrimary: "Start your free trial",
-      ctaSecondary: "See how it works ↓",
+      eyebrow: "Founder Pilot",
+      h2: "Ready to Modernize Your Salon Without Replacing Everything You Already Use?",
+      body: "Founder Pilot enrollment is limited to five salons so NailIQ can provide hands-on onboarding and launch support.",
+      supportingLine:
+        "Keep your current POS. Let NailIQ handle your website, online booking and salon setup.",
+      ctaPrimary: "Apply for Founder Pilot",
+      ctaSecondary: "Book a Free Demo",
+      trustNote:
+        "No obligation to purchase before reviewing the Founder Pilot service scope and terms.",
+      finalLegalNote:
+        "Founder Pilot availability, onboarding acceptance and final scope are subject to review. Published prices are in Canadian dollars and exclude applicable taxes and third-party fees. Direct POS integrations outside NailIQ’s currently supported scope require separate technical review and pricing.",
     },
     footer: {
       about: "About",

@@ -42,28 +42,39 @@ export function LandingFinalCta() {
           <p className="relative text-[11px] font-semibold tracking-[0.24em] text-nq-primary uppercase">
             {t.eyebrow}
           </p>
-          <h2 className="relative mt-4 text-balance text-3xl font-semibold tracking-tight text-nq-foreground md:text-5xl lg:text-6xl">
+          <h2 className="relative mt-4 text-balance text-3xl font-semibold tracking-tight text-nq-foreground md:text-4xl lg:text-5xl">
             {t.h2}
           </h2>
-          <p className="relative mx-auto mt-4 max-w-xl text-base text-nq-muted/80 md:text-lg">
-            {t.sub}
+          <p className="relative mx-auto mt-4 max-w-2xl text-base text-nq-muted/85 md:text-lg">
+            {t.body}
+          </p>
+          <p className="relative mx-auto mt-3 max-w-2xl text-base text-nq-primary-soft/90 md:text-lg">
+            {t.supportingLine}
           </p>
 
           <div className="relative mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link
-              href="/register"
+              href="/contact?intent=pilot"
               data-testid="final-cta-primary"
               className="inline-flex min-w-[260px] items-center justify-center rounded-full border border-nq-primary/50 bg-nq-primary px-8 py-4 text-base font-semibold text-nq-bg shadow-[0_12px_36px_-10px_rgba(212,175,55,0.65)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
             >
               {t.ctaPrimary}
             </Link>
-            <a
-              href="#how-it-works"
-              className="text-sm font-medium text-nq-muted transition hover:text-nq-foreground"
+            <Link
+              href="/contact?intent=demo"
+              data-testid="final-cta-secondary"
+              className="inline-flex min-w-[220px] items-center justify-center rounded-full border border-nq-border/50 bg-nq-surface/50 px-6 py-4 text-sm font-semibold text-nq-foreground transition hover:bg-nq-surface hover:border-nq-border/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
             >
               {t.ctaSecondary}
-            </a>
+            </Link>
           </div>
+
+          <p className="relative mx-auto mt-6 max-w-2xl text-xs leading-relaxed text-nq-muted/70">
+            {t.trustNote}
+          </p>
+          <p className="relative mx-auto mt-3 max-w-3xl text-[11px] leading-relaxed text-nq-muted/55">
+            {t.finalLegalNote}
+          </p>
         </motion.div>
       </div>
     </section>
