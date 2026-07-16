@@ -6,7 +6,10 @@ import { test, expect } from "@playwright/test";
 import {
   cleanupClientProfile,
   cleanupTestSalon,
+  completeBookingEntryGate,
+  completeGateOtp,
   seedTestSalon,
+  setReactInputValue,
 } from "./helpers/db";
 import { fillReactInput } from "./receptionist-center/helpers";
 
@@ -62,21 +65,30 @@ test.describe("Booking Flow — Phone OTP", () => {
     await cleanupClientProfile(clientPhone);
   });
 
-  async function walkToInfoStep(page: import("@playwright/test").Page) {
+  // Salon is phone_otp_enabled + always_otp, so OTP now lives at the ENTRY GATE
+  // (commit a4042c5 "gate-first OTP" / cfae253 "move gate OTP inline"): the gate
+  // takes phone + name + SMS consent, then the gate OTP, and only then does the
+  // service step unlock (`flowReady = gateReady && gateOtpDone`). The old
+  // post-info `#otp-code` step (BookingFlowOtpPanel) is unreachable for this flow.
+  async function gotoGate(page: import("@playwright/test").Page) {
     await page.goto(`/${testSlug}`);
+    // Per-test phone (a new customer, cleaned in beforeEach) so the gate name
+    // input shows and `always_otp` routes this booking through the gate OTP.
+    await completeBookingEntryGate(page, { phone: clientPhone });
+  }
 
-    // Phone-first entry gate (PR #328): the new-customer phone is entered here,
-    // so `always_otp` routes this booking through OTP. Use the React-aware
-    // setter — page.fill()'s CDP path bypasses React's value setter on WebKit.
-    await page
-      .getByTestId("booking-entry-phone")
-      .waitFor({ state: "visible", timeout: 15_000 });
-    await fillReactInput(page.getByTestId("booking-entry-phone"), clientPhone);
-
+  // Clear the gate OTP (send + demo code) and confirm the flow unlocked.
+  async function passGateOtp(page: import("@playwright/test").Page) {
+    await completeGateOtp(page);
     await page
       .locator('[data-testid="service-tile-select"]')
       .first()
       .waitFor({ state: "visible", timeout: 15_000 });
+  }
+
+  async function walkToInfoStep(page: import("@playwright/test").Page) {
+    await gotoGate(page);
+    await passGateOtp(page);
     await page.locator('[data-testid="service-tile-select"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
@@ -127,87 +139,78 @@ test.describe("Booking Flow — Phone OTP", () => {
     await fillReactInput(page.locator('input[name="clientName"]'), "OTP Test Client");
   }
 
-  test("OTP step appears after info and accepts demo code", async ({ page }) => {
-    await walkToInfoStep(page);
-    await page.getByRole("button", { name: "Continue" }).first().click();
+  test("gate OTP appears before the service step and accepts the demo code", async ({
+    page,
+  }) => {
+    await gotoGate(page);
 
-    // Should be on OTP step — heading must mention verification / phone
+    // Security invariant (a): OTP is demanded at the GATE, and the service step
+    // must NOT be reachable until the phone is verified.
+    await expect(page.getByTestId("booking-gate-otp")).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="service-tile-select"]')).toHaveCount(0);
+
+    // Demo code → gate opens → the service step unlocks.
+    await completeGateOtp(page);
     await expect(
-      page.getByText(/xác thực|verify|verification/i).first(),
-    ).toBeVisible({ timeout: 10_000 });
-
-    // Wait until OTP is auto-sent (input disabled={!sent} until the send API resolves).
-    // fillReactInput triggers React onChange on WebKit (page.fill uses CDP which
-    // bypasses React's patched value getter).
-    await expect(page.locator("#otp-code")).toBeEnabled({ timeout: 15_000 });
-    await fillReactInput(page.locator("#otp-code"), OTP_DEMO_CODE);
-
-    // Click verify button
-    await page.getByRole("button", { name: /xác thực|verify/i }).last().click();
-
-    // After OTP success → should advance to confirm step
-    await expect(
-      page.getByRole("button", { name: /confirm booking|xác nhận/i }),
+      page.locator('[data-testid="service-tile-select"]').first(),
     ).toBeVisible({ timeout: 15_000 });
   });
 
-  test("Wrong code shows error, correct code proceeds", async ({ page }) => {
-    await walkToInfoStep(page);
-    await page.getByRole("button", { name: "Continue" }).first().click();
+  test("gate OTP rejects a wrong code and accepts the correct one", async ({ page }) => {
+    await gotoGate(page);
+    // Reach the code input (sent stage) by requesting the code.
+    await page.getByTestId("booking-gate-otp-send").click();
+    const codeInput = page.getByTestId("booking-gate-otp-input");
+    await codeInput.waitFor({ state: "visible", timeout: 15_000 });
 
-    await expect(page.locator("#otp-code")).toBeEnabled({ timeout: 15_000 });
+    // Security invariant (b): a wrong code is rejected and the flow stays locked.
+    // 6 digits auto-fires verifyCode() (GateOtpInline.onCodeChange).
+    await setReactInputValue(codeInput, "999999");
+    await expect(page.getByTestId("booking-gate-otp-error")).toBeVisible({ timeout: 8_000 });
+    await expect(page.locator('[data-testid="service-tile-select"]')).toHaveCount(0);
 
-    // Enter wrong code
-    await fillReactInput(page.locator("#otp-code"), "999999");
-    await page.getByRole("button", { name: /xác thực|verify/i }).last().click();
-
-    // Error should appear. Scope to the OTP error text instead of [role="alert"]:
-    // the bare role selector also matches Next.js's global
-    // <div role="alert" id="__next-route-announcer__">, tripping Playwright
-    // strict mode (2 matches) intermittently — observed on the mobile project.
+    // Correct demo code → gate opens.
+    await setReactInputValue(codeInput, OTP_DEMO_CODE);
     await expect(
-      page.getByText(/incorrect code|mã không đúng/i),
-    ).toBeVisible({ timeout: 8_000 });
-
-    // Fix with correct demo code
-    await fillReactInput(page.locator("#otp-code"), OTP_DEMO_CODE);
-    await page.getByRole("button", { name: /xác thực|verify/i }).last().click();
-
-    await expect(
-      page.getByRole("button", { name: /confirm booking|xác nhận/i }),
+      page.locator('[data-testid="service-tile-select"]').first(),
     ).toBeVisible({ timeout: 15_000 });
   });
 
-  test("Back button from OTP returns to info step", async ({ page }) => {
-    await walkToInfoStep(page);
-    await page.getByRole("button", { name: "Continue" }).first().click();
+  // Was "Back button from OTP returns to info step". The gate OTP is inline in
+  // the phone card, not a separate step with a Back button, so that premise is
+  // gone. The equivalent — and more important — invariant is that editing the
+  // phone AFTER verifying re-locks the gate and forces a fresh OTP (the reactive
+  // reset in BookingTypeSwitcher clears gateOtpDone on any phone change).
+  test("editing the phone after verify re-locks the gate and re-demands OTP", async ({
+    page,
+  }) => {
+    await gotoGate(page);
+    await completeGateOtp(page);
+    await expect(
+      page.locator('[data-testid="service-tile-select"]').first(),
+    ).toBeVisible({ timeout: 15_000 });
 
-    await expect(page.locator("#otp-code")).toBeEnabled({ timeout: 15_000 });
-
-    // Click Back
-    await page.getByRole("button", { name: /← back|back/i }).click();
-
-    // Should be back on info step — name field visible
-    await expect(page.locator('input[name="clientName"]')).toBeVisible({
-      timeout: 8_000,
-    });
+    // Change to a different valid phone → gateOtpDone resets → flow re-locks and
+    // the gate OTP is demanded again. A verified session cannot carry to a new phone.
+    await setReactInputValue(page.getByTestId("booking-entry-phone"), uniqueOtpPhone());
+    await expect(page.locator('[data-testid="service-tile-select"]')).toHaveCount(0);
+    await expect(page.getByTestId("booking-gate-otp")).toBeVisible({ timeout: 8_000 });
   });
 
-  test("Full booking completes after OTP verification", async ({ page }) => {
+  test("full booking completes after gate OTP verification", async ({ page }) => {
+    // walkToInfoStep now clears the gate (phone + name + consent + gate OTP) and
+    // walks service/staff/date/time/info.
     await walkToInfoStep(page);
     await page.getByRole("button", { name: "Continue" }).first().click();
 
-    // OTP step
-    await expect(page.locator("#otp-code")).toBeEnabled({ timeout: 15_000 });
-    await fillReactInput(page.locator("#otp-code"), OTP_DEMO_CODE);
-    await page.getByRole("button", { name: /xác thực|verify/i }).last().click();
-
-    // Confirm step
-    await page
-      .getByRole("button", { name: /confirm booking|xác nhận/i })
-      .waitFor({ state: "visible", timeout: 15_000 });
-    await page.getByTestId("sms-consent").check();
-    await page.getByRole("button", { name: /confirm booking|xác nhận/i }).click();
+    // Gate OTP already satisfied → straight to confirm; no post-info OTP step.
+    const confirmBtn = page.getByRole("button", { name: /confirm booking|xác nhận/i });
+    await confirmBtn.waitFor({ state: "visible", timeout: 15_000 });
+    // SMS consent was collected at the gate; tick a confirm-step checkbox only if
+    // one is still shown (it is pre-satisfied for the gate flow).
+    const consent = page.getByTestId("sms-consent");
+    if (await consent.isVisible().catch(() => false)) await consent.check();
+    await confirmBtn.click();
 
     // Success screen
     await expect(
@@ -215,12 +218,10 @@ test.describe("Booking Flow — Phone OTP", () => {
     ).toBeVisible({ timeout: 20_000 });
   });
 
-  // Regression — a phone already verified in THIS session must never be sent
-  // back through the OTP step (re-asked to enter a code) nor re-texted a new SMS
-  // when the customer navigates Back from confirm and forward again. Before the
-  // fix, goInfoDone wiped the session and backToInfo routed verified users to the
-  // OTP step, so each round-trip fired a duplicate SMS + a redundant prompt.
-  test("verified phone is not re-prompted or re-texted on back/forward", async ({
+  // Anti-double-charge regression — the phone is verified ONCE at the gate, and
+  // navigating within the flow (info ↔ confirm) must never re-send a code nor
+  // re-open the gate OTP. One gate send, and it stays verified.
+  test("a verified phone is not re-texted when navigating within the flow", async ({
     page,
   }) => {
     let sendCount = 0;
@@ -229,65 +230,59 @@ test.describe("Booking Flow — Phone OTP", () => {
       await route.continue();
     });
 
+    // walkToInfoStep clears the gate incl. exactly one gate OTP send.
     await walkToInfoStep(page);
     await page.getByRole("button", { name: "Continue" }).first().click();
 
-    // OTP step → verify with the demo code → confirm.
-    await expect(page.locator("#otp-code")).toBeEnabled({ timeout: 15_000 });
-    await fillReactInput(page.locator("#otp-code"), OTP_DEMO_CODE);
-    await page.getByRole("button", { name: /xác thực|verify/i }).last().click();
+    const confirmBtn = page.getByRole("button", { name: /confirm booking|xác nhận/i });
+    await confirmBtn.waitFor({ state: "visible", timeout: 15_000 });
+    const sendsAfterVerify = sendCount; // one send, from the gate OTP
 
-    const confirmBtn = page.getByTestId("confirm-booking-btn");
-    await expect(confirmBtn).toBeVisible({ timeout: 15_000 });
-    const sendsAfterVerify = sendCount; // the single auto-send for the SMS code
-
-    // Back from confirm → must land on INFO (name field), NOT re-show the OTP step.
+    // Back to info, then forward to confirm again → phone stays verified, the
+    // gate OTP does NOT reappear, and NO additional SMS is sent.
     await page.getByRole("button", { name: /← back|back|quay l/i }).click();
     await expect(page.locator('input[name="clientName"]')).toBeVisible({
       timeout: 8_000,
     });
-    await expect(page.locator("#otp-code")).toHaveCount(0);
-
-    // Forward again → verify re-runs but must SKIP OTP (already verified) and
-    // land straight on confirm, with NO additional SMS send.
     await page.getByRole("button", { name: "Continue" }).first().click();
     await expect(confirmBtn).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator("#otp-code")).toHaveCount(0);
+    await expect(page.getByTestId("booking-gate-otp")).toHaveCount(0);
     expect(sendCount).toBe(sendsAfterVerify);
   });
 
-  // Salon phone fallback — after SMS is sent, the salon's tel:// link must be
-  // visible so customers can call to book when SMS + email both fail (A2P mitigation).
-  test("salon phone tel:// link visible on OTP screen after send", async ({
+  // KNOWN PRODUCT GAP — kept RED on purpose (see issue). The tel:// "call to
+  // book" A2P fallback exists only in the old BookingFlowOtpPanel, which is now
+  // unreachable in the individual flow. The gate OTP widget (GateOtpInline) has
+  // NO tel:// link. This test asserts the mitigation SHOULD be at the gate; it
+  // will fail until the product decides to restore it. Do NOT delete or weaken
+  // this test or add the link solely to make it green — that is a product call.
+  test("salon phone tel:// call-to-book link visible on the gate OTP screen", async ({
     page,
   }) => {
-    await walkToInfoStep(page);
-    await page.getByRole("button", { name: "Continue" }).first().click();
+    await gotoGate(page);
+    await page.getByTestId("booking-gate-otp-send").click();
+    await page
+      .getByTestId("booking-gate-otp-input")
+      .waitFor({ state: "visible", timeout: 15_000 });
 
-    // Wait until OTP is auto-sent (input becomes enabled)
-    await expect(page.locator("#otp-code")).toBeEnabled({ timeout: 15_000 });
-
-    // The tel:// link should appear (salon seeded with phone "16045550001")
+    // The tel:// link should appear (salon seeded with phone "16045550001").
     const callLink = page.locator('a[href^="tel:"]');
     await expect(callLink).toBeVisible({ timeout: 8_000 });
     const href = await callLink.getAttribute("href");
     expect(href).toContain("16045550001");
   });
 
-  // Email fallback button must be a visible card (not a tiny text link) so
-  // customers see it when SMS doesn't arrive.
-  test("email fallback card is visible when no email on file", async ({
-    page,
-  }) => {
-    await walkToInfoStep(page);
-    // No email filled in — email_links_enabled is true by default for the test salon
-    await page.getByRole("button", { name: "Continue" }).first().click();
+  // Email fallback must be offered on the gate OTP screen so customers who don't
+  // receive the SMS can still get a code by email.
+  test("email fallback is offered on the gate OTP screen", async ({ page }) => {
+    await gotoGate(page);
+    await page.getByTestId("booking-gate-otp-send").click();
+    await page
+      .getByTestId("booking-gate-otp-input")
+      .waitFor({ state: "visible", timeout: 15_000 });
 
-    await expect(page.locator("#otp-code")).toBeEnabled({ timeout: 15_000 });
-
-    // The fallback button (data-testid="otp-email-fallback") should be visible
     await expect(
-      page.locator('[data-testid="otp-email-fallback"]'),
+      page.getByTestId("booking-gate-otp-email-fallback"),
     ).toBeVisible({ timeout: 8_000 });
   });
 

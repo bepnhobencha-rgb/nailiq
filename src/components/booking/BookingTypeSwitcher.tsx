@@ -126,7 +126,10 @@ function GateOtpInline({
 
   if (stage === "idle") {
     return (
-      <div className="fade-in mt-4 space-y-2 border-t border-[var(--booking-border)] pt-4">
+      <div
+        data-testid="booking-gate-otp"
+        className="fade-in mt-4 space-y-2 border-t border-[var(--booking-border)] pt-4"
+      >
         {showEmailInput && emailLinksEnabled ? (
           <>
             <input
@@ -150,6 +153,7 @@ function GateOtpInline({
           <>
             <button
               type="button"
+              data-testid="booking-gate-otp-send"
               disabled={sending}
               onClick={() => void sendCode("sms")}
               className="nq-booking-btn-primary w-full"
@@ -159,6 +163,7 @@ function GateOtpInline({
             {emailLinksEnabled ? (
               <button
                 type="button"
+                data-testid="booking-gate-otp-email-fallback"
                 onClick={() => setShowEmailInput(true)}
                 className="nq-booking-btn-ghost w-full"
               >
@@ -167,13 +172,20 @@ function GateOtpInline({
             ) : null}
           </>
         )}
-        {error ? <p className="mt-1 text-sm text-red-500">{error}</p> : null}
+        {error ? (
+          <p data-testid="booking-gate-otp-error" className="mt-1 text-sm text-red-500">
+            {error}
+          </p>
+        ) : null}
       </div>
     );
   }
 
   return (
-    <div className="fade-in mt-4 space-y-2 border-t border-[var(--booking-border)] pt-4">
+    <div
+      data-testid="booking-gate-otp"
+      className="fade-in mt-4 space-y-2 border-t border-[var(--booking-border)] pt-4"
+    >
       <p className="text-sm font-medium text-[var(--booking-text,var(--color-nq-foreground))] opacity-80">
         {t.otpStepSubheading} ···{phoneDigits.slice(-4)}
         {channel === "email" ? ` ${t.otpAndEmail ?? "& email"}` : ""}
@@ -181,6 +193,7 @@ function GateOtpInline({
       <input
         ref={codeRef}
         type="text"
+        data-testid="booking-gate-otp-input"
         inputMode="numeric"
         pattern="[0-9]*"
         autoComplete="one-time-code"
@@ -191,9 +204,14 @@ function GateOtpInline({
         className="nq-booking-field w-full text-center text-2xl tracking-[0.5em] font-mono"
         aria-label={t.otpCodeLabel}
       />
-      {error ? <p className="text-sm text-red-500">{error}</p> : null}
+      {error ? (
+        <p data-testid="booking-gate-otp-error" className="text-sm text-red-500">
+          {error}
+        </p>
+      ) : null}
       <button
         type="button"
+        data-testid="booking-gate-otp-verify"
         disabled={verifying || code.length < 6}
         onClick={() => void verifyCode()}
         className="nq-booking-btn-primary w-full"
@@ -202,6 +220,7 @@ function GateOtpInline({
       </button>
       <button
         type="button"
+        data-testid="booking-gate-otp-resend"
         disabled={sending}
         onClick={() => { setCode(""); void sendCode(channel); }}
         className="nq-booking-btn-ghost w-full"
@@ -233,6 +252,7 @@ function GateOtpInline({
         ) : (
           <button
             type="button"
+            data-testid="booking-gate-otp-email-fallback"
             onClick={() => setShowEmailInput(true)}
             className="nq-booking-btn-ghost w-full"
           >
