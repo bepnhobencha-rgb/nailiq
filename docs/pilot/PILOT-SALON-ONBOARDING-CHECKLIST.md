@@ -42,7 +42,8 @@ khi còn mục chưa tick. Giới hạn pilot: **3–5 tiệm**. Tham chiếu đ
 
 ### F. Thanh toán
 - [ ] Square account đã connect (test-connection xanh trong Admin).
-- [ ] Square Gift Card setup (nếu tiệm dùng).
+- [ ] Square **physical Gift Card** setup (nếu tiệm bán thẻ cứng).
+- [ ] Square **eGift Card** setup (nếu tiệm bán thẻ điện tử).
 - [ ] No-show card flow (nếu bật) đã kiểm.
 
 ### G. Kênh & marketing
