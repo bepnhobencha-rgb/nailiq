@@ -1,0 +1,25 @@
+# Fly.io config for the NailIQ voice bridge. Deploy: `fly deploy` from this dir.
+# Secrets (never commit): OPENAI_API_KEY, VOICE_BRIDGE_SECRET, NEXT_APP_URL.
+app = "nailiq-voice-bridge"
+primary_region = "sea"
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # A call holds a socket for its whole duration — never sleep a machine mid-call.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "get"
+    path = "/health"
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

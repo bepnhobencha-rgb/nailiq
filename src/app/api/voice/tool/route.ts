@@ -66,8 +66,12 @@ export async function POST(req: NextRequest) {
   const toolArgs  = body.toolArgs ?? body.toolInput ?? {};
   const salonSlug = body.salonSlug ?? body.salonId;
   const sessionId = body.sessionId ?? null;
-  // Trusted only from the phone bridge (server-to-server); never from web/model.
-  const callerVerifiedPhone = body.callerVerifiedPhone ?? null;
+  // Caller-ID is honoured ONLY when the request proves it is the phone bridge
+  // (shared secret). A web/browser or attacker cannot set it — otherwise anyone
+  // could claim a carrier-verified number and bypass OTP on mutations.
+  const bridgeSecret = process.env.VOICE_BRIDGE_SECRET?.trim();
+  const fromBridge = Boolean(bridgeSecret) && req.headers.get("x-voice-bridge-secret") === bridgeSecret;
+  const callerVerifiedPhone = fromBridge ? (body.callerVerifiedPhone ?? null) : null;
 
   if (!toolName)  return NextResponse.json({ error: "missing_tool_name"  }, { status: 400 });
   if (!salonSlug) return NextResponse.json({ error: "missing_salon_slug" }, { status: 400 });
