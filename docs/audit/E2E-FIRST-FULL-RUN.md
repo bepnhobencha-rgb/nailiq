@@ -261,3 +261,21 @@ Số 175/21/4 của PR #753 là **chromium-only** (PR checks chạy chromium). M
 - **Mobile:** đo riêng trên main; 3 lỗi mobile-only (feature-flag-toggle superadmin race, bv-2
   gate timing, landing mobile-menu RC-7) — **không do PR #753**, đã có từ trước.
 - **Quy tắc từ nay:** báo cáo E2E tách Chromium / Mobile / Combined.
+
+---
+
+## 11. BASELINE ĐẦY ĐỦ CHROMIUM+MOBILE (NHÓM 24, 2026-07-15)
+
+Clean run `29444451203` (commit `de29837`, sau PR #757 nâng timeout 65→120) — **lần đầu** cả
+Mobile RC chạy trọn (RC 71m34s < 120). Chi tiết: `E2E-MOBILE-FAILURES.md`.
+
+| Nhóm | Total | Pass | Fail | Skip |
+|---|---|---|---|---|
+| **Chromium** | 200 | 174 | 21 | 5 |
+| **Mobile** | 200 | 142 | 53 | 5 |
+| **Combined** | 400 | 316 | 74 | 10 |
+
+- Chromium 174/21/5 ≈ baseline 175/21/4 (fail giữ 21, 1 pass↔skip variance — 0 regression).
+- Mobile 53 fail = 21 (fail cả 2 project) + 32 mobile-only (3 đã biết #755/#748 + **29 RC
+  test-debt #758**).
+- Hạ tầng 2 shard OK (Supabase start/stop, seed, sweep). 0 production secret/write.
