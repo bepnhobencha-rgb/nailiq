@@ -30,6 +30,7 @@ import {
 } from "@/shared/booking/staffCapability";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
+import { requirePhoneVerified } from "@/shared/voiceai/otpGate";
 import { createPartyLink } from "@/shared/booking/partyLinkActions";
 import type { GroupSyncMode } from "@/shared/booking/loadGroupSmartSchedule";
 
@@ -45,6 +46,9 @@ type ToolCallBody = {
   // Alternate field names accepted from external / direct API callers.
   toolInput?:  Record<string, unknown>;
   salonId?:    string;
+  // Carrier-verified caller-ID (E.164). Set ONLY by the trusted phone bridge
+  // (Twilio `From`); absent on web. Never accept it from the model/browser.
+  callerVerifiedPhone?: string;
 };
 
 export async function POST(req: NextRequest) {
@@ -62,6 +66,8 @@ export async function POST(req: NextRequest) {
   const toolArgs  = body.toolArgs ?? body.toolInput ?? {};
   const salonSlug = body.salonSlug ?? body.salonId;
   const sessionId = body.sessionId ?? null;
+  // Trusted only from the phone bridge (server-to-server); never from web/model.
+  const callerVerifiedPhone = body.callerVerifiedPhone ?? null;
 
   if (!toolName)  return NextResponse.json({ error: "missing_tool_name"  }, { status: 400 });
   if (!salonSlug) return NextResponse.json({ error: "missing_salon_slug" }, { status: 400 });
@@ -96,23 +102,29 @@ export async function POST(req: NextRequest) {
     if (toolName === "get_available_slots") {
       return handleGetAvailableSlots(supabase, salonSlug, toolArgs);
     }
+    if (toolName === "request_otp") {
+      return handleRequestOtp(salonSlug, toolArgs, req);
+    }
+    if (toolName === "verify_otp") {
+      return handleVerifyOtp(salonSlug, toolArgs, req);
+    }
     if (toolName === "confirm_booking") {
-      return handleConfirmBooking(supabase, salonSlug, toolArgs, sessionId);
+      return handleConfirmBooking(supabase, salonSlug, toolArgs, sessionId, callerVerifiedPhone);
     }
     if (toolName === "find_booking") {
       return handleFindBooking(supabase, salonSlug, toolArgs);
     }
     if (toolName === "cancel_booking") {
-      return handleCancelBooking(supabase, salonSlug, toolArgs, sessionId);
+      return handleCancelBooking(supabase, salonSlug, toolArgs, sessionId, callerVerifiedPhone);
     }
     if (toolName === "reschedule_booking") {
-      return handleRescheduleBooking(supabase, salonSlug, toolArgs, sessionId);
+      return handleRescheduleBooking(supabase, salonSlug, toolArgs, sessionId, callerVerifiedPhone);
     }
     if (toolName === "get_group_available_slots") {
       return handleGetGroupAvailableSlots(supabase, salonSlug, toolArgs);
     }
     if (toolName === "confirm_group_booking") {
-      return handleConfirmGroupBooking(supabase, salonSlug, toolArgs, sessionId, req);
+      return handleConfirmGroupBooking(supabase, salonSlug, toolArgs, sessionId, req, callerVerifiedPhone);
     }
     if (toolName === "join_waitlist") {
       return handleJoinWaitlist(supabase, salonSlug, toolArgs);
@@ -125,6 +137,79 @@ export async function POST(req: NextRequest) {
       { error: "internal_error", detail: err instanceof Error ? err.message : String(err) },
       { status: 500 },
     );
+  }
+}
+
+// Internal origin for server-to-server calls to our own OTP endpoints.
+function internalOrigin(req: NextRequest): string {
+  return (process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || req.nextUrl.origin);
+}
+
+// request_otp — send a 6-digit SMS code to the customer's phone. Reuses the
+// public booking OTP sender (Twilio Verify + rate-limit guard); no duplication.
+async function handleRequestOtp(
+  salonSlug: string,
+  args: Record<string, unknown>,
+  req: NextRequest,
+): Promise<NextResponse> {
+  const phone = (args.customer_phone as string | undefined)?.trim();
+  if (!phone) return NextResponse.json({ error: "missing_customer_phone" }, { status: 400 });
+  try {
+    const r = await fetch(`${internalOrigin(req)}/api/booking-otp/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ shopSlug: salonSlug, phone }),
+    });
+    const data = (await r.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (r.ok && data.ok) {
+      return NextResponse.json({
+        ok: true,
+        message: "A 6-digit code was texted to the customer. Ask them to read it back, then call verify_otp.",
+      });
+    }
+    return NextResponse.json({
+      ok: false,
+      error: data.error ?? "otp_send_failed",
+      hint: data.error === "rate_limited"
+        ? "Too many codes were requested; wait a moment before trying again."
+        : "Couldn't send the code; try again shortly.",
+    });
+  } catch {
+    return NextResponse.json({ ok: false, error: "otp_send_failed", hint: "Temporary problem sending the code." });
+  }
+}
+
+// verify_otp — check the code and, on success, return an otp_session_id that the
+// mutating tools must carry as proof the caller controls this phone.
+async function handleVerifyOtp(
+  salonSlug: string,
+  args: Record<string, unknown>,
+  req: NextRequest,
+): Promise<NextResponse> {
+  const phone = (args.customer_phone as string | undefined)?.trim();
+  const code = (args.code as string | undefined)?.trim();
+  if (!phone || !code) return NextResponse.json({ error: "missing_phone_or_code" }, { status: 400 });
+  try {
+    const r = await fetch(`${internalOrigin(req)}/api/booking-otp/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ shopSlug: salonSlug, phone, code }),
+    });
+    const data = (await r.json().catch(() => ({}))) as { ok?: boolean; sessionId?: string; error?: string };
+    if (r.ok && data.ok && data.sessionId) {
+      return NextResponse.json({
+        ok: true,
+        otp_session_id: data.sessionId,
+        message: "Phone verified. Pass otp_session_id to confirm/cancel/reschedule for this phone.",
+      });
+    }
+    return NextResponse.json({
+      ok: false,
+      error: data.error ?? "otp_invalid",
+      hint: "The code was wrong or expired. Offer to resend it with request_otp.",
+    });
+  } catch {
+    return NextResponse.json({ ok: false, error: "otp_invalid", hint: "Temporary problem verifying the code." });
   }
 }
 
@@ -271,6 +356,7 @@ async function handleConfirmBooking(
   salonSlug: string,
   args: Record<string, unknown>,
   sessionId: string | null,
+  callerVerifiedPhone: string | null,
 ) {
   const serviceId     = args.service_id     as string | undefined;
   const date          = args.date           as string | undefined;  // YYYY-MM-DD
@@ -290,6 +376,14 @@ async function handleConfirmBooking(
     .eq("slug", salonSlug)
     .single();
   if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
+
+  // Identity gate — creating a booking requires proof the customer controls this
+  // phone (caller-ID on the phone channel, else OTP). Stops fake/spam bookings.
+  const gate = await requirePhoneVerified(supabase, salon.id, customerPhone, {
+    otpSessionId: args.otp_session_id as string | undefined,
+    callerVerifiedPhone,
+  });
+  if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
 
   // ── 2. Load service → duration for end-time calc ────────────────────────────
   const { data: service } = await supabase
@@ -503,6 +597,7 @@ async function handleCancelBooking(
   salonSlug: string,
   args: Record<string, unknown>,
   sessionId: string | null,
+  callerVerifiedPhone: string | null,
 ) {
   const bookingId     = args.booking_id     as string | undefined;
   const customerPhone = args.customer_phone as string | undefined;
@@ -675,7 +770,7 @@ async function handleCancelBooking(
   // ── Path A: booking_id provided → cancel immediately ────────────────────────
   const { data: booking } = await supabase
     .from("bookings")
-    .select("id, salon_id, status, client_name, group_id, start_time_utc, services!bookings_service_id_fkey(name)")
+    .select("id, salon_id, status, client_name, client_phone, group_id, start_time_utc, services!bookings_service_id_fkey(name)")
     .eq("id", bookingId!)
     .eq("salon_id", salon.id)
     .single();
@@ -684,7 +779,7 @@ async function handleCancelBooking(
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const bk = booking as any as {
-    id: string; status: string; client_name: string;
+    id: string; status: string; client_name: string; client_phone: string;
     start_time_utc: string;
     services: { name: string } | { name: string }[] | null;
   };
@@ -695,6 +790,15 @@ async function handleCancelBooking(
   if (bk.status === "cancelled") {
     return NextResponse.json({ error: "already_cancelled" }, { status: 409 });
   }
+
+  // Identity gate — verify against the phone that OWNS this booking (never a
+  // number the caller merely spoke). This is what stops a caller cancelling
+  // someone else's appointment.
+  const gate = await requirePhoneVerified(supabase, salon.id, bk.client_phone, {
+    otpSessionId: args.otp_session_id as string | undefined,
+    callerVerifiedPhone,
+  });
+  if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
 
   const localTime = new Date(bk.start_time_utc).toLocaleString("en-US", {
     timeZone: tz, weekday: "short", month: "short", day: "numeric",
@@ -823,6 +927,7 @@ async function handleRescheduleBooking(
   salonSlug: string,
   args: Record<string, unknown>,
   sessionId: string | null,
+  callerVerifiedPhone: string | null,
 ) {
   const bookingId  = args.booking_id    as string | undefined;
   const newDate    = args.new_date      as string | undefined;  // YYYY-MM-DD
@@ -853,6 +958,15 @@ async function handleRescheduleBooking(
   if ((booking as { status: string }).status === "cancelled") {
     return NextResponse.json({ error: "booking_already_cancelled" }, { status: 409 });
   }
+
+  // Identity gate — verify against the phone that OWNS this booking.
+  const gate = await requirePhoneVerified(
+    supabase,
+    salon.id,
+    (booking as { client_phone: string }).client_phone,
+    { otpSessionId: args.otp_session_id as string | undefined, callerVerifiedPhone },
+  );
+  if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
 
   // Load service for duration
   const { data: service } = await supabase
@@ -1469,6 +1583,7 @@ async function handleConfirmGroupBooking(
   args: Record<string, unknown>,
   sessionId: string | null,
   req: NextRequest,
+  callerVerifiedPhone: string | null,
 ) {
   // 1. Parse args
   const serviceAssignments = args.service_assignments as { service_id: string; count: number }[] | undefined;
@@ -1511,6 +1626,14 @@ async function handleConfirmGroupBooking(
     return NextResponse.json({ error: ctxOrErr.error }, { status: ctxOrErr.status });
   }
   const ctx = ctxOrErr;
+
+  // Identity gate — creating a group booking requires the organizer prove they
+  // control the primary phone (caller-ID on the phone channel, else OTP).
+  const gate = await requirePhoneVerified(supabase, ctx.salonId, phoneDigits, {
+    otpSessionId: args.otp_session_id as string | undefined,
+    callerVerifiedPhone,
+  });
+  if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
 
   // 4. Re-run scheduler at the chosen anchor to get concrete staff assignments
   //    (Ensures we pick up any bookings created since get_group_available_slots was called)

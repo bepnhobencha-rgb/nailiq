@@ -3,6 +3,37 @@
 export const REALTIME_TOOLS = [
   {
     type: "function" as const,
+    name: "request_otp",
+    description:
+      "Send a 6-digit verification code by SMS to a phone number. Call this BEFORE any " +
+      "booking change (confirm_booking / cancel_booking / reschedule_booking / confirm_group_booking) " +
+      "unless the tool result already said the caller is verified. Tell the customer you are texting a code and to read it back.",
+    parameters: {
+      type: "object" as const,
+      properties: {
+        customer_phone: { type: "string", description: "The phone number to verify — the one that OWNS the booking being changed, or the customer's number for a new booking." },
+      },
+      required: ["customer_phone"],
+    },
+  },
+  {
+    type: "function" as const,
+    name: "verify_otp",
+    description:
+      "Check the 6-digit code the customer read back. On success it returns an otp_session_id — " +
+      "pass that to confirm_booking / cancel_booking / reschedule_booking / confirm_group_booking. " +
+      "If it fails, offer to resend with request_otp.",
+    parameters: {
+      type: "object" as const,
+      properties: {
+        customer_phone: { type: "string", description: "The same phone number passed to request_otp." },
+        code:           { type: "string", description: "The 6-digit code the customer read back." },
+      },
+      required: ["customer_phone", "code"],
+    },
+  },
+  {
+    type: "function" as const,
     name: "get_available_slots",
     description:
       "Get available booking time slots for a specific service on a given date. " +
@@ -46,6 +77,7 @@ export const REALTIME_TOOLS = [
         staff_id:       { type: "string", description: "Staff ID, or 'any' for no preference." },
         customer_name:  { type: "string", description: "Customer's full name as they stated it." },
         customer_phone: { type: "string", description: "Customer's phone number, including country code if provided." },
+        otp_session_id: { type: "string", description: "The otp_session_id from verify_otp for this phone (required unless the caller is already verified). Omit only if a prior tool result said verification is not needed." },
       },
       required: ["service_id", "date", "time_slot", "staff_id", "customer_name", "customer_phone"],
     },
@@ -103,6 +135,10 @@ export const REALTIME_TOOLS = [
           type: "string",
           description: "Short reason the customer gave for cancelling. Optional.",
         },
+        otp_session_id: {
+          type: "string",
+          description: "The otp_session_id from verify_otp for the phone that OWNS this booking. Required to actually cancel (Path A with booking_id); not needed for the lookup step.",
+        },
       },
       required: [],
     },
@@ -134,6 +170,10 @@ export const REALTIME_TOOLS = [
         staff_id: {
           type: "string",
           description: "Staff ID, or 'any' to keep the same staff or assign any available.",
+        },
+        otp_session_id: {
+          type: "string",
+          description: "The otp_session_id from verify_otp for the phone that OWNS this booking (required unless the caller is already verified).",
         },
       },
       required: ["booking_id", "new_date", "new_time_slot", "staff_id"],
@@ -245,6 +285,10 @@ export const REALTIME_TOOLS = [
         organizer_phone: {
           type: "string",
           description: "Phone number of the organizer, including country code if provided.",
+        },
+        otp_session_id: {
+          type: "string",
+          description: "The otp_session_id from verify_otp for the organizer's phone (required unless the caller is already verified).",
         },
       },
       required: ["service_assignments", "date", "time", "mode", "organizer_name", "organizer_phone"],
