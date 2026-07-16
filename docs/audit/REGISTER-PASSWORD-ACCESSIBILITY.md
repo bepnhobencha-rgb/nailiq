@@ -49,6 +49,19 @@ hardcode chuỗi "Password" → không hỏng locale khác.
   client-side sau hydration — cùng cơ chế `t.*` với label email đang chạy đúng VI. Không 500 mới.
 - **Không** tạo user production, **không** gửi email/SMS, **không** migration.
 
+### Kiểm chứng mobile — thành thật về phạm vi
+
+**KHÔNG chạy được live mobile visual test** — Chrome extension không tạo được tab group trong
+session này (dừng sau 3 lần theo nguyên tắc tránh rabbit-hole). **Không khẳng định** đã xem
+trực tiếp trên viewport mobile. Thay vào đó, mobile được xác minh bằng:
+1. **JSX dùng chung mọi viewport** — `<label>` không có nhánh render riêng cho mobile/desktop;
+   cùng một cây DOM cho mọi kích thước màn hình.
+2. **SSR HTML production có label** — cùng HTML phục vụ mọi viewport (đã thấy `<label
+   for="password-input">Password</label>` trong response).
+3. **Focused Playwright test PASS** — `label[for="password-input"]` visible + có text +
+   `#password-input` có accessible name (chromium, trên chính code đã build).
+4. **i18n key đã kiểm** — `passwordLabel` tồn tại EN "Password" / VI "Mật khẩu".
+
 ## Còn lại (#748 giữ mở)
 
 Phần A của #748 — **7 test landing-funnel** (RC-7: heading `/register` đổi "Sign in or sign up"
