@@ -157,3 +157,12 @@ thiếu accessible name) — **đã sửa** qua **PR #760** (merge `a96e073`): t
 `<label htmlFor="password-input">` dùng i18n `t.passwordLabel` (EN "Password"/VI "Mật khẩu").
 `register :: axe scan` PASS + test focused mới PASS. **Chromium non-RC 16 → 15 fail, 0 fail mới.**
 Chi tiết: `REGISTER-PASSWORD-ACCESSIBILITY.md`. Còn lại của #748 = 7 test landing-funnel (RC-7).
+
+---
+
+## Cập nhật NHÓM 28/29 (2026-07-16) — OTP-gate test debt xử lý
+
+6 test booking-otp (OTP stale) khôi phục theo luồng gate-first OTP → **PR #764** (merge `a60ea72`).
+Source chỉ thêm `data-testid` behavior-neutral. Chromium non-RC 15→9 fail, 0 fail mới. Bảo mật
+OTP giữ nguyên. #754 đóng. Tel-link gap → **#762** (test #261 giữ đỏ). Group double-OTP → **#763**.
+Chi tiết: `OTP-GATE-TEST-REMEDIATION.md`.
