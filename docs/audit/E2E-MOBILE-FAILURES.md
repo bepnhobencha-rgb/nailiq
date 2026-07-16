@@ -78,23 +78,42 @@ cùng root cause RC-7 đã track).
 - 21 fail: booking-otp 7 + otp-gate 1 (OTP, #754) + landing-funnel 7 (RC-7, #748) + a11y 1
   (RC-8, #748) + RC 5 (#749). bv-2 + feature-flag-toggle **PASS** trên chromium.
 
-### Mobile (baseline riêng — chỉ đo trên main full E2E)
-- **non-RC shard:** pass **113** · fail **19** · skip **2** (134). ✅ đo được.
-- **RC shard:** **KHÔNG đo được (tới khi PR #757 merge).**
-  > **Đính chính (NHÓM 23):** ban đầu quy sai cho **fail-fast**. Thực tế `fail-fast: false`
-  > **đã bật sẵn** (`e2e.yml:158`). Nguyên nhân RC bị cắt là **`timeout-minutes: 65`**: trên
-  > push-to-main shard chạy chromium+mobile, và mobile RC fail retry ~45s mỗi cái → vượt 65
-  > phút. Bằng chứng run sạch `29438056294` (mới nhất, không bị chen): RC chạy 17:49:55 →
-  > 18:55:31 = **65m36s** = đúng timeout. Fix ở **PR #757** (65 → 120).
-- **Mobile-only fails (non-RC, ngoài tập chromium): 3** — feature-flag-toggle, bv-2,
-  landing mobile-menu. (RC mobile có thể có thêm — sẽ đo được sau khi #757 merge.)
+### Baseline ĐẦY ĐỦ — clean run `29444451203` (NHÓM 24, commit `de29837`)
 
-### Combined (chromium + mobile — chỉ trên main full E2E)
-- **Chromium (đầy đủ):** 200 / 175 / 21 / 4.
-- **Mobile:** non-RC 134 / 113 / 19 / 2 **+ RC chưa đo (timeout)** → **combined mobile chưa
-  đủ tới khi #757 merge.**
-- **Combined chính xác chưa lập được** vì thiếu RC mobile — **giới hạn đo lường** (không bịa
-  số). Lấy đủ số cần **PR #757** (nâng timeout) merge rồi quan sát push-to-main kế tiếp.
+Sau khi **PR #757** nâng `timeout-minutes` 65 → 120, RC+mobile shard **chạy trọn** (RC:
+19:26:12 → 20:37:46 = **71m34s** < 120) → **lần đầu tiên** có số Mobile RC + Combined.
+
+| Nhóm | Total | Pass | Fail | Skip |
+|---|---|---|---|---|
+| Chromium non-RC | 134 | 115 | 16 | 3 |
+| Chromium RC | 66 | 59 | 5 | 2 |
+| **Chromium TOTAL** | **200** | **174** | **21** | **5** |
+| Mobile non-RC | 134 | 113 | 19 | 2 |
+| Mobile RC | 66 | 29 | **34** | 3 |
+| **Mobile TOTAL** | **200** | **142** | **53** | **5** |
+| **COMBINED** | **400** | **316** | **74** | **10** |
+
+> Chromium run này 174/21/5 so với baseline 175/21/4: **fail giữ nguyên 21** (không lỗi mới),
+> chỉ 1 test dịch pass↔skip (variance test-order, không phải regression).
+
+**Vì sao Mobile RC bị kill trước đây (đính chính lịch sử):** KHÔNG phải fail-fast (`false` sẵn)
+và KHÔNG phải cancel-in-progress. Là **`timeout-minutes: 65`** — mobile RC fail retry ~45-90s
+mỗi cái → RC+mobile vượt 65 phút → job killed (run `29438056294`: RC đúng 65m36s). PR #757 sửa.
+
+### Lỗi mobile-only (fail mobile, PASS/skip chromium): **32**
+- **3 đã biết** (non-RC): feature-flag-toggle (superadmin race), bv-2 (gate timing) → #755;
+  landing mobile-menu (RC-7) → #748.
+- **29 MỚI (RC):** Receptionist Center fail hàng loạt trên mobile — **test debt** (RC E2E nhắm
+  grid desktop `staff-timeline-grid`/`booking-block-*`; mobile render `VerticalDayView` không
+  testid). Xác minh bằng locator từ clean run. Tách sang **#758**. Không phải product bug ở
+  tầng test; bed-picker có 2 assertion cần soi riêng.
+
+### Both-fail (chromium + mobile): 21 — tập chromium đã biết (booking-otp, landing-funnel,
+a11y, otp-gate, 5 RC). Không đổi.
+
+**Hạ tầng clean run:** cả 2 shard mọi bước success (Supabase start, preflight/guard, schema
+parity, seed, seed-idempotent, server boot 30s, sweep, **supabase stop**). Chỉ "Run E2E tests"
+= failure (đỏ thật). **0 production secret, 0 production write.**
 
 > **Chromium RC (tham chiếu, suy từ branch run chromium):** non-RC chromium 115/16/3 + tổng
 > chromium 175/21/4 → RC chromium ≈ 60/5/1. Mobile RC không có số tương ứng.

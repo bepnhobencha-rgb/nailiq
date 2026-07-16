@@ -107,3 +107,15 @@ gate nào cũng chạy cả hai** — nên KHÔNG so số chromium-only của PR
 push-to-main shard chạy chromium+mobile và mobile RC fail retry ~45s mỗi cái → vượt 65 phút
 (run sạch `29438056294`: RC chạy đúng 65m36s rồi bị killed). Fix ở **PR #757** (timeout 65→120).
 Trước khi #757 merge, RC mobile chưa có số đầy đủ.
+
+---
+
+## 7. Timeout Full E2E (NHÓM 24, 2026-07-15)
+
+`timeout-minutes` job full-regression **65 → 120** (PR #757). Lý do: trên push-to-main shard
+chạy chromium+mobile; RC mobile fail retry lâu → 65 phút không đủ, RC bị killed lúc đúng 65m
+(→ Mobile RC không có số suốt NHÓM 20-23). Sau fix, clean run `29444451203`: **RC chạy trọn
+71m34s** < 120. Smoke (25) + Visual (30) không đổi. Không che lỗi (suite vẫn đỏ thật).
+
+**Số thực đo để tune sau:** RC+mobile ≈ 72 phút. 90 phút *có thể* đủ nhưng biên hẹp (RC mobile
+fail nhiều, thời lượng biến thiên) → giữ 120 cho ổn định; cân nhắc giảm khi mobile RC bớt đỏ.
