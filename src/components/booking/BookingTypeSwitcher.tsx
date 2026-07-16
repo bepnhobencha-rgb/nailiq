@@ -38,12 +38,16 @@ function GateOtpInline({
   shopSlug,
   phoneDigits,
   emailLinksEnabled,
+  salonPhone,
   onVerified,
 }: {
   t: BookingMessages;
   shopSlug: string;
   phoneDigits: string;
   emailLinksEnabled?: boolean | null;
+  /** Public salon contact number (salons.salon_phone) — the last-resort
+   *  "call to book" fallback when SMS + email both fail (A2P mitigation). */
+  salonPhone?: string | null;
   onVerified: (sessionId: string, otpEmail?: string) => void;
 }) {
   const [stage, setStage] = useState<"idle" | "sent">("idle");
@@ -259,6 +263,26 @@ function GateOtpInline({
             {t.otpEmailFallbackCta}
           </button>
         )
+      ) : null}
+
+      {/* Last-resort A2P fallback — call the salon directly when SMS (and email)
+          don't arrive. Ported from BookingFlowOtpPanel, which the gate-first OTP
+          move bypassed; without it an SMS-dropped customer on an OTP-on salon
+          with no email channel has no way to book (#762). */}
+      {salonPhone?.trim() ? (
+        <div className="flex items-center justify-between rounded-lg border border-[var(--booking-border)] bg-[var(--booking-bg-input)] px-3 py-2.5">
+          <span className="text-sm text-[var(--booking-text-muted)]">
+            {t.otpCallSalonHint ?? "Still having trouble?"}
+          </span>
+          <a
+            data-testid="booking-gate-otp-call-link"
+            href={`tel:${salonPhone.trim()}`}
+            className="flex items-center gap-1.5 text-sm font-medium text-[var(--salon-primary)]"
+          >
+            <span>📞</span>
+            <span>{t.otpCallSalonCta ?? "Call us to book"}</span>
+          </a>
+        </div>
       ) : null}
     </div>
   );
@@ -596,6 +620,7 @@ export function BookingTypeSwitcher({
           shopSlug={shopSlug}
           phoneDigits={entryValidation.digits}
           emailLinksEnabled={salon.emailLinksEnabled}
+          salonPhone={salon.salonPhone}
           onVerified={(sessionId, otpEmail) => { void handleGateOtpVerified(sessionId, otpEmail); }}
         />
       ) : gateOtpDone ? (
@@ -749,6 +774,7 @@ export function BookingTypeSwitcher({
           initialName={entryNameResolved}
           initialSmsConsent={entrySmsConsent}
           initialMarketingConsent={entryMarketingConsent}
+          initialOtpSessionId={gateOtpSessionId}
           language={language}
         />
       )}

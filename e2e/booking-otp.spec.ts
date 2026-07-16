@@ -250,12 +250,9 @@ test.describe("Booking Flow — Phone OTP", () => {
     expect(sendCount).toBe(sendsAfterVerify);
   });
 
-  // KNOWN PRODUCT GAP — kept RED on purpose (see issue). The tel:// "call to
-  // book" A2P fallback exists only in the old BookingFlowOtpPanel, which is now
-  // unreachable in the individual flow. The gate OTP widget (GateOtpInline) has
-  // NO tel:// link. This test asserts the mitigation SHOULD be at the gate; it
-  // will fail until the product decides to restore it. Do NOT delete or weaken
-  // this test or add the link solely to make it green — that is a product call.
+  // A2P mitigation (restored, #762): the gate OTP widget must offer a tel://
+  // "call to book" link so an SMS-dropped customer can still book. It was lost
+  // when OTP moved to the gate; GateOtpInline now renders it from salon.salonPhone.
   test("salon phone tel:// call-to-book link visible on the gate OTP screen", async ({
     page,
   }) => {

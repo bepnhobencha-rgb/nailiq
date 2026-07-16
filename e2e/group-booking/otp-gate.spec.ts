@@ -1,17 +1,22 @@
 /**
- * Group booking — OTP gate (anti-sabotage).
+ * Group booking — gate-first OTP (anti-sabotage + no double-OTP).
  *
- * A salon with phone_otp_enabled + booking_verification_mode='always_otp' must
- * force the organizer through phone OTP before a group booking is created — the
- * same shield the individual flow has. Closes the "$1,700 group with no
- * friction" hole from the Hi-Lite QA re-test.
+ * A salon with phone_otp_enabled + booking_verification_mode='always_otp' forces
+ * the organizer through phone OTP before ANY booking — the same shield the
+ * individual flow has (closes the "$1,700 group with no friction" Hi-Lite hole).
+ *
+ * Since gate-first OTP (commit a4042c5), that verification happens at the ENTRY
+ * GATE, before the group toggle even appears. The verified session is threaded
+ * into BookingGroupFlow (`initialOtpSessionId`, #763), so the organizer is NOT
+ * asked for a SECOND code after Confirm. This test proves both halves: the gate
+ * blocks the group until verified, and Confirm books directly afterwards with
+ * exactly one SMS send.
  *
  * Requires DEMO_OTP=true (magic code 000000), same as booking-otp.spec.
  */
 import { expect, test } from "@playwright/test";
 
 import { cleanupTestSalon } from "../helpers/db";
-import { fillReactInput } from "../receptionist-center/helpers";
 import {
   fillMemberCard,
   gotoGroupFlow,
@@ -21,9 +26,8 @@ import {
 } from "./helpers";
 
 const SLUG = "e2e-group-otp";
-const OTP_DEMO_CODE = "000000";
 
-test.describe("Group booking — OTP gate", () => {
+test.describe("Group booking — gate-first OTP", () => {
   test.beforeAll(async () => {
     await seedGroupTestSalon(SLUG, {
       phone_otp_enabled: true,
@@ -34,59 +38,53 @@ test.describe("Group booking — OTP gate", () => {
     await cleanupTestSalon(SLUG);
   });
 
-  test("always_otp forces the organizer through OTP before the group books", async ({
+  test("gate OTP verifies the organizer once; the group books without a second OTP", async ({
     page,
   }) => {
-    await gotoGroupFlow(page, SLUG);
+    let sendCount = 0;
+    await page.route("**/api/booking-otp/send", async (route) => {
+      if (route.request().method() === "POST") sendCount += 1;
+      await route.continue();
+    });
+
+    // Gate: phone + name + consent + OTP (exactly one SMS send). The group toggle
+    // is behind `flowReady`, so it does not appear until the gate OTP is verified.
+    await gotoGroupFlow(page, SLUG, { otp: true });
 
     // Step 1 — size
     await page.getByTestId("group-size-2").click();
     await page.getByTestId("group-size-next").click();
 
     // Step 2 — services
-    await page
-      .getByTestId("group-step-service-panel")
-      .waitFor({ state: "visible" });
+    await page.getByTestId("group-step-service-panel").waitFor({ state: "visible" });
     await fillMemberCard(page, 0, "Mai", 1, 1);
     await fillMemberCard(page, 1, "Linh", 1, 2);
     await page.getByTestId("group-service-next").click();
 
     // Step 3 — date + arrival
-    await page
-      .getByTestId("group-step-date-panel")
-      .waitFor({ state: "visible" });
+    await page.getByTestId("group-step-date-panel").waitFor({ state: "visible" });
     await pickDateInCalendar(page, nextOpenDateYmd());
     await page.getByTestId("group-arrival-afternoon").click();
     await page.getByTestId("group-date-next").click();
 
     // Step 4 — arrangement
-    await page
-      .getByTestId("group-step-arrangement-panel")
-      .waitFor({ state: "visible" });
+    await page.getByTestId("group-step-arrangement-panel").waitFor({ state: "visible" });
     const bestCard = page.getByTestId("group-arrangement-best");
     await expect(bestCard).toBeVisible({ timeout: 20_000 });
     await bestCard.click();
     await page.getByTestId("group-arrangement-next").click();
 
-    // Step 5 — confirm → click confirm
-    await page
-      .getByTestId("group-step-confirm-panel")
-      .waitFor({ state: "visible" });
-    await page.getByTestId("group-primary-phone").fill("+16045551234");
-    await page.getByTestId("group-sms-consent").check();
+    // Step 5 — confirm. The primary phone is pre-filled with the gate (verified)
+    // phone and SMS consent came from the gate, so Confirm is ready. Do NOT
+    // change the phone — the threaded gate session is bound to it.
+    await page.getByTestId("group-step-confirm-panel").waitFor({ state: "visible" });
     await page.getByTestId("group-confirm").click();
 
-    // GATE: the OTP panel must appear — the group is NOT booked yet.
-    await expect(page.locator("#otp-code")).toBeEnabled({ timeout: 15_000 });
-    await expect(page.getByTestId("booking-group-success")).toHaveCount(0);
-
-    // Enter the demo OTP → group now books.
-    await fillReactInput(page.locator("#otp-code"), OTP_DEMO_CODE);
-    await page.locator("#otp-code").press("Enter");
-
-    await expect(page.getByTestId("booking-group-success")).toBeVisible({
-      timeout: 15_000,
-    });
+    // The group books directly — NO second OTP panel — because the gate session
+    // already proves the phone (#763). And only the ONE gate SMS was sent.
+    await expect(page.getByTestId("booking-group-success")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(/#GRP-\d{8}-[A-F0-9]{4}/)).toBeVisible();
+    await expect(page.locator("#otp-code")).toHaveCount(0);
+    expect(sendCount).toBe(1);
   });
 });
