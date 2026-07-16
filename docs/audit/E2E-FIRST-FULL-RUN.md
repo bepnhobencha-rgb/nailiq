@@ -276,5 +276,5 @@ fail**, 0 fail mới. Required checks xanh; production `/register` render label 
 ## 13. CẬP NHẬT NHÓM 28/29 (2026-07-16) — OTP-gate tests
 
 PR #764 (merge `a60ea72`) khôi phục 6 test booking-otp theo gate-first OTP. Chromium full
-**201 / 182 / 14 / 5** (trước 15 fail non-RC → 9). 0 fail mới. 14 fail đều đã-biết: #261 tel-link
-(#762) + landing-funnel 7 (#748) + otp-gate 1 (#763) + RC chromium 5 (#749). Source: chỉ testid.
+**201 / 184 / 12 / 5** sau PR #766 (fix #762 tel-link + #763 group; cả hai ĐÓNG). 0 fail mới. 12 fail
+= 100% test debt: landing-funnel 7 (#748) + Receptionist Center chromium 5 (#749). NailIQ PILOT READY.

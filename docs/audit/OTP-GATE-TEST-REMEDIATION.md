@@ -37,14 +37,17 @@ product bug** — test lỗi thời. (Xác nhận bằng git history + trace, đ
 | email fallback offered at gate OTP | `booking-gate-otp-email-fallback` visible |
 | (giữ nguyên) server throttles duplicate SMS | API-level 200 → 429 rate_limited |
 
-## Giữ ĐỎ có chủ đích + tách issue
+## Hai gap product tách ra — nay ĐÃ SỬA (PR #766, merge `7dfe7705`)
 
-- **#261 tel:// call-to-book** — gate OTP **thiếu** tel-link A2P (chỉ có ở panel cũ
-  unreachable). Test **giữ đỏ** để document gap; **KHÔNG** hạ assertion, **KHÔNG** thêm link
-  chỉ để pass. → **#762** (Medium, chờ quyết định sản phẩm).
-- **Group double-OTP** — gate session không thread vào `BookingGroupFlow` → group hỏi OTP lần
-  2 sau Confirm. Không phải security bug (verify 2 lần). otp-gate **chưa sửa**. → **#763**
-  (Medium, điều tra riêng).
+> **Cập nhật cuối:** lúc viết (NHÓM 28) hai mục dưới được tách issue + để test đỏ có chủ đích.
+> Chúng đã được sửa trong **PR #766** (chế độ tăng tốc, pilot-ready) — ghi lại để chính xác.
+
+- **#261 tel:// call-to-book** — gate OTP từng **thiếu** tel-link A2P (chỉ có ở panel cũ
+  unreachable). **ĐÃ SỬA:** `GateOtpInline` render tel:// từ `salon.salonPhone` (i18n có sẵn).
+  Test #261 **PASS**. Issue **#762 ĐÓNG**.
+- **Group double-OTP** — gate session không thread vào `BookingGroupFlow`. **ĐÃ SỬA:** thread
+  `initialOtpSessionId` (mirror flow cá nhân) → group không hỏi OTP lần 2, chỉ 1 SMS gate, không
+  double booking. Test `otp-gate` **PASS**. Issue **#763 ĐÓNG**.
 
 ## Bảo mật (không đổi)
 
@@ -52,12 +55,12 @@ Không bypass, demo `000000` trơ trong production (`isDemoOtpRuntime` false tr�
 không log code, không lộ trong URL, throttle/rate-limit còn nguyên. `gateOtpDone` chỉ set qua
 `handleGateOtpVerified` sau khi verify API trả `ok+sessionId`; submit re-validate server-side.
 
-## Kết quả trước/sau (chromium)
+## Kết quả trước/sau (chromium) — trạng thái CUỐI
 
-- Trước PR #764: non-RC chromium **15 fail** (7 booking-otp trong đó).
-- Sau: non-RC chromium **9 fail** (−6). Full chromium **201 / 182 / 14 / 5** — **0 fail mới**.
-- 14 fail còn lại đều đã-biết/có-chủ-đích: #261 tel-link (#762) + landing-funnel 7 (RC-7, #748)
-  + otp-gate 1 (#763) + RC chromium 5 (#749).
+- PR #764 (test): non-RC chromium 15→**9 fail** (−6 booking-otp), full chromium **201/182/14/5**.
+- PR #766 (2 product fix #762+#763): +2 pass, −2 fail → full chromium **201 / 184 / 12 / 5**.
+  **12 fail còn lại = 100% test debt:** landing-funnel 7 (#748) + Receptionist Center chromium 5
+  (#749). **0 fail mới.** (Tel-link + otp-gate nay PASS.)
 - Required: Smoke ✅ · Build & Type Check ✅ · Security Audit ✅ · Secret scan ✅.
-- Production: deploy trên `a60ea72`; routes khoẻ (home/salon 200, slug 404, dashboard/superadmin
-  redirect đúng); **0 lỗi 500 mới**. Không gửi OTP thật, không tạo booking, không migration.
+- **NailIQ PILOT READY** cho 3–5 tiệm — xem `PILOT-READINESS-REPORT.md`. Merge cuối `7dfe7705`.
+  Production khoẻ, **0 lỗi 500 mới**, không migration, không ghi production.
