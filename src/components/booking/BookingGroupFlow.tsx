@@ -222,6 +222,10 @@ type BookingGroupFlowProps = {
   initialSmsConsent?: boolean;
   /** Marketing consent opt-in from the gate checkbox. */
   initialMarketingConsent?: boolean;
+  /** OTP session already verified at the phone gate (gate-first OTP). Threaded
+   *  in so an OTP-on organizer is NOT re-prompted for a second code after
+   *  Confirm — mirrors the individual flow's initialOtpSessionId (#763). */
+  initialOtpSessionId?: string | null;
   /** Booking-surface language → carried into the shared Party Link URL. */
   language?: "en" | "vi";
 };
@@ -240,6 +244,7 @@ export function BookingGroupFlow({
   initialName = "",
   initialSmsConsent = false,
   initialMarketingConsent: _initialMarketingConsent = false,
+  initialOtpSessionId = null,
   language = "vi",
 }: BookingGroupFlowProps) {
   const router = useRouter();
@@ -335,7 +340,7 @@ export function BookingGroupFlow({
   // OTP gate (anti-sabotage) — organizer phone verification when the salon has
   // phone_otp_enabled. otpPanelOpen shows the verify panel; otpSessionId carries
   // the proof into the re-submit.
-  const [otpSessionId, setOtpSessionId] = useState<string | null>(null);
+  const [otpSessionId, setOtpSessionId] = useState<string | null>(initialOtpSessionId);
   const [otpPanelOpen, setOtpPanelOpen] = useState(false);
   // No-show card capture at CONFIRM (Option A — like the individual flow):
   // a new/risky organizer must leave a card BEFORE the group is created, not
