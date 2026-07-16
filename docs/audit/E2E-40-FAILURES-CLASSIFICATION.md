@@ -147,3 +147,13 @@ fallback từ placeholder).
 Vì `drawer-responsive dr-2` không click nổi booking trên mobile (RC-9), hiện **không có bằng
 chứng nào** về việc booking drawer có vừa màn hình 375px hay không — assertion đó đã chết âm
 thầm. Không claim hỏng, cũng không claim ổn. **Cần repro local** sau khi RC-9 được sửa.
+
+---
+
+## Cập nhật NHÓM 26 (2026-07-16) — RC-8 ĐÃ SỬA
+
+**RC-8** (product bug thật duy nhất trong 40 lỗi: ô mật khẩu `/register` chỉ có placeholder,
+thiếu accessible name) — **đã sửa** qua **PR #760** (merge `a96e073`): thêm
+`<label htmlFor="password-input">` dùng i18n `t.passwordLabel` (EN "Password"/VI "Mật khẩu").
+`register :: axe scan` PASS + test focused mới PASS. **Chromium non-RC 16 → 15 fail, 0 fail mới.**
+Chi tiết: `REGISTER-PASSWORD-ACCESSIBILITY.md`. Còn lại của #748 = 7 test landing-funnel (RC-7).
