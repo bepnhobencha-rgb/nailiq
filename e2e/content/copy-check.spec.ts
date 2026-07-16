@@ -185,15 +185,18 @@ test.describe("Copy & i18n live-render check", () => {
           `[${lang}] pricing eyebrow "${pricing.eyebrow}" missing`,
         ).toContain(pricing.eyebrow);
 
-        for (const plan of pricing.plans) {
+        // Founder Pilot pricing shape: two cards (monthly + annual) with
+        // distinct field names instead of the old `plans[]` array. Assert
+        // both card names + CTAs render.
+        for (const card of [pricing.monthly, pricing.annual] as const) {
           expect(
             visibleText,
-            `[${lang}] plan name "${plan.name}" missing`,
-          ).toContain(plan.name);
+            `[${lang}] plan name "${card.name}" missing`,
+          ).toContain(card.name);
           expect(
             visibleText,
-            `[${lang}] plan cta "${plan.cta}" missing`,
-          ).toContain(plan.cta);
+            `[${lang}] plan cta "${card.cta}" missing`,
+          ).toContain(card.cta);
         }
 
         const title = await page.title();

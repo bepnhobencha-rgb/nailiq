@@ -1,30 +1,26 @@
 "use client";
 
 /**
- * Founder Pilot "Problem" section — was originally a 3-stat animated
- * counter card ("$50–200 lost/day"). Rewritten for the multi-POS
- * positioning: list of common technology pain points that NailIQ
- * addresses without asking the salon to replace its current POS.
- *
- * Kept the file name to minimise churn in `src/app/page.tsx` — the
- * component itself renders the new `landing.problem` i18n subtree.
+ * "Why Join the Founder Pilot?" — bullet list of pilot-only benefits
+ * plus a renewal-pricing notice. Sits between the FAQ and the final
+ * CTA to reinforce the value of applying now.
  */
 import { useMemo } from "react";
 import { motion, useReducedMotion } from "@/shared/lib/motionClient";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
-export function LandingPainSection() {
+export function LandingWhyJoin() {
   const reduce = useReducedMotion();
   const { language } = useUserLanguage();
   const t = useMemo(
-    () => getUserMessages(language).landing.problem,
+    () => getUserMessages(language).landing.whyJoin,
     [language],
   );
 
   return (
     <section className="relative bg-nq-bg py-14 md:py-20">
-      <div className="mx-auto w-full max-w-6xl px-5 md:px-8">
+      <div className="mx-auto w-full max-w-5xl px-5 md:px-8">
         <motion.div
           initial={reduce ? false : { opacity: 0, y: 16 }}
           whileInView={reduce ? undefined : { opacity: 1, y: 0 }}
@@ -48,45 +44,37 @@ export function LandingPainSection() {
               viewport={{ once: true, margin: "-60px" }}
               transition={{
                 duration: 0.45,
-                delay: 0.04 + i * 0.05,
+                delay: 0.04 + i * 0.04,
                 ease: [0.22, 1, 0.36, 1],
               }}
-              className="flex items-start gap-3 rounded-2xl border border-nq-border/30 bg-nq-surface/40 p-4 md:p-5"
+              className="flex items-start gap-3 rounded-xl border border-nq-border/30 bg-nq-surface/40 p-4 md:p-5"
             >
               <span
                 aria-hidden
-                className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-nq-primary/30 bg-nq-primary/10 text-nq-primary"
+                className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-nq-primary/15 text-nq-primary"
               >
                 <svg
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
-                  strokeWidth="2.2"
+                  strokeWidth="2.5"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   className="h-3.5 w-3.5"
                 >
-                  <circle cx="12" cy="12" r="9" />
-                  <line x1="12" y1="8" x2="12" y2="13" />
-                  <circle cx="12" cy="16.5" r="0.8" fill="currentColor" />
+                  <polyline points="20 6 9 17 4 12" />
                 </svg>
               </span>
-              <p className="text-sm leading-relaxed text-nq-foreground/90 md:text-base">
+              <span className="text-sm leading-relaxed text-nq-foreground/90 md:text-base">
                 {item}
-              </p>
+              </span>
             </motion.li>
           ))}
         </ul>
 
-        <motion.p
-          initial={reduce ? false : { opacity: 0, y: 12 }}
-          whileInView={reduce ? undefined : { opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-40px" }}
-          transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-          className="mt-8 max-w-3xl text-base leading-relaxed text-nq-primary-soft/90 md:text-lg"
-        >
-          {t.conclusion}
-        </motion.p>
+        <p className="mt-6 text-xs leading-relaxed text-nq-muted/70 md:text-sm">
+          {t.renewalNotice}
+        </p>
       </div>
     </section>
   );

@@ -148,264 +148,460 @@ export const userVi: UserMessages = {
       closeMenu: "Đóng menu",
     },
     hero: {
-      eyebrow: "Được tin dùng bởi tiệm nail tại Canada, Mỹ & Việt Nam",
-      h1Line1: "Rẻ hơn một lần làm nail.",
-      h1Gold: "Tiệm bạn tự vận hành.",
+      eyebrow: "CHƯƠNG TRÌNH FOUNDER PILOT · CHỈ NHẬN 5 TIỆM ĐẦU TIÊN",
+      h1Line1: "Website, Booking và Hệ thống vận hành —",
+      h1Gold: "Được thiết lập trọn gói cho tiệm nail",
       subline:
-        "Tiếng Việt trước. Công nghệ AI. Không bỏ lỡ lịch hẹn nào.",
-      ctaPrimary: "Dùng thử 14 ngày miễn phí",
-      ctaSecondary: "Xem cách hoạt động ↓",
+        "NailIQ giúp tiệm nail triển khai website chuyên nghiệp, booking online, lịch nhân viên và các công cụ vận hành thiết yếu mà chủ tiệm không phải tự cài đặt.",
+      posSupport:
+        "Bạn có thể tiếp tục sử dụng Square, Clover, Toast hoặc hệ thống POS hiện tại.",
+      valueStatement:
+        "Chúng tôi thiết lập. Chúng tôi hướng dẫn. Bạn tập trung phục vụ khách hàng.",
+      ctaPrimary: "Đăng ký Founder Pilot",
+      ctaSecondary: "Đặt lịch xem Demo miễn phí",
       microtrust:
-        "Không cần thẻ tín dụng · 14 ngày miễn phí · Cài đặt trong 2 phút",
+        "Thiết kế cho tiệm nail · Giữ nguyên POS đang dùng · Hỗ trợ tiếng Việt",
     },
-    pain: {
-      eyebrow: "Vấn đề",
-      h2: "Bạn đang mất tiền ngay lúc này",
-      lede:
-        "Mọi chủ tiệm chúng tôi nói chuyện đều có cùng ba lỗ hổng. Đây là con số.",
-      stat1: {
-        label: "Mất từ cuộc gọi nhỡ",
-        body:
-          "Điện thoại reo khi nhân viên đang bận. Mỗi cuộc gọi không bắt máy là một khách bước sang tiệm đối thủ.",
-      },
-      stat2: {
-        label: "Không quay lại sau lần đầu",
-        body:
-          "Không có link đặt lịch tiện lợi, khách quen mặc định chọn tiệm có lịch online — dù họ thích bạn.",
-      },
-      stat3: {
-        display: "Walk-in",
-        sub: "bỏ đi",
-        label: "Khi bạn quá bận để tiếp",
-        body:
-          "Không có queue, walk-in phải đoán thời gian chờ, bực mình rồi bỏ đi. Queue trực tiếp giữ họ — và doanh thu của bạn.",
-      },
+    problem: {
+      eyebrow: "Vì sao chọn NailIQ",
+      h2: "Công nghệ phải giúp bạn tiết kiệm thời gian — không phải làm bạn bận thêm",
+      items: [
+        "Quá nhiều cuộc gọi để đặt hoặc đổi lịch hẹn.",
+        "Lịch làm việc của nhân viên thay đổi liên tục, khó theo dõi.",
+        "Danh mục dịch vụ, giá và thời lượng khó sắp xếp gọn gàng.",
+        "Các công cụ đặt lịch chung chung vẫn buộc chủ tiệm tự cấu hình mọi thứ.",
+        "Website, booking và vận hành tiệm thường rời rạc nhau.",
+        "Chủ tiệm đã có POS nhưng vẫn cần luồng booking tốt hơn.",
+        "Chủ tiệm bận không có thời gian quản lý phần mềm phức tạp.",
+      ],
+      conclusion:
+        "NailIQ cung cấp cả nền tảng lẫn hỗ trợ triển khai — không bắt bạn đổi POS đang dùng.",
     },
-    features: {
-      eyebrow: "Tính năng",
-      h2: "Đầy đủ những gì tiệm nail cần",
-      booking: {
-        title: "Đặt lịch online",
-        body:
-          "Link đặt lịch hoạt động 24/7. Khách chọn dịch vụ, thợ và giờ mà không cần gọi — chạy trên mọi điện thoại, không cần cài app.",
+    doneForYou: {
+      eyebrow: "Bao gồm những gì",
+      h2: "Nhiều hơn phần mềm — Setup trọn gói cho tiệm nail",
+      items: [
+        {
+          title: "Website thương hiệu",
+          body: "Hiện diện online chuyên nghiệp phản ánh đúng tiệm bạn.",
+          bullets: [
+            "Website dạng template, tối đa 5 trang",
+            "Thiết kế thân thiện mobile",
+            "Dịch vụ, thông tin liên hệ, truy cập booking",
+            "Một ngôn ngữ",
+            "Tối đa 2 vòng chỉnh sửa tổng hợp",
+          ],
+        },
+        {
+          title: "Booking online",
+          body: "Luồng đặt lịch khách hoàn thành trên mọi điện thoại.",
+          bullets: [
+            "Dịch vụ, giá, thời lượng",
+            "Chính sách đặt lịch",
+            "Luồng đặt lịch cho khách",
+            "Xác thực OTP khi bật",
+            "Quyền truy cập dashboard booking",
+          ],
+        },
+        {
+          title: "Nhân viên & lịch làm",
+          body: "Nhân viên, kỹ năng và lịch trống được cấu hình sẵn cho bạn.",
+          bullets: [
+            "Hồ sơ nhân viên",
+            "Kỹ năng và dịch vụ đảm nhiệm",
+            "Giờ làm việc",
+            "Giờ nghỉ",
+            "Ngày nghỉ",
+            "Lịch trống nhận booking",
+          ],
+        },
+        {
+          title: "Luồng hoạt động cùng POS hiện có",
+          body: "Giữ nguyên hệ thống thanh toán mà tiệm bạn đang dùng.",
+          bullets: [
+            "Tiếp tục sử dụng POS hiện tại",
+            "NailIQ quản lý website, booking và lịch nhân viên",
+            "Thanh toán tiếp tục qua Square, Clover, Toast hoặc POS khác",
+            "Đồng bộ dữ liệu trực tiếp phụ thuộc vào tích hợp hiện được hỗ trợ",
+          ],
+        },
+        {
+          title: "Hỗ trợ setup Square",
+          body: "Nếu đủ điều kiện, chúng tôi hỗ trợ kết nối các tính năng Square mà NailIQ hiện hỗ trợ.",
+          bullets: [
+            "Kết nối 1 tài khoản Square hiện có đủ điều kiện, nơi được hỗ trợ",
+            "Hỗ trợ kết nối kỹ thuật",
+            "Hỗ trợ setup Square Physical Gift Card",
+            "Hỗ trợ setup Square eGift Card",
+            "Phụ thuộc điều kiện Square và khả năng kỹ thuật",
+          ],
+        },
+        {
+          title: "Đào tạo & Go-live",
+          body: "Buổi go-live có hướng dẫn để đội của bạn sẵn sàng ngày đầu.",
+          bullets: [
+            "Một buổi đào tạo online 60 phút",
+            "Booking thử có hướng dẫn",
+            "Tối đa 90 phút hỗ trợ go-live từ xa",
+          ],
+        },
+        {
+          title: "Hỗ trợ tiếp diễn",
+          body: "Cập nhật nhỏ và hỗ trợ tiếng Việt bao gồm sẵn.",
+          bullets: [
+            "Hỗ trợ tiếng Việt",
+            "Tối đa 30 phút cập nhật nhỏ mỗi tháng",
+            "Công việc phát sinh có sau khi phê duyệt và báo giá bằng văn bản",
+          ],
+        },
+      ],
+    },
+    keepPos: {
+      eyebrow: "Đa POS",
+      h2: "Giữ nguyên POS bạn đang dùng",
+      intro:
+        "NailIQ không yêu cầu tiệm bạn phải thay hệ thống POS hiện tại.",
+      square: {
+        title: "Hỗ trợ kết nối Square",
+        body: "Người dùng Square đủ điều kiện có thể nhận hỗ trợ kết nối và các tính năng Square mà NailIQ hiện hỗ trợ, gồm hỗ trợ setup Square Gift Card khi có thể.",
       },
-      queue: {
-        title: "Walk-in Queue",
-        body:
-          "Quản lý hàng chờ thời gian thực. Không hỗn loạn giờ cao điểm — biết ai sắp tới lượt, khách luôn biết thời gian chờ.",
+      other: {
+        title: "Dùng NailIQ song song với POS hiện có",
+        body: "Tiệm đang dùng Clover, Toast hoặc POS khác vẫn có thể dùng NailIQ cho website, booking online, lịch nhân viên, chính sách booking, OTP và vận hành tiệm — trong khi tiếp tục thu tiền qua POS hiện tại.",
       },
-      center: {
-        title: "Trung tâm tiếp tân",
-        body:
-          "Lưới trực tiếp hiển thị mọi lịch hẹn và walk-in. Đổi lịch, đổi thợ, xử lý xung đột trong vài giây.",
+      custom: {
+        title: "Cần tích hợp trực tiếp?",
+        body: "Đồng bộ trực tiếp với Clover, Toast hoặc POS khác không nằm trong Founder Pilot. Cần đánh giá kỹ thuật, khả dụng API, quyền nền tảng, phê duyệt đối tác (nếu cần) và báo giá riêng.",
       },
+      trustNote:
+        "Không cần đổi POS để sử dụng website, booking và lịch nhân viên của NailIQ.",
+      logoNote:
+        "Tên POS được hiển thị dưới dạng text. NailIQ không thuộc Square, Clover hay Toast và không dùng logo bên thứ ba khi chưa xác minh quyền sử dụng.",
     },
     howItWorks: {
-      eyebrow: "Bắt đầu",
-      h2: "Hoạt động trong 15 phút",
+      eyebrow: "Quy trình",
+      h2: "Từ setup đến go-live trong 4 bước",
       step1: {
-        title: "Đăng ký bằng email",
-        body: "Truy cập tức thì qua đường link — không cần cài app, không cần mật khẩu.",
-        preview:
-          "Bạn sẽ thấy — liên kết đăng nhập trong hộp thư, sau đó vào dashboard.",
+        title: "Chia sẻ thông tin tiệm",
+        body: "Bạn cung cấp thông tin cần thiết để NailIQ cấu hình cho tiệm.",
+        list: [
+          "Logo",
+          "Thông tin doanh nghiệp",
+          "Dịch vụ",
+          "Giá",
+          "Thời lượng",
+          "Nhân viên",
+          "Kỹ năng",
+          "Lịch làm việc",
+          "Chính sách",
+          "POS hiện tại",
+        ],
       },
       step2: {
-        title: "Thêm dịch vụ và nhân viên",
-        body:
-          "Mẫu sẵn giúp tăng tốc. Đa số tiệm hoàn thành trong 10 phút.",
-        preview:
-          "Bạn sẽ thấy — menu của bạn sẵn sàng nhận lịch.",
+        title: "NailIQ cấu hình",
+        body: "NailIQ dựng và cấu hình workspace của tiệm bạn từ đầu đến cuối.",
+        list: [
+          "Website",
+          "Booking",
+          "Lịch nhân viên",
+          "Chính sách booking",
+          "OTP khi bật",
+          "Luồng POS được hỗ trợ",
+        ],
       },
       step3: {
-        title: "Chia sẻ link đặt lịch",
-        body:
-          "Sao chép URL nailiq.ca/your-salon. Gửi cho khách qua Zalo, SMS, hoặc dán ở quầy.",
-        preview:
-          "Bạn sẽ thấy — lịch đầu tiên về trong vài giờ.",
+        title: "Review và test",
+        body: "Bạn kiểm tra setup và xác nhận mọi thứ hoạt động cùng POS.",
+        list: [
+          "Kiểm tra website",
+          "Kiểm tra dịch vụ và nhân viên",
+          "Hoàn thành 1 booking thử được phê duyệt",
+          "Xác minh dashboard",
+          "Xác nhận NailIQ chạy tốt cùng POS hiện có",
+        ],
       },
-      bottomCta: "Sẵn sàng khi bạn muốn. Dùng thử 14 ngày miễn phí",
-    },
-    socialProof: {
-      eyebrow: "Tin dùng bởi",
-      h2: "Chủ tiệm nói gì",
-      sub: "Phản hồi truy cập sớm",
-      quotes: [
-        {
-          initials: "LN",
-          body:
-            "Hoàn hảo cho tiệm bận. Tụi mình không còn để mất khách walk-in vì hàng chờ luôn hiển thị ngay trên iPad. Bàn lễ tân cuối cùng đã có bức tranh rõ ràng.",
-          author: "Lan Nguyễn, Chủ tiệm",
-          venue: "Nails by Lan · Toronto",
-        },
-        {
-          initials: "TM",
-          body:
-            "Hỗ trợ tiếng Việt cứu tụi mình. Khách tự đặt lịch bằng tiếng Việt và điện thoại tiệm gần như im — theo nghĩa tốt.",
-          author: "Thúy Mai, Chủ tiệm",
-          venue: "Saigon Nail Studio · Houston, TX",
-        },
-        {
-          initials: "PN",
-          body:
-            "Cài đặt hết 10 phút — mình hoài nghi nhưng đúng là nhanh vậy. Danh sách walk-in ai trong tiệm cũng thấy và bàn lễ tân không còn hỗn loạn nữa.",
-          author: "Phương Nguyễn, Chủ tiệm",
-          venue: "Pink Nails Studio · Vancouver, BC",
-        },
-        {
-          initials: "JH",
-          body:
-            "Link đặt lịch song ngữ thay đổi tất cả. Khách lớn tuổi người Việt trước không quen hệ thống cũ nay tự đặt lịch mà không cần gọi điện.",
-          author: "Jennifer Ho, Chủ tiệm",
-          venue: "Lotus Nails · Calgary, AB",
-        },
-      ],
-    },
-    trustStrip: {
-      made: "Xây dựng tại Vancouver, BC 🇨🇦",
-      pipeda: "Tuân thủ PIPEDA",
-      freeToStart: "Miễn phí để bắt đầu — không cần thẻ",
-      bilingual: "Tiếng Việt & Tiếng Anh",
+      step4: {
+        title: "Đào tạo và go-live",
+        body: "Chúng tôi đào tạo đội của bạn và hỗ trợ ngày ra mắt.",
+        list: [
+          "Đào tạo chủ tiệm hoặc quản lý được chỉ định",
+          "Hỗ trợ go-live theo kế hoạch từ xa",
+          "Giúp xử lý các vấn đề sử dụng ban đầu trong phạm vi bao gồm",
+        ],
+      },
+      timelineNote:
+        "Thời gian setup thường khoảng 7–14 ngày làm việc sau khi nhận đủ thông tin, phê duyệt và quyền truy cập bên thứ ba.",
+      bottomCta: "Đăng ký Founder Pilot",
     },
     pricing: {
-      eyebrow: "Bảng giá",
-      h2: "Bảng giá minh bạch",
-      sub: "Không phí ẩn. Nâng cấp hoặc hủy bất cứ lúc nào.",
-      perMonth: "/tháng",
-      taxNote: "+ GST/HST (và PST nếu áp dụng). Giá CAD.",
-      ccNotice: "Không cần thẻ tín dụng",
-      proMigrationNote:
-        "Đang dùng phần mềm khác? Miễn phí 3 tháng đầu.",
-      plans: [
-        {
-          id: "free",
-          name: "Miễn phí",
-          price: "$0",
-          badge: null,
-          features: [
-            "1 nhân viên",
-            "Đến 50 lịch hẹn/tháng",
-            "Link đặt lịch online",
-            "Hàng chờ walk-in",
-            "Tiếng Việt & Anh",
-            "AI Scan Menu (thiết lập)",
-          ],
-          cta: "Bắt đầu miễn phí",
-        },
-        {
-          id: "pro",
-          name: "Pro",
-          price: "$39",
-          badge: "Phổ biến nhất",
-          features: [
-            "Tất cả gói Free",
-            "Không giới hạn lịch & thợ",
-            "Trung tâm lễ tân realtime",
-            "AI gợi ý thêm dịch vụ",
-            "Tự động xin đánh giá",
-            "Báo cáo doanh thu",
-            "Huỷ bất cứ lúc nào",
-          ],
-          cta: "Dùng thử 14 ngày",
-        },
-        {
-          id: "studio",
-          name: "Studio",
-          price: "$99",
-          badge: "Tốt nhất",
-          features: [
-            "Tất cả gói Pro",
-            "AI phản hồi review (duyệt 1 chạm)",
-            "Loyalty & Thẻ quà tặng",
-            "Báo cáo hiệu suất thợ",
-            "CRM & lịch sử khách",
-            "SMS marketing (100 tin/tháng)",
-            "Hỗ trợ ưu tiên",
-          ],
-          cta: "Dùng thử 14 ngày",
-        },
-        {
-          id: "enterprise",
-          name: "Enterprise",
-          price: "$199",
-          badge: "Chuỗi tiệm",
-          features: [
-            "Tất cả gói Studio",
-            "Voice AI (Anh + Việt) (sắp ra mắt)",
-            "Quản lý đa chi nhánh",
-            "Tính lương & hoa hồng (sắp ra mắt)",
-            "Xuất T4 (sắp ra mắt)",
-            "AI quản lý kho (sắp ra mắt)",
-            "SMS không giới hạn",
-            "Hỗ trợ onboarding riêng",
-          ],
-          cta: "Liên hệ",
-        },
-      ],
-      addons: {
-        sectionTitle: "Cần thêm? Thêm tính năng theo nhu cầu.",
-        sms: {
-          name: "SMS thêm",
-          price: "$20 / 500 tin",
-          description: "Tin nhắn SMS thêm cho mọi gói",
-        },
-        location: {
-          name: "Thêm chi nhánh",
-          price: "$49/tháng mỗi chi nhánh",
-          description: "Thêm chi nhánh tiệm",
-        },
-        branding: {
-          name: "Thẻ digital thương hiệu",
-          price: "$199 một lần",
-          description: "Gói thiết kế thương hiệu cao cấp",
-        },
+      eyebrow: "Giá Founder Pilot",
+      h2: "Giá Founder Pilot",
+      sub: "Giá ưu đãi đặc biệt dành cho 5 tiệm đầu tiên tham gia.",
+      perMonthLabel: "/tháng",
+      setupLabel: "phí setup",
+      plusLabel: "cộng",
+      monthly: {
+        name: "Founder Pilot theo tháng",
+        setupPrice: "$499 CAD",
+        monthlyPrice: "$99 CAD",
+        commitment: "Cam kết tối thiểu 6 tháng",
+        included: [
+          "Một tiệm",
+          "Một chi nhánh",
+          "Một thương hiệu",
+          "Tối đa 10 nhân viên",
+          "Tối đa 75 dịch vụ",
+          "Một ngôn ngữ",
+          "Website dạng template, tối đa 5 trang",
+          "Tối đa 2 vòng chỉnh sửa website tổng hợp",
+          "Setup booking online",
+          "Lịch nhân viên, giờ nghỉ và ngày nghỉ",
+          "Chính sách booking",
+          "Setup OTP khi bật",
+          "Dùng NailIQ cùng POS hiện có",
+          "1 kết nối Square đủ điều kiện, nơi được hỗ trợ",
+          "Hỗ trợ setup Square Gift Card khi có thể",
+          "QR code booking",
+          "QR code Gift Card khi có thể",
+          "Một buổi đào tạo online 60 phút",
+          "Tối đa 90 phút hỗ trợ go-live từ xa",
+          "Tối đa 30 phút cập nhật nhỏ mỗi tháng",
+          "Tối đa 250 SMS segments mỗi tháng theo điều khoản fair-use",
+        ],
+        cta: "Đăng ký gói tháng",
+        commitmentNote:
+          "Tổng tối thiểu 6 tháng: $1,093 CAD trước thuế và phí bên thứ ba áp dụng.",
       },
+      annual: {
+        name: "Founder Pilot theo năm",
+        badge: "GIÁ TRỊ NHẤT",
+        price: "$1,399 CAD",
+        description: "Bao gồm phí setup + 12 tháng sử dụng",
+        included: [
+          "Một tiệm",
+          "Một chi nhánh",
+          "Một thương hiệu",
+          "Tối đa 10 nhân viên",
+          "Tối đa 75 dịch vụ",
+          "Một ngôn ngữ",
+          "Website dạng template, tối đa 5 trang",
+          "Tối đa 2 vòng chỉnh sửa website tổng hợp",
+          "Setup booking online",
+          "Lịch nhân viên, giờ nghỉ và ngày nghỉ",
+          "Chính sách booking",
+          "Setup OTP khi bật",
+          "Dùng NailIQ cùng POS hiện có",
+          "1 kết nối Square đủ điều kiện, nơi được hỗ trợ",
+          "Hỗ trợ setup Square Gift Card khi có thể",
+          "QR code booking",
+          "QR code Gift Card khi có thể",
+          "Một buổi đào tạo online 60 phút",
+          "Tối đa 90 phút hỗ trợ go-live từ xa",
+          "Tối đa 30 phút cập nhật nhỏ mỗi tháng",
+          "Tối đa 250 SMS segments mỗi tháng theo điều khoản fair-use",
+        ],
+        cta: "Đăng ký gói năm",
+        savingsLine:
+          "Tiết kiệm $288 so với trả phí setup cộng 12 kỳ tháng.",
+      },
+    },
+    posScope: {
+      eyebrow: "Phạm vi tương thích POS",
+      h2: "Phạm vi tương thích POS",
+      intro:
+        "Các tính năng cốt lõi (website, booking, lịch nhân viên) của NailIQ có thể chạy cùng Square, Clover, Toast hoặc các hệ thống POS khác.",
+      includedTitle: "Bao gồm cho mọi tiệm Founder Pilot đủ điều kiện",
+      includedItems: [
+        "Website NailIQ",
+        "Booking online NailIQ",
+        "Lịch nhân viên NailIQ",
+        "Chính sách booking NailIQ",
+        "OTP NailIQ nơi được bật",
+        "Tiếp tục dùng POS hiện tại để thanh toán",
+      ],
+      supportedTitle: "Chỉ bao gồm nơi hiện được hỗ trợ",
+      supportedItems: [
+        "1 kết nối tài khoản Square đủ điều kiện",
+        "Một số hỗ trợ setup Square",
+        "Hỗ trợ setup Square Gift Card",
+      ],
+      notIncludedTitle: "Không bao gồm",
+      notIncludedItems: [
+        "Đồng bộ trực tiếp với Clover",
+        "Đồng bộ trực tiếp với Toast",
+        "Tích hợp trực tiếp với POS khác",
+        "Đồng bộ tồn kho POS",
+        "Đồng bộ thanh toán POS",
+        "Đồng bộ đơn hàng POS",
+        "Chuyển dữ liệu POS",
+        "Phát triển connector tùy chỉnh",
+      ],
+      closing:
+        "Tích hợp trực tiếp non-Square cần đánh giá kỹ thuật riêng, phê duyệt phạm vi bằng văn bản và báo giá riêng.",
+    },
+    clearScope: {
+      eyebrow: "Phạm vi rõ ràng",
+      h2: "Giá minh bạch. Không cam kết quá lời.",
+      notIncludedTitle: "Không bao gồm trong giá Founder Pilot",
+      items: [
+        "Đăng ký tên miền",
+        "Phí hosting bên thứ ba nếu có",
+        "Phí xử lý và phần cứng Square",
+        "Phí xử lý và phần cứng Clover",
+        "Phí xử lý và phần cứng Toast",
+        "Phí do POS khác thu",
+        "In Physical Gift Card",
+        "Phí nạp hoặc xử lý Gift Card",
+        "SMS vượt ngưỡng bao gồm",
+        "Phí số điện thoại SMS",
+        "Phí A2P, đăng ký sender hoặc tuân thủ",
+        "Chụp ảnh",
+        "Sản xuất video",
+        "Thiết kế logo",
+        "Chỉnh sửa ảnh nâng cao",
+        "Copywriting nâng cao",
+        "Dịch thuật",
+        "Ngôn ngữ bổ sung",
+        "SEO nâng cao",
+        "Quảng cáo trả phí",
+        "Quản lý mạng xã hội",
+        "Chuyển dữ liệu phức tạp",
+        "Báo cáo tùy chỉnh",
+        "Tính năng phần mềm mới",
+        "Tích hợp bên thứ ba mới",
+        "Tích hợp trực tiếp Clover",
+        "Tích hợp trực tiếp Toast",
+        "Phát triển connector POS khác",
+        "Công việc vượt giới hạn hỗ trợ bao gồm",
+      ],
+      closing:
+        "Công việc phát sinh sẽ được ước lượng, báo giá và phê duyệt bằng văn bản trước khi thực hiện.",
+      supportPricingTitle: "Hỗ trợ phát sinh",
+      supportPricing:
+        "Hỗ trợ phát sinh khởi điểm $95 CAD/giờ, tối thiểu 30 phút. Sau 30 phút đầu, thời gian có thể tính theo mức 15 phút.",
+    },
+    smsFairUse: {
+      eyebrow: "SMS bao gồm",
+      h2: "SMS Fair Use",
+      included: "Tối đa 250 SMS segments mỗi tháng theo điều khoản fair-use.",
+      explanations: [
+        "Một tin gửi tới khách có thể sử dụng nhiều SMS segments.",
+        "Độ dài tin, emoji, Unicode và ký tự đặc biệt có thể làm tăng số segments.",
+        "Sử dụng vượt mức có thể tính phí riêng.",
+        "Đồng ý OTP hoặc transactional không tự động trở thành đồng ý marketing.",
+      ],
+    },
+    paymentDisclaimer: {
+      eyebrow: "Lưu ý",
+      title: "Lưu ý về nhà cung cấp thanh toán",
+      body: "Square, Clover, Toast và các POS/nền tảng thanh toán khác là nhà cung cấp bên thứ ba độc lập. Mỗi tiệm tự duy trì tài khoản riêng và tự chịu trách nhiệm phí nhà cung cấp, giao dịch, tranh chấp, chargebacks, phần cứng, phê duyệt tài khoản và nghĩa vụ Gift Card. NailIQ hỗ trợ website, booking và setup kỹ thuật trong phạm vi hỗ trợ nhưng không giữ tiền tiệm, không phê duyệt giao dịch và không kiểm soát tính khả dụng của dịch vụ bên thứ ba.",
+      squareNote:
+        "Kết nối Square và hỗ trợ Gift Card chỉ khả dụng nơi hiện được hỗ trợ, cho các tài khoản Square đủ điều kiện.",
+    },
+    whyJoin: {
+      eyebrow: "Lợi ích Founder Pilot",
+      h2: "Vì sao tham gia Founder Pilot?",
+      items: [
+        "Giá founder được bảo vệ trong 12 tháng đầu",
+        "Hỗ trợ onboarding trực tiếp",
+        "Giữ nguyên POS hiện có",
+        "Truy cập sớm các cải tiến quy trình được chọn",
+        "Cơ hội đóng góp phản hồi sản phẩm",
+        "Được ưu tiên chú ý trong giai đoạn triển khai đầu",
+        "Hỗ trợ tiếng Việt",
+        "Giới hạn 5 tiệm để giữ chất lượng onboarding",
+      ],
+      renewalNotice:
+        "Giá gia hạn sau 12 tháng đầu có thể thay đổi theo bảng giá hiện hành. Tiệm sẽ được thông báo bằng văn bản ít nhất 30 ngày trước.",
     },
     faq: {
       eyebrow: "Câu hỏi thường gặp",
-      h2: "Những câu chủ tiệm hỏi trước khi chuyển sang",
+      h2: "Những câu chủ tiệm thường hỏi",
       sub:
         "Nếu câu hỏi của bạn không có ở đây, nhắn cho mình — phản hồi trong 1 ngày làm việc.",
       items: [
         {
-          q: "Có cần cài app không?",
-          a: "Không. NailIQ chạy trên trình duyệt web — điện thoại, máy tính bảng, laptop đều dùng được. Khách hàng cũng không phải tải app, chỉ cần mở link đặt lịch là book được.",
+          q: "NailIQ chỉ là phần mềm booking?",
+          a: "Không. NailIQ kết hợp phần mềm với hỗ trợ triển khai. Chúng tôi giúp cấu hình website, dịch vụ, lịch nhân viên, chính sách booking và các tích hợp hiện được hỗ trợ.",
         },
         {
-          q: "Có hủy bất cứ lúc nào được không?",
-          a: "Được. Không hợp đồng, không cam kết tối thiểu. Hủy ngay trong dashboard, gói sẽ dừng cuối tháng thanh toán hiện tại.",
+          q: "Tôi có phải tự nhập mọi thứ không?",
+          a: "Không. Tiệm cung cấp thông tin đầy đủ và chính xác, NailIQ thực hiện cấu hình ban đầu trong phạm vi Founder Pilot.",
+        },
+        {
+          q: "Tôi có cần đổi POS hiện tại không?",
+          a: "Không. Bạn có thể tiếp tục dùng Square, Clover, Toast hoặc POS khác để thanh toán, đồng thời dùng NailIQ cho website, booking, lịch nhân viên và vận hành tiệm.",
+        },
+        {
+          q: "NailIQ có tích hợp với Clover không?",
+          a: "Bạn có thể dùng NailIQ song song với Clover mà không cần thay Clover. Đồng bộ trực tiếp với Clover không nằm trong Founder Pilot và cần đánh giá kỹ thuật + báo giá riêng.",
+        },
+        {
+          q: "NailIQ có tích hợp với Toast không?",
+          a: "Bạn có thể dùng NailIQ song song với Toast hoặc POS khác cho booking và vận hành tiệm. Đồng bộ trực tiếp với Toast không được bao gồm và phụ thuộc quyền truy cập nền tảng, tính khả thi kỹ thuật và báo giá riêng.",
+        },
+        {
+          q: "NailIQ có thay thế Square không?",
+          a: "Không. Square vẫn là nhà cung cấp thanh toán độc lập của tiệm. NailIQ có thể kết nối các tính năng Square được hỗ trợ nhưng không thay Square và không giữ tiền của tiệm.",
+        },
+        {
+          q: "Hỗ trợ Square bao gồm những gì?",
+          a: "Với tiệm đủ điều kiện, NailIQ có thể hỗ trợ kết nối 1 tài khoản Square được hỗ trợ và setup một số tính năng Square Gift Card. Phí Square, phê duyệt tài khoản, tranh chấp, chargebacks và phần cứng vẫn thuộc trách nhiệm của tiệm.",
+        },
+        {
+          q: "NailIQ có tích hợp với mọi POS không?",
+          a: "Các tính năng booking, website và lịch nhân viên cốt lõi của NailIQ có thể hoạt động cùng hầu hết POS. Đồng bộ dữ liệu trực tiếp phụ thuộc API của nhà cung cấp POS, quyền hạn, yêu cầu đối tác và tương thích kỹ thuật.",
+        },
+        {
+          q: "SMS có không giới hạn không?",
+          a: "Không. Founder Pilot bao gồm tối đa 250 SMS segments mỗi tháng theo điều khoản fair-use. Một tin có thể dùng nhiều segments tuỳ độ dài và ký tự. Sử dụng vượt mức có thể tính phí riêng.",
+        },
+        {
+          q: "Tôi có thể yêu cầu tính năng tuỳ chỉnh không?",
+          a: "Tính năng mới, báo cáo tùy chỉnh và tích hợp mới nằm ngoài Founder Pilot và cần đánh giá + báo giá riêng.",
         },
         {
           q: "Setup mất bao lâu?",
-          a: "Khoảng 15 phút với phần lớn tiệm. Đã có sẵn template dịch vụ và mặc định nhân viên — bạn chỉ cần xác nhận và chỉnh giá.",
+          a: "Setup thường mất 7–14 ngày làm việc sau khi NailIQ nhận đầy đủ thông tin tiệm, phê duyệt và quyền truy cập bên thứ ba.",
         },
         {
-          q: "NailIQ có hỗ trợ tiếng Việt không?",
-          a: "Có — toàn bộ giao diện chủ tiệm và lễ tân là EN/VN, trang đặt lịch khách tự nhận diện ngôn ngữ. Đây là nền tảng duy nhất xây tiếng Việt-first.",
+          q: "Tôi có thể huỷ không?",
+          a: "Gói theo tháng có cam kết tối thiểu 6 tháng. Gói theo năm bao gồm 12 tháng. Phạm vi dịch vụ và điều khoản đầy đủ được cung cấp trước khi đăng ký.",
         },
         {
-          q: "Có phí giao dịch không?",
-          a: "Không có phí theo booking hay theo khách. Phí thuê bao tháng là khoản phí duy nhất từ NailIQ. Nếu bạn thu thẻ qua bên thứ 3 (Square, Stripe), phí xử lý của họ tính riêng.",
+          q: "Gói có bao gồm website không?",
+          a: "Có. Founder Pilot bao gồm website dạng template tối đa 5 trang, một ngôn ngữ và tối đa 2 vòng chỉnh sửa tổng hợp.",
         },
         {
-          q: "Khách hàng có cần tải app để đặt lịch không?",
-          a: "Không. Khách chạm link đặt lịch và book luôn trong trình duyệt — chạy được trên iPhone, Android, desktop, không cần cài gì.",
+          q: "NailIQ có hỗ trợ nhiều chi nhánh không?",
+          a: "Giá Founder Pilot áp dụng cho 1 tiệm và 1 chi nhánh. Doanh nghiệp nhiều chi nhánh cần đánh giá và báo giá riêng.",
         },
         {
-          q: "Có import data từ Booksy hay tool khác được không?",
-          a: "Được — hỗ trợ import CSV. Email support@nailiq.ca kèm file export, mình giúp map cột. Cho khách chuyển từ tool khác, 3 tháng đầu miễn phí.",
+          q: "Đã bao gồm thuế chưa?",
+          a: "Giá công bố tính bằng đô-la Canada và chưa bao gồm thuế áp dụng và phí bên thứ ba, trừ khi nói khác.",
         },
         {
-          q: "Nếu mạng yếu thì sao?",
-          a: "Receptionist Center có cache booking và walk-in gần đây, nên thao tác cơ bản vẫn chạy được khi mất mạng ngắn. Thao tác nặng (tạo booking mới, sync edit) cần kết nối.",
+          q: "NailIQ cần thông tin gì trước khi bắt đầu setup?",
+          a: "Tiệm cần cung cấp thông tin doanh nghiệp đầy đủ, dịch vụ, giá, thời lượng, thông tin nhân viên, lịch làm, chính sách, tài liệu thương hiệu và quyền truy cập bên thứ ba liên quan. Thời gian setup bắt đầu tính sau khi nhận đủ thông tin.",
         },
       ],
       footerText: "Còn câu hỏi khác?",
       footerCta: "Liên hệ →",
     },
+    trustStrip: {
+      designed: "Thiết kế cho tiệm nail",
+      keepPos: "Giữ nguyên POS đang dùng",
+      bilingual: "Hỗ trợ tiếng Việt",
+      made: "Xây dựng tại Vancouver, BC 🇨🇦",
+    },
     contact: {
       pageTitle: "Liên hệ",
       lede:
         "Đặt tại Vancouver, BC, Canada. Mình phản hồi trong 1 ngày làm việc.",
+      intentPilot:
+        "Đăng ký Founder Pilot. Kể mình nghe về tiệm và POS hiện tại của bạn — mình sẽ liên hệ để hẹn onboarding.",
+      intentDemo:
+        "Yêu cầu demo. Chia sẻ thông tin tiệm và ngôn ngữ muốn dùng — mình sẽ liên hệ để hẹn buổi screen-share 15 phút.",
       formHeading: "Gửi tin nhắn",
       nameLabel: "Tên của bạn",
       namePlaceholder: "Jane Nguyễn",
@@ -413,9 +609,25 @@ export const userVi: UserMessages = {
       emailPlaceholder: "jane@tiembancua.com",
       salonLabel: "Tên tiệm (không bắt buộc)",
       salonPlaceholder: "Saigon Nail Studio",
+      posLabel: "POS đang dùng (không bắt buộc)",
+      posOptions: {
+        square: "Square",
+        clover: "Clover",
+        toast: "Toast",
+        other: "Khác",
+        none: "Không dùng POS",
+      },
+      posOtherLabel: "Tên POS",
+      posOtherPlaceholder: "Ví dụ: Boulevard, Vagaro…",
+      planLabel: "Gói ưa thích (không bắt buộc)",
+      planOptions: {
+        monthly: "Gói tháng",
+        annual: "Gói năm",
+        unsure: "Chưa chắc",
+      },
       messageLabel: "Tin nhắn",
       messagePlaceholder:
-        "Mình muốn biết NailIQ xử lý hàng đợi walk-in giờ cao điểm thế nào…",
+        "Kể mình nghe về tiệm, các công cụ đang dùng và điều bạn muốn NailIQ giúp setup…",
       submit: "Gửi tin nhắn",
       submitting: "Đang gửi…",
       successHeading: "Đã gửi tin nhắn",
@@ -442,12 +654,17 @@ export const userVi: UserMessages = {
       backToHome: "← Về trang chủ",
     },
     finalCta: {
-      eyebrow: "Một điều cuối cùng",
-      h2: "Thay thế lễ tân với giá dưới $39/tháng.",
-      sub:
-        "Dùng thử 14 ngày. Không cần thẻ. Cài đặt trong 2 phút.",
-      ctaPrimary: "Bắt đầu dùng thử miễn phí",
-      ctaSecondary: "Xem cách hoạt động ↓",
+      eyebrow: "Founder Pilot",
+      h2: "Sẵn sàng hiện đại hoá tiệm mà không phải thay tất cả những gì đang dùng?",
+      body: "Founder Pilot chỉ nhận 5 tiệm để NailIQ có thể hỗ trợ onboarding và go-live trực tiếp.",
+      supportingLine:
+        "Giữ nguyên POS hiện có. Để NailIQ lo website, booking online và setup tiệm.",
+      ctaPrimary: "Đăng ký Founder Pilot",
+      ctaSecondary: "Đặt lịch xem Demo miễn phí",
+      trustNote:
+        "Không bắt buộc mua trước khi xem xét phạm vi và điều khoản Founder Pilot.",
+      finalLegalNote:
+        "Việc tham gia, chấp nhận onboarding và phạm vi cuối cùng của Founder Pilot phụ thuộc đánh giá. Giá công bố tính bằng đô-la Canada, chưa bao gồm thuế áp dụng và phí bên thứ ba. Tích hợp POS trực tiếp ngoài phạm vi hỗ trợ hiện tại của NailIQ cần đánh giá kỹ thuật và báo giá riêng.",
     },
     footer: {
       about: "Về chúng tôi",
