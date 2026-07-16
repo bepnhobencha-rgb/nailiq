@@ -270,3 +270,11 @@ PR #760 (merge `a96e073`, deploy `dpl_HGAW8ktw8ojEWtPiNQSXSFQRegCh` READY) thêm
 mật khẩu `/register` → **RC-8 (product bug thật duy nhất) đã đóng**. Chromium non-RC **16 → 15
 fail**, 0 fail mới. Required checks xanh; production `/register` render label (EN verified SSR).
 15 fail chromium non-RC còn lại: booking-otp 7 (#754) + landing-funnel 7 (RC-7, #748) + otp-gate 1.
+
+---
+
+## 13. CẬP NHẬT NHÓM 28/29 (2026-07-16) — OTP-gate tests
+
+PR #764 (merge `a60ea72`) khôi phục 6 test booking-otp theo gate-first OTP. Chromium full
+**201 / 184 / 12 / 5** sau PR #766 (fix #762 tel-link + #763 group; cả hai ĐÓNG). 0 fail mới. 12 fail
+= 100% test debt: landing-funnel 7 (#748) + Receptionist Center chromium 5 (#749). NailIQ PILOT READY.
