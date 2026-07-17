@@ -13,7 +13,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { getTwilioAuthToken, validateTwilioSignature } from "@/shared/lib/twilioSignature";
+import { getTwilioAuthToken, validateTwilioSignature, twilioRequestBaseUrl } from "@/shared/lib/twilioSignature";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,8 +42,7 @@ export async function POST(req: NextRequest) {
   const authToken = await getTwilioAuthToken(supabase);
   if (authToken) {
     const signature = req.headers.get("x-twilio-signature") ?? "";
-    const base = (process.env.NEXT_PUBLIC_APP_URL ?? "https://nailiq.ca").replace(/\/$/, "");
-    const fullUrl = `${base}/api/twilio/voice${req.nextUrl.search}`;
+    const fullUrl = `${twilioRequestBaseUrl(req)}/api/twilio/voice${req.nextUrl.search}`;
     if (signature && !validateTwilioSignature(fullUrl, params, signature, authToken)) {
       console.warn("[twilio/voice] invalid signature");
       return new NextResponse("Forbidden", { status: 403 });
