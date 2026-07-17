@@ -1803,6 +1803,7 @@ export const userVi: UserMessages = {
       priceSection: "Giá",
       noNotesHint: "Không có ghi chú",
       sectionAddon: "Dịch vụ thêm",
+      sectionResource: "Giường / Phòng",
       groupSectionTitle: (n: number) => `👥 Nhóm ${n} người`,
       groupOrganizedBy: (name: string) => `Người tổ chức: ${name}`,
       groupOrganizerBadge: "Tổ chức",

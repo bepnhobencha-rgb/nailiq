@@ -405,6 +405,11 @@ export type BookingDetailDrawerModel = {
   clientNotes: string | null;
   serviceName: string;
   staffName: string;
+  /** Assigned resource name ("Bed 3"), mirroring the grid block's pill.
+   * Null when the booking has no resource — either the salon is not in
+   * resource mode, or nothing was assigned (online + group bookings are
+   * not wired to auto-assign yet). The section is hidden when null. */
+  resourceName: string | null;
   /** Raw booking status — drives the color-coded status Badge (P2:
    * status color must read consistently across the timeline + this
    * panel). The localized text lives in `statusLabel`. */
@@ -486,6 +491,8 @@ export interface BookingDetailDrawerProps {
     sectionGuest: string;
     sectionService: string;
     sectionStaff: string;
+    /** Heading for the assigned bed/room; only read when `model.resourceName` is set. */
+    sectionResource: string;
     sectionWhen: string;
     sectionStatus: string;
     sectionNotes: string;
@@ -1134,6 +1141,18 @@ export function BookingDetailDrawer({
               </p>
               <p className="font-medium text-nq-foreground">{model.staffName}</p>
             </section>
+
+            {model.resourceName ? (
+              <section
+                className="space-y-1 border-t border-nq-muted/15 pt-4"
+                data-testid="drawer-resource-section"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+                  {copy.sectionResource}
+                </p>
+                <p className="font-medium text-nq-foreground">🛏 {model.resourceName}</p>
+              </section>
+            ) : null}
 
             {/* Party composition — "who's going with whom". Lazily loaded for
                 group bookings; only shown for a real multi-person party. */}

@@ -1678,6 +1678,9 @@ export type UserMessages = {
       noNotesHint: string;
       /** Heading for the optional add-on service row in the booking drawer. */
       sectionAddon: string;
+      /** Heading for the assigned bed/room row. Only rendered when the booking
+       * has a resource, i.e. resource-mode salons (`salons.resources_enabled`). */
+      sectionResource: string;
       /** Party/group composition section. */
       groupSectionTitle: (n: number) => string;
       groupOrganizedBy: (name: string) => string;
@@ -4083,6 +4086,7 @@ export const userEn: UserMessages = {
       priceSection: "Price",
       noNotesHint: "No notes",
       sectionAddon: "Add-on",
+      sectionResource: "Bed / Room",
       groupSectionTitle: (n: number) => `👥 Party of ${n}`,
       groupOrganizedBy: (name: string) => `Organized by ${name}`,
       groupOrganizerBadge: "Organizer",
