@@ -88,13 +88,19 @@ export const REALTIME_TOOLS = [
     description:
       "Look up upcoming bookings for a customer by phone number. " +
       "Use this when a customer calls to reschedule or cancel an existing booking and you don't have a booking_id from this session. " +
-      "Returns a list of upcoming bookings with their booking_ids.",
+      "Returns a list of upcoming bookings with their booking_ids. " +
+      "If this returns { error: \"otp_required\" }, the caller must verify control of that number first: " +
+      "call request_otp(customer_phone) then verify_otp, and retry find_booking WITH the otp_session_id.",
     parameters: {
       type: "object" as const,
       properties: {
         customer_phone: {
           type: "string",
           description: "Customer's phone number to look up their upcoming bookings.",
+        },
+        otp_session_id: {
+          type: "string",
+          description: "The otp_session_id from verify_otp for this phone. Required unless the caller is already verified (e.g. calling from this same number). Omit on the first attempt.",
         },
       },
       required: ["customer_phone"],

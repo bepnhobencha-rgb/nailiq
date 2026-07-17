@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
       return handleConfirmBooking(supabase, salonSlug, toolArgs, sessionId, callerVerifiedPhone);
     }
     if (toolName === "find_booking") {
-      return handleFindBooking(supabase, salonSlug, toolArgs);
+      return handleFindBooking(supabase, salonSlug, toolArgs, callerVerifiedPhone);
     }
     if (toolName === "cancel_booking") {
       return handleCancelBooking(supabase, salonSlug, toolArgs, sessionId, callerVerifiedPhone);
@@ -628,6 +628,15 @@ async function handleCancelBooking(
 
   // ── Path B: phone lookup (no booking_id yet) ────────────────────────────────
   if (!bookingId && customerPhone) {
+    // Privacy gate (STRICT) — do not read a booking's details back for a phone
+    // the caller merely typed. Require caller-ID match or a verified OTP session
+    // for THIS number before exposing anything. Mirrors find_booking.
+    const lookupGate = await requirePhoneVerified(supabase, salon.id, customerPhone, {
+      otpSessionId: args.otp_session_id as string | undefined,
+      callerVerifiedPhone,
+    });
+    if (!lookupGate.ok) return NextResponse.json({ error: lookupGate.error, hint: lookupGate.hint });
+
     const digits = customerPhone.replace(/\D/g, "");
     const last9  = digits.slice(-9);
     const now    = new Date().toISOString();
@@ -723,7 +732,7 @@ async function handleCancelBooking(
   if (!bookingId && groupIdArg) {
     const { data: groupRows, error: grpErr } = await supabase
       .from("bookings")
-      .select("id, status")
+      .select("id, status, client_phone")
       .eq("salon_id", salon.id)
       .eq("group_id", groupIdArg)
       .neq("status", "cancelled");
@@ -731,6 +740,16 @@ async function handleCancelBooking(
     if (grpErr || !groupRows || groupRows.length === 0) {
       return NextResponse.json({ error: "group_not_found_or_already_cancelled" }, { status: 404 });
     }
+
+    // Identity gate — verify against the group's OWNING phone (the organizer's,
+    // as stored on the booking rows), never a number the caller merely spoke.
+    // Without this, anyone with a group_id could cancel a whole party unverified.
+    const groupPhone = (groupRows[0] as { client_phone?: string | null }).client_phone ?? "";
+    const grpGate = await requirePhoneVerified(supabase, salon.id, groupPhone, {
+      otpSessionId: args.otp_session_id as string | undefined,
+      callerVerifiedPhone,
+    });
+    if (!grpGate.ok) return NextResponse.json({ error: grpGate.error, hint: grpGate.hint });
 
     const ids = groupRows.map((r) => r.id as string);
     const { error: cancelErr } = await supabase
@@ -864,6 +883,7 @@ async function handleFindBooking(
   supabase: ReturnType<typeof createServiceRoleClient>,
   salonSlug: string,
   args: Record<string, unknown>,
+  callerVerifiedPhone: string | null,
 ) {
   const customerPhone = args.customer_phone as string | undefined;
   if (!customerPhone) {
@@ -876,6 +896,16 @@ async function handleFindBooking(
     .eq("slug", salonSlug)
     .single();
   if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
+
+  // Privacy gate (STRICT policy) — a booking's details (name, service, time) are
+  // only read back once the caller proves control of THIS number: caller-ID match
+  // (calling from it) or a verified OTP session for it. Otherwise otp_required.
+  // Without this, find_booking is a phone-number enumeration / PII-readback hole.
+  const findGate = await requirePhoneVerified(supabase, salon.id, customerPhone, {
+    otpSessionId: args.otp_session_id as string | undefined,
+    callerVerifiedPhone,
+  });
+  if (!findGate.ok) return NextResponse.json({ error: findGate.error, hint: findGate.hint });
 
   // Match on last 9 digits — handles +84, +1, spaces, dashes, etc.
   const digits = customerPhone.replace(/\D/g, "");
