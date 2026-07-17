@@ -89,6 +89,7 @@ wss.on("connection", (twilioWs) => {
     } finally {
       clearTimeout(timer);
     }
+    console.log("[voice-bridge] tool result:", name, JSON.stringify(result).slice(0, 200));
     for (const msg of functionCallOutputMessages(callId, result)) {
       openaiWs?.send(JSON.stringify(msg));
     }
@@ -119,8 +120,19 @@ wss.on("connection", (twilioWs) => {
 
     openaiWs.on("open", () => {
       console.log("[voice-bridge] openai WS connected — sending session.update + greet");
+      // Tell the agent the caller's own (carrier-verified) number so the common
+      // case — booking under the number you're calling from — needs NO OTP. The
+      // tool layer already treats callerVerifiedPhone == customer_phone as
+      // verified; this just makes the agent USE that number by default instead
+      // of asking and then failing verification on a mismatched one.
+      const callerNote = from
+        ? `\n\nCALLER PHONE: This caller is phoning from ${from}. Use THIS number as their ` +
+          `booking contact by default — it is already verified, so do NOT request an OTP for it. ` +
+          `Confirm it back briefly ("booking under the number you're calling from, ending ${from.slice(-4)}?"). ` +
+          `Only if they ask to use a DIFFERENT number do you verify it with request_otp then verify_otp.`
+        : "";
       openaiWs?.send(JSON.stringify(sessionUpdateMessage({
-        instructions: cfg.instructions,
+        instructions: cfg.instructions + callerNote,
         voice: cfg.voice,
         tools: [...cfg.tools, END_CALL_TOOL], // add hang-up capability for phone
       })));
@@ -131,11 +143,12 @@ wss.on("connection", (twilioWs) => {
       let evt: Record<string, unknown>;
       try { evt = JSON.parse(raw.toString()) as Record<string, unknown>; } catch { return; }
 
-      // Only surface errors now that the GA path is verified — per-event logging
-      // added overhead on long calls.
+      // Surface errors + what the AI actually said (transcript) for diagnosis.
       const t = typeof evt.type === "string" ? evt.type : "";
       if (t.includes("error")) {
         console.warn("[voice-bridge] openai EVENT", raw.toString().slice(0, 600));
+      } else if (t === "response.output_audio_transcript.done") {
+        console.log("[voice-bridge] AI said:", String((evt as { transcript?: unknown }).transcript ?? "").slice(0, 300));
       }
 
       const audio = extractAudioDelta(evt);
@@ -149,6 +162,7 @@ wss.on("connection", (twilioWs) => {
       }
       const fn = extractFunctionCall(evt);
       if (fn) {
+        console.log("[voice-bridge] tool:", fn.name, JSON.stringify(fn.args).slice(0, 200));
         if (fn.name === "end_call") {
           console.log("[voice-bridge] end_call — hanging up after goodbye");
           setTimeout(closeAll, END_CALL_GRACE_MS); // let the goodbye audio finish
