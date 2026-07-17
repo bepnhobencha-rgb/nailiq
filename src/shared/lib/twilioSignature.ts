@@ -1,6 +1,25 @@
 import "server-only";
 import crypto from "node:crypto";
+import type { NextRequest } from "next/server";
 import type { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+
+/**
+ * The exact scheme+host Twilio actually reached us on. Twilio signs the FINAL
+ * request URL — and an apex webhook (nailiq.ca) 307-redirects to the canonical
+ * www host, so Twilio ends up signing `https://www.nailiq.ca/...`. Validating
+ * against a hardcoded NEXT_PUBLIC_APP_URL (apex) would therefore mismatch. Read
+ * the forwarded host instead so validation matches whatever host received the
+ * request, regardless of apex/www/redirect. Falls back to the env only if no
+ * proxy headers are present (e.g. a direct local call).
+ */
+export function twilioRequestBaseUrl(req: NextRequest): string {
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  if (host) {
+    const proto = req.headers.get("x-forwarded-proto") ?? "https";
+    return `${proto}://${host}`;
+  }
+  return (process.env.NEXT_PUBLIC_APP_URL ?? "https://nailiq.ca").replace(/\/$/, "");
+}
 
 /**
  * Twilio webhook signature validation, shared by the Voice and SMS inbound

@@ -19,7 +19,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { getTwilioAuthToken, validateTwilioSignature } from "@/shared/lib/twilioSignature";
+import { getTwilioAuthToken, validateTwilioSignature, twilioRequestBaseUrl } from "@/shared/lib/twilioSignature";
 import { loadSalonContext } from "@/shared/voiceai/loadSalonContext";
 import { buildSystemPrompt } from "@/shared/voiceai/buildSystemPrompt";
 import { REALTIME_TOOLS } from "@/shared/voiceai/realtimeTools";
@@ -74,8 +74,7 @@ export async function POST(req: NextRequest) {
   const authToken = await getTwilioAuthToken(supabase);
   if (authToken) {
     const signature = req.headers.get("x-twilio-signature") ?? "";
-    const base = (process.env.NEXT_PUBLIC_APP_URL ?? "https://nailiq.ca").replace(/\/$/, "");
-    const fullUrl = `${base}/api/twilio/sms${req.nextUrl.search}`;
+    const fullUrl = `${twilioRequestBaseUrl(req)}/api/twilio/sms${req.nextUrl.search}`;
     if (signature && !validateTwilioSignature(fullUrl, params, signature, authToken)) {
       console.warn("[twilio/sms] invalid signature");
       return new NextResponse("Forbidden", { status: 403 });
