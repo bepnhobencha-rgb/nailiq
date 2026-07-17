@@ -29,19 +29,30 @@ export type RealtimeSessionConfig = {
   tools: unknown[];
 };
 
-/** OpenAI `session.update` — sets the brain (instructions/tools/voice) + μ-law audio + server VAD. */
+/**
+ * OpenAI `session.update` (GA Realtime API shape). The Beta shape
+ * (top-level input_audio_format / modalities / voice) was retired — GA nests
+ * audio config under `audio.input` / `audio.output`, μ-law is `audio/pcmu`, and
+ * the voice moves under `audio.output.voice`. Event names for deltas are handled
+ * tolerantly in extractAudioDelta.
+ */
 export function sessionUpdateMessage(cfg: RealtimeSessionConfig): object {
   return {
     type: "session.update",
     session: {
       type: "realtime",
       instructions: cfg.instructions,
-      voice: cfg.voice,
       tools: cfg.tools,
-      modalities: ["audio", "text"],
-      input_audio_format: "g711_ulaw",
-      output_audio_format: "g711_ulaw",
-      turn_detection: { type: "server_vad" },
+      audio: {
+        input: {
+          format: { type: "audio/pcmu" },
+          turn_detection: { type: "server_vad" },
+        },
+        output: {
+          format: { type: "audio/pcmu" },
+          voice: cfg.voice,
+        },
+      },
     },
   };
 }

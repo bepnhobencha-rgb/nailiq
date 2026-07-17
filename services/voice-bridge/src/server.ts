@@ -43,6 +43,7 @@ const wss = new WebSocketServer({ server: httpServer });
 httpServer.listen(PORT, () => console.log(`[voice-bridge] listening on :${PORT}`));
 
 wss.on("connection", (twilioWs) => {
+  console.log("[voice-bridge] twilio WS connected");
   let streamSid = "";
   let slug = "";
   let from = "";
@@ -82,19 +83,22 @@ wss.on("connection", (twilioWs) => {
         headers: { "Content-Type": "application/json", "x-voice-bridge-secret": BRIDGE_SECRET },
         body: JSON.stringify({ slug }),
       });
-      if (!r.ok) { console.warn("[voice-bridge] phone-config", r.status); return closeAll(); }
+      if (!r.ok) { console.warn("[voice-bridge] phone-config FAILED", r.status); return closeAll(); }
       cfg = (await r.json()) as typeof cfg;
+      console.log(`[voice-bridge] phone-config ok model=${cfg.model} tools=${cfg.tools?.length ?? 0}`);
     } catch (e) {
       console.warn("[voice-bridge] phone-config error", e);
       return closeAll();
     }
 
+    // GA Realtime API — no `OpenAI-Beta` header (the Beta shape was retired).
     openaiWs = new WebSocket(
       `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(cfg.model)}`,
-      { headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "OpenAI-Beta": "realtime=v1" } },
+      { headers: { Authorization: `Bearer ${OPENAI_API_KEY}` } },
     );
 
     openaiWs.on("open", () => {
+      console.log("[voice-bridge] openai WS connected — sending session.update + greet");
       openaiWs?.send(JSON.stringify(sessionUpdateMessage({ instructions: cfg.instructions, voice: cfg.voice, tools: cfg.tools })));
       openaiWs?.send(JSON.stringify({ type: "response.create" })); // greet first
     });
@@ -102,6 +106,15 @@ wss.on("connection", (twilioWs) => {
     openaiWs.on("message", (raw) => {
       let evt: Record<string, unknown>;
       try { evt = JSON.parse(raw.toString()) as Record<string, unknown>; } catch { return; }
+
+      // Surface OpenAI session/response errors + lifecycle events (but not the
+      // high-frequency audio deltas) so a failed session.update is visible.
+      const t = typeof evt.type === "string" ? evt.type : "";
+      if (t.includes("error")) {
+        console.warn("[voice-bridge] openai EVENT", raw.toString().slice(0, 600));
+      } else if (!t.includes("audio") && !t.includes("delta")) {
+        console.log("[voice-bridge] openai evt:", t);
+      }
 
       const audio = extractAudioDelta(evt);
       if (audio && streamSid) {
@@ -128,7 +141,8 @@ wss.on("connection", (twilioWs) => {
       streamSid = msg.start.streamSid;
       slug = msg.start.customParameters?.slug ?? "";
       from = msg.start.customParameters?.from ?? "";
-      if (!slug || !OPENAI_API_KEY || !BRIDGE_SECRET) return closeAll();
+      console.log(`[voice-bridge] START slug=${slug || "(none)"} from=${from || "(none)"} openaiKey=${OPENAI_API_KEY ? "set" : "MISSING"} bridgeSecret=${BRIDGE_SECRET ? "set" : "MISSING"}`);
+      if (!slug || !OPENAI_API_KEY || !BRIDGE_SECRET) { console.warn("[voice-bridge] closing: missing slug/key/secret"); return closeAll(); }
       void startOpenAi();
     } else if (msg.event === "media") {
       if (openaiWs?.readyState === WebSocket.OPEN) {
