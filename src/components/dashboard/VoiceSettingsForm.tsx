@@ -6,16 +6,18 @@ import {
   type VoiceAiSettingsInput,
 } from "@/shared/dashboard/setupActions";
 
+// OpenAI GA Realtime voices. Marin/Cedar are the newest, most natural pair.
 const VOICES = [
-  { value: "marin",   label: "Marin (default)" },
-  { value: "alloy",   label: "Alloy" },
-  { value: "ash",     label: "Ash" },
-  { value: "coral",   label: "Coral" },
-  { value: "nova",    label: "Nova" },
-  { value: "shimmer", label: "Shimmer" },
-  { value: "echo",    label: "Echo" },
-  { value: "onyx",    label: "Onyx" },
-  { value: "sage",    label: "Sage" },
+  { value: "marin",   label: "Marin — female (newest, default)" },
+  { value: "coral",   label: "Coral — female, warm" },
+  { value: "shimmer", label: "Shimmer — female, bright" },
+  { value: "sage",    label: "Sage — female, soft" },
+  { value: "cedar",   label: "Cedar — male (newest)" },
+  { value: "ash",     label: "Ash — male, deep" },
+  { value: "echo",    label: "Echo — male" },
+  { value: "ballad",  label: "Ballad — male" },
+  { value: "alloy",   label: "Alloy — neutral" },
+  { value: "verse",   label: "Verse — neutral" },
 ] as const;
 
 const EFFORTS = [

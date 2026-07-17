@@ -20,7 +20,10 @@ import "server-only";
  * `From` spoofing: a spoofer who does not hold the SIM never receives the code.
  */
 
-export const SMS_AGENT_MODEL = "claude-haiku-4-5-20251001";
+// Sonnet 5 — smarter SMS comprehension than Haiku (handles messy, multi-intent
+// texts better). Costs ~5× Haiku per message but still cents; worth it for the
+// booking-mutation path where misreading intent is expensive.
+export const SMS_AGENT_MODEL = "claude-sonnet-5";
 export const SMS_MAX_TOOL_TURNS = 6;
 export const SMS_MAX_HISTORY = 20; // persisted plain-text turns (10 exchanges)
 export const SMS_MAX_REPLY_TOKENS = 320;
