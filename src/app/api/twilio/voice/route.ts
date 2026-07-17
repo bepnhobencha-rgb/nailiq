@@ -12,8 +12,8 @@
  * Signature-validated (X-Twilio-Signature), mirroring /api/twilio/inbound.
  */
 import { NextRequest, NextResponse } from "next/server";
-import crypto from "node:crypto";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { getTwilioAuthToken, validateTwilioSignature } from "@/shared/lib/twilioSignature";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,36 +31,6 @@ function xmlEscape(s: string): string {
   );
 }
 
-async function getTwilioAuthToken(supabase: ReturnType<typeof createServiceRoleClient>): Promise<string | null> {
-  try {
-    const { data } = await supabase
-      .from("platform_settings")
-      .select("twilio_auth_token")
-      .eq("id", "platform")
-      .maybeSingle();
-    const token = (data as { twilio_auth_token?: string | null } | null)?.twilio_auth_token?.trim();
-    if (token) return token;
-  } catch {
-    /* fall through to env */
-  }
-  return process.env.TWILIO_AUTH_TOKEN?.trim() ?? null;
-}
-
-function validateSignature(
-  fullUrl: string,
-  params: Record<string, string>,
-  signature: string,
-  authToken: string,
-): boolean {
-  const data = fullUrl + Object.keys(params).sort().map((k) => k + (params[k] ?? "")).join("");
-  const computed = crypto.createHmac("sha1", authToken).update(data).digest("base64");
-  try {
-    return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(signature));
-  } catch {
-    return false;
-  }
-}
-
 export async function POST(req: NextRequest) {
   const slug = req.nextUrl.searchParams.get("slug")?.trim();
   const rawBody = await req.text();
@@ -74,7 +44,7 @@ export async function POST(req: NextRequest) {
     const signature = req.headers.get("x-twilio-signature") ?? "";
     const base = (process.env.NEXT_PUBLIC_APP_URL ?? "https://nailiq.ca").replace(/\/$/, "");
     const fullUrl = `${base}/api/twilio/voice${req.nextUrl.search}`;
-    if (signature && !validateSignature(fullUrl, params, signature, authToken)) {
+    if (signature && !validateTwilioSignature(fullUrl, params, signature, authToken)) {
       console.warn("[twilio/voice] invalid signature");
       return new NextResponse("Forbidden", { status: 403 });
     }

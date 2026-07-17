@@ -3,38 +3,64 @@
 import { useState } from "react";
 
 /**
- * Owner-facing setup panel for the phone AI receptionist (Module 3).
+ * Owner-facing setup panel for the phone + SMS AI receptionist (Module 3/4).
  *
- * The phone brain is the SAME agent as the web voice widget — the only extra
- * wiring an owner needs is to point their phone number's Voice webhook at us.
- * We do not store the Twilio number (the webhook carries `?slug=`), so this
- * panel is instructional + shows live usage rather than a stored-number field.
+ * The brain is the SAME agent as the web voice widget — the only extra wiring an
+ * owner needs is to point their number's Voice AND Messaging webhooks at us. We
+ * do not store the Twilio number (the webhooks carry `?slug=`), so this panel is
+ * instructional + shows live usage rather than a stored-number field.
  *
- * The webhook URL MUST be built from the same base the inbound route validates
+ * The webhook URLs MUST be built from the same base the inbound routes validate
  * Twilio's signature against (NEXT_PUBLIC_APP_URL) — otherwise a copied URL
- * would fail signature verification. The page passes it in already-resolved.
+ * would fail signature verification. The page passes them in already-resolved.
  */
 type Props = {
   webhookUrl: string;
+  smsWebhookUrl: string;
   enabled: boolean;
   sessionsUsed: number;
   sessionsLimit: number;
   resetAt: string | null;
 };
 
-export function VoicePhoneSetup({ webhookUrl, enabled, sessionsUsed, sessionsLimit, resetAt }: Props) {
+function CopyableUrl({ id, label, value }: { id: string; label: string; value: string }) {
   const [copied, setCopied] = useState(false);
-
-  async function copyWebhook() {
+  async function copy() {
     try {
-      await navigator.clipboard.writeText(webhookUrl);
+      await navigator.clipboard.writeText(value);
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
       /* clipboard blocked — the field is selectable as a fallback */
     }
   }
+  return (
+    <div className="space-y-1.5">
+      <label className="text-sm font-semibold" htmlFor={id}>
+        {label}
+      </label>
+      <div className="flex items-stretch gap-2">
+        <input
+          id={id}
+          type="text"
+          readOnly
+          value={value}
+          onFocus={(e) => e.currentTarget.select()}
+          className="w-full select-all rounded-xl border border-[var(--color-border)] bg-transparent px-4 py-3 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+        />
+        <button
+          type="button"
+          onClick={copy}
+          className="flex-shrink-0 rounded-xl border border-[var(--color-border)] px-4 text-sm font-semibold hover:bg-[var(--color-surface-hover,rgba(0,0,0,0.03))] transition-colors"
+        >
+          {copied ? "Copied ✓" : "Copy"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
+export function VoicePhoneSetup({ webhookUrl, smsWebhookUrl, enabled, sessionsUsed, sessionsLimit, resetAt }: Props) {
   const pct = sessionsLimit > 0 ? Math.min(100, Math.round((sessionsUsed / sessionsLimit) * 100)) : 0;
   const resetLabel = resetAt
     ? new Date(resetAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })
@@ -67,29 +93,9 @@ export function VoicePhoneSetup({ webhookUrl, enabled, sessionsUsed, sessionsLim
         </p>
       )}
 
-      {/* Webhook URL to paste into Twilio */}
-      <div className="space-y-1.5">
-        <label className="text-sm font-semibold" htmlFor="voice-webhook">
-          Voice webhook URL
-        </label>
-        <div className="flex items-stretch gap-2">
-          <input
-            id="voice-webhook"
-            type="text"
-            readOnly
-            value={webhookUrl}
-            onFocus={(e) => e.currentTarget.select()}
-            className="w-full select-all rounded-xl border border-[var(--color-border)] bg-transparent px-4 py-3 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-          />
-          <button
-            type="button"
-            onClick={copyWebhook}
-            className="flex-shrink-0 rounded-xl border border-[var(--color-border)] px-4 text-sm font-semibold hover:bg-[var(--color-surface-hover,rgba(0,0,0,0.03))] transition-colors"
-          >
-            {copied ? "Copied ✓" : "Copy"}
-          </button>
-        </div>
-      </div>
+      {/* Webhook URLs to paste into Twilio */}
+      <CopyableUrl id="voice-webhook" label="Voice webhook URL (phone calls)" value={webhookUrl} />
+      <CopyableUrl id="sms-webhook" label="Messaging webhook URL (text messages)" value={smsWebhookUrl} />
 
       {/* Setup steps */}
       <ol className="space-y-2 rounded-2xl border border-[var(--color-border)] p-4 text-sm">
@@ -97,20 +103,22 @@ export function VoicePhoneSetup({ webhookUrl, enabled, sessionsUsed, sessionsLim
           <span className="font-semibold text-[var(--color-primary)]">1.</span>
           <span>
             In your phone provider (Twilio), open the number you want customers to
-            call.
+            call or text.
           </span>
         </li>
         <li className="flex gap-2">
           <span className="font-semibold text-[var(--color-primary)]">2.</span>
           <span>
             Under <span className="font-semibold">Voice &amp; Fax → A Call Comes In</span>,
-            choose <span className="font-semibold">Webhook</span>, paste the URL above,
-            and set the method to <span className="font-semibold">HTTP POST</span>.
+            paste the <span className="font-semibold">Voice</span> URL. Under{" "}
+            <span className="font-semibold">Messaging → A Message Comes In</span>, paste
+            the <span className="font-semibold">Messaging</span> URL. Set both to{" "}
+            <span className="font-semibold">Webhook / HTTP POST</span>.
           </span>
         </li>
         <li className="flex gap-2">
           <span className="font-semibold text-[var(--color-primary)]">3.</span>
-          <span>Save, then call that number — the AI should pick up and greet you.</span>
+          <span>Save, then call or text that number — the AI should answer.</span>
         </li>
       </ol>
       <p className="text-xs text-[var(--color-text-muted)]">

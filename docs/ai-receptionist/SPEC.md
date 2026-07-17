@@ -29,12 +29,17 @@ Verify + guard rate-limit) — **tái dùng 100%**. Flag `voice_ai_enabled` (Bet
 limit/tháng (200). Song ngữ (vi/en/fr/zh). No-log OTP/PII.
 
 ## 4. Module & thứ tự
-1. **Module 1 (đang làm):** OTP gate server-side cho 4 mutation (confirm/cancel/reschedule/group)
+1. **Module 1 ✅:** OTP gate server-side cho 4 mutation (confirm/cancel/reschedule/group)
    + 2 tool `request_otp`/`verify_otp` + tham số `otp_session_id` + caller-ID binding (sẵn cho
    phone) + prompt adaptive. **Test ngay trên web voice.** Đóng lỗ hổng "voice/tool POST không auth".
-2. **Module 2:** cầu Twilio Voice ↔ OpenAI Realtime trên host persistent (Fly.io) + caller-ID/SHAKEN.
-3. **Module 3:** Admin UI setup/voice (số Twilio, test call).
-4. **Module 4 (tuỳ chọn):** SMS về chung agent.
+2. **Module 2 ✅ (code):** cầu Twilio Voice ↔ OpenAI Realtime trên host persistent (Fly.io) +
+   caller-ID/SHAKEN. Cần deploy Fly + số Twilio + gọi thật để verify live.
+3. **Module 3 ✅:** Admin UI setup/voice — webhook URL (Voice + Messaging) copy được, badge
+   AI on/off, thanh hạn mức phiên/tháng.
+4. **Module 4 ✅ (code):** SMS về chung agent — webhook `/api/twilio/sms`, vòng lặp Anthropic
+   tool-use dùng CHUNG buildSystemPrompt + REALTIME_TOOLS + handlers `/api/voice/tool`; hội thoại
+   lưu ở `sms_agent_sessions`. **Bảo mật:** SMS `From` KHÔNG được coi là đã xác thực (khác caller-ID
+   voice) → mọi mutation bắt OTP, đồng thời chặn spoof `From`. Cần số Twilio + tin nhắn thật để verify live.
 
 ## 5. Deploy / tech
 Web: Vercel (đã có). Phone bridge: Node WS service riêng (Vercel serverless không giữ WS). Flag

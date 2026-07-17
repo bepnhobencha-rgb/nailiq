@@ -46,6 +46,7 @@ export default async function VoiceSetupPage({ params }: PageProps) {
   // any other origin would fail signature verification when pasted into Twilio.
   const webhookBase = (process.env.NEXT_PUBLIC_APP_URL ?? "https://nailiq.ca").replace(/\/$/, "");
   const webhookUrl = `${webhookBase}/api/twilio/voice?slug=${encodeURIComponent(slug)}`;
+  const smsWebhookUrl = `${webhookBase}/api/twilio/sms?slug=${encodeURIComponent(slug)}`;
 
   return (
     <div className="mx-auto max-w-lg px-4 py-8">
@@ -53,6 +54,7 @@ export default async function VoiceSetupPage({ params }: PageProps) {
       <VoiceSettingsForm slug={slug} initial={initial} />
       <VoicePhoneSetup
         webhookUrl={webhookUrl}
+        smsWebhookUrl={smsWebhookUrl}
         enabled={initial.voice_ai_enabled}
         sessionsUsed={r.voice_ai_sessions_this_month ?? 0}
         sessionsLimit={r.voice_ai_sessions_limit ?? 200}
