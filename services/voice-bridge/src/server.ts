@@ -33,6 +33,19 @@ const PORT = Number(process.env.PORT ?? 8080);
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? "";
 const NEXT_APP_URL = (process.env.NEXT_APP_URL ?? "https://nailiq.ca").replace(/\/$/, "");
 const BRIDGE_SECRET = process.env.VOICE_BRIDGE_SECRET ?? "";
+const TOOL_TIMEOUT_MS = 12_000;
+const END_CALL_GRACE_MS = 4_000; // let the goodbye audio flush before hanging up
+
+// Injected phone-only tool so the agent can actually hang up. Not a server tool —
+// the bridge handles it locally by closing the call after the goodbye plays.
+const END_CALL_TOOL = {
+  type: "function",
+  name: "end_call",
+  description:
+    "Hang up the phone call. Call this ONLY after you have already said a short goodbye, " +
+    "when the caller says goodbye / asks to hang up, or the booking is fully finished.",
+  parameters: { type: "object", properties: {} },
+};
 
 // Plain HTTP is only for the health check; real traffic is the WS upgrade.
 const httpServer = http.createServer((req, res) => {
@@ -59,15 +72,22 @@ wss.on("connection", (twilioWs) => {
 
   const runTool = async (name: string, args: Record<string, unknown>, callId: string) => {
     let result: unknown;
+    // Hard timeout: a slow/hung tool call must NEVER freeze the live call. Without
+    // this, one stuck availability query leaves the caller in silence forever.
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), TOOL_TIMEOUT_MS);
     try {
       const r = await fetch(`${NEXT_APP_URL}/api/voice/tool`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-voice-bridge-secret": BRIDGE_SECRET },
         body: JSON.stringify({ toolName: name, toolArgs: args, salonSlug: slug, callerVerifiedPhone: from }),
+        signal: ac.signal,
       });
       result = await r.json().catch(() => ({ error: "tool_parse_failed" }));
     } catch {
       result = { error: "tool_unavailable" };
+    } finally {
+      clearTimeout(timer);
     }
     for (const msg of functionCallOutputMessages(callId, result)) {
       openaiWs?.send(JSON.stringify(msg));
@@ -99,7 +119,11 @@ wss.on("connection", (twilioWs) => {
 
     openaiWs.on("open", () => {
       console.log("[voice-bridge] openai WS connected — sending session.update + greet");
-      openaiWs?.send(JSON.stringify(sessionUpdateMessage({ instructions: cfg.instructions, voice: cfg.voice, tools: cfg.tools })));
+      openaiWs?.send(JSON.stringify(sessionUpdateMessage({
+        instructions: cfg.instructions,
+        voice: cfg.voice,
+        tools: [...cfg.tools, END_CALL_TOOL], // add hang-up capability for phone
+      })));
       openaiWs?.send(JSON.stringify({ type: "response.create" })); // greet first
     });
 
@@ -107,13 +131,11 @@ wss.on("connection", (twilioWs) => {
       let evt: Record<string, unknown>;
       try { evt = JSON.parse(raw.toString()) as Record<string, unknown>; } catch { return; }
 
-      // Surface OpenAI session/response errors + lifecycle events (but not the
-      // high-frequency audio deltas) so a failed session.update is visible.
+      // Only surface errors now that the GA path is verified — per-event logging
+      // added overhead on long calls.
       const t = typeof evt.type === "string" ? evt.type : "";
       if (t.includes("error")) {
         console.warn("[voice-bridge] openai EVENT", raw.toString().slice(0, 600));
-      } else if (!t.includes("audio") && !t.includes("delta")) {
-        console.log("[voice-bridge] openai evt:", t);
       }
 
       const audio = extractAudioDelta(evt);
@@ -126,7 +148,14 @@ wss.on("connection", (twilioWs) => {
         return;
       }
       const fn = extractFunctionCall(evt);
-      if (fn) void runTool(fn.name, fn.args, fn.callId);
+      if (fn) {
+        if (fn.name === "end_call") {
+          console.log("[voice-bridge] end_call — hanging up after goodbye");
+          setTimeout(closeAll, END_CALL_GRACE_MS); // let the goodbye audio finish
+          return;
+        }
+        void runTool(fn.name, fn.args, fn.callId);
+      }
     });
 
     openaiWs.on("close", closeAll);
