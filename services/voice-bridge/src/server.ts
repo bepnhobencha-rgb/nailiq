@@ -35,6 +35,7 @@ const NEXT_APP_URL = (process.env.NEXT_APP_URL ?? "https://nailiq.ca").replace(/
 const BRIDGE_SECRET = process.env.VOICE_BRIDGE_SECRET ?? "";
 const TOOL_TIMEOUT_MS = 12_000;
 const END_CALL_GRACE_MS = 4_000; // let the goodbye audio flush before hanging up
+const IDLE_HANGUP_MS = 30_000;   // no OpenAI activity this long → end the dead call
 
 // Injected phone-only tool so the agent can actually hang up. Not a server tool —
 // the bridge handles it locally by closing the call after the goodbye plays.
@@ -62,13 +63,27 @@ wss.on("connection", (twilioWs) => {
   let from = "";
   let openaiWs: WebSocket | null = null;
   let closed = false;
+  let lastActivity = Date.now();
+  let idleTimer: ReturnType<typeof setInterval> | null = null;
 
   const closeAll = () => {
     if (closed) return;
     closed = true;
+    if (idleTimer) clearInterval(idleTimer);
     try { openaiWs?.close(); } catch { /* noop */ }
     try { twilioWs.close(); } catch { /* noop */ }
   };
+
+  // Watchdog: if OpenAI produces no events for IDLE_HANGUP_MS (AI silent AND
+  // caller silent — e.g. after a completed booking), end the call instead of
+  // leaving it open forever. Twilio media flows continuously (silence frames),
+  // so we key off OpenAI activity, not raw audio.
+  idleTimer = setInterval(() => {
+    if (Date.now() - lastActivity > IDLE_HANGUP_MS) {
+      console.log("[voice-bridge] inactivity timeout — closing");
+      closeAll();
+    }
+  }, 5_000);
 
   const runTool = async (name: string, args: Record<string, unknown>, callId: string) => {
     let result: unknown;
@@ -142,13 +157,18 @@ wss.on("connection", (twilioWs) => {
     openaiWs.on("message", (raw) => {
       let evt: Record<string, unknown>;
       try { evt = JSON.parse(raw.toString()) as Record<string, unknown>; } catch { return; }
+      lastActivity = Date.now();
 
-      // Surface errors + what the AI actually said (transcript) for diagnosis.
+      // Surface errors + what the AI said (transcript) + response lifecycle so a
+      // post-booking silence is diagnosable.
       const t = typeof evt.type === "string" ? evt.type : "";
       if (t.includes("error")) {
         console.warn("[voice-bridge] openai EVENT", raw.toString().slice(0, 600));
       } else if (t === "response.output_audio_transcript.done") {
         console.log("[voice-bridge] AI said:", String((evt as { transcript?: unknown }).transcript ?? "").slice(0, 300));
+      } else if (t === "response.created" || t === "response.done" || t === "response.cancelled" || t === "response.incomplete") {
+        const status = (evt as { response?: { status?: unknown } }).response?.status;
+        console.log("[voice-bridge] evt:", t, status ? `status=${String(status)}` : "");
       }
 
       const audio = extractAudioDelta(evt);
