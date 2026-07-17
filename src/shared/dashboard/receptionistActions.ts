@@ -2742,7 +2742,12 @@ export async function addDeskAppointment(
   }
 
   // Stamp the assigned resource (bed/chair) when resource-mode is on.
-  // create_public_booking doesn't accept p_resource_id, so we write it here.
+  // The RPC auto-assigns a free bed of its own now (v2.9), but the desk's pick
+  // wins: resolveResource honours an explicit choice and an excludeBookingId the
+  // RPC knows nothing about, so this overwrite is what makes that stick. Passing
+  // p_resource_id through instead would fold both into one advisory-locked
+  // statement — worth doing, but it changes the desk path, so it is not bundled
+  // with the migration that fixes the online one.
   if (resolvedResourceId) {
     try {
       await db
