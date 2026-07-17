@@ -91,9 +91,10 @@ wss.on("connection", (twilioWs) => {
       return closeAll();
     }
 
+    // GA Realtime API — no `OpenAI-Beta` header (the Beta shape was retired).
     openaiWs = new WebSocket(
       `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(cfg.model)}`,
-      { headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "OpenAI-Beta": "realtime=v1" } },
+      { headers: { Authorization: `Bearer ${OPENAI_API_KEY}` } },
     );
 
     openaiWs.on("open", () => {
@@ -105,6 +106,15 @@ wss.on("connection", (twilioWs) => {
     openaiWs.on("message", (raw) => {
       let evt: Record<string, unknown>;
       try { evt = JSON.parse(raw.toString()) as Record<string, unknown>; } catch { return; }
+
+      // Surface OpenAI session/response errors + lifecycle events (but not the
+      // high-frequency audio deltas) so a failed session.update is visible.
+      const t = typeof evt.type === "string" ? evt.type : "";
+      if (t.includes("error")) {
+        console.warn("[voice-bridge] openai EVENT", raw.toString().slice(0, 600));
+      } else if (!t.includes("audio") && !t.includes("delta")) {
+        console.log("[voice-bridge] openai evt:", t);
+      }
 
       const audio = extractAudioDelta(evt);
       if (audio && streamSid) {
