@@ -11,17 +11,26 @@ import {
 } from "./router";
 
 describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () => {
-  it("session.update carries brain + μ-law audio + server VAD", () => {
+  it("session.update carries brain + μ-law audio + server VAD (GA shape)", () => {
     const m = sessionUpdateMessage({ instructions: "be Lily", voice: "marin", tools: [{ name: "x" }] }) as {
       type: string;
-      session: Record<string, unknown>;
+      session: {
+        type: string;
+        instructions: string;
+        tools: unknown;
+        audio: {
+          input: { format: { type: string }; turn_detection: { type: string } };
+          output: { format: { type: string }; voice: string };
+        };
+      };
     };
     expect(m.type).toBe("session.update");
+    expect(m.session.type).toBe("realtime");
     expect(m.session.instructions).toBe("be Lily");
-    expect(m.session.voice).toBe("marin");
-    expect(m.session.input_audio_format).toBe("g711_ulaw");
-    expect(m.session.output_audio_format).toBe("g711_ulaw");
-    expect((m.session.turn_detection as { type: string }).type).toBe("server_vad");
+    expect(m.session.audio.output.voice).toBe("marin");
+    expect(m.session.audio.input.format.type).toBe("audio/pcmu");
+    expect(m.session.audio.output.format.type).toBe("audio/pcmu");
+    expect(m.session.audio.input.turn_detection.type).toBe("server_vad");
     expect(m.session.tools).toEqual([{ name: "x" }]);
   });
 
