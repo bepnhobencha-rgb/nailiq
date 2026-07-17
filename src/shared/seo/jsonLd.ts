@@ -2,7 +2,7 @@ import { getSiteUrl } from "./site";
 import { resolveVertical } from "@/shared/verticals/registry";
 
 const DESCRIPTION =
-  "Salon management and booking platform for nail salons.";
+  "Done-for-you website, booking and salon operations setup for nail salons. Works alongside Square, Clover, Toast or another POS.";
 
 export function getLandingJsonLd() {
   const siteUrl = getSiteUrl();
@@ -38,7 +38,7 @@ export function getLandingJsonLd() {
         "@id": `${siteUrl}/#software`,
         name: "NailIQ",
         description:
-          "AI-powered salon OS for nail salons. Online booking, walk-in queue, receptionist center, automated SMS reminders, and client management — all in one platform.",
+          "Done-for-you website, online booking, staff scheduling and salon operations for nail salons. Compatible with Square, Clover, Toast or another POS.",
         applicationCategory: "BusinessApplication",
         applicationSubCategory: "Salon Management Software",
         operatingSystem: "Web",
@@ -46,30 +46,47 @@ export function getLandingJsonLd() {
         publisher: { "@id": `${siteUrl}/#organization` },
         audience: {
           "@type": "Audience",
-          audienceType: "Nail salons and beauty businesses",
+          audienceType: "Nail salons",
         },
         featureList: [
+          "Done-for-you salon website (template-based)",
           "Online appointment booking",
-          "Walk-in queue management",
-          "AI receptionist",
-          "Automated SMS reminders",
-          "Client profiles and history",
-          "Staff scheduling",
-          "Service catalog management",
-          "Multi-language support (English and Vietnamese)",
+          "Staff scheduling and availability",
+          "Booking policies and OTP",
+          "Works alongside Square, Clover, Toast or another POS",
+          "Square connection assistance where supported",
+          "Vietnamese-friendly support",
         ],
-        offers: {
-          "@type": "Offer",
-          price: "39",
-          priceCurrency: "CAD",
-          priceSpecification: {
-            "@type": "UnitPriceSpecification",
-            price: "39",
+        offers: [
+          {
+            "@type": "Offer",
+            name: "Founder Pilot Monthly",
+            price: "99",
             priceCurrency: "CAD",
-            unitText: "MONTH",
+            priceSpecification: {
+              "@type": "UnitPriceSpecification",
+              price: "99",
+              priceCurrency: "CAD",
+              unitText: "MONTH",
+            },
+            description:
+              "Founder Pilot Monthly: $499 CAD setup plus $99 CAD/month. Minimum six-month commitment. Excludes applicable taxes and third-party fees.",
           },
-          description: "Starter plan — full booking system from $39/month CAD",
-        },
+          {
+            "@type": "Offer",
+            name: "Founder Pilot Annual",
+            price: "1399",
+            priceCurrency: "CAD",
+            priceSpecification: {
+              "@type": "UnitPriceSpecification",
+              price: "1399",
+              priceCurrency: "CAD",
+              unitText: "ANN",
+            },
+            description:
+              "Founder Pilot Annual: $1,399 CAD covering setup and 12 months. Excludes applicable taxes and third-party fees.",
+          },
+        ],
         inLanguage: ["en", "vi"],
       },
     ],

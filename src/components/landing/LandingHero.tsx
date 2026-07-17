@@ -27,7 +27,7 @@ export function LandingHero() {
           className="relative z-10"
         >
           <span className="inline-flex items-center gap-2 rounded-full border border-nq-primary/40 bg-nq-primary/10 px-3 py-1 text-[11px] font-semibold tracking-[0.18em] text-nq-primary-soft uppercase">
-            <span aria-hidden className="nq-spark-pulse">⚡</span>
+            <span aria-hidden className="nq-spark-pulse">★</span>
             {t.eyebrow}
           </span>
 
@@ -41,24 +41,33 @@ export function LandingHero() {
             </span>
           </h1>
 
-          <p className="mt-6 max-w-xl text-lg leading-relaxed text-nq-muted/80 md:text-xl">
+          <p className="mt-6 max-w-2xl text-lg leading-relaxed text-nq-muted/80 md:text-xl">
             {t.subline}
+          </p>
+
+          <p className="mt-4 max-w-2xl text-sm leading-relaxed text-nq-primary-soft/90 md:text-base">
+            {t.posSupport}
+          </p>
+
+          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-nq-muted/70 md:text-base">
+            {t.valueStatement}
           </p>
 
           <div className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
             <Link
-              href="/register"
+              href="/contact?intent=pilot"
               data-testid="hero-cta-primary"
               className="inline-flex items-center justify-center rounded-full border border-nq-primary/50 bg-nq-primary px-6 py-3.5 text-base font-semibold text-nq-bg shadow-[0_8px_28px_-8px_rgba(212,175,55,0.55)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
             >
               {t.ctaPrimary}
             </Link>
-            <a
-              href="#how-it-works"
-              className="inline-flex items-center justify-center rounded-full px-4 py-3 text-sm font-medium text-nq-muted transition hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
+            <Link
+              href="/contact?intent=demo"
+              data-testid="hero-cta-secondary"
+              className="inline-flex items-center justify-center rounded-full border border-nq-border/50 bg-nq-surface/60 px-6 py-3.5 text-base font-medium text-nq-foreground transition hover:bg-nq-surface hover:border-nq-border/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
             >
               {t.ctaSecondary}
-            </a>
+            </Link>
           </div>
 
           <p className="mt-4 text-xs text-nq-muted/80">{t.microtrust}</p>
@@ -92,4 +101,3 @@ function BackgroundGlow() {
     </div>
   );
 }
-

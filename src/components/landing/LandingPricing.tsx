@@ -1,5 +1,16 @@
 "use client";
 
+/**
+ * Founder Pilot pricing — 2 cards (Monthly + Annual). Was the 4-tier
+ * SaaS pricing grid; the pilot has a single fixed scope + two
+ * payment shapes. Kept the file name and exported symbol so
+ * `src/app/page.tsx` doesn't need to rename imports.
+ *
+ * CTAs go to `/contact?intent=pilot&plan=<monthly|annual>` — the
+ * contact form reads the `plan` query param and preselects it in
+ * the "Preferred option" field. There is no in-flow checkout for
+ * the pilot: every applicant is reviewed manually.
+ */
 import Link from "next/link";
 import { useMemo } from "react";
 import { motion, useReducedMotion } from "@/shared/lib/motionClient";
@@ -43,8 +54,7 @@ export function LandingPricing() {
 
   return (
     <section className="relative bg-nq-bg py-14 md:py-20">
-      <div className="mx-auto w-full max-w-7xl px-5 md:px-8">
-        {/* Section header */}
+      <div className="mx-auto w-full max-w-6xl px-5 md:px-8">
         <motion.div
           initial={reduce ? false : { opacity: 0, y: 16 }}
           whileInView={reduce ? undefined : { opacity: 1, y: 0 }}
@@ -55,175 +65,140 @@ export function LandingPricing() {
           <p className="text-[11px] font-semibold tracking-[0.24em] text-nq-primary uppercase">
             {t.eyebrow}
           </p>
-          <h2 className="mt-4 text-3xl font-semibold tracking-tight text-nq-foreground md:text-5xl">
+          <h2 className="mt-4 text-3xl font-semibold tracking-tight text-nq-foreground md:text-4xl lg:text-5xl">
             {t.h2}
           </h2>
-          <p className="mt-3 text-base text-nq-muted/80 md:text-lg">
+          <p className="mx-auto mt-3 max-w-2xl text-base text-nq-muted/80 md:text-lg">
             {t.sub}
           </p>
         </motion.div>
 
-        {/* Plans grid — 1-col mobile, 2-col md, 4-col lg.
-            Task #10 (pricing v2) — was 3-col; expanded to 4 to fit
-            Enterprise. Pro keeps the gold glow even at 4 cards because
-            the conditional border + ambient layer do the heavy lift. */}
-        <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-2 md:items-stretch lg:grid-cols-4 lg:gap-6">
-          {t.plans.map((plan, i) => {
-            const isPro = plan.id === "pro";
-            const isEnterprise = plan.id === "enterprise";
+        <div className="mx-auto mt-12 grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-2 md:items-stretch md:gap-7">
+          {/* Monthly card */}
+          <motion.div
+            initial={reduce ? false : { opacity: 0, y: 24 }}
+            whileInView={reduce ? undefined : { opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-60px" }}
+            transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+            className="relative flex flex-col"
+          >
+            <div className="relative flex flex-1 flex-col rounded-3xl border border-nq-border/30 bg-nq-surface/50 p-6 md:p-8">
+              <div className="h-[26px]" aria-hidden />
+              <p className="text-xs font-semibold uppercase tracking-widest text-nq-muted">
+                {t.monthly.name}
+              </p>
 
-            return (
-              <motion.div
-                key={plan.id}
-                initial={reduce ? false : { opacity: 0, y: 24 }}
-                whileInView={reduce ? undefined : { opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-60px" }}
-                transition={{
-                  duration: 0.55,
-                  delay: 0.05 + i * 0.08,
-                  ease: [0.22, 1, 0.36, 1],
-                }}
-                className="relative flex flex-col"
-              >
-                {/* Ambient glow — Pro only */}
-                {isPro && (
-                  <div
-                    aria-hidden
-                    className="absolute -inset-3 rounded-[28px] bg-gradient-to-br from-nq-primary/20 via-transparent to-nq-primary/10 blur-2xl pointer-events-none"
-                  />
-                )}
+              <div className="mt-3 flex flex-wrap items-baseline gap-2">
+                <span className="text-4xl font-bold tracking-tight text-nq-foreground md:text-5xl">
+                  {t.monthly.setupPrice}
+                </span>
+                <span className="text-sm text-nq-muted">{t.setupLabel}</span>
+              </div>
+              <p className="mt-2 text-xs uppercase tracking-widest text-nq-muted/70">
+                {t.plusLabel}
+              </p>
+              <div className="mt-1 flex flex-wrap items-baseline gap-2">
+                <span className="text-3xl font-bold tracking-tight text-nq-foreground md:text-4xl">
+                  {t.monthly.monthlyPrice}
+                </span>
+                <span className="text-sm text-nq-muted">{t.perMonthLabel}</span>
+              </div>
 
-                <div
-                  className={cn(
-                    "relative flex flex-1 flex-col rounded-3xl p-6 md:p-7",
-                    isPro
-                      ? "border-2 border-nq-primary/60 bg-gradient-to-b from-nq-surface/70 to-nq-bg/40 shadow-[0_30px_80px_-30px_rgba(212,175,55,0.35)]"
-                      : "border border-nq-border/30 bg-nq-surface/50",
-                  )}
+              <p className="mt-3 text-sm font-medium text-nq-primary-soft/90">
+                {t.monthly.commitment}
+              </p>
+
+              <ul className="mt-6 flex-1 space-y-2.5">
+                {t.monthly.included.map((f) => (
+                  <li
+                    key={f}
+                    className="flex items-start gap-2.5 text-sm text-nq-foreground"
+                  >
+                    <CheckIcon muted />
+                    <span className="leading-relaxed">{f}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="mt-7">
+                <Link
+                  href="/contact?intent=pilot&plan=monthly"
+                  data-testid="pricing-cta-monthly"
+                  className="inline-flex w-full items-center justify-center rounded-full border border-nq-border/50 bg-nq-surface/60 px-6 py-3 text-sm font-semibold text-nq-foreground transition hover:bg-nq-surface hover:border-nq-border/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
                 >
-                  {/* Badge row — always present to keep price vertically aligned */}
-                  {plan.badge ? (
-                    <span className="inline-flex w-fit items-center rounded-full border border-nq-primary/40 bg-nq-primary/15 px-3 py-1 text-[10px] font-bold tracking-[0.18em] text-nq-primary uppercase">
-                      {plan.badge}
-                    </span>
-                  ) : (
-                    <div className="h-[26px]" aria-hidden />
-                  )}
+                  {t.monthly.cta}
+                </Link>
+                <p className="mt-3 text-center text-xs leading-snug text-nq-muted/75">
+                  {t.monthly.commitmentNote}
+                </p>
+              </div>
+            </div>
+          </motion.div>
 
-                  {/* Plan name */}
-                  <p className="mt-4 text-xs font-semibold uppercase tracking-widest text-nq-muted">
-                    {plan.name}
-                  </p>
+          {/* Annual card — BEST VALUE */}
+          <motion.div
+            initial={reduce ? false : { opacity: 0, y: 24 }}
+            whileInView={reduce ? undefined : { opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-60px" }}
+            transition={{
+              duration: 0.55,
+              delay: 0.08,
+              ease: [0.22, 1, 0.36, 1],
+            }}
+            className="relative flex flex-col"
+          >
+            {/* Ambient gold glow */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -inset-3 rounded-[28px] bg-gradient-to-br from-nq-primary/20 via-transparent to-nq-primary/10 blur-2xl"
+            />
 
-                  {/* Price */}
-                  <div className="mt-1 flex items-baseline gap-1">
-                    <span
-                      className={cn(
-                        "font-bold tracking-tight text-nq-foreground",
-                        isPro ? "text-5xl md:text-6xl" : "text-4xl md:text-5xl",
-                      )}
-                    >
-                      {plan.price}
-                    </span>
-                    <span className="text-base text-nq-muted">{t.perMonth}</span>
-                  </div>
-                  <p className="mt-1 text-xs text-nq-muted/60">{t.taxNote}</p>
+            <div className="relative flex flex-1 flex-col rounded-3xl border-2 border-nq-primary/60 bg-gradient-to-b from-nq-surface/70 to-nq-bg/40 p-6 shadow-[0_30px_80px_-30px_rgba(212,175,55,0.35)] md:p-8">
+              <span className="inline-flex w-fit items-center rounded-full border border-nq-primary/40 bg-nq-primary/15 px-3 py-1 text-[10px] font-bold tracking-[0.18em] text-nq-primary uppercase">
+                {t.annual.badge}
+              </span>
 
-                  {/* Feature list — grows to fill remaining card height */}
-                  <ul className="mt-6 flex-1 space-y-2.5">
-                    {plan.features.map((feature) => (
-                      <li
-                        key={feature}
-                        className="flex items-start gap-2.5 text-sm text-nq-foreground"
-                      >
-                        <CheckIcon muted={!isPro} />
-                        <span>{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
+              <p className="mt-4 text-xs font-semibold uppercase tracking-widest text-nq-muted">
+                {t.annual.name}
+              </p>
 
-                  {/* CTA — pinned to card bottom.
-                      Pro: filled gold, → /register.
-                      Enterprise: outlined, → /contact (no checkout flow).
-                      Free / Studio: outlined, → /register. */}
-                  <div className="mt-7">
-                    {isPro ? (
-                      <Link
-                        href="/register"
-                        data-testid={`pricing-cta-${plan.id}`}
-                        className="inline-flex w-full items-center justify-center rounded-full border border-nq-primary/50 bg-nq-primary px-6 py-3.5 text-sm font-semibold text-nq-bg shadow-[0_8px_28px_-8px_rgba(212,175,55,0.55)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
-                      >
-                        {plan.cta}
-                      </Link>
-                    ) : isEnterprise ? (
-                      <Link
-                        href="/contact"
-                        data-testid={`pricing-cta-${plan.id}`}
-                        className="inline-flex w-full items-center justify-center rounded-full border border-nq-border/50 bg-nq-surface/60 px-6 py-3 text-sm font-semibold text-nq-foreground transition hover:bg-nq-surface hover:border-nq-border/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
-                      >
-                        {plan.cta}
-                      </Link>
-                    ) : (
-                      <Link
-                        href="/register"
-                        data-testid={`pricing-cta-${plan.id}`}
-                        className="inline-flex w-full items-center justify-center rounded-full border border-nq-border/50 bg-nq-surface/60 px-6 py-3 text-sm font-semibold text-nq-foreground transition hover:bg-nq-surface hover:border-nq-border/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
-                      >
-                        {plan.cta}
-                      </Link>
-                    )}
+              <div className="mt-3 flex flex-wrap items-baseline gap-2">
+                <span className="text-5xl font-bold tracking-tight text-nq-foreground md:text-6xl">
+                  {t.annual.price}
+                </span>
+              </div>
+              <p className="mt-2 text-sm text-nq-primary-soft/90">
+                {t.annual.description}
+              </p>
 
-                    {isPro && (
-                      <>
-                        <p className="mt-2.5 text-center text-xs text-nq-muted">
-                          {t.ccNotice}
-                        </p>
-                        <p className="mt-1.5 text-center text-xs leading-snug text-nq-primary-soft/85">
-                          {t.proMigrationNote}
-                        </p>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            );
-          })}
+              <p className="mt-4 text-sm font-medium text-nq-primary">
+                {t.annual.savingsLine}
+              </p>
+
+              <ul className="mt-6 flex-1 space-y-2.5">
+                {t.annual.included.map((f) => (
+                  <li
+                    key={f}
+                    className="flex items-start gap-2.5 text-sm text-nq-foreground"
+                  >
+                    <CheckIcon />
+                    <span className="leading-relaxed">{f}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="mt-7">
+                <Link
+                  href="/contact?intent=pilot&plan=annual"
+                  data-testid="pricing-cta-annual"
+                  className="inline-flex w-full items-center justify-center rounded-full border border-nq-primary/50 bg-nq-primary px-6 py-3.5 text-sm font-semibold text-nq-bg shadow-[0_8px_28px_-8px_rgba(212,175,55,0.55)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
+                >
+                  {t.annual.cta}
+                </Link>
+              </div>
+            </div>
+          </motion.div>
         </div>
-
-        {/* Add-ons rail (Task #10) — three small cards rendered below
-            the four plans. Kept inside the same <section> so the
-            visual rhythm follows the primary pricing block. */}
-        <motion.div
-          initial={reduce ? false : { opacity: 0, y: 24 }}
-          whileInView={reduce ? undefined : { opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-60px" }}
-          transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-          className="mt-14 md:mt-20"
-        >
-          <h3 className="text-center text-xl font-semibold tracking-tight text-nq-foreground md:text-2xl">
-            {t.addons.sectionTitle}
-          </h3>
-          <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-5">
-            {([t.addons.sms, t.addons.location, t.addons.branding] as const).map(
-              (addon) => (
-                <div
-                  key={addon.name}
-                  className="flex flex-col rounded-2xl border border-nq-border/30 bg-nq-surface/40 p-5 md:p-6"
-                >
-                  <p className="text-xs font-semibold uppercase tracking-widest text-nq-muted">
-                    {addon.name}
-                  </p>
-                  <p className="mt-2 text-lg font-semibold text-nq-foreground md:text-xl">
-                    {addon.price}
-                  </p>
-                  <p className="mt-2 text-sm leading-relaxed text-nq-muted/80">
-                    {addon.description}
-                  </p>
-                </div>
-              ),
-            )}
-          </div>
-        </motion.div>
       </div>
     </section>
   );
