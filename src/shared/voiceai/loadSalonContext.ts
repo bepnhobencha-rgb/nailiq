@@ -26,7 +26,27 @@ export type SalonVoiceContext = {
   }[];
 };
 
+// ── In-memory TTL cache ──────────────────────────────────────────────────────
+// Session mint is on the critical path of call-connect latency: every voice
+// session paid 3 sequential DB round-trips before the customer heard anything.
+// Salon config (services/staff/hours) changes rarely, so a short per-instance
+// cache removes that cost for warm instances. 60 s TTL keeps dashboard edits
+// visible almost immediately; serverless instances are short-lived anyway.
+const CONTEXT_CACHE_TTL_MS = 60_000;
+const contextCache = new Map<string, { at: number; ctx: SalonVoiceContext }>();
+
 export async function loadSalonContext(salonSlug: string): Promise<SalonVoiceContext | null> {
+  const cached = contextCache.get(salonSlug);
+  if (cached && Date.now() - cached.at < CONTEXT_CACHE_TTL_MS) {
+    return cached.ctx;
+  }
+
+  const ctx = await loadSalonContextUncached(salonSlug);
+  if (ctx) contextCache.set(salonSlug, { at: Date.now(), ctx });
+  return ctx;
+}
+
+async function loadSalonContextUncached(salonSlug: string): Promise<SalonVoiceContext | null> {
   const supabase = createServiceRoleClient();
 
   const { data: salon } = await supabase
