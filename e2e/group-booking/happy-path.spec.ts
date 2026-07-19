@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { cleanupTestSalon } from "../helpers/db";
+import { cleanupTestSalon, getGroupBookingStamps } from "../helpers/db";
 import {
   fillMemberCard,
   gotoGroupFlow,
@@ -91,5 +91,24 @@ test.describe("Group booking — happy path", () => {
     // `#GRP-YYYYMMDD-XXXX`. Date prefix is the salon-local booking
     // date (always 8 digits), 4-hex suffix from the group_id UUID.
     await expect(page.getByText(/#GRP-\d{8}-[A-F0-9]{4}/)).toBeVisible();
+
+    // ── STAMPS ──────────────────────────────────────────────
+    // booking_channel has to survive the trip through the server action: this
+    // flow submits from the browser, where an anon UPDATE on `bookings` hits 0
+    // rows and reports success. Polled because the action defers to after().
+    await expect
+      .poll(
+        async () => {
+          const rows = await getGroupBookingStamps(SLUG);
+          return rows.map((b) => b.booking_channel).sort();
+        },
+        { timeout: 15_000 },
+      )
+      .toEqual(["online", "online"]);
+
+    // This salon has phone_otp_enabled=false, so nothing verified the organizer
+    // — the stamp must not claim otherwise. (otp-gate.spec covers the OTP case.)
+    const rows = await getGroupBookingStamps(SLUG);
+    expect(rows.every((b) => b.verification_method === null)).toBe(true);
   });
 });
