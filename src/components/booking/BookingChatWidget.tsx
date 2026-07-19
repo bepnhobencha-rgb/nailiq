@@ -49,6 +49,9 @@ export function BookingChatWidget({
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Stable per-widget-mount session id so the server can track the
+  // conversation (and booking conversion) in ai_chats.
+  const chatSessionIdRef = useRef<string>(crypto.randomUUID());
 
   useEffect(() => {
     if (open) {
@@ -83,6 +86,7 @@ export function BookingChatWidget({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           salonId,
+          chatSessionId: chatSessionIdRef.current,
           messages: [...messages, userMsg].map((m) => ({
             role: m.role,
             content: m.content,
