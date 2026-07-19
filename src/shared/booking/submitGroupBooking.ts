@@ -4,6 +4,7 @@ import {
   checkBookingConflict,
 } from "@/shared/lib/conflictCheck";
 import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit";
+import { stampGroupBookingIdentity } from "@/shared/booking/groupBookingSideEffects";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
@@ -107,6 +108,14 @@ export type GroupBookingParams = {
    *  with no checkbox on screen, so it leaves this unset — otherwise we would
    *  write a consent record stamped with the server's own IP. */
   smsConsent?: boolean;
+  /** Which channel created this party: 'online' (public group wizard) or
+   *  'desk' (receptionist). Stamped on every member row so reports can group
+   *  by origin. Before this existed the whole group path wrote NULL, and
+   *  `loadSalonReportsAction` folds NULL into "online" — so desk-created
+   *  parties were silently counted as online bookings rather than going
+   *  missing. Defaults to 'online' so the public flow stays correct even if a
+   *  caller forgets to pass it. */
+  bookingChannel?: "online" | "desk";
 };
 
 export type GroupBookingResult =
@@ -851,6 +860,25 @@ export async function submitGroupBooking(
   // NOTE: no-show card flagging for the GROUP lead is done server-side in
   // createDeskGroup (desk path); this function also runs in the browser
   // (online group wizard) so it must NOT import the server-only gate here.
+
+  // Stamp booking_channel on every member row (+ verification on the organizer).
+  // MUST go through a server action: this function runs in the browser for the
+  // online flow, where anon UPDATEs on `bookings` silently affect 0 rows (RLS).
+  // `otpToConsume` — not params.otpSessionId — is the session actually validated
+  // against the organizer's phone above, so we only record verified evidence.
+  // Awaited, not fire-and-forget: the wizard renders its confirmation screen as
+  // soon as this resolves, and an in-flight server-action request can be torn
+  // down by that transition — which would silently put us back at NULL. The
+  // action itself defers the writes to after(), so awaiting costs one round
+  // trip, not the DB work.
+  await stampGroupBookingIdentity({
+    bookingIds: bookingIdList,
+    organizerBookingId: bookingIdList[0] ?? null,
+    bookingChannel: params.bookingChannel ?? "online",
+    otpSessionId: otpToConsume,
+  }).catch((e) =>
+    console.error("[submitGroupBooking] channel/verification stamp failed", e),
+  );
 
   // Group committed — now single-use-consume the OTP session (fire-and-forget).
   // Relative URL only resolves in the browser; server callers (desk flow)

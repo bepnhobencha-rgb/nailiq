@@ -1095,6 +1095,8 @@ export function BookingGroupFlow({
         // phone_otp_enabled. Override (passed straight from onVerified) wins
         // over state to avoid a stale-closure read on the retry.
         otpSessionId: otpOverride ?? otpSessionId,
+        // Public group wizard → 'online' in the channel breakdown.
+        bookingChannel: "online",
         // FIX 09 — stable key across retries. A network drop +
         // retry sends the same key; server's UNIQUE on
         // `(salon_id, idempotency_key, …)` returns
