@@ -149,6 +149,24 @@ function internalOrigin(req: NextRequest): string {
   return (process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || req.nextUrl.origin);
 }
 
+/**
+ * Last-9-digit suffix used to match a caller's phone against `client_phone`
+ * (handles +84 / +1 / spaces / dashes), or null when the input is too short to
+ * identify one person.
+ *
+ * The minimum matters: these lookups run as `ilike '%' || suffix` on an
+ * UNAUTHENTICATED endpoint, so a 1-digit input like "5" used to match every
+ * booking whose number ends in 5 and return the customer's name, time, service
+ * and staff. Seven digits is the same floor `lookup_customer` already applies.
+ */
+const PHONE_SUFFIX_MIN_DIGITS = 7;
+
+function phoneSuffixOrNull(raw: string): string | null {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length < PHONE_SUFFIX_MIN_DIGITS) return null;
+  return digits.slice(-9);
+}
+
 // request_otp — send a 6-digit SMS code to the customer's phone. Reuses the
 // public booking OTP sender (Twilio Verify + rate-limit guard); no duplication.
 async function handleRequestOtp(
@@ -628,9 +646,14 @@ async function handleCancelBooking(
 
   // ── Path B: phone lookup (no booking_id yet) ────────────────────────────────
   if (!bookingId && customerPhone) {
-    const digits = customerPhone.replace(/\D/g, "");
-    const last9  = digits.slice(-9);
-    const now    = new Date().toISOString();
+    const last9 = phoneSuffixOrNull(customerPhone);
+    if (!last9) {
+      return NextResponse.json({
+        error: "phone_too_short",
+        hint: "Ask the customer to read out their full phone number, then try again.",
+      });
+    }
+    const now = new Date().toISOString();
 
     // Limit 20 — group bookings create one row per member (8-person group = 8 rows).
     // Old limit of 3 caused "only 3 cancelled out of 8" for group bookings.
@@ -721,18 +744,58 @@ async function handleCancelBooking(
   // ── Path A: group_id provided → cancel ALL bookings in the group ────────────
   const groupIdArg = args.group_id as string | undefined;
   if (!bookingId && groupIdArg) {
+    // Fetch the WHOLE party, cancelled rows included: only the active rows get
+    // cancelled, but the phone we verify against may sit on a row that is
+    // already cancelled (e.g. the organizer dropped out first).
     const { data: groupRows, error: grpErr } = await supabase
       .from("bookings")
-      .select("id, status")
+      .select("id, status, client_phone, is_group_organizer")
       .eq("salon_id", salon.id)
-      .eq("group_id", groupIdArg)
-      .neq("status", "cancelled");
+      .eq("group_id", groupIdArg);
 
-    if (grpErr || !groupRows || groupRows.length === 0) {
+    const party = (groupRows ?? []) as {
+      id: string; status: string;
+      client_phone: string | null; is_group_organizer: boolean | null;
+    }[];
+    const active = party.filter((r) => r.status !== "cancelled");
+
+    if (grpErr || active.length === 0) {
       return NextResponse.json({ error: "group_not_found_or_already_cancelled" }, { status: 404 });
     }
 
-    const ids = groupRows.map((r) => r.id as string);
+    // Identity gate — the single-booking path below has always had one; this
+    // branch did not. Cancelling a whole party is the most destructive thing
+    // the receptionist can do, and the phone-lookup branch above hands out
+    // `group_id` (with a hint that literally spells out the full-cancel call),
+    // so without this anyone who saw a party's id could wipe it.
+    //
+    // Verify against the phone that OWNS the party: the organizer's. In a group
+    // booking only member 0 supplies a real number (see submitGroupBooking) —
+    // guest rows are frequently blank, so falling back to "first row" would
+    // hand requirePhoneVerified an empty string and break legitimate cancels.
+    const usablePhone = (p: string | null): boolean =>
+      typeof p === "string" && p.replace(/\D/g, "").length >= PHONE_SUFFIX_MIN_DIGITS;
+    const ownerPhone =
+      party.find((r) => r.is_group_organizer && usablePhone(r.client_phone))?.client_phone
+      ?? party.find((r) => usablePhone(r.client_phone))?.client_phone
+      ?? null;
+
+    if (!ownerPhone) {
+      // No number anywhere on the party — ownership cannot be proven over the
+      // phone. Staff can still cancel these per-booking from the dashboard.
+      return NextResponse.json({
+        error: "group_not_verifiable",
+        hint: "This party has no phone number on file, so I can't verify who it belongs to. Ask the customer to contact the salon directly.",
+      });
+    }
+
+    const gate = await requirePhoneVerified(supabase, salon.id, ownerPhone, {
+      otpSessionId: args.otp_session_id as string | undefined,
+      callerVerifiedPhone,
+    });
+    if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
+
+    const ids = active.map((r) => r.id);
     const { error: cancelErr } = await supabase
       .from("bookings")
       .update({ status: "cancelled" })
@@ -877,9 +940,13 @@ async function handleFindBooking(
     .single();
   if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
 
-  // Match on last 9 digits — handles +84, +1, spaces, dashes, etc.
-  const digits = customerPhone.replace(/\D/g, "");
-  const last9  = digits.slice(-9);
+  const last9 = phoneSuffixOrNull(customerPhone);
+  if (!last9) {
+    return NextResponse.json({
+      error: "phone_too_short",
+      hint: "Ask the customer to read out their full phone number, then try again.",
+    });
+  }
 
   const now = new Date().toISOString();
 
