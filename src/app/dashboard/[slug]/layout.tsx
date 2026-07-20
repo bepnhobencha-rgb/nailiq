@@ -135,11 +135,17 @@ export default async function DashboardSlugLayout({
       .eq("salon_id", ctx.salon.id)
       .eq("status", "waiting")
       .gte("joined_queue_at", todayStartUtc),
+    // Bounded to today, like the waiting query above. Without a lower bound an
+    // in_progress row nobody ever closed out stays overdue forever: one
+    // abandoned booking from 10 days ago held the badge permanently red, which
+    // trains staff to ignore it — the opposite of what an alert is for. The
+    // stale rows themselves are swept by /api/cron/close-stale-in-progress.
     ctx.supabase
       .from("bookings")
       .select("id", { count: "exact", head: true })
       .eq("salon_id", ctx.salon.id)
       .eq("status", "in_progress")
+      .gte("start_time_utc", todayStartUtc)
       .lt("end_time_utc", new Date().toISOString()),
     // Only fetch pending approvals for owners/admins who can act on them
     (ctx.role === "owner" || ctx.role === "admin")
