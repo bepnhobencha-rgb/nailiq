@@ -94,6 +94,12 @@ export async function executeVoiceTool(
   if (toolName === "join_waitlist") {
     return handleJoinWaitlist(supabase, salonSlug, toolArgs);
   }
+  if (toolName === "lookup_customer") {
+    return handleLookupCustomer(supabase, salonSlug, toolArgs, sessionId);
+  }
+  if (toolName === "leave_message_for_owner") {
+    return handleLeaveMessageForOwner(supabase, salonSlug, toolArgs, sessionId);
+  }
   return NextResponse.json({ error: "unknown_tool", toolName }, { status: 400 });
 }
 
@@ -1961,5 +1967,282 @@ async function handleConfirmGroupBooking(
     hint: finalArrangement.isWaveBooking
       ? "WAVE booking confirmed. Tell the organizer their group is split into waves (say each wave's start time and guest count from `waves`). Do NOT read individual staff assignments. Mention the party link will be shared."
       : "Do NOT read individual staff assignments aloud. Tell the customer the group start time, end time, and that the party link will be shared with the group organizer.",
+  });
+}
+
+// ─── lookup_customer ─────────────────────────────────────────────────────────
+// The "memory" tool: given a phone number, return what THIS salon already knows
+// about the caller so the receptionist can greet them by name, offer their usual
+// service/staff, and avoid allergens. Reads only — never mutates.
+//
+// Privacy rules enforced here, in code, NOT left to the model:
+//
+//  • Tenant scoping. `client_profiles` is a GLOBAL, phone-keyed table with no
+//    salon_id (see migration 20260618140000_winback.sql), and we read it with
+//    the service-role client, so RLS offers no backstop. Matching on phone alone
+//    would turn this tool into a cross-tenant oracle: salon A could resolve any
+//    phone on the platform to a real person's name and visit history, and learn
+//    that they are somebody's customer. So a profile is only ever used after a
+//    booking at THIS salon confirms the relationship. No local booking →
+//    known:false, exactly as if they were new.
+//
+//    That check also closes a consent hole: `customer_preferences` is
+//    salon-scoped, so for a stranger's profile it comes back null, which made
+//    `consent_ai_personalization === false` evaluate false and fall into the
+//    FULL personalization branch — the people with no relationship to the salon
+//    were the ones getting no consent protection at all.
+//
+//  • No internal metrics reach the model. is_vip, lifetime spend, no_show_count
+//    and owner notes are never selected. `client_ai_summaries.summary_text` is
+//    deliberately NOT returned either: it is generated from a staff-facing
+//    prompt that includes VIP status, lifetime spend and no-show rate
+//    (loadClientProfile360Action.ts), so handing it to a model that speaks to
+//    the customer would read their own risk score back to them.
+//
+//  • consent_ai_personalization === false → name only, nothing else.
+async function handleLookupCustomer(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  salonSlug: string,
+  args: Record<string, unknown>,
+  sessionId: string | null,
+) {
+  const customerPhone = args.customer_phone as string | undefined;
+  if (!customerPhone) {
+    return NextResponse.json({ error: "missing_customer_phone" }, { status: 400 });
+  }
+
+  const { data: salon } = await supabase
+    .from("salons")
+    .select("id, timezone")
+    .eq("slug", salonSlug)
+    .single();
+  if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
+
+  const last9 = phoneSuffixOrNull(customerPhone);
+  if (!last9) {
+    return NextResponse.json({
+      known: false,
+      hint:  "Phone number too short to look up. Continue the normal flow.",
+    });
+  }
+
+  const NOT_KNOWN = {
+    known: false,
+    hint:  "New customer — ask for their name and continue the normal booking flow. Do not mention that you looked them up.",
+  };
+
+  const { data: profiles } = await supabase
+    .from("client_profiles")
+    .select("id, name, phone, visit_count, last_service_date, preferred_staff_id")
+    .ilike("phone", `%${last9}`)
+    .is("deleted_at", null)
+    .limit(1);
+  const profile = profiles?.[0];
+  if (!profile) return NextResponse.json(NOT_KNOWN);
+
+  // Tenant gate — the profile is global, so prove the relationship is ours
+  // before any of it is spoken aloud.
+  const { count: localBookings } = await supabase
+    .from("bookings")
+    .select("id", { count: "exact", head: true })
+    .eq("salon_id", salon.id)
+    .eq("client_profile_id", profile.id)
+    .is("deleted_at", null);
+  if (!localBookings) return NextResponse.json(NOT_KNOWN);
+
+  // Record who called on the session row (eval/analytics loop) — best-effort.
+  if (sessionId) {
+    try {
+      await supabase
+        .from("voice_ai_sessions")
+        .update({ client_phone: customerPhone.replace(/\D/g, ""), client_name: profile.name ?? null })
+        .eq("id", sessionId);
+    } catch { /* best-effort */ }
+  }
+
+  const [prefsRes, patternRes] = await Promise.all([
+    supabase
+      .from("customer_preferences")
+      .select("allergies, favorite_colors, favorite_styles, preferred_language, consent_ai_personalization")
+      .eq("salon_id", salon.id)
+      .eq("client_profile_id", profile.id)
+      .maybeSingle(),
+    supabase
+      .from("customer_booking_patterns")
+      .select("usual_service_ids, usual_staff_id, recurring_weekday, recurring_hour, pattern_confidence")
+      .eq("salon_id", salon.id)
+      .eq("client_profile_id", profile.id)
+      .maybeSingle(),
+  ]);
+
+  const prefs = prefsRes.data as {
+    allergies: string[] | null;
+    favorite_colors: string[] | null;
+    favorite_styles: string[] | null;
+    preferred_language: string | null;
+    consent_ai_personalization: boolean | null;
+  } | null;
+
+  // Explicit opt-out of AI personalization → greet by name, nothing else.
+  if (prefs?.consent_ai_personalization === false) {
+    return NextResponse.json({
+      known:         true,
+      customer_name: profile.name,
+      hint:          "Greet by name only. This customer opted out of AI personalization — do NOT reference history or preferences.",
+    });
+  }
+
+  const pattern = patternRes.data as {
+    usual_service_ids: string[] | null;
+    usual_staff_id: string | null;
+    recurring_weekday: number | null;
+    recurring_hour: number | null;
+    pattern_confidence: number | null;
+  } | null;
+
+  // Resolve usual service names + usual/preferred staff name.
+  let usualServices: { id: string; name: string }[] = [];
+  if (pattern?.usual_service_ids?.length) {
+    const { data: svcRows } = await supabase
+      .from("services")
+      .select("id, name")
+      .eq("salon_id", salon.id)
+      .in("id", pattern.usual_service_ids)
+      .is("deleted_at", null);
+    usualServices = (svcRows ?? []).map((s) => ({ id: s.id, name: s.name }));
+  }
+
+  let usualStaff: { id: string; name: string } | null = null;
+  // `preferred_staff_id` rides on the GLOBAL profile row, so it can point at
+  // another salon's employee. Scoping the lookup to this salon means a foreign
+  // id simply resolves to null instead of offering a competitor's staff name.
+  const staffId = pattern?.usual_staff_id ?? profile.preferred_staff_id ?? null;
+  if (staffId) {
+    const { data: st } = await supabase
+      .from("staff")
+      .select("id, name")
+      .eq("id", staffId)
+      .eq("salon_id", salon.id)
+      .eq("status", "active")
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (st) usualStaff = { id: st.id, name: st.name };
+  }
+
+  return NextResponse.json({
+    known:           true,
+    customer_name:   profile.name,
+    visit_count:     localBookings,
+    is_regular:      localBookings >= 3,
+    last_visit:      profile.last_service_date ?? null,
+    usual_services:  usualServices,
+    usual_staff:     usualStaff,
+    allergies:       prefs?.allergies ?? [],
+    favorite_colors: prefs?.favorite_colors ?? [],
+    favorite_styles: prefs?.favorite_styles ?? [],
+    preferred_language: prefs?.preferred_language ?? null,
+    hint:
+      "Returning customer — greet them warmly BY NAME. If usual_services/usual_staff exist, offer them first " +
+      "(e.g. 'Chị làm gel với Vy như mọi lần không?'). Use allergies only to steer away from allergens — " +
+      "never recite the list. NEVER mention visit counts, spend, internal notes, or that you 'looked them up'.",
+  });
+}
+
+// ─── leave_message_for_owner ─────────────────────────────────────────────────
+// Escalation path: when the customer needs something beyond the receptionist's
+// tools (complaint, refund, special request), take a message. Durable log row
+// first (ai_actions_log — visible in the dashboard), then owner alert via the
+// salon's configured channel (email / SMS / both). Alert failure never fails the
+// tool: the logged row is the source of truth.
+//
+// Two abuse controls, because this tool spends real money (Twilio/Resend) and is
+// reachable from surfaces with no authentication:
+//   • the message is truncated ONCE, before both the log row and the alert. The
+//     original capped only the log row and interpolated the raw string into the
+//     alert body, so a 3,000-character message became ~20 billed SMS segments.
+//   • a per-salon hourly quota, counted off the durable log rows themselves so
+//     it survives restarts and cannot be reset by minting a new session id.
+const ESCALATION_MAX_CHARS = 1000;
+const ESCALATION_MAX_PER_SALON_PER_HOUR = 10;
+
+async function handleLeaveMessageForOwner(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  salonSlug: string,
+  args: Record<string, unknown>,
+  sessionId: string | null,
+) {
+  const rawMessage    = (args.message        as string | undefined)?.trim();
+  const customerName  = (args.customer_name  as string | undefined)?.trim() ?? "";
+  const customerPhone = (args.customer_phone as string | undefined)?.trim() ?? "";
+  const urgency       = args.urgency === "urgent" ? "urgent" : "normal";
+
+  if (!rawMessage) return NextResponse.json({ error: "missing_message" }, { status: 400 });
+  const message = rawMessage.slice(0, ESCALATION_MAX_CHARS);
+
+  const { data: salon } = await supabase
+    .from("salons")
+    .select("id, name")
+    .eq("slug", salonSlug)
+    .single();
+  if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
+
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const { count: recentCount } = await supabase
+    .from("ai_actions_log")
+    .select("id", { count: "exact", head: true })
+    .eq("salon_id", salon.id)
+    .eq("action_type", "customer_message_escalation")
+    .gte("created_at", oneHourAgo);
+
+  if ((recentCount ?? 0) >= ESCALATION_MAX_PER_SALON_PER_HOUR) {
+    // Deliberately a soft, non-error response: the caller may well be a real
+    // customer with a real complaint, and the receptionist should stay helpful
+    // rather than surface a system limit.
+    return NextResponse.json({
+      success: false,
+      throttled: true,
+      hint:
+        "The salon has received a lot of messages in the past hour. Apologise, and ask the customer to call the salon directly or try again later. Do NOT retry this tool.",
+    });
+  }
+
+  let logged = false;
+  try {
+    const { error } = await supabase.from("ai_actions_log").insert({
+      salon_id:    salon.id,
+      agent:       "receptionist",
+      action_type: "customer_message_escalation",
+      payload: {
+        customer_name:    customerName || null,
+        customer_phone:   customerPhone || null,
+        message,
+        urgency,
+        voice_session_id: sessionId,
+      },
+    });
+    logged = !error;
+  } catch { /* fall through to the alert */ }
+
+  try {
+    const { sendOwnerAlert } = await import("@/shared/ai/sendOwnerAlert");
+    const flag = urgency === "urgent" ? "🔴 KHẨN — " : "";
+    await sendOwnerAlert(String(salon.id), {
+      subject:  `${flag}Lời nhắn từ khách qua AI Tiếp tân${customerName ? ` — ${customerName}` : ""}`,
+      bodyText:
+        `Khách: ${customerName || "(không rõ tên)"}\n` +
+        `SĐT: ${customerPhone || "(chưa cung cấp)"}\n` +
+        `Nội dung: ${message}\n\n` +
+        `— Ghi nhận bởi AI Tiếp tân (voice/chat).`,
+    });
+  } catch (e) {
+    console.error("[leave_message_for_owner] owner alert failed", e);
+  }
+
+  return NextResponse.json({
+    success: true,
+    logged,
+    hint:
+      "Tell the customer their message has been passed to the salon owner, who will get back to them. " +
+      "Do not promise an exact response time.",
   });
 }

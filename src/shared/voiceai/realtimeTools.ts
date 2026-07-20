@@ -325,6 +325,53 @@ export const REALTIME_TOOLS = [
   // ─── Call control ─────────────────────────────────────────────────────────
   {
     type: "function" as const,
+    name: "lookup_customer",
+    description:
+      "Look up what the salon already knows about a customer by phone number: name, visit count, " +
+      "usual service, usual staff, allergies, favorite colors/styles. " +
+      "Call this IMMEDIATELY the first time the customer provides their phone number in the conversation — " +
+      "BEFORE confirming any booking — so you can greet returning customers by name and offer their usual. " +
+      "If the result has known: false, treat them as a new customer and never mention the lookup. " +
+      "This tool only reads — it never books or changes anything.",
+    parameters: {
+      type: "object" as const,
+      properties: {
+        customer_phone: {
+          type: "string",
+          description: "Customer's phone number, including country code if provided.",
+        },
+      },
+      required: ["customer_phone"],
+    },
+  },
+  {
+    type: "function" as const,
+    name: "leave_message_for_owner",
+    description:
+      "Take a message for the salon owner when the customer needs something BEYOND your tools: " +
+      "a complaint, refund/payment issue, price negotiation, special request, or anything you are unsure about. " +
+      "The owner is notified immediately via their preferred channel. " +
+      "FIRST tell the customer you'll pass their message to the owner, collect their name + phone + the message, " +
+      "THEN call this tool. Use urgency 'urgent' only for complaints or time-sensitive issues. " +
+      "After success, confirm: the owner has the message and will get back to them (no exact time promise). " +
+      "NEVER argue with an upset customer — take the message instead.",
+    parameters: {
+      type: "object" as const,
+      properties: {
+        message:        { type: "string", description: "The customer's message, summarised faithfully in their own language." },
+        customer_name:  { type: "string", description: "Customer's name as they stated it." },
+        customer_phone: { type: "string", description: "Customer's callback phone number." },
+        urgency: {
+          type: "string",
+          enum: ["normal", "urgent"],
+          description: "'urgent' for complaints or time-sensitive issues; otherwise 'normal'.",
+        },
+      },
+      required: ["message"],
+    },
+  },
+  {
+    type: "function" as const,
     name: "end_call",
     description:
       "End the voice call gracefully. " +
