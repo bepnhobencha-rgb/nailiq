@@ -705,6 +705,7 @@ export function BookingBlock(props: BookingBlockProps) {
       <button
         type="button"
         data-testid={`booking-block-${bookingId}`}
+        data-booking-source={source}
         className={cn(commonClass, "appearance-none border-0")}
         style={style}
         title={tooltipTitle}
@@ -723,6 +724,7 @@ export function BookingBlock(props: BookingBlockProps) {
       style={style}
       title={tooltipTitle}
       data-booking-id={bookingId}
+      data-booking-source={source}
       data-testid={`booking-block-${bookingId}`}
     >
       {inner}

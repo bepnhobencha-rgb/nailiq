@@ -39,6 +39,8 @@ export type SeedPartyLinkOpts = {
   slotCount?: number;
   /** Hours from now until the group starts. Default 3. */
   hoursFromNow?: number;
+  /** Fixed start used by date-sensitive dashboard tests. Takes priority over hoursFromNow. */
+  startTimeIso?: string;
   /** Phase 6: wave_number per slot index (e.g. [1,1,1,2,2]). Defaults to all 1. */
   wavePlan?: number[];
   /**
@@ -73,7 +75,9 @@ export async function seedPartyLink(opts: SeedPartyLinkOpts): Promise<SeededPart
   } = opts;
 
   const groupId = crypto.randomUUID();
-  const startMs = Date.now() + hoursFromNow * 3600_000;
+  const startMs = opts.startTimeIso
+    ? new Date(opts.startTimeIso).getTime()
+    : Date.now() + hoursFromNow * 3600_000;
   const bookingIds: string[] = [];
 
   // Insert one booking per slot. Without a wavePlan, stagger by 5 min (legacy).
