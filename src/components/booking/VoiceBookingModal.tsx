@@ -1148,9 +1148,20 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     onClose();
   }, [endSession, cleanup, onClose]);
 
+  // `endSession` closes over `transcript`, so the unmount cleanup must call the
+  // LATEST one. Running `start()` on mount needs empty deps, and the cleanup of
+  // an empty-deps effect keeps the closure from the FIRST render — where the
+  // transcript is still []. That is how every closed call ended up reporting an
+  // empty transcript, which the end route then wrote over the tool log.
+  // Same ref indirection the hangup/nudge callbacks above already use.
+  const endSessionRef = useRef(endSession);
+  useEffect(() => {
+    endSessionRef.current = endSession;
+  }, [endSession]);
+
   useEffect(() => {
     void start();
-    return () => { void endSession("abandoned"); };
+    return () => { void endSessionRef.current("abandoned"); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
