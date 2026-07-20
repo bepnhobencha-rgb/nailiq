@@ -126,6 +126,8 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
   // costs no round trip. Switch once: flip-flopping mid-sentence is worse than
   // being wrong in one direction.
   const altLangRef         = useRef<{ language: string; instructions: string } | null>(null);
+  /** True while a `say_this` line is being spoken with barge-in disabled. */
+  const protectingLineRef  = useRef(false);
   const languageSwitchedRef = useRef(false);
   const [durationSec, setDuration]        = useState(0);
   const [bookingResult, setBookingResult] = useState<BookingResult | null>(null);
@@ -360,6 +362,28 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         pendingToolCallsRef.current = Math.max(0, pendingToolCallsRef.current - 1);
         if (pendingToolCallsRef.current !== 0) return;
 
+        // Barge-in kills these lines. Measured: the closing started as "Xong rồi,"
+        // and was cut the moment the customer said "được rồi" over it, so the
+        // service, time and staff never reached them — and the OTP notice was
+        // swallowed the same way when they read the code early. For these two
+        // sentences only, turn interruption off, then restore it on response.done.
+        // Everything else keeps barge-in, which is what makes the call feel live.
+        if (sayThis) {
+          protectingLineRef.current = true;
+          try {
+            wsRef.current?.send(JSON.stringify({
+              type: "session.update",
+              session: {
+                type: "realtime",
+                audio: { input: { turn_detection: {
+                  type: "semantic_vad", eagerness: "low",
+                  create_response: true, interrupt_response: false,
+                } } },
+              },
+            }));
+          } catch { /* best-effort */ }
+        }
+
         const instructions = sayThis
           ? `Say exactly this to the customer, word for word, and nothing else:\n\n${sayThis}\n\n` +
             `If you are speaking Vietnamese, translate it naturally but keep every detail — the ` +
@@ -494,6 +518,24 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
 
     if (type === "response.done") {
       aiActiveRef.current = false;
+      // Restore barge-in after a protected line finishes. Runs on the cancelled
+      // path too — leaving interruption disabled would make the rest of the call
+      // feel dead.
+      if (protectingLineRef.current) {
+        protectingLineRef.current = false;
+        try {
+          wsRef.current?.send(JSON.stringify({
+            type: "session.update",
+            session: {
+              type: "realtime",
+              audio: { input: { turn_detection: {
+                type: "semantic_vad", eagerness: "low",
+                create_response: true, interrupt_response: true,
+              } } },
+            },
+          }));
+        } catch { /* best-effort */ }
+      }
       if (typingIntervalRef.current) { clearInterval(typingIntervalRef.current); typingIntervalRef.current = null; }
       setAiActivity("idle");
 
