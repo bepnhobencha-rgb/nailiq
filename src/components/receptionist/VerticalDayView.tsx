@@ -184,6 +184,10 @@ export default function VerticalDayView({
 
   return (
     <div
+      // Mobile counterpart of `staff-timeline-grid`. The two are mutually
+      // exclusive — the parent picks one by viewport — so anything waiting on
+      // "the day view has rendered" has to accept whichever one it gets.
+      data-testid="vertical-day-view"
       className="relative select-none pb-28"
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}

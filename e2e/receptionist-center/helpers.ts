@@ -562,12 +562,20 @@ export async function gotoReceptionistCenter(
     state: "attached",
     timeout: 45_000,
   });
+  // Wait for whichever day view this viewport renders. ReceptionistCenter picks
+  // exactly ONE: `staff-timeline-grid` on desktop, `vertical-day-view` below
+  // 640 px. Gating on the desktop grid alone meant every spec in the `mobile`
+  // project sat here until the 45s timeout and then failed — not because the
+  // page was broken, but because it was waiting for an element that viewport
+  // never renders. Hydration is still gated properly by `rc-hydrated` below.
+  //
   // `.first()` — same streaming-hydration race as `receptionist-center-loaded`
-  // above: the grid can briefly appear twice (SSR placeholder + hydrated copy).
-  await page.getByTestId("staff-timeline-grid").first().waitFor({
-    state: "visible",
-    timeout: 45_000,
-  });
+  // above: the element can briefly appear twice (SSR placeholder + hydrated
+  // copy), and strict mode throws on two matches.
+  await page
+    .locator('[data-testid="staff-timeline-grid"], [data-testid="vertical-day-view"]')
+    .first()
+    .waitFor({ state: "visible", timeout: 45_000 });
   if (opts?.expectWalkinQueue !== false) {
     await page.getByTestId("walkin-add-form").waitFor({ state: "visible", timeout: 45_000 });
   }
