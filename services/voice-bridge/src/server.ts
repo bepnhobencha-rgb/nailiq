@@ -81,7 +81,10 @@ wss.on("connection", (twilioWs) => {
       const r = await fetch(`${NEXT_APP_URL}/api/voice/phone-config`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-voice-bridge-secret": BRIDGE_SECRET },
-        body: JSON.stringify({ slug }),
+        // `from` is the carrier-verified caller number. Forwarded so the prompt
+        // can greet a returning caller by name without asking for it. Same value
+        // already sent as callerVerifiedPhone on tool calls.
+        body: JSON.stringify({ slug, from }),
       });
       if (!r.ok) { console.warn("[voice-bridge] phone-config FAILED", r.status); return closeAll(); }
       cfg = (await r.json()) as typeof cfg;

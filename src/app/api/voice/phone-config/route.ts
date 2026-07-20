@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  let body: { slug?: string; language?: string };
+  let body: { slug?: string; language?: string; from?: string };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -36,6 +36,13 @@ export async function POST(req: NextRequest) {
 
   const slug = body.slug?.trim();
   if (!slug) return NextResponse.json({ error: "missing_slug" }, { status: 400 });
+
+  // The caller's carrier-verified inbound number, forwarded by the phone bridge
+  // (which only reaches this route with the shared secret checked above). Passed
+  // into the prompt so the agent already knows the number and need not ask.
+  // Personalisation still runs through lookup_customer, which keeps the tenant +
+  // consent checks — this only removes the asking, not any safeguard.
+  const from = typeof body.from === "string" && body.from.trim() ? body.from.trim() : null;
 
   const language: SupportedLanguage = SUPPORTED_LANGUAGES.includes(
     (body.language ?? "") as SupportedLanguage,
@@ -61,7 +68,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     model: VOICE_MODEL,
     voice: ctx.personaVoice,
-    instructions: buildSystemPrompt(ctx, language),
+    instructions: buildSystemPrompt(ctx, language, from),
     tools: [...REALTIME_TOOLS],
   });
 }
