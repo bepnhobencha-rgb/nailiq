@@ -191,39 +191,117 @@ describe("toolExecutor — a whole party is never cancelled without proof", () =
     ],
   };
 
-  // NOTE ON WHAT THIS ACTUALLY COVERS TODAY.
-  //
-  // The `group_id` branch of cancel_booking is currently UNREACHABLE. The
-  // handler opens with `if (!bookingId && !customerPhone) return 400`, and the
-  // phone branch `if (!bookingId && customerPhone)` returns on every one of its
-  // paths — so there is no argument combination that arrives at
-  // `if (!bookingId && groupIdArg)`. The branch is dead code on main too, not
-  // something this refactor introduced.
-  //
-  // That means the identity gate ported there from #781 is defence in depth
-  // rather than a live fix, and it also means whole-party cancel over voice
-  // does not work at all: the phone branch hands the model a hint telling it to
-  // call cancel_booking with group_id, and that call just loops back to the
-  // same listing. Tracked separately — the fix is to make the branch reachable,
-  // which is safe to do precisely because the gate is already sitting there.
-  //
-  // These tests therefore assert the INVARIANT ("no party gets cancelled
-  // without verification"), which holds today via the early return and must
-  // keep holding once the branch is wired up.
-  it("group_id alone is rejected outright", async () => {
+  // The group branch is reachable as of the ordering fix, so these exercise the
+  // gate itself rather than an early return further up. Before it, the branch
+  // was dead code: the phone lookup returned on all of its paths and sat in
+  // front of it, so no argument combination ever arrived here.
+  it("cancelling a whole party without proof is refused", async () => {
     const body = await call("cancel_booking", { group_id: GROUP_ID }, partyFixtures);
+    expect(body.error).toBe("otp_required");
     expect(body.success).toBeUndefined();
     expect(body.cancelled_count).toBeUndefined();
   });
 
-  it("group_id plus a phone never cancels — it can only ever list", async () => {
+  it("supplying a phone alongside group_id does not bypass the gate", async () => {
+    // The spoken phone is attacker-controlled and is NOT the proof — the gate
+    // verifies against the organizer's number as stored on the party rows.
     const body = await call(
       "cancel_booking",
-      { group_id: GROUP_ID, customer_phone: OWNER_PHONE },
+      { group_id: GROUP_ID, customer_phone: "16045559999" },
       partyFixtures,
     );
-    expect(body.success).toBeUndefined();
+    expect(body.error).toBe("otp_required");
     expect(body.cancelled_count).toBeUndefined();
+  });
+
+  it("a party with no phone anywhere is refused rather than cancelled unverified", async () => {
+    const body = await call("cancel_booking", { group_id: GROUP_ID }, {
+      ...partyFixtures,
+      bookings: [
+        { id: "b1", status: "confirmed", client_phone: null, is_group_organizer: true, group_id: GROUP_ID },
+        { id: "b2", status: "confirmed", client_phone: "", is_group_organizer: false, group_id: GROUP_ID },
+      ],
+    });
+    expect(body.error).toBe("group_not_verifiable");
+    expect(body.cancelled_count).toBeUndefined();
+  });
+
+  it("a party already fully cancelled is a 404, not a no-op success", async () => {
+    const body = await call("cancel_booking", { group_id: GROUP_ID }, {
+      ...partyFixtures,
+      bookings: [
+        { id: "b1", status: "cancelled", client_phone: OWNER_PHONE, is_group_organizer: true, group_id: GROUP_ID },
+      ],
+    });
+    expect(body.error).toBe("group_not_found_or_already_cancelled");
+  });
+});
+
+describe("toolExecutor — a verified caller CAN cancel the party", () => {
+  // The point of the ordering fix. Without this the branch could be reachable
+  // and still broken, and the gate tests above would happily pass.
+  const verifiedSession = {
+    phone: OWNER_PHONE,
+    consumed_at: null,
+    expires_at: new Date(Date.now() + 5 * 60_000).toISOString(),
+  };
+
+  it("a valid OTP session for the organizer cancels every active row", async () => {
+    const body = await call("cancel_booking", { group_id: GROUP_ID, otp_session_id: "sess-1" }, {
+      salons: salonRow,
+      phone_otp_sessions: verifiedSession,
+      bookings: [
+        { id: "b1", status: "confirmed", client_phone: OWNER_PHONE, is_group_organizer: true, group_id: GROUP_ID },
+        { id: "b2", status: "confirmed", client_phone: null, is_group_organizer: false, group_id: GROUP_ID },
+      ],
+    });
+    expect(body.success).toBe(true);
+    expect(body.cancelled_count).toBe(2);
+  });
+
+  it("carrier-verified caller-ID for the organizer also works, without a code", async () => {
+    const body = await call("cancel_booking", { group_id: GROUP_ID }, {
+      salons: salonRow,
+      phone_otp_sessions: null,
+      bookings: [
+        { id: "b1", status: "confirmed", client_phone: OWNER_PHONE, is_group_organizer: true, group_id: GROUP_ID },
+      ],
+    }, { callerVerifiedPhone: OWNER_PHONE });
+    expect(body.success).toBe(true);
+    expect(body.cancelled_count).toBe(1);
+  });
+
+  it("already-cancelled rows are not re-cancelled or counted", async () => {
+    const body = await call("cancel_booking", { group_id: GROUP_ID }, {
+      salons: salonRow,
+      phone_otp_sessions: null,
+      bookings: [
+        { id: "b1", status: "confirmed", client_phone: OWNER_PHONE, is_group_organizer: true, group_id: GROUP_ID },
+        { id: "b2", status: "cancelled",  client_phone: null, is_group_organizer: false, group_id: GROUP_ID },
+      ],
+    }, { callerVerifiedPhone: OWNER_PHONE });
+    expect(body.success).toBe(true);
+    expect(body.cancelled_count).toBe(1);
+  });
+});
+
+describe("toolExecutor — cancel_booking routes on the right identifier", () => {
+  it("no identifier at all is rejected", async () => {
+    const body = await call("cancel_booking", {}, { salons: salonRow });
+    expect(body.error).toBe("missing_booking_id_or_phone");
+  });
+
+  it("group_id alone is a valid identifier (it used to bounce as 'missing')", async () => {
+    const body = await call("cancel_booking", { group_id: GROUP_ID }, {
+      salons: salonRow,
+      phone_otp_sessions: null,
+      bookings: [
+        { id: "b1", status: "confirmed", client_phone: OWNER_PHONE, is_group_organizer: true, group_id: GROUP_ID },
+      ],
+    });
+    // Reaches the gate instead of bouncing off the argument check.
+    expect(body.error).not.toBe("missing_booking_id_or_phone");
+    expect(body.error).toBe("otp_required");
   });
 });
 

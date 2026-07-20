@@ -610,12 +610,14 @@ async function handleCancelBooking(
   const bookingId     = args.booking_id     as string | undefined;
   const customerPhone = args.customer_phone as string | undefined;
   const reason        = (args.reason as string | undefined) ?? "customer_request";
+  const groupIdArg    = args.group_id     as string | undefined;
 
-  // At least one of booking_id or customer_phone is required.
-  if (!bookingId && !customerPhone) {
+  // At least one identifier is required. group_id counts: it is how the model
+  // asks for a whole-party cancel after the phone lookup hands it one.
+  if (!bookingId && !customerPhone && !groupIdArg) {
     return NextResponse.json(
       { error: "missing_booking_id_or_phone",
-        hint: "Provide booking_id (if known) or customer_phone to look up the booking." },
+        hint: "Provide booking_id (if known), group_id (to cancel a whole party), or customer_phone to look up the booking." },
       { status: 400 },
     );
   }
@@ -630,8 +632,103 @@ async function handleCancelBooking(
 
   const tz = (salon as { timezone?: string }).timezone ?? "America/Los_Angeles";
 
-  // ── Path B: phone lookup (no booking_id yet) ────────────────────────────────
-  if (!bookingId && customerPhone) {
+  // ── Path A: group_id → cancel the WHOLE party ───────────────────────────────
+  // Checked FIRST, and before the phone lookup: the phone branch below returns on
+  // every path, so while this sat after it there was no argument combination that
+  // could reach it — whole-party cancel was unreachable code. The phone branch's
+  // own hint tells the model to come back with group_id, so that instruction had
+  // nowhere to land.
+  if (!bookingId && groupIdArg) {
+    // Fetch the WHOLE party, cancelled rows included: only the active rows get
+    // cancelled, but the phone we verify against may sit on a row that is
+    // already cancelled (e.g. the organizer dropped out first).
+    const { data: groupRows, error: grpErr } = await supabase
+      .from("bookings")
+      .select("id, status, client_phone, is_group_organizer")
+      .eq("salon_id", salon.id)
+      .eq("group_id", groupIdArg);
+
+    const party = (groupRows ?? []) as {
+      id: string; status: string;
+      client_phone: string | null; is_group_organizer: boolean | null;
+    }[];
+    const active = party.filter((r) => r.status !== "cancelled");
+
+    if (grpErr || active.length === 0) {
+      return NextResponse.json({ error: "group_not_found_or_already_cancelled" }, { status: 404 });
+    }
+
+    // Identity gate (ported from #781 — it landed in route.ts, which this module
+    // replaced). Cancelling a whole party is the most destructive thing the
+    // receptionist can do, and the phone branch above hands out `group_id` with
+    // a hint spelling out the full-cancel call, so without this anyone who saw
+    // a party's id could wipe it.
+    //
+    // Verify against the organizer's phone: in a group booking only member 0
+    // supplies a real number, guest rows are frequently blank — so a "first
+    // row" fallback would hand requirePhoneVerified an empty string and break
+    // legitimate cancels (107 of 231 production group rows have no usable phone).
+    const usablePhone = (p: string | null): boolean =>
+      typeof p === "string" && p.replace(/\D/g, "").length >= PHONE_SUFFIX_MIN_DIGITS;
+    const ownerPhone =
+      party.find((r) => r.is_group_organizer && usablePhone(r.client_phone))?.client_phone
+      ?? party.find((r) => usablePhone(r.client_phone))?.client_phone
+      ?? null;
+
+    if (!ownerPhone) {
+      return NextResponse.json({
+        error: "group_not_verifiable",
+        hint: "This party has no phone number on file, so I can't verify who it belongs to. Ask the customer to contact the salon directly.",
+      });
+    }
+
+    const gate = await requirePhoneVerified(supabase, salon.id, ownerPhone, {
+      otpSessionId: args.otp_session_id as string | undefined,
+      callerVerifiedPhone,
+    });
+    if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
+
+    const ids = active.map((r) => r.id);
+    const { error: cancelErr } = await supabase
+      .from("bookings")
+      .update({ status: "cancelled" })
+      .in("id", ids);
+
+    if (cancelErr) {
+      return NextResponse.json({ error: "cancel_failed", detail: cancelErr.message }, { status: 500 });
+    }
+
+    // Audit log — one entry per booking in the group
+    ids.forEach((id) =>
+      void logBookingEvent({
+        bookingId: id,
+        salonId: String(salon.id),
+        actorUserId: null,
+        actorRole: "system",
+        eventType: "booking_cancelled",
+        payload: { reason: "voice_ai_group_cancel", group_id: groupIdArg },
+      }),
+    );
+
+    // Owner/admin "cancelled" alert — one email for the group (first booking).
+    if (ids[0]) {
+      void sendOwnerBookingNotification({
+        salonId: String(salon.id),
+        bookingId: ids[0],
+        event: "cancel",
+      });
+    }
+
+    return NextResponse.json({
+      success:        true,
+      cancelled_count: ids.length,
+      group_id:        groupIdArg,
+      message: `Đã huỷ thành công ${ids.length} lịch trong nhóm.`,
+    });
+  }
+
+  // ── Path B: phone lookup (no booking_id, no group_id) ───────────────────────
+  if (!bookingId && !groupIdArg && customerPhone) {
     const last9 = phoneSuffixOrNull(customerPhone);
     if (!last9) return NextResponse.json(PHONE_TOO_SHORT);
     const now = new Date().toISOString();
@@ -722,98 +819,7 @@ async function handleCancelBooking(
     });
   }
 
-  // ── Path A: group_id provided → cancel ALL bookings in the group ────────────
-  const groupIdArg = args.group_id as string | undefined;
-  if (!bookingId && groupIdArg) {
-    // Fetch the WHOLE party, cancelled rows included: only the active rows get
-    // cancelled, but the phone we verify against may sit on a row that is
-    // already cancelled (e.g. the organizer dropped out first).
-    const { data: groupRows, error: grpErr } = await supabase
-      .from("bookings")
-      .select("id, status, client_phone, is_group_organizer")
-      .eq("salon_id", salon.id)
-      .eq("group_id", groupIdArg);
-
-    const party = (groupRows ?? []) as {
-      id: string; status: string;
-      client_phone: string | null; is_group_organizer: boolean | null;
-    }[];
-    const active = party.filter((r) => r.status !== "cancelled");
-
-    if (grpErr || active.length === 0) {
-      return NextResponse.json({ error: "group_not_found_or_already_cancelled" }, { status: 404 });
-    }
-
-    // Identity gate (ported from #781 — it landed in route.ts, which this module
-    // replaced). Cancelling a whole party is the most destructive thing the
-    // receptionist can do, and the phone branch above hands out `group_id` with
-    // a hint spelling out the full-cancel call, so without this anyone who saw
-    // a party's id could wipe it.
-    //
-    // Verify against the organizer's phone: in a group booking only member 0
-    // supplies a real number, guest rows are frequently blank — so a "first
-    // row" fallback would hand requirePhoneVerified an empty string and break
-    // legitimate cancels (107 of 231 production group rows have no usable phone).
-    const usablePhone = (p: string | null): boolean =>
-      typeof p === "string" && p.replace(/\D/g, "").length >= PHONE_SUFFIX_MIN_DIGITS;
-    const ownerPhone =
-      party.find((r) => r.is_group_organizer && usablePhone(r.client_phone))?.client_phone
-      ?? party.find((r) => usablePhone(r.client_phone))?.client_phone
-      ?? null;
-
-    if (!ownerPhone) {
-      return NextResponse.json({
-        error: "group_not_verifiable",
-        hint: "This party has no phone number on file, so I can't verify who it belongs to. Ask the customer to contact the salon directly.",
-      });
-    }
-
-    const gate = await requirePhoneVerified(supabase, salon.id, ownerPhone, {
-      otpSessionId: args.otp_session_id as string | undefined,
-      callerVerifiedPhone,
-    });
-    if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
-
-    const ids = active.map((r) => r.id);
-    const { error: cancelErr } = await supabase
-      .from("bookings")
-      .update({ status: "cancelled" })
-      .in("id", ids);
-
-    if (cancelErr) {
-      return NextResponse.json({ error: "cancel_failed", detail: cancelErr.message }, { status: 500 });
-    }
-
-    // Audit log — one entry per booking in the group
-    ids.forEach((id) =>
-      void logBookingEvent({
-        bookingId: id,
-        salonId: String(salon.id),
-        actorUserId: null,
-        actorRole: "system",
-        eventType: "booking_cancelled",
-        payload: { reason: "voice_ai_group_cancel", group_id: groupIdArg },
-      }),
-    );
-
-    // Owner/admin "cancelled" alert — one email for the group (first booking).
-    if (ids[0]) {
-      void sendOwnerBookingNotification({
-        salonId: String(salon.id),
-        bookingId: ids[0],
-        event: "cancel",
-      });
-    }
-
-    return NextResponse.json({
-      success:        true,
-      cancelled_count: ids.length,
-      group_id:        groupIdArg,
-      message: `Đã huỷ thành công ${ids.length} lịch trong nhóm.`,
-    });
-  }
-
-  // ── Path A: booking_id provided → cancel immediately ────────────────────────
+  // ── Path C: booking_id provided → cancel that one booking ───────────────────
   const { data: booking } = await supabase
     .from("bookings")
     .select("id, salon_id, status, client_name, client_phone, group_id, start_time_utc, services!bookings_service_id_fkey(name)")
