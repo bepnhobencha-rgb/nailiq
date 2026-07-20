@@ -29,6 +29,9 @@ export type CustomerWaitMessages = {
   thankYou: string;
   seeYouAgain: string;
   cancelled: string;
+  /** Self-service actions on the wait page (SMS deep-links here). */
+  rescheduleCta: string;
+  cancelCta: string;
   autoRefreshNote: string;
   /** Fallback screen — booking row missing or expired. */
   notFound: string;
@@ -55,6 +58,8 @@ const en: CustomerWaitMessages = {
   thankYou: "Thank you for visiting {salon}!",
   seeYouAgain: "See you again 💛",
   cancelled: "This booking was cancelled",
+  rescheduleCta: "Reschedule",
+  cancelCta: "Cancel appointment",
   autoRefreshNote: "This page updates automatically — no need to refresh",
   notFound: "We couldn't find this booking",
   tryAgainLater: "Couldn't load — please try again in a moment",
@@ -78,6 +83,8 @@ const vi: CustomerWaitMessages = {
   thankYou: "Cảm ơn bạn đã ghé {salon}!",
   seeYouAgain: "Hẹn gặp lại 💛",
   cancelled: "Lịch hẹn đã được huỷ",
+  rescheduleCta: "Đổi giờ hẹn",
+  cancelCta: "Huỷ lịch hẹn",
   autoRefreshNote: "Trang này tự cập nhật — không cần F5",
   notFound: "Không tìm thấy lịch hẹn này",
   tryAgainLater: "Không tải được — vui lòng thử lại sau ít phút",
