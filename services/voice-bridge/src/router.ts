@@ -27,7 +27,31 @@ export type RealtimeSessionConfig = {
   instructions: string;
   voice: string;
   tools: unknown[];
+  /** BCP-47 hint for the transcriber. On 8 kHz phone audio, hinting the right
+   *  language raises accuracy sharply — an un-hinted Vietnamese call transcribed
+   *  as Arabic in testing. Omit to let Whisper auto-detect. */
+  transcribeLang?: string | null;
 };
+
+/**
+ * Detect the caller's language from a transcript turn, among the languages the
+ * agent supports on the phone. Conservative on purpose: return null (no switch)
+ * unless the signal is strong, because a wrong switch mid-call is worse than
+ * staying put. Strong signals:
+ *   • Vietnamese: tone-marked vowels / đ — these never appear in en/es text.
+ *   • Spanish: ñ / ¿ / ¡, or common Spanish words (short Spanish often has no
+ *     special character, so a small function-word list backs up the accents).
+ *   • English: common English function words.
+ */
+export function detectLanguage(text: string): "vi" | "es" | "en" | null {
+  const t = text.toLowerCase().trim();
+  if (!t) return null;
+  if (/[ăâđêôơưàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i.test(text)) return "vi";
+  if (/[ñ¿¡]/.test(text)) return "es";
+  if (/\b(hola|gracias|quiero|cita|uñas|una|por favor|buenos|buenas|sí|para|con|cómo|qué|dónde|cuándo|mañana|hoy|reservar|pedicura|manicura|señor|señora)\b/.test(t)) return "es";
+  if (/\b(the|want|book|today|tomorrow|yes|no|please|appointment|nails|hello|thanks|with|for|would|like)\b/.test(t)) return "en";
+  return null;
+}
 
 /**
  * OpenAI `session.update` (GA Realtime API shape). The Beta shape
@@ -50,8 +74,13 @@ export function sessionUpdateMessage(cfg: RealtimeSessionConfig): object {
           // Transcribe the caller's speech. Without this the model still hears
           // them but emits no input transcript, so a phone call leaves no record
           // of what was said — unlike the web widget. Needed for the owner/admin
-          // call-review log.
-          transcription: { model: "gpt-realtime-whisper" },
+          // call-review log. The language hint matters on 8 kHz phone audio: with
+          // it, transcription of the salon's primary language is far more
+          // accurate; without it, Whisper auto-detects and mangles it.
+          transcription: {
+            model: "gpt-realtime-whisper",
+            ...(cfg.transcribeLang ? { language: cfg.transcribeLang } : {}),
+          },
         },
         output: {
           format: { type: "audio/pcmu" },

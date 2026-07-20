@@ -19,6 +19,7 @@ import http from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import {
   sessionUpdateMessage,
+  detectLanguage,
   appendAudioMessage,
   twilioMediaFrame,
   twilioClearFrame,
@@ -52,8 +53,37 @@ wss.on("connection", (twilioWs) => {
   // server can verify the booking time against what the caller actually said —
   // trusted there only because it arrives with the bridge secret.
   let lastUserUtterance = "";
+  let currentLang = "en";
+  let switchingLang = false;
   let openaiWs: WebSocket | null = null;
   let closed = false;
+
+  // Mid-call language switch. The session opens in the salon's default language;
+  // if the caller clearly speaks a different supported one, re-fetch the prompt
+  // in that language and re-configure the live session. Mirrors what the web
+  // widget does, which the phone channel never had — a Vietnamese caller was
+  // stuck talking to an English agent.
+  const maybeSwitchLanguage = async (userText: string) => {
+    if (switchingLang) return;
+    const detected = detectLanguage(userText);
+    if (!detected || detected === currentLang) return;
+    switchingLang = true;
+    try {
+      const r = await fetch(`${NEXT_APP_URL}/api/voice/phone-config`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-voice-bridge-secret": BRIDGE_SECRET },
+        body: JSON.stringify({ slug, from, language: detected }),   // no newSession → no new row
+      });
+      if (!r.ok) return;
+      const c = (await r.json()) as { instructions: string; voice: string; tools: unknown[] };
+      currentLang = detected;
+      openaiWs?.send(JSON.stringify(sessionUpdateMessage({
+        instructions: c.instructions, voice: c.voice, tools: c.tools, transcribeLang: detected,
+      })));
+      console.log(`[voice-bridge] switched language → ${detected}`);
+    } catch { /* best-effort — the call continues in the current language */ }
+    finally { switchingLang = false; }
+  };
 
   // Conversation record for owner/admin review — the phone equivalent of what
   // the web widget captures. Written to voice_ai_sessions.transcript at hangup.
@@ -105,20 +135,21 @@ wss.on("connection", (twilioWs) => {
 
   const startOpenAi = async () => {
     // Fetch the agent config (instructions + tools + voice + model) from Next.
-    let cfg: { model: string; voice: string; instructions: string; tools: unknown[]; sessionId?: string | null };
+    let cfg: { model: string; voice: string; instructions: string; tools: unknown[]; sessionId?: string | null; language?: string };
     try {
       const r = await fetch(`${NEXT_APP_URL}/api/voice/phone-config`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-voice-bridge-secret": BRIDGE_SECRET },
-        // `from` is the carrier-verified caller number. Forwarded so the prompt
-        // can greet a returning caller by name without asking for it. Same value
-        // already sent as callerVerifiedPhone on tool calls.
-        body: JSON.stringify({ slug, from }),
+        // `from` is the carrier-verified caller number. newSession=true marks this
+        // as the call-opening fetch (creates the session row); language switches
+        // re-fetch without it.
+        body: JSON.stringify({ slug, from, newSession: true }),
       });
       if (!r.ok) { console.warn("[voice-bridge] phone-config FAILED", r.status); return closeAll(); }
       cfg = (await r.json()) as typeof cfg;
       sessionId = cfg.sessionId ?? "";
-      console.log(`[voice-bridge] phone-config ok model=${cfg.model} tools=${cfg.tools?.length ?? 0} session=${sessionId || "(none)"}`);
+      currentLang = cfg.language ?? "en";
+      console.log(`[voice-bridge] phone-config ok model=${cfg.model} lang=${currentLang} session=${sessionId || "(none)"}`);
     } catch (e) {
       console.warn("[voice-bridge] phone-config error", e);
       return closeAll();
@@ -132,7 +163,7 @@ wss.on("connection", (twilioWs) => {
 
     openaiWs.on("open", () => {
       console.log("[voice-bridge] openai WS connected — sending session.update + greet");
-      openaiWs?.send(JSON.stringify(sessionUpdateMessage({ instructions: cfg.instructions, voice: cfg.voice, tools: cfg.tools })));
+      openaiWs?.send(JSON.stringify(sessionUpdateMessage({ instructions: cfg.instructions, voice: cfg.voice, tools: cfg.tools, transcribeLang: currentLang })));
       openaiWs?.send(JSON.stringify({ type: "response.create" })); // greet first
     });
 
@@ -159,6 +190,7 @@ wss.on("connection", (twilioWs) => {
         if (txt) {
           transcript.push({ role: "user", text: txt });
           lastUserUtterance = txt;   // most recent caller turn, for the time guard
+          void maybeSwitchLanguage(txt);
         }
       }
 
