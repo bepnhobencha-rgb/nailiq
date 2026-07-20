@@ -191,10 +191,13 @@ test.describe("/register page integrity", () => {
   // funnel now points at /contact (Founder Pilot), so /register is no longer
   // the primary landing target, but the auth surface must keep working.
   test("renders auth form (Google + email)", async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem("nailiq-user-lang", "en");
+    });
     await page.goto("/register");
     await page.waitForLoadState("networkidle");
     await expect(
-      page.getByRole("heading", { name: /sign in or sign up/i }),
+      page.getByRole("heading", { name: /get started with nailiq/i }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: /continue with google/i }),
