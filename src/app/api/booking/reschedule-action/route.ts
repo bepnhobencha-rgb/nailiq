@@ -95,7 +95,7 @@ export async function POST(req: Request) {
     // Owner/manager alert — customer self-rescheduled via email link. Booking
     // now holds the NEW start; pass the original as previousStartUtc so the
     // email shows old → new. Best-effort, fire-and-forget.
-    void sendOwnerBookingNotification({
+    await sendOwnerBookingNotification({
       salonId: salon_id,
       bookingId,
       event: "reschedule",

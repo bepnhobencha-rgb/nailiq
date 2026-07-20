@@ -242,7 +242,7 @@ export async function POST(req: Request) {
   // Owner alert + customer email + waitlist after the response is flushed.
   after(async () => {
     // Owner/manager alert — customer self-cancelled via email link.
-    void sendOwnerBookingNotification({
+    await sendOwnerBookingNotification({
       salonId: salon_id,
       bookingId,
       event: "cancel",

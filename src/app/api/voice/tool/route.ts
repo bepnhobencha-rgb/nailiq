@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { logBookingEvent } from "@/shared/dashboard/auditLog";
@@ -526,11 +526,13 @@ async function handleConfirmBooking(
         .eq("id", bookingId);
     } catch { /* best-effort */ }
     // Owner/admin "new booking" alert (opt-in, fire-and-forget).
-    void sendOwnerBookingNotification({
-      salonId: String(salon.id),
-      bookingId,
-      event: "new",
-    });
+    after(() =>
+      sendOwnerBookingNotification({
+        salonId: String(salon.id),
+        bookingId,
+        event: "new",
+      }),
+    );
     void logBookingEvent({
       bookingId,
       salonId: String(salon.id),
@@ -819,11 +821,13 @@ async function handleCancelBooking(
 
     // Owner/admin "cancelled" alert — one email for the group (first booking).
     if (ids[0]) {
-      void sendOwnerBookingNotification({
-        salonId: String(salon.id),
-        bookingId: ids[0],
-        event: "cancel",
-      });
+      after(() =>
+        sendOwnerBookingNotification({
+          salonId: String(salon.id),
+          bookingId: ids[0],
+          event: "cancel",
+        }),
+      );
     }
 
     return NextResponse.json({
@@ -893,11 +897,13 @@ async function handleCancelBooking(
   });
 
   // Owner/admin "cancelled" alert (opt-in, fire-and-forget).
-  void sendOwnerBookingNotification({
-    salonId: String(salon.id),
-    bookingId: bookingId!,
-    event: "cancel",
-  });
+  after(() =>
+    sendOwnerBookingNotification({
+      salonId: String(salon.id),
+      bookingId: bookingId!,
+      event: "cancel",
+    }),
+  );
 
   // Update voice session (best-effort)
   if (sessionId) {
@@ -1112,12 +1118,14 @@ async function handleRescheduleBooking(
   }
 
   // Owner/admin "rescheduled" alert (opt-in, fire-and-forget).
-  void sendOwnerBookingNotification({
-    salonId: String(salon.id),
-    bookingId,
-    event: "reschedule",
-    previousStartUtc: oldStart,
-  });
+  after(() =>
+    sendOwnerBookingNotification({
+      salonId: String(salon.id),
+      bookingId,
+      event: "reschedule",
+      previousStartUtc: oldStart,
+    }),
+  );
 
   // Update voice session if we have one
   if (sessionId) {
@@ -1878,11 +1886,13 @@ async function handleConfirmGroupBooking(
     } catch { /* best-effort */ }
     // Owner/admin "new booking" alert — one email for the group (first booking).
     if (bookingIds[0]) {
-      void sendOwnerBookingNotification({
-        salonId: ctx.salonId,
-        bookingId: bookingIds[0],
-        event: "new",
-      });
+      after(() =>
+        sendOwnerBookingNotification({
+          salonId: ctx.salonId,
+          bookingId: bookingIds[0],
+          event: "new",
+        }),
+      );
     }
   }
 

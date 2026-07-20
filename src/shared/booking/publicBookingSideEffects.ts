@@ -9,6 +9,10 @@ import { sendOnlineSaveCardLink } from "@/shared/booking/sendOnlineSaveCardLink"
 import { sendBookingConfirmationEmail } from "@/shared/booking/sendBookingConfirmationEmail";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { claimReferral } from "@/shared/referrals/claimReferral";
+import {
+  sendOwnerBookingNotification,
+  type OwnerNotifyInput,
+} from "@/shared/dashboard/sendOwnerBookingNotification";
 
 type EmailInput = Parameters<typeof sendBookingConfirmationEmail>[0];
 
@@ -57,6 +61,11 @@ export async function runPublicBookingSideEffects(args: {
   /** Present when the customer arrived via `/<slug>?ref=CODE` — links the
    *  referral to this booking (rewards issue when the booking completes). */
   referral?: { salonId: string; code: string; refereePhone: string; refereeBookingId: string };
+  /** Owner/manager "new booking" alert. Lives here rather than at the
+   *  submitPublicBooking call site because that runs in the BROWSER, where
+   *  createServiceRoleClient() throws and the sender's catch swallowed it —
+   *  so no owner alert was ever sent for an online booking. */
+  ownerNotify?: OwnerNotifyInput;
 }): Promise<void> {
   after(async () => {
     const jobs: Promise<unknown>[] = [];
@@ -110,6 +119,13 @@ export async function runPublicBookingSideEffects(args: {
       jobs.push(
         claimReferral(args.referral).catch((e) =>
           console.error("[publicBookingSideEffects] referral claim threw", e),
+        ),
+      );
+    }
+    if (args.ownerNotify) {
+      jobs.push(
+        sendOwnerBookingNotification(args.ownerNotify).catch((e) =>
+          console.error("[publicBookingSideEffects] owner notify threw", e),
         ),
       );
     }

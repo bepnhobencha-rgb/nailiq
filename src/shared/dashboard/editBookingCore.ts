@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
@@ -438,12 +439,14 @@ export async function performEditBooking(
   // reschedule) do we fire reschedule notifications. Opt-in, fire-and-forget.
   if (slotStartUtc && slotStartUtc !== st) {
     // Owner/admin "rescheduled" alert.
-    void sendOwnerBookingNotification({
-      salonId,
-      bookingId,
-      event: "reschedule",
-      previousStartUtc: st || null,
-    });
+    after(() =>
+      sendOwnerBookingNotification({
+        salonId,
+        bookingId,
+        event: "reschedule",
+        previousStartUtc: st || null,
+      }),
+    );
 
     // Customer reschedule notification → the durable queue (same path as
     // cancel): a 1-min cron delivers it via deliverStaffActionNotification, in

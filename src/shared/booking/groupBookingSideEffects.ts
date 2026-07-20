@@ -2,6 +2,10 @@
 
 import { after } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import {
+  sendOwnerBookingNotification,
+  type OwnerNotifyInput,
+} from "@/shared/dashboard/sendOwnerBookingNotification";
 
 /**
  * Post-creation field stamps for GROUP bookings.
@@ -39,6 +43,11 @@ export async function stampGroupBookingIdentity(args: {
   bookingChannel: string;
   /** Present when the salon has phone_otp_enabled and the organizer verified. */
   otpSessionId?: string | null;
+  /** Owner/manager "new booking" alert for the whole party. Dispatched here for
+   *  the same reason as the stamps: submitGroupBooking runs in the BROWSER, so
+   *  the sender's service-role client threw and its catch swallowed it — no
+   *  group booking ever produced an owner alert. */
+  ownerNotify?: OwnerNotifyInput;
 }): Promise<void> {
   const ids = args.bookingIds.filter(
     (id) => typeof id === "string" && id.trim().length > 0,
@@ -47,6 +56,11 @@ export async function stampGroupBookingIdentity(args: {
   if (ids.length === 0 || channel.length === 0) return;
 
   after(async () => {
+    if (args.ownerNotify) {
+      await sendOwnerBookingNotification(args.ownerNotify).catch((e) =>
+        console.error("[groupBookingSideEffects] owner notify threw", e),
+      );
+    }
     const db = createServiceRoleClient();
 
     const { error: channelErr } = await db
