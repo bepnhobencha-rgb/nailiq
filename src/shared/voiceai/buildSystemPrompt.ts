@@ -1,7 +1,16 @@
 import type { SalonVoiceContext } from "./loadSalonContext";
 import { formatServicePrice } from "@/shared/lib/currencyFormat";
 
-export function buildSystemPrompt(ctx: SalonVoiceContext, language: "vi" | "en" | "fr" | "zh"): string {
+export function buildSystemPrompt(
+  ctx: SalonVoiceContext,
+  language: "vi" | "en" | "fr" | "zh",
+  /** Phone channel only: the caller's carrier-verified inbound number. On the
+   *  web there is none. When present the agent already HAS the number — it must
+   *  not ask the caller to recite it, and it can recognise them before they say
+   *  a word. Personalisation still goes through lookup_customer (tenant + consent
+   *  checks live there); this only saves the asking. */
+  callerPhone?: string | null,
+): string {
   const isVi = language === "vi";
   const today = new Date().toLocaleDateString("en-CA", { timeZone: ctx.timezone }); // YYYY-MM-DD
 
@@ -31,13 +40,18 @@ export function buildSystemPrompt(ctx: SalonVoiceContext, language: "vi" | "en" 
     : language === "zh" ? "Chinese (中文)"
     : "English";
 
-  // Opens by asking for the phone number, matching rule 1c. It used to end with
-  // "What service would you like?", which contradicted 1c — the model got two
-  // opening lines and this hardcoded one won, so the phone-first change never
-  // actually took. Keep in sync: this line IS the first turn.
-  const greeting = isVi
-    ? `Xin chào! Tôi là ${ctx.personaName} từ ${ctx.salonName}. Dạ cho em xin số điện thoại để em xem mình đã từng đến tiệm chưa ạ?`
-    : `Hello! I'm ${ctx.personaName} from ${ctx.salonName}. Could I get your phone number so I can see if you have been in before?`;
+  // First turn. Two versions, matching rule 1c:
+  //  • Phone channel (callerPhone present): the number is already known, so open
+  //    with a plain hello and let the lookup (fired as the first action) drive
+  //    the by-name greeting. Asking for the number here would undo the point.
+  //  • Web (no callerPhone): open by asking for the number.
+  const greeting = callerPhone
+    ? (isVi
+        ? `Dạ ${ctx.salonName} xin nghe, em ${ctx.personaName} đây ạ!`
+        : `Hi, thanks for calling ${ctx.salonName} — this is ${ctx.personaName}!`)
+    : (isVi
+        ? `Xin chào! Tôi là ${ctx.personaName} từ ${ctx.salonName}. Dạ cho em xin số điện thoại để em xem mình đã từng đến tiệm chưa ạ?`
+        : `Hello! I'm ${ctx.personaName} from ${ctx.salonName}. Could I get your phone number so I can see if you have been in before?`);
 
   return `You are ${ctx.personaName}, a friendly booking assistant for ${ctx.salonName}.
 Speak ONLY in ${lang}. Be warm, concise, and professional.
@@ -108,12 +122,23 @@ TOOL USAGE RULES — READ CAREFULLY:
 
    Vary the phrase — never the same one twice in a row.
 
-1c. CUSTOMER MEMORY — ask for the phone FIRST and the call gets short:
-   Right after the greeting, before anything else, ask for the number and look them up:
+1c. CUSTOMER MEMORY — recognise them before they finish the sentence:
+${callerPhone
+  ? `   You ALREADY have the caller's number: ${callerPhone}. It is carrier-verified — they are
+   calling from it right now. So:
+   • Do NOT ask them to say or spell their phone number. You have it. Asking a regular to recite
+     the number they are literally calling from is the opposite of feeling known.
+   • As your VERY FIRST action, before or during the greeting, call lookup_customer with
+     ${callerPhone}. By the time you finish saying hello you will know who they are.
+   • Use ${callerPhone} as the booking phone. A booking under this same number needs no OTP —
+     the carrier already proved it — so never send a verification code for it.
+   • If they want the booking under a DIFFERENT number, that other number is not verified: fall
+     back to the normal OTP flow for it.`
+  : `   Right after the greeting, before anything else, ask for the number and look them up:
    ${isVi
      ? '"Dạ cho em xin số điện thoại để em xem mình đã từng đến tiệm chưa ạ?"'
      : '"Could I get your phone number so I can see if you have been in before?"'}
-   Read it back per rule 1e, then call lookup_customer.
+   Read it back per rule 1e, then call lookup_customer.`}
 
    The order is the whole point. Ask at the END and you have already made them spell out a name,
    pick a service and choose a stylist — all things you were about to know anyway. Ask at the

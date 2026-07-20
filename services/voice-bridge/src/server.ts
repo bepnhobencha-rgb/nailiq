@@ -47,12 +47,35 @@ wss.on("connection", (twilioWs) => {
   let streamSid = "";
   let slug = "";
   let from = "";
+  let sessionId = "";
   let openaiWs: WebSocket | null = null;
   let closed = false;
+
+  // Conversation record for owner/admin review — the phone equivalent of what
+  // the web widget captures. Written to voice_ai_sessions.transcript at hangup.
+  const transcript: { role: "ai" | "user"; text: string }[] = [];
+  const startedAt = Date.now();
+
+  const finalizeSession = async () => {
+    if (!sessionId) return;
+    try {
+      await fetch(`${NEXT_APP_URL}/api/voice/session/end`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-voice-bridge-secret": BRIDGE_SECRET },
+        body: JSON.stringify({
+          sessionId,
+          durationSeconds: Math.round((Date.now() - startedAt) / 1000),
+          transcript,
+          status: "completed",
+        }),
+      });
+    } catch { /* best-effort — losing the record must not throw on hangup */ }
+  };
 
   const closeAll = () => {
     if (closed) return;
     closed = true;
+    void finalizeSession();
     try { openaiWs?.close(); } catch { /* noop */ }
     try { twilioWs.close(); } catch { /* noop */ }
   };
@@ -63,7 +86,9 @@ wss.on("connection", (twilioWs) => {
       const r = await fetch(`${NEXT_APP_URL}/api/voice/tool`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-voice-bridge-secret": BRIDGE_SECRET },
-        body: JSON.stringify({ toolName: name, toolArgs: args, salonSlug: slug, callerVerifiedPhone: from }),
+        // sessionId threads the tool call into tool_log for this session, the
+        // same eval record the web path writes.
+        body: JSON.stringify({ toolName: name, toolArgs: args, salonSlug: slug, callerVerifiedPhone: from, sessionId: sessionId || null }),
       });
       result = await r.json().catch(() => ({ error: "tool_parse_failed" }));
     } catch {
@@ -76,16 +101,20 @@ wss.on("connection", (twilioWs) => {
 
   const startOpenAi = async () => {
     // Fetch the agent config (instructions + tools + voice + model) from Next.
-    let cfg: { model: string; voice: string; instructions: string; tools: unknown[] };
+    let cfg: { model: string; voice: string; instructions: string; tools: unknown[]; sessionId?: string | null };
     try {
       const r = await fetch(`${NEXT_APP_URL}/api/voice/phone-config`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-voice-bridge-secret": BRIDGE_SECRET },
-        body: JSON.stringify({ slug }),
+        // `from` is the carrier-verified caller number. Forwarded so the prompt
+        // can greet a returning caller by name without asking for it. Same value
+        // already sent as callerVerifiedPhone on tool calls.
+        body: JSON.stringify({ slug, from }),
       });
       if (!r.ok) { console.warn("[voice-bridge] phone-config FAILED", r.status); return closeAll(); }
       cfg = (await r.json()) as typeof cfg;
-      console.log(`[voice-bridge] phone-config ok model=${cfg.model} tools=${cfg.tools?.length ?? 0}`);
+      sessionId = cfg.sessionId ?? "";
+      console.log(`[voice-bridge] phone-config ok model=${cfg.model} tools=${cfg.tools?.length ?? 0} session=${sessionId || "(none)"}`);
     } catch (e) {
       console.warn("[voice-bridge] phone-config error", e);
       return closeAll();
@@ -114,6 +143,16 @@ wss.on("connection", (twilioWs) => {
         console.warn("[voice-bridge] openai EVENT", raw.toString().slice(0, 600));
       } else if (!t.includes("audio") && !t.includes("delta")) {
         console.log("[voice-bridge] openai evt:", t);
+      }
+
+      // Capture finished transcripts for the review log. The agent's spoken
+      // turn and the caller's transcribed turn arrive as separate event types.
+      if (t === "response.output_audio_transcript.done" || t === "response.audio_transcript.done") {
+        const txt = typeof evt.transcript === "string" ? evt.transcript.trim() : "";
+        if (txt) transcript.push({ role: "ai", text: txt });
+      } else if (t === "conversation.item.input_audio_transcription.completed") {
+        const txt = typeof evt.transcript === "string" ? evt.transcript.trim() : "";
+        if (txt) transcript.push({ role: "user", text: txt });
       }
 
       const audio = extractAudioDelta(evt);
