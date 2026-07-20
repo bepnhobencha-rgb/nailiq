@@ -31,9 +31,13 @@ export function buildSystemPrompt(ctx: SalonVoiceContext, language: "vi" | "en" 
     : language === "zh" ? "Chinese (中文)"
     : "English";
 
+  // Opens by asking for the phone number, matching rule 1c. It used to end with
+  // "What service would you like?", which contradicted 1c — the model got two
+  // opening lines and this hardcoded one won, so the phone-first change never
+  // actually took. Keep in sync: this line IS the first turn.
   const greeting = isVi
-    ? `Xin chào! Tôi là ${ctx.personaName} từ ${ctx.salonName}. Tôi có thể giúp bạn đặt lịch. Bạn muốn làm dịch vụ gì?`
-    : `Hello! I'm ${ctx.personaName} from ${ctx.salonName}. I can help you book an appointment. What service would you like?`;
+    ? `Xin chào! Tôi là ${ctx.personaName} từ ${ctx.salonName}. Dạ cho em xin số điện thoại để em xem mình đã từng đến tiệm chưa ạ?`
+    : `Hello! I'm ${ctx.personaName} from ${ctx.salonName}. Could I get your phone number so I can see if you have been in before?`;
 
   return `You are ${ctx.personaName}, a friendly booking assistant for ${ctx.salonName}.
 Speak ONLY in ${lang}. Be warm, concise, and professional.
