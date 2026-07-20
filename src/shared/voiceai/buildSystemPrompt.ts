@@ -66,14 +66,19 @@ TOOL USAGE RULES — READ CAREFULLY:
        a) call request_otp(customer_phone) — for a cancel/reschedule use the phone that OWNS the
           booking; say "I'm texting a 6-digit code to that number — please read it back to me";
        b) when they read it, call verify_otp(customer_phone, code);
-       c) on success you get otp_session_id — retry the booking/cancel/reschedule WITH otp_session_id.
+       c) on success you get otp_session_id — retry the booking/cancel/reschedule WITH otp_session_id
+          IMMEDIATELY, in the same turn. Do NOT ask the customer anything else first and do NOT wait
+          for them to speak again: they have already given you everything the booking needs, and that
+          extra question is the difference between a 3-second wait and a 10-second one.
+       d) verify_otp and the retry are two round trips back to back — say a hold phrase (rule 1b)
+          before verify_otp so the customer is not listening to silence across both.
    • If verify_otp fails, offer to resend with request_otp. Never claim someone is verified yourself —
      only a successful verify_otp counts. Never read a code aloud or repeat it back.
 
 1b. FILLER BEFORE SLOW TOOLS — CRITICAL for a natural call:
    Before calling get_available_slots, get_group_available_slots, confirm_booking,
-   confirm_group_booking, find_booking, or lookup_customer, ALWAYS say ONE short hold
-   phrase FIRST, then call the tool. Examples:
+   confirm_group_booking, find_booking, lookup_customer, request_otp or verify_otp,
+   ALWAYS say ONE short hold phrase FIRST, then call the tool. Examples:
    ${isVi
      ? '"Dạ, mình chờ em xíu để em xem lịch nhé…" / "Em kiểm tra liền ạ…" / "Dạ để em xem…"'
      : '"One moment, let me check the schedule…" / "Let me look that up for you…"'}

@@ -24,10 +24,13 @@ export function CustomerWaitClient({
   slug,
   bookingId,
   initialState,
+  manageLinks,
 }: {
   slug: string;
   bookingId: string;
   initialState: ReadyState;
+  /** Token-backed reschedule/cancel URLs, or null once the booking is over. */
+  manageLinks: { reschedule: string; cancel: string } | null;
 }) {
   const [state, setState] = useState<ReadyState>(initialState);
   const { language } = useUserLanguage();
@@ -98,7 +101,43 @@ export function CustomerWaitClient({
   if (isDone) return <DoneScreen state={state} messages={messages} />;
   if (isCancelled) return <CancelledScreen state={state} messages={messages} />;
 
-  return <WaitingScreen state={state} messages={messages} />;
+  return (
+    <WaitingScreen state={state} messages={messages} manageLinks={manageLinks} />
+  );
+}
+
+/** Reschedule / cancel actions. Rendered only while the booking is still
+ *  upcoming — once it is in progress, done or cancelled, changing it is a
+ *  conversation with the front desk rather than a self-service action. */
+function ManageActions({
+  manageLinks,
+  messages,
+}: {
+  manageLinks: { reschedule: string; cancel: string } | null;
+  messages: ReturnType<typeof getCustomerWaitMessages>;
+}) {
+  if (!manageLinks) return null;
+  return (
+    <div
+      data-testid="customer-wait-manage"
+      className="mt-8 flex flex-col gap-2 sm:flex-row sm:justify-center"
+    >
+      <a
+        href={manageLinks.reschedule}
+        data-testid="customer-wait-reschedule"
+        className="rounded-xl border border-nq-border px-5 py-3 text-center text-sm font-semibold text-nq-foreground transition-colors hover:bg-white/5"
+      >
+        {messages.rescheduleCta}
+      </a>
+      <a
+        href={manageLinks.cancel}
+        data-testid="customer-wait-cancel"
+        className="rounded-xl px-5 py-3 text-center text-sm text-nq-muted underline-offset-4 transition-colors hover:underline"
+      >
+        {messages.cancelCta}
+      </a>
+    </div>
+  );
 }
 
 function PageShell({
@@ -134,9 +173,11 @@ function SalonHeader({ name }: { name: string }) {
 function WaitingScreen({
   state,
   messages,
+  manageLinks,
 }: {
   state: ReadyState;
   messages: ReturnType<typeof getCustomerWaitMessages>;
+  manageLinks: { reschedule: string; cancel: string } | null;
 }) {
   const readyClock = state.readyAroundIso
     ? new Date(state.readyAroundIso).toLocaleTimeString("en-US", {
@@ -207,6 +248,8 @@ function WaitingScreen({
         {messages.statusWaiting}
         {state.queuePosition != null ? ` · ${positionLabel}` : ""}
       </p>
+
+      <ManageActions manageLinks={manageLinks} messages={messages} />
 
       <p className="mt-8 text-center text-xs text-nq-muted">
         {messages.autoRefreshNote}
