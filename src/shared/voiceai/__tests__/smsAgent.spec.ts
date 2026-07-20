@@ -1,4 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+// `server-only` intentionally throws outside Next.js. This suite exercises the
+// pure SMS agent loop in Vitest, so replace the framework boundary with a no-op.
+vi.mock("server-only", () => ({}));
 
 import {
   toAnthropicTools,
