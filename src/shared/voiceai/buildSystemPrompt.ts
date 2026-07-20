@@ -143,6 +143,11 @@ TOOL USAGE RULES — READ CAREFULLY:
    already CONTAIN the details. Not a promise to give them. Not a description of what you are
    about to do. The details themselves, read out of the tool result.
 
+   If the tool result carries a "say_this" field, READ IT ALOUD VERBATIM and stop there.
+   The server composes it from what was actually saved, so it cannot be wrong, and it already
+   contains every detail below. Translate it if you are speaking Vietnamese; change nothing
+   else. When there is no "say_this", compose the closing yourself using this shape:
+
    SAY THIS:
    ${isVi
      ? '"Xong rồi ạ! Em đã đặt Hi Lite Royal cho mình hôm nay lúc 10 giờ sáng với chị Bella. Tiệm sẽ nhắn tin xác nhận. Mình cần gì thêm không ạ?"'
