@@ -384,12 +384,18 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
           } catch { /* best-effort */ }
         }
 
+        // Say the line ONCE, in the language of the conversation. The earlier
+        // wording — "say exactly this word for word" AND "translate it if
+        // Vietnamese" — contradicted itself, and the model resolved it by doing
+        // both: the English verbatim, then the Vietnamese translation, two turns
+        // for one message. This says it plainly: render in one language, once.
+        const speakLang = sessionLangRef.current === "vi" ? "Vietnamese" : "English";
         const instructions = sayThis
-          ? `Say exactly this to the customer, word for word, and nothing else:\n\n${sayThis}\n\n` +
-            `If you are speaking Vietnamese, translate it naturally but keep every detail — the ` +
-            `service, the day, the time and the staff name. Do not add a preamble, do not describe ` +
-            `what you are doing, do not say you are about to confirm. Say the sentence, then stop ` +
-            `and wait for the customer.`
+          ? `Tell the customer exactly this, in ${speakLang}, ONCE. Keep every detail — the ` +
+            `service, the day, the time, the staff name. If the line is not already in ` +
+            `${speakLang}, translate it naturally and say only the translation; never say it in ` +
+            `two languages. Do not add a preamble, do not describe what you are doing. Then stop ` +
+            `and wait for the customer.\n\n${sayThis}`
           : instructionsRef.current;
 
         wsRef.current?.send(JSON.stringify({
