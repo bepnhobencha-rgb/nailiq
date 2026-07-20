@@ -5,7 +5,6 @@ import {
 } from "@/shared/lib/conflictCheck";
 import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit";
 import { stampGroupBookingIdentity } from "@/shared/booking/groupBookingSideEffects";
-import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
@@ -802,19 +801,10 @@ export async function submitGroupBooking(
     return fail("server_error");
   }
 
-  // Owner/admin "new booking" alert — one email for the whole party (first
-  // booking id). Opt-in, fire-and-forget.
-  {
-    const firstId = result.booking_ids.map(String)[0];
-    if (firstId) {
-      void sendOwnerBookingNotification({
-        salonId: String(salonRow.id),
-        bookingId: firstId,
-        event: "new",
-        groupSize: result.booking_ids.length,
-      });
-    }
-  }
+  // The owner/admin "new booking" alert for the party is dispatched from
+  // stampGroupBookingIdentity below — this function runs in the browser for the
+  // public flow, where the sender's service-role client throws and the failure
+  // is swallowed. See groupBookingSideEffects.
 
   // Identity Layer: the client_profiles resolve (per-member, dedup by phone,
   // placeholder-name guard, visit_count bump, FK stamp) now happens INSIDE
@@ -876,6 +866,14 @@ export async function submitGroupBooking(
     organizerBookingId: bookingIdList[0] ?? null,
     bookingChannel: params.bookingChannel ?? "online",
     otpSessionId: otpToConsume,
+    ownerNotify: bookingIdList[0]
+      ? {
+          salonId: String(salonRow.id),
+          bookingId: bookingIdList[0],
+          event: "new",
+          groupSize: bookingIdList.length,
+        }
+      : undefined,
   }).catch((e) =>
     console.error("[submitGroupBooking] channel/verification stamp failed", e),
   );

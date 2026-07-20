@@ -17,6 +17,7 @@
  * ListBookings has no "updated since" filter, so we re-scan the forward window
  * each run and upsert; the watermark is advanced for observability only.
  */
+import { after } from "next/server";
 import "server-only";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
@@ -301,11 +302,13 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
     const newId = (insRow as { id?: string } | null)?.id;
     if (newId && startMs > Date.now() && ownerNotifyCount < OWNER_NOTIFY_CAP) {
       ownerNotifyCount++;
-      void sendOwnerBookingNotification({
-        salonId,
-        bookingId: String(newId),
-        event: "new",
-      });
+      after(() =>
+        sendOwnerBookingNotification({
+          salonId,
+          bookingId: String(newId),
+          event: "new",
+        }),
+      );
     }
   }
 

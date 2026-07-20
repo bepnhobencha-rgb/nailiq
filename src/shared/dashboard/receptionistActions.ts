@@ -292,11 +292,13 @@ export async function addWalkinToQueue(
   if (!bid) return fail("server_error");
 
   // Owner/admin "new booking" alert (opt-in, fire-and-forget).
-  void sendOwnerBookingNotification({
-    salonId: ctx.salon.id,
-    bookingId: bid,
-    event: "new",
-  });
+  after(() =>
+    sendOwnerBookingNotification({
+      salonId: ctx.salon.id,
+      bookingId: bid,
+      event: "new",
+    }),
+  );
 
   void logBookingEvent({
     bookingId: bid,
@@ -775,11 +777,13 @@ export async function cancelDeskBooking(
   }
 
   // Owner/admin "cancelled" alert (opt-in, fire-and-forget).
-  void sendOwnerBookingNotification({
-    salonId: ctx.salon.id,
-    bookingId,
-    event: "cancel",
-  });
+  after(() =>
+    sendOwnerBookingNotification({
+      salonId: ctx.salon.id,
+      bookingId,
+      event: "cancel",
+    }),
+  );
 
   void logBookingEvent({
     bookingId,
@@ -1288,12 +1292,14 @@ export async function cancelDeskGroup(
   // Owner/manager alert — group cancellation (best-effort, fire-and-forget,
   // independent of the customer notify flags below). One email for the whole
   // party, using the lead booking id.
-  void sendOwnerBookingNotification({
-    salonId: ctx.salon.id,
-    bookingId: ids[0],
-    event: "cancel",
-    groupSize: ids.length,
-  });
+  after(() =>
+    sendOwnerBookingNotification({
+      salonId: ctx.salon.id,
+      bookingId: ids[0],
+      event: "cancel",
+      groupSize: ids.length,
+    }),
+  );
 
   // Notify the organizer (best-effort). Only member 0 carries a phone/email, so
   // enqueue ONE cancel notification for that lead row — same durable-queue +
@@ -1470,11 +1476,13 @@ export async function markNoShowBooking(
   if (!updated?.id) return fail("invalid_state");
 
   // Owner/admin "no-show" alert (opt-in, fire-and-forget).
-  void sendOwnerBookingNotification({
-    salonId: ctx.salon.id,
-    bookingId,
-    event: "no_show",
-  });
+  after(() =>
+    sendOwnerBookingNotification({
+      salonId: ctx.salon.id,
+      bookingId,
+      event: "no_show",
+    }),
+  );
 
   // These two RPCs are SECURITY DEFINER + revoked from anon/authenticated, so
   // they're invoked with the service-role client AFTER the role/salon auth above
@@ -2791,11 +2799,13 @@ export async function addDeskAppointment(
   }
 
   // Owner/admin "new booking" alert (opt-in, fire-and-forget).
-  void sendOwnerBookingNotification({
-    salonId: ctx.salon.id,
-    bookingId,
-    event: "new",
-  });
+  after(() =>
+    sendOwnerBookingNotification({
+      salonId: ctx.salon.id,
+      bookingId,
+      event: "new",
+    }),
+  );
 
   void logBookingEvent({
     bookingId,

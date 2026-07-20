@@ -120,6 +120,91 @@ async function resolveRecipients(
   return Array.from(set);
 }
 
+type NotifyLogRow = {
+  salonId: string;
+  bookingId?: string | null;
+  event: string;
+  recipient?: string;
+  status: "sent" | "failed" | "skipped";
+  resendId?: string | null;
+  error?: string | null;
+};
+
+/**
+ * Record one attempt. Never throws — the audit trail must not break the thing
+ * it audits. Note the `await`: a PostgrestBuilder is lazy, so a bare `void
+ * admin.from(...).insert(...)` would never actually run.
+ */
+async function logNotify(
+  admin: ReturnType<typeof createServiceRoleClient>,
+  row: NotifyLogRow,
+): Promise<void> {
+  try {
+    const { error } = await admin.from("owner_notification_log").insert({
+      salon_id: row.salonId,
+      booking_id: row.bookingId ?? null,
+      event: row.event,
+      recipient: row.recipient ?? "",
+      status: row.status,
+      resend_id: row.resendId ?? null,
+      error: row.error ?? null,
+    } as never);
+    if (error) console.error("[ownerNotify] log insert failed", error);
+  } catch (e) {
+    console.error("[ownerNotify] log insert threw", e);
+  }
+}
+
+/**
+ * Send one email per recipient rather than a single message addressed to all.
+ * One suppressed or bouncing address then cannot hide the outcome for everyone
+ * else, and recipients no longer see each other's addresses in the To: header.
+ */
+async function sendToEachRecipient(
+  admin: ReturnType<typeof createServiceRoleClient>,
+  resend: NonNullable<ReturnType<typeof getResendClient>>,
+  recipients: string[],
+  payload: { subject: string; html: string; text: string },
+  meta: { salonId: string; bookingId?: string | null; event: string },
+): Promise<{ sent: number; failed: number }> {
+  const from = getResendFrom();
+  const results = await Promise.all(
+    recipients.map(async (to) => {
+      try {
+        const res = await resend.emails.send({ from, to, ...payload });
+        if (res.error) {
+          console.error("[ownerNotify] resend error", to, res.error);
+          await logNotify(admin, {
+            ...meta,
+            recipient: to,
+            status: "failed",
+            error: String(res.error.message ?? res.error),
+          });
+          return false;
+        }
+        await logNotify(admin, {
+          ...meta,
+          recipient: to,
+          status: "sent",
+          resendId: res.data?.id ?? null,
+        });
+        return true;
+      } catch (e) {
+        console.error("[ownerNotify] send threw", to, e);
+        await logNotify(admin, {
+          ...meta,
+          recipient: to,
+          status: "failed",
+          error: e instanceof Error ? e.message : String(e),
+        });
+        return false;
+      }
+    }),
+  );
+  const sent = results.filter(Boolean).length;
+  return { sent, failed: results.length - sent };
+}
+
 /**
  * Send a one-off test email to the currently-configured recipients, ignoring
  * the per-event flags but honoring `enabled` + recipient resolution. Returns a
@@ -166,22 +251,25 @@ export async function sendOwnerNotificationTest(
   if (!resend) return { ok: false, error: "no_resend" };
 
   const salonName = salon.name?.trim() || "NailIQ";
-  const res = await resend.emails.send({
-    from: getResendFrom(),
-    to: recipients,
-    subject: `[${salonName}] Test — Manager email alerts / Thông báo quản lý`,
-    html: `<div style="font-family:-apple-system,Segoe UI,sans-serif;color:#1a1a1a">
+  // Same per-recipient path as a real alert, so a green test genuinely means
+  // every configured address was reachable — not just the first one.
+  const { sent } = await sendToEachRecipient(
+    admin,
+    resend,
+    recipients,
+    {
+      subject: `[${salonName}] Test — Manager email alerts / Thông báo quản lý`,
+      html: `<div style="font-family:-apple-system,Segoe UI,sans-serif;color:#1a1a1a">
   <h2 style="font-size:18px;margin:0 0 8px">✅ Manager email alerts are working</h2>
   <p style="margin:0 0 6px">Thông báo email cho quản lý đã hoạt động.</p>
   <p style="color:#666;margin:0">${esc(salonName)}</p>
 </div>`,
-    text: `Manager email alerts are working / Thông báo email cho quản lý đã hoạt động — ${salonName}`,
-  });
-  if (res.error) {
-    console.error("[ownerNotify/test] resend error", res.error);
-    return { ok: false, error: "send_failed" };
-  }
-  return { ok: true, recipientCount: recipients.length };
+      text: `Manager email alerts are working / Thông báo email cho quản lý đã hoạt động — ${salonName}`,
+    },
+    { salonId, event: "test" },
+  );
+  if (sent === 0) return { ok: false, error: "send_failed" };
+  return { ok: true, recipientCount: sent };
 }
 
 /**
@@ -270,24 +358,33 @@ export async function sendOwnerWaitlistNotification(
     const staffVi = staffName ? ` với ${staffName}` : "";
     const client = entry.client_name?.trim() || "A customer";
 
-    const res = await resend.emails.send({
-      from: getResendFrom(),
-      to: recipients,
-      subject: `[${salonName}] New waitlist request / Khách vào danh sách chờ`,
-      html: `<div style="font-family:-apple-system,Segoe UI,sans-serif;color:#1a1a1a;max-width:520px">
+    await sendToEachRecipient(
+      admin,
+      resend,
+      recipients,
+      {
+        subject: `[${salonName}] New waitlist request / Khách vào danh sách chờ`,
+        html: `<div style="font-family:-apple-system,Segoe UI,sans-serif;color:#1a1a1a;max-width:520px">
   <h2 style="font-size:18px;margin:0 0 10px">🕒 New waitlist request</h2>
   <p style="margin:0 0 6px">${esc(client)} joined the waitlist for <strong>${esc(serviceName)}</strong> on <strong>${esc(dateStr)}</strong> ${esc(timeEn)}${esc(staffEn)}. That slot is currently full — ${waitingCount} now waiting. Consider opening a spot.</p>
   <p style="margin:12px 0 6px;color:#333">${esc(client)} vừa vào danh sách chờ cho <strong>${esc(serviceName)}</strong> ngày <strong>${esc(dateStr)}</strong> ${esc(timeVi)}${esc(staffVi)}. Slot này đang kín — hiện ${waitingCount} khách chờ. Cân nhắc mở thêm chỗ.</p>
   <p style="color:#666;margin:10px 0 0">${esc(salonName)}</p>
 </div>`,
-      text: `New waitlist request / Khách vào danh sách chờ — ${client}: ${serviceName} ${dateStr} ${timeEn}${staffEn} (${waitingCount} waiting) — ${salonName}`,
-    });
-    if (res.error) console.error("[ownerNotify/waitlist] resend error", res.error);
+        text: `New waitlist request / Khách vào danh sách chờ — ${client}: ${serviceName} ${dateStr} ${timeEn}${staffEn} (${waitingCount} waiting) — ${salonName}`,
+      },
+      { salonId, event: "waitlist" },
+    );
   } catch (e) {
     console.error("[sendOwnerWaitlistNotification]", e);
   }
 }
 
+/**
+ * SERVER-ONLY. Needs the service-role client, so it must never be reached from
+ * the browser — see the call-site notes in submitPublicBooking / submitGroupBooking.
+ * Callers must keep the invocation alive with `after()`; a bare `void` is killed
+ * when the serverless response flushes.
+ */
 export async function sendOwnerBookingNotification(
   input: OwnerNotifyInput,
 ): Promise<void> {
@@ -329,11 +426,30 @@ export async function sendOwnerBookingNotification(
       settings.notifyMembers,
       settings.customEmails,
     );
-    if (recipients.length === 0) return;
+    // Misconfiguration, not an opt-out: leave a trail. (A `shouldNotify` miss
+    // above is deliberate and would only flood the log, so it stays silent.)
+    if (recipients.length === 0) {
+      console.warn("[ownerNotify] no recipients resolved", salonId);
+      await logNotify(admin, {
+        salonId,
+        bookingId,
+        event,
+        status: "skipped",
+        error: "no_recipients",
+      });
+      return;
+    }
 
     const resend = getResendClient();
     if (!resend) {
       console.warn("[ownerNotify] no RESEND_API_KEY — skipping");
+      await logNotify(admin, {
+        salonId,
+        bookingId,
+        event,
+        status: "skipped",
+        error: "no_resend",
+      });
       return;
     }
 
@@ -569,16 +685,13 @@ export async function sendOwnerBookingNotification(
     ];
     const text = textLines.join("\n");
 
-    const res = await resend.emails.send({
-      from: getResendFrom(),
-      to: recipients,
-      subject,
-      html,
-      text,
-    });
-    if (res.error) {
-      console.error("[ownerNotify] resend error", res.error);
-    }
+    await sendToEachRecipient(
+      admin,
+      resend,
+      recipients,
+      { subject, html, text },
+      { salonId, bookingId, event },
+    );
   } catch (e) {
     console.error("[ownerNotify]", e);
   }

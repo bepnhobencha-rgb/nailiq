@@ -4,6 +4,7 @@
  * Idempotent via `bookings.wix_booking_id`. Stateless: the watermark lives in
  * `wix_integrations.cursor_updated_date`, so it is safe to run on Vercel cron.
  */
+import { after } from "next/server";
 import "server-only";
 import { queryBookingsUpdatedSince, type WixBooking } from "./client";
 import { looseServiceClient } from "./looseDb";
@@ -276,11 +277,16 @@ export async function runForwardSync(salonId: string, siteId: string, sinceIso: 
       ownerNotifyCount < OWNER_NOTIFY_CAP
     ) {
       ownerNotifyCount++;
-      void sendOwnerBookingNotification({
-        salonId,
-        bookingId: result.bookingId,
-        event: "new",
-      });
+      // Bind before the closure: `result` is reassigned each loop iteration, so
+      // the narrowing above does not survive into the deferred callback.
+      const notifyBookingId = result.bookingId;
+      after(() =>
+        sendOwnerBookingNotification({
+          salonId,
+          bookingId: notifyBookingId,
+          event: "new",
+        }),
+      );
     }
 
     // Auto-approve write-back: confirm on Wix (best-effort).

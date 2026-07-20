@@ -20,7 +20,6 @@ import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { createClient } from "@/shared/lib/supabase/client";
 import { runPublicBookingSideEffects } from "@/shared/booking/publicBookingSideEffects";
 import { saveNoShowCardAction, reuseNoShowCardAction } from "@/shared/noshow/saveNoShowCardAction";
-import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { computeTax } from "@/shared/tax/computeTax";
 import type { TaxLine } from "@/shared/tax/taxTypes";
 import { healthAckRequired } from "@/shared/lib/healthAck";
@@ -863,14 +862,11 @@ export async function submitPublicBooking(
   // a browser anon `.update()` silently no-ops (UPDATE grant but no RLS UPDATE
   // policy → 0 rows, no error), which is why every online booking saved as
   // null channel. Reports use the channel; the SMS sender uses client_locale.
-  if (bookingId) {
-    // Notify owner/admin of the new booking (opt-in, fire-and-forget).
-    void sendOwnerBookingNotification({
-      salonId: String(salon.id),
-      bookingId,
-      event: "new",
-    });
-  }
+  // The owner/admin "new booking" alert is dispatched from
+  // runPublicBookingSideEffects below, NOT here: this function runs in the
+  // browser, where sendOwnerBookingNotification's createServiceRoleClient()
+  // throws and its catch swallows the failure — every online booking silently
+  // produced no owner alert. Same trap as the confirmation email before it.
 
   const totalPriceCents =
     (priceSnapshot ?? 0) + (addonPriceSnapshot ?? 0);
@@ -1000,6 +996,11 @@ export async function submitPublicBooking(
               taxBreakdown: taxResult.breakdown.length > 0 ? taxResult.breakdown : undefined,
             }
           : undefined,
+        ownerNotify: {
+          salonId: String(salon.id),
+          bookingId,
+          event: "new",
+        },
         stamp: {
           bookingId,
           bookingChannel: "online",
