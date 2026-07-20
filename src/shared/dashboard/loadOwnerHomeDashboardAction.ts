@@ -4,6 +4,8 @@ import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { salonDayRangeUtc, salonToday, salonYmdOfUtc } from "@/shared/lib/salonTime";
+import { loadUnclosedBookings } from "@/shared/dashboard/loadUnclosedBookings";
+import type { UnclosedBooking } from "@/shared/dashboard/unclosedBookingTypes";
 import { getPendingApprovals } from "@/shared/ai/approvalRequests";
 
 export type OwnerHomeData = {
@@ -39,6 +41,11 @@ export type OwnerHomeData = {
   tomorrowRevenueCents: number;
   // Minh AI Manager
   pendingApprovalsCount: number;
+  /** Past appointments the desk never closed out (still pending/confirmed/
+   *  in_progress). Each drifts the revenue and no-show numbers further from
+   *  reality, so the dashboard surfaces them with a link straight to the row. */
+  unclosedCount: number;
+  unclosedItems: UnclosedBooking[];
 };
 
 export type LoadOwnerHomeResult =
@@ -111,8 +118,13 @@ export async function loadOwnerHomeDashboard(
   const { startUtc: tomorrowStart, endUtc: tomorrowEnd } = salonDayRangeUtc(tomorrow, tz);
 
   // Single booking query covering 30 days + tomorrow
-  const [bookingsResult, staffResult, priorPhonesResult, pendingApprovals] =
-    await Promise.all([
+  const [
+    bookingsResult,
+    staffResult,
+    priorPhonesResult,
+    pendingApprovals,
+    unclosed,
+  ] = await Promise.all([
       supabase
         .from("bookings")
         .select(
@@ -137,6 +149,13 @@ export async function loadOwnerHomeDashboard(
         .neq("status", "cancelled"),
 
       getPendingApprovals(resolved.salon.id).catch(() => []),
+
+      // 4 rows keeps the nudge actionable without pushing today's numbers below
+      // the fold on mobile; the full count is still shown in the subtitle.
+      loadUnclosedBookings(resolved.salon.id, tz, { limit: 4 }).catch(() => ({
+        count: 0,
+        items: [],
+      })),
     ]);
 
   if (bookingsResult.error) {
@@ -346,6 +365,8 @@ export async function loadOwnerHomeDashboard(
       tomorrowBookings,
       tomorrowRevenueCents,
       pendingApprovalsCount: pendingApprovals.length,
+      unclosedCount: unclosed.count,
+      unclosedItems: unclosed.items,
     },
   };
 }

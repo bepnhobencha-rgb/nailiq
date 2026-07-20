@@ -5,6 +5,11 @@ import { salonToday, salonDayRangeUtc } from "@/shared/lib/salonTime";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { parseOwnerNotificationSettings } from "@/shared/dashboard/ownerNotificationSettings";
 import { getOutcomeStats } from "@/shared/ai/agentOutcomeTracker";
+import { loadUnclosedBookings } from "@/shared/dashboard/loadUnclosedBookings";
+import {
+  unclosedBookingHref,
+  type UnclosedBookingsResult,
+} from "@/shared/dashboard/unclosedBookingTypes";
 import { getPendingApprovals } from "@/shared/ai/approvalRequests";
 
 /**
@@ -133,6 +138,9 @@ function buildContext(
   outcomeLines: string[],
   instructions: string | null,
   pendingApprovalSummaries: string[],
+  /** How many past appointments still have no final status. Fed to the model so
+   *  Minh raises it in the narrative; the tappable list lives in the HTML. */
+  unclosedCount: number,
 ): string {
   const revenue = (stats.revenueCents / 100).toFixed(0);
 
@@ -196,6 +204,9 @@ ${outcomeLines.length > 0 ? outcomeLines.join("\n") : "Chưa đủ dữ liệu (
 
 CHỈ ĐẠO TỪ CHỦ TIỆM:
 ${instructions?.trim() || "Không có chỉ đạo đặc biệt."}
+
+LỊCH HẸN CHƯA CHỐT SỔ:
+${unclosedCount > 0 ? `${unclosedCount} lịch hẹn đã qua nhưng nhân viên chưa đánh dấu hoàn thành hoặc không đến. Doanh thu và tỉ lệ no-show đang bị thiếu. Nhắc chủ tiệm xử lý, danh sách bấm được nằm cuối email.` : "Không có — mọi lịch đã chốt sổ."}
 
 CẢNH BÁO (nếu có):
 ${alertLines.length > 0 ? alertLines.join("\n") : "Không có cảnh báo."}${approvalsSection}`;
@@ -265,6 +276,10 @@ async function sendDigestEmail(
   body: string,
   todayYmd: string,
   pendingApprovals?: PendingApprovalDigestItem[],
+  /** Needed to build Front Desk deep links; the salon row is loaded in
+   *  runDigest, so the slug is threaded down rather than re-queried. */
+  slug?: string | null,
+  unclosed?: UnclosedBookingsResult,
 ): Promise<void> {
   const db = createServiceRoleClient();
   const resend = getResendClient();
@@ -339,10 +354,34 @@ ${(pendingApprovals ?? []).map((r) => `
 </div>`).join("")}`
     : "";
 
+  // Appointments the desk never closed out. Deterministic list rather than
+  // prose: the body above is LLM-written and would paraphrase these away, and
+  // the owner needs the exact rows to tap. Unlike the approval buttons these
+  // links land in the dashboard, so they require a logged-in session.
+  const unclosedHtml = (unclosed?.count ?? 0) > 0 && slug
+    ? `<hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+<p style="font-size:13px;font-weight:700;color:#374151;margin:0 0 4px">
+  ${unclosed!.count} lịch hẹn chưa chốt sổ:
+</p>
+<p style="font-size:12px;color:#6b7280;margin:0 0 12px">
+  Đang thiếu trong doanh thu và tỉ lệ khách không đến. Bấm để mở đúng lịch hẹn.
+</p>
+${unclosed!.items.map((b) => `
+<a href="${appUrl}${unclosedBookingHref(slug, b)}" style="display:block;border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;margin:0 0 8px;text-decoration:none;color:#111">
+  <span style="font-size:14px;font-weight:600">${esc(b.clientName)}</span>
+  <span style="font-size:12px;color:#6b7280;float:right">${esc(b.dateYmd)}</span>
+</a>`).join("")}${
+  unclosed!.count > unclosed!.items.length
+    ? `<p style="font-size:12px;color:#6b7280;margin:8px 0 0">… và ${unclosed!.count - unclosed!.items.length} lịch nữa trong Bảng điều khiển.</p>`
+    : ""
+}`
+    : "";
+
   const html = `<div style="max-width:540px;margin:0 auto;font-family:-apple-system,Segoe UI,sans-serif;color:#1a1a1a;padding:8px">
   <p style="font-size:11px;color:#999;margin:0 0 20px;text-transform:uppercase;letter-spacing:.08em">${salonName} · ${todayYmd}</p>
   <div style="font-size:15px">${paragraphs}</div>
   ${pendingHtml}
+  ${unclosedHtml}
   <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
   <p style="font-size:12px;color:#aaa;margin:0">— Quản Lý AI · ${salonName}</p>
 </div>`;
@@ -352,7 +391,12 @@ ${(pendingApprovals ?? []).map((r) => `
     to: recipients,
     subject: `${salonName} · Tổng kết ${todayYmd}`,
     html,
-    text: body + `\n\n— Quản Lý AI · ${salonName}`,
+    text:
+      body +
+      ((unclosed?.count ?? 0) > 0
+        ? `\n\n${unclosed!.count} lịch hẹn chưa chốt sổ — xem trong Bảng điều khiển.`
+        : "") +
+      `\n\n— Quản Lý AI · ${salonName}`,
   });
 }
 
@@ -364,11 +408,11 @@ export async function runDigest(salonId: string): Promise<void> {
 
     const { data: salonRow } = await db
       .from("salons" as never)
-      .select("name, feature_flags, timezone, ai_manager_instructions")
+      .select("name, slug, feature_flags, timezone, ai_manager_instructions")
       .eq("id", salonId)
       .maybeSingle();
 
-    const s = salonRow as { name?: string; feature_flags?: Record<string, unknown>; timezone?: string; ai_manager_instructions?: string | null } | null;
+    const s = salonRow as { name?: string; slug?: string; feature_flags?: Record<string, unknown>; timezone?: string; ai_manager_instructions?: string | null } | null;
     if (!s) return;
     if (s.feature_flags?.ai_unified_digest !== true) return;
 
@@ -391,12 +435,24 @@ export async function runDigest(salonId: string): Promise<void> {
     if (existing) return; // already sent today
 
     // Gather data in parallel
-    const [stats, agentActions, alerts, outcomeStats, pendingApprovals] = await Promise.all([
+    const [
+      stats,
+      agentActions,
+      alerts,
+      outcomeStats,
+      pendingApprovals,
+      unclosed,
+    ] = await Promise.all([
       getBookingStats(salonId, tz),
       getTodayAgentActions(salonId, tz),
       getTodayWatchdogAlerts(salonId, tz),
       getOutcomeStats(salonId),
       getPendingApprovals(salonId),
+      // Same helper the dashboard card uses, so the two never disagree.
+      loadUnclosedBookings(salonId, tz, { limit: 8 }).catch(() => ({
+        count: 0,
+        items: [],
+      })),
     ]);
 
     const instructions = s.ai_manager_instructions ?? null;
@@ -408,7 +464,7 @@ export async function runDigest(salonId: string): Promise<void> {
       .filter((r) => r.urgency === "normal")
       .map((r) => r.summary.slice(0, 100) + (r.summary.length > 100 ? "…" : ""));
 
-    const context = buildContext(salonName, stats, agentActions, alerts, todayYmd, outcomeLines, instructions, pendingApprovalSummaries);
+    const context = buildContext(salonName, stats, agentActions, alerts, todayYmd, outcomeLines, instructions, pendingApprovalSummaries, unclosed.count);
     const body = await draftDigest(context, salonName, "vi");
     if (!body) return;
 
@@ -421,7 +477,15 @@ export async function runDigest(salonId: string): Promise<void> {
         decline_token: r.decline_token,
       }));
 
-    await sendDigestEmail(salonId, salonName, body, todayYmd, digestApprovals);
+    await sendDigestEmail(
+      salonId,
+      salonName,
+      body,
+      todayYmd,
+      digestApprovals,
+      s.slug ?? null,
+      unclosed,
+    );
 
     // Log so we don't send twice
     await db.from("ai_actions_log" as never).insert({
