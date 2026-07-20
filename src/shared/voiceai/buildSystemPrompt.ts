@@ -64,7 +64,9 @@ TOOL USAGE RULES — READ CAREFULLY:
    control the phone number involved. Checking availability or prices needs NO verification.
    • If a mutating tool returns { error: "otp_required" }, do this, then retry the SAME tool:
        a) call request_otp(customer_phone) — for a cancel/reschedule use the phone that OWNS the
-          booking; say "I'm texting a 6-digit code to that number — please read it back to me";
+          booking. Say nothing BEFORE the call, but the moment it returns you MUST tell them a code
+          is on its way and ask them to read it back. Their phone buzzes either way; staying silent
+          means an unexplained code arrives out of nowhere, which is worse than any delay.
        b) when they read it, call verify_otp(customer_phone, code);
        c) on success you get otp_session_id — call the booking/cancel/reschedule tool again WITH
           otp_session_id BEFORE YOU SAY ANYTHING. Not after a sentence, not after a question: the

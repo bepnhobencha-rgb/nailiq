@@ -123,6 +123,11 @@ async function handleRequestOtp(
       return NextResponse.json({
         ok: true,
         message: "A 6-digit code was texted to the customer. Ask them to read it back, then call verify_otp.",
+        // The customer's phone buzzes the moment this returns. If the agent stays
+        // silent they get an unexplained code out of nowhere — one tester said so
+        // in as many words: "I didn't hear you ask anything and suddenly I have
+        // this number." Handing over the sentence guarantees it gets said.
+        say_this: "I've just texted a 6-digit code to your phone. Could you read it back to me?",
       });
     }
     return NextResponse.json({
