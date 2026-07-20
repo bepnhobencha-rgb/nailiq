@@ -47,6 +47,11 @@ export function sessionUpdateMessage(cfg: RealtimeSessionConfig): object {
         input: {
           format: { type: "audio/pcmu" },
           turn_detection: { type: "server_vad" },
+          // Transcribe the caller's speech. Without this the model still hears
+          // them but emits no input transcript, so a phone call leaves no record
+          // of what was said — unlike the web widget. Needed for the owner/admin
+          // call-review log.
+          transcription: { model: "gpt-realtime-whisper" },
         },
         output: {
           format: { type: "audio/pcmu" },

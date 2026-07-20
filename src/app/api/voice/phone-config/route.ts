@@ -65,10 +65,35 @@ export async function POST(req: NextRequest) {
   const ctx = await loadSalonContext(slug);
   if (!ctx) return NextResponse.json({ error: "context_load_failed" }, { status: 500 });
 
+  // Open a session row so the phone call is recorded the same way a web call is.
+  // The bridge threads the returned id onto its tool calls (→ tool_log) and posts
+  // the transcript to /api/voice/session/end when the call ends. Best-effort: a
+  // failure here must not stop the call from connecting.
+  let sessionId: string | null = null;
+  try {
+    const { data: salonIdRow } = await supabase
+      .from("salons").select("id").eq("slug", slug).maybeSingle();
+    const salonId = (salonIdRow as { id?: string } | null)?.id ?? null;
+    if (salonId) {
+      const { data: sess } = await supabase
+        .from("voice_ai_sessions")
+        .insert({
+          salon_id: salonId,
+          status: "active",
+          language,
+          ...(from ? { client_phone: from.replace(/\D/g, "") } : {}),
+        } as never)
+        .select("id")
+        .single();
+      sessionId = (sess as { id?: string } | null)?.id ?? null;
+    }
+  } catch { /* best-effort — call still connects without a session row */ }
+
   return NextResponse.json({
     model: VOICE_MODEL,
     voice: ctx.personaVoice,
     instructions: buildSystemPrompt(ctx, language, from),
     tools: [...REALTIME_TOOLS],
+    sessionId,
   });
 }
