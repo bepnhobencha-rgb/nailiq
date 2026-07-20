@@ -151,8 +151,9 @@ test("REALTIME_TOOLS still includes all 5 individual tools", () => {
   ]) {
     assertTrue(TOOL_NAMES.includes(expected), `missing individual tool: ${expected}`);
   }
-  // 5 individual + 2 group (get/confirm) + join_waitlist + end_call = 9
-  assertEqual(TOOL_NAMES.length, 9, "total tool count must be 9");
+  // 5 individual + 2 group (get/confirm) + join_waitlist + end_call
+  //   + request_otp + verify_otp (identity gate, #770) = 11
+  assertEqual(TOOL_NAMES.length, 11, "total tool count must be 11");
 });
 
 // ─── 2. Tool schema validation ────────────────────────────────────

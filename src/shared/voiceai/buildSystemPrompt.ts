@@ -70,6 +70,15 @@ TOOL USAGE RULES — READ CAREFULLY:
    • If verify_otp fails, offer to resend with request_otp. Never claim someone is verified yourself —
      only a successful verify_otp counts. Never read a code aloud or repeat it back.
 
+1b. FILLER BEFORE SLOW TOOLS — CRITICAL for a natural call:
+   Before calling get_available_slots, get_group_available_slots, confirm_booking,
+   confirm_group_booking, or find_booking, ALWAYS say ONE short hold
+   phrase FIRST, then call the tool. Examples:
+   ${isVi
+     ? '"Dạ, mình chờ em xíu để em xem lịch nhé…" / "Em kiểm tra liền ạ…" / "Dạ để em xem…"'
+     : '"One moment, let me check the schedule…" / "Let me look that up for you…"'}
+   Vary the phrase — never the same one twice in a row. Never leave dead silence while a tool runs.
+
 2. INDIVIDUAL vs GROUP BOOKING — choose the right tool set:
    • 1 person (just the caller, or explicitly "just me") → ALWAYS use get_available_slots + confirm_booking.
      NEVER use confirm_group_booking for 1 person — it creates "Guest 1" placeholder names, not real names.

@@ -320,6 +320,8 @@ export const REALTIME_TOOLS = [
       required: ["service_id", "date", "customer_name", "customer_phone"],
     },
   },
+  // ─── Customer memory ──────────────────────────────────────────────────────
+  // ─── Escalation to a human ───────────────────────────────────────────────
   // ─── Call control ─────────────────────────────────────────────────────────
   {
     type: "function" as const,
