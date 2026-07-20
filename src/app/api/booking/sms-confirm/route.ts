@@ -97,7 +97,7 @@ export async function POST(req: Request) {
   // Check if SMS is enabled for this salon
   const { data: salon } = await db
     .from("salons")
-    .select("name, slug, subscription_plan, plan_override, address, email_outbound_enabled, timezone")
+    .select("name, slug, subscription_plan, plan_override, address, email_outbound_enabled, timezone, default_notification_locale")
     .eq("id", salonId)
     .maybeSingle();
 
@@ -155,8 +155,20 @@ export async function POST(req: Request) {
   const salonIsTest =
     /^e2e[-_]/i.test(salonSlug) || /^e2e\b/i.test(salon.name ?? "");
 
-  // Language precedence: the language the customer just chose at booking
-  // wins; else their stored preference; else Vietnamese.
+  // Language precedence: the language the customer just chose at booking wins;
+  // else their stored preference for this salon; else the SALON's configured
+  // notification locale.
+  //
+  // That last step used to be a hardcoded "vi", which is how a California salon
+  // whose default_notification_locale is "en" ended up texting a customer in
+  // Vietnamese: the voice widget passes the language of the browser session, so
+  // one Vietnamese-speaking person testing the flow picked the language for a
+  // customer base that does not read it. The salon's own setting is the only
+  // sensible default when we know nothing about the individual customer.
+  const salonLocale: "en" | "vi" =
+    (salon as { default_notification_locale?: string | null }).default_notification_locale === "vi"
+      ? "vi"
+      : "en";
   const requestedLang = language === "en" || language === "vi" ? language : null;
 
   const { data: profile } = await db
@@ -167,7 +179,7 @@ export async function POST(req: Request) {
     .maybeSingle();
   const clientEmailOnFile = (profile as { email?: string | null } | null)?.email?.trim() || null;
 
-  let lang = requestedLang ?? "vi";
+  let lang: "en" | "vi" = requestedLang ?? salonLocale;
   if (profile) {
     if (requestedLang) {
       // Persist the choice so future reminders for this customer match it.
@@ -186,7 +198,9 @@ export async function POST(req: Request) {
         .eq("client_profile_id", profile.id)
         .eq("salon_id", salonId)
         .maybeSingle();
-      lang = prefs?.preferred_language ?? "vi";
+      lang = prefs?.preferred_language === "vi" || prefs?.preferred_language === "en"
+        ? prefs.preferred_language
+        : salonLocale;
     }
   }
 
@@ -297,6 +311,7 @@ export async function POST(req: Request) {
       salonTimezone,
       salonIsTest,
       salonId,
+      lang,
     });
   }
 
@@ -313,8 +328,12 @@ async function sendGroupMemberSms(opts: {
   salonTimezone: string;
   salonIsTest: boolean;
   salonId: string;
+  /** Resolved by the caller (customer choice → stored pref → salon default).
+   *  Everything below used to be hardcoded Vietnamese, so every guest of every
+   *  party — including at English-speaking salons — got a Vietnamese text. */
+  lang: "en" | "vi";
 }) {
-  const { db, groupId, organizerBookingId, organizerName, salonName, salonSlug, salonTimezone, salonIsTest, salonId } = opts;
+  const { db, groupId, organizerBookingId, organizerName, salonName, salonSlug, salonTimezone, salonIsTest, salonId, lang } = opts;
 
   try {
     // Fetch all non-organizer bookings in the group
@@ -347,17 +366,23 @@ async function sendGroupMemberSms(opts: {
 
       const dateStr = formatConfirmDate(m.start_at, salonTimezone);
       const staffPart = m.staff_name ? ` · ${m.staff_name}` : "";
-      const rsvpUrl = `${SITE_URL}/booking/group-rsvp?token=${tokenResult.id}&lang=vi`;
+      const rsvpUrl = `${SITE_URL}/booking/group-rsvp?token=${tokenResult.id}&lang=${lang}`;
 
-      const msg = [
-        `${organizerName || "Nhóm"} đã đặt lịch cho bạn tại ${salonName} · ${dateStr}.`,
-        m.service_name ? `Dịch vụ: ${m.service_name}${staffPart}.` : null,
-        `Xác nhận tham dự: ${rsvpUrl}`,
-      ]
+      const msg = (lang === "en"
+        ? [
+            `${organizerName || "Your group"} booked an appointment for you at ${salonName} · ${dateStr}.`,
+            m.service_name ? `Service: ${m.service_name}${staffPart}.` : null,
+            `Confirm you're coming: ${rsvpUrl}`,
+          ]
+        : [
+            `${organizerName || "Nhóm"} đã đặt lịch cho bạn tại ${salonName} · ${dateStr}.`,
+            m.service_name ? `Dịch vụ: ${m.service_name}${staffPart}.` : null,
+            `Xác nhận tham dự: ${rsvpUrl}`,
+          ])
         .filter(Boolean)
         .join(" ");
 
-      void sendSmsReminder(m.client_phone, msg, { salonIsTest, lang: "vi" });
+      void sendSmsReminder(m.client_phone, msg, { salonIsTest, lang });
     }
   } catch {
     // Best-effort — don't fail the organizer SMS flow

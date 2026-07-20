@@ -1,4 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+// `after()` only runs inside a Next request scope. The success paths below reach
+// the owner-notification side effect, which #787 moved into after() — outside a
+// real request that throws. These tests are about the identity gate, not about
+// notifications, so the scheduler is a no-op here.
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>();
+  return { ...actual, after: () => {} };
+});
 
 import { executeVoiceTool } from "../toolExecutor";
 
