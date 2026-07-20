@@ -26,12 +26,21 @@ export async function POST(req: NextRequest) {
 
   const supabase = createServiceRoleClient();
 
+  // Never blank the transcript. Two writers share this column: logVoiceToolCall
+  // appends a row per tool call DURING the session, and this route stores the
+  // conversation the widget captured. Writing `transcript ?? []` meant any call
+  // that ended without a captured conversation — a dropped connection, an early
+  // close, a client bug — erased the tool log that was already there, which is
+  // the only record of what the AI actually did. An empty payload now leaves
+  // whatever is stored untouched.
+  const hasTranscript = Array.isArray(transcript) && transcript.length > 0;
+
   const { error } = await supabase
     .from("voice_ai_sessions")
     .update({
       status,
       duration_seconds: Math.max(0, Math.round(durationSeconds ?? 0)),
-      transcript:       transcript ?? [],
+      ...(hasTranscript ? { transcript } : {}),
       ended_at:         new Date().toISOString(),
       ...(clientName  ? { client_name:  clientName  } : {}),
       ...(clientPhone ? { client_phone: toCanonicalPhone(clientPhone) ?? clientPhone } : {}),
