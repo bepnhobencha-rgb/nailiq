@@ -58,6 +58,12 @@ export async function POST(req: NextRequest) {
   if (!ctx) return NextResponse.json({ error: "context_load_failed" }, { status: 500 });
 
   const instructions = buildSystemPrompt(ctx, language);
+  // The other language, built up front so a mid-call switch costs nothing. The
+  // session language comes from the browser, which is often wrong: a Vietnamese
+  // speaker landing on an English page got an English agent, said "Bạn nói gì?",
+  // and the two of them spent two minutes failing to exchange a phone number.
+  const altLanguage: SupportedLanguage = language === "vi" ? "en" : "vi";
+  const altInstructions = buildSystemPrompt(ctx, altLanguage);
   const voice        = ctx.personaVoice;
 
   // Keep client_secrets body minimal — the endpoint rejects unknown/new fields.
@@ -140,5 +146,9 @@ export async function POST(req: NextRequest) {
     openaiSessionId: openaiSessionId ?? null,
     voice,
     instructions,   // returned so the client can reinforce them in session.update
+    language,
+    // Client swaps to these when it hears the caller using the other language.
+    altLanguage,
+    altInstructions,
   });
 }

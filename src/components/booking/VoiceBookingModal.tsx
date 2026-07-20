@@ -25,6 +25,17 @@ type Status =
 
 type AiActivity = "idle" | "speaking" | "thinking";
 
+
+/** Vietnamese tone marks and Vietnamese-only letters. English transcripts never
+ *  contain these, so a single hit is a reliable signal — far more robust than
+ *  word lists, which trip over names and loanwords. */
+const VIETNAMESE_RE =
+  /[àáảãạăằắẳẵặâầấẩẫậđèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ]/i;
+
+function looksVietnamese(text: string): boolean {
+  return VIETNAMESE_RE.test(text);
+}
+
 type Transcript = { role: "ai" | "user"; text: string };
 
 type BookingResult = {
@@ -108,6 +119,14 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
   const [aiActivity, setAiActivity]       = useState<AiActivity>("idle");
   const [error, setError]                 = useState<string | null>(null);
   const [transcript, setTranscript]       = useState<Transcript[]>([]);
+  // Mid-call language switch. The session language comes from the BROWSER, which
+  // is frequently wrong — a Vietnamese speaker on an English page got an English
+  // agent and the two spent two minutes failing to exchange a phone number.
+  // Instructions for the other language are fetched at mint time so the switch
+  // costs no round trip. Switch once: flip-flopping mid-sentence is worse than
+  // being wrong in one direction.
+  const altLangRef         = useRef<{ language: string; instructions: string } | null>(null);
+  const languageSwitchedRef = useRef(false);
   const [durationSec, setDuration]        = useState(0);
   const [bookingResult, setBookingResult] = useState<BookingResult | null>(null);
 
@@ -619,6 +638,39 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     // User speech transcript — fires when input audio transcription is available
     if (type === "conversation.item.input_audio_transcription.completed") {
       const text = ev.transcript as string | undefined;
+
+      // Mid-call language switch. If the caller is clearly speaking the OTHER
+      // language, swap the agent over: new instructions and a transcription
+      // language hint. The hint matters as much as the persona — Whisper asked
+      // for English will render Vietnamese speech as nonsense ("Nhà đấy ba búc
+      // Obama qua rước không?"), and no prompt can recover from that.
+      const alt = altLangRef.current;
+      if (
+        text &&
+        alt &&
+        !languageSwitchedRef.current &&
+        alt.language === "vi" &&
+        looksVietnamese(text)
+      ) {
+        languageSwitchedRef.current = true;
+        sessionLangRef.current      = "vi";
+        instructionsRef.current     = alt.instructions;
+        try {
+          wsRef.current?.send(JSON.stringify({
+            type: "session.update",
+            session: {
+              type:         "realtime",
+              instructions: alt.instructions,
+              audio: {
+                input: {
+                  transcription: { model: "gpt-realtime-whisper", language: "vi" },
+                },
+              },
+            },
+          }));
+        } catch { /* switch is best-effort — the call continues either way */ }
+      }
+
       if (text) setTranscript((prev) => {
         const last = prev[prev.length - 1];
         if (last?.role === "user" && last.text === text) return prev;
@@ -874,14 +926,19 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         const body = await sessRes.json().catch(() => ({})) as Record<string, string>;
         throw new Error(body.error ?? `session_init_${sessRes.status}`);
       }
-      const { ephemeralKey, model: realtimeModel, sessionId, voice, instructions, expiresAt: expiresAtRaw } = await sessRes.json() as {
+      const { ephemeralKey, model: realtimeModel, sessionId, voice, instructions, expiresAt: expiresAtRaw, altLanguage, altInstructions } = await sessRes.json() as {
         ephemeralKey:  string;
         model:         string;
         sessionId:     string | null;
         voice:         string;
         instructions?: string;
         expiresAt?:    number;
+        altLanguage?:  string;
+        altInstructions?: string;
       };
+      altLangRef.current = altLanguage && altInstructions
+        ? { language: altLanguage, instructions: altInstructions }
+        : null;
       sessionIdRef.current    = sessionId;
       // Store instructions, language, and voice so downstream response.create
       // calls can re-anchor the persona AND lock the voice after each tool
@@ -1018,7 +1075,10 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
                 // Without this the model hears the user but the transcript
                 // never shows the user's words (conversation.item.input_audio_
                 // transcription.completed never fires).
-                transcription:  { model: "gpt-realtime-whisper" },
+                // `language` is a strong hint to Whisper. Without it, a
+                // Vietnamese speaker on an English session is transcribed as
+                // garbage English rather than Vietnamese.
+                transcription:  { model: "gpt-realtime-whisper", language },
                 noise_reduction: { type: "far_field" },
                 turn_detection: {
                   type:               "semantic_vad",

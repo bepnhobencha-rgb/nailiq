@@ -588,15 +588,32 @@ async function handleConfirmBooking(
     }
   }
 
+  // `say_this` is the closing sentence, assembled here from what was actually
+  // written to the database. Three prompt rewrites failed to get the agent to
+  // state these details — it kept answering "All set, I'll wrap this up with
+  // your booking details" and stopping, announcing the closing instead of
+  // delivering it. Composing the sentence server-side removes the judgement
+  // call: the prompt now only has to read one field out loud.
+  //
+  // Built from the resolved values (staff especially — the salon may assign
+  // someone other than whoever was discussed), so it cannot drift from reality.
+  const staffPart = resolvedStaffName ? ` with ${resolvedStaffName}` : "";
+  const sayThis =
+    `All set! I have you booked for ${(service as { name: string }).name} on ${date} at ${timeSlot}${staffPart}.` +
+    (smsSent ? " You will get a confirmation text." : "") +
+    " Anything else I can help with?";
+
   return NextResponse.json({
     success:      true,
     bookingId,
     serviceName:  (service as { name: string }).name,
     date,
     timeSlot,
+    staffName:    resolvedStaffName ?? null,
     customerName,
     customerPhone,
     smsSent,
+    say_this:     sayThis,
   });
 }
 
