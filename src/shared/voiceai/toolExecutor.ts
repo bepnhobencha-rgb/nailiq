@@ -202,7 +202,7 @@ const PHONE_TOO_SHORT = {
   hint: "Ask the customer to read out their full phone number, then try again.",
 };
 
-/** Best-effort per-tool-call log appended to voice_ai_sessions.transcript (eval loop). */
+/** Best-effort per-tool-call log appended to voice_ai_sessions.tool_log (eval loop). */
 export async function logVoiceToolCall(
   supabase: ReturnType<typeof createServiceRoleClient>,
   sessionId: string,
@@ -210,19 +210,21 @@ export async function logVoiceToolCall(
   httpStatus: number,
 ): Promise<void> {
   try {
+    // Writes to `tool_log`, NOT `transcript`. They used to share one column and
+    // the session-end write clobbered whatever this had appended.
     const { data } = await supabase
       .from("voice_ai_sessions")
-      .select("transcript")
+      .select("tool_log")
       .eq("id", sessionId)
       .maybeSingle();
-    const existing = Array.isArray((data as { transcript?: unknown } | null)?.transcript)
-      ? ((data as { transcript: unknown[] }).transcript)
+    const existing = Array.isArray((data as { tool_log?: unknown } | null)?.tool_log)
+      ? ((data as { tool_log: unknown[] }).tool_log)
       : [];
     const entry = { at: new Date().toISOString(), type: "tool_call", tool: toolName, ok: httpStatus < 400 };
     // Keep the last 200 entries so the row never grows unbounded.
     await supabase
       .from("voice_ai_sessions")
-      .update({ transcript: [...existing.slice(-199), entry] })
+      .update({ tool_log: [...existing.slice(-199), entry] } as never)
       .eq("id", sessionId);
   } catch { /* best-effort — logging must never break a live call */ }
 }
