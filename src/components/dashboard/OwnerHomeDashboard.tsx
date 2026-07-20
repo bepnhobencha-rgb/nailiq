@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { OwnerHomeData } from "@/shared/dashboard/loadOwnerHomeDashboardAction";
+import { unclosedBookingHref } from "@/shared/dashboard/unclosedBookingTypes";
 import { getUserMessages } from "@/shared/i18n/user";
 import { formatCurrency, formatCurrencyOrZero } from "@/shared/lib/currencyFormat";
 import { cn } from "@/shared/lib/cn";
@@ -344,6 +345,61 @@ export function OwnerHomeDashboard({
             {th.minhViewAll}
           </span>
         </Link>
+      ) : null}
+
+      {/* ── Bookings never closed out ────────────────────────────────── */}
+      {data.unclosedCount > 0 ? (
+        <section
+          aria-label={th.unclosedTitle}
+          className="rounded-2xl border border-nq-warning/40 bg-nq-warning/8 px-4 py-3 ring-1 ring-inset ring-nq-warning/15"
+        >
+          <div className="flex items-start gap-2.5">
+            <span className="text-lg leading-none pt-0.5" aria-hidden>
+              ⏳
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-nq-foreground">
+                {th.unclosedTitle}
+              </p>
+              <p className="text-xs text-nq-muted">
+                {th.unclosedSubtitle.replace(
+                  "{n}",
+                  String(data.unclosedCount),
+                )}
+              </p>
+
+              {/* Each row links straight to that booking's drawer, so closing
+                  it out is one tap from here rather than a hunt through the
+                  calendar for a date the owner no longer remembers. */}
+              <ul className="mt-2.5 flex flex-col gap-1.5">
+                {data.unclosedItems.map((b) => (
+                  <li key={b.id}>
+                    <Link
+                      href={unclosedBookingHref(slug, b)}
+                      className="flex items-center justify-between gap-3 rounded-xl bg-nq-surface/45 px-3 py-2 transition hover:bg-nq-surface/65"
+                    >
+                      <span className="min-w-0 truncate text-sm text-nq-foreground">
+                        {b.clientName}
+                      </span>
+                      <span className="shrink-0 text-xs text-nq-muted tabular-nums">
+                        {b.dateYmd}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+
+              {data.unclosedCount > data.unclosedItems.length ? (
+                <p className="mt-2 text-xs text-nq-muted">
+                  {th.unclosedMore.replace(
+                    "{n}",
+                    String(data.unclosedCount - data.unclosedItems.length),
+                  )}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </section>
       ) : null}
 
       {/* ── Today's Pulse ────────────────────────────────────────────── */}

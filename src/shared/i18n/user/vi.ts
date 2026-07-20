@@ -898,6 +898,10 @@ export const userVi: UserMessages = {
       minhTitle: "AI Manager Minh",
       minhPendingApprovals: "{n} mục cần bạn xem xét",
       minhViewAll: "Xem ngay",
+      unclosedTitle: "Lịch hẹn chưa chốt",
+      unclosedSubtitle:
+        "{n} lịch hẹn đã qua nhưng chưa có trạng thái cuối — đang thiếu trong doanh thu và tỉ lệ khách không đến. Bấm vào để xử lý.",
+      unclosedMore: "và {n} lịch nữa",
       bookingLink: "Trang đặt lịch",
       refresh: "Làm mới",
       openReceptionistCenter: "Mở Màn hình Lễ tân",

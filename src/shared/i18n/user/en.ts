@@ -657,6 +657,12 @@ export type UserMessages = {
       /** `{n}` = count. */
       minhPendingApprovals: string;
       minhViewAll: string;
+      /** Past appointments the desk never marked complete / no-show. */
+      unclosedTitle: string;
+      /** {n} = how many are waiting to be closed out. */
+      unclosedSubtitle: string;
+      /** {n} = how many more beyond the listed rows. */
+      unclosedMore: string;
       bookingLink: string;
       refresh: string;
       openReceptionistCenter: string;
@@ -3171,6 +3177,10 @@ export const userEn: UserMessages = {
       minhTitle: "AI Manager Minh",
       minhPendingApprovals: "{n} items need your review",
       minhViewAll: "Review",
+      unclosedTitle: "Appointments not closed out",
+      unclosedSubtitle:
+        "{n} past appointments still have no final status — they're missing from your revenue and no-show numbers. Tap one to fix it.",
+      unclosedMore: "and {n} more",
       bookingLink: "Booking page",
       refresh: "Refresh",
       openReceptionistCenter: "Open Receptionist Center",
