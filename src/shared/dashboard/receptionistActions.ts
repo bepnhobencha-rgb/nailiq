@@ -1156,6 +1156,9 @@ export async function createDeskGroup(
     seatTogether: input.seatTogether,
     language: input.language,
     otpSessionId,
+    // Front-desk-entered party — keeps the channel breakdown honest instead of
+    // letting desk groups fall through to the 'online' default.
+    bookingChannel: "desk",
   });
 
   // Unified no-show protection gate (desk group): only the lead carries a phone,

@@ -55,6 +55,47 @@ export async function getLatestOtp(phone: string): Promise<string> {
   return data?.code ?? "";
 }
 
+/**
+ * Every group booking row for a salon, with the fields the group side-effect
+ * stamp is responsible for.
+ *
+ * Exists because `submitGroupBooking` runs in the BROWSER for the public flow,
+ * where the anon client holds the UPDATE grant on `bookings` but has no RLS
+ * UPDATE policy — the write lands on 0 rows and reports no error. That left 168
+ * production rows with a null `booking_channel`. A green build proves nothing
+ * about this class of bug, so the specs assert the stamp from the DB side.
+ *
+ * Organizer row first, so callers can read `rows[0]` as the organizer.
+ */
+export async function getGroupBookingStamps(slug: string): Promise<
+  Array<{
+    id: string;
+    booking_channel: string | null;
+    verification_method: string | null;
+    otp_session_id: string | null;
+    is_group_organizer: boolean | null;
+  }>
+> {
+  const { data: salon } = await supabase
+    .from("salons")
+    .select("id")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (!salon) return [];
+
+  const { data } = await supabase
+    .from("bookings")
+    .select(
+      "id, booking_channel, verification_method, otp_session_id, is_group_organizer",
+    )
+    .eq("salon_id", (salon as { id: string }).id)
+    .not("group_id", "is", null)
+    .is("deleted_at", null)
+    .order("is_group_organizer", { ascending: false });
+
+  return (data ?? []) as Awaited<ReturnType<typeof getGroupBookingStamps>>;
+}
+
 export async function cleanupTestSalon(slug: string) {
   const { data: salon } = await supabase
     .from("salons")

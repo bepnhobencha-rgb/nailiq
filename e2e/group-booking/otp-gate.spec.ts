@@ -16,7 +16,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { cleanupTestSalon } from "../helpers/db";
+import { cleanupTestSalon, getGroupBookingStamps } from "../helpers/db";
 import {
   fillMemberCard,
   gotoGroupFlow,
@@ -86,5 +86,27 @@ test.describe("Group booking — gate-first OTP", () => {
     await expect(page.getByText(/#GRP-\d{8}-[A-F0-9]{4}/)).toBeVisible();
     await expect(page.locator("#otp-code")).toHaveCount(0);
     expect(sendCount).toBe(1);
+
+    // ── STAMPS ──────────────────────────────────────────────
+    // The gate OTP verified the organizer's phone, so the organizer row carries
+    // the evidence. Polled because the stamp action defers to after().
+    await expect
+      .poll(
+        async () => {
+          const rows = await getGroupBookingStamps(SLUG);
+          return rows[0]?.verification_method ?? null;
+        },
+        { timeout: 15_000 },
+      )
+      .toBe("otp");
+
+    const rows = await getGroupBookingStamps(SLUG);
+    expect(rows.every((b) => b.booking_channel === "online")).toBe(true);
+    expect(rows[0]?.otp_session_id).not.toBeNull();
+    // Members share the organizer's phone but hold no evidence of their own —
+    // marking them verified would overstate what the OTP actually proved.
+    expect(
+      rows.filter((b) => !b.is_group_organizer).every((b) => b.verification_method === null),
+    ).toBe(true);
   });
 });
