@@ -347,14 +347,31 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
 
       // Called after submitting function_call_output — fires response.create
       // only when the last pending tool call for this response turn completes.
+      // When a tool hands back a `say_this` line, that line becomes the response
+      // instruction rather than the persona prompt. Three prompt rewrites failed
+      // to get the agent to state a completed booking — it kept answering "I'll
+      // wrap this up with your booking details" and stopping, in one case after
+      // being told that exact sentence was forbidden. Asking it to compose from
+      // a description is what fails; handing it the finished sentence and asking
+      // it to read one thing does not leave room for the failure.
+      let sayThis: string | null = null;
+
       const sendResponseCreate = () => {
         pendingToolCallsRef.current = Math.max(0, pendingToolCallsRef.current - 1);
-        if (pendingToolCallsRef.current === 0) {
-          wsRef.current?.send(JSON.stringify({
-            type: "response.create",
-            ...(instructionsRef.current ? { response: { instructions: instructionsRef.current } } : {}),
-          }));
-        }
+        if (pendingToolCallsRef.current !== 0) return;
+
+        const instructions = sayThis
+          ? `Say exactly this to the customer, word for word, and nothing else:\n\n${sayThis}\n\n` +
+            `If you are speaking Vietnamese, translate it naturally but keep every detail — the ` +
+            `service, the day, the time and the staff name. Do not add a preamble, do not describe ` +
+            `what you are doing, do not say you are about to confirm. Say the sentence, then stop ` +
+            `and wait for the customer.`
+          : instructionsRef.current;
+
+        wsRef.current?.send(JSON.stringify({
+          type: "response.create",
+          ...(instructions ? { response: { instructions } } : {}),
+        }));
       };
 
       fetch("/api/voice/tool", {
@@ -414,6 +431,9 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
               customerName: (res.clientName   as string) ?? "",
             });
           }
+          const candidate = res.say_this;
+          if (typeof candidate === "string" && candidate.trim()) sayThis = candidate.trim();
+
           // Submit function output to conversation, then trigger response when ready.
           wsRef.current?.send(JSON.stringify({
             type: "conversation.item.create",
