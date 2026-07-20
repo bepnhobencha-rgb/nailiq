@@ -185,6 +185,7 @@ export default function VerticalDayView({
   return (
     <div
       className="relative select-none pb-28"
+      data-testid="vertical-day-view"
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
@@ -342,6 +343,8 @@ function BookingCard({
 
   return (
     <motion.button
+      data-testid={`booking-block-${booking.id}`}
+      data-booking-source={booking.source}
       className="w-full rounded-xl border border-white/[0.07] bg-white/[0.05] p-3 text-left transition-colors active:bg-white/[0.09]"
       whileTap={{ scale: 0.98 }}
       onClick={onPress}

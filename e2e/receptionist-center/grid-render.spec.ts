@@ -42,10 +42,7 @@ test.describe("Receptionist grid render + ghost", () => {
     const block = page.getByTestId(`booking-block-${fx.displayApptBookingId}`);
     await expect(block).toBeVisible({ timeout: 15_000 });
 
-    const walkinBorder = await block.evaluate((el) =>
-      window.getComputedStyle(el).borderLeftWidth,
-    );
-    expect(parseFloat(walkinBorder)).toBe(0);
+    await expect(block).toHaveAttribute("data-booking-source", "appointment");
   });
 
   test("case 6: cancel booking hides block and sets DB cancelled", async ({ page }) => {

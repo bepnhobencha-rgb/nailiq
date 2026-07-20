@@ -564,7 +564,11 @@ export async function gotoReceptionistCenter(
   });
   // `.first()` — same streaming-hydration race as `receptionist-center-loaded`
   // above: the grid can briefly appear twice (SSR placeholder + hydrated copy).
-  await page.getByTestId("staff-timeline-grid").first().waitFor({
+  const scheduleTestId =
+    (page.viewportSize()?.width ?? 1280) < 640
+      ? "vertical-day-view"
+      : "staff-timeline-grid";
+  await page.getByTestId(scheduleTestId).first().waitFor({
     state: "visible",
     timeout: 45_000,
   });

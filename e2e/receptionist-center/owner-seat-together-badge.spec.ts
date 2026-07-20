@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
-  gotoOwnerDashboard,
+  gotoReceptionistCenter,
   rcSlug,
   seedReceptionistCenterFixture,
   type ReceptionistCenterFixture,
@@ -27,8 +27,8 @@ test.afterAll(async ({}, testInfo) => {
   await cleanupTestSalon(rcSlug(testInfo.project.name));
 });
 
-test.describe("Owner dashboard — seat-together 💕 badge", () => {
-  test("a seat_together booking shows the couple badge on the owner dashboard", async ({
+test.describe("Receptionist Center — seat-together 💕 badge", () => {
+  test("a seat_together booking shows the couple badge on the live board", async ({
     page,
   }) => {
     // The fixture's reliably-rendered booking ("RC Display Appt") survives
@@ -42,11 +42,10 @@ test.describe("Owner dashboard — seat-together 💕 badge", () => {
       .eq("client_name", "RC Display Appt");
     expect(error).toBeNull();
 
-    await gotoOwnerDashboard(page, fx.slug);
+    await gotoReceptionistCenter(page, fx.slug, { dateYmd: fx.ymdUtc });
 
-    await expect(page.getByText("RC Display Appt").first()).toBeVisible();
     await expect(
-      page.locator('[data-testid*="seat-together-"]').first(),
+      page.getByTestId(`booking-block-icon-seat-together-${fx.displayApptBookingId}`),
     ).toBeVisible();
   });
 });

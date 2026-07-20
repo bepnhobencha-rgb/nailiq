@@ -21,6 +21,7 @@ import {
 import {
   cleanReceptionistData,
   gotoReceptionistCenter,
+  isoAtUtcYmdHourMinute,
   rcSlug,
   seedReceptionistCenterFixture,
   type ReceptionistCenterFixture,
@@ -51,9 +52,10 @@ test.describe("Drawer cancel — group-aware scope", () => {
       serviceIds: fx.serviceIds,
       slotCount: 2,
       wavePlan: [1, 2],
+      startTimeIso: isoAtUtcYmdHourMinute(fx.ymdUtc, 12, 0),
     });
 
-    await gotoReceptionistCenter(page, fx.slug);
+    await gotoReceptionistCenter(page, fx.slug, { dateYmd: fx.ymdUtc });
 
     // Open the drawer for ONE member (synthetic click — drawer/grid blocks fail
     // Playwright's actionability gate under the open animation; the repo's other

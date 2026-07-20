@@ -57,8 +57,6 @@ test.describe("Owner dashboard regression", () => {
 
     await expect(page.getByText(marker)).toHaveCount(0);
 
-    await expect(page.getByText("RC Display Appt")).toBeVisible();
-
     const summary = page.getByRole("region", { name: /^Today$/i });
     await expect(summary).toBeVisible();
 

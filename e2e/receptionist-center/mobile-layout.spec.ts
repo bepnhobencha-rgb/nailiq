@@ -33,7 +33,7 @@ test.describe("Mobile layout", () => {
     await gotoReceptionistCenter(page, fx.slug);
 
     const form = page.getByTestId("walkin-add-form");
-    const grid = page.getByTestId("staff-timeline-grid");
+    const grid = page.getByTestId("vertical-day-view");
 
     await expect(form).toBeVisible();
     await expect(grid).toBeVisible();
