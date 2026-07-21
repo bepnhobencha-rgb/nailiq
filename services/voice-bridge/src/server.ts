@@ -263,21 +263,26 @@ wss.on("connection", (twilioWs) => {
       if (t === "response.output_audio_transcript.done" || t === "response.audio_transcript.done") {
         const txt = typeof evt.transcript === "string" ? evt.transcript.trim() : "";
         if (txt) transcript.push({ role: "ai", text: txt });
+      } else if (t === "input_audio_buffer.committed") {
+        // The caller's turn just closed. Ask for the reply NOW — do not wait for
+        // the transcription to come back. gpt-realtime is speech-to-speech: it
+        // answers the AUDIO directly, so gating the response on Whisper finishing
+        // added seconds of dead air per turn on 8 kHz phone audio, and the caller
+        // filled the silence with "are you there?" — which then barged in and cut
+        // the late reply. Firing here removes that latency. (A language switch,
+        // detected once the transcript lands, still adds its own reply on top.)
+        coordinator.request({ kind: "normal", build: plainResponseCreate, language: () => currentLang });
       } else if (t === "conversation.item.input_audio_transcription.completed") {
+        // The transcript lands a beat after the reply was already requested. Use
+        // it only for the record, the time-guard utterance, and — if the caller
+        // asked to change language — the switch (which fires its own reply in the
+        // new language via the coordinator).
         const txt = typeof evt.transcript === "string" ? evt.transcript.trim() : "";
         if (txt) {
           transcript.push({ role: "user", text: txt });
           lastUserUtterance = txt;   // most recent caller turn, for the time guard
           userTurnCount++;
-        }
-        // With create_response:false the bridge drives every turn. A language
-        // switch owns its own acknowledgement response; any other turn gets one
-        // normal response (even on an empty transcript, so silence never dead-airs
-        // the caller). lastUserUtterance is set first, so a booking made this turn
-        // is checked against what the caller just said.
-        const switched = txt ? maybeSwitchLanguage(txt) : false;
-        if (!switched) {
-          coordinator.request({ kind: "normal", build: plainResponseCreate, language: () => currentLang });
+          maybeSwitchLanguage(txt);
         }
       }
 
