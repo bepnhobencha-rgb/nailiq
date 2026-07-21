@@ -19,7 +19,7 @@ export default async function VoiceSetupPage({ params }: PageProps) {
   const { data: row } = await ctx.supabase
     .from("salons")
     .select(
-      "voice_ai_enabled, voice_ai_persona_name, voice_ai_persona_voice, voice_ai_reasoning_effort, " +
+      "voice_ai_enabled, voice_ai_persona_name, voice_ai_persona_voice, voice_ai_reasoning_effort, voice_ai_upsell_enabled, " +
         "voice_ai_sessions_this_month, voice_ai_sessions_limit, voice_ai_sessions_reset_at",
     )
     .eq("id", ctx.salon.id)
@@ -39,6 +39,7 @@ export default async function VoiceSetupPage({ params }: PageProps) {
     voice_ai_persona_name:     r.voice_ai_persona_name      ?? "Lily",
     voice_ai_persona_voice:    r.voice_ai_persona_voice     ?? "marin",
     voice_ai_reasoning_effort: r.voice_ai_reasoning_effort  ?? "low",
+    voice_ai_upsell_enabled:   r.voice_ai_upsell_enabled    ?? true,
   };
 
   // Build the Twilio Voice webhook URL from the SAME base the inbound route

@@ -597,9 +597,16 @@ async function handleConfirmBooking(
   // ── 7. Link booking to voice_ai_session ────────────────────────────────────
   if (sessionId && bookingId) {
     try {
+      // upsell_accepted is set by the agent only when this booking came from an
+      // accepted upsell — measures the receptionist's revenue lift.
+      const upsellAccepted = args.upsell_accepted === true;
       await supabase
         .from("voice_ai_sessions")
-        .update({ booking_id: bookingId, status: "completed" })
+        .update({
+          booking_id: bookingId,
+          status: "completed",
+          ...(upsellAccepted ? { upsell_accepted: true } : {}),
+        })
         .eq("id", sessionId);
     } catch { /* best-effort */ }
   }
