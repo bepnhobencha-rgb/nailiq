@@ -4,6 +4,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { loadPublicNailTryOnSalon } from "@/shared/nailTryOn/publicSalon";
 import { inspectHandPhoto, TRYON_COOKIE } from "@/shared/nailTryOn/server";
 import { createSessionCredential } from "@/shared/nailTryOn/sessionCredential";
+import { recordNailTryOnEvent } from "@/shared/nailTryOn/telemetry";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -67,6 +68,7 @@ export async function POST(request: Request) {
     await db.storage.from("nail-tryon").remove([path]);
     return NextResponse.json({ error: "session_failed" }, { status: 500 });
   }
+  await recordNailTryOnEvent({ salonId: salon.id, sessionId, event: "upload_received", properties: { bytes: normalized.byteLength } });
 
   try {
     const verdict = await inspectHandPhoto(normalized);
@@ -81,6 +83,7 @@ export async function POST(request: Request) {
     } as never).eq("id", sessionId);
 
     const response = NextResponse.json({ sessionId, quality: passed ? "pass" : qualityCode, reason: verdict.reason }, { status: passed ? 201 : 422 });
+    await recordNailTryOnEvent({ salonId: salon.id, sessionId, event: passed ? "quality_passed" : "quality_rejected", properties: { code: passed ? "pass" : qualityCode, visibleNails: verdict.visibleNails } });
     response.cookies.set(TRYON_COOKIE, credential.cookieValue, {
       httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 24 * 60 * 60,
     });

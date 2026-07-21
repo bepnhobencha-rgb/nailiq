@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { loadPublicNailTryOnSalon } from "@/shared/nailTryOn/publicSalon";
+import { recordNailTryOnEvent } from "@/shared/nailTryOn/telemetry";
 
 type DesignRow = { id: string; name: string; description: string | null; preview_path: string; version: number; palette: unknown; style_tags: string[] };
 
@@ -17,5 +18,6 @@ export async function GET(request: Request) {
     const { data: signed } = await db.storage.from("nail-tryon").createSignedUrl(design.preview_path, 300);
     return { id: design.id, name: design.name, description: design.description, version: design.version, palette: design.palette, styleTags: design.style_tags, previewUrl: signed?.signedUrl || null };
   }));
+  await recordNailTryOnEvent({ salonId: salon.id, event: "catalog_viewed", properties: { designCount: designs.length } });
   return NextResponse.json({ designs }, { headers: { "Cache-Control": "private, max-age=60" } });
 }

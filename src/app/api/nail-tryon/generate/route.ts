@@ -4,6 +4,7 @@ import { z } from "zod";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { generateNailPreview, IMAGE_MODEL, TRYON_COOKIE } from "@/shared/nailTryOn/server";
 import { verifySessionCredential } from "@/shared/nailTryOn/sessionCredential";
+import { recordNailTryOnEvent } from "@/shared/nailTryOn/telemetry";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -32,6 +33,7 @@ export async function POST(request: Request) {
 
   const { data: claimed } = await db.from("nail_tryon_sessions" as never).update({ status: "generating", design_id: design.id, design_version: design.version, provider: "openai", provider_model: IMAGE_MODEL, updated_at: new Date().toISOString() } as never).eq("id", session.id).eq("status", "quality_passed").select("id").maybeSingle();
   if (!claimed) return NextResponse.json({ error: "generation_in_progress" }, { status: 409 });
+  await recordNailTryOnEvent({ salonId: session.salon_id, sessionId: session.id, event: "generation_started", properties: { designVersion: design.version } });
   try {
     const [{ data: hand }, { data: reference }] = await Promise.all([
       db.storage.from("nail-tryon").download(session.source_image_path),
@@ -43,10 +45,12 @@ export async function POST(request: Request) {
     const { error: uploadError } = await db.storage.from("nail-tryon").upload(outputPath, preview, { contentType: "image/jpeg", upsert: false });
     if (uploadError) throw uploadError;
     await db.from("nail_tryon_sessions" as never).update({ status: "ready", result_image_path: outputPath, updated_at: new Date().toISOString() } as never).eq("id", session.id);
+    await recordNailTryOnEvent({ salonId: session.salon_id, sessionId: session.id, event: "generation_ready", properties: { designVersion: design.version } });
     const { data: signed } = await db.storage.from("nail-tryon").createSignedUrl(outputPath, 300);
     return NextResponse.json({ status: "ready", previewUrl: signed?.signedUrl });
   } catch {
     await db.from("nail_tryon_sessions" as never).update({ status: "failed", error_code: "generation_failed", updated_at: new Date().toISOString() } as never).eq("id", session.id);
+    await recordNailTryOnEvent({ salonId: session.salon_id, sessionId: session.id, event: "generation_failed", properties: { code: "generation_failed" } });
     return NextResponse.json({ error: "generation_failed" }, { status: 502 });
   }
 }

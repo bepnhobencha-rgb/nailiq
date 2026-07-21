@@ -1432,6 +1432,24 @@ export function useBookingFlowState(
           console.error("[booking] record-deposit failed", e);
         }
       }
+      // A Try-On session is carried only by its opaque UUID in the URL; the
+      // server additionally requires the HttpOnly bearer cookie and a fresh
+      // same-salon booking before it will attach the private preview.
+      const tryonSessionId = typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("tryon")
+        : null;
+      if (tryonSessionId) {
+        try {
+          await fetch("/api/nail-tryon/attach", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ sessionId: tryonSessionId, bookingId: result.bookingId }),
+          });
+        } catch (e) {
+          // Booking success must never be rolled back by a preview attachment.
+          console.error("[booking] nail try-on attach failed", e);
+        }
+      }
       setBookingResult({
         bookingId: result.bookingId,
         startTimeUtc: result.startTimeUtc,
