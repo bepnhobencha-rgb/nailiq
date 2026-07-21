@@ -117,11 +117,14 @@ export function detectLanguage(text: string): "vi" | "es" | "en" | null {
  */
 export function detectLanguageRequest(text: string): SupportedLang | null {
   const t = text.toLowerCase();
-  if (/中文|mandarin|\b(in|to) chinese\b/.test(t)) return "zh";
-  if (/tiếng việt|tieng viet|\b(in|to) vietnamese\b/.test(t)) return "vi";
-  if (/\b(in|to) spanish\b|en español|en espanol|español|espanol/.test(t)) return "es";
-  if (/\b(in|to) french\b|en français|en francais|français|francais/.test(t)) return "fr";
-  if (/tiếng anh|\b(in|to) english\b|english please|en inglés|en ingles/.test(t)) return "en";
+  const asksFor = (names: string) => new RegExp(
+    `\\b(?:speak|continue(?:\\s+in)?|use|switch(?:\\s+to)?)\\s+(?:${names})\\b`,
+  ).test(t);
+  if (/中文/.test(t) || /\b(?:in|to) (?:chinese|mandarin)\b/.test(t) || asksFor("chinese|mandarin")) return "zh";
+  if (/tiếng việt|tieng viet/.test(t) || /\b(?:in|to) vietnamese\b/.test(t) || asksFor("vietnamese")) return "vi";
+  if (/\b(?:in|to) spanish\b|en español|en espanol|español|espanol/.test(t) || asksFor("spanish")) return "es";
+  if (/\b(?:in|to) french\b|en français|en francais|français|francais/.test(t) || asksFor("french")) return "fr";
+  if (/tiếng anh|\b(?:in|to) english\b|english please|en inglés|en ingles/.test(t) || asksFor("english")) return "en";
   return null;
 }
 
@@ -193,6 +196,22 @@ export function functionCallOutput(callId: string, output: unknown): object {
 
 export function plainResponseCreate(): object {
   return { type: "response.create" };
+}
+
+/** A language switch acknowledgement must not inherit the previous language
+ * from conversation context while session.update is still settling. Pin the
+ * response language and make it continue from the caller's latest request. */
+export function languageAckResponseCreate(language: string): object {
+  const langName = LANG_NAMES[language] ?? "English";
+  return {
+    type: "response.create",
+    response: {
+      instructions:
+        `Respond in ${langName} only. Briefly confirm the language change, then continue from ` +
+        `the customer's latest request with at most one short question. Do not answer an older ` +
+        `turn and do not repeat a question that was already answered.`,
+    },
+  };
 }
 
 /** Pull a `say_this` string out of a tool result, or null. */
@@ -268,9 +287,21 @@ export function createResponseCoordinator(send: (msg: object) => void) {
       // A language ack is redundant when a protected say_this is already
       // pending/active — that line confirms in the new language on its own.
       if (req.kind === "ack" && hasProtected()) return;
-      // A protected say_this supersedes any not-yet-dispatched ack.
+      // Conversational replies are snapshots of the latest caller turn. If a
+      // newer turn or language switch arrives while an older reply is queued,
+      // the old reply is stale and must never play later. This was the source of
+      // callers hearing Chinese after asking for Vietnamese, and of repeated
+      // questions after they had already answered.
+      if (req.kind === "normal" || req.kind === "ack") {
+        for (let i = queue.length - 1; i >= 0; i--) {
+          if (queue[i]!.kind === "normal" || queue[i]!.kind === "ack") queue.splice(i, 1);
+        }
+      }
+      // A protected say_this supersedes every pending conversational reply.
       if (req.kind === "protected") {
-        for (let i = queue.length - 1; i >= 0; i--) if (queue[i]!.kind === "ack") queue.splice(i, 1);
+        for (let i = queue.length - 1; i >= 0; i--) {
+          if (queue[i]!.kind === "normal" || queue[i]!.kind === "ack") queue.splice(i, 1);
+        }
       }
       queue.push(req);
       pump();

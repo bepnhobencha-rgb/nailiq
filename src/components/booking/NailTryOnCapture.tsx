@@ -25,7 +25,6 @@ type Props = {
 };
 
 type CatalogDesign = { id: string; name: string; description: string | null; previewUrl: string | null };
-
 export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
   const [consented, setConsented] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -134,7 +133,6 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
       setBusy(false);
     }
   }
-
   return (
     <div className="mx-auto w-full max-w-lg">
       <div className="mb-8 text-center">
