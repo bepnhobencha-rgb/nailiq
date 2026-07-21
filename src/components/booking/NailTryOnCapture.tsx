@@ -42,11 +42,18 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
   const [serverMessage, setServerMessage] = useState<string | null>(null);
   const [serverWarning, setServerWarning] = useState<string | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [generationSeconds, setGenerationSeconds] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
   }, [previewUrl]);
+
+  useEffect(() => {
+    if (!busy || step !== "catalog") return;
+    const timer = window.setInterval(() => setGenerationSeconds((seconds) => seconds + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [busy, step]);
 
   async function inspect(file: File) {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -126,6 +133,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
   async function generate(designId: string) {
     if (!sessionId) return;
     setBusy(true);
+    setGenerationSeconds(0);
     setServerMessage(null);
     try {
       const response = await fetch("/api/nail-tryon/generate", {
@@ -168,7 +176,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
               <span className="block p-3 text-sm font-semibold text-neutral-900">{design.name}</span>
             </button>
           ))}</div> : <p className="mt-5 rounded-2xl bg-neutral-50 p-4 text-sm text-neutral-600">This salon has not published try-on designs yet.</p>}
-          {busy ? <p className="mt-4 text-sm text-neutral-600" role="status">Creating your private AI preview…</p> : null}
+          {busy ? <p className="mt-4 rounded-2xl bg-blue-50 p-4 text-sm text-blue-900" role="status">{generationSeconds < 20 ? "Preparing your nail preview… / Đang chuẩn bị ảnh…" : generationSeconds < 50 ? "Applying the design to your nails… / Đang thử mẫu lên móng…" : "Adding the final details—please keep this page open. / Đang hoàn thiện, vui lòng giữ trang này mở."}</p> : null}
           {serverMessage ? <p className="mt-4 text-sm text-red-700" role="alert">{serverMessage}</p> : null}
         </section>
       ) : step === "result" && resultUrl ? (
