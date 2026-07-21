@@ -64,6 +64,8 @@ from `defaultOn` (Base → ON, Beta → OFF).
 | `tv_mode` | Waiting-room TV display | registry default (not yet implemented) |
 | `advanced_reports` | Advanced analytics | `feature_flags.reports_enabled` |
 | `experimental_realtime` | Experimental realtime widgets | registry default |
+| `admin_copilot` | Admin AI assistant (Coco) | `feature_flags.admin_copilot_enabled` |
+| `nail_tryon` | Scan bàn tay + xem trước mẫu nail | `feature_flags.nail_tryon_enabled` |
 
 **No key duplication.** Where a per-salon toggle already exists, the registry
 maps to it rather than minting a new one:

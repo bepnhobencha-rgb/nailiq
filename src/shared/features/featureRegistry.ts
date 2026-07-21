@@ -62,7 +62,8 @@ export type BetaFeatureKey =
   | "tv_mode"
   | "advanced_reports"
   | "experimental_realtime"
-  | "admin_copilot";
+  | "admin_copilot"
+  | "nail_tryon";
 
 export type ReleaseFeatureKey = BaseFeatureKey | BetaFeatureKey;
 
@@ -310,6 +311,15 @@ export const RELEASE_FEATURES: Record<ReleaseFeatureKey, ReleaseFeatureDescripto
     defaultOn: true,
     source: { kind: "jsonb", flagKey: "admin_copilot_enabled" },
     description: "In-admin AI assistant (Coco) for salon operations guidance.",
+  },
+  nail_tryon: {
+    key: "nail_tryon",
+    label: "AI Nail Try-On",
+    group: "booking",
+    phase: "beta",
+    defaultOn: false,
+    source: { kind: "jsonb", flagKey: "nail_tryon_enabled" },
+    description: "Private hand-photo preview with a salon nail design before booking.",
   },
 };
 

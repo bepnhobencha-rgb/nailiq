@@ -48,16 +48,17 @@ test("Base features default ON with empty salon", () => {
   }
 });
 
-test("Beta features default OFF with empty salon", () => {
+test("Beta features default OFF except documented launched previews", () => {
   for (const k of BETA_FEATURE_KEYS) {
-    eq(isReleaseFeatureEnabled({}, k), false, `${k} should default OFF`);
+    const expected = k === "marketing" || k === "admin_copilot";
+    eq(isReleaseFeatureEnabled({}, k), expected, `${k} default`);
   }
 });
 
 test("releaseFeatureDefault matches phase", () => {
   for (const k of RELEASE_FEATURE_KEYS) {
     const d = RELEASE_FEATURES[k];
-    eq(releaseFeatureDefault(k), d.phase === "base", `${k} default vs phase`);
+    eq(releaseFeatureDefault(k), d.defaultOn, `${k} default vs descriptor`);
   }
 });
 
@@ -147,17 +148,14 @@ test("every key's descriptor.key matches its map key", () => {
   }
 });
 
-test("Base = 10 keys, Beta = 10 keys, all ON/OFF respectively", () => {
+test("registry has the expected Base/Beta inventory", () => {
   eq(BASE_FEATURE_KEYS.length, 10, "Base count");
-  eq(BETA_FEATURE_KEYS.length, 10, "Beta count");
+  eq(BETA_FEATURE_KEYS.length, 12, "Beta count");
   assert(
     BASE_FEATURE_KEYS.every((k) => RELEASE_FEATURES[k].defaultOn === true),
     "all Base defaultOn true",
   );
-  assert(
-    BETA_FEATURE_KEYS.every((k) => RELEASE_FEATURES[k].defaultOn === false),
-    "all Beta defaultOn false",
-  );
+  eq(RELEASE_FEATURES.nail_tryon.defaultOn, false, "Nail Try-On is pilot-only");
 });
 
 test("mapped jsonb/column/plan keys match the known existing keys", () => {
@@ -167,6 +165,7 @@ test("mapped jsonb/column/plan keys match the known existing keys", () => {
     group_booking: "jsonb:group_booking_enabled",
     loyalty: "jsonb:loyalty_enabled",
     advanced_reports: "jsonb:reports_enabled",
+    nail_tryon: "jsonb:nail_tryon_enabled",
     ai_voice: "column:voice_ai_enabled",
     photos: "plan:photo_confirmation",
     reviews: "plan:reviews",
@@ -214,7 +213,7 @@ test("describe: no override matches the default and is not flagged overridden", 
   const base = describeReleaseFeatureForSalon({}, "public_booking");
   eq(base.resolved, true, "Base default ON");
   eq(base.overridden, false, "no divergence");
-  const beta = describeReleaseFeatureForSalon({}, "marketing");
+  const beta = describeReleaseFeatureForSalon({}, "nail_tryon");
   eq(beta.resolved, false, "Beta default OFF");
   eq(beta.overridden, false, "no divergence");
 });
@@ -292,20 +291,22 @@ test("describeReleaseFeaturesForSalon: groups partition every key exactly once",
 });
 
 // ── PR4b editability: jsonb editable, others read-only ────────────────────
-test("isReleaseFeatureEditable true for exactly the 5 jsonb-sourced features", () => {
+test("isReleaseFeatureEditable true for every jsonb-sourced feature", () => {
   const editable = [
     "receptionist_center",
     "walkin_queue",
     "group_booking",
     "loyalty",
     "advanced_reports",
+    "admin_copilot",
+    "nail_tryon",
   ] as const;
   for (const k of editable) {
     eq(isReleaseFeatureEditable(k), true, `${k} should be editable`);
   }
-  // Count: only these 5 are editable across the whole registry.
+  // Count: only these mapped JSONB features are editable across the registry.
   const editableCount = RELEASE_FEATURE_KEYS.filter(isReleaseFeatureEditable).length;
-  eq(editableCount, 5, "exactly 5 editable features");
+  eq(editableCount, 7, "exactly 7 editable features");
 });
 
 test("isReleaseFeatureEditable false for column/plan/registry features", () => {
@@ -328,14 +329,16 @@ test("releaseFeatureEditableFlagKey maps each editable feature to its jsonb key"
   eq(releaseFeatureEditableFlagKey("combos"), null, "registry → null");
 });
 
-test("EDITABLE_RELEASE_FLAG_KEYS contains exactly the 5 mapped jsonb keys", () => {
-  eq(EDITABLE_RELEASE_FLAG_KEYS.size, 5, "5 whitelisted keys");
+test("EDITABLE_RELEASE_FLAG_KEYS contains exactly the mapped jsonb keys", () => {
+  eq(EDITABLE_RELEASE_FLAG_KEYS.size, 7, "7 whitelisted keys");
   for (const fk of [
     "receptionist_center_enabled",
     "walkin_queue_enabled",
     "group_booking_enabled",
     "loyalty_enabled",
     "reports_enabled",
+    "admin_copilot_enabled",
+    "nail_tryon_enabled",
   ]) {
     assert(EDITABLE_RELEASE_FLAG_KEYS.has(fk), `whitelist has ${fk}`);
   }
