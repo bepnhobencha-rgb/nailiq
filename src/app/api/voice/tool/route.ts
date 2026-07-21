@@ -21,6 +21,11 @@ type ToolCallBody = {
   // Carrier-verified caller-ID (E.164). Set ONLY by the trusted phone bridge
   // (Twilio `From`); absent on web. Never accept it from the model/browser.
   callerVerifiedPhone?: string;
+  // The caller's most recent transcribed utterance. Set ONLY by the trusted
+  // phone bridge (from OpenAI's transcription events); used to verify the booking
+  // time. Never accept it from the model/browser — a model could otherwise feed
+  // a fake "utterance" that agrees with its own wrong time_slot.
+  lastUserUtterance?: string;
 };
 
 export async function POST(req: NextRequest) {
@@ -44,6 +49,8 @@ export async function POST(req: NextRequest) {
   const bridgeSecret = process.env.VOICE_BRIDGE_SECRET?.trim();
   const fromBridge = Boolean(bridgeSecret) && req.headers.get("x-voice-bridge-secret") === bridgeSecret;
   const callerVerifiedPhone = fromBridge ? (body.callerVerifiedPhone ?? null) : null;
+  // Trusted only from the bridge — same rule as the caller-ID above.
+  const trustedUserUtterance = fromBridge ? (body.lastUserUtterance ?? null) : null;
 
   if (!toolName)  return NextResponse.json({ error: "missing_tool_name"  }, { status: 400 });
   if (!salonSlug) return NextResponse.json({ error: "missing_salon_slug" }, { status: 400 });
@@ -82,9 +89,9 @@ export async function POST(req: NextRequest) {
       toolArgs,
       sessionId,
       new URL(req.url).origin,
-      // Only the phone bridge can set this (shared-secret check above); every
-      // other surface leaves it null and falls through to the OTP tier.
-      { callerVerifiedPhone },
+      // Only the phone bridge can set these (shared-secret check above); every
+      // other surface leaves them null.
+      { callerVerifiedPhone, trustedUserUtterance },
     );
 
     // Eval loop: record every tool invocation on the session row so calls can

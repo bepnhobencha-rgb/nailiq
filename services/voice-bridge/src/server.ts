@@ -48,6 +48,10 @@ wss.on("connection", (twilioWs) => {
   let slug = "";
   let from = "";
   let sessionId = "";
+  // The caller's most recent transcribed turn. Sent with tool calls so the
+  // server can verify the booking time against what the caller actually said —
+  // trusted there only because it arrives with the bridge secret.
+  let lastUserUtterance = "";
   let openaiWs: WebSocket | null = null;
   let closed = false;
 
@@ -86,9 +90,9 @@ wss.on("connection", (twilioWs) => {
       const r = await fetch(`${NEXT_APP_URL}/api/voice/tool`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-voice-bridge-secret": BRIDGE_SECRET },
-        // sessionId threads the tool call into tool_log for this session, the
-        // same eval record the web path writes.
-        body: JSON.stringify({ toolName: name, toolArgs: args, salonSlug: slug, callerVerifiedPhone: from, sessionId: sessionId || null }),
+        // sessionId threads the tool call into tool_log; lastUserUtterance lets
+        // the server check the booking time against what the caller just said.
+        body: JSON.stringify({ toolName: name, toolArgs: args, salonSlug: slug, callerVerifiedPhone: from, sessionId: sessionId || null, lastUserUtterance }),
       });
       result = await r.json().catch(() => ({ error: "tool_parse_failed" }));
     } catch {
@@ -152,7 +156,10 @@ wss.on("connection", (twilioWs) => {
         if (txt) transcript.push({ role: "ai", text: txt });
       } else if (t === "conversation.item.input_audio_transcription.completed") {
         const txt = typeof evt.transcript === "string" ? evt.transcript.trim() : "";
-        if (txt) transcript.push({ role: "user", text: txt });
+        if (txt) {
+          transcript.push({ role: "user", text: txt });
+          lastUserUtterance = txt;   // most recent caller turn, for the time guard
+        }
       }
 
       const audio = extractAudioDelta(evt);

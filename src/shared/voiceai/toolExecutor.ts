@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { NextResponse, after } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { compareSpokenTimeToSlot, parseSpokenTime } from "@/shared/voiceai/spokenTime";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { logBookingEvent } from "@/shared/dashboard/auditLog";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
@@ -60,9 +61,10 @@ export async function executeVoiceTool(
   toolArgs: Record<string, unknown>,
   sessionId: string | null,
   baseUrl: string,
-  opts?: { callerVerifiedPhone?: string | null },
+  opts?: { callerVerifiedPhone?: string | null; trustedUserUtterance?: string | null },
 ): Promise<NextResponse> {
   const callerVerifiedPhone = opts?.callerVerifiedPhone ?? null;
+  const trustedUserUtterance = opts?.trustedUserUtterance ?? null;
 
   if (toolName === "get_available_slots") {
     return handleGetAvailableSlots(supabase, salonSlug, toolArgs);
@@ -74,7 +76,7 @@ export async function executeVoiceTool(
     return handleVerifyOtp(salonSlug, toolArgs, baseUrl);
   }
   if (toolName === "confirm_booking") {
-    return handleConfirmBooking(supabase, salonSlug, toolArgs, sessionId, callerVerifiedPhone);
+    return handleConfirmBooking(supabase, salonSlug, toolArgs, sessionId, callerVerifiedPhone, trustedUserUtterance);
   }
   if (toolName === "find_booking") {
     return handleFindBooking(supabase, salonSlug, toolArgs);
@@ -378,6 +380,10 @@ async function handleConfirmBooking(
   args: Record<string, unknown>,
   sessionId: string | null,
   callerVerifiedPhone: string | null,
+  /** The caller's most recent transcribed utterance, trusted ONLY when it came
+   *  from the phone bridge (secret-gated in the route). Used to catch a model
+   *  that put a different time in `time_slot` than the caller actually said. */
+  trustedUserUtterance: string | null,
 ) {
   const serviceId     = args.service_id     as string | undefined;
   const date          = args.date           as string | undefined;  // YYYY-MM-DD
@@ -388,6 +394,31 @@ async function handleConfirmBooking(
 
   if (!serviceId || !date || !timeSlot || !staffId || !customerName || !customerPhone) {
     return NextResponse.json({ error: "missing_required_booking_fields" }, { status: 400 });
+  }
+
+  // Time-confirmation guard. If the caller's last utterance names a clear time
+  // that disagrees with the slot the model chose, refuse the booking — a model
+  // mistake here becomes a wrong appointment (a real call booked 5:30 PM after
+  // the caller said "six" for 6:00). Only a POSITIVE mismatch blocks; when no
+  // time is legible we defer to the read-back rule. The utterance is trusted
+  // only from the bridge, so the model cannot suppress the check via its args.
+  if (trustedUserUtterance) {
+    const verdict = compareSpokenTimeToSlot(trustedUserUtterance, timeSlot);
+    if (verdict === "mismatch") {
+      const heard = parseSpokenTime(trustedUserUtterance);
+      const heardLabel = heard
+        ? `${heard.hour12}:${String(heard.minute ?? 0).padStart(2, "0")}${heard.period ? ` ${heard.period.toUpperCase()}` : ""}`
+        : "(unclear)";
+      return NextResponse.json({
+        error: "time_confirmation_mismatch",
+        heard_time: heardLabel,
+        requested_time_slot: timeSlot,
+        message:
+          "The time in time_slot does not match what the customer just said. Apologise, read " +
+          "back the exact time you are about to book, and wait for the customer to confirm before " +
+          "calling confirm_booking again.",
+      });
+    }
   }
 
   // ── 1. Load salon by slug → get salon.id and timezone ──────────────────────
@@ -540,14 +571,20 @@ async function handleConfirmBooking(
       eventType: "booking_created",
       payload: { source: "voice" },
     });
-    // Unified no-show protection gate — runs AI agent when opted-in, falls
-    // back to hard rules otherwise.  Voice has no in-session card capture.
-    try {
-      const { handleBookingProtection } = await import(
-        "@/shared/noshow/handleBookingProtection"
-      );
-      await handleBookingProtection(bookingId, String(salon.id), "voice");
-    } catch { /* best-effort */ }
+    // Unified no-show protection gate — runs the AI agent when opted-in, else
+    // hard rules. Voice has no in-session card capture, so its result does not
+    // shape the reply. It used to be AWAITED here, adding an AI-call's worth of
+    // latency between the booking succeeding and Lily confirming it — the caller
+    // waited in silence. Deferred to after() so it still runs (Vercel keeps the
+    // function alive) without blocking the response.
+    after(async () => {
+      try {
+        const { handleBookingProtection } = await import(
+          "@/shared/noshow/handleBookingProtection"
+        );
+        await handleBookingProtection(bookingId, String(salon.id), "voice");
+      } catch { /* best-effort */ }
+    });
   }
 
   // ── 7. Link booking to voice_ai_session ────────────────────────────────────
