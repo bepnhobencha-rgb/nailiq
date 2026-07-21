@@ -244,6 +244,35 @@ describe("coordinator — one response at a time, priority, barge-in gating", ()
     c.request(plain(() => "en"));
     expect(sent.filter(isResponseCreate).length).toBe(0);
   });
+
+  it("forceRecover unsticks a coordinator whose response.done was missed (dead-air fix)", () => {
+    const { c, sent } = makeCoord();
+    // A response is created but its .done never matches (id mismatch) → stuck busy.
+    c.request(plain(() => "en"));
+    c.onResponseCreated("r_stuck");
+    c.onResponseEnded("r_WRONG_id");          // mismatched → does NOT clear (by design)
+    expect(c.isBusy()).toBe(true);            // stalled: pump() can never dispatch again
+    c.request(plain(() => "en"));             // a new turn queues but cannot play
+    const before = sent.filter(isResponseCreate).length;
+
+    // Watchdog kicks in: it clears the stuck slot AND dispatches the queued reply.
+    expect(c.forceRecover().recovered).toBe(true);
+    expect(sent.filter(isResponseCreate).length).toBe(before + 1);   // queued reply now plays
+    // The fresh reply runs a clean lifecycle → back to idle (proves it's unstuck).
+    c.onResponseCreated("r_fresh");
+    c.onResponseEnded("r_fresh");
+    expect(c.isBusy()).toBe(false);
+    expect(c.forceRecover().recovered).toBe(false);                  // nothing to recover when idle
+  });
+
+  it("forceRecover restores barge-in if a protected line was the one stuck", () => {
+    const { c, sent } = makeCoord();
+    c.request({ kind: "protected", build: () => sayThisResponseCreate("x", "en"), language: () => "en" });
+    c.onResponseCreated("r_prot");
+    c.onResponseEnded("mismatch");            // protected line stuck (interrupt still OFF)
+    c.forceRecover();
+    expect(sent.some((m) => isToggle(m) && toggleValue(m) === true)).toBe(true); // barge-in restored
+  });
 });
 
 // The exact race from call c3800b1c: "Yes" (confirm_booking in-flight), then
