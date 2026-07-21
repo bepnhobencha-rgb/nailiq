@@ -5,6 +5,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { generateNailPreview, IMAGE_MODEL, TRYON_COOKIE } from "@/shared/nailTryOn/server";
 import { verifySessionCredential } from "@/shared/nailTryOn/sessionCredential";
 import { recordNailTryOnEvent } from "@/shared/nailTryOn/telemetry";
+import { safeProviderError } from "@/shared/nailTryOn/providerError";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -25,15 +26,18 @@ export async function POST(request: Request) {
     const { data: signed } = await db.storage.from("nail-tryon").createSignedUrl(session.result_image_path, 300);
     return NextResponse.json({ status: "ready", previewUrl: signed?.signedUrl });
   }
-  if (session.status !== "quality_passed") return NextResponse.json({ error: "invalid_state" }, { status: 409 });
+  if (session.status !== "quality_passed" && session.status !== "failed") {
+    return NextResponse.json({ error: "invalid_state" }, { status: 409 });
+  }
 
   const { data: rawDesign } = await db.from("nail_designs" as never).select("id, salon_id, name, preview_path, prompt_hint, version").eq("id", parsed.data.designId).eq("salon_id", session.salon_id).eq("is_active", true).is("deleted_at", null).maybeSingle();
   const design = rawDesign as unknown as DesignRow | null;
   if (!design) return NextResponse.json({ error: "design_not_found" }, { status: 404 });
 
-  const { data: claimed } = await db.from("nail_tryon_sessions" as never).update({ status: "generating", design_id: design.id, design_version: design.version, provider: "openai", provider_model: IMAGE_MODEL, updated_at: new Date().toISOString() } as never).eq("id", session.id).eq("status", "quality_passed").select("id").maybeSingle();
+  const { data: claimed } = await db.from("nail_tryon_sessions" as never).update({ status: "generating", design_id: design.id, design_version: design.version, provider: "openai", provider_model: IMAGE_MODEL, error_code: null, updated_at: new Date().toISOString() } as never).eq("id", session.id).in("status", ["quality_passed", "failed"]).select("id").maybeSingle();
   if (!claimed) return NextResponse.json({ error: "generation_in_progress" }, { status: 409 });
   await recordNailTryOnEvent({ salonId: session.salon_id, sessionId: session.id, event: "generation_started", properties: { designVersion: design.version } });
+  const outputPath = `salon/${session.salon_id}/session/${session.id}/preview.jpg`;
   try {
     const [{ data: hand }, { data: reference }] = await Promise.all([
       db.storage.from("nail-tryon").download(session.source_image_path),
@@ -41,16 +45,22 @@ export async function POST(request: Request) {
     ]);
     if (!hand || !reference) throw new Error("input_download_failed");
     const preview = await generateNailPreview({ hand: Buffer.from(await hand.arrayBuffer()), design: Buffer.from(await reference.arrayBuffer()), designMime: reference.type, designName: design.name, promptHint: design.prompt_hint });
-    const outputPath = `salon/${session.salon_id}/session/${session.id}/preview.jpg`;
     const { error: uploadError } = await db.storage.from("nail-tryon").upload(outputPath, preview, { contentType: "image/jpeg", upsert: false });
     if (uploadError) throw uploadError;
     await db.from("nail_tryon_sessions" as never).update({ status: "ready", result_image_path: outputPath, updated_at: new Date().toISOString() } as never).eq("id", session.id);
     await recordNailTryOnEvent({ salonId: session.salon_id, sessionId: session.id, event: "generation_ready", properties: { designVersion: design.version } });
     const { data: signed } = await db.storage.from("nail-tryon").createSignedUrl(outputPath, 300);
     return NextResponse.json({ status: "ready", previewUrl: signed?.signedUrl });
-  } catch {
-    await db.from("nail_tryon_sessions" as never).update({ status: "failed", error_code: "generation_failed", updated_at: new Date().toISOString() } as never).eq("id", session.id);
-    await recordNailTryOnEvent({ salonId: session.salon_id, sessionId: session.id, event: "generation_failed", properties: { code: "generation_failed" } });
-    return NextResponse.json({ error: "generation_failed" }, { status: 502 });
+  } catch (error) {
+    const safeError = safeProviderError(error);
+    console.error("[nail-tryon] generation failed", {
+      sessionId: session.id,
+      model: IMAGE_MODEL,
+      ...safeError,
+    });
+    await db.storage.from("nail-tryon").remove([outputPath]).catch(() => undefined);
+    await db.from("nail_tryon_sessions" as never).update({ status: "quality_passed", error_code: safeError.code, updated_at: new Date().toISOString() } as never).eq("id", session.id);
+    await recordNailTryOnEvent({ salonId: session.salon_id, sessionId: session.id, event: "generation_failed", properties: { code: safeError.code, status: safeError.status, providerCode: safeError.providerCode, requestId: safeError.requestId } });
+    return NextResponse.json({ error: safeError.code, retryable: true }, { status: 502 });
   }
 }

@@ -132,12 +132,12 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId, designId }),
       });
-      const payload = await response.json() as { previewUrl?: string; error?: string };
+      const payload = await response.json() as { previewUrl?: string; error?: string; retryable?: boolean };
       if (!response.ok || !payload.previewUrl) throw new Error(payload.error || "generation_failed");
       setResultUrl(payload.previewUrl);
       setStep("result");
     } catch {
-      setServerMessage("The AI preview could not be created. Your booking is still available—please try again.");
+      setServerMessage("The AI preview could not be created. Tap a design to try again. / Chưa tạo được ảnh AI. Hãy chọn lại mẫu để thử lại.");
     } finally {
       setBusy(false);
     }
