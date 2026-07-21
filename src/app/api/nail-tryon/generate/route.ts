@@ -55,7 +55,7 @@ export async function POST(request: Request) {
 
   const { data: claimed } = await db.from("nail_tryon_sessions" as never).update({ status: "generating", design_id: design.id, design_version: design.version, provider: "openai", provider_model: IMAGE_MODEL, error_code: null, updated_at: new Date().toISOString() } as never).eq("id", session.id).in("status", ["quality_passed", "failed"]).select("id").maybeSingle();
   if (!claimed) return NextResponse.json({ error: "generation_in_progress" }, { status: 409 });
-  await recordNailTryOnEvent({ salonId: session.salon_id, sessionId: session.id, event: "generation_started", properties: { designVersion: design.version, nailLength: parsed.data.configuration.length, nailShape: parsed.data.configuration.shape, nailColor: parsed.data.configuration.color, nailFinish: parsed.data.configuration.finish } });
+  await recordNailTryOnEvent({ salonId: session.salon_id, sessionId: session.id, event: "generation_started", properties: { designVersion: design.version, nailLength: parsed.data.configuration.length, nailShape: parsed.data.configuration.shape, nailColor: parsed.data.configuration.color, nailFinish: parsed.data.configuration.finish, nailArtStyle: parsed.data.configuration.artStyle } });
   const outputPath = `salon/${session.salon_id}/session/${session.id}/preview.jpg`;
   try {
     const [{ data: hand }, { data: reference }] = await Promise.all([
