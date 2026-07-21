@@ -39,6 +39,10 @@ import {
 const PORT = Number(process.env.PORT ?? 8080);
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? "";
 const NEXT_APP_URL = (process.env.NEXT_APP_URL ?? "https://nailiq.ca").replace(/\/$/, "");
+// Platform-wide Realtime model (mirrors the app's VOICE_MODEL). Known before the
+// phone-config fetch returns, so the socket can connect in parallel with it —
+// the caller is not left in silence while one waits on the other.
+const REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2.1";
 const BRIDGE_SECRET = process.env.VOICE_BRIDGE_SECRET ?? "";
 
 // Plain HTTP is only for the health check; real traffic is the WS upgrade.
@@ -67,6 +71,13 @@ wss.on("connection", (twilioWs) => {
   let toolInFlight = 0;
   let userTurnCount = 0;
   const handledToolCallIds = new Set<string>();
+  // The session.update carrying the salon's brain has been sent — until then we
+  // do not forward caller audio (it would be handled with the default config).
+  let sessionConfigured = false;
+  // The agent asked to end the call (end_call). Hang up once its farewell has
+  // finished playing — never mid-word.
+  let hangupPending = false;
+  let hangupTimer: ReturnType<typeof setTimeout> | null = null;
   let openaiWs: WebSocket | null = null;
   let closed = false;
 
@@ -160,7 +171,24 @@ wss.on("connection", (twilioWs) => {
     try { twilioWs.close(); } catch { /* noop */ }
   };
 
+  // Hang up shortly after the farewell — long enough for the last audio frames to
+  // drain to Twilio, so the caller hears the whole goodbye, then the line drops.
+  const scheduleHangup = () => {
+    if (hangupTimer || closed) return;
+    hangupTimer = setTimeout(() => closeAll(), 1200);
+  };
+
   const runTool = async (name: string, args: Record<string, unknown>, callId: string) => {
+    // end_call is a TRANSPORT action, not a DB one — only the bridge can hang up
+    // the phone. Answer the tool so the model isn't left waiting, then drop the
+    // line once its farewell (already spoken, per the prompt) finishes playing.
+    if (name === "end_call") {
+      openaiWs?.send(JSON.stringify(functionCallOutput(callId, { ok: true })));
+      hangupPending = true;
+      if (!coordinator.isBusy()) scheduleHangup();  // farewell already done → hang up now
+      return;                                        // no follow-up response
+    }
+
     // Snapshot this before the network round trip. The caller may begin speaking
     // while lookup_customer is in flight; that must not turn the silent opening
     // enrichment into a late duplicate greeting when the result returns.
@@ -208,42 +236,53 @@ wss.on("connection", (twilioWs) => {
     }
   };
 
-  const startOpenAi = async () => {
-    // Fetch the agent config (instructions + tools + voice + model) from Next.
-    let cfg: { model: string; voice: string; instructions: string; tools: unknown[]; sessionId?: string | null; language?: string };
-    try {
-      const r = await fetch(`${NEXT_APP_URL}/api/voice/phone-config`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-voice-bridge-secret": BRIDGE_SECRET },
-        // `from` is the carrier-verified caller number. newSession=true marks this
-        // as the call-opening fetch (creates the session row); language switches
-        // re-fetch without it.
-        body: JSON.stringify({ slug, from, newSession: true }),
-      });
-      if (!r.ok) { console.warn("[voice-bridge] phone-config FAILED", r.status); return closeAll(); }
-      cfg = (await r.json()) as typeof cfg;
-      sessionId = cfg.sessionId ?? "";
-      currentLang = cfg.language ?? "en";
-      console.log(`[voice-bridge] phone-config ok model=${cfg.model} lang=${currentLang} session=${sessionId || "(none)"}`);
-    } catch (e) {
-      console.warn("[voice-bridge] phone-config error", e);
-      return closeAll();
-    }
+  type PhoneConfig = { model: string; voice: string; instructions: string; tools: unknown[]; sessionId?: string | null; language?: string };
 
-    // GA Realtime API — no `OpenAI-Beta` header (the Beta shape was retired).
-    openaiWs = new WebSocket(
-      `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(cfg.model)}`,
-      { headers: { Authorization: `Bearer ${OPENAI_API_KEY}` } },
-    );
-
-    openaiWs.on("open", () => {
-      console.log("[voice-bridge] openai WS connected — sending session.update + greet");
-      openaiWs?.send(JSON.stringify(sessionUpdateMessage({ instructions: cfg.instructions, voice: cfg.voice, tools: cfg.tools, transcribeLang: currentLang })));
+  const startOpenAi = () => {
+    // Open the socket AND fetch the salon's brain at the SAME time, then greet the
+    // instant both are ready. A real receptionist answers immediately; the old
+    // serial chain (await config → then connect → then greet) left the caller in
+    // silence for a couple of seconds, so they said "hello?" into a dead line.
+    let cfg: PhoneConfig | null = null;
+    let wsOpen = false;
+    const greetWhenReady = () => {
+      if (sessionConfigured || !wsOpen || !cfg) return;
+      sessionConfigured = true;
+      openaiWs?.send(JSON.stringify(sessionUpdateMessage({
+        instructions: cfg.instructions, voice: cfg.voice, tools: cfg.tools, transcribeLang: currentLang,
+      })));
       // Greet through the coordinator — with create_response:false it is the only
       // way a response gets made, and it keeps the greet inside the one-at-a-time
       // discipline like every other response.
       coordinator.request({ kind: "normal", build: plainResponseCreate, language: () => currentLang });
-    });
+      console.log("[voice-bridge] configured + greeting");
+    };
+
+    // The caller's carrier-verified number; newSession=true creates the session row.
+    fetch(`${NEXT_APP_URL}/api/voice/phone-config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-voice-bridge-secret": BRIDGE_SECRET },
+      body: JSON.stringify({ slug, from, newSession: true }),
+    }).then(async (r) => {
+      if (!r.ok) { console.warn("[voice-bridge] phone-config FAILED", r.status); return closeAll(); }
+      cfg = (await r.json()) as PhoneConfig;
+      sessionId = cfg.sessionId ?? "";
+      currentLang = cfg.language ?? "en";
+      if (cfg.model && cfg.model !== REALTIME_MODEL) {
+        console.warn(`[voice-bridge] config model ${cfg.model} != socket model ${REALTIME_MODEL}`);
+      }
+      console.log(`[voice-bridge] phone-config ok lang=${currentLang} session=${sessionId || "(none)"}`);
+      greetWhenReady();
+    }).catch((e) => { console.warn("[voice-bridge] phone-config error", e); closeAll(); });
+
+    // GA Realtime API — no `OpenAI-Beta` header. The model is platform-wide, so we
+    // connect without waiting for the config fetch above.
+    openaiWs = new WebSocket(
+      `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(REALTIME_MODEL)}`,
+      { headers: { Authorization: `Bearer ${OPENAI_API_KEY}` } },
+    );
+
+    openaiWs.on("open", () => { wsOpen = true; console.log("[voice-bridge] openai WS connected"); greetWhenReady(); });
 
     openaiWs.on("message", (raw) => {
       let evt: Record<string, unknown>;
@@ -294,6 +333,8 @@ wss.on("connection", (twilioWs) => {
         coordinator.onResponseCreated(extractResponseId(evt) ?? "");
       } else if (t === "response.done" || t === "response.cancelled") {
         coordinator.onResponseEnded(extractResponseId(evt) ?? "");
+        // If the agent ended the call, the farewell just finished — hang up.
+        if (hangupPending && !coordinator.isBusy()) scheduleHangup();
       } else if (t.includes("error")) {
         coordinator.onError();
       }
@@ -338,7 +379,9 @@ wss.on("connection", (twilioWs) => {
       if (!slug || !OPENAI_API_KEY || !BRIDGE_SECRET) { console.warn("[voice-bridge] closing: missing slug/key/secret"); return closeAll(); }
       void startOpenAi();
     } else if (msg.event === "media") {
-      if (openaiWs?.readyState === WebSocket.OPEN) {
+      // Hold caller audio until the salon brain is configured — audio sent before
+      // session.update would be handled with the wrong (default) language/config.
+      if (sessionConfigured && openaiWs?.readyState === WebSocket.OPEN) {
         openaiWs.send(JSON.stringify(appendAudioMessage(msg.media.payload)));
       }
     } else if (msg.event === "stop") {

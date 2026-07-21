@@ -50,4 +50,15 @@ describe("buildSystemPrompt receptionist flow", () => {
       "You have finished summarising a completed booking, cancel, or reschedule",
     );
   });
+
+  it("adds the human-voice playbook only on the phone channel (callerPhone present)", () => {
+    const phone = buildSystemPrompt(ctx, "en", "+17788680738");
+    expect(phone).toContain("SOUND LIKE A REAL PERSON");
+    expect(phone).toContain("natural filler FIRST"); // filler before slow tools
+    expect(phone).toContain("Greet in the FIRST second");
+
+    // The web widget and SMS (no callerPhone) keep their own tone — no phone playbook.
+    const web = buildSystemPrompt(ctx, "en");
+    expect(web).not.toContain("SOUND LIKE A REAL PERSON");
+  });
 });
