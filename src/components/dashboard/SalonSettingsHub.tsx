@@ -780,6 +780,29 @@ export function SalonSettingsHub({
           subtitle={vi ? "Bật/tắt từng agent AI cho tiệm" : "Toggle AI agents for your salon"}
           defaultOpen={false}
         >
+          <section
+            data-testid="settings-nail-tryon-card"
+            className="mb-6 rounded-2xl border border-nq-primary/30 bg-nq-primary/5 px-4 py-4"
+          >
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-nq-foreground">
+                  {vi ? "Nail Try-On & Smart Quote" : "Nail Try-On & Smart Quote"}
+                </p>
+                <p className="mt-1 max-w-2xl text-xs leading-5 text-nq-muted">
+                  {vi
+                    ? "Quản lý mẫu nail và liên kết từng mẫu với dịch vụ, add-on, thời lượng và giá của tiệm."
+                    : "Manage nail designs and connect each look to the salon's service, add-on, duration, and price."}
+                </p>
+              </div>
+              <Link
+                href={`/dashboard/${encodeURIComponent(slug)}/setup/nail-tryon`}
+                className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-full bg-nq-primary px-5 text-sm font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/50"
+              >
+                {vi ? "Mở Nail Try-On" : "Open Nail Try-On"}
+              </Link>
+            </div>
+          </section>
           <AiManagerHub slug={slug} initialFlags={aiFlags} initialInstructions={aiManagerInstructions} initialNotifChannel={ownerNotifChannel} initialOwnerPhone={ownerPhone ?? ""} />
         </SettingsCategory>
         ) : null}
