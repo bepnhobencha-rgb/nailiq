@@ -42,6 +42,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
   const [serverMessage, setServerMessage] = useState<string | null>(null);
   const [serverWarning, setServerWarning] = useState<string | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [selectedDesign, setSelectedDesign] = useState<CatalogDesign | null>(null);
   const [generationSeconds, setGenerationSeconds] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -50,7 +51,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
   }, [previewUrl]);
 
   useEffect(() => {
-    if (!busy || step !== "catalog") return;
+    if (!busy || step !== "result") return;
     const timer = window.setInterval(() => setGenerationSeconds((seconds) => seconds + 1), 1000);
     return () => window.clearInterval(timer);
   }, [busy, step]);
@@ -132,6 +133,9 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
 
   async function generate(designId: string) {
     if (!sessionId) return;
+    setSelectedDesign(designs.find((design) => design.id === designId) || null);
+    setResultUrl(null);
+    setStep("result");
     setBusy(true);
     setGenerationSeconds(0);
     setServerMessage(null);
@@ -147,7 +151,6 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
       }
       if (!response.ok || !payload.previewUrl) throw new Error(payload.error || "generation_failed");
       setResultUrl(payload.previewUrl);
-      setStep("result");
     } catch {
       setServerMessage("The AI preview could not be created. Tap a design to try again. / Chưa tạo được ảnh AI. Hãy chọn lại mẫu để thử lại.");
     } finally {
@@ -179,10 +182,15 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
           {busy ? <p className="mt-4 rounded-2xl bg-blue-50 p-4 text-sm text-blue-900" role="status">{generationSeconds < 20 ? "Preparing your nail preview… / Đang chuẩn bị ảnh…" : generationSeconds < 50 ? "Applying the design to your nails… / Đang thử mẫu lên móng…" : "Adding the final details—please keep this page open. / Đang hoàn thiện, vui lòng giữ trang này mở."}</p> : null}
           {serverMessage ? <p className="mt-4 text-sm text-red-700" role="alert">{serverMessage}</p> : null}
         </section>
-      ) : step === "result" && resultUrl ? (
+      ) : step === "result" ? (
         <section className="overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-xl shadow-black/5">
-          <img src={resultUrl} alt="AI nail preview on your hand" className="aspect-square w-full object-contain" />
-          <div className="p-5 sm:p-7"><p className="text-xs font-semibold uppercase tracking-widest text-emerald-700">AI preview ready</p><h2 className="mt-2 text-2xl font-semibold text-neutral-950">See yourself in this look</h2><p className="mt-2 text-sm text-neutral-600">AI preview—actual color and result may vary.</p><a href={`/${salonSlug}?tryon=${encodeURIComponent(sessionId || "")}`} className="mt-5 flex min-h-12 items-center justify-center rounded-full bg-neutral-950 px-5 font-semibold text-white">Continue to booking</a></div>
+          <div className="relative bg-neutral-100">
+            {resultUrl ? <img src={resultUrl} alt="AI nail preview on your hand" className="aspect-square w-full object-contain" /> : previewUrl ? <img src={previewUrl} alt="Your hand while AI preview is prepared" className="aspect-square w-full object-contain" /> : <div className="aspect-square" />}
+            {!resultUrl && selectedDesign?.previewUrl ? <div className="absolute bottom-4 right-4 w-24 overflow-hidden rounded-2xl border-4 border-white bg-white shadow-xl"><img src={selectedDesign.previewUrl} alt={`Selected design: ${selectedDesign.name}`} className="aspect-square w-full object-cover" /><p className="truncate px-2 py-1 text-center text-[10px] font-semibold text-neutral-800">{selectedDesign.name}</p></div> : null}
+          </div>
+          <div className="p-5 sm:p-7">
+            {resultUrl ? <><p className="text-xs font-semibold uppercase tracking-widest text-emerald-700">AI preview ready</p><h2 className="mt-2 text-2xl font-semibold text-neutral-950">See yourself in this look</h2><p className="mt-2 text-sm text-neutral-600">AI preview—actual color and result may vary.</p><a href={`/${salonSlug}?tryon=${encodeURIComponent(sessionId || "")}`} className="mt-5 flex min-h-12 items-center justify-center rounded-full bg-neutral-950 px-5 font-semibold text-white">Continue to booking</a></> : <><p className="text-xs font-semibold uppercase tracking-widest text-blue-700">Design selected instantly</p><h2 className="mt-2 text-2xl font-semibold text-neutral-950">{selectedDesign?.name || "Preparing your look"}</h2>{busy ? <p className="mt-3 rounded-2xl bg-blue-50 p-4 text-sm text-blue-900" role="status">{generationSeconds < 20 ? "Preparing your nail preview… / Đang chuẩn bị ảnh…" : generationSeconds < 50 ? "Applying the design to your nails… / Đang thử mẫu lên móng…" : "Adding the final details—please keep this page open. / Đang hoàn thiện, vui lòng giữ trang này mở."}</p> : null}{serverMessage ? <p className="mt-3 rounded-2xl bg-red-50 p-4 text-sm text-red-800" role="alert">{serverMessage}</p> : null}{!busy ? <button type="button" onClick={() => { setServerMessage(null); setStep("catalog"); }} className="mt-4 min-h-12 w-full rounded-full border border-neutral-300 px-5 font-semibold text-neutral-800">Choose another design / Chọn mẫu khác</button> : null}</>}
+          </div>
         </section>
       ) : !consented ? (
         <section className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-xl shadow-black/5">
