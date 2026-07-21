@@ -355,6 +355,8 @@ export function BookingFlow({
             onSelectService={flow.setServiceId}
             onSelectCombo={flow.setSelectedCombo}
             selectedComboId={flow.selectedComboId}
+            tryonDesignName={flow.tryonDesignName}
+            tryonBookingQuote={flow.tryonBookingQuote}
             onBack={flow.backToPhone}
             onNext={flow.goServiceNext}
           />

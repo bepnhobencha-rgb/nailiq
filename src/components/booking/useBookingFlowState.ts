@@ -54,6 +54,11 @@ import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { getPublicStaffDisplayName } from "@/shared/booking/publicStaffDisplay";
+import {
+  resolveNailTryOnBookingRecommendation,
+  type NailTryOnBookingIntent,
+  type NailTryOnBookingQuote,
+} from "@/shared/nailTryOn/bookingRecommendation";
 
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import * as Sentry from "@sentry/nextjs";
@@ -189,6 +194,13 @@ export function useBookingFlowState(
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [popularSlotLabels, setPopularSlotLabels] = useState<string[]>([]);
   const [selectedCombo, setSelectedComboState] = useState<BookingComboItem | null>(null);
+  const [tryonDesignName, setTryonDesignName] = useState<string | null>(null);
+  const [tryonBookingQuote, setTryonBookingQuote] = useState<NailTryOnBookingQuote | null>(null);
+  const [tryonRecommendation, setTryonRecommendation] = useState<{
+    serviceId: string | null;
+    addonServiceId: string | null;
+  } | null>(null);
+  const tryonIntentLoadedRef = useRef(false);
 
   const [clientName, setClientName] = useState(
     initialName.trim() || (initialReturningCustomer?.name ?? ""),
@@ -221,6 +233,53 @@ export function useBookingFlowState(
   >([]);
   /** Staff free-gap minutes after the main service; surfaced in the upsell heading copy. */
   const [upsellGapMinutes, setUpsellGapMinutes] = useState<number>(0);
+
+  useEffect(() => {
+    if (tryonIntentLoadedRef.current) return;
+    const sessionId = new URLSearchParams(window.location.search).get("tryon");
+    if (!sessionId) return;
+    const controller = new AbortController();
+    void fetch(
+      `/api/nail-tryon/booking-intent?sessionId=${encodeURIComponent(sessionId)}`,
+      { signal: controller.signal, cache: "no-store" },
+    )
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json() as Promise<NailTryOnBookingIntent>;
+      })
+      .then((intent) => {
+        if (!intent) return;
+        tryonIntentLoadedRef.current = true;
+        const recommendation = resolveNailTryOnBookingRecommendation(
+          intent,
+          services,
+          addOns,
+        );
+        const recommendedService = recommendation.service;
+        const recommendedAddon = recommendation.addOn;
+
+        if (recommendedService) {
+          setServiceId(recommendedService.id);
+          setSelectedComboState(null);
+          setServiceError(null);
+        }
+        setTryonRecommendation({
+          serviceId: recommendedService?.id ?? null,
+          addonServiceId: recommendedAddon?.id ?? null,
+        });
+        if (recommendation.designName && (recommendedService || recommendedAddon)) {
+          setTryonDesignName(recommendation.designName);
+        }
+        setTryonBookingQuote(recommendation.quote);
+      })
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          console.error("[booking] nail try-on recommendation failed", error);
+        }
+      });
+
+    return () => controller.abort();
+  }, [services, addOns]);
 
   // When Option B gate-OTP is used, pre-seed the session so the flow's own
   // OTP step is skipped (line ~1118: `otpSessionId && otpVerifiedPhone === clientPhone`).
@@ -691,6 +750,19 @@ export function useBookingFlowState(
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive reset of upsell selection on key changes
     setSelectedAddonIds([]);
   }, [serviceId, timeSlot, staffId, selectedDate]);
+
+  useEffect(() => {
+    if (
+      tryonRecommendation?.addonServiceId &&
+      tryonRecommendation.serviceId === serviceId
+    ) {
+      // Runs after the generic service-change reset above, so the verified
+      // Try-On add-on survives the initial service preselection. A later user
+      // toggle is not overwritten because these dependencies stay unchanged.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSelectedAddonIds([tryonRecommendation.addonServiceId]);
+    }
+  }, [serviceId, tryonRecommendation]);
 
   // A pending add-on is service-specific — drop it if the service changes.
   useEffect(() => {
@@ -1781,6 +1853,8 @@ export function useBookingFlowState(
     popularSlotLabels,
     selectedCombo,
     selectedComboId: selectedCombo?.id ?? null,
+    tryonDesignName,
+    tryonBookingQuote,
     clientName,
     clientPhone,
     clientEmail,

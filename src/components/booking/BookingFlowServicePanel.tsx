@@ -9,6 +9,7 @@ import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { cn } from "@/shared/lib/cn";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
 import { formatCurrency, type Currency } from "@/shared/lib/currencyFormat";
+import type { NailTryOnBookingQuote } from "@/shared/nailTryOn/bookingRecommendation";
 import {
   bookingStepVariants,
   type BookingMotionDir,
@@ -98,6 +99,8 @@ export function BookingFlowServicePanel({
   combos = [],
   serviceId,
   selectedComboId,
+  tryonDesignName,
+  tryonBookingQuote,
   error,
   stepDir,
   reducedMotion,
@@ -114,6 +117,8 @@ export function BookingFlowServicePanel({
   combos?: readonly BookingComboItem[];
   serviceId: string | null;
   selectedComboId?: string | null;
+  tryonDesignName?: string | null;
+  tryonBookingQuote?: NailTryOnBookingQuote | null;
   /** Salon's currency for combo price/savings display (defaults handled by formatCurrency). */
   currencyCode?: Currency | string | null;
   error: string | null;
@@ -368,6 +373,29 @@ export function BookingFlowServicePanel({
       >
         {t.stepServiceHeading}
       </h2>
+
+      {tryonDesignName ? (
+        <div
+          role="status"
+          data-testid="tryon-booking-recommendation"
+          className="mt-4 rounded-2xl border border-[var(--salon-primary)]/30 bg-[var(--salon-primary)]/10 px-4 py-3 text-sm text-[var(--booking-text)]"
+        >
+          <p className="font-semibold">Your Try-On recommendation is ready</p>
+          <p className="mt-1 text-[var(--booking-text-muted)]">
+            We selected the salon service for “{tryonDesignName}”. Please review it before continuing.
+          </p>
+          {tryonBookingQuote ? (
+            <p className="mt-2 font-medium">
+              {tryonBookingQuote.serviceName}
+              {tryonBookingQuote.addOnName ? ` + ${tryonBookingQuote.addOnName}` : ""}
+              {" · "}{tryonBookingQuote.durationMinutes} min
+              {tryonBookingQuote.priceCents != null
+                ? ` · ${formatCurrency(tryonBookingQuote.priceCents, currencyCode) ?? ""}`
+                : ""}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Combo bundles section — only shown when the salon has active combos */}
       {combos.length > 0 ? (
