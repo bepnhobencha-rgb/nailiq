@@ -133,6 +133,10 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
         body: JSON.stringify({ sessionId, designId }),
       });
       const payload = await response.json() as { previewUrl?: string; error?: string; retryable?: boolean };
+      if (response.status === 409 && payload.error === "generation_in_progress") {
+        setServerMessage("Your preview is still finishing. Please wait 15 seconds, then tap the design once. / Ảnh vẫn đang được tạo. Vui lòng đợi 15 giây rồi bấm mẫu một lần.");
+        return;
+      }
       if (!response.ok || !payload.previewUrl) throw new Error(payload.error || "generation_failed");
       setResultUrl(payload.previewUrl);
       setStep("result");
