@@ -1,5 +1,6 @@
 "use server";
 
+import { formatTranscript } from "@/shared/dashboard/formatTranscript";
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -347,7 +348,7 @@ export async function loadActivityFeed(
         actorRole: null,
         bookingId: null,
         bookingDate: null,
-        transcript: str(r.transcript) || null,
+        transcript: formatTranscript(r.transcript),
       });
     }
 
