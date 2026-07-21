@@ -24,11 +24,19 @@ type Props = {
   brandColor: string;
 };
 
+type CatalogDesign = { id: string; name: string; description: string | null; previewUrl: string | null };
 export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
   const [consented, setConsented] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [quality, setQuality] = useState<ClientQualityCode | "checking" | null>(null);
   const [fileName, setFileName] = useState("");
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [designs, setDesigns] = useState<CatalogDesign[]>([]);
+  const [step, setStep] = useState<"capture" | "catalog" | "result">("capture");
+  const [busy, setBusy] = useState(false);
+  const [serverMessage, setServerMessage] = useState<string | null>(null);
+  const [resultUrl, setResultUrl] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => () => {
@@ -40,6 +48,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
     const url = URL.createObjectURL(file);
     setPreviewUrl(url);
     setFileName(file.name || "hand-photo");
+    setPhoto(file);
     setQuality("checking");
 
     try {
@@ -73,9 +82,57 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
     setPreviewUrl(null);
     setQuality(null);
     setFileName("");
+    setPhoto(null);
+    setServerMessage(null);
     if (inputRef.current) inputRef.current.value = "";
   }
 
+  async function uploadAndVerify() {
+    if (!photo) return;
+    setBusy(true);
+    setServerMessage(null);
+    const form = new FormData();
+    form.set("photo", photo);
+    form.set("slug", salonSlug);
+    form.set("consent_version", "nail-tryon-v1");
+    try {
+      const response = await fetch("/api/nail-tryon/upload", { method: "POST", body: form });
+      const payload = await response.json() as { sessionId?: string; quality?: string; reason?: string; error?: string };
+      if (!response.ok || !payload.sessionId || payload.quality !== "pass") {
+        setServerMessage(payload.reason || "We could not verify five visible nails. Retake with one hand, palm down.");
+        return;
+      }
+      setSessionId(payload.sessionId);
+      const catalogResponse = await fetch(`/api/nail-tryon/catalog?slug=${encodeURIComponent(salonSlug)}`);
+      const catalog = await catalogResponse.json() as { designs?: CatalogDesign[] };
+      setDesigns(catalog.designs || []);
+      setStep("catalog");
+    } catch {
+      setServerMessage("Photo verification is temporarily unavailable. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function generate(designId: string) {
+    if (!sessionId) return;
+    setBusy(true);
+    setServerMessage(null);
+    try {
+      const response = await fetch("/api/nail-tryon/generate", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, designId }),
+      });
+      const payload = await response.json() as { previewUrl?: string; error?: string };
+      if (!response.ok || !payload.previewUrl) throw new Error(payload.error || "generation_failed");
+      setResultUrl(payload.previewUrl);
+      setStep("result");
+    } catch {
+      setServerMessage("The AI preview could not be created. Your booking is still available—please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <div className="mx-auto w-full max-w-lg">
       <div className="mb-8 text-center">
@@ -87,7 +144,25 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
         <p className="mt-2 text-sm leading-6 text-neutral-600">One clear photo. Palm down, fingers relaxed, all five nails visible.</p>
       </div>
 
-      {!consented ? (
+      {step === "catalog" ? (
+        <section className="rounded-3xl border border-neutral-200 bg-white p-5 shadow-xl shadow-black/5 sm:p-7">
+          <p className="text-xs font-semibold uppercase tracking-widest text-neutral-500">Step 2 of 3</p>
+          <h2 className="mt-2 text-2xl font-semibold text-neutral-950">Choose a salon design</h2>
+          {designs.length ? <div className="mt-5 grid grid-cols-2 gap-3">{designs.map((design) => (
+            <button key={design.id} type="button" disabled={busy} onClick={() => void generate(design.id)} className="overflow-hidden rounded-2xl border border-neutral-200 text-left transition hover:border-neutral-500 disabled:opacity-60">
+              {design.previewUrl ? <img src={design.previewUrl} alt={design.name} className="aspect-square w-full object-cover" /> : <div className="aspect-square bg-neutral-100" />}
+              <span className="block p-3 text-sm font-semibold text-neutral-900">{design.name}</span>
+            </button>
+          ))}</div> : <p className="mt-5 rounded-2xl bg-neutral-50 p-4 text-sm text-neutral-600">This salon has not published try-on designs yet.</p>}
+          {busy ? <p className="mt-4 text-sm text-neutral-600" role="status">Creating your private AI preview…</p> : null}
+          {serverMessage ? <p className="mt-4 text-sm text-red-700" role="alert">{serverMessage}</p> : null}
+        </section>
+      ) : step === "result" && resultUrl ? (
+        <section className="overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-xl shadow-black/5">
+          <img src={resultUrl} alt="AI nail preview on your hand" className="aspect-square w-full object-contain" />
+          <div className="p-5 sm:p-7"><p className="text-xs font-semibold uppercase tracking-widest text-emerald-700">AI preview ready</p><h2 className="mt-2 text-2xl font-semibold text-neutral-950">See yourself in this look</h2><p className="mt-2 text-sm text-neutral-600">AI preview—actual color and result may vary.</p><a href={`/${salonSlug}`} className="mt-5 flex min-h-12 items-center justify-center rounded-full bg-neutral-950 px-5 font-semibold text-white">Continue to booking</a></div>
+        </section>
+      ) : !consented ? (
         <section className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-xl shadow-black/5">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700"><ShieldCheck aria-hidden /></div>
           <h2 className="mt-5 text-xl font-semibold text-neutral-950">Your photo stays private</h2>
@@ -127,7 +202,8 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
                   <div className="mt-2 rounded-2xl bg-amber-50 p-4 text-amber-950" role="alert"><p className="font-semibold">Please retake this photo</p><p className="mt-1 text-sm">{COPY[quality]}</p></div>
                 ) : null}
                 <button type="button" onClick={reset} className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-neutral-300 px-5 font-semibold text-neutral-800"><RotateCcw className="h-4 w-4" aria-hidden />Retake</button>
-                {quality === "pass" ? <button type="button" disabled className="mt-3 min-h-12 w-full rounded-full bg-neutral-300 px-5 font-semibold text-neutral-600" title="Available in the next implementation step">Continue to designs — coming next</button> : null}
+                {serverMessage ? <p className="mt-3 rounded-2xl bg-red-50 p-4 text-sm text-red-800" role="alert">{serverMessage}</p> : null}
+                {quality === "pass" ? <button type="button" disabled={busy} onClick={() => void uploadAndVerify()} className="mt-3 min-h-12 w-full rounded-full bg-neutral-950 px-5 font-semibold text-white disabled:bg-neutral-300 disabled:text-neutral-600">{busy ? "Verifying hand and nails…" : "Continue to designs"}</button> : null}
               </div>
             </div>
           )}
