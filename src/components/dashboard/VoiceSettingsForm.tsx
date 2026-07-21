@@ -79,6 +79,31 @@ export function VoiceSettingsForm({ slug, initial }: Props) {
         </button>
       </div>
 
+      {/* Upsell toggle */}
+      <div className="flex items-center justify-between rounded-2xl border border-[var(--color-border)] p-4">
+        <div>
+          <p className="font-semibold">Suggest upgrades &amp; add-ons</p>
+          <p className="text-sm text-[var(--color-text-muted)]">After a service is chosen, the receptionist offers one tasteful upsell (e.g. add a pedicure, upgrade to shellac)</p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={form.voice_ai_upsell_enabled}
+          onClick={() => handleChange("voice_ai_upsell_enabled", !form.voice_ai_upsell_enabled)}
+          className={[
+            "relative inline-flex h-7 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200",
+            form.voice_ai_upsell_enabled ? "bg-[var(--color-primary)]" : "bg-zinc-300",
+          ].join(" ")}
+        >
+          <span
+            className={[
+              "pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200",
+              form.voice_ai_upsell_enabled ? "translate-x-5" : "translate-x-0",
+            ].join(" ")}
+          />
+        </button>
+      </div>
+
       {/* Persona name */}
       <div className="space-y-1.5">
         <label className="text-sm font-semibold" htmlFor="persona-name">AI Persona Name</label>
