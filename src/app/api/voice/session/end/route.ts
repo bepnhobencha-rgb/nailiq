@@ -11,7 +11,12 @@ type EndSessionBody = {
   status?:         "completed" | "failed" | "abandoned";
   clientName?:     string;
   clientPhone?:    string;
+  /** The language the call ended in. On the phone the caller can switch mid-call
+   *  (English → Spanish), and the session row must reflect where it finished. */
+  language?:       string;
 };
+
+const SUPPORTED = ["vi", "en", "es", "fr", "zh"];
 
 export async function POST(req: NextRequest) {
   let body: EndSessionBody;
@@ -21,8 +26,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
 
-  const { sessionId, durationSeconds, transcript, status = "completed", clientName, clientPhone } = body;
+  const { sessionId, durationSeconds, transcript, status = "completed", clientName, clientPhone, language } = body;
   if (!sessionId) return NextResponse.json({ error: "missing_session_id" }, { status: 400 });
+  const lang = typeof language === "string" && SUPPORTED.includes(language) ? language : null;
 
   const supabase = createServiceRoleClient();
 
@@ -45,6 +51,7 @@ export async function POST(req: NextRequest) {
       ended_at:         new Date().toISOString(),
       ...(clientName  ? { client_name:  clientName  } : {}),
       ...(clientPhone ? { client_phone: toCanonicalPhone(clientPhone) ?? clientPhone } : {}),
+      ...(lang        ? { language:     lang } : {}),
     })
     .eq("id", sessionId);
 

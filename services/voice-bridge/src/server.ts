@@ -19,11 +19,16 @@ import http from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import {
   sessionUpdateMessage,
-  detectLanguage,
+  resolveSwitchLanguage,
   appendAudioMessage,
   twilioMediaFrame,
   twilioClearFrame,
-  functionCallOutputMessages,
+  functionCallOutput,
+  plainResponseCreate,
+  extractSayThis,
+  sayThisResponseCreate,
+  interruptToggleMessage,
+  createCallLifecycle,
   extractAudioDelta,
   extractFunctionCall,
   isSpeechStarted,
@@ -58,29 +63,35 @@ wss.on("connection", (twilioWs) => {
   let openaiWs: WebSocket | null = null;
   let closed = false;
 
-  // Mid-call language switch. The session opens in the salon's default language;
-  // if the caller clearly speaks a different supported one, re-fetch the prompt
-  // in that language and re-configure the live session. Mirrors what the web
-  // widget does, which the phone channel never had — a Vietnamese caller was
-  // stuck talking to an English agent.
+  // Response + barge-in state machine (see router.createCallLifecycle).
+  const lifecycle = createCallLifecycle();
+
+  // Mid-call language switch. Opens in the salon's default language; if the
+  // caller ASKS for another supported one ("in Spanish?") or clearly SPEAKS it,
+  // re-fetch the prompt in that language, reconfigure the live session, and
+  // immediately create a response so the agent acknowledges IN the new language.
+  // currentLang is what finalizeSession persists — the session ends in the
+  // language it actually finished in.
   const maybeSwitchLanguage = async (userText: string) => {
     if (switchingLang) return;
-    const detected = detectLanguage(userText);
-    if (!detected || detected === currentLang) return;
+    const target = resolveSwitchLanguage(userText, currentLang);
+    if (!target) return;
     switchingLang = true;
     try {
       const r = await fetch(`${NEXT_APP_URL}/api/voice/phone-config`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-voice-bridge-secret": BRIDGE_SECRET },
-        body: JSON.stringify({ slug, from, language: detected }),   // no newSession → no new row
+        body: JSON.stringify({ slug, from, language: target }),   // no newSession → no new row
       });
       if (!r.ok) return;
       const c = (await r.json()) as { instructions: string; voice: string; tools: unknown[] };
-      currentLang = detected;
+      currentLang = target;
       openaiWs?.send(JSON.stringify(sessionUpdateMessage({
-        instructions: c.instructions, voice: c.voice, tools: c.tools, transcribeLang: detected,
+        instructions: c.instructions, voice: c.voice, tools: c.tools, transcribeLang: target,
       })));
-      console.log(`[voice-bridge] switched language → ${detected}`);
+      // Acknowledge the switch immediately, in the new language.
+      openaiWs?.send(JSON.stringify(plainResponseCreate()));
+      console.log(`[voice-bridge] switched language → ${target}`);
     } catch { /* best-effort — the call continues in the current language */ }
     finally { switchingLang = false; }
   };
@@ -101,6 +112,7 @@ wss.on("connection", (twilioWs) => {
           durationSeconds: Math.round((Date.now() - startedAt) / 1000),
           transcript,
           status: "completed",
+          language: currentLang,   // persist the language the call ended in
         }),
       });
     } catch { /* best-effort — losing the record must not throw on hangup */ }
@@ -109,6 +121,7 @@ wss.on("connection", (twilioWs) => {
   const closeAll = () => {
     if (closed) return;
     closed = true;
+    lifecycle.onResponseEnded();   // tear down any in-flight protection state
     void finalizeSession();
     try { openaiWs?.close(); } catch { /* noop */ }
     try { twilioWs.close(); } catch { /* noop */ }
@@ -128,8 +141,21 @@ wss.on("connection", (twilioWs) => {
     } catch {
       result = { error: "tool_unavailable" };
     }
-    for (const msg of functionCallOutputMessages(callId, result)) {
-      openaiWs?.send(JSON.stringify(msg));
+
+    // Hand the tool result back, then create exactly ONE follow-up response.
+    openaiWs?.send(JSON.stringify(functionCallOutput(callId, result)));
+
+    const sayThis = extractSayThis(result);
+    if (sayThis) {
+      // A server-composed line (booking confirmation, OTP notice). Protect it
+      // from barge-in — disable interruption, mark the response protected — so
+      // line echo cannot cut it off, then read it verbatim in the current
+      // language. interrupt_response is restored on response end (see below).
+      lifecycle.beginProtected();
+      openaiWs?.send(JSON.stringify(interruptToggleMessage(false, currentLang)));
+      openaiWs?.send(JSON.stringify(sayThisResponseCreate(sayThis, currentLang)));
+    } else {
+      openaiWs?.send(JSON.stringify(plainResponseCreate()));
     }
   };
 
@@ -194,13 +220,29 @@ wss.on("connection", (twilioWs) => {
         }
       }
 
+      // Response lifecycle → drives barge-in gating and protection restore. A
+      // response is "playing" between response.created and its end; a protected
+      // (say_this) response also flips interrupt_response back on when it ends —
+      // on done, cancelled, OR error, so barge-in can never stay stuck off.
+      if (t === "response.created") {
+        lifecycle.onResponseCreated();
+      } else if (t === "response.done" || t === "response.cancelled" || t.includes("error")) {
+        const { restore } = lifecycle.onResponseEnded();
+        if (restore) openaiWs?.send(JSON.stringify(interruptToggleMessage(true, currentLang)));
+      }
+
       const audio = extractAudioDelta(evt);
       if (audio && streamSid) {
         twilioWs.send(JSON.stringify(twilioMediaFrame(streamSid, audio)));
         return;
       }
       if (isSpeechStarted(evt) && streamSid) {
-        twilioWs.send(JSON.stringify(twilioClearFrame(streamSid))); // barge-in
+        // Only flush Twilio playback when a response is ACTUALLY playing and not
+        // protected. Clearing in dead air did nothing but muddy state; clearing
+        // over a protected line let echo cut the confirmation off mid-word.
+        if (lifecycle.shouldClearOnSpeech()) {
+          twilioWs.send(JSON.stringify(twilioClearFrame(streamSid)));
+        }
         return;
       }
       const fn = extractFunctionCall(evt);
