@@ -7,11 +7,12 @@ import { verifySessionCredential } from "@/shared/nailTryOn/sessionCredential";
 import { recordNailTryOnEvent } from "@/shared/nailTryOn/telemetry";
 import { safeProviderError } from "@/shared/nailTryOn/providerError";
 import { GENERATION_STALE_MS, isGenerationStale } from "@/shared/nailTryOn/generationLease";
+import { nailConfigurationSchema } from "@/shared/nailTryOn/configurator";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const bodySchema = z.object({ sessionId: z.string().uuid(), designId: z.string().uuid() });
+const bodySchema = z.object({ sessionId: z.string().uuid(), designId: z.string().uuid(), configuration: nailConfigurationSchema });
 type SessionRow = { id: string; salon_id: string; anonymous_token_hash: string; source_image_path: string; result_image_path: string | null; status: string; updated_at: string };
 type DesignRow = { id: string; salon_id: string; name: string; preview_path: string; prompt_hint: string | null; version: number };
 
@@ -54,7 +55,7 @@ export async function POST(request: Request) {
 
   const { data: claimed } = await db.from("nail_tryon_sessions" as never).update({ status: "generating", design_id: design.id, design_version: design.version, provider: "openai", provider_model: IMAGE_MODEL, error_code: null, updated_at: new Date().toISOString() } as never).eq("id", session.id).in("status", ["quality_passed", "failed"]).select("id").maybeSingle();
   if (!claimed) return NextResponse.json({ error: "generation_in_progress" }, { status: 409 });
-  await recordNailTryOnEvent({ salonId: session.salon_id, sessionId: session.id, event: "generation_started", properties: { designVersion: design.version } });
+  await recordNailTryOnEvent({ salonId: session.salon_id, sessionId: session.id, event: "generation_started", properties: { designVersion: design.version, nailLength: parsed.data.configuration.length, nailShape: parsed.data.configuration.shape, nailColor: parsed.data.configuration.color, nailFinish: parsed.data.configuration.finish } });
   const outputPath = `salon/${session.salon_id}/session/${session.id}/preview.jpg`;
   try {
     const [{ data: hand }, { data: reference }] = await Promise.all([
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
       db.storage.from("nail-tryon").download(design.preview_path),
     ]);
     if (!hand || !reference) throw new Error("input_download_failed");
-    const preview = await generateNailPreview({ hand: Buffer.from(await hand.arrayBuffer()), design: Buffer.from(await reference.arrayBuffer()), designMime: reference.type, designName: design.name, promptHint: design.prompt_hint });
+    const preview = await generateNailPreview({ hand: Buffer.from(await hand.arrayBuffer()), design: Buffer.from(await reference.arrayBuffer()), designMime: reference.type, designName: design.name, promptHint: design.prompt_hint, configuration: parsed.data.configuration });
     const { error: uploadError } = await db.storage.from("nail-tryon").upload(outputPath, preview, { contentType: "image/jpeg", upsert: false });
     if (uploadError) throw uploadError;
     await db.from("nail_tryon_sessions" as never).update({ status: "ready", result_image_path: outputPath, updated_at: new Date().toISOString() } as never).eq("id", session.id);
