@@ -25,6 +25,7 @@ import {
   twilioClearFrame,
   functionCallOutput,
   plainResponseCreate,
+  languageAckResponseCreate,
   extractSayThis,
   sayThisResponseCreate,
   createResponseCoordinator,
@@ -64,6 +65,8 @@ wss.on("connection", (twilioWs) => {
   // about to return a protected say_this, so a language switch during it must NOT
   // fire its own acknowledgement — the say_this confirms in the new language.
   let toolInFlight = 0;
+  let userTurnCount = 0;
+  const handledToolCallIds = new Set<string>();
   let openaiWs: WebSocket | null = null;
   let closed = false;
 
@@ -105,7 +108,11 @@ wss.on("connection", (twilioWs) => {
       // (a say_this from it would confirm in the new language on its own, and the
       // coordinator drops the ack anyway once that protected line is queued).
       if (toolInFlight === 0) {
-        coordinator.request({ kind: "ack", build: plainResponseCreate, language: () => currentLang });
+        coordinator.request({
+          kind: "ack",
+          build: () => languageAckResponseCreate(currentLang),
+          language: () => currentLang,
+        });
       }
       console.log(`[voice-bridge] switched language → ${target}`);
     } catch { /* best-effort — the call continues in the current language */ }
@@ -154,6 +161,10 @@ wss.on("connection", (twilioWs) => {
   };
 
   const runTool = async (name: string, args: Record<string, unknown>, callId: string) => {
+    // Snapshot this before the network round trip. The caller may begin speaking
+    // while lookup_customer is in flight; that must not turn the silent opening
+    // enrichment into a late duplicate greeting when the result returns.
+    const isOpeningLookup = name === "lookup_customer" && userTurnCount === 0;
     toolInFlight++;   // a switch during this must not fire its own ack (say_this may confirm instead)
     try {
       let result: unknown;
@@ -186,7 +197,10 @@ wss.on("connection", (twilioWs) => {
           build: () => sayThisResponseCreate(sayThis, currentLang),
           language: () => currentLang,
         });
-      } else {
+      } else if (!isOpeningLookup) {
+        // The opening response has already greeted the caller. Its background
+        // lookup must enrich the conversation silently, otherwise the forced
+        // follow-up repeats the greeting/question before the caller can answer.
         coordinator.request({ kind: "normal", build: plainResponseCreate, language: () => currentLang });
       }
     } finally {
@@ -254,6 +268,7 @@ wss.on("connection", (twilioWs) => {
         if (txt) {
           transcript.push({ role: "user", text: txt });
           lastUserUtterance = txt;   // most recent caller turn, for the time guard
+          userTurnCount++;
         }
         // With create_response:false the bridge drives every turn. A language
         // switch owns its own acknowledgement response; any other turn gets one
@@ -293,7 +308,13 @@ wss.on("connection", (twilioWs) => {
         return;
       }
       const fn = extractFunctionCall(evt);
-      if (fn) void runTool(fn.name, fn.args, fn.callId);
+      if (fn && !handledToolCallIds.has(fn.callId)) {
+        // The GA API may describe the same completed function call through both
+        // response.function_call_arguments.done and response.output_item.done.
+        // call_id is the idempotency key: execute and answer exactly once.
+        handledToolCallIds.add(fn.callId);
+        void runTool(fn.name, fn.args, fn.callId);
+      }
     });
 
     openaiWs.on("close", closeAll);
