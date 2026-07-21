@@ -3,7 +3,7 @@ import { formatServicePrice } from "@/shared/lib/currencyFormat";
 
 export function buildSystemPrompt(
   ctx: SalonVoiceContext,
-  language: "vi" | "en" | "fr" | "zh",
+  language: "vi" | "en" | "es" | "fr" | "zh",
   /** Phone channel only: the caller's carrier-verified inbound number. On the
    *  web there is none. When present the agent already HAS the number — it must
    *  not ask the caller to recite it, and it can recognise them before they say
@@ -36,6 +36,7 @@ export function buildSystemPrompt(
 
   const lang = isVi
     ? "Vietnamese (Tiếng Việt)"
+    : language === "es" ? "Spanish (Español)"
     : language === "fr" ? "French (Français)"
     : language === "zh" ? "Chinese (中文)"
     : "English";
@@ -45,13 +46,18 @@ export function buildSystemPrompt(
   //    with a plain hello and let the lookup (fired as the first action) drive
   //    the by-name greeting. Asking for the number here would undo the point.
   //  • Web (no callerPhone): open by asking for the number.
+  const isEs = language === "es";
   const greeting = callerPhone
     ? (isVi
         ? `Dạ ${ctx.salonName} xin nghe, em ${ctx.personaName} đây ạ!`
-        : `Hi, thanks for calling ${ctx.salonName} — this is ${ctx.personaName}!`)
+        : isEs
+          ? `¡Hola, gracias por llamar a ${ctx.salonName}! Soy ${ctx.personaName}.`
+          : `Hi, thanks for calling ${ctx.salonName} — this is ${ctx.personaName}!`)
     : (isVi
         ? `Xin chào! Tôi là ${ctx.personaName} từ ${ctx.salonName}. Dạ cho em xin số điện thoại để em xem mình đã từng đến tiệm chưa ạ?`
-        : `Hello! I'm ${ctx.personaName} from ${ctx.salonName}. Could I get your phone number so I can see if you have been in before?`);
+        : isEs
+          ? `¡Hola! Soy ${ctx.personaName} de ${ctx.salonName}. ¿Me podría dar su número de teléfono para ver si ya ha venido antes?`
+          : `Hello! I'm ${ctx.personaName} from ${ctx.salonName}. Could I get your phone number so I can see if you have been in before?`);
 
   return `You are ${ctx.personaName}, a friendly booking assistant for ${ctx.salonName}.
 Speak ONLY in ${lang}. Be warm, concise, and professional.

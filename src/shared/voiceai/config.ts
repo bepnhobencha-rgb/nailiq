@@ -25,7 +25,7 @@ export const SUPPORTED_VOICES = [
 ] as const;
 export type SupportedVoice = (typeof SUPPORTED_VOICES)[number];
 
-export const SUPPORTED_LANGUAGES = ["vi", "en", "fr", "zh"] as const;
+export const SUPPORTED_LANGUAGES = ["vi", "en", "es", "fr", "zh"] as const;
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 
 /** Maps salon DB values to OpenAI reasoning_effort values */

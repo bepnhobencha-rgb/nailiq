@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  let body: { slug?: string; language?: string; from?: string };
+  let body: { slug?: string; language?: string; from?: string; newSession?: boolean };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -44,23 +44,35 @@ export async function POST(req: NextRequest) {
   // consent checks — this only removes the asking, not any safeguard.
   const from = typeof body.from === "string" && body.from.trim() ? body.from.trim() : null;
 
-  const language: SupportedLanguage = SUPPORTED_LANGUAGES.includes(
-    (body.language ?? "") as SupportedLanguage,
-  )
-    ? (body.language as SupportedLanguage)
-    : "en";
+  // The bridge re-fetches this route mid-call to switch language (it detects the
+  // caller's language from the transcript). newSession=true marks the FIRST fetch
+  // of a call — the one that opens a session row — so a language switch does not
+  // create a duplicate row.
+  const newSession = body.newSession === true;
 
   // Gate on the enable flag — same as the mutation route.
   const supabase = createServiceRoleClient();
   const { data: salonRow } = await supabase
     .from("salons")
-    .select("voice_ai_enabled")
+    .select("voice_ai_enabled, default_notification_locale")
     .eq("slug", slug)
     .maybeSingle();
   if (!salonRow) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
   if ((salonRow as { voice_ai_enabled?: boolean | null }).voice_ai_enabled !== true) {
     return NextResponse.json({ error: "voice_not_enabled" }, { status: 403 });
   }
+
+  // Resolve the language: an explicit request (the bridge's mid-call switch)
+  // wins; otherwise open in the salon's configured notification locale so the
+  // first greeting is already in the salon's primary language, and the bridge
+  // only switches if the caller turns out to speak something else.
+  const requested = (body.language ?? "").trim() as SupportedLanguage;
+  const salonDefault = (salonRow as { default_notification_locale?: string | null })
+    .default_notification_locale as SupportedLanguage;
+  const language: SupportedLanguage =
+    SUPPORTED_LANGUAGES.includes(requested) ? requested
+    : SUPPORTED_LANGUAGES.includes(salonDefault) ? salonDefault
+    : "en";
 
   const ctx = await loadSalonContext(slug);
   if (!ctx) return NextResponse.json({ error: "context_load_failed" }, { status: 500 });
@@ -71,6 +83,7 @@ export async function POST(req: NextRequest) {
   // failure here must not stop the call from connecting.
   let sessionId: string | null = null;
   try {
+    if (!newSession) throw new Error("skip");   // language-switch re-fetch — no new row
     const { data: salonIdRow } = await supabase
       .from("salons").select("id").eq("slug", slug).maybeSingle();
     const salonId = (salonIdRow as { id?: string } | null)?.id ?? null;
@@ -95,5 +108,6 @@ export async function POST(req: NextRequest) {
     instructions: buildSystemPrompt(ctx, language, from),
     tools: [...REALTIME_TOOLS],
     sessionId,
+    language,   // so the bridge knows which language this config is for
   });
 }
