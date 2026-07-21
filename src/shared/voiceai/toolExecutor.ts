@@ -611,53 +611,52 @@ async function handleConfirmBooking(
     } catch { /* best-effort */ }
   }
 
-  // ── 8. Send SMS confirmation — AWAITED so we can report the real result ──────
-  //  Previously fire-and-forget: the UI claimed "SMS sent" even when the send
-  //  failed or Twilio wasn't configured. We now await the result and surface an
-  //  accurate `smsSent` boolean. SMS failure never fails the booking.
-  let smsSent = false;
+  // ── 8. Send SMS confirmation in the BACKGROUND (after the response) ──────────
+  //  Awaiting the Twilio round-trip here made the agent sit in dead air for
+  //  seconds after "booking that now" — callers said "sao im lặng vậy?". The
+  //  booking is already saved, so fire the SMS via after(): the confirmation is
+  //  spoken immediately and the agent verifies delivery conversationally ("did
+  //  you get the text?", see the closing rule). SMS failure never fails a booking.
   if (bookingId) {
-    try {
-      const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
-      const smsRes = await fetch(`${appUrl}/api/booking/sms-confirm`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bookingId,
-          salonId:      String(salon.id),
-          clientPhone:  customerPhone,
-          clientName:   customerName,
-          serviceName:  (service as { name: string }).name,
-          staffName:    resolvedStaffName ?? undefined,
-          startTimeUtc: startUtcIso,
-        }),
-      });
-      const smsJson = await smsRes.json().catch(() => ({})) as { ok?: boolean; error?: string };
-      smsSent = smsRes.ok && smsJson.ok === true;
-      if (!smsSent) {
-        // Log the reason (no PII / secrets) so failures are diagnosable.
-        console.warn("[voice/confirm_booking] confirmation SMS not sent:", smsJson.error ?? `http_${smsRes.status}`);
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+    after(async () => {
+      try {
+        const smsRes = await fetch(`${appUrl}/api/booking/sms-confirm`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bookingId,
+            salonId:      String(salon.id),
+            clientPhone:  customerPhone,
+            clientName:   customerName,
+            serviceName:  (service as { name: string }).name,
+            staffName:    resolvedStaffName ?? undefined,
+            startTimeUtc: startUtcIso,
+          }),
+        });
+        const smsJson = await smsRes.json().catch(() => ({})) as { ok?: boolean; error?: string };
+        if (!(smsRes.ok && smsJson.ok === true)) {
+          console.warn("[voice/confirm_booking] confirmation SMS not sent:", smsJson.error ?? `http_${smsRes.status}`);
+        }
+      } catch (e: unknown) {
+        console.error("[voice/confirm_booking] sms-confirm dispatch failed", e);
       }
-    } catch (e: unknown) {
-      console.error("[voice/confirm_booking] sms-confirm dispatch failed", e);
-      smsSent = false;
-    }
+    });
   }
 
   // `say_this` is the closing sentence, assembled here from what was actually
   // written to the database. Three prompt rewrites failed to get the agent to
-  // state these details — it kept answering "All set, I'll wrap this up with
-  // your booking details" and stopping, announcing the closing instead of
-  // delivering it. Composing the sentence server-side removes the judgement
-  // call: the prompt now only has to read one field out loud.
+  // state these details — it kept announcing the closing instead of delivering
+  // it. Composing it server-side removes the judgement call.
   //
   // Built from the resolved values (staff especially — the salon may assign
   // someone other than whoever was discussed), so it cannot drift from reality.
+  // The text is on its way (sent in the background); the agent then asks whether
+  // it arrived, per the closing rule.
   const staffPart = resolvedStaffName ? ` with ${resolvedStaffName}` : "";
   const sayThis =
     `All set! I have you booked for ${(service as { name: string }).name} on ${date} at ${timeSlot}${staffPart}.` +
-    (smsSent ? " You will get a confirmation text." : "") +
-    " Anything else I can help with?";
+    " I'm texting your confirmation now — you should get it in a moment.";
 
   return NextResponse.json({
     success:      true,
@@ -668,7 +667,7 @@ async function handleConfirmBooking(
     staffName:    resolvedStaffName ?? null,
     customerName,
     customerPhone,
-    smsSent,
+    smsSent:      "sending",
     say_this:     sayThis,
   });
 }
