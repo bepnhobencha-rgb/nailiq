@@ -1448,6 +1448,7 @@ export type VoiceAiSettingsInput = {
   voice_ai_persona_name:     string;
   voice_ai_persona_voice:    string;
   voice_ai_reasoning_effort: string;
+  voice_ai_upsell_enabled:   boolean;
 };
 
 export async function updateVoiceAiSettings(
@@ -1480,6 +1481,7 @@ export async function updateVoiceAiSettings(
       voice_ai_persona_name:     personaName,
       voice_ai_persona_voice:    voice,
       voice_ai_reasoning_effort: effort,
+      voice_ai_upsell_enabled:   input.voice_ai_upsell_enabled,
     } as never)
     .eq("id", ctx.salon.id);
 

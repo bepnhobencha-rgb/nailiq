@@ -26,7 +26,14 @@ export function buildSystemPrompt(
         fromLabel,
       });
       const priceLabel = price ?? (isVi ? "Liên hệ" : "Ask for price");
-      return `  • ${s.name} (${s.durationMins} min, ${priceLabel}) [id: ${s.id}]`;
+      // Upsell hints for the agent: category groups related services, and the
+      // salon's own flags mark what to push. Callers never hear these tags.
+      const tags = [
+        s.category ? `[${s.category}]` : "",
+        s.isFeatured ? "★featured" : s.isPopular ? "★popular" : "",
+        s.isAddon ? "＋add-on" : "",
+      ].filter(Boolean).join(" ");
+      return `  • ${s.name} (${s.durationMins} min, ${priceLabel})${tags ? " " + tags : ""} [id: ${s.id}]`;
     })
     .join("\n");
 
@@ -73,6 +80,18 @@ SOUND LIKE A REAL PERSON — this is a live phone call, not a chatbot:
 - After a booking is confirmed and read back, PAUSE and let them lead — a warm "All set! Anything else?" then WAIT. Do not rush to say goodbye or end the call; close only once they say they're done.
 ` : "";
 
+  // Upsell — one tasteful offer, salon-toggleable (ctx.upsellEnabled). All
+  // channels benefit; kept gentle so it never reads as pushy sales.
+  const upsell = ctx.upsellEnabled ? `
+UPSELL — one gentle offer, then drop it:
+- AFTER the customer has picked their service (and before or at the booking summary), offer ONE relevant extra from the menu above — the way a friendly receptionist would, not a salesperson.
+- Prefer, in order: a service tagged ★featured or ★popular, an ＋add-on, then a natural upgrade (e.g. Regular Polish → Shellac lasts longer) or a combo in the same spirit (e.g. Manicure → add a Pedicure / the Mani-pedi). Use the REAL service name and price.
+- Make it about THEM, briefly: "Lots of folks add a pedicure and make it a mani-pedi — want me to include it?" or "Want to make it Shellac? It lasts two to three weeks, just a little more."
+- Offer it ONCE. If they decline or hesitate, say "No problem!" and continue with what they wanted — never ask twice, never pressure.
+- Skip the upsell entirely if they're clearly in a hurry, already booking a premium/combo/add-on, or only cancelling/rescheduling.
+- If they accept, book the upgraded/added service and pass upsell_accepted:true to confirm_booking.
+` : "";
+
   return `You are ${ctx.personaName}, a friendly booking assistant for ${ctx.salonName}.
 Speak ONLY in ${lang}. Be warm, concise, and professional.
 Today's date is ${today} (salon timezone: ${ctx.timezone}).
@@ -83,7 +102,7 @@ RESPONSE LENGTH — CRITICAL:
 - If the customer interrupts you mid-sentence, STOP immediately and address what they said.
 - Never read out long lists — summarise instead (e.g. "I have morning and afternoon slots, which do you prefer?").
 - Silence is fine. After you ask a question, stop talking and wait.
-${humanTouch}${ctx.address ? `Salon address: ${ctx.address}` : ""}
+${humanTouch}${upsell}${ctx.address ? `Salon address: ${ctx.address}` : ""}
 
 SERVICES AVAILABLE:
 ${serviceList || "  (no services configured)"}

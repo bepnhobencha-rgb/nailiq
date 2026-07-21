@@ -10,6 +10,9 @@ export type SalonVoiceContext = {
   personaName:     string;
   personaVoice:    string;
   reasoningEffort: string;
+  /** When true, the receptionist offers ONE tasteful upsell after a service is
+   *  chosen. salons.voice_ai_upsell_enabled (default true). */
+  upsellEnabled:   boolean;
   businessHours:   unknown;
   services: {
     id:              string;
@@ -19,6 +22,12 @@ export type SalonVoiceContext = {
     // Variable pricing model — matches services.price_type / price_max_cents.
     price_type:      string;
     price_max_cents: number | null;
+    // Upsell hints — the salon can flag which services to push; the agent honours
+    // them and otherwise suggests a sensible upgrade/combo from the same menu.
+    category:        string | null;
+    isAddon:         boolean;
+    isPopular:       boolean;
+    isFeatured:      boolean;
   }[];
   staff: {
     id:   string;
@@ -51,7 +60,7 @@ async function loadSalonContextUncached(salonSlug: string): Promise<SalonVoiceCo
 
   const { data: salon } = await supabase
     .from("salons")
-    .select("id, name, timezone, address, currency_code, opening_hours, voice_ai_persona_name, voice_ai_persona_voice, voice_ai_reasoning_effort")
+    .select("id, name, timezone, address, currency_code, opening_hours, voice_ai_persona_name, voice_ai_persona_voice, voice_ai_reasoning_effort, voice_ai_upsell_enabled")
     .eq("slug", salonSlug)
     .single();
 
@@ -64,7 +73,7 @@ async function loadSalonContextUncached(salonSlug: string): Promise<SalonVoiceCo
   const [{ data: services }, { data: staff }] = await Promise.all([
     supabase
       .from("services")
-      .select("id, name, duration_minutes, price_cents, price_type, price_max_cents")
+      .select("id, name, duration_minutes, price_cents, price_type, price_max_cents, category, is_addon, is_popular, is_featured")
       .eq("salon_id", salon.id)
       .is("deleted_at", null)
       .order("name"),
@@ -86,6 +95,7 @@ async function loadSalonContextUncached(salonSlug: string): Promise<SalonVoiceCo
     personaName:     s.voice_ai_persona_name      ?? "Lily",
     personaVoice:    s.voice_ai_persona_voice      ?? "marin",
     reasoningEffort: s.voice_ai_reasoning_effort   ?? "low",
+    upsellEnabled:   s.voice_ai_upsell_enabled     ?? true,
     businessHours:   s.opening_hours,
     services: (services ?? []).map((svc) => ({
       id:              svc.id,
@@ -94,6 +104,14 @@ async function loadSalonContextUncached(salonSlug: string): Promise<SalonVoiceCo
       priceCents:      svc.price_cents,
       price_type:      svc.price_type ?? "fixed",
       price_max_cents: svc.price_max_cents ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      category:        (svc as any).category ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      isAddon:         Boolean((svc as any).is_addon),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      isPopular:       Boolean((svc as any).is_popular),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      isFeatured:      Boolean((svc as any).is_featured),
     })),
     staff: (staff ?? []).map((m) => ({ id: m.id, name: m.name })),
   };
