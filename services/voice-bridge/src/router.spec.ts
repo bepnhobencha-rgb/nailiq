@@ -14,6 +14,7 @@ import {
   createResponseCoordinator,
   extractResponseId,
   detectLanguageRequest,
+  languageAckResponseCreate,
   resolveSwitchLanguage,
   extractAudioDelta,
   extractFunctionCall,
@@ -110,8 +111,18 @@ describe("router — language request beats spoken-language detection", () => {
     expect(detectLanguageRequest("can we speak in vietnamese")).toBe("vi");
     expect(detectLanguageRequest("en français s'il vous plaît")).toBe("fr");
     expect(detectLanguageRequest("in chinese please")).toBe("zh");
+    expect(detectLanguageRequest("Can you speak Chinese?")).toBe("zh");
+    expect(detectLanguageRequest("Can we continue Vietnamese?")).toBe("vi");
+    expect(detectLanguageRequest("Can you speak Vietnamese?")).toBe("vi");
+    expect(detectLanguageRequest("Please switch to French")).toBe("fr");
     expect(detectLanguageRequest("switch to English")).toBe("en");
     expect(detectLanguageRequest("I'd like a manicure")).toBeNull();
+  });
+
+  it("pins the language acknowledgement instead of inheriting stale context", () => {
+    const m = languageAckResponseCreate("vi") as { response: { instructions: string } };
+    expect(m.response.instructions).toContain("Vietnamese only");
+    expect(m.response.instructions).toContain("latest request");
   });
 
   it("resolveSwitchLanguage runs the request first, then falls back to spoken", () => {
@@ -153,6 +164,33 @@ describe("coordinator — one response at a time, priority, barge-in gating", ()
     expect(sent.filter(isResponseCreate).length).toBe(1);   // still one → no "already active"
     c.onResponseEnded("r1");                // frees the slot → queued one dispatches
     expect(sent.filter(isResponseCreate).length).toBe(2);
+  });
+
+  it("coalesces queued conversational replies so only the latest caller turn is answered", () => {
+    const { c, sent } = makeCoord();
+    const lang = () => "en";
+    c.request(plain(lang));
+    c.onResponseCreated("active");
+    c.request({ kind: "normal", build: () => ({ type: "response.create", response: { instructions: "stale" } }), language: lang });
+    c.request({ kind: "normal", build: () => ({ type: "response.create", response: { instructions: "latest" } }), language: lang });
+    c.onResponseEnded("active");
+    const creates = sent.filter(isResponseCreate) as Array<{ response?: { instructions?: string } }>;
+    expect(creates).toHaveLength(2);
+    expect(creates[1]?.response?.instructions).toBe("latest");
+  });
+
+  it("a language acknowledgement replaces stale queued replies", () => {
+    const { c, sent } = makeCoord();
+    const lang = () => "vi";
+    c.request(plain(() => "zh"));
+    c.onResponseCreated("chinese");
+    c.request({ kind: "normal", build: () => ({ type: "response.create", response: { instructions: "stale Chinese" } }), language: () => "zh" });
+    c.request({ kind: "ack", build: () => languageAckResponseCreate("vi"), language: lang });
+    c.onResponseEnded("chinese");
+    const creates = sent.filter(isResponseCreate) as Array<{ response?: { instructions?: string } }>;
+    expect(creates).toHaveLength(2);
+    expect(creates[1]?.response?.instructions).toContain("Vietnamese only");
+    expect(creates.some((m) => m.response?.instructions === "stale Chinese")).toBe(false);
   });
 
   it("does NOT clear Twilio in dead air; clears only while an unprotected response plays", () => {
