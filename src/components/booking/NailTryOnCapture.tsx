@@ -7,6 +7,7 @@ import {
   inspectPixels,
   type ClientQualityCode,
 } from "@/shared/nailTryOn/imageQuality";
+import { DEFAULT_NAIL_CONFIGURATION, type NailConfiguration } from "@/shared/nailTryOn/configurator";
 
 const COPY: Record<Exclude<ClientQualityCode, "pass">, string> = {
   unsupported_format: "Use a JPEG, PNG, or WebP image. / Hãy dùng ảnh JPEG, PNG hoặc WebP.",
@@ -29,6 +30,18 @@ type Props = {
 };
 
 type CatalogDesign = { id: string; name: string; description: string | null; previewUrl: string | null };
+const LENGTHS: Array<{ value: NailConfiguration["length"]; label: string }> = [
+  { value: "natural", label: "Natural" }, { value: "short", label: "Short" }, { value: "medium", label: "Medium" }, { value: "long", label: "Long" }, { value: "extra_long", label: "Extra long" },
+];
+const SHAPES: Array<{ value: NailConfiguration["shape"]; label: string }> = [
+  { value: "natural", label: "Natural" }, { value: "square", label: "Square" }, { value: "round", label: "Round" }, { value: "oval", label: "Oval" }, { value: "almond", label: "Almond" }, { value: "coffin", label: "Coffin" }, { value: "stiletto", label: "Stiletto" },
+];
+const COLORS: Array<{ value: NailConfiguration["color"]; label: string; swatch: string }> = [
+  { value: "design", label: "Design", swatch: "linear-gradient(135deg,#ef4444,#f9a8d4,#60a5fa)" }, { value: "classic_red", label: "Red", swatch: "#a4161a" }, { value: "soft_pink", label: "Pink", swatch: "#e8b4b8" }, { value: "nude", label: "Nude", swatch: "#d9b49f" }, { value: "burgundy", label: "Burgundy", swatch: "#6f1d2c" }, { value: "black", label: "Black", swatch: "#151515" }, { value: "white", label: "White", swatch: "#f8f8f5" },
+];
+const FINISHES: Array<{ value: NailConfiguration["finish"]; label: string }> = [
+  { value: "glossy", label: "Glossy" }, { value: "matte", label: "Matte" }, { value: "chrome", label: "Chrome" }, { value: "cat_eye", label: "Cat-eye" },
+];
 export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
   const [consented, setConsented] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -44,6 +57,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [selectedDesign, setSelectedDesign] = useState<CatalogDesign | null>(null);
   const [generationSeconds, setGenerationSeconds] = useState(0);
+  const [configuration, setConfiguration] = useState<NailConfiguration>(DEFAULT_NAIL_CONFIGURATION);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => () => {
@@ -142,7 +156,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
     try {
       const response = await fetch("/api/nail-tryon/generate", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, designId }),
+        body: JSON.stringify({ sessionId, designId, configuration }),
       });
       const payload = await response.json() as { previewUrl?: string; error?: string; retryable?: boolean };
       if (response.status === 409 && payload.error === "generation_in_progress") {
@@ -171,8 +185,15 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
       {step === "catalog" ? (
         <section className="rounded-3xl border border-neutral-200 bg-white p-5 shadow-xl shadow-black/5 sm:p-7">
           <p className="text-xs font-semibold uppercase tracking-widest text-neutral-500">Step 2 of 3</p>
-          <h2 className="mt-2 text-2xl font-semibold text-neutral-950">Choose a salon design</h2>
+          <h2 className="mt-2 text-2xl font-semibold text-neutral-950">Build your nail look</h2>
           {serverWarning ? <p className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900" role="status">{serverWarning}</p> : null}
+          <div className="mt-5 space-y-5">
+            <fieldset><legend className="text-sm font-semibold text-neutral-900">1. Length / Độ dài</legend><div className="mt-2 flex flex-wrap gap-2">{LENGTHS.map((option) => <button key={option.value} type="button" aria-pressed={configuration.length === option.value} onClick={() => setConfiguration((current) => ({ ...current, length: option.value }))} className={`rounded-full border px-3 py-2 text-xs font-semibold ${configuration.length === option.value ? "border-neutral-950 bg-neutral-950 text-white" : "border-neutral-300 text-neutral-700"}`}>{option.label}</button>)}</div></fieldset>
+            <fieldset><legend className="text-sm font-semibold text-neutral-900">2. Shape / Dáng móng</legend><div className="mt-2 flex flex-wrap gap-2">{SHAPES.map((option) => <button key={option.value} type="button" aria-pressed={configuration.shape === option.value} onClick={() => setConfiguration((current) => ({ ...current, shape: option.value }))} className={`rounded-full border px-3 py-2 text-xs font-semibold ${configuration.shape === option.value ? "border-neutral-950 bg-neutral-950 text-white" : "border-neutral-300 text-neutral-700"}`}>{option.label}</button>)}</div></fieldset>
+            <fieldset><legend className="text-sm font-semibold text-neutral-900">3. Color / Màu</legend><div className="mt-2 grid grid-cols-4 gap-2">{COLORS.map((option) => <button key={option.value} type="button" aria-pressed={configuration.color === option.value} onClick={() => setConfiguration((current) => ({ ...current, color: option.value }))} className={`rounded-2xl border p-2 text-center text-[11px] font-semibold ${configuration.color === option.value ? "border-neutral-950 ring-2 ring-neutral-950/20" : "border-neutral-200"}`}><span className="mx-auto block h-8 w-8 rounded-full border border-black/10" style={{ background: option.swatch }} /><span className="mt-1 block">{option.label}</span></button>)}</div></fieldset>
+            <fieldset><legend className="text-sm font-semibold text-neutral-900">4. Finish / Hiệu ứng</legend><div className="mt-2 flex flex-wrap gap-2">{FINISHES.map((option) => <button key={option.value} type="button" aria-pressed={configuration.finish === option.value} onClick={() => setConfiguration((current) => ({ ...current, finish: option.value }))} className={`rounded-full border px-3 py-2 text-xs font-semibold ${configuration.finish === option.value ? "border-neutral-950 bg-neutral-950 text-white" : "border-neutral-300 text-neutral-700"}`}>{option.label}</button>)}</div></fieldset>
+          </div>
+          <h3 className="mt-6 text-sm font-semibold text-neutral-900">5. Decoration / Mẫu trang trí</h3>
           {designs.length ? <div className="mt-5 grid grid-cols-2 gap-3">{designs.map((design) => (
             <button key={design.id} type="button" disabled={busy} onClick={() => void generate(design.id)} className="overflow-hidden rounded-2xl border border-neutral-200 text-left transition hover:border-neutral-500 disabled:opacity-60">
               {design.previewUrl ? <img src={design.previewUrl} alt={design.name} className="aspect-square w-full object-cover" /> : <div className="aspect-square bg-neutral-100" />}

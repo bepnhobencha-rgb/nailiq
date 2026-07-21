@@ -4,6 +4,7 @@ import OpenAI, { toFile } from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { prepareTryOnImage } from "./imagePipeline";
+import { configurationPrompt, type NailConfiguration } from "./configurator";
 
 export const TRYON_COOKIE = "nailiq_tryon";
 export const QUALITY_MODEL = process.env.NAIL_TRYON_QUALITY_MODEL || "gpt-5.6-luna";
@@ -44,6 +45,7 @@ export async function generateNailPreview(args: {
   designMime?: string;
   designName: string;
   promptHint?: string | null;
+  configuration: NailConfiguration;
 }) {
   const [hand, design] = await Promise.all([
     prepareTryOnImage(args.hand, 1280),
@@ -59,7 +61,8 @@ export async function generateNailPreview(args: {
       "Edit the FIRST image only. Apply the nail art shown in the SECOND reference image to the five visible fingernail plates.",
       `Design name: ${args.designName}.`,
       args.promptHint ? `Salon guidance: ${args.promptHint}.` : "",
-      "Preserve the original hand anatomy, finger count, skin, pose, jewelry, lighting, camera angle, and background exactly. Do not change nail length or shape. Do not add fingers, hands, text, logos, rings, or other objects. Keep the result photorealistic. Change nail surfaces only.",
+      configurationPrompt(args.configuration),
+      "Preserve the original hand anatomy, finger count, skin, pose, jewelry, lighting, camera angle, and background exactly. Do not add fingers, hands, text, logos, rings, or other objects. Keep the result photorealistic. Change only the five nails and any requested salon nail extensions.",
     ].filter(Boolean).join(" "),
     quality: "low",
     output_format: "jpeg",
