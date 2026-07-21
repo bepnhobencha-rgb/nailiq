@@ -74,6 +74,10 @@ wss.on("connection", (twilioWs) => {
   // The session.update carrying the salon's brain has been sent — until then we
   // do not forward caller audio (it would be handled with the default config).
   let sessionConfigured = false;
+  // Has the agent produced ANY audio yet? If the opening lookup_customer runs
+  // before a single word was spoken, the caller is sitting in dead air — we must
+  // let a reply through to greet, not suppress it.
+  let greetingSpoken = false;
   // The agent asked to end the call (end_call). Hang up once its farewell has
   // finished playing — never mid-word.
   let hangupPending = false;
@@ -246,10 +250,12 @@ wss.on("connection", (twilioWs) => {
           build: () => sayThisResponseCreate(sayThis, currentLang),
           language: () => currentLang,
         });
-      } else if (!isOpeningLookup) {
-        // The opening response has already greeted the caller. Its background
-        // lookup must enrich the conversation silently, otherwise the forced
-        // follow-up repeats the greeting/question before the caller can answer.
+      } else if (!isOpeningLookup || !greetingSpoken) {
+        // Normally the opening lookup enriches silently — the opening response
+        // already greeted, so a forced follow-up would just repeat it. BUT if the
+        // agent called lookup_customer WITHOUT speaking first (greetingSpoken is
+        // still false), the caller is sitting in dead air on pickup — let the
+        // reply through so it finally greets (now personalised by the lookup).
         coordinator.request({ kind: "normal", build: plainResponseCreate, language: () => currentLang });
       }
     } finally {
@@ -374,6 +380,7 @@ wss.on("connection", (twilioWs) => {
       const audio = extractAudioDelta(evt);
       if (audio && streamSid) {
         lastProgressAt = Date.now();   // the pipeline is producing audio — not stalled
+        greetingSpoken = true;         // the caller has now heard the agent speak
         twilioWs.send(JSON.stringify(twilioMediaFrame(streamSid, audio)));
         return;
       }
