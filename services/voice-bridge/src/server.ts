@@ -25,7 +25,6 @@ import {
   twilioClearFrame,
   functionCallOutput,
   plainResponseCreate,
-  languageAckResponseCreate,
   extractSayThis,
   sayThisResponseCreate,
   createResponseCoordinator,
@@ -65,10 +64,6 @@ wss.on("connection", (twilioWs) => {
   let lastUserUtterance = "";
   let currentLang = "en";
   let switchingLang = false;
-  // How many tool calls are mid-flight. A confirm_booking that is running may be
-  // about to return a protected say_this, so a language switch during it must NOT
-  // fire its own acknowledgement — the say_this confirms in the new language.
-  let toolInFlight = 0;
   let userTurnCount = 0;
   const handledToolCallIds = new Set<string>();
   // The session.update carrying the salon's brain has been sent — until then we
@@ -147,16 +142,11 @@ wss.on("connection", (twilioWs) => {
           transcribeLang: target, interruptResponse: !coordinator.isProtectedActive(),
         })));
       }
-      // Acknowledge in the new language — but only if no tool result is pending
-      // (a say_this from it would confirm in the new language on its own, and the
-      // coordinator drops the ack anyway once that protected line is queued).
-      if (toolInFlight === 0) {
-        coordinator.request({
-          kind: "ack",
-          build: () => languageAckResponseCreate(currentLang),
-          language: () => currentLang,
-        });
-      }
+      // No separate acknowledgement response. The per-turn reply (fired on
+      // input_audio_buffer.committed) already answers THIS turn in the caller's
+      // spoken language — a second "ack" response produced a confusing double turn
+      // that re-asked for things already known. The session.update above makes the
+      // new language stick for every following turn.
       console.log(`[voice-bridge] switched language → ${target}`);
     } catch { /* best-effort — the call continues in the current language */ }
     finally { switchingLang = false; }
@@ -226,8 +216,7 @@ wss.on("connection", (twilioWs) => {
     // while lookup_customer is in flight; that must not turn the silent opening
     // enrichment into a late duplicate greeting when the result returns.
     const isOpeningLookup = name === "lookup_customer" && userTurnCount === 0;
-    toolInFlight++;   // a switch during this must not fire its own ack (say_this may confirm instead)
-    try {
+    {
       let result: unknown;
       try {
         const r = await fetch(`${NEXT_APP_URL}/api/voice/tool`, {
@@ -266,8 +255,6 @@ wss.on("connection", (twilioWs) => {
         // reply through so it finally greets (now personalised by the lookup).
         coordinator.request({ kind: "normal", build: plainResponseCreate, language: () => currentLang });
       }
-    } finally {
-      toolInFlight--;
     }
   };
 
