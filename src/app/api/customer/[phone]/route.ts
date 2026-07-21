@@ -34,7 +34,18 @@ export async function GET(
   // booking calls this a handful of times; a scraper hits it continuously.
   // Fails open on a limiter outage — never blocks a real booking.
   const ip = clientIp(_req);
-  if (await isOverRateLimit(`customer-lookup:${ip}`, 30, 60)) {
+  // A full Playwright shard makes many legitimate requests from one loopback
+  // IP. Bypass only in the isolated GitHub E2E runtime; Vercel can never meet
+  // this guard, even if a test flag is copied into its environment by mistake.
+  const bypassRateLimitForE2E =
+    process.env.CI === "true" &&
+    process.env.NAILIQ_TEST_BYPASS_SLUG_PIN === "1" &&
+    process.env.DISABLE_OUTBOUND_SMS === "1" &&
+    !process.env.VERCEL;
+  if (
+    !bypassRateLimitForE2E &&
+    (await isOverRateLimit(`customer-lookup:${ip}`, 30, 60))
+  ) {
     return NextResponse.json<CustomerLookupResponse>({ found: false }, { status: 429 });
   }
 
