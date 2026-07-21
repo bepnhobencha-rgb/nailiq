@@ -96,7 +96,15 @@ wss.on("connection", (twilioWs) => {
   // exactly one response active, queues the rest, gives a protected say_this
   // priority, and tracks responses by id so one response's end never tears down
   // another's barge-in protection.
-  const coordinator = createResponseCoordinator((msg) => openaiWs?.send(JSON.stringify(msg)));
+  const coordinator = createResponseCoordinator((msg) => {
+    // Reset the watchdog clock whenever a response is DISPATCHED, so its 8s
+    // window measures time-since-dispatch — not stale history. Without this, the
+    // first reply after a long caller silence looked "stalled for 11s" the instant
+    // it dispatched, and the watchdog recovered a coordinator that was perfectly
+    // fine (false positive).
+    if ((msg as { type?: string }).type === "response.create") lastProgressAt = Date.now();
+    openaiWs?.send(JSON.stringify(msg));
+  });
 
   // Stall watchdog. A response.done can be missed (id mismatch), leaving the
   // coordinator "busy" forever so it never speaks again — the caller hears dead
