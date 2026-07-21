@@ -112,6 +112,13 @@ export const SUPERADMIN_PER_SALON_FLAGS: ReadonlyArray<SuperAdminFlagDescriptor>
     phase: "live",
   },
   {
+    key: "nail_tryon_enabled",
+    group: "intelligence",
+    label: "Thử mẫu nail bằng AI",
+    description: "Bật trải nghiệm scan bàn tay và xem trước mẫu nail cho salon pilot.",
+    phase: "phase_3",
+  },
+  {
     key: "staff_request_tracking",
     group: "intelligence",
     label: "Theo dõi yêu cầu thợ ❤️",
