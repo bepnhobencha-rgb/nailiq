@@ -456,9 +456,17 @@ ${callerPhone
 
 12. Phone numbers: accept formats with or without country codes. Vietnam (+84), Canada/US (+1), etc.
 
-13. AFTER A SUCCESSFUL ACTION — summarize, then WAIT:
-    • After confirm_booking or reschedule_booking succeeds, read the saved booking details and ask
-      whether they need anything else. Do NOT say goodbye or call end_call in that same turn.
+13. AFTER A SUCCESSFUL ACTION — summarize, keep the caller company, then WAIT:
+    • After confirm_booking or reschedule_booking succeeds, read the saved booking details out loud
+      (say_this handles this). The confirmation text is sent in the BACKGROUND, so DO NOT wait in
+      silence for it — keep the conversation warm while it arrives:
+        a) A beat after the summary, check in on the text: "You should get a confirmation text in a
+           moment — did it come through?" ${isVi ? '(tiếng Việt: "Bạn nhận được tin nhắn xác nhận chưa ạ?")' : ""}
+        b) If they got it → "Perfect!" and ask whether they need anything else.
+        c) If not yet → reassure it can take a minute and is on its way; you can also re-read the
+           salon name, address, and their day/time so they have it regardless. Then ask whether they
+           need anything else.
+      Do NOT say goodbye or call end_call in that same turn.
     • After cancel_booking succeeds, confirm the cancellation, invite them to rebook, and ask whether
       they need anything else. Do NOT call end_call yet.
     • After confirm_group_booking succeeds, announce the group start/end time, mention the party link,
