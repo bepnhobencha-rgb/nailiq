@@ -114,11 +114,28 @@ describe("router — language request beats spoken-language detection", () => {
     expect(detectLanguageRequest("I'd like a manicure")).toBeNull();
   });
 
+  // Regression: call 1452ff11 — the caller was trapped in Chinese because these
+  // phrasings (no "in/to") were missed until they physically spoke Vietnamese.
+  it("catches 'speak/continue X' and a bare trailing name — no more language trap", () => {
+    expect(detectLanguageRequest("Can you speak Vietnamese?")).toBe("vi");
+    expect(detectLanguageRequest("Can we continue Vietnamese")).toBe("vi");
+    expect(detectLanguageRequest("Can you speak Chinese?")).toBe("zh");
+    expect(detectLanguageRequest("do you speak Spanish")).toBe("es");
+    expect(detectLanguageRequest("Chinese please")).toBe("zh");
+    expect(detectLanguageRequest("Vietnamese?")).toBe("vi");
+    expect(detectLanguageRequest("français")).toBe("fr");
+    // still not tripped by ordinary booking talk
+    expect(detectLanguageRequest("Regular color")).toBeNull();
+    expect(detectLanguageRequest("tomorrow at six please")).toBeNull();
+  });
+
   it("resolveSwitchLanguage runs the request first, then falls back to spoken", () => {
     expect(resolveSwitchLanguage("Can we continue in Spanish?", "en")).toBe("es");
     expect(resolveSwitchLanguage("in english please", "en")).toBeNull();
     expect(resolveSwitchLanguage("mình muốn đặt lịch", "en")).toBe("vi");
     expect(resolveSwitchLanguage("yes okay", "en")).toBeNull();
+    // the trap: already in Chinese, caller asks (in English) for Vietnamese
+    expect(resolveSwitchLanguage("Can you speak Vietnamese?", "zh")).toBe("vi");
   });
 });
 

@@ -257,11 +257,16 @@ wss.on("connection", (twilioWs) => {
         }
         // With create_response:false the bridge drives every turn. A language
         // switch owns its own acknowledgement response; any other turn gets one
-        // normal response (even on an empty transcript, so silence never dead-airs
-        // the caller). lastUserUtterance is set first, so a booking made this turn
-        // is checked against what the caller just said.
+        // normal response. lastUserUtterance is set first, so a booking made this
+        // turn is checked against what the caller just said.
+        //
+        // An EMPTY transcript (line noise, a cough, the opening crackle) only
+        // earns a response when the coordinator is idle — otherwise the noise at
+        // call open piled a second response on top of the greeting, so the agent
+        // greeted twice before the caller said a word. A real spoken turn always
+        // gets one; genuine dead air (idle + noise) still gets a gentle re-prompt.
         const switched = txt ? maybeSwitchLanguage(txt) : false;
-        if (!switched) {
+        if (!switched && (txt || !coordinator.isBusy())) {
           coordinator.request({ kind: "normal", build: plainResponseCreate, language: () => currentLang });
         }
       }

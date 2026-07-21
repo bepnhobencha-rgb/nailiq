@@ -117,11 +117,23 @@ export function detectLanguage(text: string): "vi" | "es" | "en" | null {
  */
 export function detectLanguageRequest(text: string): SupportedLang | null {
   const t = text.toLowerCase();
-  if (/中文|mandarin|\b(in|to) chinese\b/.test(t)) return "zh";
-  if (/tiếng việt|tieng viet|\b(in|to) vietnamese\b/.test(t)) return "vi";
-  if (/\b(in|to) spanish\b|en español|en espanol|español|espanol/.test(t)) return "es";
-  if (/\b(in|to) french\b|en français|en francais|français|francais/.test(t)) return "fr";
-  if (/tiếng anh|\b(in|to) english\b|english please|en inglés|en ingles/.test(t)) return "en";
+  // Match the language name when it is asked for, not only after "in/to". Real
+  // callers say "can you speak Vietnamese?", "continue Vietnamese", "Chinese
+  // please", or just the bare name — the old "(in|to) X" rule missed all of
+  // these, so once the agent was in Chinese it refused to leave ("I can only
+  // speak Chinese") until the caller physically spoke the target language.
+  //   • a switch verb / preposition right before the name, OR
+  //   • the name at the very end of the utterance ("...speak Vietnamese?").
+  // Broad on purpose: naming a language means you want it, and a wrong switch to
+  // a NAMED language is far less bad than trapping the caller in the current one.
+  const asked = (name: string) =>
+    new RegExp(`(?:speak|speaking|talk|continue|switch|change|use|do|prefer|want|in|to)\\s+(?:the\\s+)?${name}\\b`).test(t) ||
+    new RegExp(`\\b${name}\\b\\s*(?:please)?\\s*[?.!]*$`).test(t);
+  if (/中文|國語|普通话|普通話|mandarin/.test(t) || asked("chinese")) return "zh";
+  if (/tiếng việt|tieng viet/.test(t) || asked("vietnamese")) return "vi";
+  if (/español|espanol/.test(t) || asked("spanish")) return "es";
+  if (/français|francais/.test(t) || asked("french")) return "fr";
+  if (/tiếng anh/.test(t) || asked("english")) return "en";
   return null;
 }
 
