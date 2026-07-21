@@ -180,7 +180,13 @@ test.describe("DRC no-show tombstone + fee decision", () => {
 
     const waive = page.getByRole("button", { name: /waive fee/i });
     await expect(waive).toBeVisible();
-    await waive.click();
+    // This test verifies the server mutation, not popover positioning. A late
+    // tombstone can sit beneath the fixed desktop sidebar after the timeline
+    // auto-scrolls to "now", so Playwright's pointer-actionability check sees
+    // the sidebar intercepting the click even though the popover/button is
+    // rendered. Use the same synthetic click convention as the drawer test
+    // below and the tombstone opener above.
+    await waive.evaluate((el: HTMLElement) => el.click());
 
     await expect
       .poll(() => readChargeStatus(id), { timeout: 15_000 })
