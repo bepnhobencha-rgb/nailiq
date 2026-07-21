@@ -56,16 +56,20 @@ describe("buildSystemPrompt receptionist flow", () => {
     );
   });
 
-  it("adds a tasteful one-time upsell section when enabled, and marks flagged services", () => {
+  it("adds a proactive one-time upsell step (before the summary) when enabled, and marks flagged services", () => {
     const on = buildSystemPrompt(ctx, "en", "+17788680738");
-    expect(on).toContain("UPSELL — one gentle offer");
+    expect(on).toContain("UPSELL — a required step");
+    expect(on).toContain("BEFORE you read back the booking summary");   // proactive, not on-demand
     expect(on).toContain("Offer it ONCE");
     expect(on).toContain("upsell_accepted:true");
     expect(on).toContain("★popular");        // the flagged service is tagged for the agent
+    // the confirm-before-book rule also routes through the upsell step
+    expect(on).toContain("made your ONE upsell offer");
 
-    // Disabled → no upsell section at all.
+    // Disabled → no upsell section, and the confirm rule says nothing about upsell.
     const off = buildSystemPrompt({ ...ctx, upsellEnabled: false }, "en", "+17788680738");
-    expect(off).not.toContain("UPSELL — one gentle offer");
+    expect(off).not.toContain("UPSELL — a required step");
+    expect(off).not.toContain("made your ONE upsell offer");
   });
 
   it("adds the human-voice playbook only on the phone channel (callerPhone present)", () => {
