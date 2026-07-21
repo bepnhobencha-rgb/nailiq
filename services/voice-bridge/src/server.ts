@@ -27,10 +27,10 @@ import {
   plainResponseCreate,
   extractSayThis,
   sayThisResponseCreate,
-  interruptToggleMessage,
-  createCallLifecycle,
+  createResponseCoordinator,
   extractAudioDelta,
   extractFunctionCall,
+  extractResponseId,
   isSpeechStarted,
   type TwilioInbound,
 } from "./router.js";
@@ -60,40 +60,66 @@ wss.on("connection", (twilioWs) => {
   let lastUserUtterance = "";
   let currentLang = "en";
   let switchingLang = false;
+  // How many tool calls are mid-flight. A confirm_booking that is running may be
+  // about to return a protected say_this, so a language switch during it must NOT
+  // fire its own acknowledgement — the say_this confirms in the new language.
+  let toolInFlight = 0;
   let openaiWs: WebSocket | null = null;
   let closed = false;
 
-  // Response + barge-in state machine (see router.createCallLifecycle).
-  const lifecycle = createCallLifecycle();
+  // The single response coordinator for this call — the ONLY place a
+  // response.create is emitted (server_vad create_response is off). Everything
+  // that wants the agent to speak goes through coordinator.request(); it keeps
+  // exactly one response active, queues the rest, gives a protected say_this
+  // priority, and tracks responses by id so one response's end never tears down
+  // another's barge-in protection.
+  const coordinator = createResponseCoordinator((msg) => openaiWs?.send(JSON.stringify(msg)));
 
   // Mid-call language switch. Opens in the salon's default language; if the
   // caller ASKS for another supported one ("in Spanish?") or clearly SPEAKS it,
-  // re-fetch the prompt in that language, reconfigure the live session, and
-  // immediately create a response so the agent acknowledges IN the new language.
-  // currentLang is what finalizeSession persists — the session ends in the
-  // language it actually finished in.
-  const maybeSwitchLanguage = async (userText: string) => {
-    if (switchingLang) return;
-    const target = resolveSwitchLanguage(userText, currentLang);
-    if (!target) return;
-    switchingLang = true;
+  // switch. currentLang is updated FIRST — synchronously — so a say_this that is
+  // queued behind an in-flight response is composed in the NEW language when it
+  // finally plays. The heavy reconfigure (re-fetch the prompt, session.update)
+  // runs async; the acknowledgement goes through the coordinator, which drops it
+  // if a protected say_this is already coming (that line confirms in the new
+  // language on its own). Returns true if a switch was initiated, so the caller
+  // does not ALSO fire a normal response for this turn.
+  const reconfigureLanguage = async (target: string) => {
     try {
       const r = await fetch(`${NEXT_APP_URL}/api/voice/phone-config`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-voice-bridge-secret": BRIDGE_SECRET },
         body: JSON.stringify({ slug, from, language: target }),   // no newSession → no new row
       });
-      if (!r.ok) return;
-      const c = (await r.json()) as { instructions: string; voice: string; tools: unknown[] };
-      currentLang = target;
-      openaiWs?.send(JSON.stringify(sessionUpdateMessage({
-        instructions: c.instructions, voice: c.voice, tools: c.tools, transcribeLang: target,
-      })));
-      // Acknowledge the switch immediately, in the new language.
-      openaiWs?.send(JSON.stringify(plainResponseCreate()));
+      if (r.ok) {
+        const c = (await r.json()) as { instructions: string; voice: string; tools: unknown[] };
+        // Reconfigure prompt/voice/tools + transcriber language. Preserve the
+        // live barge-in state: if a protected say_this is playing right now, keep
+        // interruption OFF so this session.update does not un-protect it.
+        openaiWs?.send(JSON.stringify(sessionUpdateMessage({
+          instructions: c.instructions, voice: c.voice, tools: c.tools,
+          transcribeLang: target, interruptResponse: !coordinator.isProtectedActive(),
+        })));
+      }
+      // Acknowledge in the new language — but only if no tool result is pending
+      // (a say_this from it would confirm in the new language on its own, and the
+      // coordinator drops the ack anyway once that protected line is queued).
+      if (toolInFlight === 0) {
+        coordinator.request({ kind: "ack", build: plainResponseCreate, language: () => currentLang });
+      }
       console.log(`[voice-bridge] switched language → ${target}`);
     } catch { /* best-effort — the call continues in the current language */ }
     finally { switchingLang = false; }
+  };
+
+  const maybeSwitchLanguage = (userText: string): boolean => {
+    if (switchingLang) return true;   // a switch is already in flight for this turn
+    const target = resolveSwitchLanguage(userText, currentLang);
+    if (!target) return false;
+    switchingLang = true;
+    currentLang = target;             // update FIRST so a queued say_this speaks the new language
+    void reconfigureLanguage(target);
+    return true;
   };
 
   // Conversation record for owner/admin review — the phone equivalent of what
@@ -121,41 +147,50 @@ wss.on("connection", (twilioWs) => {
   const closeAll = () => {
     if (closed) return;
     closed = true;
-    lifecycle.onResponseEnded();   // tear down any in-flight protection state
+    coordinator.onClose();         // stop the queue; no more sends after hangup
     void finalizeSession();
     try { openaiWs?.close(); } catch { /* noop */ }
     try { twilioWs.close(); } catch { /* noop */ }
   };
 
   const runTool = async (name: string, args: Record<string, unknown>, callId: string) => {
-    let result: unknown;
+    toolInFlight++;   // a switch during this must not fire its own ack (say_this may confirm instead)
     try {
-      const r = await fetch(`${NEXT_APP_URL}/api/voice/tool`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-voice-bridge-secret": BRIDGE_SECRET },
-        // sessionId threads the tool call into tool_log; lastUserUtterance lets
-        // the server check the booking time against what the caller just said.
-        body: JSON.stringify({ toolName: name, toolArgs: args, salonSlug: slug, callerVerifiedPhone: from, sessionId: sessionId || null, lastUserUtterance }),
-      });
-      result = await r.json().catch(() => ({ error: "tool_parse_failed" }));
-    } catch {
-      result = { error: "tool_unavailable" };
-    }
+      let result: unknown;
+      try {
+        const r = await fetch(`${NEXT_APP_URL}/api/voice/tool`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-voice-bridge-secret": BRIDGE_SECRET },
+          // sessionId threads the tool call into tool_log; lastUserUtterance lets
+          // the server check the booking time against what the caller just said.
+          body: JSON.stringify({ toolName: name, toolArgs: args, salonSlug: slug, callerVerifiedPhone: from, sessionId: sessionId || null, lastUserUtterance }),
+        });
+        result = await r.json().catch(() => ({ error: "tool_parse_failed" }));
+      } catch {
+        result = { error: "tool_unavailable" };
+      }
 
-    // Hand the tool result back, then create exactly ONE follow-up response.
-    openaiWs?.send(JSON.stringify(functionCallOutput(callId, result)));
+      // Hand the tool result back (a conversation item, NOT a response), then ask
+      // the coordinator for exactly one follow-up response — it decides when to
+      // actually emit response.create so nothing races an in-flight response.
+      openaiWs?.send(JSON.stringify(functionCallOutput(callId, result)));
 
-    const sayThis = extractSayThis(result);
-    if (sayThis) {
-      // A server-composed line (booking confirmation, OTP notice). Protect it
-      // from barge-in — disable interruption, mark the response protected — so
-      // line echo cannot cut it off, then read it verbatim in the current
-      // language. interrupt_response is restored on response end (see below).
-      lifecycle.beginProtected();
-      openaiWs?.send(JSON.stringify(interruptToggleMessage(false, currentLang)));
-      openaiWs?.send(JSON.stringify(sayThisResponseCreate(sayThis, currentLang)));
-    } else {
-      openaiWs?.send(JSON.stringify(plainResponseCreate()));
+      const sayThis = extractSayThis(result);
+      if (sayThis) {
+        // A server-composed line (booking confirmation, OTP notice). Protected:
+        // the coordinator turns barge-in OFF for it (echo cannot cut it) and reads
+        // it verbatim in the language current AT PLAY TIME, then restores barge-in
+        // when this exact response ends.
+        coordinator.request({
+          kind: "protected",
+          build: () => sayThisResponseCreate(sayThis, currentLang),
+          language: () => currentLang,
+        });
+      } else {
+        coordinator.request({ kind: "normal", build: plainResponseCreate, language: () => currentLang });
+      }
+    } finally {
+      toolInFlight--;
     }
   };
 
@@ -190,7 +225,10 @@ wss.on("connection", (twilioWs) => {
     openaiWs.on("open", () => {
       console.log("[voice-bridge] openai WS connected — sending session.update + greet");
       openaiWs?.send(JSON.stringify(sessionUpdateMessage({ instructions: cfg.instructions, voice: cfg.voice, tools: cfg.tools, transcribeLang: currentLang })));
-      openaiWs?.send(JSON.stringify({ type: "response.create" })); // greet first
+      // Greet through the coordinator — with create_response:false it is the only
+      // way a response gets made, and it keeps the greet inside the one-at-a-time
+      // discipline like every other response.
+      coordinator.request({ kind: "normal", build: plainResponseCreate, language: () => currentLang });
     });
 
     openaiWs.on("message", (raw) => {
@@ -216,19 +254,28 @@ wss.on("connection", (twilioWs) => {
         if (txt) {
           transcript.push({ role: "user", text: txt });
           lastUserUtterance = txt;   // most recent caller turn, for the time guard
-          void maybeSwitchLanguage(txt);
+        }
+        // With create_response:false the bridge drives every turn. A language
+        // switch owns its own acknowledgement response; any other turn gets one
+        // normal response (even on an empty transcript, so silence never dead-airs
+        // the caller). lastUserUtterance is set first, so a booking made this turn
+        // is checked against what the caller just said.
+        const switched = txt ? maybeSwitchLanguage(txt) : false;
+        if (!switched) {
+          coordinator.request({ kind: "normal", build: plainResponseCreate, language: () => currentLang });
         }
       }
 
-      // Response lifecycle → drives barge-in gating and protection restore. A
-      // response is "playing" between response.created and its end; a protected
-      // (say_this) response also flips interrupt_response back on when it ends —
-      // on done, cancelled, OR error, so barge-in can never stay stuck off.
+      // Response lifecycle → the coordinator gates barge-in and restores
+      // protection, always keyed to the response's own id so one response's end
+      // never finishes another. Errors clear the in-flight response and restore
+      // barge-in if it was protected, so the call is never left stuck.
       if (t === "response.created") {
-        lifecycle.onResponseCreated();
-      } else if (t === "response.done" || t === "response.cancelled" || t.includes("error")) {
-        const { restore } = lifecycle.onResponseEnded();
-        if (restore) openaiWs?.send(JSON.stringify(interruptToggleMessage(true, currentLang)));
+        coordinator.onResponseCreated(extractResponseId(evt) ?? "");
+      } else if (t === "response.done" || t === "response.cancelled") {
+        coordinator.onResponseEnded(extractResponseId(evt) ?? "");
+      } else if (t.includes("error")) {
+        coordinator.onError();
       }
 
       const audio = extractAudioDelta(evt);
@@ -237,10 +284,10 @@ wss.on("connection", (twilioWs) => {
         return;
       }
       if (isSpeechStarted(evt) && streamSid) {
-        // Only flush Twilio playback when a response is ACTUALLY playing and not
-        // protected. Clearing in dead air did nothing but muddy state; clearing
+        // Only flush Twilio playback when an UNPROTECTED response is actually
+        // playing. Clearing in dead air did nothing but muddy state; clearing
         // over a protected line let echo cut the confirmation off mid-word.
-        if (lifecycle.shouldClearOnSpeech()) {
+        if (coordinator.shouldClearOnSpeech()) {
           twilioWs.send(JSON.stringify(twilioClearFrame(streamSid)));
         }
         return;

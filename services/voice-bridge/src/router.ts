@@ -52,7 +52,11 @@ export function turnDetection(interruptResponse: boolean): object {
     threshold: 0.6,
     prefix_padding_ms: 300,
     silence_duration_ms: 700,
-    create_response: true,
+    // The coordinator is the SOLE creator of responses (see
+    // createResponseCoordinator). Auto-creation would race the coordinator's own
+    // response.create calls — two responses at once → "already active" errors and
+    // a response.done ending the wrong response's protection.
+    create_response: false,
     interrupt_response: interruptResponse,
   };
 }
@@ -198,34 +202,109 @@ export function extractSayThis(result: unknown): string | null {
   return typeof s === "string" && s.trim() ? s : null;
 }
 
+/** What a queued response will be. `protected` = a say_this line that must not
+ *  be cut by echo (barge-in off while it plays). `ack` = a language-switch
+ *  acknowledgement, dropped if a protected say_this is already coming (the
+ *  say_this confirms in the new language, so a separate ack would double up).
+ *  `auto` is never requested — it tags a response the server created on its own
+ *  (should not happen with create_response:false, but tracked defensively so our
+ *  own sends still wait for it). */
+export type ResponseKind = "normal" | "protected" | "ack" | "auto";
+
+export interface ResponseRequest {
+  kind: "normal" | "protected" | "ack";
+  /** Built lazily at DISPATCH time, so a say_this queued behind another response
+   *  is composed with whatever language is current when it actually plays — a
+   *  switch that lands while it waits still makes it come out in the new tongue. */
+  build: () => object;
+  /** Current language, read lazily, for the interrupt toggles around a protected line. */
+  language: () => string;
+}
+
 /**
- * Response + barge-in lifecycle for one call. Two facts drive every decision:
- * is a response currently PLAYING, and is it PROTECTED (say_this).
+ * The single response coordinator for one call. OpenAI Realtime allows only ONE
+ * active response at a time; with server_vad create_response:false this is the
+ * SOLE place a response.create is emitted, so nothing races it.
  *
- *   • Twilio audio is cleared on caller speech ONLY when a response is actually
- *     playing and unprotected — never in dead air (which used to flush nothing
- *     and confuse state) and never over a protected line (echo must not cut it).
- *   • Protection is torn down on ANY response end — done, cancelled, error, or
- *     socket close — and the interrupt-restore is emitted at most once per
- *     protected episode, so overlapping events cannot leave barge-in stuck off.
+ *   • request() queues; only one response is dispatched at a time; a protected
+ *     say_this jumps the queue.
+ *   • Responses are tracked by the server's response.id. Only the matching id's
+ *     end (done / cancelled / error) may finish that response — a language ack's
+ *     response.done can never restore a protected say_this's barge-in.
+ *   • interrupt_response is turned OFF right before a protected line and restored
+ *     ONLY when that exact protected response ends — at most once.
+ *   • Twilio audio is cleared on caller speech only while an UNPROTECTED response
+ *     is actually playing (activeId set) — never in dead air, never over say_this.
  */
-export function createCallLifecycle() {
-  let responseActive = false;
-  let protectedActive = false;
+export function createResponseCoordinator(send: (msg: object) => void) {
+  let closed = false;
+  let activeId: string | null = null;                 // server response.id currently playing
+  let activeKind: ResponseKind | null = null;
+  let activeLang = "en";
+  let awaiting: ResponseRequest | null = null;        // dispatched, awaiting its response.created
+  const queue: ResponseRequest[] = [];
+
+  const hasProtected = () =>
+    activeKind === "protected" ||
+    awaiting?.kind === "protected" ||
+    queue.some((r) => r.kind === "protected");
+
+  function dispatch(req: ResponseRequest) {
+    awaiting = req;
+    if (req.kind === "protected") send(interruptToggleMessage(false, req.language()));
+    send(req.build());
+  }
+
+  function pump() {
+    if (closed || activeId !== null || awaiting !== null) return; // one at a time
+    const i = queue.findIndex((r) => r.kind === "protected");     // protected first
+    const next = i >= 0 ? queue.splice(i, 1)[0] : queue.shift();
+    if (next) dispatch(next);
+  }
+
   return {
-    onResponseCreated() { responseActive = true; },
-    /** Call on response.done / response.cancelled / error / socket close.
-     *  `restore` is true exactly once when a protected line just ended. */
-    onResponseEnded(): { restore: boolean } {
-      responseActive = false;
-      const wasProtected = protectedActive;
-      protectedActive = false;
-      return { restore: wasProtected };
+    request(req: ResponseRequest) {
+      if (closed) return;
+      // A language ack is redundant when a protected say_this is already
+      // pending/active — that line confirms in the new language on its own.
+      if (req.kind === "ack" && hasProtected()) return;
+      // A protected say_this supersedes any not-yet-dispatched ack.
+      if (req.kind === "protected") {
+        for (let i = queue.length - 1; i >= 0; i--) if (queue[i]!.kind === "ack") queue.splice(i, 1);
+      }
+      queue.push(req);
+      pump();
     },
-    beginProtected() { protectedActive = true; },
-    shouldClearOnSpeech(): boolean { return responseActive && !protectedActive; },
-    isProtected(): boolean { return protectedActive; },
-    isResponseActive(): boolean { return responseActive; },
+    onResponseCreated(id: string) {
+      if (awaiting) {
+        activeId = id; activeKind = awaiting.kind; activeLang = awaiting.language();
+        awaiting = null;
+      } else {
+        activeId = id; activeKind = "auto"; // not ours — still block our sends until it ends
+      }
+    },
+    /** Call on response.done / response.cancelled with the event's response.id. */
+    onResponseEnded(id: string) {
+      if (activeId === null || id !== activeId) return; // wrong id → never end another response
+      const wasProtected = activeKind === "protected";
+      const lang = activeLang;
+      activeId = null; activeKind = null;
+      if (wasProtected) send(interruptToggleMessage(true, lang)); // restore only for the matching protected line
+      pump();
+    },
+    /** An error killed the in-flight response. Clear it (restore protection if it
+     *  was protected) and keep serving the queue so the call is never stuck. */
+    onError() {
+      const wasProtected = activeKind === "protected" || awaiting?.kind === "protected";
+      const lang = awaiting?.language() ?? activeLang;
+      activeId = null; activeKind = null; awaiting = null;
+      if (wasProtected) send(interruptToggleMessage(true, lang));
+      pump();
+    },
+    onClose() { closed = true; queue.length = 0; awaiting = null; activeId = null; activeKind = null; },
+    shouldClearOnSpeech(): boolean { return activeId !== null && activeKind !== "protected"; },
+    isProtectedActive(): boolean { return activeKind === "protected"; },
+    isBusy(): boolean { return activeId !== null || awaiting !== null; },
   };
 }
 
@@ -282,4 +361,17 @@ export function extractFunctionCall(
 /** True when the caller started speaking → we should stop OpenAI playback on Twilio (barge-in). */
 export function isSpeechStarted(evt: { type?: string }): boolean {
   return evt.type === "input_audio_buffer.speech_started";
+}
+
+/** The response.id an event refers to. response.created / .done / .cancelled all
+ *  carry `response.id`; some error events carry a top-level `response_id`. Returns
+ *  null when the event names no response. */
+export function extractResponseId(evt: {
+  response?: { id?: unknown };
+  response_id?: unknown;
+}): string | null {
+  const nested = evt.response?.id;
+  if (typeof nested === "string") return nested;
+  if (typeof evt.response_id === "string") return evt.response_id;
+  return null;
 }
