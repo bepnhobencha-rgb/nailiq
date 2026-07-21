@@ -78,6 +78,11 @@ wss.on("connection", (twilioWs) => {
   // finished playing — never mid-word.
   let hangupPending = false;
   let hangupTimer: ReturnType<typeof setTimeout> | null = null;
+  // Watchdog: last time the response pipeline made progress (audio out, or a
+  // response created/ended). If the coordinator stays busy with no progress, a
+  // response.done was likely missed and the agent has gone silent — recover.
+  let lastProgressAt = Date.now();
+  let watchdog: ReturnType<typeof setInterval> | null = null;
   let openaiWs: WebSocket | null = null;
   let closed = false;
 
@@ -88,6 +93,21 @@ wss.on("connection", (twilioWs) => {
   // priority, and tracks responses by id so one response's end never tears down
   // another's barge-in protection.
   const coordinator = createResponseCoordinator((msg) => openaiWs?.send(JSON.stringify(msg)));
+
+  // Stall watchdog. A response.done can be missed (id mismatch), leaving the
+  // coordinator "busy" forever so it never speaks again — the caller hears dead
+  // air for the rest of the call. If it stays busy with no audio/lifecycle
+  // progress for 8s, force it back to a serving state. 8s is far longer than any
+  // real response, so this only fires on a genuine stall, never mid-sentence.
+  watchdog = setInterval(() => {
+    if (closed || !coordinator.isBusy()) return;
+    if (Date.now() - lastProgressAt < 8000) return;
+    const { recovered } = coordinator.forceRecover();
+    if (recovered) {
+      lastProgressAt = Date.now();
+      console.warn("[voice-bridge] watchdog: recovered a stalled response coordinator (missed response.done?)");
+    }
+  }, 2000);
 
   // Mid-call language switch. Opens in the salon's default language; if the
   // caller ASKS for another supported one ("in Spanish?") or clearly SPEAKS it,
@@ -165,6 +185,7 @@ wss.on("connection", (twilioWs) => {
   const closeAll = () => {
     if (closed) return;
     closed = true;
+    if (watchdog) { clearInterval(watchdog); watchdog = null; }
     coordinator.onClose();         // stop the queue; no more sends after hangup
     void finalizeSession();
     try { openaiWs?.close(); } catch { /* noop */ }
@@ -302,7 +323,12 @@ wss.on("connection", (twilioWs) => {
       if (t === "response.output_audio_transcript.done" || t === "response.audio_transcript.done") {
         const txt = typeof evt.transcript === "string" ? evt.transcript.trim() : "";
         if (txt) transcript.push({ role: "ai", text: txt });
+      } else if (t === "input_audio_buffer.speech_started") {
+        // Instrumentation for the dead-air investigation — these events are
+        // otherwise hidden (suppressed as "audio" below).
+        console.log(`[voice-bridge] speech_started (busy=${coordinator.isBusy()})`);
       } else if (t === "input_audio_buffer.committed") {
+        console.log(`[voice-bridge] committed → request reply (busy=${coordinator.isBusy()})`);
         // The caller's turn just closed. Ask for the reply NOW — do not wait for
         // the transcription to come back. gpt-realtime is speech-to-speech: it
         // answers the AUDIO directly, so gating the response on Whisper finishing
@@ -330,9 +356,15 @@ wss.on("connection", (twilioWs) => {
       // never finishes another. Errors clear the in-flight response and restore
       // barge-in if it was protected, so the call is never left stuck.
       if (t === "response.created") {
-        coordinator.onResponseCreated(extractResponseId(evt) ?? "");
+        const rid = extractResponseId(evt) ?? "";
+        lastProgressAt = Date.now();
+        console.log(`[voice-bridge] response.created id=${rid || "(none)"}`);
+        coordinator.onResponseCreated(rid);
       } else if (t === "response.done" || t === "response.cancelled") {
-        coordinator.onResponseEnded(extractResponseId(evt) ?? "");
+        const rid = extractResponseId(evt) ?? "";
+        lastProgressAt = Date.now();
+        console.log(`[voice-bridge] ${t} id=${rid || "(none)"} (activeMatch=${coordinator.isBusy()})`);
+        coordinator.onResponseEnded(rid);
         // If the agent ended the call, the farewell just finished — hang up.
         if (hangupPending && !coordinator.isBusy()) scheduleHangup();
       } else if (t.includes("error")) {
@@ -341,6 +373,7 @@ wss.on("connection", (twilioWs) => {
 
       const audio = extractAudioDelta(evt);
       if (audio && streamSid) {
+        lastProgressAt = Date.now();   // the pipeline is producing audio — not stalled
         twilioWs.send(JSON.stringify(twilioMediaFrame(streamSid, audio)));
         return;
       }
