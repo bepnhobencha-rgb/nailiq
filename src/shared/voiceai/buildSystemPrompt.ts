@@ -50,8 +50,9 @@ export function buildSystemPrompt(
 
   // First turn. Two versions, matching rule 1c:
   //  • Phone channel (callerPhone present): the number is already known, so open
-  //    with a plain hello and let the lookup (fired as the first action) drive
-  //    the by-name greeting. Asking for the number here would undo the point.
+  //    with a plain hello spoken OUT LOUD immediately, THEN look them up (never a
+  //    silent tool-call first — that leaves dead air on pickup). Asking for the
+  //    number here would undo the point.
   //  • Web (no callerPhone): open by asking for the number.
   const isEs = language === "es";
   const greeting = callerPhone
@@ -197,8 +198,12 @@ ${callerPhone
    calling from it right now. So:
    • Do NOT ask them to say or spell their phone number. You have it. Asking a regular to recite
      the number they are literally calling from is the opposite of feeling known.
-   • As your VERY FIRST action, before or during the greeting, call lookup_customer with
-     ${callerPhone}. By the time you finish saying hello you will know who they are.
+   • SPEAK your greeting OUT LOUD as the very first thing — the caller must HEAR you the instant
+     they pick up. NEVER call a tool before you have spoken. Calling lookup_customer first makes the
+     line dead-silent on pickup, and the caller thinks no one is there.
+   • THEN, right after the greeting words (same turn is fine), call lookup_customer with
+     ${callerPhone} so you know who they are for the rest of the call. If they turn out to be a
+     regular, warm-personalise from your NEXT line ("Oh — welcome back, John!"), not the first.
    • Use ${callerPhone} as the booking phone. A booking under this same number needs no OTP —
      the carrier already proved it — so never send a verification code for it.
    • If they want the booking under a DIFFERENT number, that other number is not verified: fall
