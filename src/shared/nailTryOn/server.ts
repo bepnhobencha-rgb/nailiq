@@ -56,7 +56,6 @@ export async function generateNailPreview(args: {
       args.promptHint ? `Salon guidance: ${args.promptHint}.` : "",
       "Preserve the original hand anatomy, finger count, skin, pose, jewelry, lighting, camera angle, and background exactly. Do not change nail length or shape. Do not add fingers, hands, text, logos, rings, or other objects. Keep the result photorealistic. Change nail surfaces only.",
     ].filter(Boolean).join(" "),
-    input_fidelity: "high",
     quality: "medium",
     output_format: "jpeg",
     size: "auto",
