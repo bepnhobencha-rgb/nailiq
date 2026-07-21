@@ -333,6 +333,21 @@ export function createResponseCoordinator(send: (msg: object) => void) {
       pump();
     },
     onClose() { closed = true; queue.length = 0; awaiting = null; activeId = null; activeKind = null; },
+    /** Safety net for the server-side watchdog: if a response.done was missed
+     *  (e.g. its id could not be matched), activeId/awaiting stays set and pump()
+     *  can never dispatch again — the agent goes silent for the rest of the call.
+     *  Force the slot clear (restoring barge-in if a protected line was stuck) and
+     *  serve the queue. Only the watchdog calls this, and only when genuinely
+     *  stalled (busy but no audio for seconds), so it cannot cut a live response. */
+    forceRecover(): { recovered: boolean } {
+      if (activeId === null && awaiting === null) return { recovered: false };
+      const wasProtected = activeKind === "protected" || awaiting?.kind === "protected";
+      const lang = awaiting?.language() ?? activeLang;
+      activeId = null; activeKind = null; awaiting = null;
+      if (wasProtected) send(interruptToggleMessage(true, lang));
+      pump();
+      return { recovered: true };
+    },
     shouldClearOnSpeech(): boolean { return activeId !== null && activeKind !== "protected"; },
     isProtectedActive(): boolean { return activeKind === "protected"; },
     isBusy(): boolean { return activeId !== null || awaiting !== null; },
