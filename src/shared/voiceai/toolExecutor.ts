@@ -102,6 +102,13 @@ export async function executeVoiceTool(
   if (toolName === "leave_message_for_owner") {
     return handleLeaveMessageForOwner(supabase, salonSlug, toolArgs, sessionId);
   }
+  // end_call is a transport action: the phone bridge hangs up the line, and the
+  // web widget closes the chat. There is nothing to do server-side, but it must
+  // succeed (not "unknown_tool") so neither channel treats a normal goodbye as an
+  // error.
+  if (toolName === "end_call") {
+    return NextResponse.json({ ok: true });
+  }
   return NextResponse.json({ error: "unknown_tool", toolName }, { status: 400 });
 }
 
