@@ -4,88 +4,285 @@ import {
   appendAudioMessage,
   twilioMediaFrame,
   twilioClearFrame,
-  functionCallOutputMessages,
+  functionCallOutput,
+  plainResponseCreate,
+  extractSayThis,
+  sayThisResponseCreate,
+  sayThisInstruction,
+  interruptToggleMessage,
+  turnDetection,
+  createResponseCoordinator,
+  extractResponseId,
+  detectLanguageRequest,
+  resolveSwitchLanguage,
   extractAudioDelta,
   extractFunctionCall,
   isSpeechStarted,
 } from "./router";
 
+// ── helpers for reading coordinator output ──────────────────────────────────
+const isToggle = (m: unknown): boolean =>
+  !!m && typeof m === "object" && (m as { type?: string }).type === "session.update";
+const toggleValue = (m: unknown): boolean =>
+  (m as { session: { audio: { input: { turn_detection: { interrupt_response: boolean } } } } }).session.audio.input.turn_detection.interrupt_response;
+const isResponseCreate = (m: unknown): boolean => !!m && (m as { type?: string }).type === "response.create";
+const sayThisText = (m: unknown): string | undefined =>
+  (m as { response?: { instructions?: string } }).response?.instructions;
+const isSayThis = (m: unknown): boolean => isResponseCreate(m) && typeof sayThisText(m) === "string";
+
+function makeCoord() {
+  const sent: unknown[] = [];
+  const c = createResponseCoordinator((m) => sent.push(m));
+  return { c, sent };
+}
+const plain = (lang: () => string) => ({ kind: "normal" as const, build: plainResponseCreate, language: lang });
+
 describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () => {
-  it("session.update carries brain + μ-law audio + server VAD (GA shape)", () => {
+  it("session.update carries brain + μ-law audio + tuned server VAD (GA shape)", () => {
     const m = sessionUpdateMessage({ instructions: "be Lily", voice: "marin", tools: [{ name: "x" }] }) as {
       type: string;
       session: {
-        type: string;
-        instructions: string;
-        tools: unknown;
+        type: string; instructions: string; tools: unknown;
         audio: {
-          input: { format: { type: string }; turn_detection: { type: string } };
+          input: { format: { type: string }; turn_detection: { type: string; interrupt_response: boolean; create_response: boolean; silence_duration_ms: number } };
           output: { format: { type: string }; voice: string };
         };
       };
     };
     expect(m.type).toBe("session.update");
-    expect(m.session.type).toBe("realtime");
-    expect(m.session.instructions).toBe("be Lily");
     expect(m.session.audio.output.voice).toBe("marin");
     expect(m.session.audio.input.format.type).toBe("audio/pcmu");
-    expect(m.session.audio.output.format.type).toBe("audio/pcmu");
     expect(m.session.audio.input.turn_detection.type).toBe("server_vad");
-    expect(m.session.tools).toEqual([{ name: "x" }]);
+    expect(m.session.audio.input.turn_detection.interrupt_response).toBe(true);
+    expect(m.session.audio.input.turn_detection.create_response).toBe(false); // coordinator drives responses
+    expect(m.session.audio.input.turn_detection.silence_duration_ms).toBeGreaterThan(500);
   });
 
   it("Twilio media → OpenAI append, and OpenAI delta → Twilio media (pass-through base64)", () => {
     expect(appendAudioMessage("AAAB")).toEqual({ type: "input_audio_buffer.append", audio: "AAAB" });
-    expect(twilioMediaFrame("STREAM1", "ZZZZ")).toEqual({
-      event: "media",
-      streamSid: "STREAM1",
-      media: { payload: "ZZZZ" },
-    });
-  });
-
-  it("barge-in produces a Twilio clear frame", () => {
-    expect(twilioClearFrame("STREAM1")).toEqual({ event: "clear", streamSid: "STREAM1" });
+    expect(twilioMediaFrame("S1", "ZZZZ")).toEqual({ event: "media", streamSid: "S1", media: { payload: "ZZZZ" } });
+    expect(twilioClearFrame("S1")).toEqual({ event: "clear", streamSid: "S1" });
     expect(isSpeechStarted({ type: "input_audio_buffer.speech_started" })).toBe(true);
     expect(isSpeechStarted({ type: "response.audio.delta" })).toBe(false);
   });
 
-  it("extractAudioDelta tolerates both event-name variants; ignores non-audio", () => {
-    expect(extractAudioDelta({ type: "response.audio.delta", delta: "a" })).toBe("a");
+  it("extractAudioDelta / extractFunctionCall / extractResponseId behave", () => {
     expect(extractAudioDelta({ type: "response.output_audio.delta", delta: "b" })).toBe("b");
     expect(extractAudioDelta({ type: "response.text.delta", delta: "c" })).toBeNull();
-    expect(extractAudioDelta({ type: "response.audio.delta" })).toBeNull();
+    expect(extractFunctionCall({ type: "response.function_call_arguments.done", name: "x", arguments: '{"a":1}', call_id: "c1" }))
+      .toEqual({ name: "x", args: { a: 1 }, callId: "c1" });
+    expect(extractResponseId({ response: { id: "r_1" } })).toBe("r_1");
+    expect(extractResponseId({ response_id: "r_2" })).toBe("r_2");
+    expect(extractResponseId({})).toBeNull();
   });
 
-  it("extractFunctionCall parses name/args/call_id; bad JSON → empty args", () => {
-    expect(
-      extractFunctionCall({
-        type: "response.function_call_arguments.done",
-        name: "cancel_booking",
-        arguments: '{"booking_id":"b1"}',
-        call_id: "c1",
-      }),
-    ).toEqual({ name: "cancel_booking", args: { booking_id: "b1" }, callId: "c1" });
-
-    expect(
-      extractFunctionCall({
-        type: "response.function_call_arguments.done",
-        name: "x",
-        arguments: "not-json",
-        call_id: "c2",
-      }),
-    ).toEqual({ name: "x", args: {}, callId: "c2" });
-
-    expect(extractFunctionCall({ type: "response.audio.delta" })).toBeNull();
-  });
-
-  it("function result → conversation.item.create (stringified) + response.create", () => {
-    const [item, create] = functionCallOutputMessages("c1", { ok: true, id: "b1" }) as [
-      { type: string; item: { call_id: string; output: string } },
-      { type: string },
-    ];
+  it("functionCallOutput is JUST the item — no response.create bundled", () => {
+    const item = functionCallOutput("c1", { ok: true, id: "b1" }) as { type: string; item: { call_id: string; output: string } };
     expect(item.type).toBe("conversation.item.create");
-    expect(item.item.call_id).toBe("c1");
     expect(JSON.parse(item.item.output)).toEqual({ ok: true, id: "b1" });
-    expect(create.type).toBe("response.create");
+    expect(plainResponseCreate()).toEqual({ type: "response.create" });
+  });
+});
+
+describe("router — say_this", () => {
+  it("extractSayThis pulls the string, ignores everything else", () => {
+    expect(extractSayThis({ say_this: "All set!" })).toBe("All set!");
+    expect(extractSayThis({ ok: true })).toBeNull();
+    expect(extractSayThis({ say_this: "" })).toBeNull();
+    expect(extractSayThis(null)).toBeNull();
+  });
+
+  it("say_this reads verbatim in the CURRENT language, details preserved", () => {
+    const es = sayThisInstruction("All set! Booked Gel at 6:00 PM with Bella.", "es");
+    expect(es).toContain("in Spanish");
+    expect(es).toContain("6:00 PM");
+    expect(es).toContain("Bella");
+    expect(es).toContain("EXACTLY as written");
+    const r = sayThisResponseCreate("hi", "vi") as { type: string; response: { instructions: string } };
+    expect(r.type).toBe("response.create");
+    expect(r.response.instructions).toContain("in Vietnamese");
+  });
+});
+
+describe("router — language request beats spoken-language detection", () => {
+  it("detectLanguageRequest catches an explicit ask even when the ask is in English", () => {
+    expect(detectLanguageRequest("Can we continue in Spanish?")).toBe("es");
+    expect(detectLanguageRequest("can we speak in vietnamese")).toBe("vi");
+    expect(detectLanguageRequest("en français s'il vous plaît")).toBe("fr");
+    expect(detectLanguageRequest("in chinese please")).toBe("zh");
+    expect(detectLanguageRequest("switch to English")).toBe("en");
+    expect(detectLanguageRequest("I'd like a manicure")).toBeNull();
+  });
+
+  it("resolveSwitchLanguage runs the request first, then falls back to spoken", () => {
+    expect(resolveSwitchLanguage("Can we continue in Spanish?", "en")).toBe("es");
+    expect(resolveSwitchLanguage("in english please", "en")).toBeNull();
+    expect(resolveSwitchLanguage("mình muốn đặt lịch", "en")).toBe("vi");
+    expect(resolveSwitchLanguage("yes okay", "en")).toBeNull();
+  });
+});
+
+describe("router — turnDetection", () => {
+  it("server_vad, higher threshold + longer silence, coordinator drives creation, interrupt togglable", () => {
+    const on = turnDetection(true) as Record<string, unknown>;
+    expect(on.type).toBe("server_vad");
+    expect(on.create_response).toBe(false);              // bridge coordinator is the sole creator
+    expect(on.interrupt_response).toBe(true);
+    expect(on.threshold as number).toBeGreaterThan(0.5);
+    expect(on.silence_duration_ms as number).toBeGreaterThanOrEqual(700);
+    expect((turnDetection(false) as Record<string, unknown>).interrupt_response).toBe(false);
+  });
+
+  it("interruptToggleMessage is a minimal session.update touching only audio.input", () => {
+    const m = interruptToggleMessage(false, "es") as { type: string; session: { instructions?: unknown; audio: { input: { turn_detection: { interrupt_response: boolean }; transcription: { language: string } } } } };
+    expect(m.type).toBe("session.update");
+    expect(m.session.instructions).toBeUndefined();
+    expect(m.session.audio.input.turn_detection.interrupt_response).toBe(false);
+    expect(m.session.audio.input.transcription.language).toBe("es");
+  });
+});
+
+describe("coordinator — one response at a time, priority, barge-in gating", () => {
+  it("dispatches immediately when idle; queues while one is active; no double response.create", () => {
+    const { c, sent } = makeCoord();
+    const lang = () => "en";
+    c.request(plain(lang));                 // dispatch now (idle)
+    expect(sent.filter(isResponseCreate).length).toBe(1);
+    c.onResponseCreated("r1");
+    c.request(plain(lang));                 // active → queue, NOT sent
+    expect(sent.filter(isResponseCreate).length).toBe(1);   // still one → no "already active"
+    c.onResponseEnded("r1");                // frees the slot → queued one dispatches
+    expect(sent.filter(isResponseCreate).length).toBe(2);
+  });
+
+  it("does NOT clear Twilio in dead air; clears only while an unprotected response plays", () => {
+    const { c } = makeCoord();
+    expect(c.shouldClearOnSpeech()).toBe(false);   // nothing playing
+    c.request(plain(() => "en"));
+    c.onResponseCreated("r1");
+    expect(c.shouldClearOnSpeech()).toBe(true);    // intentional barge-in works
+    c.onResponseEnded("r1");
+    expect(c.shouldClearOnSpeech()).toBe(false);
+  });
+
+  it("a protected say_this is never cut by speech, and restores barge-in only on its own end", () => {
+    const { c, sent } = makeCoord();
+    const lang = () => "en";
+    c.request({ kind: "protected", build: () => sayThisResponseCreate("All set!", "en"), language: lang });
+    // dispatch = interrupt OFF, then the say_this response.create
+    expect(isToggle(sent[0]) && toggleValue(sent[0]) === false).toBe(true);
+    expect(isSayThis(sent[1])).toBe(true);
+    c.onResponseCreated("r_say");
+    expect(c.isProtectedActive()).toBe(true);
+    expect(c.shouldClearOnSpeech()).toBe(false);   // echo / "Hello" cannot cut it
+    c.onResponseEnded("r_say");
+    // restore = interrupt back ON, exactly once
+    const restores = sent.filter((m) => isToggle(m) && toggleValue(m) === true);
+    expect(restores.length).toBe(1);
+  });
+
+  it("restores after an error too (barge-in never stuck off)", () => {
+    const { c, sent } = makeCoord();
+    c.request({ kind: "protected", build: () => sayThisResponseCreate("x", "en"), language: () => "en" });
+    c.onResponseCreated("r_say");
+    c.onError();
+    expect(sent.some((m) => isToggle(m) && toggleValue(m) === true)).toBe(true);
+    expect(c.isProtectedActive()).toBe(false);
+    expect(c.isBusy()).toBe(false);
+  });
+
+  it("a wrong / stale response id never ends another response", () => {
+    const { c, sent } = makeCoord();
+    c.request({ kind: "protected", build: () => sayThisResponseCreate("x", "en"), language: () => "en" });
+    c.onResponseCreated("r_say");
+    c.onResponseEnded("r_other");                  // stale id → ignored
+    expect(c.isProtectedActive()).toBe(true);      // still protected
+    expect(sent.some((m) => isToggle(m) && toggleValue(m) === true)).toBe(false); // no restore
+  });
+
+  it("after close, no further response.create is emitted", () => {
+    const { c, sent } = makeCoord();
+    c.onClose();
+    c.request(plain(() => "en"));
+    expect(sent.filter(isResponseCreate).length).toBe(0);
+  });
+});
+
+// The exact race from call c3800b1c: "Yes" (confirm_booking in-flight), then
+// "Can we continue in Spanish?" — the two can both want a response.create.
+describe("coordinator — language-switch × say_this race (call c3800b1c)", () => {
+  it("A. switch completes BEFORE confirm result → say_this in Spanish, ack dropped, one say_this", () => {
+    const { c, sent } = makeCoord();
+    let lang = "en";
+    const L = () => lang;
+    // caller "Yes" turn → normal response that emits the function call
+    c.request(plain(L));
+    c.onResponseCreated("r_yes");
+    // switch lands first: currentLang flips, ack requested (queues behind r_yes)
+    lang = "es";
+    c.request({ kind: "ack", build: plainResponseCreate, language: L });
+    // confirm_booking result → protected say_this (drops the queued ack)
+    c.request({ kind: "protected", build: () => sayThisResponseCreate("All set! Gel at 6:00 PM with Bella.", lang), language: L });
+    c.onResponseEnded("r_yes");                    // r_yes ends → say_this dispatches (priority)
+    const sayThises = sent.filter(isSayThis);
+    expect(sayThises.length).toBe(1);              // exactly one say_this
+    expect(sayThisText(sayThises[0])).toContain("in Spanish");
+    expect(sayThisText(sayThises[0])).toContain("6:00 PM");
+    // only two responses total (the "Yes" turn + the say_this) — the ack was dropped
+    expect(sent.filter(isResponseCreate).length).toBe(2);
+  });
+
+  it("B. confirm result BEFORE switch config → say_this still comes out in Spanish (lazy build)", () => {
+    const { c, sent } = makeCoord();
+    let lang = "en";
+    const L = () => lang;
+    c.request(plain(L));
+    c.onResponseCreated("r_yes");
+    // confirm result first → protected say_this queued (still en at request time)
+    c.request({ kind: "protected", build: () => sayThisResponseCreate("All set! Gel at 6:00 PM with Bella.", lang), language: L });
+    // switch config arrives: flip lang, ack suppressed (protected already pending)
+    lang = "es";
+    c.request({ kind: "ack", build: plainResponseCreate, language: L });
+    c.onResponseEnded("r_yes");                    // dispatch say_this — built NOW, lang=es
+    const sayThises = sent.filter(isSayThis);
+    expect(sayThises.length).toBe(1);
+    expect(sayThisText(sayThises[0])).toContain("in Spanish");
+    expect(sent.filter(isResponseCreate).length).toBe(2);   // "Yes" + say_this, ack suppressed
+  });
+
+  it("C. an ack's response.done does NOT restore a protected say_this", () => {
+    const { c, sent } = makeCoord();
+    const L = () => "es";
+    // an ack is active (no protected pending when it was requested)
+    c.request({ kind: "ack", build: plainResponseCreate, language: L });
+    c.onResponseCreated("r_ack");
+    // now a protected say_this is requested → queues behind the ack
+    c.request({ kind: "protected", build: () => sayThisResponseCreate("All set!", "es"), language: L });
+    c.onResponseEnded("r_ack");                    // ack ends: must NOT restore (ack isn't protected)
+    // the ONLY toggle so far is the protected dispatch's interrupt-OFF, no restore-ON yet
+    expect(sent.filter((m) => isToggle(m) && toggleValue(m) === true).length).toBe(0);
+    c.onResponseCreated("r_say");
+    c.onResponseEnded("r_say");                    // NOW the protected line ends → restore
+    expect(sent.filter((m) => isToggle(m) && toggleValue(m) === true).length).toBe(1);
+  });
+
+  it("D. never two active responses; say_this spoken once in Spanish", () => {
+    const { c, sent } = makeCoord();
+    let lang = "en";
+    const L = () => lang;
+    // greet
+    c.request(plain(L)); c.onResponseCreated("r0"); c.onResponseEnded("r0");
+    // "Yes"
+    c.request(plain(L)); c.onResponseCreated("r_yes");
+    // switch + confirm race, both while r_yes is active
+    lang = "es";
+    c.request({ kind: "ack", build: plainResponseCreate, language: L });
+    c.request({ kind: "protected", build: () => sayThisResponseCreate("Done at 6:00 PM.", lang), language: L });
+    c.onResponseEnded("r_yes");
+    c.onResponseCreated("r_say");
+    expect(sent.filter(isSayThis).length).toBe(1);
+    expect(sayThisText(sent.filter(isSayThis)[0])).toContain("in Spanish");
+    // greet + "Yes" + say_this = 3; the ack was dropped, so no 4th response
+    expect(sent.filter(isResponseCreate).length).toBe(3);
   });
 });

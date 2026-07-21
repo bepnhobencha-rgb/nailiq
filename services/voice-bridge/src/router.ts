@@ -31,7 +31,57 @@ export type RealtimeSessionConfig = {
    *  language raises accuracy sharply — an un-hinted Vietnamese call transcribed
    *  as Arabic in testing. Omit to let Whisper auto-detect. */
   transcribeLang?: string | null;
+  /** When false, the model's current response is NOT cancelled if the caller
+   *  (or line echo) starts talking. Set false only while a protected line — the
+   *  booking confirmation / OTP notice — is being spoken, then restored to true.
+   *  Defaults to true (normal turns stay interruptible). */
+  interruptResponse?: boolean;
 };
+
+/**
+ * server_vad turn detection, tuned for 8 kHz phone audio. Defaults
+ * (threshold 0.5, silence 500ms) false-triggered on line echo and the caller's
+ * own short "Hello", cancelling the AI mid-word ("...Shall"). Raising the
+ * threshold and lengthening the silence window makes brief noise stop cutting
+ * responses. `interrupt_response` is what actually cancels; it is togglable so a
+ * protected line can play uninterrupted.
+ */
+export function turnDetection(interruptResponse: boolean): object {
+  return {
+    type: "server_vad",
+    threshold: 0.6,
+    prefix_padding_ms: 300,
+    silence_duration_ms: 700,
+    // The coordinator is the SOLE creator of responses (see
+    // createResponseCoordinator). Auto-creation would race the coordinator's own
+    // response.create calls — two responses at once → "already active" errors and
+    // a response.done ending the wrong response's protection.
+    create_response: false,
+    interrupt_response: interruptResponse,
+  };
+}
+
+/** The `audio.input` block — shared by the initial session.update and the
+ *  mid-call interrupt toggle so the two never drift. */
+export function audioInput(interruptResponse: boolean, transcribeLang?: string | null): object {
+  return {
+    format: { type: "audio/pcmu" },
+    turn_detection: turnDetection(interruptResponse),
+    transcription: {
+      model: "gpt-realtime-whisper",
+      ...(transcribeLang ? { language: transcribeLang } : {}),
+    },
+  };
+}
+
+/** Minimal session.update that toggles ONLY barge-in (and keeps the transcribe
+ *  language stable). Used to protect / un-protect a spoken line. */
+export function interruptToggleMessage(interruptResponse: boolean, transcribeLang?: string | null): object {
+  return {
+    type: "session.update",
+    session: { type: "realtime", audio: { input: audioInput(interruptResponse, transcribeLang) } },
+  };
+}
 
 /**
  * Detect the caller's language from a transcript turn, among the languages the
@@ -43,6 +93,12 @@ export type RealtimeSessionConfig = {
  *     special character, so a small function-word list backs up the accents).
  *   • English: common English function words.
  */
+export type SupportedLang = "vi" | "en" | "es" | "fr" | "zh";
+
+export const LANG_NAMES: Record<string, string> = {
+  vi: "Vietnamese", en: "English", es: "Spanish", fr: "French", zh: "Chinese",
+};
+
 export function detectLanguage(text: string): "vi" | "es" | "en" | null {
   const t = text.toLowerCase().trim();
   if (!t) return null;
@@ -50,6 +106,35 @@ export function detectLanguage(text: string): "vi" | "es" | "en" | null {
   if (/[ñ¿¡]/.test(text)) return "es";
   if (/\b(hola|gracias|quiero|cita|uñas|una|por favor|buenos|buenas|sí|para|con|cómo|qué|dónde|cuándo|mañana|hoy|reservar|pedicura|manicura|señor|señora)\b/.test(t)) return "es";
   if (/\b(the|want|book|today|tomorrow|yes|no|please|appointment|nails|hello|thanks|with|for|would|like)\b/.test(t)) return "en";
+  return null;
+}
+
+/**
+ * Detect an EXPLICIT request to switch language, e.g. "Can we continue in
+ * Spanish?" — which is English text, so detectLanguage would never catch it.
+ * Returns the REQUESTED language, or null. Distinct from detectLanguage (which
+ * reads the language actually being spoken); this must run first.
+ */
+export function detectLanguageRequest(text: string): SupportedLang | null {
+  const t = text.toLowerCase();
+  if (/中文|mandarin|\b(in|to) chinese\b/.test(t)) return "zh";
+  if (/tiếng việt|tieng viet|\b(in|to) vietnamese\b/.test(t)) return "vi";
+  if (/\b(in|to) spanish\b|en español|en espanol|español|espanol/.test(t)) return "es";
+  if (/\b(in|to) french\b|en français|en francais|français|francais/.test(t)) return "fr";
+  if (/tiếng anh|\b(in|to) english\b|english please|en inglés|en ingles/.test(t)) return "en";
+  return null;
+}
+
+/**
+ * Decide which language to switch to for a caller turn, or null to stay put.
+ * An explicit request (detectLanguageRequest) wins over the spoken-language
+ * heuristic — a caller can ASK in English to be served in Spanish.
+ */
+export function resolveSwitchLanguage(text: string, current: string): SupportedLang | null {
+  const requested = detectLanguageRequest(text);
+  if (requested) return requested !== current ? requested : null;
+  const spoken = detectLanguage(text);
+  if (spoken && spoken !== current) return spoken;
   return null;
 }
 
@@ -68,26 +153,158 @@ export function sessionUpdateMessage(cfg: RealtimeSessionConfig): object {
       instructions: cfg.instructions,
       tools: cfg.tools,
       audio: {
-        input: {
-          format: { type: "audio/pcmu" },
-          turn_detection: { type: "server_vad" },
-          // Transcribe the caller's speech. Without this the model still hears
-          // them but emits no input transcript, so a phone call leaves no record
-          // of what was said — unlike the web widget. Needed for the owner/admin
-          // call-review log. The language hint matters on 8 kHz phone audio: with
-          // it, transcription of the salon's primary language is far more
-          // accurate; without it, Whisper auto-detects and mangles it.
-          transcription: {
-            model: "gpt-realtime-whisper",
-            ...(cfg.transcribeLang ? { language: cfg.transcribeLang } : {}),
-          },
-        },
-        output: {
-          format: { type: "audio/pcmu" },
-          voice: cfg.voice,
-        },
+        input: audioInput(cfg.interruptResponse ?? true, cfg.transcribeLang),
+        output: { format: { type: "audio/pcmu" }, voice: cfg.voice },
       },
     },
+  };
+}
+
+/**
+ * A response.create that makes the model read a server-composed `say_this` line
+ * verbatim, in the CURRENT language. The details — service, date, time, staff,
+ * whether a text was sent — must survive untouched; only the surrounding wording
+ * is translated. Mirrors the web widget's protected closing so a Spanish session
+ * never ends with an English confirmation.
+ */
+export function sayThisInstruction(sayThis: string, language: string): string {
+  const langName = LANG_NAMES[language] ?? "English";
+  return (
+    `Say this to the customer now, in ${langName}, ONCE. Keep the service name, the date, the ` +
+    `time, the staff name, and whether a confirmation text was sent EXACTLY as written — translate ` +
+    `only the surrounding wording. Never say it in two languages, never add a preamble, do not ` +
+    `describe what you are doing. Then stop and wait for the customer.\n\n${sayThis}`
+  );
+}
+
+export function sayThisResponseCreate(sayThis: string, language: string): object {
+  return { type: "response.create", response: { instructions: sayThisInstruction(sayThis, language) } };
+}
+
+/** Just the tool result item — no response.create. The caller decides which
+ *  response.create follows (a protected say_this one, or the plain one), so a
+ *  tool result never triggers two responses. */
+export function functionCallOutput(callId: string, output: unknown): object {
+  return {
+    type: "conversation.item.create",
+    item: { type: "function_call_output", call_id: callId, output: JSON.stringify(output) },
+  };
+}
+
+export function plainResponseCreate(): object {
+  return { type: "response.create" };
+}
+
+/** Pull a `say_this` string out of a tool result, or null. */
+export function extractSayThis(result: unknown): string | null {
+  if (!result || typeof result !== "object") return null;
+  const s = (result as { say_this?: unknown }).say_this;
+  return typeof s === "string" && s.trim() ? s : null;
+}
+
+/** What a queued response will be. `protected` = a say_this line that must not
+ *  be cut by echo (barge-in off while it plays). `ack` = a language-switch
+ *  acknowledgement, dropped if a protected say_this is already coming (the
+ *  say_this confirms in the new language, so a separate ack would double up).
+ *  `auto` is never requested — it tags a response the server created on its own
+ *  (should not happen with create_response:false, but tracked defensively so our
+ *  own sends still wait for it). */
+export type ResponseKind = "normal" | "protected" | "ack" | "auto";
+
+export interface ResponseRequest {
+  kind: "normal" | "protected" | "ack";
+  /** Built lazily at DISPATCH time, so a say_this queued behind another response
+   *  is composed with whatever language is current when it actually plays — a
+   *  switch that lands while it waits still makes it come out in the new tongue. */
+  build: () => object;
+  /** Current language, read lazily, for the interrupt toggles around a protected line. */
+  language: () => string;
+}
+
+/**
+ * The single response coordinator for one call. OpenAI Realtime allows only ONE
+ * active response at a time; with server_vad create_response:false this is the
+ * SOLE place a response.create is emitted, so nothing races it.
+ *
+ *   • request() queues; only one response is dispatched at a time; a protected
+ *     say_this jumps the queue.
+ *   • Responses are tracked by the server's response.id. Only the matching id's
+ *     end (done / cancelled / error) may finish that response — a language ack's
+ *     response.done can never restore a protected say_this's barge-in.
+ *   • interrupt_response is turned OFF right before a protected line and restored
+ *     ONLY when that exact protected response ends — at most once.
+ *   • Twilio audio is cleared on caller speech only while an UNPROTECTED response
+ *     is actually playing (activeId set) — never in dead air, never over say_this.
+ */
+export function createResponseCoordinator(send: (msg: object) => void) {
+  let closed = false;
+  let activeId: string | null = null;                 // server response.id currently playing
+  let activeKind: ResponseKind | null = null;
+  let activeLang = "en";
+  let awaiting: ResponseRequest | null = null;        // dispatched, awaiting its response.created
+  const queue: ResponseRequest[] = [];
+
+  const hasProtected = () =>
+    activeKind === "protected" ||
+    awaiting?.kind === "protected" ||
+    queue.some((r) => r.kind === "protected");
+
+  function dispatch(req: ResponseRequest) {
+    awaiting = req;
+    if (req.kind === "protected") send(interruptToggleMessage(false, req.language()));
+    send(req.build());
+  }
+
+  function pump() {
+    if (closed || activeId !== null || awaiting !== null) return; // one at a time
+    const i = queue.findIndex((r) => r.kind === "protected");     // protected first
+    const next = i >= 0 ? queue.splice(i, 1)[0] : queue.shift();
+    if (next) dispatch(next);
+  }
+
+  return {
+    request(req: ResponseRequest) {
+      if (closed) return;
+      // A language ack is redundant when a protected say_this is already
+      // pending/active — that line confirms in the new language on its own.
+      if (req.kind === "ack" && hasProtected()) return;
+      // A protected say_this supersedes any not-yet-dispatched ack.
+      if (req.kind === "protected") {
+        for (let i = queue.length - 1; i >= 0; i--) if (queue[i]!.kind === "ack") queue.splice(i, 1);
+      }
+      queue.push(req);
+      pump();
+    },
+    onResponseCreated(id: string) {
+      if (awaiting) {
+        activeId = id; activeKind = awaiting.kind; activeLang = awaiting.language();
+        awaiting = null;
+      } else {
+        activeId = id; activeKind = "auto"; // not ours — still block our sends until it ends
+      }
+    },
+    /** Call on response.done / response.cancelled with the event's response.id. */
+    onResponseEnded(id: string) {
+      if (activeId === null || id !== activeId) return; // wrong id → never end another response
+      const wasProtected = activeKind === "protected";
+      const lang = activeLang;
+      activeId = null; activeKind = null;
+      if (wasProtected) send(interruptToggleMessage(true, lang)); // restore only for the matching protected line
+      pump();
+    },
+    /** An error killed the in-flight response. Clear it (restore protection if it
+     *  was protected) and keep serving the queue so the call is never stuck. */
+    onError() {
+      const wasProtected = activeKind === "protected" || awaiting?.kind === "protected";
+      const lang = awaiting?.language() ?? activeLang;
+      activeId = null; activeKind = null; awaiting = null;
+      if (wasProtected) send(interruptToggleMessage(true, lang));
+      pump();
+    },
+    onClose() { closed = true; queue.length = 0; awaiting = null; activeId = null; activeKind = null; },
+    shouldClearOnSpeech(): boolean { return activeId !== null && activeKind !== "protected"; },
+    isProtectedActive(): boolean { return activeKind === "protected"; },
+    isBusy(): boolean { return activeId !== null || awaiting !== null; },
   };
 }
 
@@ -106,16 +323,6 @@ export function twilioClearFrame(streamSid: string): object {
   return { event: "clear", streamSid };
 }
 
-/** Tool result back to OpenAI, then ask it to continue speaking. */
-export function functionCallOutputMessages(callId: string, output: unknown): object[] {
-  return [
-    {
-      type: "conversation.item.create",
-      item: { type: "function_call_output", call_id: callId, output: JSON.stringify(output) },
-    },
-    { type: "response.create" },
-  ];
-}
 
 /** Pull an audio-delta payload out of an OpenAI event, tolerating name variants. Returns null if not audio. */
 export function extractAudioDelta(evt: { type?: string; delta?: unknown }): string | null {
@@ -154,4 +361,17 @@ export function extractFunctionCall(
 /** True when the caller started speaking → we should stop OpenAI playback on Twilio (barge-in). */
 export function isSpeechStarted(evt: { type?: string }): boolean {
   return evt.type === "input_audio_buffer.speech_started";
+}
+
+/** The response.id an event refers to. response.created / .done / .cancelled all
+ *  carry `response.id`; some error events carry a top-level `response_id`. Returns
+ *  null when the event names no response. */
+export function extractResponseId(evt: {
+  response?: { id?: unknown };
+  response_id?: unknown;
+}): string | null {
+  const nested = evt.response?.id;
+  if (typeof nested === "string") return nested;
+  if (typeof evt.response_id === "string") return evt.response_id;
+  return null;
 }
