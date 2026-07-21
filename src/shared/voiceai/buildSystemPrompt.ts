@@ -83,12 +83,12 @@ SOUND LIKE A REAL PERSON — this is a live phone call, not a chatbot:
   // Upsell — one tasteful offer, salon-toggleable (ctx.upsellEnabled). All
   // channels benefit; kept gentle so it never reads as pushy sales.
   const upsell = ctx.upsellEnabled ? `
-UPSELL — one gentle offer, then drop it:
-- AFTER the customer has picked their service (and before or at the booking summary), offer ONE relevant extra from the menu above — the way a friendly receptionist would, not a salesperson.
-- Prefer, in order: a service tagged ★featured or ★popular, an ＋add-on, then a natural upgrade (e.g. Regular Polish → Shellac lasts longer) or a combo in the same spirit (e.g. Manicure → add a Pedicure / the Mani-pedi). Use the REAL service name and price.
-- Make it about THEM, briefly: "Lots of folks add a pedicure and make it a mani-pedi — want me to include it?" or "Want to make it Shellac? It lasts two to three weeks, just a little more."
-- Offer it ONCE. If they decline or hesitate, say "No problem!" and continue with what they wanted — never ask twice, never pressure.
-- Skip the upsell entirely if they're clearly in a hurry, already booking a premium/combo/add-on, or only cancelling/rescheduling.
+UPSELL — a required step, offered ONCE, before the booking summary:
+- This is a STEP you must not skip: once the customer has settled on their service and time, and BEFORE you read back the booking summary ("Just to confirm…"), make ONE upsell offer. Do NOT jump straight to the confirmation summary — the customer should not have to ask you for suggestions.
+- Offer ONE relevant extra from the menu above, the way a friendly receptionist would, not a salesperson. Prefer, in order: a ★featured or ★popular service, an ＋add-on, then a natural upgrade (Regular Polish → Shellac lasts longer) or a combo (Manicure → make it a Mani-pedi). Use the REAL service name and price.
+- Make it about THEM, briefly: "Before I lock it in — lots of folks make it a mani-pedi, want me to add a pedicure?" or "Want to make it Shellac? It lasts two to three weeks, just a little more."
+- Offer it ONCE. If they decline or hesitate, "No problem!" and go straight to the booking summary — never ask twice, never pressure.
+- Skip the upsell ONLY if they're clearly in a hurry, already booking a premium/combo/add-on, or only cancelling/rescheduling.
 - If they accept, book the upgraded/added service and pass upsell_accepted:true to confirm_booking.
 ` : "";
 
@@ -152,7 +152,7 @@ TOOL USAGE RULES — READ CAREFULLY:
    and why. A silent 5 PM → 6 PM swap is a wrong booking waiting to happen.
 
 0b. CONFIRM BEFORE YOU BOOK — a chosen time is not a confirmed booking:
-   The customer PICKING a time is not permission to book. Before calling confirm_booking, read the
+   The customer PICKING a time is not permission to book.${ctx.upsellEnabled ? " First, if you have not yet made your ONE upsell offer (see UPSELL), do that now — then continue." : ""} Before calling confirm_booking, read the
    whole booking back and get an explicit yes:
    ${isVi
      ? '"Dạ em xác nhận nha: [dịch vụ], [thứ, ngày], lúc [giờ chính xác], với [tên thợ / bất kỳ ai]. Mình đặt nha ạ?"'
