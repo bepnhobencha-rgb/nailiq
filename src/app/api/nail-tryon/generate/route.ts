@@ -6,19 +6,20 @@ import { generateNailPreview, IMAGE_MODEL, TRYON_COOKIE } from "@/shared/nailTry
 import { verifySessionCredential } from "@/shared/nailTryOn/sessionCredential";
 import { recordNailTryOnEvent } from "@/shared/nailTryOn/telemetry";
 import { safeProviderError } from "@/shared/nailTryOn/providerError";
+import { GENERATION_STALE_MS, isGenerationStale } from "@/shared/nailTryOn/generationLease";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const bodySchema = z.object({ sessionId: z.string().uuid(), designId: z.string().uuid() });
-type SessionRow = { id: string; salon_id: string; anonymous_token_hash: string; source_image_path: string; result_image_path: string | null; status: string };
+type SessionRow = { id: string; salon_id: string; anonymous_token_hash: string; source_image_path: string; result_image_path: string | null; status: string; updated_at: string };
 type DesignRow = { id: string; salon_id: string; name: string; preview_path: string; prompt_hint: string | null; version: number };
 
 export async function POST(request: Request) {
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   const db = createServiceRoleClient();
-  const { data: rawSession } = await db.from("nail_tryon_sessions" as never).select("id, salon_id, anonymous_token_hash, source_image_path, result_image_path, status").eq("id", parsed.data.sessionId).maybeSingle();
+  const { data: rawSession } = await db.from("nail_tryon_sessions" as never).select("id, salon_id, anonymous_token_hash, source_image_path, result_image_path, status, updated_at").eq("id", parsed.data.sessionId).maybeSingle();
   const session = rawSession as unknown as SessionRow | null;
   const cookie = (await cookies()).get(TRYON_COOKIE)?.value;
   if (!session || !verifySessionCredential(cookie, session.id, session.anonymous_token_hash)) return NextResponse.json({ error: "not_found" }, { status: 404 });
@@ -26,7 +27,24 @@ export async function POST(request: Request) {
     const { data: signed } = await db.storage.from("nail-tryon").createSignedUrl(session.result_image_path, 300);
     return NextResponse.json({ status: "ready", previewUrl: signed?.signedUrl });
   }
-  if (session.status !== "quality_passed" && session.status !== "failed") {
+  let claimableStatus = session.status;
+  if (session.status === "generating") {
+    if (!isGenerationStale(session.updated_at)) {
+      return NextResponse.json({ error: "generation_in_progress", retryable: true }, { status: 409, headers: { "Retry-After": "15" } });
+    }
+    const staleBefore = new Date(Date.now() - GENERATION_STALE_MS).toISOString();
+    const { data: recovered } = await db.from("nail_tryon_sessions" as never)
+      .update({ status: "quality_passed", error_code: "generation_timeout", updated_at: new Date().toISOString() } as never)
+      .eq("id", session.id)
+      .eq("status", "generating")
+      .eq("updated_at", session.updated_at)
+      .lt("updated_at", staleBefore)
+      .select("id")
+      .maybeSingle();
+    if (recovered) claimableStatus = "quality_passed";
+    else return NextResponse.json({ error: "generation_in_progress", retryable: true }, { status: 409, headers: { "Retry-After": "15" } });
+  }
+  if (claimableStatus !== "quality_passed" && claimableStatus !== "failed") {
     return NextResponse.json({ error: "invalid_state" }, { status: 409 });
   }
 
