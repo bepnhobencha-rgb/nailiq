@@ -5,6 +5,7 @@ import { loadPublicNailTryOnSalon } from "@/shared/nailTryOn/publicSalon";
 import { inspectHandPhoto, TRYON_COOKIE } from "@/shared/nailTryOn/server";
 import { createSessionCredential } from "@/shared/nailTryOn/sessionCredential";
 import { recordNailTryOnEvent } from "@/shared/nailTryOn/telemetry";
+import { decideServerQuality } from "@/shared/nailTryOn/qualityPolicy";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -72,18 +73,24 @@ export async function POST(request: Request) {
 
   try {
     const verdict = await inspectHandPhoto(normalized);
-    const passed = verdict.verdict === "pass" && verdict.visibleNails === 5;
-    const qualityCode = verdict.verdict === "pass" ? "nails_occluded" : verdict.verdict;
+    const decision = decideServerQuality(verdict);
+    const passed = decision.passed;
+    const qualityCode = decision.code;
     await db.from("nail_tryon_sessions" as never).update({
       status: passed ? "quality_passed" : "quality_rejected",
-      quality_code: passed ? null : qualityCode,
+      quality_code: qualityCode,
       provider: "openai",
       provider_model: process.env.NAIL_TRYON_QUALITY_MODEL || "gpt-5.6-luna",
       updated_at: new Date().toISOString(),
     } as never).eq("id", sessionId);
 
-    const response = NextResponse.json({ sessionId, quality: passed ? "pass" : qualityCode, reason: verdict.reason }, { status: passed ? 201 : 422 });
-    await recordNailTryOnEvent({ salonId: salon.id, sessionId, event: passed ? "quality_passed" : "quality_rejected", properties: { code: passed ? "pass" : qualityCode, visibleNails: verdict.visibleNails } });
+    const response = NextResponse.json({
+      sessionId,
+      quality: passed ? "pass" : qualityCode,
+      warning: decision.warning,
+      reason: verdict.reason,
+    }, { status: passed ? 201 : 422 });
+    await recordNailTryOnEvent({ salonId: salon.id, sessionId, event: passed ? "quality_passed" : "quality_rejected", properties: { code: passed ? (decision.warning ? qualityCode : "pass") : qualityCode, warning: decision.warning, visibleNails: verdict.visibleNails } });
     response.cookies.set(TRYON_COOKIE, credential.cookieValue, {
       httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 24 * 60 * 60,
     });

@@ -9,14 +9,18 @@ import {
 } from "@/shared/nailTryOn/imageQuality";
 
 const COPY: Record<Exclude<ClientQualityCode, "pass">, string> = {
-  unsupported_format: "Use a JPEG, PNG, or WebP image.",
-  file_too_large: "This photo is over 10 MB. Choose a smaller image.",
-  resolution_too_low: "Move closer and retake—the hand needs more detail.",
-  resolution_too_high: "This image is too large to process safely. Choose a smaller photo.",
-  too_dark: "Add soft light so every nail is clearly visible.",
-  too_bright: "Reduce glare or direct flash, then retake.",
-  blurred: "Hold still and tap to focus before retaking.",
+  unsupported_format: "Use a JPEG, PNG, or WebP image. / Hãy dùng ảnh JPEG, PNG hoặc WebP.",
+  file_too_large: "This photo is over 10 MB. / Ảnh lớn hơn 10 MB.",
+  resolution_too_low: "Move closer—the hand needs more detail. / Hãy chụp gần hơn để thấy rõ móng.",
+  resolution_too_high: "Choose a smaller image. / Hãy chọn ảnh có kích thước nhỏ hơn.",
+  too_dark: "The preview may be less accurate in low light. / Ảnh tối có thể làm kết quả kém chính xác.",
+  too_bright: "Glare may reduce preview accuracy. / Ánh sáng chói có thể làm kết quả kém chính xác.",
+  blurred: "This photo looks a little soft, but you may continue. / Ảnh hơi mờ nhưng bạn vẫn có thể tiếp tục.",
 };
+
+const BLOCKING_CLIENT_CODES = new Set<ClientQualityCode>([
+  "unsupported_format", "file_too_large", "resolution_too_low", "resolution_too_high",
+]);
 
 type Props = {
   salonName: string;
@@ -36,6 +40,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
   const [step, setStep] = useState<"capture" | "catalog" | "result">("capture");
   const [busy, setBusy] = useState(false);
   const [serverMessage, setServerMessage] = useState<string | null>(null);
+  const [serverWarning, setServerWarning] = useState<string | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -84,6 +89,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
     setFileName("");
     setPhoto(null);
     setServerMessage(null);
+    setServerWarning(null);
     if (inputRef.current) inputRef.current.value = "";
   }
 
@@ -97,10 +103,13 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
     form.set("consent_version", "nail-tryon-v1");
     try {
       const response = await fetch("/api/nail-tryon/upload", { method: "POST", body: form });
-      const payload = await response.json() as { sessionId?: string; quality?: string; reason?: string; error?: string };
+      const payload = await response.json() as { sessionId?: string; quality?: string; warning?: boolean; reason?: string; error?: string };
       if (!response.ok || !payload.sessionId || payload.quality !== "pass") {
         setServerMessage(payload.reason || "We could not verify five visible nails. Retake with one hand, palm down.");
         return;
+      }
+      if (payload.warning) {
+        setServerWarning("We can continue, but the AI result may be less accurate. / Bạn vẫn có thể tiếp tục, nhưng kết quả AI có thể kém chính xác hơn.");
       }
       setSessionId(payload.sessionId);
       const catalogResponse = await fetch(`/api/nail-tryon/catalog?slug=${encodeURIComponent(salonSlug)}`);
@@ -148,6 +157,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
         <section className="rounded-3xl border border-neutral-200 bg-white p-5 shadow-xl shadow-black/5 sm:p-7">
           <p className="text-xs font-semibold uppercase tracking-widest text-neutral-500">Step 2 of 3</p>
           <h2 className="mt-2 text-2xl font-semibold text-neutral-950">Choose a salon design</h2>
+          {serverWarning ? <p className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900" role="status">{serverWarning}</p> : null}
           {designs.length ? <div className="mt-5 grid grid-cols-2 gap-3">{designs.map((design) => (
             <button key={design.id} type="button" disabled={busy} onClick={() => void generate(design.id)} className="overflow-hidden rounded-2xl border border-neutral-200 text-left transition hover:border-neutral-500 disabled:opacity-60">
               {design.previewUrl ? <img src={design.previewUrl} alt={design.name} className="aspect-square w-full object-cover" /> : <div className="aspect-square bg-neutral-100" />}
@@ -199,11 +209,12 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
                   <div className="mt-2 rounded-2xl bg-emerald-50 p-4 text-emerald-900" role="status"><p className="font-semibold">Photo looks ready</p><p className="mt-1 text-sm">Next, NailIQ will verify that exactly one hand and five nails are visible.</p></div>
                 ) : null}
                 {quality && quality !== "checking" && quality !== "pass" ? (
-                  <div className="mt-2 rounded-2xl bg-amber-50 p-4 text-amber-950" role="alert"><p className="font-semibold">Please retake this photo</p><p className="mt-1 text-sm">{COPY[quality]}</p></div>
+                  <div className="mt-2 rounded-2xl bg-amber-50 p-4 text-amber-950" role="alert"><p className="font-semibold">{BLOCKING_CLIENT_CODES.has(quality) ? "Please choose another photo / Hãy chọn ảnh khác" : "Photo quality warning / Cảnh báo chất lượng ảnh"}</p><p className="mt-1 text-sm">{COPY[quality]}</p></div>
                 ) : null}
                 <button type="button" onClick={reset} className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-neutral-300 px-5 font-semibold text-neutral-800"><RotateCcw className="h-4 w-4" aria-hidden />Retake</button>
                 {serverMessage ? <p className="mt-3 rounded-2xl bg-red-50 p-4 text-sm text-red-800" role="alert">{serverMessage}</p> : null}
-                {quality === "pass" ? <button type="button" disabled={busy} onClick={() => void uploadAndVerify()} className="mt-3 min-h-12 w-full rounded-full bg-neutral-950 px-5 font-semibold text-white disabled:bg-neutral-300 disabled:text-neutral-600">{busy ? "Verifying hand and nails…" : "Continue to designs"}</button> : null}
+                {serverWarning ? <p className="mt-3 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900" role="status">{serverWarning}</p> : null}
+                {quality && quality !== "checking" && !BLOCKING_CLIENT_CODES.has(quality) ? <button type="button" disabled={busy} onClick={() => void uploadAndVerify()} className="mt-3 min-h-12 w-full rounded-full bg-neutral-950 px-5 font-semibold text-white disabled:bg-neutral-300 disabled:text-neutral-600">{busy ? "Verifying hand and nails…" : quality === "pass" ? "Continue to designs" : "Continue anyway / Vẫn tiếp tục"}</button> : null}
               </div>
             </div>
           )}
