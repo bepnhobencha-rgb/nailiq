@@ -25,6 +25,7 @@ import { BookingLanguageToggle } from "@/components/booking/BookingLanguageToggl
 import { BookingChatWidget } from "@/components/booking/BookingChatWidget";
 import { getSalonLocalBusinessJsonLd } from "@/shared/seo/jsonLd";
 import { resolveVertical } from "@/shared/verticals/registry";
+import { loadPublicNailTryOnSalon } from "@/shared/nailTryOn/publicSalon";
 
 /** Avoid stale static segments for salons created after deploy. */
 export const dynamic = "force-dynamic";
@@ -165,6 +166,7 @@ async function PublicBookingRouteBody({
   const pageSections = load.salon.publicSectionsEnabled
     ? await loadSalonPageSections(load.salon.id)
     : [];
+  const nailTryOnSalon = await loadPublicNailTryOnSalon(normalizedSlug);
 
   if (!load.salon.acceptingBookings) {
     return (
@@ -271,6 +273,22 @@ async function PublicBookingRouteBody({
               fallbackTagline={heroFallbackTagline}
               lang={lang}
             />
+            {nailTryOnSalon ? (
+              <a
+                href={`/${normalizedSlug}/try-on`}
+                className="mb-5 flex min-h-14 items-center justify-between gap-4 rounded-2xl border border-[color-mix(in_srgb,var(--salon-primary)_35%,transparent)] bg-[color-mix(in_srgb,var(--salon-primary)_10%,var(--booking-surface))] px-4 py-3 transition hover:-translate-y-0.5"
+              >
+                <span>
+                  <span className="block text-sm font-semibold text-[var(--booking-text)]">
+                    {lang === "vi" ? "Thử mẫu nail trên tay bạn" : "Try a nail look on your hand"}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-[var(--booking-text-muted)]">
+                    {lang === "vi" ? "Chụp một ảnh · Xem trước bằng AI" : "One photo · Private AI preview"}
+                  </span>
+                </span>
+                <span aria-hidden className="text-xl">→</span>
+              </a>
+            ) : null}
             <h1 className="hidden lg:block text-2xl font-semibold tracking-tight text-[var(--booking-text)] sm:text-3xl lg:text-[2.125rem] lg:leading-[1.15] lg:tracking-[-0.035em]">
               {t.pageTitle}
             </h1>
