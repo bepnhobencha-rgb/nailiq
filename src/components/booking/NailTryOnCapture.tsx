@@ -162,7 +162,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
       ) : step === "result" && resultUrl ? (
         <section className="overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-xl shadow-black/5">
           <img src={resultUrl} alt="AI nail preview on your hand" className="aspect-square w-full object-contain" />
-          <div className="p-5 sm:p-7"><p className="text-xs font-semibold uppercase tracking-widest text-emerald-700">AI preview ready</p><h2 className="mt-2 text-2xl font-semibold text-neutral-950">See yourself in this look</h2><p className="mt-2 text-sm text-neutral-600">AI preview—actual color and result may vary.</p><a href={`/${salonSlug}`} className="mt-5 flex min-h-12 items-center justify-center rounded-full bg-neutral-950 px-5 font-semibold text-white">Continue to booking</a></div>
+          <div className="p-5 sm:p-7"><p className="text-xs font-semibold uppercase tracking-widest text-emerald-700">AI preview ready</p><h2 className="mt-2 text-2xl font-semibold text-neutral-950">See yourself in this look</h2><p className="mt-2 text-sm text-neutral-600">AI preview—actual color and result may vary.</p><a href={`/${salonSlug}?tryon=${encodeURIComponent(sessionId || "")}`} className="mt-5 flex min-h-12 items-center justify-center rounded-full bg-neutral-950 px-5 font-semibold text-white">Continue to booking</a></div>
         </section>
       ) : !consented ? (
         <section className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-xl shadow-black/5">
