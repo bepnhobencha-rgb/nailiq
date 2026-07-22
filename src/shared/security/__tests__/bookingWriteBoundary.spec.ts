@@ -17,4 +17,22 @@ describe("public booking write boundary", () => {
     expect(latestPolicy).toMatch(/REVOKE INSERT ON TABLE public\.bookings FROM anon/i);
     expect(latestPolicy).toMatch(/WITH CHECK \(false\)/i);
   });
+
+  it("keeps anonymous group bookings behind validation and abuse controls", () => {
+    const migration = readFileSync(
+      resolve(
+        process.cwd(),
+        "supabase/migrations/20260722201500_harden_public_group_booking.sql",
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(/RENAME TO insert_group_bookings_unlimited/i);
+    expect(migration).toMatch(/REVOKE ALL ON FUNCTION public\.insert_group_bookings_unlimited\(jsonb\)/i);
+    expect(migration).toMatch(/s\.id = v_service_id AND s\.salon_id = v_salon_id/i);
+    expect(migration).toMatch(/st\.id = v_staff_id AND st\.salon_id = v_salon_id/i);
+    expect(migration).toMatch(/jsonb_build_object\('price_cents', v_price\)/i);
+    expect(migration).toMatch(/public-group-booking:salon:/i);
+    expect(migration).toMatch(/public-group-booking:phone:/i);
+  });
 });
