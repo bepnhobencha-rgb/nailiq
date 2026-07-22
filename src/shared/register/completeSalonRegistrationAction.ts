@@ -13,6 +13,7 @@ import { slugifySalonName } from "@/shared/lib/slugifySalonName";
 import { DEFAULT_VERTICAL, resolveVertical } from "@/shared/verticals/registry";
 import { getOrCreateDemoSalonOwnerUserId } from "@/shared/register/demoSalonOwner";
 import { phoneDigitsFromAuthUser } from "@/shared/register/authUserPhone";
+import { createTrialWindow } from "@/shared/lib/trial";
 import {
   isRegisterPhoneDigitsValid,
   normalizeRegisterPhone,
@@ -55,7 +56,6 @@ const ALLOWED_WIZARD_TIMEZONES = [
 ] as const;
 
 const DEFAULT_WIZARD_TIMEZONE = "America/Vancouver";
-
 function normalizeWizardSlug(raw: string | null | undefined): string {
   if (!raw) return "";
   return raw
@@ -472,6 +472,7 @@ export async function completeSalonRegistration(
     });
   }
 
+  const trial = createTrialWindow();
   const { data: salonRow, error: salonErr } = await admin
     .from("salons")
     .insert({
@@ -485,6 +486,10 @@ export async function completeSalonRegistration(
       reminder_24h_enabled: true,
       reminder_3h_enabled: true,
       sms_reminders_enabled: true,
+      subscription_plan: "free",
+      subscription_status: "trialing",
+      trial_started_at: trial.trialStartedAt,
+      trial_ends_at: trial.trialEndsAt,
     } as never)
     .select("id, slug")
     .single();

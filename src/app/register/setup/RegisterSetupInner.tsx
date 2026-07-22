@@ -246,7 +246,7 @@ export default function RegisterSetupInner({
           )}
         </div>
 
-        <div>
+        <div className="sr-only" aria-hidden="true">
           <label
             htmlFor="register-setup-slug"
             className="mb-2 block text-base font-semibold text-nq-foreground"
@@ -266,6 +266,7 @@ export default function RegisterSetupInner({
               autoCorrect="off"
               autoCapitalize="off"
               aria-label={t.slugAriaLabel}
+              tabIndex={-1}
               className="min-w-0 flex-1 bg-transparent font-mono text-sm text-nq-foreground outline-none placeholder:text-nq-muted/80 disabled:opacity-70"
               value={slug}
               readOnly={isDemoMode}
@@ -292,7 +293,7 @@ export default function RegisterSetupInner({
           ) : null}
         </div>
 
-        <div>
+        <div className="sr-only" aria-hidden="true">
           <label
             htmlFor="register-setup-timezone"
             className="mb-2 block text-base font-semibold text-nq-foreground"
@@ -304,6 +305,7 @@ export default function RegisterSetupInner({
             name="salonTimezone"
             value={timezone}
             disabled={isDemoMode}
+            tabIndex={-1}
             onChange={(e) => {
               if (isDemoMode) return;
               setTimezone(e.target.value);

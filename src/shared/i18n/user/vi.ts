@@ -142,25 +142,25 @@ export const userVi: UserMessages = {
   landing: {
     nav: {
       signIn: "Đăng nhập",
-      tryFree: "Dùng thử",
+      tryFree: "Dùng thử miễn phí",
       langAriaLabel: "Ngôn ngữ",
       openMenu: "Mở menu",
       closeMenu: "Đóng menu",
     },
     hero: {
-      eyebrow: "CHƯƠNG TRÌNH FOUNDER PILOT · CHỈ NHẬN 5 TIỆM ĐẦU TIÊN",
-      h1Line1: "Website, Booking và Hệ thống vận hành —",
-      h1Gold: "Được thiết lập trọn gói cho tiệm nail",
+      eyebrow: "MIỄN PHÍ 14 NGÀY · KHÔNG CẦN THẺ",
+      h1Line1: "Nhận đặt lịch 24/7 và vận hành tiệm nail —",
+      h1Gold: "gọn hơn mỗi ngày",
       subline:
-        "NailIQ giúp tiệm nail triển khai website chuyên nghiệp, booking online, lịch nhân viên và các công cụ vận hành thiết yếu mà chủ tiệm không phải tự cài đặt.",
+        "NailIQ gom trang đặt lịch, lịch nhân viên và quầy lễ tân trực tuyến vào một nơi đơn giản.",
       posSupport:
         "Bạn có thể tiếp tục sử dụng Square, Clover, Toast hoặc hệ thống POS hiện tại.",
       valueStatement:
-        "Chúng tôi thiết lập. Chúng tôi hướng dẫn. Bạn tập trung phục vụ khách hàng.",
-      ctaPrimary: "Đăng ký Founder Pilot",
-      ctaSecondary: "Đặt lịch xem Demo miễn phí",
+        "Bạn có thể tự bắt đầu trong vài phút hoặc nhờ NailIQ setup giúp.",
+      ctaPrimary: "Bắt đầu dùng thử miễn phí",
+      ctaSecondary: "Xem demo miễn phí",
       microtrust:
-        "Thiết kế cho tiệm nail · Giữ nguyên POS đang dùng · Hỗ trợ tiếng Việt",
+        "Tạo tài khoản khoảng 2 phút · Giữ nguyên POS · Có hỗ trợ tiếng Việt",
     },
     problem: {
       eyebrow: "Vì sao chọn NailIQ",
@@ -654,17 +654,17 @@ export const userVi: UserMessages = {
       backToHome: "← Về trang chủ",
     },
     finalCta: {
-      eyebrow: "Founder Pilot",
-      h2: "Sẵn sàng hiện đại hoá tiệm mà không phải thay tất cả những gì đang dùng?",
-      body: "Founder Pilot chỉ nhận 5 tiệm để NailIQ có thể hỗ trợ onboarding và go-live trực tiếp.",
+      eyebrow: "Bắt đầu hôm nay",
+      h2: "Để lịch hẹn tiếp theo tự đến trong lúc bạn đang phục vụ khách",
+      body: "Tạo không gian tiệm trong khoảng hai phút. Dùng NailIQ miễn phí 14 ngày, không cần thẻ tín dụng.",
       supportingLine:
         "Giữ nguyên POS hiện có. Để NailIQ lo website, booking online và setup tiệm.",
-      ctaPrimary: "Đăng ký Founder Pilot",
+      ctaPrimary: "Bắt đầu dùng thử miễn phí",
       ctaSecondary: "Đặt lịch xem Demo miễn phí",
       trustNote:
-        "Không bắt buộc mua trước khi xem xét phạm vi và điều khoản Founder Pilot.",
+        "Không cần thẻ tín dụng. Dữ liệu tiệm vẫn thuộc về bạn.",
       finalLegalNote:
-        "Việc tham gia, chấp nhận onboarding và phạm vi cuối cùng của Founder Pilot phụ thuộc đánh giá. Giá công bố tính bằng đô-la Canada, chưa bao gồm thuế áp dụng và phí bên thứ ba. Tích hợp POS trực tiếp ngoài phạm vi hỗ trợ hiện tại của NailIQ cần đánh giá kỹ thuật và báo giá riêng.",
+        "Gói tự cài đặt là $39 CAD mỗi tháng sau thời gian dùng thử, chưa gồm thuế. Dịch vụ setup và tích hợp POS trực tiếp được báo giá riêng.",
     },
     footer: {
       about: "Về chúng tôi",

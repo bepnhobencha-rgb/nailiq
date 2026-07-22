@@ -37,7 +37,7 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
         id, salon_id, staff_id, service_id, client_email, client_phone, client_locale,
         start_time_utc,
         salons!inner ( id, name, slug, subscription_plan, plan_override, feature_flags, timezone, google_review_url, sms_reminders_enabled, sms_a2p_registered ),
-        services ( name ),
+        services!bookings_service_id_fkey ( name ),
         staff ( name )
       `,
       )

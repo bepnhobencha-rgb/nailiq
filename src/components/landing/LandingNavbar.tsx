@@ -66,7 +66,7 @@ export function LandingNavbar() {
             {t.signIn}
           </Link>
           <Link
-            href="/contact?intent=pilot"
+            href="/register?intent=trial"
             data-testid="nav-try-free"
             className="inline-flex items-center justify-center rounded-full border border-nq-primary/40 bg-nq-primary px-4 py-2 text-sm font-semibold text-nq-bg shadow-[0_2px_12px_rgba(212,175,55,0.25)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
           >
@@ -127,7 +127,7 @@ export function LandingNavbar() {
             {t.signIn}
           </Link>
           <Link
-            href="/contact?intent=pilot"
+            href="/register?intent=trial"
             onClick={closeSheet}
             data-testid="nav-mobile-try-free"
             className="rounded-xl bg-nq-primary px-4 py-3 text-center text-sm font-semibold text-nq-bg"

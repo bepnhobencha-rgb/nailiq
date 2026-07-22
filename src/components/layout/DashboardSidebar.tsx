@@ -9,6 +9,7 @@ import {
   Gavel,
   Gift,
   History,
+  Home,
   Package,
   ChevronLeft,
   Activity,
@@ -138,7 +139,6 @@ export function DashboardSidebar({
   salons,
   collapsed,
   onToggleCollapsed,
-  subscriptionPlan = "free",
   releaseFeatures = {},
   userEmail,
 }: Props) {
@@ -203,6 +203,14 @@ export function DashboardSidebar({
       {
         key: "live",
         items: [
+          {
+            key: "home",
+            label: language === "vi" ? "Trang chủ" : "Home",
+            href: dashRoot,
+            icon: Home,
+            match: (p) => p === dashRoot,
+            hidden: role !== "owner" && role !== "admin",
+          },
           {
             // Owner/admin remote command view — the away decision-maker's home.
             key: "pulse",
@@ -438,8 +446,9 @@ export function DashboardSidebar({
       },
     ];
   }, [
-      dashRoot,
-      role,
+    dashRoot,
+    language,
+    role,
       t.activity,
       t.approvals,
       t.calendar,
@@ -463,8 +472,7 @@ export function DashboardSidebar({
       walkinQueueCount,
       overdueCount,
       pendingApprovalsCount,
-      subscriptionPlan,
-      releaseFeatures,
+    releaseFeatures,
     ],
   );
 
@@ -473,7 +481,12 @@ export function DashboardSidebar({
   // so they can reach Staff/Services/Reports/Settings even on a salon that
   // forces Basic Mode for its receptionists.
   const isManager = role === "owner" || role === "admin";
-  const navIsBasic = basicMode && !isManager;
+  // Reception is simple by default. Front-desk staff should never have to
+  // learn the owner's analytics/configuration map just to run today's desk.
+  const navIsBasic =
+    role === "receptionist" ||
+    role === "nail_tech" ||
+    (basicMode && !isManager);
   // Basic Mode: keep only the front-desk essentials; drop now-empty
   // sections. The "+ Walk-in" quick action moves under the live section
   // (the insight section it normally trails is hidden in Basic Mode).
@@ -536,7 +549,7 @@ export function DashboardSidebar({
       ) : (
         <div className="flex items-center gap-3 px-3 py-4 border-b border-nq-border/40">
           <Link
-            href={`/dashboard/${encodeURIComponent(slug)}/center`}
+            href={`/dashboard/${encodeURIComponent(slug)}`}
             className="flex items-center gap-2 min-w-0 flex-1 rounded-lg px-1 py-1 transition-colors hover:bg-nq-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
             aria-label="Dashboard home"
           >

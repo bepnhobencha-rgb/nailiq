@@ -54,7 +54,7 @@ export function LandingFinalCta() {
 
           <div className="relative mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link
-              href="/contact?intent=pilot"
+              href="/register?intent=trial"
               data-testid="final-cta-primary"
               className="inline-flex min-w-[260px] items-center justify-center rounded-full border border-nq-primary/50 bg-nq-primary px-8 py-4 text-base font-semibold text-nq-bg shadow-[0_12px_36px_-10px_rgba(212,175,55,0.65)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
             >
