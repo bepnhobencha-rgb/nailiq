@@ -158,6 +158,7 @@ import { DrcThemePicker } from "@/components/receptionist/DrcThemePicker";
 import { BookingLimitBanner } from "@/components/dashboard/BookingLimitBanner";
 import { PartyCardPanel } from "@/components/receptionist/PartyCardPanel";
 import { AttentionChipBar } from "@/components/receptionist/AttentionChipBar";
+import { NailiqSuggestionBar } from "@/components/receptionist/NailiqSuggestionBar";
 import DeskBookingForm from "@/components/receptionist/DeskBookingForm";
 import DeskGroupForm from "@/components/receptionist/DeskGroupForm";
 import type { PartyCard } from "@/shared/dashboard/loadPartyCardsAction";
@@ -3149,6 +3150,16 @@ function ReceptionistCenterInner({
           }
           onReload={() => window.location.reload()}
         />
+
+        {!basicModeActive && isViewingToday && viewMode === "day" ? (
+          <NailiqSuggestionBar
+            inputs={cockpitInputs}
+            labels={cockpitLabels}
+            heading={rcMessages.basicMode.aiSuggestionHeading}
+            allClear={rcMessages.basicMode.aiAllClear}
+            onAction={onCockpitAction}
+          />
+        ) : null}
 
         {/*
          * KPI band per `docs/DASHBOARD_LAYOUT_RULES.md` §5: top summary

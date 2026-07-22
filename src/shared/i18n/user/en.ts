@@ -1276,6 +1276,8 @@ export type UserMessages = {
       /** Page title shown in Basic Mode header. */
       pageTitle: string;
       nextActionHeading: string;
+      aiSuggestionHeading: string;
+      aiAllClear: string;
       alertsHeading: string;
       moreIssues: (n: number) => string;
       // Next Action texts
@@ -3745,6 +3747,8 @@ export const userEn: UserMessages = {
       toggleOffAria: "Exit Basic Mode — back to the full board",
       pageTitle: "Receptionist",
       nextActionHeading: "Next action",
+      aiSuggestionHeading: "NailIQ suggests",
+      aiAllClear: "The desk is on track — no urgent action right now",
       alertsHeading: "Needs attention",
       moreIssues: (n: number) => `+${n} more issue${n === 1 ? "" : "s"}`,
       longWaitGuest: (n: number) => `1 guest has waited over ${n} min`,

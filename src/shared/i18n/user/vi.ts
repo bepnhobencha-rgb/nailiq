@@ -1469,6 +1469,8 @@ export const userVi: UserMessages = {
       toggleOffAria: "Thoát Chế độ Cơ bản — về bảng đầy đủ",
       pageTitle: "Lễ tân",
       nextActionHeading: "Việc cần làm",
+      aiSuggestionHeading: "NailIQ đề xuất",
+      aiAllClear: "Quầy đang vận hành tốt — chưa có việc gấp",
       alertsHeading: "Cần chú ý",
       moreIssues: (n: number) => `+${n} vấn đề khác`,
       longWaitGuest: (n: number) => `1 khách đã chờ hơn ${n} phút`,
@@ -1486,9 +1488,9 @@ export const userVi: UserMessages = {
         `Nhóm ${name} · ${time}: 1 khách chưa nhận slot`,
       partyPendingCount: (time: string, n: number) =>
         `${n} khách chưa nhận slot · ${time}`,
-      suggestWalkin: (name: string) => `${name} đang sẵn sàng. Có thể nhận khách walk-in.`,
+      suggestWalkin: (name: string) => `${name} đang sẵn sàng. Có thể nhận khách vãng lai.`,
       actionOpenQueue: "Mở hàng chờ",
-      actionAddWalkin: "+ Walk-in",
+      actionAddWalkin: "+ Khách vãng lai",
       actionOpenParty: "Mở booking nhóm",
       actionOpenBooking: "Mở lịch",
       alertOverdue: (n: number) =>
