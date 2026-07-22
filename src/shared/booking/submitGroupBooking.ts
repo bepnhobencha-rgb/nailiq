@@ -412,11 +412,10 @@ export async function submitGroupBooking(
   const allFetchIds = Array.from(new Set([...serviceIds, ...addonIdSet]));
 
   const { data: services, error: svcErr } = await supabase
-    .from("services")
+    .from("public_service_catalog")
     .select("id, name, duration_minutes, buffer_minutes, price_cents, is_addon, addon_timing")
     .in("id", allFetchIds)
-    .eq("salon_id", salonRow.id)
-    .is("deleted_at" as never, null);
+    .eq("salon_id", salonRow.id);
   if (svcErr) return fail("server_error");
 
   const serviceById = new Map<string, {
@@ -469,17 +468,17 @@ export async function submitGroupBooking(
   // 4. Staff ---------------------------------------------------------
   const staffIds = Array.from(new Set(params.members.map((m) => m.staffId)));
   const { data: staffRows, error: staffErr } = await supabase
-    .from("staff")
+    .from("public_staff_profiles")
     .select("id")
     .in("id", staffIds)
     .eq("salon_id", salonRow.id)
-    .eq("status", "active")
-    .is("deleted_at" as never, null);
+    .eq("status", "active");
   if (staffErr) return fail("server_error");
   const staffSet = new Set((staffRows ?? []).map((s) => String(s.id)));
   // Task #04-C FIX 12 — pinpoint which member's preferred staff
   // disappeared between arrangement-pick and submit. The select
-  // above filtered `status='active'` + `deleted_at IS NULL`, so a
+  // above filtered `status='active'`; the public view already excludes
+  // deleted rows, so a
   // missing id means the staff was deleted, paused, or marked
   // inactive in the meantime. UI auto re-runs the scheduler so the
   // remaining members get fresh staff suggestions.

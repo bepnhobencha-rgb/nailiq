@@ -525,13 +525,13 @@ export async function getAvailableTimeSlots(
 
     const [shiftRes, unavailRes] = await Promise.all([
       supabase
-        .from("staff_shifts")
+        .from("public_staff_shifts")
         .select("staff_id, start_time, end_time")
         .eq("salon_id", salonId)
         .eq("day_of_week", dayKey)
         .eq("is_active", true),
       supabase
-        .from("staff_unavailability")
+        .from("public_staff_unavailability")
         .select("staff_id")
         .eq("salon_id", salonId)
         .eq("date", ymd),

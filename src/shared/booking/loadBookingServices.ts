@@ -166,7 +166,7 @@ export async function loadBookingServicesForSalonSlug(
   if (!salonId) return null;
 
   const { data: rows, error: servicesErr } = await client
-    .from("services")
+    .from("public_service_catalog")
     // `category`, `description`, `is_popular`, `is_featured` were added
     // in migrations 20260511500000 and 20260511600000; `price_type` and
     // `price_max_cents` by the variable-pricing migration. Not yet in the
@@ -175,7 +175,6 @@ export async function loadBookingServicesForSalonSlug(
       "id, name, duration_minutes, buffer_minutes, price_cents, price_type, price_max_cents, category, description, is_popular, is_featured, is_addon, addon_timing" as never,
     )
     .eq("salon_id", salonId)
-    .is("deleted_at" as never, null)
     .order("name", { ascending: true });
 
   if (servicesErr) {
@@ -185,11 +184,10 @@ export async function loadBookingServicesForSalonSlug(
   // Public booking only sees `active` staff. `pending` and `inactive` rows
   // remain in the dashboard for the owner but never surface to customers.
   const { data: staffList, error: staffErr } = await client
-    .from("staff")
+    .from("public_staff_profiles")
     .select("id, name, job_role")
     .eq("salon_id", salonId)
     .eq("status", "active")
-    .is("deleted_at" as never, null)
     .order("name", { ascending: true });
 
   if (staffErr) {
