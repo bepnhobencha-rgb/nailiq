@@ -381,7 +381,6 @@ export async function submitPublicBooking(
     .select("id, name, duration_minutes, buffer_minutes, price_cents")
     .eq("id", serviceId)
     .eq("salon_id", salon.id)
-    .is("deleted_at" as never, null)
     .single();
 
   if (serviceErr || !service) throw new Error("service_not_found");
@@ -469,8 +468,7 @@ export async function submitPublicBooking(
       .from("public_service_catalog")
       .select("id, name, duration_minutes, buffer_minutes, price_cents, is_addon, addon_timing")
       .in("id", addonIds)
-      .eq("salon_id", salon.id)
-      .is("deleted_at" as never, null);
+      .eq("salon_id", salon.id);
 
     if (addErr) throw new Error("addon_not_found");
     const byId = new Map(
@@ -552,7 +550,6 @@ export async function submitPublicBooking(
     // receptionist's auto-created staff row) is counted as an extra bed and
     // the salon gets oversold by one when auto-assigning "Any" staff.
     .eq("status", "active")
-    .is("deleted_at" as never, null)
     .order("name", { ascending: true });
 
   if (staffListErr) throw new Error("staff_load_failed");

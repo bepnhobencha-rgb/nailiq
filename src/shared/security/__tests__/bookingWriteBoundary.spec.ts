@@ -181,5 +181,23 @@ describe("public booking write boundary", () => {
       /public_staff_unavailability[\s\S]*?AS\s+SELECT([\s\S]*?)FROM public\.staff_unavailability/i,
     )?.[1] ?? "";
     expect(timeOffProjection).not.toMatch(/\breason\b/i);
+
+    for (const file of [
+      "src/shared/booking/loadBookingServices.ts",
+      "src/shared/booking/submitPublicBooking.ts",
+      "src/shared/booking/submitGroupBooking.ts",
+      "src/shared/booking/loadGroupDayTimeline.ts",
+      "src/shared/booking/loadGroupSmartSchedule.ts",
+    ]) {
+      const source = readFileSync(resolve(process.cwd(), file), "utf8");
+      const publicCatalogQueries =
+        source.match(
+          /\.from\("public_(?:service_catalog|staff_profiles)"\)[\s\S]*?;/g,
+        ) ?? [];
+
+      for (const query of publicCatalogQueries) {
+        expect(query).not.toContain('.is("deleted_at"');
+      }
+    }
   });
 });

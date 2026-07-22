@@ -164,8 +164,7 @@ export async function loadGroupDayTimeline(
     .from("public_service_catalog")
     .select("id, name, duration_minutes, buffer_minutes, is_addon, addon_timing")
     .in("id", allFetchIds)
-    .eq("salon_id", salonRow.id)
-    .is("deleted_at" as never, null);
+    .eq("salon_id", salonRow.id);
   if (svcErr) return { ok: false, reason: "server_error" };
 
   const serviceById = new Map<string, { totalMin: number }>();
@@ -214,8 +213,7 @@ export async function loadGroupDayTimeline(
     .from("public_staff_profiles")
     .select("id, name")
     .eq("salon_id", salonRow.id)
-    .eq("status", "active")
-    .is("deleted_at" as never, null);
+    .eq("status", "active");
   if (staffErr) return { ok: false, reason: "server_error" };
   const staffList: StaffRow[] = (staffRows ?? []).map((s) => ({
     id: String(s.id),

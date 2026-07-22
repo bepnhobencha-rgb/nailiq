@@ -175,7 +175,6 @@ export async function loadBookingServicesForSalonSlug(
       "id, name, duration_minutes, buffer_minutes, price_cents, price_type, price_max_cents, category, description, is_popular, is_featured, is_addon, addon_timing" as never,
     )
     .eq("salon_id", salonId)
-    .is("deleted_at" as never, null)
     .order("name", { ascending: true });
 
   if (servicesErr) {
@@ -189,7 +188,6 @@ export async function loadBookingServicesForSalonSlug(
     .select("id, name, job_role")
     .eq("salon_id", salonId)
     .eq("status", "active")
-    .is("deleted_at" as never, null)
     .order("name", { ascending: true });
 
   if (staffErr) {
