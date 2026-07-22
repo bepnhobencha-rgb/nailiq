@@ -35,4 +35,22 @@ describe("public booking write boundary", () => {
     expect(migration).toMatch(/public-group-booking:salon:/i);
     expect(migration).toMatch(/public-group-booking:phone:/i);
   });
+
+  it("binds public customer snapshots to a recent unguessable booking", () => {
+    const migration = readFileSync(
+      resolve(
+        process.cwd(),
+        "supabase/migrations/20260722203000_bind_client_snapshot_to_booking.sql",
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(/p_booking_id uuid/i);
+    expect(migration).toMatch(/b\.id = p_booking_id/i);
+    expect(migration).toMatch(/b\.salon_id = p_salon_id/i);
+    expect(migration).toMatch(/b\.created_at >= now\(\) - interval '10 minutes'/i);
+    expect(migration).toMatch(
+      /REVOKE ALL ON FUNCTION public\.get_booking_client_snapshot\(uuid, text\)[\s\S]*FROM PUBLIC, anon, authenticated/i,
+    );
+  });
 });
