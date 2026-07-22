@@ -1315,10 +1315,17 @@ export type UserMessages = {
     dailyBrief: {
       eyebrow: string;
       title: string;
+      closingEyebrow: string;
+      closingTitle: string;
       bookings: string;
       vip: string;
       staffReady: string;
       waiting: string;
+      remaining: string;
+      inService: string;
+      completed: string;
+      readyToClose: string;
+      workRemaining: (count: number) => string;
       dayWindow: (start: string, end: string) => string;
       riskGuests: (count: number) => string;
       calmDay: string;
@@ -3808,10 +3815,18 @@ export const userEn: UserMessages = {
     dailyBrief: {
       eyebrow: "NailIQ morning brief",
       title: "Today at a glance",
+      closingEyebrow: "NailIQ closing brief",
+      closingTitle: "Finish the day with confidence",
       bookings: "Bookings",
       vip: "VIP",
       staffReady: "Staff ready",
       waiting: "Waiting",
+      remaining: "Remaining",
+      inService: "In service",
+      completed: "Finished",
+      readyToClose: "Everything is clear — ready to close",
+      workRemaining: (count: number) =>
+        count === 1 ? "1 item still needs attention" : `${count} items still need attention`,
       dayWindow: (start: string, end: string) => `Schedule ${start}–${end}`,
       riskGuests: (count: number) =>
         count === 1 ? "1 guest needs no-show attention" : `${count} guests need no-show attention`,
