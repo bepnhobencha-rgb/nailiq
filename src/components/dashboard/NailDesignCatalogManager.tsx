@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { ImagePlus } from "lucide-react";
 
-type Design = { id: string; name: string; description: string | null; active: boolean; previewUrl: string | null; serviceId: string | null; addonServiceId: string | null };
+type Design = { id: string; name: string; description: string | null; active: boolean; previewUrl: string | null; serviceIds: string[]; addonServiceIds: string[]; defaultServiceId: string | null };
 type Option = { id: string; name: string };
 
 export function NailDesignCatalogManager({ slug, initialDesigns, serviceOptions, addOnOptions }: { slug: string; initialDesigns: Design[]; serviceOptions: Option[]; addOnOptions: Option[] }) {
@@ -26,16 +26,16 @@ export function NailDesignCatalogManager({ slug, initialDesigns, serviceOptions,
     } finally { setBusy(false); }
   }
 
-  async function saveMapping(design: Design, serviceId: string, addonServiceId: string) {
+  async function saveMapping(design: Design, serviceIds: string[], addonServiceIds: string[], defaultServiceId: string | null) {
     setBusy(true); setMessage(null);
     try {
       const response = await fetch("/api/dashboard/nail-designs", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slug, designId: design.id, serviceId: serviceId || null, addonServiceId: addonServiceId || null }),
+        body: JSON.stringify({ slug, designId: design.id, serviceIds, addonServiceIds, defaultServiceId }),
       });
       if (!response.ok) throw new Error("update_failed");
-      setDesigns((current) => current.map((item) => item.id === design.id ? { ...item, serviceId: serviceId || null, addonServiceId: addonServiceId || null } : item));
+      setDesigns((current) => current.map((item) => item.id === design.id ? { ...item, serviceIds, addonServiceIds, defaultServiceId } : item));
       setMessage(`Smart Quote mapping saved for ${design.name}.`);
     } catch {
       setMessage("Could not save the service mapping. Please try again.");
@@ -51,8 +51,8 @@ export function NailDesignCatalogManager({ slug, initialDesigns, serviceOptions,
         <label className="text-sm font-medium text-nq-foreground">Design name<input name="name" required maxLength={120} className="mt-2 min-h-11 w-full rounded-xl border border-nq-border bg-nq-surface px-3" /></label>
         <label className="text-sm font-medium text-nq-foreground">Reference image<input name="image" required type="file" accept="image/jpeg,image/png,image/webp" className="mt-2 block w-full text-sm" /></label>
         <label className="text-sm font-medium text-nq-foreground sm:col-span-2">Short description<input name="description" maxLength={240} className="mt-2 min-h-11 w-full rounded-xl border border-nq-border bg-nq-surface px-3" /></label>
-        <label className="text-sm font-medium text-nq-foreground">Recommended service<select name="serviceId" className="mt-2 min-h-11 w-full rounded-xl border border-nq-border bg-nq-surface px-3"><option value="">Choose later</option>{serviceOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select></label>
-        <label className="text-sm font-medium text-nq-foreground">Recommended add-on<select name="addonServiceId" className="mt-2 min-h-11 w-full rounded-xl border border-nq-border bg-nq-surface px-3"><option value="">No add-on</option>{addOnOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select></label>
+        <fieldset className="rounded-xl border border-nq-border p-3"><legend className="px-1 text-sm font-medium text-nq-foreground">Available services</legend><p className="mb-2 text-xs text-nq-muted">Choose every service that can create this look. The first selected service becomes the default.</p>{serviceOptions.map((option) => <label key={option.id} className="flex min-h-9 items-center gap-2 text-sm"><input type="checkbox" name="serviceIds" value={option.id} />{option.name}</label>)}</fieldset>
+        <fieldset className="rounded-xl border border-nq-border p-3"><legend className="px-1 text-sm font-medium text-nq-foreground">Recommended add-ons</legend>{addOnOptions.length ? addOnOptions.map((option) => <label key={option.id} className="flex min-h-9 items-center gap-2 text-sm"><input type="checkbox" name="addonServiceIds" value={option.id} />{option.name}</label>) : <p className="text-xs text-nq-muted">No add-ons configured.</p>}</fieldset>
         <button disabled={busy} className="flex min-h-11 items-center justify-center gap-2 rounded-full bg-nq-primary px-5 font-semibold text-white disabled:opacity-60"><ImagePlus className="h-4 w-4" />{busy ? "Publishing…" : "Publish design"}</button>
         {message ? <p className="self-center text-sm text-nq-muted" role="status">{message}</p> : null}
       </form>
@@ -63,9 +63,16 @@ export function NailDesignCatalogManager({ slug, initialDesigns, serviceOptions,
   );
 }
 
-function DesignMappingCard({ design, serviceOptions, addOnOptions, busy, onSave }: { design: Design; serviceOptions: Option[]; addOnOptions: Option[]; busy: boolean; onSave: (design: Design, serviceId: string, addonServiceId: string) => Promise<void> }) {
-  const [serviceId, setServiceId] = useState(design.serviceId || "");
-  const [addonServiceId, setAddonServiceId] = useState(design.addonServiceId || "");
-  const changed = serviceId !== (design.serviceId || "") || addonServiceId !== (design.addonServiceId || "");
-  return <article className="overflow-hidden rounded-2xl border border-nq-border bg-nq-card">{design.previewUrl ? <img src={design.previewUrl} alt={design.name} className="aspect-square w-full object-cover" /> : <div className="aspect-square bg-nq-surface" />}<div className="space-y-3 p-3"><div><h2 className="font-semibold text-nq-foreground">{design.name}</h2>{design.description ? <p className="mt-1 text-xs text-nq-muted">{design.description}</p> : null}</div><label className="block text-xs font-medium text-nq-muted">Service<select aria-label={`${design.name} service`} value={serviceId} onChange={(event) => setServiceId(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-nq-border bg-nq-surface px-2 text-sm text-nq-foreground"><option value="">Not mapped</option>{serviceOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select></label><label className="block text-xs font-medium text-nq-muted">Add-on<select aria-label={`${design.name} add-on`} value={addonServiceId} onChange={(event) => setAddonServiceId(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-nq-border bg-nq-surface px-2 text-sm text-nq-foreground"><option value="">No add-on</option>{addOnOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select></label><button type="button" disabled={busy || !changed} onClick={() => void onSave(design, serviceId, addonServiceId)} className="min-h-10 w-full rounded-full bg-nq-primary px-3 text-sm font-semibold text-white disabled:opacity-40">Save Smart Quote</button></div></article>;
+function DesignMappingCard({ design, serviceOptions, addOnOptions, busy, onSave }: { design: Design; serviceOptions: Option[]; addOnOptions: Option[]; busy: boolean; onSave: (design: Design, serviceIds: string[], addonServiceIds: string[], defaultServiceId: string | null) => Promise<void> }) {
+  const [serviceIds, setServiceIds] = useState(design.serviceIds);
+  const [addonServiceIds, setAddonServiceIds] = useState(design.addonServiceIds);
+  const [defaultServiceId, setDefaultServiceId] = useState(design.defaultServiceId || "");
+  const toggle = (ids: string[], id: string) => ids.includes(id) ? ids.filter((value) => value !== id) : [...ids, id];
+  const changed = JSON.stringify(serviceIds) !== JSON.stringify(design.serviceIds) || JSON.stringify(addonServiceIds) !== JSON.stringify(design.addonServiceIds) || defaultServiceId !== (design.defaultServiceId || "");
+  function toggleService(id: string) {
+    const next = toggle(serviceIds, id);
+    setServiceIds(next);
+    if (!next.includes(defaultServiceId)) setDefaultServiceId(next[0] || "");
+  }
+  return <article className="overflow-hidden rounded-2xl border border-nq-border bg-nq-card">{design.previewUrl ? <img src={design.previewUrl} alt={design.name} className="aspect-square w-full object-cover" /> : <div className="aspect-square bg-nq-surface" />}<div className="space-y-3 p-3"><div><h2 className="font-semibold text-nq-foreground">{design.name}</h2>{design.description ? <p className="mt-1 text-xs text-nq-muted">{design.description}</p> : null}</div><fieldset><legend className="text-xs font-medium text-nq-muted">Services</legend>{serviceOptions.map((option) => <div key={option.id} className="flex items-center gap-2 py-1 text-sm"><input aria-label={`${design.name} ${option.name}`} type="checkbox" checked={serviceIds.includes(option.id)} onChange={() => toggleService(option.id)} /><span className="min-w-0 flex-1 truncate">{option.name}</span>{serviceIds.includes(option.id) ? <label className="flex items-center gap-1 text-[11px]"><input type="radio" name={`${design.id}-default`} checked={defaultServiceId === option.id} onChange={() => setDefaultServiceId(option.id)} />Default</label> : null}</div>)}</fieldset><fieldset><legend className="text-xs font-medium text-nq-muted">Add-ons</legend>{addOnOptions.map((option) => <label key={option.id} className="flex items-center gap-2 py-1 text-sm"><input type="checkbox" checked={addonServiceIds.includes(option.id)} onChange={() => setAddonServiceIds(toggle(addonServiceIds, option.id))} />{option.name}</label>)}</fieldset><button type="button" disabled={busy || !changed} onClick={() => void onSave(design, serviceIds, addonServiceIds, defaultServiceId || null)} className="min-h-10 w-full rounded-full bg-nq-primary px-3 text-sm font-semibold text-white disabled:opacity-40">Save Smart Quote</button></div></article>;
 }

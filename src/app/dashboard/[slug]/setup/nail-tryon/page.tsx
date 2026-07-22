@@ -4,25 +4,41 @@ import { requireReleaseFeatureEnabled } from "@/shared/features/requireReleaseFe
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 type Props = { params: Promise<{ slug: string }> };
-type DesignRow = { id: string; name: string; description: string | null; preview_path: string; is_active: boolean; service_id: string | null; addon_service_id: string | null };
+type DesignRow = { id: string; name: string; description: string | null; preview_path: string; is_active: boolean; service_id: string | null };
 type ServiceRow = { id: string; name: string; is_addon: boolean };
+type MappingRow = { design_id: string; service_id: string; mapping_type: "service" | "addon"; is_default: boolean; sort_order: number };
 
 export default async function NailTryOnSetupPage({ params }: Props) {
   const { slug } = await params;
   const gate = await requireReleaseFeatureEnabled(slug, "nail_tryon");
   if (!gate.ok) notFound();
   const db = createServiceRoleClient();
-  const [{ data }, { data: serviceRows }] = await Promise.all([
+  const [{ data }, { data: serviceRows }, { data: mappingRows }] = await Promise.all([
     db.from("nail_designs" as never)
-      .select("id, name, description, preview_path, is_active, service_id, addon_service_id")
+      .select("id, name, description, preview_path, is_active, service_id")
       .eq("salon_id", gate.salon.id).is("deleted_at", null).order("sort_order"),
     db.from("services" as never)
       .select("id, name, is_addon")
       .eq("salon_id", gate.salon.id).is("deleted_at", null).order("name"),
+    db.from("nail_design_service_mappings" as never)
+      .select("design_id, service_id, mapping_type, is_default, sort_order")
+      .eq("salon_id", gate.salon.id).order("sort_order"),
   ]);
+  const mappings = (mappingRows || []) as unknown as MappingRow[];
   const designs = await Promise.all(((data || []) as unknown as DesignRow[]).map(async (row) => {
     const { data: signed } = await db.storage.from("nail-tryon").createSignedUrl(row.preview_path, 300);
-    return { id: row.id, name: row.name, description: row.description, active: row.is_active, previewUrl: signed?.signedUrl || null, serviceId: row.service_id, addonServiceId: row.addon_service_id };
+    const selected = mappings.filter((mapping) => mapping.design_id === row.id);
+    const services = selected.filter((mapping) => mapping.mapping_type === "service");
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      active: row.is_active,
+      previewUrl: signed?.signedUrl || null,
+      serviceIds: services.map((mapping) => mapping.service_id),
+      addonServiceIds: selected.filter((mapping) => mapping.mapping_type === "addon").map((mapping) => mapping.service_id),
+      defaultServiceId: services.find((mapping) => mapping.is_default)?.service_id || row.service_id,
+    };
   }));
   const serviceOptions = ((serviceRows || []) as unknown as ServiceRow[]).filter((row) => !row.is_addon).map(({ id, name }) => ({ id, name }));
   const addOnOptions = ((serviceRows || []) as unknown as ServiceRow[]).filter((row) => row.is_addon).map(({ id, name }) => ({ id, name }));

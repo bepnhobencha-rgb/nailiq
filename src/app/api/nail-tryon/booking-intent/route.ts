@@ -22,6 +22,12 @@ type DesignRow = {
   addon_service_id: string | null;
 };
 
+type MappingRow = {
+  service_id: string;
+  mapping_type: "service" | "addon";
+  is_default: boolean;
+};
+
 export async function GET(request: Request) {
   const parsed = querySchema.safeParse({
     sessionId: new URL(request.url).searchParams.get("sessionId"),
@@ -65,11 +71,30 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "design_not_found" }, { status: 404 });
   }
 
+  const { data: rawMappings } = await db
+    .from("nail_design_service_mappings" as never)
+    .select("service_id, mapping_type, is_default")
+    .eq("design_id", design.id)
+    .eq("salon_id", session.salon_id)
+    .order("sort_order");
+  const mappings = (rawMappings || []) as unknown as MappingRow[];
+  const serviceMappings = mappings.filter((mapping) => mapping.mapping_type === "service");
+  const addonMappings = mappings.filter((mapping) => mapping.mapping_type === "addon");
+  const serviceIds = serviceMappings.map((mapping) => mapping.service_id);
+  const addonServiceIds = addonMappings.map((mapping) => mapping.service_id);
+  const defaultServiceId =
+    serviceMappings.find((mapping) => mapping.is_default)?.service_id ||
+    design.service_id ||
+    serviceIds[0] ||
+    null;
+
   return NextResponse.json(
     {
       designName: design.name,
-      serviceId: design.service_id,
-      addonServiceId: design.addon_service_id,
+      serviceId: defaultServiceId,
+      addonServiceId: addonServiceIds[0] || design.addon_service_id,
+      serviceIds: serviceIds.length ? serviceIds : design.service_id ? [design.service_id] : [],
+      addonServiceIds: addonServiceIds.length ? addonServiceIds : design.addon_service_id ? [design.addon_service_id] : [],
     },
     { headers: { "Cache-Control": "private, no-store" } },
   );
