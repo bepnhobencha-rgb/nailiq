@@ -143,8 +143,10 @@ function main() {
   // test database MORE permissive than production, and the security specs would
   // pass while a real leak went unnoticed.
   //
-  // Production, measured: anon and authenticated reach 75 of the 81 tables;
-  // service_role reaches all 81. The six anon cannot touch are the sensitive
+  // After the Stage 0 public-profile split, anon reaches 74 base tables plus
+  // the safe public_salon_profiles view; authenticated reaches its 75 base
+  // tables plus that view; service_role reaches all 81 plus the view. The base
+  // tables anon cannot touch are the sensitive
   // ones (client_ai_summaries, otp_send_log, payment_disputes, rate_limits,
   // salon_clients, scheduled_notifications) — that gap IS the PII protection,
   // and it has to survive into the test database intact.
@@ -152,7 +154,7 @@ function main() {
   // The first dump here was taken with --no-privileges and produced 0 grants.
   // Everything above still went green. That is why this check exists.
   console.log("\n── Grant matrix ──\n");
-  const GRANTS = { anon: 75, authenticated: 75, service_role: 81 } as const;
+  const GRANTS = { anon: 75, authenticated: 76, service_role: 82 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (

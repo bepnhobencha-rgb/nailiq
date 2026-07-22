@@ -127,7 +127,7 @@ async function formatBookedTime(
       const salonId = (bk as { salon_id?: string | null } | null)?.salon_id;
       if (salonId) {
         const { data: sl } = await supabase
-          .from("salons")
+          .from("public_salon_profiles" as never)
           .select("timezone")
           .eq("id", salonId)
           .maybeSingle();

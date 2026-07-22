@@ -38,7 +38,7 @@ export async function getSalonBySlug(
   }
 
   const { data: salonExact, error: exactErr } = await supabase
-    .from("salons")
+    .from("public_salon_profiles" as never)
     .select(PUBLIC_BOOKING_SALON_SELECT as never)
     .eq("slug", normalizedSlug)
     .limit(1)

@@ -45,6 +45,8 @@ psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
   -f "$ROOT/supabase/migrations/20260722210600_close_loyalty_otp_reads.sql"
 psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
   -f "$ROOT/supabase/migrations/20260722214100_harden_public_salon_reads.sql"
+psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+  -f "$ROOT/supabase/migrations/20260722221300_isolate_authenticated_salon_reads.sql"
 
 echo "→ reference data (lookup tables the schema cannot work without)"
 # service_categories and platform_flags are global lookup tables, not anyone's
