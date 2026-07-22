@@ -1278,6 +1278,21 @@ export type UserMessages = {
       nextActionHeading: string;
       aiSuggestionHeading: string;
       aiAllClear: string;
+      aiReasons: {
+        overdue: string;
+        not_started: string;
+        long_wait: string;
+        no_staff_for_waiting: string;
+        sms_failed: string;
+        party_change: string;
+        setup_incomplete: string;
+        finish_overdue: string;
+        assign_waiting: string;
+        prepare_next: string;
+        party_pending: string;
+        suggest_walkin: string;
+        all_clear: string;
+      };
       alertsHeading: string;
       moreIssues: (n: number) => string;
       // Next Action texts
@@ -3769,6 +3784,21 @@ export const userEn: UserMessages = {
       nextActionHeading: "Next action",
       aiSuggestionHeading: "NailIQ suggests",
       aiAllClear: "The desk is on track — no urgent action right now",
+      aiReasons: {
+        overdue: "Because the scheduled service end time has passed.",
+        not_started: "Because the appointment time passed and service has not started.",
+        long_wait: "Because this guest has waited longer than the salon’s target.",
+        no_staff_for_waiting: "Because guests are waiting and no staff member is available.",
+        sms_failed: "Because a guest may not have received their confirmation.",
+        party_change: "Because this group still has unconfirmed guests.",
+        setup_incomplete: "Because missing setup details can block daily operations.",
+        finish_overdue: "Because an active service is running beyond its planned time.",
+        assign_waiting: "Because a guest is waiting and can be served next.",
+        prepare_next: "Because the next guest is arriving within 30 minutes.",
+        party_pending: "Because the group booking is not fully confirmed yet.",
+        suggest_walkin: "Because staff capacity is open and no guest is waiting.",
+        all_clear: "Because no urgent delay, wait, or service issue is detected.",
+      },
       alertsHeading: "Needs attention",
       moreIssues: (n: number) => `+${n} more issue${n === 1 ? "" : "s"}`,
       longWaitGuest: (n: number) => `1 guest has waited over ${n} min`,

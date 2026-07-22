@@ -3174,6 +3174,7 @@ function ReceptionistCenterInner({
             labels={cockpitLabels}
             heading={rcMessages.basicMode.aiSuggestionHeading}
             allClear={rcMessages.basicMode.aiAllClear}
+            reasons={rcMessages.basicMode.aiReasons}
             onAction={onCockpitAction}
           />
         ) : null}
