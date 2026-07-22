@@ -2754,7 +2754,7 @@ function ReceptionistCenterInner({
                   variant="info"
                   state="subtle"
                   size="sm"
-                  className="hidden sm:inline-flex"
+                  className="hidden xl:inline-flex"
                 >
                   {rcMessages.roleBadge.ownerView}
                 </Badge>
@@ -2817,7 +2817,7 @@ function ReceptionistCenterInner({
                   onClick={toggleBasicMode}
                   data-rush-fade
                   className={cn(
-                    "hidden rounded-md border px-2.5 py-1 text-xs font-medium transition-colors sm:inline-flex",
+                    "hidden rounded-md border px-2.5 py-1 text-xs font-medium transition-colors xl:inline-flex",
                     basicMode
                       ? "border-nq-primary bg-nq-primary/15 text-nq-primary"
                       : "border-nq-border bg-nq-surface text-nq-muted hover:text-nq-foreground",
@@ -2830,7 +2830,7 @@ function ReceptionistCenterInner({
                   simplified view, so the density control would be redundant
                   clutter. Reappears when Basic Mode is off. */}
               {viewerRole !== "nail_tech" && !basicModeActive ? (
-                <span className="hidden md:inline" data-rush-fade>
+                <span className="hidden xl:inline" data-rush-fade>
                   <DensitySlider
                     slug={slug}
                     value={data.dashboardDensity}
@@ -2842,7 +2842,7 @@ function ReceptionistCenterInner({
               ) : null}
               {/* DRC color theme picker — owner-only, subtle palette icon */}
               {viewerRole === "owner" && !basicModeActive ? (
-                <span className="hidden md:inline" data-rush-fade>
+                <span className="hidden xl:inline" data-rush-fade>
                   <DrcThemePicker
                     slug={slug}
                     currentAccent={drcAccent}
@@ -2867,7 +2867,7 @@ function ReceptionistCenterInner({
                   aria-label={rcMessages.viewMode.ariaLabel}
                   data-testid="view-mode-toggle"
                   data-rush-fade
-                  className="hidden overflow-hidden rounded-md border border-nq-border bg-nq-surface text-xs font-medium sm:inline-flex"
+                  className="hidden overflow-hidden rounded-md border border-nq-border bg-nq-surface text-xs font-medium xl:inline-flex"
                 >
                   {(["day", "week", "month"] as const).map((mode) => {
                     const active = viewMode === mode;
