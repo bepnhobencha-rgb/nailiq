@@ -19,7 +19,7 @@ export interface ResourceMode {
 /** Read a salon's resource-mode config. */
 export async function getResourceMode(db: Db, salonId: string): Promise<ResourceMode> {
   const { data } = await db
-    .from("salons")
+    .from("public_salon_profiles" as never)
     .select("resources_enabled, primary_grid_axis")
     .eq("id", salonId)
     .maybeSingle();

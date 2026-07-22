@@ -426,7 +426,7 @@ export async function loadGroupSmartSchedule(
 
   // 1. Salon ---------------------------------------------------------
   const { data: salonRaw, error: salonErr } = await supabase
-    .from("salons")
+    .from("public_salon_profiles" as never)
     .select("id, profile_complete, opening_hours, timezone, booking_closed_dates, booking_lead_minutes")
     .eq("slug", params.shopSlug)
     .maybeSingle();

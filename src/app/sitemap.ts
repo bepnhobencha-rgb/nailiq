@@ -23,9 +23,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     );
     const { data } = await supabase
-      .from("salons")
+      .from("public_salon_profiles" as never)
       .select("slug, created_at")
-      .is("archived_at", null)
       .eq("profile_complete", true)
       .not("slug", "like", "e2e-%");
 

@@ -275,15 +275,29 @@ export async function submitPublicBooking(
 
   const supabase = createClient();
 
-  const { data: salon, error: salonErr } = await supabase
-    .from("salons")
+  const { data: salonData, error: salonErr } = await supabase
+    .from("public_salon_profiles" as never)
     .select(
       "id, profile_complete, opening_hours, subscription_plan, plan_override, feature_flags, phone_otp_enabled, booking_lead_minutes, timezone, tax_lines, vertical, health_ack_required",
     )
     .eq("slug", shopSlug)
     .single();
 
-  if (salonErr || !salon) throw new Error("salon_not_found");
+  if (salonErr || !salonData) throw new Error("salon_not_found");
+  const salon = salonData as unknown as {
+    id: string;
+    profile_complete?: boolean | null;
+    opening_hours?: unknown;
+    subscription_plan?: string | null;
+    plan_override?: string | null;
+    feature_flags?: Record<string, unknown> | null;
+    phone_otp_enabled?: boolean | null;
+    booking_lead_minutes?: number | null;
+    timezone?: string | null;
+    tax_lines?: unknown;
+    vertical?: string | null;
+    health_ack_required?: boolean | null;
+  };
 
   bookingScope.setTag("salon.id", String(salon.id));
   bookingScope.setContext("salon", {

@@ -313,7 +313,7 @@ export async function submitGroupBooking(
   // loadBookingServices.ts where `acceptingBookings` is derived
   // from this column).
   const { data: salonRaw, error: salonErr } = await supabase
-    .from("salons")
+    .from("public_salon_profiles" as never)
     .select(
       "id, profile_complete, opening_hours, timezone, booking_closed_dates, subscription_plan, plan_override, feature_flags, phone_otp_enabled",
     )

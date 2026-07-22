@@ -132,4 +132,31 @@ describe("public booking write boundary", () => {
     );
     expect(lookup).not.toMatch(/\.from\("salons"\)[\s\S]{0,120}\.select\("\*"\)/);
   });
+
+  it("isolates authenticated salon rows behind a safe public profile", () => {
+    const migration = readFileSync(
+      resolve(
+        process.cwd(),
+        "supabase/migrations/20260722221300_isolate_authenticated_salon_reads.sql",
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(/CREATE OR REPLACE VIEW public\.public_salon_profiles/i);
+    expect(migration).toMatch(/DROP POLICY IF EXISTS "public read salons"/i);
+    expect(migration).toMatch(
+      /GRANT SELECT ON TABLE public\.public_salon_profiles TO anon, authenticated, service_role/i,
+    );
+    const projection = migration.match(/AS\s+SELECT([\s\S]*?)FROM public\.salons/i)?.[1] ?? "";
+    for (const privateColumn of [
+      "email",
+      "owner_phone",
+      "stripe_customer_id",
+      "stripe_subscription_id",
+      "admin_notes",
+      "ai_manager_instructions",
+    ]) {
+      expect(projection).not.toMatch(new RegExp(`\\b${privateColumn}\\b`, "i"));
+    }
+  });
 });

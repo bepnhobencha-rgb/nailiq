@@ -47,13 +47,14 @@ export async function submitPublicWaitlistEntry(
 
   const supabase = createClient();
 
-  const { data: salon, error: salonErr } = await supabase
-    .from("salons")
+  const { data: salonData, error: salonErr } = await supabase
+    .from("public_salon_profiles" as never)
     .select("id")
     .eq("slug", shopSlug)
     .single();
 
-  if (salonErr || !salon) throw new Error("salon_not_found");
+  if (salonErr || !salonData) throw new Error("salon_not_found");
+  const salon = salonData as unknown as { id: string };
 
   const staffUuid =
     staffId === BOOKING_ANY_STAFF_ID || !staffId.trim()
