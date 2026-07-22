@@ -138,6 +138,7 @@ import {
 import {
   formatInSalonTz,
   salonDateOffset,
+  salonNowMinutes,
   salonToday,
   salonYmdOfUtc,
 } from "@/shared/lib/salonTime";
@@ -3160,6 +3161,8 @@ function ReceptionistCenterInner({
             readyStaffCount={availableStaffCount}
             totalStaffCount={data.staff.length}
             waitingCount={queueWaitingCount}
+            closeMinutes={data.salon.closeMinutes}
+            currentMinutes={salonNowMinutes(timezone, nowIso)}
             formatTime={(utcIso) => formatInSalonTz(utcIso, timezone, "time")}
             labels={rcMessages.dailyBrief}
           />

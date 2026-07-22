@@ -16,10 +16,17 @@ type BriefBooking = {
 type Labels = {
   eyebrow: string;
   title: string;
+  closingEyebrow: string;
+  closingTitle: string;
   bookings: string;
   vip: string;
   staffReady: string;
   waiting: string;
+  remaining: string;
+  inService: string;
+  completed: string;
+  readyToClose: string;
+  workRemaining: (count: number) => string;
   dayWindow: (start: string, end: string) => string;
   riskGuests: (count: number) => string;
   calmDay: string;
@@ -34,6 +41,8 @@ type Props = {
   readyStaffCount: number;
   totalStaffCount: number;
   waitingCount: number;
+  closeMinutes: number | null;
+  currentMinutes: number;
   formatTime: (utcIso: string) => string;
   labels: Labels;
 };
@@ -49,10 +58,13 @@ export function DailyBriefCard({
   readyStaffCount,
   totalStaffCount,
   waitingCount,
+  closeMinutes,
+  currentMinutes,
   formatTime,
   labels,
 }: Props) {
-  const storageKey = `nailiq-daily-brief-seen:${slug}:${selectedDate}`;
+  const isClosingTime = closeMinutes != null && currentMinutes >= closeMinutes - 90;
+  const storageKey = `nailiq-daily-brief-seen:${slug}:${selectedDate}:${isClosingTime ? "close" : "open"}`;
   const [expanded, setExpanded] = useState(true);
 
   useEffect(() => {
@@ -78,8 +90,18 @@ export function DailyBriefCard({
       ).length,
       first: active[0]?.start_time_utc ?? null,
       last: active.at(-1)?.end_time_utc ?? null,
+      remainingCount: bookings.filter((booking) =>
+        ["pending", "confirmed"].includes(booking.status),
+      ).length,
+      inServiceCount: bookings.filter((booking) => booking.status === "in_progress")
+        .length,
+      completedCount: bookings.filter((booking) => booking.status === "completed")
+        .length,
     };
   }, [bookings]);
+
+  const closingWorkCount =
+    summary.remainingCount + summary.inServiceCount + waitingCount;
 
   const collapse = () => {
     setExpanded(false);
@@ -100,8 +122,16 @@ export function DailyBriefCard({
           aria-label={labels.expand}
         >
           <Sparkles className="h-4 w-4 text-nq-primary" aria-hidden />
-          <span className="font-semibold text-nq-foreground">{labels.title}</span>
-          <span className="truncate">· {summary.count} {labels.bookings.toLocaleLowerCase()}</span>
+          <span className="font-semibold text-nq-foreground">
+            {isClosingTime ? labels.closingTitle : labels.title}
+          </span>
+          <span className="truncate">
+            · {isClosingTime
+              ? closingWorkCount === 0
+                ? labels.readyToClose
+                : labels.workRemaining(closingWorkCount)
+              : `${summary.count} ${labels.bookings.toLocaleLowerCase()}`}
+          </span>
           <ChevronDown className="ml-auto h-4 w-4" aria-hidden />
         </button>
       </div>
@@ -120,10 +150,10 @@ export function DailyBriefCard({
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-nq-primary">
-              {labels.eyebrow}
+              {isClosingTime ? labels.closingEyebrow : labels.eyebrow}
             </p>
             <h2 className="text-base font-semibold text-nq-foreground sm:text-lg">
-              {labels.title}
+              {isClosingTime ? labels.closingTitle : labels.title}
             </h2>
           </div>
           <button
@@ -137,17 +167,39 @@ export function DailyBriefCard({
         </div>
 
         <div className="mt-3 grid grid-cols-4 gap-2">
-          <Metric value={summary.count} label={labels.bookings} />
-          <Metric value={summary.vipCount} label={labels.vip} />
-          <Metric value={`${readyStaffCount}/${totalStaffCount}`} label={labels.staffReady} />
-          <Metric value={waitingCount} label={labels.waiting} />
+          {isClosingTime ? (
+            <>
+              <Metric value={summary.remainingCount} label={labels.remaining} />
+              <Metric value={summary.inServiceCount} label={labels.inService} />
+              <Metric value={waitingCount} label={labels.waiting} />
+              <Metric value={summary.completedCount} label={labels.completed} />
+            </>
+          ) : (
+            <>
+              <Metric value={summary.count} label={labels.bookings} />
+              <Metric value={summary.vipCount} label={labels.vip} />
+              <Metric value={`${readyStaffCount}/${totalStaffCount}`} label={labels.staffReady} />
+              <Metric value={waitingCount} label={labels.waiting} />
+            </>
+          )}
         </div>
 
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-nq-muted">
-          {summary.first && summary.last ? (
+          {isClosingTime ? (
+            <p
+              className={cn(
+                "font-medium",
+                closingWorkCount === 0 ? "text-nq-success" : "text-nq-warning",
+              )}
+            >
+              {closingWorkCount === 0
+                ? labels.readyToClose
+                : labels.workRemaining(closingWorkCount)}
+            </p>
+          ) : summary.first && summary.last ? (
             <p>{labels.dayWindow(formatTime(summary.first), formatTime(summary.last))}</p>
           ) : null}
-          <p
+          {!isClosingTime ? <p
             className={cn(
               summary.riskCount > 0 ? "font-medium text-nq-warning" : "",
             )}
@@ -155,7 +207,7 @@ export function DailyBriefCard({
             {summary.riskCount > 0
               ? labels.riskGuests(summary.riskCount)
               : labels.calmDay}
-          </p>
+          </p> : null}
         </div>
       </div>
     </section>
