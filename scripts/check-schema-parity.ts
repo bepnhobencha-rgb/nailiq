@@ -155,8 +155,13 @@ function main() {
   const GRANTS = { anon: 75, authenticated: 75, service_role: 81 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
-      `select count(distinct table_name) from information_schema.role_table_grants
-        where table_schema='public' and grantee='${role}'`,
+      `select count(distinct table_name) from (
+         select table_name from information_schema.role_table_grants
+          where table_schema='public' and grantee='${role}'
+         union
+         select table_name from information_schema.role_column_grants
+          where table_schema='public' and grantee='${role}'
+       ) reachable_tables`,
     );
     const ok = got === want;
     if (!ok) failed = true;
