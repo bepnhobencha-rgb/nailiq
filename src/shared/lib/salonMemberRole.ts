@@ -17,10 +17,9 @@ export const SALON_MEMBER_ROLES: readonly SalonMemberRole[] = [
  * Normalize a `salon_members.role` DB value into a known `SalonMemberRole`.
  *
  * Legacy rows may hold `NULL` or values written before the role union was
- * formalized. Default is `"owner"` — historically every membership row was
- * an owner, and owner is the most permissive role so a fallback to it does
- * not silently elevate. Any future migration should backfill explicit
- * values rather than relying on this default.
+ * formalized. Unknown values must never gain management access, so they fall
+ * back to the least-privileged schedule-only role. A data repair can restore
+ * the intended role after the membership row has been reviewed.
  */
 export function normalizeSalonMemberRole(raw: unknown): SalonMemberRole {
   const v = typeof raw === "string" ? raw.trim().toLowerCase() : "";
@@ -28,7 +27,8 @@ export function normalizeSalonMemberRole(raw: unknown): SalonMemberRole {
   if (v === "senior") return "senior";
   if (v === "nail_tech") return "nail_tech";
   if (v === "receptionist") return "receptionist";
-  return "owner";
+  if (v === "owner") return "owner";
+  return "nail_tech";
 }
 
 /**
