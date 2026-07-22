@@ -134,6 +134,8 @@ export const bookingVi: BookingMessages = {
   refImageRemove: "Xóa",
   bookingErrors: {
     slotJustTaken: "Khung giờ vừa có khách khác đặt. Vui lòng chọn giờ khác.",
+    rateLimited:
+      "Bạn đã thử đặt lịch quá nhiều lần. Vui lòng chờ 15 phút hoặc gọi cho tiệm.",
     wixSlotTaken: "Rất tiếc, khung giờ này vừa được đặt bởi khách khác. Vui lòng chọn giờ khác.",
     invalidPhone:
       "Số không hợp lệ — ví dụ +1 (604) 555-1234 hoặc +84 90 123 4567",
