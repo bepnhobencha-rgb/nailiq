@@ -90,5 +90,13 @@ describe("public booking write boundary", () => {
     expect(migration).toMatch(
       /REVOKE SELECT ON TABLE public\.phone_otp_sessions FROM anon/i,
     );
+
+    const baseline = readFileSync(
+      resolve(process.cwd(), "scripts/apply-baseline.sh"),
+      "utf8",
+    );
+    expect(baseline).toContain(
+      "20260722210600_close_loyalty_otp_reads.sql",
+    );
   });
 });
