@@ -198,26 +198,17 @@ test.describe("Accessibility", () => {
       await assertLogicalFocusOrder(page, "register");
     });
 
-    // Focused guard for the specific defect that regressed once (issue #748,
-    // RC-8): the password field was labelled by placeholder only, so a screen
-    // reader announced nothing stable and the visible hint vanished the moment
-    // the user typed. Copy-agnostic on purpose — it asserts a real, non-empty
-    // accessible name from an associated visible <label>, not any exact string.
-    test("password field has a visible, associated label — not placeholder-only", async ({
+    // The self-service flow uses magic-link email rather than a password. Keep
+    // a focused guard that the email field retains a stable accessible name.
+    test("magic-link email field has an accessible name", async ({
       page,
     }) => {
       await page.goto("/register");
       await page.waitForLoadState("networkidle");
 
-      const password = page.locator("#password-input");
-      await expect(password).toBeVisible();
-      // Accessible name must exist and must come from the label, not survive
-      // solely as a placeholder (which is not a reliable accessible name).
-      await expect(password).toHaveAccessibleName(/\S/);
-
-      const label = page.locator('label[for="password-input"]');
-      await expect(label).toBeVisible();
-      await expect(label).toHaveText(/\S/);
+      const email = page.getByRole("textbox", { name: /email address/i });
+      await expect(email).toBeVisible();
+      await expect(email).toHaveAccessibleName(/\S/);
     });
   });
 });

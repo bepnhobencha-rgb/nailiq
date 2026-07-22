@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { getSalonPwaInfo } from "@/shared/dashboard/salonPwaInfo";
 import { ImpersonationBanner } from "@/components/impersonation/ImpersonationBanner";
@@ -9,6 +10,7 @@ import { loadOwnerSalons } from "@/shared/dashboard/salonOwnerActions";
 import { expireImpersonationIfStale } from "@/shared/superadmin/impersonationActions";
 import { salonDayRangeUtc, salonToday } from "@/shared/lib/salonTime";
 import { parseSubscriptionPlan } from "@/shared/lib/subscriptionPlans";
+import { trialDaysRemaining } from "@/shared/lib/trial";
 import {
   resolveFeatureVisibility,
 } from "@/shared/features/featureRegistry";
@@ -159,17 +161,23 @@ export default async function DashboardSlugLayout({
   const { data: planRow } = await ctx.supabase
     .from("salons")
     .select(
-      "subscription_plan, plan_override, feature_flags, voice_ai_enabled" as never,
+      "subscription_plan, subscription_status, trial_ends_at, plan_override, feature_flags, voice_ai_enabled" as never,
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
   const flagSalon = (planRow ?? {}) as {
     subscription_plan?: string | null;
+    subscription_status?: string | null;
+    trial_ends_at?: string | null;
     plan_override?: string | null;
     feature_flags?: unknown;
     voice_ai_enabled?: boolean | null;
   };
   const subscriptionPlan = parseSubscriptionPlan(flagSalon.subscription_plan);
+  const daysLeftInTrial = trialDaysRemaining(flagSalon.trial_ends_at);
+  const isTrial =
+    flagSalon.subscription_status === "trialing" &&
+    daysLeftInTrial != null;
 
   // Resolve release-feature visibility server-side so the client sidebar/shell
   // receive plain booleans (never the raw salon row). Now covers EVERY key
@@ -194,6 +202,28 @@ export default async function DashboardSlugLayout({
         userEmail={userEmail}
         salonId={ctx.salon.id}
       >
+        {isTrial ? (
+          <div
+            className={`mx-4 mt-4 flex flex-col gap-3 rounded-2xl border px-4 py-3 text-sm sm:mx-6 sm:flex-row sm:items-center sm:justify-between ${
+              daysLeftInTrial === 0
+                ? "border-nq-error/40 bg-nq-error/10 text-nq-foreground"
+                : "border-nq-primary/35 bg-nq-primary/10 text-nq-foreground"
+            }`}
+            role="status"
+          >
+            <p>
+              {daysLeftInTrial === 0
+                ? "Your 14-day trial has ended. Choose a plan to keep using paid features."
+                : `${daysLeftInTrial} day${daysLeftInTrial === 1 ? "" : "s"} left in your free trial. No credit card has been charged.`}
+            </p>
+            <Link
+              href={`/dashboard/${encodeURIComponent(slug)}/settings#cat-plan`}
+              className="shrink-0 font-semibold text-nq-primary-soft underline-offset-4 hover:underline"
+            >
+              View plans
+            </Link>
+          </div>
+        ) : null}
         {children}
       </DashboardShell>
     </>

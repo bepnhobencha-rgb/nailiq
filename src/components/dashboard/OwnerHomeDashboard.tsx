@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { CalendarPlus, ChevronRight, UserPlus, Users } from "lucide-react";
 import type { OwnerHomeData } from "@/shared/dashboard/loadOwnerHomeDashboardAction";
 import { unclosedBookingHref } from "@/shared/dashboard/unclosedBookingTypes";
 import { getUserMessages } from "@/shared/i18n/user";
@@ -289,13 +290,21 @@ export function OwnerHomeDashboard({
       </div>
 
       {/* ── Quick actions (the 3 daily jobs) ─────────────────────────── */}
-      <div className="flex flex-wrap gap-2">
+      <section aria-label={L("Quick actions", "Thao tác nhanh")}>
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-nq-muted/80">
+          {L("What would you like to do?", "Bạn muốn làm gì?")}
+        </p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         <Link
           href={`/dashboard/${slug}/center?view=day`}
-          className="inline-flex min-h-10 touch-manipulation items-center gap-1.5 rounded-lg border border-nq-primary/40 bg-nq-primary/10 px-3.5 py-2 text-sm font-semibold text-nq-primary transition-colors hover:bg-nq-primary/15"
+          className="group flex min-h-16 touch-manipulation items-center gap-3 rounded-2xl bg-nq-primary px-4 py-3 text-white shadow-[0_8px_24px_rgba(127,92,255,0.24)] transition-transform active:scale-[0.98]"
         >
-          <span aria-hidden>➕</span>
-          {L("New booking", "Tạo lịch hẹn")}
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/18"><CalendarPlus className="h-5 w-5" aria-hidden /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15px] font-bold">{L("New booking", "Tạo lịch hẹn")}</span>
+            <span className="block text-xs text-white/75">{L("Choose time and staff", "Chọn giờ và nhân viên")}</span>
+          </span>
+          <ChevronRight className="h-5 w-5 text-white/70" aria-hidden />
         </Link>
         <button
           type="button"
@@ -307,19 +316,28 @@ export function OwnerHomeDashboard({
             }
             router.push(`/dashboard/${slug}/center#queue`);
           }}
-          className="inline-flex min-h-10 touch-manipulation items-center gap-1.5 rounded-lg border border-nq-border/45 bg-nq-surface/45 px-3.5 py-2 text-sm font-semibold text-nq-foreground transition-colors hover:bg-nq-surface/65"
+          className="flex min-h-16 touch-manipulation items-center gap-3 rounded-2xl border border-nq-border/45 bg-nq-surface/55 px-4 py-3 text-left transition-transform active:scale-[0.98]"
         >
-          <span aria-hidden>🚶</span>
-          {L("Walk-in", "Khách vãng lai")}
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-nq-primary/12 text-nq-primary"><Users className="h-5 w-5" aria-hidden /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15px] font-bold text-nq-foreground">{L("Walk-in customer", "Khách vãng lai")}</span>
+            <span className="block text-xs text-nq-muted">{L("Add to the waiting list", "Thêm vào danh sách chờ")}</span>
+          </span>
+          <ChevronRight className="h-5 w-5 text-nq-muted/60" aria-hidden />
         </button>
         <Link
           href={`/dashboard/${slug}/clients`}
-          className="inline-flex min-h-10 touch-manipulation items-center gap-1.5 rounded-lg border border-nq-border/45 bg-nq-surface/45 px-3.5 py-2 text-sm font-semibold text-nq-foreground transition-colors hover:bg-nq-surface/65"
+          className="flex min-h-16 touch-manipulation items-center gap-3 rounded-2xl border border-nq-border/45 bg-nq-surface/55 px-4 py-3 transition-transform active:scale-[0.98]"
         >
-          <span aria-hidden>👤</span>
-          {L("Add customer", "Thêm khách")}
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-nq-primary/12 text-nq-primary"><UserPlus className="h-5 w-5" aria-hidden /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15px] font-bold text-nq-foreground">{L("Add customer", "Thêm khách hàng")}</span>
+            <span className="block text-xs text-nq-muted">{L("Save their information", "Lưu thông tin khách")}</span>
+          </span>
+          <ChevronRight className="h-5 w-5 text-nq-muted/60" aria-hidden />
         </Link>
-      </div>
+        </div>
+      </section>
 
       {/* ── Minh pending approvals ───────────────────────────────────── */}
       {data.pendingApprovalsCount > 0 ? (

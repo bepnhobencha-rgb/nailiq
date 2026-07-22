@@ -77,11 +77,13 @@ export async function POST(req: NextRequest) {
 
     const messageSid = params.MessageSid ?? "";
     const messageStatus = (params.MessageStatus ?? "").toLowerCase();
+    const errorCode = params.ErrorCode?.trim() || null;
 
     if (messageSid && TERMINAL_STATUSES.has(messageStatus)) {
       await updateNotificationBySid(
         messageSid,
         messageStatus as "delivered" | "undelivered" | "failed",
+        errorCode,
       );
     }
   } else {
@@ -90,10 +92,12 @@ export async function POST(req: NextRequest) {
     if (formData) {
       const messageSid = String(formData.get("MessageSid") ?? "");
       const messageStatus = String(formData.get("MessageStatus") ?? "").toLowerCase();
+      const errorCode = String(formData.get("ErrorCode") ?? "").trim() || null;
       if (messageSid && TERMINAL_STATUSES.has(messageStatus)) {
         await updateNotificationBySid(
           messageSid,
           messageStatus as "delivered" | "undelivered" | "failed",
+          errorCode,
         );
       }
     }

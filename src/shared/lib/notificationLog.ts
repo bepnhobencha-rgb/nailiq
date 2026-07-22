@@ -63,6 +63,10 @@ export async function logNotification(
     .maybeSingle();
 
   if (error) {
+    // Booking confirmations are protected by a partial unique index. A second
+    // caller means the notification was already recorded; this is an expected
+    // idempotency outcome, not a production error.
+    if ((error as { code?: string }).code === "23505") return null;
     console.error("[logNotification]", error);
     return null;
   }
@@ -145,11 +149,13 @@ export async function updateNotificationStatus(
 export async function updateNotificationBySid(
   messageSid: string,
   status: "delivered" | "undelivered" | "failed",
+  errorCode?: string | null,
 ): Promise<void> {
   const supabase = createServiceRoleClient();
   const now = new Date().toISOString();
 
   const patch: Record<string, unknown> = { status };
+  if (errorCode) patch.error_code = errorCode;
   if (status === "delivered") patch.delivered_at = now;
   else patch.failed_at = now;
 

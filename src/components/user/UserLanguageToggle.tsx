@@ -3,9 +3,9 @@
 import { cn } from "@/shared/lib/cn";
 import type { UserLanguage } from "@/shared/i18n/user/types";
 
-const items: { code: UserLanguage; label: string }[] = [
-  { code: "en", label: "EN" },
-  { code: "vi", label: "VI" },
+const items: { code: UserLanguage; label: string; flag: string }[] = [
+  { code: "en", label: "English", flag: "🇨🇦" },
+  { code: "vi", label: "Tiếng Việt", flag: "🇻🇳" },
 ];
 
 export function UserLanguageToggle({
@@ -27,7 +27,7 @@ export function UserLanguageToggle({
       role="group"
       aria-label="Language"
     >
-      {items.map(({ code, label }) => {
+      {items.map(({ code, label, flag }) => {
         const active = language === code;
         return (
           <button
@@ -40,8 +40,11 @@ export function UserLanguageToggle({
                 ? "bg-white/[0.12] text-nq-foreground shadow-[0_1px_2px_rgba(0,0,0,0.35)]"
                 : "text-nq-muted hover:text-nq-primary-soft",
             )}
+              aria-label={label}
+              aria-pressed={active}
           >
-            {label}
+            <span aria-hidden className="text-base leading-none">{flag}</span>
+            <span className="sr-only">{label}</span>
           </button>
         );
       })}

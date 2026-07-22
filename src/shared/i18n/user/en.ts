@@ -2421,25 +2421,25 @@ export const userEn: UserMessages = {
   landing: {
     nav: {
       signIn: "Sign in",
-      tryFree: "Try free",
+      tryFree: "Start free trial",
       langAriaLabel: "Language",
       openMenu: "Open menu",
       closeMenu: "Close menu",
     },
     hero: {
-      eyebrow: "FOUNDER PILOT · LIMITED TO 5 SALONS",
-      h1Line1: "Your Salon’s Website, Booking and Operations —",
-      h1Gold: "Set Up for You",
+      eyebrow: "14 DAYS FREE · NO CREDIT CARD",
+      h1Line1: "Take Bookings 24/7 and Run Your Nail Salon —",
+      h1Gold: "Without the Busywork",
       subline:
-        "NailIQ helps nail salons launch a professional website, online booking, staff schedules and essential salon operations without having to configure everything themselves.",
+        "NailIQ gives your salon online booking, staff scheduling and a live front desk in one simple place.",
       posSupport:
         "Keep your current POS. NailIQ can work alongside Square, Clover, Toast or another payment system.",
       valueStatement:
-        "We set it up. We train your team. You stay focused on your clients.",
-      ctaPrimary: "Apply for Founder Pilot",
-      ctaSecondary: "Book a Free Demo",
+        "Start on your own in minutes, or ask our team to set it up for you.",
+      ctaPrimary: "Start Your Free Trial",
+      ctaSecondary: "Watch a Free Demo",
       microtrust:
-        "Designed for nail salons · Keep your existing POS · Vietnamese-friendly support",
+        "Ready in about 2 minutes · Keep your existing POS · English and Vietnamese support",
     },
     problem: {
       eyebrow: "Why NailIQ",
@@ -2932,17 +2932,17 @@ export const userEn: UserMessages = {
       backToHome: "← Back to home",
     },
     finalCta: {
-      eyebrow: "Founder Pilot",
-      h2: "Ready to Modernize Your Salon Without Replacing Everything You Already Use?",
-      body: "Founder Pilot enrollment is limited to five salons so NailIQ can provide hands-on onboarding and launch support.",
+      eyebrow: "Start today",
+      h2: "Let Your Next Booking Happen While You Are Serving a Client",
+      body: "Create your salon workspace in about two minutes. Explore NailIQ free for 14 days with no credit card.",
       supportingLine:
         "Keep your current POS. Let NailIQ handle your website, online booking and salon setup.",
-      ctaPrimary: "Apply for Founder Pilot",
+      ctaPrimary: "Start Your Free Trial",
       ctaSecondary: "Book a Free Demo",
       trustNote:
-        "No obligation to purchase before reviewing the Founder Pilot service scope and terms.",
+        "No credit card required. Your salon data remains yours.",
       finalLegalNote:
-        "Founder Pilot availability, onboarding acceptance and final scope are subject to review. Published prices are in Canadian dollars and exclude applicable taxes and third-party fees. Direct POS integrations outside NailIQ’s currently supported scope require separate technical review and pricing.",
+        "The self-service plan is $39 CAD per month after the trial, plus applicable taxes. Optional setup services and direct POS integrations are quoted separately.",
     },
     footer: {
       about: "About",
