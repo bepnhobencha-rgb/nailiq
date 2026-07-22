@@ -36,14 +36,14 @@ export default async function ImportPage({ params }: PageProps) {
       <div>
         <h1 className="text-2xl font-semibold text-white">Import from Website</h1>
         <p className="text-sm text-[#a1a1aa] mt-1">
-          Paste your existing salon website URL and we'll automatically build your NailIQ page.
+          Paste your existing salon website URL and we&apos;ll automatically build your NailIQ page.
         </p>
       </div>
 
       <ImportFromWebsite slug={slug} initialJob={latestJob as ImportJob | null} />
 
       <div className="text-xs text-[#52525b] space-y-1">
-        <p>• We'll extract your services, pricing, photos, and salon details.</p>
+        <p>• We&apos;ll extract your services, pricing, photos, and salon details.</p>
         <p>• Images are downloaded to our servers — no hotlinking.</p>
         <p>• You can edit everything after import.</p>
         <p>• One import allowed per 24 hours.</p>
