@@ -554,9 +554,11 @@ export function DashboardSidebar({
 
   return (
     <aside
-      // Hidden on mobile (bottom-bar takes over per §9.2).
+      // iPad and smaller use the touch-first bottom bar. The full navigation
+      // rail starts at xl, where it no longer steals working room from the
+      // live appointment timeline.
       className={cn(
-        "hidden md:flex fixed inset-y-0 left-0 z-40 flex-col border-r text-nq-foreground",
+        "fixed inset-y-0 left-0 z-40 hidden flex-col border-r text-nq-foreground xl:flex",
         "transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] overflow-hidden",
       )}
       style={{

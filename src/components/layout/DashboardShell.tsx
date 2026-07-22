@@ -45,7 +45,7 @@ type Props = {
 
 /**
  * App-shell wrapper for `/dashboard/[slug]/*`. Renders the persistent
- * sidebar (md+) and the mobile bottom-bar (<md), shifting `<main>` so
+ * sidebar (xl+) and the touch-first bottom-bar (<xl), shifting `<main>` so
  * the inner content does not collide with the sidebar.
  *
  * Layout contract:
@@ -107,7 +107,7 @@ export function DashboardShell({
         // Adding a transition makes the grid slide rather than snap
         // when the user toggles collapse — same easing tokens the
         // receptionist motion uses.
-        className="min-h-dvh md:pl-[var(--nq-sidebar-w)] pb-16 md:pb-0 transition-[padding-left] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)]"
+        className="min-h-dvh pb-16 transition-[padding-left] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)] xl:pb-0 xl:pl-[var(--nq-sidebar-w)]"
       >
         <DashboardTopBar slug={slug} />
         {/* The view controls (refresh + fullscreen) live here, fixed top-right

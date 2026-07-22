@@ -174,9 +174,9 @@ export function MobileBottomNav({
     <>
       <nav
         aria-label={t.primaryNav}
-        className="md:hidden fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-nq-surface/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_30px_rgba(0,0,0,0.22)] backdrop-blur-xl"
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-nq-surface/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_30px_rgba(0,0,0,0.22)] backdrop-blur-xl xl:hidden"
       >
-        <ul className="grid grid-cols-5">
+        <ul className="mx-auto grid max-w-3xl grid-cols-5">
           {primaryItems.map((item) => (
             <MobileTab key={item.key} item={item} active={item.match(pathname)} />
           ))}
