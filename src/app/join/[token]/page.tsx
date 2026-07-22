@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import Link from "next/link";
 import { validateInviteToken } from "@/shared/dashboard/inviteTokenActions";
 import { JoinPageClient } from "./JoinPageClient";
 import type { Metadata } from "next";
@@ -41,12 +41,12 @@ export default async function JoinPage({
           <div className="mb-4 text-4xl">🔗</div>
           <h1 className="text-xl font-bold text-white">{msg.title}</h1>
           <p className="mt-3 text-sm text-white/50">{msg.body}</p>
-          <a
+          <Link
             href="/login"
             className="mt-6 inline-block rounded-xl bg-[#d4af37] px-6 py-2.5 text-sm font-semibold text-[#0b0c10] hover:bg-[#c9a430]"
           >
             Đến trang đăng nhập
-          </a>
+          </Link>
         </div>
       </div>
     );

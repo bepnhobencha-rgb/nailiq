@@ -121,7 +121,7 @@ async function main() {
   const svcByNorm = new Map((nailiqServices ?? []).map((s) => [normKey(s.name), s.id]));
 
   let svcMatched = 0;
-  let svcMissed: string[] = [];
+  const svcMissed: string[] = [];
   for (const ws of wixServices) {
     const wixServiceId = ws.id;
     // Schedule ID: prefer ws.schedule.id, fall back to ws.schedules[0].id
@@ -158,7 +158,7 @@ async function main() {
   const staffByNorm = new Map((nailiqStaff ?? []).map((s) => [normKey(s.name), s.id]));
 
   let staffMatched = 0;
-  let staffMissed: string[] = [];
+  const staffMissed: string[] = [];
   for (const wr of wixResources) {
     const rawName = wr.name ?? "";
     const name = resolveResourceName(rawName);
