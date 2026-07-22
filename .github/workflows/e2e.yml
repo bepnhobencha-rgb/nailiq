@@ -559,7 +559,26 @@ jobs:
         if: steps.preflight.outputs.configured == 'true'
         run: |
           set -euo pipefail
+
+          # This repository's migration history starts after the original core
+          # tables were created, so a blank `supabase start` cannot replay it
+          # directly (`salons` does not exist yet). Match the smoke/E2E jobs:
+          # boot an empty local stack first, then load the checked-in bootstrap.
+          migrations_dir="$PWD/supabase/migrations"
+          parked_dir="$RUNNER_TEMP/nailiq-visual-migrations"
+          mv "$migrations_dir" "$parked_dir"
+          mkdir -p "$migrations_dir"
+          restore_migrations() {
+            rm -rf "$migrations_dir"
+            mv "$parked_dir" "$migrations_dir"
+          }
+          trap restore_migrations EXIT
+
           supabase start --exclude studio,edge-runtime,logflare,vector
+
+          restore_migrations
+          trap - EXIT
+
           supabase status -o env > /tmp/sb.env
           set -a; . /tmp/sb.env; set +a
           {
