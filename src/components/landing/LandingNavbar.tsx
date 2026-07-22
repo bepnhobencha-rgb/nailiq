@@ -174,6 +174,7 @@ function LangToggle({
                 : "text-nq-muted hover:text-nq-foreground",
             )}
             aria-pressed={active}
+            aria-label={code === "vi" ? "Tiếng Việt" : "English"}
           >
             <span aria-hidden>{code === "vi" ? "🇻🇳" : "🇨🇦"}</span>
             <span className="sr-only">
