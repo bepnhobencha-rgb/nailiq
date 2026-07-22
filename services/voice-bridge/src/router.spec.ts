@@ -117,6 +117,12 @@ describe("router — language request beats spoken-language detection", () => {
     expect(detectLanguageRequest("Please switch to French")).toBe("fr");
     expect(detectLanguageRequest("switch to English")).toBe("en");
     expect(detectLanguageRequest("I'd like a manicure")).toBeNull();
+    // A Vietnamese caller names other languages in Vietnamese (call 4e705d34:
+    // "nói bằng tiếng Hoa" was missed and the agent wrongly refused).
+    expect(detectLanguageRequest("nói bằng tiếng Hoa được không?")).toBe("zh");
+    expect(detectLanguageRequest("cho tôi tiếng Trung")).toBe("zh");
+    expect(detectLanguageRequest("nói tiếng Pháp đi")).toBe("fr");
+    expect(detectLanguageRequest("tiếng Tây Ban Nha")).toBe("es");
   });
 
   it("pins the language acknowledgement instead of inheriting stale context", () => {

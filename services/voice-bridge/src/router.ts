@@ -120,10 +120,13 @@ export function detectLanguageRequest(text: string): SupportedLang | null {
   const asksFor = (names: string) => new RegExp(
     `\\b(?:speak|continue(?:\\s+in)?|use|switch(?:\\s+to)?)\\s+(?:${names})\\b`,
   ).test(t);
-  if (/中文/.test(t) || /\b(?:in|to) (?:chinese|mandarin)\b/.test(t) || asksFor("chinese|mandarin")) return "zh";
+  // Native + Vietnamese names for each language — a Vietnamese caller asks for
+  // Chinese as "tiếng Hoa" / "tiếng Trung", not "Chinese".
+  if (/中文|tiếng hoa|tieng hoa|tiếng trung|tieng trung|tiếng quảng|tiếng phổ thông|tiếng tàu/.test(t)
+      || /\b(?:in|to) (?:chinese|mandarin)\b/.test(t) || asksFor("chinese|mandarin")) return "zh";
   if (/tiếng việt|tieng viet/.test(t) || /\b(?:in|to) vietnamese\b/.test(t) || asksFor("vietnamese")) return "vi";
-  if (/\b(?:in|to) spanish\b|en español|en espanol|español|espanol/.test(t) || asksFor("spanish")) return "es";
-  if (/\b(?:in|to) french\b|en français|en francais|français|francais/.test(t) || asksFor("french")) return "fr";
+  if (/tiếng tây ban nha|tieng tay ban nha|\b(?:in|to) spanish\b|en español|en espanol|español|espanol/.test(t) || asksFor("spanish")) return "es";
+  if (/tiếng pháp|tieng phap|\b(?:in|to) french\b|en français|en francais|français|francais/.test(t) || asksFor("french")) return "fr";
   if (/tiếng anh|\b(?:in|to) english\b|english please|en inglés|en ingles/.test(t) || asksFor("english")) return "en";
   return null;
 }
