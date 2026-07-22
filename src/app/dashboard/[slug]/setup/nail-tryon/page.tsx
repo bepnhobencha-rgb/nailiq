@@ -4,7 +4,7 @@ import { requireReleaseFeatureEnabled } from "@/shared/features/requireReleaseFe
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 type Props = { params: Promise<{ slug: string }> };
-type DesignRow = { id: string; name: string; description: string | null; preview_path: string; is_active: boolean; service_id: string | null };
+type DesignRow = { id: string; name: string; description: string | null; preview_path: string; is_active: boolean; service_id: string | null; mapping_status: "ai_suggested" | "ready" | "needs_review"; mapping_visual_confidence: number | null; mapping_service_confidence: number | null; mapping_reason: string | null; mapping_attributes: unknown; mapping_required_question: string | null };
 type ServiceRow = { id: string; name: string; is_addon: boolean };
 type MappingRow = { design_id: string; service_id: string; mapping_type: "service" | "addon"; is_default: boolean; sort_order: number };
 
@@ -15,7 +15,7 @@ export default async function NailTryOnSetupPage({ params }: Props) {
   const db = createServiceRoleClient();
   const [{ data }, { data: serviceRows }, { data: mappingRows }] = await Promise.all([
     db.from("nail_designs" as never)
-      .select("id, name, description, preview_path, is_active, service_id")
+      .select("id, name, description, preview_path, is_active, service_id, mapping_status, mapping_visual_confidence, mapping_service_confidence, mapping_reason, mapping_attributes, mapping_required_question")
       .eq("salon_id", gate.salon.id).is("deleted_at", null).order("sort_order"),
     db.from("services" as never)
       .select("id, name, is_addon")
@@ -38,6 +38,13 @@ export default async function NailTryOnSetupPage({ params }: Props) {
       serviceIds: services.map((mapping) => mapping.service_id),
       addonServiceIds: selected.filter((mapping) => mapping.mapping_type === "addon").map((mapping) => mapping.service_id),
       defaultServiceId: services.find((mapping) => mapping.is_default)?.service_id || row.service_id,
+      status: row.mapping_status,
+      visualConfidence: row.mapping_visual_confidence,
+      serviceConfidence: row.mapping_service_confidence,
+      confidence: row.mapping_service_confidence,
+      reason: row.mapping_reason || undefined,
+      attributes: Array.isArray(row.mapping_attributes) ? row.mapping_attributes.filter((item): item is string => typeof item === "string") : [],
+      requiredQuestion: row.mapping_required_question,
     };
   }));
   const serviceOptions = ((serviceRows || []) as unknown as ServiceRow[]).filter((row) => !row.is_addon).map(({ id, name }) => ({ id, name }));
