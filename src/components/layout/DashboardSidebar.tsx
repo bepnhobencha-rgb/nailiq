@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Calendar,
   Camera,
+  ChevronDown,
   Gavel,
   Gift,
   History,
@@ -20,6 +21,7 @@ import {
   LayoutGrid,
   MessageSquare,
   Monitor,
+  Ellipsis,
   Plus,
   Scissors,
   Settings as SettingsIcon,
@@ -119,6 +121,23 @@ const BASIC_NAV_KEYS = new Set([
   "queue",
   "calendar",
   "clients",
+  "settings",
+]);
+
+/**
+ * The desktop rail follows the same iPhone-style hierarchy as mobile:
+ * everyday work stays visible, while occasional owner/admin tools live
+ * behind one predictable “More” disclosure. Routes remain fully reachable.
+ */
+const DESKTOP_PRIMARY_NAV_KEYS = new Set([
+  "home",
+  "pulse",
+  "front-desk",
+  "queue",
+  "calendar",
+  "clients",
+  "staff",
+  "services",
   "settings",
 ]);
 
@@ -487,19 +506,41 @@ export function DashboardSidebar({
     role === "receptionist" ||
     role === "nail_tech" ||
     (basicMode && !isManager);
-  // Basic Mode: keep only the front-desk essentials; drop now-empty
-  // sections. The "+ Walk-in" quick action moves under the live section
-  // (the insight section it normally trails is hidden in Basic Mode).
+  // Basic Mode keeps only the front-desk essentials. Management mode keeps
+  // daily work visible and folds occasional tools into a single More section.
   const visibleSections = useMemo<NavSection[]>(() => {
-    if (!navIsBasic) return sections;
-    return sections
-      .map((s) => ({
-        ...s,
-        items: s.items.filter((i) => BASIC_NAV_KEYS.has(i.key)),
+    if (navIsBasic) {
+      return sections
+        .map((s) => ({
+          ...s,
+          items: s.items.filter((i) => BASIC_NAV_KEYS.has(i.key)),
+        }))
+        .filter((s) => s.items.length > 0);
+    }
+
+    const primary = sections
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) =>
+          DESKTOP_PRIMARY_NAV_KEYS.has(item.key),
+        ),
       }))
-      .filter((s) => s.items.length > 0);
+      .filter((section) => section.items.length > 0);
+    const moreItems = sections.flatMap((section) =>
+      section.items.filter(
+        (item) => !DESKTOP_PRIMARY_NAV_KEYS.has(item.key) && !item.hidden,
+      ),
+    );
+    const configIndex = primary.findIndex((section) => section.key === "config");
+    const insertAt = configIndex >= 0 ? configIndex : primary.length;
+
+    return [
+      ...primary.slice(0, insertAt),
+      ...(moreItems.length ? [{ key: "more", items: moreItems }] : []),
+      ...primary.slice(insertAt),
+    ];
   }, [sections, navIsBasic]);
-  const quickAddSectionKey = navIsBasic ? "live" : "insight";
+  const quickAddSectionKey = navIsBasic ? "live" : "more";
 
   // Reference the prop so unused-var lint stays clean. messagesCount is
   // intentionally not surfaced in the new layout (Messages shows the
@@ -587,21 +628,30 @@ export function DashboardSidebar({
                 aria-hidden
               />
             ) : null}
-            <ul className="flex flex-col gap-1">
-              {section.items.filter((item) => !item.hidden).map((item) => (
-                <li key={item.key}>
-                  <SidebarRow
-                    item={item}
-                    active={item.href ? item.match(pathname) : false}
-                    collapsed={!showExpanded}
-                  />
-                </li>
-              ))}
-            </ul>
-            {/* Quick action sits inside the insight section so the
-                separator before Settings naturally wraps both the
-                insight rows AND the +Walk-in button. In Basic Mode the
-                insight section is hidden, so it would move under "live" —
+            {section.key === "more" ? (
+              <SidebarMoreSection
+                items={section.items}
+                pathname={pathname}
+                collapsed={!showExpanded}
+                label={language === "vi" ? "Thêm" : "More"}
+              />
+            ) : (
+              <ul className="flex flex-col gap-1">
+                {section.items.filter((item) => !item.hidden).map((item) => (
+                  <li key={item.key}>
+                    <SidebarRow
+                      item={item}
+                      active={item.href ? item.match(pathname) : false}
+                      collapsed={!showExpanded}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+            {/* Quick action sits with the More section so the separator
+                before Settings naturally wraps both the occasional tools
+                AND the +Walk-in button. In Basic Mode More is hidden, so
+                it would move under "live" —
                 but the Basic header already shows a primary "+ Walk-in",
                 so we drop the sidebar duplicate in Basic Mode (DoD #4:
                 no duplicate + Walk-in). We also drop it on the Front Desk
@@ -749,6 +799,57 @@ export function DashboardSidebar({
         ) : null}
       </div>
     </aside>
+  );
+}
+
+function SidebarMoreSection({
+  items,
+  pathname,
+  collapsed,
+  label,
+}: {
+  items: NavItem[];
+  pathname: string;
+  collapsed: boolean;
+  label: string;
+}) {
+  const active = items.some((item) => item.href && item.match(pathname));
+
+  return (
+    <details className="group" open={active || undefined}>
+      <summary
+        className={cn(
+          "flex min-h-11 w-full cursor-pointer list-none touch-manipulation items-center gap-3 rounded-lg text-nq-muted transition-colors",
+          "hover:bg-nq-surface/80 hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45",
+          "[&::-webkit-details-marker]:hidden",
+          collapsed ? "px-3" : "px-2.5",
+          active ? "bg-nq-primary/15 text-nq-primary" : "",
+        )}
+        title={collapsed ? label : undefined}
+      >
+        <Ellipsis className="h-5 w-5 shrink-0" aria-hidden />
+        {collapsed ? null : (
+          <>
+            <span className="min-w-0 flex-1 truncate text-sm">{label}</span>
+            <ChevronDown
+              className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180"
+              aria-hidden
+            />
+          </>
+        )}
+      </summary>
+      <ul className="mt-1 flex flex-col gap-1 border-l border-nq-border/30 pl-1.5">
+        {items.map((item) => (
+          <li key={item.key}>
+            <SidebarRow
+              item={item}
+              active={item.href ? item.match(pathname) : false}
+              collapsed={collapsed}
+            />
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
