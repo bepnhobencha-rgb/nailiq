@@ -53,4 +53,23 @@ describe("public booking write boundary", () => {
       /REVOKE ALL ON FUNCTION public\.get_booking_client_snapshot\(uuid, text\)[\s\S]*FROM PUBLIC, anon, authenticated/i,
     );
   });
+
+  it("keeps queue and review PII closed to public table reads", () => {
+    const migration = readFileSync(
+      resolve(
+        process.cwd(),
+        "supabase/migrations/20260722205000_close_public_pii_reads.sql",
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(/DROP POLICY IF EXISTS anon_read_queue_entries/i);
+    expect(migration).toMatch(
+      /REVOKE SELECT ON TABLE public\.queue_entries FROM anon/i,
+    );
+    expect(migration).toMatch(/DROP POLICY IF EXISTS reviews_select_by_token/i);
+    expect(migration).toMatch(
+      /REVOKE SELECT ON TABLE public\.reviews FROM anon, authenticated/i,
+    );
+  });
 });

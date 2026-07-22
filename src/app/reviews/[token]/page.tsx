@@ -16,8 +16,8 @@ type PageProps = {
 
 /**
  * Public review form. Authenticated solely by the opaque `token` in
- * the URL — no Supabase auth. RLS allows anon SELECT on `reviews` by
- * `request_token` so this server component can resolve the row.
+ * the URL — no Supabase auth. This server component resolves the token with a
+ * server-only service-role client; the reviews base table is never public.
  */
 export default async function ReviewByTokenPage({ params }: PageProps) {
   const { token } = await params;
