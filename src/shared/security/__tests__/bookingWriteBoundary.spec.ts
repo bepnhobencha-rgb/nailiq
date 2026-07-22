@@ -99,4 +99,37 @@ describe("public booking write boundary", () => {
       "20260722210600_close_loyalty_otp_reads.sql",
     );
   });
+
+  it("keeps owner, billing and internal salon fields out of anonymous reads", () => {
+    const migration = readFileSync(
+      resolve(
+        process.cwd(),
+        "supabase/migrations/20260722214100_harden_public_salon_reads.sql",
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(
+      /REVOKE ALL PRIVILEGES ON TABLE public\.salons FROM anon/i,
+    );
+    expect(migration).toMatch(/GRANT SELECT \([\s\S]*\) ON TABLE public\.salons TO anon/i);
+    for (const privateColumn of [
+      "email",
+      "owner_phone",
+      "stripe_customer_id",
+      "stripe_subscription_id",
+      "admin_notes",
+      "ai_manager_instructions",
+    ]) {
+      expect(migration.match(/GRANT SELECT \(([\s\S]*?)\) ON TABLE/i)?.[1]).not.toMatch(
+        new RegExp(`\\b${privateColumn}\\b`, "i"),
+      );
+    }
+
+    const lookup = readFileSync(
+      resolve(process.cwd(), "src/shared/booking/getSalonBySlug.ts"),
+      "utf8",
+    );
+    expect(lookup).not.toMatch(/\.from\("salons"\)[\s\S]{0,120}\.select\("\*"\)/);
+  });
 });

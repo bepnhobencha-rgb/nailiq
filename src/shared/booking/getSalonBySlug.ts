@@ -5,6 +5,22 @@ import {
   PUBLIC_BOOKING_SLUG_MIN_LEN,
 } from "@/shared/booking/normalizePublicBookingSlug";
 
+// Keep this list aligned with the anonymous column grant in
+// 20260722214100_harden_public_salon_reads.sql. Public booking must never use
+// select("*") here: salons also stores owner contact, billing and internal AI
+// configuration.
+export const PUBLIC_BOOKING_SALON_SELECT = [
+  "id", "slug", "name", "address", "salon_phone", "opening_hours",
+  "profile_complete", "booking_closed_dates", "timezone",
+  "subscription_plan", "plan_override", "feature_flags", "brand_color",
+  "theme_mode", "currency_code", "description", "phone_otp_enabled",
+  "voice_ai_enabled", "vertical", "public_sections_enabled", "booking_images",
+  "staff_selection_enabled", "booking_lead_minutes",
+  "group_together_threshold_minutes", "reference_image_enabled",
+  "health_ack_required", "email_links_enabled", "resources_enabled",
+  "tax_lines", "privacy_url", "terms_url", "default_language", "logo_url",
+].join(", ");
+
 export async function getSalonBySlug(
   supabase: SupabaseClient,
   slug: string,
@@ -23,7 +39,7 @@ export async function getSalonBySlug(
 
   const { data: salonExact, error: exactErr } = await supabase
     .from("salons")
-    .select("*")
+    .select(PUBLIC_BOOKING_SALON_SELECT as never)
     .eq("slug", normalizedSlug)
     .limit(1)
     .maybeSingle();
@@ -36,7 +52,7 @@ export async function getSalonBySlug(
   }
   if (salonExact) {
     return {
-      salon: salonExact as Record<string, unknown>,
+      salon: salonExact as unknown as Record<string, unknown>,
       error: null,
     };
   }
