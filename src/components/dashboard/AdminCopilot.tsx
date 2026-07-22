@@ -104,12 +104,6 @@ const SUGGESTIONS: Record<Lang, string[]> = {
   ],
 };
 
-function readLangCookie(): Lang {
-  if (typeof document === "undefined") return "en";
-  const m = document.cookie.match(/(?:^|;\s*)nailiq-user-lang=([^;]+)/);
-  return m && decodeURIComponent(m[1]).toLowerCase().startsWith("vi") ? "vi" : "en";
-}
-
 const LINK_RE = /\[([^\]]+)\]\(([^)]+)\)/;
 const TOKEN_RE = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g;
 
@@ -220,21 +214,13 @@ function Markdown({ text, nav }: { text: string; nav: (href: string) => void }) 
 export function AdminCopilot({ slug }: { slug: string; role?: string }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { language: lang, setLanguage } = useUserLanguage();
   const [open, setOpen] = useState(false);
-  const [lang, setLang] = useState<Lang>("en");
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  // Read the user-language cookie after mount. Deliberately done in an effect
-  // (not a lazy initializer) so the server and client first render both use
-  // "en" — that keeps hydration stable; the cookie value is applied right after.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { setLang(readLangCookie()); }, []);
-
-  const { setLanguage } = useUserLanguage();
 
   const nav = useCallback(
     (href: string) => {
