@@ -39,6 +39,8 @@ describe("resolveNailTryOnBookingRecommendation", () => {
       designName: "Classic Cherry",
       service: base,
       addOn: chrome,
+      eligibleServices: [],
+      eligibleAddOns: [],
       quote: {
         serviceName: "gel-x",
         addOnName: "chrome",
@@ -70,5 +72,26 @@ describe("resolveNailTryOnBookingRecommendation", () => {
     );
 
     expect(result.quote).toMatchObject({ durationMinutes: 60, priceCents: 10000 });
+  });
+
+  it("falls back to the first valid service and exposes every eligible option", () => {
+    const manicure = service("manicure");
+    const gelX = service("gel-x");
+    const chrome = service("chrome");
+    const art = service("art");
+    const result = resolveNailTryOnBookingRecommendation(
+      {
+        serviceId: "stale-default",
+        serviceIds: [gelX.id, manicure.id, "other-salon"],
+        addonServiceIds: [chrome.id, art.id],
+      },
+      [manicure, gelX],
+      [chrome, art],
+    );
+
+    expect(result.service?.id).toBe("gel-x");
+    expect(result.addOn?.id).toBe("chrome");
+    expect(result.eligibleServices.map((item) => item.id)).toEqual(["gel-x", "manicure"]);
+    expect(result.eligibleAddOns.map((item) => item.id)).toEqual(["chrome", "art"]);
   });
 });
