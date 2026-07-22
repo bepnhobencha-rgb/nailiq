@@ -5,6 +5,15 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  // Supabase generates open-ended index signatures for schema objects. Keep
+  // no-explicit-any strict everywhere else; this file is replaced wholesale
+  // whenever database types are regenerated.
+  {
+    files: ["src/lib/database.types.ts"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
