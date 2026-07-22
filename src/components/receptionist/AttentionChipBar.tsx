@@ -36,7 +36,7 @@ export type AttentionGroupSummary = {
   unconfirmed: number;
 };
 
-type ChipKey = "overdue" | "noshow" | "groups" | "waitlist";
+type ChipKey = "all" | "overdue" | "noshow" | "groups" | "waitlist";
 
 export type AttentionWaitlistSummary = {
   /** Active waitlist entries (waiting + notified + recently claimed). */
@@ -87,6 +87,12 @@ export function AttentionChipBar({
   const hasGroups = !!groupSummary && groupsContent != null && groupSummary.active > 0;
   const hasWaitlist =
     !!waitlistSummary && waitlistContent != null && waitlistSummary.total > 0;
+  const totalItems =
+    overdue.length +
+    noShowsToday.length +
+    (groupSummary?.active ?? 0) +
+    (waitlistSummary?.total ?? 0);
+  const hasUrgent = hasOverdue || (waitlistSummary?.claimed ?? 0) > 0;
 
   // Close the dropdown on Escape for keyboard users.
   useEffect(() => {
@@ -107,65 +113,80 @@ export function AttentionChipBar({
     <div className="relative z-20 mx-3 mt-3">
       {/* ── Chip row ─────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
-        {hasOverdue ? (
+        <span className="xl:hidden">
           <Chip
-            testId="attention-chip-overdue"
-            active={open === "overdue"}
-            tone="danger"
-            pulse
-            onClick={() => toggle("overdue")}
-            icon="⏰"
-            label={vi ? "Quá giờ" : "Overdue"}
-            count={overdue.length}
+            testId="attention-chip-all"
+            active={open === "all"}
+            tone={hasUrgent ? "danger" : "primary"}
+            pulse={hasUrgent}
+            onClick={() => toggle("all")}
+            icon="✓"
+            label={vi ? "Việc cần xử lý" : "Action center"}
+            count={totalItems}
           />
-        ) : null}
+        </span>
 
-        {hasNoShow ? (
-          <Chip
-            testId="attention-chip-noshow"
-            active={open === "noshow"}
-            tone="muted"
-            onClick={() => toggle("noshow")}
-            icon="🚫"
-            label={vi ? "Vắng hôm nay" : "No-show today"}
-            count={noShowsToday.length}
-          />
-        ) : null}
+        <span className="hidden xl:contents">
+          {hasOverdue ? (
+            <Chip
+              testId="attention-chip-overdue"
+              active={open === "overdue"}
+              tone="danger"
+              pulse
+              onClick={() => toggle("overdue")}
+              icon="⏰"
+              label={vi ? "Quá giờ" : "Overdue"}
+              count={overdue.length}
+            />
+          ) : null}
 
-        {hasGroups ? (
-          <Chip
-            testId="attention-chip-groups"
-            active={open === "groups"}
-            tone="primary"
-            onClick={() => toggle("groups")}
-            icon="👥"
-            label={vi ? "Nhóm" : "Groups"}
-            count={groupSummary!.active}
-            subBadge={
-              groupSummary!.unconfirmed > 0
-                ? `${groupSummary!.unconfirmed} ${vi ? "chưa xác nhận" : "unconfirmed"}`
-                : null
-            }
-          />
-        ) : null}
+          {hasNoShow ? (
+            <Chip
+              testId="attention-chip-noshow"
+              active={open === "noshow"}
+              tone="muted"
+              onClick={() => toggle("noshow")}
+              icon="🚫"
+              label={vi ? "Vắng hôm nay" : "No-show today"}
+              count={noShowsToday.length}
+            />
+          ) : null}
 
-        {hasWaitlist ? (
-          <Chip
-            testId="attention-chip-waitlist"
-            active={open === "waitlist"}
-            tone="primary"
-            pulse={waitlistSummary!.claimed > 0}
-            onClick={() => toggle("waitlist")}
-            icon="⏳"
-            label={vi ? "Chờ chỗ" : "Waitlist"}
-            count={waitlistSummary!.total}
-            subBadge={
-              waitlistSummary!.claimed > 0
-                ? `${waitlistSummary!.claimed} ${vi ? "cần tạo lịch" : "to book"}`
-                : null
-            }
-          />
-        ) : null}
+          {hasGroups ? (
+            <Chip
+              testId="attention-chip-groups"
+              active={open === "groups"}
+              tone="primary"
+              onClick={() => toggle("groups")}
+              icon="👥"
+              label={vi ? "Nhóm" : "Groups"}
+              count={groupSummary!.active}
+              subBadge={
+                groupSummary!.unconfirmed > 0
+                  ? `${groupSummary!.unconfirmed} ${vi ? "chưa xác nhận" : "unconfirmed"}`
+                  : null
+              }
+            />
+          ) : null}
+
+          {hasWaitlist ? (
+            <Chip
+              testId="attention-chip-waitlist"
+              active={open === "waitlist"}
+              tone="primary"
+              pulse={waitlistSummary!.claimed > 0}
+              onClick={() => toggle("waitlist")}
+              icon="⏳"
+              label={vi ? "Chờ chỗ" : "Waitlist"}
+              count={waitlistSummary!.total}
+              subBadge={
+                waitlistSummary!.claimed > 0
+                  ? `${waitlistSummary!.claimed} ${vi ? "cần tạo lịch" : "to book"}`
+                  : null
+              }
+            />
+          ) : null}
+        </span>
       </div>
 
       {/* ── Dropdown overlay (covers the grid, never pushes it) ───────── */}
@@ -189,7 +210,36 @@ export function AttentionChipBar({
               "animate-[nq-attn-pop_140ms_var(--ease-nq-out,ease-out)]",
             )}
           >
-            {open === "overdue" ? (
+            {open === "all" ? (
+              <div className="flex items-center gap-2 border-b border-nq-border/40 px-3 py-2.5">
+                <span
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-nq-primary/15 text-sm text-nq-primary"
+                  aria-hidden
+                >
+                  ✓
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-nq-foreground">
+                    {vi ? "Việc cần xử lý" : "Action center"}
+                  </p>
+                  <p className="text-xs text-nq-muted">
+                    {vi
+                      ? `${totalItems} mục trong một nơi`
+                      : `${totalItems} items in one place`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setOpen(null)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full text-nq-muted hover:bg-nq-surface hover:text-nq-foreground"
+                  aria-label={vi ? "Đóng" : "Close"}
+                >
+                  ✕
+                </button>
+              </div>
+            ) : null}
+
+            {open === "overdue" || (open === "all" && hasOverdue) ? (
               <Section
                 title={`⏰ ${vi ? "Quá giờ — chưa bắt đầu" : "Overdue — not started"}`}
                 count={overdue.length}
@@ -226,7 +276,7 @@ export function AttentionChipBar({
               </Section>
             ) : null}
 
-            {open === "noshow" ? (
+            {open === "noshow" || (open === "all" && hasNoShow) ? (
               <Section
                 title={vi ? "Đã đánh dấu vắng hôm nay" : "Marked no-show today"}
                 count={noShowsToday.length}
@@ -254,12 +304,36 @@ export function AttentionChipBar({
               </Section>
             ) : null}
 
-            {open === "groups" ? (
-              <div className="p-1.5">{groupsContent}</div>
+            {(open === "groups" || open === "all") && hasGroups ? (
+              <div
+                className={cn(
+                  "p-1.5",
+                  open === "all" && "border-t border-nq-border/30",
+                )}
+              >
+                {open === "all" ? (
+                  <p className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide text-nq-primary">
+                    👥 {vi ? "Nhóm" : "Groups"} ({groupSummary!.active})
+                  </p>
+                ) : null}
+                {groupsContent}
+              </div>
             ) : null}
 
-            {open === "waitlist" ? (
-              <div className="p-1.5">{waitlistContent}</div>
+            {(open === "waitlist" || open === "all") && hasWaitlist ? (
+              <div
+                className={cn(
+                  "p-1.5",
+                  open === "all" && "border-t border-nq-border/30",
+                )}
+              >
+                {open === "all" ? (
+                  <p className="px-2 pt-2 text-xs font-semibold uppercase tracking-wide text-nq-primary">
+                    ⏳ {vi ? "Chờ chỗ" : "Waitlist"} ({waitlistSummary!.total})
+                  </p>
+                ) : null}
+                {waitlistContent}
+              </div>
             ) : null}
           </div>
         </>
