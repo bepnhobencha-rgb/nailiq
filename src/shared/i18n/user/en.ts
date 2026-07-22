@@ -1312,6 +1312,19 @@ export type UserMessages = {
       /** Hover title clarifying the upcoming window. */
       nowUpcomingTitle: string;
     };
+    dailyBrief: {
+      eyebrow: string;
+      title: string;
+      bookings: string;
+      vip: string;
+      staffReady: string;
+      waiting: string;
+      dayWindow: (start: string, end: string) => string;
+      riskGuests: (count: number) => string;
+      calmDay: string;
+      collapse: string;
+      expand: string;
+    };
     /** Party Card strip labels (shared across Basic/Balanced/Advanced). */
     partyCard: {
       panelSummary: (n: number) => string;
@@ -3791,6 +3804,20 @@ export const userEn: UserMessages = {
       nowNoStaffAvailable: "None",
       nowUpcoming: "Upcoming",
       nowUpcomingTitle: "Arriving in the next 30 min",
+    },
+    dailyBrief: {
+      eyebrow: "NailIQ morning brief",
+      title: "Today at a glance",
+      bookings: "Bookings",
+      vip: "VIP",
+      staffReady: "Staff ready",
+      waiting: "Waiting",
+      dayWindow: (start: string, end: string) => `Schedule ${start}–${end}`,
+      riskGuests: (count: number) =>
+        count === 1 ? "1 guest needs no-show attention" : `${count} guests need no-show attention`,
+      calmDay: "No high-risk guests on today’s schedule",
+      collapse: "Mark today’s brief as reviewed",
+      expand: "Open today’s NailIQ brief",
     },
     partyCard: {
       panelSummary: (n: number) =>
