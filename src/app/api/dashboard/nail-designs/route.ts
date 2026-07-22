@@ -12,6 +12,7 @@ const optionalServiceId = z.preprocess(
   (value) => value === "" || value == null ? null : value,
   z.string().uuid().nullable(),
 );
+const serviceIdsSchema = z.array(z.string().uuid()).max(50);
 
 async function authorizeSalon(slug: string) {
   const auth = await createClient();
@@ -25,12 +26,23 @@ async function authorizeSalon(slug: string) {
   return { user, salon, db } as const;
 }
 
-async function validateServiceMapping(db: ReturnType<typeof createServiceRoleClient>, salonId: string, serviceId: string | null, addonServiceId: string | null) {
-  const ids = [serviceId, addonServiceId].filter((id): id is string => Boolean(id));
+async function validateServiceMapping(db: ReturnType<typeof createServiceRoleClient>, salonId: string, mapping: { serviceIds: string[]; addonServiceIds: string[]; defaultServiceId: string | null }) {
+  const ids = [...mapping.serviceIds, ...mapping.addonServiceIds];
   if (!ids.length) return true;
   const { data } = await db.from("services" as never).select("id, is_addon").eq("salon_id", salonId).in("id", ids).is("deleted_at", null);
   const rows = (data || []) as unknown as Array<{ id: string; is_addon: boolean }>;
-  return mappingMatchesServices(rows, serviceId, addonServiceId);
+  return mappingMatchesServices(rows, mapping);
+}
+
+async function replaceServiceMappings(db: ReturnType<typeof createServiceRoleClient>, designId: string, salonId: string, mapping: { serviceIds: string[]; addonServiceIds: string[]; defaultServiceId: string | null }) {
+  const { error } = await db.rpc("replace_nail_design_service_mappings" as never, {
+    p_design_id: designId,
+    p_salon_id: salonId,
+    p_service_ids: mapping.serviceIds,
+    p_addon_service_ids: mapping.addonServiceIds,
+    p_default_service_id: mapping.defaultServiceId,
+  } as never);
+  return !error;
 }
 
 export async function POST(request: Request) {
@@ -39,13 +51,17 @@ export async function POST(request: Request) {
   const name = String(form?.get("name") || "").trim();
   const description = String(form?.get("description") || "").trim();
   const image = form?.get("image") as File | null;
-  const mapping = z.object({ serviceId: optionalServiceId, addonServiceId: optionalServiceId }).safeParse({ serviceId: form?.get("serviceId"), addonServiceId: form?.get("addonServiceId") });
+  const mapping = z.object({ serviceIds: serviceIdsSchema, addonServiceIds: serviceIdsSchema, defaultServiceId: optionalServiceId }).safeParse({
+    serviceIds: form?.getAll("serviceIds") || [],
+    addonServiceIds: form?.getAll("addonServiceIds") || [],
+    defaultServiceId: form?.get("defaultServiceId"),
+  });
   if (!name || name.length > 120 || !image || image.size > 10 * 1024 * 1024) return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   if (!mapping.success) return NextResponse.json({ error: "invalid_service_mapping" }, { status: 400 });
   const authorized = await authorizeSalon(slug);
   if ("error" in authorized) return authorized.error;
   const { user, salon, db } = authorized;
-  if (!await validateServiceMapping(db, salon.id, mapping.data.serviceId, mapping.data.addonServiceId)) return NextResponse.json({ error: "invalid_service_mapping" }, { status: 400 });
+  if (!await validateServiceMapping(db, salon.id, mapping.data)) return NextResponse.json({ error: "invalid_service_mapping" }, { status: 400 });
   let normalized: Buffer;
   try {
     normalized = await sharp(Buffer.from(await image.arrayBuffer()), { limitInputPixels: 20_000_000 }).rotate().resize({ width: 1400, height: 1400, fit: "cover" }).jpeg({ quality: 90 }).toBuffer();
@@ -54,25 +70,30 @@ export async function POST(request: Request) {
   const path = `salon/${salon.id}/design/${id}.jpg`;
   const { error: uploadError } = await db.storage.from("nail-tryon").upload(path, normalized, { contentType: "image/jpeg", upsert: false });
   if (uploadError) return NextResponse.json({ error: "upload_failed" }, { status: 500 });
-  const { error: insertError } = await db.from("nail_designs" as never).insert({ id, salon_id: salon.id, name, description: description || null, preview_path: path, created_by: user.id, service_id: mapping.data.serviceId, addon_service_id: mapping.data.addonServiceId } as never);
+  const { error: insertError } = await db.from("nail_designs" as never).insert({ id, salon_id: salon.id, name, description: description || null, preview_path: path, created_by: user.id } as never);
   if (insertError) { await db.storage.from("nail-tryon").remove([path]); return NextResponse.json({ error: "insert_failed" }, { status: 500 }); }
+  if (!await replaceServiceMappings(db, id, salon.id, mapping.data)) {
+    await Promise.all([
+      db.from("nail_designs" as never).delete().eq("id", id).eq("salon_id", salon.id),
+      db.storage.from("nail-tryon").remove([path]),
+    ]);
+    return NextResponse.json({ error: "mapping_failed" }, { status: 500 });
+  }
   const { data: signed } = await db.storage.from("nail-tryon").createSignedUrl(path, 300);
-  return NextResponse.json({ design: { id, name, description: description || null, active: true, previewUrl: signed?.signedUrl || null, serviceId: mapping.data.serviceId, addonServiceId: mapping.data.addonServiceId } }, { status: 201 });
+  return NextResponse.json({ design: { id, name, description: description || null, active: true, previewUrl: signed?.signedUrl || null, ...mapping.data } }, { status: 201 });
 }
 
 export async function PATCH(request: Request) {
   const body = await request.json().catch(() => null);
-  const parsed = z.object({ slug: z.string().min(1), designId: z.string().uuid(), serviceId: optionalServiceId, addonServiceId: optionalServiceId }).safeParse(body);
+  const parsed = z.object({ slug: z.string().min(1), designId: z.string().uuid(), serviceIds: serviceIdsSchema, addonServiceIds: serviceIdsSchema, defaultServiceId: optionalServiceId }).safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   const authorized = await authorizeSalon(parsed.data.slug);
   if ("error" in authorized) return authorized.error;
   const { salon, db } = authorized;
-  if (!await validateServiceMapping(db, salon.id, parsed.data.serviceId, parsed.data.addonServiceId)) return NextResponse.json({ error: "invalid_service_mapping" }, { status: 400 });
-  const { data, error } = await db.from("nail_designs" as never)
-    .update({ service_id: parsed.data.serviceId, addon_service_id: parsed.data.addonServiceId, updated_at: new Date().toISOString() } as never)
-    .eq("id", parsed.data.designId).eq("salon_id", salon.id).is("deleted_at", null)
-    .select("id").maybeSingle();
-  if (error) return NextResponse.json({ error: "update_failed" }, { status: 500 });
-  if (!data) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  const mapping = { serviceIds: parsed.data.serviceIds, addonServiceIds: parsed.data.addonServiceIds, defaultServiceId: parsed.data.defaultServiceId };
+  if (!await validateServiceMapping(db, salon.id, mapping)) return NextResponse.json({ error: "invalid_service_mapping" }, { status: 400 });
+  const { data: design } = await db.from("nail_designs" as never).select("id").eq("id", parsed.data.designId).eq("salon_id", salon.id).is("deleted_at", null).maybeSingle();
+  if (!design) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (!await replaceServiceMappings(db, parsed.data.designId, salon.id, mapping)) return NextResponse.json({ error: "update_failed" }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
