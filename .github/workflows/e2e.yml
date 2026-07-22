@@ -634,16 +634,18 @@ jobs:
       - name: Stop Supabase and destroy the database
         if: always() && steps.preflight.outputs.configured == 'true'
         run: supabase stop --no-backup
-      - name: Commit updated Linux snapshots back to main
+      - name: Commit updated Linux snapshots to a review branch
         if: steps.preflight.outputs.configured == 'true' && steps.snap.outputs.flag != ''
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add e2e/visual/visual-regression.spec.ts-snapshots/
           if ! git diff --cached --quiet; then
             git commit -m "chore(visual): update Linux snapshot baselines [skip ci]"
-            git push origin HEAD:main
-            echo "::notice::Committed updated Linux snapshots to main"
+            snapshot_branch="automation/visual-baselines-${GITHUB_RUN_ID}"
+            git push origin "HEAD:refs/heads/${snapshot_branch}"
+            echo "::notice::Visual snapshots pushed to ${snapshot_branch}; open a PR to review and merge them."
           else
             echo "::notice::No snapshot changes detected"
           fi
