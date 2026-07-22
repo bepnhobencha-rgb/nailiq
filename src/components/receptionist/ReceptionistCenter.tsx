@@ -2705,8 +2705,8 @@ function ReceptionistCenterInner({
             </div>
           </div>
         ) : null}
-        <header className="shrink-0 border-b border-nq-muted/20 px-[var(--pad-nq-section-mobile)] py-3 backdrop-blur-sm md:px-6" style={{ backgroundColor: "var(--drc-bg, #0b0c10)" }}>
-          <div className="mx-auto flex w-full max-w-[var(--max-nq-desktop)] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <header className="shrink-0 border-b border-nq-muted/20 px-[var(--pad-nq-section-mobile)] py-2.5 backdrop-blur-sm md:px-6 md:py-3" style={{ backgroundColor: "var(--drc-bg, #0b0c10)" }}>
+          <div className="mx-auto flex w-full max-w-[var(--max-nq-desktop)] flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2 gap-y-2">
                 <Link
@@ -2721,11 +2721,11 @@ function ReceptionistCenterInner({
                     : rcMessages.title}
                 </h1>
               </div>
-              <p className="truncate text-xs text-nq-muted md:text-sm">
+              <p className="truncate text-[11px] text-nq-muted sm:text-xs md:text-sm">
                 {data.salon.name}
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               {/* Status pill duplicates the Now Bar's Waiting + In service
                   counts, so it's hidden in Basic Mode. Balanced/Advanced
                   keep it (no Now Bar there). */}
@@ -2754,6 +2754,7 @@ function ReceptionistCenterInner({
                   variant="info"
                   state="subtle"
                   size="sm"
+                  className="hidden sm:inline-flex"
                 >
                   {rcMessages.roleBadge.ownerView}
                 </Badge>
@@ -2816,7 +2817,7 @@ function ReceptionistCenterInner({
                   onClick={toggleBasicMode}
                   data-rush-fade
                   className={cn(
-                    "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                    "hidden rounded-md border px-2.5 py-1 text-xs font-medium transition-colors sm:inline-flex",
                     basicMode
                       ? "border-nq-primary bg-nq-primary/15 text-nq-primary"
                       : "border-nq-border bg-nq-surface text-nq-muted hover:text-nq-foreground",
@@ -2829,7 +2830,7 @@ function ReceptionistCenterInner({
                   simplified view, so the density control would be redundant
                   clutter. Reappears when Basic Mode is off. */}
               {viewerRole !== "nail_tech" && !basicModeActive ? (
-                <span data-rush-fade>
+                <span className="hidden md:inline" data-rush-fade>
                   <DensitySlider
                     slug={slug}
                     value={data.dashboardDensity}
@@ -2841,7 +2842,7 @@ function ReceptionistCenterInner({
               ) : null}
               {/* DRC color theme picker — owner-only, subtle palette icon */}
               {viewerRole === "owner" && !basicModeActive ? (
-                <span data-rush-fade>
+                <span className="hidden md:inline" data-rush-fade>
                   <DrcThemePicker
                     slug={slug}
                     currentAccent={drcAccent}
@@ -2866,7 +2867,7 @@ function ReceptionistCenterInner({
                   aria-label={rcMessages.viewMode.ariaLabel}
                   data-testid="view-mode-toggle"
                   data-rush-fade
-                  className="inline-flex overflow-hidden rounded-md border border-nq-border bg-nq-surface text-xs font-medium"
+                  className="hidden overflow-hidden rounded-md border border-nq-border bg-nq-surface text-xs font-medium sm:inline-flex"
                 >
                   {(["day", "week", "month"] as const).map((mode) => {
                     const active = viewMode === mode;
@@ -2910,7 +2911,9 @@ function ReceptionistCenterInner({
                   data-testid="header-add-walkin"
                   onClick={openWalkinAdd}
                 >
-                  {rcMessages.queue.addWalkinCta}
+                  {language === "vi"
+                    ? "+ Khách vãng lai"
+                    : rcMessages.queue.addWalkinCta}
                 </Button>
               ) : null}
               {/* "New appointment" — book a phone-in customer for a FUTURE date
@@ -2920,6 +2923,7 @@ function ReceptionistCenterInner({
                   variant="secondary"
                   size="sm"
                   data-testid="header-add-appointment"
+                  className="hidden sm:inline-flex"
                   onClick={() => {
                     // Open a blank form on the currently-viewed date so a
                     // receptionist booking ahead (viewing tomorrow) doesn't
@@ -2983,6 +2987,7 @@ function ReceptionistCenterInner({
                   variant="secondary"
                   size="sm"
                   data-testid="header-add-group"
+                  className="hidden sm:inline-flex"
                   onClick={() => setDeskGroupOpen(true)}
                 >
                   {language === "vi" ? "+ Nhóm" : "+ Group"}
