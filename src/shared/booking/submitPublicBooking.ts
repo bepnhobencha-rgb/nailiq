@@ -377,7 +377,7 @@ export async function submitPublicBooking(
   if (!week) throw new Error("salon_hours_invalid");
 
   const { data: service, error: serviceErr } = await supabase
-    .from("services")
+    .from("public_service_catalog")
     .select("id, name, duration_minutes, buffer_minutes, price_cents")
     .eq("id", serviceId)
     .eq("salon_id", salon.id)
@@ -466,7 +466,7 @@ export async function submitPublicBooking(
     // One round-trip for all add-ons; each must belong to the salon, be live,
     // and be flagged is_addon (prices/durations come from the DB, not client).
     const { data: addSvcs, error: addErr } = await supabase
-      .from("services")
+      .from("public_service_catalog")
       .select("id, name, duration_minutes, buffer_minutes, price_cents, is_addon, addon_timing")
       .in("id", addonIds)
       .eq("salon_id", salon.id)
@@ -543,7 +543,7 @@ export async function submitPublicBooking(
       : null;
 
   const { data: staffRows, error: staffListErr } = await supabase
-    .from("staff")
+    .from("public_staff_profiles")
     .select("id, name")
     .eq("salon_id", salon.id)
     // Only ACTIVE providers are real bookable beds — must match the public

@@ -159,4 +159,27 @@ describe("public booking write boundary", () => {
       expect(projection).not.toMatch(new RegExp(`\\b${privateColumn}\\b`, "i"));
     }
   });
+
+  it("keeps staff identities and time-off reasons out of public booking", () => {
+    const migration = readFileSync(
+      resolve(
+        process.cwd(),
+        "supabase/migrations/20260722223100_harden_public_staff_catalog.sql",
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(/DROP POLICY IF EXISTS "public read staff"/i);
+    expect(migration).toMatch(/DROP POLICY IF EXISTS "public read services"/i);
+    expect(migration).toMatch(/CREATE OR REPLACE VIEW public\.public_staff_profiles/i);
+    expect(migration).toMatch(/CREATE OR REPLACE VIEW public\.public_staff_unavailability/i);
+    const staffProjection = migration.match(
+      /public_staff_profiles[\s\S]*?AS\s+SELECT([\s\S]*?)FROM public\.staff/i,
+    )?.[1] ?? "";
+    expect(staffProjection).not.toMatch(/\buser_id\b|\bwix_resource_id\b|\bsquare_team_member_id\b/i);
+    const timeOffProjection = migration.match(
+      /public_staff_unavailability[\s\S]*?AS\s+SELECT([\s\S]*?)FROM public\.staff_unavailability/i,
+    )?.[1] ?? "";
+    expect(timeOffProjection).not.toMatch(/\breason\b/i);
+  });
 });

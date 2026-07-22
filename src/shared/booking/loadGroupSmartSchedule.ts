@@ -516,7 +516,7 @@ export async function loadGroupSmartSchedule(
   const allFetchIds = Array.from(new Set([...serviceIds, ...addonIdSet]));
 
   const { data: serviceRows, error: svcErr } = await supabase
-    .from("services")
+    .from("public_service_catalog")
     .select("id, name, duration_minutes, buffer_minutes, price_cents, is_addon, addon_timing")
     .in("id", allFetchIds)
     .eq("salon_id", salonRow.id)
@@ -624,7 +624,7 @@ export async function loadGroupSmartSchedule(
 
   // 6. Staff ---------------------------------------------------------
   const { data: staffRows, error: staffErr } = await supabase
-    .from("staff")
+    .from("public_staff_profiles")
     .select("id, name")
     .eq("salon_id", salonRow.id)
     .eq("status", "active")

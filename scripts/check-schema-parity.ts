@@ -154,7 +154,7 @@ function main() {
   // The first dump here was taken with --no-privileges and produced 0 grants.
   // Everything above still went green. That is why this check exists.
   console.log("\n── Grant matrix ──\n");
-  const GRANTS = { anon: 75, authenticated: 76, service_role: 82 } as const;
+  const GRANTS = { anon: 75, authenticated: 80, service_role: 86 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
