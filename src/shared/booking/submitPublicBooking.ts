@@ -308,9 +308,9 @@ export async function submitPublicBooking(
   }
 
   // Validate OTP session when the salon requires phone verification.
-  // Note: submitPublicBooking runs in the browser (no "use server") so we use
-  // the anon `supabase` client. phone_otp_sessions has an RLS policy that allows
-  // reading unconsumed/non-expired sessions by UUID (the UUID is the capability token).
+  // Note: submitPublicBooking runs in the browser (no "use server"). Validate
+  // the exact capability through a boolean RPC; OTP rows and phone numbers are
+  // never readable by the anonymous client.
   const salonPhoneOtpEnabled =
     (salon as { phone_otp_enabled?: unknown }).phone_otp_enabled === true;
   // The OTP session id actually used downstream (reuse + consume). Resolved from
@@ -318,43 +318,19 @@ export async function submitPublicBooking(
   let resolvedOtpSessionId = "";
   if (salonPhoneOtpEnabled) {
     const passedId = (params.otpSessionId ?? "").trim();
-    type OtpRow = { id: string; phone: string };
-    // The anon RLS policy `anon_read_valid_otp_session` only returns rows that
-    // are UNCONSUMED + UNEXPIRED — so any row we read here is already valid.
-    let otpSession: OtpRow | null = null;
-
-    // 1) The session id the client passed (the normal path).
-    if (passedId) {
-      const { data } = (await supabase
-        .from("phone_otp_sessions" as never)
-        .select("id, phone")
-        .eq("id", passedId)
-        .eq("salon_id", String(salon.id))
-        .maybeSingle()) as { data: OtpRow | null };
-      if (data && data.phone === phoneOk.digits) otpSession = data;
+    if (!passedId) throw new Error("otp_required");
+    const { data: otpValid, error: otpValidationError } = await supabase.rpc(
+      "validate_phone_otp_session" as never,
+      {
+        p_session_id: passedId,
+        p_salon_id: String(salon.id),
+        p_phone: phoneOk.digits,
+      } as never,
+    );
+    if (otpValidationError || otpValid !== true) {
+      throw new Error("otp_required");
     }
-
-    // 2) FALLBACK — the client can hold a STALE session id after re-verifying
-    //    (the id it remembers expired/was consumed by an earlier attempt), which
-    //    wrongly threw "phone verification required" even though the customer
-    //    DID just verify. Accept any still-valid session for THIS phone+salon:
-    //    a fresh verified session for the same number is the same proof of
-    //    phone control (you can't get one without receiving its code).
-    if (!otpSession) {
-      const { data } = (await supabase
-        .from("phone_otp_sessions" as never)
-        .select("id, phone")
-        .eq("salon_id", String(salon.id))
-        .eq("phone", phoneOk.digits)
-        .order("expires_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()) as { data: OtpRow | null };
-      if (data) otpSession = data;
-    }
-
-    if (!otpSession) throw new Error("otp_required");
-    // Use the RESOLVED session id everywhere downstream (reuse + consume).
-    resolvedOtpSessionId = otpSession.id;
+    resolvedOtpSessionId = passedId;
 
     // NOTE: do NOT consume the session here. The saved-card REUSE path
     // (reuseNoShowCardForBooking, below) re-validates this same session and

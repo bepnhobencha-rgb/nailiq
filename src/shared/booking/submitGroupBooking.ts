@@ -721,14 +721,16 @@ export async function submitGroupBooking(
     const leadDigits = leadValidation.ok ? leadValidation.digits : "";
     const sessionId = (params.otpSessionId ?? "").trim();
     if (!sessionId) return fail("otp_required");
-    const { data: otpRow } = await supabase
-      .from("phone_otp_sessions")
-      .select("id, phone")
-      .eq("id", sessionId)
-      .eq("salon_id", String(salonRow.id))
-      .maybeSingle();
-    if (!otpRow) return fail("otp_invalid");
-    if (!leadDigits || (otpRow as { phone?: string }).phone !== leadDigits) {
+    if (!leadDigits) return fail("otp_invalid");
+    const { data: otpValid, error: otpValidationError } = await supabase.rpc(
+      "validate_phone_otp_session" as never,
+      {
+        p_session_id: sessionId,
+        p_salon_id: String(salonRow.id),
+        p_phone: leadDigits,
+      } as never,
+    );
+    if (otpValidationError || otpValid !== true) {
       return fail("otp_invalid");
     }
     otpToConsume = sessionId;

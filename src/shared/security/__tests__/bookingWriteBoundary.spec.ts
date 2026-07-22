@@ -72,4 +72,23 @@ describe("public booking write boundary", () => {
       /REVOKE SELECT ON TABLE public\.reviews FROM anon, authenticated/i,
     );
   });
+
+  it("keeps loyalty phones and OTP session rows private", () => {
+    const migration = readFileSync(
+      resolve(
+        process.cwd(),
+        "supabase/migrations/20260722210600_close_loyalty_otp_reads.sql",
+      ),
+      "utf8",
+    );
+
+    expect(migration).toMatch(
+      /REVOKE SELECT ON TABLE public\.loyalty_cards FROM anon/i,
+    );
+    expect(migration).toMatch(/p_session_id uuid[\s\S]*p_salon_id uuid[\s\S]*p_phone text/i);
+    expect(migration).toMatch(/s\.id = p_session_id/i);
+    expect(migration).toMatch(
+      /REVOKE SELECT ON TABLE public\.phone_otp_sessions FROM anon/i,
+    );
+  });
 });
