@@ -5,6 +5,10 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import * as jose from "npm:jose@5";
+import {
+  outboundMessagingEnabled,
+  rejectUnauthorizedInternalRequest,
+} from "../_shared/internalAuth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -61,6 +65,10 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") {
     return jsonError("Method not allowed", 405);
   }
+
+  const unauthorized = await rejectUnauthorizedInternalRequest(req, corsHeaders);
+  if (unauthorized) return unauthorized;
+  if (!outboundMessagingEnabled()) return jsonError("outbound_messaging_disabled", 503);
 
   let body: { photo_id?: string };
   try {

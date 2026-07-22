@@ -9,6 +9,11 @@
 // the salon admin controls them via the dashboard.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  outboundMessageLimit,
+  outboundMessagingEnabled,
+  rejectUnauthorizedInternalRequest,
+} from "../_shared/internalAuth.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -61,6 +66,12 @@ async function sendSms(creds: TwilioCreds, to: string, body: string): Promise<vo
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
+  const unauthorized = await rejectUnauthorizedInternalRequest(req);
+  if (unauthorized) return unauthorized;
+  if (!outboundMessagingEnabled()) {
+    return new Response(JSON.stringify({ error: "outbound_messaging_disabled" }), { status: 503 });
+  }
+
   const body = await req.json().catch(() => ({}));
   const targetSalonId: string | undefined = body.salon_id;
 
@@ -91,6 +102,7 @@ Deno.serve(async (req) => {
 
   const twilio = await getTwilioCreds();
   let totalSent = 0;
+  const messageLimit = outboundMessageLimit();
   const errors: string[] = [];
 
   const now = new Date();
@@ -102,6 +114,7 @@ Deno.serve(async (req) => {
   const mmPadded = String(currentMonth).padStart(2, "0");
 
   for (const salon of studioPlanSalons) {
+    if (totalSent >= messageLimit) break;
     try {
       // Find phones with a completed booking at this salon in the last 2 years
       const { data: activeBookings } = await db
@@ -138,6 +151,7 @@ Deno.serve(async (req) => {
       });
 
       for (const client of birthdayClients) {
+        if (totalSent >= messageLimit) break;
         try {
           // Unique code: BDAY{phone_last4}{year} — deterministic so duplicate inserts fail gracefully
           const code = `BDAY${(client.phone as string).slice(-4)}${currentYear}`;

@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { rejectUnauthorizedInternalRequest } from "../_shared/internalAuth.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -11,6 +12,9 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return new Response("Method Not Allowed", { status: 405 });
   }
+
+  const unauthorized = await rejectUnauthorizedInternalRequest(req);
+  if (unauthorized) return unauthorized;
 
   const body = await req.json().catch(() => ({}));
   const targetSalonId: string | undefined = body.salon_id;

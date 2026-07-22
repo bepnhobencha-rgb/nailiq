@@ -1,9 +1,10 @@
 // Supabase Edge Function — scrape-website
 // Accepts POST { jobId, sourceUrl, salonId, salonSlug, salonEmail }
-// Called fire-and-forget from /api/import-website (service role, no auth header).
+// Called fire-and-forget from /api/import-website with a service-role Bearer credential.
 // Pipeline: fetch HTML → Claude extract → download images → upsert salon/services/sections → email.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { rejectUnauthorizedInternalRequest } from "../_shared/internalAuth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -86,7 +87,7 @@ async function downloadImageToStorage(
 
 function extractText(html: string): string {
   // Strip scripts, styles, nav, footer noise
-  let text = html
+  const text = html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
@@ -367,6 +368,15 @@ async function sendCompletionEmail(
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return jsonRes({ error: "method_not_allowed" }, 405);
+
+  const unauthorized = await rejectUnauthorizedInternalRequest(req, corsHeaders);
+  if (unauthorized) return unauthorized;
+
+  // Emergency fail-closed kill switch. The importer performs outbound fetches
+  // and must remain disabled until its SSRF defenses pass penetration tests.
+  if (Deno.env.get("WEBSITE_IMPORT_ENABLED") !== "true") {
+    return jsonRes({ error: "website_import_disabled" }, 503);
+  }
 
   let body: { jobId: string; sourceUrl: string; salonId: string; salonSlug: string; salonEmail: string };
   try {

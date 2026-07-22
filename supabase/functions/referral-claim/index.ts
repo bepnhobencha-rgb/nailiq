@@ -3,6 +3,7 @@
 // POST { salon_id, code, referee_phone, referee_booking_id? }
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { rejectUnauthorizedInternalRequest } from "../_shared/internalAuth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -34,6 +35,9 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") {
     return jsonError("Method not allowed", 405);
   }
+
+  const unauthorized = await rejectUnauthorizedInternalRequest(req, corsHeaders);
+  if (unauthorized) return unauthorized;
 
   let body: {
     salon_id?: string;

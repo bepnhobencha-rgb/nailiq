@@ -21,6 +21,12 @@ function isBlockedUrl(url: string): boolean {
 }
 
 export async function POST(req: Request) {
+  // Emergency fail-closed kill switch. Keep the importer unavailable until
+  // its outbound-fetch SSRF defenses have passed security verification.
+  if (process.env.WEBSITE_IMPORT_ENABLED !== "true") {
+    return NextResponse.json({ error: "website_import_disabled" }, { status: 503 });
+  }
+
   let raw: unknown;
   try {
     raw = await req.json();
