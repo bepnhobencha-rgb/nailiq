@@ -4,6 +4,8 @@ export type NailTryOnBookingIntent = {
   designName?: string;
   serviceId?: string | null;
   addonServiceId?: string | null;
+  serviceIds?: string[];
+  addonServiceIds?: string[];
 };
 
 export type NailTryOnBookingQuote = {
@@ -18,12 +20,20 @@ export function resolveNailTryOnBookingRecommendation(
   services: readonly BookingServiceItem[],
   addOns: readonly BookingServiceItem[],
 ) {
-  const service = intent.serviceId
-    ? services.find((item) => item.id === intent.serviceId) ?? null
-    : null;
-  const addOn = intent.addonServiceId
-    ? addOns.find((item) => item.id === intent.addonServiceId) ?? null
-    : null;
+  const eligibleServices = (intent.serviceIds || [])
+    .map((id) => services.find((item) => item.id === id))
+    .filter((item): item is BookingServiceItem => Boolean(item));
+  const eligibleAddOns = (intent.addonServiceIds || [])
+    .map((id) => addOns.find((item) => item.id === id))
+    .filter((item): item is BookingServiceItem => Boolean(item));
+  const service =
+    (intent.serviceId ? services.find((item) => item.id === intent.serviceId) : null) ??
+    eligibleServices[0] ??
+    null;
+  const addOn =
+    (intent.addonServiceId ? addOns.find((item) => item.id === intent.addonServiceId) : null) ??
+    eligibleAddOns[0] ??
+    null;
   const servicePrice = service?.promoPriceCents ?? service?.priceCents ?? null;
   const addOnPrice = addOn?.promoPriceCents ?? addOn?.priceCents ?? null;
   const quote: NailTryOnBookingQuote | null = service
@@ -43,6 +53,8 @@ export function resolveNailTryOnBookingRecommendation(
         : null,
     service,
     addOn,
+    eligibleServices,
+    eligibleAddOns,
     quote,
   };
 }
