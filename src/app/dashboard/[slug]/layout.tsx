@@ -11,6 +11,7 @@ import { expireImpersonationIfStale } from "@/shared/superadmin/impersonationAct
 import { salonDayRangeUtc, salonToday } from "@/shared/lib/salonTime";
 import { parseSubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import { trialDaysRemaining } from "@/shared/lib/trial";
+import { resolveUserLanguage } from "@/shared/i18n/user/resolveUserLanguage";
 import {
   resolveFeatureVisibility,
 } from "@/shared/features/featureRegistry";
@@ -175,6 +176,7 @@ export default async function DashboardSlugLayout({
   };
   const subscriptionPlan = parseSubscriptionPlan(flagSalon.subscription_plan);
   const daysLeftInTrial = trialDaysRemaining(flagSalon.trial_ends_at);
+  const userLanguage = await resolveUserLanguage();
   const isTrial =
     flagSalon.subscription_status === "trialing" &&
     daysLeftInTrial != null;
@@ -213,14 +215,18 @@ export default async function DashboardSlugLayout({
           >
             <p>
               {daysLeftInTrial === 0
-                ? "Your 14-day trial has ended. Choose a plan to keep using paid features."
-                : `${daysLeftInTrial} day${daysLeftInTrial === 1 ? "" : "s"} left in your free trial. No credit card has been charged.`}
+                ? userLanguage === "vi"
+                  ? "Thời gian dùng thử 14 ngày đã kết thúc. Chọn gói để tiếp tục dùng các tính năng trả phí."
+                  : "Your 14-day trial has ended. Choose a plan to keep using paid features."
+                : userLanguage === "vi"
+                  ? `Bạn còn ${daysLeftInTrial} ngày dùng thử miễn phí. Chưa có khoản phí nào được tính.`
+                  : `${daysLeftInTrial} day${daysLeftInTrial === 1 ? "" : "s"} left in your free trial. No credit card has been charged.`}
             </p>
             <Link
               href={`/dashboard/${encodeURIComponent(slug)}/settings#cat-plan`}
               className="shrink-0 font-semibold text-nq-primary-soft underline-offset-4 hover:underline"
             >
-              View plans
+              {userLanguage === "vi" ? "Xem các gói" : "View plans"}
             </Link>
           </div>
         ) : null}
