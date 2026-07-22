@@ -9,7 +9,7 @@
  * Late bookings are seeded relative to real "now" (the grid compares against the
  * live clock); all seeds go on `freeStaffId` to avoid the baseline GIST overlap.
  */
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
 import { cleanupTestSalon } from "../helpers/db";
 import {
@@ -75,6 +75,31 @@ async function readChargeStatus(bookingId: string): Promise<string | null> {
   return v ?? null;
 }
 
+/**
+ * A freshly seeded booking can briefly be absent from the server-rendered grid
+ * while Supabase's pooled/PostgREST reads catch up with the write.  Re-load the
+ * complete server component a few times instead of treating that short
+ * visibility window as a product regression.  The bounded poll still fails on
+ * a genuinely missing booking and keeps the assertion tied to the exact row.
+ */
+async function expectServerRenderedItem(page: Page, testId: string): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        if ((await page.getByTestId(testId).count()) > 0) return true;
+
+        await page.reload({ waitUntil: "domcontentloaded" });
+        await page
+          .getByTestId("receptionist-center-loaded")
+          .first()
+          .waitFor({ state: "attached", timeout: 20_000 });
+        return (await page.getByTestId(testId).count()) > 0;
+      },
+      { timeout: 30_000, intervals: [1_000, 2_000, 3_000] },
+    )
+    .toBe(true);
+}
+
 test.beforeAll(async ({}, testInfo) => {
   fx = await seedReceptionistCenterFixture(rcSlug(testInfo.project.name));
 });
@@ -92,7 +117,7 @@ test.describe("DRC lateness escalation", () => {
     const id = await seedLate(3);
     await gotoReceptionistCenter(page, fx.slug);
 
-    await expect(page.getByTestId(`booking-block-lateness-${id}`)).toBeAttached();
+    await expectServerRenderedItem(page, `booking-block-lateness-${id}`);
     // due stays calm — no clock marker in the icon stack.
     await expect(page.getByTestId(`booking-block-icon-late-${id}`)).toHaveCount(0);
     // owner (demo cookie) can change status → inline Start is offered.
@@ -103,7 +128,7 @@ test.describe("DRC lateness escalation", () => {
     const id = await seedLate(13);
     await gotoReceptionistCenter(page, fx.slug);
 
-    await expect(page.getByTestId(`booking-block-lateness-${id}`)).toBeAttached();
+    await expectServerRenderedItem(page, `booking-block-lateness-${id}`);
     await expect(page.getByTestId(`booking-block-icon-late-${id}`)).toBeAttached();
   });
 
@@ -111,7 +136,7 @@ test.describe("DRC lateness escalation", () => {
     const id = await seedLate(23);
     await gotoReceptionistCenter(page, fx.slug);
 
-    await expect(page.getByTestId(`booking-block-lateness-${id}`)).toBeAttached();
+    await expectServerRenderedItem(page, `booking-block-lateness-${id}`);
     await expect(page.getByTestId(`booking-block-icon-late-${id}`)).toBeAttached();
   });
 
@@ -119,7 +144,7 @@ test.describe("DRC lateness escalation", () => {
     const id = await seedLate(13, "completed");
     await gotoReceptionistCenter(page, fx.slug);
 
-    await expect(page.getByTestId(`booking-block-${id}`)).toBeAttached();
+    await expectServerRenderedItem(page, `booking-block-${id}`);
     await expect(page.getByTestId(`booking-block-lateness-${id}`)).toHaveCount(0);
     await expect(page.getByTestId(`booking-block-start-${id}`)).toHaveCount(0);
   });
@@ -128,6 +153,7 @@ test.describe("DRC lateness escalation", () => {
     const id = await seedLate(13);
     await gotoReceptionistCenter(page, fx.slug);
 
+    await expectServerRenderedItem(page, `booking-block-start-${id}`);
     const startBtn = page.getByTestId(`booking-block-start-${id}`);
     await startBtn.evaluate((el: HTMLElement) => el.click());
 
@@ -165,8 +191,8 @@ test.describe("DRC no-show tombstone + fee decision", () => {
     const id = await seedNoShow({ withCard: false });
     await gotoReceptionistCenter(page, fx.slug);
 
+    await expectServerRenderedItem(page, `noshow-tombstone-${id}`);
     const tomb = page.getByTestId(`noshow-tombstone-${id}`);
-    await expect(tomb).toBeAttached();
     await tomb.evaluate((el: HTMLElement) => el.click());
     await expect(page.getByRole("button", { name: /undo no-show/i })).toBeVisible();
   });
@@ -175,6 +201,7 @@ test.describe("DRC no-show tombstone + fee decision", () => {
     const id = await seedNoShow({ withCard: true });
     await gotoReceptionistCenter(page, fx.slug);
 
+    await expectServerRenderedItem(page, `noshow-tombstone-${id}`);
     const tomb = page.getByTestId(`noshow-tombstone-${id}`);
     await tomb.evaluate((el: HTMLElement) => el.click());
 
