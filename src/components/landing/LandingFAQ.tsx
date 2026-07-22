@@ -26,7 +26,7 @@ const FAQ = {
 
 export function LandingFAQ() {
   const { language } = useUserLanguage();
-  const items = FAQ[language];
+  const items = FAQ[language].slice(0, 4);
 
   return (
     <section id="faq" className="bg-nq-bg py-14 md:py-20">

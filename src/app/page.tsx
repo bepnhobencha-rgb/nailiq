@@ -2,9 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Playfair_Display } from "next/font/google";
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { LandingHero } from "@/components/landing/LandingHero";
-import { LandingPainSection } from "@/components/landing/LandingPainSection";
 import { LandingFeatures } from "@/components/landing/LandingFeatures";
-import { LandingKeepPos } from "@/components/landing/LandingKeepPos";
 import { LandingTrustStrip } from "@/components/landing/LandingTrustStrip";
 import { LandingPricing } from "@/components/landing/LandingPricing";
 import { LandingFAQ } from "@/components/landing/LandingFAQ";
@@ -76,9 +74,7 @@ export default function Home() {
         <main>
           <LandingHero />
           <LandingTrustStrip />
-          <LandingPainSection />
           <LandingFeatures />
-          <LandingKeepPos />
           <LandingPricing />
           <LandingFAQ />
           <LandingFinalCta />

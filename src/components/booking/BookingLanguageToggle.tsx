@@ -54,14 +54,16 @@ export function BookingLanguageToggle({
             disabled={pending}
             onClick={() => setLang(lang)}
             className={cn(
-              "min-w-9 rounded-full px-2.5 py-1 transition-colors",
+              "inline-flex min-h-9 min-w-9 items-center justify-center rounded-full px-2.5 text-base transition-[color,background-color,transform] duration-200 active:scale-95",
               active
                 ? "bg-white text-black"
                 : "text-white/90 hover:text-white",
               pending && "opacity-60",
             )}
+              aria-label={lang === "vi" ? "Tiếng Việt" : "English"}
           >
-            {lang === "vi" ? "VI" : "EN"}
+            <span aria-hidden>{lang === "vi" ? "🇻🇳" : "🇨🇦"}</span>
+            <span className="sr-only">{lang === "vi" ? "Tiếng Việt" : "English"}</span>
           </button>
         );
       })}

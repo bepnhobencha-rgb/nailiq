@@ -156,7 +156,7 @@ function LangToggle({
       role="group"
       aria-label={ariaLabel}
       className={cn(
-        "inline-flex items-center rounded-full border border-nq-border/40 bg-nq-surface/40 p-1 text-[11px] font-semibold tracking-widest uppercase",
+        "inline-flex items-center rounded-full border border-nq-border/40 bg-nq-surface/40 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]",
         compact ? "self-start" : "",
       )}
     >
@@ -168,14 +168,17 @@ function LangToggle({
             type="button"
             onClick={() => setLang(code)}
             className={cn(
-              "min-w-9 rounded-full px-3 py-1 transition",
+              "inline-flex min-h-9 min-w-9 items-center justify-center rounded-full px-2.5 text-base leading-none transition-[color,background-color,box-shadow,transform] duration-200 active:scale-95",
               active
                 ? "bg-nq-primary/15 text-nq-primary-soft shadow-[inset_0_0_0_1px_rgba(212,175,55,0.25)]"
                 : "text-nq-muted hover:text-nq-foreground",
             )}
             aria-pressed={active}
           >
-            {code}
+            <span aria-hidden>{code === "vi" ? "🇻🇳" : "🇨🇦"}</span>
+            <span className="sr-only">
+              {code === "vi" ? "Tiếng Việt" : "English"}
+            </span>
           </button>
         );
       })}
