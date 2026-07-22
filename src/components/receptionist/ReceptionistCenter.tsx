@@ -159,6 +159,7 @@ import { BookingLimitBanner } from "@/components/dashboard/BookingLimitBanner";
 import { PartyCardPanel } from "@/components/receptionist/PartyCardPanel";
 import { AttentionChipBar } from "@/components/receptionist/AttentionChipBar";
 import { NailiqSuggestionBar } from "@/components/receptionist/NailiqSuggestionBar";
+import { DailyBriefCard } from "@/components/receptionist/DailyBriefCard";
 import DeskBookingForm from "@/components/receptionist/DeskBookingForm";
 import DeskGroupForm from "@/components/receptionist/DeskGroupForm";
 import type { PartyCard } from "@/shared/dashboard/loadPartyCardsAction";
@@ -3150,6 +3151,19 @@ function ReceptionistCenterInner({
           }
           onReload={() => window.location.reload()}
         />
+
+        {isViewingToday && viewMode === "day" ? (
+          <DailyBriefCard
+            slug={slug}
+            selectedDate={data.selectedDate}
+            bookings={data.bookingsForDay}
+            readyStaffCount={availableStaffCount}
+            totalStaffCount={data.staff.length}
+            waitingCount={queueWaitingCount}
+            formatTime={(utcIso) => formatInSalonTz(utcIso, timezone, "time")}
+            labels={rcMessages.dailyBrief}
+          />
+        ) : null}
 
         {!basicModeActive && isViewingToday && viewMode === "day" ? (
           <NailiqSuggestionBar
