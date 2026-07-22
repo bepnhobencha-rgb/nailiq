@@ -5,6 +5,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { rejectUnauthorizedInternalRequest } from "../_shared/internalAuth.ts";
+import { safeOutboundFetch } from "../_shared/safeOutboundFetch.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -49,7 +50,7 @@ async function downloadImageToStorage(
   label: string,
 ): Promise<string | null> {
   try {
-    const res = await fetch(imageUrl, {
+    const res = await safeOutboundFetch(imageUrl, {
       headers: { "User-Agent": "NailIQ-Importer/1.0" },
       signal: AbortSignal.timeout(10_000),
     });
@@ -401,7 +402,7 @@ Deno.serve(async (req: Request) => {
     // ── 1. Scraping ────────────────────────────────────────────────────────
     await updateJob(db, jobId, { status: "scraping", progress: 10 });
 
-    const htmlRes = await fetch(sourceUrl, {
+    const htmlRes = await safeOutboundFetch(sourceUrl, {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (compatible; NailIQ-Importer/1.0; +https://nailiq.ca)",
