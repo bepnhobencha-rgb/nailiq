@@ -149,6 +149,8 @@ export const bookingEn = {
   bookingErrors: {
     slotJustTaken:
       "This slot was just booked. Please pick another time.",
+    rateLimited:
+      "Too many booking attempts. Please wait 15 minutes or call the salon.",
     wixSlotTaken:
       "Sorry, this time slot was just booked by someone else. Please choose a different time.",
     invalidPhone:

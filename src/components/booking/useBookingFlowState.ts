@@ -1111,6 +1111,9 @@ export function useBookingFlowState(
         setStepDir(-1);
         setStep("time");
         setError(t.bookingErrors.slotJustTaken);
+      } else if (err instanceof Error && err.message === "booking_rate_limited") {
+        setError(t.bookingErrors.rateLimited);
+        setStep("info");
       } else if (err instanceof Error && err.message === "cannot_book_past") {
         // The slot was offered but is now within the lead window (or just
         // passed). Clear the stale selection so the user re-picks from the
@@ -1140,7 +1143,7 @@ export function useBookingFlowState(
   }, [ // eslint-disable-line react-hooks/exhaustive-deps -- goTimeNextDirect is stable
     shopSlug, serviceId, staffId, selectedDate, clientName, clientPhone, clientEmail, clientNotes,
     goTimeNextDirect, t.bookingErrors.slotJustTaken, t.bookingErrors.invalidPhone,
-    t.bookingErrors.invalidNameChars, t.pastTimeError, t.salonClosedError,
+    t.bookingErrors.invalidNameChars, t.bookingErrors.rateLimited, t.pastTimeError, t.salonClosedError,
     t.outsideHoursError, t.submitError,
   ]);
 
@@ -1562,6 +1565,12 @@ export function useBookingFlowState(
         }
       } else if (
         err instanceof Error &&
+        err.message === "booking_rate_limited"
+      ) {
+        setError(t.bookingErrors.rateLimited);
+        setStep("info");
+      } else if (
+        err instanceof Error &&
         err.message === "cannot_book_past"
       ) {
         setTimeSlot(null);
@@ -1677,6 +1686,7 @@ export function useBookingFlowState(
     t.pastTimeError,
     t.salonClosedError,
     t.bookingErrors.slotJustTaken,
+    t.bookingErrors.rateLimited,
     t.submitError,
   ]); // eslint-disable-line react-hooks/exhaustive-deps -- capableStaff, t.bookingErrors.monthlyLimitReached, t.bookingErrors.otpRequired are intentionally omitted; they don't affect the booking submission path
 

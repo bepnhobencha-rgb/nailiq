@@ -744,6 +744,9 @@ export async function submitPublicBooking(
         if (code === "slot_conflict" || code === "duplicate_booking") {
           throw new BookingConflictError();
         }
+        if (code === "rate_limited") {
+          throw new Error("booking_rate_limited");
+        }
         captureCreatePublicBookingFailure({
           reason: code ? `json_error_${code}` : "json_success_false",
           rpcJsonBody: raw,
