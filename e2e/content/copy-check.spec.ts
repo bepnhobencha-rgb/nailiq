@@ -177,27 +177,15 @@ test.describe("Copy & i18n live-render check", () => {
           `[${lang}] landing hero headline not rendered`,
         ).toContain(messages.landing.hero.h1Gold);
 
-        // Pricing section — the part that motivated this test (plans
-        // structure changed after the initial pipeline PR).
-        const pricing = messages.landing.pricing;
-        expect(
-          visibleText,
-          `[${lang}] pricing eyebrow "${pricing.eyebrow}" missing`,
-        ).toContain(pricing.eyebrow);
-
-        // Founder Pilot pricing shape: two cards (monthly + annual) with
-        // distinct field names instead of the old `plans[]` array. Assert
-        // both card names + CTAs render.
-        for (const card of [pricing.monthly, pricing.annual] as const) {
-          expect(
-            visibleText,
-            `[${lang}] plan name "${card.name}" missing`,
-          ).toContain(card.name);
-          expect(
-            visibleText,
-            `[${lang}] plan cta "${card.cta}" missing`,
-          ).toContain(card.cta);
-        }
+        // Pricing now presents one self-service subscription and an optional
+        // setup service. Assert the customer-facing decision, not retired
+        // Founder Pilot monthly/annual copy that is no longer rendered.
+        const pricing = lang === "vi"
+          ? { eyebrow: "Giá rõ ràng", trial: "Dùng thử 14 ngày", setup: "NailIQ setup giúp" }
+          : { eyebrow: "Simple pricing", trial: "14-day free trial", setup: "Done-for-you setup" };
+        expect(visibleText, `[${lang}] pricing eyebrow missing`).toContain(pricing.eyebrow);
+        expect(visibleText, `[${lang}] trial plan missing`).toContain(pricing.trial);
+        expect(visibleText, `[${lang}] optional setup missing`).toContain(pricing.setup);
 
         const title = await page.title();
         expect(title, `[${lang}] page title is empty`).not.toEqual("");
