@@ -8,6 +8,11 @@
 // Twilio credentials come from platform_settings, not env vars.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  outboundMessageLimit,
+  outboundMessagingEnabled,
+  rejectUnauthorizedInternalRequest,
+} from "../_shared/internalAuth.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -63,6 +68,12 @@ async function doSendSms(creds: TwilioCreds, to: string, body: string): Promise<
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
+  const unauthorized = await rejectUnauthorizedInternalRequest(req);
+  if (unauthorized) return unauthorized;
+  if (!outboundMessagingEnabled()) {
+    return new Response(JSON.stringify({ error: "outbound_messaging_disabled" }), { status: 503 });
+  }
+
   // Lazy-load Twilio creds once per cold start
   if (_twilio === undefined) {
     _twilio = await getTwilioCreds();
@@ -96,6 +107,7 @@ Deno.serve(async (req) => {
   });
 
   let totalSent = 0;
+  const messageLimit = outboundMessageLimit();
   const errors: string[] = [];
 
   const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
@@ -103,6 +115,7 @@ Deno.serve(async (req) => {
   const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
   for (const salon of studioPlanSalons) {
+    if (totalSent >= messageLimit) break;
     try {
       // Find clients with last_service_date < 60 days ago (lapsed) linked to this salon
       const { data: lapsedProfiles } = await db
@@ -136,6 +149,7 @@ Deno.serve(async (req) => {
       );
 
       for (const client of eligibleClients) {
+        if (totalSent >= messageLimit) break;
         try {
           // Check no welcome_back voucher issued in last 90 days for this client+salon
           const { count: recentVouchers } = await db

@@ -7,6 +7,11 @@
 // Marks bookings with reconfirm_sent_at to avoid double-sending.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  outboundMessageLimit,
+  outboundMessagingEnabled,
+  rejectUnauthorizedInternalRequest,
+} from "../_shared/internalAuth.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -74,6 +79,12 @@ function formatLocalTime(utcIso: string, timezone: string): string {
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
+  const unauthorized = await rejectUnauthorizedInternalRequest(req);
+  if (unauthorized) return unauthorized;
+  if (!outboundMessagingEnabled()) {
+    return new Response(JSON.stringify({ error: "outbound_messaging_disabled" }), { status: 503 });
+  }
+
   const body = await req.json().catch(() => ({}));
   const targetSalonId: string | undefined = body.salon_id;
 
@@ -97,9 +108,11 @@ Deno.serve(async (req) => {
 
   const twilio = await getTwilioCreds();
   let totalSent = 0;
+  const messageLimit = outboundMessageLimit();
   const errors: string[] = [];
 
   for (const salon of salons ?? []) {
+    if (totalSent >= messageLimit) break;
     try {
       // Find confirmed bookings in the 24-48h window with a client phone
       // that haven't received a re-confirm SMS yet
@@ -122,9 +135,9 @@ Deno.serve(async (req) => {
       if (!upcomingBookings?.length) continue;
 
       for (const booking of upcomingBookings) {
+        if (totalSent >= messageLimit) break;
         try {
           const phone = booking.client_phone as string;
-          const name = (booking.client_name as string | null) ?? "bạn";
           const serviceName =
             (booking.services as { name?: string } | null)?.name ?? "your appointment";
           const when = formatLocalTime(booking.start_time_utc as string, salon.timezone ?? "America/Vancouver");

@@ -20,6 +20,10 @@
 // sibling internal SMS function; booking_id is an unguessable UUID.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  outboundMessagingEnabled,
+  rejectUnauthorizedInternalRequest,
+} from "../_shared/internalAuth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -125,8 +129,7 @@ async function sendTwilioSms(opts: {
   return data.sid ?? "";
 }
 
-// deno-lint-ignore no-explicit-any
-type DB = ReturnType<typeof createClient<any>>;
+type DB = ReturnType<typeof createClient>;
 
 // Resolve the customer's locale from the most specific signal available.
 async function resolveLocale(
@@ -186,6 +189,10 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { headers: corsHeaders });
   }
   if (req.method !== "POST") return jsonError("Method not allowed", 405);
+
+  const unauthorized = await rejectUnauthorizedInternalRequest(req, corsHeaders);
+  if (unauthorized) return unauthorized;
+  if (!outboundMessagingEnabled()) return jsonError("outbound_messaging_disabled", 503);
 
   let body: { booking_id?: string; lang?: string };
   try {
