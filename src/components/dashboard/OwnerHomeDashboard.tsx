@@ -2,8 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { CalendarPlus, ChevronRight, UserPlus, Users } from "lucide-react";
+import { DashboardPrimaryActions } from "@/components/dashboard/DashboardPrimaryActions";
 import type { OwnerHomeData } from "@/shared/dashboard/loadOwnerHomeDashboardAction";
 import { unclosedBookingHref } from "@/shared/dashboard/unclosedBookingTypes";
 import { getUserMessages } from "@/shared/i18n/user";
@@ -175,11 +174,9 @@ export function OwnerHomeDashboard({
   onManualRefresh: () => void;
   manualRefreshing: boolean;
 }) {
-  const router = useRouter();
   const messages = getUserMessages(language);
   const th = messages.ownerDashboard.home;
   const cc = data.currencyCode;
-  const L = (en: string, viStr: string) => (language === "vi" ? viStr : en);
 
   // "{n} bookings" → singular in English; Vietnamese ("lịch") is unaffected.
   const bkLabel = (tmpl: string, n: number) => {
@@ -290,54 +287,7 @@ export function OwnerHomeDashboard({
       </div>
 
       {/* ── Quick actions (the 3 daily jobs) ─────────────────────────── */}
-      <section aria-label={L("Quick actions", "Thao tác nhanh")}>
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-nq-muted/80">
-          {L("What would you like to do?", "Bạn muốn làm gì?")}
-        </p>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <Link
-          href={`/dashboard/${slug}/center?view=day`}
-          className="group flex min-h-16 touch-manipulation items-center gap-3 rounded-2xl bg-nq-primary px-4 py-3 text-white shadow-[0_8px_24px_rgba(127,92,255,0.24)] transition-transform active:scale-[0.98]"
-        >
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/18"><CalendarPlus className="h-5 w-5" aria-hidden /></span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[15px] font-bold">{L("New booking", "Tạo lịch hẹn")}</span>
-            <span className="block text-xs text-white/75">{L("Choose time and staff", "Chọn giờ và nhân viên")}</span>
-          </span>
-          <ChevronRight className="h-5 w-5 text-white/70" aria-hidden />
-        </Link>
-        <button
-          type="button"
-          onClick={() => {
-            try {
-              window.localStorage.setItem("nailiq-queue-panel-open", "1");
-            } catch {
-              /* ignore */
-            }
-            router.push(`/dashboard/${slug}/center#queue`);
-          }}
-          className="flex min-h-16 touch-manipulation items-center gap-3 rounded-2xl border border-nq-border/45 bg-nq-surface/55 px-4 py-3 text-left transition-transform active:scale-[0.98]"
-        >
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-nq-primary/12 text-nq-primary"><Users className="h-5 w-5" aria-hidden /></span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[15px] font-bold text-nq-foreground">{L("Walk-in customer", "Khách vãng lai")}</span>
-            <span className="block text-xs text-nq-muted">{L("Add to the waiting list", "Thêm vào danh sách chờ")}</span>
-          </span>
-          <ChevronRight className="h-5 w-5 text-nq-muted/60" aria-hidden />
-        </button>
-        <Link
-          href={`/dashboard/${slug}/clients`}
-          className="flex min-h-16 touch-manipulation items-center gap-3 rounded-2xl border border-nq-border/45 bg-nq-surface/55 px-4 py-3 transition-transform active:scale-[0.98]"
-        >
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-nq-primary/12 text-nq-primary"><UserPlus className="h-5 w-5" aria-hidden /></span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[15px] font-bold text-nq-foreground">{L("Add customer", "Thêm khách hàng")}</span>
-            <span className="block text-xs text-nq-muted">{L("Save their information", "Lưu thông tin khách")}</span>
-          </span>
-          <ChevronRight className="h-5 w-5 text-nq-muted/60" aria-hidden />
-        </Link>
-        </div>
-      </section>
+      <DashboardPrimaryActions slug={slug} language={language} />
 
       {/* ── Minh pending approvals ───────────────────────────────────── */}
       {data.pendingApprovalsCount > 0 ? (

@@ -15,6 +15,7 @@ import { MobileStack } from "@/components/layout/MobileStack";
 import { AddEmailBanner } from "@/components/dashboard/AddEmailBanner";
 import { DashboardEmptyShare } from "@/components/dashboard/DashboardEmptyShare";
 import { SetupChecklist } from "@/components/dashboard/SetupChecklist";
+import { DashboardPrimaryActions } from "@/components/dashboard/DashboardPrimaryActions";
 import { SalonOwnerDashboardMain } from "@/components/dashboard/SalonOwnerDashboardMain";
 import {
   nextBookingStatus,
@@ -382,25 +383,51 @@ export function SalonOwnerDashboard({
   if (isSetupIncomplete) {
     return (
       <ResponsiveShell>
-        <div className="w-full max-w-[var(--max-nq-mobile)] mx-auto px-4 py-8">
-          <p className="mb-1 text-xl font-semibold text-nq-foreground">
-            {td.emptySetup.title}
-          </p>
-          <p className="mb-6 text-sm text-nq-muted">{td.emptySetup.subtitle}</p>
-          <SetupChecklist
-            salon={{
-              services_count: data.setup.services_count,
-              staff_count: data.setup.staff_count,
-              address: data.salon.address,
-              opening_hours: data.salon.opening_hours,
-              email: data.salon.email,
-              vertical: data.salon.vertical,
-            }}
-            slug={slug}
-            language={language}
-            viewerEmail={data.viewerEmail}
-          />
-        </div>
+        <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] gap-6 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pt-2">
+          <header className="pt-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-primary">
+              {language === "vi" ? "Bắt đầu với NailIQ" : "Start with NailIQ"}
+            </p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-nq-foreground">
+              {data.salon.name ?? slug}
+            </h1>
+            <p className="mt-1 text-sm leading-relaxed text-nq-muted">
+              {language === "vi"
+                ? "Dùng ngay các việc hằng ngày. Hoàn tất thiết lập bên dưới khi bạn sẵn sàng."
+                : "Use the daily tools now. Finish the setup below when you are ready."}
+            </p>
+          </header>
+
+          <DashboardPrimaryActions slug={slug} language={language} />
+
+          <section aria-labelledby="dashboard-setup-title">
+            <div className="mb-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted/75">
+                {language === "vi" ? "Thiết lập một lần" : "One-time setup"}
+              </p>
+              <h2
+                id="dashboard-setup-title"
+                className="text-lg font-semibold text-nq-foreground"
+              >
+                {td.emptySetup.title}
+              </h2>
+              <p className="mt-1 text-sm text-nq-muted">{td.emptySetup.subtitle}</p>
+            </div>
+            <SetupChecklist
+              salon={{
+                services_count: data.setup.services_count,
+                staff_count: data.setup.staff_count,
+                address: data.salon.address,
+                opening_hours: data.salon.opening_hours,
+                email: data.salon.email,
+                vertical: data.salon.vertical,
+              }}
+              slug={slug}
+              language={language}
+              viewerEmail={data.viewerEmail}
+            />
+          </section>
+        </MobileStack>
       </ResponsiveShell>
     );
   }
