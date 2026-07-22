@@ -50,6 +50,34 @@ const ROLE_BADGE: Record<string, string> = {
   staff: "bg-nq-border/60 text-nq-muted",
 };
 
+function SortButton({
+  sortKey,
+  label,
+  active,
+  onSelect,
+}: {
+  sortKey: SortKey;
+  label: string;
+  active: boolean;
+  onSelect: (sortKey: SortKey) => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={() => onSelect(sortKey)}
+      className={cn(
+        "rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
+        active
+          ? "border-nq-primary/40 bg-nq-primary/10 text-nq-primary"
+          : "border-nq-border bg-nq-surface text-nq-muted hover:text-nq-foreground",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
 export function UserListTable({ users }: { users: SuperAdminUserRow[] }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("lastSignIn");
@@ -79,21 +107,6 @@ export function UserListTable({ users }: { users: SuperAdminUserRow[] }) {
       });
   }, [users, query, sort]);
 
-  const SortBtn = ({ k, label }: { k: SortKey; label: string }) => (
-    <button
-      type="button"
-      onClick={() => setSort(k)}
-      className={cn(
-        "rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
-        sort === k
-          ? "border-nq-primary/40 bg-nq-primary/10 text-nq-primary"
-          : "border-nq-border bg-nq-surface text-nq-muted hover:text-nq-foreground",
-      )}
-    >
-      {label}
-    </button>
-  );
-
   return (
     <div className="space-y-3">
       {/* Controls */}
@@ -107,9 +120,24 @@ export function UserListTable({ users }: { users: SuperAdminUserRow[] }) {
         />
         <div className="ml-auto flex items-center gap-1.5">
           <span className="text-xs text-nq-muted">Sort:</span>
-          <SortBtn k="lastSignIn" label="Last active" />
-          <SortBtn k="createdAt" label="Joined" />
-          <SortBtn k="email" label="Email" />
+          <SortButton
+            sortKey="lastSignIn"
+            label="Last active"
+            active={sort === "lastSignIn"}
+            onSelect={setSort}
+          />
+          <SortButton
+            sortKey="createdAt"
+            label="Joined"
+            active={sort === "createdAt"}
+            onSelect={setSort}
+          />
+          <SortButton
+            sortKey="email"
+            label="Email"
+            active={sort === "email"}
+            onSelect={setSort}
+          />
         </div>
       </div>
 
