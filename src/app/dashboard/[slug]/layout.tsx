@@ -206,25 +206,25 @@ export default async function DashboardSlugLayout({
       >
         {isTrial ? (
           <div
-            className={`mx-4 mt-4 flex flex-col gap-3 rounded-2xl border px-4 py-3 text-sm sm:mx-6 sm:flex-row sm:items-center sm:justify-between ${
+            className={`mx-4 mt-3 flex items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 text-sm sm:mx-6 sm:mt-4 sm:py-3 ${
               daysLeftInTrial === 0
                 ? "border-nq-error/40 bg-nq-error/10 text-nq-foreground"
                 : "border-nq-primary/35 bg-nq-primary/10 text-nq-foreground"
             }`}
             role="status"
           >
-            <p>
+            <p className="min-w-0 leading-snug">
               {daysLeftInTrial === 0
                 ? userLanguage === "vi"
                   ? "Thời gian dùng thử 14 ngày đã kết thúc. Chọn gói để tiếp tục dùng các tính năng trả phí."
                   : "Your 14-day trial has ended. Choose a plan to keep using paid features."
                 : userLanguage === "vi"
-                  ? `Bạn còn ${daysLeftInTrial} ngày dùng thử miễn phí. Chưa có khoản phí nào được tính.`
-                  : `${daysLeftInTrial} day${daysLeftInTrial === 1 ? "" : "s"} left in your free trial. No credit card has been charged.`}
+                  ? <><span className="sm:hidden">Còn {daysLeftInTrial} ngày dùng thử</span><span className="hidden sm:inline">Bạn còn {daysLeftInTrial} ngày dùng thử miễn phí. Chưa có khoản phí nào được tính.</span></>
+                  : <><span className="sm:hidden">{daysLeftInTrial} trial day{daysLeftInTrial === 1 ? "" : "s"} left</span><span className="hidden sm:inline">{daysLeftInTrial} day{daysLeftInTrial === 1 ? "" : "s"} left in your free trial. No credit card has been charged.</span></>}
             </p>
             <Link
               href={`/dashboard/${encodeURIComponent(slug)}/settings#cat-plan`}
-              className="shrink-0 font-semibold text-nq-primary-soft underline-offset-4 hover:underline"
+              className="shrink-0 text-xs font-semibold text-nq-primary-soft underline-offset-4 hover:underline sm:text-sm"
             >
               {userLanguage === "vi" ? "Xem các gói" : "View plans"}
             </Link>

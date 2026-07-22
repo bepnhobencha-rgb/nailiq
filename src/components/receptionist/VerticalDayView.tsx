@@ -66,6 +66,15 @@ function minsToLabel(minutes: number): string {
   return `${h12}${minStr}${p}`;
 }
 
+function minsToDisplayLabel(minutes: number, language: "en" | "vi"): string {
+  if (language === "vi") {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  }
+  return minsToLabel(minutes);
+}
+
 /** Add/subtract N calendar days from a YYYY-MM-DD string (UTC arithmetic). */
 function addDaysToYmd(ymd: string, delta: number): string {
   const [y, mo, d] = ymd.split("-").map(Number);
@@ -177,7 +186,7 @@ export default function VerticalDayView({
     [selectedDate, onNavigateDate],
   );
 
-  const addLabel = language === "vi" ? "Thêm hẹn" : "New appt";
+  const addLabel = language === "vi" ? "Tạo hẹn" : "New appointment";
 
   const prevLabel = language === "vi" ? "Hôm qua" : "Prev day";
   const nextLabel = language === "vi" ? "Ngày mai" : "Next day";
@@ -261,11 +270,11 @@ export default function VerticalDayView({
               <div className="w-12 flex-shrink-0 pt-0.5">
                 {isHour ? (
                   <span className="text-[11px] font-semibold tracking-wide text-white/50">
-                    {minsToLabel(slot)}
+                    {minsToDisplayLabel(slot, language)}
                   </span>
                 ) : (
                   <span className="text-[10px] text-white/20">
-                    {minsToLabel(slot)}
+                    {minsToDisplayLabel(slot, language)}
                   </span>
                 )}
               </div>
@@ -299,7 +308,7 @@ export default function VerticalDayView({
                     }}
                   >
                     <Plus size={11} className="opacity-60" />
-                    {minsToLabel(slot)}
+                    {minsToDisplayLabel(slot, language)}
                   </button>
                 ) : null}
               </div>
