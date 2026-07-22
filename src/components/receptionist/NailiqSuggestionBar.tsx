@@ -10,6 +10,8 @@ import {
   type CockpitActionTarget,
   type CockpitInputs,
   type CockpitLabels,
+  type CriticalAlertKey,
+  type NextActionKind,
 } from "@/shared/dashboard/basicModeCockpit";
 
 const TONE_CLASS = {
@@ -23,6 +25,7 @@ type Props = {
   labels: CockpitLabels;
   heading: string;
   allClear: string;
+  reasons: Record<CriticalAlertKey | NextActionKind | "all_clear", string>;
   onAction: (target: CockpitActionTarget) => void;
 };
 
@@ -39,6 +42,7 @@ export function NailiqSuggestionBar({
   labels,
   heading,
   allClear,
+  reasons,
   onAction,
 }: Props) {
   const suggestion = useMemo(() => {
@@ -49,14 +53,25 @@ export function NailiqSuggestionBar({
         text: urgent.text,
         tone: urgent.tone,
         action: urgent.action,
+        reason: reasons[urgent.key],
       };
     }
 
     const next = computeNextAction(inputs, labels);
     return next
-      ? { text: next.text, tone: next.tone, action: next.action }
-      : { text: allClear, tone: "info" as const, action: null };
-  }, [allClear, inputs, labels]);
+      ? {
+          text: next.text,
+          tone: next.tone,
+          action: next.action,
+          reason: reasons[next.kind],
+        }
+      : {
+          text: allClear,
+          tone: "info" as const,
+          action: null,
+          reason: reasons.all_clear,
+        };
+  }, [allClear, inputs, labels, reasons]);
 
   return (
     <div
@@ -73,12 +88,15 @@ export function NailiqSuggestionBar({
         <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-nq-primary/15 text-nq-primary">
           <Sparkles className="h-4 w-4" aria-hidden />
         </span>
-        <div className="min-w-0 flex-1 sm:flex sm:items-baseline sm:gap-2">
+        <div className="min-w-0 flex-1">
           <p className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-nq-primary">
             {heading}
           </p>
-          <p className="truncate text-sm font-medium text-nq-foreground">
+          <p className="text-sm font-medium leading-snug text-nq-foreground">
             {suggestion.text}
+          </p>
+          <p className="mt-0.5 text-[11px] leading-snug text-nq-muted">
+            {suggestion.reason}
           </p>
         </div>
         {suggestion.action ? (
