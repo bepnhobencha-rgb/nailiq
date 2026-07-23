@@ -174,7 +174,11 @@ export function SalonSessionsPanel({
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {sessions.map((s) => (
-            <SessionCard key={s.userId} session={s} />
+            <SessionCard
+              key={s.userId}
+              session={s}
+              observedAtMs={lastRefresh.getTime()}
+            />
           ))}
         </div>
       )}
@@ -182,8 +186,14 @@ export function SalonSessionsPanel({
   );
 }
 
-function SessionCard({ session: s }: { session: PresenceRow }) {
-  const secsAgo = (Date.now() - new Date(s.lastSeenAt).getTime()) / 1000;
+function SessionCard({
+  session: s,
+  observedAtMs,
+}: {
+  session: PresenceRow;
+  observedAtMs: number;
+}) {
+  const secsAgo = (observedAtMs - new Date(s.lastSeenAt).getTime()) / 1000;
   const isLive = secsAgo < 60;
 
   return (
