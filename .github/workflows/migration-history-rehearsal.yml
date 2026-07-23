@@ -1,0 +1,91 @@
+name: Migration History Rehearsal
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/migration-history-rehearsal.yml"
+      - "scripts/audit-migration-history.mjs"
+      - "scripts/build-folded-migration-history.mjs"
+      - "scripts/check-schema-parity.ts"
+      - "scripts/verify-schema-dump.ts"
+      - "supabase/bootstrap/**"
+      - "supabase/migration-history/**"
+      - "supabase/migrations/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  folded-history:
+    name: Folded history on blank Supabase
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+
+      - name: Audit current drift
+        run: npm run db:history:audit
+
+      - name: Build folded history in a throwaway directory
+        run: |
+          set -euo pipefail
+          node scripts/build-folded-migration-history.mjs \
+            --output "$RUNNER_TEMP/folded-migrations"
+          npx tsx scripts/verify-schema-dump.ts \
+            "$RUNNER_TEMP/folded-migrations/20260723000000_folded_production_schema_baseline.sql"
+
+          count="$(find "$RUNNER_TEMP/folded-migrations" -maxdepth 1 -type f -name '*.sql' | wc -l)"
+          unique="$(find "$RUNNER_TEMP/folded-migrations" -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | cut -c1-14 | sort -u | wc -l)"
+          test "$count" -eq 267
+          test "$unique" -eq 267
+
+      - name: Apply folded history to blank Supabase
+        run: |
+          set -euo pipefail
+
+          migrations_dir="$PWD/supabase/migrations"
+          legacy_dir="$RUNNER_TEMP/legacy-migrations"
+          mv "$migrations_dir" "$legacy_dir"
+          cp -R "$RUNNER_TEMP/folded-migrations" "$migrations_dir"
+
+          restore_migrations() {
+            rm -rf "$migrations_dir"
+            mv "$legacy_dir" "$migrations_dir"
+          }
+          trap restore_migrations EXIT
+
+          supabase start --exclude studio,edge-runtime,logflare,vector
+          supabase status -o env > "$RUNNER_TEMP/supabase.env"
+          set -a
+          . "$RUNNER_TEMP/supabase.env"
+          set +a
+
+          NEXT_PUBLIC_SUPABASE_URL="${API_URL}" \
+            SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY}" \
+            npx tsx -e "import('./e2e/helpers/guardProduction').then(g => { g.assertNotProductionFromEnv(); console.log('✓ guard: not production'); })"
+
+          DB_URL="${DB_URL}" npx tsx scripts/check-schema-parity.ts
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f supabase/bootstrap/reference-data.sql
+
+          test "$(psql "$DB_URL" -tAc 'select count(*) from public.service_categories')" -eq 13
+          test "$(psql "$DB_URL" -tAc 'select count(*) from public.platform_flags')" -eq 5
+
+          restore_migrations
+          trap - EXIT
+
+      - name: Stop throwaway Supabase
+        if: always()
+        run: supabase stop --no-backup
