@@ -548,7 +548,11 @@ export type ReceptionistCenterDataLoaderDeps = {
     dashboard_density: unknown | null;
     currency_code: unknown | null;
     walkin_auto_assign?: unknown | null;
+    queue_display_mode?: unknown | null;
+    basic_mode_forced?: unknown | null;
     opening_hours?: unknown | null;
+    staff_notification_settings?: unknown | null;
+    auto_no_show_minutes?: unknown | null;
   };
 };
 
@@ -639,6 +643,8 @@ export async function loadReceptionistCenterData(
     queue_display_mode?: unknown;
     basic_mode_forced?: unknown;
     opening_hours?: unknown;
+    staff_notification_settings?: unknown;
+    auto_no_show_minutes?: unknown;
   };
   let salonData: SalonShape | null;
   if (deps?.preFetchedSalon) {
@@ -652,13 +658,16 @@ export async function loadReceptionistCenterData(
       dashboard_density: deps.preFetchedSalon.dashboard_density,
       currency_code: deps.preFetchedSalon.currency_code,
       walkin_auto_assign: deps.preFetchedSalon.walkin_auto_assign,
+      queue_display_mode: deps.preFetchedSalon.queue_display_mode,
       // Carried so the /center route (which pre-fetches the salon) honors
       // forced Basic Mode without a second salons query.
-      basic_mode_forced: (deps.preFetchedSalon as { basic_mode_forced?: unknown })
-        .basic_mode_forced,
+      basic_mode_forced: deps.preFetchedSalon.basic_mode_forced,
       // Drives the timeline grid's default window on booking-free days.
       // SALON_DASHBOARD_SELECT already fetches opening_hours, so no extra query.
       opening_hours: deps.preFetchedSalon.opening_hours,
+      staff_notification_settings:
+        deps.preFetchedSalon.staff_notification_settings,
+      auto_no_show_minutes: deps.preFetchedSalon.auto_no_show_minutes,
     };
   } else {
     const salonResult = await supabase
@@ -709,17 +718,14 @@ export async function loadReceptionistCenterData(
     currencyCode: parseCurrency(salonData.currency_code),
     walkinAutoAssign: salonData.walkin_auto_assign === false ? false : true,
     queueDisplayMode: (salonData.queue_display_mode === "simple" ? "simple" : "full") as "simple" | "full",
-    // TODO: Regenerate types when Docker is available (npx supabase gen types typescript --local)
-    basicModeForced: (salonData as any).basic_mode_forced === true,
+    basicModeForced: salonData.basic_mode_forced === true,
     depositsEnabled,
     ...openingHoursForDay(salonData.opening_hours, dateYmd),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- types not regenerated yet (see basic_mode_forced TODO above)
     staffNotificationSettings: parseStaffNotificationSettings(
-      (salonData as any).staff_notification_settings,
+      salonData.staff_notification_settings,
     ),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- types not regenerated yet (see basic_mode_forced TODO above)
     autoNoShowMinutes: (() => {
-      const v = (salonData as any).auto_no_show_minutes;
+      const v = salonData.auto_no_show_minutes;
       if (v == null) return null;
       const n = Math.round(Number(v));
       return Number.isFinite(n) && n > 0 ? n : null;
@@ -1525,9 +1531,14 @@ export async function loadReceptionistCenterData(
     if (capErr) {
       console.error("[loadReceptionistCenterData] staff_services", capErr);
     } else if ((capRows?.length ?? 0) > 0) {
-      capabilityRows = ((capRows ?? []) as any).map((r: any) => ({
-        staff_id: String(r.staff_id),
-        service_id: String(r.service_id),
+      capabilityRows = (
+        (capRows ?? []) as unknown as Array<{
+          staff_id: unknown;
+          service_id: unknown;
+        }>
+      ).map((row) => ({
+        staff_id: String(row.staff_id),
+        service_id: String(row.service_id),
       }));
     }
   }
