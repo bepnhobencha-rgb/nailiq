@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState, useTransition } from "react";
+import {
+  useId,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+} from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { getUserMessages } from "@/shared/i18n/user";
@@ -52,6 +58,7 @@ type Props = {
 
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
 const MIN_PASSWORD_LEN = 8;
+const noopSubscribe = () => () => {};
 
 function authCallbackUrl(): string {
   const siteUrl =
@@ -89,11 +96,13 @@ export function SocialAuthButtons({
   const [pending, startTransition] = useTransition();
   const emailSectionId = useId();
   const passwordSectionId = useId();
-  // Resolved after mount so SSR and initial client render stay in sync.
-  const [isInAppBrowser, setIsInAppBrowser] = useState(false);
-  useEffect(() => {
-    setIsInAppBrowser(detectInAppBrowser());
-  }, []);
+  // Server snapshot stays false for deterministic HTML; React reads the
+  // user-agent snapshot after hydration without a state-setting effect.
+  const isInAppBrowser = useSyncExternalStore(
+    noopSubscribe,
+    detectInAppBrowser,
+    () => false,
+  );
 
   const passwordSupported = layout === "open" && enablePassword;
 
