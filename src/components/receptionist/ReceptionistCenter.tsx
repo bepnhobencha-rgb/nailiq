@@ -551,6 +551,19 @@ function ReceptionistCenterInner({
   const [dayLoading, setDayLoading] = useState(false);
 
   const [drawerBookingId, setDrawerBookingId] = useState<string | null>(null);
+  // Every open of the booking drawer is its own session. Anything fetched for
+  // the drawer is keyed on this, so reopening the same booking starts from
+  // loading again instead of rendering what the previous open had cached —
+  // stale allergies or usual-staff after the record was just edited.
+  // Open through openBookingDrawer only, never setDrawerBookingId directly.
+  const [drawerOpenRevision, setDrawerOpenRevision] = useState(0);
+  const openBookingDrawer = useCallback((bookingId: string) => {
+    setDrawerOpenRevision((n) => n + 1);
+    setDrawerBookingId(bookingId);
+  }, []);
+  const closeBookingDrawer = useCallback(() => {
+    setDrawerBookingId(null);
+  }, []);
 
   // Customer 360 profile drawer — opened from the booking detail drawer's
   // "Profile & history" button. Keyed by the guest's phone.
@@ -560,9 +573,10 @@ function ReceptionistCenterInner({
   // for the open booking. `undefined` = loading, `null` = unavailable.
   // Tagged with every argument the request was made with, so `undefined`
   // (loading) falls out of "what is on screen has no answer yet" rather than
-  // being written back from the effect.
+  // being written back from the effect. The drawer session revision is what
+  // makes reopening the same booking a fresh load instead of a cache hit.
   const customerContextKey = drawerBookingId
-    ? JSON.stringify([slug, drawerBookingId])
+    ? JSON.stringify([slug, drawerBookingId, drawerOpenRevision])
     : null;
   const [fetchedCustomerContext, setFetchedCustomerContext] = useState<{
     key: string;
@@ -606,9 +620,9 @@ function ReceptionistCenterInner({
     if (data.bookingsForDay.some((b) => b.id === urlBookingParam)) {
       didOpenUrlBookingRef.current = true;
       // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot deep-link open
-      setDrawerBookingId(urlBookingParam);
+      openBookingDrawer(urlBookingParam);
     }
-  }, [urlBookingParam, data.bookingsForDay]);
+  }, [urlBookingParam, data.bookingsForDay, openBookingDrawer]);
 
   // E2E hydration signal: renders only after the first client-side effect,
   // confirming React has fully hydrated and all event handlers are registered.
@@ -1183,12 +1197,12 @@ function ReceptionistCenterInner({
       if (res.ok) {
         setData(res.data);
         markSynced();
-        setDrawerBookingId(bookingId);
+        openBookingDrawer(bookingId);
       } else {
         setShakeMessage(loadErrorCopy(messages.receptionist, res.error));
       }
     },
-    [slug, messages.receptionist, markSynced],
+    [slug, messages.receptionist, markSynced, openBookingDrawer],
   );
 
   const onWalkinAssignSlot = async (staffId: string, slotStartUtc: string) => {
@@ -1903,7 +1917,7 @@ function ReceptionistCenterInner({
         );
         return;
       }
-      setDrawerBookingId(null);
+      closeBookingDrawer();
       await reloadCurrentDay();
       router.refresh();
     } finally {
@@ -1939,7 +1953,7 @@ function ReceptionistCenterInner({
       } else {
         // Whole party cancelled — close the drawer and reload; the grid visibly
         // empties every member's slot, which is its own confirmation.
-        setDrawerBookingId(null);
+        closeBookingDrawer();
         await reloadCurrentDay();
         router.refresh();
       }
@@ -1993,7 +2007,7 @@ function ReceptionistCenterInner({
           );
         }
         // Close drawer and reload grid first so booking disappears
-        setDrawerBookingId(null);
+        closeBookingDrawer();
         await reloadCurrentDay();
         router.refresh();
 
@@ -2314,13 +2328,13 @@ function ReceptionistCenterInner({
     target: import("@/shared/dashboard/basicModeCockpit").CockpitActionTarget,
   ) => {
     if (target === "open_overdue") {
-      if (firstOverdueId) setDrawerBookingId(firstOverdueId);
+      if (firstOverdueId) openBookingDrawer(firstOverdueId);
       return;
     }
     if (target === "open_not_started") {
       // Confirmed-but-not-started guest → open the booking so the receptionist
       // can mark arrived / no-show (same affordance as the attention chip).
-      if (firstNotStartedId) setDrawerBookingId(firstNotStartedId);
+      if (firstNotStartedId) openBookingDrawer(firstNotStartedId);
       return;
     }
     if (target === "open_party") {
@@ -2373,7 +2387,7 @@ function ReceptionistCenterInner({
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
       } else {
-        setDrawerBookingId(null);
+        closeBookingDrawer();
         await reloadCurrentDay();
         router.refresh();
       }
@@ -2394,7 +2408,7 @@ function ReceptionistCenterInner({
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
       } else {
-        setDrawerBookingId(null);
+        closeBookingDrawer();
         await reloadCurrentDay();
         router.refresh();
       }
@@ -2449,7 +2463,7 @@ function ReceptionistCenterInner({
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
       } else {
-        setDrawerBookingId(null);
+        closeBookingDrawer();
         await reloadCurrentDay();
         router.refresh();
       }
@@ -2507,7 +2521,7 @@ function ReceptionistCenterInner({
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
       } else {
-        setDrawerBookingId(null);
+        closeBookingDrawer();
         await reloadCurrentDay();
         router.refresh();
       }
@@ -2604,7 +2618,7 @@ function ReceptionistCenterInner({
               : mutationMessage(messages.receptionist, r.error);
         setShakeMessage(msg);
       } else {
-        setDrawerBookingId(null);
+        closeBookingDrawer();
         await reloadCurrentDay();
         router.refresh();
       }
@@ -2627,7 +2641,7 @@ function ReceptionistCenterInner({
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
       } else {
-        setDrawerBookingId(null);
+        closeBookingDrawer();
         await reloadCurrentDay();
         router.refresh();
       }
@@ -3465,7 +3479,7 @@ function ReceptionistCenterInner({
                   formatInSalonTz(utcIso, timezone, "time")
                 }
                 displayName={displayCustomerName}
-                onOpenBooking={(id) => setDrawerBookingId(id)}
+                onOpenBooking={(id) => openBookingDrawer(id)}
                 onMarkNoShow={(id) => void triggerMarkNoShow(id)}
                 onUndoNoShow={(id) => void handleUndoNoShow(id)}
               />
@@ -3480,7 +3494,7 @@ function ReceptionistCenterInner({
                   isViewingToday={isViewingToday}
                   openMinutes={data.salon.openMinutes}
                   closeMinutes={data.salon.closeMinutes}
-                  onBookingClick={(id) => setDrawerBookingId(id)}
+                  onBookingClick={(id) => openBookingDrawer(id)}
                   onEmptySlotClick={(staffId, ymd, slotLabel) => {
                     setDeskPrefill({ staffId, ymd, slotLabel, anchor: undefined });
                     setDeskBookingOpen(true);
@@ -3503,7 +3517,7 @@ function ReceptionistCenterInner({
                 isViewingToday={isViewingToday}
                 jumpToNowTrigger={jumpToNowTrigger}
                 existingBookings={gridBookings}
-                onBookingClick={(id) => setDrawerBookingId(id)}
+                onBookingClick={(id) => openBookingDrawer(id)}
                 onSlotClick={(staffId, utc) =>
                   void onWalkinAssignSlot(staffId, utc)
                 }
@@ -3826,12 +3840,12 @@ function ReceptionistCenterInner({
         open={drawerBookingId !== null && detailModel !== null}
         model={detailModel}
         slug={slug}
-        onClose={() => setDrawerBookingId(null)}
+        onClose={() => closeBookingDrawer()}
         onViewPartyCard={
           openDrawerBooking?.group_id
             ? () => {
                 const gid = openDrawerBooking.group_id;
-                setDrawerBookingId(null);
+                closeBookingDrawer();
                 setPartyRevealed(true);
                 setTimeout(() => {
                   const card = gid
@@ -3935,7 +3949,7 @@ function ReceptionistCenterInner({
                     customerContext?.usualStaffId ?? b.staff_id ?? undefined,
                   ymd: next ? salonYmdOfUtc(next, timezone) : undefined,
                 });
-                setDrawerBookingId(null);
+                closeBookingDrawer();
                 setDeskBookingOpen(true);
               }
             : undefined
