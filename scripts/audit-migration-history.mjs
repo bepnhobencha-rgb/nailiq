@@ -49,6 +49,10 @@ async function main() {
   const localByVersion = groupBy(local, "version");
   const remoteByVersion = groupBy(ledger.migrations, "version");
   const localByName = groupBy(local, "name");
+  const latestProductionVersion = [...remoteByVersion.keys()].sort().at(-1);
+  if (!latestProductionVersion) {
+    throw new Error("Production ledger is empty");
+  }
 
   const duplicateVersions = [...localByVersion.entries()]
     .filter(([, files]) => files.length > 1)
@@ -63,8 +67,32 @@ async function main() {
   const remoteOnly = [...remoteByVersion.keys()].filter(
     (version) => !localByVersion.has(version),
   );
-  const exactMatches = [...localByVersion.keys()].filter((version) =>
-    remoteByVersion.has(version),
+  const nameMismatches = [...localByVersion.entries()].flatMap(
+    ([version, localFiles]) => {
+      const remoteRows = remoteByVersion.get(version);
+      if (!remoteRows || localFiles.length !== 1 || remoteRows.length !== 1) {
+        return [];
+      }
+      return localFiles[0].name === remoteRows[0].name
+        ? []
+        : [
+            {
+              version,
+              localName: localFiles[0].name,
+              productionName: remoteRows[0].name,
+            },
+          ];
+    },
+  );
+  const exactMatches = [...localByVersion.entries()].filter(
+    ([version, localFiles]) => {
+      const remoteRows = remoteByVersion.get(version);
+      return (
+        localFiles.length === 1 &&
+        remoteRows?.length === 1 &&
+        localFiles[0].name === remoteRows[0].name
+      );
+    },
   );
   const renamedMatches = ledger.migrations.filter((remote) => {
     const localFiles = localByName.get(remote.name) ?? [];
@@ -80,12 +108,14 @@ async function main() {
     localOnlyUniqueVersions: localOnly.length,
     productionOnlyVersions: remoteOnly.length,
     duplicateVersionIds: duplicateVersions.length,
+    nameMismatchVersions: nameMismatches.length,
     extraFilesBehindDuplicateIds: duplicateVersions.reduce(
       (sum, duplicate) => sum + duplicate.files.length - 1,
       0,
     ),
     sameNameDifferentVersion: renamedMatches.length,
     localOnlyVersions: localOnly,
+    nameMismatches,
   };
 
   console.log(JSON.stringify(result, null, 2));
@@ -112,8 +142,28 @@ async function main() {
     const drifted =
       duplicateVersions.length > 0 ||
       localOnly.length > 0 ||
-      remoteOnly.length > 0;
+      remoteOnly.length > 0 ||
+      nameMismatches.length > 0;
     if (drifted) {
+      process.exitCode = 1;
+    }
+  }
+
+  if (process.argv.includes("--deploy-ready")) {
+    const forwardOnly = localOnly.every(
+      (version) => version > latestProductionVersion,
+    );
+    const deployReady =
+      duplicateVersions.length === 0 &&
+      remoteOnly.length === 0 &&
+      nameMismatches.length === 0 &&
+      exactMatches.length === ledger.migrations.length &&
+      forwardOnly;
+
+    if (!deployReady) {
+      console.error(
+        "Deploy-ready invariant failed: production history must be an exact prefix and every pending migration must be newer than the latest production version.",
+      );
       process.exitCode = 1;
     }
   }

@@ -7,8 +7,11 @@
 
 ## Executive finding
 
-The production schema is usable and the checked-in bootstrap can reproduce its
-shape for E2E, but the migration ledger is not a deployable history.
+The original non-deployable history described below is now reconciled.
+Production and the checked-in migration history are at strict 267/267 parity.
+Future migration PRs may contain only unique versions newer than the latest
+audited production version; CI rebuilds the complete history on a blank
+Supabase database before they are eligible to apply.
 
 The drift is much larger than the May 2026 runbook describes:
 
@@ -31,8 +34,9 @@ version ID used by production differs from the filename committed to Git.
 Running `db push` would therefore attempt to replay a large set of changes that
 already exist.
 
-The existing `npm run db:push` guard remains correct and must stay enabled until
-the reconciliation is complete.
+`npm run db:push` is now a safe wrapper. It proves production is an exact prefix,
+performs a pinned linked dry-run by default, and requires both an explicit apply
+flag and approval value before it can mutate production.
 
 ## Post-rehearsal correction
 
