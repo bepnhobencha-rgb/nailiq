@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { useState, useEffect, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   updateRemindersEnabled,
@@ -338,10 +338,18 @@ function NoShowHistorySection({ slug, salonId, language }: { slug: string; salon
 
   const salonSlug = slug;
 
+  // Callers turn the spinner on before calling fetchPage, so the mount effect
+  // below does not have to set state synchronously — `loading` already starts
+  // true. fetchPage only turns the spinners back off once it settles.
+  const requestSeq = useRef(0);
+
   async function fetchPage(newDays: number | null, newStatus: string, offset: number, append: boolean) {
-    if (offset === 0) setLoading(true); else setLoadingMore(true);
+    const seq = ++requestSeq.current;
     try {
       const res = await loadNoShowHistory(salonSlug, { days: newDays, status: newStatus, offset, limit: PAGE });
+      // A newer period/status request started while this one was in flight —
+      // its rows belong to a filter the user has already moved off.
+      if (seq !== requestSeq.current) return;
       if (res.ok && res.items) {
         setItems((prev) => append ? [...prev, ...res.items!] : res.items!);
         setHasMore(res.hasMore ?? false);
@@ -358,12 +366,14 @@ function NoShowHistorySection({ slug, salonId, language }: { slug: string; salon
   function handlePeriod(d: number | null) {
     setDays(d);
     setItems([]);
+    setLoading(true);
     void fetchPage(d, statusFilter, 0, false);
   }
 
   function handleStatus(s: string) {
     setStatusFilter(s);
     setItems([]);
+    setLoading(true);
     void fetchPage(days, s, 0, false);
   }
 
@@ -551,7 +561,10 @@ function NoShowHistorySection({ slug, salonId, language }: { slug: string; salon
           <button
             type="button"
             disabled={loadingMore}
-            onClick={() => void fetchPage(days, statusFilter, items.length, true)}
+            onClick={() => {
+              setLoadingMore(true);
+              void fetchPage(days, statusFilter, items.length, true);
+            }}
             className="mt-3 w-full rounded-xl border border-nq-border/40 py-2.5 text-xs font-medium text-nq-muted transition-colors hover:text-nq-foreground disabled:opacity-50"
           >
             {loadingMore ? (vi ? "Đang tải…" : "Loading…") : (vi ? "Xem thêm" : "Load more")}
