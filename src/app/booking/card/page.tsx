@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 type CardInfo = {
@@ -33,29 +33,31 @@ function brandLabel(brand: string): string {
 function CardManager() {
   const params = useSearchParams();
   const token = params?.get("token") ?? "";
-  const [state, setState] = useState<Phase>({ phase: "loading" });
-
-  const load = useCallback(async () => {
-    if (!token) {
-      setState({ phase: "error", code: "missing_token" });
-      return;
-    }
-    try {
-      const res = await fetch(`/api/booking/card-info?token=${encodeURIComponent(token)}`);
-      const json = (await res.json()) as CardInfo;
-      if (!res.ok || !json.ok) {
-        setState({ phase: "error", code: json.code ?? "load_failed" });
-        return;
-      }
-      setState({ phase: "view", info: json });
-    } catch {
-      setState({ phase: "error", code: "network_error" });
-    }
-  }, [token]);
+  const [state, setState] = useState<Phase>(
+    token ? { phase: "loading" } : { phase: "error", code: "missing_token" },
+  );
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!token) return;
+    let alive = true;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/booking/card-info?token=${encodeURIComponent(token)}`);
+        const json = (await res.json()) as CardInfo;
+        if (!alive) return;
+        if (!res.ok || !json.ok) {
+          setState({ phase: "error", code: json.code ?? "load_failed" });
+          return;
+        }
+        setState({ phase: "view", info: json });
+      } catch {
+        if (alive) setState({ phase: "error", code: "network_error" });
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [token]);
 
   async function remove(info: CardInfo) {
     setState({ phase: "removing", info });
