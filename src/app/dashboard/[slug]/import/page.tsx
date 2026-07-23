@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { ImportFromWebsite } from "@/components/import/ImportFromWebsite";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import type { ImportJob } from "@/shared/import/types";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,7 @@ export default async function ImportPage({ params }: PageProps) {
   const { slug } = await params;
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) redirect("/register");
+  if (!isOwnerOrAdmin(ctx.role)) redirect(`/dashboard/${encodeURIComponent(slug)}`);
 
   const { salon } = ctx;
   const db = createServiceRoleClient();

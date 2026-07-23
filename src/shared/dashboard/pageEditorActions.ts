@@ -83,6 +83,7 @@ export async function updateSectionOrder(
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   for (const { id, sort_order } of sections) {
     const { error } = await ctx.supabase
@@ -106,6 +107,7 @@ export async function uploadSectionImage(
 ): Promise<{ ok: boolean; url?: string; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const file = formData.get("file") as File | null;
   const type = (formData.get("type") as string | null) ?? "section";
