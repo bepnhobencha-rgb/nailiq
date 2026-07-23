@@ -184,6 +184,17 @@ test.describe("DRC no-show tombstone + fee decision", () => {
       .update({ status: "no_show" } as never)
       .eq("id", id);
     if (error) throw new Error(`seedNoShow: ${error.message}`);
+
+    // Do not navigate until the status write is observable. CI's local
+    // PostgREST pool can briefly return before a follow-up server-rendered
+    // read sees the update, which made this fixture intermittently look like
+    // an active booking instead of a no-show tombstone.
+    await expect
+      .poll(async () => (await getBookingRow(fx.salonId, id))?.status, {
+        timeout: 15_000,
+        intervals: [250, 500, 1_000],
+      })
+      .toBe("no_show");
     return id;
   }
 

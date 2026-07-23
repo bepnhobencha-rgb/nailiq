@@ -19,7 +19,7 @@ export default async function SuperadminUsersPage() {
   }
 
   const { users } = result;
-  const now = Date.now();
+  const now = new Date().getTime();
   const liveCount = users.filter((u) => {
     if (!u.lastSignInAt) return false;
     return now - new Date(u.lastSignInAt).getTime() < 15 * 60 * 1000;

@@ -93,7 +93,9 @@ export default async function PhotosPage({ params }: PageProps) {
   }
 
   // Fetch photos with booking joins — last 90 days, max 200 rows
-  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+  const ninetyDaysAgo = new Date(
+    new Date().getTime() - 90 * 24 * 60 * 60 * 1000,
+  ).toISOString();
   const db = createServiceRoleClient();
 
   const { data: rawPhotos } = await db
