@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useSyncExternalStore,
+} from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import {
   type ReturningCustomer,
@@ -30,6 +36,15 @@ import { MAX_WAVES } from "@/shared/booking/groupSchedulerCore";
  * the toggle vanishes entirely below MIN_GROUP_SIZE.
  */
 const MIN_GROUP_SIZE = 2;
+
+// The public booking gate is server-rendered before React attaches its event
+// handlers. WebKit can expose the phone input during that short window, so E2E
+// must not treat "visible" as "interactive". This client-only snapshot gives
+// the shared booking helpers the same deterministic hydration signal used by
+// ReceptionistCenter.
+const noopSubscribe = () => () => {};
+const getHydratedSnapshot = () => true;
+const getServerFalseSnapshot = () => false;
 
 // Compact OTP widget rendered INSIDE the phone gate card so the "Send code"
 // button is always visible without scrolling. Handles SMS + email fallback.
@@ -340,6 +355,12 @@ export function BookingTypeSwitcher({
    *  `true` so callers that don't resolve the flag are unaffected. */
   groupBookingEnabled?: boolean;
 }) {
+  const bookingEntryHydrated = useSyncExternalStore(
+    noopSubscribe,
+    getHydratedSnapshot,
+    getServerFalseSnapshot,
+  );
+
   // P2.3 — initialize from ?mode= so language switch (which reloads
   // the page) doesn't drop the user back to individual.
   const searchParams = useSearchParams();
@@ -489,7 +510,6 @@ export function BookingTypeSwitcher({
     return () => {
       if (entryLookupTimer.current) clearTimeout(entryLookupTimer.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entryPhoneRaw, salon.id]);
 
   // Fetches the full customer profile after gate OTP verification and updates
@@ -552,6 +572,13 @@ export function BookingTypeSwitcher({
       data-testid="booking-phone-gate"
       className="rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-4 sm:p-5"
     >
+      {bookingEntryHydrated ? (
+        <span
+          data-testid="booking-entry-hydrated"
+          aria-hidden="true"
+          style={{ display: "none" }}
+        />
+      ) : null}
       <label
         htmlFor="booking-entry-phone"
         className="mb-1 block text-sm font-semibold"
