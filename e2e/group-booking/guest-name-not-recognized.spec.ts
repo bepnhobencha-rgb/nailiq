@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 
-import { cleanupTestSalon } from "../helpers/db";
+import { cleanupTestSalon, enterBookingPhone } from "../helpers/db";
 import { seedGroupTestSalon } from "./helpers";
 
 /**
@@ -64,7 +64,7 @@ test.describe("Gate — no stored name is surfaced pre-OTP (privacy S1)", () => 
 
     // National number — the full E.164 would be sliced to a bogus area code
     // and the lookup would never fire.
-    await page.getByTestId("booking-entry-phone").fill(POLLUTED_PHONE.slice(-10));
+    await enterBookingPhone(page, POLLUTED_PHONE);
     // Recognized generically; the "Guest 1" placeholder (like any stored name)
     // is never surfaced. The name input is hidden at the gate for a recognized
     // customer (BookingTypeSwitcher `!entryCustomer`), so there is no field that
@@ -79,7 +79,7 @@ test.describe("Gate — no stored name is surfaced pre-OTP (privacy S1)", () => 
     page,
   }) => {
     await page.goto(`/${SLUG}`);
-    await page.getByTestId("booking-entry-phone").fill(REAL_PHONE.slice(-10));
+    await enterBookingPhone(page, REAL_PHONE);
     const recognized = page.getByTestId("booking-entry-recognized");
     await expect(recognized).toBeVisible({ timeout: 10_000 });
     // The real stored name must NOT leak to a phone-only lookup — neither in the
@@ -93,7 +93,7 @@ test.describe("Gate — no stored name is surfaced pre-OTP (privacy S1)", () => 
     page,
   }) => {
     await page.goto(`/${SLUG}`);
-    await page.getByTestId("booking-entry-phone").fill(FALLBACK_PHONE.slice(-10));
+    await enterBookingPhone(page, FALLBACK_PHONE);
     // Neither the placeholder ("Khách 2") nor the real booking name
     // ("Linda Real") is surfaced — recognition stays generic, and the name
     // input is hidden at the gate so nothing can leak through a pre-fill.
