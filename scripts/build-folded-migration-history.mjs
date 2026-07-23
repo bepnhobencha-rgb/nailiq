@@ -138,8 +138,13 @@ function assertLedger(ledger) {
     versions.add(migration.version);
   }
 
-  if (versions.has(BASELINE_VERSION)) {
-    throw new Error(`Baseline version ${BASELINE_VERSION} already exists`);
+  const baseline = ledger.migrations.find(
+    (migration) => migration.version === BASELINE_VERSION,
+  );
+  if (!baseline || baseline.name !== BASELINE_NAME) {
+    throw new Error(
+      `Production ledger must contain ${BASELINE_VERSION}_${BASELINE_NAME}`,
+    );
   }
 }
 
@@ -166,10 +171,13 @@ async function main() {
   );
   const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
   assertLedger(ledger);
+  const markerMigrations = ledger.migrations.filter(
+    (migration) => migration.version !== BASELINE_VERSION,
+  );
 
   await mkdir(outputDir, { recursive: true });
 
-  for (const migration of ledger.migrations) {
+  for (const migration of markerMigrations) {
     const marker = [
       `-- Folded-history marker for production migration ${migration.version}.`,
       `-- Original production name: ${migration.name}.`,
@@ -269,14 +277,14 @@ async function main() {
     JSON.stringify(
       {
         outputDir,
-        markerMigrations: ledger.migrations.length,
+        markerMigrations: markerMigrations.length,
         baselineVersion: BASELINE_VERSION,
         postSnapshotSchemaDeltas:
           POST_SNAPSHOT_FILES.length - PRODUCTION_STATE_ONLY_FILES.size,
         omittedProductionStateDeltas: [...PRODUCTION_STATE_ONLY_FILES],
         reconciledServiceRoleGrantTables:
           POST_SNAPSHOT_SERVICE_ROLE_GRANT_TABLES,
-        totalMigrations: ledger.migrations.length + 1,
+        totalMigrations: markerMigrations.length + 1,
       },
       null,
       2,

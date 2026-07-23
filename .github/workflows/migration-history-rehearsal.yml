@@ -35,8 +35,8 @@ jobs:
         with:
           version: 2.109.1
 
-      - name: Audit folded cutover invariants
-        run: npm run db:history:audit -- --cutover-ready
+      - name: Audit strict production parity
+        run: npm run db:history:audit -- --strict
 
       - name: Rebuild and compare folded history
         run: |

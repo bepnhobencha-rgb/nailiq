@@ -1,9 +1,9 @@
 # NailIQ migration-history reconciliation
 
 **Audit date:** 2026-07-23  
-**Release audited:** `9e04ce272beba71f8d4e456ec5e08ba3a1ccf3d3` (`origin/main`)
+**Release audited:** `4868e87d19621b48e55e0099a781a3915a9d47af` (`origin/main`)
 **Supabase project:** `fshmobzyjhmtvndobwsy` (`NailIQOS`)  
-**Status:** folded cutover prepared; production ledger backed up; baseline repair pending
+**Status:** folded cutover deployed; production ledger repaired; strict parity verified
 
 ## Executive finding
 
@@ -135,15 +135,15 @@ proven on a throwaway local/CI database:
 - [x] Generated baseline contains no customer rows and no credential-shaped
   values.
 - [x] Migration versions are unique.
-- [ ] Blank database applies the corrected 25-schema-delta history from zero.
-- [ ] Tables, columns, policies, functions, triggers and indexes meet the
+- [x] Blank database applies the corrected 25-schema-delta history from zero.
+- [x] Tables, columns, policies, functions, triggers and indexes meet the
   production parity assertions.
-- [ ] Grant matrix matches production exactly.
-- [ ] RLS is enabled on every core table.
-- [ ] Seed is idempotent.
-- [ ] Typecheck, unit, build and both E2E suites pass on one exact SHA.
+- [x] Grant matrix matches production exactly.
+- [x] RLS is enabled on every core table.
+- [x] Seed is idempotent.
+- [x] Typecheck, unit, build and both E2E suites pass on one exact SHA.
 - [x] Ledger rollback procedure restores the pre-repair version set.
-- [x] `db:push` remains blocked until production verification succeeds.
+- [x] `db:push` remained blocked through production verification.
 
 ## Production boundary
 
@@ -158,12 +158,21 @@ Both the source and backup contain 266 rows and have ledger checksum
 copied the backup into a table with the production shape and reproduced the
 same row count and checksum before rolling back.
 
-The repository cutover archives the 288 legacy SQL files under
+The repository cutover archived the 288 legacy SQL files under
 `supabase/migration-history/legacy-2026-07-23/`, checks in 266 inert markers
-plus the folded baseline, and keeps `db:push` blocked. After this exact change
-passes CI and reaches `main`, production may record only baseline version
-`20260723000000` as applied. Its SQL must never be executed against the existing
-production schema.
+plus the folded baseline, and kept `db:push` blocked. PR #912 passed build,
+security, smoke, both E2E suites, and the blank-Supabase migration rehearsal,
+then deployed to Vercel production as
+`4868e87d19621b48e55e0099a781a3915a9d47af`.
+
+Production then recorded only baseline version `20260723000000` as applied in a
+transaction guarded by the 266-row backup and exact schema/grant/RLS
+preconditions. Its schema SQL was not executed. Independent post-commit
+verification found 267 ledger rows, exactly one folded-baseline marker, the
+unchanged object counts (89 tables, 1216 columns, 101 policies, 72 app
+functions, 25 triggers, 294 indexes), unchanged reachable-table grants
+(anon 75, authenticated 83, service_role 94), and RLS enabled on every core
+table. The 266-row rollback backup remains in place.
 
 ## Relevant current Supabase behavior
 
