@@ -526,6 +526,33 @@ function SmsComposer({
 // Main drawer component
 // ---------------------------------------------------------------------------
 
+/**
+ * State owned by one profile fetch. `key` identifies which client+language the
+ * values belong to, so a response that arrives after the drawer moved on can
+ * be dropped instead of overwriting the client now on screen.
+ */
+type Profile360Session = {
+  key: string;
+  loading: boolean;
+  error: string | null;
+  data: ClientProfile360 | null;
+  aiGenerating: boolean;
+  aiSummary: ClientProfile360["aiSummary"] | null;
+};
+
+const EMPTY_SESSION: Profile360Session = {
+  key: "",
+  loading: false,
+  error: null,
+  data: null,
+  aiGenerating: false,
+  aiSummary: null,
+};
+
+function startSession(key: string, loading: boolean): Profile360Session {
+  return { ...EMPTY_SESSION, key, loading };
+}
+
 export function ClientProfile360Drawer({
   slug,
   clientPhone,
@@ -541,14 +568,23 @@ export function ClientProfile360Drawer({
     [language],
   );
 
-  // Fetch state
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<ClientProfile360 | null>(null);
+  // Everything an in-flight request can write lives in one object tagged with
+  // the fetch key it belongs to, so a late response can be matched against the
+  // client currently on screen — see applySession below.
+  const [session, setSession] = useState<Profile360Session>(EMPTY_SESSION);
+  const { loading, error, data, aiGenerating, aiSummary } = session;
 
-  // AI summary state
-  const [aiGenerating, setAiGenerating] = useState(false);
-  const [aiSummary, setAiSummary] = useState<ClientProfile360["aiSummary"] | null>(null);
+  /**
+   * Apply an async result only if the drawer still shows the client the
+   * request was started for. The comparison happens inside the updater, so it
+   * reads the latest committed state and never depends on when an effect ran.
+   */
+  const applySession = useCallback(
+    (requestKey: string, patch: Partial<Omit<Profile360Session, "key">>) => {
+      setSession((prev) => (prev.key === requestKey ? { ...prev, ...patch } : prev));
+    },
+    [],
+  );
 
   // Timeline show-more
   const [showAllTimeline, setShowAllTimeline] = useState(false);
@@ -565,69 +601,81 @@ export function ClientProfile360Drawer({
   // Build booking URL for rebook-invite template
   const bookingUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://nailiq.ca"}/${slug}`;
 
-  // Reset + fetch when phone changes
-  useEffect(() => {
-    if (!clientPhone) {
-      setData(null);
-      setError(null);
-      setAiSummary(null);
-      setShowAllTimeline(false);
-      setCompose({ open: false, body: "", kind: "message", status: null });
-      return;
-    }
-
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    setData(null);
-    setAiSummary(null);
+  // Everything below belongs to one profile fetch. When the target changes,
+  // reset during render instead of in an effect — React's documented way to
+  // adjust state on a prop change, and it avoids painting the previous
+  // client's data for a frame under the new client's name.
+  const fetchKey = `${slug}|${clientPhone ?? ""}|${language}`;
+  if (session.key !== fetchKey) {
+    // Closing the drawer resets its contents but starts no request.
+    setSession(startSession(fetchKey, clientPhone !== null));
     setShowAllTimeline(false);
     setCompose({ open: false, body: "", kind: "message", status: null });
+  }
 
-    void callLoadProfile(slug, clientPhone, language).then((res) => {
-      if (cancelled) return;
-      setLoading(false);
-      if (!res.ok) {
-        setError(m.error);
+  // Fetch when the target changes.
+  useEffect(() => {
+    if (!clientPhone) return;
+
+    const requestKey = fetchKey;
+
+    void (async () => {
+      let res: Awaited<ReturnType<typeof callLoadProfile>>;
+      try {
+        res = await callLoadProfile(slug, clientPhone, language);
+      } catch {
+        // The action itself rejected (network / server error). Without this
+        // the drawer would sit on the skeleton forever.
+        applySession(requestKey, { loading: false, error: m.error });
         return;
       }
-      setData(res.data);
+      if (!res.ok) {
+        applySession(requestKey, { loading: false, error: m.error });
+        return;
+      }
+      applySession(requestKey, { loading: false, data: res.data });
 
       // If AI summary already present, use it; otherwise generate in background
       if (res.data.aiSummary) {
-        setAiSummary(res.data.aiSummary);
-      } else {
-        setAiGenerating(true);
-        void callGenerateSummary(slug, clientPhone, language).then((aiRes) => {
-          if (cancelled) return;
-          setAiGenerating(false);
-          if (aiRes.ok) {
-            setAiSummary({
+        applySession(requestKey, { aiSummary: res.data.aiSummary });
+        return;
+      }
+      applySession(requestKey, { aiGenerating: true });
+      try {
+        const aiRes = await callGenerateSummary(slug, clientPhone, language);
+        if (aiRes.ok) {
+          applySession(requestKey, {
+            aiGenerating: false,
+            aiSummary: {
               text: aiRes.text,
               nextAction: aiRes.nextAction,
               computedAt: aiRes.computedAt,
-            });
-          }
-          // On error: just hide the AI card gracefully
-        });
+            },
+          });
+          return;
+        }
+        // On error: just hide the AI card gracefully
+      } catch {
+        // Best-effort — the profile itself is already on screen.
       }
-    });
-
-    return () => {
-      cancelled = true;
-    };
+      applySession(requestKey, { aiGenerating: false });
+    })();
   // Re-runs on language change so the AI summary + dates re-fetch in the new
   // language (the rest of the UI is reactive via getUserMessages already).
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug, clientPhone, language]);
+  }, [slug, clientPhone, language, fetchKey, m.error, applySession]);
 
   /** Re-fetch the profile (e.g. after a message is sent to pick up notification history). */
   const refreshProfile = useCallback(() => {
     if (!clientPhone) return;
-    void callLoadProfile(slug, clientPhone, language).then((res) => {
-      if (res.ok) setData(res.data);
-    });
-  }, [slug, clientPhone, language]);
+    const requestKey = fetchKey;
+    void callLoadProfile(slug, clientPhone, language)
+      .then((res) => {
+        if (res.ok) applySession(requestKey, { data: res.data });
+      })
+      .catch(() => {
+        // Best-effort refresh — keep the profile already on screen.
+      });
+  }, [slug, clientPhone, language, fetchKey, applySession]);
 
   const handleClose = useCallback(() => {
     onClose();
@@ -660,19 +708,31 @@ export function ClientProfile360Drawer({
   /** Re-generate AI summary. */
   const handleRegenerateSummary = useCallback(() => {
     if (!clientPhone || aiGenerating) return;
-    setAiGenerating(true);
-    setAiSummary(null);
-    void callGenerateSummary(slug, clientPhone, language).then((aiRes) => {
-      setAiGenerating(false);
-      if (aiRes.ok) {
-        setAiSummary({
-          text: aiRes.text,
-          nextAction: aiRes.nextAction,
-          computedAt: aiRes.computedAt,
-        });
-      }
-    });
-  }, [slug, clientPhone, aiGenerating]);
+    // This request outlives the click: if the drawer moves to another client
+    // before it resolves, the result belongs to nobody and must be dropped.
+    const requestKey = fetchKey;
+    applySession(requestKey, { aiGenerating: true, aiSummary: null });
+    void callGenerateSummary(slug, clientPhone, language)
+      .then((aiRes) => {
+        if (aiRes.ok) {
+          applySession(requestKey, {
+            aiGenerating: false,
+            aiSummary: {
+              text: aiRes.text,
+              nextAction: aiRes.nextAction,
+              computedAt: aiRes.computedAt,
+            },
+          });
+          return;
+        }
+        // On error: just hide the AI card gracefully
+        applySession(requestKey, { aiGenerating: false });
+      })
+      .catch(() => {
+        // Best-effort — the profile itself is already on screen.
+        applySession(requestKey, { aiGenerating: false });
+      });
+  }, [slug, clientPhone, language, aiGenerating, fetchKey, applySession]);
 
   // ── Build title ──────────────────────────────────────────────────────────
   const drawerTitle = data?.profile.name?.trim() ?? m.title;
