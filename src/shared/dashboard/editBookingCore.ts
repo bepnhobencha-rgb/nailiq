@@ -25,6 +25,21 @@ function isUuidLike(value: string): boolean {
   return UUID_RE.test(value.trim());
 }
 
+type BookingEditRow = {
+  id?: unknown;
+  status?: unknown;
+  start_time_utc?: unknown;
+  end_time_utc?: unknown;
+  addon_service_id?: unknown;
+};
+
+type ServiceTimingRow = {
+  id?: unknown;
+  duration_minutes?: unknown;
+  buffer_minutes?: unknown;
+  price_cents?: unknown;
+};
+
 /** Q1 desk edit payload: time + staff + service (+ optional addon). */
 export type EditBookingInput = {
   salonId: string;
@@ -118,7 +133,10 @@ export async function performEditBooking(
     .is("deleted_at" as never, null)
     .maybeSingle();
 
-  if (staffErr || !(staffRow as any)?.id) {
+  if (
+    staffErr ||
+    !(staffRow as unknown as { id?: unknown } | null)?.id
+  ) {
     return { ok: false, error: "server_error" };
   }
 
@@ -136,11 +154,11 @@ export async function performEditBooking(
     return { ok: false, error: "server_error" };
   }
 
-  if (!(booking as any)?.id) {
+  const bookingData = booking as unknown as BookingEditRow | null;
+  if (!bookingData?.id) {
     return { ok: false, error: "not_found" };
   }
 
-  const bookingData = booking as any;
   const st =
     bookingData.start_time_utc != null
       ? String(bookingData.start_time_utc).trim()
@@ -182,7 +200,7 @@ export async function performEditBooking(
     console.error("[performEditBooking] service", svcErr);
     return { ok: false, error: "server_error" };
   }
-  const svcData = svc as any;
+  const svcData = svc as unknown as ServiceTimingRow | null;
   if (!svcData?.id) {
     return { ok: false, error: "server_error" };
   }
@@ -199,7 +217,9 @@ export async function performEditBooking(
       .eq("staff_id", newStaffId)
       .eq("service_id", newServiceId)
       .maybeSingle();
-    if (!(capRow as any)?.staff_id) {
+    if (
+      !(capRow as unknown as { staff_id?: unknown } | null)?.staff_id
+    ) {
       return { ok: false, error: "staff_cannot_perform_service" };
     }
   }
@@ -250,7 +270,8 @@ export async function performEditBooking(
       console.error("[performEditBooking] addon service", addonErr);
       return { ok: false, error: "server_error" };
     }
-    const addonSvcData = addonSvc as any;
+    const addonSvcData =
+      addonSvc as unknown as ServiceTimingRow | null;
     if (!addonSvcData) {
       return { ok: false, error: "server_error" };
     }
@@ -296,7 +317,8 @@ export async function performEditBooking(
     staffId: newStaffId,
     startUtcIso: slotStartUtc,
     endUtcIso: slotEndUtc,
-    existingBookings: (existing ?? []) as any as ConflictCheckBooking[],
+    existingBookings:
+      (existing ?? []) as unknown as ConflictCheckBooking[],
     excludeBookingId: bookingId,
   });
   if (conflict !== null) {
@@ -401,7 +423,7 @@ export async function performEditBooking(
     return { ok: false, error: "server_error" };
   }
 
-  if (!(updated as any)?.id) {
+  if (!(updated as unknown as { id?: unknown } | null)?.id) {
     return { ok: false, error: "invalid_status" };
   }
 
