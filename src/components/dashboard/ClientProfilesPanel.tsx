@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   useTransition,
 } from "react";
 
@@ -66,6 +67,46 @@ const VIEW_MODE_VALUES: ViewMode[] = ["cards", "list", "details"];
 
 function isViewMode(v: string | null): v is ViewMode {
   return VIEW_MODE_VALUES.includes(v as ViewMode);
+}
+
+// The stored preference is read through an external store so React can pick it
+// up after hydration without a state-setting effect. SSR and the first client
+// paint both stay on "cards", so there is no hydration mismatch.
+const viewModeListeners = new Set<() => void>();
+let viewModeSnapshot: ViewMode | null = null;
+
+function subscribeViewMode(onStoreChange: () => void): () => void {
+  viewModeListeners.add(onStoreChange);
+  return () => {
+    viewModeListeners.delete(onStoreChange);
+  };
+}
+
+function getViewModeSnapshot(): ViewMode {
+  if (viewModeSnapshot === null) {
+    try {
+      const stored = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+      viewModeSnapshot = isViewMode(stored) ? stored : "cards";
+    } catch {
+      /* ignore quota / private mode */
+      viewModeSnapshot = "cards";
+    }
+  }
+  return viewModeSnapshot;
+}
+
+function getViewModeServerSnapshot(): ViewMode {
+  return "cards";
+}
+
+function setViewMode(next: ViewMode): void {
+  try {
+    window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, next);
+  } catch {
+    /* ignore quota / private mode */
+  }
+  viewModeSnapshot = next;
+  for (const listener of viewModeListeners) listener();
 }
 
 /**
@@ -311,28 +352,13 @@ export function ClientProfilesPanel({
   // Customer 360 drawer — stores the phone of the currently-open profile.
   const [open360, setOpen360] = useState<string | null>(null);
 
-  // View mode — default "cards"; hydrated from localStorage after mount.
-  const [viewMode, setViewModeState] = useState<ViewMode>("cards");
-
-  useEffect(() => {
-    // Hydrate stored preference after mount (SSR-safe).
-    if (typeof window === "undefined") return;
-    try {
-      const stored = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
-      if (isViewMode(stored)) setViewModeState(stored);
-    } catch {
-      /* ignore quota / private mode */
-    }
-  }, []);
-
-  const setViewMode = useCallback((next: ViewMode) => {
-    setViewModeState(next);
-    try {
-      window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, next);
-    } catch {
-      /* ignore quota / private mode */
-    }
-  }, []);
+  // View mode — "cards" on the server and the first client paint, then the
+  // stored preference once React subscribes to the store above.
+  const viewMode = useSyncExternalStore(
+    subscribeViewMode,
+    getViewModeSnapshot,
+    getViewModeServerSnapshot,
+  );
 
   // isPending tracks in-flight server requests for subtle loading overlay.
   const [isPending, startTransition] = useTransition();
