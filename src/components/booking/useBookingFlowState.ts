@@ -233,6 +233,7 @@ export function useBookingFlowState(
   >([]);
   /** Staff free-gap minutes after the main service; surfaced in the upsell heading copy. */
   const [upsellGapMinutes, setUpsellGapMinutes] = useState<number>(0);
+  const [serviceError, setServiceError] = useState<string | null>(null);
 
   useEffect(() => {
     if (tryonIntentLoadedRef.current) return;
@@ -331,7 +332,6 @@ export function useBookingFlowState(
   const [marketingConsent, setMarketingConsent] = useState(initialMarketingConsent);
   const [waitlistSlotJoined, setWaitlistSlotJoined] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [serviceError, setServiceError] = useState<string | null>(null);
   const [infoNameError, setInfoNameError] = useState<string | null>(null);
   const [infoPhoneError, setInfoPhoneError] = useState<string | null>(null);
   const [infoEmailError, setInfoEmailError] = useState<string | null>(null);
