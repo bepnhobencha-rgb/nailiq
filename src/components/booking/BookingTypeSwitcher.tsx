@@ -387,8 +387,14 @@ export function BookingTypeSwitcher({
   const [entryMarketingConsent, setEntryMarketingConsent] = useState(false);
   // Option B — gate-first OTP: verify phone before entering the flow so the
   // OTP step inside the flow is skipped (no re-prompt, no re-SMS).
-  const [gateOtpDone, setGateOtpDone] = useState(false);
-  const [gateOtpSessionId, setGateOtpSessionId] = useState<string | null>(null);
+  // Stored together with the number it was verified for. Both flags below are
+  // derived from that comparison, so editing the phone re-arms the gate as part
+  // of the same render — there is no commit where the old session id is still
+  // readable under a new number.
+  const [gateOtp, setGateOtp] = useState<{ phone: string; sessionId: string } | null>(null);
+  const activeGateOtp = gateOtp && gateOtp.phone === entryPhoneRaw ? gateOtp : null;
+  const gateOtpDone = activeGateOtp !== null;
+  const gateOtpSessionId = activeGateOtp?.sessionId ?? null;
   // Email used to receive the gate OTP code — pre-fills the booking email
   // field so new customers don't retype the same address.
   const [gateOtpEmail, setGateOtpEmail] = useState("");
@@ -419,9 +425,9 @@ export function BookingTypeSwitcher({
     (entryCustomer?.name ?? "").trim() || committedName.trim();
 
   useEffect(() => {
-    // Phone changed → reset gate OTP state so the new number must be re-verified.
-    setGateOtpDone(false);
-    setGateOtpSessionId(null);
+    // Phone changed. The gate OTP itself is re-armed by the derived check
+    // above; this only clears the guard that keeps the anonymous lookup from
+    // overwriting a verified profile.
     gateOtpVerifiedRef.current = false;
 
     if (entryLookupTimer.current) {
@@ -458,8 +464,7 @@ export function BookingTypeSwitcher({
   // Fetches the full customer profile after gate OTP verification and updates
   // entryCustomer + entryName so the personalized greeting and flow pre-fills work.
   async function handleGateOtpVerified(sessionId: string, otpEmail?: string) {
-    setGateOtpSessionId(sessionId);
-    setGateOtpDone(true);
+    setGateOtp({ phone: entryPhoneRaw, sessionId });
     gateOtpVerifiedRef.current = true;
     // Store the email used for OTP delivery so new customers don't retype it.
     if (otpEmail) setGateOtpEmail(otpEmail);
