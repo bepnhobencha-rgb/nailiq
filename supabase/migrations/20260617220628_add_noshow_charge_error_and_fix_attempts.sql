@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260617220628.
+-- Original production name: add_noshow_charge_error_and_fix_attempts.
+-- Its schema effect is represented by the later folded baseline.

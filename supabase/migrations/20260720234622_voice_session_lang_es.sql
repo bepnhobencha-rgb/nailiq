@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260720234622.
+-- Original production name: voice_session_lang_es.
+-- Its schema effect is represented by the later folded baseline.

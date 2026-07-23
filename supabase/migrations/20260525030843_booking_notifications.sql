@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260525030843.
+-- Original production name: booking_notifications.
+-- Its schema effect is represented by the later folded baseline.

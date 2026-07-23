@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260522180556.
+-- Original production name: ai_chats.
+-- Its schema effect is represented by the later folded baseline.

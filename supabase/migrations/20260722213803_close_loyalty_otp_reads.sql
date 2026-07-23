@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260722213803.
+-- Original production name: close_loyalty_otp_reads.
+-- Its schema effect is represented by the later folded baseline.

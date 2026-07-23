@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260528064009.
+-- Original production name: party_links.
+-- Its schema effect is represented by the later folded baseline.

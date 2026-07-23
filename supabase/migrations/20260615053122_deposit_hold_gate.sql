@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615053122.
+-- Original production name: deposit_hold_gate.
+-- Its schema effect is represented by the later folded baseline.

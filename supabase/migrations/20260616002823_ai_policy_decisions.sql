@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260616002823.
+-- Original production name: ai_policy_decisions.
+-- Its schema effect is represented by the later folded baseline.

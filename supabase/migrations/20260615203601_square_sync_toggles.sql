@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615203601.
+-- Original production name: square_sync_toggles.
+-- Its schema effect is represented by the later folded baseline.

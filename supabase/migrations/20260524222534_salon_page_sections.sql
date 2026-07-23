@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260524222534.
+-- Original production name: salon_page_sections.
+-- Its schema effect is represented by the later folded baseline.

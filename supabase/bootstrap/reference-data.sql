@@ -52,3 +52,20 @@ INSERT INTO public.platform_flags (key, enabled) VALUES
   ('sms_enabled',            false),
   ('stripe_billing_enabled', false)
 ON CONFLICT (key) DO NOTHING;
+
+-- ── private system buckets (1 row) ─────────────────────────────────────────
+-- Configuration, not customer data. The folded schema deliberately omits the
+-- original top-level INSERT so the migration remains schema-only; local/test
+-- environments still need the same private bucket that production uses.
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'nail-tryon',
+  'nail-tryon',
+  false,
+  10485760,
+  ARRAY['image/jpeg', 'image/png', 'image/webp']
+)
+ON CONFLICT (id) DO UPDATE SET
+  public = EXCLUDED.public,
+  file_size_limit = EXCLUDED.file_size_limit,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;

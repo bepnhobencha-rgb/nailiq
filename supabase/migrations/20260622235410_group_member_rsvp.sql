@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260622235410.
+-- Original production name: group_member_rsvp.
+-- Its schema effect is represented by the later folded baseline.

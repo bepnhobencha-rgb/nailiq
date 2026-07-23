@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260722204507.
+-- Original production name: bind_client_snapshot_to_booking.
+-- Its schema effect is represented by the later folded baseline.

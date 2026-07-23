@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260527015906.
+-- Original production name: add_voice_to_bookings_source_check.
+-- Its schema effect is represented by the later folded baseline.

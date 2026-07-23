@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260611220542.
+-- Original production name: group_booking_client_locale.
+-- Its schema effect is represented by the later folded baseline.

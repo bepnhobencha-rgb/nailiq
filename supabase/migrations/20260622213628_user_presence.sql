@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260622213628.
+-- Original production name: user_presence.
+-- Its schema effect is represented by the later folded baseline.

@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260511001635.
+-- Original production name: add_staff_requested_by_client.
+-- Its schema effect is represented by the later folded baseline.

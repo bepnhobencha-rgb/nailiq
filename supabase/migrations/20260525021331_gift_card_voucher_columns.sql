@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260525021331.
+-- Original production name: gift_card_voucher_columns.
+-- Its schema effect is represented by the later folded baseline.

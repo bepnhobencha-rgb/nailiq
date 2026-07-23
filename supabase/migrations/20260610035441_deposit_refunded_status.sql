@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260610035441.
+-- Original production name: deposit_refunded_status.
+-- Its schema effect is represented by the later folded baseline.

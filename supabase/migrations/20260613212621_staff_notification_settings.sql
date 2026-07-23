@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260613212621.
+-- Original production name: staff_notification_settings.
+-- Its schema effect is represented by the later folded baseline.

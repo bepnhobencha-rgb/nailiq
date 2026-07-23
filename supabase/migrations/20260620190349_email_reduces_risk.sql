@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260620190349.
+-- Original production name: email_reduces_risk.
+-- Its schema effect is represented by the later folded baseline.

@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260610012548.
+-- Original production name: square_sync_integration.
+-- Its schema effect is represented by the later folded baseline.

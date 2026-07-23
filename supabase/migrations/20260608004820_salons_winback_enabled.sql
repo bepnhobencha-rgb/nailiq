@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260608004820.
+-- Original production name: salons_winback_enabled.
+-- Its schema effect is represented by the later folded baseline.

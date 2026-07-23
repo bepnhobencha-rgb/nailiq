@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260722195601.
+-- Original production name: rate_limit_public_booking.
+-- Its schema effect is represented by the later folded baseline.

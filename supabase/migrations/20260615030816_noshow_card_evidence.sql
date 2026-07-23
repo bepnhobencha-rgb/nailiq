@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615030816.
+-- Original production name: noshow_card_evidence.
+-- Its schema effect is represented by the later folded baseline.

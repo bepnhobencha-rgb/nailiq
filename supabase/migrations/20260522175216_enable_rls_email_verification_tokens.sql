@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260522175216.
+-- Original production name: enable_rls_email_verification_tokens.
+-- Its schema effect is represented by the later folded baseline.

@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260706031448.
+-- Original production name: waitlist_advance_fix_ambiguous_col.
+-- Its schema effect is represented by the later folded baseline.

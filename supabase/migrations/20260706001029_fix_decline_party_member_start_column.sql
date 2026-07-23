@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260706001029.
+-- Original production name: fix_decline_party_member_start_column.
+-- Its schema effect is represented by the later folded baseline.

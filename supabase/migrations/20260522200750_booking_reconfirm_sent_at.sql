@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260522200750.
+-- Original production name: booking_reconfirm_sent_at.
+-- Its schema effect is represented by the later folded baseline.

@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260709081803.
+-- Original production name: salon_legal_urls.
+-- Its schema effect is represented by the later folded baseline.

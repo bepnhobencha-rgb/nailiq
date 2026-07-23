@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260522180447.
+-- Original production name: customer_preferences.
+-- Its schema effect is represented by the later folded baseline.

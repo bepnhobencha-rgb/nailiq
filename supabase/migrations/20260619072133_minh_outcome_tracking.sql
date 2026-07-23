@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260619072133.
+-- Original production name: minh_outcome_tracking.
+-- Its schema effect is represented by the later folded baseline.

@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615005053.
+-- Original production name: client_ai_summaries.
+-- Its schema effect is represented by the later folded baseline.

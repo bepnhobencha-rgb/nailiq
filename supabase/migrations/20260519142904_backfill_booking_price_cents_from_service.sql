@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260519142904.
+-- Original production name: backfill_booking_price_cents_from_service.
+-- Its schema effect is represented by the later folded baseline.

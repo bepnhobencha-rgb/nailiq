@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260605221400.
+-- Original production name: booking_addons_multi.
+-- Its schema effect is represented by the later folded baseline.

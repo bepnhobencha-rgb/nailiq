@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260519170404.
+-- Original production name: platform_settings.
+-- Its schema effect is represented by the later folded baseline.

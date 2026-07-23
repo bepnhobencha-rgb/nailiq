@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260512205455.
+-- Original production name: drop_staff_skills_column.
+-- Its schema effect is represented by the later folded baseline.

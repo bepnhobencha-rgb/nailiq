@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260522180122.
+-- Original production name: add_client_birthday.
+-- Its schema effect is represented by the later folded baseline.

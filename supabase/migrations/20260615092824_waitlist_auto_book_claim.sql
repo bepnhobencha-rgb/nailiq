@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615092824.
+-- Original production name: waitlist_auto_book_claim.
+-- Its schema effect is represented by the later folded baseline.

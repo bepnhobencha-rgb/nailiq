@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260707015225.
+-- Original production name: reoptin_campaign.
+-- Its schema effect is represented by the later folded baseline.

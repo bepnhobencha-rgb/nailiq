@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260511033245.
+-- Original production name: add_brand_color.
+-- Its schema effect is represented by the later folded baseline.

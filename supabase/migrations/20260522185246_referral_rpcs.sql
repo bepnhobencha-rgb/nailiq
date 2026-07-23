@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260522185246.
+-- Original production name: referral_rpcs.
+-- Its schema effect is represented by the later folded baseline.

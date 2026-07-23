@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260614222819.
+-- Original production name: 20260614130000_merge_client_profiles.
+-- Its schema effect is represented by the later folded baseline.

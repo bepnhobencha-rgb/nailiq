@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260705214704.
+-- Original production name: lock_party_links_to_service_role.
+-- Its schema effect is represented by the later folded baseline.

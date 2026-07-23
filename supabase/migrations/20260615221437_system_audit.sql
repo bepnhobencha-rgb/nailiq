@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615221437.
+-- Original production name: system_audit.
+-- Its schema effect is represented by the later folded baseline.

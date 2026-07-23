@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260528020252.
+-- Original production name: group_booking_dynamic_capacity.
+-- Its schema effect is represented by the later folded baseline.

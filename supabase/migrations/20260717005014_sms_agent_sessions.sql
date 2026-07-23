@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260717005014.
+-- Original production name: sms_agent_sessions.
+-- Its schema effect is represented by the later folded baseline.

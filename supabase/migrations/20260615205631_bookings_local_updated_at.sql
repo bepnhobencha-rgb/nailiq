@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615205631.
+-- Original production name: bookings_local_updated_at.
+-- Its schema effect is represented by the later folded baseline.

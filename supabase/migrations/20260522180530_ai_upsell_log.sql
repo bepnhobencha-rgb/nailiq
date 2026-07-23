@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260522180530.
+-- Original production name: ai_upsell_log.
+-- Its schema effect is represented by the later folded baseline.

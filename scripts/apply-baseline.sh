@@ -4,51 +4,25 @@
 #
 #   scripts/apply-baseline.sh "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
 #
-# Used by CI and by anyone verifying the baseline locally, so the two cannot
-# drift. supabase/bootstrap/schema.sql is never edited: it stays byte-identical
-# to what pg_dump produced, because the moment anyone hand-edits it, it silently
-# stops being what came off production. Anything that has to be adjusted is
-# adjusted HERE, in the open.
+# Used only for an empty local/CI database. Production deploys must use the
+# migration-history guard and must never run this script.
+#
+# The folded migration is generated from the immutable production snapshot and
+# all reviewed schema-bearing deltas. Applying that exact artifact here keeps
+# E2E, the migration rehearsal, and a fresh install on the same schema path.
 set -euo pipefail
 
 DB_URL="${1:?usage: apply-baseline.sh <database-url>}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+FOLDED_BASELINE="$ROOT/supabase/migrations/20260723000000_folded_production_schema_baseline.sql"
 
-echo "→ prelude (roles, auth shims, extensions)"
-psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$ROOT/supabase/bootstrap/prelude.sql"
+if [[ ! -f "$FOLDED_BASELINE" ]]; then
+  echo "missing folded baseline: $FOLDED_BASELINE" >&2
+  exit 1
+fi
 
-echo "→ schema baseline"
-# ALTER DEFAULT PRIVILEGES is filtered out, and only that.
-#
-# The dump carries 24 of them, half `FOR ROLE supabase_admin`. On a Supabase
-# stack the connection is `postgres`, which is NOT a member of supabase_admin, so
-# those statements fail with "permission denied to change default privileges" and
-# take the whole apply down with them — the first CI attempt died there, 11,678
-# lines in.
-#
-# Dropping them is safe, and the reason is narrow: default privileges govern
-# grants on objects created LATER by those roles. A throwaway test database
-# creates no new objects at runtime — the suite inserts rows, it does not create
-# tables. The grants on the 81 tables that DO exist come from the 391 GRANT
-# statements in the dump, and those are asserted table-by-table in
-# scripts/check-schema-parity.ts (anon 75/81, authenticated 75/81,
-# service_role 81/81 — the six anon cannot reach ARE the PII protection).
-grep -v '^ALTER DEFAULT PRIVILEGES ' "$ROOT/supabase/bootstrap/schema.sql" \
-  | psql "$DB_URL" -v ON_ERROR_STOP=1 -q
-
-echo "→ Stage 0 security deltas required by the current application"
-# The bootstrap is an immutable production dump, while the application on this
-# branch calls the capability-only OTP validator introduced after that dump.
-# Apply this idempotent-in-context delta explicitly so E2E exercises the same
-# public boundary as production instead of failing with PostgREST PGRST202.
-psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
-  -f "$ROOT/supabase/migrations/20260722210600_close_loyalty_otp_reads.sql"
-psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
-  -f "$ROOT/supabase/migrations/20260722214100_harden_public_salon_reads.sql"
-psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
-  -f "$ROOT/supabase/migrations/20260722221300_isolate_authenticated_salon_reads.sql"
-psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
-  -f "$ROOT/supabase/migrations/20260722223100_harden_public_staff_catalog.sql"
+echo "→ folded production-schema baseline"
+psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$FOLDED_BASELINE"
 
 echo "→ reference data (lookup tables the schema cannot work without)"
 # service_categories and platform_flags are global lookup tables, not anyone's

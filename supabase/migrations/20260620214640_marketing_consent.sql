@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260620214640.
+-- Original production name: marketing_consent.
+-- Its schema effect is represented by the later folded baseline.

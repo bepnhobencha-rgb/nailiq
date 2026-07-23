@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260519220233.
+-- Original production name: salon_sms_reminders.
+-- Its schema effect is represented by the later folded baseline.

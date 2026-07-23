@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260514040326.
+-- Original production name: fix_bookings_rls_anon_insert.
+-- Its schema effect is represented by the later folded baseline.

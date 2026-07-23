@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260616044537.
+-- Original production name: ai_policy_override_actor.
+-- Its schema effect is represented by the later folded baseline.

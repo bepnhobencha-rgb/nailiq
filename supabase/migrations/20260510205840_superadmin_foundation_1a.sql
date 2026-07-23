@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260510205840.
+-- Original production name: superadmin_foundation_1a.
+-- Its schema effect is represented by the later folded baseline.

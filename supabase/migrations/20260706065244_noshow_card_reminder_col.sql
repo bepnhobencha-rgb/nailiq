@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260706065244.
+-- Original production name: noshow_card_reminder_col.
+-- Its schema effect is represented by the later folded baseline.

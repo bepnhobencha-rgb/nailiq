@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260515064436.
+-- Original production name: salons_walkin_auto_assign.
+-- Its schema effect is represented by the later folded baseline.
