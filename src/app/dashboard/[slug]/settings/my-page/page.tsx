@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { PageEditorPanel } from "@/components/dashboard/PageEditorPanel";
 import { PublicSectionsToggle } from "@/components/dashboard/PublicSectionsToggle";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import type { SalonSection } from "@/shared/types/salonPage";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,7 @@ export default async function MyPageEditorPage({ params }: PageProps) {
   const { slug } = await params;
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) redirect("/register");
+  if (!isOwnerOrAdmin(ctx.role)) redirect(`/dashboard/${encodeURIComponent(slug)}`);
 
   const { supabase, salon } = ctx;
 

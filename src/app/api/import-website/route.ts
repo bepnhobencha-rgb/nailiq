@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 
 const bodySchema = z.object({
   slug: z.string().min(1),
@@ -45,10 +46,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "blocked_url" }, { status: 400 });
   }
 
-  // Auth: must be a dashboard member
+  // Auth: importing can overwrite public salon content, so membership alone
+  // is insufficient even though the importer is currently behind a kill switch.
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (!isOwnerOrAdmin(ctx.role)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
   const { salon } = ctx;
