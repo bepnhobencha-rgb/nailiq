@@ -1,8 +1,10 @@
 \set ON_ERROR_STOP on
 
 -- Runs only against the transaction-scoped, throwaway Supabase database in
--- Migration History Rehearsal. It proves owner/admin management while senior
--- and receptionist retain only the public active-combo read path.
+-- Migration History Rehearsal. It proves owner/admin management while a
+-- senior staff login and a receptionist retain only the public active-combo
+-- read path. `senior` is a staff.job_role; its dashboard permission is stored
+-- as `receptionist` in salon_members.
 begin;
 
 insert into auth.users (
@@ -95,13 +97,21 @@ values
   (
     '21000000-0000-0000-0000-000000000001',
     '11000000-0000-0000-0000-000000000003',
-    'senior'
+    'receptionist'
   ),
   (
     '21000000-0000-0000-0000-000000000001',
     '11000000-0000-0000-0000-000000000004',
     'receptionist'
   );
+
+insert into public.staff (salon_id, name, job_role, user_id)
+values (
+  '21000000-0000-0000-0000-000000000001',
+  'Combo senior staff',
+  'senior',
+  '11000000-0000-0000-0000-000000000003'
+);
 
 set local role authenticated;
 select set_config(
