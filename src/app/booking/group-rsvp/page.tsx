@@ -43,17 +43,21 @@ export default function GroupRsvpPage() {
   const lang = (searchParams?.get("lang") ?? "vi") as "en" | "vi";
 
   const [data, setData] = useState<RsvpPageData | null>(null);
-  const [uiState, setUiState] = useState<UIState>("loading");
+  const [uiState, setUiState] = useState<UIState>(
+    token ? "loading" : "error",
+  );
   const [sugName, setSugName] = useState("");
   const [sugPhone, setSugPhone] = useState("");
-  const [errorCode, setErrorCode] = useState("");
+  const [errorCode, setErrorCode] = useState(
+    token ? "" : "missing_token",
+  );
   const [cutoffHours, setCutoffHours] = useState(2);
   const [isPending, startTransition] = useTransition();
 
   const t = lang === "en" ? EN : VI;
 
   useEffect(() => {
-    if (!token) { setUiState("error"); setErrorCode("missing_token"); return; }
+    if (!token) return;
     void loadRsvpPageData(token).then((res) => {
       setData(res);
       if (!res.ok) { setUiState("error"); setErrorCode(res.code); return; }
