@@ -1,8 +1,8 @@
 {
   "projectRef": "fshmobzyjhmtvndobwsy",
   "capturedAt": "2026-07-23",
-  "releaseSha": "b2e379b0f26f7e8007657ddbf986f5ed30dc1be2",
-  "rowCount": 266,
+  "releaseSha": "4868e87d19621b48e55e0099a781a3915a9d47af",
+  "rowCount": 267,
   "migrations": [
     {
       "version": "20260427120000",
@@ -1067,6 +1067,10 @@
     {
       "version": "20260722225335",
       "name": "harden_public_staff_catalog"
+    },
+    {
+      "version": "20260723000000",
+      "name": "folded_production_schema_baseline"
     }
   ]
 }
