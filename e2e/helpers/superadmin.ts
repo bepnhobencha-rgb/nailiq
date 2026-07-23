@@ -130,7 +130,7 @@ export async function cleanupTestSuperadmin(userId: string) {
 
 /**
  * Drive the email/password UI login at `/superadmin/login` and wait
- * until the shell renders. Uses the real form (not a cookie shortcut)
+ * until the canonical dashboard renders. Uses the real form (not a cookie shortcut)
  * so the server-side role gate + session cookie wiring are exercised.
  */
 export async function loginAsSuperadmin(
@@ -143,8 +143,12 @@ export async function loginAsSuperadmin(
   await form.locator('input[type="email"]').fill(account.email);
   await form.locator('input[type="password"]').fill(account.password);
   await form.getByRole("button", { name: "Sign in" }).click();
-  // The form does router.replace("/superadmin"); wait until we leave login.
-  await page.waitForURL(/\/superadmin(?!\/login)(\/|$)/, { timeout: 30_000 });
+  // The form first replaces to `/superadmin`, whose server page redirects to
+  // `/superadmin/dashboard`. Waiting only until we leave `/login` races that
+  // second redirect against the caller's next navigation on slower projects.
+  await page.waitForURL(/\/superadmin\/dashboard(?:[/?#]|$)/, {
+    timeout: 30_000,
+  });
 }
 
 /* ───────────────────────── service-role readers ───────────────────────── */
