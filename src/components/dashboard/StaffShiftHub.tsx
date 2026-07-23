@@ -171,7 +171,11 @@ function UnavailabilitySection({
   const { language } = useUserLanguage();
   const vi = language === "vi";
   const [rows, setRows] = useState<StaffUnavailabilityRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Which salon the rows belong to. Loading is derived from this rather than
+  // held as its own state, so switching slug shows the spinner again without
+  // an effect that has to reset a flag.
+  const [loadedSlug, setLoadedSlug] = useState<string | null>(null);
+  const loading = loadedSlug !== slug;
   const [staffId, setStaffId] = useState(staff[0]?.id ?? "");
   const [date, setDate] = useState("");
   const [reason, setReason] = useState("");
@@ -179,15 +183,19 @@ function UnavailabilitySection({
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    setLoading(true);
+    let cancelled = false;
     void (async () => {
       // Show next 60 days of unavailability
       const today = new Date().toISOString().slice(0, 10);
       const future = new Date(Date.now() + 60 * 86400_000).toISOString().slice(0, 10);
       const r = await listStaffUnavailability(slug, today, future);
+      if (cancelled) return;
       if (r.ok) setRows(r.data ?? []);
-      setLoading(false);
+      setLoadedSlug(slug);
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [slug]);
 
   function handleAdd() {
