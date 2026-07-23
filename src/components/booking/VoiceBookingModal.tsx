@@ -503,7 +503,9 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
           // Hard cap. Enforced here rather than from an effect watching
           // durationSec: the tick is the event, and handleStop clears this
           // interval on its way out so it can only fire once.
-          if (elapsed >= TOTAL_CALL_LIMIT_SEC) void handleStopRef.current();
+          if (elapsed >= TOTAL_CALL_LIMIT_SEC && statusRef.current === "connected") {
+            void handleStopRef.current();
+          }
         }, 1000);
         // Prompt AI to speak first
         wsRef.current?.send(JSON.stringify({ type: "response.create" }));
