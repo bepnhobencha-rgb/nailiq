@@ -296,7 +296,12 @@ export function EditBookingForm({
 
   // Both of these are facts about `resourceWindow` vs what has been fetched,
   // so they are derived rather than set from the effect below.
-  const resourceKey = resourceWindow ? `${resourceWindow.startUtc}|${resourceWindow.endUtc}` : "";
+  // Every argument the request is made with, so a different salon or booking on
+  // the same time window counts as a different request. JSON.stringify rather
+  // than a delimiter so no value can forge a boundary.
+  const resourceKey = resourceWindow
+    ? JSON.stringify([slug, bookingId, resourceWindow.startUtc, resourceWindow.endUtc])
+    : "";
   const resourceOptions = resourceKey && fetchedResources.key === resourceKey
     ? fetchedResources.resources
     : [];
