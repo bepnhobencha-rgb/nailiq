@@ -18,7 +18,10 @@ type Props = {
 export function PresenceHeartbeat({ salonId }: Props) {
   const pathname = usePathname();
   const pathnameRef = useRef(pathname);
-  pathnameRef.current = pathname;
+
+  useEffect(() => {
+    pathnameRef.current = pathname;
+  }, [pathname]);
 
   useEffect(() => {
     let cancelled = false;
