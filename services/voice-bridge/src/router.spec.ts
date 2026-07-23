@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   sessionUpdateMessage,
   appendAudioMessage,
@@ -19,6 +19,11 @@ import {
   extractAudioDelta,
   extractFunctionCall,
   isSpeechStarted,
+  twilioMarkFrame,
+  extractMarkName,
+  createHangupController,
+  HANGUP_MARK,
+  HANGUP_FALLBACK_MS,
 } from "./router";
 
 // ── helpers for reading coordinator output ──────────────────────────────────
@@ -65,6 +70,14 @@ describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () =>
     expect(twilioClearFrame("S1")).toEqual({ event: "clear", streamSid: "S1" });
     expect(isSpeechStarted({ type: "input_audio_buffer.speech_started" })).toBe(true);
     expect(isSpeechStarted({ type: "response.audio.delta" })).toBe(false);
+  });
+
+  it("mark frame round-trips: send a named mark, recognise its Twilio echo (playback-aware hangup)", () => {
+    expect(twilioMarkFrame("S1", "hangup-after-farewell"))
+      .toEqual({ event: "mark", streamSid: "S1", mark: { name: "hangup-after-farewell" } });
+    expect(extractMarkName({ event: "mark", mark: { name: "hangup-after-farewell" } })).toBe("hangup-after-farewell");
+    expect(extractMarkName({ event: "mark" })).toBeNull();          // mark with no name → ignore
+    expect(extractMarkName({ event: "stop" })).toBeNull();          // not a mark at all
   });
 
   it("extractAudioDelta / extractFunctionCall / extractResponseId behave", () => {
@@ -357,5 +370,102 @@ describe("coordinator — language-switch × say_this race (call c3800b1c)", () 
     expect(sayThisText(sent.filter(isSayThis)[0])).toContain("in Spanish");
     // greet + "Yes" + say_this = 3; the ack was dropped, so no 4th response
     expect(sent.filter(isResponseCreate).length).toBe(3);
+  });
+});
+
+// ── playback-aware hangup controller ────────────────────────────────────────
+// The lifecycle rules the bridge relies on to never cut a farewell mid-word
+// and never leave a call hanging open. Mirrors server.ts wiring: end_call →
+// onEndCall(coordinator.isBusy()), response.done → onResponseEnded(...),
+// Twilio mark event → onMark(name), closeAll for any reason → onClose().
+describe("createHangupController — playback-aware hangup lifecycle", () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  function makeHangup(opts: { streamAlive?: boolean } = {}) {
+    let streamAlive = opts.streamAlive ?? true;
+    let markSends = 0;
+    const closed: string[] = [];
+    const h = createHangupController({
+      sendMark: () => { if (!streamAlive) return false; markSends++; return true; },
+      close: (reason) => closed.push(reason),
+    });
+    return { h, closed, marks: () => markSends, killStream: () => { streamAlive = false; } };
+  }
+
+  it("closes ONLY on the hangup mark's echo — other mark names are ignored", () => {
+    vi.useFakeTimers();
+    const { h, closed, marks } = makeHangup();
+    h.onEndCall(false);                    // farewell already generated → mark goes out
+    expect(marks()).toBe(1);
+    h.onMark("some-other-mark");           // e.g. an unrelated mark echo
+    h.onMark(null);                        // a mark event with no name
+    expect(closed).toEqual([]);            // still waiting — wrong name never closes
+    h.onMark(HANGUP_MARK);
+    expect(closed).toEqual(["farewell_fully_played"]);
+    vi.advanceTimersByTime(HANGUP_FALLBACK_MS * 2);
+    expect(closed).toEqual(["farewell_fully_played"]); // fallback was cancelled by the ack
+  });
+
+  it("a stray hangup-mark echo BEFORE end_call never closes the call", () => {
+    const { h, closed } = makeHangup();
+    h.onMark(HANGUP_MARK);                 // we never sent one — ignore
+    expect(closed).toEqual([]);
+  });
+
+  it("end_call while the farewell is still generating waits for the response end", () => {
+    vi.useFakeTimers();
+    const { h, marks, closed } = makeHangup();
+    h.onEndCall(true);                     // coordinator busy: farewell in flight
+    expect(marks()).toBe(0);               // no mark yet — audio is still being produced
+    expect(closed).toEqual([]);
+    h.onResponseEnded(false);              // farewell finished generating
+    expect(marks()).toBe(1);               // NOW the mark chases the last audio frame
+    h.onMark(HANGUP_MARK);
+    expect(closed).toEqual(["farewell_fully_played"]);
+  });
+
+  it("repeated lifecycle events never send the mark twice", () => {
+    vi.useFakeTimers();
+    const { h, marks } = makeHangup();
+    h.onEndCall(false);
+    h.onEndCall(false);                    // duplicate end_call tool call
+    h.onResponseEnded(false);              // response.done arriving after the mark
+    h.onResponseEnded(false);              // ...and response.cancelled variants
+    expect(marks()).toBe(1);
+  });
+
+  it("a response end WITHOUT a prior end_call never starts a hangup", () => {
+    const { h, marks, closed } = makeHangup();
+    h.onResponseEnded(false);              // ordinary turn finishing
+    expect(marks()).toBe(0);
+    expect(closed).toEqual([]);
+  });
+
+  it("fallback closes after HANGUP_FALLBACK_MS when the ack never arrives", () => {
+    vi.useFakeTimers();
+    const { h, closed } = makeHangup();
+    h.onEndCall(false);
+    vi.advanceTimersByTime(HANGUP_FALLBACK_MS - 1);
+    expect(closed).toEqual([]);            // still inside the grace window
+    vi.advanceTimersByTime(1);
+    expect(closed).toEqual(["hangup_fallback_timeout"]);
+  });
+
+  it("onClose (e.g. Twilio 'stop' closed the call immediately) cancels the fallback", () => {
+    vi.useFakeTimers();
+    const { h, closed } = makeHangup();
+    h.onEndCall(false);                    // mark + fallback armed
+    h.onClose();                           // server.ts: 'stop' → closeAll → hangup.onClose()
+    vi.advanceTimersByTime(HANGUP_FALLBACK_MS * 2);
+    expect(closed).toEqual([]);            // the controller never double-closes a closed call
+  });
+
+  it("no live stream to send the mark on → close immediately, no timer", () => {
+    vi.useFakeTimers();
+    const { h, closed } = makeHangup({ streamAlive: false });
+    h.onEndCall(false);
+    expect(closed).toEqual(["hangup_no_live_stream"]);
+    vi.advanceTimersByTime(HANGUP_FALLBACK_MS * 2);
+    expect(closed).toEqual(["hangup_no_live_stream"]); // nothing fires later
   });
 });

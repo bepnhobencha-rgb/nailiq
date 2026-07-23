@@ -15,7 +15,8 @@
  */
 
 // Discriminated union of the Twilio Media Stream events we act on. Unknown
-// events (e.g. "connected", "mark") simply match no branch in the handler.
+// events (e.g. "connected") simply match no branch in the handler; "mark" is
+// consumed by the playback-aware hangup (see extractMarkName / server.ts).
 export type TwilioInbound =
   | { event: "connected" }
   | { event: "start"; start: { streamSid: string; callSid?: string; customParameters?: Record<string, string> } }
@@ -370,6 +371,86 @@ export function twilioMediaFrame(streamSid: string, audioBase64: string): object
 /** Twilio "clear" — flush queued playback on barge-in (user started speaking). */
 export function twilioClearFrame(streamSid: string): object {
   return { event: "clear", streamSid };
+}
+
+/**
+ * Twilio "mark" — a named checkpoint queued BEHIND all media frames already
+ * sent on the stream. Twilio echoes the same mark back only after every frame
+ * queued before it has actually been PLAYED to the caller, so it is the one
+ * reliable "the caller has heard everything up to here" signal. Used for the
+ * playback-aware hangup: send the farewell audio, send a mark, wait for the
+ * echo, THEN drop the line — never a fixed timer.
+ * https://www.twilio.com/docs/voice/media-streams/websocket-messages
+ */
+export function twilioMarkFrame(streamSid: string, name: string): object {
+  return { event: "mark", streamSid, mark: { name } };
+}
+
+/** The name of an inbound Twilio mark acknowledgement, or null if the message
+ *  is not a mark event (or carries no name). */
+export function extractMarkName(msg: TwilioInbound): string | null {
+  return msg.event === "mark" && typeof msg.mark?.name === "string" ? msg.mark.name : null;
+}
+
+export const HANGUP_MARK = "hangup-after-farewell";
+export const HANGUP_FALLBACK_MS = 5000;
+
+/**
+ * Playback-aware hangup, as a pure state machine with injected I/O (same
+ * pattern as createResponseCoordinator, and for the same reason: the whole
+ * lifecycle is unit-testable without a live call). The rules it enforces:
+ *
+ *   • end_call while the farewell response is still being GENERATED → do
+ *     nothing yet; wait for that response's end event.
+ *   • Once no response is in flight → send the hangup mark EXACTLY ONCE, no
+ *     matter how many lifecycle events follow.
+ *   • Close only when Twilio echoes OUR mark name back (= the farewell has
+ *     fully PLAYED to the caller). Any other mark name is ignored, and a stray
+ *     echo before we ever sent one is ignored too.
+ *   • If the echo never arrives, a fallback timer closes the call so it can
+ *     never hang open. If there is no live stream to send a mark on, close
+ *     immediately — there is nothing left to wait for.
+ *   • onClose() (the call closed for any other reason, e.g. Twilio "stop")
+ *     cancels the fallback timer so nothing fires after teardown.
+ */
+export function createHangupController(io: {
+  /** Send the named mark on the Twilio stream. Return false when there is no
+   *  live stream to wait on — the controller then closes immediately. */
+  sendMark: (name: string) => boolean;
+  close: (reason: string) => void;
+  fallbackMs?: number;
+}) {
+  const fallbackMs = io.fallbackMs ?? HANGUP_FALLBACK_MS;
+  let pending = false;    // end_call has been requested
+  let markSent = false;   // the one hangup mark is on the wire
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const stopTimer = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  const sendMarkOnce = () => {
+    if (markSent) return;
+    markSent = true;
+    if (io.sendMark(HANGUP_MARK)) {
+      timer = setTimeout(() => { timer = null; io.close("hangup_fallback_timeout"); }, fallbackMs);
+    } else {
+      io.close("hangup_no_live_stream");
+    }
+  };
+
+  return {
+    /** The end_call tool arrived. responseBusy = a response (the farewell) is
+     *  still being generated — the mark must wait for its end event. */
+    onEndCall(responseBusy: boolean) { pending = true; if (!responseBusy) sendMarkOnce(); },
+    /** A response finished (done / cancelled). responseBusy = the coordinator
+     *  still has another response in flight or queued. */
+    onResponseEnded(responseBusy: boolean) { if (pending && !responseBusy) sendMarkOnce(); },
+    /** Twilio echoed a mark: everything queued before it has PLAYED. */
+    onMark(name: string | null) {
+      if (name === HANGUP_MARK && markSent) { stopTimer(); io.close("farewell_fully_played"); }
+    },
+    /** The call is closing for any reason — never let the fallback fire late. */
+    onClose() { stopTimer(); },
+    isHangupPending(): boolean { return pending; },
+  };
 }
 
 

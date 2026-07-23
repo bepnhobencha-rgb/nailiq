@@ -375,14 +375,12 @@ export const REALTIME_TOOLS = [
     type: "function" as const,
     name: "end_call",
     description:
-      "End the voice call gracefully. " +
-      "ALWAYS say your farewell sentence FIRST, THEN call this tool — never call it before speaking. " +
-      "Call end_call when:\n" +
-      "• Customer says goodbye / tạm biệt / bye / cảm ơn tạm biệt / thôi tôi cúp máy / xong rồi\n" +
-      "• After confirm_booking / confirm_group_booking success and you have read the booking summary\n" +
-      "• After cancel_booking success and you have thanked the customer\n" +
-      "• After reschedule_booking success and you have confirmed the new time\n" +
-      "• Customer says no further help needed",
+      "End the voice call gracefully — calling this HANGS UP the phone.\n" +
+      "Call it ONLY as the last step of this exact closing sequence:\n" +
+      "1. After any successful action (booking / group booking / cancel / reschedule / waitlist): read the summary, ask if the customer needs anything else, and WAIT for their answer. Do NOT call end_call at this step.\n" +
+      "2. Only when the customer says goodbye (tạm biệt / bye / thôi tôi cúp máy / xong rồi) or clearly says they need nothing else: say ONE short farewell sentence.\n" +
+      "3. THEN call end_call — in the same turn as the farewell, never before speaking it.\n" +
+      "A successful tool result is NEVER by itself a reason to call end_call, and never call it in the same turn as a booking summary.",
     parameters: {
       type: "object" as const,
       properties: {},
