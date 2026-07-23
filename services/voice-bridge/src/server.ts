@@ -23,6 +23,8 @@ import {
   appendAudioMessage,
   twilioMediaFrame,
   twilioClearFrame,
+  twilioMarkFrame,
+  extractMarkName,
   functionCallOutput,
   plainResponseCreate,
   extractSayThis,
@@ -167,6 +169,25 @@ wss.on("connection", (twilioWs) => {
   const transcript: { role: "ai" | "user"; text: string }[] = [];
   const startedAt = Date.now();
 
+  // ── Per-leg latency telemetry ─────────────────────────────────────────────
+  // One structured JSON line per event so the logs can be grepped and charted:
+  //   [telemetry] {"call":"MZ…","event":"first_audio","t":8123,"sinceCommitMs":640,…}
+  // `t` is ms since the Twilio WS connected. This instruments the exact chain
+  // that was previously unmeasured: caller stops speaking → response created →
+  // tool call → bridge HTTP round trip (+ the server's own Server-Timing
+  // breakdown) → tool output sent → first audio after the tool → Twilio mark
+  // played → call closed. Telemetry must never break a call — hence the guard.
+  const logT = (event: string, fields: Record<string, unknown> = {}) => {
+    try {
+      console.log("[telemetry]", JSON.stringify({ call: streamSid || sessionId || "(pending)", event, t: Date.now() - startedAt, ...fields }));
+    } catch { /* noop */ }
+  };
+  // Per-turn timing marks. Zero = "not currently measuring that leg".
+  let turnCommittedAt = 0;    // caller's turn closed (input_audio_buffer.committed)
+  let responseCreatedAt = 0;  // the active response's response.created
+  let firstAudioSeen = true;  // first audio delta of the active response already logged?
+  let toolOutputSentAt = 0;   // last function_call_output sent → measures tool→audio gap
+
   const finalizeSession = async () => {
     if (!sessionId) return;
     try {
@@ -184,21 +205,42 @@ wss.on("connection", (twilioWs) => {
     } catch { /* best-effort — losing the record must not throw on hangup */ }
   };
 
-  const closeAll = () => {
+  const closeAll = (reason = "unspecified") => {
     if (closed) return;
     closed = true;
+    logT("call_closed", { reason });
     if (watchdog) { clearInterval(watchdog); watchdog = null; }
+    if (hangupTimer) { clearTimeout(hangupTimer); hangupTimer = null; }
     coordinator.onClose();         // stop the queue; no more sends after hangup
     void finalizeSession();
     try { openaiWs?.close(); } catch { /* noop */ }
     try { twilioWs.close(); } catch { /* noop */ }
   };
 
-  // Hang up shortly after the farewell — long enough for the last audio frames to
-  // drain to Twilio, so the caller hears the whole goodbye, then the line drops.
-  const scheduleHangup = () => {
-    if (hangupTimer || closed) return;
-    hangupTimer = setTimeout(() => closeAll(), 1200);
+  // Playback-aware hangup. `response.done` only means OpenAI finished
+  // GENERATING the farewell — Twilio may still hold seconds of it in its
+  // playback buffer, so closing on a fixed timer (the old 1.2 s) cut long
+  // goodbyes off mid-word and made short ones feel abruptly dropped. Instead:
+  // send a named `mark` AFTER the last farewell audio frame; Twilio echoes it
+  // back only once everything queued before it has actually PLAYED to the
+  // caller; hang up on that echo. The timer survives only as a fallback for
+  // when the ack never arrives (caller hung up first, media glitch).
+  const HANGUP_MARK = "hangup-after-farewell";
+  const HANGUP_FALLBACK_MS = 5000;
+  let hangupMarkSentAt = 0;
+  const requestHangup = () => {
+    if (closed || hangupTimer || hangupMarkSentAt) return;   // already in progress
+    if (streamSid && twilioWs.readyState === WebSocket.OPEN) {
+      hangupMarkSentAt = Date.now();
+      twilioWs.send(JSON.stringify(twilioMarkFrame(streamSid, HANGUP_MARK)));
+      logT("hangup_mark_sent");
+      hangupTimer = setTimeout(() => {
+        logT("hangup_fallback_fired", { waitedMs: HANGUP_FALLBACK_MS });
+        closeAll("hangup_fallback_timeout");
+      }, HANGUP_FALLBACK_MS);
+    } else {
+      closeAll("hangup_no_live_stream"); // nothing left to wait on
+    }
   };
 
   const runTool = async (name: string, args: Record<string, unknown>, callId: string) => {
@@ -208,7 +250,8 @@ wss.on("connection", (twilioWs) => {
     if (name === "end_call") {
       openaiWs?.send(JSON.stringify(functionCallOutput(callId, { ok: true })));
       hangupPending = true;
-      if (!coordinator.isBusy()) scheduleHangup();  // farewell already done → hang up now
+      logT("end_call_requested", { farewellStillPlaying: coordinator.isBusy() });
+      if (!coordinator.isBusy()) requestHangup();   // farewell already generated → wait for playback, then drop
       return;                                        // no follow-up response
     }
 
@@ -218,6 +261,8 @@ wss.on("connection", (twilioWs) => {
     const isOpeningLookup = name === "lookup_customer" && userTurnCount === 0;
     {
       let result: unknown;
+      logT("tool_call_started", { tool: name });
+      const httpStartedAt = Date.now();
       try {
         const r = await fetch(`${NEXT_APP_URL}/api/voice/tool`, {
           method: "POST",
@@ -227,14 +272,21 @@ wss.on("connection", (twilioWs) => {
           body: JSON.stringify({ toolName: name, toolArgs: args, salonSlug: slug, callerVerifiedPhone: from, sessionId: sessionId || null, lastUserUtterance }),
         });
         result = await r.json().catch(() => ({ error: "tool_parse_failed" }));
+        // serverTiming is the tool route's own breakdown (gate / exec / log) —
+        // side by side with httpMs it shows whether a slow tool was the network
+        // or the database, without guessing.
+        logT("tool_http_done", { tool: name, httpMs: Date.now() - httpStartedAt, status: r.status, serverTiming: r.headers.get("server-timing") });
       } catch {
         result = { error: "tool_unavailable" };
+        logT("tool_http_error", { tool: name, httpMs: Date.now() - httpStartedAt });
       }
 
       // Hand the tool result back (a conversation item, NOT a response), then ask
       // the coordinator for exactly one follow-up response — it decides when to
       // actually emit response.create so nothing races an in-flight response.
       openaiWs?.send(JSON.stringify(functionCallOutput(callId, result)));
+      toolOutputSentAt = Date.now();
+      logT("tool_output_sent", { tool: name });
 
       const sayThis = extractSayThis(result);
       if (sayThis) {
@@ -286,7 +338,7 @@ wss.on("connection", (twilioWs) => {
       headers: { "Content-Type": "application/json", "x-voice-bridge-secret": BRIDGE_SECRET },
       body: JSON.stringify({ slug, from, newSession: true }),
     }).then(async (r) => {
-      if (!r.ok) { console.warn("[voice-bridge] phone-config FAILED", r.status); return closeAll(); }
+      if (!r.ok) { console.warn("[voice-bridge] phone-config FAILED", r.status); return closeAll("phone_config_failed"); }
       cfg = (await r.json()) as PhoneConfig;
       sessionId = cfg.sessionId ?? "";
       currentLang = cfg.language ?? "en";
@@ -295,7 +347,7 @@ wss.on("connection", (twilioWs) => {
       }
       console.log(`[voice-bridge] phone-config ok lang=${currentLang} session=${sessionId || "(none)"}`);
       greetWhenReady();
-    }).catch((e) => { console.warn("[voice-bridge] phone-config error", e); closeAll(); });
+    }).catch((e) => { console.warn("[voice-bridge] phone-config error", e); closeAll("phone_config_error"); });
 
     // GA Realtime API — no `OpenAI-Beta` header. The model is platform-wide, so we
     // connect without waiting for the config fetch above.
@@ -327,9 +379,14 @@ wss.on("connection", (twilioWs) => {
       } else if (t === "input_audio_buffer.speech_started") {
         // Instrumentation for the dead-air investigation — these events are
         // otherwise hidden (suppressed as "audio" below).
-        console.log(`[voice-bridge] speech_started (busy=${coordinator.isBusy()})`);
+        logT("speech_started", { busy: coordinator.isBusy() });
+      } else if (t === "input_audio_buffer.speech_stopped") {
+        // The moment the caller went quiet — the clock the caller experiences
+        // dead air against starts HERE, before VAD commits the turn.
+        logT("speech_stopped");
       } else if (t === "input_audio_buffer.committed") {
-        console.log(`[voice-bridge] committed → request reply (busy=${coordinator.isBusy()})`);
+        turnCommittedAt = Date.now();
+        logT("turn_committed", { busy: coordinator.isBusy() });
         // The caller's turn just closed. Ask for the reply NOW — do not wait for
         // the transcription to come back. gpt-realtime is speech-to-speech: it
         // answers the AUDIO directly, so gating the response on Whisper finishing
@@ -359,15 +416,21 @@ wss.on("connection", (twilioWs) => {
       if (t === "response.created") {
         const rid = extractResponseId(evt) ?? "";
         lastProgressAt = Date.now();
-        console.log(`[voice-bridge] response.created id=${rid || "(none)"}`);
+        responseCreatedAt = Date.now();
+        firstAudioSeen = false;   // measure this response's first audio delta
+        logT("response_created", {
+          id: rid || null,
+          sinceCommitMs: turnCommittedAt ? responseCreatedAt - turnCommittedAt : null,
+        });
         coordinator.onResponseCreated(rid);
       } else if (t === "response.done" || t === "response.cancelled") {
         const rid = extractResponseId(evt) ?? "";
         lastProgressAt = Date.now();
-        console.log(`[voice-bridge] ${t} id=${rid || "(none)"} (activeMatch=${coordinator.isBusy()})`);
+        logT("response_ended", { type: t, id: rid || null, activeMatch: coordinator.isBusy() });
         coordinator.onResponseEnded(rid);
-        // If the agent ended the call, the farewell just finished — hang up.
-        if (hangupPending && !coordinator.isBusy()) scheduleHangup();
+        // If the agent ended the call, the farewell has been fully GENERATED —
+        // now wait for Twilio to confirm it fully PLAYED (mark ack), then close.
+        if (hangupPending && !coordinator.isBusy()) requestHangup();
       } else if (t.includes("error")) {
         coordinator.onError();
       }
@@ -376,6 +439,17 @@ wss.on("connection", (twilioWs) => {
       if (audio && streamSid) {
         lastProgressAt = Date.now();   // the pipeline is producing audio — not stalled
         greetingSpoken = true;         // the caller has now heard the agent speak
+        if (!firstAudioSeen) {
+          // The caller-felt latency numbers: silence → first sound, and (after a
+          // tool) tool result → first sound. Logged once per response.
+          firstAudioSeen = true;
+          logT("first_audio", {
+            sinceResponseMs: responseCreatedAt ? Date.now() - responseCreatedAt : null,
+            sinceCommitMs: turnCommittedAt ? Date.now() - turnCommittedAt : null,
+            sinceToolOutputMs: toolOutputSentAt ? Date.now() - toolOutputSentAt : null,
+          });
+          toolOutputSentAt = 0;   // the tool→audio gap is measured; don't reattribute it
+        }
         twilioWs.send(JSON.stringify(twilioMediaFrame(streamSid, audio)));
         return;
       }
@@ -398,8 +472,8 @@ wss.on("connection", (twilioWs) => {
       }
     });
 
-    openaiWs.on("close", closeAll);
-    openaiWs.on("error", (e) => { console.warn("[voice-bridge] openai error", e); closeAll(); });
+    openaiWs.on("close", () => closeAll("openai_ws_closed"));
+    openaiWs.on("error", (e) => { console.warn("[voice-bridge] openai error", e); closeAll("openai_ws_error"); });
   };
 
   twilioWs.on("message", (raw) => {
@@ -411,7 +485,7 @@ wss.on("connection", (twilioWs) => {
       slug = msg.start.customParameters?.slug ?? "";
       from = msg.start.customParameters?.from ?? "";
       console.log(`[voice-bridge] START slug=${slug || "(none)"} from=${from || "(none)"} openaiKey=${OPENAI_API_KEY ? "set" : "MISSING"} bridgeSecret=${BRIDGE_SECRET ? "set" : "MISSING"}`);
-      if (!slug || !OPENAI_API_KEY || !BRIDGE_SECRET) { console.warn("[voice-bridge] closing: missing slug/key/secret"); return closeAll(); }
+      if (!slug || !OPENAI_API_KEY || !BRIDGE_SECRET) { console.warn("[voice-bridge] closing: missing slug/key/secret"); return closeAll("missing_config"); }
       void startOpenAi();
     } else if (msg.event === "media") {
       // Hold caller audio until the salon brain is configured — audio sent before
@@ -419,11 +493,19 @@ wss.on("connection", (twilioWs) => {
       if (sessionConfigured && openaiWs?.readyState === WebSocket.OPEN) {
         openaiWs.send(JSON.stringify(appendAudioMessage(msg.media.payload)));
       }
+    } else if (msg.event === "mark") {
+      // Twilio confirms everything queued before this mark has PLAYED to the
+      // caller. For the hangup mark that means the farewell was fully heard —
+      // the only correct moment to drop the line.
+      if (extractMarkName(msg) === HANGUP_MARK && hangupMarkSentAt) {
+        logT("hangup_mark_played", { playbackMs: Date.now() - hangupMarkSentAt });
+        closeAll("farewell_fully_played");
+      }
     } else if (msg.event === "stop") {
-      closeAll();
+      closeAll("twilio_stop");
     }
   });
 
-  twilioWs.on("close", closeAll);
-  twilioWs.on("error", closeAll);
+  twilioWs.on("close", () => closeAll("twilio_ws_closed"));
+  twilioWs.on("error", () => closeAll("twilio_ws_error"));
 });

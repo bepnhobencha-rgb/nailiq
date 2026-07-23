@@ -62,17 +62,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "service_unavailable" }, { status: 503 });
   }
 
+  // Per-leg timing for the voice latency investigation: how long the salon
+  // gate query, the tool itself, and the tool_log write each took. Logged
+  // server-side AND returned in a standard Server-Timing header so the voice
+  // bridge can line the server's breakdown up against its own round-trip
+  // numbers — no more guessing whether a slow tool was network or database.
+  const tStart = Date.now();
+  let gateMs = 0;
+
   // Gate the whole transactional tool surface on the salon actually having voice
   // AI enabled. The session-mint route already checks this, but this route was
   // directly POST-able with a known slug and no auth — letting a caller
   // create / cancel / reschedule bookings by phone even for salons with voice
   // AI off. Re-check here so the enable flag is enforced at the mutation point.
   {
+    const tGate = Date.now();
     const { data: salonRow } = await supabase
       .from("salons")
       .select("voice_ai_enabled")
       .eq("slug", salonSlug)
       .maybeSingle();
+    gateMs = Date.now() - tGate;
     if (!salonRow) {
       return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
     }
@@ -82,6 +92,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const tExec = Date.now();
     const res = await executeVoiceTool(
       supabase,
       salonSlug,
@@ -93,12 +104,18 @@ export async function POST(req: NextRequest) {
       // other surface leaves them null.
       { callerVerifiedPhone, trustedUserUtterance },
     );
+    const execMs = Date.now() - tExec;
 
     // Eval loop: record every tool invocation on the session row so calls can
     // be scored later (booked? errored? escalated?). Best-effort by design.
+    const tLog = Date.now();
     if (sessionId) {
       await logVoiceToolCall(supabase, sessionId, toolName, res.status);
     }
+    const logMs = Date.now() - tLog;
+
+    res.headers.set("Server-Timing", `gate;dur=${gateMs}, exec;dur=${execMs}, log;dur=${logMs}`);
+    console.log("[voice/tool] timing", JSON.stringify({ toolName, sessionId, gateMs, execMs, logMs, totalMs: Date.now() - tStart }));
 
     return res;
   } catch (err) {

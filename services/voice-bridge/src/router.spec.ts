@@ -19,6 +19,8 @@ import {
   extractAudioDelta,
   extractFunctionCall,
   isSpeechStarted,
+  twilioMarkFrame,
+  extractMarkName,
 } from "./router";
 
 // ── helpers for reading coordinator output ──────────────────────────────────
@@ -65,6 +67,14 @@ describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () =>
     expect(twilioClearFrame("S1")).toEqual({ event: "clear", streamSid: "S1" });
     expect(isSpeechStarted({ type: "input_audio_buffer.speech_started" })).toBe(true);
     expect(isSpeechStarted({ type: "response.audio.delta" })).toBe(false);
+  });
+
+  it("mark frame round-trips: send a named mark, recognise its Twilio echo (playback-aware hangup)", () => {
+    expect(twilioMarkFrame("S1", "hangup-after-farewell"))
+      .toEqual({ event: "mark", streamSid: "S1", mark: { name: "hangup-after-farewell" } });
+    expect(extractMarkName({ event: "mark", mark: { name: "hangup-after-farewell" } })).toBe("hangup-after-farewell");
+    expect(extractMarkName({ event: "mark" })).toBeNull();          // mark with no name → ignore
+    expect(extractMarkName({ event: "stop" })).toBeNull();          // not a mark at all
   });
 
   it("extractAudioDelta / extractFunctionCall / extractResponseId behave", () => {

@@ -15,7 +15,8 @@
  */
 
 // Discriminated union of the Twilio Media Stream events we act on. Unknown
-// events (e.g. "connected", "mark") simply match no branch in the handler.
+// events (e.g. "connected") simply match no branch in the handler; "mark" is
+// consumed by the playback-aware hangup (see extractMarkName / server.ts).
 export type TwilioInbound =
   | { event: "connected" }
   | { event: "start"; start: { streamSid: string; callSid?: string; customParameters?: Record<string, string> } }
@@ -370,6 +371,25 @@ export function twilioMediaFrame(streamSid: string, audioBase64: string): object
 /** Twilio "clear" — flush queued playback on barge-in (user started speaking). */
 export function twilioClearFrame(streamSid: string): object {
   return { event: "clear", streamSid };
+}
+
+/**
+ * Twilio "mark" — a named checkpoint queued BEHIND all media frames already
+ * sent on the stream. Twilio echoes the same mark back only after every frame
+ * queued before it has actually been PLAYED to the caller, so it is the one
+ * reliable "the caller has heard everything up to here" signal. Used for the
+ * playback-aware hangup: send the farewell audio, send a mark, wait for the
+ * echo, THEN drop the line — never a fixed timer.
+ * https://www.twilio.com/docs/voice/media-streams/websocket-messages
+ */
+export function twilioMarkFrame(streamSid: string, name: string): object {
+  return { event: "mark", streamSid, mark: { name } };
+}
+
+/** The name of an inbound Twilio mark acknowledgement, or null if the message
+ *  is not a mark event (or carries no name). */
+export function extractMarkName(msg: TwilioInbound): string | null {
+  return msg.event === "mark" && typeof msg.mark?.name === "string" ? msg.mark.name : null;
 }
 
 

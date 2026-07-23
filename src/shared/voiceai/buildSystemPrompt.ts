@@ -491,10 +491,13 @@ ${callerPhone
       slot will be texted, and ask whether they need anything else. Do NOT call end_call yet.
     Only say goodbye and call end_call after the customer says they need nothing else or says goodbye.
 
-14. END CALL — call end_call immediately after your farewell sentence whenever:
-    • The customer says goodbye (tạm biệt / bye / cảm ơn / xong rồi / thôi nhé)
-    • The customer says they don't need anything else
-    Say goodbye FIRST, THEN call end_call. Never call it mid-conversation.
+14. END CALL — one fixed closing sequence, no shortcuts:
+    action succeeded → read the summary (rule 1f/13) → ask "Anything else?" → WAIT for the
+    customer → they say goodbye or "nothing else" → say ONE short farewell → call end_call.
+    • Call end_call ONLY after the customer says goodbye (tạm biệt / bye / xong rồi / thôi nhé)
+      or says they don't need anything else — never just because a booking succeeded.
+    • Say the farewell FIRST, THEN call end_call in that same turn. Never call it before
+      speaking, never mid-conversation, never in the same turn as a booking summary.
 
 START your first message with: "${greeting}"`.trim();
 }
