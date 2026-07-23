@@ -32,8 +32,8 @@ export default function CancelBookingPage() {
   const token = searchParams?.get("token") ?? "";
   const [state, setState] = useState<
     "preview" | "idle" | "loading" | "done" | "error" | "blocked"
-  >("preview");
-  const [code, setCode] = useState("");
+  >(token ? "preview" : "error");
+  const [code, setCode] = useState(token ? "" : "missing_token");
   const [salonSlug, setSalonSlug] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [feeCharged, setFeeCharged] = useState<{ cents: number; currency: string } | null>(null);
@@ -41,11 +41,7 @@ export default function CancelBookingPage() {
   // Fetch what a cancel would do (past appointment? late-cancel fee?) so the
   // customer sees the fee BEFORE confirming.
   useEffect(() => {
-    if (!token) {
-      setState("error");
-      setCode("missing_token");
-      return;
-    }
+    if (!token) return;
     let alive = true;
     (async () => {
       try {
