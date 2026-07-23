@@ -411,9 +411,20 @@ function ReceptionistCenterInner({
     dashboardModules: initialOk.dashboardModules,
   }));
 
+  // Wall-clock of the last successful server sync (initial SSR load, then
+  // every fresh refetch). Surfaced in the disconnect banner as "last updated";
+  // that banner is hidden while connected, so the empty SSR value does not
+  // participate in hydration.
+  const [lastSyncedIso, setLastSyncedIso] = useState(nowIso);
+  const markSynced = useCallback(() => {
+    setLastSyncedIso(new Date().toISOString());
+  }, [setLastSyncedIso]);
+
   // The day the user is actually viewing — the source of truth for reloads.
   const viewedYmdRef = useRef(data.selectedDate);
-  viewedYmdRef.current = data.selectedDate;
+  useEffect(() => {
+    viewedYmdRef.current = data.selectedDate;
+  }, [data.selectedDate]);
 
   useEffect(() => {
     // Only adopt server-provided data when it's for the day the user is viewing.
@@ -422,7 +433,6 @@ function ReceptionistCenterInner({
     // acting on a future day (drag-reschedule, edit, etc.). When the server day
     // differs, keep the viewed day — reloadCurrentDay already refreshed it.
     if (initialOk.selectedDate === viewedYmdRef.current) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync local data when initialOk reloads from server
       setData({ ...initialOk, selectedDate: initialOk.selectedDate });
       setLastSyncedIso(new Date().toISOString());
     }
@@ -688,16 +698,6 @@ function ReceptionistCenterInner({
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("connected");
   const isOffline = connectionState !== "connected";
-
-  // Wall-clock of the last successful server sync (initial SSR load, then
-  // every fresh refetch). Surfaced in the disconnect banner as "last updated"
-  // so a receptionist on a stale board knows how old the data is. Only ever
-  // rendered inside ConnectionBanner, which is hidden while connected — so it
-  // never participates in hydration (no SSR/client mismatch).
-  const [lastSyncedIso, setLastSyncedIso] = useState(nowIso);
-  const markSynced = useCallback(() => {
-    setLastSyncedIso(new Date().toISOString());
-  }, []);
 
   // Origin for guest wait-link buttons. Read AFTER mount (not during render):
   // deriving it from `window.location.origin` inline made the server render ""
