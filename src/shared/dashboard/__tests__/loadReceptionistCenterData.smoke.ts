@@ -14,6 +14,7 @@ loadDotenv({ path: resolve(process.cwd(), ".env.local") });
 import { createServiceRoleClient } from "../../lib/supabase/serviceRole";
 import { salonToday } from "../../lib/salonTime";
 import { loadReceptionistCenterData } from "../loadReceptionistCenterData";
+import { parseStaffNotificationSettings } from "../staffNotificationSettings";
 
 /** Dev tenant UUID — optional if slug/env resolution finds a salon. */
 const HARDCODED_DEV_SALON_ID = "";
@@ -229,6 +230,70 @@ async function main() {
         );
       }
     }
+  });
+
+  await smoke("6. pre-fetched salon preserves receptionist config parity", async () => {
+    const { data, error } = await supabase
+      .from("salons")
+      .select(
+        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign, queue_display_mode, basic_mode_forced, opening_hours, staff_notification_settings, auto_no_show_minutes" as never,
+      )
+      .eq("id", salon.id)
+      .maybeSingle();
+
+    assert(!error && data, `[smoke] prefetch salon config: ${error?.message}`);
+    const prefetched = data as unknown as {
+      id: string;
+      name: string;
+      slug: string;
+      timezone: string;
+      dashboard_modules: unknown;
+      dashboard_preset: unknown;
+      dashboard_density: unknown;
+      currency_code: unknown;
+      walkin_auto_assign: unknown;
+      queue_display_mode: unknown;
+      basic_mode_forced: unknown;
+      opening_hours: unknown;
+      staff_notification_settings: unknown;
+      auto_no_show_minutes: unknown;
+    };
+    const res = await loadReceptionistCenterData(salon.slug, today, {
+      resolveWrite: deps,
+      preFetchedSalon: prefetched,
+    });
+
+    assert(res.ok, JSON.stringify(res));
+    assert(
+      res.data.salon.walkinAutoAssign ===
+        (prefetched.walkin_auto_assign === false ? false : true),
+      "walkin_auto_assign parity mismatch",
+    );
+    assert(
+      res.data.salon.queueDisplayMode ===
+        (prefetched.queue_display_mode === "simple" ? "simple" : "full"),
+      "queue_display_mode parity mismatch",
+    );
+    assert(
+      JSON.stringify(res.data.salon.staffNotificationSettings) ===
+        JSON.stringify(
+          parseStaffNotificationSettings(prefetched.staff_notification_settings),
+        ),
+      "staff_notification_settings parity mismatch",
+    );
+    const rawAutoNoShow = prefetched.auto_no_show_minutes;
+    const numericAutoNoShow =
+      rawAutoNoShow == null ? null : Math.round(Number(rawAutoNoShow));
+    const expectedAutoNoShow =
+      numericAutoNoShow !== null &&
+      Number.isFinite(numericAutoNoShow) &&
+      numericAutoNoShow > 0
+        ? numericAutoNoShow
+        : null;
+    assert(
+      res.data.salon.autoNoShowMinutes === expectedAutoNoShow,
+      "auto_no_show_minutes parity mismatch",
+    );
   });
 
   console.log(`${pass} passed, ${failed} failed`);
