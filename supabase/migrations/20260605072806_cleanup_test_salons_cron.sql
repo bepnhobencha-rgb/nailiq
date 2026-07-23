@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260605072806.
+-- Original production name: cleanup_test_salons_cron.
+-- Its schema effect is represented by the later folded baseline.

@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260610032244.
+-- Original production name: square_deposits.
+-- Its schema effect is represented by the later folded baseline.

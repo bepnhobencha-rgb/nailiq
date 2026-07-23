@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260519211136.
+-- Original production name: waitlist_enhance.
+-- Its schema effect is represented by the later folded baseline.

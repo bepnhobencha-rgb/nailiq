@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615075606.
+-- Original production name: loyalty_voucher_valid_days.
+-- Its schema effect is represented by the later folded baseline.

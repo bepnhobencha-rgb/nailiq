@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615040608.
+-- Original production name: gate_staff_writes_to_managers.
+-- Its schema effect is represented by the later folded baseline.

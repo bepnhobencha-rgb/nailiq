@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260706041547.
+-- Original production name: reschedule_waitlist_salon_tz.
+-- Its schema effect is represented by the later folded baseline.

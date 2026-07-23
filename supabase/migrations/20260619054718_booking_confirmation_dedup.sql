@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260619054718.
+-- Original production name: booking_confirmation_dedup.
+-- Its schema effect is represented by the later folded baseline.

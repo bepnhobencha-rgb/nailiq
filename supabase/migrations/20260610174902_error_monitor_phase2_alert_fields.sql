@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260610174902.
+-- Original production name: error_monitor_phase2_alert_fields.
+-- Its schema effect is represented by the later folded baseline.

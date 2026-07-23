@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260512031111.
+-- Original production name: add_salon_description.
+-- Its schema effect is represented by the later folded baseline.

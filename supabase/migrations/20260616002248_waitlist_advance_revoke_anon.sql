@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260616002248.
+-- Original production name: waitlist_advance_revoke_anon.
+-- Its schema effect is represented by the later folded baseline.

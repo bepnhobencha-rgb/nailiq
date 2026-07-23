@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260619181705.
+-- Original production name: upgrade_create_public_booking_v27_autoassign.
+-- Its schema effect is represented by the later folded baseline.

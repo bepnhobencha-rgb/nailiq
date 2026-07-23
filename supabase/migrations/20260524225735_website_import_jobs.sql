@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260524225735.
+-- Original production name: website_import_jobs.
+-- Its schema effect is represented by the later folded baseline.

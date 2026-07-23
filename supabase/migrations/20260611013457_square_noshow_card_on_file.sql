@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260611013457.
+-- Original production name: square_noshow_card_on_file.
+-- Its schema effect is represented by the later folded baseline.

@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615234200.
+-- Original production name: noshow_card_gate_rules.
+-- Its schema effect is represented by the later folded baseline.

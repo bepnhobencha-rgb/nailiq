@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260722222735.
+-- Original production name: isolate_authenticated_salon_reads.
+-- Its schema effect is represented by the later folded baseline.

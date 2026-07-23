@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615223815.
+-- Original production name: auth_events.
+-- Its schema effect is represented by the later folded baseline.

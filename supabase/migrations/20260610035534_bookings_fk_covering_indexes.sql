@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260610035534.
+-- Original production name: bookings_fk_covering_indexes.
+-- Its schema effect is represented by the later folded baseline.

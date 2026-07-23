@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260706000255.
+-- Original production name: self_cancel_fee_percent.
+-- Its schema effect is represented by the later folded baseline.

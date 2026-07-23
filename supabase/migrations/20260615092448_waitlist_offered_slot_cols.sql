@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615092448.
+-- Original production name: waitlist_offered_slot_cols.
+-- Its schema effect is represented by the later folded baseline.

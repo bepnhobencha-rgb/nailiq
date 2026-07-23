@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260614230148.
+-- Original production name: 20260615020000_client_segment_settings.
+-- Its schema effect is represented by the later folded baseline.

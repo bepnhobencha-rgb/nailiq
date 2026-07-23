@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260519211139.
+-- Original production name: salon_reminder_settings.
+-- Its schema effect is represented by the later folded baseline.

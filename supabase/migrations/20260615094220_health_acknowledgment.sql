@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615094220.
+-- Original production name: health_acknowledgment.
+-- Its schema effect is represented by the later folded baseline.

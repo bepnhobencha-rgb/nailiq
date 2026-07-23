@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260512073029.
+-- Original production name: group_booking_idempotency_fix.
+-- Its schema effect is represented by the later folded baseline.

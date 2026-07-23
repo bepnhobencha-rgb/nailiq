@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260622061054.
+-- Original production name: restore_public_booking_profile_link.
+-- Its schema effect is represented by the later folded baseline.

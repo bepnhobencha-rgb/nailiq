@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615202037.
+-- Original production name: square_reverse_create_flag.
+-- Its schema effect is represented by the later folded baseline.

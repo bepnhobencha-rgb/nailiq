@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260524200304.
+-- Original production name: fix_claim_waitlist_slot_ambiguous_id.
+-- Its schema effect is represented by the later folded baseline.

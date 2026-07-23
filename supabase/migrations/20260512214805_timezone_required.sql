@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260512214805.
+-- Original production name: timezone_required.
+-- Its schema effect is represented by the later folded baseline.

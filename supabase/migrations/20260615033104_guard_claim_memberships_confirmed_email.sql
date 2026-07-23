@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615033104.
+-- Original production name: guard_claim_memberships_confirmed_email.
+-- Its schema effect is represented by the later folded baseline.

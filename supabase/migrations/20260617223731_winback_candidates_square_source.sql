@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260617223731.
+-- Original production name: winback_candidates_square_source.
+-- Its schema effect is represented by the later folded baseline.

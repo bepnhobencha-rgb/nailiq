@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260519213748.
+-- Original production name: waitlist_entry_email.
+-- Its schema effect is represented by the later folded baseline.

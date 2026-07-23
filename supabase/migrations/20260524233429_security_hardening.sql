@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260524233429.
+-- Original production name: security_hardening.
+-- Its schema effect is represented by the later folded baseline.

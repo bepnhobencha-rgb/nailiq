@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260611215206.
+-- Original production name: notification_i18n_foundation.
+-- Its schema effect is represented by the later folded baseline.

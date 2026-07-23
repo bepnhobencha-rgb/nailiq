@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260707071633.
+-- Original production name: campaign_schedules.
+-- Its schema effect is represented by the later folded baseline.

@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260622195007.
+-- Original production name: promotions.
+-- Its schema effect is represented by the later folded baseline.

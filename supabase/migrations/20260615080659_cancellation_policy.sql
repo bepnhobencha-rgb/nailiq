@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615080659.
+-- Original production name: cancellation_policy.
+-- Its schema effect is represented by the later folded baseline.

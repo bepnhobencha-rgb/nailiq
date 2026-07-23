@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260614175532.
+-- Original production name: payment_provider.
+-- Its schema effect is represented by the later folded baseline.

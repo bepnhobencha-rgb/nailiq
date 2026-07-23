@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260522175914.
+-- Original production name: booking_photos.
+-- Its schema effect is represented by the later folded baseline.

@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260605225001.
+-- Original production name: services_addon_timing.
+-- Its schema effect is represented by the later folded baseline.

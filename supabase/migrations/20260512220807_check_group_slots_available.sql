@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260512220807.
+-- Original production name: check_group_slots_available.
+-- Its schema effect is represented by the later folded baseline.

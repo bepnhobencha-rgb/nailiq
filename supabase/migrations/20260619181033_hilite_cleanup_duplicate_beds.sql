@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260619181033.
+-- Original production name: hilite_cleanup_duplicate_beds.
+-- Its schema effect is represented by the later folded baseline.

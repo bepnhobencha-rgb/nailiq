@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615231413.
+-- Original production name: noshow_group_whole_party.
+-- Its schema effect is represented by the later folded baseline.

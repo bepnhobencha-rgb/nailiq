@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615040729.
+-- Original production name: lock_party_change_requests_to_service_role.
+-- Its schema effect is represented by the later folded baseline.

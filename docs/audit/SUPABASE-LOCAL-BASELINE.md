@@ -2,6 +2,12 @@
 
 **Ngày:** 2026-07-14 · **Nguồn:** production `fshmobzyjhmtvndobwsy` (NailIQOS) · **Commit tương ứng:** `c16e275`
 
+> **Cập nhật 2026-07-23:** lịch sử cũ đã được lưu nguyên vẹn tại
+> `supabase/migration-history/legacy-2026-07-23/`. `supabase/migrations/` nay
+> chứa 266 marker khớp ledger production và một folded baseline có thể dựng
+> database trắng. Tài liệu bằng chứng/cutover hiện hành là
+> `docs/audit/MIGRATION-HISTORY-RECONCILIATION-2026-07-23.md`.
+
 ---
 
 ## Baseline này KHÔNG phải migration history của production

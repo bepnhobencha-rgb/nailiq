@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260508075244.
+-- Original production name: bookings_walkin_queue_meta.
+-- Its schema effect is represented by the later folded baseline.

@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260623005829.
+-- Original production name: group_decline_cutoff_configurable.
+-- Its schema effect is represented by the later folded baseline.

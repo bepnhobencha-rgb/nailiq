@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260619180811.
+-- Original production name: create_public_booking_with_resource_id.
+-- Its schema effect is represented by the later folded baseline.

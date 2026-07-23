@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615002314.
+-- Original production name: 20260615100000_top_salon_hosts.
+-- Its schema effect is represented by the later folded baseline.

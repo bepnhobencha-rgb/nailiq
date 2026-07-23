@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260519211123.
+-- Original production name: booking_reminder_tokens.
+-- Its schema effect is represented by the later folded baseline.

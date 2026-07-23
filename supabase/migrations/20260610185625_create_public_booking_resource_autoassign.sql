@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260610185625.
+-- Original production name: create_public_booking_resource_autoassign.
+-- Its schema effect is represented by the later folded baseline.

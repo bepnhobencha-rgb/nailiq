@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260512015039.
+-- Original production name: dynamic_service_categories.
+-- Its schema effect is represented by the later folded baseline.

@@ -35,10 +35,10 @@ jobs:
         with:
           version: 2.109.1
 
-      - name: Audit current drift
-        run: npm run db:history:audit
+      - name: Audit folded cutover invariants
+        run: npm run db:history:audit -- --cutover-ready
 
-      - name: Build folded history in a throwaway directory
+      - name: Rebuild and compare folded history
         run: |
           set -euo pipefail
           node scripts/build-folded-migration-history.mjs \
@@ -50,21 +50,11 @@ jobs:
           unique="$(find "$RUNNER_TEMP/folded-migrations" -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | cut -c1-14 | sort -u | wc -l)"
           test "$count" -eq 267
           test "$unique" -eq 267
+          diff -qr "$RUNNER_TEMP/folded-migrations" supabase/migrations
 
       - name: Apply folded history to blank Supabase
         run: |
           set -euo pipefail
-
-          migrations_dir="$PWD/supabase/migrations"
-          legacy_dir="$RUNNER_TEMP/legacy-migrations"
-          mv "$migrations_dir" "$legacy_dir"
-          cp -R "$RUNNER_TEMP/folded-migrations" "$migrations_dir"
-
-          restore_migrations() {
-            rm -rf "$migrations_dir"
-            mv "$legacy_dir" "$migrations_dir"
-          }
-          trap restore_migrations EXIT
 
           supabase start --exclude studio,edge-runtime,logflare,vector
           supabase status -o env > "$RUNNER_TEMP/supabase.env"
@@ -82,9 +72,8 @@ jobs:
 
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.service_categories')" -eq 13
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.platform_flags')" -eq 5
-
-          restore_migrations
-          trap - EXIT
+          bucket_count="$(psql "$DB_URL" -tAc "select count(*) from storage.buckets where id = 'nail-tryon' and public = false")"
+          test "$bucket_count" -eq 1
 
       - name: Stop throwaway Supabase
         if: always()

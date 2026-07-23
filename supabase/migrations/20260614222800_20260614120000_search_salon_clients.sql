@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260614222800.
+-- Original production name: 20260614120000_search_salon_clients.
+-- Its schema effect is represented by the later folded baseline.

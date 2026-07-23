@@ -1,9 +1,9 @@
 # NailIQ migration-history reconciliation
 
 **Audit date:** 2026-07-23  
-**Release audited:** `b2e379b0f26f7e8007657ddbf986f5ed30dc1be2` (`origin/main`)  
+**Release audited:** `9e04ce272beba71f8d4e456ec5e08ba3a1ccf3d3` (`origin/main`)
 **Supabase project:** `fshmobzyjhmtvndobwsy` (`NailIQOS`)  
-**Status:** rehearsal design only; production unchanged
+**Status:** folded cutover prepared; production ledger backed up; baseline repair pending
 
 ## Executive finding
 
@@ -33,6 +33,43 @@ already exist.
 
 The existing `npm run db:push` guard remains correct and must stay enabled until
 the reconciliation is complete.
+
+## Post-rehearsal correction
+
+The first rehearsal PR proved the folding mechanism, but a full unit run during
+cutover preparation caught that its generator appended only the final four
+security migrations after the 2026-07-14 schema snapshot. That would have
+omitted 22 other post-snapshot schema migrations from a fresh database,
+including the first four public-booking security hardening migrations.
+
+The cutover generator now deterministically reviews all 26 migrations introduced
+after the snapshot and appends the 25 schema-bearing deltas. It intentionally
+omits `20260722175728_move_cron_auth_to_vault.sql`: that migration is a
+production-state credential transition over four existing `cron.job` rows and
+has no schema effect, so it cannot run on a blank database. The generator also
+removes exactly three top-level data statements: the private storage-bucket
+configuration and two no-op-on-empty-database mapping backfills. The bucket
+configuration moved to the idempotent non-PII reference seed. Function bodies
+remain intact. The generated baseline now reports 89 tables and passes all 276
+unit tests, including the eight public-booking security boundary assertions.
+Because the schema snapshot deliberately removes `ALTER DEFAULT PRIVILEGES`,
+the generator explicitly restores the production-equivalent `service_role`
+grants on the two post-snapshot tables that inherited those defaults:
+`owner_notification_log` and `sms_agent_sessions`.
+
+Production was re-measured on 2026-07-23:
+
+| Object | Production |
+|---|---:|
+| Public base tables | 89 |
+| Public columns | 1,216 |
+| RLS policies | 101 |
+| App-owned public functions | 72 |
+| Non-internal public triggers | 25 |
+| Public indexes | 294 |
+| Reachable objects for `anon` | 75 |
+| Reachable objects for `authenticated` | 83 |
+| Reachable objects for `service_role` | 94 |
 
 ## Duplicate local version IDs
 
@@ -95,25 +132,38 @@ evidence and makes rollback of the ledger edit a single-row operation.
 The reconciliation is not eligible for production until all of these are
 proven on a throwaway local/CI database:
 
-- [ ] Generated baseline contains no customer rows and no credential-shaped
+- [x] Generated baseline contains no customer rows and no credential-shaped
   values.
-- [ ] Migration versions are unique.
-- [ ] Blank database applies the history from zero.
+- [x] Migration versions are unique.
+- [ ] Blank database applies the corrected 25-schema-delta history from zero.
 - [ ] Tables, columns, policies, functions, triggers and indexes meet the
   production parity assertions.
 - [ ] Grant matrix matches production exactly.
 - [ ] RLS is enabled on every core table.
 - [ ] Seed is idempotent.
 - [ ] Typecheck, unit, build and both E2E suites pass on one exact SHA.
-- [ ] Ledger rollback procedure restores the pre-repair version set.
-- [ ] `db:push` remains blocked until production verification succeeds.
+- [x] Ledger rollback procedure restores the pre-repair version set.
+- [x] `db:push` remains blocked until production verification succeeds.
 
 ## Production boundary
 
-No production repair, schema migration, data write, branch purchase, backup
-restore or destructive operation is authorized by this document. The local/CI
-rehearsal can proceed independently; editing the production migration ledger
-requires explicit owner approval after the rehearsal evidence is green.
+The owner explicitly approved production migration-history repair on
+2026-07-23 after the rehearsal was green and rollback was available.
+
+Before preparing the cutover, the complete six-column ledger was copied
+transactionally to
+`supabase_migrations.schema_migrations_backup_20260723_pre_folded_cutover`.
+Both the source and backup contain 266 rows and have ledger checksum
+`b3f3f1be0c17619986bb0ac37f2aa3ad`. A transaction-scoped restore rehearsal
+copied the backup into a table with the production shape and reproduced the
+same row count and checksum before rolling back.
+
+The repository cutover archives the 288 legacy SQL files under
+`supabase/migration-history/legacy-2026-07-23/`, checks in 266 inert markers
+plus the folded baseline, and keeps `db:push` blocked. After this exact change
+passes CI and reaches `main`, production may record only baseline version
+`20260723000000` as applied. Its SQL must never be executed against the existing
+production schema.
 
 ## Relevant current Supabase behavior
 

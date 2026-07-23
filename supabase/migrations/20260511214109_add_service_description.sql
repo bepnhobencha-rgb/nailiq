@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260511214109.
+-- Original production name: add_service_description.
+-- Its schema effect is represented by the later folded baseline.

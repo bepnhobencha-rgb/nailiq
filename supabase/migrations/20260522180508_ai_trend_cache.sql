@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260522180508.
+-- Original production name: ai_trend_cache.
+-- Its schema effect is represented by the later folded baseline.

@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260614234038.
+-- Original production name: 20260615030000_party_claim_promote_identity.
+-- Its schema effect is represented by the later folded baseline.

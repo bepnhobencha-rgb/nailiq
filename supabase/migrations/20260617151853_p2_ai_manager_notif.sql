@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260617151853.
+-- Original production name: p2_ai_manager_notif.
+-- Its schema effect is represented by the later folded baseline.

@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260608164817.
+-- Original production name: phone_canonical_triggers.
+-- Its schema effect is represented by the later folded baseline.

@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260607220104.
+-- Original production name: salons_reference_image_enabled.
+-- Its schema effect is represented by the later folded baseline.

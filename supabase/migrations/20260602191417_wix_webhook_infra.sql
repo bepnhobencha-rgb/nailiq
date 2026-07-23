@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260602191417.
+-- Original production name: wix_webhook_infra.
+-- Its schema effect is represented by the later folded baseline.

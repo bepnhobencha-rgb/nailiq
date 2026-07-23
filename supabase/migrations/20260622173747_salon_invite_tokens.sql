@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260622173747.
+-- Original production name: salon_invite_tokens.
+-- Its schema effect is represented by the later folded baseline.

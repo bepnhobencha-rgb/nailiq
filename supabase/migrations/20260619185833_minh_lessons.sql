@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260619185833.
+-- Original production name: minh_lessons.
+-- Its schema effect is represented by the later folded baseline.

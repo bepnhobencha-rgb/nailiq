@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260614185640.
+-- Original production name: noshow_policy_on_salon.
+-- Its schema effect is represented by the later folded baseline.

@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260530020735.
+-- Original production name: wave_booking.
+-- Its schema effect is represented by the later folded baseline.

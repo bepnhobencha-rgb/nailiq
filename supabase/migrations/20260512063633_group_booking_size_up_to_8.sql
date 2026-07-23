@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260512063633.
+-- Original production name: group_booking_size_up_to_8.
+-- Its schema effect is represented by the later folded baseline.
