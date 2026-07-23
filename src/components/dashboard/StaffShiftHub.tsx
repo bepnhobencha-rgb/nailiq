@@ -188,10 +188,19 @@ function UnavailabilitySection({
       // Show next 60 days of unavailability
       const today = new Date().toISOString().slice(0, 10);
       const future = new Date(Date.now() + 60 * 86400_000).toISOString().slice(0, 10);
-      const r = await listStaffUnavailability(slug, today, future);
-      if (cancelled) return;
-      if (r.ok) setRows(r.data ?? []);
-      setLoadedSlug(slug);
+      try {
+        const r = await listStaffUnavailability(slug, today, future);
+        if (cancelled) return;
+        // Always replace rows, including on failure: keeping the previous
+        // salon's rows here would render them under the new slug.
+        setRows(r.ok ? (r.data ?? []) : []);
+        setLoadedSlug(slug);
+      } catch {
+        // The action itself rejected (network / server error) — same rule.
+        if (cancelled) return;
+        setRows([]);
+        setLoadedSlug(slug);
+      }
     })();
     return () => {
       cancelled = true;
