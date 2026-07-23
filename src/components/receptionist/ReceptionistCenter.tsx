@@ -35,7 +35,14 @@ import { Users } from "lucide-react";
  *     ANIMATION_RULES.md §3.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -169,6 +176,16 @@ import {
   loadBookingCustomerContext,
   type BookingCustomerContext,
 } from "@/shared/dashboard/loadBookingCustomerContextAction";
+
+// Values that only exist on the client. Read through useSyncExternalStore so
+// the server render and the first client render agree (no hydration mismatch)
+// and React swaps the real value in once hydration completes — no effect
+// writing state back on mount.
+const noopSubscribe = () => () => {};
+const getHydratedSnapshot = () => true;
+const getServerFalseSnapshot = () => false;
+const getWindowOrigin = () => window.location.origin;
+const getServerEmptySnapshot = () => "";
 
 export type ReceptionistCenterProps = {
   slug: string;
@@ -541,25 +558,42 @@ function ReceptionistCenterInner({
 
   // Lazy "customer launchpad" context (creator / allergies / return cadence)
   // for the open booking. `undefined` = loading, `null` = unavailable.
-  const [customerContext, setCustomerContext] = useState<
-    BookingCustomerContext | null | undefined
-  >(undefined);
+  // Tagged with every argument the request was made with, so `undefined`
+  // (loading) falls out of "what is on screen has no answer yet" rather than
+  // being written back from the effect.
+  const customerContextKey = drawerBookingId
+    ? JSON.stringify([slug, drawerBookingId])
+    : null;
+  const [fetchedCustomerContext, setFetchedCustomerContext] = useState<{
+    key: string;
+    context: BookingCustomerContext | null;
+  } | null>(null);
+  const customerContext: BookingCustomerContext | null | undefined =
+    customerContextKey && fetchedCustomerContext?.key === customerContextKey
+      ? fetchedCustomerContext.context
+      : undefined;
   useEffect(() => {
     const id = drawerBookingId;
-    if (!id) {
-      setCustomerContext(undefined);
-      return;
-    }
+    if (!id || !customerContextKey) return;
+    const requestKey = customerContextKey;
     let cancelled = false;
-    setCustomerContext(undefined);
-    void loadBookingCustomerContext(slug, id).then((res) => {
-      if (cancelled) return;
-      setCustomerContext(res.ok ? res.context : null);
-    });
+    void loadBookingCustomerContext(slug, id)
+      .then((res) => {
+        if (cancelled) return;
+        setFetchedCustomerContext({
+          key: requestKey,
+          context: res.ok ? res.context : null,
+        });
+      })
+      .catch(() => {
+        // The action itself rejected — settle as unavailable so the launchpad
+        // stops showing its loading state forever.
+        if (!cancelled) setFetchedCustomerContext({ key: requestKey, context: null });
+      });
     return () => {
       cancelled = true;
     };
-  }, [drawerBookingId, slug]);
+  }, [drawerBookingId, slug, customerContextKey]);
 
   // Deep-link `?booking=<id>` (e.g. Coco's "open this appointment" link): open
   // that booking's detail drawer once on mount. The page already loaded the
@@ -579,10 +613,11 @@ function ReceptionistCenterInner({
   // E2E hydration signal: renders only after the first client-side effect,
   // confirming React has fully hydrated and all event handlers are registered.
   // Used by gotoReceptionistCenter in e2e/receptionist-center/helpers.ts.
-  const [rcHydrated, setRcHydrated] = useState(false);
-  useEffect(() => {
-    setRcHydrated(true);
-  }, []);
+  const rcHydrated = useSyncExternalStore(
+    noopSubscribe,
+    getHydratedSnapshot,
+    getServerFalseSnapshot,
+  );
 
   const [undoState, setUndoState] = useState<UndoToastState | null>(null);
   const undoTimerRef = useRef<number | null>(null);
@@ -704,10 +739,11 @@ function ReceptionistCenterInner({
   // (button hidden) while the client rendered the origin (button shown),
   // throwing a React #418 hydration mismatch on any queued walk-in. Empty on
   // the server + first client render (match), populated on mount.
-  const [originBaseUrl, setOriginBaseUrl] = useState("");
-  useEffect(() => {
-    setOriginBaseUrl(window.location.origin);
-  }, []);
+  const originBaseUrl = useSyncExternalStore(
+    noopSubscribe,
+    getWindowOrigin,
+    getServerEmptySnapshot,
+  );
 
   // Sound alerts (Web Audio, generated tones only). Hook is a no-op
   // when `dashboard_modules.sound_alerts` is off; honors browser
