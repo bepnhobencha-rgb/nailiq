@@ -565,24 +565,32 @@ export function ClientProfile360Drawer({
   // Build booking URL for rebook-invite template
   const bookingUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://nailiq.ca"}/${slug}`;
 
-  // Reset + fetch when phone changes
-  useEffect(() => {
-    if (!clientPhone) {
-      setData(null);
-      setError(null);
-      setAiSummary(null);
-      setShowAllTimeline(false);
-      setCompose({ open: false, body: "", kind: "message", status: null });
-      return;
-    }
-
-    let cancelled = false;
-    setLoading(true);
+  // Everything below belongs to one profile fetch. When the target changes,
+  // reset during render instead of in an effect — React's documented way to
+  // adjust state on a prop change, and it avoids painting the previous
+  // client's data for a frame under the new client's name.
+  const fetchKey = `${slug}|${clientPhone ?? ""}|${language}`;
+  const [activeFetchKey, setActiveFetchKey] = useState<string | null>(null);
+  if (activeFetchKey !== fetchKey) {
+    setActiveFetchKey(fetchKey);
     setError(null);
     setData(null);
     setAiSummary(null);
+    // The in-flight summary for the previous client bails out on `cancelled`
+    // and never clears this, so reset it here or the shimmer stays up forever
+    // and the regenerate button below stays disabled.
+    setAiGenerating(false);
     setShowAllTimeline(false);
     setCompose({ open: false, body: "", kind: "message", status: null });
+    // Closing the drawer resets its contents but starts no request.
+    if (clientPhone) setLoading(true);
+  }
+
+  // Fetch when the target changes.
+  useEffect(() => {
+    if (!clientPhone) return;
+
+    let cancelled = false;
 
     void callLoadProfile(slug, clientPhone, language).then((res) => {
       if (cancelled) return;
