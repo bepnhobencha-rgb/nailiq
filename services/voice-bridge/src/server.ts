@@ -25,6 +25,8 @@ import {
   twilioClearFrame,
   twilioMarkFrame,
   extractMarkName,
+  createHangupController,
+  HANGUP_FALLBACK_MS,
   functionCallOutput,
   plainResponseCreate,
   extractSayThis,
@@ -75,10 +77,9 @@ wss.on("connection", (twilioWs) => {
   // before a single word was spoken, the caller is sitting in dead air — we must
   // let a reply through to greet, not suppress it.
   let greetingSpoken = false;
-  // The agent asked to end the call (end_call). Hang up once its farewell has
-  // finished playing — never mid-word.
-  let hangupPending = false;
-  let hangupTimer: ReturnType<typeof setTimeout> | null = null;
+  // The agent asked to end the call (end_call). The hangup controller (created
+  // below, after closeAll exists) hangs up only once the farewell has actually
+  // PLAYED — never mid-word.
   // Watchdog: last time the response pipeline made progress (audio out, or a
   // response created/ended). If the coordinator stays busy with no progress, a
   // response.done was likely missed and the agent has gone silent — recover.
@@ -210,7 +211,7 @@ wss.on("connection", (twilioWs) => {
     closed = true;
     logT("call_closed", { reason });
     if (watchdog) { clearInterval(watchdog); watchdog = null; }
-    if (hangupTimer) { clearTimeout(hangupTimer); hangupTimer = null; }
+    hangup.onClose();              // never let the fallback timer fire after teardown
     coordinator.onClose();         // stop the queue; no more sends after hangup
     void finalizeSession();
     try { openaiWs?.close(); } catch { /* noop */ }
@@ -223,25 +224,28 @@ wss.on("connection", (twilioWs) => {
   // goodbyes off mid-word and made short ones feel abruptly dropped. Instead:
   // send a named `mark` AFTER the last farewell audio frame; Twilio echoes it
   // back only once everything queued before it has actually PLAYED to the
-  // caller; hang up on that echo. The timer survives only as a fallback for
-  // when the ack never arrives (caller hung up first, media glitch).
-  const HANGUP_MARK = "hangup-after-farewell";
-  const HANGUP_FALLBACK_MS = 5000;
+  // caller; hang up on that echo. A timer survives only as a fallback for when
+  // the ack never arrives (caller hung up first, media glitch). The whole
+  // lifecycle lives in createHangupController (router.ts) so it is unit-tested;
+  // this block only wires in the real Twilio socket, telemetry and closeAll.
   let hangupMarkSentAt = 0;
-  const requestHangup = () => {
-    if (closed || hangupTimer || hangupMarkSentAt) return;   // already in progress
-    if (streamSid && twilioWs.readyState === WebSocket.OPEN) {
+  const hangup = createHangupController({
+    sendMark: (name) => {
+      if (closed || !streamSid || twilioWs.readyState !== WebSocket.OPEN) return false;
       hangupMarkSentAt = Date.now();
-      twilioWs.send(JSON.stringify(twilioMarkFrame(streamSid, HANGUP_MARK)));
+      twilioWs.send(JSON.stringify(twilioMarkFrame(streamSid, name)));
       logT("hangup_mark_sent");
-      hangupTimer = setTimeout(() => {
+      return true;
+    },
+    close: (reason) => {
+      if (reason === "farewell_fully_played" && hangupMarkSentAt) {
+        logT("hangup_mark_played", { playbackMs: Date.now() - hangupMarkSentAt });
+      } else if (reason === "hangup_fallback_timeout") {
         logT("hangup_fallback_fired", { waitedMs: HANGUP_FALLBACK_MS });
-        closeAll("hangup_fallback_timeout");
-      }, HANGUP_FALLBACK_MS);
-    } else {
-      closeAll("hangup_no_live_stream"); // nothing left to wait on
-    }
-  };
+      }
+      closeAll(reason);
+    },
+  });
 
   const runTool = async (name: string, args: Record<string, unknown>, callId: string) => {
     // end_call is a TRANSPORT action, not a DB one — only the bridge can hang up
@@ -249,9 +253,10 @@ wss.on("connection", (twilioWs) => {
     // line once its farewell (already spoken, per the prompt) finishes playing.
     if (name === "end_call") {
       openaiWs?.send(JSON.stringify(functionCallOutput(callId, { ok: true })));
-      hangupPending = true;
-      logT("end_call_requested", { farewellStillPlaying: coordinator.isBusy() });
-      if (!coordinator.isBusy()) requestHangup();   // farewell already generated → wait for playback, then drop
+      logT("end_call_requested", { farewellStillGenerating: coordinator.isBusy() });
+      // If the farewell response is still in flight the controller waits for its
+      // end event; otherwise it sends the playback mark now.
+      hangup.onEndCall(coordinator.isBusy());
       return;                                        // no follow-up response
     }
 
@@ -430,7 +435,7 @@ wss.on("connection", (twilioWs) => {
         coordinator.onResponseEnded(rid);
         // If the agent ended the call, the farewell has been fully GENERATED —
         // now wait for Twilio to confirm it fully PLAYED (mark ack), then close.
-        if (hangupPending && !coordinator.isBusy()) requestHangup();
+        hangup.onResponseEnded(coordinator.isBusy());
       } else if (t.includes("error")) {
         coordinator.onError();
       }
@@ -495,12 +500,9 @@ wss.on("connection", (twilioWs) => {
       }
     } else if (msg.event === "mark") {
       // Twilio confirms everything queued before this mark has PLAYED to the
-      // caller. For the hangup mark that means the farewell was fully heard —
-      // the only correct moment to drop the line.
-      if (extractMarkName(msg) === HANGUP_MARK && hangupMarkSentAt) {
-        logT("hangup_mark_played", { playbackMs: Date.now() - hangupMarkSentAt });
-        closeAll("farewell_fully_played");
-      }
+      // caller. The controller closes only on OUR hangup mark — any other mark
+      // name (or a stray echo before we sent one) is ignored.
+      hangup.onMark(extractMarkName(msg));
     } else if (msg.event === "stop") {
       closeAll("twilio_stop");
     }
