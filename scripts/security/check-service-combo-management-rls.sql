@@ -185,7 +185,7 @@ begin
     raise exception 'admin did not update its salon combo';
   end if;
 
-  select set_config(
+  perform set_config(
     'request.jwt.claim.sub',
     '11000000-0000-0000-0000-000000000003',
     true
@@ -231,7 +231,7 @@ begin
     when insufficient_privilege then null;
   end;
 
-  select set_config(
+  perform set_config(
     'request.jwt.claim.sub',
     '11000000-0000-0000-0000-000000000004',
     true
