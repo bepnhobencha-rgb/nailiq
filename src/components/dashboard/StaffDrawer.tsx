@@ -173,6 +173,10 @@ export function StaffDrawer({
   const [status, setStatus] = useState<StaffStatus>(staff?.status ?? "active");
   const [serviceIds, setServiceIds] = useState<string[]>(effectiveInitialServiceIds);
   const [capabilityOpen, setCapabilityOpen] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveButtonStatus>("idle");
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [toast, setToast] = useState<SetupToastPayload | null>(null);
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Reset all local state whenever the target staff changes (drawer opens for
   // a different member, or switches between add / edit mode).
@@ -207,11 +211,6 @@ export function StaffDrawer({
   const isDirty = Object.keys(patch).length > 0;
 
   // ── save state ────────────────────────────────────────────────────────────
-
-  const [saveStatus, setSaveStatus] = useState<SaveButtonStatus>("idle");
-  const [fieldError, setFieldError] = useState<string | null>(null);
-  const [toast, setToast] = useState<SetupToastPayload | null>(null);
-  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearTimer = useCallback(() => {
     if (statusTimerRef.current !== null) {
