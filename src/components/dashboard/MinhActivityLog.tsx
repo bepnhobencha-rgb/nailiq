@@ -92,7 +92,7 @@ function EntryRow({ entry }: { entry: MinhLogEntry }) {
         </div>
         {entry.messagePreview && (
           <p className="mt-0.5 line-clamp-1 text-xs text-nq-muted/70 italic">
-            "{entry.messagePreview}"
+            &ldquo;{entry.messagePreview}&rdquo;
           </p>
         )}
       </div>

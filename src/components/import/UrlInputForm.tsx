@@ -72,7 +72,7 @@ export function UrlInputForm({ slug, onJobCreated }: Props) {
         )}
       </div>
       <p className="text-xs text-[#71717a]">
-        We'll scrape your existing website and use AI to extract your services, photos, and salon
+        We&apos;ll scrape your existing website and use AI to extract your services, photos, and salon
         details — then automatically populate your NailIQ page.
       </p>
     </form>
