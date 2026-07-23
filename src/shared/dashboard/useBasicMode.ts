@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 /**
  * Per-device Basic Mode toggle for the Receptionist board.
@@ -14,10 +14,67 @@ import { useCallback, useEffect, useState } from "react";
  * However, if salon.basic_mode_forced = true (e.g., Tech Nails receptionist),
  * Basic Mode is automatically ON and cannot be toggled off.
  *
- * SSR-safe: starts `false` on the server + first client paint, then hydrates
- * from localStorage in an effect to avoid a hydration mismatch.
+ * SSR-safe: localStorage is exposed through a module-level external store, so
+ * the server snapshot is always `false` and React swaps in the real value after
+ * hydration — no state-setting effect, no hydration mismatch.
  */
 const STORAGE_KEY = "nailiq-basic-mode";
+
+// One store shared by every hook instance on the page (sidebar + receptionist
+// board), so a toggle in one re-renders the other instead of leaving it on a
+// stale snapshot until it remounts.
+const listeners = new Set<() => void>();
+
+// Cached so getSnapshot stays cheap — the receptionist board re-renders on
+// every realtime tick and should not hit localStorage each time.
+let snapshot: boolean | null = null;
+
+function emit(): void {
+  for (const listener of listeners) listener();
+}
+
+function getSnapshot(): boolean {
+  if (snapshot === null) {
+    try {
+      snapshot = window.localStorage.getItem(STORAGE_KEY) === "1";
+    } catch {
+      /* localStorage unavailable (private mode) — stay off */
+      snapshot = false;
+    }
+  }
+  return snapshot;
+}
+
+function onStorageEvent(): void {
+  // Another tab wrote the key — drop the cache and re-read on next render.
+  snapshot = null;
+  emit();
+}
+
+function subscribe(onStoreChange: () => void): () => void {
+  listeners.add(onStoreChange);
+  window.addEventListener("storage", onStorageEvent);
+  return () => {
+    listeners.delete(onStoreChange);
+    if (listeners.size === 0) {
+      window.removeEventListener("storage", onStorageEvent);
+    }
+  };
+}
+
+function writeStored(on: boolean): void {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, on ? "1" : "0");
+  } catch {
+    /* ignore persistence failure */
+  }
+  snapshot = on;
+  emit();
+}
+
+const noopSubscribe = () => () => {};
+const getServerSnapshot = () => false;
+const getMountedSnapshot = () => true;
 
 export function useBasicMode(basicModeForced?: boolean): {
   basicMode: boolean;
@@ -28,24 +85,25 @@ export function useBasicMode(basicModeForced?: boolean): {
   /** True if basic mode cannot be toggled (forced by salon config). */
   isForced: boolean;
 } {
-  const [basicMode, setBasicModeState] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
   const isForced = basicModeForced ?? false;
 
+  const stored = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const hydrated = useSyncExternalStore(
+    noopSubscribe,
+    getMountedSnapshot,
+    getServerSnapshot,
+  );
+
+  // Forced salons persist the flag to the device, matching the previous
+  // behavior: a device that later loses basic_mode_forced keeps Basic Mode.
+  // Writes storage only — no React state is set here.
   useEffect(() => {
-    try {
-      // If forced, always enable
-      if (isForced) {
-        setBasicModeState(true);
-        window.localStorage.setItem(STORAGE_KEY, "1");
-      } else {
-        setBasicModeState(window.localStorage.getItem(STORAGE_KEY) === "1");
-      }
-    } catch {
-      /* localStorage unavailable (private mode) — stay off */
+    if (isForced && !getSnapshot()) {
+      writeStored(true);
     }
-    setHydrated(true);
   }, [isForced]);
+
+  const basicMode = isForced || stored;
 
   const setBasicMode = useCallback(
     (on: boolean) => {
@@ -53,12 +111,7 @@ export function useBasicMode(basicModeForced?: boolean): {
       if (isForced && !on) {
         return;
       }
-      setBasicModeState(on);
-      try {
-        window.localStorage.setItem(STORAGE_KEY, on ? "1" : "0");
-      } catch {
-        /* ignore persistence failure */
-      }
+      writeStored(on);
     },
     [isForced],
   );
@@ -68,15 +121,7 @@ export function useBasicMode(basicModeForced?: boolean): {
     if (isForced) {
       return;
     }
-    setBasicModeState((prev) => {
-      const next = !prev;
-      try {
-        window.localStorage.setItem(STORAGE_KEY, next ? "1" : "0");
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
+    writeStored(!getSnapshot());
   }, [isForced]);
 
   return { basicMode, setBasicMode, toggleBasicMode, hydrated, isForced };
