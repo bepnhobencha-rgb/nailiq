@@ -570,6 +570,9 @@ export function ClientProfile360Drawer({
   // adjust state on a prop change, and it avoids painting the previous
   // client's data for a frame under the new client's name.
   const fetchKey = `${slug}|${clientPhone ?? ""}|${language}`;
+  // Lets callbacks that outlive their click (regenerate) tell whether the
+  // drawer still shows the client they were started for.
+  const currentFetchKeyRef = useRef(fetchKey);
   const [activeFetchKey, setActiveFetchKey] = useState<string | null>(null);
   if (activeFetchKey !== fetchKey) {
     setActiveFetchKey(fetchKey);
@@ -586,13 +589,33 @@ export function ClientProfile360Drawer({
     if (clientPhone) setLoading(true);
   }
 
+  // Refs cannot be written during render, so publish the active key here. The
+  // drawer only ever switches client from a click, and React flushes passive
+  // effects synchronously for discrete events, so this lands before any
+  // in-flight promise callback gets to run.
+  useEffect(() => {
+    currentFetchKeyRef.current = fetchKey;
+  }, [fetchKey]);
+
   // Fetch when the target changes.
   useEffect(() => {
     if (!clientPhone) return;
 
     let cancelled = false;
 
-    void callLoadProfile(slug, clientPhone, language).then((res) => {
+    void (async () => {
+      let res: Awaited<ReturnType<typeof callLoadProfile>>;
+      try {
+        res = await callLoadProfile(slug, clientPhone, language);
+      } catch {
+        // The action itself rejected (network / server error). Without this
+        // the drawer would sit on the skeleton forever.
+        if (!cancelled) {
+          setLoading(false);
+          setError(m.error);
+        }
+        return;
+      }
       if (cancelled) return;
       setLoading(false);
       if (!res.ok) {
@@ -604,30 +627,32 @@ export function ClientProfile360Drawer({
       // If AI summary already present, use it; otherwise generate in background
       if (res.data.aiSummary) {
         setAiSummary(res.data.aiSummary);
-      } else {
-        setAiGenerating(true);
-        void callGenerateSummary(slug, clientPhone, language).then((aiRes) => {
-          if (cancelled) return;
-          setAiGenerating(false);
-          if (aiRes.ok) {
-            setAiSummary({
-              text: aiRes.text,
-              nextAction: aiRes.nextAction,
-              computedAt: aiRes.computedAt,
-            });
-          }
-          // On error: just hide the AI card gracefully
-        });
+        return;
       }
-    });
+      setAiGenerating(true);
+      try {
+        const aiRes = await callGenerateSummary(slug, clientPhone, language);
+        if (!cancelled && aiRes.ok) {
+          setAiSummary({
+            text: aiRes.text,
+            nextAction: aiRes.nextAction,
+            computedAt: aiRes.computedAt,
+          });
+        }
+        // On error: just hide the AI card gracefully
+      } catch {
+        // Best-effort — the profile itself is already on screen.
+      } finally {
+        if (!cancelled) setAiGenerating(false);
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
   // Re-runs on language change so the AI summary + dates re-fetch in the new
   // language (the rest of the UI is reactive via getUserMessages already).
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug, clientPhone, language]);
+  }, [slug, clientPhone, language, m.error]);
 
   /** Re-fetch the profile (e.g. after a message is sent to pick up notification history). */
   const refreshProfile = useCallback(() => {
@@ -668,19 +693,32 @@ export function ClientProfile360Drawer({
   /** Re-generate AI summary. */
   const handleRegenerateSummary = useCallback(() => {
     if (!clientPhone || aiGenerating) return;
+    // This request outlives the click: if the drawer moves to another client
+    // before it resolves, the result belongs to nobody and must be dropped.
+    const requestKey = fetchKey;
     setAiGenerating(true);
     setAiSummary(null);
-    void callGenerateSummary(slug, clientPhone, language).then((aiRes) => {
-      setAiGenerating(false);
-      if (aiRes.ok) {
-        setAiSummary({
-          text: aiRes.text,
-          nextAction: aiRes.nextAction,
-          computedAt: aiRes.computedAt,
-        });
-      }
-    });
-  }, [slug, clientPhone, aiGenerating]);
+    void callGenerateSummary(slug, clientPhone, language)
+      .then((aiRes) => {
+        if (currentFetchKeyRef.current !== requestKey) return;
+        if (aiRes.ok) {
+          setAiSummary({
+            text: aiRes.text,
+            nextAction: aiRes.nextAction,
+            computedAt: aiRes.computedAt,
+          });
+        }
+        // On error: just hide the AI card gracefully
+      })
+      .catch(() => {
+        // Best-effort — the profile itself is already on screen.
+      })
+      .finally(() => {
+        if (currentFetchKeyRef.current === requestKey) {
+          setAiGenerating(false);
+        }
+      });
+  }, [slug, clientPhone, language, aiGenerating, fetchKey]);
 
   // ── Build title ──────────────────────────────────────────────────────────
   const drawerTitle = data?.profile.name?.trim() ?? m.title;
