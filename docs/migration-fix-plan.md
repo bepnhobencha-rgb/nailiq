@@ -4,7 +4,10 @@
 > Source of truth for the diagnosis is `docs/decisions.md` → "Migration tracking out of sync".
 > This file is the executable runbook; `decisions.md` is the architectural log to update at the end.
 >
-> **Status as of 2026-05-04:** deferred until 2026-05-05 morning. Nothing has been run against prod yet.
+> **Completed 2026-07-23.** This file preserves the original plan for audit
+> history. PR #912 cut over to a folded baseline, production recorded only its
+> history marker after a rollback rehearsal, and PR #913 locked strict 267/267
+> parity. Do not repeat the repair steps below.
 
 ## TL;DR
 
@@ -14,7 +17,10 @@ Plus one stale remote row (`20260428`) for the pre-rename id of `register_comple
 
 We do **not** want to re-run the SQL. We want `supabase migration repair` to mark the rows correct.
 
-`npm run db:push` is currently blocked by `scripts/db-push-guard.js` so nobody accidentally re-runs everything. The guard is convention only — `npx supabase db push` directly is still possible. **Do not run it until reconciliation is finished.**
+`npm run db:push` now uses `scripts/db-push-safe.mjs`. Its default behavior is
+read-only: deploy-ready history audit followed by `supabase db push
+--dry-run --linked` using pinned CLI 2.109.1. A real apply requires the explicit
+`--apply` flag and the approval value documented by the script.
 
 ## Prereqs (5-minute warm-up)
 

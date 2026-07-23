@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  readFile,
+  readdir,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
@@ -174,6 +180,33 @@ async function main() {
   const markerMigrations = ledger.migrations.filter(
     (migration) => migration.version !== BASELINE_VERSION,
   );
+  const ledgerVersions = new Set(
+    ledger.migrations.map((migration) => migration.version),
+  );
+  const latestProductionVersion = [...ledgerVersions].sort().at(-1);
+  if (!latestProductionVersion) {
+    throw new Error("Production ledger is empty");
+  }
+  const forwardMigrations = (await readdir(liveMigrationsDir))
+    .filter((filename) => filename.endsWith(".sql"))
+    .sort()
+    .map((filename) => {
+      const match = /^(\d{14})_([A-Za-z0-9_]+)\.sql$/.exec(filename);
+      if (!match) {
+        throw new Error(`Invalid migration filename: ${filename}`);
+      }
+      return { filename, version: match[1] };
+    })
+    .filter(({ version }) => !ledgerVersions.has(version));
+
+  const invalidForwardMigration = forwardMigrations.find(
+    ({ version }) => version <= latestProductionVersion,
+  );
+  if (invalidForwardMigration) {
+    throw new Error(
+      `Migration not represented by the production ledger must be newer than the latest production version: ${invalidForwardMigration.filename}`,
+    );
+  }
 
   await mkdir(outputDir, { recursive: true });
 
@@ -273,6 +306,13 @@ async function main() {
     { flag: "wx" },
   );
 
+  for (const migration of forwardMigrations) {
+    await copyFile(
+      path.join(liveMigrationsDir, migration.filename),
+      path.join(outputDir, migration.filename),
+    );
+  }
+
   console.log(
     JSON.stringify(
       {
@@ -284,7 +324,9 @@ async function main() {
         omittedProductionStateDeltas: [...PRODUCTION_STATE_ONLY_FILES],
         reconciledServiceRoleGrantTables:
           POST_SNAPSHOT_SERVICE_ROLE_GRANT_TABLES,
-        totalMigrations: markerMigrations.length + 1,
+        forwardMigrations: forwardMigrations.map(({ filename }) => filename),
+        totalMigrations:
+          markerMigrations.length + 1 + forwardMigrations.length,
       },
       null,
       2,

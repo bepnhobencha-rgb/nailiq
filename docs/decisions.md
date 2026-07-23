@@ -101,7 +101,7 @@ Newest entries on top.
 
 ## 2026-05-04 — Migration tracking out of sync; `db push` blocked until reconciled
 
-**Status.** Open. No reconciliation yet performed.
+**Status.** Resolved on 2026-07-23 by PRs #912 and #913.
 
 **Context.** nailiq runs against a single Supabase project (`nailiqOS`, ref `fshmobzyjhmtvndobwsy`). There is no separate test project — E2E and production share the DB. On 2026-05-04 we ran `npx supabase migration list` and discovered significant drift between local migration files and the remote `supabase_migrations.schema_migrations` tracking table.
 
@@ -186,15 +186,19 @@ gh workflow run e2e.yml
 
 Wait for green. If it fails with schema-related errors, the assumption that "schema is fully present on prod" was wrong — at least one local migration was never actually applied. Stop, identify which, and apply only that one via `db push --include-all=false` with explicit selection (or run the SQL manually via the dashboard editor) before re-running step 4.
 
-### 6. Unblock
+### 6. Unblock safely
 
-Replace the guard with the real command in `package.json`:
+The historical plan to replace the guard with a raw `supabase db push` command
+was superseded. `npm run db:push` now runs a pinned CLI through
+`scripts/db-push-safe.mjs`: it first proves the local history is an exact
+extension of the audited production ledger, always performs a linked dry-run,
+and changes production only when both `--apply` and
+`NAILIQ_DB_PUSH_APPROVAL=APPLY_REHEARSED_MIGRATIONS` are present.
 
-```json
-"db:push": "supabase db push"
-```
-
-Commit. Update this entry: change **Status** to **Resolved**, append `Reconciled on YYYY-MM-DD via commit <hash>.`
+The folded baseline was rehearsed on an empty database in PR #912. Production
+recorded only the history marker in a guarded transaction; its schema SQL was
+not executed. PR #913 then locked the repaired ledger at strict 267/267 parity.
+The 266-row pre-repair backup remains available for rollback.
 
 **Related.** Commits `7de1124` (rename that exposed the drift), `06e9463` (CI env vars), `a381d92` (Edit perms scope). Discovery from `npx supabase migration list` output captured in chat on 2026-05-04.
 

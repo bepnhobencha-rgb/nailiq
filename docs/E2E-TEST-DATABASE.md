@@ -1,6 +1,14 @@
 # E2E Test Database — thiết lập
 
-E2E hiện **bị skip** trong CI. Đây là chủ ý: nó từng chạy thẳng vào **Supabase production** và để lại 5 tài khoản superadmin cùng một loạt salon fixture nằm cạnh dữ liệu khách thật (xem `docs/audit/E2E-PRODUCTION-CONTAINMENT.md`). Tài liệu này là những gì cần làm để bật lại E2E một cách an toàn.
+> **Cập nhật 2026-07-23:** E2E đã chạy trên Supabase Local cách ly và không
+> còn bị skip. PR #912 đã thay lịch sử cũ bằng 266 marker + một folded baseline;
+> PR #913 khóa production/local ở 267/267. Phần chẩn đoán 262 migration dưới đây
+> được giữ lại làm lịch sử, không còn mô tả trạng thái hiện tại.
+
+Trước đây E2E từng chạy thẳng vào **Supabase production** và để lại 5 tài khoản
+superadmin cùng một loạt salon fixture nằm cạnh dữ liệu khách thật (xem
+`docs/audit/E2E-PRODUCTION-CONTAINMENT.md`). Tài liệu này ghi lại quá trình bật
+lại E2E một cách an toàn.
 
 ---
 
@@ -140,11 +148,8 @@ Sweep (`scripts/e2e-sweep.ts`) chạy ở step `if: always()`, **sống sót c�
 
 ---
 
-## 4. Việc còn lại (đề xuất, chưa làm)
+## 4. Folded baseline — đã hoàn tất
 
-**Squash 262 migration thành 1 baseline.** Sau khi có `supabase/bootstrap/schema.sql`, nên:
-- chuyển 262 file cũ vào `supabase/migrations/_archive/`
-- đặt baseline thành migration đầu tiên
-- gỡ `scripts/db-push-guard.js`
-
-Khi đó `supabase db reset` / `db push` mới hoạt động trở lại, và **phương án B (Supabase local trong CI, $0)** mới khả thi. Đây là việc riêng, cần anh duyệt — nó đụng vào toàn bộ lịch sử migration.
+PR #912 đã archive lịch sử cũ, tạo folded baseline và chứng minh nó trên
+Supabase Local trắng. `npm run db:push` hiện dùng wrapper an toàn: mặc định chỉ
+deploy-ready audit + linked dry-run; apply thật cần cờ và approval riêng.
