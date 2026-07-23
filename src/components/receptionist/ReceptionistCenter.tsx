@@ -2516,12 +2516,13 @@ function ReceptionistCenterInner({
 
   // No-show: only for a confirmed / in-progress booking whose start time has passed
   // (you can't no-show a future appointment). Front desk: owner/admin/senior/receptionist.
+  const drawerNowMs = Date.parse(nowIso);
   const drawerNoShowAction =
     openDrawerBooking &&
     canMarkNoShow(viewerRole) &&
     (openDrawerBooking.status === "confirmed" ||
       openDrawerBooking.status === "in_progress") &&
-    new Date(openDrawerBooking.start_time_utc).getTime() < Date.now()
+    new Date(openDrawerBooking.start_time_utc).getTime() < drawerNowMs
       ? {
           label: rcMessages.drawer.noShow,
           busy: drawerBusy,
@@ -2603,7 +2604,7 @@ function ReceptionistCenterInner({
     openDrawerBooking &&
     canUndoCancel(viewerRole) &&
     openDrawerBooking.status === "cancelled" &&
-    new Date(openDrawerBooking.start_time_utc).getTime() > Date.now() + 60_000
+    new Date(openDrawerBooking.start_time_utc).getTime() > drawerNowMs + 60_000
       ? {
           label: rcMessages.drawer.restoreBooking,
           busy: drawerBusy,
