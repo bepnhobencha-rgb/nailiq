@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import {
+  cleanupClientProfile,
   cleanupTestSalon,
   gotoBookingServiceStep,
   seedTestSalon,
@@ -79,6 +80,12 @@ test.describe("Booking validation — info step", () => {
     // CountryPhoneField accepts the national number (no country code prefix).
     // Three NANP formats to verify the validator handles different notations.
     const formats = ["6045551234", "7788680738", "(604) 555-9999"];
+    // `client_profiles` is global rather than salon-scoped. Earlier Chromium
+    // specs create a profile for 6045551234, so the later mobile project can
+    // legitimately recognize it, hide the new-customer name field, and make
+    // this format-validation test time out. Pin all three identities to the
+    // new-customer path before asserting the gate behavior.
+    await Promise.all(formats.map((phone) => cleanupClientProfile(phone)));
     let gateUnlocked = false;
 
     for (const fmt of formats) {
