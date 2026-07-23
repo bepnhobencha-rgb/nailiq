@@ -176,10 +176,13 @@ export function EditBookingForm({
   // Bed/resource picker state (resource-mode salons only).
   const originalResourceId = booking.resource_id ?? null;
   const [resourceId, setResourceId] = useState<string | null>(originalResourceId);
-  const [resourceOptions, setResourceOptions] = useState<
-    { id: string; name: string; displayOrder: number; isAvailable: boolean }[]
-  >([]);
-  const [resourceLoading, setResourceLoading] = useState(false);
+  // Raw fetch result, tagged with the time window it was fetched for. What the
+  // picker renders — and whether it is still loading — is derived from that
+  // below, so the effect never has to set either synchronously.
+  const [fetchedResources, setFetchedResources] = useState<{
+    key: string;
+    resources: { id: string; name: string; displayOrder: number; isAvailable: boolean }[];
+  }>({ key: "", resources: [] });
 
   // Salon meta (opening hours / closures / lead time) + add-ons — fetched once,
   // exactly like DeskBookingForm, so the grid shows REAL open times.
@@ -278,30 +281,51 @@ export function EditBookingForm({
     [deskData],
   );
 
-  // Fetch bed availability whenever the selected slot changes (resource-mode only).
+  // The exact window the beds are being checked for, or null when the picker
+  // does not apply yet (not a resource salon, no slot, no service).
   // Placed after totalSpanMinutes + selectedSvc to avoid temporal dead zone.
-  useEffect(() => {
-    if (!deskData?.salon.resourcesEnabled || !selectedSlotLabel || !selectedSvc) {
-      setResourceOptions([]);
-      return;
-    }
+  const resourceWindow = useMemo(() => {
+    if (!deskData?.salon.resourcesEnabled || !selectedSlotLabel || !selectedSvc) return null;
     const startMin = slotLabelToMinutes(selectedSlotLabel);
-    if (startMin == null) return;
+    if (startMin == null) return null;
     const startUtc = salonWallTimeToUtcIso(selectedDay, startMin, timezone);
     const endMs = Date.parse(startUtc) + totalSpanMinutes * 60 * 1000;
-    if (Number.isNaN(endMs)) return;
-    const endUtc = new Date(endMs).toISOString();
+    if (Number.isNaN(endMs)) return null;
+    return { startUtc, endUtc: new Date(endMs).toISOString() };
+  }, [deskData, selectedSlotLabel, selectedSvc, selectedDay, totalSpanMinutes, timezone]);
+
+  // Both of these are facts about `resourceWindow` vs what has been fetched,
+  // so they are derived rather than set from the effect below.
+  // Every argument the request is made with, so a different salon or booking on
+  // the same time window counts as a different request. JSON.stringify rather
+  // than a delimiter so no value can forge a boundary.
+  const resourceKey = resourceWindow
+    ? JSON.stringify([slug, bookingId, resourceWindow.startUtc, resourceWindow.endUtc])
+    : "";
+  const resourceOptions = resourceKey && fetchedResources.key === resourceKey
+    ? fetchedResources.resources
+    : [];
+  const resourceLoading = resourceKey !== "" && fetchedResources.key !== resourceKey;
+
+  // Fetch bed availability whenever the selected slot changes (resource-mode only).
+  useEffect(() => {
+    if (!resourceWindow) return;
+    const requestKey = resourceKey;
     let cancelled = false;
-    setResourceLoading(true);
-    void getResourceAvailability(slug, startUtc, endUtc, bookingId).then((res) => {
-      if (cancelled) return;
-      if (res.ok) setResourceOptions(res.resources);
-      setResourceLoading(false);
-    });
+    void getResourceAvailability(slug, resourceWindow.startUtc, resourceWindow.endUtc, bookingId)
+      .then((res) => {
+        if (cancelled) return;
+        setFetchedResources({ key: requestKey, resources: res.ok ? res.resources : [] });
+      })
+      .catch(() => {
+        // The action itself rejected — settle the key anyway so the picker
+        // stops saying "Checking…" forever.
+        if (!cancelled) setFetchedResources({ key: requestKey, resources: [] });
+      });
     return () => {
       cancelled = true;
     };
-  }, [deskData, selectedSlotLabel, selectedDay, totalSpanMinutes, timezone, slug, bookingId, selectedSvc]);
+  }, [resourceWindow, resourceKey, slug, bookingId]);
 
   // getAvailableTimeSlots wants `BookingStaffItem` (incl. job_role). The edit
   // form's `staff` prop is {id,name} only, so recover job_role from deskData
