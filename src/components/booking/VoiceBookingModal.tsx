@@ -196,6 +196,12 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
   const transcriptRef     = useRef<Transcript[]>([]);
   /** Stable renewal function — updated via useEffect so it always has fresh deps. */
   const performRenewalRef = useRef<() => Promise<void>>(async () => Promise.resolve());
+  /**
+   * Stable hang-up used by the duration ticker for the hard call cap. Declared
+   * here (and filled in below, like performRenewalRef) because the ticker is
+   * created inside the realtime event handler, long before handleStop exists.
+   */
+  const handleStopRef = useRef<() => Promise<void>>(async () => Promise.resolve());
 
   const v = t.voice;
 
@@ -492,7 +498,12 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         setStatus("connected");
         startTsRef.current = Date.now();
         timerRef.current = setInterval(() => {
-          setDuration(Math.round((Date.now() - startTsRef.current) / 1000));
+          const elapsed = Math.round((Date.now() - startTsRef.current) / 1000);
+          setDuration(elapsed);
+          // Hard cap. Enforced here rather than from an effect watching
+          // durationSec: the tick is the event, and handleStop clears this
+          // interval on its way out so it can only fire once.
+          if (elapsed >= TOTAL_CALL_LIMIT_SEC) void handleStopRef.current();
         }, 1000);
         // Prompt AI to speak first
         wsRef.current?.send(JSON.stringify({ type: "response.create" }));
@@ -1287,18 +1298,20 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     endSessionRef.current = endSession;
   }, [endSession]);
 
+  // Same indirection for the duration ticker's hard cap — see handleStopRef.
   useEffect(() => {
+    handleStopRef.current = handleStop;
+  }, [handleStop]);
+
+  useEffect(() => {
+    // Opening the call IS the effect: this connects to an external system
+    // (mic + realtime socket) on mount, and start() reports "connecting" by
+    // setting status before it awaits. There is nothing to derive here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- connect to the realtime session on mount
     void start();
     return () => { void endSessionRef.current("abandoned"); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // 5-min hard cap — auto-end regardless of activity
-  useEffect(() => {
-    if (status === "connected" && durationSec >= TOTAL_CALL_LIMIT_SEC) {
-      void handleStop();
-    }
-  }, [durationSec, status, handleStop]);
 
   const formatDuration = (sec: number) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
 
