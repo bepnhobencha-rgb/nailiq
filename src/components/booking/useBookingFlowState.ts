@@ -311,7 +311,10 @@ export function useBookingFlowState(
   const [returningCustomer, setReturningCustomer] = useState<ReturningCustomer | null>(
     initialReturningCustomer ?? null,
   );
-  const [lookupLoading, setLookupLoading] = useState(false);
+  // Which lookup has finished, tagged with the request it belongs to.
+  // `lookupLoading` is derived from it against the phone on screen, so the
+  // effect below never has to raise or lower a flag synchronously.
+  const [settledLookupKey, setSettledLookupKey] = useState<string | null>(null);
   const [preferredStaffDismissed, setPreferredStaffDismissed] = useState(false);
   const lookupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -566,6 +569,17 @@ export function useBookingFlowState(
     void fireBookingConfetti();
   }, [step]);
 
+  // Gate-verified: the full profile was already fetched via the
+  // profile-verified API and supplied through initialReturningCustomer. Skip
+  // the anonymous lookup, which only returns { found, isVip } and would
+  // overwrite the rich profile. No key → nothing to look up, nothing loading.
+  const lookupPhone = validateGuestPhone(clientPhone.trim());
+  const lookupKey =
+    !initialOtpSessionId && lookupPhone.ok
+      ? JSON.stringify([salon.id, lookupPhone.digits])
+      : null;
+  const lookupLoading = lookupKey !== null && settledLookupKey !== lookupKey;
+
   // Debounced phone lookup — auto-fills name/email for returning customers
   useEffect(() => {
     // Cancel any pending lookup
@@ -574,30 +588,27 @@ export function useBookingFlowState(
       lookupTimerRef.current = null;
     }
 
-    // Gate-verified: full profile was already fetched via profile-verified API and
-    // supplied through initialReturningCustomer. Skip the anonymous lookup which
-    // only returns { found, isVip } and would overwrite the rich profile.
-    if (initialOtpSessionId) {
-      setLookupLoading(false);
-      return;
-    }
-
-    const phoneValidation = validateGuestPhone(clientPhone.trim());
-    if (!phoneValidation.ok) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive reset when phone becomes invalid
-      setReturningCustomer(null);
-      setLookupLoading(false);
+    if (!lookupKey || !lookupPhone.ok) {
+      if (!initialOtpSessionId) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive reset when phone becomes invalid
+        setReturningCustomer(null);
+      }
       return;
     }
 
     // Phone valid — debounce 400ms then fetch
-    setLookupLoading(true);
+    const requestKey = lookupKey;
+    const requestDigits = lookupPhone.digits;
+    let alive = true;
     lookupTimerRef.current = setTimeout(() => {
       void fetch(
-        `/api/customer/${encodeURIComponent(phoneValidation.digits)}?salon_id=${encodeURIComponent(salon.id)}`
+        `/api/customer/${encodeURIComponent(requestDigits)}?salon_id=${encodeURIComponent(salon.id)}`
       )
         .then((r) => r.json() as Promise<ReturningCustomer | { found: false }>)
         .then((data) => {
+          // Without this, a slow answer for a number the customer has already
+          // typed past would land on the profile shown for the new one.
+          if (!alive) return;
           if (data.found) {
             setReturningCustomer(data as ReturningCustomer);
             setPreferredStaffDismissed(false); // reset dismiss when new profile loaded
@@ -612,14 +623,15 @@ export function useBookingFlowState(
           }
         })
         .catch(() => {
-          setReturningCustomer(null);
+          if (alive) setReturningCustomer(null);
         })
         .finally(() => {
-          setLookupLoading(false);
+          if (alive) setSettledLookupKey(requestKey);
         });
     }, 400);
 
     return () => {
+      alive = false;
       if (lookupTimerRef.current) {
         clearTimeout(lookupTimerRef.current);
       }
