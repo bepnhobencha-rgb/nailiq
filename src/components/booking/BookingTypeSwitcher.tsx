@@ -455,6 +455,36 @@ export function BookingTypeSwitcher({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entryPhoneRaw, salon.id]);
 
+  // Fetches the full customer profile after gate OTP verification and updates
+  // entryCustomer + entryName so the personalized greeting and flow pre-fills work.
+  async function handleGateOtpVerified(sessionId: string, otpEmail?: string) {
+    setGateOtpSessionId(sessionId);
+    setGateOtpDone(true);
+    gateOtpVerifiedRef.current = true;
+    // Store the email used for OTP delivery so new customers don't retype it.
+    if (otpEmail) setGateOtpEmail(otpEmail);
+
+    const v = validateGuestPhone(entryPhoneRaw.trim());
+    if (!v.ok) return;
+    try {
+      const r = await fetch(
+        `/api/customer/profile-verified?otp_session_id=${encodeURIComponent(sessionId)}&phone=${encodeURIComponent(v.digits)}&salon_id=${encodeURIComponent(salon.id)}`,
+      );
+      if (!r.ok) return;
+      const data = (await r.json()) as ReturningCustomer | { found: false };
+      if (data.found) {
+        setEntryCustomer(data as ReturningCustomer);
+        const name = (data as ReturningCustomer).name?.trim();
+        if (name && !entryName.trim()) {
+          setEntryName(name);
+          setCommittedName(name);
+        }
+      }
+    } catch {
+      // Non-fatal: flow opens without personalization on network error.
+    }
+  }
+
   // Defensive fallback — older deployed booking i18n bundles (before
   // PR #140 / #141) may not have the `groupBooking` namespace; if a
   // cached client gets here without it the destructure would throw
@@ -634,36 +664,6 @@ export function BookingTypeSwitcher({
       ) : null}
     </div>
   );
-
-  // Fetches the full customer profile after gate OTP verification and updates
-  // entryCustomer + entryName so the personalized greeting and flow pre-fills work.
-  async function handleGateOtpVerified(sessionId: string, otpEmail?: string) {
-    setGateOtpSessionId(sessionId);
-    setGateOtpDone(true);
-    gateOtpVerifiedRef.current = true;
-    // Store the email used for OTP delivery so new customers don't retype it.
-    if (otpEmail) setGateOtpEmail(otpEmail);
-
-    const v = validateGuestPhone(entryPhoneRaw.trim());
-    if (!v.ok) return;
-    try {
-      const r = await fetch(
-        `/api/customer/profile-verified?otp_session_id=${encodeURIComponent(sessionId)}&phone=${encodeURIComponent(v.digits)}&salon_id=${encodeURIComponent(salon.id)}`,
-      );
-      if (!r.ok) return;
-      const data = (await r.json()) as ReturningCustomer | { found: false };
-      if (data.found) {
-        setEntryCustomer(data as ReturningCustomer);
-        const name = (data as ReturningCustomer).name?.trim();
-        if (name && !entryName.trim()) {
-          setEntryName(name);
-          setCommittedName(name);
-        }
-      }
-    } catch {
-      // Non-fatal: flow opens without personalization on network error.
-    }
-  }
 
   // Shared props for BookingFlow — same in both individual-only and group-switcher paths.
   const flowReady = gateReady && (!salon.phoneOtpEnabled || gateOtpDone);
