@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useTransition, useRef, useEffect, useMemo } from "react";
+import {
+  useState,
+  useTransition,
+  useRef,
+  useEffect,
+  useMemo,
+  useSyncExternalStore,
+} from "react";
 import { createPortal } from "react-dom";
 import { Palette, Check, RotateCcw } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
@@ -24,6 +31,10 @@ interface Props {
   onBgChange: (hex: string) => void;
 }
 
+const noopSubscribe = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
+
 export function DrcThemePicker({
   slug,
   currentAccent,
@@ -38,7 +49,11 @@ export function DrcThemePicker({
   const [accentSaved, setAccentSaved] = useState(false);
   const [bgSaved, setBgSaved] = useState(false);
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(
+    noopSubscribe,
+    getClientSnapshot,
+    getServerSnapshot,
+  );
   const btnRef = useRef<HTMLButtonElement>(null);
 
   const { language } = useUserLanguage();
@@ -46,8 +61,6 @@ export function DrcThemePicker({
 
   const pending = accentPending || bgPending;
   const saved = accentSaved || bgSaved;
-
-  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     if (!open || !btnRef.current) return;
