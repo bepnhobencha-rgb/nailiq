@@ -575,6 +575,24 @@ function StaffTimelineGridImpl({
   // browsers fire after pointerup even when the pointer moved significantly.
   const recentlyDraggedRef = useRef(false);
 
+  const bookingsByStaff = useMemo(() => {
+    const m = new Map<string, GridBooking[]>();
+    for (const b of bookings) {
+      const list = m.get(b.staff_id) ?? [];
+      list.push(b);
+      m.set(b.staff_id, list);
+    }
+    return m;
+  }, [bookings]);
+  // Ref mirror so the once-registered pointer handlers can read live bookings
+  // (for back-to-back drag snapping) without going stale. Keep this sync effect
+  // before the handler-registration effect below so the initial value and every
+  // subsequent booking update are observable before pointer events run.
+  const bookingsByStaffRef = useRef(bookingsByStaff);
+  useEffect(() => {
+    bookingsByStaffRef.current = bookingsByStaff;
+  }, [bookingsByStaff]);
+
   // Always-on global handlers — noops when both refs are null (i.e. nothing
   // is being dragged). Registered once via empty deps; all live state is read
   // through refs so closures never go stale.
@@ -744,20 +762,6 @@ function StaffTimelineGridImpl({
     () => toConflictRows(existingBookings),
     [existingBookings],
   );
-
-  const bookingsByStaff = useMemo(() => {
-    const m = new Map<string, GridBooking[]>();
-    for (const b of bookings) {
-      const list = m.get(b.staff_id) ?? [];
-      list.push(b);
-      m.set(b.staff_id, list);
-    }
-    return m;
-  }, [bookings]);
-  // Ref mirror so the once-registered pointer handlers can read live bookings
-  // (for back-to-back drag snapping) without going stale.
-  const bookingsByStaffRef = useRef(bookingsByStaff);
-  bookingsByStaffRef.current = bookingsByStaff;
 
   const nowLineLeftPx = useMemo(() => {
     if (!isViewingToday) return null;
