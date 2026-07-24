@@ -69,6 +69,8 @@ jobs:
 
           DB_URL="${DB_URL}" npx tsx scripts/check-schema-parity.ts
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f supabase/bootstrap/reference-data.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/check-public-page-management-rls.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-public-page-management-rls-rollback.sql
@@ -88,8 +90,6 @@ jobs:
             -f scripts/security/check-public-view-invoker-boundary.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-public-view-invoker-rollback.sql
-          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
-            -f supabase/bootstrap/reference-data.sql
 
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.service_categories')" -eq 13
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.platform_flags')" -eq 5
