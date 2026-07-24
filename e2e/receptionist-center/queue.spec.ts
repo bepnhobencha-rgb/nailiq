@@ -78,6 +78,13 @@ test.describe("Receptionist queue + assign", () => {
     expect(bookingId.length).toBeGreaterThan(10);
 
     await page.getByTestId(`queue-assign-${bookingId}`).click();
+    if ((page.viewportSize()?.width ?? 1280) < 640) {
+      await expect(page.getByTestId("queue-panel-slideover")).toHaveAttribute(
+        "aria-hidden",
+        "true",
+      );
+      await expect(page.getByTestId("mobile-walkin-assign-banner")).toBeVisible();
+    }
 
     await clickAssignSlot(page, fx.freeStaffId, fx.noonSlotIndex);
 
@@ -135,10 +142,18 @@ test.describe("Receptionist queue + assign", () => {
       await clickWalkinQueueAssign(p1, bookingId);
       await clickWalkinQueueAssign(p2, bookingId);
 
-      await expect(p1.getByTestId("walkin-assign-active-hint")).toBeVisible({ timeout: 15_000 });
-      await expect(p2.getByTestId("walkin-assign-active-hint")).toBeVisible({ timeout: 15_000 });
-      await expect(p1.getByTestId("staff-timeline-grid")).toHaveClass(/cursor-copy/, { timeout: 15_000 });
-      await expect(p2.getByTestId("staff-timeline-grid")).toHaveClass(/cursor-copy/, { timeout: 15_000 });
+      const assignHint = (p: import("@playwright/test").Page) =>
+        p
+          .getByTestId("walkin-assign-active-hint")
+          .or(p.getByTestId("mobile-walkin-assign-banner"));
+      await expect(assignHint(p1)).toBeVisible({ timeout: 15_000 });
+      await expect(assignHint(p2)).toBeVisible({ timeout: 15_000 });
+      const assignSurface = (p: import("@playwright/test").Page) =>
+        p.locator(
+          '[data-testid="staff-timeline-grid"], [data-testid="vertical-day-view"]',
+        );
+      await expect(assignSurface(p1)).toHaveClass(/cursor-copy/, { timeout: 15_000 });
+      await expect(assignSurface(p2)).toHaveClass(/cursor-copy/, { timeout: 15_000 });
 
       const slotClick = async (p: import("@playwright/test").Page) => {
         await clickAssignSlot(p, fx.freeStaffId, fx.noonSlotIndex);

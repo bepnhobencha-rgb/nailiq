@@ -3513,6 +3513,11 @@ function ReceptionistCenterInner({
                   onTombstoneUndo={(id) => void handleTombstoneUndo(id)}
                   onTombstoneCharge={(id) => void handleTombstoneCharge(id)}
                   onTombstoneWaive={(id) => void handleTombstoneWaive(id)}
+                  assigning={assignedSlot}
+                  onAssignSlot={(staffId, slotStartUtc) =>
+                    void onWalkinAssignSlot(staffId, slotStartUtc)
+                  }
+                  onCancelAssign={() => setAssigningWalkinId(null)}
                 />
               ) : (
               <StaffTimelineGrid
@@ -3727,7 +3732,10 @@ function ReceptionistCenterInner({
                 waitLinkBaseUrl={originBaseUrl}
                 waitLinkSalonSlug={slug}
                 onCancelWalkin={onCancelWalkin}
-                onStartAssign={(id) => setAssigningWalkinId(id)}
+                onStartAssign={(id) => {
+                  setAssigningWalkinId(id);
+                  if (isMobile) setQueuePanelOpen(false);
+                }}
                 onCancelAssign={() => setAssigningWalkinId(null)}
                 addFormDisabled={isSetupIncomplete}
                 isOffline={isOffline}
