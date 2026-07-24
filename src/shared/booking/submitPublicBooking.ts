@@ -17,7 +17,7 @@ import {
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
-import { createClient } from "@/shared/lib/supabase/client";
+import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 import { runPublicBookingSideEffects } from "@/shared/booking/publicBookingSideEffects";
 import { saveNoShowCardAction, reuseNoShowCardAction } from "@/shared/noshow/saveNoShowCardAction";
 import { computeTax } from "@/shared/tax/computeTax";
@@ -273,7 +273,7 @@ export async function submitPublicBooking(
             throw new Error("invalid_email");
           })();
 
-  const supabase = createClient();
+  const supabase = createPublicClient();
 
   const { data: salonData, error: salonErr } = await supabase
     .from("public_salon_profiles" as never)

@@ -13,7 +13,7 @@ import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { salonDayRangeUtc, salonToday, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
-import { createClient } from "@/shared/lib/supabase/client";
+import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { hmToMinutes } from "@/shared/booking/hmToMinutes";
@@ -305,7 +305,7 @@ export async function submitGroupBooking(
     }
   }
 
-  const supabase = createClient();
+  const supabase = createPublicClient();
 
   // 2. Salon ---------------------------------------------------------
   // `profile_complete` is the single source of truth for "salon

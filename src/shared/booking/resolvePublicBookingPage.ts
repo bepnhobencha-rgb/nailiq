@@ -12,7 +12,7 @@ import {
   normalizePublicBookingSlug,
   validatePublicBookingSlug,
 } from "@/shared/booking/normalizePublicBookingSlug";
-import { createClient } from "@/shared/lib/supabase/server";
+import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 import { setPublicBookingSalonTags } from "@/shared/observability/salonSentry";
 
 /**
@@ -105,7 +105,7 @@ export const resolvePublicBookingPage = cache(
     //
     // Costs one indexed single-row lookup. Cheap insurance against silently
     // de-listing the salons that pay for this.
-    const client = supabase ?? (await createClient());
+    const client = supabase ?? createPublicClient();
     const { salon: exists, error: lookupErr } = await getSalonBySlug(
       client,
       normalizedSlug,
