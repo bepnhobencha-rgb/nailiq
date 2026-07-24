@@ -11,14 +11,20 @@ const migration = source(
 );
 
 describe("salon control-plane column boundary", () => {
-  it("installs a BEFORE UPDATE trigger on salons", () => {
+  it("hardens the existing audit function without adding schema objects", () => {
     expect(migration).toContain(
-      "create or replace function public.enforce_salon_control_plane_columns()",
+      "create or replace function public.log_system_audit()",
     );
-    expect(migration).toContain("before update on public.salons");
-    expect(migration).toContain(
-      "execute function public.enforce_salon_control_plane_columns()",
+    expect(migration).not.toContain("create trigger");
+    expect(migration).not.toContain(
+      "function public.enforce_salon_control_plane_columns()",
     );
+  });
+
+  it("preserves authorization errors instead of swallowing the write rejection", () => {
+    expect(migration).toContain("when insufficient_privilege then");
+    expect(migration).toMatch(/when insufficient_privilege then\s+raise;/);
+    expect(migration).toContain("when others then");
   });
 
   it.each([

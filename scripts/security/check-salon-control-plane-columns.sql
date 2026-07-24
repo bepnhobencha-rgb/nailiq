@@ -127,6 +127,7 @@ $test$;
 reset role;
 
 -- Trusted service/database paths still update external-system mirrors.
+select set_config('request.jwt.claim.sub', '', true);
 update public.salons
 set subscription_plan = 'premium',
     stripe_connect_account_id = 'acct_control_plane_test',
