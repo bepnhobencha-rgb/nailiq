@@ -92,9 +92,9 @@ describe("identity/security state boundary", () => {
 
   it("updates the blank-database parity tripwire", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("policies: 117");
+    expect(parity).toContain("policies: 121");
     expect(parity).toContain(
-      "const GRANTS = { anon: 71, authenticated: 74, service_role: 94 }",
+      "const GRANTS = { anon: 67, authenticated: 70, service_role: 94 }",
     );
   });
 });
