@@ -16,7 +16,10 @@ import { motion } from "framer-motion";
 import { ChevronLeft, ChevronRight, Clock, Play, Plus } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
-import { formatInSalonTz } from "@/shared/lib/salonTime";
+import {
+  formatInSalonTz,
+  salonWallTimeToUtcIso,
+} from "@/shared/lib/salonTime";
 import { computeLatenessTier } from "./lateness";
 import type { GridBooking, GridStaff } from "./StaffTimelineGrid";
 
@@ -141,6 +144,13 @@ export interface VerticalDayViewProps {
   onTombstoneUndo?: (bookingId: string) => void;
   onTombstoneCharge?: (bookingId: string) => void;
   onTombstoneWaive?: (bookingId: string) => void;
+  assigning?: {
+    queueItemId: string;
+    clientName: string;
+    serviceDurationMinutes: number;
+  } | null;
+  onAssignSlot?: (staffId: string, slotStartUtc: string) => void;
+  onCancelAssign?: () => void;
 }
 
 // ─────────────────────────────── main component ────────────────────────────────
@@ -166,9 +176,13 @@ export default function VerticalDayView({
   onTombstoneUndo,
   onTombstoneCharge,
   onTombstoneWaive,
+  assigning = null,
+  onAssignSlot,
+  onCancelAssign,
 }: VerticalDayViewProps) {
   const open = openMinutes ?? DEFAULT_OPEN;
   const close = closeMinutes ?? DEFAULT_CLOSE;
+  const assignMode = assigning !== null && onAssignSlot !== undefined;
 
   // Stable colour + name lookup by staff id
   const staffColorMap = useMemo(() => {
@@ -264,7 +278,10 @@ export default function VerticalDayView({
 
   return (
     <div
-      className="relative select-none pb-28"
+      className={cn(
+        "relative select-none pb-28",
+        assignMode ? "cursor-copy" : "",
+      )}
       data-testid="vertical-day-view"
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
@@ -302,7 +319,32 @@ export default function VerticalDayView({
         </motion.button>
       </motion.div>
 
-      {slots.map((slot) => {
+      {assignMode ? (
+        <div
+          data-testid="mobile-walkin-assign-banner"
+          className="mx-4 mb-2 flex items-center justify-between gap-3 rounded-xl border border-nq-primary/45 bg-nq-primary/10 px-3 py-2"
+        >
+          <p className="min-w-0 text-xs font-semibold text-nq-primary">
+            {language === "vi" ? "Xếp chỗ cho" : "Assign"}{" "}
+            <span className="truncate text-white/90">{assigning.clientName}</span>
+            <span className="ml-1 text-white/45">
+              · {assigning.serviceDurationMinutes}m
+            </span>
+          </p>
+          {onCancelAssign ? (
+            <button
+              type="button"
+              data-testid="mobile-walkin-assign-cancel"
+              className="min-h-9 shrink-0 rounded-lg border border-white/15 px-2.5 text-xs font-semibold text-white/65"
+              onClick={onCancelAssign}
+            >
+              {language === "vi" ? "Hủy" : "Cancel"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {slots.map((slot, slotIndex) => {
         const slotBookings = bookingsBySlot.get(slot) ?? [];
         const slotTombstones = tombstonesBySlot.get(slot) ?? [];
         const isHour = slot % 60 === 0;
@@ -317,7 +359,13 @@ export default function VerticalDayView({
             : null;
 
         // Skip empty :30 slots to keep the list tight (only :00 get empty rows)
-        if (!hasItems && !isHour && !nowLineHere) return null;
+        if (!assignMode && !hasItems && !isHour && !nowLineHere) return null;
+
+        const slotUtc = salonWallTimeToUtcIso(
+          selectedDate,
+          slot,
+          timezone,
+        );
 
         return (
           <div key={slot} className="relative">
@@ -353,6 +401,34 @@ export default function VerticalDayView({
 
               {/* Bookings or empty-slot tap area */}
               <div className="min-w-0 flex-1 space-y-1.5">
+                {assignMode ? (
+                  <div
+                    data-testid={`mobile-assign-slot-${slotIndex}`}
+                    className="grid grid-cols-2 gap-1.5"
+                  >
+                    {staff.map((staffMember) => (
+                      <button
+                        key={staffMember.id}
+                        type="button"
+                        data-testid={`assign-slot-${staffMember.id}-${slotIndex}`}
+                        data-slot-utc={slotUtc}
+                        aria-label={
+                          language === "vi"
+                            ? `Xếp ${assigning.clientName} cho ${staffMember.name} lúc ${minsToDisplayLabel(slot, language)}`
+                            : `Assign ${assigning.clientName} to ${staffMember.name} at ${minsToDisplayLabel(slot, language)}`
+                        }
+                        className="min-h-11 rounded-lg border border-nq-primary/35 bg-nq-primary/10 px-2 text-left text-xs font-semibold text-white/80 transition-colors active:bg-nq-primary/25"
+                        onClick={() => onAssignSlot(staffMember.id, slotUtc)}
+                      >
+                        <span className="block truncate">{staffMember.name}</span>
+                        <span className="text-[10px] font-normal text-white/40">
+                          {minsToDisplayLabel(slot, language)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+
                 {hasItems ? (
                   <>
                     {slotBookings.map((booking) => (
@@ -393,7 +469,7 @@ export default function VerticalDayView({
                       />
                     ))}
                   </>
-                ) : isHour ? (
+                ) : !assignMode && isHour ? (
                   <button
                     className="flex h-9 w-full items-center gap-1.5 rounded-lg border border-dashed border-white/[0.08] px-3 text-[11px] text-white/20 transition-colors active:border-white/25 active:text-white/40"
                     onClick={() => {
