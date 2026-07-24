@@ -1,7 +1,15 @@
 "use server";
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import type { CustomerChannelMode } from "@/shared/lib/channelResolver";
+import { z } from "zod";
+
+const CustomerChannelSettingsInput = z.object({
+  smsOutboundEnabled: z.boolean(),
+  emailOutboundEnabled: z.boolean(),
+  customerChannel: z.enum(["smart", "sms_only", "email_only", "sms_and_email"]),
+});
 
 export interface CustomerChannelSettings {
   smsOutboundEnabled: boolean;
@@ -15,6 +23,7 @@ export async function getCustomerChannelSettings(
   try {
     const ctx = await getDashboardWriteClient(slug);
     if (!ctx) return { ok: false };
+    if (!isOwnerOrAdmin(ctx.role)) return { ok: false };
     const { data } = await ctx.supabase
       .from("salons")
       .select("sms_outbound_enabled, email_outbound_enabled, customer_channel" as never)
@@ -42,18 +51,23 @@ export async function saveCustomerChannelSettings(
   try {
     const ctx = await getDashboardWriteClient(slug);
     if (!ctx) return { ok: false, error: "unauthorized" };
+    if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
+
+    const parsed = CustomerChannelSettingsInput.safeParse(settings);
+    if (!parsed.success) return { ok: false, error: "invalid_input" };
+    const clean = parsed.data;
 
     const { error } = await ctx.supabase
       .from("salons")
       .update({
-        sms_outbound_enabled: settings.smsOutboundEnabled,
-        email_outbound_enabled: settings.emailOutboundEnabled,
-        customer_channel: settings.customerChannel,
+        sms_outbound_enabled: clean.smsOutboundEnabled,
+        email_outbound_enabled: clean.emailOutboundEnabled,
+        customer_channel: clean.customerChannel,
       } as never)
       .eq("id", ctx.salon.id);
 
     if (error) return { ok: false, error: error.message };
-    return { ok: true, settings };
+    return { ok: true, settings: clean };
   } catch (e) {
     return { ok: false, error: String(e) };
   }

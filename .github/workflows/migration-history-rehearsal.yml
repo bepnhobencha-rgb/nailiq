@@ -77,6 +77,10 @@ jobs:
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-service-combo-management-rls-rollback.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-salon-settings-update-rls.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-salon-settings-update-rls-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f supabase/bootstrap/reference-data.sql
 
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.service_categories')" -eq 13
