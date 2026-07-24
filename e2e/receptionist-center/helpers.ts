@@ -687,6 +687,20 @@ export async function clickWalkinQueueAssign(page: Page, bookingId: string): Pro
 }
 
 /**
+ * Open the party panel through the attention surface exposed at the current
+ * viewport. Compact layouts intentionally consolidate the dedicated Groups
+ * chip into Action center; xl+ keeps the direct Groups affordance.
+ */
+export async function openAttentionGroups(page: Page): Promise<void> {
+  const compact = (page.viewportSize()?.width ?? 0) < 1280;
+  const chip = page.getByTestId(
+    compact ? "attention-chip-all" : "attention-chip-groups",
+  );
+  await chip.waitFor({ state: "visible", timeout: 15_000 });
+  await chip.click();
+}
+
+/**
  * Receptionist timeline slot `<button>`s sit under booking blocks (`z-[2]`). Synthetic click reaches React reliably.
  */
 export async function clickAssignSlot(
