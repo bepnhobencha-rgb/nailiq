@@ -24,6 +24,19 @@ fi
 echo "→ folded production-schema baseline"
 psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$FOLDED_BASELINE"
 
+echo "→ forward migrations after the folded baseline"
+baseline_name="${FOLDED_BASELINE##*/}"
+forward_count=0
+for migration in "$ROOT"/supabase/migrations/*.sql; do
+  migration_name="${migration##*/}"
+  if [[ "$migration_name" > "$baseline_name" ]]; then
+    echo "  → $migration_name"
+    psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$migration"
+    forward_count=$((forward_count + 1))
+  fi
+done
+echo "✓ applied $forward_count forward migration(s)"
+
 echo "→ reference data (lookup tables the schema cannot work without)"
 # service_categories and platform_flags are global lookup tables, not anyone's
 # data. services.category has a FK into service_categories, so an empty one means
