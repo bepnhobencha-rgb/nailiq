@@ -2,8 +2,8 @@
 
 Audited against production on 2026-07-24.
 
-Supabase Security Advisor reports nine anonymous-executable
-`SECURITY DEFINER` functions. They are not nine unreviewed exceptions: they are
+Supabase Security Advisor reports ten anonymous-executable
+`SECURITY DEFINER` functions. They are not ten unreviewed exceptions: they are
 the complete allowlist of public booking RPCs that must cross RLS without
 granting anonymous users direct access to customer, booking, OTP, or salon
 control-plane tables.
@@ -25,6 +25,7 @@ Every entry is required to satisfy the executable proof in
 | `check_group_slots_available` | Reads protected booking occupancy for the public group scheduler. | Returns availability and caller-supplied member indexes, never booking/customer fields. |
 | `create_public_booking` | Public booking must insert through business-rule and rate-limit enforcement because direct anonymous booking inserts are revoked. | Salon and phone rate limits; delegates to the validated booking implementation. |
 | `create_public_waitlist_entry` | Public waitlist submission needs a controlled insert while direct table access remains RLS-blocked. | Allowlisted source plus same-salon service/staff validation. |
+| `finalize_public_booking_profile` | A newly committed booking must atomically persist OTP trust and explicit marketing consent without reopening direct profile writes. | Recent booking capability; durable profile link; exact OTP salon, phone, expiry, and single-use state. |
 | `get_booking_client_snapshot` | A just-created booking may request a small returning-client snapshot without exposing client profiles. | Booking ID, salon, canonical phone, and ten-minute freshness must all match. |
 | `insert_group_bookings` | A public group booking is an atomic controlled write across protected booking rows. | Group size, salon, service, staff, time, price, and rate limits are validated. |
 | `public_booking_occupancy_for_range` | Public scheduling needs occupied intervals but must not read booking/customer records. | Returns only staff ID and start/end timestamps. |

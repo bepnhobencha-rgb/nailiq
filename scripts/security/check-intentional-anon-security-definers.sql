@@ -20,9 +20,9 @@ BEGIN
     AND p.prosecdef
     AND has_function_privilege('anon', p.oid, 'EXECUTE');
 
-  IF v_actual_count <> 9 THEN
+  IF v_actual_count <> 10 THEN
     RAISE EXCEPTION
-      'anonymous SECURITY DEFINER allowlist drift: expected 9, found %',
+      'anonymous SECURITY DEFINER allowlist drift: expected 10, found %',
       v_actual_count;
   END IF;
 
@@ -68,6 +68,19 @@ BEGIN
             'invalid_waitlist_source',
             'invalid_service_for_salon',
             'invalid_staff_for_salon'
+          ]::text[]
+        ),
+        (
+          'public.finalize_public_booking_profile(uuid,uuid,boolean)',
+          'v',
+          'RETURNS jsonb',
+          ARRAY[
+            'b.created_at >= v_now - interval ''10 minutes''',
+            's.salon_id = v_booking.salon_id',
+            'public.canonical_phone(s.phone)',
+            's.consumed_at IS NULL',
+            'v_booking.otp_session_id = s.id',
+            'cp.id = v_booking.client_profile_id'
           ]::text[]
         ),
         (

@@ -836,15 +836,50 @@ export async function submitPublicBooking(
     }
   }
 
-  // Consume the OTP session NOW — after the card/reuse step, which needs it
-  // unconsumed (see the validation note above). Single-use: best-effort
-  // fire-and-forget so a failure never blocks the committed booking.
-  if (salonPhoneOtpEnabled && resolvedOtpSessionId) {
-    void fetch("/api/booking-otp/consume-session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: resolvedOtpSessionId }),
-    });
+  // Finalize identity evidence only after the card/reuse step, which needs the
+  // OTP session unconsumed. The narrow RPC binds the unguessable booking id to
+  // its durable client_profile_id, validates the exact OTP salon+phone, stamps
+  // phone trust / marketing consent and consumes OTP in one transaction.
+  if (resolvedOtpSessionId || params.marketingConsent === true) {
+    const { data: finalized, error: finalizeError } = await supabase.rpc(
+      "finalize_public_booking_profile" as never,
+      {
+        p_booking_id: bookingId,
+        p_otp_session_id: resolvedOtpSessionId || null,
+        p_marketing_consent: params.marketingConsent === true,
+      } as never,
+    );
+    const result = finalized as
+      | { success?: boolean; code?: string }
+      | null;
+    if (finalizeError || result?.success !== true) {
+      const err = new Error(
+        finalizeError?.message ??
+          `profile_finalize_${result?.code ?? "failed"}`,
+      );
+      err.name = "PublicBookingProfileFinalizeError";
+      Sentry.captureException(err, {
+        tags: {
+          "booking.rpc": "finalize_public_booking_profile",
+          "booking.rpc.failure": "profile_finalize_best_effort",
+        },
+        extra: {
+          code: result?.code ?? null,
+          message: finalizeError?.message ?? null,
+        },
+      });
+
+      // Fail closed on OTP replay even during a brief code-before-migration
+      // deployment window. The booking remains committed; only the durable
+      // trust stamp is deferred.
+      if (resolvedOtpSessionId) {
+        void fetch("/api/booking-otp/consume-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: resolvedOtpSessionId }),
+        });
+      }
+    }
   }
 
   // booking_channel='online' + client_locale are stamped SERVER-SIDE in
@@ -906,37 +941,9 @@ export async function submitPublicBooking(
   // upsert that did all of that was removed (under RLS it could silently no-op,
   // and keeping it would double-count visit_count).
   //
-  // We KEEP only the "verify once, trust" stamp: on an OTP-verified booking,
-  // record phone_verified_at so future bookings can skip OTP
-  // (determine_booking_verification). It writes a single column — never
-  // visit_count — so it cannot double-count. By now the RPC has already
-  // upserted the profile row, so this only updates the existing row.
-  if (params.verificationMethod === "otp") {
-    try {
-      const { error: verifyStampErr } = await supabase
-        .from("client_profiles")
-        .upsert(
-          {
-            phone: phoneOk.digits,
-            phone_verified_at: new Date().toISOString(),
-          } as never,
-          { onConflict: "phone" },
-        );
-      if (verifyStampErr) {
-        const err = new Error(verifyStampErr.message);
-        err.name = "ClientProfilesVerifyStampError";
-        Sentry.captureException(err, {
-          tags: {
-            "booking.rpc": "client_profiles",
-            "booking.rpc.failure": "verify_stamp_best_effort",
-          },
-          extra: { message: verifyStampErr.message },
-        });
-      }
-    } catch {
-      /* booking succeeded; verify stamp is best-effort */
-    }
-  }
+  // OTP trust and marketing consent are finalized above through the
+  // booking-capability RPC. Direct browser writes to client_profiles are
+  // intentionally impossible under RLS.
 
   // Post-commit side-effects (deposit eval + AI no-show risk + card-required
   // flag, and the confirmation email) run in a SERVER ACTION. This flow executes
@@ -1000,8 +1007,13 @@ export async function submitPublicBooking(
           bookingChannel: "online",
           clientLocale: params.language || undefined,
           staffRequested: customerRequestedStaff,
-          verificationMethod: params.verificationMethod || undefined,
-          otpSessionId: params.otpSessionId ?? undefined,
+          verificationMethod:
+            resolvedOtpSessionId
+              ? "otp"
+              : params.verificationMethod === "otp"
+                ? undefined
+                : params.verificationMethod || undefined,
+          otpSessionId: resolvedOtpSessionId || undefined,
           healthAck: params.healthAck === true,
           subtotalCents: totalPriceCents > 0 ? totalPriceCents : undefined,
           taxAmountCents: taxResult.taxAmountCents > 0 ? taxResult.taxAmountCents : undefined,
@@ -1137,21 +1149,6 @@ export async function submitPublicBooking(
         console.error("[submitPublicBooking] set-ref-image dispatch failed", e);
       }
     })();
-  }
-
-  // Fire-and-forget: stamp marketing consent on client_profiles so Minh
-  // agents can contact this customer. Upsert is idempotent — re-booking
-  // with consent checked updates the timestamp to the latest consent.
-  if (params.marketingConsent && phoneOk.digits) {
-    void supabase
-      .from("client_profiles")
-      .upsert(
-        { phone: phoneOk.digits, marketing_consent_at: new Date().toISOString() },
-        { onConflict: "phone" },
-      )
-      .then(({ error }) => {
-        if (error) console.error("[submitPublicBooking] marketing_consent upsert failed", error);
-      });
   }
 
   return {
