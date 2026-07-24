@@ -569,10 +569,20 @@ export default function DeskBookingForm({
       if (seq !== lookupSeq.current) return;
       if (res.ok && res.found) {
         const p = res.profile;
-        if (p.name && !name) setName(p.name);
-        if (p.email && !email) setEmail(p.email);
-        if (p.top_service && !serviceId) setServiceId(p.top_service.id);
-        if (p.top_staff && !staffId) setStaffId(p.top_staff.id);
+        // The lookup resolves after the receptionist may already have typed.
+        // Functional updates read the latest field value instead of the empty
+        // value captured when the phone effect started, so a slow lookup can
+        // never overwrite newer customer input.
+        const profileName = p.name?.trim() ?? "";
+        const profileEmail = p.email?.trim() ?? "";
+        const profileServiceId = p.top_service?.id ?? "";
+        const profileStaffId = p.top_staff?.id ?? "";
+        if (profileName) setName((current) => current || profileName);
+        if (profileEmail) setEmail((current) => current || profileEmail);
+        if (profileServiceId)
+          setServiceId((current) => current || profileServiceId);
+        if (profileStaffId)
+          setStaffId((current) => current || profileStaffId);
         setLookupMsg(
           tx.returning(
             p.is_vip ? tx.vipTag : "",
