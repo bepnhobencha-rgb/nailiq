@@ -19,13 +19,13 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260724080000. Refresh these with each schema-changing forward
+ * through 20260724083000. Refresh these with each schema-changing forward
  * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
   tables: 89,
   columns: 1216,
-  policies: 125,
+  policies: 128,
   /**
    * APP functions only — 65.
    *
