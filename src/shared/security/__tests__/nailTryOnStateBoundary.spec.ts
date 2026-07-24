@@ -6,22 +6,22 @@ const read = (file: string) =>
   readFileSync(resolve(process.cwd(), file), "utf8");
 
 const migration = read(
-  "supabase/migrations/20260724083000_explicit_internal_delivery_policies.sql",
+  "supabase/migrations/20260724090000_explicit_nail_tryon_state_policies.sql",
 );
 const proof = read(
-  "scripts/security/check-internal-delivery-boundary.sql",
+  "scripts/security/check-nail-tryon-state-boundary.sql",
 );
 const rollback = read(
-  "scripts/security/rehearse-internal-delivery-rollback.sql",
+  "scripts/security/rehearse-nail-tryon-state-rollback.sql",
 );
 
 const tables = [
-  "owner_notification_log",
-  "scheduled_notifications",
-  "sms_agent_sessions",
+  "nail_tryon_cleanup_queue",
+  "nail_tryon_events",
+  "nail_tryon_sessions",
 ];
 
-describe("internal-delivery boundary", () => {
+describe("nail-tryon state boundary", () => {
   it("keeps direct API grants closed and preserves service-role access", () => {
     for (const table of tables) {
       expect(migration).toContain(`public.${table}`);
@@ -49,32 +49,37 @@ describe("internal-delivery boundary", () => {
       "EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = v_oid)",
     );
     expect(rollback).toContain(
-      "\\ir check-internal-delivery-boundary.sql",
+      "\\ir check-nail-tryon-state-boundary.sql",
     );
   });
 
   it("keeps every direct table access path on a service-role client", () => {
-    const receptionist = read(
-      "src/shared/dashboard/receptionistActions.ts",
+    const telemetry = read("src/shared/nailTryOn/telemetry.ts");
+    const upload = read("src/app/api/nail-tryon/upload/route.ts");
+    const generate = read("src/app/api/nail-tryon/generate/route.ts");
+    const attach = read("src/app/api/nail-tryon/attach/route.ts");
+    const intent = read(
+      "src/app/api/nail-tryon/booking-intent/route.ts",
     );
-    const edit = read("src/shared/dashboard/editBookingCore.ts");
-    const ownerNotify = read(
-      "src/shared/dashboard/sendOwnerBookingNotification.ts",
+    const cleanup = read(
+      "src/app/api/cron/nail-tryon-cleanup/route.ts",
     );
-    const cron = read(
-      "src/app/api/cron/send-pending-notifications/route.ts",
-    );
-    const sms = read("src/app/api/twilio/sms/route.ts");
 
-    for (const source of [receptionist, edit, ownerNotify, cron, sms]) {
+    for (const source of [
+      telemetry,
+      upload,
+      generate,
+      attach,
+      intent,
+      cleanup,
+    ]) {
       expect(source).toContain("createServiceRoleClient");
     }
-    expect(ownerNotify).toContain(
-      "admin: ReturnType<typeof createServiceRoleClient>",
-    );
-    expect(sms).toContain(
-      "supabase: ReturnType<typeof createServiceRoleClient>",
-    );
+    expect(telemetry).toContain('import "server-only"');
+    expect(generate).toContain("verifySessionCredential");
+    expect(attach).toContain("verifySessionCredential");
+    expect(intent).toContain("verifySessionCredential");
+    expect(cleanup).toContain("CRON_SECRET");
   });
 
   it("updates the blank-database parity tripwire", () => {
