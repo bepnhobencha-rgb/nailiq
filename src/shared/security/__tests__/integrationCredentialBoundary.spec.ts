@@ -74,4 +74,13 @@ describe("integration credential boundary", () => {
     expect(wixClient).toContain('import "server-only"');
     expect(wixClient).toContain("looseServiceClient()");
   });
+
+  it("updates the blank-database parity tripwire for the forward migration", () => {
+    const parity = read("scripts/check-schema-parity.ts");
+
+    expect(parity).toContain("policies: 108");
+    expect(parity).toContain(
+      "const GRANTS = { anon: 78, authenticated: 81, service_role: 94 }",
+    );
+  });
 });
