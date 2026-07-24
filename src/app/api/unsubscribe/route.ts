@@ -25,7 +25,10 @@ export async function POST(req: Request) {
   if (!unsubscribeValid(email, sig)) {
     return NextResponse.json({ ok: false }, { status: 400 });
   }
-  await suppress(email);
+  const suppressed = await suppress(email);
+  if (!suppressed) {
+    return NextResponse.json({ ok: false }, { status: 503 });
+  }
   return NextResponse.json({ ok: true });
 }
 
@@ -35,7 +38,13 @@ export async function GET(req: Request) {
   if (!unsubscribeValid(email, sig)) {
     return new NextResponse("Invalid unsubscribe link.", { status: 400 });
   }
-  await suppress(email);
+  const suppressed = await suppress(email);
+  if (!suppressed) {
+    return new NextResponse("Could not unsubscribe right now. Please try again.", {
+      status: 503,
+      headers: { "content-type": "text/plain; charset=utf-8" },
+    });
+  }
   return new NextResponse("You've been unsubscribed. / Bạn đã ngừng nhận email.", {
     status: 200,
     headers: { "content-type": "text/plain; charset=utf-8" },
