@@ -19,13 +19,13 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260724070000. Refresh these with each schema-changing forward
+ * through 20260724071500. Refresh these with each schema-changing forward
  * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
   tables: 89,
   columns: 1216,
-  policies: 113,
+  policies: 117,
   /**
    * APP functions only — 65.
    *
@@ -142,18 +142,16 @@ function main() {
   // test database MORE permissive than production, and the security specs would
   // pass while a real leak went unnoticed.
   //
-  // Public booking views are SECURITY INVOKER. Anon therefore reaches five
-  // additional base tables through narrow column grants plus the safe views;
-  // authenticated and service_role counts are unchanged. The base tables anon
-  // cannot touch are the sensitive
-  // ones (client_ai_summaries, otp_send_log, payment_disputes, rate_limits,
-  // salon_clients, scheduled_notifications) — that gap IS the PII protection,
-  // and it has to survive into the test database intact.
+  // Public booking views are SECURITY INVOKER. Anon therefore reaches narrow
+  // base-table columns through the safe views, while bearer-capability,
+  // credential, identity-security, and other internal state remains
+  // service-role-only. That gap IS the PII/security boundary, and it has to
+  // survive into the test database intact.
   //
   // The first dump here was taken with --no-privileges and produced 0 grants.
   // Everything above still went green. That is why this check exists.
   console.log("\n── Grant matrix ──\n");
-  const GRANTS = { anon: 75, authenticated: 78, service_role: 94 } as const;
+  const GRANTS = { anon: 71, authenticated: 74, service_role: 94 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
