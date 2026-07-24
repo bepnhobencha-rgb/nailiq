@@ -3502,6 +3502,17 @@ function ReceptionistCenterInner({
                   onNavigateDate={(ymd) => void navigateToYmd(ymd)}
                   onAddBooking={() => setDeskBookingOpen(true)}
                   language={language === "vi" ? "vi" : "en"}
+                  autoNoShowMinutes={data.salon.autoNoShowMinutes}
+                  currencyCode={data.salon.currencyCode}
+                  noShowTombstones={noShowsTodayList}
+                  onStartBooking={
+                    canChangeBookingStatus(viewerRole)
+                      ? (id) => void handleStartBooking(id)
+                      : undefined
+                  }
+                  onTombstoneUndo={(id) => void handleTombstoneUndo(id)}
+                  onTombstoneCharge={(id) => void handleTombstoneCharge(id)}
+                  onTombstoneWaive={(id) => void handleTombstoneWaive(id)}
                 />
               ) : (
               <StaffTimelineGrid

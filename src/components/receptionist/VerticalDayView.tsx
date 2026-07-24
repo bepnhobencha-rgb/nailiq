@@ -11,11 +11,13 @@
  * Desktop always uses StaffTimelineGrid (unchanged).
  */
 
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, Play, Plus } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
+import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { formatInSalonTz } from "@/shared/lib/salonTime";
+import { computeLatenessTier } from "./lateness";
 import type { GridBooking, GridStaff } from "./StaffTimelineGrid";
 
 // 8-colour palette — one per staff member (by staff list index, stable per session)
@@ -98,6 +100,22 @@ export interface VerticalDayViewProps {
   onNavigateDate: (ymd: string) => void;
   onAddBooking: () => void;
   language?: "en" | "vi";
+  autoNoShowMinutes?: number | null;
+  currencyCode?: import("@/shared/lib/currencyFormat").Currency;
+  noShowTombstones?: Array<{
+    id: string;
+    clientName: string;
+    startTimeUtc: string;
+    endTimeUtc: string;
+    staffId: string | null;
+    feeCents: number | null;
+    chargeStatus: string | null;
+    hasCard: boolean;
+  }>;
+  onStartBooking?: (bookingId: string) => void;
+  onTombstoneUndo?: (bookingId: string) => void;
+  onTombstoneCharge?: (bookingId: string) => void;
+  onTombstoneWaive?: (bookingId: string) => void;
 }
 
 // ─────────────────────────────── main component ────────────────────────────────
@@ -116,6 +134,13 @@ export default function VerticalDayView({
   onNavigateDate,
   onAddBooking,
   language = "en",
+  autoNoShowMinutes,
+  currencyCode,
+  noShowTombstones = [],
+  onStartBooking,
+  onTombstoneUndo,
+  onTombstoneCharge,
+  onTombstoneWaive,
 }: VerticalDayViewProps) {
   const open = openMinutes ?? DEFAULT_OPEN;
   const close = closeMinutes ?? DEFAULT_CLOSE;
@@ -151,6 +176,17 @@ export default function VerticalDayView({
     }
     return map;
   }, [bookings, timezone]);
+
+  const tombstonesBySlot = useMemo(() => {
+    const map = new Map<number, (typeof noShowTombstones)[number][]>();
+    for (const tombstone of noShowTombstones) {
+      const mins = utcToSalonMinutes(tombstone.startTimeUtc, timezone);
+      const slot = Math.floor(mins / SLOT_MIN) * SLOT_MIN;
+      if (!map.has(slot)) map.set(slot, []);
+      map.get(slot)!.push(tombstone);
+    }
+    return map;
+  }, [noShowTombstones, timezone]);
 
   // Current-time position for the "now" red line
   const nowMins = useMemo(
@@ -233,8 +269,9 @@ export default function VerticalDayView({
 
       {slots.map((slot) => {
         const slotBookings = bookingsBySlot.get(slot) ?? [];
+        const slotTombstones = tombstonesBySlot.get(slot) ?? [];
         const isHour = slot % 60 === 0;
-        const hasBookings = slotBookings.length > 0;
+        const hasItems = slotBookings.length > 0 || slotTombstones.length > 0;
 
         // Show the "now" red line inside the slot where the current time falls
         const nowLineHere =
@@ -245,7 +282,7 @@ export default function VerticalDayView({
             : null;
 
         // Skip empty :30 slots to keep the list tight (only :00 get empty rows)
-        if (!hasBookings && !isHour && !nowLineHere) return null;
+        if (!hasItems && !isHour && !nowLineHere) return null;
 
         return (
           <div key={slot} className="relative">
@@ -281,17 +318,46 @@ export default function VerticalDayView({
 
               {/* Bookings or empty-slot tap area */}
               <div className="min-w-0 flex-1 space-y-1.5">
-                {hasBookings ? (
-                  slotBookings.map((booking) => (
-                    <BookingCard
-                      key={booking.id}
-                      booking={booking}
-                      color={staffColorMap[booking.staff_id] ?? "#888"}
-                      staffName={staffNameMap[booking.staff_id] ?? ""}
-                      timezone={timezone}
-                      onPress={() => onBookingClick(booking.id)}
-                    />
-                  ))
+                {hasItems ? (
+                  <>
+                    {slotBookings.map((booking) => (
+                      <BookingCard
+                        key={booking.id}
+                        booking={booking}
+                        color={staffColorMap[booking.staff_id] ?? "#888"}
+                        staffName={staffNameMap[booking.staff_id] ?? ""}
+                        timezone={timezone}
+                        nowIso={nowIso}
+                        autoNoShowMinutes={autoNoShowMinutes ?? null}
+                        language={language}
+                        onPress={() => onBookingClick(booking.id)}
+                        onStart={
+                          onStartBooking
+                            ? () => onStartBooking(booking.id)
+                            : undefined
+                        }
+                      />
+                    ))}
+                    {slotTombstones.map((tombstone) => (
+                      <MobileNoShowTombstone
+                        key={tombstone.id}
+                        {...tombstone}
+                        language={language}
+                        currencyCode={currencyCode}
+                        onUndo={() => onTombstoneUndo?.(tombstone.id)}
+                        onCharge={
+                          onTombstoneCharge
+                            ? () => onTombstoneCharge(tombstone.id)
+                            : undefined
+                        }
+                        onWaive={
+                          onTombstoneWaive
+                            ? () => onTombstoneWaive(tombstone.id)
+                            : undefined
+                        }
+                      />
+                    ))}
+                  </>
                 ) : isHour ? (
                   <button
                     className="flex h-9 w-full items-center gap-1.5 rounded-lg border border-dashed border-white/[0.08] px-3 text-[11px] text-white/20 transition-colors active:border-white/25 active:text-white/40"
@@ -338,27 +404,65 @@ function BookingCard({
   color,
   staffName,
   timezone,
+  nowIso,
+  autoNoShowMinutes,
+  language,
   onPress,
+  onStart,
 }: {
   booking: GridBooking;
   color: string;
   staffName: string;
   timezone: string;
+  nowIso: string;
+  autoNoShowMinutes: number | null;
+  language: "en" | "vi";
   onPress: () => void;
+  onStart?: () => void;
 }) {
   const startStr = formatInSalonTz(booking.start_time_utc, timezone, "shortTime");
   const endStr = formatInSalonTz(booking.end_time_utc, timezone, "shortTime");
   const dotColor = STATUS_DOT[booking.status] ?? STATUS_DOT.pending;
+  const { tier: latenessTier, autoAtIso } = computeLatenessTier({
+    status: booking.status,
+    startTimeUtc: booking.start_time_utc,
+    nowIso,
+    autoNoShowMinutes,
+  });
+  const latenessLabel =
+    latenessTier === "critical"
+      ? language === "vi"
+        ? "Rất trễ"
+        : "Very late"
+      : language === "vi"
+        ? "Trễ"
+        : "Late";
 
   return (
-    <motion.button
+    <motion.div
       data-testid={`booking-block-${booking.id}`}
       data-booking-source={booking.source}
-      className="w-full rounded-xl border border-white/[0.07] bg-white/[0.05] p-3 text-left transition-colors active:bg-white/[0.09]"
+      className={cn(
+        "w-full rounded-xl border bg-white/[0.05] p-3 text-left transition-colors active:bg-white/[0.09]",
+        latenessTier === "critical"
+          ? "border-nq-error/70 ring-2 ring-nq-error/35"
+          : latenessTier === "late"
+            ? "border-nq-warning/70 ring-2 ring-nq-warning/25"
+            : latenessTier === "due"
+              ? "border-nq-primary/55 ring-1 ring-nq-primary/25"
+              : "border-white/[0.07]",
+      )}
       whileTap={{ scale: 0.98 }}
       onClick={onPress}
     >
-      <div className="flex items-start gap-2.5">
+      <button
+        type="button"
+        className="flex w-full items-start gap-2.5 text-left"
+        onClick={(event) => {
+          event.stopPropagation();
+          onPress();
+        }}
+      >
         {/* Staff colour bar */}
         <div
           className="flex-shrink-0 self-stretch rounded-full"
@@ -385,6 +489,32 @@ function BookingCard({
             {booking.service_name}
           </div>
 
+          {latenessTier && latenessTier !== "due" ? (
+            <div
+              data-testid={`booking-block-lateness-${booking.id}`}
+              className="mb-2 flex flex-wrap items-center gap-1.5"
+            >
+              <span
+                data-testid={`booking-block-icon-late-${booking.id}`}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                  latenessTier === "critical"
+                    ? "bg-nq-error/20 text-nq-error"
+                    : "bg-nq-warning/20 text-nq-warning",
+                )}
+              >
+                <Clock size={11} aria-hidden />
+                {latenessLabel}
+              </span>
+              {autoAtIso ? (
+                <span className="text-[10px] text-white/35">
+                  {language === "vi" ? "Tự đánh dấu vắng" : "Auto no-show"}{" "}
+                  {formatInSalonTz(autoAtIso, timezone, "shortTime")}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+
           {/* Time range + staff chip */}
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] text-white/35">
@@ -398,7 +528,148 @@ function BookingCard({
             </span>
           </div>
         </div>
-      </div>
-    </motion.button>
+      </button>
+      {latenessTier ? (
+        <div
+          data-testid={
+            latenessTier === "due"
+              ? `booking-block-lateness-${booking.id}`
+              : undefined
+          }
+          className="mt-2 flex justify-end"
+        >
+          {onStart ? (
+            <button
+              type="button"
+              data-testid={`booking-block-start-${booking.id}`}
+              className="inline-flex min-h-8 items-center gap-1 rounded-lg bg-nq-success/20 px-2.5 text-[11px] font-semibold text-nq-success"
+              onClick={(event) => {
+                event.stopPropagation();
+                onStart();
+              }}
+            >
+              <Play size={11} fill="currentColor" aria-hidden />
+              {language === "vi" ? "Bắt đầu" : "Start"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </motion.div>
+  );
+}
+
+function MobileNoShowTombstone({
+  id,
+  clientName,
+  feeCents,
+  chargeStatus,
+  hasCard,
+  language,
+  currencyCode,
+  onUndo,
+  onCharge,
+  onWaive,
+}: {
+  id: string;
+  clientName: string;
+  feeCents: number | null;
+  chargeStatus: string | null;
+  hasCard: boolean;
+  language: "en" | "vi";
+  currencyCode?: import("@/shared/lib/currencyFormat").Currency;
+  onUndo: () => void;
+  onCharge?: () => void;
+  onWaive?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const vi = language === "vi";
+  const amount = feeCents
+    ? (formatCurrency(feeCents, currencyCode) ?? "")
+    : "";
+  const canResolveFee =
+    hasCard &&
+    feeCents !== null &&
+    feeCents > 0 &&
+    chargeStatus !== "charged" &&
+    chargeStatus !== "waived";
+  const status =
+    chargeStatus === "charged"
+      ? vi
+        ? `Đã thu ${amount}`
+        : `Charged ${amount}`
+      : chargeStatus === "waived"
+        ? vi
+          ? "Đã bỏ qua phí"
+          : "Fee waived"
+        : vi
+          ? "Vắng mặt"
+          : "No-show";
+
+  return (
+    <div
+      data-testid={`noshow-tombstone-${id}`}
+      className="w-full rounded-xl border border-dashed border-nq-error/50 bg-nq-error/10 p-3 text-left"
+      onClick={() => setOpen((value) => !value)}
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={vi ? `Khách vắng: ${clientName}` : `No-show: ${clientName}`}
+        className="flex w-full items-center justify-between gap-3 text-left"
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((value) => !value);
+        }}
+      >
+        <span className="truncate text-sm font-semibold text-white/75 line-through decoration-nq-error/70">
+          {clientName}
+        </span>
+        <span className="shrink-0 text-[11px] font-medium text-nq-error">
+          {status}
+        </span>
+      </button>
+
+      {open ? (
+        <div
+          className="mt-2 grid gap-1 border-t border-nq-error/20 pt-2"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            className="min-h-10 rounded-lg px-2 text-left text-sm text-nq-success"
+            onClick={() => {
+              setOpen(false);
+              onUndo();
+            }}
+          >
+            {vi ? "Bỏ vắng (đã đến)" : "Undo no-show"}
+          </button>
+          {canResolveFee && onCharge ? (
+            <button
+              type="button"
+              className="min-h-10 rounded-lg px-2 text-left text-sm text-nq-warning"
+              onClick={() => {
+                setOpen(false);
+                onCharge();
+              }}
+            >
+              {vi ? `Thu phí ${amount}` : `Charge ${amount}`}
+            </button>
+          ) : null}
+          {canResolveFee && onWaive ? (
+            <button
+              type="button"
+              className="min-h-10 rounded-lg px-2 text-left text-sm text-white/60"
+              onClick={() => {
+                setOpen(false);
+                onWaive();
+              }}
+            >
+              {vi ? "Bỏ qua phí" : "Waive fee"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
