@@ -11,7 +11,7 @@ BEGIN
     FROM (
       VALUES
         ('public.add_booking_addons(uuid,uuid[])', true, false),
-        ('public.check_group_slots_available(jsonb)', true, true),
+        ('public.check_group_slots_available(jsonb)', true, false),
         ('public.create_public_booking(uuid,uuid,uuid,text,text,timestamp with time zone,timestamp with time zone,text,integer,text,uuid,integer,text,uuid)', true, false),
         ('public.create_public_waitlist_entry(uuid,uuid,uuid,date,text,text,text,text,text)', true, false),
         ('public.get_booking_client_snapshot(uuid,text,uuid)', true, false),

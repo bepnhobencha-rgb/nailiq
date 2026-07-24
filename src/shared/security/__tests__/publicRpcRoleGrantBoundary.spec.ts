@@ -68,6 +68,7 @@ describe("public RPC role grant boundary", () => {
       "src/shared/booking/getAvailableTimeSlots.ts",
       "src/shared/booking/loadGroupDayTimeline.ts",
       "src/shared/booking/loadGroupSmartSchedule.ts",
+      "src/shared/booking/checkGroupSlotsAvailable.ts",
     ].map(read);
 
     for (const source of publicBookingSources) {
@@ -79,9 +80,7 @@ describe("public RPC role grant boundary", () => {
     const groupProbe = read(
       "src/shared/booking/checkGroupSlotsAvailable.ts",
     );
-    expect(groupProbe).toContain(
-      'createClient } from "@/shared/lib/supabase/server"',
-    );
+    expect(groupProbe).toContain("createPublicClient");
     expect(groupProbe).toContain('"check_group_slots_available"');
 
     const setupActions = read("src/shared/dashboard/setupActions.ts");
