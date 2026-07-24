@@ -46,7 +46,7 @@ import * as Sentry from "@sentry/nextjs";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { createClient } from "@/shared/lib/supabase/server";
+import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import {
@@ -422,7 +422,7 @@ export async function loadGroupSmartSchedule(
     return { ok: false, reason: "invalid_input" };
   }
 
-  const supabase = await createClient();
+  const supabase = createPublicClient();
 
   // 1. Salon ---------------------------------------------------------
   const { data: salonRaw, error: salonErr } = await supabase

@@ -24,7 +24,7 @@ import { execFileSync } from "node:child_process";
 const PRODUCTION = {
   tables: 89,
   columns: 1216,
-  policies: 101,
+  policies: 106,
   /**
    * APP functions only — 65.
    *
@@ -141,10 +141,10 @@ function main() {
   // test database MORE permissive than production, and the security specs would
   // pass while a real leak went unnoticed.
   //
-  // After the Stage 0 public-profile split, anon reaches 74 base tables plus
-  // the safe public_salon_profiles view; authenticated reaches its 75 base
-  // tables plus that view; service_role reaches all 81 plus the view. The base
-  // tables anon cannot touch are the sensitive
+  // Public booking views are SECURITY INVOKER. Anon therefore reaches five
+  // additional base tables through narrow column grants plus the safe views;
+  // authenticated and service_role counts are unchanged. The base tables anon
+  // cannot touch are the sensitive
   // ones (client_ai_summaries, otp_send_log, payment_disputes, rate_limits,
   // salon_clients, scheduled_notifications) — that gap IS the PII protection,
   // and it has to survive into the test database intact.
@@ -152,7 +152,7 @@ function main() {
   // The first dump here was taken with --no-privileges and produced 0 grants.
   // Everything above still went green. That is why this check exists.
   console.log("\n── Grant matrix ──\n");
-  const GRANTS = { anon: 75, authenticated: 83, service_role: 94 } as const;
+  const GRANTS = { anon: 80, authenticated: 83, service_role: 94 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (

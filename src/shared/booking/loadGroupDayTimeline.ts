@@ -21,7 +21,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { createClient } from "@/shared/lib/supabase/server";
+import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import {
   buildCapabilityMap,
@@ -98,7 +98,7 @@ export async function loadGroupDayTimeline(
     return { ok: false, reason: "invalid_input" };
   }
 
-  const supabase: SupabaseClient = await createClient();
+  const supabase: SupabaseClient = createPublicClient();
 
   // 1. Salon ---------------------------------------------------------
   const { data: salonRaw, error: salonErr } = await supabase
