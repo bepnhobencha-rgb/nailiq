@@ -7,10 +7,7 @@ import {
   type OwnerNotificationSettings,
 } from "@/shared/dashboard/ownerNotificationSettings";
 import { sendOwnerNotificationTest } from "@/shared/dashboard/sendOwnerBookingNotification";
-
-function canManage(role: string): boolean {
-  return role === "owner" || role === "admin";
-}
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 
 export async function getOwnerNotificationSettings(
   slug: string,
@@ -20,6 +17,7 @@ export async function getOwnerNotificationSettings(
 > {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
   const { data } = await ctx.supabase
     .from("salons")
     .select("owner_notification_settings" as never)
@@ -39,7 +37,7 @@ export async function saveOwnerNotificationSettings(
 > {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (!canManage(ctx.role)) return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   // parse normalizes/validates everything (emails, event flags, booleans).
   const clean = parseOwnerNotificationSettings(input);
@@ -69,6 +67,6 @@ export async function sendOwnerNotificationTestAction(
 > {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (!canManage(ctx.role)) return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
   return sendOwnerNotificationTest(ctx.salon.id);
 }
