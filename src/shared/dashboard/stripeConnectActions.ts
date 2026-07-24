@@ -3,6 +3,7 @@
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { isOwner } from "@/shared/lib/salonMemberRole";
 import { getStripeClient, getStripeReturnOrigin } from "@/shared/lib/stripe";
+import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 /**
  * Stripe Connect (Express) onboarding — Phase 1.
@@ -67,7 +68,7 @@ export async function startStripeConnectOnboarding(
         business_profile: { name: row.name ?? undefined },
       });
       accountId = account.id;
-      const { error: upErr } = await ctx.supabase
+      const { error: upErr } = await createServiceRoleClient()
         .from("salons")
         .update({ stripe_connect_account_id: accountId } as never)
         .eq("id", ctx.salon.id);
@@ -126,7 +127,7 @@ export async function refreshStripeConnectStatus(
     const account = await stripe.accounts.retrieve(accountId);
     const chargesEnabled = Boolean(account.charges_enabled);
     const detailsSubmitted = Boolean(account.details_submitted);
-    await ctx.supabase
+    await createServiceRoleClient()
       .from("salons")
       .update({
         stripe_connect_charges_enabled: chargesEnabled,
