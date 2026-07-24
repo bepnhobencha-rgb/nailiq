@@ -85,20 +85,22 @@ export function complianceFooterHtml(opts: {
 }
 
 /** True when this email has opted out of optional/marketing mail. Transactional
- *  booking confirmations should NOT gate on this. Fails OPEN (false) on error so
- *  a DB hiccup never silently drops mail. */
+ *  booking confirmations should NOT gate on this. Fails CLOSED (true) when the
+ *  suppression list cannot be read so optional mail is never sent while consent
+ *  state is unknown. */
 export async function isEmailSuppressed(email: string): Promise<boolean> {
   const e = email.trim().toLowerCase();
   if (!e) return false;
   try {
-    const { data } = await createServiceRoleClient()
+    const { data, error } = await createServiceRoleClient()
       .from("client_email_optouts" as never)
       .select("email")
       .eq("email", e)
       .maybeSingle();
+    if (error) return true;
     return Boolean(data);
   } catch {
-    return false;
+    return true;
   }
 }
 

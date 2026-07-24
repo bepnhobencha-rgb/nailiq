@@ -186,7 +186,7 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
       }
       if (ch.email && c.email) {
         const resend = getResendClient();
-        const suppressed = await isEmailSuppressed(c.email).catch(() => false);
+        const suppressed = await isEmailSuppressed(c.email).catch(() => true);
         if (resend && !suppressed) {
           const esc = (x: string) => x.replace(/[<>&"]/g, (c2) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c2] ?? c2));
           const bodyHtml = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#faf9f7;">

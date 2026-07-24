@@ -138,7 +138,7 @@ async function sendEmail(
   const resend = getResendClient();
   if (!resend) return false;
   // First-visit nurture is a marketing sequence — honour suppression list.
-  const suppressed = await isEmailSuppressed(to).catch(() => false);
+  const suppressed = await isEmailSuppressed(to).catch(() => true);
   if (suppressed) return false;
   const esc = (s: string) =>
     s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] ?? c));
