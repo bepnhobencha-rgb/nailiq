@@ -19,13 +19,13 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260724170000. Refresh these with each schema-changing forward
+ * through 20260724173000. Refresh these with each schema-changing forward
  * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
   tables: 89,
   columns: 1216,
-  policies: 139,
+  policies: 140,
   /**
    * APP functions only — 65.
    *
@@ -151,7 +151,7 @@ function main() {
   // The first dump here was taken with --no-privileges and produced 0 grants.
   // Everything above still went green. That is why this check exists.
   console.log("\n── Grant matrix ──\n");
-  const GRANTS = { anon: 58, authenticated: 61, service_role: 94 } as const;
+  const GRANTS = { anon: 57, authenticated: 60, service_role: 94 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
