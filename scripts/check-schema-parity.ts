@@ -19,7 +19,7 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260724100000. Refresh these with each schema-changing forward
+ * through 20260724103000. Refresh these with each schema-changing forward
  * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
@@ -39,7 +39,7 @@ const PRODUCTION = {
    * Verified on production: 253 total = 188 extension-owned + 65 app-owned.
    * The query below excludes anything a `pg_depend` extension edge points at.
    */
-  functions: 72,
+  functions: 73,
   triggers: 25,
   indexes: 294,
 } as const;

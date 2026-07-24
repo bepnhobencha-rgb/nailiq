@@ -879,19 +879,46 @@ export async function submitGroupBooking(
     console.error("[submitGroupBooking] channel/verification stamp failed", e),
   );
 
-  // Group committed — now single-use-consume the OTP session (fire-and-forget).
-  // Relative URL only resolves in the browser; server callers (desk flow)
-  // need an absolute URL or this silently no-ops (session stays unconsumed).
-  if (otpToConsume) {
-    const consumeAppUrl =
-      typeof window !== "undefined"
-        ? ""
-        : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
-    void fetch(`${consumeAppUrl}/api/booking-otp/consume-session`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: otpToConsume }),
-    });
+  // Finalize the organizer's durable phone trust and consume the OTP in the
+  // same transaction. Group bookings previously burned the session without
+  // ever setting client_profiles.phone_verified_at.
+  if (otpToConsume && bookingIdList[0]) {
+    const { data: finalized, error: finalizeError } = await supabase.rpc(
+      "finalize_public_booking_profile" as never,
+      {
+        p_booking_id: bookingIdList[0],
+        p_otp_session_id: otpToConsume,
+        p_marketing_consent: false,
+      } as never,
+    );
+    const finalizeResult = finalized as
+      | { success?: boolean; code?: string }
+      | null;
+    if (finalizeError || finalizeResult?.success !== true) {
+      Sentry.captureMessage("group_booking_profile_finalize_failed", {
+        level: "error",
+        tags: {
+          "booking.rpc": "finalize_public_booking_profile",
+          "booking.flow": "group",
+        },
+        extra: {
+          code: finalizeResult?.code ?? null,
+          message: finalizeError?.message ?? null,
+          organizerBookingId: bookingIdList[0],
+        },
+      });
+
+      // Preserve single-use OTP if code deploys before the migration.
+      const consumeAppUrl =
+        typeof window !== "undefined"
+          ? ""
+          : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+      void fetch(`${consumeAppUrl}/api/booking-otp/consume-session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: otpToConsume }),
+      });
+    }
   }
 
   await Promise.all(
