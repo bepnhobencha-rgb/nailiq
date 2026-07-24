@@ -102,6 +102,8 @@ jobs:
             -f scripts/security/check-public-rpc-role-grants.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-public-rpc-role-grants-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-group-slot-probe-grant-rollback.sql
 
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.service_categories')" -eq 13
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.platform_flags')" -eq 5
