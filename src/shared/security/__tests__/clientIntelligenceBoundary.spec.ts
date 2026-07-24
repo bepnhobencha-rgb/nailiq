@@ -96,9 +96,9 @@ describe("client-intelligence boundary", () => {
 
   it("updates the blank-database parity tripwire", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("policies: 136");
+    expect(parity).toContain("policies: 137");
     expect(parity).toContain(
-      "const GRANTS = { anon: 60, authenticated: 63, service_role: 94 }",
+      "const GRANTS = { anon: 59, authenticated: 62, service_role: 94 }",
     );
   });
 });

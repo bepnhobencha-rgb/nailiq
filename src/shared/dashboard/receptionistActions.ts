@@ -2769,11 +2769,22 @@ export async function addDeskAppointment(
   // RPC). Best-effort — the appointment already exists with the correct block.
   if (addonIds.length > 0) {
     try {
-      await db.rpc("add_booking_addons", {
-        p_booking_id: bookingId,
-        p_service_ids: addonIds,
-      } as never);
-    } catch {
+      // Authenticated members deliberately cannot execute this cross-tenant
+      // SECURITY DEFINER capability directly. This server action has already
+      // authorized the salon and booking, so use the service-role client.
+      const privilegedDb = createServiceRoleClient();
+      const { error: addonError } = await privilegedDb.rpc(
+        "add_booking_addons",
+        {
+          p_booking_id: bookingId,
+          p_service_ids: addonIds,
+        } as never,
+      );
+      if (addonError) {
+        console.error("[addDeskAppointment] add_booking_addons", addonError);
+      }
+    } catch (error) {
+      console.error("[addDeskAppointment] add_booking_addons", error);
       /* best-effort */
     }
   }
