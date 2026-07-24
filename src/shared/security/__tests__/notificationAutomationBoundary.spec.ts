@@ -6,23 +6,23 @@ const read = (file: string) =>
   readFileSync(resolve(process.cwd(), file), "utf8");
 
 const migration = read(
-  "supabase/migrations/20260724073000_deny_direct_observability_state_access.sql",
+  "supabase/migrations/20260724080000_deny_direct_notification_automation_access.sql",
 );
 const proof = read(
-  "scripts/security/check-observability-state-boundary.sql",
+  "scripts/security/check-notification-automation-boundary.sql",
 );
 const rollback = read(
-  "scripts/security/rehearse-observability-state-rollback.sql",
+  "scripts/security/rehearse-notification-automation-rollback.sql",
 );
 
 const tables = [
-  "ai_policy_decisions",
-  "system_audit",
-  "watchdog_alerts",
-  "watchdog_state",
+  "campaign_schedules",
+  "notification_templates",
+  "reoptin_sends",
+  "winback_suggestions",
 ];
 
-describe("observability-state boundary", () => {
+describe("notification-automation boundary", () => {
   it("removes direct API grants and preserves service-role access", () => {
     for (const table of tables) {
       expect(migration).toContain(`public.${table}`);
@@ -43,20 +43,12 @@ describe("observability-state boundary", () => {
     expect(proof).toContain("AND NOT polpermissive");
   });
 
-  it("keeps the audit trigger definer-only for API roles", () => {
-    expect(proof).toContain("'public.log_system_audit()'::regprocedure");
-    expect(proof).toContain("<> 'postgres'");
-    expect(proof).toContain(
-      "'authenticated', 'public.log_system_audit()', 'EXECUTE'",
-    );
-  });
-
   it("rehearses the exact legacy grants inside a rollback", () => {
     expect(rollback).toContain("BEGIN;");
     expect(rollback).toContain("ROLLBACK;");
     expect(rollback.match(/GRANT ALL PRIVILEGES ON TABLE/g)).toHaveLength(4);
     expect(rollback).toContain(
-      "\\ir check-observability-state-boundary.sql",
+      "\\ir check-notification-automation-boundary.sql",
     );
   });
 
@@ -64,32 +56,34 @@ describe("observability-state boundary", () => {
     const looseDb = read(
       "src/shared/integrations/square/looseDb.ts",
     );
-    const watchdog = read("src/shared/watchdog/agentWatchdog.ts");
-    const policy = read("src/shared/noshow/agentNoShowPolicy.ts");
-    const override = read(
-      "src/shared/dashboard/overrideNoShowPolicyAction.ts",
-    );
+    const schedules = read("src/shared/reoptin/campaignSchedule.ts");
+    const reoptin = read("src/shared/reoptin/reoptinCampaign.ts");
+    const rebook = read("src/shared/winback/agentRebook.ts");
+    const winback = read("src/shared/winback/agentWinback.ts");
+    const undo = read("src/shared/ai/undoAiAction.ts");
     const activity = read(
       "src/shared/dashboard/loadActivityFeedAction.ts",
     );
-    const attribution = read(
-      "src/shared/dashboard/attributeAudit.ts",
+    const edgeFunction = read(
+      "supabase/functions/reschedule-sms/index.ts",
     );
 
     expect(looseDb).toContain(
       "return createServiceRoleClient() as unknown as LooseDb",
     );
     for (const source of [
-      watchdog,
-      policy,
-      override,
+      schedules,
+      reoptin,
+      rebook,
+      winback,
+      undo,
       activity,
-      attribution,
     ]) {
       expect(source).toContain("createServiceRoleClient");
     }
-    expect(activity).toContain('"use server"');
-    expect(override).toContain('"use server"');
+    expect(edgeFunction).toContain(
+      "createClient(SUPABASE_URL, SERVICE_ROLE_KEY",
+    );
   });
 
   it("updates the blank-database parity tripwire", () => {
