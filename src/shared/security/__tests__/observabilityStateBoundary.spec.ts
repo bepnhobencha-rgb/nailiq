@@ -6,23 +6,23 @@ const read = (file: string) =>
   readFileSync(resolve(process.cwd(), file), "utf8");
 
 const migration = read(
-  "supabase/migrations/20260724071500_deny_direct_capability_token_access.sql",
+  "supabase/migrations/20260724073000_deny_direct_observability_state_access.sql",
 );
 const proof = read(
-  "scripts/security/check-capability-token-boundary.sql",
+  "scripts/security/check-observability-state-boundary.sql",
 );
 const rollback = read(
-  "scripts/security/rehearse-capability-token-boundary-rollback.sql",
+  "scripts/security/rehearse-observability-state-rollback.sql",
 );
 
 const tables = [
-  "party_links",
-  "party_link_claims",
-  "party_link_change_requests",
-  "salon_invite_tokens",
+  "ai_policy_decisions",
+  "system_audit",
+  "watchdog_alerts",
+  "watchdog_state",
 ];
 
-describe("capability-token boundary", () => {
+describe("observability-state boundary", () => {
   it("removes direct API grants and preserves service-role access", () => {
     for (const table of tables) {
       expect(migration).toContain(`public.${table}`);
@@ -43,42 +43,53 @@ describe("capability-token boundary", () => {
     expect(proof).toContain("AND NOT polpermissive");
   });
 
+  it("keeps the audit trigger definer-only for API roles", () => {
+    expect(proof).toContain("'public.log_system_audit()'::regprocedure");
+    expect(proof).toContain("<> 'postgres'");
+    expect(proof).toContain(
+      "'authenticated', 'public.log_system_audit()', 'EXECUTE'",
+    );
+  });
+
   it("rehearses the exact legacy grants inside a rollback", () => {
     expect(rollback).toContain("BEGIN;");
     expect(rollback).toContain("ROLLBACK;");
     expect(rollback.match(/GRANT ALL PRIVILEGES ON TABLE/g)).toHaveLength(4);
     expect(rollback).toContain(
-      "\\ir check-capability-token-boundary.sql",
+      "\\ir check-observability-state-boundary.sql",
     );
   });
 
-  it("keeps every direct table access path on a server service client", () => {
-    const partyActions = read("src/shared/booking/partyLinkActions.ts");
-    const rsvpActions = read(
-      "src/shared/booking/groupMemberRsvpActions.ts",
+  it("keeps every direct table access path on a service-role client", () => {
+    const looseDb = read(
+      "src/shared/integrations/square/looseDb.ts",
     );
-    const partyCards = read(
-      "src/shared/dashboard/loadPartyCardsAction.ts",
+    const watchdog = read("src/shared/watchdog/agentWatchdog.ts");
+    const policy = read("src/shared/noshow/agentNoShowPolicy.ts");
+    const override = read(
+      "src/shared/dashboard/overrideNoShowPolicyAction.ts",
     );
-    const inviteActions = read(
-      "src/shared/dashboard/inviteTokenActions.ts",
+    const activity = read(
+      "src/shared/dashboard/loadActivityFeedAction.ts",
     );
-    const receptionist = read(
-      "src/shared/dashboard/receptionistActions.ts",
+    const attribution = read(
+      "src/shared/dashboard/attributeAudit.ts",
     );
-    const partyPage = read("src/app/party/[token]/page.tsx");
 
+    expect(looseDb).toContain(
+      "return createServiceRoleClient() as unknown as LooseDb",
+    );
     for (const source of [
-      partyActions,
-      rsvpActions,
-      partyCards,
-      inviteActions,
+      watchdog,
+      policy,
+      override,
+      activity,
+      attribution,
     ]) {
-      expect(source).toContain('"use server"');
       expect(source).toContain("createServiceRoleClient");
     }
-    expect(receptionist).toContain("createServiceRoleClient");
-    expect(partyPage).toContain("createServiceRoleClient");
+    expect(activity).toContain('"use server"');
+    expect(override).toContain('"use server"');
   });
 
   it("updates the blank-database parity tripwire", () => {
