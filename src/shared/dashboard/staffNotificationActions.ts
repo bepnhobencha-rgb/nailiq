@@ -6,10 +6,7 @@ import {
   parseStaffNotificationSettings,
   type StaffNotificationSettings,
 } from "@/shared/dashboard/staffNotificationSettings";
-
-function canManage(role: string): boolean {
-  return role === "owner" || role === "admin";
-}
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 
 export async function getStaffNotificationSettings(
   slug: string,
@@ -19,6 +16,7 @@ export async function getStaffNotificationSettings(
 > {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
   const { data } = await ctx.supabase
     .from("salons")
     .select("staff_notification_settings" as never)
@@ -38,7 +36,7 @@ export async function saveStaffNotificationSettings(
 > {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (!canManage(ctx.role)) return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   // parse normalizes/validates channels, event flags, locale, booleans.
   const clean = parseStaffNotificationSettings(input);
