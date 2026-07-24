@@ -110,6 +110,10 @@ jobs:
             -f scripts/security/rehearse-salon-staff-capability-definer-rollback.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/check-intentional-anon-security-definers.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-integration-credential-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-integration-credential-boundary-rollback.sql
 
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.service_categories')" -eq 13
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.platform_flags')" -eq 5
