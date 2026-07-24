@@ -143,9 +143,11 @@ test.describe("Receptionist queue + assign", () => {
       await clickWalkinQueueAssign(p2, bookingId);
 
       const assignHint = (p: import("@playwright/test").Page) =>
-        p
-          .getByTestId("walkin-assign-active-hint")
-          .or(p.getByTestId("mobile-walkin-assign-banner"));
+        p.getByTestId(
+          (p.viewportSize()?.width ?? 0) < 768
+            ? "mobile-walkin-assign-banner"
+            : "walkin-assign-active-hint",
+        );
       await expect(assignHint(p1)).toBeVisible({ timeout: 15_000 });
       await expect(assignHint(p2)).toBeVisible({ timeout: 15_000 });
       const assignSurface = (p: import("@playwright/test").Page) =>
