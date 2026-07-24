@@ -138,6 +138,10 @@ jobs:
             -f scripts/security/check-nail-tryon-state-boundary.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-nail-tryon-state-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-client-intelligence-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-client-intelligence-rollback.sql
 
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.service_categories')" -eq 13
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.platform_flags')" -eq 5
