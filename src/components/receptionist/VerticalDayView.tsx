@@ -84,6 +84,31 @@ function addDaysToYmd(ymd: string, delta: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Keep the configured opening-hours window, but widen it to include every
+ * rendered booking/tombstone start. The desktop grid already does this for
+ * off-hours bookings; mobile must not silently drop the same appointments.
+ */
+export function computeVerticalSlotWindow(
+  openMinutes: number,
+  closeMinutes: number,
+  itemStartMinutes: number[],
+): { start: number; end: number } {
+  let start = openMinutes;
+  let end = closeMinutes;
+
+  for (const minutes of itemStartMinutes) {
+    if (!Number.isFinite(minutes)) continue;
+    const slot = Math.floor(minutes / SLOT_MIN) * SLOT_MIN;
+    start = Math.min(start, slot);
+    end = Math.max(end, slot + SLOT_MIN);
+  }
+
+  start = Math.max(0, Math.min(start, 24 * 60 - SLOT_MIN));
+  end = Math.min(24 * 60, Math.max(end, start + SLOT_MIN));
+  return { start, end };
+}
+
 // ──────────────────────────────────── types ────────────────────────────────────
 
 export interface VerticalDayViewProps {
@@ -195,12 +220,22 @@ export default function VerticalDayView({
     [isViewingToday, nowIso, timezone],
   );
 
-  // Generate 30-min time slots
+  // Generate 30-min time slots. Widen around actual items so an appointment
+  // before opening or after closing still has a row on the mobile board.
   const slots = useMemo(() => {
+    const itemStartMinutes = [
+      ...bookings.map((booking) =>
+        utcToSalonMinutes(booking.start_time_utc, timezone),
+      ),
+      ...noShowTombstones.map((tombstone) =>
+        utcToSalonMinutes(tombstone.startTimeUtc, timezone),
+      ),
+    ];
+    const window = computeVerticalSlotWindow(open, close, itemStartMinutes);
     const arr: number[] = [];
-    for (let m = open; m < close; m += SLOT_MIN) arr.push(m);
+    for (let m = window.start; m < window.end; m += SLOT_MIN) arr.push(m);
     return arr;
-  }, [open, close]);
+  }, [bookings, close, noShowTombstones, open, timezone]);
 
   // Horizontal swipe → navigate to prev/next day
   const touchStart = useRef({ x: 0, y: 0 });
