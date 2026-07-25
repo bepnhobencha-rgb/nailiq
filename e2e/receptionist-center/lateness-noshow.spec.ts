@@ -15,6 +15,7 @@ import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
   gotoReceptionistCenter,
+  isoAtUtcYmdHourMinute,
   rcSlug,
   seedDeskBooking,
   seedReceptionistCenterFixture,
@@ -167,7 +168,20 @@ test.describe("DRC lateness escalation", () => {
 
 test.describe("DRC no-show tombstone + fee decision", () => {
   async function seedNoShow(opts: { withCard: boolean }) {
-    const { startIso, endIso } = lateStart(30);
+    // Keep the row inside the fixture's UTC calendar day. Subtracting a fixed
+    // 30 minutes from real "now" crosses into yesterday during the first half
+    // hour after midnight, while the receptionist page correctly loads today;
+    // the seeded no-show then cannot appear no matter how often the page reloads.
+    const dayStartMs = Date.parse(
+      isoAtUtcYmdHourMinute(fx.ymdUtc, 0, 0),
+    );
+    const dayEndMs = dayStartMs + 24 * 60 * 60_000;
+    const startMs = Math.min(
+      dayEndMs - 45 * 60_000,
+      Math.max(dayStartMs, Date.now() - 30 * 60_000),
+    );
+    const startIso = new Date(startMs).toISOString();
+    const endIso = new Date(startMs + 45 * 60_000).toISOString();
     const name = testClientNameMarker();
     const id = await seedDeskBooking(fx.salonId, {
       clientName: name,
