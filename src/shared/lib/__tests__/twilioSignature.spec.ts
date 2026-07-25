@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { validateTwilioSignature } from "@/shared/lib/twilioSignature";
+
+vi.mock("server-only", () => ({}));
 
 const URL = "https://www.nailiq.ca/api/twilio/status";
 const TOKEN = "test_auth_token";
