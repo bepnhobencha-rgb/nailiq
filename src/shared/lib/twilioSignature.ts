@@ -54,6 +54,7 @@ export function validateTwilioSignature(
   signature: string,
   authToken: string,
 ): boolean {
+  if (!signature.trim() || !authToken.trim()) return false;
   const data = fullUrl + Object.keys(params).sort().map((k) => k + (params[k] ?? "")).join("");
   const computed = crypto.createHmac("sha1", authToken).update(data).digest("base64");
   try {

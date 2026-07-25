@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
   if (authToken) {
     const signature = req.headers.get("x-twilio-signature") ?? "";
     const fullUrl = `${twilioRequestBaseUrl(req)}/api/twilio/sms${req.nextUrl.search}`;
-    if (signature && !validateTwilioSignature(fullUrl, params, signature, authToken)) {
+    if (!validateTwilioSignature(fullUrl, params, signature, authToken)) {
       console.warn("[twilio/sms] invalid signature");
       return new NextResponse("Forbidden", { status: 403 });
     }

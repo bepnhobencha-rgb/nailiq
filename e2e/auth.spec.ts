@@ -29,9 +29,8 @@ test.describe("Auth Flows — Registration", () => {
     const emailInput = page.locator('input[inputMode="email"]');
     await expect(emailInput).toBeVisible();
 
-    // Should have a "Sign in with password" toggle/section
-    const passwordToggle = page.getByTestId("social-auth-password-toggle");
-    await expect(passwordToggle).toBeVisible();
+    // Password signup is a primary registration path and must be reachable.
+    await expect(page.locator('input[type="password"]')).toBeVisible();
   });
 
   test("Register with email/password — valid inputs", async ({ page }) => {
@@ -40,9 +39,6 @@ test.describe("Auth Flows — Registration", () => {
     try {
       await page.goto("/register");
       await page.waitForLoadState("networkidle");
-
-      // Expand password section
-      await page.getByTestId("social-auth-password-toggle").click();
 
       // Fill credentials
       const emailInput = page.locator('input[inputMode="email"]');
@@ -83,29 +79,17 @@ test.describe("Auth Flows — Registration", () => {
     expect(inputStatus.validity).toBe(false);
   });
 
-  test("Register — password toggle reveals password input", async ({ page }) => {
+  test("Register — password input is available by default", async ({ page }) => {
     await page.goto("/register");
     await page.waitForLoadState("networkidle");
 
     const passwordInput = page.locator('input[type="password"]');
-    const toggleBtn = page.getByTestId("social-auth-password-toggle");
-
-    // Password input should be hidden initially
-    await expect(passwordInput).not.toBeVisible();
-
-    // Click toggle
-    await toggleBtn.click();
-
-    // Password input should now be visible
     await expect(passwordInput).toBeVisible();
   });
 
   test("Register — weak password validation (< 8 chars)", async ({ page }) => {
     await page.goto("/register");
     await page.waitForLoadState("networkidle");
-
-    // Expand password section
-    await page.getByTestId("social-auth-password-toggle").click();
 
     // Wait for password input to be visible
     await page.waitForSelector('input[type="password"]', { timeout: 5000 });
@@ -131,9 +115,6 @@ test.describe("Auth Flows — Registration", () => {
   test("Register — submit button disabled when form invalid", async ({ page }) => {
     await page.goto("/register");
     await page.waitForLoadState("networkidle");
-
-    // Expand password section
-    await page.getByTestId("social-auth-password-toggle").click();
 
     // Wait for password input to be visible
     await page.waitForSelector('input[type="password"]', { timeout: 5000 });
@@ -506,10 +487,6 @@ test.describe("Auth Flows — Accessibility", () => {
     await page.goto("/register");
     await page.waitForLoadState("networkidle");
 
-    // Expand password toggle first
-    const toggleBtn = page.getByTestId("social-auth-password-toggle");
-    await toggleBtn.click();
-
     // Wait for password input to be visible
     await page.waitForSelector('input[type="password"]', { timeout: 5_000 });
 
@@ -536,9 +513,6 @@ test.describe("Auth Flows — Accessibility", () => {
     try {
       await page.goto("/register");
       await page.waitForLoadState("networkidle");
-
-      // Expand password section
-      await page.getByTestId("social-auth-password-toggle").click();
 
       // Tab to and focus email input
       const emailInput = page.locator('input[inputMode="email"]');
@@ -743,7 +717,6 @@ test.describe("Auth Flows — Session & State", () => {
       await page.goto("/register");
       await page.waitForLoadState("networkidle");
 
-      await page.getByTestId("social-auth-password-toggle").click();
       await page.locator('input[inputMode="email"]').fill(email);
       await page.locator('input[type="password"]').fill(password);
       await page.getByRole("button", { name: /^sign in$/i }).click();

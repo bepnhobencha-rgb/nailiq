@@ -11,44 +11,15 @@
  */
 
 import { NextRequest, NextResponse, after } from "next/server";
-import crypto from "node:crypto";
 import { salonYmdOfUtc } from "@/shared/lib/salonTime";
+import {
+  getTwilioAuthToken,
+  validateTwilioSignature,
+  twilioRequestBaseUrl,
+} from "@/shared/lib/twilioSignature";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function validateTwilioSignature(
-  url: string,
-  params: Record<string, string>,
-  signature: string,
-  authToken: string,
-): boolean {
-  const sortedKeys = Object.keys(params).sort();
-  const data = url + sortedKeys.map((k) => k + (params[k] ?? "")).join("");
-  const computed = crypto.createHmac("sha1", authToken).update(data).digest("base64");
-  try {
-    return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(signature));
-  } catch {
-    return false;
-  }
-}
-
-async function getTwilioAuthToken(): Promise<string | null> {
-  try {
-    const { createServiceRoleClient } = await import("@/shared/lib/supabase/serviceRole");
-    const supabase = createServiceRoleClient();
-    const { data } = await supabase
-      .from("platform_settings")
-      .select("twilio_auth_token")
-      .eq("id", "platform")
-      .maybeSingle();
-    const token = (data as { twilio_auth_token?: string | null } | null)?.twilio_auth_token?.trim();
-    if (token) return token;
-  } catch {
-    /* fall through to env */
-  }
-  return process.env.TWILIO_AUTH_TOKEN?.trim() ?? null;
-}
 
 // Bilingual command words. Single-word replies are how customers actually answer.
 const CONFIRM_WORDS = new Set([
@@ -88,13 +59,13 @@ export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   const params = Object.fromEntries(new URLSearchParams(rawBody).entries());
 
-  const authToken = await getTwilioAuthToken();
+  const { createServiceRoleClient } = await import("@/shared/lib/supabase/serviceRole");
+  const supabase = createServiceRoleClient();
+  const authToken = await getTwilioAuthToken(supabase);
   if (authToken) {
     const signature = req.headers.get("x-twilio-signature") ?? "";
-    const url =
-      (process.env.NEXT_PUBLIC_APP_URL ?? "https://nailiq.ca").replace(/\/$/, "") +
-      "/api/twilio/inbound";
-    if (signature && !validateTwilioSignature(url, params, signature, authToken)) {
+    const url = `${twilioRequestBaseUrl(req)}/api/twilio/inbound`;
+    if (!validateTwilioSignature(url, params, signature, authToken)) {
       console.warn("[twilio/inbound] invalid signature");
       return new NextResponse("Forbidden", { status: 403 });
     }
@@ -108,8 +79,7 @@ export async function POST(req: NextRequest) {
   const phone = toCanonicalPhone(params.From ?? "");
   if (!phone) return twiml();
 
-  const { createServiceRoleClient } = await import("@/shared/lib/supabase/serviceRole");
-  const db = createServiceRoleClient();
+  const db = supabase;
 
   // The booking this reply is about: soonest upcoming pending/confirmed booking
   // for this phone. Prefer bookings that received a reminder (confirmation/winback/rebook);
