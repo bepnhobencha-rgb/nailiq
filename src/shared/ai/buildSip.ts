@@ -31,7 +31,7 @@ async function fetchSalonContext(salonId: string) {
   const [salonRes, servicesRes, statsRes] = await Promise.all([
     db
       .from("salons")
-      .select("id, name, slug, language, timezone, vertical, noshow_protection_enabled")
+      .select("id, name, slug, default_language, timezone, vertical, noshow_protection_enabled")
       .eq("id", salonId)
       .single(),
 
@@ -50,6 +50,10 @@ async function fetchSalonContext(salonId: string) {
       .eq("salon_id", salonId)
       .gte("booking_date", new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10)),
   ]);
+
+  if (salonRes.error) {
+    throw new Error(`buildSip: failed to load salon ${salonId}: ${salonRes.error.message}`);
+  }
 
   return {
     salon: salonRes.data as Record<string, unknown> | null,
@@ -78,7 +82,9 @@ export async function buildSip(salonId: string): Promise<SalonIntelligenceProfil
   const ai = getClient();
   if (!ai) {
     // No API key — persist and return a default SIP so the app stays functional
-    const sip = defaultSip(salon as { language?: string | null; ai_profile?: SalonIntelligenceProfile | null });
+    const sip = defaultSip({
+      language: salon.default_language as string | null | undefined,
+    });
     sip.built_via = "settings_change";
     sip.built_at = new Date().toISOString();
     await db.from("salons").update({ ai_profile: sip }).eq("id", salonId);
@@ -105,7 +111,7 @@ export async function buildSip(salonId: string): Promise<SalonIntelligenceProfil
 ## Salon data
 - Name: ${String(salon.name ?? "")}
 - Vertical: ${String(salon.vertical ?? "nail")}
-- Primary language: ${String(salon.language ?? "en")}
+- Primary language: ${String(salon.default_language ?? "en")}
 - Timezone: ${String(salon.timezone ?? "America/Los_Angeles")}
 - No-show protection enabled: ${String(salon.noshow_protection_enabled ?? false)}
 - Bookings (last 30 days): ${totalBookings}
@@ -163,7 +169,9 @@ Rules:
   } catch (err) {
     // If Claude returns bad JSON or request fails, fall back to default
     console.warn("[buildSip] Claude parse/call error, using defaultSip:", err);
-    sip = defaultSip(salon as { language?: string | null; ai_profile?: SalonIntelligenceProfile | null });
+    sip = defaultSip({
+      language: salon.default_language as string | null | undefined,
+    });
     sip.built_via = "settings_change";
     sip.built_at = new Date().toISOString();
   }
