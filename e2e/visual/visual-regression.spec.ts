@@ -111,7 +111,13 @@ test.describe("Visual regression", () => {
         );
         await expect(page.getByTestId("receptionist-center-loaded")).toBeVisible();
         await expect(page.getByTestId("rc-hydrated")).toHaveCount(1);
-        await expect(page.getByTestId("staff-timeline-grid")).toBeVisible();
+        // Desktop renders StaffTimelineGrid; the mobile breakpoint swaps it
+        // for VerticalDayView after hydration.
+        await expect(
+          page.locator(
+            '[data-testid="staff-timeline-grid"], [data-testid="vertical-day-view"]',
+          ),
+        ).toBeVisible();
         await waitForVisualUi(page);
         await expect(page).toHaveScreenshot(
           `dashboard-center-${vp.label}.png`,
