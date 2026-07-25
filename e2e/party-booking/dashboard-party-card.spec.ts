@@ -13,7 +13,6 @@ import { expect, test } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import {
   cleanupPartyTestSalon,
-  getPartyClaims,
   gotoPartyDashboard,
   seedPartyLink,
   seedPartyTestSalon,
