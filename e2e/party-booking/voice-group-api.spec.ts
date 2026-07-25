@@ -37,16 +37,6 @@ test.afterAll(async () => {
   await cleanupPartyTestSalon(SLUG, salon?.salonId);
 });
 
-// ─── Helpers ──────────────────────────────────────────────────────
-
-function voiceTool(
-  baseURL: string,
-  toolName: string,
-  toolArgs: Record<string, unknown>,
-) {
-  return { url: `${baseURL}/api/voice/tool`, toolName, toolArgs };
-}
-
 // ─── Test 10a: get_group_available_slots ──────────────────────────
 
 test("get_group_available_slots returns arrangements for the seeded salon", async ({
