@@ -40,7 +40,6 @@ async function seedMember(role: SalonMemberRole): Promise<TestMember> {
 
 async function loginAndOpenCenter(page: Page, member: TestMember): Promise<void> {
   await page.goto("/register");
-  await page.getByTestId("social-auth-password-toggle").click();
   await page.locator('input[inputmode="email"]').fill(member.email);
   await page.locator('input[type="password"]').fill(member.password);
   await page.getByRole("button", { name: /^sign in$/i }).click();
