@@ -336,20 +336,32 @@ export default function DeskBookingForm({
   // notify panel appear). Prefer the side of the click with more room.
   useLayoutEffect(() => {
     if (!anchored || !anchor || !popoverRef.current) return;
-    const r = popoverRef.current.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const M = 8;
-    const GAP = 14;
-    let left = anchor.x + GAP;
-    if (left + r.width > vw - M) left = anchor.x - r.width - GAP;
-    left = Math.max(M, Math.min(left, vw - r.width - M));
-    let top = anchor.y - 28;
-    top = Math.max(M, Math.min(top, vh - r.height - M));
-    setPos((prev) =>
-      prev && prev.left === left && prev.top === top ? prev : { left, top },
-    );
-  });
+    const popover = popoverRef.current;
+    const updatePosition = () => {
+      const r = popover.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const M = 8;
+      const GAP = 14;
+      let left = anchor.x + GAP;
+      if (left + r.width > vw - M) left = anchor.x - r.width - GAP;
+      left = Math.max(M, Math.min(left, vw - r.width - M));
+      let top = anchor.y - 28;
+      top = Math.max(M, Math.min(top, vh - r.height - M));
+      setPos((prev) =>
+        prev && prev.left === left && prev.top === top ? prev : { left, top },
+      );
+    };
+
+    updatePosition();
+    const resizeObserver = new ResizeObserver(updatePosition);
+    resizeObserver.observe(popover);
+    window.addEventListener("resize", updatePosition);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [anchored, anchor]);
 
   // Load services / staff / salon meta once.
   useEffect(() => {
@@ -552,6 +564,7 @@ export default function DeskBookingForm({
     closedDateYmdSet,
     shortestServiceMinutes,
     blockMinutes,
+    addonIds.length,
   ]);
 
   // Returning-customer recognition (debounced).
