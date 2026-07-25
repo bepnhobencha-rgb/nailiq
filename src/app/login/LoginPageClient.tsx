@@ -28,6 +28,8 @@ type Props = {
   emailEnabled: boolean;
   /** Shown when the proxy bounced an unconfirmed-email session here. */
   showConfirmEmailNotice?: boolean;
+  /** Safe callback error rendered as an actionable login banner. */
+  authError?: "pkce_restart" | "session" | null;
 };
 
 export function LoginPageClient({
@@ -35,6 +37,7 @@ export function LoginPageClient({
   smsEnabled,
   emailEnabled,
   showConfirmEmailNotice = false,
+  authError = null,
 }: Props) {
   const router = useRouter();
   const { language } = useUserLanguage();
@@ -64,6 +67,17 @@ export function LoginPageClient({
       className="mb-4 rounded-lg border border-nq-primary/30 bg-nq-primary/10 px-4 py-3 text-sm text-nq-primary-soft"
     >
       {t.login.confirmEmailNotice}
+    </div>
+  ) : null;
+
+  const authErrorBanner = authError ? (
+    <div
+      role="alert"
+      className="mb-4 rounded-lg border border-nq-error/30 bg-nq-error/10 px-4 py-3 text-sm text-nq-error"
+    >
+      {authError === "pkce_restart"
+        ? t.login.pkceRestart
+        : t.login.sessionError}
     </div>
   ) : null;
 
@@ -132,6 +146,7 @@ export function LoginPageClient({
         showBrandPanel
       >
         {confirmEmailBanner}
+        {authErrorBanner}
         <SocialAuthButtons mode="login" layout="open" enablePassword={true} />
         <p className="mt-6 text-center text-sm text-nq-muted">
           {t.login.noSalonPrefix}
@@ -163,6 +178,7 @@ export function LoginPageClient({
       />
 
       {confirmEmailBanner}
+      {authErrorBanner}
 
       <p className="mb-2 text-sm text-nq-muted sm:mb-4">
         {t.login.promptEnterPhone}

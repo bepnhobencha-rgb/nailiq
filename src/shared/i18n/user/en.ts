@@ -441,6 +441,8 @@ export type UserMessages = {
     signinDisabledBody: string;
     /** Banner shown when redirected with ?notice=confirm-email (email not yet confirmed). */
     confirmEmailNotice: string;
+    pkceRestart: string;
+    sessionError: string;
     /** Forgot password link on /login form. */
     forgotPasswordLink: string;
     /** /login/verify */
@@ -3043,6 +3045,10 @@ export const userEn: UserMessages = {
       "We've paused sign-in while platform maintenance is in progress. Please check back soon.",
     confirmEmailNotice:
       "Please confirm your email before continuing. Check your inbox for the confirmation link we sent you.",
+    pkceRestart:
+      "This sign-in link was opened in a different browser or has expired. Start sign-in again in this browser.",
+    sessionError:
+      "We couldn't complete sign-in. Please try again.",
     forgotPasswordLink: "Forgot password?",
     verifyTitle: "Enter OTP",
     verifySubtextSent: "Sent a 6-digit code to {masked}",

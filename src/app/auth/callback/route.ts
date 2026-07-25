@@ -73,9 +73,18 @@ export async function GET(request: NextRequest) {
   const { error: exchangeErr } =
     await supabase.auth.exchangeCodeForSession(code);
   if (exchangeErr) {
-    console.error("[auth/callback] exchangeCodeForSession", exchangeErr);
+    const isMissingPkceVerifier =
+      exchangeErr.code === "pkce_code_verifier_not_found";
+    if (isMissingPkceVerifier) {
+      console.warn("[auth/callback] PKCE verifier missing; restart sign-in");
+    } else {
+      console.error("[auth/callback] exchangeCodeForSession", exchangeErr);
+    }
     const dest = new URL("/login", request.url);
-    dest.searchParams.set("error", "session");
+    dest.searchParams.set(
+      "error",
+      isMissingPkceVerifier ? "pkce_restart" : "session",
+    );
     return NextResponse.redirect(dest);
   }
 

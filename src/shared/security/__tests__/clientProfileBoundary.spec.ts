@@ -62,6 +62,20 @@ describe("client_profiles boundary", () => {
     expect(publicBooking).toContain('"get_booking_client_snapshot"');
   });
 
+  it("keeps receptionist VIP enrichment behind the service-role boundary", () => {
+    const loader = read(
+      "src/shared/dashboard/loadReceptionistCenterData.ts",
+    );
+
+    expect(loader).toContain("const profileDb = createServiceRoleClient()");
+    expect(loader).toContain(
+      'profileDb\n      .from("client_profiles")',
+    );
+    expect(loader).not.toContain(
+      'supabase\n      .from("client_profiles")\n      .select("phone, is_vip"',
+    );
+  });
+
   it("updates the blank-database parity tripwire", () => {
     const parity = read("scripts/check-schema-parity.ts");
     expect(parity).toContain("policies: 140");

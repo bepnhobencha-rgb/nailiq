@@ -965,7 +965,11 @@ export async function loadReceptionistCenterData(
   );
   const vipByPhone = new Map<string, boolean>();
   if (queuePhones.length > 0) {
-    const vipRes = (await supabase
+    // `client_profiles` is deliberately closed to anon/authenticated because
+    // it is a global PII table. The queue phones are already scoped to this
+    // authorized salon, so use the server-only client for this bounded lookup.
+    const profileDb = createServiceRoleClient();
+    const vipRes = (await profileDb
       .from("client_profiles")
       .select("phone, is_vip" as never)
       .in("phone", queuePhones)) as {
