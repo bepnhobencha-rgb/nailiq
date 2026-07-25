@@ -593,6 +593,18 @@ function BookingCard({
             {booking.is_vip && (
               <span className="leading-none text-nq-primary text-xs">★</span>
             )}
+            {booking.seat_together ? (
+              <span
+                data-testid={`booking-block-icon-seat-together-${booking.id}`}
+                role="img"
+                aria-label={
+                  language === "vi" ? "Yêu cầu ngồi cùng nhau" : "Seat together"
+                }
+                className="leading-none text-xs"
+              >
+                💕
+              </span>
+            ) : null}
           </div>
 
           {/* Service name */}
