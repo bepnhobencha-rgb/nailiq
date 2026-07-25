@@ -75,7 +75,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx tsc --noEmit
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v2
         with:
           version: 2.109.1
       - name: Start Supabase (local, throwaway)
@@ -307,7 +307,7 @@ jobs:
         # Pinned, not `latest`. A CLI that silently moves under us can change how
         # the stack boots or what `supabase status` prints, and the failure would
         # land on whoever opened the next unrelated PR.
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v2
         with:
           version: 2.109.1
       - name: Start Supabase (local, throwaway)
@@ -538,7 +538,7 @@ jobs:
         if: steps.preflight.outputs.configured == 'true'
       - name: Set up Supabase CLI (pinned)
         if: steps.preflight.outputs.configured == 'true'
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v2
         with:
           version: 2.109.1
       - name: Start Supabase (local, throwaway) and build the schema
