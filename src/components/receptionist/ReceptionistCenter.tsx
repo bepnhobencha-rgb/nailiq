@@ -3206,8 +3206,6 @@ function ReceptionistCenterInner({
 
         {isViewingToday && viewMode === "day" ? (
           <DailyBriefCard
-            slug={slug}
-            selectedDate={data.selectedDate}
             bookings={data.bookingsForDay}
             readyStaffCount={availableStaffCount}
             totalStaffCount={data.staff.length}
