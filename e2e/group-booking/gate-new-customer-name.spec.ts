@@ -11,7 +11,18 @@ import { seedGroupTestSalon } from "./helpers";
  */
 
 const SLUG = "e2e-gate-newname";
-const NEW_PHONE = "16045559123";
+const NEW_PHONE_BY_PROJECT: Record<string, string> = {
+  chromium: "16045559123",
+  mobile: "16045559124",
+};
+
+function getNewPhone(projectName: string): string {
+  const phone = NEW_PHONE_BY_PROJECT[projectName];
+  if (!phone) {
+    throw new Error(`Missing new-customer phone for project: ${projectName}`);
+  }
+  return phone;
+}
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,18 +30,24 @@ const supabase = createClient(
 );
 
 test.describe("Phone-first gate — new customer name", () => {
-  test.beforeAll(async () => {
+  test.beforeAll(async ({}, testInfo) => {
     await seedGroupTestSalon(SLUG);
     // Ensure this phone is genuinely a NEW customer (no profile).
-    await supabase.from("client_profiles").delete().eq("phone", NEW_PHONE);
+    await supabase
+      .from("client_profiles")
+      .delete()
+      .eq("phone", getNewPhone(testInfo.project.name));
   });
   test.afterAll(async () => {
     await cleanupTestSalon(SLUG);
   });
 
-  test("new customer types name at the gate; it pre-fills Guest 1", async ({
-    page,
-  }) => {
+  test("new customer types name at the gate; it pre-fills Guest 1", async (
+    { page },
+    testInfo,
+  ) => {
+    const newPhone = getNewPhone(testInfo.project.name);
+
     // Drive the gate directly (don't pre-enter a phone via gotoGroupFlow).
     await page.goto(`/${SLUG}`);
     await expect(page.getByTestId("booking-phone-gate")).toBeVisible();
@@ -38,7 +55,7 @@ test.describe("Phone-first gate — new customer name", () => {
     // New phone → no recognition → the name field appears.
     // CountryPhoneField's inner input takes the 10-digit NATIONAL number; the
     // full E.164 would be sliced to a bogus area code and rejected.
-    await page.getByTestId("booking-entry-phone").fill(NEW_PHONE.slice(-10));
+    await page.getByTestId("booking-entry-phone").fill(newPhone.slice(-10));
     await expect(page.getByTestId("booking-entry-name")).toBeVisible({
       timeout: 10_000,
     });
