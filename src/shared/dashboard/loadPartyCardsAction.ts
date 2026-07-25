@@ -55,7 +55,6 @@ export async function loadPartyCardsAction(
     db = createServiceRoleClient();
   } catch (err) {
     if (process.env.NODE_ENV !== "production") {
-      // eslint-disable-next-line no-console
       console.warn(
         "[nailiq] loadPartyCardsAction: service-role client unavailable — " +
           "Party Card panel will be empty. Set SUPABASE_SERVICE_ROLE_KEY.",

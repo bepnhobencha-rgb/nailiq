@@ -688,7 +688,6 @@ export function BookingGroupFlow({
       // Deliberate reset when inputs go invalid — not a render-loop.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setCardRequirement(null);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCardRequirementLoading(false);
       return;
     }
@@ -1189,7 +1188,6 @@ export function BookingGroupFlow({
               setPartyLinkUrl(linkResult.url);
             } else {
               if (process.env.NODE_ENV !== "production") {
-                // eslint-disable-next-line no-console
                 console.warn(
                   "[nailiq] createPartyLink returned ok:false — reason:",
                   linkResult.reason,
@@ -1200,7 +1198,6 @@ export function BookingGroupFlow({
             }
           }).catch((err: unknown) => {
             if (process.env.NODE_ENV !== "production") {
-              // eslint-disable-next-line no-console
               console.warn("[nailiq] createPartyLink threw unexpectedly:", err);
             }
             setPartyLinkFailed(true);
