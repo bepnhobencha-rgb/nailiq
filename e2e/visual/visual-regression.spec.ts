@@ -15,6 +15,10 @@ import { cleanupTestSalon, seedTestSalon } from "../helpers/db";
 const VISUAL_SLUG = "e2e-visual-salon";
 const DEMO_COOKIE = "nailiq-demo-slug";
 const SALON_PHONE = "15558881212";
+const VISUAL_DATE_YMD = "2026-07-22";
+// 10:00 AM in the seeded salon's default America/Vancouver timezone.
+// Keep browser-owned date/brief/Now-line rendering stable across CI runs.
+const VISUAL_NOW_ISO = "2026-07-22T17:00:00.000Z";
 
 const VIEWPORTS = [
   { label: "desktop", width: 1280, height: 800 },
@@ -42,6 +46,13 @@ async function seedDemoCookie(page: Page, slug: string) {
   ]);
 }
 
+async function waitForVisualUi(page: Page) {
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
+}
+
 test.describe("Visual regression", () => {
   test.skip(
     !process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -61,13 +72,22 @@ test.describe("Visual regression", () => {
     await cleanupTestSalon(VISUAL_SLUG);
   });
 
+  test.beforeEach(async ({ page }) => {
+    // setFixedTime keeps timers and requestAnimationFrame running, unlike
+    // pausing the clock, while making Date.now/new Date deterministic.
+    await page.clock.setFixedTime(VISUAL_NOW_ISO);
+  });
+
   for (const vp of VIEWPORTS) {
     test.describe(`@${vp.label} (${vp.width}x${vp.height})`, () => {
       test.use({ viewport: { width: vp.width, height: vp.height } });
 
       test("public booking page", async ({ page }) => {
         await page.goto(`/${VISUAL_SLUG}`);
-        await page.waitForLoadState("networkidle");
+        // `networkidle` alone can resolve while the route's Suspense fallback is
+        // still visible. #book exists only in the resolved booking body.
+        await expect(page.locator("#book")).toBeVisible();
+        await waitForVisualUi(page);
         await expect(page).toHaveScreenshot(
           `booking-${vp.label}.png`,
           SCREENSHOT_OPTS,
@@ -76,7 +96,7 @@ test.describe("Visual regression", () => {
 
       test("register page", async ({ page }) => {
         await page.goto("/register");
-        await page.waitForLoadState("networkidle");
+        await waitForVisualUi(page);
         await expect(page).toHaveScreenshot(
           `register-${vp.label}.png`,
           SCREENSHOT_OPTS,
@@ -86,8 +106,13 @@ test.describe("Visual regression", () => {
       test("receptionist center", async ({ page }) => {
         await page.goto("/");
         await seedDemoCookie(page, VISUAL_SLUG);
-        await page.goto(`/dashboard/${VISUAL_SLUG}/center`);
-        await page.waitForLoadState("networkidle");
+        await page.goto(
+          `/dashboard/${VISUAL_SLUG}/center?date=${VISUAL_DATE_YMD}`,
+        );
+        await expect(page.getByTestId("receptionist-center-loaded")).toBeVisible();
+        await expect(page.getByTestId("rc-hydrated")).toHaveCount(1);
+        await expect(page.getByTestId("staff-timeline-grid")).toBeVisible();
+        await waitForVisualUi(page);
         await expect(page).toHaveScreenshot(
           `dashboard-center-${vp.label}.png`,
           SCREENSHOT_OPTS,
@@ -99,7 +124,7 @@ test.describe("Visual regression", () => {
         await seedDemoCookie(page, VISUAL_SLUG);
         // /dashboard/[slug]/setup has no index — the first step is /setup/address.
         await page.goto(`/dashboard/${VISUAL_SLUG}/setup/address`);
-        await page.waitForLoadState("networkidle");
+        await waitForVisualUi(page);
         await expect(page).toHaveScreenshot(
           `dashboard-setup-${vp.label}.png`,
           SCREENSHOT_OPTS,
