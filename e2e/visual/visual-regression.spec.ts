@@ -53,6 +53,41 @@ async function waitForVisualUi(page: Page) {
   });
 }
 
+async function waitForVisibleImages(page: Page) {
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(() => {
+          const visibleImages = Array.from(document.images).filter((image) => {
+            const rect = image.getBoundingClientRect();
+            const style = window.getComputedStyle(image);
+            return (
+              style.display !== "none" &&
+              style.visibility !== "hidden" &&
+              rect.width > 0 &&
+              rect.height > 0 &&
+              rect.bottom > 0 &&
+              rect.right > 0 &&
+              rect.top < window.innerHeight &&
+              rect.left < window.innerWidth
+            );
+          });
+
+          return (
+            visibleImages.length > 0 &&
+            visibleImages.every(
+              (image) => image.complete && image.naturalWidth > 0,
+            )
+          );
+        }),
+      {
+        message: "visible booking imagery should finish loading",
+        timeout: 15_000,
+      },
+    )
+    .toBe(true);
+}
+
 test.describe("Visual regression", () => {
   test.skip(
     !process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -88,6 +123,12 @@ test.describe("Visual regression", () => {
         // still visible. #book exists only in the resolved booking body.
         await expect(page.locator("#book")).toBeVisible();
         await waitForVisualUi(page);
+        // The desktop hero and ambient photos are lazy-loaded. `networkidle`
+        // may fire before the browser schedules those requests, which otherwise
+        // records empty photo frames as an accepted baseline.
+        if (vp.label === "desktop") {
+          await waitForVisibleImages(page);
+        }
         await expect(page).toHaveScreenshot(
           `booking-${vp.label}.png`,
           SCREENSHOT_OPTS,

@@ -51,6 +51,12 @@ for the desktop `StaffTimelineGrid`, while the hydrated mobile board correctly
 swaps to `VerticalDayView`. The readiness gate now accepts the rendered schedule
 surface for either breakpoint.
 
+Main run `30139423464` passed Visual Regression and generated branch
+`automation/visual-baselines-30139423464`, but review rejected its sole changed
+PNG: the booking body had resolved while all three lazy desktop hero photos
+were still empty. The booking capture must now also prove that every visible
+image is complete with a non-zero natural width before taking the screenshot.
+
 ## Refresh and review procedure
 
 1. Preserve `[update-snapshots]` in the squash-merge title.
