@@ -103,6 +103,7 @@ test("nail tech cannot access booking create, edit, cancel, or another tech's st
 
   await loginAndOpenCenter(page, member);
   await expect(page.getByTestId("header-add-appointment")).toHaveCount(0);
+  await expect(page.getByTestId("header-add-walkin")).toHaveCount(0);
 
   await openBaselineBooking(page);
   await expect(page.getByTestId("edit-booking-button")).toHaveCount(0);

@@ -137,6 +137,7 @@ import { logSalonRushEvent } from "@/shared/dashboard/rushHourEvent";
 import {
   canCancelBooking,
   canChangeBookingStatus,
+  canCreateDeskBooking,
   canMarkNoShow,
   canEditBooking,
   canUndoCancel,
@@ -2958,7 +2959,8 @@ function ReceptionistCenterInner({
               {isViewingToday &&
               viewMode === "day" &&
               modules.queue_panel &&
-              modules.quick_add ? (
+              modules.quick_add &&
+              canCreateDeskBooking(viewerRole) ? (
                 <Button
                   variant="primary"
                   size="sm"
@@ -2972,7 +2974,7 @@ function ReceptionistCenterInner({
               ) : null}
               {/* "New appointment" — book a phone-in customer for a FUTURE date
                  (not gated to today, unlike the walk-in queue). */}
-              {viewMode === "day" ? (
+              {viewMode === "day" && canCreateDeskBooking(viewerRole) ? (
                 <Button
                   variant="secondary"
                   size="sm"
