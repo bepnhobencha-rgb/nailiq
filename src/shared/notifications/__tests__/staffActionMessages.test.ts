@@ -15,11 +15,9 @@ function test(name: string, fn: () => void) {
   try {
     fn();
     pass++;
-    // eslint-disable-next-line no-console
     console.log(`  ✓ ${name}`);
   } catch (e) {
     fail++;
-    // eslint-disable-next-line no-console
     console.error(`  ✗ ${name}\n    ${(e as Error).message}`);
   }
 }
@@ -74,6 +72,5 @@ test("email subjects per event + locale", () => {
   assert(buildStaffActionEmailSubject("no_show", "en", "X") === null, "no_show null");
 });
 
-// eslint-disable-next-line no-console
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);
