@@ -45,6 +45,12 @@ receptionist timeline. It also fixes browser time at 10:00 AM Vancouver time
 and passes the matching explicit receptionist date, so daily-brief and Now-line
 pixels do not depend on the wall clock.
 
+Main run `30138311986` then proved the booking readiness fix (all non-mobile
+visual cases passed), but exposed a viewport-specific assertion: it waited only
+for the desktop `StaffTimelineGrid`, while the hydrated mobile board correctly
+swaps to `VerticalDayView`. The readiness gate now accepts the rendered schedule
+surface for either breakpoint.
+
 ## Refresh and review procedure
 
 1. Preserve `[update-snapshots]` in the squash-merge title.
