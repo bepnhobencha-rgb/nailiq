@@ -15,8 +15,8 @@ jobs:
     name: i18n & Copy Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
@@ -59,7 +59,7 @@ jobs:
       WIX_API_KEY: ""
       TZ: America/Los_Angeles
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Pre-flight — is the schema baseline present?
         id: preflight
         run: |
@@ -69,7 +69,7 @@ jobs:
             echo "::error::supabase/bootstrap/schema.sql is missing — the smoke gate cannot build a database, and it will not fall back to production."
             exit 1
           fi
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
@@ -134,7 +134,7 @@ jobs:
         # A red gate must be diagnosable in one click. Without the trace you are
         # left inferring what the page did from a locator timeout.
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: smoke-artifacts
           path: |
@@ -265,7 +265,7 @@ jobs:
       # booking-errors conflict tests to insert at wrong UTC offsets.
       TZ: America/Los_Angeles
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Pre-flight — is the schema baseline present?
         id: preflight
         # E2E uses the checked-in schema snapshot as its stable local fixture.
@@ -295,7 +295,7 @@ jobs:
               echo "\`founder\` superadmin accounts and a pile of fixture salons next to real customer data."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         if: steps.preflight.outputs.configured == 'true'
         with:
           node-version: 20
@@ -448,7 +448,7 @@ jobs:
         run: |
           echo "── tail of next-server.log ──"
           tail -n 150 tmp/next-server.log || echo "(no server log)"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && steps.preflight.outputs.configured == 'true'
         with:
           name: next-server-log-shard-${{ matrix.shard }}
@@ -475,7 +475,7 @@ jobs:
       - name: Summarize results
         if: always() && steps.preflight.outputs.configured == 'true'
         run: node scripts/playwright-summary.js >> "$GITHUB_STEP_SUMMARY" || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && steps.preflight.outputs.configured == 'true'
         with:
           name: playwright-report-shard-${{ matrix.shard }}
@@ -515,7 +515,7 @@ jobs:
       OPENAI_API_KEY: ""
       WIX_API_KEY: ""
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Pre-flight — is the schema baseline present?
@@ -529,7 +529,7 @@ jobs:
             echo "configured=false" >> "$GITHUB_OUTPUT"
             echo "::warning::Visual regression SKIPPED — supabase/bootstrap/schema.sql is missing. No production fallback exists, by design."
           fi
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         if: steps.preflight.outputs.configured == 'true'
         with:
           node-version: 20
@@ -637,7 +637,7 @@ jobs:
           fi
       - name: Upload visual diff artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: visual-diffs
           path: |
@@ -654,10 +654,10 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download playwright shard reports
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: playwright-report-shard-*
           path: playwright-reports/
