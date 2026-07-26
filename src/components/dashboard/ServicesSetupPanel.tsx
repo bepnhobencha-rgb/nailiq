@@ -57,6 +57,28 @@ function dollarsFromCents(cents: number): string {
 
 const UNDO_TIMEOUT_MS = 5000;
 
+function restoreServiceRow(
+  rows: SetupServiceRow[],
+  row: SetupServiceRow,
+  initialRows: SetupServiceRow[],
+): SetupServiceRow[] {
+  // A server action can stream fresh `initialRows` into this client component
+  // before the local rejection handler runs. In that case the service is
+  // already back and appending it again would render duplicate rows/buttons.
+  if (rows.some((candidate) => candidate.id === row.id)) return rows;
+
+  const originalIndex = initialRows.findIndex(
+    (candidate) => candidate.id === row.id,
+  );
+  const restored = [...rows];
+  if (originalIndex >= 0) {
+    restored.splice(Math.min(originalIndex, restored.length), 0, row);
+  } else {
+    restored.push(row);
+  }
+  return restored;
+}
+
 // ── Category icons ─────────────────────────────────────────────────────────────
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -591,13 +613,9 @@ export function ServicesSetupPanel({
           );
           setPendingId(null);
           // Restore the row on error
-          setRows((prev) => {
-            const idx = initialRows.findIndex((r) => r.id === serviceId);
-            const restored = [...prev];
-            if (idx !== -1) restored.splice(idx, 0, rowToDelete);
-            else restored.push(rowToDelete);
-            return restored;
-          });
+          setRows((prev) =>
+            restoreServiceRow(prev, rowToDelete, initialRows),
+          );
           setFormError(tLabels.deleteFailed);
           setToast({ variant: "error", message: tLabels.saveConnectionFailed });
           return;
@@ -613,10 +631,9 @@ export function ServicesSetupPanel({
           );
           setToast({ variant: "error", message: tLabels.saveConnectionFailed });
           // Restore the row on server-side error
-          setRows((prev) => {
-            const restored = [...prev, rowToDelete];
-            return restored;
-          });
+          setRows((prev) =>
+            restoreServiceRow(prev, rowToDelete, initialRows),
+          );
           return;
         }
         setToast({ variant: "success", message: tLabels.serviceRemoved });
@@ -635,13 +652,11 @@ export function ServicesSetupPanel({
     clearTimeout(undoPending.timer);
     undoTimerRef.current = null;
     // Restore the row
-    setRows((prev) => {
-      // Restore at original position if possible
-      const restored = [...prev, undoPending.row];
-      return restored;
-    });
+    setRows((prev) =>
+      restoreServiceRow(prev, undoPending.row, initialRows),
+    );
     setUndoPending(null);
-  }, [undoPending]);
+  }, [initialRows, undoPending]);
 
   // Cleanup timer on unmount
   useEffect(
