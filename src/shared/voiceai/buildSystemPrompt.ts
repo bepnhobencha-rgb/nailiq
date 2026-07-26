@@ -62,10 +62,10 @@ export function buildSystemPrompt(
           ? `¡Hola, gracias por llamar a ${ctx.salonName}! Soy ${ctx.personaName}.`
           : `Hi, thanks for calling ${ctx.salonName} — this is ${ctx.personaName}!`)
     : (isVi
-        ? `Xin chào! Tôi là ${ctx.personaName} từ ${ctx.salonName}. Dạ cho em xin số điện thoại để em xem mình đã từng đến tiệm chưa ạ?`
+        ? `Xin chào! Tôi là ${ctx.personaName} từ ${ctx.salonName}. Dạ cho em xin số điện thoại để nhận ra khách quen và giữ lịch an toàn nha — mình có thể bỏ qua lúc này ạ.`
         : isEs
-          ? `¡Hola! Soy ${ctx.personaName} de ${ctx.salonName}. ¿Me podría dar su número de teléfono para ver si ya ha venido antes?`
-          : `Hello! I'm ${ctx.personaName} from ${ctx.salonName}. Could I get your phone number so I can see if you have been in before?`);
+          ? `¡Hola! Soy ${ctx.personaName} de ${ctx.salonName}. ¿Me da su número para reconocerle y proteger la reserva? Puede omitirlo por ahora.`
+          : `Hello! I'm ${ctx.personaName} from ${ctx.salonName}. Could I get your phone number? It helps me recognize returning guests and keep bookings secure—you can skip it for now.`);
 
   // Phone channel only (callerPhone present): the "sound human" playbook. On a
   // live call the caller must never suspect they are talking to a robot. Not for
@@ -226,8 +226,8 @@ ${callerPhone
      back to the normal OTP flow for it.`
   : `   Right after the greeting, before anything else, ask for the number and look them up:
    ${isVi
-     ? '"Dạ cho em xin số điện thoại để em xem mình đã từng đến tiệm chưa ạ?"'
-     : '"Could I get your phone number so I can see if you have been in before?"'}
+     ? '"Dạ cho em xin số điện thoại để nhận ra khách quen và giữ lịch an toàn nha — mình có thể bỏ qua lúc này ạ."'
+     : '"Could I get your phone number? It helps me recognize returning guests and keep bookings secure—you can skip it for now."'}
    Read it back per rule 1e, then call lookup_customer.`}
 
    The order is the whole point. Ask at the END and you have already made them spell out a name,
