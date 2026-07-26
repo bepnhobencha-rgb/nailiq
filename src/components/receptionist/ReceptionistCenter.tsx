@@ -168,6 +168,7 @@ import { BookingLimitBanner } from "@/components/dashboard/BookingLimitBanner";
 import { PartyCardPanel } from "@/components/receptionist/PartyCardPanel";
 import { AttentionChipBar } from "@/components/receptionist/AttentionChipBar";
 import { NailiqSuggestionBar } from "@/components/receptionist/NailiqSuggestionBar";
+import { ReceptionistInterfaceSwitcher } from "@/components/receptionist/ReceptionistInterfaceSwitcher";
 import { DailyBriefCard } from "@/components/receptionist/DailyBriefCard";
 import DeskBookingForm from "@/components/receptionist/DeskBookingForm";
 import DeskGroupForm from "@/components/receptionist/DeskGroupForm";
@@ -177,6 +178,7 @@ import {
   loadBookingCustomerContext,
   type BookingCustomerContext,
 } from "@/shared/dashboard/loadBookingCustomerContextAction";
+import { useReceptionistInterface } from "@/shared/dashboard/useReceptionistInterface";
 
 // Values that only exist on the client. Read through useSyncExternalStore so
 // the server render and the first client render agree (no hydration mismatch)
@@ -457,6 +459,13 @@ function ReceptionistCenterInner({
   }, [initialOk]);
 
   const [dateOffset, setDateOffset] = useState<-1 | 0 | 1>(0);
+  const {
+    receptionistInterface,
+    setReceptionistInterface,
+    hydrated: interfaceHydrated,
+  } = useReceptionistInterface();
+  const previewInterface =
+    interfaceHydrated && receptionistInterface === "preview";
 
   // Detect mobile viewport for the VerticalDayView swap (< 640 px).
   // Defaults false (server + first render → desktop grid); effect flips it
@@ -2711,10 +2720,12 @@ function ReceptionistCenterInner({
       <div
         data-testid="receptionist-center-loaded"
         data-rush-mode={rush.active ? "on" : "off"}
+        data-receptionist-interface={receptionistInterface}
         style={{ ...drcCssVars, backgroundColor: drcBg }}
         className={cn(
           "flex min-h-[100dvh] w-full flex-col",
           rush.active && "[&_[data-rush-fade]]:opacity-50",
+          previewInterface && "gap-2 p-2 md:p-3",
         )}
       >
         {/* Hydration signal for E2E: only rendered after React useEffect fires. */}
@@ -2760,7 +2771,18 @@ function ReceptionistCenterInner({
             </div>
           </div>
         ) : null}
-        <header className="shrink-0 border-b border-nq-muted/20 px-[var(--pad-nq-section-mobile)] py-2.5 backdrop-blur-sm md:px-6 md:py-3" style={{ backgroundColor: "var(--drc-bg, #0b0c10)" }}>
+        <header
+          className={cn(
+            "shrink-0 border-b border-nq-muted/20 px-[var(--pad-nq-section-mobile)] py-2.5 backdrop-blur-sm md:px-6 md:py-3",
+            previewInterface &&
+              "rounded-xl border border-nq-border bg-nq-surface/90 shadow-nq-sm",
+          )}
+          style={
+            previewInterface
+              ? undefined
+              : { backgroundColor: "var(--drc-bg, #0b0c10)" }
+          }
+        >
           <div className="mx-auto flex w-full max-w-[var(--max-nq-desktop)] flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2 gap-y-2">
@@ -2781,6 +2803,11 @@ function ReceptionistCenterInner({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <ReceptionistInterfaceSwitcher
+                value={receptionistInterface}
+                language={language === "vi" ? "vi" : "en"}
+                onChange={setReceptionistInterface}
+              />
               {/* Status pill duplicates the Now Bar's Waiting + In service
                   counts, so it's hidden in Basic Mode. Balanced/Advanced
                   keep it (no Now Bar there). */}
@@ -2859,7 +2886,10 @@ function ReceptionistCenterInner({
                   on the live day board for every role (it's a personal view
                   preference, not a salon-wide setting). Hidden when the salon
                   forces Basic Mode (the toggle would be a no-op). */}
-              {isViewingToday && viewMode === "day" && !isForced ? (
+              {isViewingToday &&
+              viewMode === "day" &&
+              !isForced &&
+              !previewInterface ? (
                 <button
                   type="button"
                   data-testid="basic-mode-toggle"
@@ -2884,7 +2914,9 @@ function ReceptionistCenterInner({
               {/* Density slider is hidden in Basic Mode — Basic Mode is the
                   simplified view, so the density control would be redundant
                   clutter. Reappears when Basic Mode is off. */}
-              {viewerRole !== "nail_tech" && !basicModeActive ? (
+              {viewerRole !== "nail_tech" &&
+              !basicModeActive &&
+              !previewInterface ? (
                 <span className="hidden xl:inline" data-rush-fade>
                   <DensitySlider
                     slug={slug}
@@ -2896,7 +2928,9 @@ function ReceptionistCenterInner({
                 </span>
               ) : null}
               {/* DRC color theme picker — owner-only, subtle palette icon */}
-              {viewerRole === "owner" && !basicModeActive ? (
+              {viewerRole === "owner" &&
+              !basicModeActive &&
+              !previewInterface ? (
                 <span className="hidden xl:inline" data-rush-fade>
                   <DrcThemePicker
                     slug={slug}
@@ -3279,6 +3313,7 @@ function ReceptionistCenterInner({
             messages={rcMessages.kpiBar}
             currencyCode={data.salon.currencyCode}
             isLoading={dayLoading}
+            compact={previewInterface}
           />
         ) : null}
 
@@ -3438,6 +3473,8 @@ function ReceptionistCenterInner({
               className={cn(
                 "flex min-h-[min(50dvh,28rem)] min-w-0 flex-1 flex-col border-t border-nq-muted/20",
                 "transition-[padding-right] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)]",
+                previewInterface &&
+                  "overflow-hidden rounded-xl border border-nq-border bg-nq-surface/40 shadow-nq-sm",
                 // Arbitrary value (`md:pr-[20rem]`) instead of `md:pr-80`
                 // so Tailwind always emits the rule even if the static
                 // utility hash changes between versions. Same 320px.
