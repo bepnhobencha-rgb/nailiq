@@ -35,6 +35,10 @@ import {
   plainResponseCreate,
   zeroAudioRecoveryResponseCreate,
   summarizeRealtimeResponseDone,
+  summarizeRealtimeRateLimitsUpdated,
+  isTokenRateLimitExceeded,
+  createTokenRateLimitRecoveryGuard,
+  tokenRateLimitComfortTonePayloads,
   createZeroAudioRecoveryGuard,
   openingGreetingResponseCreate,
   openingLookupFollowupResponseCreate,
@@ -199,6 +203,27 @@ wss.on("connection", (twilioWs) => {
   let responseAudioBase64Chars = 0;
   let toolOutputSentAt = 0;   // last function_call_output sent → measures tool→audio gap
   const zeroAudioRecovery = createZeroAudioRecoveryGuard();
+  const tokenRateLimitRecovery = createTokenRateLimitRecoveryGuard();
+  let tokenRateLimitRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  let tokenRateLimitCooldownUntil = 0;
+  let coalescedRateLimitedTurns = 0;
+
+  const clearTokenRateLimitCooldown = () => {
+    if (tokenRateLimitRetryTimer) {
+      clearTimeout(tokenRateLimitRetryTimer);
+      tokenRateLimitRetryTimer = null;
+    }
+    tokenRateLimitCooldownUntil = 0;
+    coalescedRateLimitedTurns = 0;
+    coordinator.resume();
+  };
+
+  const playTokenRateLimitComfortTone = () => {
+    if (!streamSid || twilioWs.readyState !== WebSocket.OPEN) return;
+    for (const payload of tokenRateLimitComfortTonePayloads()) {
+      twilioWs.send(JSON.stringify(twilioMediaFrame(streamSid, payload)));
+    }
+  };
 
   const finalizeSession = async () => {
     if (!sessionId) return;
@@ -222,6 +247,10 @@ wss.on("connection", (twilioWs) => {
     closed = true;
     logT("call_closed", { reason });
     if (watchdog) { clearInterval(watchdog); watchdog = null; }
+    if (tokenRateLimitRetryTimer) {
+      clearTimeout(tokenRateLimitRetryTimer);
+      tokenRateLimitRetryTimer = null;
+    }
     hangup.onClose();              // never let the fallback timer fire after teardown
     coordinator.onClose();         // stop the queue; no more sends after hangup
     void finalizeSession();
@@ -431,6 +460,12 @@ wss.on("connection", (twilioWs) => {
         console.log("[voice-bridge] openai evt:", t);
       }
 
+      if (t === "rate_limits.updated") {
+        const limits = summarizeRealtimeRateLimitsUpdated(evt);
+        tokenRateLimitRecovery.onRateLimits(limits);
+        logT("rate_limits_updated", { limits });
+      }
+
       // Capture finished transcripts for the review log. The agent's spoken
       // turn and the caller's transcribed turn arrive as separate event types.
       if (t === "response.output_audio_transcript.done" || t === "response.audio_transcript.done") {
@@ -454,7 +489,15 @@ wss.on("connection", (twilioWs) => {
         // filled the silence with "are you there?" — which then barged in and cut
         // the late reply. Firing here removes that latency. (A language switch,
         // detected once the transcript lands, still adds its own reply on top.)
-        coordinator.request({ kind: "normal", build: plainResponseCreate, language: () => currentLang });
+        if (tokenRateLimitRetryTimer) {
+          coalescedRateLimitedTurns++;
+          logT("rate_limit_turn_coalesced", {
+            coalescedTurns: coalescedRateLimitedTurns,
+            retryInMs: Math.max(0, tokenRateLimitCooldownUntil - Date.now()),
+          });
+        } else {
+          coordinator.request({ kind: "normal", build: plainResponseCreate, language: () => currentLang });
+        }
       } else if (t === "conversation.item.input_audio_transcription.completed") {
         // The transcript lands a beat after the reply was already requested. Use
         // it only for the record, the time-guard utterance, and — if the caller
@@ -500,7 +543,12 @@ wss.on("connection", (twilioWs) => {
               outputContentTypes: [],
               hasFunctionCall: false,
             };
+        const tokenRateLimited = t === "response.done" && isTokenRateLimitExceeded(summary);
+        // Do not let onResponseEnded immediately pump a queued response into the
+        // same exhausted token window. Resume only when reset_seconds has elapsed.
+        if (tokenRateLimited) coordinator.pause();
         const endedActive = coordinator.onResponseEnded(rid);
+        if (tokenRateLimited && !endedActive) coordinator.resume();
         logT("response_ended", {
           type: t,
           id: rid || null,
@@ -531,32 +579,71 @@ wss.on("connection", (twilioWs) => {
           !coordinator.isBusy() &&
           !hangup.isHangupPending()
         ) {
-          const decision = zeroAudioRecovery.decide(summary, responseAudioDeltaCount);
-          if (decision === "retry") {
-            logT("zero_audio_detected", {
-              id: rid || null,
-              status: summary.status,
-              statusType: summary.statusType,
-              statusReason: summary.statusReason,
-              errorType: summary.errorType,
-              errorCode: summary.errorCode,
-              recoveryAttempt: zeroAudioRecovery.attempts(),
-            });
-            coordinator.request({
-              kind: "normal",
-              build: () => zeroAudioRecoveryResponseCreate(currentLang),
-              language: () => currentLang,
-            });
-            logT("zero_audio_recovery_requested", {
-              recoveryAttempt: zeroAudioRecovery.attempts(),
-            });
-          } else if (decision === "exhausted") {
-            logT("zero_audio_recovery_exhausted", {
-              id: rid || null,
-              status: summary.status,
-              recoveryAttempts: zeroAudioRecovery.attempts(),
-            });
+          if (tokenRateLimited) {
+            const decision = tokenRateLimitRecovery.decide(summary);
+            if (decision.kind === "retry") {
+              tokenRateLimitCooldownUntil = Date.now() + decision.delayMs;
+              playTokenRateLimitComfortTone();
+              logT("token_rate_limit_cooldown_started", {
+                recoveryAttempt: decision.attempt,
+                delayMs: decision.delayMs,
+              });
+              tokenRateLimitRetryTimer = setTimeout(() => {
+                tokenRateLimitRetryTimer = null;
+                tokenRateLimitCooldownUntil = 0;
+                if (closed || hangup.isHangupPending()) return;
+                const coalescedTurns = coalescedRateLimitedTurns;
+                coalescedRateLimitedTurns = 0;
+                coordinator.request({
+                  kind: "normal",
+                  build: () => zeroAudioRecoveryResponseCreate(currentLang),
+                  language: () => currentLang,
+                });
+                coordinator.resume();
+                logT("token_rate_limit_recovery_requested", {
+                  recoveryAttempt: decision.attempt,
+                  coalescedTurns,
+                });
+              }, decision.delayMs);
+            } else if (decision.kind === "exhausted") {
+              coordinator.resume();
+              logT("token_rate_limit_recovery_exhausted", {
+                recoveryAttempts: decision.attempts,
+              });
+            }
+          } else {
+            const decision = zeroAudioRecovery.decide(summary, responseAudioDeltaCount);
+            if (decision === "retry") {
+              logT("zero_audio_detected", {
+                id: rid || null,
+                status: summary.status,
+                statusType: summary.statusType,
+                statusReason: summary.statusReason,
+                errorType: summary.errorType,
+                errorCode: summary.errorCode,
+                recoveryAttempt: zeroAudioRecovery.attempts(),
+              });
+              coordinator.request({
+                kind: "normal",
+                build: () => zeroAudioRecoveryResponseCreate(currentLang),
+                language: () => currentLang,
+              });
+              logT("zero_audio_recovery_requested", {
+                recoveryAttempt: zeroAudioRecovery.attempts(),
+              });
+            } else if (decision === "exhausted") {
+              logT("zero_audio_recovery_exhausted", {
+                id: rid || null,
+                status: summary.status,
+                recoveryAttempts: zeroAudioRecovery.attempts(),
+              });
+            }
           }
+        }
+        if (tokenRateLimited && endedActive && !tokenRateLimitRetryTimer) {
+          // A stale/mismatched lifecycle, pending hangup, or exhausted circuit
+          // must never leave the coordinator paused permanently.
+          coordinator.resume();
         }
       } else if (t.includes("error")) {
         coordinator.onError();
@@ -568,6 +655,11 @@ wss.on("connection", (twilioWs) => {
         responseAudioDeltaCount++;
         responseAudioBase64Chars += audio.length;
         zeroAudioRecovery.onAudibleOutput();
+        tokenRateLimitRecovery.onAudibleOutput();
+        if (tokenRateLimitRetryTimer) {
+          clearTokenRateLimitCooldown();
+          logT("token_rate_limit_cooldown_cleared", { reason: "audible_output" });
+        }
         if (!firstAudioSeen) {
           // The caller-felt latency numbers: silence → first sound, and (after a
           // tool) tool result → first sound. Logged once per response.
