@@ -66,6 +66,38 @@ test("keeps classic as default and remembers the opt-in preview", async ({
       body: await page.screenshot(),
       contentType: "image/png",
     });
+  } else {
+    const themePicker = page.getByTestId("preview-theme-picker");
+    await themePicker.locator("button").first().click();
+    const themePanel = page.getByTestId("preview-theme-picker-panel");
+    await expect(themePanel).toBeVisible();
+    const themeBox = await themePanel.boundingBox();
+    expect(themeBox).not.toBeNull();
+    expect(themeBox!.x).toBeGreaterThanOrEqual(0);
+    expect(themeBox!.x + themeBox!.width).toBeLessThanOrEqual(
+      page.viewportSize()!.width,
+    );
+    await page.getByTestId("preview-theme-picker-backdrop").click({
+      position: { x: 2, y: 2 },
+    });
+    await expect(themePanel).toHaveCount(0);
+
+    const queueToggle = page.getByTestId("queue-panel-toggle");
+    await expect(queueToggle).toBeVisible();
+    await queueToggle.click();
+    const queuePanel = page.getByTestId("queue-panel-slideover");
+    await expect(queuePanel).toBeVisible();
+    await expect(queuePanel).toHaveAttribute("aria-hidden", "false");
+    const queueBox = await queuePanel.boundingBox();
+    expect(queueBox).not.toBeNull();
+    expect(queueBox!.x).toBeGreaterThanOrEqual(0);
+    expect(queueBox!.x + queueBox!.width).toBeLessThanOrEqual(
+      page.viewportSize()!.width,
+    );
+    await page.getByTestId("queue-panel-backdrop").click({
+      position: { x: 2, y: 2 },
+    });
+    await expect(queuePanel).toHaveAttribute("aria-hidden", "true");
   }
 
   await page.reload();

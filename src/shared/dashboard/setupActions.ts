@@ -9,6 +9,7 @@ import { NAILQ_DEMO_SLUG_COOKIE } from "@/shared/lib/demoDashboardCookie";
 import {
   resolveSalonForDashboard,
 } from "@/shared/dashboard/salonOwnerActions";
+import { isSalonProfileComplete } from "@/shared/dashboard/profileCompletion";
 import {
   canAddService,
   canAddStaff,
@@ -146,8 +147,11 @@ async function refreshSalonProfileComplete(
     row && typeof row === "object" && "address" in row
       ? String((row as { address?: unknown }).address ?? "").trim()
       : "";
-  const profileComplete =
-    (sc ?? 0) > 1 && (tc ?? 0) > 1 && addr.length > 0;
+  const profileComplete = isSalonProfileComplete({
+    activeServiceCount: sc ?? 0,
+    activeStaffCount: tc ?? 0,
+    address: addr,
+  });
 
   const { error } = await supabase
     .from("salons")

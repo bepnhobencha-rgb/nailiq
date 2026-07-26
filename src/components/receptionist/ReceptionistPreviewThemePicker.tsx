@@ -1,7 +1,8 @@
 "use client";
 
 import { Check, Palette, RotateCcw } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useLayoutEffect, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/Button";
 import { saveReceptionistPreviewBgColor } from "@/shared/dashboard/drcThemeAction";
@@ -28,6 +29,40 @@ export function ReceptionistPreviewThemePicker({
   const [customHex, setCustomHex] = useState(currentBg);
   const [saved, setSaved] = useState(false);
   const [pending, startTransition] = useTransition();
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const [panelPosition, setPanelPosition] = useState<{
+    left: number;
+    top: number;
+  } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    const updatePosition = () => {
+      const anchor = anchorRef.current;
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      const margin = 12;
+      const panelWidth = Math.min(288, window.innerWidth - margin * 2);
+      const left =
+        window.innerWidth < 768
+          ? Math.max(margin, (window.innerWidth - panelWidth) / 2)
+          : Math.min(
+              window.innerWidth - panelWidth - margin,
+              Math.max(margin, rect.right - panelWidth),
+            );
+      const top = window.innerWidth < 768 ? 80 : rect.bottom + 8;
+      setPanelPosition({ left, top });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open]);
 
   const copy =
     language === "vi"
@@ -69,7 +104,11 @@ export function ReceptionistPreviewThemePicker({
   }
 
   return (
-    <div className="relative" data-testid="preview-theme-picker">
+    <div
+      ref={anchorRef}
+      className="relative"
+      data-testid="preview-theme-picker"
+    >
       <Button
         variant="secondary"
         size="sm"
@@ -84,8 +123,23 @@ export function ReceptionistPreviewThemePicker({
         </span>
       </Button>
 
-      {open ? (
-        <div className="absolute right-0 top-full z-50 mt-2 w-72 rounded-2xl border border-[var(--rc-new-border)] bg-[var(--rc-new-surface)] p-4 text-[var(--rc-new-text)] shadow-xl">
+      {open && panelPosition
+        ? createPortal(
+            <>
+          <button
+            type="button"
+            aria-label={
+              language === "vi" ? "Đóng bảng màu" : "Close color picker"
+            }
+            onClick={() => setOpen(false)}
+                className="fixed inset-0 z-[80] bg-black/20 md:hidden"
+            data-testid="preview-theme-picker-backdrop"
+          />
+          <div
+                className="fixed z-[90] w-72 max-w-[calc(100vw-1.5rem)] rounded-2xl border border-[var(--rc-new-border)] bg-[var(--rc-new-surface)] p-4 text-[var(--rc-new-text)] shadow-xl"
+                style={panelPosition}
+            data-testid="preview-theme-picker-panel"
+          >
           <div className="mb-3 flex items-center justify-between gap-3">
             <p className="text-sm font-semibold">{copy.title}</p>
             {pending ? (
@@ -158,8 +212,11 @@ export function ReceptionistPreviewThemePicker({
             <RotateCcw className="h-3.5 w-3.5" />
             {copy.reset}
           </button>
-        </div>
-      ) : null}
+          </div>
+            </>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

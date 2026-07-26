@@ -9,7 +9,7 @@
 Những thay đổi mới nhất (một số mục bên dưới trong doc cũ đã lỗi thời — ưu tiên phần này):
 
 - **Auth:** Phone OTP đã **retired (2026-05-13)**. Đường chính giờ là Google OAuth + email magic link + email/password, tất cả qua `/auth/callback` → `resolveRoleAndSlugForUser()`. (Doc cũ mô tả phone-OTP/Twilio là sai.)
-- **Register seed (P0.3):** `completeSalonRegistrationAction.ts` (dòng 507–522) seed **12 dịch vụ nail mặc định** + **1 staff "Staff 1" làm-được-tất-cả** (P0.5). Demo path vẫn 1 service.
+- **Register seed (P0.3):** `completeSalonRegistrationAction.ts` seed tối đa **10 dịch vụ nail mặc định** (đúng cap Free) + **1 staff "Staff 1" làm-được-tất-cả** (P0.5). Demo path vẫn 1 service.
 - **AI Prefill (P2 ⭐):** `/dashboard/[slug]/setup/ai-prefill` — `AIPrefillWizard.tsx` + `aiPrefillServicesAction.ts`. Upload ảnh menu / URL → Claude Vision (`claude-sonnet-4-6`) extract JSON → review → `bulkImportAIServices()`. Là công cụ post-register trong setup.
 - **Owner Dashboard 3 empty states (P1.3):** `SalonOwnerDashboard.tsx` (dòng 370–414): State 1 setup chưa xong (checklist) / State 2 setup xong 0 booking (share UI + QR) / State 3 có booking (full).
 - **Settings rút gọn (P0.2/P1.1):** NoShow gộp 1 toggle "Tự động nhắc khách" (advanced 24h/3h/SMS collapse). Hours có 3 preset (P0.4). Reviews ẩn cho Free plan (P1.2).
