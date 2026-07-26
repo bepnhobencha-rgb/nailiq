@@ -187,7 +187,7 @@ test.describe("Landing page → self-service trial funnel", () => {
 test.describe("/register page integrity", () => {
   // Smoke-tests the destination page itself. The landing marketing funnel
   // intentionally points here so owners can start the no-card trial directly.
-  test("renders auth form (Google + email)", async ({ page }) => {
+  test("renders auth form (Google + email/password)", async ({ page }) => {
     await page.addInitScript(() => {
       window.localStorage.setItem("nailiq-user-lang", "en");
     });
@@ -200,6 +200,7 @@ test.describe("/register page integrity", () => {
       page.getByRole("button", { name: /continue with google/i }),
     ).toBeVisible();
     await expect(page.locator('input[inputMode="email"]')).toBeVisible();
+    await expect(page.locator('input[type="password"]')).toBeVisible();
   });
 
   test("page title is set (not empty / undefined)", async ({ page }) => {

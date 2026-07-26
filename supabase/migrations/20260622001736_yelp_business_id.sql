@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260622001736.
+-- Original production name: yelp_business_id.
+-- Its schema effect is represented by the later folded baseline.

@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260508233310.
+-- Original production name: add_staff_skills.
+-- Its schema effect is represented by the later folded baseline.

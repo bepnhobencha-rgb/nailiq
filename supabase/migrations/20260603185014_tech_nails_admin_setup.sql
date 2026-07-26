@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260603185014.
+-- Original production name: tech_nails_admin_setup.
+-- Its schema effect is represented by the later folded baseline.

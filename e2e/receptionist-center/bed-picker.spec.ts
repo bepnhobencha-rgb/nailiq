@@ -432,6 +432,9 @@ test.describe("New Appt — bed picker", () => {
     ]);
 
     const payload = JSON.parse(request.postData() ?? "[]")[1] as Record<string, unknown>;
+    // A delayed returning-customer lookup must not replace the name typed
+    // after the phone number (mobile CI exposed this stale-closure race).
+    expect(payload.clientName).toBe(clientName);
     expect(payload.resourceId).toBe(fx.freeBedId);
 
     // Also verify DB
@@ -463,6 +466,7 @@ test.describe("New Appt — bed picker", () => {
     ]);
 
     const payload = JSON.parse(request.postData() ?? "[]")[1] as Record<string, unknown>;
+    expect(payload.clientName).toBe(clientName);
     // Auto = resourceId null in payload; server auto-assigns
     expect(payload.resourceId).toBeNull();
 
@@ -510,8 +514,9 @@ test.describe("Edit Booking — bed picker", () => {
     await chip.waitFor({ state: "visible", timeout: 15_000 });
     await chip.evaluate((el: HTMLElement) => el.click());
     // Wait for booking drawer
-    await page.locator('button:has-text("Edit")').waitFor({ state: "visible", timeout: 10_000 });
-    await page.locator('button:has-text("Edit")').evaluate((el: HTMLElement) => el.click());
+    const editButton = page.getByTestId("edit-booking-button");
+    await editButton.waitFor({ state: "visible", timeout: 10_000 });
+    await editButton.evaluate((el: HTMLElement) => el.click());
     // Wait for Edit form
     await page.getByTestId("edit-booking-form").waitFor({ state: "visible", timeout: 15_000 });
   }

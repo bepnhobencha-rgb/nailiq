@@ -31,7 +31,7 @@ export function RegisterPageClient() {
       showBrandPanel
       step={{ current: 1, total: 3 }}
     >
-      <SocialAuthButtons mode="register" layout="open" />
+      <SocialAuthButtons mode="register" layout="open" enablePassword />
     </RegisterStepShell>
   );
 }

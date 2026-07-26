@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260609174144.
+-- Original production name: client_profiles_pii_revoke.
+-- Its schema effect is represented by the later folded baseline.

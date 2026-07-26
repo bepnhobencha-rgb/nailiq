@@ -1,0 +1,177 @@
+name: Migration History Rehearsal
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/migration-history-rehearsal.yml"
+      - "scripts/audit-migration-history.mjs"
+      - "scripts/build-folded-migration-history.mjs"
+      - "scripts/check-schema-parity.ts"
+      - "scripts/verify-schema-dump.ts"
+      - "supabase/bootstrap/**"
+      - "supabase/migration-history/**"
+      - "supabase/migrations/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  folded-history:
+    name: Folded history on blank Supabase
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - uses: supabase/setup-cli@v2
+        with:
+          version: 2.109.1
+
+      - name: Audit deploy-ready production prefix
+        run: npm run db:history:audit -- --deploy-ready
+
+      - name: Rebuild and compare folded history
+        run: |
+          set -euo pipefail
+          node scripts/build-folded-migration-history.mjs \
+            --output "$RUNNER_TEMP/folded-migrations"
+          npx tsx scripts/verify-schema-dump.ts \
+            "$RUNNER_TEMP/folded-migrations/20260723000000_folded_production_schema_baseline.sql"
+
+          count="$(find "$RUNNER_TEMP/folded-migrations" -maxdepth 1 -type f -name '*.sql' | wc -l)"
+          unique="$(find "$RUNNER_TEMP/folded-migrations" -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | cut -c1-14 | sort -u | wc -l)"
+          expected="$(find supabase/migrations -maxdepth 1 -type f -name '*.sql' | wc -l)"
+          test "$count" -eq "$expected"
+          test "$unique" -eq "$expected"
+          diff -qr "$RUNNER_TEMP/folded-migrations" supabase/migrations
+
+      - name: Apply folded history to blank Supabase
+        run: |
+          set -euo pipefail
+
+          supabase start --exclude studio,edge-runtime,logflare,vector
+          supabase status -o env > "$RUNNER_TEMP/supabase.env"
+          set -a
+          . "$RUNNER_TEMP/supabase.env"
+          set +a
+
+          NEXT_PUBLIC_SUPABASE_URL="${API_URL}" \
+            SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY}" \
+            npx tsx -e "import('./e2e/helpers/guardProduction').then(g => { g.assertNotProductionFromEnv(); console.log('✓ guard: not production'); })"
+
+          DB_URL="${DB_URL}" npx tsx scripts/check-schema-parity.ts
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f supabase/bootstrap/reference-data.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-public-page-management-rls.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-public-page-management-rls-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-service-combo-management-rls.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-service-combo-management-rls-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-salon-settings-update-rls.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-salon-settings-update-rls-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-salon-control-plane-columns.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-salon-control-plane-columns-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-public-view-invoker-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-public-view-invoker-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-btree-gist-extension-schema.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-btree-gist-extension-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-server-only-customer-rpc-grants.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-server-only-customer-rpc-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-public-rpc-role-grants.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-public-rpc-role-grants-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-group-slot-probe-grant-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-salon-staff-capability-invoker.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-salon-staff-capability-definer-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-intentional-anon-security-definers.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-integration-credential-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-integration-credential-boundary-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-identity-security-state-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-identity-security-state-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-capability-token-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-capability-token-boundary-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-observability-state-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-observability-state-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-notification-automation-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-notification-automation-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-internal-delivery-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-internal-delivery-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-nail-tryon-state-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-nail-tryon-state-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-client-intelligence-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-client-intelligence-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-client-profile-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-client-profile-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-public-booking-profile-finalization.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-public-booking-profile-finalization-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-booking-addons-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-booking-addons-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-email-optout-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-email-optout-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-payment-disputes-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-payment-disputes-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-reviews-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-reviews-rollback.sql
+
+          test "$(psql "$DB_URL" -tAc 'select count(*) from public.service_categories')" -eq 13
+          test "$(psql "$DB_URL" -tAc 'select count(*) from public.platform_flags')" -eq 5
+          bucket_count="$(psql "$DB_URL" -tAc "select count(*) from storage.buckets where id = 'nail-tryon' and public = false")"
+          test "$bucket_count" -eq 1
+
+      - name: Stop throwaway Supabase
+        if: always()
+        run: supabase stop --no-backup

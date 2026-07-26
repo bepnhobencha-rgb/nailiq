@@ -1,5 +1,5 @@
 import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
-import { createClient } from "@/shared/lib/supabase/client";
+import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 import type { BookingStaffItem } from "@/shared/booking/loadBookingServices";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
@@ -499,7 +499,7 @@ export async function getAvailableTimeSlots(
     startIso = dayStart.toISOString();
     endIso = dayEnd.toISOString();
   }
-  const supabase = createClient();
+  const supabase = createPublicClient();
   let occupancy: OccupancyRow[] = [];
 
   const { data: occData, error: occErr } = await supabase.rpc(

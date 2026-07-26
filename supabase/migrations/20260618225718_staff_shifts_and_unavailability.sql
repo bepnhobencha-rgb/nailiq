@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260618225718.
+-- Original production name: staff_shifts_and_unavailability.
+-- Its schema effect is represented by the later folded baseline.

@@ -20,6 +20,7 @@ import { cleanupPartyData, seedPartyLink } from "../party-booking/helpers";
 import {
   cleanReceptionistData,
   gotoReceptionistCenter,
+  openAttentionGroups,
   rcSlug,
   seedReceptionistCenterFixture,
   type ReceptionistCenterFixture,
@@ -66,7 +67,7 @@ test.describe("PartyCardPanel — valid HTML (no nested buttons)", () => {
     });
 
     await gotoReceptionistCenter(page, fx.slug);
-    await page.getByTestId("attention-chip-groups").click();
+    await openAttentionGroups(page);
 
     const toggle = page.getByTestId("party-card-panel-toggle");
     const refresh = page.getByTestId("party-card-panel-refresh");

@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260617155813.
+-- Original production name: p4_vip_birthday_google.
+-- Its schema effect is represented by the later folded baseline.

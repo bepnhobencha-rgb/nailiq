@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615162005.
+-- Original production name: email_links_enabled.
+-- Its schema effect is represented by the later folded baseline.

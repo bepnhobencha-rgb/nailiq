@@ -61,7 +61,7 @@ async function handleVoice(req: NextRequest, sigParams: Record<string, string>) 
   if (authToken) {
     const signature = req.headers.get("x-twilio-signature") ?? "";
     const fullUrl = `${twilioRequestBaseUrl(req)}/api/twilio/voice${req.nextUrl.search}`;
-    if (signature && !validateTwilioSignature(fullUrl, sigParams, signature, authToken)) {
+    if (!validateTwilioSignature(fullUrl, sigParams, signature, authToken)) {
       console.warn("[twilio/voice] invalid signature");
       return new NextResponse("Forbidden", { status: 403 });
     }

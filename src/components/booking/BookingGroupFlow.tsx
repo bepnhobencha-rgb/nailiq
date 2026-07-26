@@ -136,6 +136,34 @@ function currentArrivalPeriod(
   return "evening";
 }
 
+/**
+ * Sensible starting value for the "Specific time" field: the current
+ * salon-local time rounded up to the next 15 minutes, clamped into that day's
+ * open hours. Falls back to 9:00–19:00 when the day has no usable hours.
+ */
+function defaultSpecificTime(
+  tz: string,
+  dayHours: { open?: string; close?: string; closed?: boolean } | null | undefined,
+): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz || "America/Los_Angeles",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const h = Number(parts.find((p) => p.type === "hour")?.value ?? "12");
+  const m = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+  let mins = Math.ceil((h * 60 + m) / 15) * 15;
+  const toMin = (s?: string): number | null => {
+    const [hh, mm] = (s ?? "").split(":").map(Number);
+    return Number.isFinite(hh) ? hh * 60 + (mm || 0) : null;
+  };
+  const open = (!dayHours?.closed ? toMin(dayHours?.open) : null) ?? 9 * 60;
+  const close = (!dayHours?.closed ? toMin(dayHours?.close) : null) ?? 19 * 60;
+  if (mins < open || mins >= close) mins = open;
+  return `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+}
+
 type Step = 1 | 2 | 3 | 4 | 5 | "success";
 
 type MemberDraft = {
@@ -469,39 +497,6 @@ export function BookingGroupFlow({
   }, [openingWeek, date]);
   const isSelectedDayClosed = !!dayHours?.closed;
 
-  // Pre-fill "Specific time" with the current salon-local time (rounded up to
-  // the next 15 min, clamped to that day's open hours) the first time the
-  // customer picks "Specific time" — so they confirm/nudge a sensible value
-  // instead of starting from an empty field. Functional setState keeps any
-  // value the customer already typed or intentionally cleared.
-  useEffect(() => {
-    if (arrivalKind !== "specific") return;
-    setSpecificTime((cur) => {
-      if (cur !== "") return cur;
-      const tz = salon.timezone || "America/Los_Angeles";
-      const parts = new Intl.DateTimeFormat("en-US", {
-        timeZone: tz,
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }).formatToParts(new Date());
-      const h = Number(parts.find((p) => p.type === "hour")?.value ?? "12");
-      const m = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
-      let mins = Math.ceil((h * 60 + m) / 15) * 15;
-      const toMin = (s?: string): number | null => {
-        const [hh, mm] = (s ?? "").split(":").map(Number);
-        return Number.isFinite(hh) ? hh * 60 + (mm || 0) : null;
-      };
-      const open = (!dayHours?.closed ? toMin(dayHours?.open) : null) ?? 9 * 60;
-      const close =
-        (!dayHours?.closed ? toMin(dayHours?.close) : null) ?? 19 * 60;
-      if (mins < open || mins >= close) mins = open;
-      const hh = String(Math.floor(mins / 60)).padStart(2, "0");
-      const mm = String(mins % 60).padStart(2, "0");
-      return `${hh}:${mm}`;
-    });
-  }, [arrivalKind, salon.timezone, dayHours]);
-
   // Totals — sum of service prices + add-on prices; max member
   // effective duration (svc block + sequential add-on block).
   const totals = useMemo(() => {
@@ -693,7 +688,6 @@ export function BookingGroupFlow({
       // Deliberate reset when inputs go invalid — not a render-loop.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setCardRequirement(null);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCardRequirementLoading(false);
       return;
     }
@@ -1194,7 +1188,6 @@ export function BookingGroupFlow({
               setPartyLinkUrl(linkResult.url);
             } else {
               if (process.env.NODE_ENV !== "production") {
-                // eslint-disable-next-line no-console
                 console.warn(
                   "[nailiq] createPartyLink returned ok:false — reason:",
                   linkResult.reason,
@@ -1205,7 +1198,6 @@ export function BookingGroupFlow({
             }
           }).catch((err: unknown) => {
             if (process.env.NODE_ENV !== "production") {
-              // eslint-disable-next-line no-console
               console.warn("[nailiq] createPartyLink threw unexpectedly:", err);
             }
             setPartyLinkFailed(true);
@@ -1598,6 +1590,15 @@ export function BookingGroupFlow({
             setStepErrors(new Set());
           }}
           onArrivalKindChange={(k) => {
+            // Switching *into* "Specific time" seeds a sensible value so the
+            // customer confirms or nudges it instead of facing an empty field.
+            // Only on the transition, and only when nothing is there — anything
+            // already typed, or intentionally cleared, survives.
+            if (k === "specific" && arrivalKind !== "specific") {
+              setSpecificTime((cur) =>
+                cur !== "" ? cur : defaultSpecificTime(salon.timezone, dayHours),
+              );
+            }
             setArrivalKind(k);
             setStepErrors(new Set());
             setScheduleResult(null);

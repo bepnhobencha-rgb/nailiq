@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260524213412.
+-- Original production name: fix_determine_booking_verification_v2.
+-- Its schema effect is represented by the later folded baseline.

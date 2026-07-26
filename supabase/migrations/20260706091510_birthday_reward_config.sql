@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260706091510.
+-- Original production name: birthday_reward_config.
+-- Its schema effect is represented by the later folded baseline.

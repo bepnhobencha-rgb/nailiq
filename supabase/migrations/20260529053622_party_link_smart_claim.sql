@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260529053622.
+-- Original production name: party_link_smart_claim.
+-- Its schema effect is represented by the later folded baseline.

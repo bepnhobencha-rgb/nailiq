@@ -43,10 +43,7 @@ test.describe("Registration flow", () => {
       await page.goto("/register");
       await page.waitForLoadState("networkidle");
 
-      // Expand the password section (hidden behind "Sign in with password" toggle).
-      await page.getByTestId("social-auth-password-toggle").click();
-
-      // Fill email (already visible in open layout) and the newly revealed password input.
+      // Fill the primary email/password form.
       const emailInput = page.locator('input[inputMode="email"]');
       await emailInput.fill(email);
       await page.locator('input[type="password"]').fill(password);

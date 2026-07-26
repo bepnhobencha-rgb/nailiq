@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260619063201.
+-- Original production name: first_visit_sequences.
+-- Its schema effect is represented by the later folded baseline.

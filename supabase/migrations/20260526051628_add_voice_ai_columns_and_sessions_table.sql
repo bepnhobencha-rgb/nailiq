@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260526051628.
+-- Original production name: add_voice_ai_columns_and_sessions_table.
+-- Its schema effect is represented by the later folded baseline.

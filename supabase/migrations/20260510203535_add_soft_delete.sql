@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260510203535.
+-- Original production name: add_soft_delete.
+-- Its schema effect is represented by the later folded baseline.

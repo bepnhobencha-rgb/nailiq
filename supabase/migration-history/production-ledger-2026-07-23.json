@@ -1,0 +1,1076 @@
+{
+  "projectRef": "fshmobzyjhmtvndobwsy",
+  "capturedAt": "2026-07-23",
+  "releaseSha": "4868e87d19621b48e55e0099a781a3915a9d47af",
+  "rowCount": 267,
+  "migrations": [
+    {
+      "version": "20260427120000",
+      "name": "rls_public_booking"
+    },
+    {
+      "version": "20260427140000",
+      "name": "register_otps"
+    },
+    {
+      "version": "20260428120000",
+      "name": "salon_members_owner_rls"
+    },
+    {
+      "version": "20260428140000",
+      "name": "salons_email_owner_update_policy"
+    },
+    {
+      "version": "20260429130000",
+      "name": "bookings_rpc_and_authenticated_insert"
+    },
+    {
+      "version": "20260430120000",
+      "name": "public_read_catalog_policies"
+    },
+    {
+      "version": "20260430160000",
+      "name": "phase2_salon_setup_and_catalog_write_rls"
+    },
+    {
+      "version": "20260430170000",
+      "name": "bookings_unique_slot_and_price_snapshot"
+    },
+    {
+      "version": "20260430180000",
+      "name": "public_booking_occupancy_rpc"
+    },
+    {
+      "version": "20260430190000",
+      "name": "booking_waitlist"
+    },
+    {
+      "version": "20260430200000",
+      "name": "booking_flowchart_notes_addon"
+    },
+    {
+      "version": "20260505100000",
+      "name": "add_name_safety_constraints"
+    },
+    {
+      "version": "20260506003739",
+      "name": "add_staff_status"
+    },
+    {
+      "version": "20260506004410",
+      "name": "add_bookings_client_email"
+    },
+    {
+      "version": "20260506004817",
+      "name": "create_public_booking_accept_client_email"
+    },
+    {
+      "version": "20260506120000",
+      "name": "add_staff_services"
+    },
+    {
+      "version": "20260508075244",
+      "name": "bookings_walkin_queue_meta"
+    },
+    {
+      "version": "20260508233310",
+      "name": "add_staff_skills"
+    },
+    {
+      "version": "20260509031156",
+      "name": "salons_dashboard_density"
+    },
+    {
+      "version": "20260510203535",
+      "name": "add_soft_delete"
+    },
+    {
+      "version": "20260510205840",
+      "name": "superadmin_foundation_1a"
+    },
+    {
+      "version": "20260511001635",
+      "name": "add_staff_requested_by_client"
+    },
+    {
+      "version": "20260511015913",
+      "name": "add_soft_hold_until"
+    },
+    {
+      "version": "20260511025220",
+      "name": "add_walkin_auto_assign"
+    },
+    {
+      "version": "20260511030331",
+      "name": "platform_flags_table"
+    },
+    {
+      "version": "20260511033245",
+      "name": "add_brand_color"
+    },
+    {
+      "version": "20260511072718",
+      "name": "add_theme_mode"
+    },
+    {
+      "version": "20260511191635",
+      "name": "enable_rls_platform_flags"
+    },
+    {
+      "version": "20260511214109",
+      "name": "add_service_description"
+    },
+    {
+      "version": "20260512015011",
+      "name": "add_salon_currency_code"
+    },
+    {
+      "version": "20260512015039",
+      "name": "dynamic_service_categories"
+    },
+    {
+      "version": "20260512031111",
+      "name": "add_salon_description"
+    },
+    {
+      "version": "20260512054748",
+      "name": "group_booking"
+    },
+    {
+      "version": "20260512063633",
+      "name": "group_booking_size_up_to_8"
+    },
+    {
+      "version": "20260512073029",
+      "name": "group_booking_idempotency_fix"
+    },
+    {
+      "version": "20260512205455",
+      "name": "drop_staff_skills_column"
+    },
+    {
+      "version": "20260512214805",
+      "name": "timezone_required"
+    },
+    {
+      "version": "20260512220807",
+      "name": "check_group_slots_available"
+    },
+    {
+      "version": "20260513031528",
+      "name": "enforce_category_fk"
+    },
+    {
+      "version": "20260514040326",
+      "name": "fix_bookings_rls_anon_insert"
+    },
+    {
+      "version": "20260515064436",
+      "name": "salons_walkin_auto_assign"
+    },
+    {
+      "version": "20260516182354",
+      "name": "reviews"
+    },
+    {
+      "version": "20260519142904",
+      "name": "backfill_booking_price_cents_from_service"
+    },
+    {
+      "version": "20260519164432",
+      "name": "phone_otp"
+    },
+    {
+      "version": "20260519170404",
+      "name": "platform_settings"
+    },
+    {
+      "version": "20260519211118",
+      "name": "noshow_bookings_extend"
+    },
+    {
+      "version": "20260519211123",
+      "name": "booking_reminder_tokens"
+    },
+    {
+      "version": "20260519211136",
+      "name": "waitlist_enhance"
+    },
+    {
+      "version": "20260519211139",
+      "name": "salon_reminder_settings"
+    },
+    {
+      "version": "20260519211209",
+      "name": "reschedule_booking_rpc"
+    },
+    {
+      "version": "20260519213748",
+      "name": "waitlist_entry_email"
+    },
+    {
+      "version": "20260519220233",
+      "name": "salon_sms_reminders"
+    },
+    {
+      "version": "20260522175216",
+      "name": "enable_rls_email_verification_tokens"
+    },
+    {
+      "version": "20260522175914",
+      "name": "booking_photos"
+    },
+    {
+      "version": "20260522175942",
+      "name": "customer_photo_consents"
+    },
+    {
+      "version": "20260522180122",
+      "name": "add_client_birthday"
+    },
+    {
+      "version": "20260522180154",
+      "name": "vouchers"
+    },
+    {
+      "version": "20260522180214",
+      "name": "voucher_redemptions"
+    },
+    {
+      "version": "20260522180243",
+      "name": "referrals"
+    },
+    {
+      "version": "20260522180418",
+      "name": "customer_booking_patterns"
+    },
+    {
+      "version": "20260522180447",
+      "name": "customer_preferences"
+    },
+    {
+      "version": "20260522180508",
+      "name": "ai_trend_cache"
+    },
+    {
+      "version": "20260522180530",
+      "name": "ai_upsell_log"
+    },
+    {
+      "version": "20260522180556",
+      "name": "ai_chats"
+    },
+    {
+      "version": "20260522185242",
+      "name": "storage_booking_photos_rls"
+    },
+    {
+      "version": "20260522185246",
+      "name": "referral_rpcs"
+    },
+    {
+      "version": "20260522185847",
+      "name": "enable_pg_cron_pg_net"
+    },
+    {
+      "version": "20260522200305",
+      "name": "booking_reference_image"
+    },
+    {
+      "version": "20260522200750",
+      "name": "booking_reconfirm_sent_at"
+    },
+    {
+      "version": "20260522202235",
+      "name": "service_combos"
+    },
+    {
+      "version": "20260523080841",
+      "name": "smart_booking_verification"
+    },
+    {
+      "version": "20260524200304",
+      "name": "fix_claim_waitlist_slot_ambiguous_id"
+    },
+    {
+      "version": "20260524213342",
+      "name": "fix_determine_booking_verification"
+    },
+    {
+      "version": "20260524213412",
+      "name": "fix_determine_booking_verification_v2"
+    },
+    {
+      "version": "20260524220633",
+      "name": "phone_otp_sessions_anon_read_policy"
+    },
+    {
+      "version": "20260524222534",
+      "name": "salon_page_sections"
+    },
+    {
+      "version": "20260524225735",
+      "name": "website_import_jobs"
+    },
+    {
+      "version": "20260524233429",
+      "name": "security_hardening"
+    },
+    {
+      "version": "20260525011350",
+      "name": "google_review_url"
+    },
+    {
+      "version": "20260525021321",
+      "name": "loyalty_programs"
+    },
+    {
+      "version": "20260525021331",
+      "name": "gift_card_voucher_columns"
+    },
+    {
+      "version": "20260525030843",
+      "name": "booking_notifications"
+    },
+    {
+      "version": "20260525210758",
+      "name": "google_review_url"
+    },
+    {
+      "version": "20260526051628",
+      "name": "add_voice_ai_columns_and_sessions_table"
+    },
+    {
+      "version": "20260527015906",
+      "name": "add_voice_to_bookings_source_check"
+    },
+    {
+      "version": "20260528020252",
+      "name": "group_booking_dynamic_capacity"
+    },
+    {
+      "version": "20260528064009",
+      "name": "party_links"
+    },
+    {
+      "version": "20260529053622",
+      "name": "party_link_smart_claim"
+    },
+    {
+      "version": "20260530010432",
+      "name": "booking_notifications_nullable_sent_at"
+    },
+    {
+      "version": "20260530020735",
+      "name": "wave_booking"
+    },
+    {
+      "version": "20260602082700",
+      "name": "no_show_status"
+    },
+    {
+      "version": "20260602191417",
+      "name": "wix_webhook_infra"
+    },
+    {
+      "version": "20260603185014",
+      "name": "tech_nails_admin_setup"
+    },
+    {
+      "version": "20260604044804",
+      "name": "staff_user_link"
+    },
+    {
+      "version": "20260604143938",
+      "name": "add_salons_vertical"
+    },
+    {
+      "version": "20260604191722",
+      "name": "salon_custom_domains"
+    },
+    {
+      "version": "20260604193608",
+      "name": "public_page_sections"
+    },
+    {
+      "version": "20260605072806",
+      "name": "cleanup_test_salons_cron"
+    },
+    {
+      "version": "20260605084637",
+      "name": "salons_booking_images"
+    },
+    {
+      "version": "20260605202739",
+      "name": "salons_staff_selection_enabled"
+    },
+    {
+      "version": "20260605211300",
+      "name": "services_is_addon"
+    },
+    {
+      "version": "20260605221400",
+      "name": "booking_addons_multi"
+    },
+    {
+      "version": "20260605225001",
+      "name": "services_addon_timing"
+    },
+    {
+      "version": "20260606004401",
+      "name": "claim_salon_memberships_by_email"
+    },
+    {
+      "version": "20260607214028",
+      "name": "salons_booking_lead_minutes"
+    },
+    {
+      "version": "20260607220104",
+      "name": "salons_reference_image_enabled"
+    },
+    {
+      "version": "20260607232730",
+      "name": "auto_no_show"
+    },
+    {
+      "version": "20260607234442",
+      "name": "unbump_client_no_show"
+    },
+    {
+      "version": "20260608004820",
+      "name": "salons_winback_enabled"
+    },
+    {
+      "version": "20260608052439",
+      "name": "bookings_seat_together"
+    },
+    {
+      "version": "20260608053444",
+      "name": "group_booking_seat_together"
+    },
+    {
+      "version": "20260608164817",
+      "name": "phone_canonical_triggers"
+    },
+    {
+      "version": "20260609052450",
+      "name": "salons_group_together_threshold"
+    },
+    {
+      "version": "20260609174001",
+      "name": "client_profiles_snapshot_rpc"
+    },
+    {
+      "version": "20260609174144",
+      "name": "client_profiles_pii_revoke"
+    },
+    {
+      "version": "20260609190531",
+      "name": "pin_function_search_path"
+    },
+    {
+      "version": "20260610012548",
+      "name": "square_sync_integration"
+    },
+    {
+      "version": "20260610024505",
+      "name": "cancel_booking_by_id"
+    },
+    {
+      "version": "20260610032244",
+      "name": "square_deposits"
+    },
+    {
+      "version": "20260610035441",
+      "name": "deposit_refunded_status"
+    },
+    {
+      "version": "20260610035534",
+      "name": "bookings_fk_covering_indexes"
+    },
+    {
+      "version": "20260610163740",
+      "name": "rls_initplan_wrap_auth_calls"
+    },
+    {
+      "version": "20260610173909",
+      "name": "error_logs_self_hosted_monitor"
+    },
+    {
+      "version": "20260610174902",
+      "name": "error_monitor_phase2_alert_fields"
+    },
+    {
+      "version": "20260610175940",
+      "name": "error_monitor_phase3_ai_fix"
+    },
+    {
+      "version": "20260610181126",
+      "name": "resource_layer"
+    },
+    {
+      "version": "20260610183734",
+      "name": "create_public_booking_resource"
+    },
+    {
+      "version": "20260610185625",
+      "name": "create_public_booking_resource_autoassign"
+    },
+    {
+      "version": "20260611002052",
+      "name": "bookings_sms_consent"
+    },
+    {
+      "version": "20260611013457",
+      "name": "square_noshow_card_on_file"
+    },
+    {
+      "version": "20260611164138",
+      "name": "bookings_booking_channel"
+    },
+    {
+      "version": "20260611195720",
+      "name": "owner_notification_settings"
+    },
+    {
+      "version": "20260611215206",
+      "name": "notification_i18n_foundation"
+    },
+    {
+      "version": "20260611220542",
+      "name": "group_booking_client_locale"
+    },
+    {
+      "version": "20260613212621",
+      "name": "staff_notification_settings"
+    },
+    {
+      "version": "20260613224431",
+      "name": "scheduled_notifications"
+    },
+    {
+      "version": "20260614170828",
+      "name": "noshow_consent"
+    },
+    {
+      "version": "20260614175532",
+      "name": "payment_provider"
+    },
+    {
+      "version": "20260614185640",
+      "name": "noshow_policy_on_salon"
+    },
+    {
+      "version": "20260614193318",
+      "name": "noshow_card_required"
+    },
+    {
+      "version": "20260614222623",
+      "name": "salon_clients_directory"
+    },
+    {
+      "version": "20260614222651",
+      "name": "20260614100000_bookings_client_profile_id"
+    },
+    {
+      "version": "20260614222747",
+      "name": "20260614110000_resolve_client_profile"
+    },
+    {
+      "version": "20260614222800",
+      "name": "20260614120000_search_salon_clients"
+    },
+    {
+      "version": "20260614222819",
+      "name": "20260614130000_merge_client_profiles"
+    },
+    {
+      "version": "20260614222829",
+      "name": "20260614140000_backfill_client_profile_id"
+    },
+    {
+      "version": "20260614223043",
+      "name": "20260614121000_rename_typeahead_drop_dup"
+    },
+    {
+      "version": "20260614230148",
+      "name": "20260615020000_client_segment_settings"
+    },
+    {
+      "version": "20260614234038",
+      "name": "20260615030000_party_claim_promote_identity"
+    },
+    {
+      "version": "20260614234102",
+      "name": "20260615040000_group_organizer_host_stats"
+    },
+    {
+      "version": "20260615002314",
+      "name": "20260615100000_top_salon_hosts"
+    },
+    {
+      "version": "20260615005053",
+      "name": "client_ai_summaries"
+    },
+    {
+      "version": "20260615015917",
+      "name": "20260615110000_salon_multi_name_phones"
+    },
+    {
+      "version": "20260615023306",
+      "name": "seal_pii_leaks_prelaunch"
+    },
+    {
+      "version": "20260615023528",
+      "name": "scope_booking_client_snapshot_to_salon"
+    },
+    {
+      "version": "20260615024203",
+      "name": "drop_legacy_booking_client_snapshot"
+    },
+    {
+      "version": "20260615024551",
+      "name": "client_ai_summaries_lang"
+    },
+    {
+      "version": "20260615030816",
+      "name": "noshow_card_evidence"
+    },
+    {
+      "version": "20260615031451",
+      "name": "in_app_rate_limit"
+    },
+    {
+      "version": "20260615032224",
+      "name": "payment_disputes"
+    },
+    {
+      "version": "20260615033104",
+      "name": "guard_claim_memberships_confirmed_email"
+    },
+    {
+      "version": "20260615040608",
+      "name": "gate_staff_writes_to_managers"
+    },
+    {
+      "version": "20260615040729",
+      "name": "lock_party_change_requests_to_service_role"
+    },
+    {
+      "version": "20260615042106",
+      "name": "20260616100000_get_host_groups"
+    },
+    {
+      "version": "20260615053122",
+      "name": "deposit_hold_gate"
+    },
+    {
+      "version": "20260615055115",
+      "name": "deposit_hold_grace_setting"
+    },
+    {
+      "version": "20260615055709",
+      "name": "waitlist_advance_notifications"
+    },
+    {
+      "version": "20260615072533",
+      "name": "email_optouts"
+    },
+    {
+      "version": "20260615075606",
+      "name": "loyalty_voucher_valid_days"
+    },
+    {
+      "version": "20260615080659",
+      "name": "cancellation_policy"
+    },
+    {
+      "version": "20260615092448",
+      "name": "waitlist_offered_slot_cols"
+    },
+    {
+      "version": "20260615092557",
+      "name": "waitlist_capture_freed_slot"
+    },
+    {
+      "version": "20260615092824",
+      "name": "waitlist_auto_book_claim"
+    },
+    {
+      "version": "20260615093024",
+      "name": "waitlist_notify_fix_ambiguous_booking_date"
+    },
+    {
+      "version": "20260615094220",
+      "name": "health_acknowledgment"
+    },
+    {
+      "version": "20260615162005",
+      "name": "email_links_enabled"
+    },
+    {
+      "version": "20260615165043",
+      "name": "email_otp_codes"
+    },
+    {
+      "version": "20260615202037",
+      "name": "square_reverse_create_flag"
+    },
+    {
+      "version": "20260615203601",
+      "name": "square_sync_toggles"
+    },
+    {
+      "version": "20260615205631",
+      "name": "bookings_local_updated_at"
+    },
+    {
+      "version": "20260615221437",
+      "name": "system_audit"
+    },
+    {
+      "version": "20260615221846",
+      "name": "system_audit_entity_fix"
+    },
+    {
+      "version": "20260615223815",
+      "name": "auth_events"
+    },
+    {
+      "version": "20260615224435",
+      "name": "noshow_charge_retry"
+    },
+    {
+      "version": "20260615230807",
+      "name": "noshow_fee_pay_link"
+    },
+    {
+      "version": "20260615231413",
+      "name": "noshow_group_whole_party"
+    },
+    {
+      "version": "20260615232210",
+      "name": "noshow_deposit_escalation"
+    },
+    {
+      "version": "20260615234200",
+      "name": "noshow_card_gate_rules"
+    },
+    {
+      "version": "20260616002248",
+      "name": "waitlist_advance_revoke_anon"
+    },
+    {
+      "version": "20260616002823",
+      "name": "ai_policy_decisions"
+    },
+    {
+      "version": "20260616021715",
+      "name": "salon_client_names"
+    },
+    {
+      "version": "20260616044215",
+      "name": "waitlist_flip_tz_and_pastslot_fix"
+    },
+    {
+      "version": "20260616044537",
+      "name": "ai_policy_override_actor"
+    },
+    {
+      "version": "20260616061205",
+      "name": "salon_client_spend"
+    },
+    {
+      "version": "20260616063432",
+      "name": "watchdog"
+    },
+    {
+      "version": "20260616064452",
+      "name": "vip_spend_tiers"
+    },
+    {
+      "version": "20260616073306",
+      "name": "winback"
+    },
+    {
+      "version": "20260616074620",
+      "name": "otp_send_log"
+    },
+    {
+      "version": "20260616084456",
+      "name": "rebook_due"
+    },
+    {
+      "version": "20260617084211",
+      "name": "add_salon_ai_profile"
+    },
+    {
+      "version": "20260617151853",
+      "name": "p2_ai_manager_notif"
+    },
+    {
+      "version": "20260617155813",
+      "name": "p4_vip_birthday_google"
+    },
+    {
+      "version": "20260617220628",
+      "name": "add_noshow_charge_error_and_fix_attempts"
+    },
+    {
+      "version": "20260617220918",
+      "name": "square_visit_history"
+    },
+    {
+      "version": "20260617223731",
+      "name": "winback_candidates_square_source"
+    },
+    {
+      "version": "20260617223802",
+      "name": "winback_fix_gift_card_filter"
+    },
+    {
+      "version": "20260618225718",
+      "name": "staff_shifts_and_unavailability"
+    },
+    {
+      "version": "20260618225728",
+      "name": "hilite_seed_resources"
+    },
+    {
+      "version": "20260619054718",
+      "name": "booking_confirmation_dedup"
+    },
+    {
+      "version": "20260619063201",
+      "name": "first_visit_sequences"
+    },
+    {
+      "version": "20260619072133",
+      "name": "minh_outcome_tracking"
+    },
+    {
+      "version": "20260619180811",
+      "name": "create_public_booking_with_resource_id"
+    },
+    {
+      "version": "20260619181033",
+      "name": "hilite_cleanup_duplicate_beds"
+    },
+    {
+      "version": "20260619181228",
+      "name": "hilite_backfill_resource_id_upcoming"
+    },
+    {
+      "version": "20260619181705",
+      "name": "upgrade_create_public_booking_v27_autoassign"
+    },
+    {
+      "version": "20260619185833",
+      "name": "minh_lessons"
+    },
+    {
+      "version": "20260619190900",
+      "name": "approval_requests"
+    },
+    {
+      "version": "20260620190349",
+      "name": "email_reduces_risk"
+    },
+    {
+      "version": "20260620214640",
+      "name": "marketing_consent"
+    },
+    {
+      "version": "20260622001736",
+      "name": "yelp_business_id"
+    },
+    {
+      "version": "20260622061054",
+      "name": "restore_public_booking_profile_link"
+    },
+    {
+      "version": "20260622173747",
+      "name": "salon_invite_tokens"
+    },
+    {
+      "version": "20260622195007",
+      "name": "promotions"
+    },
+    {
+      "version": "20260622213628",
+      "name": "user_presence"
+    },
+    {
+      "version": "20260622225205",
+      "name": "tax_system"
+    },
+    {
+      "version": "20260622235410",
+      "name": "group_member_rsvp"
+    },
+    {
+      "version": "20260623005829",
+      "name": "group_decline_cutoff_configurable"
+    },
+    {
+      "version": "20260705214704",
+      "name": "lock_party_links_to_service_role"
+    },
+    {
+      "version": "20260705222313",
+      "name": "self_cancel_late_fee"
+    },
+    {
+      "version": "20260706000255",
+      "name": "self_cancel_fee_percent"
+    },
+    {
+      "version": "20260706001029",
+      "name": "fix_decline_party_member_start_column"
+    },
+    {
+      "version": "20260706031448",
+      "name": "waitlist_advance_fix_ambiguous_col"
+    },
+    {
+      "version": "20260706041547",
+      "name": "reschedule_waitlist_salon_tz"
+    },
+    {
+      "version": "20260706065244",
+      "name": "noshow_card_reminder_col"
+    },
+    {
+      "version": "20260706075719",
+      "name": "marketing_email_consent"
+    },
+    {
+      "version": "20260706091510",
+      "name": "birthday_reward_config"
+    },
+    {
+      "version": "20260706092448",
+      "name": "milestone_reward_config"
+    },
+    {
+      "version": "20260707015225",
+      "name": "reoptin_campaign"
+    },
+    {
+      "version": "20260707071633",
+      "name": "campaign_schedules"
+    },
+    {
+      "version": "20260709051812",
+      "name": "bookings_sms_consent_meta"
+    },
+    {
+      "version": "20260709081803",
+      "name": "salon_legal_urls"
+    },
+    {
+      "version": "20260709090035",
+      "name": "salon_default_language"
+    },
+    {
+      "version": "20260709091031",
+      "name": "salon_logo_url"
+    },
+    {
+      "version": "20260717005014",
+      "name": "sms_agent_sessions"
+    },
+    {
+      "version": "20260717061231",
+      "name": "create_public_booking_resource_autoassign_v29"
+    },
+    {
+      "version": "20260719201312",
+      "name": "tax_presets_rls"
+    },
+    {
+      "version": "20260720021617",
+      "name": "owner_notification_log"
+    },
+    {
+      "version": "20260720142914",
+      "name": "voice_session_tool_log"
+    },
+    {
+      "version": "20260720234622",
+      "name": "voice_session_lang_es"
+    },
+    {
+      "version": "20260721151743",
+      "name": "voice_ai_upsell"
+    },
+    {
+      "version": "20260722063820",
+      "name": "add_self_service_trial"
+    },
+    {
+      "version": "20260722175728",
+      "name": "move_cron_auth_to_vault"
+    },
+    {
+      "version": "20260722180738",
+      "name": "lock_internal_rpc_execution"
+    },
+    {
+      "version": "20260722182513",
+      "name": "harden_public_booking_addons"
+    },
+    {
+      "version": "20260722184158",
+      "name": "lock_verification_rpcs"
+    },
+    {
+      "version": "20260722184711",
+      "name": "secure_function_default_privileges"
+    },
+    {
+      "version": "20260722184850",
+      "name": "secure_global_function_defaults"
+    },
+    {
+      "version": "20260722195601",
+      "name": "rate_limit_public_booking"
+    },
+    {
+      "version": "20260722201052",
+      "name": "block_anon_direct_booking_insert"
+    },
+    {
+      "version": "20260722202634",
+      "name": "harden_public_group_booking"
+    },
+    {
+      "version": "20260722204507",
+      "name": "bind_client_snapshot_to_booking"
+    },
+    {
+      "version": "20260722210105",
+      "name": "close_public_pii_reads"
+    },
+    {
+      "version": "20260722213803",
+      "name": "close_loyalty_otp_reads"
+    },
+    {
+      "version": "20260722220834",
+      "name": "harden_public_salon_reads"
+    },
+    {
+      "version": "20260722222735",
+      "name": "isolate_authenticated_salon_reads"
+    },
+    {
+      "version": "20260722225335",
+      "name": "harden_public_staff_catalog"
+    },
+    {
+      "version": "20260723000000",
+      "name": "folded_production_schema_baseline"
+    }
+  ]
+}

@@ -82,7 +82,6 @@ function assertTrue(actual: unknown, msg?: string) {
 
 const NOW = new Date("2026-06-01T14:00:00Z");
 const TZ = "America/Vancouver";
-const SALON_ID = crypto.randomUUID();
 const GROUP_ID = crypto.randomUUID();
 const PARTY_LINK_ID = crypto.randomUUID();
 

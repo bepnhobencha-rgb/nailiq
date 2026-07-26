@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615165043.
+-- Original production name: email_otp_codes.
+-- Its schema effect is represented by the later folded baseline.

@@ -6,7 +6,7 @@ import { resolveVertical } from "@/shared/verticals/registry";
 import { parseServiceCategory } from "@/shared/booking/serviceCategory";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
-import { createClient } from "@/shared/lib/supabase/server";
+import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 import { normalizeBrandColor } from "@/shared/lib/brandColor";
 import {
   formatServicePrice,
@@ -124,7 +124,7 @@ export type BookingLoadData = {
  * Booking flowchart step 4 — load booking data for the salon.
  * Caller must pass a slug already normalized + validated (`resolvePublicBookingPage`).
  *
- * When `supabase` is omitted, uses `createClient()` from `@/shared/lib/supabase/server` (cookies).
+ * When `supabase` is omitted, uses the stateless public client (no user session).
  * Pass a `@supabase/supabase-js` client for scripts outside the Next.js request scope.
  * Public catalog reads rely on RLS policies for anonymous access.
  */
@@ -132,7 +132,7 @@ export async function loadBookingServicesForSalonSlug(
   normalizedSlug: string,
   supabase?: SupabaseClient,
 ): Promise<BookingLoadData | null> {
-  const client = supabase ?? (await createClient());
+  const client = supabase ?? createPublicClient();
 
   const { salon, error: salonErr } = await getSalonBySlug(
     client,

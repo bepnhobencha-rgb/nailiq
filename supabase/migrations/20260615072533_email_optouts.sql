@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615072533.
+-- Original production name: email_optouts.
+-- Its schema effect is represented by the later folded baseline.

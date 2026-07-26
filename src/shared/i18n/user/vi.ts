@@ -728,6 +728,10 @@ export const userVi: UserMessages = {
       "Hệ thống đăng nhập đang được bảo trì. Vui lòng quay lại sau.",
     confirmEmailNotice:
       "Vui lòng xác nhận email trước khi tiếp tục. Kiểm tra hộp thư để bấm vào liên kết xác nhận chúng tôi đã gửi.",
+    pkceRestart:
+      "Liên kết đăng nhập này được mở ở trình duyệt khác hoặc đã hết hạn. Hãy bắt đầu đăng nhập lại trong trình duyệt này.",
+    sessionError:
+      "Không thể hoàn tất đăng nhập. Vui lòng thử lại.",
     forgotPasswordLink: "Quên mật khẩu?",
     verifyTitle: "Nhập mã OTP",
     verifySubtextSent: "Mã 6 số đã gửi đến số {masked}",

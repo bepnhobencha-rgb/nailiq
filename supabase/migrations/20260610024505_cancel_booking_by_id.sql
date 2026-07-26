@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260610024505.
+-- Original production name: cancel_booking_by_id.
+-- Its schema effect is represented by the later folded baseline.

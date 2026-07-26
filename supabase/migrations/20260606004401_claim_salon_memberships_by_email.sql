@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260606004401.
+-- Original production name: claim_salon_memberships_by_email.
+-- Its schema effect is represented by the later folded baseline.

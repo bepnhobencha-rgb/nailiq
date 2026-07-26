@@ -35,6 +35,16 @@ export default async function UnsubscribePage({ searchParams }: Props) {
               Email xác nhận đặt lịch vẫn được gửi.
             </p>
           </>
+        ) : valid ? (
+          <>
+            <h1 className="text-xl font-semibold text-neutral-900">Please try again</h1>
+            <p className="mt-2 text-sm leading-relaxed text-neutral-600">
+              We could not update your email preferences right now. Please reload this page.
+            </p>
+            <p className="mt-1 text-sm leading-relaxed text-neutral-500">
+              Chưa thể cập nhật tùy chọn email. Vui lòng tải lại trang.
+            </p>
+          </>
         ) : (
           <>
             <h1 className="text-xl font-semibold text-neutral-900">Link not valid</h1>

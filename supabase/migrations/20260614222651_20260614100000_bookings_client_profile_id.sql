@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260614222651.
+-- Original production name: 20260614100000_bookings_client_profile_id.
+-- Its schema effect is represented by the later folded baseline.

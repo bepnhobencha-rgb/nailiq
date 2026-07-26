@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260610181126.
+-- Original production name: resource_layer.
+-- Its schema effect is represented by the later folded baseline.

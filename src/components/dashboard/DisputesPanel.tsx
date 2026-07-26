@@ -24,7 +24,6 @@ type PageState =
   | { kind: "ok"; disputes: DisputeRow[]; needsResponse: number };
 
 type EvidenceState =
-  | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "ok"; evidence: DisputeEvidence };
@@ -163,24 +162,43 @@ function EvidenceBundle({
   disputeId: string;
   t: ReturnType<typeof getUserMessages>["disputes"];
 }) {
-  const [state, setState] = useState<EvidenceState>({ kind: "idle" });
+  // The fetched state is tagged with the dispute it belongs to, so a response
+  // that lands after the target changed can be dropped. Comparing inside the
+  // updater reads the latest committed state, so nothing depends on effect
+  // timing.
+  const fetchKey = `${slug}|${disputeId}`;
+  const [session, setSession] = useState<{ key: string; state: EvidenceState }>({
+    key: fetchKey,
+    state: { kind: "loading" },
+  });
+  const state = session.state;
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Back to skeletons during render when the target changes — no effect needed.
+  if (session.key !== fetchKey) {
+    setSession({ key: fetchKey, state: { kind: "loading" } });
+  }
+
+  const applyState = useCallback((requestKey: string, next: EvidenceState) => {
+    setSession((prev) => (prev.key === requestKey ? { key: prev.key, state: next } : prev));
+  }, []);
+
   // Load evidence on mount
   useEffect(() => {
-    let cancelled = false;
-    setState({ kind: "loading" });
+    const requestKey = fetchKey;
     void (async () => {
-      const res = await loadDisputeEvidence(slug, disputeId);
-      if (cancelled) return;
-      if (res.ok) setState({ kind: "ok", evidence: res.evidence });
-      else setState({ kind: "error", message: res.error });
+      try {
+        const res = await loadDisputeEvidence(slug, disputeId);
+        if (res.ok) applyState(requestKey, { kind: "ok", evidence: res.evidence });
+        else applyState(requestKey, { kind: "error", message: res.error });
+      } catch {
+        // The action itself rejected — without this the bundle sits on
+        // skeletons forever.
+        applyState(requestKey, { kind: "error", message: "request_failed" });
+      }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [slug, disputeId]);
+  }, [slug, disputeId, fetchKey, applyState]);
 
   // Build plain-text copy of the evidence bundle
   const buildPlainText = useCallback(
@@ -261,7 +279,7 @@ function EvidenceBundle({
     [],
   );
 
-  if (state.kind === "idle" || state.kind === "loading") {
+  if (state.kind === "loading") {
     return (
       <div className="mt-3 space-y-2" role="status" aria-busy>
         <Skeleton className="h-5 w-40" rounded="rounded-md" />
@@ -472,22 +490,43 @@ export function DisputesPanel({ slug }: { slug: string }) {
   const { language } = useUserLanguage();
   const t = useMemo(() => getUserMessages(language).disputes, [language]);
 
-  const [state, setState] = useState<PageState>({ kind: "loading" });
+  // Tagged with the salon it belongs to — see EvidenceBundle above for why.
+  const [session, setSession] = useState<{ key: string; state: PageState }>({
+    key: slug,
+    state: { kind: "loading" },
+  });
+  const state = session.state;
+
+  // Back to skeletons during render when the salon changes — no effect needed.
+  if (session.key !== slug) {
+    setSession({ key: slug, state: { kind: "loading" } });
+  }
+
+  const applyState = useCallback((requestKey: string, next: PageState) => {
+    setSession((prev) => (prev.key === requestKey ? { key: prev.key, state: next } : prev));
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    setState({ kind: "loading" });
+    const requestKey = slug;
     void (async () => {
-      const res = await loadDisputes(slug);
-      if (cancelled) return;
-      if (res.ok)
-        setState({ kind: "ok", disputes: res.disputes, needsResponse: res.needsResponse });
-      else setState({ kind: "error", message: res.error });
+      try {
+        const res = await loadDisputes(slug);
+        if (res.ok) {
+          applyState(requestKey, {
+            kind: "ok",
+            disputes: res.disputes,
+            needsResponse: res.needsResponse,
+          });
+        } else {
+          applyState(requestKey, { kind: "error", message: res.error });
+        }
+      } catch {
+        // The action itself rejected — without this the panel sits on
+        // skeletons forever.
+        applyState(requestKey, { kind: "error", message: "request_failed" });
+      }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [slug]);
+  }, [slug, applyState]);
 
   return (
     <div className="space-y-4" data-testid="disputes-panel">

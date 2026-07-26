@@ -11,11 +11,16 @@
  * Desktop always uses StaffTimelineGrid (unchanged).
  */
 
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, Play, Plus } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
-import { formatInSalonTz } from "@/shared/lib/salonTime";
+import { formatCurrency } from "@/shared/lib/currencyFormat";
+import {
+  formatInSalonTz,
+  salonWallTimeToUtcIso,
+} from "@/shared/lib/salonTime";
+import { computeLatenessTier } from "./lateness";
 import type { GridBooking, GridStaff } from "./StaffTimelineGrid";
 
 // 8-colour palette — one per staff member (by staff list index, stable per session)
@@ -82,6 +87,31 @@ function addDaysToYmd(ymd: string, delta: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Keep the configured opening-hours window, but widen it to include every
+ * rendered booking/tombstone start. The desktop grid already does this for
+ * off-hours bookings; mobile must not silently drop the same appointments.
+ */
+export function computeVerticalSlotWindow(
+  openMinutes: number,
+  closeMinutes: number,
+  itemStartMinutes: number[],
+): { start: number; end: number } {
+  let start = openMinutes;
+  let end = closeMinutes;
+
+  for (const minutes of itemStartMinutes) {
+    if (!Number.isFinite(minutes)) continue;
+    const slot = Math.floor(minutes / SLOT_MIN) * SLOT_MIN;
+    start = Math.min(start, slot);
+    end = Math.max(end, slot + SLOT_MIN);
+  }
+
+  start = Math.max(0, Math.min(start, 24 * 60 - SLOT_MIN));
+  end = Math.min(24 * 60, Math.max(end, start + SLOT_MIN));
+  return { start, end };
+}
+
 // ──────────────────────────────────── types ────────────────────────────────────
 
 export interface VerticalDayViewProps {
@@ -98,6 +128,29 @@ export interface VerticalDayViewProps {
   onNavigateDate: (ymd: string) => void;
   onAddBooking: () => void;
   language?: "en" | "vi";
+  autoNoShowMinutes?: number | null;
+  currencyCode?: import("@/shared/lib/currencyFormat").Currency;
+  noShowTombstones?: Array<{
+    id: string;
+    clientName: string;
+    startTimeUtc: string;
+    endTimeUtc: string;
+    staffId: string | null;
+    feeCents: number | null;
+    chargeStatus: string | null;
+    hasCard: boolean;
+  }>;
+  onStartBooking?: (bookingId: string) => void;
+  onTombstoneUndo?: (bookingId: string) => void;
+  onTombstoneCharge?: (bookingId: string) => void;
+  onTombstoneWaive?: (bookingId: string) => void;
+  assigning?: {
+    queueItemId: string;
+    clientName: string;
+    serviceDurationMinutes: number;
+  } | null;
+  onAssignSlot?: (staffId: string, slotStartUtc: string) => void;
+  onCancelAssign?: () => void;
 }
 
 // ─────────────────────────────── main component ────────────────────────────────
@@ -116,9 +169,20 @@ export default function VerticalDayView({
   onNavigateDate,
   onAddBooking,
   language = "en",
+  autoNoShowMinutes,
+  currencyCode,
+  noShowTombstones = [],
+  onStartBooking,
+  onTombstoneUndo,
+  onTombstoneCharge,
+  onTombstoneWaive,
+  assigning = null,
+  onAssignSlot,
+  onCancelAssign,
 }: VerticalDayViewProps) {
   const open = openMinutes ?? DEFAULT_OPEN;
   const close = closeMinutes ?? DEFAULT_CLOSE;
+  const assignMode = assigning !== null && onAssignSlot !== undefined;
 
   // Stable colour + name lookup by staff id
   const staffColorMap = useMemo(() => {
@@ -152,6 +216,17 @@ export default function VerticalDayView({
     return map;
   }, [bookings, timezone]);
 
+  const tombstonesBySlot = useMemo(() => {
+    const map = new Map<number, (typeof noShowTombstones)[number][]>();
+    for (const tombstone of noShowTombstones) {
+      const mins = utcToSalonMinutes(tombstone.startTimeUtc, timezone);
+      const slot = Math.floor(mins / SLOT_MIN) * SLOT_MIN;
+      if (!map.has(slot)) map.set(slot, []);
+      map.get(slot)!.push(tombstone);
+    }
+    return map;
+  }, [noShowTombstones, timezone]);
+
   // Current-time position for the "now" red line
   const nowMins = useMemo(
     () =>
@@ -159,12 +234,22 @@ export default function VerticalDayView({
     [isViewingToday, nowIso, timezone],
   );
 
-  // Generate 30-min time slots
+  // Generate 30-min time slots. Widen around actual items so an appointment
+  // before opening or after closing still has a row on the mobile board.
   const slots = useMemo(() => {
+    const itemStartMinutes = [
+      ...bookings.map((booking) =>
+        utcToSalonMinutes(booking.start_time_utc, timezone),
+      ),
+      ...noShowTombstones.map((tombstone) =>
+        utcToSalonMinutes(tombstone.startTimeUtc, timezone),
+      ),
+    ];
+    const window = computeVerticalSlotWindow(open, close, itemStartMinutes);
     const arr: number[] = [];
-    for (let m = open; m < close; m += SLOT_MIN) arr.push(m);
+    for (let m = window.start; m < window.end; m += SLOT_MIN) arr.push(m);
     return arr;
-  }, [open, close]);
+  }, [bookings, close, noShowTombstones, open, timezone]);
 
   // Horizontal swipe → navigate to prev/next day
   const touchStart = useRef({ x: 0, y: 0 });
@@ -193,7 +278,10 @@ export default function VerticalDayView({
 
   return (
     <div
-      className="relative select-none pb-28"
+      className={cn(
+        "relative select-none pb-28",
+        assignMode ? "cursor-copy" : "",
+      )}
       data-testid="vertical-day-view"
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
@@ -231,10 +319,36 @@ export default function VerticalDayView({
         </motion.button>
       </motion.div>
 
-      {slots.map((slot) => {
+      {assignMode ? (
+        <div
+          data-testid="mobile-walkin-assign-banner"
+          className="mx-4 mb-2 flex items-center justify-between gap-3 rounded-xl border border-nq-primary/45 bg-nq-primary/10 px-3 py-2"
+        >
+          <p className="min-w-0 text-xs font-semibold text-nq-primary">
+            {language === "vi" ? "Xếp chỗ cho" : "Assign"}{" "}
+            <span className="truncate text-white/90">{assigning.clientName}</span>
+            <span className="ml-1 text-white/45">
+              · {assigning.serviceDurationMinutes}m
+            </span>
+          </p>
+          {onCancelAssign ? (
+            <button
+              type="button"
+              data-testid="mobile-walkin-assign-cancel"
+              className="min-h-9 shrink-0 rounded-lg border border-white/15 px-2.5 text-xs font-semibold text-white/65"
+              onClick={onCancelAssign}
+            >
+              {language === "vi" ? "Hủy" : "Cancel"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {slots.map((slot, slotIndex) => {
         const slotBookings = bookingsBySlot.get(slot) ?? [];
+        const slotTombstones = tombstonesBySlot.get(slot) ?? [];
         const isHour = slot % 60 === 0;
-        const hasBookings = slotBookings.length > 0;
+        const hasItems = slotBookings.length > 0 || slotTombstones.length > 0;
 
         // Show the "now" red line inside the slot where the current time falls
         const nowLineHere =
@@ -245,7 +359,13 @@ export default function VerticalDayView({
             : null;
 
         // Skip empty :30 slots to keep the list tight (only :00 get empty rows)
-        if (!hasBookings && !isHour && !nowLineHere) return null;
+        if (!assignMode && !hasItems && !isHour && !nowLineHere) return null;
+
+        const slotUtc = salonWallTimeToUtcIso(
+          selectedDate,
+          slot,
+          timezone,
+        );
 
         return (
           <div key={slot} className="relative">
@@ -281,18 +401,75 @@ export default function VerticalDayView({
 
               {/* Bookings or empty-slot tap area */}
               <div className="min-w-0 flex-1 space-y-1.5">
-                {hasBookings ? (
-                  slotBookings.map((booking) => (
-                    <BookingCard
-                      key={booking.id}
-                      booking={booking}
-                      color={staffColorMap[booking.staff_id] ?? "#888"}
-                      staffName={staffNameMap[booking.staff_id] ?? ""}
-                      timezone={timezone}
-                      onPress={() => onBookingClick(booking.id)}
-                    />
-                  ))
-                ) : isHour ? (
+                {assignMode ? (
+                  <div
+                    data-testid={`mobile-assign-slot-${slotIndex}`}
+                    className="grid grid-cols-2 gap-1.5"
+                  >
+                    {staff.map((staffMember) => (
+                      <button
+                        key={staffMember.id}
+                        type="button"
+                        data-testid={`assign-slot-${staffMember.id}-${slotIndex}`}
+                        data-slot-utc={slotUtc}
+                        aria-label={
+                          language === "vi"
+                            ? `Xếp ${assigning.clientName} cho ${staffMember.name} lúc ${minsToDisplayLabel(slot, language)}`
+                            : `Assign ${assigning.clientName} to ${staffMember.name} at ${minsToDisplayLabel(slot, language)}`
+                        }
+                        className="min-h-11 rounded-lg border border-nq-primary/35 bg-nq-primary/10 px-2 text-left text-xs font-semibold text-white/80 transition-colors active:bg-nq-primary/25"
+                        onClick={() => onAssignSlot(staffMember.id, slotUtc)}
+                      >
+                        <span className="block truncate">{staffMember.name}</span>
+                        <span className="text-[10px] font-normal text-white/40">
+                          {minsToDisplayLabel(slot, language)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+
+                {hasItems ? (
+                  <>
+                    {slotBookings.map((booking) => (
+                      <BookingCard
+                        key={booking.id}
+                        booking={booking}
+                        color={staffColorMap[booking.staff_id] ?? "#888"}
+                        staffName={staffNameMap[booking.staff_id] ?? ""}
+                        timezone={timezone}
+                        nowIso={nowIso}
+                        autoNoShowMinutes={autoNoShowMinutes ?? null}
+                        language={language}
+                        onPress={() => onBookingClick(booking.id)}
+                        onStart={
+                          onStartBooking
+                            ? () => onStartBooking(booking.id)
+                            : undefined
+                        }
+                      />
+                    ))}
+                    {slotTombstones.map((tombstone) => (
+                      <MobileNoShowTombstone
+                        key={tombstone.id}
+                        {...tombstone}
+                        language={language}
+                        currencyCode={currencyCode}
+                        onUndo={() => onTombstoneUndo?.(tombstone.id)}
+                        onCharge={
+                          onTombstoneCharge
+                            ? () => onTombstoneCharge(tombstone.id)
+                            : undefined
+                        }
+                        onWaive={
+                          onTombstoneWaive
+                            ? () => onTombstoneWaive(tombstone.id)
+                            : undefined
+                        }
+                      />
+                    ))}
+                  </>
+                ) : !assignMode && isHour ? (
                   <button
                     className="flex h-9 w-full items-center gap-1.5 rounded-lg border border-dashed border-white/[0.08] px-3 text-[11px] text-white/20 transition-colors active:border-white/25 active:text-white/40"
                     onClick={() => {
@@ -338,27 +515,65 @@ function BookingCard({
   color,
   staffName,
   timezone,
+  nowIso,
+  autoNoShowMinutes,
+  language,
   onPress,
+  onStart,
 }: {
   booking: GridBooking;
   color: string;
   staffName: string;
   timezone: string;
+  nowIso: string;
+  autoNoShowMinutes: number | null;
+  language: "en" | "vi";
   onPress: () => void;
+  onStart?: () => void;
 }) {
   const startStr = formatInSalonTz(booking.start_time_utc, timezone, "shortTime");
   const endStr = formatInSalonTz(booking.end_time_utc, timezone, "shortTime");
   const dotColor = STATUS_DOT[booking.status] ?? STATUS_DOT.pending;
+  const { tier: latenessTier, autoAtIso } = computeLatenessTier({
+    status: booking.status,
+    startTimeUtc: booking.start_time_utc,
+    nowIso,
+    autoNoShowMinutes,
+  });
+  const latenessLabel =
+    latenessTier === "critical"
+      ? language === "vi"
+        ? "Rất trễ"
+        : "Very late"
+      : language === "vi"
+        ? "Trễ"
+        : "Late";
 
   return (
-    <motion.button
+    <motion.div
       data-testid={`booking-block-${booking.id}`}
       data-booking-source={booking.source}
-      className="w-full rounded-xl border border-white/[0.07] bg-white/[0.05] p-3 text-left transition-colors active:bg-white/[0.09]"
+      className={cn(
+        "w-full rounded-xl border bg-white/[0.05] p-3 text-left transition-colors active:bg-white/[0.09]",
+        latenessTier === "critical"
+          ? "border-nq-error/70 ring-2 ring-nq-error/35"
+          : latenessTier === "late"
+            ? "border-nq-warning/70 ring-2 ring-nq-warning/25"
+            : latenessTier === "due"
+              ? "border-nq-primary/55 ring-1 ring-nq-primary/25"
+              : "border-white/[0.07]",
+      )}
       whileTap={{ scale: 0.98 }}
       onClick={onPress}
     >
-      <div className="flex items-start gap-2.5">
+      <button
+        type="button"
+        className="flex w-full items-start gap-2.5 text-left"
+        onClick={(event) => {
+          event.stopPropagation();
+          onPress();
+        }}
+      >
         {/* Staff colour bar */}
         <div
           className="flex-shrink-0 self-stretch rounded-full"
@@ -378,12 +593,50 @@ function BookingCard({
             {booking.is_vip && (
               <span className="leading-none text-nq-primary text-xs">★</span>
             )}
+            {booking.seat_together ? (
+              <span
+                data-testid={`booking-block-icon-seat-together-${booking.id}`}
+                role="img"
+                aria-label={
+                  language === "vi" ? "Yêu cầu ngồi cùng nhau" : "Seat together"
+                }
+                className="leading-none text-xs"
+              >
+                💕
+              </span>
+            ) : null}
           </div>
 
           {/* Service name */}
           <div className="mb-1.5 truncate text-xs text-white/50">
             {booking.service_name}
           </div>
+
+          {latenessTier && latenessTier !== "due" ? (
+            <div
+              data-testid={`booking-block-lateness-${booking.id}`}
+              className="mb-2 flex flex-wrap items-center gap-1.5"
+            >
+              <span
+                data-testid={`booking-block-icon-late-${booking.id}`}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                  latenessTier === "critical"
+                    ? "bg-nq-error/20 text-nq-error"
+                    : "bg-nq-warning/20 text-nq-warning",
+                )}
+              >
+                <Clock size={11} aria-hidden />
+                {latenessLabel}
+              </span>
+              {autoAtIso ? (
+                <span className="text-[10px] text-white/35">
+                  {language === "vi" ? "Tự đánh dấu vắng" : "Auto no-show"}{" "}
+                  {formatInSalonTz(autoAtIso, timezone, "shortTime")}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
 
           {/* Time range + staff chip */}
           <div className="flex items-center justify-between gap-2">
@@ -398,7 +651,148 @@ function BookingCard({
             </span>
           </div>
         </div>
-      </div>
-    </motion.button>
+      </button>
+      {latenessTier ? (
+        <div
+          data-testid={
+            latenessTier === "due"
+              ? `booking-block-lateness-${booking.id}`
+              : undefined
+          }
+          className="mt-2 flex justify-end"
+        >
+          {onStart ? (
+            <button
+              type="button"
+              data-testid={`booking-block-start-${booking.id}`}
+              className="inline-flex min-h-8 items-center gap-1 rounded-lg bg-nq-success/20 px-2.5 text-[11px] font-semibold text-nq-success"
+              onClick={(event) => {
+                event.stopPropagation();
+                onStart();
+              }}
+            >
+              <Play size={11} fill="currentColor" aria-hidden />
+              {language === "vi" ? "Bắt đầu" : "Start"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </motion.div>
+  );
+}
+
+function MobileNoShowTombstone({
+  id,
+  clientName,
+  feeCents,
+  chargeStatus,
+  hasCard,
+  language,
+  currencyCode,
+  onUndo,
+  onCharge,
+  onWaive,
+}: {
+  id: string;
+  clientName: string;
+  feeCents: number | null;
+  chargeStatus: string | null;
+  hasCard: boolean;
+  language: "en" | "vi";
+  currencyCode?: import("@/shared/lib/currencyFormat").Currency;
+  onUndo: () => void;
+  onCharge?: () => void;
+  onWaive?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const vi = language === "vi";
+  const amount = feeCents
+    ? (formatCurrency(feeCents, currencyCode) ?? "")
+    : "";
+  const canResolveFee =
+    hasCard &&
+    feeCents !== null &&
+    feeCents > 0 &&
+    chargeStatus !== "charged" &&
+    chargeStatus !== "waived";
+  const status =
+    chargeStatus === "charged"
+      ? vi
+        ? `Đã thu ${amount}`
+        : `Charged ${amount}`
+      : chargeStatus === "waived"
+        ? vi
+          ? "Đã bỏ qua phí"
+          : "Fee waived"
+        : vi
+          ? "Vắng mặt"
+          : "No-show";
+
+  return (
+    <div
+      data-testid={`noshow-tombstone-${id}`}
+      className="w-full rounded-xl border border-dashed border-nq-error/50 bg-nq-error/10 p-3 text-left"
+      onClick={() => setOpen((value) => !value)}
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={vi ? `Khách vắng: ${clientName}` : `No-show: ${clientName}`}
+        className="flex w-full items-center justify-between gap-3 text-left"
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((value) => !value);
+        }}
+      >
+        <span className="truncate text-sm font-semibold text-white/75 line-through decoration-nq-error/70">
+          {clientName}
+        </span>
+        <span className="shrink-0 text-[11px] font-medium text-nq-error">
+          {status}
+        </span>
+      </button>
+
+      {open ? (
+        <div
+          className="mt-2 grid gap-1 border-t border-nq-error/20 pt-2"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            className="min-h-10 rounded-lg px-2 text-left text-sm text-nq-success"
+            onClick={() => {
+              setOpen(false);
+              onUndo();
+            }}
+          >
+            {vi ? "Bỏ vắng (đã đến)" : "Undo no-show"}
+          </button>
+          {canResolveFee && onCharge ? (
+            <button
+              type="button"
+              className="min-h-10 rounded-lg px-2 text-left text-sm text-nq-warning"
+              onClick={() => {
+                setOpen(false);
+                onCharge();
+              }}
+            >
+              {vi ? `Thu phí ${amount}` : `Charge ${amount}`}
+            </button>
+          ) : null}
+          {canResolveFee && onWaive ? (
+            <button
+              type="button"
+              className="min-h-10 rounded-lg px-2 text-left text-sm text-white/60"
+              onClick={() => {
+                setOpen(false);
+                onWaive();
+              }}
+            >
+              {vi ? "Bỏ qua phí" : "Waive fee"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }

@@ -212,15 +212,11 @@ function PriceChip({
   currency: Currency;
 }) {
   const [editing, setEditing] = useState(false);
+  // Only read while editing. The button below re-seeds it from the row on
+  // every click, and the read-only display formats row.price_cents directly,
+  // so the row prop never needs syncing into it from an effect.
   const [draft, setDraft] = useState(dollarsFromCents(row.price_cents));
   const inputRef = useRef<HTMLInputElement>(null);
-
-  // Keep draft in sync when row prop changes (e.g. after save/refresh)
-  useEffect(() => {
-    if (!editing) {
-      setDraft(dollarsFromCents(row.price_cents));
-    }
-  }, [row.price_cents, editing]);
 
   function handleCommit() {
     const cents = centsFromDollarsString(draft);

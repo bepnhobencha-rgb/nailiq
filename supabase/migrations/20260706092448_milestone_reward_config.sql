@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260706092448.
+-- Original production name: milestone_reward_config.
+-- Its schema effect is represented by the later folded baseline.

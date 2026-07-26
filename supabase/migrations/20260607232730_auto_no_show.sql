@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260607232730.
+-- Original production name: auto_no_show.
+-- Its schema effect is represented by the later folded baseline.

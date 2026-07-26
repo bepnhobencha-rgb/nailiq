@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDown, Sparkles, X } from "lucide-react";
 
 import { cn } from "@/shared/lib/cn";
@@ -35,8 +35,6 @@ type Labels = {
 };
 
 type Props = {
-  slug: string;
-  selectedDate: string;
   bookings: BriefBooking[];
   readyStaffCount: number;
   totalStaffCount: number;
@@ -50,10 +48,13 @@ type Props = {
 const ACTIVE_STATUSES = new Set(["pending", "confirmed", "in_progress", "completed"]);
 const HIGH_RISK_SCORE = 60;
 
-/** A 10-second start-of-day briefing that remembers when it was reviewed. */
+/**
+ * A compact start-of-day briefing with details available on demand.
+ *
+ * The schedule is the receptionist's primary workspace, so the brief starts as
+ * a single summary row instead of occupying a full card above the timeline.
+ */
 export function DailyBriefCard({
-  slug,
-  selectedDate,
   bookings,
   readyStaffCount,
   totalStaffCount,
@@ -64,19 +65,7 @@ export function DailyBriefCard({
   labels,
 }: Props) {
   const isClosingTime = closeMinutes != null && currentMinutes >= closeMinutes - 90;
-  const storageKey = `nailiq-daily-brief-seen:${slug}:${selectedDate}:${isClosingTime ? "close" : "open"}`;
-  const [expanded, setExpanded] = useState(true);
-
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      try {
-        setExpanded(window.localStorage.getItem(storageKey) !== "1");
-      } catch {
-        // Storage can be unavailable in private mode; the briefing remains open.
-      }
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [storageKey]);
+  const [expanded, setExpanded] = useState(false);
 
   const summary = useMemo(() => {
     const active = bookings
@@ -103,21 +92,13 @@ export function DailyBriefCard({
   const closingWorkCount =
     summary.remainingCount + summary.inServiceCount + waitingCount;
 
-  const collapse = () => {
-    setExpanded(false);
-    try {
-      window.localStorage.setItem(storageKey, "1");
-    } catch {
-      // Keeping the UI responsive matters more than persistence.
-    }
-  };
-
   if (!expanded) {
     return (
       <div className="border-b border-nq-muted/20 px-[var(--pad-nq-section-mobile)] py-1.5 md:px-6">
         <button
           type="button"
           onClick={() => setExpanded(true)}
+          data-testid="nailiq-daily-brief-summary"
           className="mx-auto flex min-h-9 w-full max-w-[var(--max-nq-desktop)] items-center gap-2 rounded-lg px-2 text-left text-xs text-nq-muted transition-colors hover:bg-nq-surface/70 hover:text-nq-foreground"
           aria-label={labels.expand}
         >
@@ -158,7 +139,8 @@ export function DailyBriefCard({
           </div>
           <button
             type="button"
-            onClick={collapse}
+            onClick={() => setExpanded(false)}
+            data-testid="nailiq-daily-brief-collapse"
             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-nq-muted transition-colors hover:bg-nq-surface hover:text-nq-foreground"
             aria-label={labels.collapse}
           >

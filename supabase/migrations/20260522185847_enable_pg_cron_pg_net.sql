@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260522185847.
+-- Original production name: enable_pg_cron_pg_net.
+-- Its schema effect is represented by the later folded baseline.

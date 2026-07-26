@@ -24,7 +24,7 @@
  * probe and the submit click).
  */
 
-import { createClient } from "@/shared/lib/supabase/server";
+import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 
 export type GroupSlotProbe = {
   /** 0-indexed position in the arrangement's member list. Echoed
@@ -55,7 +55,10 @@ export async function checkGroupSlotsAvailable(
     return { available: true };
   }
 
-  const supabase = await createClient();
+  // This is deliberately a public booking probe. Do not inherit dashboard
+  // cookies here: the database role must stay `anon` even when a signed-in
+  // operator happens to open the public group-booking flow.
+  const supabase = createPublicClient();
   const payload = slots.map((s) => ({
     member_index: s.memberIndex,
     salon_id: s.salonId,

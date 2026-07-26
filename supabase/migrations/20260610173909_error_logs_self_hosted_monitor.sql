@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260610173909.
+-- Original production name: error_logs_self_hosted_monitor.
+-- Its schema effect is represented by the later folded baseline.

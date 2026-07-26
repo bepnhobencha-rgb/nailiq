@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260509031156.
+-- Original production name: salons_dashboard_density.
+-- Its schema effect is represented by the later folded baseline.

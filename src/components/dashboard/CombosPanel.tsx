@@ -2,8 +2,12 @@
 
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/shared/lib/supabase/client";
-import type { ComboRow, ServiceOption } from "@/app/dashboard/[slug]/combos/page";
+import type { ServiceOption } from "@/app/dashboard/[slug]/combos/page";
+import {
+  deleteServiceCombo,
+  saveServiceCombo,
+  type ComboRow,
+} from "@/shared/dashboard/comboActions";
 import { cn } from "@/shared/lib/cn";
 
 type EditState = {
@@ -33,18 +37,15 @@ function formatPrice(cents: number) {
 }
 
 export function CombosPanel({
-  salonId,
   slug,
   combos: initialCombos,
   services,
 }: {
-  salonId: string;
   slug: string;
   combos: ComboRow[];
   services: ServiceOption[];
 }) {
   const router = useRouter();
-  const db = createClient();
   const [combos, setCombos] = useState<ComboRow[]>(initialCombos);
   const [editing, setEditing] = useState<EditState | null>(null);
   const [saving, setSaving] = useState(false);
@@ -94,60 +95,41 @@ export function CombosPanel({
     if (duration <= 0) { setError("Duration must be > 0"); return; }
 
     setSaving(true);
-    const payload = {
-      salon_id: salonId,
+    const result = await saveServiceCombo(slug, {
+      id: editing.id,
       name,
       description: editing.description.trim() || null,
-      service_ids: editing.service_ids,
-      price_cents: price,
-      discount_cents: discount,
-      duration_minutes: duration,
-      is_active: editing.is_active,
-    };
-
-    let err;
-    let row: ComboRow | null = null;
-    if (editing.id) {
-      const { data, error: e } = await (db as ReturnType<typeof createClient>)
-        .from("service_combos" as never)
-        .update(payload as never)
-        .eq("id", editing.id)
-        .select()
-        .single();
-      err = e;
-      row = data as ComboRow | null;
-    } else {
-      const maxPos = combos.reduce((m, c) => Math.max(m, c.position), -1);
-      const { data, error: e } = await (db as ReturnType<typeof createClient>)
-        .from("service_combos" as never)
-        .insert({ ...payload, position: maxPos + 1 } as never)
-        .select()
-        .single();
-      err = e;
-      row = data as ComboRow | null;
-    }
+      serviceIds: editing.service_ids,
+      priceCents: price,
+      discountCents: discount,
+      durationMinutes: duration,
+      isActive: editing.is_active,
+    });
 
     setSaving(false);
-    if (err || !row) { setError((err as { message?: string })?.message ?? "Save failed"); return; }
+    if (!result.ok) { setError(`Save failed (${result.error})`); return; }
+    const row = result.combo;
 
     setCombos((prev) =>
       editing.id
-        ? prev.map((c) => (c.id === editing.id ? (row as ComboRow) : c))
-        : [...prev, row as ComboRow],
+        ? prev.map((c) => (c.id === editing.id ? row : c))
+        : [...prev, row],
     );
     setEditing(null);
     router.refresh();
-  }, [editing, salonId, combos, db, router]);
+  }, [editing, slug, router]);
 
   const del = useCallback(async (id: string) => {
     if (!confirm("Delete this bundle?")) return;
-    await (db as ReturnType<typeof createClient>)
-      .from("service_combos" as never)
-      .delete()
-      .eq("id", id);
+    setError(null);
+    const result = await deleteServiceCombo(slug, id);
+    if (!result.ok) {
+      setError(`Delete failed (${result.error})`);
+      return;
+    }
     setCombos((prev) => prev.filter((c) => c.id !== id));
     router.refresh();
-  }, [db, router]);
+  }, [slug, router]);
 
   return (
     <div className="space-y-8 p-6">

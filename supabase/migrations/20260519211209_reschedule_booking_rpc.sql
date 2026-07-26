@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260519211209.
+-- Original production name: reschedule_booking_rpc.
+-- Its schema effect is represented by the later folded baseline.

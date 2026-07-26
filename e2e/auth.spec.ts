@@ -17,16 +17,8 @@ import { test, expect } from "@playwright/test";
 
 import {
   cleanupTestUser,
-  getLatestOtp,
   seedTestUser,
 } from "./helpers/db";
-
-/** Mirrors `normalizeRegisterPhone` — OTP rows use canonical digits (NANP gets leading 1). */
-function normalizedDigits(raw: string): string {
-  const d = raw.replace(/\D/g, "");
-  if (d.length === 10 && /^[2-9]\d{9}$/.test(d)) return `1${d}`;
-  return d;
-}
 
 test.describe("Auth Flows — Registration", () => {
   test("Register page loads with email input visible", async ({ page }) => {
@@ -37,9 +29,8 @@ test.describe("Auth Flows — Registration", () => {
     const emailInput = page.locator('input[inputMode="email"]');
     await expect(emailInput).toBeVisible();
 
-    // Should have a "Sign in with password" toggle/section
-    const passwordToggle = page.getByTestId("social-auth-password-toggle");
-    await expect(passwordToggle).toBeVisible();
+    // Password signup is a primary registration path and must be reachable.
+    await expect(page.locator('input[type="password"]')).toBeVisible();
   });
 
   test("Register with email/password — valid inputs", async ({ page }) => {
@@ -48,9 +39,6 @@ test.describe("Auth Flows — Registration", () => {
     try {
       await page.goto("/register");
       await page.waitForLoadState("networkidle");
-
-      // Expand password section
-      await page.getByTestId("social-auth-password-toggle").click();
 
       // Fill credentials
       const emailInput = page.locator('input[inputMode="email"]');
@@ -79,9 +67,6 @@ test.describe("Auth Flows — Registration", () => {
     await emailInput.fill("notanemail");
     await emailInput.blur(); // trigger validation
 
-    // Email input should have error state (aria-invalid or visual error)
-    // Check for error message or invalid state
-    const errorMsg = page.locator('text=/invalid|error|@/i');
     // Some validation happens on blur, give it time
     await page.waitForTimeout(300);
 
@@ -94,29 +79,17 @@ test.describe("Auth Flows — Registration", () => {
     expect(inputStatus.validity).toBe(false);
   });
 
-  test("Register — password toggle reveals password input", async ({ page }) => {
+  test("Register — password input is available by default", async ({ page }) => {
     await page.goto("/register");
     await page.waitForLoadState("networkidle");
 
     const passwordInput = page.locator('input[type="password"]');
-    const toggleBtn = page.getByTestId("social-auth-password-toggle");
-
-    // Password input should be hidden initially
-    await expect(passwordInput).not.toBeVisible();
-
-    // Click toggle
-    await toggleBtn.click();
-
-    // Password input should now be visible
     await expect(passwordInput).toBeVisible();
   });
 
   test("Register — weak password validation (< 8 chars)", async ({ page }) => {
     await page.goto("/register");
     await page.waitForLoadState("networkidle");
-
-    // Expand password section
-    await page.getByTestId("social-auth-password-toggle").click();
 
     // Wait for password input to be visible
     await page.waitForSelector('input[type="password"]', { timeout: 5000 });
@@ -143,20 +116,18 @@ test.describe("Auth Flows — Registration", () => {
     await page.goto("/register");
     await page.waitForLoadState("networkidle");
 
-    // Expand password section
-    await page.getByTestId("social-auth-password-toggle").click();
-
     // Wait for password input to be visible
     await page.waitForSelector('input[type="password"]', { timeout: 5000 });
 
     const emailInput = page.locator('input[inputMode="email"]');
     const passwordInput = page.locator('input[type="password"]');
-    const submitBtn = page.getByRole("button", { name: /^sign in$/i });
+    const submitBtn = page.getByRole("button", { name: /^sign up$/i });
 
     // Initially form is empty - at least one input should be empty
     let emailValue = await emailInput.inputValue();
     let passwordValue = await passwordInput.inputValue();
     expect(emailValue.trim().length === 0 || passwordValue.length === 0).toBe(true);
+    await expect(submitBtn).toBeDisabled();
 
     // Fill email only
     await emailInput.fill("test@example.com");
@@ -166,6 +137,7 @@ test.describe("Auth Flows — Registration", () => {
     emailValue = await emailInput.inputValue();
     passwordValue = await passwordInput.inputValue();
     expect(emailValue.length > 0 && passwordValue.length === 0).toBe(true);
+    await expect(submitBtn).toBeDisabled();
 
     // Fill weak password (less than 8 chars)
     await passwordInput.fill("weak");
@@ -174,6 +146,7 @@ test.describe("Auth Flows — Registration", () => {
     // Password should still be too short
     const weakPassword = await passwordInput.inputValue();
     expect(weakPassword.length < 8).toBe(true);
+    await expect(submitBtn).toBeDisabled();
 
     // Fill strong password
     await passwordInput.fill("StrongPass123!");
@@ -182,6 +155,7 @@ test.describe("Auth Flows — Registration", () => {
     // Strong password should be valid (longer than 8 chars)
     const strongPassword = await passwordInput.inputValue();
     expect(strongPassword.length >= 8).toBe(true);
+    await expect(submitBtn).toBeEnabled();
   });
 });
 
@@ -436,57 +410,33 @@ test.describe("Auth Flows — Language Toggle (EN/VI)", () => {
     await page.goto("/register");
     await page.waitForLoadState("networkidle");
 
-    // Find language toggle buttons - look for button with text "EN" or "VI"
-    const buttons = await page.getByRole("button").all();
-    let viButton = null;
-    let enButton = null;
+    const enButton = page.getByRole("button", { name: "English" });
+    const viButton = page.getByRole("button", { name: "Tiếng Việt" });
+    await enButton.click();
+    await expect(enButton).toHaveAttribute("aria-pressed", "true");
+    await expect(viButton).toBeVisible();
+    await expect(viButton).toHaveAttribute("aria-pressed", "false");
 
-    for (const btn of buttons) {
-      const text = await btn.textContent();
-      if (text?.includes("EN")) enButton = btn;
-      if (text?.includes("VI")) viButton = btn;
-    }
+    await viButton.click();
 
-    // If VI button found, click it
-    if (viButton) {
-      const initialHtml = await page.content();
-      await viButton.click();
-      await page.waitForTimeout(300);
-
-      // Page should have changed (language swapped)
-      const newHtml = await page.content();
-      expect(newHtml).not.toBe(initialHtml);
-    }
+    await expect(viButton).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("link", { name: /Trang chủ/ })).toBeVisible();
   });
 
   test("Language toggle persists on navigation", async ({ page }) => {
     await page.goto("/register");
     await page.waitForLoadState("networkidle");
 
-    // Toggle to VI if toggle exists
-    const langToggle = page.locator("button").filter({
-      hasText: /EN|VI|English|Tiếng/i,
-    });
+    const viOption = page.getByRole("button", { name: "Tiếng Việt" });
+    await viOption.click();
+    await expect(viOption).toHaveAttribute("aria-pressed", "true");
 
-    if (await langToggle.count() > 0) {
-      const viOption = page.locator("button", { has: page.locator("text=/VI|Tiếng/i") });
-      if (await viOption.count() > 0) {
-        await viOption.click();
-        await page.waitForTimeout(300);
+    await page.goto("/login");
+    await page.waitForLoadState("networkidle");
 
-        // Navigate to login
-        await page.goto("/login");
-        await page.waitForLoadState("networkidle");
-
-        // VI should still be selected
-        const activeToggle = page.locator("button[aria-pressed='true']").filter({
-          hasText: /VI|Tiếng/i,
-        });
-
-        // If persistent, toggle should show VI selected
-        // (Implementation dependent on cookie/localStorage)
-      }
-    }
+    await expect(
+      page.getByRole("button", { name: "Tiếng Việt" }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 });
 
@@ -537,10 +487,6 @@ test.describe("Auth Flows — Accessibility", () => {
     await page.goto("/register");
     await page.waitForLoadState("networkidle");
 
-    // Expand password toggle first
-    const toggleBtn = page.getByTestId("social-auth-password-toggle");
-    await toggleBtn.click();
-
     // Wait for password input to be visible
     await page.waitForSelector('input[type="password"]', { timeout: 5_000 });
 
@@ -567,9 +513,6 @@ test.describe("Auth Flows — Accessibility", () => {
     try {
       await page.goto("/register");
       await page.waitForLoadState("networkidle");
-
-      // Expand password section
-      await page.getByTestId("social-auth-password-toggle").click();
 
       // Tab to and focus email input
       const emailInput = page.locator('input[inputMode="email"]');
@@ -732,7 +675,7 @@ test.describe("Auth Flows — Error States", () => {
         await submitBtn.click();
         await page.waitForTimeout(500);
       }
-    } catch (e) {
+    } catch {
       // Network error is expected during offline operation
     }
 
@@ -774,7 +717,6 @@ test.describe("Auth Flows — Session & State", () => {
       await page.goto("/register");
       await page.waitForLoadState("networkidle");
 
-      await page.getByTestId("social-auth-password-toggle").click();
       await page.locator('input[inputMode="email"]').fill(email);
       await page.locator('input[type="password"]').fill(password);
       await page.getByRole("button", { name: /^sign in$/i }).click();

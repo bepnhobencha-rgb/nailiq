@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260607234442.
+-- Original production name: unbump_client_no_show.
+-- Its schema effect is represented by the later folded baseline.

@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260607214028.
+-- Original production name: salons_booking_lead_minutes.
+-- Its schema effect is represented by the later folded baseline.

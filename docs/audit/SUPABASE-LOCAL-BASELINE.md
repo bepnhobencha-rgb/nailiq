@@ -2,6 +2,15 @@
 
 **Ngày:** 2026-07-14 · **Nguồn:** production `fshmobzyjhmtvndobwsy` (NailIQOS) · **Commit tương ứng:** `c16e275`
 
+> **Cập nhật 2026-07-23:** lịch sử cũ đã được lưu nguyên vẹn tại
+> `supabase/migration-history/legacy-2026-07-23/`. `supabase/migrations/` nay
+> chứa 266 marker khớp ledger production và một folded baseline có thể dựng
+> database trắng. Tài liệu bằng chứng/cutover hiện hành là
+> `docs/audit/MIGRATION-HISTORY-RECONCILIATION-2026-07-23.md`.
+> Production và repo hiện ở strict 267/267 parity.
+> `scripts/db-push-guard.js` đã được thay bằng `scripts/db-push-safe.mjs`;
+> mặc định chỉ dry-run và mọi apply thật vẫn approval-gated.
+
 ---
 
 ## Baseline này KHÔNG phải migration history của production
@@ -116,16 +125,16 @@ CI sẽ tự bắt nếu baseline thiếu: `check-schema-parity.ts` so số bả
 
 ---
 
-## Kế hoạch xử lý 262 migration (sprint sau — CHƯA làm)
+## Kế hoạch xử lý 262 migration (đã hoàn tất 2026-07-23)
 
-**Không đụng trong nhóm này.** Đề xuất cho sau:
+Kế hoạch lịch sử đã được thực hiện theo phương án folded baseline:
 
 1. Dùng `supabase/bootstrap/schema.sql` (đã có, đã verify) làm baseline.
 2. Chuyển 262 file cũ sang `supabase/migrations/_archive/` — **giữ lại**, không xoá.
 3. Đặt baseline thành migration đầu tiên (`00000000000000_baseline.sql`).
 4. `supabase migration repair` trên **project test**, **không** trên production.
 5. Chỉ khi test xanh mới cân nhắc đồng bộ bảng `schema_migrations` của production.
-6. Gỡ `scripts/db-push-guard.js` khi `db push` an toàn trở lại.
+6. Thay guard cũ bằng wrapper bắt buộc deploy-ready audit + dry-run trước apply.
 
 **Không** rewrite Git history. **Không** sửa `schema_migrations` của production trong bước 1–4.
 

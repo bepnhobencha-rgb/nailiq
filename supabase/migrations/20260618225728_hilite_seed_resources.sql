@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260618225728.
+-- Original production name: hilite_seed_resources.
+-- Its schema effect is represented by the later folded baseline.

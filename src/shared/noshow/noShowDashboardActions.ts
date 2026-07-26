@@ -3,7 +3,7 @@
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { attributeRecentAudit } from "@/shared/dashboard/attributeAudit";
-import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
+import { isOwner, isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 
 export type NoShowSummary = {
   unconfirmedCount: number;
@@ -421,8 +421,9 @@ export async function updateSquareSyncSettings(
   return { ok: true };
 }
 
-/** Update the provider choice + no-show card-on-file policy (provider-agnostic).
- *  Owner only. Provider is locked elsewhere once a card exists; this just sets it. */
+/** Update no-show card-on-file policy. Owner/admin may manage protection rules,
+ *  but choosing the payment provider is owner-only payment infrastructure.
+ *  Provider is locked elsewhere once a card exists; this just sets it. */
 export async function updateNoShowCardSettings(
   slug: string,
   settings: {
@@ -450,6 +451,9 @@ export async function updateNoShowCardSettings(
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx || !isOwnerOrAdmin(ctx.role)) return { ok: false, error: "unauthorized" };
+  if (settings.payment_provider !== undefined && !isOwner(ctx.role)) {
+    return { ok: false, error: "unauthorized" };
+  }
 
   const clampPct = (v: number) => Math.min(100, Math.max(0, Math.round(v)));
   const patch: Record<string, unknown> = {};

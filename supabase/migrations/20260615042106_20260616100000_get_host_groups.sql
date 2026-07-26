@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615042106.
+-- Original production name: 20260616100000_get_host_groups.
+-- Its schema effect is represented by the later folded baseline.

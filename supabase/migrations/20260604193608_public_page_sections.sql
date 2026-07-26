@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260604193608.
+-- Original production name: public_page_sections.
+-- Its schema effect is represented by the later folded baseline.

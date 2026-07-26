@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260609052450.
+-- Original production name: salons_group_together_threshold.
+-- Its schema effect is represented by the later folded baseline.

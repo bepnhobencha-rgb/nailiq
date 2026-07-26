@@ -1,31 +1,25 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
+const foldedBaseline = readFileSync(
+  resolve(
+    process.cwd(),
+    "supabase/migrations/20260723000000_folded_production_schema_baseline.sql",
+  ),
+  "utf8",
+);
+
 describe("public booking write boundary", () => {
   it("keeps anonymous direct booking inserts revoked and fail-closed", () => {
-    const dir = resolve(process.cwd(), "supabase/migrations");
-    const migrations = readdirSync(dir)
-      .filter((name) => name.endsWith(".sql"))
-      .sort()
-      .map((name) => readFileSync(resolve(dir, name), "utf8"));
-    const latestPolicy = migrations
-      .filter((sql) => /(?:CREATE|create) POLICY bookings_insert_anon/.test(sql))
-      .at(-1);
-
-    expect(latestPolicy).toBeDefined();
-    expect(latestPolicy).toMatch(/REVOKE INSERT ON TABLE public\.bookings FROM anon/i);
-    expect(latestPolicy).toMatch(/WITH CHECK \(false\)/i);
+    expect(foldedBaseline).toMatch(
+      /REVOKE INSERT ON TABLE public\.bookings FROM anon/i,
+    );
+    expect(foldedBaseline).toMatch(/WITH CHECK \(false\)/i);
   });
 
   it("keeps anonymous group bookings behind validation and abuse controls", () => {
-    const migration = readFileSync(
-      resolve(
-        process.cwd(),
-        "supabase/migrations/20260722201500_harden_public_group_booking.sql",
-      ),
-      "utf8",
-    );
+    const migration = foldedBaseline;
 
     expect(migration).toMatch(/RENAME TO insert_group_bookings_unlimited/i);
     expect(migration).toMatch(/REVOKE ALL ON FUNCTION public\.insert_group_bookings_unlimited\(jsonb\)/i);
@@ -37,13 +31,7 @@ describe("public booking write boundary", () => {
   });
 
   it("binds public customer snapshots to a recent unguessable booking", () => {
-    const migration = readFileSync(
-      resolve(
-        process.cwd(),
-        "supabase/migrations/20260722203000_bind_client_snapshot_to_booking.sql",
-      ),
-      "utf8",
-    );
+    const migration = foldedBaseline;
 
     expect(migration).toMatch(/p_booking_id uuid/i);
     expect(migration).toMatch(/b\.id = p_booking_id/i);
@@ -55,13 +43,7 @@ describe("public booking write boundary", () => {
   });
 
   it("keeps queue and review PII closed to public table reads", () => {
-    const migration = readFileSync(
-      resolve(
-        process.cwd(),
-        "supabase/migrations/20260722205000_close_public_pii_reads.sql",
-      ),
-      "utf8",
-    );
+    const migration = foldedBaseline;
 
     expect(migration).toMatch(/DROP POLICY IF EXISTS anon_read_queue_entries/i);
     expect(migration).toMatch(
@@ -74,13 +56,7 @@ describe("public booking write boundary", () => {
   });
 
   it("keeps loyalty phones and OTP session rows private", () => {
-    const migration = readFileSync(
-      resolve(
-        process.cwd(),
-        "supabase/migrations/20260722210600_close_loyalty_otp_reads.sql",
-      ),
-      "utf8",
-    );
+    const migration = foldedBaseline;
 
     expect(migration).toMatch(
       /REVOKE SELECT ON TABLE public\.loyalty_cards FROM anon/i,
@@ -90,24 +66,11 @@ describe("public booking write boundary", () => {
     expect(migration).toMatch(
       /REVOKE SELECT ON TABLE public\.phone_otp_sessions FROM anon/i,
     );
-
-    const baseline = readFileSync(
-      resolve(process.cwd(), "scripts/apply-baseline.sh"),
-      "utf8",
-    );
-    expect(baseline).toContain(
-      "20260722210600_close_loyalty_otp_reads.sql",
-    );
+    expect(migration).toContain("20260722210600_close_loyalty_otp_reads.sql");
   });
 
   it("keeps owner, billing and internal salon fields out of anonymous reads", () => {
-    const migration = readFileSync(
-      resolve(
-        process.cwd(),
-        "supabase/migrations/20260722214100_harden_public_salon_reads.sql",
-      ),
-      "utf8",
-    );
+    const migration = foldedBaseline;
 
     expect(migration).toMatch(
       /REVOKE ALL PRIVILEGES ON TABLE public\.salons FROM anon/i,
@@ -134,13 +97,7 @@ describe("public booking write boundary", () => {
   });
 
   it("isolates authenticated salon rows behind a safe public profile", () => {
-    const migration = readFileSync(
-      resolve(
-        process.cwd(),
-        "supabase/migrations/20260722221300_isolate_authenticated_salon_reads.sql",
-      ),
-      "utf8",
-    );
+    const migration = foldedBaseline;
 
     expect(migration).toMatch(/CREATE OR REPLACE VIEW public\.public_salon_profiles/i);
     expect(migration).toMatch(/DROP POLICY IF EXISTS "public read salons"/i);
@@ -161,13 +118,7 @@ describe("public booking write boundary", () => {
   });
 
   it("keeps staff identities and time-off reasons out of public booking", () => {
-    const migration = readFileSync(
-      resolve(
-        process.cwd(),
-        "supabase/migrations/20260722223100_harden_public_staff_catalog.sql",
-      ),
-      "utf8",
-    );
+    const migration = foldedBaseline;
 
     expect(migration).toMatch(/DROP POLICY IF EXISTS "public read staff"/i);
     expect(migration).toMatch(/DROP POLICY IF EXISTS "public read services"/i);

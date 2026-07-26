@@ -2,7 +2,7 @@ import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import type { BookingWaitlistSource } from "@/shared/booking/waitlistSource";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
-import { createClient } from "@/shared/lib/supabase/client";
+import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 
 export type SubmitPublicWaitlistParams = {
   shopSlug: string;
@@ -45,7 +45,7 @@ export async function submitPublicWaitlistEntry(
     throw new Error("invalid_name_chars");
   }
 
-  const supabase = createClient();
+  const supabase = createPublicClient();
 
   const { data: salonData, error: salonErr } = await supabase
     .from("public_salon_profiles" as never)

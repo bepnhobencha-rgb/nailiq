@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260522180154.
+-- Original production name: vouchers.
+-- Its schema effect is represented by the later folded baseline.

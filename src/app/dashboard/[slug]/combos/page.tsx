@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
+import type { ComboRow } from "@/shared/dashboard/comboActions";
 import { CombosPanel } from "@/components/dashboard/CombosPanel";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +22,9 @@ export default async function CombosPage({ params }: PageProps) {
   const { slug } = await params;
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) redirect("/register");
+  if (!isOwnerOrAdmin(ctx.role)) {
+    redirect(`/dashboard/${encodeURIComponent(slug)}`);
+  }
   const { supabase, salon } = ctx;
 
   // PR3: release flag `combos` (Beta, registry-only, default OFF) gates the
@@ -58,25 +63,12 @@ export default async function CombosPage({ params }: PageProps) {
 
   return (
     <CombosPanel
-      salonId={salon.id}
       slug={slug}
       combos={(combos ?? []) as ComboRow[]}
       services={(services ?? []) as ServiceOption[]}
     />
   );
 }
-
-export type ComboRow = {
-  id: string;
-  name: string;
-  description: string | null;
-  service_ids: string[];
-  price_cents: number;
-  discount_cents: number;
-  duration_minutes: number;
-  is_active: boolean;
-  position: number;
-};
 
 export type ServiceOption = {
   id: string;

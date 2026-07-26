@@ -18,13 +18,14 @@
 import { execFileSync } from "node:child_process";
 
 /**
- * Production's shape, measured 2026-07-14 against project fshmobzyjhmtvndobwsy.
- * Refresh these when the baseline is refreshed — they are a tripwire, not a spec.
+ * Release shape, measured from production plus the rehearsed forward migrations
+ * through 20260724173000. Refresh these with each schema-changing forward
+ * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
-  tables: 81,
-  columns: 1064,
-  policies: 101,
+  tables: 89,
+  columns: 1216,
+  policies: 140,
   /**
    * APP functions only — 65.
    *
@@ -38,9 +39,9 @@ const PRODUCTION = {
    * Verified on production: 253 total = 188 extension-owned + 65 app-owned.
    * The query below excludes anything a `pg_depend` extension edge points at.
    */
-  functions: 65,
-  triggers: 24,
-  indexes: 265,
+  functions: 73,
+  triggers: 25,
+  indexes: 294,
 } as const;
 
 /**
@@ -52,8 +53,6 @@ const PRODUCTION = {
  * we are hunting is a baseline that dropped a WHOLE CLASS of object — half the
  * policies, all the triggers — not a drift of three.
  */
-const TOLERANCE = 0.9; // must retain at least 90% of production's count
-
 /** Tables the product cannot function without. Absence here is fatal, not a ratio. */
 const CRITICAL_TABLES = [
   "salons",
@@ -112,7 +111,7 @@ function main() {
   for (const key of Object.keys(PRODUCTION) as Array<keyof typeof PRODUCTION>) {
     const got = actual[key];
     const want = PRODUCTION[key];
-    const ok = got >= Math.floor(want * TOLERANCE);
+    const ok = got === want;
     if (!ok) failed = true;
     console.log(
       `  ${ok ? "✓" : "✗"} ${key.padEnd(10)} ${String(got).padStart(5)}  ${String(want).padStart(5)}` +
@@ -143,18 +142,16 @@ function main() {
   // test database MORE permissive than production, and the security specs would
   // pass while a real leak went unnoticed.
   //
-  // After the Stage 0 public-profile split, anon reaches 74 base tables plus
-  // the safe public_salon_profiles view; authenticated reaches its 75 base
-  // tables plus that view; service_role reaches all 81 plus the view. The base
-  // tables anon cannot touch are the sensitive
-  // ones (client_ai_summaries, otp_send_log, payment_disputes, rate_limits,
-  // salon_clients, scheduled_notifications) — that gap IS the PII protection,
-  // and it has to survive into the test database intact.
+  // Public booking views are SECURITY INVOKER. Anon therefore reaches narrow
+  // base-table columns through the safe views, while bearer-capability,
+  // credential, identity-security, and other internal state remains
+  // service-role-only. That gap IS the PII/security boundary, and it has to
+  // survive into the test database intact.
   //
   // The first dump here was taken with --no-privileges and produced 0 grants.
   // Everything above still went green. That is why this check exists.
   console.log("\n── Grant matrix ──\n");
-  const GRANTS = { anon: 75, authenticated: 80, service_role: 86 } as const;
+  const GRANTS = { anon: 57, authenticated: 60, service_role: 94 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (

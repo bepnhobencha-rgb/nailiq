@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260511072718.
+-- Original production name: add_theme_mode.
+-- Its schema effect is represented by the later folded baseline.

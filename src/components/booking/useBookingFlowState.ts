@@ -311,7 +311,10 @@ export function useBookingFlowState(
   const [returningCustomer, setReturningCustomer] = useState<ReturningCustomer | null>(
     initialReturningCustomer ?? null,
   );
-  const [lookupLoading, setLookupLoading] = useState(false);
+  // Which lookup has finished, tagged with the request it belongs to.
+  // `lookupLoading` is derived from it against the phone on screen, so the
+  // effect below never has to raise or lower a flag synchronously.
+  const [settledLookupKey, setSettledLookupKey] = useState<string | null>(null);
   const [preferredStaffDismissed, setPreferredStaffDismissed] = useState(false);
   const lookupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -319,13 +322,19 @@ export function useBookingFlowState(
   const [waitlistSubmitting, setWaitlistSubmitting] = useState(false);
   // Option A no-show card gate — resolved when the customer reaches the confirm
   // step (before any booking exists) so the card form can render in-step.
-  const [cardRequirement, setCardRequirement] = useState<NoShowCardRequirement | null>(null);
-  // True while resolveNoShowCardRequirement is in-flight. Gates the confirm
-  // button so the user can't race past the card check before it resolves.
-  const [cardRequirementLoading, setCardRequirementLoading] = useState(false);
+  // Raw fetch results, each tagged with the request identity it belongs to.
+  // What the confirm step reads is derived from those below, so neither effect
+  // has to clear state synchronously when its inputs stop applying.
+  const [fetchedCardRequirement, setFetchedCardRequirement] = useState<{
+    key: string;
+    requirement: NoShowCardRequirement | null;
+  } | null>(null);
   // Đợt 2 — returning OTP-verified customer's saved card (one-tap reuse). Null =
   // not looked up / none; only populated when a card is required AND OTP-verified.
-  const [savedCard, setSavedCard] = useState<SavedNoShowCard | null>(null);
+  const [fetchedSavedCard, setFetchedSavedCard] = useState<{
+    key: string;
+    card: SavedNoShowCard | null;
+  } | null>(null);
   // SMS consent — captured at the phone gate; pre-satisfies confirm so it isn't
   // asked twice. Confirm still requires it (gates the button) as a safety net.
   const [smsConsent, setSmsConsent] = useState(initialSmsConsent);
@@ -560,6 +569,17 @@ export function useBookingFlowState(
     void fireBookingConfetti();
   }, [step]);
 
+  // Gate-verified: the full profile was already fetched via the
+  // profile-verified API and supplied through initialReturningCustomer. Skip
+  // the anonymous lookup, which only returns { found, isVip } and would
+  // overwrite the rich profile. No key → nothing to look up, nothing loading.
+  const lookupPhone = validateGuestPhone(clientPhone.trim());
+  const lookupKey =
+    !initialOtpSessionId && lookupPhone.ok
+      ? JSON.stringify([salon.id, lookupPhone.digits])
+      : null;
+  const lookupLoading = lookupKey !== null && settledLookupKey !== lookupKey;
+
   // Debounced phone lookup — auto-fills name/email for returning customers
   useEffect(() => {
     // Cancel any pending lookup
@@ -568,30 +588,27 @@ export function useBookingFlowState(
       lookupTimerRef.current = null;
     }
 
-    // Gate-verified: full profile was already fetched via profile-verified API and
-    // supplied through initialReturningCustomer. Skip the anonymous lookup which
-    // only returns { found, isVip } and would overwrite the rich profile.
-    if (initialOtpSessionId) {
-      setLookupLoading(false);
-      return;
-    }
-
-    const phoneValidation = validateGuestPhone(clientPhone.trim());
-    if (!phoneValidation.ok) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive reset when phone becomes invalid
-      setReturningCustomer(null);
-      setLookupLoading(false);
+    if (!lookupKey || !lookupPhone.ok) {
+      if (!initialOtpSessionId) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive reset when phone becomes invalid
+        setReturningCustomer(null);
+      }
       return;
     }
 
     // Phone valid — debounce 400ms then fetch
-    setLookupLoading(true);
+    const requestKey = lookupKey;
+    const requestDigits = lookupPhone.digits;
+    let alive = true;
     lookupTimerRef.current = setTimeout(() => {
       void fetch(
-        `/api/customer/${encodeURIComponent(phoneValidation.digits)}?salon_id=${encodeURIComponent(salon.id)}`
+        `/api/customer/${encodeURIComponent(requestDigits)}?salon_id=${encodeURIComponent(salon.id)}`
       )
         .then((r) => r.json() as Promise<ReturningCustomer | { found: false }>)
         .then((data) => {
+          // Without this, a slow answer for a number the customer has already
+          // typed past would land on the profile shown for the new one.
+          if (!alive) return;
           if (data.found) {
             setReturningCustomer(data as ReturningCustomer);
             setPreferredStaffDismissed(false); // reset dismiss when new profile loaded
@@ -606,14 +623,15 @@ export function useBookingFlowState(
           }
         })
         .catch(() => {
-          setReturningCustomer(null);
+          if (alive) setReturningCustomer(null);
         })
         .finally(() => {
-          setLookupLoading(false);
+          if (alive) setSettledLookupKey(requestKey);
         });
     }, 400);
 
     return () => {
+      alive = false;
       if (lookupTimerRef.current) {
         clearTimeout(lookupTimerRef.current);
       }
@@ -1348,53 +1366,77 @@ export function useBookingFlowState(
 
   // Resolve the no-show card requirement when the customer reaches confirm —
   // before any booking exists — so the card form can render in the confirm step.
+  // The key carries every argument the request is made with, so a stale answer
+  // can never be read back under a different service or phone.
+  const cardRequirementPhone = validateGuestPhone(clientPhone.trim());
+  const cardRequirementKey =
+    step === "confirm" && serviceId && cardRequirementPhone.ok
+      ? JSON.stringify([salon.id, serviceId, cardRequirementPhone.digits])
+      : null;
+  const cardRequirement =
+    cardRequirementKey && fetchedCardRequirement?.key === cardRequirementKey
+      ? fetchedCardRequirement.requirement
+      : null;
+  // True while resolveNoShowCardRequirement is in-flight. Gates the confirm
+  // button so the user can't race past the card check before it resolves.
+  const cardRequirementLoading =
+    cardRequirementKey !== null && fetchedCardRequirement?.key !== cardRequirementKey;
+
   useEffect(() => {
-    if (step !== "confirm" || !serviceId) return;
-    const v = validateGuestPhone(clientPhone.trim());
-    if (!v.ok) {
-      setCardRequirement(null);
-      setCardRequirementLoading(false);
-      return;
-    }
+    if (!cardRequirementKey || !serviceId || !cardRequirementPhone.ok) return;
+    const requestKey = cardRequirementKey;
+    const clientPhoneDigits = cardRequirementPhone.digits;
     let alive = true;
-    setCardRequirementLoading(true);
     void resolveNoShowCardRequirement({
       salonId: salon.id,
       serviceId,
-      clientPhone: v.digits,
+      clientPhone: clientPhoneDigits,
     })
       .then((r) => {
-        if (!alive) return;
-        setCardRequirement(r);
-        setCardRequirementLoading(false);
+        if (alive) setFetchedCardRequirement({ key: requestKey, requirement: r });
       })
       .catch(() => {
-        if (!alive) return;
-        setCardRequirement(null);
-        setCardRequirementLoading(false);
+        // Treat a failed resolve as "no card required", exactly as before —
+        // and settle the key so the confirm button stops being gated.
+        if (alive) setFetchedCardRequirement({ key: requestKey, requirement: null });
       });
     return () => {
       alive = false;
     };
-  }, [step, serviceId, clientPhone, salon.id]);
+    // cardRequirementKey already encodes salon.id, serviceId and the digits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardRequirementKey]);
 
   // Đợt 2 — once a card is required AND the phone is OTP-verified, check whether
   // this returning customer already has a card on file so the confirm step can
   // offer one-tap reuse. OTP-gated by construction (needs otpSessionId; the
   // server reads the phone from the session, never the client).
+  const savedCardKey =
+    step === "confirm" && cardRequirement?.required === true && otpSessionId
+      ? JSON.stringify([salon.id, otpSessionId])
+      : null;
+  const savedCard =
+    savedCardKey && fetchedSavedCard?.key === savedCardKey
+      ? fetchedSavedCard.card
+      : null;
+
   useEffect(() => {
-    if (step !== "confirm" || cardRequirement?.required !== true || !otpSessionId) {
-      setSavedCard(null);
-      return;
-    }
+    if (!savedCardKey || !otpSessionId) return;
+    const requestKey = savedCardKey;
     let alive = true;
     void resolveSavedNoShowCard({ salonId: salon.id, otpSessionId })
-      .then((r) => alive && setSavedCard(r))
-      .catch(() => alive && setSavedCard(null));
+      .then((r) => {
+        if (alive) setFetchedSavedCard({ key: requestKey, card: r });
+      })
+      .catch(() => {
+        if (alive) setFetchedSavedCard({ key: requestKey, card: null });
+      });
     return () => {
       alive = false;
     };
-  }, [step, cardRequirement, otpSessionId, salon.id]);
+    // savedCardKey already encodes salon.id and otpSessionId.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedCardKey]);
 
   const onConfirm = useCallback(async (
     extra?: { noShowCardSourceId?: string; noShowCardVerificationToken?: string; noShowConsent?: boolean; noShowReuseSavedCard?: boolean; healthAck?: boolean },

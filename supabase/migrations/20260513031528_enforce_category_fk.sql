@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260513031528.
+-- Original production name: enforce_category_fk.
+-- Its schema effect is represented by the later folded baseline.

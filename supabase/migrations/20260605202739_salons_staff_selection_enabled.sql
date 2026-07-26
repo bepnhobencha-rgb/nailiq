@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260605202739.
+-- Original production name: salons_staff_selection_enabled.
+-- Its schema effect is represented by the later folded baseline.

@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260619181228.
+-- Original production name: hilite_backfill_resource_id_upcoming.
+-- Its schema effect is represented by the later folded baseline.

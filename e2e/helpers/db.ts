@@ -420,6 +420,29 @@ export async function setReactInputValue(
 }
 
 /**
+ * Enter a national phone number only after the public booking gate is hydrated.
+ *
+ * The phone input is present in streamed SSR HTML before React's controlled
+ * input handler is attached. On a fast repeat navigation, WebKit can therefore
+ * accept a visible value without updating `entryPhoneRaw`; no customer lookup
+ * runs and the gate waits forever. `booking-entry-hydrated` is client-only, so
+ * observing it proves the handler is ready before the InputEvent is dispatched.
+ */
+export async function enterBookingPhone(
+  page: Page,
+  phone: string,
+): Promise<void> {
+  await page.getByTestId("booking-entry-hydrated").waitFor({
+    state: "attached",
+    timeout: 15_000,
+  });
+  const phoneInput = page.getByTestId("booking-entry-phone");
+  await phoneInput.waitFor({ state: "visible", timeout: 15_000 });
+  const digits = phone.replace(/\D/g, "");
+  await setReactInputValue(phoneInput, digits.slice(-10));
+}
+
+/**
  * Clear the phone-first entry gate on an already-loaded public booking page.
  *
  * This is the single source of truth for "how a test gets through the gate",
@@ -456,10 +479,8 @@ export async function completeBookingEntryGate(
     // it) and keeps Guest placeholders/name pre-fills at their defaults.
     await supabase.from("client_profiles").delete().eq("phone", digits);
   }
-  const phoneInput = page.getByTestId("booking-entry-phone");
-  await phoneInput.waitFor({ state: "visible", timeout: 15_000 });
   // National number only — the last 10 digits, never the E.164 country code.
-  await setReactInputValue(phoneInput, digits.slice(-10));
+  await enterBookingPhone(page, digits);
 
   const nameInput = page.getByTestId("booking-entry-name");
   await nameInput.waitFor({ state: "visible", timeout: 8_000 });

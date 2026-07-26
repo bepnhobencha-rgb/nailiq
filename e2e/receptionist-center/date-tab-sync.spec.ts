@@ -45,7 +45,11 @@ test.describe("date-tab-sync", () => {
     await page.getByTestId("date-switcher-yesterday").evaluate((el: HTMLElement) => el.click());
     await expect(page.getByTestId("walkin-queue-sidebar")).toHaveCount(0);
     await expect(page.getByTestId("status-pill")).toHaveCount(0);
-    await expect(page.getByTestId("staff-timeline-grid")).toBeVisible();
+    await expect(
+      page.locator(
+        '[data-testid="staff-timeline-grid"], [data-testid="vertical-day-view"]',
+      ),
+    ).toBeVisible();
   });
 
   test("case dt-2: walk-in queue visible again when viewing today", async ({ page }) => {

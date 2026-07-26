@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260617223802.
+-- Original production name: winback_fix_gift_card_filter.
+-- Its schema effect is represented by the later folded baseline.

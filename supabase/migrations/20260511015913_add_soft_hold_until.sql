@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260511015913.
+-- Original production name: add_soft_hold_until.
+-- Its schema effect is represented by the later folded baseline.

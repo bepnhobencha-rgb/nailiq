@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260616044215.
+-- Original production name: waitlist_flip_tz_and_pastslot_fix.
+-- Its schema effect is represented by the later folded baseline.

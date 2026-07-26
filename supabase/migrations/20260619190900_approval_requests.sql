@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260619190900.
+-- Original production name: approval_requests.
+-- Its schema effect is represented by the later folded baseline.

@@ -343,13 +343,12 @@ function FinalPriceEditor({
   const factor = action.currency === "VND" ? 1 : 100;
   const initial =
     action.currentCents != null ? String(action.currentCents / factor) : "";
+  // Both fields belong to the booking this editor was mounted for. The caller
+  // keys it on the booking id, so opening a different booking remounts and
+  // reseeds them — no re-sync effect, and saving no longer wipes the
+  // "saved" confirmation the moment the parent echoes the new price back.
   const [draft, setDraft] = useState(initial);
   const [saved, setSaved] = useState(false);
-  // Re-sync when a different booking opens (currentCents changes).
-  useEffect(() => {
-    setDraft(action.currentCents != null ? String(action.currentCents / factor) : "");
-    setSaved(false);
-  }, [action.currentCents, factor]);
 
   const cents = Math.round(parseFloat(draft) * factor);
   const valid = draft.trim() !== "" && Number.isFinite(cents) && cents >= 0;
@@ -1094,7 +1093,14 @@ export function BookingDetailDrawer({
                   </p>
                 </div>
               ) : null}
-              {finalPriceAction ? <FinalPriceEditor action={finalPriceAction} /> : null}
+              {finalPriceAction ? (
+                // Keyed on the booking so a different one gets a fresh editor
+                // instead of the previous booking's half-typed price.
+                <FinalPriceEditor
+                  key={deskEdit?.booking.id ?? "final-price"}
+                  action={finalPriceAction}
+                />
+              ) : null}
             </section>
 
             {model.addons.length > 0 ? (

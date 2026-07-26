@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useSyncExternalStore,
+} from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import {
   type ReturningCustomer,
@@ -31,8 +37,29 @@ import { MAX_WAVES } from "@/shared/booking/groupSchedulerCore";
  */
 const MIN_GROUP_SIZE = 2;
 
+// The public booking gate is server-rendered before React attaches its event
+// handlers. WebKit can expose the phone input during that short window, so E2E
+// must not treat "visible" as "interactive". This client-only snapshot gives
+// the shared booking helpers the same deterministic hydration signal used by
+// ReceptionistCenter.
+const noopSubscribe = () => () => {};
+const getHydratedSnapshot = () => true;
+const getServerFalseSnapshot = () => false;
+
 // Compact OTP widget rendered INSIDE the phone gate card so the "Send code"
 // button is always visible without scrolling. Handles SMS + email fallback.
+/**
+ * A verified gate OTP, pinned to everything it was issued against. Anything
+ * that differs — another salon, another edit of the phone field, different
+ * normalized digits — means the session no longer applies and the gate closes.
+ */
+type GateOtpState = {
+  salonId: string;
+  phoneRevision: number;
+  phoneDigits: string;
+  sessionId: string;
+};
+
 function GateOtpInline({
   t,
   shopSlug,
@@ -328,6 +355,12 @@ export function BookingTypeSwitcher({
    *  `true` so callers that don't resolve the flag are unaffected. */
   groupBookingEnabled?: boolean;
 }) {
+  const bookingEntryHydrated = useSyncExternalStore(
+    noopSubscribe,
+    getHydratedSnapshot,
+    getServerFalseSnapshot,
+  );
+
   // P2.3 — initialize from ?mode= so language switch (which reloads
   // the page) doesn't drop the user back to individual.
   const searchParams = useSearchParams();
@@ -373,6 +406,15 @@ export function BookingTypeSwitcher({
   // the gate is the single phone input and the individual flow starts
   // at "service" (never showing its own phone step → never two inputs).
   const [entryPhoneRaw, setEntryPhoneRaw] = useState("");
+  // Bumped on every edit of the phone field. A verified OTP is pinned to one
+  // revision, so re-typing the same number still counts as a new number and
+  // must be verified again — the client cannot tell whether a session has since
+  // expired or been revoked, so it never revives one.
+  const [entryPhoneRevision, setEntryPhoneRevision] = useState(0);
+  const handleEntryPhoneChange = useCallback((next: string) => {
+    setEntryPhoneRaw(next);
+    setEntryPhoneRevision((n) => n + 1);
+  }, []);
   const [entryCustomer, setEntryCustomer] = useState<ReturningCustomer | null>(
     null,
   );
@@ -387,8 +429,8 @@ export function BookingTypeSwitcher({
   const [entryMarketingConsent, setEntryMarketingConsent] = useState(false);
   // Option B — gate-first OTP: verify phone before entering the flow so the
   // OTP step inside the flow is skipped (no re-prompt, no re-SMS).
-  const [gateOtpDone, setGateOtpDone] = useState(false);
-  const [gateOtpSessionId, setGateOtpSessionId] = useState<string | null>(null);
+  // Stored with the full identity it was issued against.
+  const [gateOtp, setGateOtp] = useState<GateOtpState | null>(null);
   // Email used to receive the gate OTP code — pre-fills the booking email
   // field so new customers don't retype the same address.
   const [gateOtpEmail, setGateOtpEmail] = useState("");
@@ -398,6 +440,22 @@ export function BookingTypeSwitcher({
   const entryLookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const entryValidation = validateGuestPhone(entryPhoneRaw.trim());
   const entryPhone = entryValidation.ok ? entryPhoneRaw.trim() : "";
+
+  // A stored session only counts for the exact identity it was issued against:
+  // same salon, same edit revision of the field, same normalized digits. Both
+  // flags are derived from that, so changing any of them re-arms the gate in
+  // the same render — there is no commit where the old session id is readable
+  // under a new identity.
+  const activeGateOtp =
+    gateOtp &&
+    gateOtp.salonId === salon.id &&
+    gateOtp.phoneRevision === entryPhoneRevision &&
+    entryValidation.ok &&
+    gateOtp.phoneDigits === entryValidation.digits
+      ? gateOtp
+      : null;
+  const gateOtpDone = activeGateOtp !== null;
+  const gateOtpSessionId = activeGateOtp?.sessionId ?? null;
   // Returning customers (phone recognized) skip name entry — their name comes
   // from the verified profile after OTP. New customers must type ≥2 chars.
   // ≥2 matches the nameTooShort guard in submitPublicBooking.
@@ -419,9 +477,9 @@ export function BookingTypeSwitcher({
     (entryCustomer?.name ?? "").trim() || committedName.trim();
 
   useEffect(() => {
-    // Phone changed → reset gate OTP state so the new number must be re-verified.
-    setGateOtpDone(false);
-    setGateOtpSessionId(null);
+    // Phone changed. The gate OTP itself is re-armed by the derived check
+    // above; this only clears the guard that keeps the anonymous lookup from
+    // overwriting a verified profile.
     gateOtpVerifiedRef.current = false;
 
     if (entryLookupTimer.current) {
@@ -452,20 +510,25 @@ export function BookingTypeSwitcher({
     return () => {
       if (entryLookupTimer.current) clearTimeout(entryLookupTimer.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entryPhoneRaw, salon.id]);
 
   // Fetches the full customer profile after gate OTP verification and updates
   // entryCustomer + entryName so the personalized greeting and flow pre-fills work.
   async function handleGateOtpVerified(sessionId: string, otpEmail?: string) {
-    setGateOtpSessionId(sessionId);
-    setGateOtpDone(true);
+    // Record the identity from this render, so a verification that resolves
+    // after the user has moved on cannot activate the gate for the new one.
+    const v = validateGuestPhone(entryPhoneRaw.trim());
+    if (!v.ok) return;
+    setGateOtp({
+      salonId: salon.id,
+      phoneRevision: entryPhoneRevision,
+      phoneDigits: v.digits,
+      sessionId,
+    });
     gateOtpVerifiedRef.current = true;
     // Store the email used for OTP delivery so new customers don't retype it.
     if (otpEmail) setGateOtpEmail(otpEmail);
 
-    const v = validateGuestPhone(entryPhoneRaw.trim());
-    if (!v.ok) return;
     try {
       const r = await fetch(
         `/api/customer/profile-verified?otp_session_id=${encodeURIComponent(sessionId)}&phone=${encodeURIComponent(v.digits)}&salon_id=${encodeURIComponent(salon.id)}`,
@@ -509,6 +572,13 @@ export function BookingTypeSwitcher({
       data-testid="booking-phone-gate"
       className="rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-4 sm:p-5"
     >
+      {bookingEntryHydrated ? (
+        <span
+          data-testid="booking-entry-hydrated"
+          aria-hidden="true"
+          style={{ display: "none" }}
+        />
+      ) : null}
       <label
         htmlFor="booking-entry-phone"
         className="mb-1 block text-sm font-semibold"
@@ -519,7 +589,7 @@ export function BookingTypeSwitcher({
         id="booking-entry-phone"
         testId="booking-entry-phone"
         value={entryPhoneRaw}
-        onChange={setEntryPhoneRaw}
+        onChange={handleEntryPhoneChange}
         salonTimezone={salon.timezone}
         language={language}
       />
@@ -646,6 +716,10 @@ export function BookingTypeSwitcher({
           always visible without scrolling. Only when salon has OTP enabled. */}
       {gateReady && salon.phoneOtpEnabled && !gateOtpDone && entryValidation.ok ? (
         <GateOtpInline
+          // Same identity as the session it will produce, so switching salon or
+          // editing the number drops the widget's stage, typed code and any
+          // in-flight request rather than carrying them to a new number.
+          key={`${salon.id}:${entryPhoneRevision}:${entryValidation.digits}`}
           t={t}
           shopSlug={shopSlug}
           phoneDigits={entryValidation.digits}

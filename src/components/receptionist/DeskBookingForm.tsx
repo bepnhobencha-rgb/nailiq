@@ -286,10 +286,13 @@ export default function DeskBookingForm({
   const [notes, setNotes] = useState("");
   // Bed/resource picker state (resource-mode salons only).
   const [resourceId, setResourceId] = useState<string | null>(null);
-  const [resourceOptions, setResourceOptions] = useState<
-    { id: string; name: string; displayOrder: number; isAvailable: boolean }[]
-  >([]);
-  const [resourceLoading, setResourceLoading] = useState(false);
+  // Raw fetch result, tagged with the time window it was fetched for. What the
+  // picker renders — and whether it is still loading — is derived from that
+  // below, so the effect never has to set either synchronously.
+  const [fetchedResources, setFetchedResources] = useState<{
+    key: string;
+    resources: { id: string; name: string; displayOrder: number; isAvailable: boolean }[];
+  }>({ key: "", resources: [] });
 
   // Desired time from a grid click — auto-selected once it shows up free in the
   // freshly-computed slot grid (the grid cell is 30 min, the form grid 15 min,
@@ -333,20 +336,32 @@ export default function DeskBookingForm({
   // notify panel appear). Prefer the side of the click with more room.
   useLayoutEffect(() => {
     if (!anchored || !anchor || !popoverRef.current) return;
-    const r = popoverRef.current.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const M = 8;
-    const GAP = 14;
-    let left = anchor.x + GAP;
-    if (left + r.width > vw - M) left = anchor.x - r.width - GAP;
-    left = Math.max(M, Math.min(left, vw - r.width - M));
-    let top = anchor.y - 28;
-    top = Math.max(M, Math.min(top, vh - r.height - M));
-    setPos((prev) =>
-      prev && prev.left === left && prev.top === top ? prev : { left, top },
-    );
-  });
+    const popover = popoverRef.current;
+    const updatePosition = () => {
+      const r = popover.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const M = 8;
+      const GAP = 14;
+      let left = anchor.x + GAP;
+      if (left + r.width > vw - M) left = anchor.x - r.width - GAP;
+      left = Math.max(M, Math.min(left, vw - r.width - M));
+      let top = anchor.y - 28;
+      top = Math.max(M, Math.min(top, vh - r.height - M));
+      setPos((prev) =>
+        prev && prev.left === left && prev.top === top ? prev : { left, top },
+      );
+    };
+
+    updatePosition();
+    const resizeObserver = new ResizeObserver(updatePosition);
+    resizeObserver.observe(popover);
+    window.addEventListener("resize", updatePosition);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [anchored, anchor]);
 
   // Load services / staff / salon meta once.
   useEffect(() => {
@@ -433,32 +448,53 @@ export default function DeskBookingForm({
     [data],
   );
 
-  // Fetch bed availability when slot is selected (resource-mode salons only).
-  useEffect(() => {
-    if (!data?.salon.resourcesEnabled || !slotLabel || !ymd || blockMinutes <= 0) {
-      setResourceOptions([]);
-      return;
-    }
+  // The exact window the beds are being checked for, or null when the picker
+  // does not apply yet (not a resource salon, no slot, no day, no span).
+  const resourceWindow = useMemo(() => {
+    if (!data?.salon.resourcesEnabled || !slotLabel || !ymd || blockMinutes <= 0) return null;
     const m = slotLabel.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-    if (!m) return;
+    if (!m) return null;
     let h = Number(m[1]) % 12;
     if (m[3].toUpperCase() === "PM") h += 12;
     const startMin = h * 60 + Number(m[2]);
     const startUtc = salonWallTimeToUtcIso(ymd, startMin, timezone);
     const endMs = Date.parse(startUtc) + blockMinutes * 60 * 1000;
-    if (Number.isNaN(endMs)) return;
-    const endUtc = new Date(endMs).toISOString();
+    if (Number.isNaN(endMs)) return null;
+    return { startUtc, endUtc: new Date(endMs).toISOString() };
+  }, [data, slotLabel, ymd, blockMinutes, timezone]);
+
+  // Both of these are facts about `resourceWindow` vs what has been fetched,
+  // so they are derived rather than set from the effect below.
+  // Every argument the request is made with, so a different salon on the same
+  // time window counts as a different request. JSON.stringify rather than a
+  // delimiter so no value can forge a boundary.
+  const resourceKey = resourceWindow
+    ? JSON.stringify([slug, resourceWindow.startUtc, resourceWindow.endUtc])
+    : "";
+  const resourceOptions = resourceKey && fetchedResources.key === resourceKey
+    ? fetchedResources.resources
+    : [];
+  const resourceLoading = resourceKey !== "" && fetchedResources.key !== resourceKey;
+
+  // Fetch bed availability when slot is selected (resource-mode salons only).
+  useEffect(() => {
+    if (!resourceWindow) return;
+    const requestKey = resourceKey;
     let cancelled = false;
-    setResourceLoading(true);
-    void getResourceAvailability(slug, startUtc, endUtc).then((res) => {
-      if (cancelled) return;
-      if (res.ok) setResourceOptions(res.resources);
-      setResourceLoading(false);
-    });
+    void getResourceAvailability(slug, resourceWindow.startUtc, resourceWindow.endUtc)
+      .then((res) => {
+        if (cancelled) return;
+        setFetchedResources({ key: requestKey, resources: res.ok ? res.resources : [] });
+      })
+      .catch(() => {
+        // The action itself rejected — settle the key anyway so the picker
+        // stops saying "Checking…" forever.
+        if (!cancelled) setFetchedResources({ key: requestKey, resources: [] });
+      });
     return () => {
       cancelled = true;
     };
-  }, [data, slotLabel, ymd, blockMinutes, timezone, slug]);
+  }, [resourceWindow, resourceKey, slug]);
 
   // Reset resource choice when key booking inputs change.
   // eslint-disable-next-line react-hooks/set-state-in-effect -- reset bed pick when the slot/day/staff changes
@@ -528,6 +564,7 @@ export default function DeskBookingForm({
     closedDateYmdSet,
     shortestServiceMinutes,
     blockMinutes,
+    addonIds.length,
   ]);
 
   // Returning-customer recognition (debounced).
@@ -545,10 +582,20 @@ export default function DeskBookingForm({
       if (seq !== lookupSeq.current) return;
       if (res.ok && res.found) {
         const p = res.profile;
-        if (p.name && !name) setName(p.name);
-        if (p.email && !email) setEmail(p.email);
-        if (p.top_service && !serviceId) setServiceId(p.top_service.id);
-        if (p.top_staff && !staffId) setStaffId(p.top_staff.id);
+        // The lookup resolves after the receptionist may already have typed.
+        // Functional updates read the latest field value instead of the empty
+        // value captured when the phone effect started, so a slow lookup can
+        // never overwrite newer customer input.
+        const profileName = p.name?.trim() ?? "";
+        const profileEmail = p.email?.trim() ?? "";
+        const profileServiceId = p.top_service?.id ?? "";
+        const profileStaffId = p.top_staff?.id ?? "";
+        if (profileName) setName((current) => current || profileName);
+        if (profileEmail) setEmail((current) => current || profileEmail);
+        if (profileServiceId)
+          setServiceId((current) => current || profileServiceId);
+        if (profileStaffId)
+          setStaffId((current) => current || profileStaffId);
         setLookupMsg(
           tx.returning(
             p.is_vip ? tx.vipTag : "",

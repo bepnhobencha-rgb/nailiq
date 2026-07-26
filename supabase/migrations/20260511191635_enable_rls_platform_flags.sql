@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260511191635.
+-- Original production name: enable_rls_platform_flags.
+-- Its schema effect is represented by the later folded baseline.

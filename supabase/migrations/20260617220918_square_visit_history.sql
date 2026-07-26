@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260617220918.
+-- Original production name: square_visit_history.
+-- Its schema effect is represented by the later folded baseline.

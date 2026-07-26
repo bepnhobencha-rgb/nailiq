@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260720021617.
+-- Original production name: owner_notification_log.
+-- Its schema effect is represented by the later folded baseline.

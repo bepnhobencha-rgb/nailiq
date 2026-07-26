@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260519211118.
+-- Original production name: noshow_bookings_extend.
+-- Its schema effect is represented by the later folded baseline.

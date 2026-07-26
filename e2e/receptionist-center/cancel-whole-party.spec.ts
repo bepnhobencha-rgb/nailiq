@@ -19,6 +19,7 @@ import {
 import {
   cleanReceptionistData,
   gotoReceptionistCenter,
+  openAttentionGroups,
   rcSlug,
   seedReceptionistCenterFixture,
   type ReceptionistCenterFixture,
@@ -56,7 +57,7 @@ test.describe("PartyCardPanel — cancel whole group", () => {
     });
 
     await gotoReceptionistCenter(page, fx.slug);
-    await page.getByTestId("attention-chip-groups").click();
+    await openAttentionGroups(page);
 
     const card = page.getByTestId(`party-card-${party.groupId}`);
     await expect(card).toBeVisible();

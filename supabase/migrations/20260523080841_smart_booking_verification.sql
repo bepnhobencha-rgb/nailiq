@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260523080841.
+-- Original production name: smart_booking_verification.
+-- Its schema effect is represented by the later folded baseline.

@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260709090035.
+-- Original production name: salon_default_language.
+-- Its schema effect is represented by the later folded baseline.

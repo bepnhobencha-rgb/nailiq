@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615055709.
+-- Original production name: waitlist_advance_notifications.
+-- Its schema effect is represented by the later folded baseline.

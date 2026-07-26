@@ -15,8 +15,8 @@ jobs:
     name: i18n & Copy Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
@@ -59,7 +59,7 @@ jobs:
       WIX_API_KEY: ""
       TZ: America/Los_Angeles
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Pre-flight — is the schema baseline present?
         id: preflight
         run: |
@@ -69,13 +69,13 @@ jobs:
             echo "::error::supabase/bootstrap/schema.sql is missing — the smoke gate cannot build a database, and it will not fall back to production."
             exit 1
           fi
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
       - run: npm ci
       - run: npx tsc --noEmit
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v2
         with:
           version: 2.109.1
       - name: Start Supabase (local, throwaway)
@@ -134,7 +134,7 @@ jobs:
         # A red gate must be diagnosable in one click. Without the trace you are
         # left inferring what the page did from a locator timeout.
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: smoke-artifacts
           path: |
@@ -265,20 +265,13 @@ jobs:
       # booking-errors conflict tests to insert at wrong UTC offsets.
       TZ: America/Los_Angeles
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Pre-flight — is the schema baseline present?
         id: preflight
-        # E2E needs a database, and the database is built from
-        # supabase/bootstrap/schema.sql. That file cannot be generated from the
-        # 262 migrations in this repo: the core tables (salons, bookings, staff,
-        # services) have no CREATE TABLE anywhere — the migrations only ALTER
-        # tables that were created by hand on the live project. `db push` against
-        # an empty database dies on the first file, which is why
-        # scripts/db-push-guard.js already blocks it.
-        #
-        # So until the baseline is committed, the DB suite is SKIPPED — loudly,
-        # and explaining exactly what is missing. What it must never do is fall
-        # back to production. That is what this whole exercise was about.
+        # E2E uses the checked-in schema snapshot as its stable local fixture.
+        # The folded migration history is independently rebuilt and applied to
+        # a blank Supabase by migration-history-rehearsal.yml. Neither workflow
+        # ever falls back to production.
         run: |
           if [ -f supabase/bootstrap/schema.sql ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
@@ -302,7 +295,7 @@ jobs:
               echo "\`founder\` superadmin accounts and a pile of fixture salons next to real customer data."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         if: steps.preflight.outputs.configured == 'true'
         with:
           node-version: 20
@@ -314,7 +307,7 @@ jobs:
         # Pinned, not `latest`. A CLI that silently moves under us can change how
         # the stack boots or what `supabase status` prints, and the failure would
         # land on whoever opened the next unrelated PR.
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v2
         with:
           version: 2.109.1
       - name: Start Supabase (local, throwaway)
@@ -322,17 +315,10 @@ jobs:
         # Docker is preinstalled on ubuntu-latest. This boots Postgres 17 + GoTrue
         # + PostgREST in containers that belong to this job and die with it.
         #
-        # The migrations are moved aside first, and that is not a workaround — it
-        # is the whole finding. `supabase start` applies supabase/migrations/*.sql
-        # automatically, and those 262 files CANNOT build a database: the first one
-        # runs `alter table public.salons enable row level security` against a
-        # table that has no CREATE anywhere in the repo. The first CI run died
-        # exactly there: `relation "public.salons" does not exist`.
-        #
-        # supabase/bootstrap/schema.sql is the source of truth for a fresh
-        # database. The migrations stay untouched on disk and in git — they are
-        # production's (drifted) history, and consolidating them is a separate
-        # job with its own blast radius. See docs/audit/SUPABASE-LOCAL-BASELINE.md.
+        # This job parks migrations because it loads the verified schema snapshot
+        # directly for speed and deterministic E2E fixtures. The dedicated
+        # migration-history rehearsal job separately proves the full folded
+        # history from zero, including every forward migration.
         run: |
           set -euo pipefail
           mv supabase/migrations /tmp/migrations-parked
@@ -462,7 +448,7 @@ jobs:
         run: |
           echo "── tail of next-server.log ──"
           tail -n 150 tmp/next-server.log || echo "(no server log)"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && steps.preflight.outputs.configured == 'true'
         with:
           name: next-server-log-shard-${{ matrix.shard }}
@@ -489,7 +475,7 @@ jobs:
       - name: Summarize results
         if: always() && steps.preflight.outputs.configured == 'true'
         run: node scripts/playwright-summary.js >> "$GITHUB_STEP_SUMMARY" || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && steps.preflight.outputs.configured == 'true'
         with:
           name: playwright-report-shard-${{ matrix.shard }}
@@ -529,7 +515,7 @@ jobs:
       OPENAI_API_KEY: ""
       WIX_API_KEY: ""
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Pre-flight — is the schema baseline present?
@@ -543,7 +529,7 @@ jobs:
             echo "configured=false" >> "$GITHUB_OUTPUT"
             echo "::warning::Visual regression SKIPPED — supabase/bootstrap/schema.sql is missing. No production fallback exists, by design."
           fi
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         if: steps.preflight.outputs.configured == 'true'
         with:
           node-version: 20
@@ -552,7 +538,7 @@ jobs:
         if: steps.preflight.outputs.configured == 'true'
       - name: Set up Supabase CLI (pinned)
         if: steps.preflight.outputs.configured == 'true'
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v2
         with:
           version: 2.109.1
       - name: Start Supabase (local, throwaway) and build the schema
@@ -651,7 +637,7 @@ jobs:
           fi
       - name: Upload visual diff artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: visual-diffs
           path: |
@@ -668,10 +654,10 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download playwright shard reports
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: playwright-report-shard-*
           path: playwright-reports/

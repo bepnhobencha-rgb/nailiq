@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260722201052.
+-- Original production name: block_anon_direct_booking_insert.
+-- Its schema effect is represented by the later folded baseline.

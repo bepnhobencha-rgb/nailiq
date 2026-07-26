@@ -143,7 +143,7 @@ export async function deliverStaffActionNotification(
       const to = row.client_email;
       // Booking change notifications are transactional — no opt-out gate — but
       // do skip suppressed addresses (hard bounces / spam complaints).
-      const suppressed = await isEmailSuppressed(to).catch(() => false);
+      const suppressed = await isEmailSuppressed(to).catch(() => true);
       if (!suppressed) {
         const esc = (s: string) =>
           s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

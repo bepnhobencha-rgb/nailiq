@@ -1,0 +1,3 @@
+-- Folded-history marker for production migration 20260615093024.
+-- Original production name: waitlist_notify_fix_ambiguous_booking_date.
+-- Its schema effect is represented by the later folded baseline.
