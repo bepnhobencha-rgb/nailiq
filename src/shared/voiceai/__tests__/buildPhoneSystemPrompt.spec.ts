@@ -35,6 +35,7 @@ const ctx: SalonVoiceContext = {
     priceCents: 4500,
     price_type: "fixed",
     price_max_cents: null,
+    description: null,
     category: "manicure",
     isAddon: false,
     isPopular: true,
@@ -122,6 +123,45 @@ describe("compact phone Realtime config", () => {
     );
     expect(vietnamesePrompt).toContain("Do not paraphrase it.");
     expect(englishPrompt).not.toContain("một ngày an lành");
+  });
+
+  it("uses explicit salon service details and fails closed on eligibility questions", () => {
+    const prompt = buildPhoneSystemPrompt({
+      ...ctx,
+      services: [
+        {
+          ...ctx.services[0]!,
+          id: "bikini-line",
+          name: "Bikini Line",
+          description: "For women only. Not offered to male guests.",
+        },
+        {
+          ...ctx.services[0]!,
+          id: "head-spa",
+          name: "Head Spa",
+          description: null,
+        },
+      ],
+    }, "en", "+17780000000");
+
+    expect(prompt).toContain(
+      'salon_details="For women only. Not offered to male guests."',
+    );
+    expect(prompt).toContain(
+      "Never infer gender eligibility, body-area scope, included steps",
+    );
+    expect(prompt).toContain(
+      "If salon_details do not answer a service-policy question",
+    );
+    expect(prompt).toContain("Never guess yes or no");
+  });
+
+  it("treats common Vietnamese no-more-help replies as a graceful close", () => {
+    const prompt = buildPhoneSystemPrompt(ctx, "vi", "+17780000000");
+    expect(prompt).toContain('"không cần gì nữa"');
+    expect(prompt).toContain('"thôi được rồi"');
+    expect(prompt).toContain('a closing "cảm ơn"');
+    expect(prompt).toContain("speak the farewell first");
   });
 
   it("keeps shared tool contracts, adds the phone-only transfer tool, and materially reduces static context", () => {

@@ -2474,6 +2474,16 @@ async function handleLeaveMessageForOwner(
     logged = !error;
   } catch { /* fall through to the alert */ }
 
+  if (!logged) {
+    return NextResponse.json({
+      success: false,
+      error: "message_not_saved",
+      hint:
+        "Apologise that the message could not be saved. Do not say it was sent or passed to the owner. " +
+        "Ask the customer to call the salon directly or try again later.",
+    }, { status: 500 });
+  }
+
   try {
     const { sendOwnerAlert } = await import("@/shared/ai/sendOwnerAlert");
     const flag = urgency === "urgent" ? "🔴 KHẨN — " : "";
@@ -2491,9 +2501,11 @@ async function handleLeaveMessageForOwner(
 
   return NextResponse.json({
     success: true,
-    logged,
+    logged: true,
+    saved_to: "Dashboard > Nhật ký hoạt động > AI",
     hint:
-      "Tell the customer their message has been passed to the salon owner, who will get back to them. " +
-      "Do not promise an exact response time.",
+      "Tell the customer their message was saved for the salon staff. Do not claim the owner was " +
+      "notified, and do not promise an exact response time. Staff can review it in Dashboard > " +
+      "Nhật ký hoạt động > AI.",
   });
 }

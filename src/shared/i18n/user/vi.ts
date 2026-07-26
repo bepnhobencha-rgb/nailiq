@@ -1253,9 +1253,9 @@ export const userVi: UserMessages = {
   },
   serviceForm: {
     descriptionLabel: "Mô tả",
-    descriptionPlaceholder: "VD: Bóng lâu, dáng móng chuẩn.",
+    descriptionPlaceholder: "VD: Chỉ dành cho nữ; không phục vụ khách nam.",
     descriptionHint:
-      "Hiển thị một dòng dưới tên dịch vụ trên trang đặt lịch. Bỏ trống — chúng tôi sẽ tự viết giúp.",
+      "Hiển thị trên trang đặt lịch và là nguồn sự thật cho AI về đối tượng, phạm vi và nội dung dịch vụ.",
     descriptionTooLong: "Mô tả tối đa 250 ký tự.",
     popularLabel: "Phổ biến",
     popularHint:

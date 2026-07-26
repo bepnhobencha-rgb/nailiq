@@ -22,6 +22,7 @@ const ctx: SalonVoiceContext = {
       priceCents: 4500,
       price_type: "fixed",
       price_max_cents: null,
+      description: null,
       category: "manicure",
       isAddon: false,
       isPopular: true,
@@ -64,6 +65,23 @@ describe("buildSystemPrompt receptionist flow", () => {
     expect(phone).toContain("Never promise an exact callback time");
     expect(phone).toContain("call wait_for_user and say NOTHING afterward");
     expect(phone).toContain("do not guess and do not call a business tool");
+  });
+
+  it("uses salon details and fails closed instead of inventing service eligibility", () => {
+    const prompt = buildSystemPrompt({
+      ...ctx,
+      services: [{
+        ...ctx.services[0]!,
+        name: "Bikini Line",
+        description: "For women only. Not offered to male guests.",
+      }],
+    }, "en", "+17788680738");
+
+    expect(prompt).toContain(
+      'salon_details="For women only. Not offered to male guests."',
+    );
+    expect(prompt).toContain("Never infer gender eligibility, body-area scope");
+    expect(prompt).toContain("never guess yes or no");
   });
 
   it("handles tool failures without false success or duplicate writes", () => {

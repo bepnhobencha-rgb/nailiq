@@ -3567,9 +3567,9 @@ export const userEn: UserMessages = {
   },
   serviceForm: {
     descriptionLabel: "Description",
-    descriptionPlaceholder: "e.g. Long-lasting shine, perfectly shaped nails.",
+    descriptionPlaceholder: "e.g. Women only; not offered to male guests.",
     descriptionHint:
-      "One line shown under the service name on your booking page. Leave blank and we'll write one for you.",
+      "Shown on the booking page and used by AI as the source of truth for eligibility, scope, and inclusions.",
     descriptionTooLong: "Keep the description to 250 characters or fewer.",
     popularLabel: "Popular",
     popularHint:

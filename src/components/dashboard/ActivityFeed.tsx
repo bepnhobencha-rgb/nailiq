@@ -45,6 +45,13 @@ function timeAgo(iso: string): string {
 }
 
 function StatusBadge({ status }: { status: string }) {
+  if (status === "saved") {
+    return (
+      <span className="rounded-full bg-nq-success/15 px-2 py-0.5 text-[10px] font-semibold text-nq-success">
+        ✓ Đã lưu
+      </span>
+    );
+  }
   const ok = status === "delivered";
   const bad = status === "failed" || status === "undelivered";
   const cls = ok

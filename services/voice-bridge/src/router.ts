@@ -242,6 +242,32 @@ export function sayThisResponseCreate(sayThis: string, language: string): object
   return { type: "response.create", response: { instructions: sayThisInstruction(sayThis, language) } };
 }
 
+const FAREWELL_BY_LANGUAGE: Record<string, string> = {
+  vi: "Dạ, cảm ơn anh/chị đã gọi. Chúc anh/chị một ngày an lành ạ.",
+  en: "Thank you for calling. Have a wonderful day.",
+  es: "Gracias por llamar. Que tenga un excelente día.",
+  fr: "Merci de votre appel. Passez une excellente journée.",
+  zh: "感谢您的来电。祝您今天愉快。",
+};
+
+/**
+ * A tool-free, server-pinned farewell used when the model requests end_call
+ * without producing any audible words. Realtime can legally return a
+ * function-call-only response; the bridge must repair that before hanging up.
+ */
+export function farewellResponseCreate(language: string): object {
+  const farewell = FAREWELL_BY_LANGUAGE[language] ?? FAREWELL_BY_LANGUAGE.en;
+  return {
+    type: "response.create",
+    response: {
+      tools: [],
+      output_modalities: ["audio"],
+      instructions:
+        `Say exactly this one farewell now, with no additions and no tool call: ${JSON.stringify(farewell)}`,
+    },
+  };
+}
+
 /** Just the tool result item — no response.create. The caller decides which
  *  response.create follows (a protected say_this one, or the plain one), so a
  *  tool result never triggers two responses. */

@@ -351,10 +351,10 @@ export const REALTIME_TOOLS = [
     description:
       "Take a message for the salon owner when the customer needs something BEYOND your tools: " +
       "a complaint, refund/payment issue, price negotiation, special request, or anything you are unsure about. " +
-      "The owner is notified immediately via their preferred channel. " +
       "FIRST tell the customer you'll pass their message to the owner, collect their name + phone + the message, " +
       "THEN call this tool. Use urgency 'urgent' only for complaints or time-sensitive issues. " +
-      "After success, confirm: the owner has the message and will get back to them (no exact time promise). " +
+      "After success, confirm only that the message was saved for salon staff. It appears in Dashboard > " +
+      "Nhật ký hoạt động > AI. Never claim a notification or callback happened unless a tool explicitly confirms it. " +
       "NEVER argue with an upset customer — take the message instead.",
     parameters: {
       type: "object" as const,
@@ -392,7 +392,7 @@ export const REALTIME_TOOLS = [
       "End the voice call gracefully — calling this HANGS UP the phone.\n" +
       "Call it ONLY as the last step of this exact closing sequence:\n" +
       "1. After any successful action (booking / group booking / cancel / reschedule / waitlist): read the summary, ask if the customer needs anything else, and WAIT for their answer. Do NOT call end_call at this step.\n" +
-      "2. Only when the customer says goodbye (tạm biệt / bye / thôi tôi cúp máy / xong rồi) or clearly says they need nothing else: say ONE short farewell sentence.\n" +
+      "2. Only when the customer says goodbye (tạm biệt / bye / thôi tôi cúp máy / xong rồi / thôi được rồi) or clearly says they need nothing else: say ONE short farewell sentence. A closing cảm ơn after you asked whether they need anything else also means they are done.\n" +
       "3. THEN call end_call — in the same turn as the farewell, never before speaking it.\n" +
       "A successful tool result is NEVER by itself a reason to call end_call, and never call it in the same turn as a booking summary.",
     parameters: {
