@@ -11,6 +11,16 @@ import {
   shouldRecoverZeroAudio,
   createZeroAudioRecoveryGuard,
   ZERO_AUDIO_RECOVERY_MAX_ATTEMPTS,
+  REALTIME_MAX_OUTPUT_TOKENS,
+  REALTIME_SPEECH_SPEED,
+  REALTIME_POST_INSTRUCTION_TOKEN_LIMIT,
+  REALTIME_TRUNCATION_RETENTION_RATIO,
+  summarizeRealtimeRateLimitsUpdated,
+  isTokenRateLimitExceeded,
+  createTokenRateLimitRecoveryGuard,
+  TOKEN_RATE_LIMIT_RECOVERY_MAX_ATTEMPTS,
+  TOKEN_RATE_LIMIT_RESET_BUFFER_MS,
+  tokenRateLimitComfortTonePayloads,
   openingGreetingResponseCreate,
   openingLookupFollowupResponseCreate,
   extractSayThis,
@@ -59,10 +69,14 @@ describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () =>
     const m = sessionUpdateMessage({ instructions: "be Lily", voice: "marin", tools: [{ name: "x" }] }) as {
       type: string;
       session: {
-        type: string; instructions: string; tools: unknown;
+        type: string; instructions: string; tools: unknown; max_output_tokens: number;
+        truncation: {
+          type: string; retention_ratio: number;
+          token_limits: { post_instructions: number };
+        };
         audio: {
           input: { format: { type: string }; turn_detection: { type: string; interrupt_response: boolean; create_response: boolean; silence_duration_ms: number } };
-          output: { format: { type: string }; voice: string };
+          output: { format: { type: string }; voice: string; speed: number };
         };
       };
     };
@@ -73,6 +87,13 @@ describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () =>
     expect(m.session.audio.input.turn_detection.interrupt_response).toBe(true);
     expect(m.session.audio.input.turn_detection.create_response).toBe(false); // coordinator drives responses
     expect(m.session.audio.input.turn_detection.silence_duration_ms).toBeGreaterThan(500);
+    expect(m.session.max_output_tokens).toBe(REALTIME_MAX_OUTPUT_TOKENS);
+    expect(m.session.audio.output.speed).toBe(REALTIME_SPEECH_SPEED);
+    expect(m.session.truncation).toEqual({
+      type: "retention_ratio",
+      retention_ratio: REALTIME_TRUNCATION_RETENTION_RATIO,
+      token_limits: { post_instructions: REALTIME_POST_INSTRUCTION_TOKEN_LIMIT },
+    });
   });
 
   it("Twilio media → OpenAI append, and OpenAI delta → Twilio media (pass-through base64)", () => {
@@ -160,10 +181,21 @@ describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () =>
     const cancelled = summarizeRealtimeResponseDone({
       response: { status: "cancelled", status_details: { type: "cancelled", reason: "turn_detected" } },
     });
+    const tokenLimited = summarizeRealtimeResponseDone({
+      response: {
+        status: "failed",
+        status_details: {
+          type: "failed",
+          error: { type: "tokens", code: "rate_limit_exceeded" },
+        },
+      },
+    });
     expect(shouldRecoverZeroAudio(completed, 0)).toBe(true);
     expect(shouldRecoverZeroAudio(completed, 1)).toBe(false);
     expect(shouldRecoverZeroAudio(toolOnly, 0)).toBe(false);
     expect(shouldRecoverZeroAudio(cancelled, 0)).toBe(false);
+    expect(isTokenRateLimitExceeded(tokenLimited)).toBe(true);
+    expect(shouldRecoverZeroAudio(tokenLimited, 0)).toBe(false);
   });
 
   it("retries one consecutive zero-audio response, then stops until audio resumes", () => {
@@ -192,12 +224,67 @@ describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () =>
     expect(message.response.instructions).toContain("one short question");
   });
 
+  it("waits for the documented token reset, bounds retries, and resets after audio", () => {
+    const limits = summarizeRealtimeRateLimitsUpdated({
+      type: "rate_limits.updated",
+      rate_limits: [
+        { name: "requests", limit: 100, remaining: 98, reset_seconds: 0.2 },
+        { name: "tokens", limit: 20_000, remaining: 0, reset_seconds: 4.25 },
+        { name: "tokens", limit: "private", remaining: -1, reset_seconds: Number.NaN },
+      ],
+      private_future_field: "must not be retained",
+    });
+    expect(limits).toEqual([
+      { name: "requests", limit: 100, remaining: 98, resetSeconds: 0.2 },
+      { name: "tokens", limit: 20_000, remaining: 0, resetSeconds: 4.25 },
+      { name: "tokens", limit: null, remaining: null, resetSeconds: null },
+    ]);
+    expect(JSON.stringify(limits)).not.toContain("private");
+
+    const summary = summarizeRealtimeResponseDone({
+      response: {
+        status: "failed",
+        status_details: { error: { type: "tokens", code: "rate_limit_exceeded" } },
+      },
+    });
+    const guard = createTokenRateLimitRecoveryGuard();
+    guard.onRateLimits(limits, 10_000);
+    expect(guard.decide(summary, 10_250)).toEqual({
+      kind: "retry",
+      delayMs: 4_500,
+      attempt: 1,
+    });
+    expect(guard.decide(summary, 15_000)).toMatchObject({ kind: "retry", attempt: 2 });
+    expect(guard.decide(summary, 15_001)).toEqual({
+      kind: "exhausted",
+      attempts: TOKEN_RATE_LIMIT_RECOVERY_MAX_ATTEMPTS,
+    });
+    guard.onAudibleOutput();
+    expect(guard.decide(summary, 20_000)).toMatchObject({
+      kind: "retry",
+      attempt: 1,
+    });
+  });
+
+  it("generates a short local μ-law comfort tone without OpenAI", () => {
+    const payloads = tokenRateLimitComfortTonePayloads();
+    expect(payloads).toHaveLength(12);
+    const decoded = payloads.map((payload) => Buffer.from(payload, "base64"));
+    expect(decoded.every((frame) => frame.length === 160)).toBe(true);
+    expect(decoded.some((frame) => frame.some((byte) => byte !== 0xff))).toBe(true);
+    expect(TOKEN_RATE_LIMIT_RESET_BUFFER_MS).toBeGreaterThan(0);
+  });
+
   it("opening greeting invites the caller to speak before any tool call", () => {
     const message = openingGreetingResponseCreate("en") as {
       type: string;
       response: { instructions: string };
     };
     expect(message.type).toBe("response.create");
+    expect(message.response.instructions).toContain("calm front-desk pace");
+    expect(message.response.instructions).toContain("Clearly enunciate the salon name");
+    expect(message.response.instructions).toContain("brief natural pause");
+    expect(message.response.instructions).toContain("Do not rush");
     expect(message.response.instructions).toContain("what the caller needs help with today");
     expect(message.response.instructions).toContain("Do not call any tool");
     expect(message.response.instructions).toContain("stop and listen");
@@ -312,6 +399,25 @@ describe("coordinator — one response at a time, priority, barge-in gating", ()
     const creates = sent.filter(isResponseCreate) as Array<{ response?: { instructions?: string } }>;
     expect(creates).toHaveLength(2);
     expect(creates[1]?.response?.instructions).toBe("latest");
+  });
+
+  it("pauses queued replies during a rate-limit window and dispatches only after resume", () => {
+    const { c, sent } = makeCoord();
+    const lang = () => "en";
+    c.request(plain(lang));
+    c.onResponseCreated("rate_limited");
+    c.pause();
+    c.request({
+      kind: "normal",
+      build: () => ({ type: "response.create", response: { instructions: "latest after reset" } }),
+      language: lang,
+    });
+    c.onResponseEnded("rate_limited");
+    expect(sent.filter(isResponseCreate)).toHaveLength(1);
+    c.resume();
+    const creates = sent.filter(isResponseCreate) as Array<{ response?: { instructions?: string } }>;
+    expect(creates).toHaveLength(2);
+    expect(creates[1]?.response?.instructions).toBe("latest after reset");
   });
 
   it("a language acknowledgement replaces stale queued replies", () => {
