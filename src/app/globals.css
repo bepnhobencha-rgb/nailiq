@@ -780,19 +780,7 @@ html[data-receptionist-interface-mode="preview"] [data-dashboard-main] {
 
 html[data-receptionist-interface-mode="preview"]
   [data-testid="dashboard-view-controls"] {
-  border-color: var(--rc-new-border) !important;
-  background: color-mix(
-    in srgb,
-    var(--rc-new-surface) 92%,
-    transparent
-  ) !important;
-  color: var(--rc-new-text);
-}
-
-html[data-receptionist-interface-mode="preview"]
-  [data-testid="dashboard-view-controls"]
-  button {
-  color: var(--rc-new-text) !important;
+  display: none !important;
 }
 
 .rc-new-booking {

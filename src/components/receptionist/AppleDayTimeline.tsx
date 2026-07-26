@@ -16,11 +16,14 @@ import { minutesToLabel } from "@/shared/booking/getAvailableTimeSlots";
 import { cn } from "@/shared/lib/cn";
 
 const SLOT_MINUTES = 30;
-const SLOT_HEIGHT = 52;
+// The approved reference keeps the full 9–7 workday visible in one desktop
+// viewport. Thirty-two pixels per half-hour avoids the oversized,
+// scroll-heavy Classic density; mobile keeps its separate touch-first view.
+const SLOT_HEIGHT = 32;
 const DEFAULT_OPEN_MINUTES = 9 * 60;
 const DEFAULT_CLOSE_MINUTES = 19 * 60;
-const STAFF_COLUMN_WIDTH = 190;
-const TIME_RAIL_WIDTH = 72;
+const STAFF_COLUMN_WIDTH = 170;
+const TIME_RAIL_WIDTH = 96;
 
 type AppleDayTimelineProps = {
   staff: GridStaff[];
@@ -185,7 +188,7 @@ export function AppleDayTimeline({
             staff.map((person) => (
               <div
                 key={person.id}
-                className="flex min-h-16 items-center gap-3 border-l border-[var(--rc-new-border)] px-4"
+                className="flex min-h-16 items-center gap-3 border-l border-[var(--rc-new-border)] px-3"
               >
                 <span className="relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--rc-new-surface-subtle)] text-xs font-semibold text-[var(--rc-new-text)]">
                   {staffInitials(person.name)}
@@ -309,7 +312,7 @@ export function AppleDayTimeline({
                       SLOT_MINUTES) *
                     SLOT_HEIGHT;
                   const height = Math.max(
-                    44,
+                    28,
                     ((Math.min(end, endMinutes) - Math.max(start, startMinutes)) /
                       SLOT_MINUTES) *
                       SLOT_HEIGHT -
@@ -325,7 +328,7 @@ export function AppleDayTimeline({
                       data-booking-source={booking.source}
                       onClick={() => onBookingClick(booking.id)}
                       className={cn(
-                        "rc-new-booking absolute inset-x-2 z-10 overflow-hidden rounded-lg border px-3 py-2 text-left shadow-sm outline-none",
+                        "rc-new-booking absolute inset-x-2 z-10 overflow-hidden rounded-md border px-2.5 py-1.5 text-left shadow-sm outline-none",
                         "hover:-translate-y-px hover:shadow-md focus-visible:ring-2 focus-visible:ring-nq-info focus-visible:ring-offset-1",
                         bookingTone(booking),
                       )}
@@ -340,7 +343,7 @@ export function AppleDayTimeline({
                           language === "vi" ? "Khách đã xoá" : "Removed guest",
                         )}
                       </span>
-                      <span className="mt-1 block truncate text-[11px] leading-tight opacity-70">
+                      <span className="mt-0.5 block truncate text-[11px] leading-tight opacity-70">
                         {booking.service_name}
                       </span>
                       <span className="sr-only">

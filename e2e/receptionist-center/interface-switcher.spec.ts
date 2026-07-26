@@ -32,7 +32,10 @@ test.afterAll(async ({}, testInfo) => {
 
 test("keeps classic as default and remembers the opt-in preview", async ({
   page,
-}) => {
+}, testInfo) => {
+  if (testInfo.project.name === "chromium") {
+    await page.setViewportSize({ width: 1280, height: 853 });
+  }
   await gotoReceptionistCenter(page, fx.slug);
 
   const center = page.getByTestId("receptionist-center-loaded");
@@ -43,21 +46,39 @@ test("keeps classic as default and remembers the opt-in preview", async ({
 
   await switcher.click();
   await expect(center).toHaveAttribute("data-receptionist-interface", "preview");
-  await expect(page.getByTestId("receptionist-kpi-bar")).toHaveAttribute(
-    "data-compact",
-    "true",
-  );
+  if ((page.viewportSize()?.width ?? 0) >= 768) {
+    await expect(page.getByTestId("preview-apple-header")).toBeVisible();
+  }
+  await expect(page.getByTestId("preview-command-bar")).toBeVisible();
+  await expect(page.getByTestId("preview-command-appointments")).toBeVisible();
+  await expect(page.getByTestId("preview-command-waiting")).toBeVisible();
+  await expect(page.getByTestId("preview-command-late")).toBeVisible();
+  await expect(page.getByTestId("preview-command-available")).toBeVisible();
+  await expect(page.getByTestId("preview-command-action")).toBeVisible();
+  await expect(page.getByTestId("nailiq-daily-brief")).toHaveCount(0);
+  await expect(page.getByTestId("nailiq-suggestion-bar")).toHaveCount(0);
+  await expect(page.getByTestId("receptionist-kpi-bar")).toHaveCount(0);
   if ((page.viewportSize()?.width ?? 0) >= 640) {
     await expect(page.getByTestId("preview-apple-shell")).toBeVisible();
     await expect(page.getByTestId("preview-apple-timeline")).toBeVisible();
     await expect(page.getByTestId("preview-walkin-queue")).toBeVisible();
+    await testInfo.attach("new-receptionist-reference", {
+      body: await page.screenshot(),
+      contentType: "image/png",
+    });
   }
 
   await page.reload();
   await expect(center).toHaveAttribute("data-receptionist-interface", "preview");
 
-  await switcher.click();
+  await page.getByTestId("preview-settings-trigger").click();
+  await page
+    .getByTestId("preview-apple-header")
+    .getByTestId("receptionist-interface-switcher")
+    .click();
   await expect(center).toHaveAttribute("data-receptionist-interface", "classic");
+  await expect(page.getByTestId("preview-apple-header")).toHaveCount(0);
+  await expect(page.getByTestId("preview-command-bar")).toHaveCount(0);
   await expect(page.getByTestId("preview-apple-shell")).toHaveCount(0);
 
   await page.reload();
