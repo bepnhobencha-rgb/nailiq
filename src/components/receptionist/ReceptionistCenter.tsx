@@ -189,6 +189,11 @@ const AppleDayTimeline = dynamic(
     import("./AppleDayTimeline").then((module) => module.AppleDayTimeline),
   { ssr: false },
 );
+const AppleDeskHeader = dynamic(
+  () =>
+    import("./AppleDeskHeader").then((module) => module.AppleDeskHeader),
+  { ssr: false },
+);
 const AppleCommandBar = dynamic(
   () =>
     import("./AppleCommandBar").then((module) => module.AppleCommandBar),
@@ -2788,7 +2793,7 @@ function ReceptionistCenterInner({
         className={cn(
           "flex min-h-[100dvh] w-full flex-col",
           rush.active && "[&_[data-rush-fade]]:opacity-50",
-          previewInterface && "gap-2 p-2 md:p-3",
+          previewInterface && "gap-1 p-1",
         )}
       >
         {/* Hydration signal for E2E: only rendered after React useEffect fires. */}
@@ -2834,12 +2839,67 @@ function ReceptionistCenterInner({
             </div>
           </div>
         ) : null}
+        {previewInterface ? (
+          <AppleDeskHeader
+            salonName={data.salon.name}
+            selectedDate={data.selectedDate}
+            selectedOffset={dateOffset}
+            connectionState={connectionState}
+            language={language === "vi" ? "vi" : "en"}
+            clientHref={`/dashboard/${encodeURIComponent(slug)}/clients`}
+            ownerHref={`/dashboard/${encodeURIComponent(slug)}`}
+            canAddWalkin={
+              isViewingToday &&
+              viewMode === "day" &&
+              modules.queue_panel &&
+              modules.quick_add &&
+              canCreateDeskBooking(viewerRole) &&
+              !isSetupIncomplete
+            }
+            canAddAppointment={
+              viewMode === "day" && canCreateDeskBooking(viewerRole)
+            }
+            canAddGroup={viewMode === "day" && groupBookingEnabled}
+            settings={
+              <>
+                <ReceptionistInterfaceSwitcher
+                  value={receptionistInterface}
+                  language={language === "vi" ? "vi" : "en"}
+                  onChange={(next) => {
+                    if (next === "classic") setPreviewFullQueueOpen(false);
+                    setReceptionistInterface(next);
+                  }}
+                  className="border-[var(--rc-new-border-strong)] bg-[var(--rc-new-surface)] text-[var(--rc-new-text)] hover:bg-[var(--rc-new-surface-subtle)]"
+                />
+                {viewerRole === "owner" || viewerRole === "admin" ? (
+                  <ReceptionistPreviewThemePicker
+                    slug={slug}
+                    currentBg={newInterfaceBg}
+                    language={language === "vi" ? "vi" : "en"}
+                    onBgChange={setNewInterfaceBg}
+                  />
+                ) : null}
+                <UserLanguageToggle
+                  language={language}
+                  onLanguageChange={setLanguage}
+                />
+              </>
+            }
+            onDateChange={(next) => void onDateSwitchChange(next)}
+            onAddWalkin={openPreviewWalkinAdd}
+            onAddAppointment={() => {
+              setDeskPrefill({ ymd: data.selectedDate });
+              setDeskBookingOpen(true);
+            }}
+            onAddGroup={() => setDeskGroupOpen(true)}
+          />
+        ) : null}
         <header
           data-preview-header={previewInterface ? "true" : undefined}
           className={cn(
             "shrink-0 border-b border-nq-muted/20 px-[var(--pad-nq-section-mobile)] py-2.5 backdrop-blur-sm md:px-6 md:py-3",
             previewInterface &&
-              "rounded-xl border border-[var(--rc-new-border)] bg-[var(--rc-new-surface)] shadow-sm",
+              "md:hidden",
           )}
           style={
             previewInterface

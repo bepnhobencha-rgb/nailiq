@@ -78,7 +78,7 @@ export function AppleCommandBar({
   return (
     <section
       data-testid="preview-command-bar"
-      className="shrink-0 overflow-x-auto border-y border-[var(--rc-new-border)] bg-[var(--rc-new-surface)]"
+      className="shrink-0 overflow-x-auto rounded-lg border border-[var(--rc-new-border)] bg-[var(--rc-new-surface)] shadow-sm"
       aria-label={language === "vi" ? "Tình hình hôm nay" : "Today's status"}
     >
       <div className="flex min-w-max items-stretch">
@@ -88,7 +88,7 @@ export function AppleCommandBar({
             <div
               key={stat.key}
               data-testid={`preview-command-${stat.key}`}
-              className="flex min-h-16 min-w-44 items-center gap-3 border-r border-[var(--rc-new-border)] px-5"
+              className="flex min-h-[68px] min-w-44 items-center gap-3 border-r border-[var(--rc-new-border)] px-5"
             >
               <Icon
                 className="h-5 w-5 shrink-0 text-[var(--rc-new-muted)]"
@@ -106,7 +106,7 @@ export function AppleCommandBar({
 
         <div
           data-testid="preview-command-available"
-          className="flex min-h-16 min-w-52 items-center gap-3 border-r border-[var(--rc-new-border)] px-5"
+          className="flex min-h-[68px] min-w-52 items-center gap-3 border-r border-[var(--rc-new-border)] px-5"
         >
           <UserRound className="h-5 w-5 shrink-0 text-nq-success" aria-hidden />
           <span className="min-w-0">
@@ -126,7 +126,7 @@ export function AppleCommandBar({
           </span>
         </div>
 
-        <div className="flex min-h-16 min-w-96 flex-1 items-center gap-3 px-5">
+        <div className="flex min-h-[68px] min-w-96 flex-1 items-center gap-3 px-5">
           <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-nq-primary/15 text-nq-primary">
             <Sparkles className="h-4 w-4" aria-hidden />
           </span>

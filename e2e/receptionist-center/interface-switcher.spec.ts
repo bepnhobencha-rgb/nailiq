@@ -43,6 +43,9 @@ test("keeps classic as default and remembers the opt-in preview", async ({
 
   await switcher.click();
   await expect(center).toHaveAttribute("data-receptionist-interface", "preview");
+  if ((page.viewportSize()?.width ?? 0) >= 768) {
+    await expect(page.getByTestId("preview-apple-header")).toBeVisible();
+  }
   await expect(page.getByTestId("preview-command-bar")).toBeVisible();
   await expect(page.getByTestId("preview-command-appointments")).toBeVisible();
   await expect(page.getByTestId("preview-command-waiting")).toBeVisible();
@@ -62,6 +65,7 @@ test("keeps classic as default and remembers the opt-in preview", async ({
 
   await switcher.click();
   await expect(center).toHaveAttribute("data-receptionist-interface", "classic");
+  await expect(page.getByTestId("preview-apple-header")).toHaveCount(0);
   await expect(page.getByTestId("preview-command-bar")).toHaveCount(0);
   await expect(page.getByTestId("preview-apple-shell")).toHaveCount(0);
 
