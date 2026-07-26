@@ -554,6 +554,7 @@ export function DashboardSidebar({
 
   return (
     <aside
+      data-dashboard-sidebar
       // iPad and smaller use the touch-first bottom bar. The full navigation
       // rail starts at xl, where it no longer steals working room from the
       // live appointment timeline.

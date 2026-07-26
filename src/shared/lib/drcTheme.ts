@@ -5,6 +5,17 @@
 
 export const DEFAULT_DRC_ACCENT = "#c9a96e"; // NailIQ gold
 export const DEFAULT_DRC_BG = "#0b0c10";     // NailIQ charcoal
+/** New Receptionist canvas. Stored separately so Classic can never be repainted. */
+export const DEFAULT_RECEPTIONIST_PREVIEW_BG = "#f4f5f7";
+
+export const RECEPTIONIST_PREVIEW_BG_PRESETS = [
+  { hex: "#f4f5f7", label: "Soft white" },
+  { hex: "#ffffff", label: "Pure white" },
+  { hex: "#f7f5f2", label: "Warm pearl" },
+  { hex: "#f2f6f5", label: "Soft mint" },
+  { hex: "#f2f5f9", label: "Soft blue" },
+  { hex: "#f7f3f8", label: "Soft lavender" },
+] as const;
 
 export type DrcPalette = {
   accent: string;

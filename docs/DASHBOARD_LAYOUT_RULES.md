@@ -461,3 +461,44 @@ The receptionist queue panel defaults to **collapsed** (slide-over hidden) on ev
 - Animation values (durations, easing) inherit from `ANIMATION_RULES.md`. This section names which transition fires; values trace to the named tokens.
 
 ---
+
+## 12. New interface vertical-time matrix _(added 2026-07-25, PM-approved)_
+
+**Scope.** This section applies only when `data-receptionist-interface="preview"` (the user-facing **New** interface). Classic continues to follow §§2 and 11 unchanged.
+
+### 12.1 Stable geometry
+
+- **Top band:** compact Today/salon/date/sync/search/create identity bar.
+- **Command band:** appointments, waiting, late, available-staff, and at most one contextual recommended action.
+- **Leading time rail:** time runs vertically from salon open to close and stays visually attached to the grid.
+- **Staff axis:** staff are stable columns across the top. A staff name never moves because bookings load or realtime data changes.
+- **Timeline:** the dominant surface. Booking cards are positioned by start/end time in their staff column.
+- **Queue:** a persistent right-hand lane on desktop when the queue module is enabled; narrow viewports may use the existing discoverable overlay.
+
+The New interface therefore preserves the same operational truths—staff, time, bookings, intake—but rotates the staff/time matrix for faster top-to-bottom day scanning.
+
+### 12.2 Safety and compatibility
+
+- New and Classic consume the same typed data and existing mutation callbacks.
+- No New-only server mutation, duplicate state machine, or parallel booking model is allowed.
+- Switching interfaces changes presentation only and must not discard unsaved work.
+- Every New selector and style must be scoped to its interface root. No global repaint of Classic.
+- Classic remains the default and the immediate rollback surface until the PM explicitly approves a future default change.
+
+### 12.3 Responsive behavior
+
+- **Desktop / landscape tablet:** time rail + staff columns + persistent queue lane.
+- **Narrow tablet:** time rail + horizontally scrollable staff columns; queue stays discoverable.
+- **Phone:** agenda/list presentation may replace the matrix, but uses the same action labels and state semantics.
+
+### 12.4 Release gate
+
+Each New-interface PR must prove:
+
+1. Classic still renders and performs its core actions.
+2. Classic ↔ New switching survives reload.
+3. Booking open/create and walk-in entry use the existing callbacks.
+4. Owner/Admin background customization cannot reduce operational text/control contrast below the documented floor.
+5. The change is previewed before merge; production is not the first visual review.
+
+---

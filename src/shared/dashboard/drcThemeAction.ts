@@ -1,10 +1,14 @@
 "use server";
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
-import { isOwner } from "@/shared/lib/salonMemberRole";
+import { isOwner, isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { revalidatePath } from "next/cache";
-import { sanitizeHex, DEFAULT_DRC_BG } from "@/shared/lib/drcTheme";
+import {
+  sanitizeHex,
+  DEFAULT_DRC_BG,
+  DEFAULT_RECEPTIONIST_PREVIEW_BG,
+} from "@/shared/lib/drcTheme";
 
 /**
  * Save the owner's chosen DRC accent color to salons.feature_flags.
@@ -83,6 +87,55 @@ export async function saveDrcBgColor(
         Object.entries(currentFlags).filter(([k]) => k !== "drc_bg_color"),
       )
     : { ...currentFlags, drc_bg_color: clean };
+
+  const { error } = await supabase
+    .from("salons")
+    .update({ feature_flags: newFlags } as never)
+    .eq("id", ctx.salon.id);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath(`/dashboard/${slug}/center`);
+  return { ok: true };
+}
+
+/**
+ * Save the light New Receptionist canvas independently from Classic.
+ * Owner/Admin only. Passing null (or the default) removes the feature flag.
+ */
+export async function saveReceptionistPreviewBgColor(
+  slug: string,
+  bgHex: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx || !isOwnerOrAdmin(ctx.role)) {
+    return { ok: false, error: "unauthorized" };
+  }
+
+  const clean = bgHex ? sanitizeHex(bgHex) : null;
+  if (bgHex && !clean) return { ok: false, error: "invalid_color" };
+
+  const supabase = createServiceRoleClient();
+  const { data: salon } = await supabase
+    .from("salons")
+    .select("feature_flags")
+    .eq("id", ctx.salon.id)
+    .maybeSingle();
+
+  const currentFlags =
+    ((salon as { feature_flags?: Record<string, unknown> | null } | null)
+      ?.feature_flags) ?? {};
+
+  const isDefault =
+    !clean ||
+    clean.toLowerCase() === DEFAULT_RECEPTIONIST_PREVIEW_BG.toLowerCase();
+  const newFlags = isDefault
+    ? Object.fromEntries(
+        Object.entries(currentFlags).filter(
+          ([key]) => key !== "receptionist_preview_bg_color",
+        ),
+      )
+    : { ...currentFlags, receptionist_preview_bg_color: clean };
 
   const { error } = await supabase
     .from("salons")
