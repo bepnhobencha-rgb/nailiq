@@ -37,6 +37,7 @@ import {
   summarizeRealtimeResponseDone,
   summarizeRealtimeRateLimitsUpdated,
   isTokenRateLimitExceeded,
+  shouldHoldCoordinatorForToolResult,
   createTokenRateLimitRecoveryGuard,
   tokenRateLimitComfortTonePayloads,
   createZeroAudioRecoveryGuard,
@@ -207,6 +208,14 @@ wss.on("connection", (twilioWs) => {
   let tokenRateLimitRetryTimer: ReturnType<typeof setTimeout> | null = null;
   let tokenRateLimitCooldownUntil = 0;
   let coalescedRateLimitedTurns = 0;
+  let inFlightBusinessTools = 0;
+  let toolResultBarrierActive = false;
+
+  const resumeCoordinatorIfUnblocked = () => {
+    if (!tokenRateLimitRetryTimer && inFlightBusinessTools === 0) {
+      coordinator.resume();
+    }
+  };
 
   const clearTokenRateLimitCooldown = () => {
     if (tokenRateLimitRetryTimer) {
@@ -215,7 +224,7 @@ wss.on("connection", (twilioWs) => {
     }
     tokenRateLimitCooldownUntil = 0;
     coalescedRateLimitedTurns = 0;
-    coordinator.resume();
+    resumeCoordinatorIfUnblocked();
   };
 
   const playTokenRateLimitComfortTone = () => {
@@ -313,7 +322,8 @@ wss.on("connection", (twilioWs) => {
     // while lookup_customer is in flight; that must not turn the silent opening
     // enrichment into a late duplicate greeting when the result returns.
     const isOpeningLookup = name === "lookup_customer" && userTurnCount === 0;
-    {
+    inFlightBusinessTools++;
+    try {
       let result: unknown;
       logT("tool_call_started", { tool: name });
       const httpStartedAt = Date.now();
@@ -392,6 +402,13 @@ wss.on("connection", (twilioWs) => {
       } else {
         coordinator.request({ kind: "normal", build: plainResponseCreate, language: () => currentLang });
       }
+    } finally {
+      inFlightBusinessTools = Math.max(0, inFlightBusinessTools - 1);
+      if (toolResultBarrierActive && inFlightBusinessTools === 0) {
+        toolResultBarrierActive = false;
+        logT("tool_result_barrier_released", { tool: name });
+      }
+      resumeCoordinatorIfUnblocked();
     }
   };
 
@@ -556,11 +573,22 @@ wss.on("connection", (twilioWs) => {
               hasFunctionCall: false,
             };
         const tokenRateLimited = t === "response.done" && isTokenRateLimitExceeded(summary);
+        const waitingForToolResult = t === "response.done" &&
+          shouldHoldCoordinatorForToolResult(summary, inFlightBusinessTools);
         // Do not let onResponseEnded immediately pump a queued response into the
-        // same exhausted token window. Resume only when reset_seconds has elapsed.
-        if (tokenRateLimited) coordinator.pause();
+        // same exhausted token window. A function-call response also waits for
+        // its HTTP result, so a stale caller turn cannot consume a redundant
+        // model response before the real tool-result response is queued.
+        if (tokenRateLimited || waitingForToolResult) coordinator.pause();
+        if (waitingForToolResult) {
+          toolResultBarrierActive = true;
+          logT("tool_result_barrier_started", { inFlightBusinessTools });
+        }
         const endedActive = coordinator.onResponseEnded(rid);
-        if (tokenRateLimited && !endedActive) coordinator.resume();
+        if ((tokenRateLimited || waitingForToolResult) && !endedActive) {
+          toolResultBarrierActive = false;
+          resumeCoordinatorIfUnblocked();
+        }
         logT("response_ended", {
           type: t,
           id: rid || null,
@@ -611,14 +639,14 @@ wss.on("connection", (twilioWs) => {
                   build: () => zeroAudioRecoveryResponseCreate(currentLang),
                   language: () => currentLang,
                 });
-                coordinator.resume();
+                resumeCoordinatorIfUnblocked();
                 logT("token_rate_limit_recovery_requested", {
                   recoveryAttempt: decision.attempt,
                   coalescedTurns,
                 });
               }, decision.delayMs);
             } else if (decision.kind === "exhausted") {
-              coordinator.resume();
+              resumeCoordinatorIfUnblocked();
               logT("token_rate_limit_recovery_exhausted", {
                 recoveryAttempts: decision.attempts,
               });
@@ -655,7 +683,7 @@ wss.on("connection", (twilioWs) => {
         if (tokenRateLimited && endedActive && !tokenRateLimitRetryTimer) {
           // A stale/mismatched lifecycle, pending hangup, or exhausted circuit
           // must never leave the coordinator paused permanently.
-          coordinator.resume();
+          resumeCoordinatorIfUnblocked();
         }
       } else if (t.includes("error")) {
         coordinator.onError();

@@ -17,6 +17,7 @@ import {
   REALTIME_TRUNCATION_RETENTION_RATIO,
   summarizeRealtimeRateLimitsUpdated,
   isTokenRateLimitExceeded,
+  shouldHoldCoordinatorForToolResult,
   createTokenRateLimitRecoveryGuard,
   TOKEN_RATE_LIMIT_RECOVERY_MAX_ATTEMPTS,
   TOKEN_RATE_LIMIT_RESET_BUFFER_MS,
@@ -88,6 +89,7 @@ describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () =>
     expect(m.session.audio.input.turn_detection.create_response).toBe(false); // coordinator drives responses
     expect(m.session.audio.input.turn_detection.silence_duration_ms).toBeGreaterThan(500);
     expect(m.session.max_output_tokens).toBe(REALTIME_MAX_OUTPUT_TOKENS);
+    expect(m.session.truncation.token_limits.post_instructions).toBeLessThanOrEqual(4_000);
     expect(m.session.audio.output.speed).toBe(REALTIME_SPEECH_SPEED);
     expect(m.session.truncation).toEqual({
       type: "retention_ratio",
@@ -196,6 +198,18 @@ describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () =>
     expect(shouldRecoverZeroAudio(cancelled, 0)).toBe(false);
     expect(isTokenRateLimitExceeded(tokenLimited)).toBe(true);
     expect(shouldRecoverZeroAudio(tokenLimited, 0)).toBe(false);
+  });
+
+  it("holds a function-call response until its business tool result is queued", () => {
+    const toolOnly = summarizeRealtimeResponseDone({
+      response: { status: "completed", output: [{ type: "function_call" }] },
+    });
+    const spoken = summarizeRealtimeResponseDone({
+      response: { status: "completed", output: [{ type: "message" }] },
+    });
+    expect(shouldHoldCoordinatorForToolResult(toolOnly, 1)).toBe(true);
+    expect(shouldHoldCoordinatorForToolResult(toolOnly, 0)).toBe(false);
+    expect(shouldHoldCoordinatorForToolResult(spoken, 1)).toBe(false);
   });
 
   it("retries one consecutive zero-audio response, then stops until audio resumes", () => {
@@ -418,6 +432,37 @@ describe("coordinator — one response at a time, priority, barge-in gating", ()
     const creates = sent.filter(isResponseCreate) as Array<{ response?: { instructions?: string } }>;
     expect(creates).toHaveLength(2);
     expect(creates[1]?.response?.instructions).toBe("latest after reset");
+  });
+
+  it("does not speak a stale caller turn between a function call and its tool result", () => {
+    const { c, sent } = makeCoord();
+    const lang = () => "en";
+    c.request(plain(lang));
+    c.onResponseCreated("function_call");
+    c.request({
+      kind: "normal",
+      build: () => ({ type: "response.create", response: { instructions: "stale caller turn" } }),
+      language: lang,
+    });
+
+    // server.ts sees response.done(hasFunctionCall) while HTTP is still in
+    // flight, so it pauses before ending the function-call response.
+    c.pause();
+    c.onResponseEnded("function_call");
+    expect(sent.filter(isResponseCreate)).toHaveLength(1);
+
+    // The tool result supersedes the stale queued turn, then releases the
+    // barrier. Exactly one caller-facing follow-up is generated.
+    c.request({
+      kind: "normal",
+      build: () => ({ type: "response.create", response: { instructions: "real tool result" } }),
+      language: lang,
+    });
+    c.resume();
+    const creates = sent.filter(isResponseCreate) as Array<{ response?: { instructions?: string } }>;
+    expect(creates).toHaveLength(2);
+    expect(creates[1]?.response?.instructions).toBe("real tool result");
+    expect(creates.some((message) => message.response?.instructions === "stale caller turn")).toBe(false);
   });
 
   it("a language acknowledgement replaces stale queued replies", () => {

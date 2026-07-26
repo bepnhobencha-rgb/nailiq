@@ -49,8 +49,10 @@ export const REALTIME_MAX_OUTPUT_TOKENS = 512;
 export const REALTIME_SPEECH_SPEED = 0.92;
 
 /** Keep enough recent dialogue to finish a booking while dropping old turns in
- * batches. Retaining 80% avoids a cache-busting truncation on every later turn. */
-export const REALTIME_POST_INSTRUCTION_TOKEN_LIMIT = 8_000;
+ * batches. Phone turns are deliberately short, so 4k post-instruction tokens
+ * preserve the active booking while halving the rolling token pressure seen in
+ * long live calls. Retaining 80% avoids truncating on every later turn. */
+export const REALTIME_POST_INSTRUCTION_TOKEN_LIMIT = 4_000;
 export const REALTIME_TRUNCATION_RETENTION_RATIO = 0.8;
 
 /** A voice-tool HTTP call must never leave the caller in dead air indefinitely. */
@@ -384,6 +386,21 @@ export function summarizeRealtimeRateLimitsUpdated(evt: unknown): RealtimeRateLi
 
 export function isTokenRateLimitExceeded(summary: RealtimeResponseDoneSummary): boolean {
   return summary.errorType === "tokens" && summary.errorCode === "rate_limit_exceeded";
+}
+
+/**
+ * A function-call response is not a caller-facing answer. If its HTTP tool is
+ * still running when response.done arrives, hold the coordinator until the
+ * function output is queued. Otherwise a caller turn captured during the lookup
+ * can slip through first, causing one redundant model response before the real
+ * tool-result response. In the production failure this consumed the remaining
+ * token window and made the actual availability result inaudible.
+ */
+export function shouldHoldCoordinatorForToolResult(
+  summary: RealtimeResponseDoneSummary,
+  inFlightBusinessTools: number,
+): boolean {
+  return summary.hasFunctionCall && inFlightBusinessTools > 0;
 }
 
 export const TOKEN_RATE_LIMIT_RECOVERY_MAX_ATTEMPTS = 2;
