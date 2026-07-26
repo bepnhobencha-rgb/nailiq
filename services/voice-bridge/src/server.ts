@@ -29,6 +29,8 @@ import {
   HANGUP_FALLBACK_MS,
   functionCallOutput,
   plainResponseCreate,
+  openingGreetingResponseCreate,
+  openingLookupFollowupResponseCreate,
   extractSayThis,
   sayThisResponseCreate,
   createResponseCoordinator,
@@ -76,7 +78,6 @@ wss.on("connection", (twilioWs) => {
   // Has the agent produced ANY audio yet? If the opening lookup_customer runs
   // before a single word was spoken, the caller is sitting in dead air — we must
   // let a reply through to greet, not suppress it.
-  let greetingSpoken = false;
   // The agent asked to end the call (end_call). The hangup controller (created
   // below, after closeAll exists) hangs up only once the farewell has actually
   // PLAYED — never mid-word.
@@ -304,12 +305,17 @@ wss.on("connection", (twilioWs) => {
           build: () => sayThisResponseCreate(sayThis, currentLang),
           language: () => currentLang,
         });
-      } else if (!isOpeningLookup || !greetingSpoken) {
-        // Normally the opening lookup enriches silently — the opening response
-        // already greeted, so a forced follow-up would just repeat it. BUT if the
-        // agent called lookup_customer WITHOUT speaking first (greetingSpoken is
-        // still false), the caller is sitting in dead air on pickup — let the
-        // reply through so it finally greets (now personalised by the lookup).
+      } else if (isOpeningLookup) {
+        // Never swallow an opening lookup result. The previous implementation
+        // intentionally emitted no response here after the greeting, which left
+        // the caller in silence until they spoke first.
+        coordinator.request({
+          kind: "normal",
+          build: () => openingLookupFollowupResponseCreate(currentLang),
+          language: () => currentLang,
+        });
+        logT("opening_lookup_followup_requested");
+      } else {
         coordinator.request({ kind: "normal", build: plainResponseCreate, language: () => currentLang });
       }
     }
@@ -333,7 +339,11 @@ wss.on("connection", (twilioWs) => {
       // Greet through the coordinator — with create_response:false it is the only
       // way a response gets made, and it keeps the greet inside the one-at-a-time
       // discipline like every other response.
-      coordinator.request({ kind: "normal", build: plainResponseCreate, language: () => currentLang });
+      coordinator.request({
+        kind: "normal",
+        build: () => openingGreetingResponseCreate(currentLang),
+        language: () => currentLang,
+      });
       console.log("[voice-bridge] configured + greeting");
     };
 
@@ -443,7 +453,6 @@ wss.on("connection", (twilioWs) => {
       const audio = extractAudioDelta(evt);
       if (audio && streamSid) {
         lastProgressAt = Date.now();   // the pipeline is producing audio — not stalled
-        greetingSpoken = true;         // the caller has now heard the agent speak
         if (!firstAudioSeen) {
           // The caller-felt latency numbers: silence → first sound, and (after a
           // tool) tool result → first sound. Logged once per response.

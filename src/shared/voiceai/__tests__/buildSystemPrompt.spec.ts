@@ -104,4 +104,17 @@ describe("buildSystemPrompt receptionist flow", () => {
     const web = buildSystemPrompt(ctx, "en");
     expect(web).not.toContain("SOUND LIKE A REAL PERSON");
   });
+
+  it.each([
+    ["en", "What can I help you with today?"],
+    ["vi", "Hôm nay mình cần em giúp gì ạ?"],
+  ] as const)("opens a %s phone call with a clear invitation and no tool", (language, invitation) => {
+    const phone = buildSystemPrompt(ctx, language, "+17788680738");
+
+    expect(phone).toContain(invitation);
+    expect(phone).toContain("Do NOT call any tool in the opening response");
+    expect(phone).toContain("one clear invitation, then listen");
+    expect(phone).not.toContain("greet once, then stop talking");
+    expect(phone).not.toContain("right after the greeting words (same turn is fine)");
+  });
 });

@@ -6,6 +6,8 @@ import {
   twilioClearFrame,
   functionCallOutput,
   plainResponseCreate,
+  openingGreetingResponseCreate,
+  openingLookupFollowupResponseCreate,
   extractSayThis,
   sayThisResponseCreate,
   sayThisInstruction,
@@ -95,6 +97,27 @@ describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () =>
     expect(item.type).toBe("conversation.item.create");
     expect(JSON.parse(item.item.output)).toEqual({ ok: true, id: "b1" });
     expect(plainResponseCreate()).toEqual({ type: "response.create" });
+  });
+
+  it("opening greeting invites the caller to speak before any tool call", () => {
+    const message = openingGreetingResponseCreate("en") as {
+      type: string;
+      response: { instructions: string };
+    };
+    expect(message.type).toBe("response.create");
+    expect(message.response.instructions).toContain("what the caller needs help with today");
+    expect(message.response.instructions).toContain("Do not call any tool");
+    expect(message.response.instructions).toContain("stop and listen");
+  });
+
+  it("opening lookup recovery always resumes instead of leaving dead air", () => {
+    const message = openingLookupFollowupResponseCreate("vi") as {
+      type: string;
+      response: { instructions: string };
+    };
+    expect(message.response.instructions).toContain("Vietnamese");
+    expect(message.response.instructions).toContain("Do not repeat the full greeting");
+    expect(message.response.instructions).toContain("what you can help them with today");
   });
 });
 

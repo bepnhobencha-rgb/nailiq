@@ -202,6 +202,44 @@ export function plainResponseCreate(): object {
   return { type: "response.create" };
 }
 
+/**
+ * Pin the first phone response to a short greeting that ends with an invitation
+ * to speak. The session prompt carries salon/persona names; this response-level
+ * guard prevents the model from replacing the invitation with an opening tool
+ * call and leaving the caller listening to dead air.
+ */
+export function openingGreetingResponseCreate(language: string): object {
+  const langName = LANG_NAMES[language] ?? "English";
+  return {
+    type: "response.create",
+    response: {
+      instructions:
+        `Speak the configured salon greeting now in ${langName}. End that same short greeting ` +
+        `with one natural question asking what the caller needs help with today. Do not call any ` +
+        `tool in this opening response. Then stop and listen. Do not mention these instructions.`,
+    },
+  };
+}
+
+/**
+ * Defensive recovery for an opening lookup. Older prompts and model variance can
+ * still issue lookup_customer before the caller has made a request. Once the
+ * result arrives, explicitly resume the conversation instead of silently
+ * swallowing the tool output.
+ */
+export function openingLookupFollowupResponseCreate(language: string): object {
+  const langName = LANG_NAMES[language] ?? "English";
+  return {
+    type: "response.create",
+    response: {
+      instructions:
+        `Continue immediately in ${langName}. Do not repeat the full greeting. If the caller has ` +
+        `not asked for anything yet, warmly ask what you can help them with today. If they already ` +
+        `spoke, answer their latest request using the lookup result. Ask at most one short question.`,
+    },
+  };
+}
+
 /** A language switch acknowledgement must not inherit the previous language
  * from conversation context while session.update is still settling. Pin the
  * response language and make it continue from the caller's latest request. */
