@@ -71,11 +71,17 @@ test("keeps classic as default and remembers the opt-in preview", async ({
   await page.reload();
   await expect(center).toHaveAttribute("data-receptionist-interface", "preview");
 
-  await page.getByTestId("preview-settings-trigger").click();
-  await page
-    .getByTestId("preview-apple-header")
-    .getByTestId("receptionist-interface-switcher")
-    .click();
+  if ((page.viewportSize()?.width ?? 0) >= 768) {
+    await page.getByTestId("preview-settings-trigger").click();
+    await page
+      .getByTestId("preview-apple-header")
+      .getByTestId("receptionist-interface-switcher")
+      .click();
+  } else {
+    await page
+      .locator('[data-testid="receptionist-interface-switcher"]:visible')
+      .click();
+  }
   await expect(center).toHaveAttribute("data-receptionist-interface", "classic");
   await expect(page.getByTestId("preview-apple-header")).toHaveCount(0);
   await expect(page.getByTestId("preview-command-bar")).toHaveCount(0);
