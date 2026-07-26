@@ -33,6 +33,9 @@ import {
   callerPresenceLabel,
   functionCallOutput,
   plainResponseCreate,
+  zeroAudioRecoveryResponseCreate,
+  summarizeRealtimeResponseDone,
+  createZeroAudioRecoveryGuard,
   openingGreetingResponseCreate,
   openingLookupFollowupResponseCreate,
   extractSayThis,
@@ -192,7 +195,10 @@ wss.on("connection", (twilioWs) => {
   let turnCommittedAt = 0;    // caller's turn closed (input_audio_buffer.committed)
   let responseCreatedAt = 0;  // the active response's response.created
   let firstAudioSeen = true;  // first audio delta of the active response already logged?
+  let responseAudioDeltaCount = 0;
+  let responseAudioBase64Chars = 0;
   let toolOutputSentAt = 0;   // last function_call_output sent → measures tool→audio gap
+  const zeroAudioRecovery = createZeroAudioRecoveryGuard();
 
   const finalizeSession = async () => {
     if (!sessionId) return;
@@ -472,6 +478,8 @@ wss.on("connection", (twilioWs) => {
         lastProgressAt = Date.now();
         responseCreatedAt = Date.now();
         firstAudioSeen = false;   // measure this response's first audio delta
+        responseAudioDeltaCount = 0;
+        responseAudioBase64Chars = 0;
         logT("response_created", {
           id: rid || null,
           sinceCommitMs: turnCommittedAt ? responseCreatedAt - turnCommittedAt : null,
@@ -480,11 +488,76 @@ wss.on("connection", (twilioWs) => {
       } else if (t === "response.done" || t === "response.cancelled") {
         const rid = extractResponseId(evt) ?? "";
         lastProgressAt = Date.now();
-        logT("response_ended", { type: t, id: rid || null, activeMatch: coordinator.isBusy() });
-        coordinator.onResponseEnded(rid);
+        const summary = t === "response.done"
+          ? summarizeRealtimeResponseDone(evt)
+          : {
+              status: "cancelled",
+              statusType: null,
+              statusReason: null,
+              errorType: null,
+              errorCode: null,
+              outputItemTypes: [],
+              outputContentTypes: [],
+              hasFunctionCall: false,
+            };
+        const endedActive = coordinator.onResponseEnded(rid);
+        logT("response_ended", {
+          type: t,
+          id: rid || null,
+          activeMatch: endedActive,
+          status: summary.status,
+          statusType: summary.statusType,
+          statusReason: summary.statusReason,
+          errorType: summary.errorType,
+          errorCode: summary.errorCode,
+          outputItemTypes: summary.outputItemTypes,
+          outputContentTypes: summary.outputContentTypes,
+          audioDeltaCount: responseAudioDeltaCount,
+          audioBase64Chars: responseAudioBase64Chars,
+        });
         // If the agent ended the call, the farewell has been fully GENERATED —
         // now wait for Twilio to confirm it fully PLAYED (mark ack), then close.
         hangup.onResponseEnded(coordinator.isBusy());
+
+        // response.done is emitted for every terminal outcome and carries status
+        // details, but omits raw audio. We therefore pair its safe metadata with
+        // the deltas observed above. A completed/failed/incomplete response with
+        // no tool call and zero audio is real caller-facing dead air. Retry once
+        // with a short, tool-free recovery line; never loop and never retry a
+        // write. If another response is already queued, it is the recovery.
+        if (
+          t === "response.done" &&
+          endedActive &&
+          !coordinator.isBusy() &&
+          !hangup.isHangupPending()
+        ) {
+          const decision = zeroAudioRecovery.decide(summary, responseAudioDeltaCount);
+          if (decision === "retry") {
+            logT("zero_audio_detected", {
+              id: rid || null,
+              status: summary.status,
+              statusType: summary.statusType,
+              statusReason: summary.statusReason,
+              errorType: summary.errorType,
+              errorCode: summary.errorCode,
+              recoveryAttempt: zeroAudioRecovery.attempts(),
+            });
+            coordinator.request({
+              kind: "normal",
+              build: () => zeroAudioRecoveryResponseCreate(currentLang),
+              language: () => currentLang,
+            });
+            logT("zero_audio_recovery_requested", {
+              recoveryAttempt: zeroAudioRecovery.attempts(),
+            });
+          } else if (decision === "exhausted") {
+            logT("zero_audio_recovery_exhausted", {
+              id: rid || null,
+              status: summary.status,
+              recoveryAttempts: zeroAudioRecovery.attempts(),
+            });
+          }
+        }
       } else if (t.includes("error")) {
         coordinator.onError();
       }
@@ -492,6 +565,9 @@ wss.on("connection", (twilioWs) => {
       const audio = extractAudioDelta(evt);
       if (audio && streamSid) {
         lastProgressAt = Date.now();   // the pipeline is producing audio — not stalled
+        responseAudioDeltaCount++;
+        responseAudioBase64Chars += audio.length;
+        zeroAudioRecovery.onAudibleOutput();
         if (!firstAudioSeen) {
           // The caller-felt latency numbers: silence → first sound, and (after a
           // tool) tool result → first sound. Logged once per response.

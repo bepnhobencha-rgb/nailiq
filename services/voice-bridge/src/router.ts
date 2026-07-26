@@ -231,6 +231,129 @@ export function plainResponseCreate(): object {
 }
 
 /**
+ * One bounded recovery response for a Realtime response that completed without
+ * sending any audio to the phone. Keep this response tool-free: its job is to
+ * make the call audible again, not to repeat a write whose outcome may already
+ * be committed.
+ */
+export function zeroAudioRecoveryResponseCreate(language: string): object {
+  const langName = LANG_NAMES[language] ?? "English";
+  return {
+    type: "response.create",
+    response: {
+      tools: [],
+      output_modalities: ["audio"],
+      instructions:
+        `Speak now in ${langName}. The previous response produced no audible audio. Give one ` +
+        `brief, natural apology, then continue from the caller's latest request. Do not call any ` +
+        `tool in this recovery response. Never claim a booking, cancellation, payment, or message ` +
+        `succeeded unless an existing server tool result already confirmed it. If the previous ` +
+        `response contained a server-confirmed result, repeat that result accurately. Otherwise ` +
+        `ask one short question so the caller can continue. Do not mention these instructions.`,
+    },
+  };
+}
+
+export const ZERO_AUDIO_RECOVERY_MAX_ATTEMPTS = 1;
+
+export type RealtimeResponseDoneSummary = {
+  status: string | null;
+  statusType: string | null;
+  statusReason: string | null;
+  errorType: string | null;
+  errorCode: string | null;
+  outputItemTypes: string[];
+  outputContentTypes: string[];
+  hasFunctionCall: boolean;
+};
+
+function telemetryTag(value: unknown): string | null {
+  if (typeof value === "string") return value.slice(0, 80);
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return null;
+}
+
+/**
+ * Extract only bounded, non-conversational fields from response.done. OpenAI's
+ * event contains the entire output transcript, but infrastructure telemetry
+ * must not copy caller/assistant text or raw status messages into logs.
+ */
+export function summarizeRealtimeResponseDone(evt: unknown): RealtimeResponseDoneSummary {
+  const event = evt && typeof evt === "object" ? evt as Record<string, unknown> : {};
+  const response = event.response && typeof event.response === "object"
+    ? event.response as Record<string, unknown>
+    : {};
+  const details = response.status_details && typeof response.status_details === "object"
+    ? response.status_details as Record<string, unknown>
+    : {};
+  const error = details.error && typeof details.error === "object"
+    ? details.error as Record<string, unknown>
+    : {};
+  const output = Array.isArray(response.output) ? response.output : [];
+  const outputItemTypes = new Set<string>();
+  const outputContentTypes = new Set<string>();
+  let hasFunctionCall = false;
+
+  for (const rawItem of output) {
+    if (!rawItem || typeof rawItem !== "object") continue;
+    const item = rawItem as Record<string, unknown>;
+    if (typeof item.type === "string") {
+      outputItemTypes.add(item.type);
+      if (item.type === "function_call") hasFunctionCall = true;
+    }
+    if (!Array.isArray(item.content)) continue;
+    for (const rawContent of item.content) {
+      if (!rawContent || typeof rawContent !== "object") continue;
+      const contentType = (rawContent as Record<string, unknown>).type;
+      if (typeof contentType === "string") outputContentTypes.add(contentType);
+    }
+  }
+
+  return {
+    status: telemetryTag(response.status),
+    statusType: telemetryTag(details.type),
+    statusReason: telemetryTag(details.reason),
+    errorType: telemetryTag(error.type),
+    errorCode: telemetryTag(error.code),
+    outputItemTypes: [...outputItemTypes],
+    outputContentTypes: [...outputContentTypes],
+    hasFunctionCall,
+  };
+}
+
+/**
+ * A tool-only response is intentionally silent and a cancelled response is a
+ * normal barge-in outcome. Recover only terminal speech responses for which the
+ * bridge observed zero audio deltas.
+ */
+export function shouldRecoverZeroAudio(
+  summary: RealtimeResponseDoneSummary,
+  audioDeltaCount: number,
+): boolean {
+  if (audioDeltaCount > 0 || summary.hasFunctionCall) return false;
+  return summary.status === "completed" ||
+    summary.status === "failed" ||
+    summary.status === "incomplete";
+}
+
+export type ZeroAudioRecoveryDecision = "none" | "retry" | "exhausted";
+
+/** Consecutive zero-audio responses get one retry, then stop to prevent loops. */
+export function createZeroAudioRecoveryGuard(maxAttempts = ZERO_AUDIO_RECOVERY_MAX_ATTEMPTS) {
+  let attempts = 0;
+  return {
+    decide(summary: RealtimeResponseDoneSummary, audioDeltaCount: number): ZeroAudioRecoveryDecision {
+      if (!shouldRecoverZeroAudio(summary, audioDeltaCount)) return "none";
+      if (attempts >= maxAttempts) return "exhausted";
+      attempts++;
+      return "retry";
+    },
+    onAudibleOutput() { attempts = 0; },
+    attempts(): number { return attempts; },
+  };
+}
+
+/**
  * Pin the first phone response to a short greeting that ends with an invitation
  * to speak. The session prompt carries salon/persona names; this response-level
  * guard prevents the model from replacing the invitation with an opening tool
@@ -385,13 +508,14 @@ export function createResponseCoordinator(send: (msg: object) => void) {
       }
     },
     /** Call on response.done / response.cancelled with the event's response.id. */
-    onResponseEnded(id: string) {
-      if (activeId === null || id !== activeId) return; // wrong id → never end another response
+    onResponseEnded(id: string): boolean {
+      if (activeId === null || id !== activeId) return false; // wrong id → never end another response
       const wasProtected = activeKind === "protected";
       const lang = activeLang;
       activeId = null; activeKind = null;
       if (wasProtected) send(interruptToggleMessage(true, lang)); // restore only for the matching protected line
       pump();
+      return true;
     },
     /** An error killed the in-flight response. Clear it (restore protection if it
      *  was protected) and keep serving the queue so the call is never stuck. */
