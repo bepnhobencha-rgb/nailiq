@@ -35,6 +35,13 @@ const LANGUAGES: ReadonlyArray<{ value: SupportedLanguage; label: string }> = [
   { value: "zh", label: "中文" },
 ];
 
+// Keep native select popovers in the dashboard's dark color scheme. Without
+// this, Chromium/WebKit can render a white option menu while inheriting white
+// text from the control, making every unhighlighted option appear blank.
+const SELECT_CLASS_NAME =
+  "min-h-11 w-full rounded-xl border border-nq-muted/40 bg-nq-surface px-4 py-3 text-sm text-nq-foreground [color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-nq-primary/40";
+const OPTION_CLASS_NAME = "bg-nq-surface text-nq-foreground";
+
 type Props = {
   slug: string;
   initial: VoiceAiSettingsInput;
@@ -125,10 +132,14 @@ export function VoiceSettingsForm({ slug, initial }: Props) {
             "voice_ai_default_language",
             e.target.value as SupportedLanguage,
           )}
-          className="w-full rounded-xl border border-[var(--color-border)] bg-transparent px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          className={SELECT_CLASS_NAME}
         >
           {LANGUAGES.map((language) => (
-            <option key={language.value} value={language.value}>
+            <option
+              key={language.value}
+              value={language.value}
+              className={OPTION_CLASS_NAME}
+            >
               {language.label}
             </option>
           ))}
@@ -160,10 +171,16 @@ export function VoiceSettingsForm({ slug, initial }: Props) {
           id="voice-select"
           value={form.voice_ai_persona_voice}
           onChange={(e) => handleChange("voice_ai_persona_voice", e.target.value)}
-          className="w-full rounded-xl border border-[var(--color-border)] bg-transparent px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          className={SELECT_CLASS_NAME}
         >
           {VOICES.map((v) => (
-            <option key={v.value} value={v.value}>{v.label}</option>
+            <option
+              key={v.value}
+              value={v.value}
+              className={OPTION_CLASS_NAME}
+            >
+              {v.label}
+            </option>
           ))}
         </select>
       </div>
@@ -175,10 +192,16 @@ export function VoiceSettingsForm({ slug, initial }: Props) {
           id="effort-select"
           value={form.voice_ai_reasoning_effort}
           onChange={(e) => handleChange("voice_ai_reasoning_effort", e.target.value)}
-          className="w-full rounded-xl border border-[var(--color-border)] bg-transparent px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          className={SELECT_CLASS_NAME}
         >
           {EFFORTS.map((ef) => (
-            <option key={ef.value} value={ef.value}>{ef.label}</option>
+            <option
+              key={ef.value}
+              value={ef.value}
+              className={OPTION_CLASS_NAME}
+            >
+              {ef.label}
+            </option>
           ))}
         </select>
       </div>
