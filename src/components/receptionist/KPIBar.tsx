@@ -54,6 +54,8 @@ export type KPIBarProps = {
    * mid-day-switch and a stale snapshot would mislead.
    */
   isLoading?: boolean;
+  /** Calm command-bar treatment used by the opt-in Receptionist preview. */
+  compact?: boolean;
 };
 
 type Tile = {
@@ -71,6 +73,7 @@ export function KPIBar({
   messages,
   currencyCode,
   isLoading = false,
+  compact = false,
 }: KPIBarProps) {
   const tiles = useMemo<Tile[]>(() => {
     const out: Tile[] = [];
@@ -161,11 +164,18 @@ export function KPIBar({
   return (
     <div
       data-testid="receptionist-kpi-bar"
-      className="border-b border-nq-muted/20 bg-nq-surface/60 px-[var(--pad-nq-section-mobile)] py-3 md:px-6"
+      data-compact={compact ? "true" : "false"}
+      className={cn(
+        "border-b border-nq-muted/20 bg-nq-surface/60 px-[var(--pad-nq-section-mobile)] md:px-6",
+        compact ? "py-2" : "py-3",
+      )}
       aria-label={isLoading ? messages.loading : undefined}
     >
       <div
-        className="mx-auto flex w-full max-w-[var(--max-nq-desktop)] gap-3 overflow-x-auto pb-1"
+        className={cn(
+          "mx-auto flex w-full max-w-[var(--max-nq-desktop)] overflow-x-auto",
+          compact ? "gap-2" : "gap-3 pb-1",
+        )}
         // Horizontal scroll on narrow viewports (iPad portrait); tiles keep
         // their min-width to remain scannable rather than truncating to
         // illegibility per `DASHBOARD_LAYOUT_RULES.md` §2.
@@ -178,7 +188,13 @@ export function KPIBar({
               "shrink-0 first:pl-0 last:pr-0",
               // Revenue gets extra room so the label + a long currency
               // value (especially VND) sit comfortably without clipping.
-              tile.key === "revenue" ? "min-w-48" : "min-w-40",
+              compact
+                ? tile.key === "next-available"
+                  ? "min-w-48"
+                  : "min-w-32"
+                : tile.key === "revenue"
+                  ? "min-w-48"
+                  : "min-w-40",
             )}
           >
             <KPIWidget
@@ -187,6 +203,7 @@ export function KPIBar({
               status={tile.status}
               valueNoWrap={tile.valueNoWrap}
               isLoading={isLoading}
+              compact={compact}
             />
           </div>
         ))}
