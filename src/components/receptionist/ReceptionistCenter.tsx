@@ -2793,7 +2793,8 @@ function ReceptionistCenterInner({
         className={cn(
           "flex min-h-[100dvh] w-full flex-col",
           rush.active && "[&_[data-rush-fade]]:opacity-50",
-          previewInterface && "gap-1 p-1",
+          previewInterface &&
+            "gap-1 p-1 md:-mt-6 md:min-h-[calc(100dvh+1.5rem)]",
         )}
       >
         {/* Hydration signal for E2E: only rendered after React useEffect fires. */}

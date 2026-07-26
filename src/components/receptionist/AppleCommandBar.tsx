@@ -8,8 +8,6 @@ import {
   UserRound,
 } from "lucide-react";
 
-import { Button } from "@/components/ui/Button";
-
 type AppleCommandBarProps = {
   appointmentCount: number;
   waitingCount: number;
@@ -134,14 +132,18 @@ export function AppleCommandBar({
             {suggestion}
           </span>
           {canAct ? (
-            <Button
-              variant="secondary"
-              size="sm"
+            <button
+              type="button"
               onClick={onAction}
-              className="shrink-0 border-[var(--rc-new-control)] bg-[var(--rc-new-control)] text-[var(--rc-new-surface)] hover:opacity-90"
+              className="h-8 shrink-0 rounded-lg border px-4 text-sm font-semibold transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-info"
+              style={{
+                borderColor: "var(--rc-new-control)",
+                backgroundColor: "var(--rc-new-control)",
+                color: "var(--rc-new-surface)",
+              }}
             >
               {actionLabel}
-            </Button>
+            </button>
           ) : null}
         </div>
       </div>

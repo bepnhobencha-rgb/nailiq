@@ -129,9 +129,9 @@ export function AppleDeskHeader({
         </button>
       </nav>
 
-      <div className="flex items-center justify-self-end gap-3 pr-32">
+      <div className="flex items-center justify-self-end gap-3">
         <span
-          className="hidden items-center gap-2 text-xs text-[var(--rc-new-muted)] 2xl:inline-flex"
+          className="inline-flex items-center gap-2 text-xs text-[var(--rc-new-muted)]"
           role="status"
         >
           <span
