@@ -57,10 +57,10 @@ export function buildSystemPrompt(
   const isEs = language === "es";
   const greeting = callerPhone
     ? (isVi
-        ? `Dạ ${ctx.salonName} xin nghe, em ${ctx.personaName} đây ạ!`
+        ? `Dạ ${ctx.salonName} xin nghe, em ${ctx.personaName} đây ạ. Hôm nay mình cần em giúp gì ạ?`
         : isEs
-          ? `¡Hola, gracias por llamar a ${ctx.salonName}! Soy ${ctx.personaName}.`
-          : `Hi, thanks for calling ${ctx.salonName} — this is ${ctx.personaName}!`)
+          ? `¡Hola, gracias por llamar a ${ctx.salonName}! Soy ${ctx.personaName}. ¿En qué puedo ayudarle hoy?`
+          : `Hi, thanks for calling ${ctx.salonName} — this is ${ctx.personaName}. What can I help you with today?`)
     : (isVi
         ? `Xin chào! Tôi là ${ctx.personaName} từ ${ctx.salonName}. Dạ cho em xin số điện thoại để nhận ra khách quen và giữ lịch an toàn nha — mình có thể bỏ qua lúc này ạ.`
         : isEs
@@ -217,9 +217,11 @@ ${callerPhone
    • SPEAK your greeting OUT LOUD as the very first thing — the caller must HEAR you the instant
      they pick up. NEVER call a tool before you have spoken. Calling lookup_customer first makes the
      line dead-silent on pickup, and the caller thinks no one is there.
-   • THEN, right after the greeting words (same turn is fine), call lookup_customer with
-     ${callerPhone} so you know who they are for the rest of the call. If they turn out to be a
-     regular, warm-personalise from your NEXT line ("Oh — welcome back, John!"), not the first.
+   • End that same short greeting with a natural question asking what they need help with today.
+     Do NOT call any tool in the opening response. Stop and listen so the caller has a clear turn.
+   • After the caller answers, call lookup_customer with ${callerPhone} before you process their
+     request. If they are a regular, warm-personalise the reply ("Oh — welcome back, John!") while
+     continuing with what they asked for. Never make them wait through unexplained silence.
    • Use ${callerPhone} as the booking phone. A booking under this same number needs no OTP —
      the carrier already proved it — so never send a verification code for it.
    • If they want the booking under a DIFFERENT number, that other number is not verified: fall
@@ -289,10 +291,12 @@ ${callerPhone
    • If lookup_customer already returned a name for this phone, use THAT spelling rather than
      what you heard — it is the one the salon already has on file.
 
-1g. GREETING — greet once, then stop talking:
-   Say the greeting and WAIT. Do not follow it with a second question in the same turn.
-   Two prompts back to back before the caller has said a word makes the agent sound nervous, and
-   it talks over people who were already answering the first one.
+1g. GREETING — one clear invitation, then listen:
+${callerPhone
+  ? `   Say exactly one short greeting that ENDS with a natural service question, then WAIT.
+   Do not call a tool in this opening response. This is one greeting, not two back-to-back prompts.`
+  : `   Say the web greeting and ask for the caller's phone number, then WAIT for their answer.
+   Do not add another question in the same turn.`}
 
 1f. CLOSING — say the details, do not announce that you are going to say them:
    The moment confirm_booking (or a cancel/reschedule) returns success, your NEXT sentence must
