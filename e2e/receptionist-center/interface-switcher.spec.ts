@@ -43,10 +43,14 @@ test("keeps classic as default and remembers the opt-in preview", async ({
 
   await switcher.click();
   await expect(center).toHaveAttribute("data-receptionist-interface", "preview");
-  await expect(page.getByTestId("receptionist-kpi-bar")).toHaveAttribute(
-    "data-compact",
-    "true",
-  );
+  await expect(page.getByTestId("preview-command-bar")).toBeVisible();
+  await expect(page.getByTestId("preview-command-appointments")).toBeVisible();
+  await expect(page.getByTestId("preview-command-waiting")).toBeVisible();
+  await expect(page.getByTestId("preview-command-late")).toBeVisible();
+  await expect(page.getByTestId("preview-command-available")).toBeVisible();
+  await expect(page.getByTestId("nailiq-daily-brief")).toHaveCount(0);
+  await expect(page.getByTestId("nailiq-suggestion-bar")).toHaveCount(0);
+  await expect(page.getByTestId("receptionist-kpi-bar")).toHaveCount(0);
   if ((page.viewportSize()?.width ?? 0) >= 640) {
     await expect(page.getByTestId("preview-apple-shell")).toBeVisible();
     await expect(page.getByTestId("preview-apple-timeline")).toBeVisible();
@@ -58,6 +62,7 @@ test("keeps classic as default and remembers the opt-in preview", async ({
 
   await switcher.click();
   await expect(center).toHaveAttribute("data-receptionist-interface", "classic");
+  await expect(page.getByTestId("preview-command-bar")).toHaveCount(0);
   await expect(page.getByTestId("preview-apple-shell")).toHaveCount(0);
 
   await page.reload();

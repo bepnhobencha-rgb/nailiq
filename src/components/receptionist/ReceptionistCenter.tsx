@@ -189,6 +189,11 @@ const AppleDayTimeline = dynamic(
     import("./AppleDayTimeline").then((module) => module.AppleDayTimeline),
   { ssr: false },
 );
+const AppleCommandBar = dynamic(
+  () =>
+    import("./AppleCommandBar").then((module) => module.AppleCommandBar),
+  { ssr: false },
+);
 const AppleWalkinQueue = dynamic(
   () =>
     import("./AppleWalkinQueue").then((module) => module.AppleWalkinQueue),
@@ -2842,7 +2847,14 @@ function ReceptionistCenterInner({
               : { backgroundColor: "var(--drc-bg, #0b0c10)" }
           }
         >
-          <div className="mx-auto flex w-full max-w-[var(--max-nq-desktop)] flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+          <div
+            className={cn(
+              "mx-auto flex w-full flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3",
+              previewInterface
+                ? "max-w-none"
+                : "max-w-[var(--max-nq-desktop)]",
+            )}
+          >
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2 gap-y-2">
                 <Link
@@ -2894,7 +2906,10 @@ function ReceptionistCenterInner({
               {/* Status pill duplicates the Now Bar's Waiting + In service
                   counts, so it's hidden in Basic Mode. Balanced/Advanced
                   keep it (no Now Bar there). */}
-              {isViewingToday && modules.kpi_bar && !basicModeActive ? (
+              {isViewingToday &&
+              modules.kpi_bar &&
+              !basicModeActive &&
+              !previewInterface ? (
                 <StatusPill
                   waitingCount={queueItems.length}
                   inProgressCount={inProgressToday}
@@ -2913,7 +2928,9 @@ function ReceptionistCenterInner({
                * decoration needed. Pairs colored Badge variant with
                * text label per COLOR_TOKENS §5 (no hue-only encoding).
                */}
-              {viewerRole === "owner" && !basicModeActive ? (
+              {viewerRole === "owner" &&
+              !basicModeActive &&
+              !previewInterface ? (
                 <Badge
                   data-testid="role-badge-owner"
                   variant="info"
@@ -3033,7 +3050,7 @@ function ReceptionistCenterInner({
                   Basic Mode is a front-desk "today" view — the
                   Day/Week/Month toggle is hidden there (Yesterday/Today/
                   Tomorrow remains). Balanced/Advanced keep the toggle. */}
-              {basicModeActive ? null : (
+              {basicModeActive || previewInterface ? null : (
                 <div
                   role="tablist"
                   aria-label={rcMessages.viewMode.ariaLabel}
@@ -3250,7 +3267,10 @@ function ReceptionistCenterInner({
           </div>
           <div
             className={cn(
-              "mx-auto mt-3 flex w-full max-w-[var(--max-nq-desktop)] flex-wrap items-center gap-y-2",
+              "mx-auto mt-3 flex w-full flex-wrap items-center gap-y-2",
+              previewInterface
+                ? "max-w-none"
+                : "max-w-[var(--max-nq-desktop)]",
               dayLoading && "pointer-events-none opacity-60",
             )}
             aria-busy={dayLoading}
@@ -3332,7 +3352,33 @@ function ReceptionistCenterInner({
           onReload={() => window.location.reload()}
         />
 
-        {isViewingToday && viewMode === "day" ? (
+        {previewInterface && isViewingToday && viewMode === "day" ? (
+          <AppleCommandBar
+            appointmentCount={gridBookings.length}
+            waitingCount={queueWaitingCount}
+            lateCount={
+              data.kpiSnapshot.overdueCount + notStartedBookings.length
+            }
+            availableStaffName={availableStaffName}
+            waitingGuestName={
+              data.walkinQueue[0]?.client_name?.trim() || null
+            }
+            canAct={
+              canCreateDeskBooking(viewerRole) && !isSetupIncomplete
+            }
+            language={language === "vi" ? "vi" : "en"}
+            onAction={() => {
+              if (queueWaitingCount > 0 && availableStaffName) {
+                setPreviewFullQueueOpen(true);
+                setQueuePanelOpen(true);
+                return;
+              }
+              openPreviewWalkinAdd();
+            }}
+          />
+        ) : null}
+
+        {!previewInterface && isViewingToday && viewMode === "day" ? (
           <DailyBriefCard
             bookings={data.bookingsForDay}
             readyStaffCount={availableStaffCount}
@@ -3345,7 +3391,10 @@ function ReceptionistCenterInner({
           />
         ) : null}
 
-        {!basicModeActive && isViewingToday && viewMode === "day" ? (
+        {!previewInterface &&
+        !basicModeActive &&
+        isViewingToday &&
+        viewMode === "day" ? (
           <NailiqSuggestionBar
             inputs={cockpitInputs}
             labels={cockpitLabels}
@@ -3364,7 +3413,7 @@ function ReceptionistCenterInner({
          * "now" semantics (Coming up 30m, Overdue, Next available) so
          * historical/future date views must not pretend they are live.
          */}
-        {basicModeActive ? (
+        {previewInterface ? null : basicModeActive ? (
           /* Basic Mode replaces the full KPI band with the Front Desk
              Cockpit: Critical Alerts (max 2) + Next Action + 4-card Now Bar.
              Revenue / avg-wait / next-available clutter is intentionally
@@ -3582,9 +3631,9 @@ function ReceptionistCenterInner({
                 language={language === "vi" ? "vi" : "en"}
                 overdue={attentionOverdue}
                 noShowsToday={noShowsTodayList}
-                groupSummary={groupSummary}
+                groupSummary={previewInterface ? null : groupSummary}
                 groupsContent={
-                  showGroupsChip ? (
+                  !previewInterface && showGroupsChip ? (
                     <PartyCardPanel
                       initialCards={partyCards}
                       slug={slug}
