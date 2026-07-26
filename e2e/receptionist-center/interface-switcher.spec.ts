@@ -70,6 +70,7 @@ test("keeps classic as default and remembers the opt-in preview", async ({
   await page.reload();
   await expect(center).toHaveAttribute("data-receptionist-interface", "preview");
 
+  await page.getByTestId("preview-settings-trigger").click();
   await page
     .getByTestId("preview-apple-header")
     .getByTestId("receptionist-interface-switcher")

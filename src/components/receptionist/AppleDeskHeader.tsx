@@ -68,7 +68,10 @@ export function AppleDeskHeader({
       className="relative z-30 hidden min-h-[72px] shrink-0 grid-cols-[minmax(13rem,1fr)_auto_minmax(13rem,1fr)] items-center rounded-lg border border-[var(--rc-new-border)] bg-[var(--rc-new-surface)] px-5 shadow-sm md:grid"
     >
       <details className="group relative min-w-0 justify-self-start">
-        <summary className="flex cursor-pointer list-none items-center gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-nq-info [&::-webkit-details-marker]:hidden">
+        <summary
+          data-testid="preview-settings-trigger"
+          className="flex cursor-pointer list-none items-center gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-nq-info [&::-webkit-details-marker]:hidden"
+        >
           <span className="text-xl font-semibold tracking-[-0.02em] text-[var(--rc-new-text)]">
             {language === "vi" ? "Hôm nay" : "Today"}
           </span>
