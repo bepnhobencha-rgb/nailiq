@@ -99,7 +99,7 @@ test("keeps classic as default and remembers the opt-in preview", async ({
     await page.getByTestId("queue-panel-backdrop").click({
       position: { x: 2, y: 2 },
     });
-    await expect(queuePanel).toHaveAttribute("aria-hidden", "true");
+    await expect(queuePanel).toHaveCount(0);
   }
 
   await page.reload();
