@@ -89,15 +89,24 @@ test.describe("Booking Flow — Phone OTP", () => {
   async function walkToInfoStep(page: import("@playwright/test").Page) {
     await gotoGate(page);
     await passGateOtp(page);
-    await page.locator('[data-testid="service-tile-select"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).first().click();
+    const serviceStep = page.locator(
+      'section[aria-labelledby="svc-heading"]',
+    );
+    await serviceStep
+      .locator('[data-testid="service-tile-select"]')
+      .first()
+      .click();
+    await serviceStep.getByRole("button", { name: "Continue" }).click();
 
-    await page
+    const staffStep = page.locator(
+      'section[aria-labelledby="staff-heading"]',
+    );
+    await staffStep
       .locator('[data-testid="staff-item"]')
       .first()
       .waitFor({ state: "visible", timeout: 15_000 });
-    await page.locator('[data-testid="staff-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).first().click();
+    await staffStep.locator('[data-testid="staff-item"]').first().click();
+    await staffStep.getByRole("button", { name: "Continue" }).click();
 
     // Robust date pick (mirrors PR #211): the calendar opens on the first month
     // with availability, but late in the month the current view can hold only
@@ -105,11 +114,14 @@ test.describe("Booking Flow — Phone OTP", () => {
     // a selectable `date-day` appears instead of assuming the default view has
     // one — keeps the OTP suite deterministic on the last day of the month.
     // The month grid is collapsed behind the "📅 More dates" toggle (#593).
-    await page.locator('[data-testid="date-toggle-calendar"]').click();
-    await page
+    const dateStep = page.locator(
+      'section[aria-labelledby="date-heading"]',
+    );
+    await dateStep.locator('[data-testid="date-toggle-calendar"]').click();
+    await dateStep
       .locator('[data-testid="calendar-grid"]')
       .waitFor({ state: "visible", timeout: 15_000 });
-    const selectableDay = page
+    const selectableDay = dateStep
       .locator('[data-testid="date-day"]:not([disabled])')
       .first();
     for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -117,26 +129,36 @@ test.describe("Booking Flow — Phone OTP", () => {
         await selectableDay.waitFor({ state: "visible", timeout: 5_000 });
         break;
       } catch {
-        const next = page.locator('[data-testid="calendar-next-month"]');
+        const next = dateStep.locator('[data-testid="calendar-next-month"]');
         if (!(await next.isEnabled().catch(() => false))) break;
         await next.click();
       }
     }
     await selectableDay.waitFor({ state: "visible", timeout: 15_000 });
     await selectableDay.click();
-    await page.getByRole("button", { name: "Continue" }).first().click();
+    await dateStep.getByRole("button", { name: "Continue" }).click();
 
-    await page
+    const timeStep = page.locator(
+      'section[aria-labelledby="time-heading"]',
+    );
+    await timeStep
       .locator('[data-testid="time-slot"]')
       .first()
       .waitFor({ state: "visible", timeout: 20_000 });
-    await page.locator('[data-testid="time-slot"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).first().click();
+    await timeStep.locator('[data-testid="time-slot"]').first().click();
+    await timeStep.getByRole("button", { name: "Continue" }).click();
 
     // Phone-first: phone captured at the entry gate; info step takes name only.
     // Use the native setter so React's controlled onChange fires (page.fill()
     // uses CDP which bypasses React's patched value getter).
-    await fillReactInput(page.locator('input[name="clientName"]'), "OTP Test Client");
+    const infoStep = page.locator(
+      'section[aria-labelledby="info-heading"]',
+    );
+    await infoStep.waitFor({ state: "visible", timeout: 15_000 });
+    await fillReactInput(
+      infoStep.locator('input[name="clientName"]'),
+      "OTP Test Client",
+    );
   }
 
   test("gate OTP appears before the service step and accepts the demo code", async ({

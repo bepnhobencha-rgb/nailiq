@@ -3946,6 +3946,8 @@ function ReceptionistCenterInner({
                         const reason =
                           result.error === "past_date"
                             ? failCopy.past_date
+                            : result.error === "outside_hours"
+                              ? failCopy.outside_hours
                             : result.error === "slot_conflict"
                               ? failCopy.slot_conflict
                               : result.error === "staff_cannot_perform_service"

@@ -90,31 +90,41 @@ async function navigateToTimeStep(page: Page, slug: string) {
   // Target the inner select button directly; clicking the outer service-item
   // div is unreliable on narrow (mobile) viewports where the hit-test center
   // may not land on the button.
-  await page.locator('[data-testid="service-tile-select"]').first().click();
-  // .first() avoids strict-mode violations during the 0.18s AnimatePresence
-  // window where both the exiting and entering panels are in the DOM.
-  await page.getByRole("button", { name: "Continue" }).first().click();
+  const serviceStep = page.locator(
+    'section[aria-labelledby="svc-heading"]',
+  );
+  await serviceStep
+    .locator('[data-testid="service-tile-select"]')
+    .first()
+    .click();
+  await serviceStep.getByRole("button", { name: "Continue" }).click();
   // Wait for the staff panel to animate in before interacting.
-  await page
+  const staffStep = page.locator(
+    'section[aria-labelledby="staff-heading"]',
+  );
+  await staffStep
     .locator('[data-testid="staff-item"]')
     .first()
     .waitFor({ state: "visible", timeout: 15_000 });
-  await page.locator('[data-testid="staff-item"]').first().click();
-  await page.getByRole("button", { name: "Continue" }).first().click();
+  await staffStep.locator('[data-testid="staff-item"]').first().click();
+  await staffStep.getByRole("button", { name: "Continue" }).click();
   // The month grid is collapsed behind the "📅 More dates" toggle (#593); open
   // it so the date-day grid below mounts. Then pick a selectable day. The
   // calendar opens on the first month with availability; late in the month a
   // salon open every day can still leave the current view with only "today"
   // (which renders as `date-today`, not `date-day`), so advance a month when no
   // selectable `date-day` is present.
-  await page
+  const dateStep = page.locator(
+    'section[aria-labelledby="date-heading"]',
+  );
+  await dateStep
     .locator('[data-testid="date-toggle-calendar"]')
     .waitFor({ state: "visible", timeout: 15_000 });
-  await page.locator('[data-testid="date-toggle-calendar"]').click();
-  await page
+  await dateStep.locator('[data-testid="date-toggle-calendar"]').click();
+  await dateStep
     .locator('[data-testid="calendar-grid"]')
     .waitFor({ state: "visible", timeout: 15_000 });
-  const selectableDay = page
+  const selectableDay = dateStep
     .locator('[data-testid="date-day"]:not([disabled])')
     .first();
   // Advance a month at a time until a selectable day shows. Wait for the day to
@@ -127,7 +137,7 @@ async function navigateToTimeStep(page: Page, slug: string) {
       await selectableDay.waitFor({ state: "visible", timeout: 5_000 });
       break;
     } catch {
-      const next = page.locator('[data-testid="calendar-next-month"]');
+      const next = dateStep.locator('[data-testid="calendar-next-month"]');
       if (!(await next.isEnabled().catch(() => false))) break;
       await next.click();
     }
@@ -141,20 +151,23 @@ async function navigateToTimeStep(page: Page, slug: string) {
   // exiting panel's button via `.first()` — either way the flow stays on the
   // date step and the time slots never load (20s timeout). `aria-pressed` flips
   // true once the selection commits, so it's a reliable settle signal.
-  await page
+  await dateStep
     .locator('[data-testid="date-day"][aria-pressed="true"]')
     .first()
     .waitFor({ state: "visible", timeout: 10_000 });
-  await page.getByRole("button", { name: "Continue" }).first().click();
+  await dateStep.getByRole("button", { name: "Continue" }).click();
   // The time grid fetches slots async (Supabase round-trip) behind a skeleton.
   // Wait for the skeleton to clear before asserting a slot so a slow fetch under
   // CI load doesn't eat the slot budget; `detached` resolves immediately if the
   // fetch already finished.
-  await page
+  const timeStep = page.locator(
+    'section[aria-labelledby="time-heading"]',
+  );
+  await timeStep
     .locator('[data-testid="time-slots-skeleton"]')
     .waitFor({ state: "detached", timeout: 25_000 })
     .catch(() => {});
-  await page
+  await timeStep
     .locator('[data-testid="time-slot"]')
     .first()
     .waitFor({ state: "visible", timeout: 25_000 });
@@ -162,9 +175,14 @@ async function navigateToTimeStep(page: Page, slug: string) {
 
 async function navigateToInfoStep(page: Page, slug: string) {
   await navigateToTimeStep(page, slug);
-  await page.locator('[data-testid="time-slot"]').first().click();
-  await page.getByRole("button", { name: "Continue" }).first().click();
-  await expect(page.getByTestId("booking-info-name")).toBeVisible();
+  const timeStep = page.locator(
+    'section[aria-labelledby="time-heading"]',
+  );
+  await timeStep.locator('[data-testid="time-slot"]').first().click();
+  await timeStep.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByTestId("booking-info-name")).toBeVisible({
+    timeout: 15_000,
+  });
 }
 
 async function navigateToConfirmStep(

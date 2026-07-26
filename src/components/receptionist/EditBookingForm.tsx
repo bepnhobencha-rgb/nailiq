@@ -8,7 +8,7 @@ import {
   getDeskBookingData,
   getResourceAvailability,
 } from "@/shared/dashboard/receptionistActions";
-import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
+import { computeBookingTiming } from "@/shared/booking/bookingTiming";
 import { addonLabel } from "@/shared/booking/serviceLabels";
 import {
   getAvailableTimeSlots,
@@ -250,26 +250,33 @@ export function EditBookingForm({
     return deskData.addOns.find((s) => s.id === selectedAddon) ?? null;
   }, [selectedAddon, deskData]);
 
-  /** Add-on contribution (duration + buffer) — recomputes live as the
-   *  receptionist swaps the select. Returns 0 when no add-on selected. */
-  const addonSpanMinutes = useMemo(() => {
-    if (!selectedAddonSvc) return 0;
-    const dur = Math.max(0, Math.round(Number(selectedAddonSvc.durationMinutes ?? 0)));
-    const buf = Math.max(0, Math.round(Number(selectedAddonSvc.bufferMinutes ?? 0)));
-    return serviceBlockMinutes(dur, buf);
-  }, [selectedAddonSvc]);
-
-  /** Total service span (main duration + buffer + add-on span). Drives both the
-   *  availability grid and the end-time preview. */
-  const totalSpanMinutes = useMemo(() => {
-    if (!selectedSvc) return 0;
-    const mainTotal = serviceBlockMinutes(
-      selectedSvc.duration_minutes,
-      selectedSvc.buffer_minutes,
+  const bookingTiming = useMemo(() => {
+    if (!selectedSvc) {
+      return {
+        blockMinutes: 0,
+        serviceCompletionMinutes: 0,
+        trailingBufferMinutes: 0,
+      };
+    }
+    return computeBookingTiming(
+      {
+        durationMinutes: selectedSvc.duration_minutes,
+        bufferMinutes: selectedSvc.buffer_minutes,
+      },
+      selectedAddonSvc
+        ? [
+            {
+              durationMinutes: selectedAddonSvc.durationMinutes,
+              bufferMinutes: selectedAddonSvc.bufferMinutes,
+              concurrent: selectedAddonSvc.addonConcurrent,
+            },
+          ]
+        : [],
     );
-    if (!Number.isFinite(mainTotal) || mainTotal < 1) return 0;
-    return mainTotal + addonSpanMinutes;
-  }, [selectedSvc, addonSpanMinutes]);
+  }, [selectedSvc, selectedAddonSvc]);
+
+  /** Full occupied span, including the final cleanup buffer. */
+  const totalSpanMinutes = bookingTiming.blockMinutes;
 
   const closedDateYmdSet = useMemo(() => {
     const raw = deskData?.salon.booking_closed_dates;
@@ -371,11 +378,7 @@ export function EditBookingForm({
       staffId: selectedStaff,
       staffList: slotStaffList,
       serviceDurationMinutes: totalSpanMinutes,
-      // Trailing buffer may run past close for the last appointment (no next
-      // booking). Single-service only; with an add-on, keep the whole-block fit.
-      trailingBufferMinutes: selectedAddon
-        ? 0
-        : Math.max(0, Math.round(Number(selectedSvc?.buffer_minutes ?? 0))),
+      trailingBufferMinutes: bookingTiming.trailingBufferMinutes,
       closedDateYmdSet,
       shortestServiceMinutes,
       leadMinutes: deskData.salon.bookingLeadMinutes,
@@ -422,7 +425,9 @@ export function EditBookingForm({
     selectedSvc,
     selectedStaff,
     selectedDay,
+    minDayYmd,
     totalSpanMinutes,
+    bookingTiming.trailingBufferMinutes,
     salonId,
     slotStaffList,
     closedDateYmdSet,
@@ -541,6 +546,9 @@ export function EditBookingForm({
         break;
       case "past_date":
         setError(editCopy.pastDateMessage);
+        break;
+      case "outside_hours":
+        setError(editCopy.outsideHoursMessage);
         break;
       case "server_error":
         setError(editCopy.serverErrorMessage);

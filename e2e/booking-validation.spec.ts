@@ -12,33 +12,53 @@ async function navigateToBookingInfo(page: Page, testSlug: string) {
   // Phone-first entry gate (PR #328): a phone is entered at the gate, so the
   // info step collects only the name.
   await gotoBookingServiceStep(page, testSlug);
-  await page.locator('[data-testid="service-tile-select"]').first().click();
-  await page.getByRole("button", { name: "Continue" }).first().click();
+  const serviceStep = page.locator(
+    'section[aria-labelledby="svc-heading"]',
+  );
+  await serviceStep
+    .locator('[data-testid="service-tile-select"]')
+    .first()
+    .click();
+  await serviceStep.getByRole("button", { name: "Continue" }).click();
 
-  await page
+  const staffStep = page.locator(
+    'section[aria-labelledby="staff-heading"]',
+  );
+  await staffStep
     .locator('[data-testid="staff-item"]')
     .first()
     .waitFor({ state: "visible", timeout: 15_000 });
-  await page.locator('[data-testid="staff-item"]').first().click();
-  await page.getByRole("button", { name: "Continue" }).first().click();
+  await staffStep.locator('[data-testid="staff-item"]').first().click();
+  await staffStep.getByRole("button", { name: "Continue" }).click();
 
   // Reveal the collapsed month grid (#593) before picking a grid day.
-  await page.locator('[data-testid="date-toggle-calendar"]').click();
-  await page
+  const dateStep = page.locator(
+    'section[aria-labelledby="date-heading"]',
+  );
+  await dateStep.locator('[data-testid="date-toggle-calendar"]').click();
+  await dateStep
     .locator('[data-testid="date-day"]:not([disabled])')
     .nth(1)
     .waitFor({ state: "visible", timeout: 15_000 });
-  await page.locator('[data-testid="date-day"]:not([disabled])').nth(1).click();
-  await page.getByRole("button", { name: "Continue" }).first().click();
+  await dateStep
+    .locator('[data-testid="date-day"]:not([disabled])')
+    .nth(1)
+    .click();
+  await dateStep.getByRole("button", { name: "Continue" }).click();
 
-  await page
+  const timeStep = page.locator(
+    'section[aria-labelledby="time-heading"]',
+  );
+  await timeStep
     .locator('[data-testid="time-slot"]')
     .first()
     .waitFor({ state: "visible", timeout: 20_000 });
-  await page.locator('[data-testid="time-slot"]').first().click();
-  await page.getByRole("button", { name: "Continue" }).first().click();
+  await timeStep.locator('[data-testid="time-slot"]').first().click();
+  await timeStep.getByRole("button", { name: "Continue" }).click();
 
-  await expect(page.getByTestId("booking-info-name")).toBeVisible();
+  await expect(page.getByTestId("booking-info-name")).toBeVisible({
+    timeout: 15_000,
+  });
 }
 
 test.describe("Booking validation — info step", () => {

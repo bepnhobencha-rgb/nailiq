@@ -151,8 +151,9 @@ test.describe("Receptionist desk — edit booking", () => {
     const polishId = fx.serviceIds[1]!;
     const deluxePedId = fx.serviceIds[2]!;
     const marker = testClientNameMarker();
+    const bookingYmd = futureOpenYmdUtc(fx.ymdUtc);
 
-    const startIso = isoAtUtcYmdHourMinute(fx.ymdUtc, 11, 0);
+    const startIso = isoAtUtcYmdHourMinute(bookingYmd, 11, 0);
     const endIsoShort = endIsoFromDurationBuffer(startIso, 30, 10);
     const bookingId = await seedDeskBooking(fx.salonId, {
       clientName: marker,
@@ -163,7 +164,10 @@ test.describe("Receptionist desk — edit booking", () => {
       status: "pending",
     });
 
-    await gotoReceptionistCenter(page, fx.slug, { dateYmd: fx.ymdUtc });
+    await gotoReceptionistCenter(page, fx.slug, {
+      dateYmd: bookingYmd,
+      expectWalkinQueue: false,
+    });
     await page.getByTestId(`booking-block-${bookingId}`).click();
     await page.getByTestId("edit-booking-button").click();
     await expect(page.getByTestId("edit-booking-form")).toBeVisible();

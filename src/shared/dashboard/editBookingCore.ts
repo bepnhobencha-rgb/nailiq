@@ -6,6 +6,12 @@ import type { SalonDashboardBooking } from "@/shared/types";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
+import { computeBookingTiming } from "@/shared/booking/bookingTiming";
+import { checkBookingWithinOpeningHours } from "@/shared/booking/bookingWithinOpeningHours";
+import {
+  salonYmdOfUtc,
+  utcIsoToSalonMinutesFromMidnight,
+} from "@/shared/lib/salonTime";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { getResourceMode, resolveFreeResource } from "@/shared/booking/resolveResource";
 import {
@@ -28,6 +34,7 @@ function isUuidLike(value: string): boolean {
 type BookingEditRow = {
   id?: unknown;
   status?: unknown;
+  service_id?: unknown;
   start_time_utc?: unknown;
   end_time_utc?: unknown;
   addon_service_id?: unknown;
@@ -68,6 +75,7 @@ export type EditBookingError =
   | "not_found"
   | "invalid_status"
   | "past_date"
+  | "outside_hours"
   | "slot_conflict"
   | "staff_cannot_perform_service"
   | "server_error"
@@ -143,7 +151,7 @@ export async function performEditBooking(
   const { data: booking, error: bkErr } = await supabase
     .from("bookings")
     .select(
-      "id, salon_id, status, staff_id, start_time_utc, end_time_utc, addon_service_id",
+      "id, salon_id, status, staff_id, service_id, start_time_utc, end_time_utc, addon_service_id",
     )
     .eq("id", bookingId)
     .eq("salon_id", salonId)
@@ -257,6 +265,8 @@ export async function performEditBooking(
   }
 
   let addonSpanMin = 0;
+  let addonDurationMin = 0;
+  let addonBufferMin = 0;
   let addonPriceCents: number | null = null;
   if (effectiveAddonId) {
     const { data: addonSvc, error: addonErr } = await supabase
@@ -283,6 +293,8 @@ export async function performEditBooking(
     if (!Number.isFinite(aBuf) || aBuf < 0) {
       return { ok: false, error: "server_error" };
     }
+    addonDurationMin = aDur;
+    addonBufferMin = aBuf;
     addonSpanMin = serviceBlockMinutes(aDur, aBuf);
     const aPrice =
       addonSvcData.price_cents != null
@@ -291,9 +303,60 @@ export async function performEditBooking(
     addonPriceCents = Number.isFinite(aPrice ?? NaN) ? aPrice : null;
   }
 
+  const bookingTiming = computeBookingTiming(
+    { durationMinutes: duration, bufferMinutes: buffer },
+    effectiveAddonId
+      ? [
+          {
+            durationMinutes: addonDurationMin,
+            bufferMinutes: addonBufferMin,
+          },
+        ]
+      : [],
+  );
   const totalMin = serviceBlockMinutes(duration, buffer) + addonSpanMin;
   const endMs = startMs + totalMin * 60 * 1000;
   const slotEndUtc = new Date(endMs).toISOString();
+
+  const previousServiceId = String(bookingData.service_id ?? "").trim();
+  const previousAddonId = String(bookingData.addon_service_id ?? "").trim();
+  const affectsServiceWindow =
+    startMs !== Date.parse(st) ||
+    newServiceId !== previousServiceId ||
+    (effectiveAddonId ?? "") !== previousAddonId;
+
+  // Preserve existing exceptional bookings when the receptionist only
+  // reassigns staff. Changing the time, service, or add-on changes the
+  // customer-facing service window and must satisfy today's opening hours.
+  if (affectsServiceWindow) {
+    const { data: salonRow, error: salonErr } = await supabase
+      .from("salons")
+      .select("opening_hours, booking_closed_dates, timezone")
+      .eq("id", salonId)
+      .maybeSingle();
+    if (salonErr || !salonRow) {
+      console.error("[performEditBooking] salon hours", salonErr);
+      return { ok: false, error: "server_error" };
+    }
+    const timezone =
+      String((salonRow as { timezone?: unknown }).timezone ?? "").trim() ||
+      "America/Los_Angeles";
+    const dateYmd = salonYmdOfUtc(slotStartUtc, timezone);
+    const startMinutes = utcIsoToSalonMinutesFromMidnight(
+      slotStartUtc,
+      timezone,
+    );
+    const hoursCheck = checkBookingWithinOpeningHours({
+      openingHoursRaw: (salonRow as { opening_hours?: unknown }).opening_hours,
+      bookingClosedDatesRaw: (
+        salonRow as { booking_closed_dates?: unknown }
+      ).booking_closed_dates,
+      dateYmd,
+      startMinutes,
+      serviceCompletionMinutes: bookingTiming.serviceCompletionMinutes,
+    });
+    if (!hoursCheck.ok) return { ok: false, error: "outside_hours" };
+  }
 
   const price =
     svcData.price_cents != null
