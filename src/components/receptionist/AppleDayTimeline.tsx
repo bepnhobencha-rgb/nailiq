@@ -22,8 +22,8 @@ const SLOT_MINUTES = 30;
 const SLOT_HEIGHT = 32;
 const DEFAULT_OPEN_MINUTES = 9 * 60;
 const DEFAULT_CLOSE_MINUTES = 19 * 60;
-const STAFF_COLUMN_WIDTH = 178;
-const TIME_RAIL_WIDTH = 72;
+const STAFF_COLUMN_WIDTH = 170;
+const TIME_RAIL_WIDTH = 96;
 
 type AppleDayTimelineProps = {
   staff: GridStaff[];
