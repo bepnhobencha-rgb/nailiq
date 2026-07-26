@@ -66,9 +66,22 @@ test.describe("Undo toast", () => {
     // Generous 8s timeout: the grid re-renders each tick, so under CI load the
     // countdown can stall briefly before the next decrement lands. We only need
     // to observe ONE tick below 5, whenever the main thread frees up.
-    await expect.poll(readSeconds, { timeout: 8000 }).toBeLessThan(5);
-
-    await toast.getByTestId("undo-toast-undo").click();
+    const undoButton = toast.getByTestId("undo-toast-undo");
+    // Observe a real tick and click while the toast is still open. Checking
+    // only `seconds < 5` also accepted the hidden 0s state under CI load,
+    // leaving Playwright to click through the inert toast into the KPI cards.
+    await expect
+      .poll(
+        async () => {
+          const seconds = await readSeconds();
+          if (seconds <= 0 || seconds >= 5) return false;
+          await expect(toast).toHaveAttribute("aria-hidden", "false");
+          await undoButton.click({ timeout: 1500 });
+          return true;
+        },
+        { timeout: 8000 },
+      )
+      .toBe(true);
 
     await expect(page.getByTestId(`booking-block-${bookingId}`)).toHaveCount(0);
     await expect(page.getByTestId(`queue-item-${bookingId}`)).toBeVisible({ timeout: 15_000 });

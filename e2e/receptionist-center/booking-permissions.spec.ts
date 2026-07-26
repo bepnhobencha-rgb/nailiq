@@ -40,6 +40,10 @@ async function seedMember(role: SalonMemberRole): Promise<TestMember> {
 
 async function loginAndOpenCenter(page: Page, member: TestMember): Promise<void> {
   await page.goto("/register");
+  await expect(page.getByTestId("social-auth-controls")).toHaveAttribute(
+    "data-hydrated",
+    "true",
+  );
   await page.locator('input[inputmode="email"]').fill(member.email);
   await page.locator('input[type="password"]').fill(member.password);
   await page.getByRole("button", { name: /^sign in$/i }).click();

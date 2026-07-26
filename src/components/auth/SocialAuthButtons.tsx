@@ -103,6 +103,14 @@ export function SocialAuthButtons({
     detectInAppBrowser,
     () => false,
   );
+  // Auth controls are server-rendered before their click handlers exist.
+  // Keep them disabled for that brief window so a fast tap is not silently
+  // lost (most visible on mobile/WebKit and under a busy main thread).
+  const isHydrated = useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false,
+  );
 
   const passwordSupported = layout === "open" && enablePassword;
 
@@ -300,7 +308,11 @@ export function SocialAuthButtons({
   }
 
   return (
-    <div className="mt-6 flex flex-col gap-3">
+    <div
+      className="mt-6 flex flex-col gap-3"
+      data-testid="social-auth-controls"
+      data-hydrated={isHydrated ? "true" : "false"}
+    >
       {/* In-app browser guard — Google blocks OAuth in WebViews (Error 403 disallowed_useragent) */}
       {isInAppBrowser ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800/40 dark:bg-amber-950/30">
@@ -327,7 +339,7 @@ export function SocialAuthButtons({
         size="lg"
         className="w-full min-h-[52px] gap-3 text-base"
         loading={pending && pendingAction === "google"}
-        disabled={pending || isInAppBrowser}
+        disabled={!isHydrated || pending || isInAppBrowser}
         onClick={onGoogle}
       >
         {/* Google "G" logo */}
@@ -357,6 +369,7 @@ export function SocialAuthButtons({
           aria-expanded={showEmail}
           aria-controls={emailSectionId}
           data-testid="social-auth-other-options-toggle"
+          disabled={!isHydrated}
           onClick={() => {
             setError(null);
             setInfo(null);
@@ -459,7 +472,7 @@ export function SocialAuthButtons({
                   size="md"
                   className="w-full min-h-[48px] text-base"
                   loading={pending && pendingAction === "signin"}
-                  disabled={pending}
+                  disabled={!isHydrated || pending}
                   onClick={() => onPasswordSubmit("signin")}
                 >
                   {pending && pendingAction === "signin" ? t.signingIn : t.signInButton}
@@ -470,7 +483,7 @@ export function SocialAuthButtons({
                   size="md"
                   className="w-full min-h-[48px] text-base"
                   loading={pending && pendingAction === "signup"}
-                  disabled={pending || !isPasswordAcceptable}
+                  disabled={!isHydrated || pending || !isPasswordAcceptable}
                   onClick={() => onPasswordSubmit("signup")}
                 >
                   {pending && pendingAction === "signup" ? t.signingUp : t.signUpButton}
@@ -480,7 +493,7 @@ export function SocialAuthButtons({
               <form onSubmit={onMagicLink} method="post">
                 <button
                   type="submit"
-                  disabled={pending}
+                  disabled={!isHydrated || pending}
                   className="w-full min-h-[44px] text-sm text-nq-muted underline-offset-4 transition hover:text-nq-foreground hover:underline disabled:opacity-50"
                 >
                   {pending && pendingAction === "magic" ? "…" : t.forgotPasswordLinkText}
@@ -497,7 +510,7 @@ export function SocialAuthButtons({
                   size="md"
                   className="w-full min-h-[48px]"
                   loading={pending && pendingAction === "magic"}
-                  disabled={pending}
+                  disabled={!isHydrated || pending}
                 >
                   {magicLinkButtonLabel}
                 </Button>
@@ -506,6 +519,7 @@ export function SocialAuthButtons({
               {passwordSupported ? (
                 <button
                   type="button"
+                  disabled={!isHydrated}
                   onClick={() => {
                     setShowPassword(true);
                     setError(null);
