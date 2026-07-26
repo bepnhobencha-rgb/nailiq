@@ -39,6 +39,34 @@ export type RealtimeSessionConfig = {
   interruptResponse?: boolean;
 };
 
+/** A voice-tool HTTP call must never leave the caller in dead air indefinitely. */
+export const TOOL_REQUEST_TIMEOUT_MS = 12_000;
+
+/** Only side-effect-free reads may be retried after a transport/5xx failure.
+ *  A timed-out write may already have committed, so retrying it could duplicate
+ *  a booking, cancellation, waitlist entry, OTP, or owner message. */
+const READ_ONLY_VOICE_TOOLS = new Set([
+  "get_available_slots",
+  "get_group_available_slots",
+  "find_booking",
+  "lookup_customer",
+]);
+
+export function voiceToolMaxAttempts(name: string): 1 | 2 {
+  return READ_ONLY_VOICE_TOOLS.has(name) ? 2 : 1;
+}
+
+/** Transport-only no-op used when Realtime detects silence, TV, or side speech.
+ *  It is deliberately answered without creating another model response. */
+export function isSilentTransportTool(name: string): boolean {
+  return name === "wait_for_user";
+}
+
+/** Never put a carrier-verified caller number in infrastructure logs. */
+export function callerPresenceLabel(phone: string): "present" | "missing" {
+  return phone ? "present" : "missing";
+}
+
 /**
  * server_vad turn detection, tuned for 8 kHz phone audio. Defaults
  * (threshold 0.5, silence 500ms) false-triggered on line echo and the caller's
