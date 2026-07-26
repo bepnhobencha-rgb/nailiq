@@ -70,6 +70,49 @@ describe("compact phone Realtime config", () => {
     expect(prompt).toContain("Anna");
   });
 
+  it("requires one real-menu upsell and rechecks availability after acceptance", () => {
+    const prompt = buildPhoneSystemPrompt({
+      ...ctx,
+      services: [
+        {
+          ...ctx.services[0]!,
+          name: "Manicure W/ Reg Polish",
+          isPopular: false,
+        },
+        {
+          ...ctx.services[0]!,
+          id: "service-shellac",
+          name: "Manicure Shellac",
+          priceCents: 5200,
+          isPopular: true,
+        },
+        {
+          ...ctx.services[0]!,
+          id: "service-combo",
+          name: "Mani-pedi W/ Shellac",
+          priceCents: 8500,
+          isPopular: false,
+        },
+      ],
+    }, "en", "+17780000000");
+
+    expect(prompt).toContain("Sales checkpoint — required once");
+    expect(prompt).toContain("Manicure Shellac");
+    expect(prompt).toContain("Mani-pedi W/ Shellac");
+    expect(prompt).toContain("call get_available_slots AGAIN");
+    expect(prompt).toContain("Keep the tentative time only if it is returned");
+    expect(prompt).toContain("Never repeat the offer");
+  });
+
+  it("does not require an upsell when the salon disables it", () => {
+    const prompt = buildPhoneSystemPrompt(
+      { ...ctx, upsellEnabled: false },
+      "en",
+      "+17780000000",
+    );
+    expect(prompt).not.toContain("Sales checkpoint — required once");
+  });
+
   it("keeps identical tool contracts while materially reducing static context", () => {
     const fullTools = REALTIME_TOOLS as unknown as Array<{
       name: string;

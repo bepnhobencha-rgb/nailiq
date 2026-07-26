@@ -60,9 +60,31 @@ export function buildPhoneSystemPrompt(
   const staff = ctx.staff.length
     ? ctx.staff.map((member) => `- ${member.name}; id=${member.id}`).join("\n")
     : "- Any available staff; id=any";
-  const upsellRule = ctx.upsellEnabled
-    ? "- After service and time are chosen, offer one relevant real menu upgrade/add-on once. If declined, move on. Set upsell_accepted=true only when accepted.\n"
-    : "";
+  const upsellCandidates = ctx.services
+    .filter((service) =>
+      !service.isAddon && (
+        service.isFeatured ||
+        service.isPopular ||
+        /\b(mani[\s-]?pedi|shellac|deluxe|french|design)\b/i.test(service.name)
+      )
+    )
+    .sort((a, b) => {
+      const score = (service: SalonVoiceContext["services"][number]) =>
+        (service.isFeatured ? 2 : 0) +
+        (service.isPopular ? 1 : 0);
+      return score(b) - score(a) || a.name.localeCompare(b.name);
+    })
+    .slice(0, 8)
+    .map((service) => service.name);
+  const upsellSection = ctx.upsellEnabled ? `
+# Sales checkpoint — required once for a new individual booking
+- After the caller chooses a tentative time but BEFORE the final booking readback, make exactly ONE brief, relevant offer from the real Menu.
+- Offer a related upgrade or single-menu combo. Useful real candidates: ${upsellCandidates.length ? upsellCandidates.join("; ") : "none configured"}.
+- Skip only when no compatible real candidate exists, the caller is in a hurry, or they already chose a premium/combo/add-on. Never invent a discount, promotion, service, price, or availability.
+- Do not offer a separate add-on service: confirm_booking currently saves one menu service. A menu combo such as a mani-pedi is safe because it has one real service_id.
+- If accepted, switch to the accepted service_id and call get_available_slots AGAIN for that service/date/staff. Keep the tentative time only if it is returned; otherwise offer real alternatives.
+- If declined or hesitant, say "No problem" once and continue. Never repeat the offer. Set upsell_accepted=true only after acceptance.
+` : "";
   const callerRules = callerPhone
     ? `- Carrier-verified caller number: ${callerPhone}. Do not ask them to recite it.
 - After the caller states their goal, call lookup_customer once with ${callerPhone}; continue their request after the result.
@@ -99,12 +121,14 @@ ${callerRules}
 - Tool failure: never expose raw errors or promise success. A safe read may retry once; never retry a timed-out write because it may already have committed.
 - If a tool result contains say_this, speak say_this exactly, add nothing, then wait.
 
+${upsellSection}
 # Booking flow
 1. Learn intent. For a new booking, collect one item at a time: service, date, staff preference.
 2. Call get_available_slots; offer two exact returned times. Never invent availability.
-${upsellRule}3. After the caller chooses, read back service/date/time/staff and obtain a clear yes.
-4. Call confirm_booking only after that yes. If otp_required for a different number, request and verify OTP, then retry once with otp_session_id.
-5. On success, speak the server-confirmed result, ask if anything else is needed, and wait.
+3. After the caller chooses a tentative time, complete the Sales checkpoint when enabled.
+4. Read back the final service/date/time/staff and obtain a clear yes.
+5. Call confirm_booking only after that yes. If otp_required for a different number, request and verify OTP, then retry once with otp_session_id.
+6. On success, speak the server-confirmed result, ask if anything else is needed, and wait.
 
 # Other flows
 - Cancel/reschedule: call find_booking, identify the exact booking, explain the change, get a clear yes, then call the relevant write tool.
