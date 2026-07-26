@@ -402,6 +402,14 @@ describe("router — language request beats spoken-language detection", () => {
     expect(resolveSwitchLanguage("Can we continue in Spanish?", "en")).toBe("es");
     expect(resolveSwitchLanguage("in english please", "en")).toBeNull();
     expect(resolveSwitchLanguage("mình muốn đặt lịch", "en")).toBe("vi");
+    expect(resolveSwitchLanguage(
+      "Bonjour, je voudrais prendre un rendez-vous pour une manucure",
+      "en",
+    )).toBe("fr");
+    expect(resolveSwitchLanguage(
+      "Je voudrais réserver une pédicure demain",
+      "fr",
+    )).toBeNull();
     expect(resolveSwitchLanguage("yes okay", "en")).toBeNull();
   });
 });

@@ -49,6 +49,10 @@ import {
 } from "@/shared/lib/demoOtpMode";
 import type { SalonMemberRole } from "@/shared/lib/salonMemberRole";
 import { normaliseToE164 } from "@/shared/lib/twilioSms";
+import {
+  normalizeSupportedLanguage,
+  type SupportedLanguage,
+} from "@/shared/voiceai/config";
 
 export type StaffJobRole = "owner" | "senior" | "nail_tech";
 
@@ -1450,6 +1454,7 @@ export async function getDashboardWriteClient(slug: string): Promise<
 
 export type VoiceAiSettingsInput = {
   voice_ai_enabled:          boolean;
+  voice_ai_default_language: SupportedLanguage;
   voice_ai_persona_name:     string;
   voice_ai_persona_voice:    string;
   voice_ai_reasoning_effort: string;
@@ -1478,6 +1483,7 @@ export async function updateVoiceAiSettings(
   const effort = VALID_EFFORTS.includes(input.voice_ai_reasoning_effort as (typeof VALID_EFFORTS)[number])
     ? input.voice_ai_reasoning_effort
     : "low";
+  const defaultLanguage = normalizeSupportedLanguage(input.voice_ai_default_language);
   const personaName = input.voice_ai_persona_name.trim().slice(0, 40) || "Lily";
   const rawTransferPhone = input.voice_ai_transfer_phone.trim();
   const transferPhone = rawTransferPhone ? normaliseToE164(rawTransferPhone) : null;
@@ -1487,6 +1493,7 @@ export async function updateVoiceAiSettings(
     .from("salons")
     .update({
       voice_ai_enabled:          input.voice_ai_enabled,
+      voice_ai_default_language: defaultLanguage,
       voice_ai_persona_name:     personaName,
       voice_ai_persona_voice:    voice,
       voice_ai_reasoning_effort: effort,

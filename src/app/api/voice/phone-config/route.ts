@@ -19,7 +19,11 @@ import {
   buildPhoneSystemPrompt,
 } from "@/shared/voiceai/buildPhoneSystemPrompt";
 import { PHONE_REALTIME_TOOLS } from "@/shared/voiceai/realtimeTools";
-import { VOICE_MODEL, SUPPORTED_LANGUAGES, type SupportedLanguage } from "@/shared/voiceai/config";
+import {
+  VOICE_MODEL,
+  normalizeSupportedLanguage,
+  type SupportedLanguage,
+} from "@/shared/voiceai/config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,7 +61,7 @@ export async function POST(req: NextRequest) {
   const supabase = createServiceRoleClient();
   const { data: salonRow } = await supabase
     .from("salons")
-    .select("voice_ai_enabled, default_notification_locale")
+    .select("voice_ai_enabled, voice_ai_default_language")
     .eq("slug", slug)
     .maybeSingle();
   if (!salonRow) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
@@ -66,16 +70,20 @@ export async function POST(req: NextRequest) {
   }
 
   // Resolve the language: an explicit request (the bridge's mid-call switch)
-  // wins; otherwise open in the salon's configured notification locale so the
-  // first greeting is already in the salon's primary language, and the bridge
-  // only switches if the caller turns out to speak something else.
-  const requested = (body.language ?? "").trim() as SupportedLanguage;
-  const salonDefault = (salonRow as { default_notification_locale?: string | null })
-    .default_notification_locale as SupportedLanguage;
-  const language: SupportedLanguage =
-    SUPPORTED_LANGUAGES.includes(requested) ? requested
-    : SUPPORTED_LANGUAGES.includes(salonDefault) ? salonDefault
-    : "en";
+  // wins; otherwise open in the salon's dedicated Voice AI language. Keep this
+  // separate from default_notification_locale: staff/customer notifications
+  // currently support a narrower language set than the live receptionist.
+  const salonDefault = normalizeSupportedLanguage(
+    (salonRow as { voice_ai_default_language?: string | null })
+      .voice_ai_default_language,
+  );
+  const requested = typeof body.language === "string"
+    ? body.language.trim()
+    : null;
+  const language: SupportedLanguage = normalizeSupportedLanguage(
+    requested,
+    salonDefault,
+  );
 
   const ctx = await loadSalonContext(slug);
   if (!ctx) return NextResponse.json({ error: "context_load_failed" }, { status: 500 });
