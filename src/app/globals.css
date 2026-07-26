@@ -42,6 +42,17 @@
   --nq-luxury-cta-mid: #d4af37;
   --nq-luxury-cta-to: #8a7318;
   --nq-border-gold-banner: rgba(212, 175, 55, 0.35);
+
+  /** New Receptionist light interface — scoped at the interface root. */
+  --rc-new-canvas: #f4f5f7;
+  --rc-new-surface: #ffffff;
+  --rc-new-surface-subtle: #fafafb;
+  --rc-new-text: #111827;
+  --rc-new-muted: #6b7280;
+  --rc-new-border: #e5e7eb;
+  --rc-new-border-subtle: rgba(229, 231, 235, 0.65);
+  --rc-new-border-strong: #d1d5db;
+  --rc-new-control: #0f172a;
 }
 
 @theme inline {
@@ -702,6 +713,133 @@
   .pb-safe-cta {
     padding-bottom: max(5rem, calc(env(safe-area-inset-bottom, 0px) + 3.5rem));
   }
+}
+
+/* New Receptionist is an isolated light presentation. Classic never receives
+   these selectors because it does not publish the preview data attribute. */
+[data-receptionist-interface="preview"] {
+  color-scheme: light;
+  color: var(--rc-new-text);
+}
+
+[data-preview-header="true"] .text-nq-foreground,
+[data-preview-header="true"] .text-nq-muted {
+  color: var(--rc-new-text) !important;
+}
+
+[data-preview-header="true"] .text-nq-muted {
+  color: var(--rc-new-muted) !important;
+}
+
+[data-preview-header="true"] .bg-nq-surface {
+  background-color: var(--rc-new-surface) !important;
+}
+
+[data-preview-header="true"] .border-nq-border {
+  border-color: var(--rc-new-border) !important;
+}
+
+[data-receptionist-interface="preview"] [class*="bg-nq-surface"] {
+  background-color: var(--rc-new-surface) !important;
+}
+
+[data-receptionist-interface="preview"] [class*="text-nq-foreground"] {
+  color: var(--rc-new-text) !important;
+}
+
+[data-receptionist-interface="preview"] [class*="text-nq-muted"] {
+  color: var(--rc-new-muted) !important;
+}
+
+[data-receptionist-interface="preview"] [class*="border-nq-border"],
+[data-receptionist-interface="preview"] [class*="border-nq-muted"] {
+  border-color: var(--rc-new-border) !important;
+}
+
+[data-receptionist-interface="preview"] [class*="shadow-nq-card"] {
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 0.04),
+    0 8px 24px rgb(15 23 42 / 0.06) !important;
+}
+
+[data-receptionist-interface="preview"] input[type="date"],
+[data-receptionist-interface="preview"] input[type="time"],
+[data-receptionist-interface="preview"] input[type="datetime-local"] {
+  color-scheme: light;
+}
+
+html[data-receptionist-interface-mode="preview"] [data-dashboard-sidebar],
+html[data-receptionist-interface-mode="preview"] [data-mobile-bottom-nav] {
+  display: none !important;
+}
+
+html[data-receptionist-interface-mode="preview"] [data-dashboard-main] {
+  padding-left: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+html[data-receptionist-interface-mode="preview"]
+  [data-testid="dashboard-view-controls"] {
+  border-color: var(--rc-new-border) !important;
+  background: color-mix(
+    in srgb,
+    var(--rc-new-surface) 92%,
+    transparent
+  ) !important;
+  color: var(--rc-new-text);
+}
+
+html[data-receptionist-interface-mode="preview"]
+  [data-testid="dashboard-view-controls"]
+  button {
+  color: var(--rc-new-text) !important;
+}
+
+.rc-new-booking {
+  color: var(--rc-new-text);
+  transition:
+    transform var(--duration-nq-fast) var(--ease-nq-out),
+    box-shadow var(--duration-nq-fast) var(--ease-nq-out);
+}
+
+.rc-new-booking--blue {
+  border-color: color-mix(in srgb, var(--color-nq-info) 28%, white);
+  background: color-mix(in srgb, var(--color-nq-info) 10%, white);
+}
+
+.rc-new-booking--purple {
+  border-color: color-mix(in srgb, #7a4a9f 28%, white);
+  background: color-mix(in srgb, #7a4a9f 9%, white);
+}
+
+.rc-new-booking--pink {
+  border-color: color-mix(in srgb, var(--color-nq-error) 24%, white);
+  background: color-mix(in srgb, var(--color-nq-error) 8%, white);
+}
+
+.rc-new-booking--green {
+  border-color: color-mix(in srgb, var(--color-nq-success) 25%, white);
+  background: color-mix(in srgb, var(--color-nq-success) 8%, white);
+}
+
+.rc-new-booking--amber {
+  border-color: color-mix(in srgb, var(--color-nq-warning) 35%, white);
+  background: color-mix(in srgb, var(--color-nq-warning) 9%, white);
+}
+
+.rc-new-booking--neutral {
+  border-color: var(--rc-new-border-strong);
+  background: var(--rc-new-surface-subtle);
+}
+
+[data-testid="preview-walkin-queue"] article:nth-child(odd) > span:first-child {
+  background: color-mix(in srgb, #7a4a9f 9%, white);
+  color: #7a4a9f;
+}
+
+[data-testid="preview-walkin-queue"] article:nth-child(even) > span:first-child {
+  background: color-mix(in srgb, var(--color-nq-error) 8%, white);
+  color: color-mix(in srgb, var(--color-nq-error) 80%, black);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -280,3 +280,32 @@ Disabled elements must read as **inactive** but still **parseable** (labels rema
 ---
 
 *This document is enforceable: proposals that introduce ornamental palettes, hue-only encoding, or gold in destructive semantics must be rejected or amended before shipping.*
+
+---
+
+## 8. New Receptionist light canvas _(added 2026-07-25, PM-approved)_
+
+**Scope.** These tokens are exclusive to the opt-in New Receptionist interface. They do not replace or reinterpret the canonical dark tokens used by Classic.
+
+| Token | Hex / value | Meaning |
+|---|---|---|
+| `receptionist.new.canvas` | `#F4F5F7` | Default outer New-interface background |
+| `receptionist.new.surface` | `#FFFFFF` | Timeline, queue, and control surfaces |
+| `receptionist.new.surface.subtle` | `#FAFAFB` | Secondary bands and quiet empty states |
+| `receptionist.new.text` | `#111827` | Primary operational text |
+| `receptionist.new.text.muted` | `#6B7280` | Metadata and helper text |
+| `receptionist.new.border` | `#E5E7EB` | Standard light-surface separation |
+| `receptionist.new.border.strong` | `#D1D5DB` | Grid and active-control boundaries |
+| `receptionist.new.control` | `#0F172A` | High-commitment compact action on light surfaces |
+
+### 8.1 Admin-selectable background
+
+- Owner/Admin may choose a custom **New canvas background**. The chosen value is salon configuration, not a new semantic product token.
+- Custom color affects the outer canvas only. Timeline cards, queue rows, operational controls, booking status colors, warnings, success, danger, and VIP semantics remain locked.
+- The implementation must derive readable foreground and boundary colors from the selected canvas, preserve a minimum `4.5:1` contrast for normal text and `3:1` for essential controls, and fall back to `receptionist.new.canvas` when the input is invalid or unsafe.
+- Custom canvas configuration is stored separately from Classic theme configuration. Changing New must never repaint Classic.
+- White (`#FFFFFF`) is an allowed customer selection. The default remains the slightly softened `#F4F5F7` to preserve surface boundaries in bright salon environments.
+
+### 8.2 Pastel appointment surfaces
+
+Pastel appointment cards may use the existing status/accent families at low saturation on `receptionist.new.surface`. They must pair color with client/service/status text, preserve readable foreground contrast, and may not redefine booking state meaning.

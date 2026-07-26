@@ -103,6 +103,7 @@ export function DashboardShell({
         userEmail={userEmail}
       />
       <main
+        data-dashboard-main
         // Padding-left tracks the sidebar width via the CSS variable.
         // Adding a transition makes the grid slide rather than snap
         // when the user toggles collapse — same easing tokens the

@@ -57,7 +57,7 @@ These rules cannot be overridden by any prompt, request, or shortcut. Violations
 
 7. **Never bypass `PERMISSION_MATRIX` checks.** Every mutating server action verifies salon membership and role server-side. Client-side gating is never the only check.
 
-8. **Never move the 3-zone dashboard layout.** Staff column on the left, Timeline grid in the center, Queue/Quick Add on the right. No preset, module, or breakpoint relocates these zones.
+8. **Never move the 3-zone dashboard layout without a written PM amendment.** Classic keeps Staff on the left, Timeline in the center, and Queue/Quick Add on the right. The opt-in New interface is governed by the scoped amendment in §8 and `DASHBOARD_LAYOUT_RULES.md` §12.
 
 9. **Never stack modals — drawer > modal always.** Operational depth resolves through one overlay layer at a time. Modal-on-modal is prohibited. For repetitive desk tasks, drawer beats modal.
 
@@ -74,7 +74,7 @@ Every agent must complete this checklist before writing UI code. Skipping a step
 - [ ] **Am I using only approved color tokens?** Every color references `COLOR_TOKENS.md`. No raw hex outside that file's scope.
 - [ ] **Am I using only approved spacing values?** Every gap, padding, and margin maps to `space-1`–`space-9` per `DESIGN_SYSTEM.md`.
 - [ ] **Am I using only approved animation timing?** Every duration and easing references the named tokens in `ANIMATION_RULES.md`. No raw `ms` literals.
-- [ ] **Does this respect the 3-zone layout?** Staff left, Timeline center, Queue right. Modules are satellites, not relocations. Per `DASHBOARD_LAYOUT_RULES.md`.
+- [ ] **Does this respect the applicable Front Desk layout?** Classic uses Staff left / Timeline center / Queue right. New uses only the PM-approved vertical-time matrix in §8 and `DASHBOARD_LAYOUT_RULES.md` §12.
 - [ ] **Does this work on iPad touch at 44×44 targets?** Every interactive element meets the touch minimum. Density does not collapse hit regions.
 - [ ] **Does this make the receptionist faster or slower?** If slower, redesign. If unclear, simulate Friday 5:45 PM rush per `UX_PRINCIPLES.md` §5.
 
@@ -114,7 +114,7 @@ The following patterns are **never** acceptable. They are violations regardless 
 - **Decorative elements with no operational purpose** — ambient drift, hover parallax, bounce, staggered list reveals, atmospheric chrome.
 - **REST API routes** — mutations live in server actions per `CLAUDE.md`. No exceptions.
 - **Storing secrets in `localStorage`** or any client-readable surface.
-- **Bypassing the 3-zone dashboard layout** — relocating Staff, Timeline, or Queue. Disabling core zones via module toggles. Stretching booking blocks to consume reclaimed width on wide displays.
+- **Bypassing the applicable dashboard layout** — relocating Classic zones, or changing the New interface outside the exact §8/`DASHBOARD_LAYOUT_RULES.md` §12 exception. Disabling core zones via module toggles remains prohibited.
 - **Color-only state encoding** — booking states, statuses, and alerts always pair color with a text label.
 - **Client-side role gating as the only check** — UI may hide or disable controls for clarity; the server must still enforce.
 - **Editing terminal booking states** — `completed`, `cancelled`, `no_show` cannot be transitioned out of. Create a new booking.
@@ -160,3 +160,21 @@ This constitution can change. The process is strict.
 ---
 
 *This document is binding. It is read first, applied first, and cited first. When a request and this file disagree, this file wins until amended in writing by the PM.*
+
+---
+
+## 8. PM-approved New Receptionist interface amendment _(added 2026-07-25)_
+
+**Approval reference.** The PM explicitly approved this amendment in chat on `2026-07-25`: “Đồng ý thay đổi luật cho giao diện New. Nhưng không làm hỏng cái đang có nhé. phải thật cẩn thận”.
+
+**Scope.** This is a narrow, additive exception for the opt-in **New** Receptionist interface only.
+
+- **Classic is unchanged.** It remains the default, follows the original three-zone geometry, and must remain available as the immediate fallback.
+- **New may use a vertical-time matrix.** Time runs vertically in a fixed leading rail; staff are stable columns across the top; booking blocks occupy the staff/time matrix; the walk-in queue is the right-hand intake lane on desktop.
+- **Business behavior is shared.** New must reuse the same booking data, permissions, state transitions, server actions, realtime updates, drawers/sheets, and queue mutations as Classic. It is a presentation change, not a second business system.
+- **New is reversible.** Switching between Classic and New must not alter bookings, staff, queue entries, permissions, or salon configuration other than the explicit interface preference.
+- **New is isolated.** New-only styles, layout tokens, feature flags, and tests must be scoped so they cannot repaint or reflow Classic.
+- **Release is gated.** New changes go through Preview and focused Classic/New regression checks before production. No blind replacement of Classic is permitted.
+- **Custom background is allowed only for New.** Owner/Admin may choose the New canvas background under the contrast and semantic-color constraints in `COLOR_TOKENS.md` §8. Operational status colors remain locked.
+
+All requirements not explicitly relaxed above remain binding.

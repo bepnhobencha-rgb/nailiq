@@ -47,12 +47,18 @@ test("keeps classic as default and remembers the opt-in preview", async ({
     "data-compact",
     "true",
   );
+  if ((page.viewportSize()?.width ?? 0) >= 640) {
+    await expect(page.getByTestId("preview-apple-shell")).toBeVisible();
+    await expect(page.getByTestId("preview-apple-timeline")).toBeVisible();
+    await expect(page.getByTestId("preview-walkin-queue")).toBeVisible();
+  }
 
   await page.reload();
   await expect(center).toHaveAttribute("data-receptionist-interface", "preview");
 
   await switcher.click();
   await expect(center).toHaveAttribute("data-receptionist-interface", "classic");
+  await expect(page.getByTestId("preview-apple-shell")).toHaveCount(0);
 
   await page.reload();
   await expect(center).toHaveAttribute("data-receptionist-interface", "classic");

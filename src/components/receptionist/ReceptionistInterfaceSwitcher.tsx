@@ -9,12 +9,14 @@ export type ReceptionistInterfaceSwitcherProps = {
   value: ReceptionistInterface;
   language: "en" | "vi";
   onChange: (next: ReceptionistInterface) => void;
+  className?: string;
 };
 
 export function ReceptionistInterfaceSwitcher({
   value,
   language,
   onChange,
+  className,
 }: ReceptionistInterfaceSwitcherProps) {
   const isPreview = value === "preview";
   const next: ReceptionistInterface = isPreview ? "classic" : "preview";
@@ -48,6 +50,7 @@ export function ReceptionistInterfaceSwitcher({
         )
       }
       onClick={() => onChange(next)}
+      className={className}
     >
       {label}
     </Button>

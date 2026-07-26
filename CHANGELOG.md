@@ -2,6 +2,17 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-07-25 (docs — New Receptionist light-interface exception, PM-approved)
+
+- **PM approval:** explicit chat directive `2026-07-25`: “Đồng ý thay đổi luật cho giao diện New. Nhưng không làm hỏng cái đang có nhé. phải thật cẩn thận”.
+- **`docs/ARCHITECTURE_LOCK.md` §8:** added a narrow, reversible exception for the opt-in New Receptionist interface. Classic remains unchanged/default; business logic, permissions, state transitions, and data stay shared.
+- **`docs/DASHBOARD_LAYOUT_RULES.md` §12:** allows New to use a vertical time rail, staff columns across the top, the timeline as the dominant surface, and a persistent right-hand queue on desktop. Adds explicit Classic/New regression and Preview gates.
+- **`docs/COLOR_TOKENS.md` §8:** adds the New light-surface token family and permits a separately stored Owner/Admin-selected canvas background with contrast safeguards. Classic theme values are not changed.
+- **New interface implementation:** added an isolated light timeline with staff columns, vertical time rail, pastel appointment cards, current-time line, and persistent walk-in summary. Existing booking/queue callbacks and drawers are reused; Classic grid code remains the fallback.
+- **New-only background setting:** Owner/Admin can save `feature_flags.receptionist_preview_bg_color`; it never reads or writes Classic `drc_bg_color`.
+- **Shell isolation:** the app sidebar/bottom navigation yields the full canvas only while New is active and returns immediately when switching to Classic.
+- **Validation:** `npm run typecheck`, focused ESLint on new/changed modules, and production `next build --webpack` pass. The focused Classic/New Playwright spec is extended for CI/Preview verification.
+
 ## 2026-05-11 (platform-flag gated auth modes)
 
 ### feat(register): wire platform_flags sms_enabled / email_enabled to /register flow

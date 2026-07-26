@@ -91,6 +91,10 @@ export default async function ReceptionistCenterPage({
     typeof featureFlags?.drc_bg_color === "string"
       ? featureFlags.drc_bg_color
       : null;
+  const receptionistPreviewBgColor =
+    typeof featureFlags?.receptionist_preview_bg_color === "string"
+      ? featureFlags.receptionist_preview_bg_color
+      : null;
 
   // Hard URL enforcement: the sidebar hides the nav, but a direct visit to
   // /center must also be blocked when the feature is off. effective =
@@ -134,6 +138,7 @@ export default async function ReceptionistCenterPage({
         tvModeEnabled={tvModeEnabled}
         accentColor={drcAccentColor}
         bgColor={drcBgColor}
+        previewBgColor={receptionistPreviewBgColor}
       />
     </ReceptionistErrorBoundary>
   );

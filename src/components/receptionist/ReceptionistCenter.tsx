@@ -45,6 +45,7 @@ import {
 } from "react";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { Badge } from "@/components/ui/Badge";
@@ -160,6 +161,7 @@ import type { BookingStatus } from "@/shared/types";
 import {
   DEFAULT_DRC_ACCENT,
   DEFAULT_DRC_BG,
+  DEFAULT_RECEPTIONIST_PREVIEW_BG,
   deriveDrcPalette,
   drcPaletteToCssVars,
 } from "@/shared/lib/drcTheme";
@@ -179,6 +181,26 @@ import {
   type BookingCustomerContext,
 } from "@/shared/dashboard/loadBookingCustomerContextAction";
 import { useReceptionistInterface } from "@/shared/dashboard/useReceptionistInterface";
+
+// New is opt-in. Keep its visual bundle out of the Classic default path while
+// reusing the same parent data/actions once the user switches interfaces.
+const AppleDayTimeline = dynamic(
+  () =>
+    import("./AppleDayTimeline").then((module) => module.AppleDayTimeline),
+  { ssr: false },
+);
+const AppleWalkinQueue = dynamic(
+  () =>
+    import("./AppleWalkinQueue").then((module) => module.AppleWalkinQueue),
+  { ssr: false },
+);
+const ReceptionistPreviewThemePicker = dynamic(
+  () =>
+    import("./ReceptionistPreviewThemePicker").then(
+      (module) => module.ReceptionistPreviewThemePicker,
+    ),
+  { ssr: false },
+);
 
 // Values that only exist on the client. Read through useSyncExternalStore so
 // the server render and the first client render agree (no hydration mismatch)
@@ -213,6 +235,8 @@ export type ReceptionistCenterProps = {
   /** Owner-chosen DRC accent hex color (saved in feature_flags.drc_accent_color). */
   accentColor?: string | null;
   bgColor?: string | null;
+  /** New-only light canvas color; deliberately separate from Classic. */
+  previewBgColor?: string | null;
 };
 
 function loadErrorCopy(
@@ -364,6 +388,7 @@ function ReceptionistCenterInner({
   tvModeEnabled,
   accentColor,
   bgColor,
+  previewBgColor,
 }: {
   slug: string;
   initialOk: ReceptionistCenterData;
@@ -376,6 +401,7 @@ function ReceptionistCenterInner({
   tvModeEnabled: boolean;
   accentColor: string | null;
   bgColor: string | null;
+  previewBgColor: string | null;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -386,6 +412,9 @@ function ReceptionistCenterInner({
   // useState for optimistic updates: picker updates immediately, server action saves async.
   const [drcAccent, setDrcAccent] = useState(accentColor ?? DEFAULT_DRC_ACCENT);
   const [drcBg, setDrcBg] = useState(bgColor ?? DEFAULT_DRC_BG);
+  const [newInterfaceBg, setNewInterfaceBg] = useState(
+    previewBgColor ?? DEFAULT_RECEPTIONIST_PREVIEW_BG,
+  );
   const drcCssVars = useMemo(
     () => drcPaletteToCssVars(deriveDrcPalette(drcAccent, drcBg)),
     [drcAccent, drcBg],
@@ -466,6 +495,27 @@ function ReceptionistCenterInner({
   } = useReceptionistInterface();
   const previewInterface =
     interfaceHydrated && receptionistInterface === "preview";
+
+  // Publish the opt-in mode to the dashboard shell so New can use the full
+  // canvas shown in the approved mockup. Removing/switching back restores the
+  // Classic shell immediately; no data or salon preference is changed here.
+  useEffect(() => {
+    if (!interfaceHydrated) return;
+    if (previewInterface) {
+      document.documentElement.dataset.receptionistInterfaceMode = "preview";
+      document.documentElement.style.setProperty(
+        "--rc-new-canvas",
+        newInterfaceBg,
+      );
+    } else {
+      delete document.documentElement.dataset.receptionistInterfaceMode;
+      document.documentElement.style.removeProperty("--rc-new-canvas");
+    }
+    return () => {
+      delete document.documentElement.dataset.receptionistInterfaceMode;
+      document.documentElement.style.removeProperty("--rc-new-canvas");
+    };
+  }, [interfaceHydrated, newInterfaceBg, previewInterface]);
 
   // Detect mobile viewport for the VerticalDayView swap (< 640 px).
   // Defaults false (server + first render → desktop grid); effect flips it
@@ -902,6 +952,7 @@ function ReceptionistCenterInner({
   // Bumped by the header "+ Walk-in" action to focus the add form on open —
   // makes that button a distinct ADD action vs the "Hàng chờ" list toggle.
   const [addFocusNonce, setAddFocusNonce] = useState(0);
+  const [previewFullQueueOpen, setPreviewFullQueueOpen] = useState(false);
   // Desk "New appointment" modal — books a phone-in customer for a future date.
   const [deskBookingOpen, setDeskBookingOpen] = useState(false);
   // Prefill for the desk form when opened by clicking an empty grid slot
@@ -925,6 +976,10 @@ function ReceptionistCenterInner({
     setQueuePanelOpen(true);
     setAddFocusNonce((n) => n + 1);
   }, [setQueuePanelOpen]);
+  const openPreviewWalkinAdd = useCallback(() => {
+    setPreviewFullQueueOpen(true);
+    openWalkinAdd();
+  }, [openWalkinAdd]);
 
   // Create a real appointment from a claimed waitlist entry — reuse the
   // desk-prefill mechanism (same as onRebookNext): open the existing
@@ -2721,7 +2776,10 @@ function ReceptionistCenterInner({
         data-testid="receptionist-center-loaded"
         data-rush-mode={rush.active ? "on" : "off"}
         data-receptionist-interface={receptionistInterface}
-        style={{ ...drcCssVars, backgroundColor: drcBg }}
+        style={{
+          ...drcCssVars,
+          backgroundColor: previewInterface ? newInterfaceBg : drcBg,
+        }}
         className={cn(
           "flex min-h-[100dvh] w-full flex-col",
           rush.active && "[&_[data-rush-fade]]:opacity-50",
@@ -2772,10 +2830,11 @@ function ReceptionistCenterInner({
           </div>
         ) : null}
         <header
+          data-preview-header={previewInterface ? "true" : undefined}
           className={cn(
             "shrink-0 border-b border-nq-muted/20 px-[var(--pad-nq-section-mobile)] py-2.5 backdrop-blur-sm md:px-6 md:py-3",
             previewInterface &&
-              "rounded-xl border border-nq-border bg-nq-surface/90 shadow-nq-sm",
+              "rounded-xl border border-[var(--rc-new-border)] bg-[var(--rc-new-surface)] shadow-sm",
           )}
           style={
             previewInterface
@@ -2788,12 +2847,19 @@ function ReceptionistCenterInner({
               <div className="flex flex-wrap items-center gap-2 gap-y-2">
                 <Link
                   href={`/dashboard/${encodeURIComponent(slug)}`}
-                  className="truncate text-[13px] font-medium text-nq-primary hover:text-nq-primary/85"
+                  className={cn(
+                    "truncate text-[13px] font-medium text-nq-primary hover:text-nq-primary/85",
+                    previewInterface && "hidden",
+                  )}
                 >
                   ← {rcMessages.navOwnerDashboard}
                 </Link>
                 <h1 className="truncate text-lg font-semibold text-nq-foreground md:text-xl">
-                  {basicModeActive
+                  {previewInterface
+                    ? language === "vi"
+                      ? "Hôm nay"
+                      : "Today"
+                    : basicModeActive
                     ? rcMessages.basicMode.pageTitle
                     : rcMessages.title}
                 </h1>
@@ -2806,8 +2872,25 @@ function ReceptionistCenterInner({
               <ReceptionistInterfaceSwitcher
                 value={receptionistInterface}
                 language={language === "vi" ? "vi" : "en"}
-                onChange={setReceptionistInterface}
+                onChange={(next) => {
+                  if (next === "classic") setPreviewFullQueueOpen(false);
+                  setReceptionistInterface(next);
+                }}
+                className={
+                  previewInterface
+                    ? "border-[var(--rc-new-border-strong)] bg-[var(--rc-new-surface)] text-[var(--rc-new-text)] hover:bg-[var(--rc-new-surface-subtle)]"
+                    : undefined
+                }
               />
+              {previewInterface &&
+              (viewerRole === "owner" || viewerRole === "admin") ? (
+                <ReceptionistPreviewThemePicker
+                  slug={slug}
+                  currentBg={newInterfaceBg}
+                  language={language === "vi" ? "vi" : "en"}
+                  onBgChange={setNewInterfaceBg}
+                />
+              ) : null}
               {/* Status pill duplicates the Now Bar's Waiting + In service
                   counts, so it's hidden in Basic Mode. Balanced/Advanced
                   keep it (no Now Bar there). */}
@@ -2999,7 +3082,9 @@ function ReceptionistCenterInner({
                   variant="primary"
                   size="sm"
                   data-testid="header-add-walkin"
-                  onClick={openWalkinAdd}
+                  onClick={
+                    previewInterface ? openPreviewWalkinAdd : openWalkinAdd
+                  }
                 >
                   {language === "vi"
                     ? "+ Khách vãng lai"
@@ -3117,7 +3202,14 @@ function ReceptionistCenterInner({
               (queueWaitingCount > 0 || queuePanelOpen) ? (
                 <button
                   type="button"
-                  onClick={toggleQueuePanel}
+                  onClick={
+                    previewInterface
+                      ? () => {
+                          setPreviewFullQueueOpen(true);
+                          setQueuePanelOpen(true);
+                        }
+                      : toggleQueuePanel
+                  }
                   aria-label={rcMessages.queue.title}
                   aria-pressed={queuePanelOpen}
                   data-testid="queue-panel-toggle"
@@ -3474,11 +3566,14 @@ function ReceptionistCenterInner({
                 "flex min-h-[min(50dvh,28rem)] min-w-0 flex-1 flex-col border-t border-nq-muted/20",
                 "transition-[padding-right] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)]",
                 previewInterface &&
-                  "overflow-hidden rounded-xl border border-nq-border bg-nq-surface/40 shadow-nq-sm",
+                  "overflow-hidden rounded-xl border border-[var(--rc-new-border)] bg-[var(--rc-new-surface)] shadow-sm",
                 // Arbitrary value (`md:pr-[20rem]`) instead of `md:pr-80`
                 // so Tailwind always emits the rule even if the static
                 // utility hash changes between versions. Same 320px.
-                isViewingToday && modules.queue_panel && queuePanelOpen
+                !previewInterface &&
+                isViewingToday &&
+                modules.queue_panel &&
+                queuePanelOpen
                   ? "md:pr-[20rem]"
                   : "",
               )}
@@ -3521,7 +3616,58 @@ function ReceptionistCenterInner({
                 onUndoNoShow={(id) => void handleUndoNoShow(id)}
               />
 
-              {isMobile ? (
+              {previewInterface && !isMobile ? (
+                <div
+                  className={cn(
+                    "grid min-h-0 flex-1",
+                    isViewingToday && modules.queue_panel
+                      ? "grid-cols-[minmax(0,1fr)_20rem]"
+                      : "grid-cols-1",
+                  )}
+                  data-testid="preview-apple-shell"
+                >
+                  <AppleDayTimeline
+                    staff={gridStaff}
+                    bookings={gridBookings}
+                    assigning={assignedSlot}
+                    selectedDate={data.selectedDate}
+                    timezone={timezone}
+                    nowIso={nowIso}
+                    isViewingToday={isViewingToday}
+                    openMinutes={data.salon.openMinutes}
+                    closeMinutes={data.salon.closeMinutes}
+                    jumpToNowTrigger={jumpToNowTrigger}
+                    language={language === "vi" ? "vi" : "en"}
+                    onBookingClick={(id) => openBookingDrawer(id)}
+                    onSlotClick={(staffId, utc) =>
+                      void onWalkinAssignSlot(staffId, utc)
+                    }
+                    onEmptySlotClick={(staffId, ymd, slotLabel, anchor) => {
+                      setDeskPrefill({ staffId, ymd, slotLabel, anchor });
+                      setDeskBookingOpen(true);
+                    }}
+                  />
+                  {isViewingToday && modules.queue_panel ? (
+                    <AppleWalkinQueue
+                      items={queueItems}
+                      assigningId={assigningWalkinId}
+                      nowIso={nowIso}
+                      language={language === "vi" ? "vi" : "en"}
+                      canAdd={
+                        modules.quick_add &&
+                        canCreateDeskBooking(viewerRole) &&
+                        !isSetupIncomplete
+                      }
+                      onAdd={openPreviewWalkinAdd}
+                      onAssign={(id) => setAssigningWalkinId(id)}
+                      onOpenFullQueue={() => {
+                        setPreviewFullQueueOpen(true);
+                        setQueuePanelOpen(true);
+                      }}
+                    />
+                  ) : null}
+                </div>
+              ) : isMobile ? (
                 <VerticalDayView
                   staff={gridStaff}
                   bookings={gridBookings}
@@ -3698,7 +3844,10 @@ function ReceptionistCenterInner({
        * when the salon's queue_panel module is enabled. On mobile, a
        * backdrop appears beneath the panel and click-to-close.
        */}
-      {viewMode === "day" && isViewingToday && modules.queue_panel ? (
+      {viewMode === "day" &&
+      isViewingToday &&
+      modules.queue_panel &&
+      (!previewInterface || previewFullQueueOpen) ? (
         <>
           {/* Mobile backdrop — md:hidden so desktop just flexes the
               grid via pr-80 instead of dimming the rest of the desk. */}
@@ -3707,7 +3856,10 @@ function ReceptionistCenterInner({
               type="button"
               aria-hidden
               tabIndex={-1}
-              onClick={() => setQueuePanelOpen(false)}
+              onClick={() => {
+                setQueuePanelOpen(false);
+                setPreviewFullQueueOpen(false);
+              }}
               className="md:hidden fixed inset-0 z-30 bg-nq-bg/60"
               data-testid="queue-panel-backdrop"
             />
@@ -3735,7 +3887,10 @@ function ReceptionistCenterInner({
           >
             <div className="min-h-0 flex-1 overflow-y-auto">
               <WalkinQueueSidebar
-                onClose={() => setQueuePanelOpen(false)}
+                onClose={() => {
+                  setQueuePanelOpen(false);
+                  setPreviewFullQueueOpen(false);
+                }}
                 closeLabel={rcMessages.queue.closePanel}
                 assigningId={assigningWalkinId}
                 items={queueItems}
@@ -4283,6 +4438,7 @@ export function ReceptionistCenter({
   tvModeEnabled = true,
   accentColor,
   bgColor,
+  previewBgColor,
 }: ReceptionistCenterProps) {
   if (!initialResult.ok) {
     return <ReceptionistGateError code={initialResult.error} />;
@@ -4298,6 +4454,7 @@ export function ReceptionistCenter({
       tvModeEnabled={tvModeEnabled}
       accentColor={accentColor ?? null}
       bgColor={bgColor ?? null}
+      previewBgColor={previewBgColor ?? null}
     />
   );
 }
