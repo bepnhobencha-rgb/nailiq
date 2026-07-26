@@ -22,6 +22,10 @@ export type SalonVoiceContext = {
     // Variable pricing model — matches services.price_type / price_max_cents.
     price_type:      string;
     price_max_cents: number | null;
+    /** Salon-authored facts shown on the booking page and used by the voice
+     * receptionist for inclusions and eligibility. Null means "not confirmed",
+     * never permission for the model to infer an answer. */
+    description:      string | null;
     // Upsell hints — the salon can flag which services to push; the agent honours
     // them and otherwise suggests a sensible upgrade/combo from the same menu.
     category:        string | null;
@@ -73,7 +77,7 @@ async function loadSalonContextUncached(salonSlug: string): Promise<SalonVoiceCo
   const [{ data: services }, { data: staff }] = await Promise.all([
     supabase
       .from("services")
-      .select("id, name, duration_minutes, price_cents, price_type, price_max_cents, category, is_addon, is_popular, is_featured")
+      .select("id, name, duration_minutes, price_cents, price_type, price_max_cents, description, category, is_addon, is_popular, is_featured")
       .eq("salon_id", salon.id)
       .is("deleted_at", null)
       .order("name"),
@@ -104,6 +108,7 @@ async function loadSalonContextUncached(salonSlug: string): Promise<SalonVoiceCo
       priceCents:      svc.price_cents,
       price_type:      svc.price_type ?? "fixed",
       price_max_cents: svc.price_max_cents ?? null,
+      description:     svc.description?.trim() || null,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       category:        (svc as any).category ?? null,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

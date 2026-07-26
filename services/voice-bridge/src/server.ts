@@ -45,6 +45,7 @@ import {
   openingLookupFollowupResponseCreate,
   extractSayThis,
   sayThisResponseCreate,
+  farewellResponseCreate,
   createResponseCoordinator,
   extractAudioDelta,
   extractFunctionCall,
@@ -85,6 +86,8 @@ wss.on("connection", (twilioWs) => {
   let currentLang = "en";
   let switchingLang = false;
   let userTurnCount = 0;
+  let endCallRequested = false;
+  let forcedFarewellAttempts = 0;
   const handledToolCallIds = new Set<string>();
   // The session.update carrying the salon's brain has been sent — until then we
   // do not forward caller audio (it would be handled with the default config).
@@ -305,10 +308,14 @@ wss.on("connection", (twilioWs) => {
     // line once its farewell (already spoken, per the prompt) finishes playing.
     if (name === "end_call") {
       openaiWs?.send(JSON.stringify(functionCallOutput(callId, { ok: true })));
-      logT("end_call_requested", { farewellStillGenerating: coordinator.isBusy() });
-      // If the farewell response is still in flight the controller waits for its
-      // end event; otherwise it sends the playback mark now.
-      hangup.onEndCall(coordinator.isBusy());
+      endCallRequested = true;
+      logT("end_call_requested", {
+        farewellStillGenerating: coordinator.isBusy(),
+        audibleFramesSoFar: responseAudioDeltaCount,
+      });
+      // Wait for response.done before arming hangup. Realtime may return a
+      // function-call-only response; in that case the response.done handler
+      // first queues a server-pinned audible farewell.
       return;                                        // no follow-up response
     }
 
@@ -629,9 +636,45 @@ wss.on("connection", (twilioWs) => {
           audioDeltaCount: responseAudioDeltaCount,
           audioBase64Chars: responseAudioBase64Chars,
         });
-        // If the agent ended the call, the farewell has been fully GENERATED —
-        // now wait for Twilio to confirm it fully PLAYED (mark ack), then close.
-        hangup.onResponseEnded(coordinator.isBusy());
+        // Realtime may call end_call without producing any audio (a legal
+        // function-call-only response). Never put the hangup mark onto an empty
+        // audio queue: synthesize the pinned farewell first, then arm the
+        // playback-aware hangup. One retry covers a rare zero-audio repair
+        // response without risking a loop.
+        if (endCallRequested && !hangup.isHangupPending()) {
+          if (responseAudioDeltaCount > 0) {
+            hangup.onEndCall(coordinator.isBusy());
+          } else if (endedActive) {
+            forcedFarewellAttempts++;
+            coordinator.request({
+              kind: "protected",
+              build: () => farewellResponseCreate(currentLang),
+              language: () => currentLang,
+            });
+            hangup.onEndCall(coordinator.isBusy());
+            logT("forced_farewell_requested", { attempt: forcedFarewellAttempts });
+          }
+        } else if (
+          hangup.isHangupPending() &&
+          endedActive &&
+          responseAudioDeltaCount === 0 &&
+          forcedFarewellAttempts > 0 &&
+          forcedFarewellAttempts < 2
+        ) {
+          forcedFarewellAttempts++;
+          coordinator.request({
+            kind: "protected",
+            build: () => farewellResponseCreate(currentLang),
+            language: () => currentLang,
+          });
+          hangup.onResponseEnded(coordinator.isBusy());
+          logT("forced_farewell_requested", { attempt: forcedFarewellAttempts });
+        } else {
+          // Audible farewell (or an unrelated response): when hangup is pending,
+          // the mark now follows the final audio frame and closes only after
+          // Twilio confirms it played.
+          hangup.onResponseEnded(coordinator.isBusy());
+        }
 
         // response.done is emitted for every terminal outcome and carries status
         // details, but omits raw audio. We therefore pair its safe metadata with

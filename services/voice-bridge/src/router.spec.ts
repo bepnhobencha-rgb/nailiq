@@ -27,6 +27,7 @@ import {
   extractSayThis,
   sayThisResponseCreate,
   sayThisInstruction,
+  farewellResponseCreate,
   interruptToggleMessage,
   turnDetection,
   createResponseCoordinator,
@@ -96,6 +97,24 @@ describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () =>
       retention_ratio: REALTIME_TRUNCATION_RETENTION_RATIO,
       token_limits: { post_instructions: REALTIME_POST_INSTRUCTION_TOKEN_LIMIT },
     });
+  });
+
+  it("builds a tool-free pinned Vietnamese farewell for silent end_call recovery", () => {
+    const msg = farewellResponseCreate("vi") as {
+      type: string;
+      response: {
+        tools: unknown[];
+        output_modalities: string[];
+        instructions: string;
+      };
+    };
+    expect(msg.type).toBe("response.create");
+    expect(msg.response.tools).toEqual([]);
+    expect(msg.response.output_modalities).toEqual(["audio"]);
+    expect(msg.response.instructions).toContain(
+      "Dạ, cảm ơn anh/chị đã gọi. Chúc anh/chị một ngày an lành ạ.",
+    );
+    expect(msg.response.instructions).toContain("no tool call");
   });
 
   it("Twilio media → OpenAI append, and OpenAI delta → Twilio media (pass-through base64)", () => {

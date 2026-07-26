@@ -219,8 +219,8 @@ const MOCK_CTX: SalonVoiceContext = {
   upsellEnabled:   true,
   businessHours:   null,
   services: [
-    { id: PEDICURE_ID, name: "Pedicure", durationMins: 60, priceCents: 2500, price_type: "fixed", price_max_cents: null, category: "pedicure", isAddon: false, isPopular: false, isFeatured: false },
-    { id: MANICURE_ID, name: "Manicure", durationMins: 45, priceCents: 2000, price_type: "fixed", price_max_cents: null, category: "manicure", isAddon: false, isPopular: false, isFeatured: false },
+    { id: PEDICURE_ID, name: "Pedicure", durationMins: 60, priceCents: 2500, price_type: "fixed", price_max_cents: null, description: null, category: "pedicure", isAddon: false, isPopular: false, isFeatured: false },
+    { id: MANICURE_ID, name: "Manicure", durationMins: 45, priceCents: 2000, price_type: "fixed", price_max_cents: null, description: null, category: "manicure", isAddon: false, isPopular: false, isFeatured: false },
   ],
   staff: [
     { id: "s1", name: "Alice" },

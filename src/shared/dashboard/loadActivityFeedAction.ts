@@ -1,6 +1,7 @@
 "use server";
 
 import { formatTranscript } from "@/shared/dashboard/formatTranscript";
+import { customerMessageActivityItem } from "@/shared/dashboard/customerMessageActivity";
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -225,7 +226,18 @@ export async function loadActivityFeed(
     const tz = (salonRow as { timezone?: string } | null)?.timezone || "America/Los_Angeles";
 
     const now = new Date().toISOString();
-    const [eventsRes, notifsRes, callsRes, auditRes, authRes, aiRes, watchdogRes, winbackRes, aiActionsRes] = await Promise.all([
+    const [
+      eventsRes,
+      notifsRes,
+      callsRes,
+      auditRes,
+      authRes,
+      aiRes,
+      watchdogRes,
+      winbackRes,
+      aiActionsRes,
+      customerMessagesRes,
+    ] = await Promise.all([
       db
         .from("booking_events" as never)
         .select("id, booking_id, actor_role, event_type, payload, created_at, bookings ( client_name, start_time_utc )")
@@ -285,6 +297,13 @@ export async function loadActivityFeed(
         .is("undone_at", null)
         .order("created_at", { ascending: false })
         .limit(50),
+      db
+        .from("ai_actions_log" as never)
+        .select("id, payload, created_at")
+        .eq("salon_id", salonId)
+        .eq("action_type", "customer_message_escalation")
+        .order("created_at", { ascending: false })
+        .limit(PER_SOURCE),
     ]);
 
     // Build lookup: winback_suggestion.id → ai_action.id (for undo button)
@@ -350,6 +369,10 @@ export async function loadActivityFeed(
         bookingDate: null,
         transcript: formatTranscript(r.transcript),
       });
+    }
+
+    for (const r of (customerMessagesRes.data ?? []) as Array<Record<string, unknown>>) {
+      items.push(customerMessageActivityItem(r));
     }
 
     // Resolve actor user ids → staff names so config changes read "Mai · Đổi …".
