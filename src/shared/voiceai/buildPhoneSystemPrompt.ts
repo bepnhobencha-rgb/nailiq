@@ -95,8 +95,8 @@ export function buildPhoneSystemPrompt(
     : `- No carrier-verified number is available. Ask for the phone only when lookup or booking needs it.
 - Read the complete phone back before lookup. Any booking write must use request_otp then verify_otp.`;
   const farewellRule = isVi
-    ? '- Vietnamese farewell must be exactly: "Dạ, cảm ơn anh/chị đã gọi. Chúc anh/chị một ngày an lành ạ." Do not paraphrase it.'
-    : "- Say one short, natural farewell in the caller's language.";
+    ? '- The phone bridge will speak exactly: "Dạ, cảm ơn anh/chị đã gọi. Chúc anh/chị một ngày an lành ạ." Do not say or paraphrase this farewell yourself.'
+    : "- The phone bridge will speak a fixed farewell in the caller's language. Do not say a farewell yourself.";
 
   return `# Role
 You are ${ctx.personaName}, the phone receptionist for the salon named exactly "${ctx.salonName}".
@@ -147,9 +147,10 @@ ${upsellSection}
 - Unsupported request (including something unrelated such as arranging a ride): explain briefly that a human is needed and ask permission to transfer. If yes, call transfer_to_human. If no, or if the transfer tool says unavailable, collect a concise message and call leave_message_for_owner. Never invent an answer or promise a callback time.
 - Never transfer an emergency as a substitute for emergency services. Tell the caller to contact local emergency services.
 - End only after the caller says they are done/goodbye. After you ask whether they need anything else, phrases such as "nothing else", "that's all", "không cần gì nữa", "thôi được rồi", or a closing "cảm ơn" mean they are done.
-- Never end in the same turn as an action summary. In the closing turn, speak the farewell first and call end_call only after audible farewell words.
+- Never end in the same turn as an action summary. In the closing turn, call end_call silently; the phone bridge speaks the approved farewell and hangs up after it has played.
 ${farewellRule}
-- After speaking the farewell, call end_call.
+- Never narrate the transport action with phrases such as "I will end the call", "để em kết thúc", or "cho gọn".
+- Do not speak any closing words before end_call. Call end_call as the only action in that turn.
 
 # Menu
 ${services || "- No services configured"}

@@ -251,9 +251,9 @@ const FAREWELL_BY_LANGUAGE: Record<string, string> = {
 };
 
 /**
- * A tool-free, server-pinned farewell used when the model requests end_call
- * without producing any audible words. Realtime can legally return a
- * function-call-only response; the bridge must repair that before hanging up.
+ * A tool-free, server-pinned farewell used whenever the model requests
+ * end_call. Model-authored closing audio is not trusted as the final farewell:
+ * it may paraphrase the approved wording or narrate the transport action.
  */
 export function farewellResponseCreate(language: string): object {
   const farewell = FAREWELL_BY_LANGUAGE[language] ?? FAREWELL_BY_LANGUAGE.en;
@@ -266,6 +266,26 @@ export function farewellResponseCreate(language: string): object {
         `Say exactly this one farewell now, with no additions and no tool call: ${JSON.stringify(farewell)}`,
     },
   };
+}
+
+/**
+ * Every phone end_call gets one server-pinned farewell, even when the model
+ * already emitted audio in the same response. That earlier audio may be a
+ * transition such as "I'll end the call now", not the approved goodbye.
+ */
+export function shouldQueuePinnedFarewellAfterEndCall(input: {
+  endCallRequested: boolean;
+  hangupPending: boolean;
+  endedActive: boolean;
+  forcedFarewellAttempts: number;
+  modelAudioDeltaCount: number;
+}): boolean {
+  return (
+    input.endCallRequested &&
+    !input.hangupPending &&
+    input.endedActive &&
+    input.forcedFarewellAttempts === 0
+  );
 }
 
 /** Just the tool result item — no response.create. The caller decides which

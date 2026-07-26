@@ -46,6 +46,7 @@ import {
   extractSayThis,
   sayThisResponseCreate,
   farewellResponseCreate,
+  shouldQueuePinnedFarewellAfterEndCall,
   createResponseCoordinator,
   extractAudioDelta,
   extractFunctionCall,
@@ -304,8 +305,9 @@ wss.on("connection", (twilioWs) => {
 
   const runTool = async (name: string, args: Record<string, unknown>, callId: string) => {
     // end_call is a TRANSPORT action, not a DB one — only the bridge can hang up
-    // the phone. Answer the tool so the model isn't left waiting, then drop the
-    // line once its farewell (already spoken, per the prompt) finishes playing.
+    // the phone. Answer the tool so the model isn't left waiting. A separate,
+    // server-pinned farewell is always queued after this response; only then
+    // does the bridge arm the playback-aware hangup.
     if (name === "end_call") {
       openaiWs?.send(JSON.stringify(functionCallOutput(callId, { ok: true })));
       endCallRequested = true;
@@ -313,9 +315,9 @@ wss.on("connection", (twilioWs) => {
         farewellStillGenerating: coordinator.isBusy(),
         audibleFramesSoFar: responseAudioDeltaCount,
       });
-      // Wait for response.done before arming hangup. Realtime may return a
-      // function-call-only response; in that case the response.done handler
-      // first queues a server-pinned audible farewell.
+      // Wait for response.done before arming hangup. Model-authored audio in
+      // this response is not accepted as the final farewell because it may
+      // paraphrase or narrate the transport action.
       return;                                        // no follow-up response
     }
 
@@ -636,24 +638,25 @@ wss.on("connection", (twilioWs) => {
           audioDeltaCount: responseAudioDeltaCount,
           audioBase64Chars: responseAudioBase64Chars,
         });
-        // Realtime may call end_call without producing any audio (a legal
-        // function-call-only response). Never put the hangup mark onto an empty
-        // audio queue: synthesize the pinned farewell first, then arm the
-        // playback-aware hangup. One retry covers a rare zero-audio repair
-        // response without risking a loop.
-        if (endCallRequested && !hangup.isHangupPending()) {
-          if (responseAudioDeltaCount > 0) {
-            hangup.onEndCall(coordinator.isBusy());
-          } else if (endedActive) {
-            forcedFarewellAttempts++;
-            coordinator.request({
-              kind: "protected",
-              build: () => farewellResponseCreate(currentLang),
-              language: () => currentLang,
-            });
-            hangup.onEndCall(coordinator.isBusy());
-            logT("forced_farewell_requested", { attempt: forcedFarewellAttempts });
-          }
+        // Always synthesize the approved farewell after end_call. The model may
+        // have emitted audible words before the tool, but those words can be a
+        // meta-transition rather than the approved goodbye. One retry covers a
+        // rare zero-audio pinned response without risking a loop.
+        if (shouldQueuePinnedFarewellAfterEndCall({
+          endCallRequested,
+          hangupPending: hangup.isHangupPending(),
+          endedActive,
+          forcedFarewellAttempts,
+          modelAudioDeltaCount: responseAudioDeltaCount,
+        })) {
+          forcedFarewellAttempts++;
+          coordinator.request({
+            kind: "protected",
+            build: () => farewellResponseCreate(currentLang),
+            language: () => currentLang,
+          });
+          hangup.onEndCall(coordinator.isBusy());
+          logT("forced_farewell_requested", { attempt: forcedFarewellAttempts });
         } else if (
           hangup.isHangupPending() &&
           endedActive &&
