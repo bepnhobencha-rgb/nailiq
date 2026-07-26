@@ -82,7 +82,7 @@ export function AppleCommandBar({
       className="shrink-0 overflow-x-auto rounded-lg border border-[var(--rc-new-border)] bg-[var(--rc-new-surface)] shadow-sm"
       aria-label={language === "vi" ? "Tình hình hôm nay" : "Today's status"}
     >
-      <div className="flex min-w-max items-stretch">
+      <div className="flex w-full min-w-[1268px] items-stretch">
         {stats.map((stat) => {
           const Icon = stat.icon;
           return (
