@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { refreshCustomerWaitState } from "@/shared/booking/loadCustomerWaitStateAction";
 import type { CustomerWaitState } from "@/shared/booking/loadCustomerWaitState";
+import { resolveCustomerWaitSurface } from "@/shared/booking/customerWaitPresentation";
 import { createClient } from "@/shared/lib/supabase/client";
 import { cn } from "@/shared/lib/cn";
 import { getCustomerWaitMessages } from "@/shared/i18n/customerWait";
@@ -92,17 +93,101 @@ export function CustomerWaitClient({
     };
   }, [slug, bookingId]);
 
-  const status = state.booking.status;
-  const isReady = status === "in_progress";
-  const isDone = status === "completed";
-  const isCancelled = status === "cancelled" || status === "no_show";
+  const surface = resolveCustomerWaitSurface(
+    state.booking.kind,
+    state.booking.status,
+  );
 
-  if (isReady) return <ReadyScreen state={state} messages={messages} />;
-  if (isDone) return <DoneScreen state={state} messages={messages} />;
-  if (isCancelled) return <CancelledScreen state={state} messages={messages} />;
+  if (surface === "appointment") {
+    return (
+      <AppointmentScreen
+        state={state}
+        messages={messages}
+        manageLinks={manageLinks}
+        language={language}
+      />
+    );
+  }
+  if (surface === "ready") {
+    return <ReadyScreen state={state} messages={messages} />;
+  }
+  if (surface === "done") {
+    return <DoneScreen state={state} messages={messages} />;
+  }
+  if (surface === "cancelled") {
+    return <CancelledScreen state={state} messages={messages} />;
+  }
 
   return (
     <WaitingScreen state={state} messages={messages} manageLinks={manageLinks} />
+  );
+}
+
+function AppointmentScreen({
+  state,
+  messages,
+  manageLinks,
+  language,
+}: {
+  state: ReadyState;
+  messages: ReturnType<typeof getCustomerWaitMessages>;
+  manageLinks: { reschedule: string; cancel: string } | null;
+  language: "en" | "vi";
+}) {
+  const appointmentTime = state.booking.startTimeUtc
+    ? new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-CA", {
+        timeZone: state.salon.timezone,
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        timeZoneName: "short",
+      }).format(new Date(state.booking.startTimeUtc))
+    : "—";
+
+  return (
+    <PageShell testId="customer-wait-appointment" className="bg-nq-bg">
+      <SalonHeader name={state.salon.name} />
+      <p className="mt-3 text-center text-sm text-nq-muted">
+        {messages.greeting.replace("{name}", state.booking.clientName)}
+      </p>
+
+      <section className="mt-6 rounded-2xl border border-emerald-500/35 bg-emerald-500/10 px-5 py-6 text-center">
+        <span
+          aria-hidden
+          className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 text-xl font-bold text-nq-bg"
+        >
+          ✓
+        </span>
+        <h2 className="mt-3 text-xl font-semibold text-nq-foreground">
+          {messages.appointmentConfirmed}
+        </h2>
+      </section>
+
+      <SectionDivider label={messages.appointmentDateLabel} />
+      <time
+        dateTime={state.booking.startTimeUtc ?? undefined}
+        data-testid="customer-wait-appointment-time"
+        className="block text-center text-base font-semibold text-nq-foreground"
+      >
+        {appointmentTime}
+      </time>
+
+      <SectionDivider label={messages.serviceLabel} />
+      <p className="text-center text-sm text-nq-foreground">
+        {state.booking.serviceName}
+        {state.staffName ? (
+          <span className="text-nq-muted"> · {state.staffName}</span>
+        ) : null}
+      </p>
+
+      <p className="mt-6 text-center text-sm leading-6 text-nq-muted">
+        {messages.appointmentConfirmedNote}
+      </p>
+      <ManageActions manageLinks={manageLinks} messages={messages} />
+    </PageShell>
   );
 }
 

@@ -25,7 +25,12 @@ export async function generateMetadata({
     };
   }
   return {
-    title: { absolute: `${r.salon.name} — Wait status` },
+    title: {
+      absolute:
+        r.booking.kind === "appointment"
+          ? `${r.salon.name} — Appointment`
+          : `${r.salon.name} — Wait status`,
+    },
     robots: { index: false, follow: false },
   };
 }

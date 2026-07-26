@@ -1,12 +1,15 @@
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { normalizePublicBookingSlug } from "@/shared/booking/normalizePublicBookingSlug";
+import {
+  customerBookingKindFromSource,
+  type CustomerBookingStatus,
+} from "@/shared/booking/customerWaitPresentation";
 
 /**
  * Public-safe loader for the customer-facing wait page.
  *
- * Returns the minimum information a guest needs to track their own
- * walk-in: position in queue (without exposing other customers'
- * names), service, assigned staff display name, and a wait estimate.
+ * Returns the minimum information a guest needs to manage a scheduled
+ * appointment or track their own walk-in without exposing other customers.
  *
  * Security:
  *   - No auth required (the URL itself is the bearer token — guess
@@ -15,8 +18,6 @@ import { normalizePublicBookingSlug } from "@/shared/booking/normalizePublicBook
  *     customer already knows about themselves).
  *   - Booking lookup is hard-scoped to the salon resolved from the
  *     URL slug; mismatched slug+id pairs return `not_found`.
- *   - Only `walkin` source bookings are exposed — appointment
- *     bookings should not flow through this surface.
  *   - Other customers are surfaced only as a position number; we
  *     never return names or any identifying field.
  */
@@ -32,18 +33,14 @@ export type CustomerWaitState =
     }
   | {
       ok: true;
-      salon: { id: string; slug: string; name: string };
+      salon: { id: string; slug: string; name: string; timezone: string };
       booking: {
         id: string;
         clientName: string;
         serviceName: string;
-        status:
-          | "waiting"
-          | "confirmed"
-          | "in_progress"
-          | "completed"
-          | "cancelled"
-          | "no_show";
+        kind: "walkin" | "appointment";
+        status: CustomerBookingStatus;
+        startTimeUtc: string | null;
       };
       /** Resolved staff display name when the row carries `staff_id`. */
       staffName: string | null;
@@ -95,7 +92,7 @@ export async function loadCustomerWaitState(
 
   const salonRes = await admin
     .from("salons")
-    .select("id, slug, name")
+    .select("id, slug, name, timezone")
     .eq("slug", slug)
     .maybeSingle();
   if (salonRes.error) {
@@ -113,6 +110,8 @@ export async function loadCustomerWaitState(
     id: String(salonRes.data.id),
     slug: String(salonRes.data.slug),
     name: String(salonRes.data.name ?? "").trim(),
+    timezone:
+      String(salonRes.data.timezone ?? "").trim() || "America/Vancouver",
   };
 
   type BookingRow = {
@@ -173,12 +172,8 @@ export async function loadCustomerWaitState(
   // when source='walkin' AND status='waiting'. Appointments fall into
   // the assigned-screen branch automatically.
 
-  const status = (b.status ?? "waiting") as CustomerWaitState extends {
-    ok: true;
-    booking: { status: infer S };
-  }
-    ? S
-    : never;
+  const status = (b.status ?? "waiting") as CustomerBookingStatus;
+  const kind = customerBookingKindFromSource(b.source);
 
   const svcJoin = Array.isArray(b.services) ? b.services[0] : b.services;
   const serviceName = String(svcJoin?.name ?? "").trim();
@@ -264,7 +259,9 @@ export async function loadCustomerWaitState(
       id: String(b.id),
       clientName: String(b.client_name ?? "").trim() || "—",
       serviceName: serviceName || "—",
+      kind,
       status,
+      startTimeUtc: b.start_time_utc,
     },
     staffName,
     queuePosition,
