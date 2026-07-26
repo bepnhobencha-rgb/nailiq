@@ -2842,13 +2842,16 @@ function ReceptionistCenterInner({
         ) : null}
         {previewInterface ? (
           <AppleDeskHeader
+            slug={slug}
             salonName={data.salon.name}
             selectedDate={data.selectedDate}
             selectedOffset={dateOffset}
+            viewMode={viewMode}
             connectionState={connectionState}
             language={language === "vi" ? "vi" : "en"}
             clientHref={`/dashboard/${encodeURIComponent(slug)}/clients`}
             ownerHref={`/dashboard/${encodeURIComponent(slug)}`}
+            settingsHref={`/dashboard/${encodeURIComponent(slug)}/settings`}
             canAddWalkin={
               isViewingToday &&
               viewMode === "day" &&
@@ -2887,6 +2890,23 @@ function ReceptionistCenterInner({
               </>
             }
             onDateChange={(next) => void onDateSwitchChange(next)}
+            onSelectDate={(ymd) => void navigateToYmd(ymd)}
+            onViewModeChange={(next) => {
+              if (next === "week") {
+                setWeekMondayYmd(mondayYmdOf(data.selectedDate));
+              } else if (next === "month") {
+                setMonthFirstYmd(firstOfMonth(data.selectedDate));
+              }
+              onChangeViewMode(next);
+            }}
+            onSelectClient={(client) => {
+              setDeskPrefill({
+                ymd: data.selectedDate,
+                phone: client.phone,
+                name: client.name ?? undefined,
+              });
+              setDeskBookingOpen(true);
+            }}
             onAddWalkin={openPreviewWalkinAdd}
             onAddAppointment={() => {
               setDeskPrefill({ ymd: data.selectedDate });
@@ -3111,13 +3131,16 @@ function ReceptionistCenterInner({
                   Basic Mode is a front-desk "today" view — the
                   Day/Week/Month toggle is hidden there (Yesterday/Today/
                   Tomorrow remains). Balanced/Advanced keep the toggle. */}
-              {basicModeActive || previewInterface ? null : (
+              {basicModeActive ? null : (
                 <div
                   role="tablist"
                   aria-label={rcMessages.viewMode.ariaLabel}
                   data-testid="view-mode-toggle"
                   data-rush-fade
-                  className="hidden overflow-hidden rounded-md border border-nq-border bg-nq-surface text-xs font-medium xl:inline-flex"
+                  className={cn(
+                    "overflow-hidden rounded-md border border-nq-border bg-nq-surface text-xs font-medium",
+                    previewInterface ? "inline-flex" : "hidden xl:inline-flex",
+                  )}
                 >
                   {(["day", "week", "month"] as const).map((mode) => {
                     const active = viewMode === mode;
@@ -3346,11 +3369,47 @@ function ReceptionistCenterInner({
                 <>
                   {/* Always-visible date anchor — tells you which day you're
                       viewing, especially after drilling in from Month view. */}
-                  <ViewedDateChip
-                    ymd={data.selectedDate}
-                    language={language}
-                    isToday={isViewingToday}
-                  />
+                  {previewInterface ? (
+                    <details className="group relative">
+                      <summary
+                        data-testid="preview-mobile-calendar-trigger"
+                        className="cursor-pointer list-none rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-nq-info [&::-webkit-details-marker]:hidden"
+                      >
+                        <ViewedDateChip
+                          ymd={data.selectedDate}
+                          language={language}
+                          isToday={isViewingToday}
+                        />
+                      </summary>
+                      <div
+                        data-testid="preview-mobile-calendar-menu"
+                        className="absolute left-0 top-full z-50 mt-2 w-72 rounded-2xl border border-[var(--rc-new-border)] bg-[var(--rc-new-surface)] p-3 shadow-xl"
+                      >
+                        <label className="mb-2 block text-xs font-semibold text-[var(--rc-new-muted)]">
+                          {language === "vi" ? "Chọn ngày" : "Choose date"}
+                        </label>
+                        <input
+                          type="date"
+                          value={data.selectedDate}
+                          data-testid="preview-mobile-calendar-date-input"
+                          onChange={(event) => {
+                            if (!event.target.value) return;
+                            void navigateToYmd(event.target.value);
+                            event.currentTarget
+                              .closest("details")
+                              ?.removeAttribute("open");
+                          }}
+                          className="min-h-11 w-full rounded-xl border border-[var(--rc-new-border)] bg-[var(--rc-new-surface)] px-3 text-sm font-medium text-[var(--rc-new-text)] outline-none focus-visible:ring-2 focus-visible:ring-nq-info"
+                        />
+                      </div>
+                    </details>
+                  ) : (
+                    <ViewedDateChip
+                      ymd={data.selectedDate}
+                      language={language}
+                      isToday={isViewingToday}
+                    />
+                  )}
                   <DateSwitcher
                     selectedOffset={dateOffset}
                     onChange={(next) => void onDateSwitchChange(next)}
