@@ -85,6 +85,7 @@ const E2E_FIXTURE_SERVICES = JSON.stringify([
   { name: "Regular Manicure", price_cents: 2500, duration_minutes: 25 },
   { name: "Acrylic Full Set", price_cents: 5500, duration_minutes: 60 },
 ]);
+const E2E_FIXTURE_LATENCY_MS = 250;
 
 /** Resolve the vertical AI-descriptor ("a nail salon" / "a head spa") for the
  *  salon behind a dashboard write context. The `vertical` column is read
@@ -116,8 +117,18 @@ async function callClaudeVision(
 ): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
   // E2E mock gate — short-circuits before any real network call
   const e2eMock = process.env["AI_PREFILL_E2E_MOCK"];
-  if (e2eMock === "services") return { ok: true, text: E2E_FIXTURE_SERVICES };
-  if (e2eMock === "empty") return { ok: true, text: "[]" };
+  if (e2eMock === "services" || e2eMock === "empty") {
+    // Keep the mock fast while leaving enough time for React to paint the
+    // loading step. An already-resolved fixture can batch loading -> review
+    // into one render, making the loading-state regression test racey.
+    await new Promise((resolve) =>
+      setTimeout(resolve, E2E_FIXTURE_LATENCY_MS),
+    );
+    return {
+      ok: true,
+      text: e2eMock === "services" ? E2E_FIXTURE_SERVICES : "[]",
+    };
+  }
 
   const apiKey = process.env["ANTHROPIC_API_KEY"];
   if (!apiKey) {
