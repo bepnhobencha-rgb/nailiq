@@ -9,6 +9,9 @@ import type { UserLanguage } from "@/shared/i18n/user/types";
  */
 export type CustomerWaitMessages = {
   greeting: string;
+  appointmentConfirmed: string;
+  appointmentDateLabel: string;
+  appointmentConfirmedNote: string;
   yourPosition: string;
   /** Pill shown when the customer has been assigned (no queue position). */
   assigned: string;
@@ -43,6 +46,10 @@ export type CustomerWaitMessages = {
 
 const en: CustomerWaitMessages = {
   greeting: "Hi {name} 👋",
+  appointmentConfirmed: "Appointment confirmed",
+  appointmentDateLabel: "Date and time",
+  appointmentConfirmedNote:
+    "Your appointment is reserved. Use the options below if your plans change.",
   yourPosition: "Your position",
   assigned: "Assigned",
   estimatedWait: "Estimated wait",
@@ -68,6 +75,10 @@ const en: CustomerWaitMessages = {
 
 const vi: CustomerWaitMessages = {
   greeting: "Xin chào {name} 👋",
+  appointmentConfirmed: "Lịch hẹn đã được xác nhận",
+  appointmentDateLabel: "Ngày và giờ",
+  appointmentConfirmedNote:
+    "Lịch hẹn của bạn đã được giữ. Dùng các lựa chọn bên dưới nếu kế hoạch thay đổi.",
   yourPosition: "Vị trí của bạn",
   assigned: "Đã sắp xếp",
   estimatedWait: "Thời gian chờ",
