@@ -75,13 +75,26 @@ test.describe("Undo toast", () => {
         async () => {
           const seconds = await readSeconds();
           if (seconds <= 0 || seconds >= 5) return false;
-          await expect(toast).toHaveAttribute("aria-hidden", "false");
-          await undoButton.click({ timeout: 1500 });
-          return true;
+          if ((await toast.getAttribute("aria-hidden")) !== "false") return false;
+
+          // The countdown re-renders the toast every second. On a loaded mobile
+          // runner Playwright can therefore keep waiting for the button to be
+          // "stable" even though it is visible and is the real hit target.
+          // Verify the center point is not covered before bypassing only that
+          // animation-stability heuristic for the click below.
+          return undoButton.evaluate((button) => {
+            const rect = button.getBoundingClientRect();
+            const hit = document.elementFromPoint(
+              rect.left + rect.width / 2,
+              rect.top + rect.height / 2,
+            );
+            return hit !== null && (hit === button || button.contains(hit));
+          });
         },
         { timeout: 8000 },
       )
       .toBe(true);
+    await undoButton.click({ force: true });
 
     await expect(page.getByTestId(`booking-block-${bookingId}`)).toHaveCount(0);
     await expect(page.getByTestId(`queue-item-${bookingId}`)).toBeVisible({ timeout: 15_000 });
