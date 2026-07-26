@@ -148,6 +148,27 @@ export function VoiceSettingsForm({ slug, initial }: Props) {
         </select>
       </div>
 
+      {/* Live human handoff */}
+      <div className="space-y-1.5">
+        <label className="text-sm font-semibold" htmlFor="transfer-phone">
+          Human transfer phone
+        </label>
+        <input
+          id="transfer-phone"
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
+          value={form.voice_ai_transfer_phone}
+          onChange={(e) => handleChange("voice_ai_transfer_phone", e.target.value)}
+          placeholder="+1 604 555 0123"
+          className="w-full rounded-xl border border-[var(--color-border)] bg-transparent px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+        />
+        <p className="text-sm text-[var(--color-text-muted)]">
+          Optional. The receptionist transfers here when a caller asks for a person
+          or needs help outside its tools. Use a different number from the AI line.
+        </p>
+      </div>
+
       {saved && (
         <p className="rounded-xl bg-green-50 px-4 py-3 text-sm font-semibold text-green-700">
           ✓ Settings saved

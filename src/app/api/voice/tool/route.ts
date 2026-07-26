@@ -21,6 +21,10 @@ type ToolCallBody = {
   // Carrier-verified caller-ID (E.164). Set ONLY by the trusted phone bridge
   // (Twilio `From`); absent on web. Never accept it from the model/browser.
   callerVerifiedPhone?: string;
+  // Trusted live-call transport fields. The model never sees or supplies these.
+  phoneCallSid?: string;
+  calledVerifiedPhone?: string;
+  language?: string;
   // The caller's most recent transcribed utterance. Set ONLY by the trusted
   // phone bridge (from OpenAI's transcription events); used to verify the booking
   // time. Never accept it from the model/browser — a model could otherwise feed
@@ -49,6 +53,9 @@ export async function POST(req: NextRequest) {
   const bridgeSecret = process.env.VOICE_BRIDGE_SECRET?.trim();
   const fromBridge = Boolean(bridgeSecret) && req.headers.get("x-voice-bridge-secret") === bridgeSecret;
   const callerVerifiedPhone = fromBridge ? (body.callerVerifiedPhone ?? null) : null;
+  const trustedPhoneCallSid = fromBridge ? (body.phoneCallSid ?? null) : null;
+  const trustedCalledPhone = fromBridge ? (body.calledVerifiedPhone ?? null) : null;
+  const trustedLanguage = fromBridge ? (body.language ?? null) : null;
   // Trusted only from the bridge — same rule as the caller-ID above.
   const trustedUserUtterance = fromBridge ? (body.lastUserUtterance ?? null) : null;
 
@@ -102,7 +109,13 @@ export async function POST(req: NextRequest) {
       new URL(req.url).origin,
       // Only the phone bridge can set these (shared-secret check above); every
       // other surface leaves them null.
-      { callerVerifiedPhone, trustedUserUtterance },
+      {
+        callerVerifiedPhone,
+        trustedUserUtterance,
+        trustedPhoneCallSid,
+        trustedCalledPhone,
+        trustedLanguage,
+      },
     );
     const execMs = Date.now() - tExec;
 
