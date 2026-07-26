@@ -124,3 +124,68 @@ test("keeps classic as default and remembers the opt-in preview", async ({
   await page.reload();
   await expect(center).toHaveAttribute("data-receptionist-interface", "classic");
 });
+
+test("keeps New interface calendar, search, and account navigation discoverable", async ({
+  page,
+}, testInfo) => {
+  if (testInfo.project.name === "chromium") {
+    await page.setViewportSize({ width: 1280, height: 853 });
+  }
+  await gotoReceptionistCenter(page, fx.slug);
+  await page
+    .locator('[data-testid="receptionist-interface-switcher"]:visible')
+    .click();
+  await expect(page.getByTestId("receptionist-center-loaded")).toHaveAttribute(
+    "data-receptionist-interface",
+    "preview",
+  );
+
+  if ((page.viewportSize()?.width ?? 0) >= 768) {
+    const calendarTrigger = page.getByTestId("preview-calendar-trigger");
+    await expect(calendarTrigger).toBeVisible();
+    await calendarTrigger.click();
+    await expect(page.getByTestId("preview-calendar-menu")).toBeVisible();
+    await page.getByTestId("preview-view-mode-week").click();
+    await expect(page.getByTestId("week-view")).toBeVisible();
+
+    await calendarTrigger.click();
+    await page.getByTestId("preview-view-mode-month").click();
+    await expect(page.getByTestId("month-view")).toBeVisible();
+
+    await calendarTrigger.click();
+    await page.getByTestId("preview-view-mode-day").click();
+    await expect(page.getByTestId("preview-apple-timeline")).toBeVisible();
+
+    const initialUrl = page.url();
+    await page.getByTestId("preview-customer-search-trigger").click();
+    const searchInput = page.getByTestId("preview-customer-search-input");
+    await expect(searchInput).toBeVisible();
+    await searchInput.fill("ZZ");
+    await page.waitForTimeout(400);
+    expect(page.url()).toBe(initialUrl);
+
+    await page.getByTestId("preview-customer-search-trigger").click();
+    await page.getByTestId("preview-account-trigger").click();
+    const accountMenu = page.getByTestId("preview-account-menu");
+    await expect(accountMenu).toBeVisible();
+    await expect(
+      accountMenu.getByRole("link", { name: "Owner dashboard" }),
+    ).toHaveAttribute("href", `/dashboard/${fx.slug}`);
+    await expect(accountMenu.getByRole("link", { name: "Settings" })).toHaveAttribute(
+      "href",
+      `/dashboard/${fx.slug}/settings`,
+    );
+    await expect(accountMenu.getByRole("button", { name: "Sign out" })).toBeVisible();
+  } else {
+    const modeToggle = page.getByTestId("view-mode-toggle");
+    await expect(modeToggle).toBeVisible();
+    await modeToggle.getByRole("tab", { name: "Week" }).click();
+    await expect(page.getByTestId("week-view")).toBeVisible();
+    await modeToggle.getByRole("tab", { name: "Month" }).click();
+    await expect(page.getByTestId("month-view")).toBeVisible();
+    await modeToggle.getByRole("tab", { name: "Day" }).click();
+
+    await page.getByTestId("preview-mobile-calendar-trigger").click();
+    await expect(page.getByTestId("preview-mobile-calendar-date-input")).toBeVisible();
+  }
+});

@@ -6,26 +6,47 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  LayoutDashboard,
   Plus,
   Search,
+  Settings,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import {
+  type ChangeEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 
+import { LogoutButton } from "@/components/dashboard/LogoutButton";
+import {
+  searchClients,
+  type ClientSearchHit,
+} from "@/shared/dashboard/searchClientsAction";
+import { formatPhone } from "@/shared/lib/phoneFormat";
 import { cn } from "@/shared/lib/cn";
 
 type AppleDeskHeaderProps = {
+  slug: string;
   salonName: string;
   selectedDate: string;
   selectedOffset: -1 | 0 | 1;
+  viewMode: "day" | "week" | "month";
   connectionState: "connected" | "reconnecting" | "offline";
   language: "en" | "vi";
   clientHref: string;
   ownerHref: string;
+  settingsHref: string;
   canAddWalkin: boolean;
   canAddAppointment: boolean;
   canAddGroup: boolean;
   settings: ReactNode;
   onDateChange: (offset: -1 | 0 | 1) => void;
+  onSelectDate: (ymd: string) => void;
+  onViewModeChange: (mode: "day" | "week" | "month") => void;
+  onSelectClient: (client: ClientSearchHit) => void;
   onAddWalkin: () => void;
   onAddAppointment: () => void;
   onAddGroup: () => void;
@@ -42,18 +63,24 @@ function dateLabel(ymd: string, language: "en" | "vi"): string {
 }
 
 export function AppleDeskHeader({
+  slug,
   salonName,
   selectedDate,
   selectedOffset,
+  viewMode,
   connectionState,
   language,
   clientHref,
   ownerHref,
+  settingsHref,
   canAddWalkin,
   canAddAppointment,
   canAddGroup,
   settings,
   onDateChange,
+  onSelectDate,
+  onViewModeChange,
+  onSelectClient,
   onAddWalkin,
   onAddAppointment,
   onAddGroup,
@@ -61,6 +88,8 @@ export function AppleDeskHeader({
   const connected = connectionState === "connected";
   const salonInitial = salonName.trim().charAt(0).toUpperCase() || "N";
   const hasQuickAction = canAddWalkin || canAddAppointment || canAddGroup;
+  const dateMenuRef = useRef<HTMLDetailsElement>(null);
+  const accountMenuRef = useRef<HTMLDetailsElement>(null);
 
   return (
     <header
@@ -102,13 +131,81 @@ export function AppleDeskHeader({
         >
           <ChevronLeft className="h-4 w-4" aria-hidden />
         </button>
-        <div className="flex h-10 min-w-56 items-center justify-center gap-3 rounded-lg border border-[var(--rc-new-border)] bg-[var(--rc-new-surface)] px-4 text-sm font-semibold text-[var(--rc-new-text)] shadow-sm">
-          <CalendarDays
-            className="h-4 w-4 text-[var(--rc-new-muted)]"
-            aria-hidden
-          />
-          <span className="capitalize">{dateLabel(selectedDate, language)}</span>
-        </div>
+        <details ref={dateMenuRef} className="group relative">
+          <summary
+            data-testid="preview-calendar-trigger"
+            className="flex h-10 min-w-56 cursor-pointer list-none items-center justify-center gap-3 rounded-lg border border-[var(--rc-new-border)] bg-[var(--rc-new-surface)] px-4 text-sm font-semibold text-[var(--rc-new-text)] shadow-sm outline-none transition hover:bg-[var(--rc-new-surface-subtle)] focus-visible:ring-2 focus-visible:ring-nq-info [&::-webkit-details-marker]:hidden"
+          >
+            <CalendarDays
+              className="h-4 w-4 text-[var(--rc-new-muted)]"
+              aria-hidden
+            />
+            <span className="capitalize">
+              {dateLabel(selectedDate, language)}
+            </span>
+            <ChevronDown
+              className="h-3.5 w-3.5 text-[var(--rc-new-muted)] transition-transform group-open:rotate-180"
+              aria-hidden
+            />
+          </summary>
+          <div
+            data-testid="preview-calendar-menu"
+            className="absolute left-1/2 top-full z-50 mt-3 w-80 -translate-x-1/2 rounded-2xl border border-[var(--rc-new-border)] bg-[var(--rc-new-surface)] p-3 shadow-xl"
+          >
+            <p className="mb-2 text-xs font-semibold text-[var(--rc-new-muted)]">
+              {language === "vi" ? "Chọn ngày và chế độ xem" : "Choose date and view"}
+            </p>
+            <input
+              type="date"
+              value={selectedDate}
+              data-testid="preview-calendar-date-input"
+              aria-label={language === "vi" ? "Chọn ngày" : "Choose date"}
+              onChange={(event) => {
+                if (!event.target.value) return;
+                onSelectDate(event.target.value);
+                if (dateMenuRef.current) dateMenuRef.current.open = false;
+              }}
+              className="min-h-11 w-full rounded-xl border border-[var(--rc-new-border)] bg-[var(--rc-new-surface)] px-3 text-sm font-medium text-[var(--rc-new-text)] outline-none focus-visible:ring-2 focus-visible:ring-nq-info"
+            />
+            <div
+              role="tablist"
+              aria-label={language === "vi" ? "Chế độ lịch" : "Calendar view"}
+              className="mt-3 grid grid-cols-3 overflow-hidden rounded-xl border border-[var(--rc-new-border)]"
+            >
+              {(["day", "week", "month"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  role="tab"
+                  aria-selected={viewMode === mode}
+                  data-testid={`preview-view-mode-${mode}`}
+                  onClick={() => {
+                    onViewModeChange(mode);
+                    if (dateMenuRef.current) dateMenuRef.current.open = false;
+                  }}
+                  className={cn(
+                    "min-h-11 px-3 text-xs font-semibold transition",
+                    viewMode === mode
+                      ? "bg-nq-primary/15 text-nq-primary"
+                      : "text-[var(--rc-new-muted)] hover:bg-[var(--rc-new-surface-subtle)] hover:text-[var(--rc-new-text)]",
+                  )}
+                >
+                  {mode === "day"
+                    ? language === "vi"
+                      ? "Ngày"
+                      : "Day"
+                    : mode === "week"
+                      ? language === "vi"
+                        ? "Tuần"
+                        : "Week"
+                      : language === "vi"
+                        ? "Tháng"
+                        : "Month"}
+                </button>
+              ))}
+            </div>
+          </div>
+        </details>
         <button
           type="button"
           onClick={() => onDateChange((selectedOffset + 1) as 0 | 1)}
@@ -160,13 +257,12 @@ export function AppleDeskHeader({
                 ? "Ngoại tuyến"
                 : "Offline"}
         </span>
-        <Link
-          href={clientHref}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--rc-new-border)] text-[var(--rc-new-text)] transition hover:bg-[var(--rc-new-surface-subtle)]"
-          aria-label={language === "vi" ? "Tìm khách hàng" : "Search customers"}
-        >
-          <Search className="h-4 w-4" aria-hidden />
-        </Link>
+        <HeaderCustomerSearch
+          slug={slug}
+          language={language}
+          clientHref={clientHref}
+          onSelectClient={onSelectClient}
+        />
         {hasQuickAction ? (
           <details className="group relative">
             <summary className="inline-flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-full bg-[var(--rc-new-control)] text-white shadow-sm transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-info [&::-webkit-details-marker]:hidden">
@@ -206,14 +302,216 @@ export function AppleDeskHeader({
             </div>
           </details>
         ) : null}
-        <Link
-          href={ownerHref}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--rc-new-border)] bg-[var(--rc-new-surface-subtle)] text-sm font-semibold text-[var(--rc-new-text)]"
-          aria-label={language === "vi" ? "Trang quản lý" : "Owner dashboard"}
-        >
-          {salonInitial}
-        </Link>
+        <details ref={accountMenuRef} className="group relative">
+          <summary
+            data-testid="preview-account-trigger"
+            className="inline-flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-full border border-[var(--rc-new-border)] bg-[var(--rc-new-surface-subtle)] text-sm font-semibold text-[var(--rc-new-text)] outline-none transition hover:bg-[var(--rc-new-border)] focus-visible:ring-2 focus-visible:ring-nq-info [&::-webkit-details-marker]:hidden"
+            aria-label={language === "vi" ? "Mở menu tài khoản" : "Open account menu"}
+          >
+            {salonInitial}
+          </summary>
+          <div
+            data-testid="preview-account-menu"
+            className="absolute right-0 top-full z-50 mt-3 w-64 rounded-2xl border border-[var(--rc-new-border)] bg-[var(--rc-new-surface)] p-2 shadow-xl"
+          >
+            <div className="border-b border-[var(--rc-new-border)] px-3 py-2">
+              <p className="truncate text-sm font-semibold text-[var(--rc-new-text)]">
+                {salonName}
+              </p>
+              <p className="text-xs text-[var(--rc-new-muted)]">
+                {language === "vi" ? "Tài khoản salon" : "Salon account"}
+              </p>
+            </div>
+            <Link
+              href={ownerHref}
+              onClick={() => {
+                if (accountMenuRef.current) accountMenuRef.current.open = false;
+              }}
+              className="mt-1 flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium text-[var(--rc-new-text)] transition hover:bg-[var(--rc-new-surface-subtle)]"
+            >
+              <LayoutDashboard className="h-4 w-4" aria-hidden />
+              {language === "vi" ? "Trang quản lý" : "Owner dashboard"}
+            </Link>
+            <Link
+              href={settingsHref}
+              onClick={() => {
+                if (accountMenuRef.current) accountMenuRef.current.open = false;
+              }}
+              className="flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium text-[var(--rc-new-text)] transition hover:bg-[var(--rc-new-surface-subtle)]"
+            >
+              <Settings className="h-4 w-4" aria-hidden />
+              {language === "vi" ? "Cài đặt" : "Settings"}
+            </Link>
+            <div className="mt-1 border-t border-[var(--rc-new-border)] px-2 pt-2">
+              <LogoutButton language={language} />
+            </div>
+          </div>
+        </details>
       </div>
     </header>
+  );
+}
+
+function HeaderCustomerSearch({
+  slug,
+  language,
+  clientHref,
+  onSelectClient,
+}: {
+  slug: string;
+  language: "en" | "vi";
+  clientHref: string;
+  onSelectClient: (client: ClientSearchHit) => void;
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestRef = useRef(0);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<ClientSearchHit[]>([]);
+  const [error, setError] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (!open) return;
+    inputRef.current?.focus();
+    const onPointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    },
+    [],
+  );
+
+  const onQueryChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const next = event.target.value;
+    setQuery(next);
+    setError(false);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    const normalized = next.trim();
+    if (normalized.length < 2) {
+      requestRef.current += 1;
+      setHits([]);
+      return;
+    }
+    const request = ++requestRef.current;
+    timerRef.current = setTimeout(() => {
+      startTransition(async () => {
+        const result = await searchClients(slug, normalized);
+        if (request !== requestRef.current) return;
+        if (!result.ok) {
+          setHits([]);
+          setError(true);
+          return;
+        }
+        setHits(result.hits);
+      });
+    }, 250);
+  };
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        data-testid="preview-customer-search-trigger"
+        onClick={() => setOpen((current) => !current)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--rc-new-border)] text-[var(--rc-new-text)] outline-none transition hover:bg-[var(--rc-new-surface-subtle)] focus-visible:ring-2 focus-visible:ring-nq-info"
+        aria-label={language === "vi" ? "Tìm khách hàng" : "Search customers"}
+      >
+        <Search className="h-4 w-4" aria-hidden />
+      </button>
+      {open ? (
+        <div
+          role="dialog"
+          aria-label={language === "vi" ? "Tìm khách hàng" : "Search customers"}
+          data-testid="preview-customer-search"
+          className="absolute right-0 top-full z-50 mt-3 w-80 rounded-2xl border border-[var(--rc-new-border)] bg-[var(--rc-new-surface)] p-3 shadow-xl"
+        >
+          <label className="sr-only" htmlFor="preview-customer-search-input">
+            {language === "vi" ? "Tên hoặc số điện thoại" : "Name or phone"}
+          </label>
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--rc-new-muted)]"
+              aria-hidden
+            />
+            <input
+              ref={inputRef}
+              id="preview-customer-search-input"
+              data-testid="preview-customer-search-input"
+              value={query}
+              onChange={onQueryChange}
+              placeholder={
+                language === "vi" ? "Tên hoặc số điện thoại" : "Name or phone"
+              }
+              className="min-h-11 w-full rounded-xl border border-[var(--rc-new-border)] bg-[var(--rc-new-surface)] pl-9 pr-3 text-sm text-[var(--rc-new-text)] outline-none placeholder:text-[var(--rc-new-muted)] focus-visible:ring-2 focus-visible:ring-nq-info"
+            />
+          </div>
+          <div className="mt-2 max-h-72 overflow-y-auto">
+            {pending ? (
+              <p role="status" className="px-3 py-3 text-xs text-[var(--rc-new-muted)]">
+                {language === "vi" ? "Đang tìm…" : "Searching…"}
+              </p>
+            ) : error ? (
+              <p role="alert" className="px-3 py-3 text-xs text-nq-error">
+                {language === "vi"
+                  ? "Không tìm được lúc này. Vui lòng thử lại."
+                  : "Search is unavailable. Please try again."}
+              </p>
+            ) : query.trim().length < 2 ? (
+              <p className="px-3 py-3 text-xs text-[var(--rc-new-muted)]">
+                {language === "vi"
+                  ? "Nhập ít nhất 2 ký tự."
+                  : "Enter at least 2 characters."}
+              </p>
+            ) : hits.length === 0 ? (
+              <p className="px-3 py-3 text-xs text-[var(--rc-new-muted)]">
+                {language === "vi" ? "Không tìm thấy khách." : "No customers found."}
+              </p>
+            ) : (
+              hits.map((hit) => (
+                <button
+                  key={hit.phone}
+                  type="button"
+                  onClick={() => {
+                    onSelectClient(hit);
+                    setOpen(false);
+                  }}
+                  className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-[var(--rc-new-surface-subtle)]"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold text-[var(--rc-new-text)]">
+                      {hit.name ||
+                        (language === "vi" ? "Khách chưa có tên" : "Unnamed customer")}
+                    </span>
+                    <span className="block text-xs text-[var(--rc-new-muted)]">
+                      {formatPhone(hit.phone)}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-xs font-medium text-nq-primary">
+                    {language === "vi" ? "Đặt lịch" : "Book"}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+          <Link
+            href={clientHref}
+            className="mt-2 flex min-h-11 items-center justify-center rounded-xl border border-[var(--rc-new-border)] text-xs font-semibold text-[var(--rc-new-text)] transition hover:bg-[var(--rc-new-surface-subtle)]"
+          >
+            {language === "vi" ? "Xem tất cả khách hàng" : "View all customers"}
+          </Link>
+        </div>
+      ) : null}
+    </div>
   );
 }
