@@ -42,6 +42,28 @@ describe("buildSystemPrompt receptionist flow", () => {
     );
   });
 
+  it("explains why the web assistant asks for a phone and makes deferral explicit", () => {
+    const en = buildSystemPrompt(ctx, "en");
+    expect(en).toContain("recognize returning guests");
+    expect(en).toContain("keep bookings secure");
+    expect(en).toContain("you can skip it for now");
+
+    const vi = buildSystemPrompt(ctx, "vi");
+    expect(vi).toContain("nhận ra khách quen");
+    expect(vi).toContain("giữ lịch an toàn");
+    expect(vi).toContain("mình có thể bỏ qua lúc này");
+  });
+
+  it("keeps interruption, unclear-audio, language-switch, and human-escalation safeguards", () => {
+    const phone = buildSystemPrompt(ctx, "en", "+17788680738");
+
+    expect(phone).toContain("If the customer interrupts you mid-sentence, STOP immediately");
+    expect(phone).toContain("If you mishear or the line is unclear, ask lightly");
+    expect(phone).toContain("KEEP everything already gathered");
+    expect(phone).toContain("HUMAN ESCALATION — know your limits");
+    expect(phone).toContain("Never promise an exact callback time");
+  });
+
   it.each(["vi", "en"] as const)("keeps the call open after a %s booking summary", (language) => {
     const prompt = buildSystemPrompt(ctx, language);
 
