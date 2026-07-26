@@ -141,4 +141,16 @@ test.describe("Release feature route gating — ai_voice", () => {
       page.getByRole("heading", { name: "Page not found" }),
     ).toBeHidden();
   });
+
+  test("flag ON → Settings exposes a direct AI Voice link", async ({ page }) => {
+    await authAs(page, VOICE_SLUG_ON);
+    await page.goto(`/dashboard/${VOICE_SLUG_ON}/settings`);
+
+    const voiceSettingsLink = page.getByTestId("settings-voice-ai-link");
+    await expect(voiceSettingsLink).toBeVisible();
+    await expect(voiceSettingsLink).toHaveAttribute(
+      "href",
+      `/dashboard/${VOICE_SLUG_ON}/setup/voice`,
+    );
+  });
 });

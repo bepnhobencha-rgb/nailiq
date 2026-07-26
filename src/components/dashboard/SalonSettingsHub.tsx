@@ -316,6 +316,26 @@ export function SalonSettingsHub({
           </span>
         </Link>
 
+        {canManageSalonSettings && voiceAiEnabled ? (
+          <Link
+            data-testid="settings-voice-ai-link"
+            href={`/dashboard/${encodeURIComponent(slug)}/setup/voice`}
+            className="mt-2 flex min-h-[3.25rem] touch-manipulation items-center justify-between gap-4 rounded-2xl border border-nq-primary/35 bg-nq-primary/5 px-4 py-3 text-nq-primary ring-1 ring-inset ring-nq-primary/10 transition-colors hover:border-nq-primary/55 hover:bg-nq-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
+          >
+            <span className="min-w-0">
+              <span className="block text-base font-semibold">AI Voice</span>
+              <span className="mt-0.5 block text-xs text-nq-muted">
+                {vi
+                  ? "Giọng nói, upsell và số chuyển máy"
+                  : "Voice, upsells, and human transfer phone"}
+              </span>
+            </span>
+            <span className="shrink-0" aria-hidden>
+              →
+            </span>
+          </Link>
+        ) : null}
+
         {/* ── Jump bar — quick anchors to each category ───────── */}
         <SettingsJumpBar
           label={t.categories.jumpLabel}
