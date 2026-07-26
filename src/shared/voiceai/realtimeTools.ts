@@ -451,7 +451,8 @@ const PHONE_TOOL_DESCRIPTIONS: Record<string, string> = {
   lookup_customer: "Read the caller profile by phone; never reveal internal profile details.",
   leave_message_for_owner: "Record an unsupported request, complaint, or owner callback message.",
   wait_for_user: "No-op for silence, noise, TV, or side speech; say nothing after calling.",
-  end_call: "Hang up only after the caller is done and a farewell has been spoken.",
+  end_call:
+    "Request a graceful phone hangup only after the caller is done. Say nothing before calling it; the phone bridge speaks the approved farewell and hangs up after playback.",
 };
 
 function withoutSchemaDescriptions(value: unknown): unknown {

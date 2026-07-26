@@ -114,14 +114,15 @@ describe("compact phone Realtime config", () => {
     expect(prompt).not.toContain("Sales checkpoint — required once");
   });
 
-  it("pins the approved Vietnamese farewell instead of letting the model paraphrase it", () => {
+  it("delegates the approved Vietnamese farewell to the phone bridge", () => {
     const vietnamesePrompt = buildPhoneSystemPrompt(ctx, "vi", "+17780000000");
     const englishPrompt = buildPhoneSystemPrompt(ctx, "en", "+17780000000");
 
     expect(vietnamesePrompt).toContain(
-      'Vietnamese farewell must be exactly: "Dạ, cảm ơn anh/chị đã gọi. Chúc anh/chị một ngày an lành ạ."',
+      'The phone bridge will speak exactly: "Dạ, cảm ơn anh/chị đã gọi. Chúc anh/chị một ngày an lành ạ."',
     );
-    expect(vietnamesePrompt).toContain("Do not paraphrase it.");
+    expect(vietnamesePrompt).toContain("Do not say or paraphrase this farewell yourself.");
+    expect(vietnamesePrompt).toContain('Never narrate the transport action with phrases such as "I will end the call", "để em kết thúc", or "cho gọn".');
     expect(englishPrompt).not.toContain("một ngày an lành");
   });
 
@@ -161,7 +162,8 @@ describe("compact phone Realtime config", () => {
     expect(prompt).toContain('"không cần gì nữa"');
     expect(prompt).toContain('"thôi được rồi"');
     expect(prompt).toContain('a closing "cảm ơn"');
-    expect(prompt).toContain("speak the farewell first");
+    expect(prompt).toContain("call end_call silently");
+    expect(prompt).toContain("Do not speak any closing words before end_call");
   });
 
   it("keeps shared tool contracts, adds the phone-only transfer tool, and materially reduces static context", () => {
@@ -177,6 +179,10 @@ describe("compact phone Realtime config", () => {
       fullTools.map((tool) => tool.name),
     );
     expect(phoneTools.at(-1)?.name).toBe("transfer_to_human");
+    expect(
+      (phoneTools.find((tool) => tool.name === "end_call") as { description?: string })
+        ?.description,
+    ).toContain("the phone bridge speaks the approved farewell");
     expect(phoneTools.every((tool) =>
       typeof (tool as { description?: unknown }).description === "string"
     )).toBe(true);

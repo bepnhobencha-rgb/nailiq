@@ -28,6 +28,7 @@ import {
   sayThisResponseCreate,
   sayThisInstruction,
   farewellResponseCreate,
+  shouldQueuePinnedFarewellAfterEndCall,
   interruptToggleMessage,
   turnDetection,
   createResponseCoordinator,
@@ -99,7 +100,7 @@ describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () =>
     });
   });
 
-  it("builds a tool-free pinned Vietnamese farewell for silent end_call recovery", () => {
+  it("builds a tool-free pinned Vietnamese farewell for every phone end_call", () => {
     const msg = farewellResponseCreate("vi") as {
       type: string;
       response: {
@@ -115,6 +116,23 @@ describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () =>
       "Dạ, cảm ơn anh/chị đã gọi. Chúc anh/chị một ngày an lành ạ.",
     );
     expect(msg.response.instructions).toContain("no tool call");
+  });
+
+  it("requires the pinned farewell even when the model spoke before end_call", () => {
+    expect(shouldQueuePinnedFarewellAfterEndCall({
+      endCallRequested: true,
+      hangupPending: false,
+      endedActive: true,
+      forcedFarewellAttempts: 0,
+      modelAudioDeltaCount: 7,
+    })).toBe(true);
+    expect(shouldQueuePinnedFarewellAfterEndCall({
+      endCallRequested: true,
+      hangupPending: true,
+      endedActive: true,
+      forcedFarewellAttempts: 1,
+      modelAudioDeltaCount: 0,
+    })).toBe(false);
   });
 
   it("Twilio media → OpenAI append, and OpenAI delta → Twilio media (pass-through base64)", () => {
