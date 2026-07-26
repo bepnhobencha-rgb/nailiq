@@ -32,7 +32,10 @@ test.afterAll(async ({}, testInfo) => {
 
 test("keeps classic as default and remembers the opt-in preview", async ({
   page,
-}) => {
+}, testInfo) => {
+  if (testInfo.project.name === "chromium") {
+    await page.setViewportSize({ width: 1280, height: 853 });
+  }
   await gotoReceptionistCenter(page, fx.slug);
 
   const center = page.getByTestId("receptionist-center-loaded");
@@ -58,6 +61,10 @@ test("keeps classic as default and remembers the opt-in preview", async ({
     await expect(page.getByTestId("preview-apple-shell")).toBeVisible();
     await expect(page.getByTestId("preview-apple-timeline")).toBeVisible();
     await expect(page.getByTestId("preview-walkin-queue")).toBeVisible();
+    await testInfo.attach("new-receptionist-reference", {
+      body: await page.screenshot(),
+      contentType: "image/png",
+    });
   }
 
   await page.reload();
