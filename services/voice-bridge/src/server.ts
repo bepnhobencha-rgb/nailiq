@@ -73,8 +73,10 @@ httpServer.listen(PORT, () => console.log(`[voice-bridge] listening on :${PORT}`
 wss.on("connection", (twilioWs) => {
   console.log("[voice-bridge] twilio WS connected");
   let streamSid = "";
+  let callSid = "";
   let slug = "";
   let from = "";
+  let to = "";
   let sessionId = "";
   // The caller's most recent transcribed turn. Sent with tool calls so the
   // server can verify the booking time against what the caller actually said —
@@ -210,9 +212,10 @@ wss.on("connection", (twilioWs) => {
   let coalescedRateLimitedTurns = 0;
   let inFlightBusinessTools = 0;
   let toolResultBarrierActive = false;
+  let transportHandoffStarted = false;
 
   const resumeCoordinatorIfUnblocked = () => {
-    if (!tokenRateLimitRetryTimer && inFlightBusinessTools === 0) {
+    if (!transportHandoffStarted && !tokenRateLimitRetryTimer && inFlightBusinessTools === 0) {
       coordinator.resume();
     }
   };
@@ -338,7 +341,17 @@ wss.on("connection", (twilioWs) => {
             signal: controller.signal,
             // sessionId threads the tool call into tool_log; lastUserUtterance lets
             // the server check the booking time against what the caller just said.
-            body: JSON.stringify({ toolName: name, toolArgs: args, salonSlug: slug, callerVerifiedPhone: from, sessionId: sessionId || null, lastUserUtterance }),
+            body: JSON.stringify({
+              toolName: name,
+              toolArgs: args,
+              salonSlug: slug,
+              callerVerifiedPhone: from,
+              calledVerifiedPhone: to,
+              phoneCallSid: callSid,
+              language: currentLang,
+              sessionId: sessionId || null,
+              lastUserUtterance,
+            }),
           });
           const parsed = await r.json().catch(() => ({ error: "tool_parse_failed" }));
           // serverTiming is the tool route's own breakdown (gate / exec / log) —
@@ -377,6 +390,19 @@ wss.on("connection", (twilioWs) => {
       openaiWs?.send(JSON.stringify(functionCallOutput(callId, result)));
       toolOutputSentAt = Date.now();
       logT("tool_output_sent", { tool: name });
+
+      if (
+        name === "transfer_to_human" &&
+        (result as { transportAction?: unknown } | null)?.transportAction === "transfer_call"
+      ) {
+        // Twilio is redirecting the live parent call away from this Media Stream
+        // to <Dial>. Do not let a queued model response talk over ringback; the
+        // socket will close naturally as soon as Twilio applies the new TwiML.
+        transportHandoffStarted = true;
+        coordinator.pause();
+        logT("human_transfer_started");
+        return;
+      }
 
       const sayThis = extractSayThis(result);
       if (sayThis) {
@@ -743,10 +769,12 @@ wss.on("connection", (twilioWs) => {
 
     if (msg.event === "start") {
       streamSid = msg.start.streamSid;
+      callSid = msg.start.callSid ?? "";
       slug = msg.start.customParameters?.slug ?? "";
       from = msg.start.customParameters?.from ?? "";
+      to = msg.start.customParameters?.to ?? "";
       console.log(`[voice-bridge] START slug=${slug || "(none)"} caller=${callerPresenceLabel(from)} openaiKey=${OPENAI_API_KEY ? "set" : "MISSING"} bridgeSecret=${BRIDGE_SECRET ? "set" : "MISSING"}`);
-      if (!slug || !OPENAI_API_KEY || !BRIDGE_SECRET) { console.warn("[voice-bridge] closing: missing slug/key/secret"); return closeAll("missing_config"); }
+      if (!slug || !callSid || !OPENAI_API_KEY || !BRIDGE_SECRET) { console.warn("[voice-bridge] closing: missing slug/call/key/secret"); return closeAll("missing_config"); }
       void startOpenAi();
     } else if (msg.event === "media") {
       // Hold caller audio until the salon brain is configured — audio sent before

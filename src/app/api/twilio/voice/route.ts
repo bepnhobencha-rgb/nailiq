@@ -67,8 +67,9 @@ async function handleVoice(req: NextRequest, sigParams: Record<string, string>) 
     }
   }
 
-  // `From` is in the body on POST, in the query on GET.
+  // `From` / `To` are in the body on POST, in the query on GET.
   const from = sigParams.From ?? req.nextUrl.searchParams.get("From") ?? "";
+  const to = sigParams.To ?? req.nextUrl.searchParams.get("To") ?? "";
   const bridgeWss = process.env.VOICE_BRIDGE_WSS_URL?.trim(); // e.g. wss://nailiq-voice.fly.dev/media
 
   // Fallbacks that keep the caller served even when AI is off / misconfigured.
@@ -95,6 +96,7 @@ async function handleVoice(req: NextRequest, sigParams: Record<string, string>) 
         `<Stream url="${xmlEscape(bridgeWss)}">` +
           `<Parameter name="slug" value="${xmlEscape(slug)}"/>` +
           `<Parameter name="from" value="${xmlEscape(from)}"/>` +
+          `<Parameter name="to" value="${xmlEscape(to)}"/>` +
         `</Stream>` +
       `</Connect>` +
     `</Response>`,

@@ -405,6 +405,38 @@ export const REALTIME_TOOLS = [
 
 export type RealtimeTool = (typeof REALTIME_TOOLS)[number];
 
+const PHONE_HUMAN_TRANSFER_TOOL = {
+  type: "function" as const,
+  name: "transfer_to_human",
+  description:
+    "Transfer this live PHONE call to the salon's configured human destination. " +
+    "Use when the caller explicitly asks for a person, manager, or staff member. " +
+    "For a request outside your tools, briefly explain that a human is needed and ask permission before transferring. " +
+    "First collect a concise reason and, when available, the caller's name. The carrier-verified caller number is already known. " +
+    "Never ask for or choose the destination number; the server uses the owner's protected setting. " +
+    "Do not use for emergencies: tell the caller to contact local emergency services. " +
+    "If the tool says transfer is unavailable, apologise and use leave_message_for_owner instead.",
+  parameters: {
+    type: "object" as const,
+    properties: {
+      reason: {
+        type: "string",
+        description: "Brief, faithful reason for the handoff in the caller's language.",
+      },
+      customer_name: {
+        type: "string",
+        description: "Caller's name if they provided it.",
+      },
+      urgency: {
+        type: "string",
+        enum: ["normal", "urgent"],
+        description: "'urgent' only for a serious complaint or time-sensitive salon matter.",
+      },
+    },
+    required: ["reason"],
+  },
+} as const;
+
 const PHONE_TOOL_DESCRIPTIONS: Record<string, string> = {
   request_otp: "Send a 6-digit OTP to verify a different booking phone before a write.",
   verify_otp: "Verify the OTP and return otp_session_id for the next write.",
@@ -437,8 +469,11 @@ function withoutSchemaDescriptions(value: unknown): unknown {
  * prompt. Remove duplicated, deeply nested prose from JSON schemas while
  * retaining every tool name, field, enum, type, and required constraint.
  */
-export const PHONE_REALTIME_TOOLS = REALTIME_TOOLS.map((tool) => ({
-  ...tool,
-  description: PHONE_TOOL_DESCRIPTIONS[tool.name],
-  parameters: withoutSchemaDescriptions(tool.parameters),
-}));
+export const PHONE_REALTIME_TOOLS = [
+  ...REALTIME_TOOLS.map((tool) => ({
+    ...tool,
+    description: PHONE_TOOL_DESCRIPTIONS[tool.name],
+    parameters: withoutSchemaDescriptions(tool.parameters),
+  })),
+  PHONE_HUMAN_TRANSFER_TOOL,
+];

@@ -49,6 +49,7 @@ jobs:
       DEMO_OTP: "true"
       NAILIQ_TEST_BYPASS_SLUG_PIN: "1"
       DISABLE_OUTBOUND_SMS: "1"
+      DISABLE_OUTBOUND_CALLS: "1"
       AI_PREFILL_E2E_MOCK: "services"
       TWILIO_ACCOUNT_SID: ""
       TWILIO_AUTH_TOKEN: ""
@@ -233,6 +234,7 @@ jobs:
       # so this flag is what stops outbound SMS; the 555-exchange recipient guard
       # is the secondary net. NEVER set on Vercel production.
       DISABLE_OUTBOUND_SMS: "1"
+      DISABLE_OUTBOUND_CALLS: "1"
       # Short-circuits the Anthropic Vision call in aiPrefillServicesAction
       # so setup-ai-prefill E2E specs work without an API key.
       AI_PREFILL_E2E_MOCK: "services"
@@ -507,6 +509,7 @@ jobs:
       NAILIQ_TEST_BYPASS_SLUG_PIN: "1"
       # HARD kill-switch — visual specs must never bill real Twilio either.
       DISABLE_OUTBOUND_SMS: "1"
+      DISABLE_OUTBOUND_CALLS: "1"
       TWILIO_ACCOUNT_SID: ""
       TWILIO_AUTH_TOKEN: ""
       RESEND_API_KEY: ""

@@ -190,6 +190,28 @@ describe("toolExecutor — identity gate is enforced inside the executor", () =>
   });
 });
 
+describe("toolExecutor — live transfer is phone-bridge only", () => {
+  it("a browser/direct caller cannot supply a destination or redirect a call", async () => {
+    const body = await call(
+      "transfer_to_human",
+      {
+        reason: "Caller wants a manager",
+        // A model or attacker-supplied destination must be ignored entirely.
+        destination_phone: "+16045559999",
+      },
+      {
+        salons: {
+          ...salonRow,
+          voice_ai_transfer_phone: "+16045550123",
+        },
+      },
+    );
+
+    expect(body.success).toBe(false);
+    expect(body.error).toBe("phone_transfer_unavailable");
+  });
+});
+
 describe("toolExecutor — a whole party is never cancelled without proof", () => {
   const partyFixtures = {
     salons: salonRow,

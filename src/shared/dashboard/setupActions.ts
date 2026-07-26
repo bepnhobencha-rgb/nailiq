@@ -1,7 +1,7 @@
 "use server";
 
 import * as Sentry from "@sentry/nextjs";
-import { isOwner, isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { cookies } from "next/headers";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -48,6 +48,7 @@ import {
   isDemoSlugPinBypassed,
 } from "@/shared/lib/demoOtpMode";
 import type { SalonMemberRole } from "@/shared/lib/salonMemberRole";
+import { normaliseToE164 } from "@/shared/lib/twilioSms";
 
 export type StaffJobRole = "owner" | "senior" | "nail_tech";
 
@@ -1453,6 +1454,7 @@ export type VoiceAiSettingsInput = {
   voice_ai_persona_voice:    string;
   voice_ai_reasoning_effort: string;
   voice_ai_upsell_enabled:   boolean;
+  voice_ai_transfer_phone:   string;
 };
 
 export async function updateVoiceAiSettings(
@@ -1461,7 +1463,7 @@ export async function updateVoiceAiSettings(
 ): Promise<{ ok: true } | { error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { error: "unauthorized" };
-  if (!isOwner(ctx.role)) return { error: "owner_only" };
+  if (!isOwnerOrAdmin(ctx.role)) return { error: "owner_or_admin_only" };
 
   const VALID_VOICES = [
     "alloy", "ash", "ballad", "cedar", "coral",
@@ -1477,6 +1479,9 @@ export async function updateVoiceAiSettings(
     ? input.voice_ai_reasoning_effort
     : "low";
   const personaName = input.voice_ai_persona_name.trim().slice(0, 40) || "Lily";
+  const rawTransferPhone = input.voice_ai_transfer_phone.trim();
+  const transferPhone = rawTransferPhone ? normaliseToE164(rawTransferPhone) : null;
+  if (rawTransferPhone && !transferPhone) return { error: "invalid_transfer_phone" };
 
   const { error } = await ctx.supabase
     .from("salons")
@@ -1486,6 +1491,7 @@ export async function updateVoiceAiSettings(
       voice_ai_persona_voice:    voice,
       voice_ai_reasoning_effort: effort,
       voice_ai_upsell_enabled:   input.voice_ai_upsell_enabled,
+      voice_ai_transfer_phone:   transferPhone,
     } as never)
     .eq("id", ctx.salon.id);
 

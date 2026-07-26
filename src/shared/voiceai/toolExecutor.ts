@@ -33,6 +33,11 @@ import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { createPartyLink } from "@/shared/booking/partyLinkActions";
 import { requirePhoneVerified } from "@/shared/voiceai/otpGate";
 import type { GroupSyncMode } from "@/shared/booking/loadGroupSmartSchedule";
+import { transferActiveTwilioCall } from "@/shared/lib/twilioCallTransfer";
+import {
+  SUPPORTED_LANGUAGES,
+  type SupportedLanguage,
+} from "@/shared/voiceai/config";
 
 /**
  * Shared receptionist tool executor.
@@ -61,10 +66,22 @@ export async function executeVoiceTool(
   toolArgs: Record<string, unknown>,
   sessionId: string | null,
   baseUrl: string,
-  opts?: { callerVerifiedPhone?: string | null; trustedUserUtterance?: string | null },
+  opts?: {
+    callerVerifiedPhone?: string | null;
+    trustedUserUtterance?: string | null;
+    trustedPhoneCallSid?: string | null;
+    trustedCalledPhone?: string | null;
+    trustedLanguage?: string | null;
+  },
 ): Promise<NextResponse> {
   const callerVerifiedPhone = opts?.callerVerifiedPhone ?? null;
   const trustedUserUtterance = opts?.trustedUserUtterance ?? null;
+  const trustedPhoneCallSid = opts?.trustedPhoneCallSid ?? null;
+  const trustedCalledPhone = opts?.trustedCalledPhone ?? null;
+  const requestedLanguage = (opts?.trustedLanguage ?? "") as SupportedLanguage;
+  const trustedLanguage: SupportedLanguage = SUPPORTED_LANGUAGES.includes(requestedLanguage)
+    ? requestedLanguage
+    : "en";
 
   if (toolName === "get_available_slots") {
     return handleGetAvailableSlots(supabase, salonSlug, toolArgs);
@@ -99,6 +116,19 @@ export async function executeVoiceTool(
   if (toolName === "lookup_customer") {
     return handleLookupCustomer(supabase, salonSlug, toolArgs, sessionId);
   }
+  if (toolName === "transfer_to_human") {
+    return handleTransferToHuman(
+      supabase,
+      salonSlug,
+      toolArgs,
+      sessionId,
+      callerVerifiedPhone,
+      trustedPhoneCallSid,
+      trustedCalledPhone,
+      trustedLanguage,
+      baseUrl,
+    );
+  }
   if (toolName === "leave_message_for_owner") {
     return handleLeaveMessageForOwner(supabase, salonSlug, toolArgs, sessionId);
   }
@@ -110,6 +140,143 @@ export async function executeVoiceTool(
     return NextResponse.json({ ok: true });
   }
   return NextResponse.json({ error: "unknown_tool", toolName }, { status: 400 });
+}
+
+const TRANSFER_REASON_MAX_CHARS = 500;
+const TRANSFER_MAX_PER_SALON_PER_HOUR = 10;
+
+async function handleTransferToHuman(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  salonSlug: string,
+  args: Record<string, unknown>,
+  sessionId: string | null,
+  callerVerifiedPhone: string | null,
+  trustedPhoneCallSid: string | null,
+  trustedCalledPhone: string | null,
+  language: SupportedLanguage,
+  baseUrl: string,
+): Promise<NextResponse> {
+  // A browser or direct API caller never receives the trusted Twilio Call SID,
+  // so it cannot make the platform dial an arbitrary active call.
+  if (!trustedPhoneCallSid) {
+    return NextResponse.json({
+      success: false,
+      error: "phone_transfer_unavailable",
+      hint: "Apologise and use leave_message_for_owner instead.",
+    });
+  }
+
+  const reason = (args.reason as string | undefined)?.trim().slice(0, TRANSFER_REASON_MAX_CHARS);
+  const customerName = (args.customer_name as string | undefined)?.trim().slice(0, 120) ?? "";
+  const urgency = args.urgency === "urgent" ? "urgent" : "normal";
+  if (!reason) {
+    return NextResponse.json({ success: false, error: "missing_reason" }, { status: 400 });
+  }
+
+  const { data: salon } = await supabase
+    .from("salons")
+    .select("id, name, voice_ai_transfer_phone")
+    .eq("slug", salonSlug)
+    .maybeSingle();
+  const row = salon as {
+    id?: string;
+    name?: string | null;
+    voice_ai_transfer_phone?: string | null;
+  } | null;
+  if (!row?.id) {
+    return NextResponse.json({ success: false, error: "salon_not_found" }, { status: 404 });
+  }
+  const destinationPhone = row.voice_ai_transfer_phone?.trim();
+  if (!destinationPhone) {
+    return NextResponse.json({
+      success: false,
+      error: "transfer_phone_not_configured",
+      hint: "Apologise and use leave_message_for_owner instead.",
+    });
+  }
+
+  // Live transfers incur outbound voice charges. Count durable attempts rather
+  // than process memory so a caller cannot reset the limit with a new session.
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const { count: recentCount } = await supabase
+    .from("ai_actions_log")
+    .select("id", { count: "exact", head: true })
+    .eq("salon_id", row.id)
+    .eq("action_type", "voice_human_transfer")
+    .gte("created_at", oneHourAgo);
+  if ((recentCount ?? 0) >= TRANSFER_MAX_PER_SALON_PER_HOUR) {
+    return NextResponse.json({
+      success: false,
+      error: "transfer_rate_limited",
+      hint: "Apologise and use leave_message_for_owner instead. Do not retry the transfer.",
+    });
+  }
+
+  // Persist the handoff context BEFORE redirecting the live call. Once Twilio
+  // leaves the Media Stream, the AI session closes; this row is the reliable
+  // fallback if the human destination is busy or does not answer.
+  const { error: logError } = await supabase.from("ai_actions_log").insert({
+    salon_id: row.id,
+    agent: "receptionist",
+    action_type: "voice_human_transfer",
+    payload: {
+      customer_name: customerName || null,
+      customer_phone: callerVerifiedPhone,
+      reason,
+      urgency,
+      voice_session_id: sessionId,
+    },
+  });
+  if (logError) {
+    console.error("[transfer_to_human] could not persist handoff", logError);
+    return NextResponse.json({
+      success: false,
+      error: "transfer_log_failed",
+      hint: "Apologise and use leave_message_for_owner instead.",
+    }, { status: 503 });
+  }
+
+  try {
+    const { sendOwnerAlert } = await import("@/shared/ai/sendOwnerAlert");
+    const flag = urgency === "urgent" ? "🔴 KHẨN — " : "";
+    await sendOwnerAlert(String(row.id), {
+      subject: `${flag}Khách yêu cầu chuyển cuộc gọi${customerName ? ` — ${customerName}` : ""}`,
+      bodyText:
+        `Khách: ${customerName || "(không rõ tên)"}\n` +
+        `SĐT: ${callerVerifiedPhone || "(không hiển thị)"}\n` +
+        `Lý do: ${reason}\n\n` +
+        `AI Tiếp tân đang chuyển cuộc gọi đến số người trực.`,
+    });
+  } catch (error) {
+    // The durable dashboard row above remains the source of truth.
+    console.error("[transfer_to_human] owner alert failed", error);
+  }
+
+  const transfer = await transferActiveTwilioCall({
+    supabase,
+    callSid: trustedPhoneCallSid,
+    destinationPhone,
+    calledPhone: trustedCalledPhone,
+    language,
+    statusCallbackUrl:
+      `${baseUrl.replace(/\/$/, "")}/api/twilio/voice/transfer-result` +
+      `?language=${encodeURIComponent(language)}`,
+  });
+  if (!transfer.ok) {
+    return NextResponse.json({
+      success: false,
+      error: transfer.error,
+      message_saved: true,
+      hint:
+        "Apologise that the live transfer is unavailable. Tell the caller the salon has their message and will follow up. Do not retry.",
+    });
+  }
+
+  return NextResponse.json({
+    success: true,
+    transportAction: "transfer_call",
+    message_saved: true,
+  });
 }
 
 // request_otp — send a 6-digit SMS code to the customer's phone. Reuses the

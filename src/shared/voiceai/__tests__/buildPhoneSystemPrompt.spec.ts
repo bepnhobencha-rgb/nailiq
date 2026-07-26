@@ -124,7 +124,7 @@ describe("compact phone Realtime config", () => {
     expect(englishPrompt).not.toContain("một ngày an lành");
   });
 
-  it("keeps identical tool contracts while materially reducing static context", () => {
+  it("keeps shared tool contracts, adds the phone-only transfer tool, and materially reduces static context", () => {
     const fullTools = REALTIME_TOOLS as unknown as Array<{
       name: string;
       parameters: unknown;
@@ -133,16 +133,35 @@ describe("compact phone Realtime config", () => {
       name: string;
       parameters: unknown;
     }>;
-    expect(phoneTools.map((tool) => tool.name)).toEqual(fullTools.map((tool) => tool.name));
+    expect(phoneTools.slice(0, -1).map((tool) => tool.name)).toEqual(
+      fullTools.map((tool) => tool.name),
+    );
+    expect(phoneTools.at(-1)?.name).toBe("transfer_to_human");
     expect(phoneTools.every((tool) =>
       typeof (tool as { description?: unknown }).description === "string"
     )).toBe(true);
-    expect(phoneTools.map((tool) => tool.parameters)).toEqual(
+    expect(phoneTools.slice(0, -1).map((tool) => tool.parameters)).toEqual(
       fullTools.map((tool) => withoutDescriptions(tool.parameters)),
     );
 
     const phonePrompt = buildPhoneSystemPrompt(ctx, "en", "+17780000000");
     const compactChars = phonePrompt.length + JSON.stringify(phoneTools).length;
     expect(compactChars).toBeLessThan(18_000);
+  });
+
+  it("routes explicit human requests and unsupported phone tasks through a protected handoff", () => {
+    const prompt = buildPhoneSystemPrompt(ctx, "en", "+17780000000");
+    const transfer = (PHONE_REALTIME_TOOLS as Array<{
+      name: string;
+      description?: string;
+      parameters?: { required?: string[] };
+    }>).find((tool) => tool.name === "transfer_to_human");
+
+    expect(prompt).toContain("caller explicitly asks for a person, manager, or staff member");
+    expect(prompt).toContain("something unrelated such as arranging a ride");
+    expect(prompt).toContain("ask permission to transfer");
+    expect(prompt).toContain("Never transfer an emergency");
+    expect(transfer?.description).toContain("server uses the owner's protected setting");
+    expect(transfer?.parameters?.required).toEqual(["reason"]);
   });
 });
