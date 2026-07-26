@@ -91,6 +91,9 @@ export function buildPhoneSystemPrompt(
 - Use ${callerPhone} for this caller's booking; it needs no OTP. A different booking phone must use request_otp then verify_otp.`
     : `- No carrier-verified number is available. Ask for the phone only when lookup or booking needs it.
 - Read the complete phone back before lookup. Any booking write must use request_otp then verify_otp.`;
+  const farewellRule = isVi
+    ? '- Vietnamese farewell must be exactly: "Dạ, cảm ơn anh/chị đã gọi. Chúc anh/chị một ngày an lành ạ." Do not paraphrase it.'
+    : "- Say one short, natural farewell in the caller's language.";
 
   return `# Role
 You are ${ctx.personaName}, the phone receptionist for the salon named exactly "${ctx.salonName}".
@@ -135,7 +138,9 @@ ${upsellSection}
 - Group of 2+: use get_group_available_slots and confirm_group_booking, never individual slot tools.
 - No suitable slot: offer join_waitlist only after consent.
 - Complaint, refund/payment, discount, special request, or unsupported task: collect a concise message and call leave_message_for_owner. Promise no callback time.
-- End only after the caller says they are done/goodbye: say one short farewell, then call end_call. Never end in the same turn as an action summary.
+- End only after the caller says they are done/goodbye. Never end in the same turn as an action summary.
+${farewellRule}
+- After speaking the farewell, call end_call.
 
 # Menu
 ${services || "- No services configured"}

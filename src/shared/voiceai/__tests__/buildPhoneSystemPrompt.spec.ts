@@ -113,6 +113,17 @@ describe("compact phone Realtime config", () => {
     expect(prompt).not.toContain("Sales checkpoint — required once");
   });
 
+  it("pins the approved Vietnamese farewell instead of letting the model paraphrase it", () => {
+    const vietnamesePrompt = buildPhoneSystemPrompt(ctx, "vi", "+17780000000");
+    const englishPrompt = buildPhoneSystemPrompt(ctx, "en", "+17780000000");
+
+    expect(vietnamesePrompt).toContain(
+      'Vietnamese farewell must be exactly: "Dạ, cảm ơn anh/chị đã gọi. Chúc anh/chị một ngày an lành ạ."',
+    );
+    expect(vietnamesePrompt).toContain("Do not paraphrase it.");
+    expect(englishPrompt).not.toContain("một ngày an lành");
+  });
+
   it("keeps identical tool contracts while materially reducing static context", () => {
     const fullTools = REALTIME_TOOLS as unknown as Array<{
       name: string;
