@@ -10,9 +10,9 @@ import {
 } from "@/shared/lib/demoDashboardCookie";
 import { DEMO_SALON_SLUG, isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 import { slugifySalonName } from "@/shared/lib/slugifySalonName";
-import { DEFAULT_VERTICAL, resolveVertical } from "@/shared/verticals/registry";
 import { getOrCreateDemoSalonOwnerUserId } from "@/shared/register/demoSalonOwner";
 import { phoneDigitsFromAuthUser } from "@/shared/register/authUserPhone";
+import { buildRegistrationDefaultServices } from "@/shared/register/registrationDefaults";
 import { createTrialWindow } from "@/shared/lib/trial";
 import {
   isRegisterPhoneDigitsValid,
@@ -514,9 +514,7 @@ export async function completeSalonRegistration(
   // Seed catalogue comes from the vertical registry. New registrations default
   // to the nail-salon vertical; other verticals are assigned in Admin Settings
   // after onboarding (then services can be re-seeded / edited there).
-  const DEFAULT_SERVICES = resolveVertical(DEFAULT_VERTICAL).seedServices.map(
-    (svc) => ({ ...svc, salon_id: salonId }),
-  );
+  const DEFAULT_SERVICES = buildRegistrationDefaultServices(salonId);
 
   const { error: svcErr } = await admin.from("services").insert(DEFAULT_SERVICES as never);
 

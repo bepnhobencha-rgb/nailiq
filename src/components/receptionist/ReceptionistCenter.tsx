@@ -3277,7 +3277,9 @@ function ReceptionistCenterInner({
               {isViewingToday &&
               viewMode === "day" &&
               modules.queue_panel &&
-              (queueWaitingCount > 0 || queuePanelOpen) ? (
+              // The New interface keeps the queue discoverable even when it
+              // is empty. Classic retains its existing compact behaviour.
+              (previewInterface || queueWaitingCount > 0 || queuePanelOpen) ? (
                 <button
                   type="button"
                   onClick={

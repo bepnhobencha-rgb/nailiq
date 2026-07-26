@@ -44,14 +44,16 @@ export function SetupChecklist({
       key: "services",
       label: t.addServices,
       hint: serviceHint ? `${egPrefix} ${serviceHint}` : undefined,
-      done: salon.services_count > 1,
+      done: salon.services_count >= 1,
       href: `/dashboard/${slug}/setup/services`,
     },
     {
       key: "staff",
       label: t.addStaff,
       hint: undefined,
-      done: salon.staff_count > 1,
+      // Free/trial salons are capped at one staff member. Requiring a second
+      // staff member here made the setup checklist impossible to complete.
+      done: salon.staff_count >= 1,
       href: `/dashboard/${slug}/setup/staff`,
     },
     {
