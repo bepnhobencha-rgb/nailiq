@@ -27,6 +27,10 @@ import {
   extractMarkName,
   createHangupController,
   HANGUP_FALLBACK_MS,
+  TOOL_REQUEST_TIMEOUT_MS,
+  voiceToolMaxAttempts,
+  isSilentTransportTool,
+  callerPresenceLabel,
   functionCallOutput,
   plainResponseCreate,
   openingGreetingResponseCreate,
@@ -261,6 +265,15 @@ wss.on("connection", (twilioWs) => {
       return;                                        // no follow-up response
     }
 
+    // Silence / background audio is not a conversational turn. Acknowledge the
+    // no-op tool to Realtime, then stay silent — creating a response here would
+    // make the assistant talk to a TV, another person, or line noise.
+    if (isSilentTransportTool(name)) {
+      openaiWs?.send(JSON.stringify(functionCallOutput(callId, { ok: true, silent: true })));
+      logT("wait_for_user");
+      return;                                        // no follow-up response
+    }
+
     // Snapshot this before the network round trip. The caller may begin speaking
     // while lookup_customer is in flight; that must not turn the silent opening
     // enrichment into a late duplicate greeting when the result returns.
@@ -269,23 +282,49 @@ wss.on("connection", (twilioWs) => {
       let result: unknown;
       logT("tool_call_started", { tool: name });
       const httpStartedAt = Date.now();
-      try {
-        const r = await fetch(`${NEXT_APP_URL}/api/voice/tool`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-voice-bridge-secret": BRIDGE_SECRET },
-          // sessionId threads the tool call into tool_log; lastUserUtterance lets
-          // the server check the booking time against what the caller just said.
-          body: JSON.stringify({ toolName: name, toolArgs: args, salonSlug: slug, callerVerifiedPhone: from, sessionId: sessionId || null, lastUserUtterance }),
-        });
-        result = await r.json().catch(() => ({ error: "tool_parse_failed" }));
-        // serverTiming is the tool route's own breakdown (gate / exec / log) —
-        // side by side with httpMs it shows whether a slow tool was the network
-        // or the database, without guessing.
-        logT("tool_http_done", { tool: name, httpMs: Date.now() - httpStartedAt, status: r.status, serverTiming: r.headers.get("server-timing") });
-      } catch {
-        result = { error: "tool_unavailable" };
-        logT("tool_http_error", { tool: name, httpMs: Date.now() - httpStartedAt });
+      const maxAttempts = voiceToolMaxAttempts(name);
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), TOOL_REQUEST_TIMEOUT_MS);
+        try {
+          const r = await fetch(`${NEXT_APP_URL}/api/voice/tool`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-voice-bridge-secret": BRIDGE_SECRET },
+            signal: controller.signal,
+            // sessionId threads the tool call into tool_log; lastUserUtterance lets
+            // the server check the booking time against what the caller just said.
+            body: JSON.stringify({ toolName: name, toolArgs: args, salonSlug: slug, callerVerifiedPhone: from, sessionId: sessionId || null, lastUserUtterance }),
+          });
+          const parsed = await r.json().catch(() => ({ error: "tool_parse_failed" }));
+          // serverTiming is the tool route's own breakdown (gate / exec / log) —
+          // side by side with httpMs it shows whether a slow tool was the network
+          // or the database, without guessing.
+          logT("tool_http_done", { tool: name, attempt, httpMs: Date.now() - httpStartedAt, status: r.status, serverTiming: r.headers.get("server-timing") });
+          if (r.status >= 500 && attempt < maxAttempts) {
+            logT("tool_retry", { tool: name, attempt, reason: "server_error" });
+            continue;
+          }
+          result = parsed;
+          break;
+        } catch {
+          const timedOut = controller.signal.aborted;
+          logT("tool_http_error", { tool: name, attempt, httpMs: Date.now() - httpStartedAt, reason: timedOut ? "timeout" : "network" });
+          if (attempt < maxAttempts) {
+            logT("tool_retry", { tool: name, attempt, reason: timedOut ? "timeout" : "network" });
+            continue;
+          }
+          result = {
+            error: timedOut ? "tool_timeout" : "tool_unavailable",
+            retryable: false,
+            // For writes the server may have committed before the response was
+            // lost. The prompt must escalate, never blindly repeat the action.
+            outcome: maxAttempts === 1 ? "unknown" : "not_completed",
+          };
+        } finally {
+          clearTimeout(timeout);
+        }
       }
+      result ??= { error: "tool_unavailable", retryable: false, outcome: "not_completed" };
 
       // Hand the tool result back (a conversation item, NOT a response), then ask
       // the coordinator for exactly one follow-up response — it decides when to
@@ -498,7 +537,7 @@ wss.on("connection", (twilioWs) => {
       streamSid = msg.start.streamSid;
       slug = msg.start.customParameters?.slug ?? "";
       from = msg.start.customParameters?.from ?? "";
-      console.log(`[voice-bridge] START slug=${slug || "(none)"} from=${from || "(none)"} openaiKey=${OPENAI_API_KEY ? "set" : "MISSING"} bridgeSecret=${BRIDGE_SECRET ? "set" : "MISSING"}`);
+      console.log(`[voice-bridge] START slug=${slug || "(none)"} caller=${callerPresenceLabel(from)} openaiKey=${OPENAI_API_KEY ? "set" : "MISSING"} bridgeSecret=${BRIDGE_SECRET ? "set" : "MISSING"}`);
       if (!slug || !OPENAI_API_KEY || !BRIDGE_SECRET) { console.warn("[voice-bridge] closing: missing slug/key/secret"); return closeAll("missing_config"); }
       void startOpenAi();
     } else if (msg.event === "media") {

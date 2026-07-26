@@ -373,6 +373,20 @@ export const REALTIME_TOOLS = [
   },
   {
     type: "function" as const,
+    name: "wait_for_user",
+    description:
+      "Use this no-op when there is no clear speech addressed to you: silence, room noise, TV/radio, " +
+      "or a side conversation between other people. After calling it, say NOTHING and keep listening. " +
+      "Do not use it when the customer clearly addressed you but one detail was unclear — ask one short " +
+      "clarifying question in that case.",
+    parameters: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    type: "function" as const,
     name: "end_call",
     description:
       "End the voice call gracefully — calling this HANGS UP the phone.\n" +

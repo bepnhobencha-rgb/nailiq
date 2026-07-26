@@ -141,6 +141,10 @@ test("REALTIME_TOOLS includes join_waitlist", () => {
   assertTrue(TOOL_NAMES.includes("join_waitlist"), "tool must be registered");
 });
 
+test("REALTIME_TOOLS includes wait_for_user background-audio no-op", () => {
+  assertTrue(TOOL_NAMES.includes("wait_for_user"), "silent transport tool must be registered");
+});
+
 test("REALTIME_TOOLS still includes all 5 individual tools", () => {
   for (const expected of [
     "get_available_slots",
@@ -153,8 +157,9 @@ test("REALTIME_TOOLS still includes all 5 individual tools", () => {
   }
   // 5 individual + 2 group (get/confirm) + join_waitlist + end_call
   //   + request_otp + verify_otp (identity gate, #770)
-  //   + lookup_customer + leave_message_for_owner (receptionist memory) = 13
-  assertEqual(TOOL_NAMES.length, 13, "total tool count must be 13");
+  //   + lookup_customer + leave_message_for_owner (receptionist memory)
+  //   + wait_for_user (silence/background-audio no-op) = 14
+  assertEqual(TOOL_NAMES.length, 14, "total tool count must be 14");
 });
 
 // ─── 2. Tool schema validation ────────────────────────────────────

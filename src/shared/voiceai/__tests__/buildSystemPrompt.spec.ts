@@ -62,6 +62,17 @@ describe("buildSystemPrompt receptionist flow", () => {
     expect(phone).toContain("KEEP everything already gathered");
     expect(phone).toContain("HUMAN ESCALATION — know your limits");
     expect(phone).toContain("Never promise an exact callback time");
+    expect(phone).toContain("call wait_for_user and say NOTHING afterward");
+    expect(phone).toContain("do not guess and do not call a business tool");
+  });
+
+  it("handles tool failures without false success or duplicate writes", () => {
+    const prompt = buildSystemPrompt(ctx, "en", "+17788680738");
+
+    expect(prompt).toContain("TOOL FAILURE RECOVERY");
+    expect(prompt).toContain("NEVER retry that write blindly");
+    expect(prompt).toContain("claim the action succeeded");
+    expect(prompt).toContain("After two failed read attempts, stop retrying");
   });
 
   it.each(["vi", "en"] as const)("keeps the call open after a %s booking summary", (language) => {

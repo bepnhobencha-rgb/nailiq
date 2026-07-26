@@ -353,6 +353,22 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         return;
       }
 
+      // Silence / TV / side speech is not a customer turn. Acknowledge the
+      // transport no-op without creating a new response, otherwise the model
+      // would speak into background noise.
+      if (fnName === "wait_for_user") {
+        wsRef.current?.send(JSON.stringify({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify({ ok: true, silent: true }),
+          },
+        }));
+        pendingToolCallsRef.current = Math.max(0, pendingToolCallsRef.current - 1);
+        return;
+      }
+
       // Called after submitting function_call_output — fires response.create
       // only when the last pending tool call for this response turn completes.
       // When a tool hands back a `say_this` line, that line becomes the response
@@ -410,9 +426,12 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         }));
       };
 
+      const controller = new AbortController();
+      const toolTimeout = setTimeout(() => controller.abort(), 12_000);
       fetch("/api/voice/tool", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body:    JSON.stringify({ toolName: fnName, toolArgs: args, salonSlug, sessionId }),
       })
         .then((r) => {
@@ -420,8 +439,11 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
           return r.json();
         })
         .then((result: unknown) => {
-          console.log(`[voice/tool] ✓ ${fnName} result:`, JSON.stringify(result));
           const res = result as Record<string, unknown>;
+          console.log(`[voice/tool] ✓ ${fnName}`, {
+            ok: res.success === true || res.ok === true,
+            error: typeof res.error === "string" ? res.error : null,
+          });
           // Surface action result in the UI immediately (card shows while AI is still talking)
           if (fnName === "confirm_booking" && res.success) {
             setBookingResult({
@@ -477,14 +499,24 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
           }));
           sendResponseCreate();
         })
-        .catch((err: unknown) => {
-          console.error(`[voice/tool] ✗ ${fnName} fetch error:`, err);
+        .catch(() => {
+          const timedOut = controller.signal.aborted;
+          console.error(`[voice/tool] ✗ ${fnName}`, timedOut ? "timeout" : "network_error");
           wsRef.current?.send(JSON.stringify({
             type: "conversation.item.create",
-            item: { type: "function_call_output", call_id: callId, output: JSON.stringify({ error: String(err) }) },
+            item: {
+              type: "function_call_output",
+              call_id: callId,
+              output: JSON.stringify({
+                error: timedOut ? "tool_timeout" : "tool_unavailable",
+                retryable: false,
+                outcome: "unknown",
+              }),
+            },
           }));
           sendResponseCreate();
-        });
+        })
+        .finally(() => clearTimeout(toolTimeout));
     };
 
     if (type === "session.created") {
@@ -987,7 +1019,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         setIsRenewing(false);
       }
     };
-  }, [shopSlug, language, handleRealtimeEvent, cleanup]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [shopSlug, language, handleRealtimeEvent, cleanup]);
 
   const start = useCallback(async () => {
     if (statusRef.current !== "idle" && statusRef.current !== "error") return;

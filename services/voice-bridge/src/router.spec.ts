@@ -26,6 +26,10 @@ import {
   createHangupController,
   HANGUP_MARK,
   HANGUP_FALLBACK_MS,
+  TOOL_REQUEST_TIMEOUT_MS,
+  voiceToolMaxAttempts,
+  isSilentTransportTool,
+  callerPresenceLabel,
 } from "./router";
 
 // ── helpers for reading coordinator output ──────────────────────────────────
@@ -72,6 +76,19 @@ describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () =>
     expect(twilioClearFrame("S1")).toEqual({ event: "clear", streamSid: "S1" });
     expect(isSpeechStarted({ type: "input_audio_buffer.speech_started" })).toBe(true);
     expect(isSpeechStarted({ type: "response.audio.delta" })).toBe(false);
+  });
+
+  it("bounds tool dead-air, retries only reads, and keeps caller PII out of logs", () => {
+    expect(TOOL_REQUEST_TIMEOUT_MS).toBe(12_000);
+    expect(voiceToolMaxAttempts("get_available_slots")).toBe(2);
+    expect(voiceToolMaxAttempts("lookup_customer")).toBe(2);
+    expect(voiceToolMaxAttempts("confirm_booking")).toBe(1);
+    expect(voiceToolMaxAttempts("cancel_booking")).toBe(1);
+    expect(isSilentTransportTool("wait_for_user")).toBe(true);
+    expect(isSilentTransportTool("confirm_booking")).toBe(false);
+    expect(callerPresenceLabel("+16045551234")).toBe("present");
+    expect(callerPresenceLabel("")).toBe("missing");
+    expect(callerPresenceLabel("+16045551234")).not.toContain("1234");
   });
 
   it("mark frame round-trips: send a named mark, recognise its Twilio echo (playback-aware hangup)", () => {
