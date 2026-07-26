@@ -4,9 +4,9 @@
  * a salon, for the PHONE bridge to configure its OpenAI Realtime session.
  *
  * The web path (/api/voice/session) mints a browser ephemeral key; the phone
- * bridge instead runs server-side with the raw OPENAI_API_KEY and only needs the
- * "brain" (same buildSystemPrompt + REALTIME_TOOLS the web uses) — so the agent
- * is identical across web and phone; only the transport differs.
+ * bridge instead runs server-side with the raw OPENAI_API_KEY. Phone sessions
+ * use a compact, safety-equivalent prompt/tool projection because repeating the
+ * verbose web context on every spoken turn can exhaust Realtime token limits.
  *
  * Auth: shared secret (VOICE_BRIDGE_SECRET) — the bridge is server-to-server, not
  * a browser. Gated on the salon actually having voice AI enabled.
@@ -14,8 +14,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { loadSalonContext } from "@/shared/voiceai/loadSalonContext";
-import { buildSystemPrompt } from "@/shared/voiceai/buildSystemPrompt";
-import { REALTIME_TOOLS } from "@/shared/voiceai/realtimeTools";
+import {
+  buildPhoneGreeting,
+  buildPhoneSystemPrompt,
+} from "@/shared/voiceai/buildPhoneSystemPrompt";
+import { PHONE_REALTIME_TOOLS } from "@/shared/voiceai/realtimeTools";
 import { VOICE_MODEL, SUPPORTED_LANGUAGES, type SupportedLanguage } from "@/shared/voiceai/config";
 
 export const runtime = "nodejs";
@@ -105,8 +108,9 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     model: VOICE_MODEL,
     voice: ctx.personaVoice,
-    instructions: buildSystemPrompt(ctx, language, from),
-    tools: [...REALTIME_TOOLS],
+    instructions: buildPhoneSystemPrompt(ctx, language, from),
+    greeting: buildPhoneGreeting(ctx, language),
+    tools: [...PHONE_REALTIME_TOOLS],
     sessionId,
     language,   // so the bridge knows which language this config is for
   });

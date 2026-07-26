@@ -276,17 +276,17 @@ describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () =>
   });
 
   it("opening greeting invites the caller to speak before any tool call", () => {
-    const message = openingGreetingResponseCreate("en") as {
+    const greeting = "Hi, thanks for calling Tech Nails Salon. This is Lily. How can I help today?";
+    const message = openingGreetingResponseCreate("en", greeting) as {
       type: string;
       response: { instructions: string };
     };
     expect(message.type).toBe("response.create");
-    expect(message.response.instructions).toContain("calm front-desk pace");
-    expect(message.response.instructions).toContain("Clearly enunciate the salon name");
-    expect(message.response.instructions).toContain("brief natural pause");
-    expect(message.response.instructions).toContain("Do not rush");
-    expect(message.response.instructions).toContain("what the caller needs help with today");
-    expect(message.response.instructions).toContain("Do not call any tool");
+    expect(message.response.instructions).toContain(JSON.stringify(greeting));
+    expect(message.response.instructions).toContain("EXACTLY");
+    expect(message.response.instructions).toContain("clearly enunciate the salon name");
+    expect(message.response.instructions).toContain("Do not translate, paraphrase, rename the salon");
+    expect(message.response.instructions).toContain("call a tool");
     expect(message.response.instructions).toContain("stop and listen");
   });
 
