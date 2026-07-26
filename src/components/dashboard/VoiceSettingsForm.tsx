@@ -5,6 +5,7 @@ import {
   updateVoiceAiSettings,
   type VoiceAiSettingsInput,
 } from "@/shared/dashboard/setupActions";
+import type { SupportedLanguage } from "@/shared/voiceai/config";
 
 // OpenAI GA Realtime voices. Marin/Cedar are the newest, most natural pair.
 const VOICES = [
@@ -25,6 +26,14 @@ const EFFORTS = [
   { value: "medium", label: "Medium (balanced)" },
   { value: "high",   label: "High (smarter)" },
 ] as const;
+
+const LANGUAGES: ReadonlyArray<{ value: SupportedLanguage; label: string }> = [
+  { value: "en", label: "English" },
+  { value: "fr", label: "Français" },
+  { value: "vi", label: "Tiếng Việt" },
+  { value: "es", label: "Español" },
+  { value: "zh", label: "中文" },
+];
 
 type Props = {
   slug: string;
@@ -102,6 +111,32 @@ export function VoiceSettingsForm({ slug, initial }: Props) {
             ].join(" ")}
           />
         </button>
+      </div>
+
+      {/* Opening language */}
+      <div className="space-y-1.5">
+        <label className="text-sm font-semibold" htmlFor="language-select">
+          Default call language
+        </label>
+        <select
+          id="language-select"
+          value={form.voice_ai_default_language}
+          onChange={(e) => handleChange(
+            "voice_ai_default_language",
+            e.target.value as SupportedLanguage,
+          )}
+          className="w-full rounded-xl border border-[var(--color-border)] bg-transparent px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+        >
+          {LANGUAGES.map((language) => (
+            <option key={language.value} value={language.value}>
+              {language.label}
+            </option>
+          ))}
+        </select>
+        <p className="text-sm text-[var(--color-text-muted)]">
+          Used for the first greeting. The receptionist automatically switches
+          when the caller speaks another supported language.
+        </p>
       </div>
 
       {/* Persona name */}

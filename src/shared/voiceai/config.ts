@@ -28,6 +28,18 @@ export type SupportedVoice = (typeof SUPPORTED_VOICES)[number];
 export const SUPPORTED_LANGUAGES = ["vi", "en", "es", "fr", "zh"] as const;
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 
+export function isSupportedLanguage(value: unknown): value is SupportedLanguage {
+  return typeof value === "string"
+    && SUPPORTED_LANGUAGES.includes(value as SupportedLanguage);
+}
+
+export function normalizeSupportedLanguage(
+  value: unknown,
+  fallback: SupportedLanguage = "en",
+): SupportedLanguage {
+  return isSupportedLanguage(value) ? value : fallback;
+}
+
 /** Maps salon DB values to OpenAI reasoning_effort values */
 export const REASONING_EFFORT_MAP: Record<string, "low" | "medium" | "high"> = {
   minimal: "low",

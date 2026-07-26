@@ -134,8 +134,8 @@ export function interruptToggleMessage(interruptResponse: boolean, transcribeLan
  * unless the signal is strong, because a wrong switch mid-call is worse than
  * staying put. Strong signals:
  *   • Vietnamese: tone-marked vowels / đ — these never appear in en/es text.
- *   • Spanish: ñ / ¿ / ¡, or common Spanish words (short Spanish often has no
- *     special character, so a small function-word list backs up the accents).
+ *   • Spanish/French: distinctive accents, or common booking/function words
+ *     (short turns often have no accent, so small word lists back them up).
  *   • English: common English function words.
  */
 export type SupportedLang = "vi" | "en" | "es" | "fr" | "zh";
@@ -144,9 +144,13 @@ export const LANG_NAMES: Record<string, string> = {
   vi: "Vietnamese", en: "English", es: "Spanish", fr: "French", zh: "Chinese",
 };
 
-export function detectLanguage(text: string): "vi" | "es" | "en" | null {
+export function detectLanguage(text: string): "vi" | "es" | "fr" | "en" | null {
   const t = text.toLowerCase().trim();
   if (!t) return null;
+  // Check high-confidence French phrases before Vietnamese diacritics: French
+  // é/è also occur in the Vietnamese Unicode range used by the next rule.
+  if (/[çœ]/.test(t)) return "fr";
+  if (/\b(bonjour|bonsoir|merci|rendez-vous|ongles|manucure|pédicure|pedicure|voudrais|souhaite|avec|demain|aujourd'hui|aujourd’hui|s'il vous plaît|s’il vous plaît|disponible|réserver|reserver|je veux|est-ce que|c'est|c’est)\b/.test(t)) return "fr";
   if (/[ăâđêôơưàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i.test(text)) return "vi";
   if (/[ñ¿¡]/.test(text)) return "es";
   if (/\b(hola|gracias|quiero|cita|uñas|una|por favor|buenos|buenas|sí|para|con|cómo|qué|dónde|cuándo|mañana|hoy|reservar|pedicura|manicura|señor|señora)\b/.test(t)) return "es";
