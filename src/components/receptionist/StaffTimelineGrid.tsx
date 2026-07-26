@@ -1011,7 +1011,6 @@ function StaffTimelineGridImpl({
                   "text-[10px] font-semibold tabular-nums text-white shadow-nq-card",
                 )}
                 style={{ left: nowLineLeftPx }}
-                aria-label={`Current time ${nowLineLabel}`}
               >
                 {nowLineLabel}
               </div>
