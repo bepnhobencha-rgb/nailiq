@@ -145,6 +145,7 @@ export function AppleCommandBar({
           </span>
           {canAct ? (
             <button
+              data-testid="preview-command-action"
               type="button"
               onClick={onAction}
               className="h-8 shrink-0 rounded-lg border px-4 text-sm font-semibold transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-info"

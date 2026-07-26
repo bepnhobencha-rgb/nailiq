@@ -54,6 +54,7 @@ test("keeps classic as default and remembers the opt-in preview", async ({
   await expect(page.getByTestId("preview-command-waiting")).toBeVisible();
   await expect(page.getByTestId("preview-command-late")).toBeVisible();
   await expect(page.getByTestId("preview-command-available")).toBeVisible();
+  await expect(page.getByTestId("preview-command-action")).toBeVisible();
   await expect(page.getByTestId("nailiq-daily-brief")).toHaveCount(0);
   await expect(page.getByTestId("nailiq-suggestion-bar")).toHaveCount(0);
   await expect(page.getByTestId("receptionist-kpi-bar")).toHaveCount(0);
