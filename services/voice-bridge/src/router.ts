@@ -39,6 +39,20 @@ export type RealtimeSessionConfig = {
   interruptResponse?: boolean;
 };
 
+/** Bound each turn so a short phone reply cannot reserve the model's entire
+ * output allowance. Audio tokens are included, so this still leaves ample room
+ * for a concise confirmation while reducing token-rate pressure. */
+export const REALTIME_MAX_OUTPUT_TOKENS = 512;
+
+/** Slightly calmer than the model default. The opening prompt adds an explicit
+ * pause around the salon name, while this keeps the rest of the call natural. */
+export const REALTIME_SPEECH_SPEED = 0.92;
+
+/** Keep enough recent dialogue to finish a booking while dropping old turns in
+ * batches. Retaining 80% avoids a cache-busting truncation on every later turn. */
+export const REALTIME_POST_INSTRUCTION_TOKEN_LIMIT = 8_000;
+export const REALTIME_TRUNCATION_RETENTION_RATIO = 0.8;
+
 /** A voice-tool HTTP call must never leave the caller in dead air indefinitely. */
 export const TOOL_REQUEST_TIMEOUT_MS = 12_000;
 
@@ -187,9 +201,19 @@ export function sessionUpdateMessage(cfg: RealtimeSessionConfig): object {
       type: "realtime",
       instructions: cfg.instructions,
       tools: cfg.tools,
+      max_output_tokens: REALTIME_MAX_OUTPUT_TOKENS,
+      truncation: {
+        type: "retention_ratio",
+        retention_ratio: REALTIME_TRUNCATION_RETENTION_RATIO,
+        token_limits: { post_instructions: REALTIME_POST_INSTRUCTION_TOKEN_LIMIT },
+      },
       audio: {
         input: audioInput(cfg.interruptResponse ?? true, cfg.transcribeLang),
-        output: { format: { type: "audio/pcmu" }, voice: cfg.voice },
+        output: {
+          format: { type: "audio/pcmu" },
+          voice: cfg.voice,
+          speed: REALTIME_SPEECH_SPEED,
+        },
       },
     },
   };
@@ -321,6 +345,141 @@ export function summarizeRealtimeResponseDone(evt: unknown): RealtimeResponseDon
   };
 }
 
+export type RealtimeRateLimitSummary = {
+  name: string;
+  limit: number | null;
+  remaining: number | null;
+  resetSeconds: number | null;
+};
+
+function finiteNonNegativeNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : null;
+}
+
+/**
+ * Extract only safe numeric quota telemetry. Never log the full event: future
+ * API revisions may add fields that are not intended for infrastructure logs.
+ */
+export function summarizeRealtimeRateLimitsUpdated(evt: unknown): RealtimeRateLimitSummary[] {
+  const event = evt && typeof evt === "object" ? evt as Record<string, unknown> : {};
+  const limits = Array.isArray(event.rate_limits) ? event.rate_limits : [];
+  const summaries: RealtimeRateLimitSummary[] = [];
+
+  for (const rawLimit of limits.slice(0, 10)) {
+    if (!rawLimit || typeof rawLimit !== "object") continue;
+    const limit = rawLimit as Record<string, unknown>;
+    const name = telemetryTag(limit.name);
+    if (!name) continue;
+    summaries.push({
+      name,
+      limit: finiteNonNegativeNumber(limit.limit),
+      remaining: finiteNonNegativeNumber(limit.remaining),
+      resetSeconds: finiteNonNegativeNumber(limit.reset_seconds),
+    });
+  }
+  return summaries;
+}
+
+export function isTokenRateLimitExceeded(summary: RealtimeResponseDoneSummary): boolean {
+  return summary.errorType === "tokens" && summary.errorCode === "rate_limit_exceeded";
+}
+
+export const TOKEN_RATE_LIMIT_RECOVERY_MAX_ATTEMPTS = 2;
+export const TOKEN_RATE_LIMIT_FALLBACK_DELAY_MS = 30_000;
+export const TOKEN_RATE_LIMIT_RESET_BUFFER_MS = 500;
+export const TOKEN_RATE_LIMIT_MAX_DELAY_MS = 120_000;
+
+export type TokenRateLimitRecoveryDecision =
+  | { kind: "none" }
+  | { kind: "retry"; delayMs: number; attempt: number }
+  | { kind: "exhausted"; attempts: number };
+
+/**
+ * Respect the server's token reset window instead of immediately retrying into
+ * the same quota failure. At most two consecutive recovery attempts are made;
+ * any audible output resets the circuit.
+ */
+export function createTokenRateLimitRecoveryGuard(
+  maxAttempts = TOKEN_RATE_LIMIT_RECOVERY_MAX_ATTEMPTS,
+  fallbackDelayMs = TOKEN_RATE_LIMIT_FALLBACK_DELAY_MS,
+) {
+  let attempts = 0;
+  let tokenResetAt = 0;
+
+  return {
+    onRateLimits(limits: RealtimeRateLimitSummary[], now = Date.now()) {
+      const tokenResetSeconds = limits
+        .filter((limit) => limit.name === "tokens" && limit.resetSeconds !== null)
+        .map((limit) => limit.resetSeconds as number);
+      if (tokenResetSeconds.length > 0) {
+        tokenResetAt = now + Math.max(...tokenResetSeconds) * 1_000;
+      }
+    },
+    decide(summary: RealtimeResponseDoneSummary, now = Date.now()): TokenRateLimitRecoveryDecision {
+      if (!isTokenRateLimitExceeded(summary)) return { kind: "none" };
+      if (attempts >= maxAttempts) return { kind: "exhausted", attempts };
+      attempts++;
+      const documentedResetDelay = tokenResetAt > now
+        ? tokenResetAt - now + TOKEN_RATE_LIMIT_RESET_BUFFER_MS
+        : fallbackDelayMs;
+      const delayMs = Math.min(
+        TOKEN_RATE_LIMIT_MAX_DELAY_MS,
+        Math.max(TOKEN_RATE_LIMIT_RESET_BUFFER_MS, Math.ceil(documentedResetDelay)),
+      );
+      return { kind: "retry", delayMs, attempt: attempts };
+    },
+    onAudibleOutput() {
+      attempts = 0;
+      tokenResetAt = 0;
+    },
+    attempts(): number { return attempts; },
+  };
+}
+
+/** Encode signed PCM16 into G.711 μ-law, the format Twilio already consumes. */
+function linearPcmToMulaw(sample: number): number {
+  const BIAS = 0x84;
+  const CLIP = 32_635;
+  const sign = (sample >> 8) & 0x80;
+  if (sign !== 0) sample = -sample;
+  sample = Math.min(CLIP, sample) + BIAS;
+
+  let exponent = 7;
+  for (let mask = 0x4000; exponent > 0 && (sample & mask) === 0; exponent--, mask >>= 1) {
+    // Find the highest populated magnitude bit.
+  }
+  const mantissa = (sample >> (exponent + 3)) & 0x0f;
+  return (~(sign | (exponent << 4) | mantissa)) & 0xff;
+}
+
+/**
+ * A quiet 240 ms comfort tone generated locally, independent of OpenAI quota.
+ * It tells the caller the line is alive while the bridge waits for the exact
+ * token reset window. Each payload is one 20 ms Twilio μ-law frame.
+ */
+export function tokenRateLimitComfortTonePayloads(): string[] {
+  const sampleRate = 8_000;
+  const frameSamples = 160;
+  const totalFrames = 12;
+  const totalSamples = frameSamples * totalFrames;
+  const bytes = Buffer.alloc(totalSamples);
+
+  for (let i = 0; i < totalSamples; i++) {
+    const edge = Math.min(i / 240, (totalSamples - 1 - i) / 240, 1);
+    const envelope = Math.max(0, edge);
+    const sample = Math.round(Math.sin(2 * Math.PI * 523.25 * i / sampleRate) * 1_200 * envelope);
+    bytes[i] = linearPcmToMulaw(sample);
+  }
+
+  const payloads: string[] = [];
+  for (let offset = 0; offset < bytes.length; offset += frameSamples) {
+    payloads.push(bytes.subarray(offset, offset + frameSamples).toString("base64"));
+  }
+  return payloads;
+}
+
 /**
  * A tool-only response is intentionally silent and a cancelled response is a
  * normal barge-in outcome. Recover only terminal speech responses for which the
@@ -331,6 +490,9 @@ export function shouldRecoverZeroAudio(
   audioDeltaCount: number,
 ): boolean {
   if (audioDeltaCount > 0 || summary.hasFunctionCall) return false;
+  // A token quota failure cannot recover immediately. The dedicated guard waits
+  // for rate_limits.updated.reset_seconds before asking again.
+  if (isTokenRateLimitExceeded(summary)) return false;
   return summary.status === "completed" ||
     summary.status === "failed" ||
     summary.status === "incomplete";
@@ -365,7 +527,10 @@ export function openingGreetingResponseCreate(language: string): object {
     type: "response.create",
     response: {
       instructions:
-        `Speak the configured salon greeting now in ${langName}. End that same short greeting ` +
+        `Speak the configured salon greeting now in ${langName} at a calm front-desk pace. ` +
+        `Clearly enunciate the salon name, with a brief natural pause immediately before and ` +
+        `after the salon name so the caller can understand it. Do not rush the first sentence. ` +
+        `End that same short greeting ` +
         `with one natural question asking what the caller needs help with today. Do not call any ` +
         `tool in this opening response. Then stop and listen. Do not mention these instructions.`,
     },
@@ -450,6 +615,7 @@ export interface ResponseRequest {
  */
 export function createResponseCoordinator(send: (msg: object) => void) {
   let closed = false;
+  let paused = false;
   let activeId: string | null = null;                 // server response.id currently playing
   let activeKind: ResponseKind | null = null;
   let activeLang = "en";
@@ -468,7 +634,7 @@ export function createResponseCoordinator(send: (msg: object) => void) {
   }
 
   function pump() {
-    if (closed || activeId !== null || awaiting !== null) return; // one at a time
+    if (closed || paused || activeId !== null || awaiting !== null) return; // one at a time
     const i = queue.findIndex((r) => r.kind === "protected");     // protected first
     const next = i >= 0 ? queue.splice(i, 1)[0] : queue.shift();
     if (next) dispatch(next);
@@ -526,6 +692,11 @@ export function createResponseCoordinator(send: (msg: object) => void) {
       if (wasProtected) send(interruptToggleMessage(true, lang));
       pump();
     },
+    /** Hold queued responses while an external condition (currently a token
+     *  reset window) makes dispatch guaranteed to fail. Active lifecycle events
+     *  are still processed; resume() pumps the newest safe request afterward. */
+    pause() { paused = true; },
+    resume() { paused = false; pump(); },
     onClose() { closed = true; queue.length = 0; awaiting = null; activeId = null; activeKind = null; },
     /** Safety net for the server-side watchdog: if a response.done was missed
      *  (e.g. its id could not be matched), activeId/awaiting stays set and pump()
