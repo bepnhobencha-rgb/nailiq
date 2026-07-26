@@ -6,6 +6,11 @@ import {
   twilioClearFrame,
   functionCallOutput,
   plainResponseCreate,
+  zeroAudioRecoveryResponseCreate,
+  summarizeRealtimeResponseDone,
+  shouldRecoverZeroAudio,
+  createZeroAudioRecoveryGuard,
+  ZERO_AUDIO_RECOVERY_MAX_ATTEMPTS,
   openingGreetingResponseCreate,
   openingLookupFollowupResponseCreate,
   extractSayThis,
@@ -114,6 +119,77 @@ describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () =>
     expect(item.type).toBe("conversation.item.create");
     expect(JSON.parse(item.item.output)).toEqual({ ok: true, id: "b1" });
     expect(plainResponseCreate()).toEqual({ type: "response.create" });
+  });
+
+  it("summarizes response.done without retaining transcript or error messages", () => {
+    const summary = summarizeRealtimeResponseDone({
+      type: "response.done",
+      response: {
+        status: "failed",
+        status_details: {
+          type: "failed",
+          reason: "server_error",
+          error: { type: "realtime_error", code: "audio_failed", message: "private details" },
+        },
+        output: [{
+          type: "message",
+          content: [{ type: "output_audio", transcript: "private booking transcript" }],
+        }],
+      },
+    });
+    expect(summary).toEqual({
+      status: "failed",
+      statusType: "failed",
+      statusReason: "server_error",
+      errorType: "realtime_error",
+      errorCode: "audio_failed",
+      outputItemTypes: ["message"],
+      outputContentTypes: ["output_audio"],
+      hasFunctionCall: false,
+    });
+    expect(JSON.stringify(summary)).not.toContain("private");
+  });
+
+  it("recovers only zero-audio speech outcomes, never tool calls or cancellations", () => {
+    const completed = summarizeRealtimeResponseDone({
+      response: { status: "completed", output: [{ type: "message", content: [{ type: "output_audio" }] }] },
+    });
+    const toolOnly = summarizeRealtimeResponseDone({
+      response: { status: "completed", output: [{ type: "function_call" }] },
+    });
+    const cancelled = summarizeRealtimeResponseDone({
+      response: { status: "cancelled", status_details: { type: "cancelled", reason: "turn_detected" } },
+    });
+    expect(shouldRecoverZeroAudio(completed, 0)).toBe(true);
+    expect(shouldRecoverZeroAudio(completed, 1)).toBe(false);
+    expect(shouldRecoverZeroAudio(toolOnly, 0)).toBe(false);
+    expect(shouldRecoverZeroAudio(cancelled, 0)).toBe(false);
+  });
+
+  it("retries one consecutive zero-audio response, then stops until audio resumes", () => {
+    const summary = summarizeRealtimeResponseDone({
+      response: { status: "completed", output: [] },
+    });
+    const guard = createZeroAudioRecoveryGuard();
+    expect(ZERO_AUDIO_RECOVERY_MAX_ATTEMPTS).toBe(1);
+    expect(guard.decide(summary, 0)).toBe("retry");
+    expect(guard.decide(summary, 0)).toBe("exhausted");
+    guard.onAudibleOutput();
+    expect(guard.decide(summary, 0)).toBe("retry");
+  });
+
+  it("zero-audio recovery is audible, tool-free, and preserves confirmed outcomes", () => {
+    const message = zeroAudioRecoveryResponseCreate("vi") as {
+      type: string;
+      response: { instructions: string; tools: unknown[]; output_modalities: string[] };
+    };
+    expect(message.type).toBe("response.create");
+    expect(message.response.tools).toEqual([]);
+    expect(message.response.output_modalities).toEqual(["audio"]);
+    expect(message.response.instructions).toContain("Vietnamese");
+    expect(message.response.instructions).toContain("Do not call any tool");
+    expect(message.response.instructions).toContain("server-confirmed result");
+    expect(message.response.instructions).toContain("one short question");
   });
 
   it("opening greeting invites the caller to speak before any tool call", () => {
@@ -292,9 +368,10 @@ describe("coordinator — one response at a time, priority, barge-in gating", ()
     const { c, sent } = makeCoord();
     c.request({ kind: "protected", build: () => sayThisResponseCreate("x", "en"), language: () => "en" });
     c.onResponseCreated("r_say");
-    c.onResponseEnded("r_other");                  // stale id → ignored
+    expect(c.onResponseEnded("r_other")).toBe(false); // stale id → ignored
     expect(c.isProtectedActive()).toBe(true);      // still protected
     expect(sent.some((m) => isToggle(m) && toggleValue(m) === true)).toBe(false); // no restore
+    expect(c.onResponseEnded("r_say")).toBe(true);
   });
 
   it("after close, no further response.create is emitted", () => {
