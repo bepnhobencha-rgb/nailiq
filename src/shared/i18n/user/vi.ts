@@ -1775,6 +1775,8 @@ export const userVi: UserMessages = {
       conflictShake: "Trùng lịch. Chọn giờ hoặc thợ khác.",
       rescheduleFailed: {
         past_date: "Không thể dời lịch về quá khứ.",
+        outside_hours:
+          "Dịch vụ sẽ kết thúc sau giờ đóng cửa.",
         slot_conflict: "Khung giờ này đã trùng với lịch khác.",
         staff_cannot_perform_service: "Thợ này không làm dịch vụ đó.",
         generic: "Không dời được lịch. Thử lại.",
@@ -1874,6 +1876,8 @@ export const userVi: UserMessages = {
       invalid_statusMessage: "Không thể sửa booking này",
       serverErrorMessage: "Lỗi server. Thử lại.",
       pastDateMessage: "Không thể dời lịch về quá khứ.",
+      outsideHoursMessage:
+        "Chọn giờ để dịch vụ hoàn thành trước hoặc đúng giờ đóng cửa.",
     },
     actionErrorFallback: "Không thực hiện được thao tác. Thử lại.",
     actionErrors: {

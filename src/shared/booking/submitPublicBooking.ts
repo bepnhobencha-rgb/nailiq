@@ -2,7 +2,10 @@ import * as Sentry from "@sentry/nextjs";
 import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
-import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
+import {
+  computeBookingTiming,
+  type BookingTimingSegment,
+} from "@/shared/booking/bookingTiming";
 import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
 import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
 import { hmToMinutes } from "@/shared/booking/hmToMinutes";
@@ -450,11 +453,7 @@ export async function submitPublicBooking(
     };
   }
 
-  const mainBlockMin = combo
-    ? combo.durationMinutes
-    : serviceBlockMinutes(service.duration_minutes, service.buffer_minutes);
-
-  let addonBlockMin = 0;
+  const timingAddOns: BookingTimingSegment[] = [];
   type AddonRow = { id: string; name: string; price_cents: number | null };
   const addonRows: AddonRow[] = [];
 
@@ -480,14 +479,19 @@ export async function submitPublicBooking(
         | { id: string; name: string; duration_minutes?: unknown; buffer_minutes?: unknown; price_cents?: unknown; is_addon?: unknown; addon_timing?: unknown }
         | undefined;
       if (!addSvc || addSvc.is_addon !== true) throw new Error("addon_not_found");
-      const block = serviceBlockMinutes(
-        addSvc.duration_minutes,
-        addSvc.buffer_minutes,
+      const duration = Math.round(Number(addSvc.duration_minutes) || 0);
+      const buffer = Math.max(
+        0,
+        Math.round(Number(addSvc.buffer_minutes) || 0),
       );
-      if (block <= 0) throw new Error("invalid_addon");
+      if (duration <= 0) throw new Error("invalid_addon");
       // Concurrent add-ons run alongside the main service → add $0 time to the
       // appointment block; only sequential ones extend the end time.
-      if (addSvc.addon_timing !== "concurrent") addonBlockMin += block;
+      timingAddOns.push({
+        durationMinutes: duration,
+        bufferMinutes: buffer,
+        concurrent: addSvc.addon_timing === "concurrent",
+      });
       addonRows.push({
         id: String(addSvc.id),
         name: String(addSvc.name ?? ""),
@@ -499,7 +503,16 @@ export async function submitPublicBooking(
   // First add-on drives the legacy single-value columns; the full list is
   // persisted via `add_booking_addons` after insert.
   const addonRow: AddonRow | null = addonRows[0] ?? null;
-  const totalBlockMin = mainBlockMin + addonBlockMin;
+  const bookingTiming = computeBookingTiming(
+    combo
+      ? { durationMinutes: combo.durationMinutes, bufferMinutes: 0 }
+      : {
+          durationMinutes: service.duration_minutes,
+          bufferMinutes: service.buffer_minutes,
+        },
+    timingAddOns,
+  );
+  const totalBlockMin = bookingTiming.blockMinutes;
   const endLocal = new Date(startLocal.getTime() + totalBlockMin * 60_000);
 
   // Opening-hours check in SALON-LOCAL minutes (device-tz-independent). Mirrors
@@ -512,13 +525,11 @@ export async function submitPublicBooking(
     const openM = hmToMinutes(dayCfg.open);
     const closeM = hmToMinutes(dayCfg.close);
     const endMinsOfDay = startMinsOfDay + totalBlockMin;
-    // The trailing buffer may run past close for the last booking (cleanup, no
-    // next customer) — only the SERVICE must finish by close. Single-service
-    // only; with add-ons keep the conservative whole-block fit. Mirrors the
-    // client grid's `trailingBufferMinutes`.
-    const closingTrailingBuffer =
-      addonBlockMin === 0 ? Number(service.buffer_minutes) || 0 : 0;
-    const serviceEndMinsOfDay = endMinsOfDay - closingTrailingBuffer;
+    const serviceEndMinsOfDay =
+      startMinsOfDay +
+      (combo || addonIds.length > 1
+        ? bookingTiming.blockMinutes
+        : bookingTiming.serviceCompletionMinutes);
     if (closeM <= openM) throw new Error("outside_opening_hours");
     if (
       startMinsOfDay < openM ||

@@ -28,6 +28,11 @@ import {
 import { loadBookingServicesForSalonSlug } from "@/shared/booking/loadBookingServices";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import {
+  computeBookingTiming,
+  type BookingTimingSegment,
+} from "@/shared/booking/bookingTiming";
+import { checkBookingWithinOpeningHours } from "@/shared/booking/bookingWithinOpeningHours";
+import {
   salonWallTimeToUtcIso,
   salonDayRangeUtc,
 } from "@/shared/lib/salonTime";
@@ -2450,6 +2455,12 @@ export async function addDeskAppointment(
   } | null;
   if (!svc || svc.salon_id !== ctx.salon.id || svc.deleted_at)
     return fail("invalid_service");
+  const mainDuration = Math.round(Number(svc.duration_minutes ?? 0));
+  const mainBuffer = Math.round(Number(svc.buffer_minutes ?? 0));
+  if (!Number.isFinite(mainDuration) || mainDuration < 1)
+    return fail("invalid_duration");
+  if (!Number.isFinite(mainBuffer) || mainBuffer < 0)
+    return fail("invalid_buffer");
 
   // Resolve active promotion discount for this service (server-side, no client trust)
   const basePriceCents = svc.price_cents != null ? Math.round(Number(svc.price_cents)) : null;
@@ -2510,6 +2521,7 @@ export async function addDeskAppointment(
   // into the email total. Validated server-side: must be this salon's live,
   // is_addon services — never trust client durations/prices.
   let addonBlockMin = 0;
+  const timingAddOns: BookingTimingSegment[] = [];
   let addonPriceCents = 0;
   // Display rows for the optimistic grid item (`bookingsForDay[].addons`) — same
   // shape `loadReceptionistCenterData` builds from `booking_addons`.
@@ -2562,6 +2574,11 @@ export async function addDeskAppointment(
       if (block <= 0) return fail("invalid_addon");
       const concurrent = a.addon_timing === "concurrent";
       if (!concurrent) addonBlockMin += block;
+      timingAddOns.push({
+        durationMinutes: a.duration_minutes,
+        bufferMinutes: a.buffer_minutes,
+        concurrent,
+      });
       addonPriceCents += a.price_cents != null ? Number(a.price_cents) : 0;
       const addonName = String(a.name ?? "");
       const addonDuration = Math.max(
@@ -2592,9 +2609,32 @@ export async function addDeskAppointment(
 
   const timezone = ctx.salon.timezone;
   const startUtcIso = salonWallTimeToUtcIso(dateYmd, startMinutes, timezone);
-  const totalMin =
-    serviceBlockMinutes(svc.duration_minutes, svc.buffer_minutes) +
-    addonBlockMin;
+  const bookingTiming = computeBookingTiming(
+    {
+      durationMinutes: mainDuration,
+      bufferMinutes: mainBuffer,
+    },
+    timingAddOns,
+  );
+  const totalMin = bookingTiming.blockMinutes;
+  // Keep the accumulator honest while legacy add-on persistence still uses it.
+  if (
+    totalMin !==
+    serviceBlockMinutes(mainDuration, mainBuffer) + addonBlockMin
+  ) {
+    return fail("invalid_duration");
+  }
+  const hoursCheck = checkBookingWithinOpeningHours({
+    openingHoursRaw: ctx.salon.opening_hours,
+    bookingClosedDatesRaw: ctx.salon.booking_closed_dates,
+    dateYmd,
+    startMinutes,
+    serviceCompletionMinutes:
+      addonIds.length <= 1
+        ? bookingTiming.serviceCompletionMinutes
+        : bookingTiming.blockMinutes,
+  });
+  if (!hoursCheck.ok) return fail("outside_hours");
   const endUtcIso = new Date(
     Date.parse(startUtcIso) + totalMin * 60_000,
   ).toISOString();

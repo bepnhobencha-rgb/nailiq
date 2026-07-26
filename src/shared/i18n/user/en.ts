@@ -1634,6 +1634,7 @@ export type UserMessages = {
       /** Toast shown when a drag-to-reschedule is rejected, keyed by reason. */
       rescheduleFailed: {
         past_date: string;
+        outside_hours: string;
         slot_conflict: string;
         staff_cannot_perform_service: string;
         generic: string;
@@ -1758,6 +1759,7 @@ export type UserMessages = {
       invalid_statusMessage: string;
       serverErrorMessage: string;
       pastDateMessage: string;
+      outsideHoursMessage: string;
     };
     actionErrorFallback: string;
     actionErrors: {
@@ -4099,6 +4101,8 @@ export const userEn: UserMessages = {
         "That slot overlaps another booking. Choose another slot or time.",
       rescheduleFailed: {
         past_date: "Can't move a booking into the past.",
+        outside_hours:
+          "The service would finish after the salon closes.",
         slot_conflict: "That slot overlaps another booking.",
         staff_cannot_perform_service:
           "That staff member doesn't perform this service.",
@@ -4202,6 +4206,8 @@ export const userEn: UserMessages = {
       invalid_statusMessage: "Cannot edit this booking",
       serverErrorMessage: "Server error. Try again.",
       pastDateMessage: "Can't move a booking to the past.",
+      outsideHoursMessage:
+        "Choose a time that lets the service finish before closing.",
     },
     actionErrorFallback: "Could not complete that action. Try again.",
     actionErrors: {

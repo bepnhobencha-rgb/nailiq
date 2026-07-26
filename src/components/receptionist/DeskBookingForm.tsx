@@ -46,6 +46,7 @@ import {
   getAvailableTimeSlots,
   type TimeSlot,
 } from "@/shared/booking/getAvailableTimeSlots";
+import { computeBookingTiming } from "@/shared/booking/bookingTiming";
 import {
   NotifyCustomerPanel,
   type NotifyChannels,
@@ -424,19 +425,35 @@ export default function DeskBookingForm({
     [data, serviceId],
   );
 
-  // Total appointment block in minutes: main service + sequential add-ons.
-  // Concurrent add-ons run alongside the main service and add no time. This is
-  // what makes availability honest — a "gel + design" booking reserves the full
-  // block so the next customer can't be slotted on top of it.
-  const blockMinutes = useMemo(() => {
-    if (!service) return 0;
-    const extra = addonIds.reduce((sum, id) => {
-      const a = data?.addOns.find((x) => x.id === id);
-      if (!a) return sum;
-      return sum + (a.addonConcurrent ? 0 : a.totalMinutes);
-    }, 0);
-    return service.totalMinutes + extra;
+  const bookingTiming = useMemo(() => {
+    if (!service) {
+      return {
+        blockMinutes: 0,
+        serviceCompletionMinutes: 0,
+        trailingBufferMinutes: 0,
+      };
+    }
+    const addOns = addonIds.flatMap((id) => {
+      const addOn = data?.addOns.find((item) => item.id === id);
+      return addOn
+        ? [
+            {
+              durationMinutes: addOn.durationMinutes,
+              bufferMinutes: addOn.bufferMinutes,
+              concurrent: addOn.addonConcurrent,
+            },
+          ]
+        : [];
+    });
+    return computeBookingTiming(
+      {
+        durationMinutes: service.durationMinutes,
+        bufferMinutes: service.bufferMinutes,
+      },
+      addOns,
+    );
   }, [service, addonIds, data]);
+  const blockMinutes = bookingTiming.blockMinutes;
 
   const closedDateYmdSet = useMemo(() => {
     const raw = data?.salon.booking_closed_dates;
@@ -523,11 +540,13 @@ export default function DeskBookingForm({
       staffId,
       staffList: capableStaff,
       serviceDurationMinutes: blockMinutes,
-      // The last booking's trailing buffer may run past close (cleanup, no next
-      // customer) — recover that end-of-day slot. Single-service only; with
-      // add-ons we keep the conservative whole-block fit (trailing = 0).
+      // Only the final cleanup buffer may spill after close. Buffers between
+      // sequential services remain part of the customer's completion span.
+      // The legacy create RPC receives at most one add-on id. With multiple
+      // add-ons it cannot independently prove which buffer is final, so keep
+      // the whole block inside hours rather than offer an unsavable slot.
       trailingBufferMinutes:
-        addonIds.length === 0 ? (service.bufferMinutes ?? 0) : 0,
+        addonIds.length <= 1 ? bookingTiming.trailingBufferMinutes : 0,
       closedDateYmdSet,
       shortestServiceMinutes,
       leadMinutes: data.salon.bookingLeadMinutes,
@@ -564,6 +583,7 @@ export default function DeskBookingForm({
     closedDateYmdSet,
     shortestServiceMinutes,
     blockMinutes,
+    bookingTiming.trailingBufferMinutes,
     addonIds.length,
   ]);
 

@@ -30,6 +30,7 @@ import {
   minutesToLabel,
   type TimeSlot,
 } from "@/shared/booking/getAvailableTimeSlots";
+import { computeBookingTiming } from "@/shared/booking/bookingTiming";
 import type {
   BookingSalonMeta,
   BookingStaffItem,
@@ -387,16 +388,6 @@ export function useBookingFlowState(
     [selectedAddonIds, addOns, addonAddedMinutes],
   );
 
-  // Extra minutes for the pending (wanted-but-not-yet-fitting) add-on; added
-  // to the time-step slot sizing so the grid offers times that fit it.
-  const pendingAddonMin = useMemo(
-    () =>
-      pendingAddonId
-        ? addonAddedMinutes(addOns.find((s) => s.id === pendingAddonId))
-        : 0,
-    [pendingAddonId, addOns, addonAddedMinutes],
-  );
-
   // Toggle an add-on on/off. Concurrent add-ons are always allowed (no time
   // cost); sequential ones are blocked when they'd overflow the staff's free
   // gap (so the appointment never runs into the next booking).
@@ -440,19 +431,76 @@ export function useBookingFlowState(
 
   const confettiFiredRef = useRef(false);
 
-  const baseService = serviceId ? getServiceById(services, serviceId) : undefined;
+  const baseService = useMemo(
+    () => (serviceId ? getServiceById(services, serviceId) : undefined),
+    [serviceId, services],
+  );
   // When a combo is selected, override the base service's duration and price
   // so slot blocking and pricing reflect the combo, not just the first component.
-  const service = baseService && selectedCombo
-    ? {
-        ...baseService,
-        totalMinutes: selectedCombo.durationMinutes,
-        durationMinutes: selectedCombo.durationMinutes,
-        priceCents: selectedCombo.priceCents,
-        priceDisplay: null,
-        name: selectedCombo.name,
-      }
-    : baseService;
+  const service = useMemo(
+    () =>
+      baseService && selectedCombo
+        ? {
+            ...baseService,
+            totalMinutes: selectedCombo.durationMinutes,
+            durationMinutes: selectedCombo.durationMinutes,
+            priceCents: selectedCombo.priceCents,
+            priceDisplay: null,
+            name: selectedCombo.name,
+          }
+        : baseService,
+    [baseService, selectedCombo],
+  );
+
+  const slotBookingTiming = useMemo(() => {
+    if (!service) {
+      return {
+        blockMinutes: 0,
+        serviceCompletionMinutes: 0,
+        trailingBufferMinutes: 0,
+      };
+    }
+    const selectedIds = pendingAddonId
+      ? Array.from(new Set([...selectedAddonIds, pendingAddonId]))
+      : selectedAddonIds;
+    const selectedAddOns = selectedIds.flatMap((id) => {
+      const addOn = addOns.find((item) => item.id === id);
+      return addOn
+        ? [
+            {
+              durationMinutes: addOn.durationMinutes,
+              bufferMinutes: addOn.bufferMinutes,
+              concurrent: addOn.addonConcurrent,
+            },
+          ]
+        : [];
+    });
+    return computeBookingTiming(
+      selectedCombo
+        ? {
+            durationMinutes: selectedCombo.durationMinutes,
+            bufferMinutes: 0,
+          }
+        : {
+            durationMinutes: service.durationMinutes,
+            bufferMinutes: service.bufferMinutes,
+          },
+      selectedAddOns,
+    );
+  }, [
+    service,
+    selectedCombo,
+    selectedAddonIds,
+    pendingAddonId,
+    addOns,
+  ]);
+  const slotAddOnCount =
+    selectedAddonIds.length +
+    (pendingAddonId && !selectedAddonIds.includes(pendingAddonId) ? 1 : 0);
+  const slotTrailingBufferMinutes =
+    selectedCombo || slotAddOnCount > 1
+      ? 0
+      : slotBookingTiming.trailingBufferMinutes;
 
   /** Staff filtered to those capable of the currently selected service.
    *  When no service is picked yet we show the full list (step 1 hasn't gated anything). */
@@ -655,14 +703,8 @@ export function useBookingFlowState(
       // add-ons. On the first pass no add-ons are picked yet (→ 0), so the
       // behaviour is unchanged; on a re-pick (after adding a time-consuming
       // add-on at confirm) the grid only offers times that fit everything.
-      serviceDurationMinutes:
-        service.totalMinutes + selectedAddonsSlotMin + pendingAddonMin,
-      // NOTE: trailing-buffer spill past close is DISABLED. create_public_booking
-      // rejects any booking whose end (service + buffer) is after close
-      // (outside_hours), so offering a buffer-spill slot produced a slot the
-      // server always refused ("Could not complete booking"). Require the whole
-      // block to fit before close so availability matches create.
-      trailingBufferMinutes: 0,
+      serviceDurationMinutes: slotBookingTiming.blockMinutes,
+      trailingBufferMinutes: slotTrailingBufferMinutes,
       closedDateYmdSet,
       shortestServiceMinutes,
       leadMinutes: salon.bookingLeadMinutes,
@@ -687,8 +729,10 @@ export function useBookingFlowState(
     serviceId,
     service,
     shortestServiceMinutes,
-    selectedAddonsSlotMin,
-    pendingAddonMin,
+    salon.bookingLeadMinutes,
+    salon.timezone,
+    slotBookingTiming,
+    slotTrailingBufferMinutes,
   ]);
 
   useEffect(() => {
@@ -1592,10 +1636,8 @@ export function useBookingFlowState(
             selectedDate,
             staffId: staffId ?? BOOKING_ANY_STAFF_ID,
             staffList: capableStaff,
-            serviceDurationMinutes: service.totalMinutes,
-            // Disabled (see other call site): create rejects buffer-spill-past-close
-            // slots, so require the whole block to fit before close.
-            trailingBufferMinutes: 0,
+            serviceDurationMinutes: slotBookingTiming.blockMinutes,
+            trailingBufferMinutes: slotTrailingBufferMinutes,
             closedDateYmdSet,
             shortestServiceMinutes,
             leadMinutes: salon.bookingLeadMinutes,
@@ -1712,10 +1754,15 @@ export function useBookingFlowState(
     shopSlug,
     salon.id,
     salon.opening_hours,
+    salon.bookingLeadMinutes,
+    salon.timezone,
     closedDateYmdSet,
     serviceId,
     service,
     staff,
+    capableStaff,
+    slotBookingTiming.blockMinutes,
+    slotTrailingBufferMinutes,
     otpSessionId,
     t.bookingErrors.nameRequired,
     t.bookingErrors.nameTooShort,
