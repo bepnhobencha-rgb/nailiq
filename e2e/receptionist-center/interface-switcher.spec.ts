@@ -18,7 +18,11 @@ test.beforeAll(async ({}, testInfo) => {
 test.beforeEach(async ({ page }) => {
   await cleanReceptionistData(fx.salonId);
   await page.addInitScript(() => {
-    window.localStorage.removeItem("nailiq-receptionist-interface");
+    const initializedKey = "nailiq-interface-switcher-test-initialized";
+    if (window.sessionStorage.getItem(initializedKey) !== "true") {
+      window.localStorage.removeItem("nailiq-receptionist-interface");
+      window.sessionStorage.setItem(initializedKey, "true");
+    }
   });
 });
 
