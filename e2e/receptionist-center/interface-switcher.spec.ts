@@ -68,7 +68,9 @@ test("keeps classic as default and remembers the opt-in preview", async ({
     });
   } else {
     const themePicker = page.getByTestId("preview-theme-picker");
-    await themePicker.locator("button").first().click();
+    const visibleThemeTrigger = themePicker.locator("button:visible").first();
+    await expect(visibleThemeTrigger).toBeVisible();
+    await visibleThemeTrigger.click();
     const themePanel = page.getByTestId("preview-theme-picker-panel");
     await expect(themePanel).toBeVisible();
     const themeBox = await themePanel.boundingBox();
