@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 
 import { cn } from "@/shared/lib/cn";
 
@@ -31,11 +32,13 @@ export function UndoToast({
     onDismiss();
   }, [showCountdown, open, secondsRemaining, onDismiss]);
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
       data-testid="undo-toast"
       className={cn(
-        "fixed bottom-36 left-1/2 z-[70] flex max-w-[min(100vw-2rem,28rem)] -translate-x-1/2 px-4 md:bottom-6",
+        "fixed bottom-36 left-1/2 z-[100] flex max-w-[min(100vw-2rem,28rem)] -translate-x-1/2 px-4 md:bottom-6",
         "motion-safe:transition-[transform,opacity] motion-safe:duration-300 motion-safe:ease-[var(--ease-nq-out,cubic-bezier(0.22,1,0.36,1))]",
         open
           ? "translate-y-0 opacity-100"
@@ -84,6 +87,7 @@ export function UndoToast({
           ) : null}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
