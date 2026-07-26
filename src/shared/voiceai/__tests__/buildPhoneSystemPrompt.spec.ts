@@ -1,0 +1,94 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  buildPhoneGreeting,
+  buildPhoneSystemPrompt,
+} from "../buildPhoneSystemPrompt";
+import type { SalonVoiceContext } from "../loadSalonContext";
+import { PHONE_REALTIME_TOOLS, REALTIME_TOOLS } from "../realtimeTools";
+
+function withoutDescriptions(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutDescriptions);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => key !== "description")
+      .map(([key, nested]) => [key, withoutDescriptions(nested)]),
+  );
+}
+
+const ctx: SalonVoiceContext = {
+  salonId: "salon-1",
+  salonName: "Tech Nails Salon",
+  timezone: "America/Vancouver",
+  address: "123 Test Street",
+  currency: "CAD",
+  personaName: "Lily",
+  personaVoice: "marin",
+  reasoningEffort: "low",
+  upsellEnabled: true,
+  businessHours: null,
+  services: [{
+    id: "service-1",
+    name: "Gel Manicure",
+    durationMins: 45,
+    priceCents: 4500,
+    price_type: "fixed",
+    price_max_cents: null,
+    category: "manicure",
+    isAddon: false,
+    isPopular: true,
+    isFeatured: false,
+  }],
+  staff: [{ id: "staff-1", name: "Anna" }],
+};
+
+describe("compact phone Realtime config", () => {
+  it.each([
+    ["en", "Tech Nails Salon"],
+    ["vi", "Tech Nails Salon"],
+    ["es", "Tech Nails Salon"],
+    ["fr", "Tech Nails Salon"],
+    ["zh", "Tech Nails Salon"],
+  ] as const)("pins the exact salon name in the %s greeting", (language, salonName) => {
+    const greeting = buildPhoneGreeting(ctx, language);
+    expect(greeting).toContain(salonName);
+    expect(greeting).not.toContain("Aurora");
+    expect(greeting).not.toContain("Luna Glow");
+  });
+
+  it("retains booking and safety gates without the verbose web prompt", () => {
+    const prompt = buildPhoneSystemPrompt(ctx, "en", "+17780000000");
+    expect(prompt).toContain('named exactly "Tech Nails Salon"');
+    expect(prompt).toContain("Never invent, substitute, translate, or rename the salon");
+    expect(prompt).toContain("Carrier-verified caller number: +17780000000");
+    expect(prompt).toContain("A chosen time is not booking consent");
+    expect(prompt).toContain("never retry a timed-out write");
+    expect(prompt).toContain("call wait_for_user and say nothing");
+    expect(prompt).toContain("clear yes");
+    expect(prompt).toContain("Gel Manicure");
+    expect(prompt).toContain("Anna");
+  });
+
+  it("keeps identical tool contracts while materially reducing static context", () => {
+    const fullTools = REALTIME_TOOLS as unknown as Array<{
+      name: string;
+      parameters: unknown;
+    }>;
+    const phoneTools = PHONE_REALTIME_TOOLS as Array<{
+      name: string;
+      parameters: unknown;
+    }>;
+    expect(phoneTools.map((tool) => tool.name)).toEqual(fullTools.map((tool) => tool.name));
+    expect(phoneTools.every((tool) =>
+      typeof (tool as { description?: unknown }).description === "string"
+    )).toBe(true);
+    expect(phoneTools.map((tool) => tool.parameters)).toEqual(
+      fullTools.map((tool) => withoutDescriptions(tool.parameters)),
+    );
+
+    const phonePrompt = buildPhoneSystemPrompt(ctx, "en", "+17780000000");
+    const compactChars = phonePrompt.length + JSON.stringify(phoneTools).length;
+    expect(compactChars).toBeLessThan(18_000);
+  });
+});

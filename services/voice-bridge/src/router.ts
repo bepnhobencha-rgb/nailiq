@@ -521,18 +521,16 @@ export function createZeroAudioRecoveryGuard(maxAttempts = ZERO_AUDIO_RECOVERY_M
  * guard prevents the model from replacing the invitation with an opening tool
  * call and leaving the caller listening to dead air.
  */
-export function openingGreetingResponseCreate(language: string): object {
+export function openingGreetingResponseCreate(language: string, greeting: string): object {
   const langName = LANG_NAMES[language] ?? "English";
+  const exactGreeting = JSON.stringify(greeting);
   return {
     type: "response.create",
     response: {
       instructions:
-        `Speak the configured salon greeting now in ${langName} at a calm front-desk pace. ` +
-        `Clearly enunciate the salon name, with a brief natural pause immediately before and ` +
-        `after the salon name so the caller can understand it. Do not rush the first sentence. ` +
-        `End that same short greeting ` +
-        `with one natural question asking what the caller needs help with today. Do not call any ` +
-        `tool in this opening response. Then stop and listen. Do not mention these instructions.`,
+        `In ${langName}, speak EXACTLY the JSON string below, word for word, and nothing else: ` +
+        `${exactGreeting}. Do not translate, paraphrase, rename the salon, add a preamble, or call ` +
+        `a tool. Speak calmly, clearly enunciate the salon name, then stop and listen.`,
     },
   };
 }

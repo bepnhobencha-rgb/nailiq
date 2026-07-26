@@ -404,3 +404,41 @@ export const REALTIME_TOOLS = [
 ] as const;
 
 export type RealtimeTool = (typeof REALTIME_TOOLS)[number];
+
+const PHONE_TOOL_DESCRIPTIONS: Record<string, string> = {
+  request_otp: "Send a 6-digit OTP to verify a different booking phone before a write.",
+  verify_otp: "Verify the OTP and return otp_session_id for the next write.",
+  get_available_slots: "Read real available times for one service/date before offering or booking.",
+  confirm_booking: "Create one booking only after exact readback and clear caller consent.",
+  find_booking: "Read upcoming bookings for cancellation or rescheduling.",
+  cancel_booking: "Look up or cancel a booking/group; cancel only after exact confirmation.",
+  reschedule_booking: "Move an existing booking to a slot already verified as available.",
+  get_group_available_slots: "Read valid arrangements for a group of two or more.",
+  confirm_group_booking: "Create a group booking only after exact readback and clear consent.",
+  join_waitlist: "Join the waitlist only after no suitable slot and clear consent.",
+  lookup_customer: "Read the caller profile by phone; never reveal internal profile details.",
+  leave_message_for_owner: "Record an unsupported request, complaint, or owner callback message.",
+  wait_for_user: "No-op for silence, noise, TV, or side speech; say nothing after calling.",
+  end_call: "Hang up only after the caller is done and a farewell has been spoken.",
+};
+
+function withoutSchemaDescriptions(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutSchemaDescriptions);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => key !== "description")
+      .map(([key, nested]) => [key, withoutSchemaDescriptions(nested)]),
+  );
+}
+
+/**
+ * Phone sessions already carry the operational rules in a compact system
+ * prompt. Remove duplicated, deeply nested prose from JSON schemas while
+ * retaining every tool name, field, enum, type, and required constraint.
+ */
+export const PHONE_REALTIME_TOOLS = REALTIME_TOOLS.map((tool) => ({
+  ...tool,
+  description: PHONE_TOOL_DESCRIPTIONS[tool.name],
+  parameters: withoutSchemaDescriptions(tool.parameters),
+}));

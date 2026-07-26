@@ -395,7 +395,15 @@ wss.on("connection", (twilioWs) => {
     }
   };
 
-  type PhoneConfig = { model: string; voice: string; instructions: string; tools: unknown[]; sessionId?: string | null; language?: string };
+  type PhoneConfig = {
+    model: string;
+    voice: string;
+    instructions: string;
+    greeting: string;
+    tools: unknown[];
+    sessionId?: string | null;
+    language?: string;
+  };
 
   const startOpenAi = () => {
     // Open the socket AND fetch the salon's brain at the SAME time, then greet the
@@ -415,7 +423,7 @@ wss.on("connection", (twilioWs) => {
       // discipline like every other response.
       coordinator.request({
         kind: "normal",
-        build: () => openingGreetingResponseCreate(currentLang),
+        build: () => openingGreetingResponseCreate(currentLang, cfg!.greeting),
         language: () => currentLang,
       });
       console.log("[voice-bridge] configured + greeting");
@@ -434,7 +442,11 @@ wss.on("connection", (twilioWs) => {
       if (cfg.model && cfg.model !== REALTIME_MODEL) {
         console.warn(`[voice-bridge] config model ${cfg.model} != socket model ${REALTIME_MODEL}`);
       }
-      console.log(`[voice-bridge] phone-config ok lang=${currentLang} session=${sessionId || "(none)"}`);
+      console.log(
+        `[voice-bridge] phone-config ok lang=${currentLang} session=${sessionId || "(none)"} ` +
+        `promptChars=${cfg.instructions.length} toolsChars=${JSON.stringify(cfg.tools).length} ` +
+        `greetingChars=${cfg.greeting.length}`,
+      );
       greetWhenReady();
     }).catch((e) => { console.warn("[voice-bridge] phone-config error", e); closeAll("phone_config_error"); });
 
