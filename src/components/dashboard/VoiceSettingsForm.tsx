@@ -68,6 +68,27 @@ export function VoiceSettingsForm({ slug, initial }: Props) {
     });
   }
 
+  function toggleAllowedLanguage(language: SupportedLanguage) {
+    const isAllowed = form.voice_ai_allowed_languages.includes(language);
+    if (isAllowed && form.voice_ai_allowed_languages.length === 1) {
+      setErr("At least one call language must stay enabled.");
+      return;
+    }
+
+    const nextAllowed = isAllowed
+      ? form.voice_ai_allowed_languages.filter((value) => value !== language)
+      : [...form.voice_ai_allowed_languages, language];
+    setForm((prev) => ({
+      ...prev,
+      voice_ai_allowed_languages: nextAllowed,
+      voice_ai_default_language: nextAllowed.includes(prev.voice_ai_default_language)
+        ? prev.voice_ai_default_language
+        : nextAllowed[0]!,
+    }));
+    setSaved(false);
+    setErr(null);
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Enable toggle */}
@@ -120,6 +141,31 @@ export function VoiceSettingsForm({ slug, initial }: Props) {
         </button>
       </div>
 
+      {/* Allowed call languages */}
+      <fieldset className="space-y-3">
+        <legend className="text-sm font-semibold">Languages AI can use</legend>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {LANGUAGES.map((language) => (
+            <label
+              key={language.value}
+              className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-nq-muted/40 bg-nq-surface px-4 py-2 text-sm text-nq-foreground"
+            >
+              <input
+                type="checkbox"
+                checked={form.voice_ai_allowed_languages.includes(language.value)}
+                onChange={() => toggleAllowedLanguage(language.value)}
+                className="h-5 w-5 accent-nq-primary"
+              />
+              <span>{language.label}</span>
+            </label>
+          ))}
+        </div>
+        <p className="text-sm text-[var(--color-text-muted)]">
+          The receptionist may speak only the selected languages. It changes
+          language only when the caller clearly speaks or explicitly requests one.
+        </p>
+      </fieldset>
+
       {/* Opening language */}
       <div className="space-y-1.5">
         <label className="text-sm font-semibold" htmlFor="language-select">
@@ -134,7 +180,9 @@ export function VoiceSettingsForm({ slug, initial }: Props) {
           )}
           className={SELECT_CLASS_NAME}
         >
-          {LANGUAGES.map((language) => (
+          {LANGUAGES.filter((language) =>
+            form.voice_ai_allowed_languages.includes(language.value)
+          ).map((language) => (
             <option
               key={language.value}
               value={language.value}
@@ -145,8 +193,7 @@ export function VoiceSettingsForm({ slug, initial }: Props) {
           ))}
         </select>
         <p className="text-sm text-[var(--color-text-muted)]">
-          Used for the first greeting. The receptionist automatically switches
-          when the caller speaks another supported language.
+          Used for the first greeting. This language always remains enabled.
         </p>
       </div>
 

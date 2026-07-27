@@ -5,7 +5,10 @@ import { VoiceSettingsForm } from "@/components/dashboard/VoiceSettingsForm";
 import { VoicePhoneSetup } from "@/components/dashboard/VoicePhoneSetup";
 import type { VoiceAiSettingsInput } from "@/shared/dashboard/setupActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
-import { normalizeSupportedLanguage } from "@/shared/voiceai/config";
+import {
+  normalizeAllowedLanguages,
+  normalizeSupportedLanguage,
+} from "@/shared/voiceai/config";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +24,7 @@ export default async function VoiceSetupPage({ params }: PageProps) {
     .from("salons")
     .select(
       "voice_ai_enabled, voice_ai_persona_name, voice_ai_persona_voice, voice_ai_reasoning_effort, voice_ai_upsell_enabled, " +
-        "voice_ai_default_language, voice_ai_transfer_phone, voice_ai_sessions_this_month, voice_ai_sessions_limit, voice_ai_sessions_reset_at",
+        "voice_ai_default_language, voice_ai_allowed_languages, voice_ai_transfer_phone, voice_ai_sessions_this_month, voice_ai_sessions_limit, voice_ai_sessions_reset_at",
     )
     .eq("id", ctx.salon.id)
     .single();
@@ -38,6 +41,7 @@ export default async function VoiceSetupPage({ params }: PageProps) {
   const initial: VoiceAiSettingsInput = {
     voice_ai_enabled:          r.voice_ai_enabled          ?? false,
     voice_ai_default_language: normalizeSupportedLanguage(r.voice_ai_default_language),
+    voice_ai_allowed_languages: normalizeAllowedLanguages(r.voice_ai_allowed_languages),
     voice_ai_persona_name:     r.voice_ai_persona_name      ?? "Lily",
     voice_ai_persona_voice:    r.voice_ai_persona_voice     ?? "marin",
     voice_ai_reasoning_effort: r.voice_ai_reasoning_effort  ?? "low",

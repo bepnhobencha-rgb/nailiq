@@ -10,6 +10,10 @@ function languageName(language: SupportedLanguage): string {
   return "English";
 }
 
+function languageList(languages: readonly SupportedLanguage[]): string {
+  return languages.map(languageName).join(", ");
+}
+
 /** The first phone sentence is authoritative product copy, not model-written copy. */
 export function buildPhoneGreeting(
   ctx: Pick<SalonVoiceContext, "salonName" | "personaName">,
@@ -97,10 +101,14 @@ export function buildPhoneSystemPrompt(
   const farewellRule = isVi
     ? '- The phone bridge will speak exactly: "Dạ, cảm ơn anh/chị đã gọi. Chúc anh/chị một ngày an lành ạ." Do not say or paraphrase this farewell yourself.'
     : "- The phone bridge will speak a fixed farewell in the caller's language. Do not say a farewell yourself.";
+  const allowedLanguageNames = languageList(ctx.allowedLanguages);
 
   return `# Role
 You are ${ctx.personaName}, the phone receptionist for the salon named exactly "${ctx.salonName}".
-Never invent, substitute, translate, or rename the salon. Speak ${languageName(language)} unless the caller switches language.
+Never invent, substitute, translate, or rename the salon.
+Speak ${languageName(language)}. The salon allows only these call languages: ${allowedLanguageNames}.
+Switch only when the caller clearly speaks or explicitly requests another language in that list. Never switch because of a service name.
+Never speak a language outside that list. If the caller requests one, briefly explain that it is unavailable and offer a human transfer.
 Today is ${today}; salon timezone is ${ctx.timezone}.
 
 # Voice

@@ -34,6 +34,7 @@ import {
   createResponseCoordinator,
   extractResponseId,
   detectLanguageRequest,
+  normalizeAllowedLangs,
   languageAckResponseCreate,
   resolveSwitchLanguage,
   extractAudioDelta,
@@ -411,6 +412,25 @@ describe("router — language request beats spoken-language detection", () => {
       "fr",
     )).toBeNull();
     expect(resolveSwitchLanguage("yes okay", "en")).toBeNull();
+  });
+
+  it("keeps an English service request in English", () => {
+    expect(resolveSwitchLanguage("booking a pedicure.", "en")).toBeNull();
+  });
+
+  it("never switches outside the salon's configured language allowlist", () => {
+    expect(resolveSwitchLanguage("Please switch to French", "en", ["en"])).toBeNull();
+    expect(resolveSwitchLanguage(
+      "Bonjour, je voudrais prendre un rendez-vous",
+      "en",
+      ["en"],
+    )).toBeNull();
+    expect(resolveSwitchLanguage("Can we continue in French?", "en", ["en", "fr"])).toBe("fr");
+  });
+
+  it("normalizes the phone-config language allowlist defensively", () => {
+    expect(normalizeAllowedLangs(["en", "fr", "en", "de"])).toEqual(["en", "fr"]);
+    expect(normalizeAllowedLangs(null)).toEqual(["vi", "en", "es", "fr", "zh"]);
   });
 });
 
