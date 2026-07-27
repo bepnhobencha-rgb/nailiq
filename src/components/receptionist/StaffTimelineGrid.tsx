@@ -30,6 +30,7 @@ import {
   utcIsoToSalonMinutesFromMidnight,
 } from "@/shared/lib/salonTime";
 import { minutesToLabel } from "@/shared/booking/getAvailableTimeSlots";
+import { canOfferGridCreateStart } from "@/shared/booking/gridCreateAvailability";
 
 // Default visible window when nothing forces it wider. The grid expands beyond
 // this to cover any booking outside it + the current time (so a 1:44 AM walk-in
@@ -129,6 +130,11 @@ export interface StaffTimelineGridProps {
    */
   openMinutes?: number | null;
   closeMinutes?: number | null;
+  /**
+   * Shortest customer-facing main service each staff member can perform.
+   * `null` means the staff member has no bookable main service.
+   */
+  minimumServiceMinutesByStaff?: Record<string, number | null>;
   timezone: string;
   nowIso: string;
   /** When false, hide now line and skip jump-to-now scrolling (yesterday/tomorrow). */
@@ -444,6 +450,7 @@ function StaffTimelineGridImpl({
   selectedDate,
   openMinutes,
   closeMinutes,
+  minimumServiceMinutesByStaff,
   timezone,
   nowIso,
   isViewingToday,
@@ -497,6 +504,9 @@ function StaffTimelineGridImpl({
     startMin: number;
     leftPx: number;
   } | null>(null);
+  const [blockedCreateHoverStaffId, setBlockedCreateHoverStaffId] = useState<
+    string | null
+  >(null);
 
   const [dragState, setDragState] = useState<GridDragState | null>(null);
   const dragStateRef = useRef<GridDragState | null>(null);
@@ -864,21 +874,21 @@ function StaffTimelineGridImpl({
   // opens the desk booking form prefilled. Mutually exclusive with assign.
   const clickToCreate = !assignMode && !!onEmptySlotClick;
 
-  // Slot-validity check for click-to-create only — does NOT affect assign
-  // mode (assign keeps its original "any slot clickable" behavior). A slot
-  // is creatable when the staff row is active (not "offline") AND the slot
-  // start time is within the salon's open/close window (skip the hours
-  // guard when either bound is null/unknown).
+  // Start-validity check for click-to-create only — does NOT affect assign
+  // mode. The preview is shown only when at least one main service that this
+  // staff member can perform would finish before close.
   const isSlotCreatable = (
     staffStatus: StaffStatus,
-    slotIndex: number,
-  ): boolean => {
-    if (staffStatus === "offline") return false;
-    const slotMinutes = hourStart * 60 + slotIndex * SLOT_MINUTES;
-    if (openMinutes != null && slotMinutes < openMinutes) return false;
-    if (closeMinutes != null && slotMinutes >= closeMinutes) return false;
-    return true;
-  };
+    staffId: string,
+    startMinutes: number,
+  ): boolean =>
+    canOfferGridCreateStart({
+      staffIsActive: staffStatus !== "offline",
+      startMinutes,
+      openMinutes,
+      closeMinutes,
+      minimumServiceMinutes: minimumServiceMinutesByStaff?.[staffId],
+    });
 
   return (
     <div
@@ -1062,9 +1072,8 @@ function StaffTimelineGridImpl({
                   0,
                   Math.min(totalSlots * 2 - 1, Math.floor(relX / HALF_PX)),
                 );
-                const slotIndex = Math.floor(subSlot / 2);
-                if (!isSlotCreatable(s.status, slotIndex)) return null;
-                const gridLeftPx = subSlot * HALF_PX;
+                let startMin = hourStart * 60 + subSlot * 15;
+                let gridLeftPx = subSlot * HALF_PX;
                 for (const b of rowBookings) {
                   const { leftPx, widthPx } = bookingToPosition(
                     b,
@@ -1079,13 +1088,13 @@ function StaffTimelineGridImpl({
                     const endMin = Math.round(
                       utcIsoToSalonMinutesFromMidnight(b.end_time_utc, timezone),
                     );
-                    return { startMin: endMin, leftPx: rightPx };
+                    startMin = endMin;
+                    gridLeftPx = rightPx;
+                    break;
                   }
                 }
-                return {
-                  startMin: hourStart * 60 + subSlot * 15,
-                  leftPx: gridLeftPx,
-                };
+                if (!isSlotCreatable(s.status, s.id, startMin)) return null;
+                return { startMin, leftPx: gridLeftPx };
               };
               // Drag-to-reschedule ghost — shown when a booking block is being dragged.
               const isDragTarget =
@@ -1262,6 +1271,7 @@ function StaffTimelineGridImpl({
                       label=""
                     />
                     <div
+                      data-testid="create-booking-preview"
                       className="pointer-events-none absolute top-1 z-30 flex items-center gap-1 whitespace-nowrap rounded-full border border-nq-primary/50 bg-nq-bg/90 px-2 py-0.5 text-[11px] font-semibold text-nq-primary shadow-nq-card ring-1 ring-nq-primary/20 backdrop-blur-sm"
                       style={{ left: pillLeft }}
                     >
@@ -1279,7 +1289,10 @@ function StaffTimelineGridImpl({
                   className={cn(
                     "relative border-b border-nq-muted/15 transition-colors",
                     assignMode && "cursor-copy",
-                    clickToCreate && "cursor-pointer",
+                    clickToCreate &&
+                      (blockedCreateHoverStaffId === s.id
+                        ? "cursor-not-allowed"
+                        : "cursor-pointer"),
                     // Highlight the row the click-to-create pointer is over.
                     clickToCreate &&
                       createHover?.staffId === s.id &&
@@ -1289,6 +1302,7 @@ function StaffTimelineGridImpl({
                   onMouseLeave={() => {
                     setHoveredSlot(null);
                     setCreateHover(null);
+                    setBlockedCreateHoverStaffId(null);
                   }}
                   onMouseMove={
                     clickToCreate
@@ -1299,6 +1313,7 @@ function StaffTimelineGridImpl({
                           // overlap as two translucent layers.
                           if (dragState !== null) {
                             if (createHover !== null) setCreateHover(null);
+                            setBlockedCreateHoverStaffId(null);
                             return;
                           }
                           const rowRect =
@@ -1309,8 +1324,10 @@ function StaffTimelineGridImpl({
                           if (!res) {
                             if (createHover?.staffId === s.id)
                               setCreateHover(null);
+                            setBlockedCreateHoverStaffId(s.id);
                             return;
                           }
+                          setBlockedCreateHoverStaffId(null);
                           if (
                             createHover?.staffId !== s.id ||
                             createHover.startMin !== res.startMin
