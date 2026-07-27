@@ -26,6 +26,10 @@ import type { ApprovalRow } from "@/shared/ai/approvalRequests";
 import { prepareAudienceAction } from "@/shared/ai/prepareAudienceAction";
 import type { ExecutionJobRow } from "@/shared/ai/executionQueue";
 import type { MinhActivityData } from "@/shared/ai/loadMinhActivity";
+import type {
+  AiOperatingState,
+  LearnedAiControl,
+} from "@/shared/ai/operatingState";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 type Props = {
@@ -33,6 +37,7 @@ type Props = {
   approvals: ApprovalRow[];
   activity: MinhActivityData;
   executionJobs: ExecutionJobRow[];
+  operatingState: AiOperatingState;
   appUrl: string;
   nowIso: string;
 };
@@ -52,6 +57,7 @@ export function AiControlCenter({
   approvals,
   activity,
   executionJobs,
+  operatingState,
   appUrl,
   nowIso,
 }: Props) {
@@ -96,6 +102,12 @@ export function AiControlCenter({
         <Metric label={vi ? "Khách quay lại" : "Customers returned"} value={activity.converted} tone="success" />
         <Metric label={vi ? "Hiệu quả đo được" : "Measured effectiveness"} value={effectiveness == null ? "—" : `${effectiveness}%`} />
       </section>
+
+      <OperatingStatus
+        state={operatingState}
+        language={language}
+        nowIso={nowIso}
+      />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]">
         <section className="space-y-3">
@@ -307,6 +319,156 @@ export function AiControlCenter({
         </aside>
       </div>
     </main>
+  );
+}
+
+function OperatingStatus({
+  state,
+  language,
+  nowIso,
+}: {
+  state: AiOperatingState;
+  language: "en" | "vi";
+  nowIso: string;
+}) {
+  const vi = language === "vi";
+  const { health } = state;
+  const copy = {
+    healthy: {
+      title: vi ? "AI đang vận hành ổn định" : "AI is operating normally",
+      detail: vi
+        ? "Không có công việc bị lỗi, mắc kẹt hoặc đang chờ bạn bổ sung thông tin."
+        : "No work is failed, stalled, or waiting for information from you.",
+    },
+    active: {
+      title: vi ? "AI đang xử lý công việc" : "AI is processing work",
+      detail: vi
+        ? `${health.activeWork} công việc đang xếp hàng hoặc thực thi.`
+        : `${health.activeWork} ${health.activeWork === 1 ? "job is" : "jobs are"} queued or running.`,
+    },
+    attention: {
+      title: vi ? "AI đang chờ thông tin" : "AI is waiting for information",
+      detail: vi
+        ? `${health.waitingInput} công việc đã được duyệt nhưng cần thêm dữ liệu an toàn trước khi chạy.`
+        : `${health.waitingInput} approved ${health.waitingInput === 1 ? "job needs" : "jobs need"} safe execution input.`,
+    },
+    issue: {
+      title: vi ? "Có công việc AI cần kiểm tra" : "AI work needs review",
+      detail: vi
+        ? `${health.failed} lỗi · ${health.stalled} worker quá hạn 15 phút. Hệ thống không che giấu lỗi hoặc tự coi là thành công.`
+        : `${health.failed} failed · ${health.stalled} worker leases over 15 minutes. Failures are never hidden or reported as success.`,
+    },
+  }[health.tone];
+  const tone =
+    health.tone === "issue"
+      ? "border-nq-error/35 bg-nq-error/5"
+      : health.tone === "attention"
+        ? "border-nq-warning/35 bg-nq-warning/5"
+        : "border-nq-success/30 bg-nq-success/5";
+  const iconTone =
+    health.tone === "issue"
+      ? "text-nq-error"
+      : health.tone === "attention"
+        ? "text-nq-warning"
+        : "text-nq-success";
+
+  return (
+    <section
+      className={`grid gap-4 rounded-2xl border p-4 sm:p-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] ${tone}`}
+      aria-label={vi ? "Trạng thái vận hành AI" : "AI operating status"}
+    >
+      <div className="flex gap-3">
+        <div className="mt-0.5 rounded-xl border border-current/15 bg-nq-surface p-2.5">
+          <Activity className={`h-5 w-5 ${iconTone}`} aria-hidden />
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+            {vi ? "Sức khỏe vận hành" : "Operating health"}
+          </p>
+          <h2 className="mt-1 text-base font-semibold text-nq-foreground">
+            {copy.title}
+          </h2>
+          <p className="mt-1 text-xs leading-5 text-nq-muted">{copy.detail}</p>
+          <p className="mt-2 text-[11px] text-nq-muted">
+            {vi ? "Quan sát" : "Observed"}{" "}
+            {relativeTime(state.observedAt, nowIso, language)}
+          </p>
+        </div>
+      </div>
+
+      <div className="border-t border-nq-border/50 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+        <div className="flex items-center gap-2">
+          <Lightbulb className="h-4 w-4 text-nq-primary" aria-hidden />
+          <h3 className="text-sm font-semibold text-nq-foreground">
+            {vi ? "AI đã học và đang áp dụng" : "What AI learned and is applying"}
+          </h3>
+        </div>
+        {state.learnedControls.length === 0 ? (
+          <p className="mt-2 text-xs leading-5 text-nq-muted">
+            {vi
+              ? "Chưa có điều chỉnh tự động nào đang hoạt động. AI vẫn theo giới hạn bạn đã cấu hình."
+              : "No learned adjustment is active. AI is following your configured limits."}
+          </p>
+        ) : (
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {state.learnedControls.slice(0, 4).map((control) => (
+              <LearnedControl
+                key={learnedControlKey(control)}
+                control={control}
+                language={language}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function learnedControlKey(control: LearnedAiControl): string {
+  return control.kind === "proposal_cooldown"
+    ? `${control.kind}:${control.actionType}:${control.proposalSource ?? "all"}`
+    : `${control.kind}:${control.agent}`;
+}
+
+function LearnedControl({
+  control,
+  language,
+}: {
+  control: LearnedAiControl;
+  language: "en" | "vi";
+}) {
+  const vi = language === "vi";
+  if (control.kind === "proposal_cooldown") {
+    const until = new Intl.DateTimeFormat(vi ? "vi-CA" : "en-CA", {
+      month: "short",
+      day: "numeric",
+    }).format(new Date(control.suppressUntil));
+    return (
+      <div className="rounded-xl border border-nq-border/60 bg-nq-surface/75 p-3">
+        <p className="text-xs font-semibold text-nq-foreground">
+          {vi ? "Giảm đề xuất lặp lại" : "Fewer repeated proposals"}
+        </p>
+        <p className="mt-1 text-[11px] leading-4 text-nq-muted">
+          {vi
+            ? `Bạn thường từ chối ${control.actionType.replaceAll("_", " ")}; AI tạm ngưng đề xuất này đến ${until}.`
+            : `You often declined ${control.actionType.replaceAll("_", " ")}; AI paused this proposal until ${until}.`}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-nq-border/60 bg-nq-surface/75 p-3">
+      <p className="text-xs font-semibold text-nq-foreground">
+        {vi ? "Giảm nhịp liên hệ" : "Reduced contact pace"}
+      </p>
+      <p className="mt-1 text-[11px] leading-4 text-nq-muted">
+        {vi
+          ? `${control.agent} đang chạy ở ${Math.round(control.capMultiplier * 100)}% giới hạn sau khi đo kết quả gần đây.`
+          : `${control.agent} is running at ${Math.round(control.capMultiplier * 100)}% of its cap after recent outcome measurement.`}
+      </p>
+    </div>
   );
 }
 

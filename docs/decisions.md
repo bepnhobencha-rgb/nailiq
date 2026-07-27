@@ -5,6 +5,31 @@ Newest entries on top.
 
 ---
 
+## 2026-07-27 — AI operating state must be measured, tenant-scoped, and honest
+
+**Status.** Implemented on `agent/ai-operating-health`.
+
+**Context.** AI Control Center showed recent jobs, but owners could not tell
+whether the execution system was healthy, actively working, waiting for safe
+input, or carrying a hidden failure. Learned cooldowns and outcome-based pace
+reductions altered behavior without an owner-facing explanation.
+
+**Decision.**
+- Queue health uses exact, salon-scoped counts for queued, waiting-input,
+  running, and failed jobs. A running lease older than the worker's 15-minute
+  recovery threshold is explicitly reported as stalled.
+- Status severity is deterministic: failed/stalled → issue; waiting input →
+  attention; queued/running → active; otherwise healthy. A failed job is never
+  presented as completed or silently omitted.
+- Owner-facing learned controls include only active lessons belonging to that
+  salon. Global and cross-salon lessons are excluded, and expired proposal
+  cooldowns are filtered at read time.
+- The surface explains temporary proposal cooldowns and bounded contact-cap
+  reductions. It is read-only and adds no execution, messaging, payment, or
+  authentication authority.
+
+---
+
 ## 2026-07-27 — Owner decisions must alter proposal frequency without permanently muting AI
 
 **Status.** Implemented on `agent/approval-preference-learning`.

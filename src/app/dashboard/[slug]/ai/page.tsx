@@ -5,6 +5,7 @@ import { AiControlCenter } from "@/components/dashboard/AiControlCenter";
 import { getAllApprovals } from "@/shared/ai/approvalRequests";
 import { loadMinhActivity } from "@/shared/ai/loadMinhActivity";
 import { getExecutionJobs } from "@/shared/ai/executionQueue";
+import { loadAiOperatingState } from "@/shared/ai/operatingState";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { requireReleaseFeatureEnabled } from "@/shared/features/requireReleaseFeature";
@@ -26,10 +27,12 @@ export default async function AiControlCenterPage({ params }: Props) {
   const releaseGate = await requireReleaseFeatureEnabled(slug, "ai_control_center");
   if (!releaseGate.ok) notFound();
 
-  const [approvals, activity, executionJobs] = await Promise.all([
+  const now = new Date();
+  const [approvals, activity, executionJobs, operatingState] = await Promise.all([
     getAllApprovals(ctx.salon.id),
     loadMinhActivity(ctx.salon.id, 30),
     getExecutionJobs(ctx.salon.id, 10),
+    loadAiOperatingState(ctx.salon.id, now),
   ]);
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://nailiq.ca";
@@ -40,8 +43,9 @@ export default async function AiControlCenterPage({ params }: Props) {
       approvals={approvals}
       activity={activity}
       executionJobs={executionJobs}
+      operatingState={operatingState}
       appUrl={appUrl}
-      nowIso={new Date().toISOString()}
+      nowIso={now.toISOString()}
     />
   );
 }
