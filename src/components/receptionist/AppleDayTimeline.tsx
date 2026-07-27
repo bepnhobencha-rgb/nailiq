@@ -346,6 +346,14 @@ export function AppleDayTimeline({
                       <span className="mt-0.5 block truncate text-[11px] leading-tight opacity-70">
                         {booking.service_name}
                       </span>
+                      {booking.after_hours_minutes ? (
+                        <span
+                          data-testid={`booking-block-icon-after-hours-${booking.id}`}
+                          className="mt-1 inline-flex rounded-full bg-amber-400/20 px-1.5 py-0.5 text-[9px] font-semibold text-amber-800"
+                        >
+                          🌙 {booking.after_hours_minutes}m after close
+                        </span>
+                      ) : null}
                       <span className="sr-only">
                         {statusLabel(booking.status, language)}
                       </span>

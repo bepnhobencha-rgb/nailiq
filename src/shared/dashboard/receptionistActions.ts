@@ -22,6 +22,7 @@ import {
   canCancelBooking,
   canMarkNoShow,
   canCreateDeskBooking,
+  canCreateAfterHoursDeskBooking,
   canEditBooking,
   canUndoCancel,
 } from "@/shared/lib/salonMemberRole";
@@ -32,6 +33,7 @@ import {
   type BookingTimingSegment,
 } from "@/shared/booking/bookingTiming";
 import { checkBookingWithinOpeningHours } from "@/shared/booking/bookingWithinOpeningHours";
+import { evaluateControlledAfterHours } from "@/shared/booking/controlledAfterHours";
 import {
   salonWallTimeToUtcIso,
   salonDayRangeUtc,
@@ -2309,7 +2311,7 @@ export async function getDeskBookingData(
       ok: true;
       data: NonNullable<
         Awaited<ReturnType<typeof loadBookingServicesForSalonSlug>>
-      >;
+      > & { canBookAfterHours: boolean };
     }
   | { ok: false; error: string }
 > {
@@ -2318,7 +2320,18 @@ export async function getDeskBookingData(
   if (!canCreateDeskBooking(ctx.role)) return fail("unauthorized");
   const data = await loadBookingServicesForSalonSlug(slug);
   if (!data) return fail("not_found");
-  return { ok: true, data };
+  return {
+    ok: true,
+    data: {
+      ...data,
+      // Demo-cookie owners have no attributable auth user and therefore cannot
+      // approve an auditable labor-hours exception.
+      canBookAfterHours:
+        ctx.kind === "member" &&
+        ctx.userId != null &&
+        canCreateAfterHoursDeskBooking(ctx.role),
+    },
+  };
 }
 
 /**
@@ -2359,6 +2372,11 @@ export async function addDeskAppointment(
     /** Explicit bed/chair to assign. `null` = auto-assign first free one.
      *  `undefined` = also auto-assign (backwards compat). */
     resourceId?: string | null;
+    /** Management-only exception. The server independently proves the acting
+     * role, selected staff, time boundary, and 120-minute cap. */
+    afterHoursOverride?: {
+      staffConsentConfirmed?: boolean;
+    };
   },
 ): Promise<OkDeskBooking | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
@@ -2624,17 +2642,50 @@ export async function addDeskAppointment(
   ) {
     return fail("invalid_duration");
   }
+  const serviceCompletionMinutes =
+    addonIds.length <= 1
+      ? bookingTiming.serviceCompletionMinutes
+      : bookingTiming.blockMinutes;
   const hoursCheck = checkBookingWithinOpeningHours({
     openingHoursRaw: ctx.salon.opening_hours,
     bookingClosedDatesRaw: ctx.salon.booking_closed_dates,
     dateYmd,
     startMinutes,
-    serviceCompletionMinutes:
-      addonIds.length <= 1
-        ? bookingTiming.serviceCompletionMinutes
-        : bookingTiming.blockMinutes,
+    serviceCompletionMinutes,
   });
-  if (!hoursCheck.ok) return fail("outside_hours");
+  let afterHoursMinutes: number | null = null;
+  if (!hoursCheck.ok) {
+    if (
+      ctx.kind !== "member" ||
+      !ctx.userId ||
+      !canCreateAfterHoursDeskBooking(ctx.role)
+    ) {
+      return fail("after_hours_not_allowed");
+    }
+    if (isAnyStaff) return fail("specific_staff_required");
+    if (input.afterHoursOverride?.staffConsentConfirmed !== true) {
+      return fail("staff_consent_required");
+    }
+    const override = evaluateControlledAfterHours({
+      openingHoursRaw: ctx.salon.opening_hours,
+      bookingClosedDatesRaw: ctx.salon.booking_closed_dates,
+      dateYmd,
+      startMinutes,
+      serviceCompletionMinutes,
+    });
+    if (!override.ok) {
+      return fail(
+        override.reason === "extension_too_long"
+          ? "after_hours_limit_exceeded"
+          : "outside_hours",
+      );
+    }
+    afterHoursMinutes = override.afterHoursMinutes;
+  } else if (input.afterHoursOverride) {
+    // Never stamp a normal booking as after-hours merely because a client sent
+    // the optional object.
+    return fail("invalid_after_hours_override");
+  }
   const endUtcIso = new Date(
     Date.parse(startUtcIso) + totalMin * 60_000,
   ).toISOString();
@@ -2745,40 +2796,81 @@ export async function addDeskAppointment(
     resolvedResourceId = rr.resourceId;
   }
 
-  const { data: rpcData, error: rpcErr } = await db.rpc(
-    "create_public_booking",
-    {
-      p_salon_id: ctx.salon.id,
-      p_service_id: serviceId,
-      p_staff_id: resolvedStaffId,
-      p_client_name: clientName,
-      p_client_phone: canonicalPhone,
-      p_start_time_utc: startUtcIso,
-      p_end_time_utc: endUtcIso,
-      p_status: "confirmed",
-      p_price_cents: deskPriceCents ?? svc.price_cents ?? null,
-      p_client_notes: clientNotes,
-      p_client_email: clientEmail,
-    } as never,
-  );
-  if (rpcErr) {
-    const code = (rpcErr as { code?: string }).code;
-    if (code === "P0002" || code === "23P01") return fail("time_slot_taken");
-    console.error("[addDeskAppointment] rpc error", rpcErr);
-    return fail("server_error");
+  let bookingId: string;
+  if (afterHoursMinutes != null) {
+    // The public RPC intentionally rejects out-of-hours times. This private
+    // service-role insert is reached only after the authenticated management
+    // checks above; the bookings GiST exclusion still rejects staff overlap.
+    const { data: inserted, error: insertError } = await db
+      .from("bookings")
+      .insert({
+        salon_id: ctx.salon.id,
+        service_id: serviceId,
+        staff_id: resolvedStaffId,
+        client_name: clientName,
+        client_phone: canonicalPhone,
+        client_email: clientEmail,
+        client_notes: clientNotes,
+        client_locale: input.language ?? null,
+        start_time_utc: startUtcIso,
+        end_time_utc: endUtcIso,
+        status: "confirmed",
+        source: "appointment",
+        price_cents: deskPriceCents ?? svc.price_cents ?? null,
+        walkin_source: "phone",
+        booking_channel: "desk",
+        staff_requested_by_client: input.staffRequestedByClient === true,
+        resource_id: resolvedResourceId,
+        after_hours_minutes: afterHoursMinutes,
+        after_hours_approved_by: ctx.userId,
+        after_hours_staff_consent: true,
+      } as never)
+      .select("id")
+      .single();
+    if (insertError) {
+      if ((insertError as { code?: string }).code === "23P01") {
+        return fail("time_slot_taken");
+      }
+      console.error("[addDeskAppointment] after-hours insert", insertError);
+      return fail("server_error");
+    }
+    bookingId = String((inserted as { id: string }).id);
+  } else {
+    const { data: rpcData, error: rpcErr } = await db.rpc(
+      "create_public_booking",
+      {
+        p_salon_id: ctx.salon.id,
+        p_service_id: serviceId,
+        p_staff_id: resolvedStaffId,
+        p_client_name: clientName,
+        p_client_phone: canonicalPhone,
+        p_start_time_utc: startUtcIso,
+        p_end_time_utc: endUtcIso,
+        p_status: "confirmed",
+        p_price_cents: deskPriceCents ?? svc.price_cents ?? null,
+        p_client_notes: clientNotes,
+        p_client_email: clientEmail,
+      } as never,
+    );
+    if (rpcErr) {
+      const code = (rpcErr as { code?: string }).code;
+      if (code === "P0002" || code === "23P01") return fail("time_slot_taken");
+      console.error("[addDeskAppointment] rpc error", rpcErr);
+      return fail("server_error");
+    }
+    const result = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as {
+      success?: boolean;
+      booking_id?: string;
+      code?: string;
+    } | null;
+    if (!result?.success || !result.booking_id) {
+      const rCode = result?.code;
+      if (rCode === "slot_conflict") return fail("time_slot_taken");
+      if (rCode === "outside_hours") return fail("outside_hours");
+      return fail("server_error");
+    }
+    bookingId = result.booking_id;
   }
-  const result = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as {
-    success?: boolean;
-    booking_id?: string;
-    code?: string;
-  } | null;
-  if (!result?.success || !result.booking_id) {
-    const rCode = result?.code;
-    if (rCode === "slot_conflict") return fail("time_slot_taken");
-    if (rCode === "outside_hours") return fail("outside_hours");
-    return fail("server_error");
-  }
-  const bookingId = result.booking_id;
 
   // Stamp promo discount when an active campaign applies (server-authoritative)
   if (deskPromoId && basePriceCents && deskPriceCents != null && deskPriceCents < basePriceCents) {
@@ -2863,7 +2955,10 @@ export async function addDeskAppointment(
     salonId: ctx.salon.id,
     actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
-    eventType: "booking_created",
+    eventType:
+      afterHoursMinutes != null
+        ? "booking_after_hours_created"
+        : "booking_created",
     payload: {
       source: "desk_phone",
       staffId: resolvedStaffId,
@@ -2871,6 +2966,13 @@ export async function addDeskAppointment(
       addonServiceIds: addonIds,
       anyStaff: isAnyStaff,
       staffRequestedByClient: input.staffRequestedByClient === true,
+      ...(afterHoursMinutes != null
+        ? {
+            afterHoursMinutes,
+            staffConsentConfirmed: true,
+            approvedBy: ctx.userId,
+          }
+        : {}),
     },
   });
 
@@ -3000,6 +3102,7 @@ export async function addDeskAppointment(
     noshow_charge_status: null,
     resource_id: resolvedResourceId,
     resource_name: null,
+    after_hours_minutes: afterHoursMinutes,
   };
 
   return { ok: true, bookingId, booking: optimisticBooking };

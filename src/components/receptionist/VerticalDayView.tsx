@@ -593,7 +593,7 @@ function BookingCard({
             {booking.is_vip && (
               <span className="leading-none text-nq-primary text-xs">★</span>
             )}
-            {booking.seat_together ? (
+              {booking.seat_together ? (
               <span
                 data-testid={`booking-block-icon-seat-together-${booking.id}`}
                 role="img"
@@ -633,6 +633,14 @@ function BookingCard({
                 <span className="text-[10px] text-white/35">
                   {language === "vi" ? "Tự đánh dấu vắng" : "Auto no-show"}{" "}
                   {formatInSalonTz(autoAtIso, timezone, "shortTime")}
+                </span>
+              ) : null}
+              {booking.after_hours_minutes ? (
+                <span
+                  data-testid={`booking-block-icon-after-hours-${booking.id}`}
+                  className="rounded-full bg-amber-400/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
+                >
+                  🌙 {booking.after_hours_minutes}m
                 </span>
               ) : null}
             </div>

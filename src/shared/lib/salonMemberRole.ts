@@ -106,6 +106,15 @@ export function canCreateDeskBooking(role: SalonMemberRole): boolean {
   );
 }
 
+/** Controlled after-hours exceptions are management decisions, not routine
+ * front-desk mutations. They require an authenticated Owner/Admin plus an
+ * explicit selected-staff consent confirmation in the server action. */
+export function canCreateAfterHoursDeskBooking(
+  role: SalonMemberRole,
+): boolean {
+  return role === "owner" || role === "admin";
+}
+
 export function canUndoCancel(role: SalonMemberRole): boolean {
   return (
     role === "owner" ||

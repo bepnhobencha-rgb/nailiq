@@ -116,6 +116,13 @@ export type GetAvailableTimeSlotsParams = {
    *  timezone). Omit → legacy device/UTC-frame behavior (server callers that
    *  pre-shift their own frame rely on this). */
   timezone?: string;
+  /** Private desk-only display option. Public creation still rejects these
+   * slots server-side. Extends the customer-facing completion boundary beyond
+   * close by this many minutes (0 by default). */
+  closingExtensionMinutes?: number;
+  /** A staff member who explicitly consented to after-hours work may exceed
+   * their configured shift end. This does not ignore one-off unavailability. */
+  allowBeyondStaffShiftEnd?: boolean;
 };
 
 /**
@@ -186,6 +193,8 @@ export function computeTimeSlots(args: {
    *  staff are excluded from "any staff" selection and make specific-staff
    *  slots completely unavailable. */
   staffUnavailableIds?: ReadonlySet<string>;
+  closingExtensionMinutes?: number;
+  allowBeyondStaffShiftEnd?: boolean;
 }): TimeSlot[] {
   const {
     openingHoursRaw,
@@ -202,6 +211,8 @@ export function computeTimeSlots(args: {
     timezone,
     staffShiftWindows,
     staffUnavailableIds,
+    closingExtensionMinutes = 0,
+    allowBeyondStaffShiftEnd = false,
   } = args;
 
   const durationMin = Math.max(1, Math.round(Number(serviceDurationMinutes) || 1));
@@ -231,6 +242,13 @@ export function computeTimeSlots(args: {
   const openMin = hmToMinutes(dayCfg.open);
   const closeMin = hmToMinutes(dayCfg.close);
   if (closeMin <= openMin) return [];
+  const extensionMin = Math.max(
+    0,
+    Math.min(
+      24 * 60 - closeMin,
+      Math.round(Number(closingExtensionMinutes) || 0),
+    ),
+  );
 
   const occIntervals = occupancy.map((row) => ({
     staffId: String(row.staff_id),
@@ -259,7 +277,10 @@ export function computeTimeSlots(args: {
     if (!staffShiftWindows || staffShiftWindows.size === 0) return true;
     const win = staffShiftWindows.get(staffUuid);
     if (!win) return true; // no shift row for this staff → fall back to salon hours
-    return slotStartMin >= win.startMin && slotEndMin <= win.endMin;
+    return (
+      slotStartMin >= win.startMin &&
+      (allowBeyondStaffShiftEnd || slotEndMin <= win.endMin)
+    );
   }
 
   function slotAvailableForSelection(
@@ -314,7 +335,7 @@ export function computeTimeSlots(args: {
     : sameCalendarDay(selectedDate, now);
 
   // Closing boundary in ms — used to guard against slots that run past close.
-  const closeBoundaryMs = slotMsAt(closeMin);
+  const closeBoundaryMs = slotMsAt(closeMin + extensionMin);
 
   // ── Phase 1: regular 15-min grid ─────────────────────────────────────────
   // Map<startMs, TimeSlot> — keyed by ms for O(1) dedup in Phase 2.
@@ -324,7 +345,7 @@ export function computeTimeSlots(args: {
 
   for (
     let mins = openMin;
-    mins + closingDurationMin <= closeMin;
+    mins + closingDurationMin <= closeMin + extensionMin;
     mins += SLOT_STEP_MINUTES
   ) {
     let slotStartMs: number;
@@ -381,7 +402,10 @@ export function computeTimeSlots(args: {
 
     // Must be within opening hours and leave room for the service (its trailing
     // buffer may run past close — see closingDurationMin).
-    if (endMins < openMin || endMins + closingDurationMin > closeMin) continue;
+    if (
+      endMins < openMin ||
+      endMins + closingDurationMin > closeMin + extensionMin
+    ) continue;
 
     let slotStartMs: number;
     let label: string;
@@ -475,6 +499,8 @@ export async function getAvailableTimeSlots(
     shortestServiceMinutes,
     leadMinutes,
     timezone,
+    closingExtensionMinutes,
+    allowBeyondStaffShiftEnd,
   } = params;
 
   const week = parseOpeningHours(openingHoursRaw);
@@ -574,6 +600,8 @@ export async function getAvailableTimeSlots(
     timezone,
     staffShiftWindows,
     staffUnavailableIds,
+    closingExtensionMinutes,
+    allowBeyondStaffShiftEnd,
   });
 }
 

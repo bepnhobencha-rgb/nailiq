@@ -231,6 +231,8 @@ export interface BookingBlockProps {
   /** Assigned resource name ("Bed 3") shown as a small pill under the service line.
    * Only rendered when resources_enabled is on for the salon. */
   resourceName?: string | null;
+  /** Controlled Owner/Admin exception; renders a compact moon marker. */
+  afterHoursMinutes?: number | null;
 }
 
 /**
@@ -327,6 +329,7 @@ export function BookingBlock(props: BookingBlockProps) {
     autoNoShowAtLabel,
     onStart,
     resourceName,
+    afterHoursMinutes = null,
   } = props;
 
   const reduced = useReducedMotion();
@@ -370,6 +373,11 @@ export function BookingBlock(props: BookingBlockProps) {
     hasDesign ||
     isGroup ||
     seatTogether;
+    // Moon is text rather than a new icon dependency; it remains recognizable
+    // in every density and is paired with an accessible label.
+  const isAfterHours =
+    afterHoursMinutes != null && Number(afterHoursMinutes) > 0;
+  const hasAnyIcons = hasIcons || isAfterHours;
 
   const lateChipLabel =
     latenessTier === "critical"
@@ -603,7 +611,7 @@ export function BookingBlock(props: BookingBlockProps) {
           ) : null}
         </div>
 
-        {hasIcons ? (
+        {hasAnyIcons ? (
           <div
             data-testid={`booking-block-icons-${bookingId}`}
             className={cn(
@@ -693,6 +701,16 @@ export function BookingBlock(props: BookingBlockProps) {
                 aria-label={iconLabels.design}
                 data-testid={`booking-block-icon-design-${bookingId}`}
               />
+            ) : null}
+            {isAfterHours ? (
+              <span
+                aria-label={`After hours · ${afterHoursMinutes} minutes`}
+                title={`After hours · ${afterHoursMinutes} minutes`}
+                data-testid={`booking-block-icon-after-hours-${bookingId}`}
+                className="text-xs leading-none"
+              >
+                🌙
+              </span>
             ) : null}
           </div>
         ) : null}
