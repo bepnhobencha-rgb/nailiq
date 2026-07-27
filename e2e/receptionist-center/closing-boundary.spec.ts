@@ -1,6 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-import { cleanupTestSalon } from "../helpers/db";
+import {
+  cleanupTestSalon,
+  cleanupTestUser,
+  seedTestUser,
+} from "../helpers/db";
 import {
   fillReactInput,
   gotoReceptionistCenter,
@@ -101,14 +105,40 @@ async function seedFixture(slug: string): Promise<Fixture> {
 }
 
 let fixture: Fixture;
+let owner: Awaited<ReturnType<typeof seedTestUser>>;
 
 test.beforeAll(async ({}, testInfo) => {
   fixture = await seedFixture(fixtureSlug(testInfo.project.name));
+  owner = await seedTestUser();
+  const { error } = await supabaseAdmin.from("salon_members").insert({
+    salon_id: fixture.salonId,
+    user_id: owner.userId,
+    role: "owner",
+  });
+  if (error) throw new Error(`closing fixture owner: ${error.message}`);
 });
 
 test.afterAll(async ({}, testInfo) => {
   await cleanupTestSalon(fixtureSlug(testInfo.project.name));
+  if (owner?.userId) await cleanupTestUser(owner.userId);
 });
+
+async function loginOwner(page: import("@playwright/test").Page): Promise<void> {
+  await page.goto("/register");
+  await page.getByTestId("social-auth-controls").waitFor({ state: "attached" });
+  await page.locator('input[inputmode="email"]').fill(owner.email);
+  await page.locator('input[type="password"]').fill(owner.password);
+  await page.getByRole("button", { name: /^sign in$/i }).click();
+  await page.waitForURL(/\/dashboard\//, { timeout: 30_000 });
+  await page.goto(
+    `/dashboard/${encodeURIComponent(fixture.slug)}/center?date=${fixture.dateYmd}`,
+  );
+  await page
+    .getByTestId("receptionist-center-loaded")
+    .first()
+    .waitFor({ state: "attached", timeout: 45_000 });
+  await page.getByTestId("rc-hydrated").waitFor({ state: "attached" });
+}
 
 test("grid hides click-to-create preview when no service can finish before close", async ({
   page,
@@ -219,4 +249,87 @@ test("manual desk booking allows service to finish exactly at close and preserve
       // the 30-minute customer-facing service completion.
       end: `${fixture.dateYmd}T19:40:00.000Z`,
     });
+});
+
+test("Owner can explicitly approve a staff-consented after-hours booking", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, "The mobile header intentionally hides New appointment.");
+  const clientName = `Te2eAfterHours${Date.now()}`;
+  await loginOwner(page);
+  await page.getByTestId("header-add-appointment").click();
+  await page
+    .locator('button:has-text("Create appointment")')
+    .waitFor({ state: "attached", timeout: 15_000 });
+
+  await fillReactInput(page.locator('input[inputmode="tel"]'), "+17145550101");
+  await fillReactInput(
+    page.locator('input[autocomplete="off"]').first(),
+    clientName,
+  );
+  await page
+    .locator('select:has(option:text-is("— Select a service —"))')
+    .selectOption({ label: `${fixture.serviceName} · $35.00` });
+  await page
+    .locator(
+      `select:has(option:text-is("${fixture.staffName}")):not([data-testid])`,
+    )
+    .selectOption({ label: fixture.staffName });
+
+  await expect(page.getByTestId("desk-after-hours-panel")).toBeVisible();
+  await page.getByTestId("desk-after-hours-toggle").click();
+  const sevenFifteen = page
+    .getByTestId("desk-after-hours-slots")
+    .getByRole("button", { name: /7:15 PM/ });
+  await expect(sevenFifteen).toBeVisible({ timeout: 15_000 });
+  await sevenFifteen.click();
+
+  const submit = page.getByRole("button", {
+    name: /Accept after-hours booking/i,
+  });
+  await expect(submit).toBeDisabled();
+  await page.getByTestId("desk-after-hours-consent").check();
+  await expect(submit).toBeEnabled();
+  await submit.click();
+
+  await expect
+    .poll(
+      async () => {
+        const { data } = await supabaseAdmin
+          .from("bookings")
+          .select(
+            "id, start_time_utc, end_time_utc, after_hours_minutes, after_hours_approved_by, after_hours_staff_consent, booking_channel",
+          )
+          .eq("salon_id", fixture.salonId)
+          .eq("client_name", clientName)
+          .maybeSingle();
+        if (!data) return null;
+        const row = data as unknown as {
+          start_time_utc: string;
+          end_time_utc: string;
+          after_hours_minutes: number;
+          after_hours_approved_by: string;
+          after_hours_staff_consent: boolean;
+          booking_channel: string;
+        };
+        return {
+          ...row,
+          start_time_utc: new Date(row.start_time_utc).toISOString(),
+          end_time_utc: new Date(row.end_time_utc).toISOString(),
+        };
+      },
+      { timeout: 15_000 },
+    )
+    .toMatchObject({
+      start_time_utc: `${fixture.dateYmd}T19:15:00.000Z`,
+      end_time_utc: `${fixture.dateYmd}T19:55:00.000Z`,
+      after_hours_minutes: 15,
+      after_hours_approved_by: owner.userId,
+      after_hours_staff_consent: true,
+      booking_channel: "desk",
+    });
+  await expect(
+    page.locator('[data-testid^="booking-block-icon-after-hours-"]').first(),
+  ).toBeVisible({ timeout: 15_000 });
 });

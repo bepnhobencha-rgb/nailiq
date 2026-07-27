@@ -48,6 +48,11 @@ import {
 } from "@/shared/booking/getAvailableTimeSlots";
 import { computeBookingTiming } from "@/shared/booking/bookingTiming";
 import {
+  evaluateControlledAfterHours,
+  MAX_AFTER_HOURS_EXTENSION_MINUTES,
+} from "@/shared/booking/controlledAfterHours";
+import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
+import {
   NotifyCustomerPanel,
   type NotifyChannels,
 } from "./NotifyCustomerPanel";
@@ -122,6 +127,17 @@ const COPY = {
     time: "Time *",
     slotsLoading: "Finding open times…",
     noSlots: "No open times this day — pick another date.",
+    afterHoursTitle: "After-hours exception",
+    afterHoursDescription:
+      "Owner/Admin only · selected staff must agree · up to 2 hours after close.",
+    showAfterHours: "Show after-hours times",
+    hideAfterHours: "Hide after-hours times",
+    specificStaffForAfterHours:
+      "Choose a specific staff member to request after-hours consent.",
+    staffConsent:
+      "I confirmed this staff member agreed to work after closing.",
+    afterHoursMinutes: (minutes: number) => `${minutes} min after close`,
+    afterHoursSubmit: "Accept after-hours booking",
     notes: "Notes (optional)",
     submit: "Create appointment",
     submitting: "Creating…",
@@ -168,6 +184,11 @@ const COPY = {
       outside_hours: "That time is outside the salon's hours.",
       booking_limit_reached: "You've hit your plan's booking limit.",
       unauthorized: "You don't have permission to create bookings.",
+      after_hours_not_allowed: "Only an Owner or Admin can approve after-hours.",
+      specific_staff_required: "Choose the staff member who agreed to stay.",
+      staff_consent_required: "Confirm the selected staff member agreed.",
+      after_hours_limit_exceeded: "After-hours is limited to 2 hours past close.",
+      invalid_after_hours_override: "This time is already inside normal hours.",
     } as Record<string, string>,
   },
   vi: {
@@ -190,6 +211,16 @@ const COPY = {
     time: "Giờ *",
     slotsLoading: "Đang tìm giờ trống…",
     noSlots: "Không còn giờ trống ngày này — chọn ngày khác.",
+    afterHoursTitle: "Ngoại lệ ngoài giờ",
+    afterHoursDescription:
+      "Chỉ Owner/Admin · phải có sự đồng ý của thợ · tối đa 2 giờ sau khi đóng cửa.",
+    showAfterHours: "Hiện giờ ngoài giờ",
+    hideAfterHours: "Ẩn giờ ngoài giờ",
+    specificStaffForAfterHours:
+      "Chọn đúng một thợ để xác nhận họ đồng ý làm ngoài giờ.",
+    staffConsent: "Tôi xác nhận thợ này đã đồng ý làm sau giờ đóng cửa.",
+    afterHoursMinutes: (minutes: number) => `${minutes} phút sau giờ đóng cửa`,
+    afterHoursSubmit: "Nhận lịch ngoài giờ",
     notes: "Ghi chú (tuỳ chọn)",
     submit: "Tạo lịch hẹn",
     submitting: "Đang tạo lịch…",
@@ -236,6 +267,11 @@ const COPY = {
       outside_hours: "Giờ này nằm ngoài giờ làm của tiệm.",
       booking_limit_reached: "Đã đạt giới hạn lịch của gói hiện tại.",
       unauthorized: "Bạn không có quyền tạo lịch.",
+      after_hours_not_allowed: "Chỉ Owner hoặc Admin được duyệt lịch ngoài giờ.",
+      specific_staff_required: "Chọn đúng thợ đã đồng ý ở lại.",
+      staff_consent_required: "Xác nhận thợ đã đồng ý làm ngoài giờ.",
+      after_hours_limit_exceeded: "Chỉ được kéo dài tối đa 2 giờ sau đóng cửa.",
+      invalid_after_hours_override: "Giờ này vẫn nằm trong giờ làm bình thường.",
     } as Record<string, string>,
   },
 } as const;
@@ -302,6 +338,11 @@ export default function DeskBookingForm({
   const prefilled = !!(initialStaffId || initialYmd || initialSlotLabel);
 
   const [slots, setSlots] = useState<TimeSlot[]>([]);
+  const [afterHoursSlots, setAfterHoursSlots] = useState<
+    Array<TimeSlot & { afterHoursMinutes: number }>
+  >([]);
+  const [showAfterHours, setShowAfterHours] = useState(false);
+  const [afterHoursConsent, setAfterHoursConsent] = useState(false);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [lookupMsg, setLookupMsg] = useState<string | null>(null);
   // Existing-client typeahead on the name field.
@@ -528,12 +569,13 @@ export default function DeskBookingForm({
     if (!data || !service || !staffId || !ymd || blockMinutes <= 0) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale grid when inputs incomplete
       setSlots([]);
+      setAfterHoursSlots([]);
       return;
     }
     let cancelled = false;
     setSlotsLoading(true);
     setSlotLabel("");
-    void getAvailableTimeSlots({
+    const baseParams = {
       salonId,
       openingHoursRaw: data.salon.opening_hours,
       selectedDate: ymdToLocalNoon(ymd),
@@ -551,10 +593,43 @@ export default function DeskBookingForm({
       shortestServiceMinutes,
       leadMinutes: data.salon.bookingLeadMinutes,
       timezone: data.salon.timezone,
-    })
-      .then((res) => {
+    };
+    const canLoadAfterHours =
+      data.canBookAfterHours &&
+      staffId !== BOOKING_ANY_STAFF_ID &&
+      showAfterHours;
+    void Promise.all([
+      getAvailableTimeSlots(baseParams),
+      canLoadAfterHours
+        ? getAvailableTimeSlots({
+            ...baseParams,
+            closingExtensionMinutes: MAX_AFTER_HOURS_EXTENSION_MINUTES,
+            allowBeyondStaffShiftEnd: true,
+          })
+        : Promise.resolve([]),
+    ])
+      .then(([res, extended]) => {
         if (cancelled) return;
         setSlots(res);
+        setAfterHoursSlots(
+          extended.flatMap((candidate) => {
+            if (!candidate.available) return [];
+            const startMinutes = parseTimeSlotToMinutes(candidate.label);
+            const check = evaluateControlledAfterHours({
+              openingHoursRaw: data.salon.opening_hours,
+              bookingClosedDatesRaw: data.salon.booking_closed_dates,
+              dateYmd: ymd,
+              startMinutes,
+              serviceCompletionMinutes:
+                addonIds.length <= 1
+                  ? bookingTiming.serviceCompletionMinutes
+                  : bookingTiming.blockMinutes,
+            });
+            return check.ok
+              ? [{ ...candidate, afterHoursMinutes: check.afterHoursMinutes }]
+              : [];
+          }),
+        );
         // Keep the PREFERRED time (the grid-clicked time, or one the
         // receptionist picked) selected across service / staff / add-on changes,
         // as long as it's still bookable. Previously this fired once then wiped
@@ -583,9 +658,20 @@ export default function DeskBookingForm({
     closedDateYmdSet,
     shortestServiceMinutes,
     blockMinutes,
+    bookingTiming.blockMinutes,
+    bookingTiming.serviceCompletionMinutes,
     bookingTiming.trailingBufferMinutes,
     addonIds.length,
+    showAfterHours,
   ]);
+
+  useEffect(() => {
+    // Consent belongs to one exact staff/date/service selection and must never
+    // silently carry to a different employee or appointment.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- invalidate a consent tied to the prior booking inputs
+    setAfterHoursConsent(false);
+    setSlotLabel("");
+  }, [staffId, ymd, serviceId, addonIds]);
 
   // Returning-customer recognition (debounced).
   const lookupSeq = useRef(0);
@@ -678,6 +764,9 @@ export default function DeskBookingForm({
     );
   }, []);
 
+  const selectedAfterHours = afterHoursSlots.find(
+    (slot) => slot.label === slotLabel,
+  );
   const canSubmit =
     !!name.trim() &&
     phone.replace(/\D/g, "").length >= 10 &&
@@ -685,6 +774,7 @@ export default function DeskBookingForm({
     !!staffId &&
     !!ymd &&
     !!slotLabel &&
+    (!selectedAfterHours || afterHoursConsent) &&
     !submitting;
 
   const submit = useCallback(async () => {
@@ -710,6 +800,13 @@ export default function DeskBookingForm({
         email: notifyChannels.email && !!email.trim(),
       },
       ...(data?.salon.resourcesEnabled ? { resourceId } : {}),
+      ...(selectedAfterHours
+        ? {
+            afterHoursOverride: {
+              staffConsentConfirmed: afterHoursConsent,
+            },
+          }
+        : {}),
     });
     setSubmitting(false);
     if (res.ok) {
@@ -739,6 +836,8 @@ export default function DeskBookingForm({
     tx,
     resourceId,
     data,
+    selectedAfterHours,
+    afterHoursConsent,
   ]);
 
   const inputCls =
@@ -1004,6 +1103,99 @@ export default function DeskBookingForm({
               </div>
             ) : null}
 
+            {data.canBookAfterHours && serviceId && staffId && ymd ? (
+              <div
+                data-testid="desk-after-hours-panel"
+                className="rounded-lg border border-amber-400/40 bg-amber-400/10 p-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold text-nq-foreground">
+                      🌙 {tx.afterHoursTitle}
+                    </p>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-nq-muted">
+                      {tx.afterHoursDescription}
+                    </p>
+                  </div>
+                  {staffId !== BOOKING_ANY_STAFF_ID ? (
+                    <button
+                      type="button"
+                      data-testid="desk-after-hours-toggle"
+                      onClick={() => {
+                        setShowAfterHours((current) => !current);
+                        setSlotLabel("");
+                        setAfterHoursConsent(false);
+                      }}
+                      className="shrink-0 rounded-md border border-amber-500/50 bg-nq-surface px-2.5 py-1.5 text-[11px] font-semibold text-nq-foreground hover:bg-amber-400/15"
+                    >
+                      {showAfterHours
+                        ? tx.hideAfterHours
+                        : tx.showAfterHours}
+                    </button>
+                  ) : null}
+                </div>
+
+                {staffId === BOOKING_ANY_STAFF_ID ? (
+                  <p className="mt-2 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                    {tx.specificStaffForAfterHours}
+                  </p>
+                ) : showAfterHours ? (
+                  <>
+                    {slotsLoading ? (
+                      <p className="mt-2 text-xs text-nq-muted">
+                        {tx.slotsLoading}
+                      </p>
+                    ) : afterHoursSlots.length === 0 ? (
+                      <p className="mt-2 text-xs text-nq-muted">{tx.noSlots}</p>
+                    ) : (
+                      <div
+                        data-testid="desk-after-hours-slots"
+                        className="mt-2 grid max-h-32 grid-cols-3 gap-1.5 overflow-y-auto"
+                      >
+                        {afterHoursSlots.map((slot) => (
+                          <button
+                            key={slot.label}
+                            type="button"
+                            onClick={() => {
+                              setSlotLabel(slot.label);
+                              desiredSlotRef.current = slot.label;
+                              setAfterHoursConsent(false);
+                            }}
+                            className={`rounded border px-1 py-1.5 text-xs transition ${
+                              slotLabel === slot.label
+                                ? "border-amber-500 bg-amber-400 text-slate-950"
+                                : "border-amber-400/35 bg-nq-surface text-nq-foreground hover:bg-amber-400/15"
+                            }`}
+                          >
+                            <span className="block font-semibold">
+                              {slot.label}
+                            </span>
+                            <span className="block text-[9px] opacity-75">
+                              {tx.afterHoursMinutes(slot.afterHoursMinutes)}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {selectedAfterHours ? (
+                      <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-md bg-nq-surface p-2 text-[11px] leading-relaxed text-nq-foreground">
+                        <input
+                          type="checkbox"
+                          data-testid="desk-after-hours-consent"
+                          checked={afterHoursConsent}
+                          onChange={(event) =>
+                            setAfterHoursConsent(event.target.checked)
+                          }
+                          className="mt-0.5 h-4 w-4 shrink-0 accent-amber-500"
+                        />
+                        <span>{tx.staffConsent}</span>
+                      </label>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+
             {/* Bed/chair picker — resource-mode salons only, shown once slot is chosen */}
             {data?.salon.resourcesEnabled && slotLabel ? (
               <div data-testid="desk-bed-picker">
@@ -1099,7 +1291,11 @@ export default function DeskBookingForm({
               onClick={submit}
               className="mt-1 w-full rounded-md bg-nq-primary py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {submitting ? tx.submitting : tx.submit}
+              {submitting
+                ? tx.submitting
+                : selectedAfterHours
+                  ? tx.afterHoursSubmit
+                  : tx.submit}
             </button>
           </div>
         )}

@@ -110,6 +110,9 @@ export interface GridBooking {
   /** Assigned resource name ("Bed 3") — shown as a small pill badge under the service name.
    * Only populated when resources_enabled is on for the salon. */
   resource_name?: string | null;
+  /** Minutes the customer-facing service runs beyond close for a controlled
+   * Owner/Admin override. */
+  after_hours_minutes?: number | null;
 }
 
 export interface StaffTimelineGridProps {
@@ -1567,6 +1570,7 @@ function StaffTimelineGridImpl({
                           isLate={isLate}
                           iconLabels={labels.bookingIcon}
                           resourceName={b.resource_name}
+                          afterHoursMinutes={b.after_hours_minutes}
                           isDragging={isBeingDragged}
                           latenessTier={latenessTier}
                           autoNoShowAtLabel={autoNoShowAtLabel}

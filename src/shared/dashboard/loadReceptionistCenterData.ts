@@ -323,6 +323,9 @@ export interface ReceptionistCenterData {
     /** Human-readable resource name ("Bed 3") for the booking block badge.
      * Null when no resource is assigned. */
     resource_name: string | null;
+    /** Controlled Owner/Admin desk exception. Null for every normal/public/AI
+     * booking; 1-120 is the customer-facing overrun beyond salon close. */
+    after_hours_minutes: number | null;
   }>;
   /** Per-staff service whitelist for this salon. `null` = no rows → all-capable fallback. */
   capabilityRows: { staff_id: string; service_id: string }[] | null;
@@ -835,6 +838,7 @@ export async function loadReceptionistCenterData(
       noshow_fee_cents,
       noshow_charge_status,
       resource_id,
+      after_hours_minutes,
       resource:salon_resources ( id, name, kind ),
       services!bookings_service_id_fkey ( name, duration_minutes, buffer_minutes ),
       addon:services!bookings_addon_service_id_fkey ( name, duration_minutes, buffer_minutes )
@@ -930,6 +934,7 @@ export async function loadReceptionistCenterData(
     services: ServiceJoinMinimal | ServiceJoinMinimal[] | null;
     addon: ServiceJoinMinimal | ServiceJoinMinimal[] | null;
     resource_id: string | null;
+    after_hours_minutes: number | null;
     resource: { id: string; name: string; kind: string } | { id: string; name: string; kind: string }[] | null;
   }> | null;
 
@@ -1520,6 +1525,12 @@ export async function loadReceptionistCenterData(
         if (!r) return null;
         const rec = Array.isArray(r) ? r[0] : r;
         return rec?.name ?? null;
+      })(),
+      after_hours_minutes: (() => {
+        const value = row.after_hours_minutes;
+        if (value == null) return null;
+        const parsed = Math.round(Number(value));
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
       })(),
     };
   });

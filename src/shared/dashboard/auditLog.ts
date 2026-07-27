@@ -14,6 +14,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 export type BookingEventType =
   | "booking_created"
+  | "booking_after_hours_created"
   | "booking_edited"
   | "booking_cancelled"
   | "booking_restored"

@@ -916,6 +916,7 @@ function ReceptionistCenterInner({
           noshow_fee_cents: b.noshow_fee_cents ?? null,
           noshow_charge_status: b.noshow_charge_status ?? null,
           resource_name: b.resource_name ?? null,
+          after_hours_minutes: b.after_hours_minutes ?? null,
         },
       ];
     });
