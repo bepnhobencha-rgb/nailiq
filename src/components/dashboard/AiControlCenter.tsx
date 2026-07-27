@@ -13,6 +13,7 @@ import {
   Gauge,
   Lightbulb,
   ListChecks,
+  RefreshCcw,
   ShieldCheck,
   Sparkles,
   Target,
@@ -23,6 +24,8 @@ import {
 
 import { buildActionIntelligence } from "@/shared/ai/actionIntelligence";
 import type { ApprovalRow } from "@/shared/ai/approvalRequests";
+import { controlExecutionJobAction } from "@/shared/ai/controlExecutionJobAction";
+import { canControlExecutionJob } from "@/shared/ai/executionPolicy";
 import { prepareAudienceAction } from "@/shared/ai/prepareAudienceAction";
 import type { ExecutionJobRow } from "@/shared/ai/executionQueue";
 import type { MinhActivityData } from "@/shared/ai/loadMinhActivity";
@@ -307,6 +310,7 @@ export function AiControlCenter({
                         {job.last_error}
                       </p>
                     ) : null}
+                    <JobRecoveryControls job={job} slug={slug} vi={vi} />
                   </div>
                 ))}
               </div>
@@ -609,6 +613,116 @@ function JobAudiencePreparation({
             : "Recheck audience"}
       </button>
       {error ? <p className="mt-2 text-xs text-nq-error">{error}</p> : null}
+    </div>
+  );
+}
+
+function JobRecoveryControls({
+  job,
+  slug,
+  vi,
+}: {
+  job: ExecutionJobRow;
+  slug: string;
+  vi: boolean;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const canRetry = canControlExecutionJob({
+    operation: "retry",
+    status: job.status,
+    attemptCount: job.attempt_count,
+    maxAttempts: job.max_attempts,
+  });
+  const canCancel = canControlExecutionJob({
+    operation: "cancel",
+    status: job.status,
+    attemptCount: job.attempt_count,
+    maxAttempts: job.max_attempts,
+  });
+
+  if (!canRetry && !canCancel) return null;
+
+  const control = (operation: "retry" | "cancel") => {
+    if (
+      operation === "cancel" &&
+      !window.confirm(
+        vi
+          ? "Hủy công việc AI này? Hành động chưa chạy sẽ không được thực thi."
+          : "Cancel this AI job? Any action that has not run will not be executed.",
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const result = await controlExecutionJobAction({
+        slug,
+        jobId: job.id,
+        operation,
+      });
+      if (!result.ok) {
+        setError(
+          result.error === "invalid_state"
+            ? vi
+              ? "Trạng thái vừa thay đổi. Đang tải lại dữ liệu."
+              : "The job state just changed. Refreshing current data."
+            : vi
+              ? "Không thể cập nhật công việc lúc này."
+              : "The job could not be updated right now.",
+        );
+        router.refresh();
+        return;
+      }
+      router.refresh();
+    });
+  };
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      {canRetry ? (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => control("retry")}
+          className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
+        >
+          <RefreshCcw className="h-3.5 w-3.5" aria-hidden />
+          {pending
+            ? vi
+              ? "Đang thử lại…"
+              : "Retrying…"
+            : vi
+              ? "Thử lại an toàn"
+              : "Retry safely"}
+        </button>
+      ) : null}
+      {canCancel ? (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => control("cancel")}
+          className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-nq-error/30 px-3 text-xs font-semibold text-nq-error transition-colors hover:bg-nq-error/10 disabled:cursor-wait disabled:opacity-60"
+        >
+          <X className="h-3.5 w-3.5" aria-hidden />
+          {pending
+            ? vi
+              ? "Đang cập nhật…"
+              : "Updating…"
+            : vi
+              ? "Hủy công việc"
+              : "Cancel job"}
+        </button>
+      ) : null}
+      {job.status === "failed" && job.attempt_count >= job.max_attempts ? (
+        <p className="text-[11px] text-nq-muted">
+          {vi
+            ? "Đã hết số lần thử tự động; có thể hủy để đóng sự cố."
+            : "Automatic attempts are exhausted; cancel to close the incident."}
+        </p>
+      ) : null}
+      {error ? <p className="w-full text-xs text-nq-error">{error}</p> : null}
     </div>
   );
 }

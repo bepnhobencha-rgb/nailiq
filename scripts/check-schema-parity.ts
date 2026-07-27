@@ -19,7 +19,7 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260727082929. Refresh these with each schema-changing forward
+ * through 20260727183101. Refresh these with each schema-changing forward
  * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
@@ -39,7 +39,7 @@ const PRODUCTION = {
    * Verified on production: 253 total = 188 extension-owned + 65 app-owned.
    * The query below excludes anything a `pg_depend` extension edge points at.
    */
-  functions: 73,
+  functions: 74,
   triggers: 25,
   indexes: 299,
 } as const;
@@ -67,7 +67,10 @@ const CRITICAL_TABLES = [
 ] as const;
 
 /** Booking cannot work without these; a missing RPC fails at runtime, not at apply time. */
-const CRITICAL_FUNCTIONS = ["compute_no_show_risk"] as const;
+const CRITICAL_FUNCTIONS = [
+  "compute_no_show_risk",
+  "control_ai_execution_job",
+] as const;
 
 const dbUrl = process.env.DB_URL;
 if (!dbUrl?.trim()) {

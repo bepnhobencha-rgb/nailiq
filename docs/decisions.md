@@ -5,6 +5,32 @@ Newest entries on top.
 
 ---
 
+## 2026-07-27 — Owners can recover failed AI work without bypassing execution safety
+
+**Status.** Implemented on `agent/ai-execution-recovery`.
+
+**Context.** AI Control Center accurately exposed queued, failed, and stalled
+work, but an owner could not resolve a failed or no-longer-wanted job from the
+same operating surface. Recovery required database intervention, so the control
+center was observability without operational control.
+
+**Decision.**
+- Owners/admins may retry only a `failed` job that remains below its bounded
+  attempt limit. Retry returns it to `queued`; the worker still owns execution.
+- Owners/admins may cancel `queued`, `waiting_input`, or `failed` work. Running
+  work cannot be canceled because its external effect may already have started;
+  succeeded/canceled states remain terminal.
+- A service-role-only, security-invoker RPC locks the tenant-scoped job and
+  writes its transition plus `ai_actions_log` row in one database transaction.
+  Public, anonymous, and authenticated Data API roles cannot execute the RPC.
+- The Server Action independently resolves the salon and verifies owner/admin
+  membership before calling the RPC. Stale UI actions return `invalid_state`
+  rather than overwriting a concurrent worker transition.
+- Retry/cancel adds no new sender, payment, pricing, authentication, or campaign
+  authority.
+
+---
+
 ## 2026-07-27 — AI operating state must be measured, tenant-scoped, and honest
 
 **Status.** Implemented on `agent/ai-operating-health`.

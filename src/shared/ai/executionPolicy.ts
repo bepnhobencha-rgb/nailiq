@@ -6,6 +6,28 @@ export type ExecutionJobStatus =
   | "failed"
   | "canceled";
 
+export type ExecutionJobControl = "retry" | "cancel";
+
+export function canControlExecutionJob(params: {
+  operation: ExecutionJobControl;
+  status: ExecutionJobStatus;
+  attemptCount: number;
+  maxAttempts: number;
+}): boolean {
+  if (params.operation === "retry") {
+    return (
+      params.status === "failed" &&
+      params.attemptCount < params.maxAttempts
+    );
+  }
+
+  return (
+    params.status === "queued" ||
+    params.status === "waiting_input" ||
+    params.status === "failed"
+  );
+}
+
 export function initialExecutionStatus(
   payload: Record<string, unknown>,
 ): ExecutionJobStatus {
