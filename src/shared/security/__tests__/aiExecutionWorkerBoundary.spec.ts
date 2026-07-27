@@ -8,8 +8,12 @@ const read = (file: string) =>
 describe("AI execution worker boundary", () => {
   const effects = read("src/shared/ai/executionEffects.ts");
   const worker = read("src/shared/ai/executionWorker.ts");
+  const leases = read(
+    "supabase/migrations/20260727203000_add_ai_execution_leases.sql",
+  );
   const route = read("src/app/api/cron/ai-execution/route.ts");
   const schedule = read("vercel.json");
+  const parity = read("scripts/check-schema-parity.ts");
 
   it("uses an explicit effect allowlist with outbound messaging blocked", () => {
     expect(effects).toContain('job.action_type === "bulk_message"');
@@ -22,25 +26,34 @@ describe("AI execution worker boundary", () => {
     expect(worker).not.toContain("getResendClient");
   });
 
-  it("claims optimistically and bounds retry attempts", () => {
-    expect(worker).toContain('.eq("status" as never, candidate.status)');
-    expect(worker).toContain(
-      '.eq("attempt_count" as never, candidate.attempt_count)',
-    );
-    expect(worker).toContain("canRetryExecution");
+  it("claims with skip-locked leases and bounds retry attempts", () => {
+    expect(worker).toContain('"claim_ai_execution_jobs" as never');
+    expect(leases).toContain("for update skip locked");
+    expect(leases).toContain("lease_token = gen_random_uuid()");
+    expect(leases).toContain("attempt_count < max_attempts");
     expect(worker).toContain("nextRetryAt");
-    expect(worker).toContain("attempt_count: attemptCount");
-    expect(worker).toContain('"worker_lease_expired"');
-    expect(worker).toContain("15 * 60_000");
+    expect(leases).toContain("'worker_lease_expired'");
+    expect(leases).toContain("interval '15 minutes'");
   });
 
-  it("records terminal and retry transitions in the AI audit log", () => {
-    expect(worker).toContain('.from("ai_actions_log" as never)');
-    expect(worker).toContain('agent: "ai_execution"');
+  it("atomically fences completion and its audit record", () => {
+    expect(worker).toContain('"finish_ai_execution_job" as never');
+    expect(worker).toContain("StaleExecutionLeaseError");
+    expect(leases).toContain("and lease_token = p_lease_token");
+    expect(leases).toContain("insert into public.ai_actions_log");
+    expect(leases).toContain("'execution_' || p_status");
     expect(worker).toContain('status: "succeeded"');
     expect(worker).toContain('status: "failed"');
     expect(worker).toContain('status: "canceled"');
     expect(worker).toContain('status: "waiting_input"');
+  });
+
+  it("recovers expired leases atomically without letting old workers finish", () => {
+    expect(worker).toContain('"recover_stale_ai_execution_jobs" as never');
+    expect(leases).toContain("lease_token = null");
+    expect(leases).toContain("lease_expires_at = null");
+    expect(leases).toContain("'worker_lease_expired'");
+    expect(leases).toContain("'execution_failed'");
   });
 
   it("requires a configured cron secret and is scheduled", () => {
@@ -48,5 +61,15 @@ describe("AI execution worker boundary", () => {
     expect(route).toContain("`Bearer ${cronSecret}`");
     expect(schedule).toContain('"/api/cron/ai-execution"');
     expect(schedule).toContain('"*/5 * * * *"');
+  });
+
+  it("makes every lease RPC a blank-database critical object", () => {
+    expect(parity).toContain("through 20260727203000");
+    expect(parity).toContain("columns: 1240");
+    expect(parity).toContain("functions: 78");
+    expect(parity).toContain("indexes: 300");
+    expect(parity).toContain('"claim_ai_execution_jobs"');
+    expect(parity).toContain('"finish_ai_execution_job"');
+    expect(parity).toContain('"recover_stale_ai_execution_jobs"');
   });
 });

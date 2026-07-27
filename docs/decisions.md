@@ -5,6 +5,32 @@ Newest entries on top.
 
 ---
 
+## 2026-07-27 — Execution leases fence stale AI workers
+
+**Status.** Implemented on `agent/ai-execution-leases`.
+
+**Context.** The execution worker previously claimed work with an optimistic
+update, then completed the job and wrote its audit event in separate calls. If
+an attempt ran longer than the recovery window, a second worker could recover
+and reclaim it while the original worker was still alive. The original worker
+could then overwrite the newer attempt because completion was guarded only by
+`status = running`.
+
+**Decision.**
+- Every claim receives a unique 15-minute lease token. Only the worker holding
+  the current token may finish that attempt.
+- Claiming uses `FOR UPDATE SKIP LOCKED`, so concurrent cron invocations divide
+  ready work without waiting on or duplicating one another.
+- Claim, recovery, completion, and their matching audit events are database
+  transactions exposed only to the service role.
+- Expired recovery clears the old token before a retry can be claimed. A late
+  worker treats a rejected token as stale and never converts it into another
+  failure or overwrites the current state.
+- Retry limits and the outbound-effect allowlist remain unchanged. This adds no
+  messaging, payment, pricing, booking-mutation, or authentication authority.
+
+---
+
 ## 2026-07-27 — Approval and execution enqueue are one atomic transition
 
 **Status.** Implemented on `agent/atomic-approval-execution`.

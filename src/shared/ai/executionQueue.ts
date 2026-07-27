@@ -16,6 +16,8 @@ export type ExecutionJobRow = {
   available_at: string;
   started_at: string | null;
   finished_at: string | null;
+  lease_token: string | null;
+  lease_expires_at: string | null;
   last_error: string | null;
   result: Record<string, unknown> | null;
   created_at: string;

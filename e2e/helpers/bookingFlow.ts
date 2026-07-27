@@ -1,6 +1,38 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 import { gotoBookingServiceStep } from "./db";
+
+/**
+ * Advance one animated booking step and prove the destination mounted.
+ *
+ * Under saturated CI workers Chromium can occasionally report a completed
+ * pointer click without React receiving it. Retrying blindly is unsafe because
+ * a delayed first click could advance two steps. We therefore retry only while
+ * the original panel and CTA are still visible. A second miss remains a hard
+ * failure.
+ */
+export async function advanceBookingStep(
+  sourcePanel: Locator,
+  destination: Locator,
+): Promise<void> {
+  const continueButton = sourcePanel.getByRole("button", {
+    name: "Continue",
+  });
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await expect(continueButton).toBeEnabled();
+    await continueButton.click();
+
+    try {
+      await destination.waitFor({ state: "visible", timeout: 3_000 });
+      return;
+    } catch (error) {
+      if (attempt === 1) throw error;
+      await expect(sourcePanel).toBeVisible();
+      await expect(continueButton).toBeEnabled();
+    }
+  }
+}
 
 /**
  * Drive the public booking flow to the confirm step.
@@ -75,7 +107,13 @@ export async function navigateToConfirmStep(
     .first();
   await firstAvailableSlot.click();
   await expect(firstAvailableSlot).toHaveAttribute("aria-pressed", "true");
-  await page.getByRole("button", { name: "Continue" }).first().click();
+  const timeStep = page.locator(
+    'section[aria-labelledby="time-heading"]',
+  );
+  await advanceBookingStep(
+    timeStep,
+    page.getByTestId("booking-info-name"),
+  );
 
   // 6. Info (phone was captured at the gate; this step takes the name).
   await page

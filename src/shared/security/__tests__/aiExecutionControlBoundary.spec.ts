@@ -54,7 +54,7 @@ describe("AI execution control boundary", () => {
   });
 
   it("makes the recovery RPC a production-parity critical object", () => {
-    expect(parityCheck).toContain("functions: 75");
+    expect(parityCheck).toContain("functions: 78");
     expect(parityCheck).toContain('"control_ai_execution_job"');
   });
 });

@@ -6,6 +6,7 @@ import {
   gotoBookingServiceStep,
   seedTestSalon,
 } from "./helpers/db";
+import { advanceBookingStep } from "./helpers/bookingFlow";
 
 test.describe("Public booking — privacy (reschedule tel)", () => {
   const slug = "e2e-booking-security";
@@ -152,10 +153,16 @@ async function navigateToBookingInfoStep(page: Page, testSlug: string) {
     .locator('[data-testid="time-slot"]')
     .first()
     .waitFor({ state: "visible", timeout: 20_000 });
-  await page.locator('[data-testid="time-slot"]').first().click();
-  await page.getByRole("button", { name: "Continue" }).first().click();
-
-  await expect(page.getByTestId("booking-info-name")).toBeVisible();
+  const timeStep = page.locator(
+    'section[aria-labelledby="time-heading"]',
+  );
+  const firstSlot = timeStep.locator('[data-testid="time-slot"]').first();
+  await firstSlot.click();
+  await expect(firstSlot).toHaveAttribute("aria-pressed", "true");
+  await advanceBookingStep(
+    timeStep,
+    page.getByTestId("booking-info-name"),
+  );
 }
 
 test.describe("Guest name — XSS / charset guard", () => {
@@ -207,4 +214,3 @@ test.describe("Guest name — XSS / charset guard", () => {
     });
   });
 });
-

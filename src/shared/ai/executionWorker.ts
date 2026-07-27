@@ -1,11 +1,7 @@
 import "server-only";
 
 import { planExecutionEffect } from "@/shared/ai/executionEffects";
-import {
-  canRetryExecution,
-  nextRetryAt,
-  type ExecutionJobStatus,
-} from "@/shared/ai/executionPolicy";
+import { nextRetryAt, type ExecutionJobStatus } from "@/shared/ai/executionPolicy";
 import type { ExecutionJobRow } from "@/shared/ai/executionQueue";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
@@ -27,56 +23,53 @@ export type ExecutionWorkerSummary = {
   outcomes: WorkerOutcome[];
 };
 
-async function recoverStaleRunningJobs(now: Date): Promise<number> {
-  const db = createServiceRoleClient();
-  const leaseExpiredAt = new Date(now.getTime() - 15 * 60_000).toISOString();
-  const { data, error } = await db
-    .from("ai_execution_jobs" as never)
-    .update({
-      status: "failed",
-      available_at: now.toISOString(),
-      last_error: "worker_lease_expired",
-      finished_at: null,
-      updated_at: now.toISOString(),
-    } as never)
-    .eq("status" as never, "running")
-    .lt("started_at" as never, leaseExpiredAt)
-    .select("id");
-  if (error) throw new Error(error.message);
-  return (data as { id: string }[] | null)?.length ?? 0;
+class StaleExecutionLeaseError extends Error {
+  constructor() {
+    super("stale_execution_lease");
+    this.name = "StaleExecutionLeaseError";
+  }
 }
 
-async function auditTransition(
-  job: ExecutionJobRow,
-  status: ExecutionJobStatus,
-  details: Record<string, unknown>,
-) {
+async function recoverStaleRunningJobs(now: Date): Promise<number> {
   const db = createServiceRoleClient();
-  const { error } = await db.from("ai_actions_log" as never).insert({
-    salon_id: job.salon_id,
-    agent: "ai_execution",
-    action_type: `execution_${status}`,
-    target_id: job.id,
-    payload: {
-      approval_request_id: job.approval_request_id,
-      requested_action_type: job.action_type,
-      ...details,
-    },
-  } as never);
-  if (error) console.error("[executionWorker] audit transition", error);
+  const { data, error } = await db.rpc(
+    "recover_stale_ai_execution_jobs" as never,
+    { p_now: now.toISOString() } as never,
+  );
+  if (error) throw new Error(error.message);
+  return typeof data === "number" ? data : 0;
 }
 
 async function finishJob(
   job: ExecutionJobRow,
-  patch: Record<string, unknown>,
+  input: {
+    status: "waiting_input" | "succeeded" | "failed" | "canceled";
+    result: Record<string, unknown> | null;
+    lastError: string | null;
+    availableAt: string | null;
+    finishedAt: string | null;
+    now: string;
+    details: Record<string, unknown>;
+  },
 ) {
+  if (!job.lease_token) throw new StaleExecutionLeaseError();
   const db = createServiceRoleClient();
-  const { error } = await db
-    .from("ai_execution_jobs" as never)
-    .update(patch as never)
-    .eq("id" as never, job.id)
-    .eq("status" as never, "running");
+  const { data, error } = await db.rpc(
+    "finish_ai_execution_job" as never,
+    {
+      p_job_id: job.id,
+      p_lease_token: job.lease_token,
+      p_status: input.status,
+      p_result: input.result,
+      p_last_error: input.lastError,
+      p_available_at: input.availableAt,
+      p_finished_at: input.finishedAt,
+      p_now: input.now,
+      p_details: input.details,
+    } as never,
+  );
   if (error) throw new Error(error.message);
+  if (data !== true) throw new StaleExecutionLeaseError();
 }
 
 async function executeClaimedJob(
@@ -90,11 +83,12 @@ async function executeClaimedJob(
     await finishJob(job, {
       status: "waiting_input",
       result: { blocker: effect.blocker },
-      last_error: null,
-      finished_at: null,
-      updated_at: nowIso,
+      lastError: null,
+      availableAt: null,
+      finishedAt: null,
+      now: nowIso,
+      details: { blocker: effect.blocker },
     });
-    await auditTransition(job, "waiting_input", { blocker: effect.blocker });
     return { jobId: job.id, status: "waiting_input", attempted: true };
   }
 
@@ -102,11 +96,12 @@ async function executeClaimedJob(
     await finishJob(job, {
       status: "canceled",
       result: { reason: effect.reason },
-      last_error: effect.reason,
-      finished_at: nowIso,
-      updated_at: nowIso,
+      lastError: effect.reason,
+      availableAt: null,
+      finishedAt: nowIso,
+      now: nowIso,
+      details: { reason: effect.reason },
     });
-    await auditTransition(job, "canceled", { reason: effect.reason });
     return {
       jobId: job.id,
       status: "canceled",
@@ -122,41 +117,31 @@ async function executeClaimedJob(
       audit_action_type: effect.actionType,
       ...effect.payload,
     },
-    last_error: null,
-    finished_at: nowIso,
-    updated_at: nowIso,
-  });
-  await auditTransition(job, "succeeded", {
-    effect: effect.kind,
-    audit_action_type: effect.actionType,
-    ...effect.payload,
+    lastError: null,
+    availableAt: null,
+    finishedAt: nowIso,
+    now: nowIso,
+    details: {
+      effect: effect.kind,
+      audit_action_type: effect.actionType,
+      ...effect.payload,
+    },
   });
   return { jobId: job.id, status: "succeeded", attempted: true };
 }
 
-async function claimJob(
-  candidate: ExecutionJobRow,
+async function claimJobs(
+  limit: number,
   now: Date,
-): Promise<ExecutionJobRow | null> {
+): Promise<ExecutionJobRow[]> {
   const db = createServiceRoleClient();
-  const attemptCount = candidate.attempt_count + 1;
   const { data, error } = await db
-    .from("ai_execution_jobs" as never)
-    .update({
-      status: "running",
-      attempt_count: attemptCount,
-      started_at: now.toISOString(),
-      finished_at: null,
-      last_error: null,
-      updated_at: now.toISOString(),
-    } as never)
-    .eq("id" as never, candidate.id)
-    .eq("status" as never, candidate.status)
-    .eq("attempt_count" as never, candidate.attempt_count)
-    .select("*")
-    .maybeSingle();
+    .rpc(
+      "claim_ai_execution_jobs" as never,
+      { p_limit: limit, p_now: now.toISOString() } as never,
+    );
   if (error) throw new Error(error.message);
-  return (data as ExecutionJobRow | null) ?? null;
+  return (data as ExecutionJobRow[] | null) ?? [];
 }
 
 async function recordTransientFailure(
@@ -166,19 +151,21 @@ async function recordTransientFailure(
 ): Promise<WorkerOutcome> {
   const message = error instanceof Error ? error.message : String(error);
   const exhausted = job.attempt_count >= job.max_attempts;
+  const availableAt = exhausted
+    ? job.available_at
+    : nextRetryAt(job.attempt_count, now);
   await finishJob(job, {
     status: "failed",
-    available_at: exhausted
-      ? job.available_at
-      : nextRetryAt(job.attempt_count, now),
-    last_error: message.slice(0, 1000),
-    finished_at: exhausted ? now.toISOString() : null,
-    updated_at: now.toISOString(),
-  });
-  await auditTransition(job, "failed", {
-    error: message.slice(0, 1000),
-    exhausted,
-    attempt_count: job.attempt_count,
+    result: job.result,
+    availableAt,
+    lastError: message.slice(0, 1000),
+    finishedAt: exhausted ? now.toISOString() : null,
+    now: now.toISOString(),
+    details: {
+      error: message.slice(0, 1000),
+      exhausted,
+      attempt_count: job.attempt_count,
+    },
   });
   return {
     jobId: job.id,
@@ -195,67 +182,44 @@ export async function processExecutionQueue(params?: {
   const now = params?.now ?? new Date();
   const limit = Math.max(1, Math.min(25, params?.limit ?? 10));
   const recovered = await recoverStaleRunningJobs(now);
-  const db = createServiceRoleClient();
-  const { data, error } = await db
-    .from("ai_execution_jobs" as never)
-    .select("*")
-    .in("status" as never, ["queued", "failed"])
-    .lte("available_at" as never, now.toISOString())
-    .order("available_at" as never, { ascending: true })
-    .limit(limit);
-  if (error) throw new Error(error.message);
-
-  const candidates = (data as ExecutionJobRow[] | null) ?? [];
+  const claimedJobs = await claimJobs(limit, now);
   const outcomes: WorkerOutcome[] = [];
-  let claimed = 0;
 
-  for (const candidate of candidates) {
-    if (
-      !canRetryExecution({
-        status: candidate.status,
-        attemptCount: candidate.attempt_count,
-        maxAttempts: candidate.max_attempts,
-        availableAt: candidate.available_at,
-        now,
-      })
-    ) {
-      outcomes.push({
-        jobId: candidate.id,
-        status: candidate.status,
-        attempted: false,
-      });
-      continue;
-    }
-
-    let claimedJob: ExecutionJobRow | null;
-    try {
-      claimedJob = await claimJob(candidate, now);
-    } catch (claimError) {
-      outcomes.push({
-        jobId: candidate.id,
-        status: candidate.status,
-        attempted: false,
-        error:
-          claimError instanceof Error ? claimError.message : String(claimError),
-      });
-      continue;
-    }
-    if (!claimedJob) continue;
-    claimed++;
-
+  for (const claimedJob of claimedJobs) {
     try {
       outcomes.push(await executeClaimedJob(claimedJob, now));
     } catch (executionError) {
-      outcomes.push(
-        await recordTransientFailure(claimedJob, executionError, now),
-      );
+      if (executionError instanceof StaleExecutionLeaseError) {
+        outcomes.push({
+          jobId: claimedJob.id,
+          status: "running",
+          attempted: false,
+          error: executionError.message,
+        });
+        continue;
+      }
+      try {
+        outcomes.push(
+          await recordTransientFailure(claimedJob, executionError, now),
+        );
+      } catch (failureError) {
+        if (!(failureError instanceof StaleExecutionLeaseError)) {
+          throw failureError;
+        }
+        outcomes.push({
+          jobId: claimedJob.id,
+          status: "running",
+          attempted: false,
+          error: failureError.message,
+        });
+      }
     }
   }
 
   return {
-    inspected: candidates.length,
+    inspected: claimedJobs.length,
     recovered,
-    claimed,
+    claimed: claimedJobs.length,
     succeeded: outcomes.filter((item) => item.status === "succeeded").length,
     failed: outcomes.filter((item) => item.status === "failed").length,
     waitingInput: outcomes.filter((item) => item.status === "waiting_input")
