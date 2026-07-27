@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 import {
   Activity,
   ArrowRight,
@@ -15,11 +17,13 @@ import {
   Sparkles,
   Target,
   Undo2,
+  Users,
   X,
 } from "lucide-react";
 
 import { buildActionIntelligence } from "@/shared/ai/actionIntelligence";
 import type { ApprovalRow } from "@/shared/ai/approvalRequests";
+import { prepareAudienceAction } from "@/shared/ai/prepareAudienceAction";
 import type { ExecutionJobRow } from "@/shared/ai/executionQueue";
 import type { MinhActivityData } from "@/shared/ai/loadMinhActivity";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -284,11 +288,7 @@ export function AiControlCenter({
                         : ""}
                     </p>
                     {job.status === "waiting_input" ? (
-                      <p className="mt-2 text-xs leading-5 text-nq-warning">
-                        {vi
-                          ? "Đang chờ chọn người nhận và kiểm tra consent. Chưa gửi tin nhắn."
-                          : "Waiting for recipient selection and consent checks. No message was sent."}
-                      </p>
+                      <JobAudiencePreparation job={job} slug={slug} vi={vi} />
                     ) : null}
                     {job.last_error ? (
                       <p className="mt-2 line-clamp-2 text-xs leading-5 text-nq-error">
@@ -307,6 +307,147 @@ export function AiControlCenter({
         </aside>
       </div>
     </main>
+  );
+}
+
+type AudiencePreparationView = {
+  prepared_at: string;
+  eligible_count: number;
+  sms_recipient_count: number;
+  email_recipient_count: number;
+  excluded_no_consent: number;
+  excluded_no_channel: number;
+  excluded_recent_contact: number;
+  estimated_cost_usd_cents: number;
+  candidate_limit: number;
+  may_have_more_candidates: boolean;
+  no_messages_sent: true;
+};
+
+function audiencePreparationFrom(
+  result: Record<string, unknown> | null,
+): AudiencePreparationView | null {
+  const value = result?.audience_preparation;
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  if (
+    typeof row.prepared_at !== "string" ||
+    typeof row.eligible_count !== "number" ||
+    row.no_messages_sent !== true
+  ) {
+    return null;
+  }
+  return row as unknown as AudiencePreparationView;
+}
+
+function JobAudiencePreparation({
+  job,
+  slug,
+  vi,
+}: {
+  job: ExecutionJobRow;
+  slug: string;
+  vi: boolean;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const preparation = audiencePreparationFrom(job.result);
+
+  const prepare = () => {
+    setError(null);
+    startTransition(async () => {
+      const result = await prepareAudienceAction({ slug, jobId: job.id });
+      if (!result.ok) {
+        setError(
+          vi
+            ? "Không thể chuẩn bị danh sách lúc này."
+            : "The audience could not be prepared right now.",
+        );
+        return;
+      }
+      router.refresh();
+    });
+  };
+
+  if (!preparation) {
+    return (
+      <div className="mt-2">
+        <p className="text-xs leading-5 text-nq-warning">
+          {vi
+            ? "Đang chờ chọn người nhận và kiểm tra consent. Chưa gửi tin nhắn."
+            : "Waiting for recipient selection and consent checks. No message was sent."}
+        </p>
+        {job.action_type === "bulk_message" ? (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={prepare}
+            className="mt-2 inline-flex min-h-9 items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
+          >
+            <Users className="h-3.5 w-3.5" aria-hidden />
+            {pending
+              ? vi
+                ? "Đang kiểm tra…"
+                : "Checking…"
+              : vi
+                ? "Chuẩn bị danh sách"
+                : "Prepare audience"}
+          </button>
+        ) : null}
+        {error ? <p className="mt-2 text-xs text-nq-error">{error}</p> : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 rounded-lg border border-nq-border/60 bg-nq-surface/70 p-2.5">
+      <p className="text-xs font-semibold text-nq-foreground">
+        {vi
+          ? `${preparation.eligible_count} khách đủ điều kiện`
+          : `${preparation.eligible_count} eligible customers`}
+      </p>
+      <p className="mt-1 text-[11px] leading-4 text-nq-muted">
+        SMS {preparation.sms_recipient_count} · Email{" "}
+        {preparation.email_recipient_count} ·{" "}
+        {vi ? "ước tính" : "estimated"} $
+        {(preparation.estimated_cost_usd_cents / 100).toFixed(2)} USD
+      </p>
+      <p className="mt-1 text-[11px] leading-4 text-nq-muted">
+        {vi ? "Đã loại" : "Excluded"}:{" "}
+        {preparation.excluded_recent_contact}{" "}
+        {vi ? "đã liên hệ trong 24h" : "contacted within 24h"},{" "}
+        {preparation.excluded_no_consent} {vi ? "thiếu consent" : "without consent"},{" "}
+        {preparation.excluded_no_channel} {vi ? "thiếu kênh hợp lệ" : "without a valid channel"}.
+      </p>
+      {preparation.may_have_more_candidates ? (
+        <p className="mt-1 text-[11px] leading-4 text-nq-muted">
+          {vi
+            ? `Bản kiểm tra được giới hạn ở ${preparation.candidate_limit} ứng viên để vận hành an toàn.`
+            : `This dry run is capped at ${preparation.candidate_limit} candidates for safe operation.`}
+        </p>
+      ) : null}
+      <p className="mt-1 text-[11px] font-medium text-nq-warning">
+        {vi
+          ? "Đây chỉ là bản kiểm tra. Chưa có tin nhắn nào được gửi."
+          : "This is a dry run only. No message was sent."}
+      </p>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={prepare}
+        className="mt-2 text-[11px] font-semibold text-nq-primary hover:underline disabled:opacity-60"
+      >
+        {pending
+          ? vi
+            ? "Đang kiểm tra lại…"
+            : "Rechecking…"
+          : vi
+            ? "Kiểm tra lại audience"
+            : "Recheck audience"}
+      </button>
+      {error ? <p className="mt-2 text-xs text-nq-error">{error}</p> : null}
+    </div>
   );
 }
 
