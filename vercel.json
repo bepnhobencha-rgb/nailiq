@@ -49,6 +49,10 @@
       "schedule": "0 3 * * *"
     },
     {
+      "path": "/api/cron/ai-execution",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/spend-sync",
       "schedule": "0 8 * * *"
     },
