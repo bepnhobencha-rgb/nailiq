@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { recordExecutionWorkerHeartbeat } from "@/shared/ai/executionHeartbeat";
 import { processExecutionQueue } from "@/shared/ai/executionWorker";
 
 export const runtime = "nodejs";
@@ -20,11 +21,41 @@ export async function GET(req: Request): Promise<NextResponse> {
     );
   }
 
+  const runId = crypto.randomUUID();
   try {
+    await recordExecutionWorkerHeartbeat({
+      runId,
+      phase: "started",
+      now: new Date(),
+    });
     const summary = await processExecutionQueue({ limit: 10 });
+    await recordExecutionWorkerHeartbeat({
+      runId,
+      phase: "succeeded",
+      now: new Date(),
+      summary: {
+        inspected: summary.inspected,
+        recovered: summary.recovered,
+        claimed: summary.claimed,
+        succeeded: summary.succeeded,
+        failed: summary.failed,
+        waiting_input: summary.waitingInput,
+        canceled: summary.canceled,
+      },
+    });
     return NextResponse.json({ ok: true, ...summary });
   } catch (error) {
     console.error("[cron/ai-execution]", error);
+    try {
+      await recordExecutionWorkerHeartbeat({
+        runId,
+        phase: "failed",
+        now: new Date(),
+        error: error instanceof Error ? error.message : "execution_failed",
+      });
+    } catch (heartbeatError) {
+      console.error("[cron/ai-execution] heartbeat failure", heartbeatError);
+    }
     return NextResponse.json(
       {
         ok: false,

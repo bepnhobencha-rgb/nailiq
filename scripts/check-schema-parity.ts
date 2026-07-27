@@ -19,12 +19,12 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260727203000. Refresh these with each schema-changing forward
+ * through 20260727220000. Refresh these with each schema-changing forward
  * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
-  tables: 90,
-  columns: 1240,
+  tables: 91,
+  columns: 1250,
   policies: 142,
   /**
    * APP functions only — 65.
@@ -39,9 +39,9 @@ const PRODUCTION = {
    * Verified on production: 253 total = 188 extension-owned + 65 app-owned.
    * The query below excludes anything a `pg_depend` extension edge points at.
    */
-  functions: 78,
+  functions: 79,
   triggers: 25,
-  indexes: 300,
+  indexes: 301,
 } as const;
 
 /**
@@ -64,6 +64,7 @@ const CRITICAL_TABLES = [
   "superadmins",
   "superadmin_audit_logs",
   "ai_execution_jobs",
+  "ai_execution_worker_state",
 ] as const;
 
 /** Booking cannot work without these; a missing RPC fails at runtime, not at apply time. */
@@ -74,6 +75,7 @@ const CRITICAL_FUNCTIONS = [
   "decide_ai_approval_request",
   "finish_ai_execution_job",
   "recover_stale_ai_execution_jobs",
+  "record_ai_execution_worker_heartbeat",
 ] as const;
 
 const dbUrl = process.env.DB_URL;
@@ -159,7 +161,7 @@ function main() {
   // The first dump here was taken with --no-privileges and produced 0 grants.
   // Everything above still went green. That is why this check exists.
   console.log("\n── Grant matrix ──\n");
-  const GRANTS = { anon: 57, authenticated: 61, service_role: 95 } as const;
+  const GRANTS = { anon: 57, authenticated: 61, service_role: 96 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
