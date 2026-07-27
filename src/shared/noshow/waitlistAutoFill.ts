@@ -1,6 +1,9 @@
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
-import { complianceFooterHtml, listUnsubscribeHeaders, isEmailSuppressed } from "@/shared/lib/emailCompliance";
+import {
+  complianceFooterHtml,
+  listUnsubscribeHeaders,
+} from "@/shared/lib/emailCompliance";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { logNotification } from "@/shared/lib/notificationLog";
 
@@ -183,10 +186,12 @@ export async function notifyWaitlistForSlot(params: {
     }
   }
 
-  // BONUS — also email when an address is on file (honours unsubscribe inside).
+  // Email is the dependable delivery channel for public waitlist entries.
+  // Link-bearing SMS can be filtered by carriers, so a failed email must not
+  // be reported as a successful notification.
   if (email) {
     try {
-      await sendWaitlistEmail({
+      emailOk = await sendWaitlistEmail({
         clientName: row.client_name,
         clientEmail: email,
         claimToken: row.claim_token,
@@ -194,7 +199,6 @@ export async function notifyWaitlistForSlot(params: {
         salonName: params.salonName,
         bookingDateYmd: params.bookingDateYmd,
       });
-      emailOk = true;
     } catch (e) {
       console.error("[waitlistAutoFill] email send failed", e);
     }
@@ -211,16 +215,12 @@ async function sendWaitlistEmail(input: {
   serviceName: string;
   salonName: string;
   bookingDateYmd: string;
-}): Promise<void> {
+}): Promise<boolean> {
   const resend = getResendClient();
-  if (!resend) return;
-
-  // Waitlist offers are optional mail → honour unsubscribe.
-  if (await isEmailSuppressed(input.clientEmail)) return;
+  if (!resend) return false;
 
   const claimUrl = `${SITE_URL}/booking/waitlist-claim?token=${input.claimToken}`;
-  const from =
-    getResendFrom();
+  const from = getResendFrom();
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -261,14 +261,20 @@ async function sendWaitlistEmail(input: {
     `${complianceFooterHtml({ email: input.clientEmail, salonName: input.salonName })}</body>`,
   );
   try {
-    await resend.emails.send({
+    const { error } = await resend.emails.send({
       from,
       to: input.clientEmail,
       subject: `Spot opened: ${input.serviceName} at ${input.salonName}`,
       html: htmlC,
       headers: listUnsubscribeHeaders(input.clientEmail),
     });
+    if (error) {
+      console.error("[waitlistAutoFill] Email send failed", error);
+      return false;
+    }
+    return true;
   } catch (e) {
     console.error("[waitlistAutoFill] Email send failed", e);
+    return false;
   }
 }

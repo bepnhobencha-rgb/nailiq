@@ -1,6 +1,7 @@
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import type { BookingWaitlistSource } from "@/shared/booking/waitlistSource";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 
@@ -15,8 +16,11 @@ export type SubmitPublicWaitlistParams = {
   staffId: string;
   clientName: string;
   clientPhone: string;
-  /** Optional — required for email notifications when a slot opens. */
-  clientEmail?: string;
+  /**
+   * Required for public waitlist entries. Link-bearing SMS can be filtered by
+   * carriers, so email is the dependable channel for the 20-minute claim link.
+   */
+  clientEmail: string;
   source: BookingWaitlistSource;
 };
 
@@ -34,6 +38,11 @@ export async function submitPublicWaitlistEntry(
     clientEmail,
     source,
   } = params;
+
+  const email = clientEmail.trim();
+  if (!isValidEmailFormat(email)) {
+    throw new Error("invalid_email");
+  }
 
   const phoneOk = validateGuestPhone(clientPhone);
   if (!phoneOk.ok) {
@@ -72,7 +81,7 @@ export async function submitPublicWaitlistEntry(
       p_client_name: nameTrimmed,
       p_client_phone: phoneOk.digits,
       p_source: source,
-      p_client_email: clientEmail?.trim() || null,
+      p_client_email: email,
     },
   );
 
