@@ -351,7 +351,8 @@ export function AppleDayTimeline({
                           data-testid={`booking-block-icon-after-hours-${booking.id}`}
                           className="mt-1 inline-flex rounded-full bg-amber-400/20 px-1.5 py-0.5 text-[9px] font-semibold text-amber-800"
                         >
-                          🌙 {booking.after_hours_minutes}m after close
+                          🌙 {booking.after_hours_minutes}m{" "}
+                          {language === "vi" ? "ngoài giờ" : "after close"}
                         </span>
                       ) : null}
                       <span className="sr-only">

@@ -2815,6 +2815,7 @@ export async function addDeskAppointment(
         start_time_utc: startUtcIso,
         end_time_utc: endUtcIso,
         status: "confirmed",
+        confirmed_at: new Date().toISOString(),
         source: "appointment",
         price_cents: deskPriceCents ?? svc.price_cents ?? null,
         walkin_source: "phone",

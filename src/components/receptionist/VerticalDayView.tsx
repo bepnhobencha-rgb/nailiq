@@ -640,7 +640,8 @@ function BookingCard({
                   data-testid={`booking-block-icon-after-hours-${booking.id}`}
                   className="rounded-full bg-amber-400/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
                 >
-                  🌙 {booking.after_hours_minutes}m
+                  🌙 {booking.after_hours_minutes}m{" "}
+                  {language === "vi" ? "ngoài giờ" : "after close"}
                 </span>
               ) : null}
             </div>
