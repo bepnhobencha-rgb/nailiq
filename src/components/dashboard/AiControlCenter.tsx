@@ -20,6 +20,7 @@ import {
 
 import { buildActionIntelligence } from "@/shared/ai/actionIntelligence";
 import type { ApprovalRow } from "@/shared/ai/approvalRequests";
+import type { ExecutionJobRow } from "@/shared/ai/executionQueue";
 import type { MinhActivityData } from "@/shared/ai/loadMinhActivity";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
@@ -27,6 +28,7 @@ type Props = {
   slug: string;
   approvals: ApprovalRow[];
   activity: MinhActivityData;
+  executionJobs: ExecutionJobRow[];
   appUrl: string;
   nowIso: string;
 };
@@ -41,7 +43,14 @@ function relativeTime(iso: string, nowIso: string, language: "en" | "vi"): strin
   return language === "vi" ? `${days} ngày trước` : `${days}d ago`;
 }
 
-export function AiControlCenter({ slug, approvals, activity, appUrl, nowIso }: Props) {
+export function AiControlCenter({
+  slug,
+  approvals,
+  activity,
+  executionJobs,
+  appUrl,
+  nowIso,
+}: Props) {
   const { language } = useUserLanguage();
   const vi = language === "vi";
   const pending = approvals.filter((item) => item.status === "pending");
@@ -242,6 +251,55 @@ export function AiControlCenter({ slug, approvals, activity, appUrl, nowIso }: P
               </div>
             )}
           </div>
+          <div className="rounded-2xl border border-nq-border bg-nq-surface p-4">
+            <div className="flex items-center gap-2">
+              <Clock3 className="h-4 w-4 text-nq-primary" aria-hidden />
+              <h3 className="text-sm font-semibold text-nq-foreground">
+                {vi ? "Hàng đợi thực thi" : "Execution queue"}
+              </h3>
+            </div>
+            {executionJobs.length === 0 ? (
+              <p className="mt-3 text-xs leading-5 text-nq-muted">
+                {vi
+                  ? "Chưa có hành động đã duyệt nào được xếp hàng."
+                  : "No approved actions have been queued yet."}
+              </p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {executionJobs.slice(0, 4).map((job) => (
+                  <div
+                    key={job.id}
+                    className="rounded-xl border border-nq-border/60 bg-nq-bg/45 p-3"
+                  >
+                    <div className="flex items-center gap-2">
+                      <p className="min-w-0 flex-1 truncate text-xs font-medium text-nq-foreground">
+                        {job.action_type.replaceAll("_", " ")}
+                      </p>
+                      <ExecutionStatus status={job.status} vi={vi} />
+                    </div>
+                    <p className="mt-1 text-[11px] text-nq-muted">
+                      {relativeTime(job.created_at, nowIso, language)}
+                      {job.attempt_count > 0
+                        ? ` · ${vi ? "Lần thử" : "Attempt"} ${job.attempt_count}/${job.max_attempts}`
+                        : ""}
+                    </p>
+                    {job.status === "waiting_input" ? (
+                      <p className="mt-2 text-xs leading-5 text-nq-warning">
+                        {vi
+                          ? "Đang chờ chọn người nhận và kiểm tra consent. Chưa gửi tin nhắn."
+                          : "Waiting for recipient selection and consent checks. No message was sent."}
+                      </p>
+                    ) : null}
+                    {job.last_error ? (
+                      <p className="mt-2 line-clamp-2 text-xs leading-5 text-nq-error">
+                        {job.last_error}
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <Link href={`/dashboard/${encodeURIComponent(slug)}/manager`} className="flex min-h-11 items-center justify-between rounded-xl border border-nq-border px-4 text-sm font-medium text-nq-foreground hover:border-nq-primary/40">
             <span className="inline-flex items-center gap-2"><Activity className="h-4 w-4 text-nq-primary" aria-hidden />{vi ? "Nhật ký AI đầy đủ" : "Full AI activity"}</span>
             <ArrowRight className="h-4 w-4 text-nq-muted" aria-hidden />
@@ -249,6 +307,36 @@ export function AiControlCenter({ slug, approvals, activity, appUrl, nowIso }: P
         </aside>
       </div>
     </main>
+  );
+}
+
+function ExecutionStatus({
+  status,
+  vi,
+}: {
+  status: ExecutionJobRow["status"];
+  vi: boolean;
+}) {
+  const labels: Record<ExecutionJobRow["status"], { en: string; vi: string }> = {
+    queued: { en: "Queued", vi: "Đã xếp hàng" },
+    waiting_input: { en: "Needs input", vi: "Cần thông tin" },
+    running: { en: "Running", vi: "Đang chạy" },
+    succeeded: { en: "Succeeded", vi: "Thành công" },
+    failed: { en: "Failed", vi: "Thất bại" },
+    canceled: { en: "Canceled", vi: "Đã hủy" },
+  };
+  const tone =
+    status === "succeeded"
+      ? "bg-nq-success/15 text-nq-success"
+      : status === "failed"
+        ? "bg-nq-error/15 text-nq-error"
+        : status === "waiting_input"
+          ? "bg-nq-warning/15 text-nq-warning"
+          : "bg-nq-primary/10 text-nq-primary";
+  return (
+    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${tone}`}>
+      {vi ? labels[status].vi : labels[status].en}
+    </span>
   );
 }
 

@@ -30,6 +30,8 @@ import "server-only";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { createLesson } from "@/shared/ai/lessonMutations";
+import { enqueueApprovedAction } from "@/shared/ai/executionQueue";
+import type { ExecutionJobStatus } from "@/shared/ai/executionPolicy";
 
 export type ApprovalUrgency = "urgent" | "normal";
 
@@ -312,6 +314,12 @@ export async function processDecision(
   actionType: string | null;
   alreadyDecided: boolean;
   expired: boolean;
+  execution?: {
+    ok: boolean;
+    jobId: string | null;
+    status: ExecutionJobStatus | null;
+    error: string | null;
+  };
 }> {
   const db = createServiceRoleClient();
 
@@ -361,14 +369,41 @@ export async function processDecision(
   }
 
   // Apply decision
-  await db
+  const decidedAt = new Date().toISOString();
+  const { data: decidedRow, error: decisionError } = await db
     .from("approval_requests" as never)
     .update({
       status: decision,
-      decided_at: new Date().toISOString(),
+      decided_at: decidedAt,
       // decided_by: cannot resolve without auth here — token auth only
     } as never)
-    .eq("id" as never, req.id);
+    .eq("id" as never, req.id)
+    .eq("status" as never, "pending")
+    .select("id")
+    .maybeSingle();
+
+  if (decisionError) {
+    console.error("[processDecision] persist decision", decisionError);
+    return {
+      ok: false,
+      salonSlug: null,
+      actionType: req.action_type,
+      alreadyDecided: false,
+      expired: false,
+    };
+  }
+
+  // A concurrent click won the conditional update.
+  if (!decidedRow) {
+    const salon = await getSalonMeta(req.salon_id);
+    return {
+      ok: false,
+      salonSlug: salon?.slug ?? null,
+      actionType: req.action_type,
+      alreadyDecided: true,
+      expired: false,
+    };
+  }
 
   // On decline: create a lesson so Minh learns to propose less often
   if (decision === "declined") {
@@ -386,6 +421,36 @@ export async function processDecision(
     }
   }
 
+  let execution:
+    | {
+        ok: boolean;
+        jobId: string | null;
+        status: ExecutionJobStatus | null;
+        error: string | null;
+      }
+    | undefined;
+
+  if (decision === "approved") {
+    const queued = await enqueueApprovedAction({
+      ...req,
+      status: "approved",
+      decided_at: decidedAt,
+    });
+    execution = queued.ok
+      ? {
+          ok: true,
+          jobId: queued.job.id,
+          status: queued.job.status,
+          error: null,
+        }
+      : {
+          ok: false,
+          jobId: null,
+          status: null,
+          error: queued.error,
+        };
+  }
+
   const salon = await getSalonMeta(req.salon_id);
   return {
     ok: true,
@@ -393,6 +458,7 @@ export async function processDecision(
     actionType: req.action_type,
     alreadyDecided: false,
     expired: false,
+    execution,
   };
 }
 
