@@ -232,16 +232,102 @@ export function SalonSettingsHub({
   const t = messages.salonSettings;
   const base = `/dashboard/${encodeURIComponent(slug)}/setup`;
 
-  const rows: { href: string; label: string }[] = [
-    { href: `${base}/services`, label: t.sectionServices },
-    { href: `${base}/staff`, label: t.sectionStaff },
-    { href: `${base}/hours`, label: t.sectionHours },
-    { href: `${base}/address`, label: t.sectionAddress },
-    { href: `${base}/promotions`, label: t.sectionPromotions },
-    { href: `${base}/manager-briefing`, label: t.sectionAiManager },
+  const adminGroups = [
+    {
+      title: vi ? "Vận hành tiệm" : "Salon operations",
+      description: vi
+        ? "Dịch vụ, nhân viên, giờ mở cửa và địa chỉ"
+        : "Services, staff, business hours, and address",
+      links: [
+        { href: `${base}/services`, label: t.sectionServices },
+        { href: `${base}/staff`, label: t.sectionStaff },
+        { href: `${base}/hours`, label: t.sectionHours },
+        { href: `${base}/address`, label: t.sectionAddress },
+      ],
+    },
+    {
+      title: vi ? "Đặt lịch & quầy tiếp tân" : "Booking & front desk",
+      description: vi
+        ? "Luồng đặt lịch, hàng chờ và quy tắc vận hành"
+        : "Booking flow, queues, and operating rules",
+      links: [
+        {
+          href: `/dashboard/${encodeURIComponent(slug)}/center?view=day`,
+          label: vi ? "Mở quầy tiếp tân" : "Open front desk",
+        },
+        {
+          href: "#cat-booking",
+          label: vi ? "Quy tắc đặt lịch" : "Booking rules",
+        },
+      ],
+    },
+    {
+      title: vi ? "Khách hàng & liên lạc" : "Customers & communication",
+      description: vi
+        ? "Email, SMS, lời nhắc và thông báo"
+        : "Email, SMS, reminders, and notifications",
+      links: [
+        {
+          href: "#cat-notifications",
+          label: vi ? "Kênh liên lạc" : "Communication channels",
+        },
+        {
+          href: `${base}/promotions`,
+          label: t.sectionPromotions,
+        },
+      ],
+    },
+    {
+      title: vi ? "Thương hiệu & trang đặt lịch" : "Brand & booking page",
+      description: vi
+        ? "Giao diện, màu sắc và trang khách hàng nhìn thấy"
+        : "Appearance, colors, and the customer-facing page",
+      links: [
+        { href: "#cat-brand", label: vi ? "Thương hiệu" : "Brand appearance" },
+        {
+          href: `/dashboard/${encodeURIComponent(slug)}/settings/my-page`,
+          label: "My Page",
+        },
+      ],
+    },
+    {
+      title: vi ? "AI & tự động hóa" : "AI & automation",
+      description: vi
+        ? "AI Quản Lý, báo cáo và AI Tiếp Tân"
+        : "AI Manager, reports, and AI Receptionist",
+      links: [
+        { href: "#cat-ai-manager", label: vi ? "AI Quản Lý" : "AI Manager" },
+        {
+          href: `${base}/manager-briefing`,
+          label: t.sectionAiManager,
+        },
+        ...(voiceAiEnabled
+          ? [
+              {
+                href: `${base}/voice`,
+                label: vi ? "AI Tiếp Tân" : "AI Receptionist",
+              },
+            ]
+          : []),
+      ],
+    },
+    {
+      title: vi ? "Tăng trưởng & hệ thống" : "Growth & system",
+      description: vi
+        ? "Tích hợp, đánh giá, gói dịch vụ và cài đặt nâng cao"
+        : "Integrations, reviews, plan, and advanced settings",
+      links: [
+        {
+          href: "#cat-integrations",
+          label: vi ? "Tích hợp & đánh giá" : "Integrations & reviews",
+        },
+        {
+          href: "#cat-plan",
+          label: vi ? "Gói & nâng cao" : "Plan & advanced",
+        },
+      ],
+    },
   ];
-
-  const myPageHref = `/dashboard/${encodeURIComponent(slug)}/settings/my-page`;
 
   return (
     <ResponsiveShell>
@@ -281,57 +367,61 @@ export function SalonSettingsHub({
           {t.pageIntro}
         </p>
 
-        {/* ── 4 setup page links ──────────────────────────────── */}
-        <ul className="flex flex-col gap-2" aria-label={t.pageTitle}>
-          {rows.map(({ href, label }) => (
-            <li key={href}>
-              <Link
-                href={href}
-                className={cn(
-                  "flex min-h-[3.25rem] touch-manipulation items-center justify-between gap-4 rounded-2xl border border-nq-border/40 bg-nq-surface/45 px-4 py-3",
-                  "text-base font-medium text-nq-foreground ring-1 ring-inset ring-nq-primary/10 transition-colors",
-                  "hover:border-nq-primary/35 hover:bg-nq-primary/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45",
-                )}
-              >
-                <span>{label}</span>
-                <span className="shrink-0 text-nq-muted" aria-hidden>
-                  →
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-
-        {/* ── My Page ─────────────────────────────────────────── */}
-        <Link
-          href={myPageHref}
-          className="mt-2 flex min-h-[3.25rem] touch-manipulation items-center justify-between gap-4 rounded-2xl border border-[#d4af37]/30 bg-[#d4af37]/5 px-4 py-3 text-base font-medium text-[#d4af37] ring-1 ring-inset ring-[#d4af37]/10 transition-colors hover:border-[#d4af37]/50 hover:bg-[#d4af37]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4af37]/45"
+        {/* A visible admin home: six jobs instead of one long, mixed list. */}
+        <section
+          aria-labelledby="admin-settings-home-title"
+          className="rounded-3xl border border-nq-border/40 bg-nq-surface/25 p-3 sm:p-4"
         >
-          <span>My Page</span>
-          <span className="shrink-0" aria-hidden>
-            →
-          </span>
-        </Link>
+          <div className="mb-3 px-1">
+            <h2
+              id="admin-settings-home-title"
+              className="text-lg font-semibold text-nq-foreground"
+            >
+              {vi ? "Bạn muốn quản lý gì?" : "What do you want to manage?"}
+            </h2>
+            <p className="mt-1 text-sm text-nq-muted">
+              {vi
+                ? "Mọi chức năng cũ vẫn còn nguyên, nay được gom theo công việc."
+                : "Every existing setting is preserved, now grouped by job."}
+            </p>
+          </div>
 
-        {canManageSalonSettings && voiceAiEnabled ? (
-          <Link
-            data-testid="settings-voice-ai-link"
-            href={`/dashboard/${encodeURIComponent(slug)}/setup/voice`}
-            className="mt-2 flex min-h-[3.25rem] touch-manipulation items-center justify-between gap-4 rounded-2xl border border-nq-primary/35 bg-nq-primary/5 px-4 py-3 text-nq-primary ring-1 ring-inset ring-nq-primary/10 transition-colors hover:border-nq-primary/55 hover:bg-nq-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
-          >
-            <span className="min-w-0">
-              <span className="block text-base font-semibold">AI Voice</span>
-              <span className="mt-0.5 block text-xs text-nq-muted">
-                {vi
-                  ? "Giọng nói, upsell và số chuyển máy"
-                  : "Voice, upsells, and human transfer phone"}
-              </span>
-            </span>
-            <span className="shrink-0" aria-hidden>
-              →
-            </span>
-          </Link>
-        ) : null}
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {adminGroups.map((group) => (
+              <article
+                key={group.title}
+                className="rounded-2xl border border-nq-border/40 bg-nq-surface/55 p-4 shadow-sm"
+              >
+                <h3 className="text-base font-semibold text-nq-foreground">
+                  {group.title}
+                </h3>
+                <p className="mt-1 min-h-10 text-xs leading-5 text-nq-muted">
+                  {group.description}
+                </p>
+                <ul className="mt-3 divide-y divide-nq-border/25">
+                  {group.links.map(({ href, label }) => (
+                    <li key={`${group.title}-${href}-${label}`}>
+                      <Link
+                        href={href}
+                        data-testid={
+                          href.endsWith("/voice")
+                            ? "settings-voice-ai-link"
+                            : undefined
+                        }
+                        className="flex min-h-11 items-center justify-between gap-3 py-2 text-sm font-medium text-nq-foreground transition-colors hover:text-nq-primary focus-visible:outline-none focus-visible:text-nq-primary"
+                      >
+                        <span>{label}</span>
+                        <span aria-hidden className="shrink-0 text-nq-muted">
+                          →
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
+        </section>
 
         {/* ── Jump bar — quick anchors to each category ───────── */}
         <SettingsJumpBar
