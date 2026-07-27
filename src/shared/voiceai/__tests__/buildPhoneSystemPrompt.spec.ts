@@ -174,6 +174,19 @@ describe("compact phone Realtime config", () => {
     expect(prompt).toContain("Do not speak any closing words before end_call");
   });
 
+  it("repairs connection checks and prevents a staff-preference loop", () => {
+    const prompt = buildPhoneSystemPrompt(ctx, "en", "+17780000000");
+
+    expect(prompt).toContain(
+      '"Hello?", "Are you there?", or "Can you hear me?" during the call is a connection check',
+    );
+    expect(prompt).toContain("then restate the pending question briefly");
+    expect(prompt).toContain("clarify once with two choices");
+    expect(prompt).toContain("use anyone available for the availability lookup");
+    expect(prompt).toContain("Never keep looping on staff preference");
+    expect(prompt).toContain("Never volunteer a staff name");
+  });
+
   it("keeps shared tool contracts, adds the phone-only transfer tool, and materially reduces static context", () => {
     const fullTools = REALTIME_TOOLS as unknown as Array<{
       name: string;

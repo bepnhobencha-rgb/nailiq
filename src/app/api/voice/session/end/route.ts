@@ -17,6 +17,7 @@ type EndSessionBody = {
 };
 
 const SUPPORTED = ["vi", "en", "es", "fr", "zh"];
+const SESSION_STATUSES = new Set(["completed", "failed", "abandoned"]);
 
 export async function POST(req: NextRequest) {
   let body: EndSessionBody;
@@ -26,9 +27,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
 
-  const { sessionId, durationSeconds, transcript, status = "completed", clientName, clientPhone, language } = body;
+  const {
+    sessionId,
+    durationSeconds,
+    transcript,
+    status: requestedStatus = "completed",
+    clientName,
+    clientPhone,
+    language,
+  } = body;
   if (!sessionId) return NextResponse.json({ error: "missing_session_id" }, { status: 400 });
   const lang = typeof language === "string" && SUPPORTED.includes(language) ? language : null;
+  const status = SESSION_STATUSES.has(requestedStatus) ? requestedStatus : "failed";
 
   const supabase = createServiceRoleClient();
 

@@ -83,6 +83,35 @@ export function callerPresenceLabel(phone: string): "present" | "missing" {
   return phone ? "present" : "missing";
 }
 
+export type VoiceSessionCloseStatus = "completed" | "failed" | "abandoned";
+
+/**
+ * Translate the transport teardown into a session outcome. Previously every
+ * socket close was persisted as "completed", so a caller hangup in the middle
+ * of a booking looked identical to a fully played farewell.
+ */
+export function voiceSessionStatusForClose(input: {
+  reason: string;
+  endCallRequested: boolean;
+  transportHandoffStarted: boolean;
+}): VoiceSessionCloseStatus {
+  if (
+    input.endCallRequested ||
+    input.transportHandoffStarted ||
+    input.reason === "farewell_fully_played" ||
+    input.reason === "hangup_fallback_timeout" ||
+    input.reason === "hangup_no_live_stream"
+  ) {
+    return "completed";
+  }
+
+  if (input.reason === "twilio_stop" || input.reason === "twilio_ws_closed") {
+    return "abandoned";
+  }
+
+  return "failed";
+}
+
 /**
  * server_vad turn detection, tuned for 8 kHz phone audio. Defaults
  * (threshold 0.5, silence 500ms) false-triggered on line echo and the caller's
