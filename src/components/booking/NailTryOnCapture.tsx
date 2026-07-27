@@ -70,7 +70,8 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
   const [selectedDesign, setSelectedDesign] = useState<CatalogDesign | null>(null);
   const [generationSeconds, setGenerationSeconds] = useState(0);
   const [configuration, setConfiguration] = useState<NailConfiguration>(DEFAULT_NAIL_CONFIGURATION);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const libraryInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -124,7 +125,8 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
     setPhoto(null);
     setServerMessage(null);
     setServerWarning(null);
-    if (inputRef.current) inputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
+    if (libraryInputRef.current) libraryInputRef.current.value = "";
   }
 
   async function uploadAndVerify() {
@@ -250,7 +252,28 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
               <ul className="mt-5 grid grid-cols-2 gap-2 text-xs text-neutral-600">
                 {["Palm down", "Five nails visible", "Soft, even light", "No motion blur"].map((item) => <li key={item} className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-600" aria-hidden />{item}</li>)}
               </ul>
-              <button type="button" onClick={() => inputRef.current?.click()} className="mt-6 flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-neutral-950 px-5 font-semibold text-white"><ImagePlus className="h-5 w-5" aria-hidden />Take or choose photo</button>
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => cameraInputRef.current?.click()}
+                  className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-neutral-950 px-5 font-semibold text-white"
+                >
+                  <Camera className="h-5 w-5" aria-hidden />
+                  Take photo / Chụp ảnh
+                </button>
+                <button
+                  type="button"
+                  onClick={() => libraryInputRef.current?.click()}
+                  className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-neutral-300 bg-white px-5 font-semibold text-neutral-900"
+                >
+                  <ImagePlus className="h-5 w-5" aria-hidden />
+                  Choose photo / Chọn ảnh
+                </button>
+              </div>
+              <p className="mt-3 text-center text-xs leading-5 text-neutral-500">
+                On a phone, “Take photo” opens the rear camera. If camera access
+                is unavailable, choose an existing photo instead.
+              </p>
             </div>
           ) : (
             <div>
@@ -272,7 +295,29 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
               </div>
             </div>
           )}
-          <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void inspect(file); }} />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="sr-only"
+            aria-label="Take a hand photo with the rear camera"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void inspect(file);
+            }}
+          />
+          <input
+            ref={libraryInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="sr-only"
+            aria-label="Choose an existing hand photo"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void inspect(file);
+            }}
+          />
         </section>
       )}
 
