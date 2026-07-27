@@ -15,7 +15,8 @@ import "server-only";
  *   2. For urgent requests: email sent immediately with approve/decline buttons.
  *   3. For normal requests: queued; digest includes them; reminders after 24h.
  *   4. Owner taps button → GET /api/ai/approve?token=... → processDecision().
- *   5. Declined: auto-creates a minh_lessons 'policy' lesson so Minh learns.
+ *   5. Resolved decisions refresh a bounded owner-preference policy so repeated
+ *      declines reduce future proposals and later approvals can recover them.
  *
  * Example usage (see bottom of file for more):
  *   const requestId = await createApprovalRequest({
@@ -29,9 +30,9 @@ import "server-only";
 
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
-import { createLesson } from "@/shared/ai/lessonMutations";
 import { enqueueApprovedAction } from "@/shared/ai/executionQueue";
 import type { ExecutionJobStatus } from "@/shared/ai/executionPolicy";
+import { refreshOwnerProposalPreference } from "@/shared/ai/ownerPreference";
 
 export type ApprovalUrgency = "urgent" | "normal";
 
@@ -405,19 +406,39 @@ export async function processDecision(
     };
   }
 
-  // On decline: create a lesson so Minh learns to propose less often
-  if (decision === "declined") {
+  // Feed repeated strategist decisions back into future proposal frequency.
+  // This is deliberately advisory: a preference refresh failure must never
+  // roll back or reinterpret the owner's persisted approve/decline decision.
+  const proposalSource =
+    typeof req.payload?.proposal_source === "string"
+      ? req.payload.proposal_source
+      : null;
+  if (proposalSource) {
     try {
-      await createLesson({
+      const preference = await refreshOwnerProposalPreference({
         salonId: req.salon_id,
-        scope: "policy",
-        condition: { action_type: req.action_type },
-        rule: `owner_declined: Owner declined "${req.action_type}" on ${new Date().toISOString().slice(0, 10)}. Reduce frequency or skip this action type.`,
-        source: `decline:${req.id}`,
-        confidence: 0.7,
+        actionType: req.action_type,
+        proposalSource,
       });
+      if (preference.changed) {
+        await db.from("ai_actions_log" as never).insert({
+          salon_id: req.salon_id,
+          agent: "strategist",
+          action_type: preference.active
+            ? "owner_preference_cooldown_activated"
+            : "owner_preference_cooldown_recovered",
+          target_id: req.id,
+          payload: {
+            approval_request_id: req.id,
+            approval_decision: decision,
+            approval_action_type: req.action_type,
+            proposal_source: proposalSource,
+            lesson_id: preference.lessonId,
+          },
+        } as never);
+      }
     } catch (e) {
-      console.error("[processDecision] createLesson", e);
+      console.error("[processDecision] owner preference", e);
     }
   }
 

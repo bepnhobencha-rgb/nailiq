@@ -117,16 +117,21 @@ export async function createLesson(params: {
 }
 
 const OUTCOME_SOURCE_PREFIX = "outcome_adaptation:";
+const OWNER_PREFERENCE_SOURCE_PREFIX = "owner_preference:";
 
-function outcomeAdaptationId(salonId: string, agent: string): string {
+function deterministicLessonId(namespace: string, ...parts: string[]): string {
   const hex = createHash("sha256")
-    .update(`nailiq:outcome-adaptation:${salonId}:${agent}`)
+    .update(["nailiq", namespace, ...parts].join(":"))
     .digest("hex")
     .slice(0, 32);
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(
     12,
     16,
   )}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function outcomeAdaptationId(salonId: string, agent: string): string {
+  return deterministicLessonId("outcome-adaptation", salonId, agent);
 }
 
 export type OutcomeAdaptationMutation = {
@@ -233,6 +238,135 @@ export async function setOutcomeAdaptation(params: {
     .eq("salon_id" as never, params.salonId);
   if (error) {
     console.error("[setOutcomeAdaptation] update", error);
+    return {
+      lessonId: existing.id,
+      changed: false,
+      active: params.active,
+    };
+  }
+
+  return {
+    lessonId: existing.id,
+    changed: true,
+    active: params.active,
+  };
+}
+
+export type OwnerPreferenceMutation = {
+  lessonId: string | null;
+  changed: boolean;
+  active: boolean;
+};
+
+/**
+ * Maintain one deterministic, reversible policy lesson for an action/source.
+ * It never authorizes an action; while active it only suppresses future
+ * proposals until the bounded cooldown expires.
+ */
+export async function setOwnerProposalPreference(params: {
+  salonId: string;
+  actionType: string;
+  proposalSource: string | null;
+  active: boolean;
+  suppressUntil: string | null;
+}): Promise<OwnerPreferenceMutation> {
+  const db = createServiceRoleClient();
+  const sourceKey = params.proposalSource ?? "all";
+  const source = `${OWNER_PREFERENCE_SOURCE_PREFIX}${params.actionType}:${sourceKey}`;
+  const condition = {
+    action_type: params.actionType,
+    ...(params.proposalSource
+      ? { proposal_source: params.proposalSource }
+      : {}),
+    ...(params.suppressUntil
+      ? { suppress_until: params.suppressUntil }
+      : {}),
+  };
+  const rule = "proposal_cooldown";
+
+  const { data: existingData, error: fetchError } = await db
+    .from("minh_lessons" as never)
+    .select("id, active, rule, condition")
+    .eq("salon_id" as never, params.salonId)
+    .eq("scope" as never, "policy")
+    .eq("source" as never, source)
+    .limit(1)
+    .maybeSingle();
+  if (fetchError) {
+    console.error("[setOwnerProposalPreference] fetch", fetchError);
+    return { lessonId: null, changed: false, active: params.active };
+  }
+
+  const existing = existingData as
+    | {
+        id: string;
+        active: boolean;
+        rule: string;
+        condition: Record<string, unknown>;
+      }
+    | null;
+
+  if (!existing) {
+    if (!params.active || !params.suppressUntil) {
+      return { lessonId: null, changed: false, active: false };
+    }
+    const { data, error } = await db
+      .from("minh_lessons" as never)
+      .upsert({
+        id: deterministicLessonId(
+          "owner-preference",
+          params.salonId,
+          params.actionType,
+          sourceKey,
+        ),
+        salon_id: params.salonId,
+        scope: "policy",
+        condition,
+        rule,
+        source,
+        confidence: 0.8,
+        active: true,
+      } as never, { onConflict: "id" })
+      .select("id")
+      .maybeSingle();
+    if (error) {
+      console.error("[setOwnerProposalPreference] insert", error);
+      return { lessonId: null, changed: false, active: true };
+    }
+    return {
+      lessonId: (data as { id: string } | null)?.id ?? null,
+      changed: true,
+      active: true,
+    };
+  }
+
+  const existingUntil = String(existing.condition?.suppress_until ?? "");
+  const changed =
+    existing.active !== params.active ||
+    (params.active &&
+      (existing.rule !== rule ||
+        existingUntil !== String(params.suppressUntil ?? "")));
+  if (!changed) {
+    return {
+      lessonId: existing.id,
+      changed: false,
+      active: params.active,
+    };
+  }
+
+  const { error } = await db
+    .from("minh_lessons" as never)
+    .update({
+      active: params.active,
+      rule,
+      condition: params.active ? condition : existing.condition,
+      updated_at: new Date().toISOString(),
+      ...(params.active ? { confidence: 0.8 } : {}),
+    } as never)
+    .eq("id" as never, existing.id)
+    .eq("salon_id" as never, params.salonId);
+  if (error) {
+    console.error("[setOwnerProposalPreference] update", error);
     return {
       lessonId: existing.id,
       changed: false,

@@ -5,6 +5,34 @@ Newest entries on top.
 
 ---
 
+## 2026-07-27 — Owner decisions must alter proposal frequency without permanently muting AI
+
+**Status.** Implemented on `agent/approval-preference-learning`.
+
+**Context.** A declined approval created a new `policy` lesson, but the weekly
+strategist never read policy lessons. The system therefore claimed to learn while
+repeating the same approval pattern. Creating one permanent suppression lesson
+per decline would overreact to a single decision and could never recover.
+
+**Decision.**
+- Resolved weekly-strategist approvals are evaluated inside the same salon,
+  action type, and proposal source. Unrelated bulk-message workflows cannot
+  teach this policy.
+- Two declines among the latest three resolved decisions activate one
+  deterministic `proposal_cooldown` lesson for 28 days. Fewer than three
+  decisions do not change behavior.
+- Two consecutive approvals recover the learned cooldown. The gap between
+  activation and recovery is deliberate hysteresis.
+- During an active cooldown, strategist analysis and read-only recommendations
+  may still run, but no repeated approval request is created. The suppression is
+  written to `ai_actions_log` with its lesson and expiry.
+- The expiry is enforced at read time, so a stale lesson cannot permanently mute
+  proposals even if a cleanup cron is delayed.
+- This mechanism only removes future proposals. It adds no sender, execution
+  permission, payment behavior, or authentication authority.
+
+---
+
 ## 2026-07-27 — Outcome adaptation must change behavior, stay bounded, and recover
 
 **Status.** Implemented on `agent/ai-outcome-adaptation`.
