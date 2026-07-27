@@ -10,6 +10,9 @@ const migration = read(
 );
 const queue = read("src/shared/ai/executionQueue.ts");
 const approval = read("src/shared/ai/approvalRequests.ts");
+const atomicDecision = read(
+  "supabase/migrations/20260727194500_make_approval_execution_atomic.sql",
+);
 
 describe("AI execution queue boundary", () => {
   it("is idempotent and records safe execution states", () => {
@@ -19,8 +22,10 @@ describe("AI execution queue boundary", () => {
     expect(migration).toContain("'running'");
     expect(migration).toContain("'succeeded'");
     expect(migration).toContain("'failed'");
-    expect(queue).toContain('onConflict: "approval_request_id"');
-    expect(queue).toContain("ignoreDuplicates: true");
+    expect(atomicDecision).toContain("'approval:' || v_request.id::text");
+    expect(atomicDecision).toContain(
+      "on conflict (approval_request_id) do nothing",
+    );
   });
 
   it("allows owners to read but only the service role to mutate", () => {
@@ -40,18 +45,34 @@ describe("AI execution queue boundary", () => {
     expect(queue).toContain("createServiceRoleClient");
   });
 
-  it("queues only after an approval is persisted", () => {
-    const approvalUpdate = approval.indexOf(
-      "const { data: decidedRow, error: decisionError }",
+  it("persists approval, queue, and audit atomically", () => {
+    expect(atomicDecision).toContain(
+      "for update",
     );
-    const enqueue = approval.indexOf(
-      "const queued = await enqueueApprovedAction",
+    expect(atomicDecision).toContain(
+      "update public.approval_requests",
     );
-    expect(approvalUpdate).toBeGreaterThan(-1);
-    expect(enqueue).toBeGreaterThan(approvalUpdate);
-    expect(approval).toContain('.eq("status" as never, "pending")');
-    expect(approval).toContain("if (decisionError)");
-    expect(approval).toContain("if (!decidedRow)");
+    expect(atomicDecision).toContain(
+      "insert into public.ai_execution_jobs",
+    );
+    expect(atomicDecision).toContain(
+      "insert into public.ai_actions_log",
+    );
+    expect(approval).toContain(
+      '"decide_ai_approval_request" as never',
+    );
+    expect(queue).not.toContain("enqueueApprovedAction");
+  });
+
+  it("validates token intent, reconciles old approvals, and is service-role only", () => {
+    expect(atomicDecision).toContain("ar.approve_token = p_token");
+    expect(atomicDecision).toContain("ar.decline_token = p_token");
+    expect(atomicDecision).toContain("'approved_recovered'");
+    expect(atomicDecision).toContain(
+      "revoke all on function public.decide_ai_approval_request(text, text)",
+    );
+    expect(atomicDecision).toContain("from public, anon, authenticated");
+    expect(atomicDecision).toContain("to service_role");
   });
 
   it("updates the blank-database schema tripwire", () => {
@@ -60,7 +81,9 @@ describe("AI execution queue boundary", () => {
     expect(parity).toContain("columns: 1238");
     expect(parity).toContain("policies: 142");
     expect(parity).toContain("indexes: 299");
+    expect(parity).toContain("functions: 75");
     expect(parity).toContain('"ai_execution_jobs"');
+    expect(parity).toContain('"decide_ai_approval_request"');
     expect(parity).toContain(
       "const GRANTS = { anon: 57, authenticated: 61, service_role: 95 }",
     );

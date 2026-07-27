@@ -30,7 +30,6 @@ import "server-only";
 
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
-import { enqueueApprovedAction } from "@/shared/ai/executionQueue";
 import type { ExecutionJobStatus } from "@/shared/ai/executionPolicy";
 import { refreshOwnerProposalPreference } from "@/shared/ai/ownerPreference";
 
@@ -54,6 +53,24 @@ export type ApprovalRow = {
   decided_by: string | null;
   decided_at: string | null;
   created_at: string;
+};
+
+type ApprovalDecisionTransition = {
+  outcome:
+    | "approved_queued"
+    | "approved_recovered"
+    | "declined"
+    | "expired"
+    | "already_decided"
+    | "invalid_decision"
+    | "not_found";
+  approval_id: string | null;
+  salon_id: string | null;
+  action_type: string | null;
+  decision_status: ApprovalRow["status"] | null;
+  execution_job_id: string | null;
+  execution_status: ExecutionJobStatus | null;
+  decided_at: string | null;
 };
 
 type SalonMeta = {
@@ -338,27 +355,35 @@ export async function processDecision(
   }
 
   const req = row as ApprovalRow;
-
-  // Already decided?
-  if (req.status !== "pending") {
-    const salon = await getSalonMeta(req.salon_id);
+  const { data: transitionRows, error: transitionError } = await db.rpc(
+    "decide_ai_approval_request" as never,
+    { p_token: token, p_decision: decision } as never,
+  );
+  if (transitionError) {
+    console.error("[processDecision] atomic decision", transitionError);
     return {
       ok: false,
-      salonSlug: salon?.slug ?? null,
+      salonSlug: null,
       actionType: req.action_type,
-      alreadyDecided: true,
-      expired: req.status === "expired",
+      alreadyDecided: false,
+      expired: false,
     };
   }
 
-  // Expired?
-  if (new Date(req.expires_at) < new Date()) {
-    // Mark expired if not already
-    await db
-      .from("approval_requests" as never)
-      .update({ status: "expired" } as never)
-      .eq("id" as never, req.id);
+  const transition = (
+    transitionRows as ApprovalDecisionTransition[] | null
+  )?.[0];
+  if (!transition || transition.outcome === "not_found" || transition.outcome === "invalid_decision") {
+    return {
+      ok: false,
+      salonSlug: null,
+      actionType: req.action_type,
+      alreadyDecided: false,
+      expired: false,
+    };
+  }
 
+  if (transition.outcome === "expired") {
     const salon = await getSalonMeta(req.salon_id);
     return {
       ok: false,
@@ -369,40 +394,14 @@ export async function processDecision(
     };
   }
 
-  // Apply decision
-  const decidedAt = new Date().toISOString();
-  const { data: decidedRow, error: decisionError } = await db
-    .from("approval_requests" as never)
-    .update({
-      status: decision,
-      decided_at: decidedAt,
-      // decided_by: cannot resolve without auth here — token auth only
-    } as never)
-    .eq("id" as never, req.id)
-    .eq("status" as never, "pending")
-    .select("id")
-    .maybeSingle();
-
-  if (decisionError) {
-    console.error("[processDecision] persist decision", decisionError);
-    return {
-      ok: false,
-      salonSlug: null,
-      actionType: req.action_type,
-      alreadyDecided: false,
-      expired: false,
-    };
-  }
-
-  // A concurrent click won the conditional update.
-  if (!decidedRow) {
+  if (transition.outcome === "already_decided") {
     const salon = await getSalonMeta(req.salon_id);
     return {
       ok: false,
       salonSlug: salon?.slug ?? null,
       actionType: req.action_type,
       alreadyDecided: true,
-      expired: false,
+      expired: transition.decision_status === "expired",
     };
   }
 
@@ -413,7 +412,10 @@ export async function processDecision(
     typeof req.payload?.proposal_source === "string"
       ? req.payload.proposal_source
       : null;
-  if (proposalSource) {
+  const isNewDecision =
+    transition.outcome === "approved_queued" ||
+    transition.outcome === "declined";
+  if (proposalSource && isNewDecision) {
     try {
       const preference = await refreshOwnerProposalPreference({
         salonId: req.salon_id,
@@ -442,35 +444,15 @@ export async function processDecision(
     }
   }
 
-  let execution:
-    | {
-        ok: boolean;
-        jobId: string | null;
-        status: ExecutionJobStatus | null;
-        error: string | null;
-      }
-    | undefined;
-
-  if (decision === "approved") {
-    const queued = await enqueueApprovedAction({
-      ...req,
-      status: "approved",
-      decided_at: decidedAt,
-    });
-    execution = queued.ok
+  const execution =
+    decision === "approved"
       ? {
           ok: true,
-          jobId: queued.job.id,
-          status: queued.job.status,
+          jobId: transition.execution_job_id,
+          status: transition.execution_status,
           error: null,
         }
-      : {
-          ok: false,
-          jobId: null,
-          status: null,
-          error: queued.error,
-        };
-  }
+      : undefined;
 
   const salon = await getSalonMeta(req.salon_id);
   return {
