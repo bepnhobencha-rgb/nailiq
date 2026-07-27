@@ -102,3 +102,42 @@ export function applyLearnedAgentCap(
 
   return Math.max(1, Math.floor(safeBase * multiplier));
 }
+
+export type ProposalCooldown = {
+  lessonId: string;
+  suppressUntil: string;
+};
+
+/** Find a still-active owner preference cooldown for one proposal workflow. */
+export function findProposalCooldown(
+  lessons: MinhLesson[],
+  context: { actionType: string; proposalSource: string; now?: Date },
+): ProposalCooldown | null {
+  const nowMs = (context.now ?? new Date()).getTime();
+  let latest: ProposalCooldown | null = null;
+
+  for (const lesson of lessons) {
+    if (lesson.scope !== "policy" || lesson.rule !== "proposal_cooldown") {
+      continue;
+    }
+    const condition = lesson.condition;
+    if (condition.action_type !== context.actionType) continue;
+    if (
+      condition.proposal_source &&
+      condition.proposal_source !== context.proposalSource
+    ) {
+      continue;
+    }
+    const suppressUntil = String(condition.suppress_until ?? "");
+    const suppressUntilMs = new Date(suppressUntil).getTime();
+    if (!Number.isFinite(suppressUntilMs) || suppressUntilMs <= nowMs) continue;
+    if (
+      !latest ||
+      suppressUntilMs > new Date(latest.suppressUntil).getTime()
+    ) {
+      latest = { lessonId: lesson.id, suppressUntil };
+    }
+  }
+
+  return latest;
+}

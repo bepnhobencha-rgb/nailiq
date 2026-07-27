@@ -7,6 +7,7 @@ import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
 import type { SalonIntelligenceProfile } from "@/shared/ai/types";
 import { createApprovalRequest, getPendingApprovals } from "@/shared/ai/approvalRequests";
 import { buildStrategistApprovalProposal } from "@/shared/ai/strategistProposal";
+import { findProposalCooldown, getLessons } from "@/shared/ai/lessons";
 
 /**
  * AI Chiến Lược Gia (Weekly Strategist) — Runs every Sunday at 21:00 salon time.
@@ -456,10 +457,18 @@ export async function runStrategist(salonId: string): Promise<void> {
 
     // Log each recommendation separately so ActivityFeed can show them
     const svc = createServiceRoleClient();
+    const proposalCooldown = findProposalCooldown(
+      await getLessons(salonId, "policy"),
+      {
+        actionType: "bulk_message",
+        proposalSource: "weekly_strategist",
+      },
+    );
     const hasPendingStrategistProposal = (await getPendingApprovals(salonId)).some(
       (request) => request.payload?.proposal_source === "weekly_strategist",
     );
     let approvalCreated = hasPendingStrategistProposal;
+    let suppressionLogged = false;
 
     for (const rec of output.recommendations) {
       const isActable = rec.type === "flash_deal" || rec.type === "message_tweak";
@@ -477,7 +486,33 @@ export async function runStrategist(salonId: string): Promise<void> {
         undo_deadline: isActable ? new Date(Date.now() + 60 * 60 * 1000).toISOString() : null,
       } as never);
 
-      if (rec.type !== "structural" && rec.draft_message && !approvalCreated) {
+      if (
+        rec.type !== "structural" &&
+        rec.draft_message &&
+        proposalCooldown &&
+        !suppressionLogged
+      ) {
+        await svc.from("ai_actions_log" as never).insert({
+          salon_id: salonId,
+          agent: "strategist",
+          action_type: "proposal_suppressed_owner_preference",
+          payload: {
+            approval_action_type: "bulk_message",
+            proposal_source: "weekly_strategist",
+            lesson_id: proposalCooldown.lessonId,
+            suppress_until: proposalCooldown.suppressUntil,
+            summary: "Owner preference cooldown prevented a repeated approval request.",
+          },
+        } as never);
+        suppressionLogged = true;
+      }
+
+      if (
+        rec.type !== "structural" &&
+        rec.draft_message &&
+        !approvalCreated &&
+        !proposalCooldown
+      ) {
         const proposal = buildStrategistApprovalProposal({
           type: rec.type,
           title: rec.title,
