@@ -5,6 +5,30 @@ Newest entries on top.
 
 ---
 
+## 2026-07-27 — Approval and execution enqueue are one atomic transition
+
+**Status.** Implemented on `agent/atomic-approval-execution`.
+
+**Context.** Approval persistence and execution enqueue previously happened in
+two database calls. A queue failure could leave an owner decision marked
+`approved` with no execution job, and revisiting the one-tap link treated that
+state as already complete instead of repairing it.
+
+**Decision.**
+- A service-role-only, security-invoker RPC locks the approval row, validates
+  that the supplied token matches the requested decision, persists the decision,
+  creates the idempotent execution job, and writes its audit event in one
+  transaction.
+- Declines are also persisted with their audit event atomically.
+- Revisiting the approve link for a historical approved row with no job safely
+  creates the missing job once. Existing jobs remain unchanged.
+- Proposal-preference learning stays post-commit and advisory; its failure
+  cannot reinterpret or roll back the owner's decision.
+- This transition adds no sender, campaign, payment, pricing, or authentication
+  authority.
+
+---
+
 ## 2026-07-27 — Owners can recover failed AI work without bypassing execution safety
 
 **Status.** Implemented on `agent/ai-execution-recovery`.
