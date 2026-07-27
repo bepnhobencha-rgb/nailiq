@@ -112,7 +112,13 @@ test.afterAll(async ({}, testInfo) => {
 
 test("grid hides click-to-create preview when no service can finish before close", async ({
   page,
+  isMobile,
 }) => {
+  test.skip(
+    isMobile,
+    "The click-to-create hover affordance is a desktop mouse interaction.",
+  );
+
   await gotoReceptionistCenter(page, fixture.slug, {
     dateYmd: fixture.dateYmd,
     expectWalkinQueue: false,
