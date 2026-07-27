@@ -63,7 +63,6 @@ import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { MobileAccountCard } from "@/components/dashboard/MobileAccountCard";
 import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
-import { MessagingSettings } from "@/app/dashboard/[slug]/settings/MessagingSettings";
 
 export function SalonSettingsHub({
   slug,
@@ -113,7 +112,6 @@ export function SalonSettingsHub({
   primaryGridAxis,
   smsOutboundEnabled,
   emailOutboundEnabled,
-  smsA2pRegistered,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -165,8 +163,6 @@ export function SalonSettingsHub({
   smsOutboundEnabled: boolean;
   /** Operator-level email kill-switch (default ON). */
   emailOutboundEnabled: boolean;
-  /** Whether A2P 10DLC registration is complete (superadmin-set; read-only here). */
-  smsA2pRegistered: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -197,19 +193,20 @@ export function SalonSettingsHub({
   const [advSaved, setAdvSaved] = useState(false);
 
   function handleReminderToggle(next: boolean) {
+    const nextSms = next && smsOutboundEnabled;
     setReminderOn(next);
     if (next) {
-      setAdv24h(true);
-      setAdv3h(true);
-      setAdvSms(true);
+      setAdv24h(emailOutboundEnabled);
+      setAdv3h(emailOutboundEnabled);
+      setAdvSms(nextSms);
     }
     startReminderTransition(async () => {
       if (next) {
         await updateRemindersEnabled(slug, true);
         await updateReminderSettings(slug, {
-          reminder_24h_enabled: true,
-          reminder_3h_enabled: true,
-          sms_reminders_enabled: true,
+          reminder_24h_enabled: emailOutboundEnabled,
+          reminder_3h_enabled: emailOutboundEnabled,
+          sms_reminders_enabled: nextSms,
         });
       } else {
         await updateRemindersEnabled(slug, false);
@@ -220,9 +217,9 @@ export function SalonSettingsHub({
   function handleReminderAdvSave() {
     startReminderTransition(async () => {
       await updateReminderSettings(slug, {
-        reminder_24h_enabled: adv24h,
-        reminder_3h_enabled: adv3h,
-        sms_reminders_enabled: advSms,
+        reminder_24h_enabled: emailOutboundEnabled && adv24h,
+        reminder_3h_enabled: emailOutboundEnabled && adv3h,
+        sms_reminders_enabled: smsOutboundEnabled && advSms,
       });
       setAdvSaved(true);
       setTimeout(() => setAdvSaved(false), 2500);
@@ -587,7 +584,19 @@ export function SalonSettingsHub({
                   {t.reminders.autoTitle}
                 </p>
                 <p className="mt-0.5 text-xs text-nq-muted">
-                  {t.reminders.autoHint}
+                  {!smsOutboundEnabled && emailOutboundEnabled
+                    ? language === "vi"
+                      ? "Chỉ gửi email — SMS đang tắt trong Kênh liên lạc với khách."
+                      : "Email only — SMS is disabled in Customer communication."
+                    : !emailOutboundEnabled && smsOutboundEnabled
+                      ? language === "vi"
+                        ? "Chỉ gửi SMS — email đang tắt trong Kênh liên lạc với khách."
+                        : "SMS only — email is disabled in Customer communication."
+                      : !emailOutboundEnabled && !smsOutboundEnabled
+                        ? language === "vi"
+                          ? "Chưa có kênh gửi nào được bật."
+                          : "No delivery channel is currently enabled."
+                        : t.reminders.autoHint}
                 </p>
               </div>
               <Toggle
@@ -617,32 +626,40 @@ export function SalonSettingsHub({
                     {
                       key: "24h",
                       label: t.reminders.email24h,
-                      checked: adv24h,
+                      checked: emailOutboundEnabled && adv24h,
                       set: setAdv24h,
+                      available: emailOutboundEnabled,
                     },
                     {
                       key: "3h",
                       label: t.reminders.email3h,
-                      checked: adv3h,
+                      checked: emailOutboundEnabled && adv3h,
                       set: setAdv3h,
+                      available: emailOutboundEnabled,
                     },
                     {
                       key: "sms",
                       label: t.reminders.sms3h,
-                      checked: advSms,
+                      checked: smsOutboundEnabled && advSms,
                       set: setAdvSms,
+                      available: smsOutboundEnabled,
                     },
                   ] as const
-                ).map(({ key, label, checked, set }) => (
+                ).map(({ key, label, checked, set, available }) => (
                   <label
                     key={key}
-                    className="flex cursor-pointer items-center gap-3 text-sm text-nq-foreground"
+                    className={cn(
+                      "flex items-center gap-3 text-sm",
+                      available
+                        ? "cursor-pointer text-nq-foreground"
+                        : "cursor-not-allowed text-nq-muted",
+                    )}
                   >
                     <input
                       type="checkbox"
                       className="h-4 w-4 rounded border-nq-border/60 text-nq-primary focus:ring-nq-primary/40"
                       checked={checked}
-                      disabled={reminderPending}
+                      disabled={reminderPending || !available}
                       onChange={(e) => set(e.target.checked)}
                     />
                     {label}
@@ -673,22 +690,16 @@ export function SalonSettingsHub({
           <CustomerChannelCard slug={slug} />
         ) : null}
 
-        {/* ── Messaging & Email master toggles + A2P badge ─────── */}
-        {canManageSalonSettings ? (
-          <MessagingSettings
-            slug={slug}
-            initialSmsEnabled={smsOutboundEnabled}
-            initialEmailEnabled={emailOutboundEnabled}
-            smsA2pRegistered={smsA2pRegistered}
-          />
-        ) : null}
-
         {/* ── Manager + staff notification cards ──────────────── */}
         {canManageSalonSettings ? (
           <OwnerNotificationCard slug={slug} />
         ) : null}
         {canManageSalonSettings ? (
-          <StaffNotificationCard slug={slug} />
+          <StaffNotificationCard
+            slug={slug}
+            smsOutboundEnabled={smsOutboundEnabled}
+            emailOutboundEnabled={emailOutboundEnabled}
+          />
         ) : null}
         {canManageSalonSettings ? (
           <AIReportCard slug={slug} />
