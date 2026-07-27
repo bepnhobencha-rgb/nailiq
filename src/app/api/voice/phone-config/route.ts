@@ -21,7 +21,8 @@ import {
 import { PHONE_REALTIME_TOOLS } from "@/shared/voiceai/realtimeTools";
 import {
   VOICE_MODEL,
-  normalizeSupportedLanguage,
+  normalizeAllowedLanguages,
+  resolveAllowedLanguage,
   type SupportedLanguage,
 } from "@/shared/voiceai/config";
 
@@ -61,7 +62,7 @@ export async function POST(req: NextRequest) {
   const supabase = createServiceRoleClient();
   const { data: salonRow } = await supabase
     .from("salons")
-    .select("voice_ai_enabled, voice_ai_default_language")
+    .select("voice_ai_enabled, voice_ai_default_language, voice_ai_allowed_languages")
     .eq("slug", slug)
     .maybeSingle();
   if (!salonRow) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
@@ -73,16 +74,20 @@ export async function POST(req: NextRequest) {
   // wins; otherwise open in the salon's dedicated Voice AI language. Keep this
   // separate from default_notification_locale: staff/customer notifications
   // currently support a narrower language set than the live receptionist.
-  const salonDefault = normalizeSupportedLanguage(
+  const configuredDefault =
     (salonRow as { voice_ai_default_language?: string | null })
-      .voice_ai_default_language,
+      .voice_ai_default_language;
+  const allowedLanguages = normalizeAllowedLanguages(
+    (salonRow as { voice_ai_allowed_languages?: unknown })
+      .voice_ai_allowed_languages,
   );
   const requested = typeof body.language === "string"
     ? body.language.trim()
     : null;
-  const language: SupportedLanguage = normalizeSupportedLanguage(
+  const language: SupportedLanguage = resolveAllowedLanguage(
     requested,
-    salonDefault,
+    configuredDefault,
+    allowedLanguages,
   );
 
   const ctx = await loadSalonContext(slug);
@@ -116,10 +121,11 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     model: VOICE_MODEL,
     voice: ctx.personaVoice,
-    instructions: buildPhoneSystemPrompt(ctx, language, from),
+    instructions: buildPhoneSystemPrompt({ ...ctx, allowedLanguages }, language, from),
     greeting: buildPhoneGreeting(ctx, language),
     tools: [...PHONE_REALTIME_TOOLS],
     sessionId,
     language,   // so the bridge knows which language this config is for
+    allowedLanguages,
   });
 }

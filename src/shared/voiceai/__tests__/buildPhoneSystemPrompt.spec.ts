@@ -26,6 +26,7 @@ const ctx: SalonVoiceContext = {
   personaName: "Lily",
   personaVoice: "marin",
   reasoningEffort: "low",
+  allowedLanguages: ["en", "fr"],
   upsellEnabled: true,
   businessHours: null,
   services: [{
@@ -69,6 +70,13 @@ describe("compact phone Realtime config", () => {
     expect(prompt).toContain("clear yes");
     expect(prompt).toContain("Gel Manicure");
     expect(prompt).toContain("Anna");
+  });
+
+  it("pins the model to the admin-approved call languages", () => {
+    const prompt = buildPhoneSystemPrompt(ctx, "en", "+17780000000");
+    expect(prompt).toContain("allows only these call languages: English, French");
+    expect(prompt).toContain("Never switch because of a service name");
+    expect(prompt).toContain("Never speak a language outside that list");
   });
 
   it("requires one real-menu upsell and rechecks availability after acceptance", () => {

@@ -1,4 +1,8 @@
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import {
+  normalizeAllowedLanguages,
+  type SupportedLanguage,
+} from "@/shared/voiceai/config";
 
 export type SalonVoiceContext = {
   salonId:         string;
@@ -10,6 +14,8 @@ export type SalonVoiceContext = {
   personaName:     string;
   personaVoice:    string;
   reasoningEffort: string;
+  /** Languages the salon allows the phone receptionist to speak. */
+  allowedLanguages: SupportedLanguage[];
   /** When true, the receptionist offers ONE tasteful upsell after a service is
    *  chosen. salons.voice_ai_upsell_enabled (default true). */
   upsellEnabled:   boolean;
@@ -64,7 +70,7 @@ async function loadSalonContextUncached(salonSlug: string): Promise<SalonVoiceCo
 
   const { data: salon } = await supabase
     .from("salons")
-    .select("id, name, timezone, address, currency_code, opening_hours, voice_ai_persona_name, voice_ai_persona_voice, voice_ai_reasoning_effort, voice_ai_upsell_enabled")
+    .select("id, name, timezone, address, currency_code, opening_hours, voice_ai_persona_name, voice_ai_persona_voice, voice_ai_reasoning_effort, voice_ai_upsell_enabled, voice_ai_allowed_languages")
     .eq("slug", salonSlug)
     .single();
 
@@ -99,6 +105,7 @@ async function loadSalonContextUncached(salonSlug: string): Promise<SalonVoiceCo
     personaName:     s.voice_ai_persona_name      ?? "Lily",
     personaVoice:    s.voice_ai_persona_voice      ?? "marin",
     reasoningEffort: s.voice_ai_reasoning_effort   ?? "low",
+    allowedLanguages: normalizeAllowedLanguages(s.voice_ai_allowed_languages),
     upsellEnabled:   s.voice_ai_upsell_enabled     ?? true,
     businessHours:   s.opening_hours,
     services: (services ?? []).map((svc) => ({
