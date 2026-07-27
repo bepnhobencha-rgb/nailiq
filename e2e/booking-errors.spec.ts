@@ -178,7 +178,14 @@ async function navigateToInfoStep(page: Page, slug: string) {
   const timeStep = page.locator(
     'section[aria-labelledby="time-heading"]',
   );
-  await timeStep.locator('[data-testid="time-slot"]').first().click();
+  const firstAvailableSlot = timeStep
+    .locator('[data-testid="time-slot"]:not([disabled])')
+    .first();
+  await firstAvailableSlot.click();
+  // The selection is committed through React state. Under CI load the next
+  // click can otherwise land before that state enables the step transition,
+  // leaving the wizard on Time until the Info assertion times out.
+  await expect(firstAvailableSlot).toHaveAttribute("aria-pressed", "true");
   await timeStep.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByTestId("booking-info-name")).toBeVisible({
     timeout: 15_000,

@@ -70,10 +70,11 @@ export async function navigateToConfirmStep(
     .locator('[data-testid="time-slot"]:not([disabled])')
     .first()
     .waitFor({ state: "visible", timeout: 20_000 });
-  await page
+  const firstAvailableSlot = page
     .locator('[data-testid="time-slot"]:not([disabled])')
-    .first()
-    .click();
+    .first();
+  await firstAvailableSlot.click();
+  await expect(firstAvailableSlot).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "Continue" }).first().click();
 
   // 6. Info (phone was captured at the gate; this step takes the name).
