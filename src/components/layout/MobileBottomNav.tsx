@@ -159,7 +159,24 @@ export function MobileBottomNav({
       if (releaseFeatures.loyalty === true) items.push({ key: "loyalty", label: t.loyalty, href: `${dashRoot}/setup/loyalty`, icon: Gift, match: (p) => p.startsWith(`${dashRoot}/setup/loyalty`) });
       if (releaseFeatures.marketing === true) items.push({ key: "marketing", label: t.marketing, href: `${dashRoot}/marketing`, icon: Megaphone, match: (p) => p.startsWith(`${dashRoot}/marketing`) });
       items.push(
-        { key: "approvals", label: t.approvals, href: `${dashRoot}/approvals`, icon: Sparkles, match: (p) => p.startsWith(`${dashRoot}/approvals`) },
+        releaseFeatures.ai_control_center === true
+          ? {
+              key: "ai-control-center",
+              label: L("AI Control Center", "Trung tâm AI"),
+              href: `${dashRoot}/ai`,
+              icon: Sparkles,
+              match: (p) =>
+                p.startsWith(`${dashRoot}/ai`) ||
+                p.startsWith(`${dashRoot}/approvals`) ||
+                p.startsWith(`${dashRoot}/manager`),
+            }
+          : {
+              key: "approvals",
+              label: t.approvals,
+              href: `${dashRoot}/approvals`,
+              icon: Sparkles,
+              match: (p) => p.startsWith(`${dashRoot}/approvals`),
+            },
         { key: "activity", label: t.activity, href: `${dashRoot}/activity`, icon: History, match: (p) => p.startsWith(`${dashRoot}/activity`) },
       );
     }

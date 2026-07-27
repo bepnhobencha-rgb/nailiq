@@ -31,7 +31,6 @@ import {
   TrendingUp,
   UserCheck,
   Users,
-  ClipboardCheck,
 } from "lucide-react";
 import { LogoutButton } from "@/components/dashboard/LogoutButton";
 import { GlobalLanguageToggle } from "@/components/user/GlobalLanguageToggle";
@@ -391,32 +390,28 @@ export function DashboardSidebar({
             hidden: role !== "owner" && role !== "admin",
           },
           {
+            key: "ai-control-center",
+            label: language === "vi" ? "Trung tâm AI" : "AI Control Center",
+            href: `${dashRoot}/ai`,
+            icon: Sparkles,
+            match: (p) =>
+              p.startsWith(`${dashRoot}/ai`) ||
+              p.startsWith(`${dashRoot}/manager`) ||
+              p.startsWith(`${dashRoot}/approvals`),
+            hidden:
+              featureOff("ai_control_center") ||
+              (role !== "owner" && role !== "admin"),
+            badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : undefined,
+            badgeTone: "red" as const,
+          },
+          {
             key: "activity",
             label: t.activity,
             href: `${dashRoot}/activity`,
             icon: History,
             match: (p) => p.startsWith(`${dashRoot}/activity`),
-            // Full audit/comms log — owner + admin (matches the page gate).
+            // Full non-AI audit/comms log — owner + admin only.
             hidden: role !== "owner" && role !== "admin",
-          },
-          {
-            key: "manager",
-            label: "Nhật ký Minh",
-            href: `${dashRoot}/manager`,
-            icon: Sparkles,
-            match: (p) => p.startsWith(`${dashRoot}/manager`),
-            hidden: role !== "owner" && role !== "admin",
-          },
-          {
-            key: "approvals",
-            label: t.approvals,
-            href: `${dashRoot}/approvals`,
-            icon: ClipboardCheck,
-            match: (p) => p.startsWith(`${dashRoot}/approvals`),
-            // Minh approval requests — owner + admin only.
-            hidden: role !== "owner" && role !== "admin",
-            badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : undefined,
-            badgeTone: "red" as const,
           },
           {
             key: "messages",
@@ -469,7 +464,6 @@ export function DashboardSidebar({
     language,
     role,
       t.activity,
-      t.approvals,
       t.calendar,
       t.clients,
       t.disputes,

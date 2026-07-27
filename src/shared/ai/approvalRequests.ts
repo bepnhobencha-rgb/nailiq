@@ -35,7 +35,7 @@ export type ApprovalUrgency = "urgent" | "normal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ApprovalRow = {
+export type ApprovalRow = {
   id: string;
   salon_id: string;
   action_type: string;
