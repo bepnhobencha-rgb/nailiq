@@ -112,6 +112,8 @@ export interface ReceptionistCenterData {
     name: string;
     duration_minutes: number;
     buffer_minutes: number;
+    /** Add-on-only rows cannot be used to make an empty grid start bookable. */
+    is_addon?: boolean;
     price_cents: number;
     /** Variable-pricing model ('fixed' | 'from' | 'range'); legacy rows → 'fixed'. */
     price_type: string;
@@ -764,7 +766,7 @@ export async function loadReceptionistCenterData(
     supabase
       .from("services")
       .select(
-        "id, name, duration_minutes, buffer_minutes, price_cents, price_type, price_max_cents, created_at",
+        "id, name, duration_minutes, buffer_minutes, is_addon, price_cents, price_type, price_max_cents, created_at",
       )
       .eq("salon_id", ctx.salon.id)
       .is("deleted_at" as never, null)
@@ -874,6 +876,7 @@ export async function loadReceptionistCenterData(
     name: string;
     duration_minutes: number;
     buffer_minutes: number;
+    is_addon: boolean | null;
     price_cents: number;
     price_type: string | null;
     price_max_cents: number | null;
@@ -1569,6 +1572,7 @@ export async function loadReceptionistCenterData(
           name: s.name,
           duration_minutes: Number(s.duration_minutes),
           buffer_minutes: Number(s.buffer_minutes),
+          is_addon: s.is_addon === true,
           price_cents: Number(s.price_cents),
           // Legacy rows (pre variable-pricing) → default to "fixed".
           price_type:

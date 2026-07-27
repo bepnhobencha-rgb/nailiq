@@ -122,6 +122,7 @@ import {
   checkBookingConflict,
   type ConflictCheckBooking,
 } from "@/shared/lib/conflictCheck";
+import { buildMinimumServiceMinutesByStaff } from "@/shared/booking/gridCreateAvailability";
 import { cn } from "@/shared/lib/cn";
 import { displayCustomerName } from "@/shared/lib/customerDisplayName";
 import { cleanPhone, formatPhone } from "@/shared/lib/phoneFormat";
@@ -469,6 +470,24 @@ function ReceptionistCenterInner({
     selectedDate: initialOk.selectedDate,
     dashboardModules: initialOk.dashboardModules,
   }));
+
+  const minimumServiceMinutesByStaff = useMemo(
+    () =>
+      buildMinimumServiceMinutesByStaff({
+        staffIds: data.staff.map((staff) => staff.id),
+        services: data.services.map((service) => ({
+          id: service.id,
+          durationMinutes: service.duration_minutes,
+          isAddon: service.is_addon === true,
+        })),
+        capabilityRows:
+          data.capabilityRows?.map((row) => ({
+            staffId: row.staff_id,
+            serviceId: row.service_id,
+          })) ?? null,
+      }),
+    [data.staff, data.services, data.capabilityRows],
+  );
 
   // Wall-clock of the last successful server sync (initial SSR load, then
   // every fresh refetch). Surfaced in the disconnect banner as "last updated";
@@ -3882,6 +3901,7 @@ function ReceptionistCenterInner({
                 selectedDate={data.selectedDate}
                 openMinutes={data.salon.openMinutes}
                 closeMinutes={data.salon.closeMinutes}
+                minimumServiceMinutesByStaff={minimumServiceMinutesByStaff}
                 timezone={timezone}
                 nowIso={nowIso}
                 isViewingToday={isViewingToday}
