@@ -9,6 +9,10 @@ const migration = readFileSync(
   ),
   "utf8",
 );
+const parity = readFileSync(
+  resolve(process.cwd(), "scripts/check-schema-parity.ts"),
+  "utf8",
+);
 
 describe("Voice AI language policy migration", () => {
   it("requires a non-empty supported allowlist containing the default language", () => {
@@ -19,5 +23,10 @@ describe("Voice AI language policy migration", () => {
     expect(migration).toContain(
       "voice_ai_default_language = any(voice_ai_allowed_languages)",
     );
+  });
+
+  it("advances the blank-database schema parity tripwire", () => {
+    expect(parity).toContain("through 20260727020207");
+    expect(parity).toContain("columns: 1222");
   });
 });
