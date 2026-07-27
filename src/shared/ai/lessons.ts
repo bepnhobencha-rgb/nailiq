@@ -73,3 +73,32 @@ export function findChannelLesson(
   }
   return null;
 }
+
+const CAP_MULTIPLIER_PREFIX = "cap_multiplier:";
+
+/**
+ * Apply the most conservative active outcome lesson for one agent.
+ *
+ * Learned caps may only reduce an existing code cap, never raise it or pause an
+ * agent completely. That keeps outcome adaptation inside the already-approved
+ * operational envelope while avoiding a single noisy sample shutting work off.
+ */
+export function applyLearnedAgentCap(
+  baseCap: number,
+  lessons: MinhLesson[],
+  agent: string,
+): number {
+  const safeBase = Math.max(1, Math.floor(baseCap));
+  let multiplier = 1;
+
+  for (const lesson of lessons) {
+    if (lesson.scope !== "segment" || lesson.condition.agent !== agent) continue;
+    if (!lesson.rule.startsWith(CAP_MULTIPLIER_PREFIX)) continue;
+    const parsed = Number(lesson.rule.slice(CAP_MULTIPLIER_PREFIX.length));
+    if (!Number.isFinite(parsed)) continue;
+    // Automatic adaptation is deliberately bounded to 25-100% of the cap.
+    multiplier = Math.min(multiplier, Math.max(0.25, Math.min(1, parsed)));
+  }
+
+  return Math.max(1, Math.floor(safeBase * multiplier));
+}

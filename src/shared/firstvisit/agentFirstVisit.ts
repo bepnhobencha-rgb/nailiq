@@ -7,6 +7,10 @@ import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { listUnsubscribeHeaders, complianceFooterHtml, isEmailSuppressed } from "@/shared/lib/emailCompliance";
 import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
+import {
+  applyLearnedAgentCap,
+  getLessons,
+} from "@/shared/ai/lessons";
 import { salonToday, salonDayRangeUtc } from "@/shared/lib/salonTime";
 
 /**
@@ -287,6 +291,12 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
     // below. Using the UTC day fired scheduled steps a day early for salons
     // behind UTC.
     const todayYmd = salonToday(tz);
+    const segmentLessons = await getLessons(salonId, "segment");
+    const learnedNudgeCap = applyLearnedAgentCap(
+      15,
+      segmentLessons,
+      "first_visit",
+    );
 
     // ── 1. Detect new first-time visitors and enroll them ──────────────────
     const firstVisitors = await detectFirstVisits(salonId, tz);
@@ -331,7 +341,7 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
       if (ch.noChannel) continue;
 
       const channel: "sms" | "email" = ch.email ? "email" : "sms";
-      const [day1, day2] = stepDays(fv.service);
+      const [day1] = stepDays(fv.service);
 
       // Skip if already enrolled (unique constraint on salon_id + client_phone)
       const { error: insertErr } = await svc
@@ -368,7 +378,13 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
           agent: "first_visit",
           action_type: "warmth_sent",
           target_id: null,
-          payload: { name: fv.name, channel, service: fv.service, message_preview: warmth.slice(0, 120) },
+          payload: {
+            name: fv.name,
+            phone: fv.phone,
+            channel,
+            service: fv.service,
+            message_preview: warmth.slice(0, 120),
+          },
           undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
         } as never);
       }
@@ -424,6 +440,10 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
         continue;
       }
 
+      // Keep conversion checks running for every due sequence, but defer extra
+      // outreach once the learned daily cap is reached.
+      if (nudgeCount >= learnedNudgeCap) continue;
+
       // Step 2 is the last — expire after sending
       const isLastStep = step >= 2;
       const [day1, day2] = stepDays(seqService);
@@ -469,7 +489,14 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
         agent: "first_visit",
         action_type: `step${step}_sent`,
         target_id: seqId,
-        payload: { name, channel, service: seqService, step, message_preview: message.slice(0, 120) },
+        payload: {
+          name,
+          phone,
+          channel,
+          service: seqService,
+          step,
+          message_preview: message.slice(0, 120),
+        },
         undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
       } as never);
     }

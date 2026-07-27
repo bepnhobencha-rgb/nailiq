@@ -6,7 +6,11 @@ import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
 import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
-import { getLessons, findChannelLesson } from "@/shared/ai/lessons";
+import {
+  applyLearnedAgentCap,
+  findChannelLesson,
+  getLessons,
+} from "@/shared/ai/lessons";
 import { phoneRegion } from "@/shared/lib/phoneRegion";
 
 /**
@@ -180,11 +184,13 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
     const emailOutboundEnabled = s.email_outbound_enabled !== false; // default true
     const customerChannelMode = (str(s.customer_channel) || "smart") as CustomerChannelMode;
 
-    const candidates = await gatherWinbackCandidates(salonId, cap);
+    const [channelLessons, segmentLessons] = await Promise.all([
+      getLessons(salonId, "channel"),
+      getLessons(salonId, "segment"),
+    ]);
+    const effectiveCap = applyLearnedAgentCap(cap, segmentLessons, "winback");
+    const candidates = await gatherWinbackCandidates(salonId, effectiveCap);
     if (candidates.length === 0) return;
-
-    // Load channel lessons once per run (global + per-salon, cached 5 min).
-    const channelLessons = await getLessons(salonId, "channel");
 
     const svc = createServiceRoleClient();
     let sentCount = 0;
@@ -281,7 +287,13 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
         agent: "winback",
         action_type: `sent_${channel}`,
         target_id: suggestionId,
-        payload: { name: c.name, channel, reason: ch.reason, message_preview: message.slice(0, 120) },
+        payload: {
+          name: c.name,
+          phone: c.phone,
+          channel,
+          reason: ch.reason,
+          message_preview: message.slice(0, 120),
+        },
         undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
       } as never);
     }

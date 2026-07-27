@@ -5,6 +5,35 @@ Newest entries on top.
 
 ---
 
+## 2026-07-27 — Outcome adaptation must change behavior, stay bounded, and recover
+
+**Status.** Implemented on `agent/ai-outcome-adaptation`.
+
+**Context.** The learning cron aggregated conversion outcomes, but the result did
+not reliably affect agent behavior. Newly sent actions omitted `payload.phone`,
+so the outcome tracker could not associate them with later bookings. The old
+analysis also reduced confidence on broad lessons that were not necessarily
+owned by the low-performing agent.
+
+**Decision.**
+- Every trackable customer action records the canonical customer phone in its
+  audit payload. Historical rows recover phone from `winback_suggestions`,
+  `first_visit_sequences`, or `client_profiles` using tenant-scoped batch reads.
+- A 30-day sample of at least 10 resolved actions activates an agent-specific
+  `segment` lesson below 5% conversion. The lesson applies
+  `cap_multiplier:0.5`; a 10% recovery threshold deactivates it. The 5–10% gap
+  provides hysteresis.
+- Learned caps are bounded to 25–100% of the code cap and may never raise a cap
+  or stop an agent entirely. Winback, rebook, first-visit nudges, and VIP Care
+  all consume the same helper.
+- The adaptive lesson uses a deterministic UUID and primary-key upsert, making
+  concurrent cron retries idempotent. Audit rows are written only when the
+  active state actually changes.
+- No sender, channel permission, campaign authorization, pricing behavior, or
+  payment behavior is added by this loop.
+
+---
+
 ## 2026-06-19 — Minh Learning Loop Bước 3: approval_requests + owner notification (§3D + §3E)
 
 **Status.** Migration applied to prod (`fshmobzyjhmtvndobwsy`). Code in `feat/minh-approval-requests`.

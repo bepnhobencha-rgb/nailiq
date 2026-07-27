@@ -1,14 +1,11 @@
 import "server-only";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { getLessons } from "./lessons";
-import { decreaseLessonConfidence } from "./lessonMutations";
+import { setOutcomeAdaptation } from "./lessonMutations";
 
-const CONVERSION_RATE_THRESHOLD = 0.05; // 5% — very low; warrants a confidence decrease
-const MIN_SAMPLE_SIZE = 10; // need at least 10 resolved actions to act
-const CONFIDENCE_DELTA = 0.05; // minor signal, needs more data
-
-// Scopes checked for low-performing agents
-const AGENT_LESSON_SCOPES = ["timing", "channel", "segment"] as const;
+const REDUCE_THRESHOLD = 0.05;
+const RECOVER_THRESHOLD = 0.1;
+const MIN_SAMPLE_SIZE = 10;
+const ADAPTIVE_AGENTS = new Set(["winback", "rebook", "first_visit", "vip_care"]);
 
 export type AgentStat = {
   sent: number;
@@ -19,15 +16,28 @@ export type AgentStat = {
 export type OutcomeAnalysisResult = {
   agentStats: Record<string, AgentStat>;
   lessonsAdjusted: number;
+  adaptationsActivated: number;
+  adaptationsRecovered: number;
 };
 
 /**
- * Reads ai_actions_log outcomes for the past 30 days and adjusts lesson
- * confidence for agents with very low conversion rates (<5%).
- *
- * The signal is minor: we only apply a small delta (0.05) per agent so that
- * a single bad month doesn't deactivate an otherwise sound lesson.
- * Logs every adjustment to ai_actions_log for audit trail.
+ * Decide whether a statistically meaningful agent sample should reduce,
+ * recover, or preserve its current learned cap. The gap between 5% and 10% is
+ * hysteresis so a noisy day cannot flip behavior back and forth.
+ */
+export function decideOutcomeAdaptation(stat: AgentStat):
+  | "activate"
+  | "recover"
+  | "unchanged" {
+  if (stat.sent < MIN_SAMPLE_SIZE) return "unchanged";
+  if (stat.conversionRate < REDUCE_THRESHOLD) return "activate";
+  if (stat.conversionRate >= RECOVER_THRESHOLD) return "recover";
+  return "unchanged";
+}
+
+/**
+ * Reads resolved outcomes from the last 30 days and turns them into a bounded,
+ * reversible cap lesson. This does not send anything and cannot raise a code cap.
  */
 export async function analyzeAgentOutcomes(
   salonId: string,
@@ -50,7 +60,12 @@ export async function analyzeAgentOutcomes(
 
   if (error) {
     console.error("[analyzeAgentOutcomes] query", salonId, error);
-    return { agentStats: {}, lessonsAdjusted: 0 };
+    return {
+      agentStats: {},
+      lessonsAdjusted: 0,
+      adaptationsActivated: 0,
+      adaptationsRecovered: 0,
+    };
   }
 
   // Aggregate per agent
@@ -72,51 +87,47 @@ export async function analyzeAgentOutcomes(
   }
 
   let lessonsAdjusted = 0;
+  let adaptationsActivated = 0;
+  let adaptationsRecovered = 0;
 
   for (const [agent, stat] of Object.entries(agentStats)) {
-    if (
-      stat.sent < MIN_SAMPLE_SIZE ||
-      stat.conversionRate >= CONVERSION_RATE_THRESHOLD
-    ) {
-      continue;
-    }
+    if (!ADAPTIVE_AGENTS.has(agent)) continue;
+    const decision = decideOutcomeAdaptation(stat);
+    if (decision === "unchanged") continue;
 
-    // Low conversion — find lessons associated with this agent's scopes
-    const lessonsForAgent: string[] = [];
+    const mutation = await setOutcomeAdaptation({
+      salonId,
+      agent,
+      active: decision === "activate",
+      capMultiplier: 0.5,
+    });
+    if (!mutation.changed) continue;
 
-    for (const scope of AGENT_LESSON_SCOPES) {
-      const lessons = await getLessons(salonId, scope);
-      for (const lesson of lessons) {
-        // Target lessons that either explicitly mention this agent or are general
-        const cond = lesson.condition as Record<string, unknown>;
-        const agentMatch = !cond.agent || cond.agent === agent;
-        if (agentMatch) {
-          lessonsForAgent.push(lesson.id);
-        }
-      }
-    }
-
-    for (const lessonId of lessonsForAgent) {
-      await decreaseLessonConfidence(lessonId, CONFIDENCE_DELTA);
-      lessonsAdjusted++;
-
-      // Log the adjustment
-      await db.from("ai_actions_log" as never).insert({
-        salon_id: salonId,
-        agent: "minh_self_learn",
-        action_type: "lesson_confidence_adjusted",
-        target_id: lessonId,
-        payload: {
-          reason: "low_conversion",
-          agent_assessed: agent,
-          conversion_rate: stat.conversionRate,
-          sent: stat.sent,
-          converted: stat.converted,
-          delta: -CONFIDENCE_DELTA,
-        },
-      } as never);
-    }
+    lessonsAdjusted++;
+    if (decision === "activate") adaptationsActivated++;
+    else adaptationsRecovered++;
+    await db.from("ai_actions_log" as never).insert({
+      salon_id: salonId,
+      agent: "minh_self_learn",
+      action_type:
+        decision === "activate"
+          ? "outcome_adaptation_activated"
+          : "outcome_adaptation_recovered",
+      target_id: mutation.lessonId,
+      payload: {
+        agent_assessed: agent,
+        conversion_rate: stat.conversionRate,
+        sent: stat.sent,
+        converted: stat.converted,
+        cap_multiplier: decision === "activate" ? 0.5 : 1,
+      },
+    } as never);
   }
 
-  return { agentStats, lessonsAdjusted };
+  return {
+    agentStats,
+    lessonsAdjusted,
+    adaptationsActivated,
+    adaptationsRecovered,
+  };
 }
