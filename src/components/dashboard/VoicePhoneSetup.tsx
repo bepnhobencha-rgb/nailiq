@@ -23,6 +23,20 @@ type Props = {
   resetAt: string | null;
 };
 
+export function formatVoiceUsageResetDate(resetAt: string | null): string | null {
+  if (!resetAt) return null;
+  const resetDate = new Date(resetAt);
+  if (Number.isNaN(resetDate.getTime())) return null;
+
+  // Server rendering runs in UTC while salon browsers can be in any timezone.
+  // Pin both locale and timezone so the server and first client render agree.
+  return resetDate.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 function CopyableUrl({ id, label, value }: { id: string; label: string; value: string }) {
   const [copied, setCopied] = useState(false);
   async function copy() {
@@ -62,9 +76,7 @@ function CopyableUrl({ id, label, value }: { id: string; label: string; value: s
 
 export function VoicePhoneSetup({ webhookUrl, smsWebhookUrl, enabled, sessionsUsed, sessionsLimit, resetAt }: Props) {
   const pct = sessionsLimit > 0 ? Math.min(100, Math.round((sessionsUsed / sessionsLimit) * 100)) : 0;
-  const resetLabel = resetAt
-    ? new Date(resetAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })
-    : null;
+  const resetLabel = formatVoiceUsageResetDate(resetAt);
 
   return (
     <section className="mt-10 space-y-5 border-t border-[var(--color-border)] pt-8">
