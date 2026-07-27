@@ -7,6 +7,7 @@ import {
   seedTestSalon,
   setReactInputValue,
 } from "./helpers/db";
+import { advanceBookingStep } from "./helpers/bookingFlow";
 
 /**
  * Pre-launch error-path smoke for the public booking page (`/[slug]`).
@@ -186,10 +187,10 @@ async function navigateToInfoStep(page: Page, slug: string) {
   // click can otherwise land before that state enables the step transition,
   // leaving the wizard on Time until the Info assertion times out.
   await expect(firstAvailableSlot).toHaveAttribute("aria-pressed", "true");
-  await timeStep.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByTestId("booking-info-name")).toBeVisible({
-    timeout: 15_000,
-  });
+  await advanceBookingStep(
+    timeStep,
+    page.getByTestId("booking-info-name"),
+  );
 }
 
 async function navigateToConfirmStep(

@@ -11,6 +11,7 @@ import {
   seedTestSalon,
   setReactInputValue,
 } from "./helpers/db";
+import { advanceBookingStep } from "./helpers/bookingFlow";
 import { fillReactInput } from "./receptionist-center/helpers";
 
 const OTP_DEMO_CODE = "000000";
@@ -148,15 +149,14 @@ test.describe("Booking Flow — Phone OTP", () => {
     await firstAvailableSlot.waitFor({ state: "visible", timeout: 20_000 });
     await firstAvailableSlot.click();
     await expect(firstAvailableSlot).toHaveAttribute("aria-pressed", "true");
-    await timeStep.getByRole("button", { name: "Continue" }).click();
+    const infoStep = page.locator(
+      'section[aria-labelledby="info-heading"]',
+    );
+    await advanceBookingStep(timeStep, infoStep);
 
     // Phone-first: phone captured at the entry gate; info step takes name only.
     // Use the native setter so React's controlled onChange fires (page.fill()
     // uses CDP which bypasses React's patched value getter).
-    const infoStep = page.locator(
-      'section[aria-labelledby="info-heading"]',
-    );
-    await infoStep.waitFor({ state: "visible", timeout: 15_000 });
     await fillReactInput(
       infoStep.locator('input[name="clientName"]'),
       "OTP Test Client",
