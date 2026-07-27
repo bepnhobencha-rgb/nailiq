@@ -136,16 +136,18 @@ test.describe("Booking Flow — Phone OTP", () => {
     }
     await selectableDay.waitFor({ state: "visible", timeout: 15_000 });
     await selectableDay.click();
+    await expect(selectableDay).toHaveAttribute("aria-pressed", "true");
     await dateStep.getByRole("button", { name: "Continue" }).click();
 
     const timeStep = page.locator(
       'section[aria-labelledby="time-heading"]',
     );
-    await timeStep
-      .locator('[data-testid="time-slot"]')
-      .first()
-      .waitFor({ state: "visible", timeout: 20_000 });
-    await timeStep.locator('[data-testid="time-slot"]').first().click();
+    const firstAvailableSlot = timeStep
+      .locator('[data-testid="time-slot"]:not([disabled])')
+      .first();
+    await firstAvailableSlot.waitFor({ state: "visible", timeout: 20_000 });
+    await firstAvailableSlot.click();
+    await expect(firstAvailableSlot).toHaveAttribute("aria-pressed", "true");
     await timeStep.getByRole("button", { name: "Continue" }).click();
 
     // Phone-first: phone captured at the entry gate; info step takes name only.

@@ -36,6 +36,26 @@ function lateStart(min: number): { startIso: string; endIso: string } {
   };
 }
 
+/**
+ * The live board only loads the salon's current calendar day. During the
+ * first `min` minutes after UTC midnight, a booking that is genuinely `min`
+ * minutes late belongs to yesterday and therefore cannot appear on today's
+ * board. Skip only that mathematically impossible boundary window; the tier
+ * calculation itself is covered by scripts/test-lateness.ts.
+ */
+function skipIfLatenessCrossesUtcDay(min: number): void {
+  const now = new Date();
+  const utcDayStart = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+  );
+  test.skip(
+    now.getTime() - utcDayStart < min * 60_000,
+    `Cannot render a ${min}-minute-late booking on today's UTC board yet`,
+  );
+}
+
 /** Seed a confirmed booking `min` minutes late on the free staff column. */
 async function seedLate(min: number, status: "confirmed" | "completed" = "confirmed") {
   const { startIso, endIso } = lateStart(min);
@@ -115,6 +135,7 @@ test.afterAll(async ({}, testInfo) => {
 
 test.describe("DRC lateness escalation", () => {
   test("due tier (≤10m late): ring only, no clock icon, Start button shown", async ({ page }) => {
+    skipIfLatenessCrossesUtcDay(3);
     const id = await seedLate(3);
     await gotoReceptionistCenter(page, fx.slug);
 
@@ -126,6 +147,7 @@ test.describe("DRC lateness escalation", () => {
   });
 
   test("late tier (10–20m): ring + amber clock icon", async ({ page }) => {
+    skipIfLatenessCrossesUtcDay(13);
     const id = await seedLate(13);
     await gotoReceptionistCenter(page, fx.slug);
 
@@ -134,6 +156,7 @@ test.describe("DRC lateness escalation", () => {
   });
 
   test("critical tier (≥20m): ring + clock icon", async ({ page }) => {
+    skipIfLatenessCrossesUtcDay(23);
     const id = await seedLate(23);
     await gotoReceptionistCenter(page, fx.slug);
 
@@ -142,6 +165,7 @@ test.describe("DRC lateness escalation", () => {
   });
 
   test("completed booking past start shows NO lateness escalation", async ({ page }) => {
+    skipIfLatenessCrossesUtcDay(13);
     const id = await seedLate(13, "completed");
     await gotoReceptionistCenter(page, fx.slug);
 
@@ -151,6 +175,7 @@ test.describe("DRC lateness escalation", () => {
   });
 
   test("inline Start flips confirmed → in_progress and clears the escalation", async ({ page }) => {
+    skipIfLatenessCrossesUtcDay(13);
     const id = await seedLate(13);
     await gotoReceptionistCenter(page, fx.slug);
 
@@ -246,6 +271,7 @@ test.describe("DRC no-show tombstone + fee decision", () => {
   });
 
   test("marking no-show with a card on file opens the Charge/Waive modal (not an instant mark)", async ({ page }) => {
+    skipIfLatenessCrossesUtcDay(13);
     const id = await seedLate(13);
     await attachCard(id);
     await gotoReceptionistCenter(page, fx.slug);
