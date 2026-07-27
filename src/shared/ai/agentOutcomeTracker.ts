@@ -23,6 +23,122 @@ const WINDOW_DAYS: Record<string, number> = {
 
 const TRACKABLE_AGENTS = Object.keys(WINDOW_DAYS);
 
+type TrackableAction = {
+  id: string;
+  agent: string;
+  target_id: string | null;
+  created_at: string;
+  payload: Record<string, unknown> | null;
+};
+
+function cleanPhone(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function chunks<T>(values: T[], size = 100): T[][] {
+  return Array.from(
+    { length: Math.ceil(values.length / size) },
+    (_, index) => values.slice(index * size, (index + 1) * size),
+  );
+}
+
+async function loadHistoricalTargetPhones(
+  salonId: string,
+  actions: TrackableAction[],
+): Promise<Map<string, string>> {
+  const db = createServiceRoleClient();
+  const phoneByActionId = new Map<string, string>();
+
+  const byAgent = (agent: string) =>
+    actions.filter(
+      (action) =>
+        action.agent === agent &&
+        !cleanPhone(action.payload?.phone) &&
+        action.target_id,
+    );
+  const winbackActions = [
+    ...byAgent("winback"),
+    ...byAgent("rebook"),
+  ];
+  const firstVisitActions = byAgent("first_visit");
+  const vipActions = byAgent("vip_care");
+
+  if (winbackActions.length > 0) {
+    const ids = [...new Set(winbackActions.map((action) => action.target_id!))];
+    const results = await Promise.all(
+      chunks(ids).map((batch) =>
+        db
+          .from("winback_suggestions" as never)
+          .select("id, client_phone")
+          .eq("salon_id" as never, salonId)
+          .in("id" as never, batch),
+      ),
+    );
+    const data = results.flatMap((result) => result.data ?? []);
+    const phones = new Map(
+      ((data ?? []) as Array<{ id: string; client_phone: string }>).map((row) => [
+        row.id,
+        cleanPhone(row.client_phone),
+      ]),
+    );
+    for (const action of winbackActions) {
+      const phone = phones.get(action.target_id!);
+      if (phone) phoneByActionId.set(action.id, phone);
+    }
+  }
+
+  if (firstVisitActions.length > 0) {
+    const ids = [
+      ...new Set(firstVisitActions.map((action) => action.target_id!)),
+    ];
+    const results = await Promise.all(
+      chunks(ids).map((batch) =>
+        db
+          .from("first_visit_sequences" as never)
+          .select("id, client_phone")
+          .eq("salon_id" as never, salonId)
+          .in("id" as never, batch),
+      ),
+    );
+    const data = results.flatMap((result) => result.data ?? []);
+    const phones = new Map(
+      ((data ?? []) as Array<{ id: string; client_phone: string }>).map((row) => [
+        row.id,
+        cleanPhone(row.client_phone),
+      ]),
+    );
+    for (const action of firstVisitActions) {
+      const phone = phones.get(action.target_id!);
+      if (phone) phoneByActionId.set(action.id, phone);
+    }
+  }
+
+  if (vipActions.length > 0) {
+    const ids = [...new Set(vipActions.map((action) => action.target_id!))];
+    const results = await Promise.all(
+      chunks(ids).map((batch) =>
+        db
+          .from("client_profiles" as never)
+          .select("id, phone")
+          .in("id" as never, batch),
+      ),
+    );
+    const data = results.flatMap((result) => result.data ?? []);
+    const phones = new Map(
+      ((data ?? []) as Array<{ id: string; phone: string }>).map((row) => [
+        row.id,
+        cleanPhone(row.phone),
+      ]),
+    );
+    for (const action of vipActions) {
+      const phone = phones.get(action.target_id!);
+      if (phone) phoneByActionId.set(action.id, phone);
+    }
+  }
+
+  return phoneByActionId;
+}
+
 export async function runOutcomeTracker(salonId: string): Promise<void> {
   const db = createServiceRoleClient();
 
@@ -32,7 +148,7 @@ export async function runOutcomeTracker(salonId: string): Promise<void> {
 
   const { data: actions } = await db
     .from("ai_actions_log" as never)
-    .select("id, agent, created_at, payload")
+    .select("id, agent, target_id, created_at, payload")
     .eq("salon_id", salonId)
     .in("agent", TRACKABLE_AGENTS)
     // A row = a message that actually went out. No agent ever writes the literal
@@ -48,15 +164,16 @@ export async function runOutcomeTracker(salonId: string): Promise<void> {
 
   if (!actions?.length) return;
 
+  const typedActions = actions as TrackableAction[];
+  const historicalPhones = await loadHistoricalTargetPhones(
+    salonId,
+    typedActions,
+  );
   const now = new Date();
 
-  for (const row of actions as {
-    id: string;
-    agent: string;
-    created_at: string;
-    payload: Record<string, unknown> | null;
-  }[]) {
-    const phone = String(row.payload?.phone ?? "").trim();
+  for (const row of typedActions) {
+    const phone =
+      cleanPhone(row.payload?.phone) || historicalPhones.get(row.id) || "";
     if (!phone) continue;
 
     const sentAt = new Date(row.created_at);

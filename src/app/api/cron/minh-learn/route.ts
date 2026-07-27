@@ -78,6 +78,8 @@ export async function GET(req: Request): Promise<NextResponse> {
       entry.outcome_analysis = {
         agents: Object.keys(outcomeResult.agentStats).length,
         lessonsAdjusted: outcomeResult.lessonsAdjusted,
+        adaptationsActivated: outcomeResult.adaptationsActivated,
+        adaptationsRecovered: outcomeResult.adaptationsRecovered,
       };
       totalLessonsAdjusted += outcomeResult.lessonsAdjusted;
     } catch (e) {

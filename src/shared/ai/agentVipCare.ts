@@ -5,6 +5,10 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
+import {
+  applyLearnedAgentCap,
+  getLessons,
+} from "@/shared/ai/lessons";
 import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
 
 /**
@@ -410,9 +414,10 @@ export async function runVipCare(salonId: string): Promise<void> {
       validDays: num(s.milestone_reward_valid_days) || 30,
     };
 
-    const [clients, existing] = await Promise.all([
+    const [clients, existing, segmentLessons] = await Promise.all([
       loadVipClients(salonId),
       loadExistingActions(salonId),
+      getLessons(salonId, "segment"),
     ]);
 
     if (clients.length === 0) return;
@@ -427,13 +432,18 @@ export async function runVipCare(salonId: string): Promise<void> {
     // instead of blasting real customers in one pass; steady-state daily volume
     // is well under this.
     const MAX_SENDS_PER_RUN = 15;
+    const learnedSendCap = applyLearnedAgentCap(
+      MAX_SENDS_PER_RUN,
+      segmentLessons,
+      "vip_care",
+    );
     // Channel-scoped consent: Square email-subscription (marketing_email_consent_at)
     // unlocks EMAIL only, never SMS. Gated OFF by default until deliberately enabled.
     const emailConsentEnabled = process.env.SQUARE_EMAIL_CONSENT_SEND === "1";
     let sentCount = 0;
 
     for (const client of clients) {
-      if (sentCount >= MAX_SENDS_PER_RUN) break;
+      if (sentCount >= learnedSendCap) break;
       // Full opt-in → SMS or email. Email-only consent (Square) → EMAIL ONLY.
       const hasFullConsent = !!client.marketingConsentAt;
       const hasEmailConsent =
@@ -474,12 +484,19 @@ export async function runVipCare(salonId: string): Promise<void> {
               agent: "vip_care",
               action_type: "birthday",
               target_id: client.id,
-              payload: { name: client.name, channel, reason, preview: msg.slice(0, 120) },
+              payload: {
+                name: client.name,
+                phone: client.phone,
+                channel,
+                reason,
+                preview: msg.slice(0, 120),
+              },
               undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
             } as never);
           }
         }
       }
+      if (sentCount >= learnedSendCap) break;
 
       // ── Milestones ───────────────────────────────────────────
       for (const milestone of MILESTONES) {
@@ -515,12 +532,20 @@ export async function runVipCare(salonId: string): Promise<void> {
             agent: "vip_care",
             action_type: `milestone_${milestone}`,
             target_id: client.id,
-            payload: { name: client.name, channel, reason, visit_count: milestone, preview: msg.slice(0, 120) },
+            payload: {
+              name: client.name,
+              phone: client.phone,
+              channel,
+              reason,
+              visit_count: milestone,
+              preview: msg.slice(0, 120),
+            },
             undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
           } as never);
         }
         break; // only fire one milestone per client per cron run
       }
+      if (sentCount >= learnedSendCap) break;
 
       // ── VIP inactive 30d ─────────────────────────────────────
       if (!existing.has(`vip_inactive:${client.id}`) && client.lastVisitAt) {
@@ -546,7 +571,14 @@ export async function runVipCare(salonId: string): Promise<void> {
               agent: "vip_care",
               action_type: "vip_inactive",
               target_id: client.id,
-              payload: { name: client.name, channel, reason, days_since: daysSince, preview: msg.slice(0, 120) },
+              payload: {
+                name: client.name,
+                phone: client.phone,
+                channel,
+                reason,
+                days_since: daysSince,
+                preview: msg.slice(0, 120),
+              },
               undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
             } as never);
           }

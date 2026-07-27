@@ -6,6 +6,10 @@ import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { listUnsubscribeHeaders, complianceFooterHtml, isEmailSuppressed } from "@/shared/lib/emailCompliance";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
+import {
+  applyLearnedAgentCap,
+  getLessons,
+} from "@/shared/ai/lessons";
 import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
 
 /**
@@ -140,7 +144,9 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
     const smsA2pRegistered = s.sms_a2p_registered === true; // US A2P 10DLC status
     const customerChannelMode = (str(s.customer_channel) || "smart") as CustomerChannelMode;
 
-    const candidates = await gatherRebookCandidates(salonId, cap);
+    const segmentLessons = await getLessons(salonId, "segment");
+    const effectiveCap = applyLearnedAgentCap(cap, segmentLessons, "rebook");
+    const candidates = await gatherRebookCandidates(salonId, effectiveCap);
     if (candidates.length === 0) return;
 
     const svc = createServiceRoleClient();
@@ -240,7 +246,13 @@ ${complianceFooterHtml({ email: c.email, salonName, lang })}
         agent: "rebook",
         action_type: `sent_${channel}`,
         target_id: suggestionId,
-        payload: { name: c.name, channel, reason: ch.reason, message_preview: message.slice(0, 120) },
+        payload: {
+          name: c.name,
+          phone: c.phone,
+          channel,
+          reason: ch.reason,
+          message_preview: message.slice(0, 120),
+        },
         undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
       } as never);
     }
