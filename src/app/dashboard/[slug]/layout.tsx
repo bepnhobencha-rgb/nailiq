@@ -17,6 +17,7 @@ import {
 } from "@/shared/features/featureRegistry";
 import { loadPlatformDisabledFeatures } from "@/shared/features/platformFeatureFlags";
 import { getPendingApprovals } from "@/shared/ai/approvalRequests";
+import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 type Props = {
   children: ReactNode;
@@ -131,13 +132,30 @@ export default async function DashboardSlugLayout({
     ctx.salon.timezone,
   );
 
-  const [waitingRes, overdueRes, pendingApprovals] = await Promise.all([
+  const [waitingRes, waitlistRes, overdueRes, pendingApprovals] = await Promise.all([
     ctx.supabase
       .from("bookings")
       .select("id", { count: "exact", head: true })
       .eq("salon_id", ctx.salon.id)
       .eq("status", "waiting")
       .gte("joined_queue_at", todayStartUtc),
+    // Online waitlist is a separate customer state from an in-salon walk-in.
+    // Keep its badge separate so receptionists never mistake "waiting online"
+    // for "physically waiting in the salon".
+    (async () => {
+      try {
+        // The waitlist table is intentionally RLS-locked. This executes only
+        // after membership has been verified above and returns a count, never
+        // customer details, to the client shell.
+        return await createServiceRoleClient()
+          .from("booking_waitlist_entries")
+          .select("id", { count: "exact", head: true })
+          .eq("salon_id", ctx.salon.id)
+          .in("status", ["waiting", "notified"]);
+      } catch {
+        return { count: 0 };
+      }
+    })(),
     // Bounded to today, like the waiting query above. Without a lower bound an
     // in_progress row nobody ever closed out stays overdue forever: one
     // abandoned booking from 10 days ago held the badge permanently red, which
@@ -156,6 +174,7 @@ export default async function DashboardSlugLayout({
       : Promise.resolve([]),
   ]);
   const walkinQueueCount = waitingRes.count ?? 0;
+  const waitlistCount = waitlistRes.count ?? 0;
   const overdueCount = overdueRes.count ?? 0;
   const pendingApprovalsCount = pendingApprovals.length;
 
@@ -197,6 +216,7 @@ export default async function DashboardSlugLayout({
         salonName={salonName}
         salons={salons}
         walkinQueueCount={walkinQueueCount}
+        waitlistCount={waitlistCount}
         overdueCount={overdueCount}
         pendingApprovalsCount={pendingApprovalsCount}
         subscriptionPlan={subscriptionPlan}

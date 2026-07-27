@@ -11,6 +11,7 @@ import {
   Gift,
   History,
   Home,
+  Hourglass,
   LayoutGrid,
   Megaphone,
   Scissors,
@@ -31,7 +32,9 @@ import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 type Props = {
   slug: string;
   walkinQueueCount?: number;
+  waitlistCount?: number;
   overdueCount?: number;
+  pendingApprovalsCount?: number;
   role?: string;
   releaseFeatures?: ReleaseFeatureMap;
 };
@@ -46,6 +49,12 @@ type MobileItem = {
   urgent?: boolean;
 };
 
+type MobileGroup = {
+  key: string;
+  label: string;
+  items: MobileItem[];
+};
+
 /**
  * iPhone-first navigation: four predictable destinations plus one More sheet.
  * Secondary tools stay reachable without asking low-tech users to understand
@@ -54,7 +63,9 @@ type MobileItem = {
 export function MobileBottomNav({
   slug,
   walkinQueueCount = 0,
+  waitlistCount = 0,
   overdueCount = 0,
+  pendingApprovalsCount = 0,
   role,
   releaseFeatures = {},
 }: Props) {
@@ -131,61 +142,106 @@ export function MobileBottomNav({
     return common;
   }, [L, dashRoot, isOwner, overdueCount, queueBadge, releaseFeatures.advanced_reports, t.clients]);
 
-  const moreItems = useMemo<MobileItem[]>(() => {
-    const items: MobileItem[] = [
+  const moreGroups = useMemo<MobileGroup[]>(() => {
+    const groups: MobileGroup[] = [
       {
-        key: "queue",
-        label: L("Waiting customers", "Khách đang chờ"),
-        href: `${dashRoot}/center?view=day#queue`,
-        icon: Clock,
-        match: () => false,
-        badge: queueBadge,
-        urgent: overdueCount > 0,
-      },
-      {
-        key: "calendar",
-        label: L("Calendar", "Lịch làm việc"),
-        href: `${dashRoot}/center?view=week`,
-        icon: CalendarDays,
-        match: () => false,
+        key: "front-desk",
+        label: L("Front desk", "Quầy tiếp tân"),
+        items: [
+          {
+            key: "queue",
+            label: L("Walk-ins", "Khách vãng lai"),
+            href: `${dashRoot}/center?view=day#queue`,
+            icon: Clock,
+            match: () => false,
+            badge: queueBadge,
+            urgent: overdueCount > 0,
+          },
+          {
+            key: "waitlist",
+            label: L("Online waitlist", "Danh sách chờ online"),
+            href: `${dashRoot}/center?view=day#waitlist`,
+            icon: Hourglass,
+            match: () => false,
+            badge: waitlistCount,
+          },
+          {
+            key: "calendar",
+            label: L("Calendar", "Lịch làm việc"),
+            href: `${dashRoot}/center?view=week`,
+            icon: CalendarDays,
+            match: () => false,
+          },
+        ],
       },
     ];
     if (isOwner) {
-      items.push(
-        { key: "staff", label: t.staff, href: `${dashRoot}/setup/staff`, icon: UserCheck, match: (p) => p.startsWith(`${dashRoot}/setup/staff`) },
-        { key: "services", label: t.services, href: `${dashRoot}/setup/services`, icon: Scissors, match: (p) => p.startsWith(`${dashRoot}/setup/services`) },
-      );
-      if (releaseFeatures.reviews === true) items.push({ key: "reviews", label: t.reviews, href: `${dashRoot}/reviews`, icon: Star, match: (p) => p.startsWith(`${dashRoot}/reviews`) });
-      if (releaseFeatures.loyalty === true) items.push({ key: "loyalty", label: t.loyalty, href: `${dashRoot}/setup/loyalty`, icon: Gift, match: (p) => p.startsWith(`${dashRoot}/setup/loyalty`) });
-      if (releaseFeatures.marketing === true) items.push({ key: "marketing", label: t.marketing, href: `${dashRoot}/marketing`, icon: Megaphone, match: (p) => p.startsWith(`${dashRoot}/marketing`) });
-      items.push(
-        releaseFeatures.ai_control_center === true
-          ? {
-              key: "ai-control-center",
-              label: L("AI Control Center", "Trung tâm AI"),
-              href: `${dashRoot}/ai`,
-              icon: Sparkles,
-              match: (p) =>
-                p.startsWith(`${dashRoot}/ai`) ||
-                p.startsWith(`${dashRoot}/approvals`) ||
-                p.startsWith(`${dashRoot}/manager`),
-            }
-          : {
-              key: "approvals",
-              label: t.approvals,
-              href: `${dashRoot}/approvals`,
-              icon: Sparkles,
-              match: (p) => p.startsWith(`${dashRoot}/approvals`),
-            },
-        { key: "activity", label: t.activity, href: `${dashRoot}/activity`, icon: History, match: (p) => p.startsWith(`${dashRoot}/activity`) },
-      );
+      groups.push({
+        key: "salon-setup",
+        label: L("Salon setup", "Thiết lập salon"),
+        items: [
+          { key: "staff", label: t.staff, href: `${dashRoot}/setup/staff`, icon: UserCheck, match: (p) => p.startsWith(`${dashRoot}/setup/staff`) },
+          { key: "services", label: t.services, href: `${dashRoot}/setup/services`, icon: Scissors, match: (p) => p.startsWith(`${dashRoot}/setup/services`) },
+        ],
+      });
+      const growthItems: MobileItem[] = [];
+      if (releaseFeatures.reviews === true) growthItems.push({ key: "reviews", label: t.reviews, href: `${dashRoot}/reviews`, icon: Star, match: (p) => p.startsWith(`${dashRoot}/reviews`) });
+      if (releaseFeatures.loyalty === true) growthItems.push({ key: "loyalty", label: t.loyalty, href: `${dashRoot}/setup/loyalty`, icon: Gift, match: (p) => p.startsWith(`${dashRoot}/setup/loyalty`) });
+      if (releaseFeatures.marketing === true) growthItems.push({ key: "marketing", label: t.marketing, href: `${dashRoot}/marketing`, icon: Megaphone, match: (p) => p.startsWith(`${dashRoot}/marketing`) });
+      if (growthItems.length > 0) {
+        groups.push({
+          key: "growth",
+          label: L("Growth", "Tăng trưởng"),
+          items: growthItems,
+        });
+      }
+      groups.push({
+        key: "system",
+        label: L("System", "Hệ thống"),
+        items: [
+          releaseFeatures.ai_control_center === true
+            ? {
+                key: "ai-control-center",
+                label: L("AI Control Center", "Trung tâm AI"),
+                href: `${dashRoot}/ai`,
+                icon: Sparkles,
+                match: (p) =>
+                  p.startsWith(`${dashRoot}/ai`) ||
+                  p.startsWith(`${dashRoot}/approvals`) ||
+                  p.startsWith(`${dashRoot}/manager`),
+                badge: pendingApprovalsCount,
+                urgent: pendingApprovalsCount > 0,
+              }
+            : {
+                key: "approvals",
+                label: t.approvals,
+                href: `${dashRoot}/approvals`,
+                icon: Sparkles,
+                match: (p) => p.startsWith(`${dashRoot}/approvals`),
+                badge: pendingApprovalsCount,
+                urgent: pendingApprovalsCount > 0,
+              },
+          { key: "activity", label: t.activity, href: `${dashRoot}/activity`, icon: History, match: (p) => p.startsWith(`${dashRoot}/activity`) },
+          { key: "settings", label: t.settings, href: `${dashRoot}/settings`, icon: Settings, match: (p) => p.startsWith(`${dashRoot}/settings`) },
+        ],
+      });
+    } else {
+      groups.push({
+        key: "system",
+        label: L("System", "Hệ thống"),
+        items: [
+          { key: "settings", label: t.settings, href: `${dashRoot}/settings`, icon: Settings, match: (p) => p.startsWith(`${dashRoot}/settings`) },
+        ],
+      });
     }
-    items.push({ key: "settings", label: t.settings, href: `${dashRoot}/settings`, icon: Settings, match: (p) => p.startsWith(`${dashRoot}/settings`) });
-    return items;
-  }, [L, dashRoot, isOwner, overdueCount, queueBadge, releaseFeatures, t]);
+    return groups;
+  }, [L, dashRoot, isOwner, overdueCount, pendingApprovalsCount, queueBadge, releaseFeatures, t, waitlistCount]);
 
+  const moreItems = moreGroups.flatMap((group) => group.items);
   const secondaryActive = moreItems.some((item) => item.match(pathname));
-  const moreBadge = isOwner ? queueBadge : 0;
+  const moreBadge = isOwner
+    ? queueBadge + waitlistCount + pendingApprovalsCount
+    : waitlistCount;
 
   return (
     <>
@@ -231,21 +287,30 @@ export function MobileBottomNav({
               </div>
               <button type="button" onClick={() => setMoreOpen(false)} className="flex h-11 w-11 items-center justify-center rounded-full bg-nq-bg text-nq-muted" aria-label={L("Close", "Đóng")}><X className="h-5 w-5" aria-hidden /></button>
             </div>
-            <ul className="overflow-hidden rounded-2xl border border-nq-border/40 bg-nq-bg/45">
-              {moreItems.map((item, index) => {
-                const Icon = item.icon;
-                return (
-                  <li key={item.key} className={index ? "border-t border-nq-border/30" : undefined}>
-                    <Link href={item.href} onClick={() => setMoreOpen(false)} className="flex min-h-14 touch-manipulation items-center gap-3 px-4 py-2.5 active:bg-nq-primary/10">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-nq-primary/12 text-nq-primary"><Icon className="h-5 w-5" aria-hidden /></span>
-                      <span className="min-w-0 flex-1 text-[15px] font-semibold text-nq-foreground">{item.label}</span>
-                      {(item.badge ?? 0) > 0 ? <Badge variant={item.urgent ? "danger" : "vip"}>{item.badge}</Badge> : null}
-                      <ChevronRight className="h-5 w-5 shrink-0 text-nq-muted/60" aria-hidden />
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
+            <div className="space-y-4">
+              {moreGroups.map((group) => (
+                <section key={group.key} aria-labelledby={`mobile-more-${group.key}`}>
+                  <h3 id={`mobile-more-${group.key}`} className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-[0.12em] text-nq-muted">
+                    {group.label}
+                  </h3>
+                  <ul className="overflow-hidden rounded-2xl border border-nq-border/40 bg-nq-bg/45">
+                    {group.items.map((item, index) => {
+                      const Icon = item.icon;
+                      return (
+                        <li key={item.key} className={index ? "border-t border-nq-border/30" : undefined}>
+                          <Link href={item.href} onClick={() => setMoreOpen(false)} className="flex min-h-14 touch-manipulation items-center gap-3 px-4 py-2.5 active:bg-nq-primary/10">
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-nq-primary/12 text-nq-primary"><Icon className="h-5 w-5" aria-hidden /></span>
+                            <span className="min-w-0 flex-1 text-[15px] font-semibold text-nq-foreground">{item.label}</span>
+                            {(item.badge ?? 0) > 0 ? <Badge variant={item.urgent ? "danger" : "vip"}>{item.badge}</Badge> : null}
+                            <ChevronRight className="h-5 w-5 shrink-0 text-nq-muted/60" aria-hidden />
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              ))}
+            </div>
           </section>
         </div>
       ) : null}

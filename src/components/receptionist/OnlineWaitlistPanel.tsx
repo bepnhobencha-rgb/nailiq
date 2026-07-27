@@ -100,9 +100,10 @@ export function OnlineWaitlistPanel({
 
   return (
     <section
+      id="waitlist"
       data-testid="online-waitlist-panel"
       aria-label={t.title}
-      className="border-t border-nq-border/40 bg-nq-surface px-3 py-3"
+      className="scroll-mt-20 border-t border-nq-border/40 bg-nq-surface px-3 py-3"
     >
       <header className="flex items-center justify-between gap-2 pb-2">
         <h2 className="text-sm font-semibold text-nq-foreground">{t.title}</h2>

@@ -11,6 +11,7 @@ import {
   Gift,
   History,
   Home,
+  Hourglass,
   Package,
   ChevronLeft,
   Activity,
@@ -53,6 +54,8 @@ type Props = {
   role: string;
   salonName: string;
   walkinQueueCount?: number;
+  /** Active online waitlist entries, kept separate from walk-ins. */
+  waitlistCount?: number;
   /** When > 0, the Walk-in Queue badge flips red (regardless of
    * `walkinQueueCount`). Driven by overdue in-progress bookings. */
   overdueCount?: number;
@@ -118,6 +121,7 @@ type NavSection = {
 const BASIC_NAV_KEYS = new Set([
   "front-desk",
   "queue",
+  "waitlist",
   "calendar",
   "clients",
   "settings",
@@ -133,6 +137,7 @@ const DESKTOP_PRIMARY_NAV_KEYS = new Set([
   "pulse",
   "front-desk",
   "queue",
+  "waitlist",
   "calendar",
   "clients",
   "staff",
@@ -151,6 +156,7 @@ export function DashboardSidebar({
   role,
   salonName,
   walkinQueueCount = 0,
+  waitlistCount = 0,
   overdueCount = 0,
   messagesCount = 0,
   pendingApprovalsCount = 0,
@@ -250,7 +256,7 @@ export function DashboardSidebar({
           },
           {
             key: "queue",
-            label: t.walkinQueue,
+            label: language === "vi" ? "Khách vãng lai" : "Walk-ins",
             // Queue panel renders only in the day view — force it + deep-link #queue.
             href: `${dashRoot}/center?view=day#queue`,
             icon: Clock,
@@ -268,6 +274,19 @@ export function DashboardSidebar({
                   ? walkinQueueCount
                   : 0,
             badgeTone: overdueCount > 0 ? "red" : "gold",
+          },
+          {
+            key: "waitlist",
+            label:
+              language === "vi"
+                ? "Danh sách chờ online"
+                : "Online waitlist",
+            href: `${dashRoot}/center?view=day#waitlist`,
+            icon: Hourglass,
+            match: () => false,
+            hidden: featureOff("receptionist_center"),
+            badge: waitlistCount > 0 ? waitlistCount : undefined,
+            badgeTone: "gold",
           },
           {
             key: "calendar",
@@ -481,10 +500,10 @@ export function DashboardSidebar({
       t.services,
       t.settings,
       t.staff,
-      t.walkinQueue,
       walkinQueueCount,
-      overdueCount,
-      pendingApprovalsCount,
+    overdueCount,
+    waitlistCount,
+    pendingApprovalsCount,
     releaseFeatures,
     ],
   );
