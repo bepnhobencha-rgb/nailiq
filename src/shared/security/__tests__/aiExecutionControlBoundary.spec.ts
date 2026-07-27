@@ -13,6 +13,10 @@ const migration = readFileSync(
   ),
   "utf8",
 );
+const parityCheck = readFileSync(
+  resolve(process.cwd(), "scripts/check-schema-parity.ts"),
+  "utf8",
+);
 
 describe("AI execution control boundary", () => {
   it("requires a resolved owner/admin and passes the resolved salon scope", () => {
@@ -47,5 +51,10 @@ describe("AI execution control boundary", () => {
     expect(migration).toContain(
       "v_job.status not in ('queued', 'waiting_input', 'failed')",
     );
+  });
+
+  it("makes the recovery RPC a production-parity critical object", () => {
+    expect(parityCheck).toContain("functions: 74");
+    expect(parityCheck).toContain('"control_ai_execution_job"');
   });
 });
