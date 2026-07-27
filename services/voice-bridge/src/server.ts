@@ -32,6 +32,7 @@ import {
   voiceToolMaxAttempts,
   isSilentTransportTool,
   callerPresenceLabel,
+  voiceSessionStatusForClose,
   functionCallOutput,
   plainResponseCreate,
   zeroAudioRecoveryResponseCreate,
@@ -255,7 +256,7 @@ wss.on("connection", (twilioWs) => {
     }
   };
 
-  const finalizeSession = async () => {
+  const finalizeSession = async (reason: string) => {
     if (!sessionId) return;
     try {
       await fetch(`${NEXT_APP_URL}/api/voice/session/end`, {
@@ -265,7 +266,11 @@ wss.on("connection", (twilioWs) => {
           sessionId,
           durationSeconds: Math.round((Date.now() - startedAt) / 1000),
           transcript,
-          status: "completed",
+          status: voiceSessionStatusForClose({
+            reason,
+            endCallRequested,
+            transportHandoffStarted,
+          }),
           language: currentLang,   // persist the language the call ended in
         }),
       });
@@ -283,7 +288,7 @@ wss.on("connection", (twilioWs) => {
     }
     hangup.onClose();              // never let the fallback timer fire after teardown
     coordinator.onClose();         // stop the queue; no more sends after hangup
-    void finalizeSession();
+    void finalizeSession(reason);
     try { openaiWs?.close(); } catch { /* noop */ }
     try { twilioWs.close(); } catch { /* noop */ }
   };

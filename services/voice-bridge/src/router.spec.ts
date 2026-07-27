@@ -49,6 +49,7 @@ import {
   voiceToolMaxAttempts,
   isSilentTransportTool,
   callerPresenceLabel,
+  voiceSessionStatusForClose,
 } from "./router";
 
 // ── helpers for reading coordinator output ──────────────────────────────────
@@ -155,6 +156,29 @@ describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () =>
     expect(callerPresenceLabel("+16045551234")).toBe("present");
     expect(callerPresenceLabel("")).toBe("missing");
     expect(callerPresenceLabel("+16045551234")).not.toContain("1234");
+  });
+
+  it("distinguishes a graceful close, human handoff, caller hangup, and bridge failure", () => {
+    expect(voiceSessionStatusForClose({
+      reason: "farewell_fully_played",
+      endCallRequested: true,
+      transportHandoffStarted: false,
+    })).toBe("completed");
+    expect(voiceSessionStatusForClose({
+      reason: "twilio_stop",
+      endCallRequested: false,
+      transportHandoffStarted: true,
+    })).toBe("completed");
+    expect(voiceSessionStatusForClose({
+      reason: "twilio_stop",
+      endCallRequested: false,
+      transportHandoffStarted: false,
+    })).toBe("abandoned");
+    expect(voiceSessionStatusForClose({
+      reason: "openai_ws_error",
+      endCallRequested: false,
+      transportHandoffStarted: false,
+    })).toBe("failed");
   });
 
   it("mark frame round-trips: send a named mark, recognise its Twilio echo (playback-aware hangup)", () => {

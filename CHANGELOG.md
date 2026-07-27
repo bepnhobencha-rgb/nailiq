@@ -2,6 +2,14 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-07-26 (AI Voice — connection repair and truthful call outcomes)
+
+- **PM approval:** explicit chat directive `2026-07-26`: “next”, following the production-call diagnosis and proposed repair.
+- **Connection checks:** the compact phone prompt treats “Hello?”, “Are you there?”, and “Can you hear me?” as connection checks, acknowledges the caller immediately, and briefly restores the pending question.
+- **Staff preference:** after one ambiguous answer and one clarification, the agent proceeds with anyone available instead of looping. It no longer volunteers a staff name solely because the name appears in the salon roster.
+- **Session outcome:** the voice bridge now records a caller/transport hangup before `end_call` as `abandoned`, an unexpected bridge/OpenAI failure as `failed`, and only graceful AI farewells or successful human handoffs as `completed`.
+- **Regression coverage:** compact phone-prompt tests cover connection repair and the staff loop; voice-bridge tests cover graceful close, handoff, caller hangup, and infrastructure failure.
+
 ## 2026-07-25 (docs — New Receptionist light-interface exception, PM-approved)
 
 - **PM approval:** explicit chat directive `2026-07-25`: “Đồng ý thay đổi luật cho giao diện New. Nhưng không làm hỏng cái đang có nhé. phải thật cẩn thận”.
