@@ -188,12 +188,18 @@ export const bookingVi: BookingMessages = {
     "Không bắt buộc — dị ứng, ý tưởng thiết kế, chỗ đỗ xe, v.v.",
   waitlistNotifyCta: "Báo cho tôi nếu có chỗ trống",
   waitlistSubmitting: "Đang lưu…",
-  waitlistJoined: "Đã ghi nhận. Chúng tôi sẽ nhắn tin khi có chỗ trống.",
+  waitlistJoined:
+    "Đã ghi nhận. Chúng tôi sẽ gửi email khi có chỗ trống phù hợp.",
   waitlistError: "Không lưu được. Vui lòng thử lại.",
+  waitlistEmailLabel: "Email *",
+  waitlistEmailHint:
+    "Bắt buộc — link giữ chỗ an toàn trong 20 phút sẽ được gửi vào email này.",
+  waitlistEmailRequired:
+    "Vui lòng nhập email để chúng tôi báo khi có chỗ trống.",
   waitlistPreferredTimeLabel: "Giờ mong muốn (tuỳ chọn)",
   waitlistAnyTime: "Bất kỳ giờ nào",
   waitlistInlineTitle: "Không thấy giờ bạn muốn?",
-  waitlistInlineSub: "Báo bạn ngay khi có chỗ trống hợp giờ.",
+  waitlistInlineSub: "Gửi email ngay khi có chỗ trống hợp giờ.",
   waitlistInlineOpenCta: "Vào danh sách chờ",
   contactRequiredError: "Vui lòng nhập họ tên và số điện thoại.",
   pastTimeError: "Giờ này đã qua. Vui lòng chọn giờ khác.",

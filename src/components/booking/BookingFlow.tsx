@@ -413,7 +413,7 @@ export function BookingFlow({
             waitlistPreferredTime={flow.waitlistPreferredTime}
             onWaitlistPreferredTimeChange={flow.setWaitlistPreferredTime}
             waitlistTimeOptions={flow.waitlistTimeOptions}
-            waitlistContactInvalid={flow.guestContactInvalid}
+            waitlistContactInvalid={flow.waitlistContactInvalid}
             scarcityHint={scarcityHint}
             error={flow.error}
             onClientNameChange={flow.setClientName}

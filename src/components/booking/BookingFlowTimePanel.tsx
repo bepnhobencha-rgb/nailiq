@@ -127,7 +127,7 @@ export function BookingFlowTimePanel({
             htmlFor="booking-waitlist-email"
             className="mb-2 block text-sm font-medium text-[var(--booking-text)]"
           >
-            {t.clientEmailLabel}
+            {t.waitlistEmailLabel}
           </label>
           <input
             id="booking-waitlist-email"
@@ -138,8 +138,16 @@ export function BookingFlowTimePanel({
             value={clientEmail}
             onChange={(e) => onClientEmailChange(e.target.value)}
             className="nq-booking-field"
-            placeholder={t.clientEmailHint ?? ""}
+            placeholder={t.otpEmailPlaceholder}
+            required
+            aria-describedby="booking-waitlist-email-hint"
           />
+          <p
+            id="booking-waitlist-email-hint"
+            className="mt-1.5 text-xs leading-relaxed text-[var(--booking-text-muted)]"
+          >
+            {t.waitlistEmailHint}
+          </p>
         </div>
         {waitlistTimeOptions.length > 0 ? (
           <div>
@@ -288,7 +296,7 @@ export function BookingFlowTimePanel({
                       htmlFor="booking-waitlist-email"
                       className="mb-2 block text-sm font-medium text-[var(--booking-text)]"
                     >
-                      {t.clientEmailLabel}
+                      {t.waitlistEmailLabel}
                     </label>
                     <input
                       id="booking-waitlist-email"
@@ -299,8 +307,16 @@ export function BookingFlowTimePanel({
                       value={clientEmail}
                       onChange={(e) => onClientEmailChange(e.target.value)}
                       className="nq-booking-field"
-                      placeholder={t.clientEmailHint ?? ""}
+                      placeholder={t.otpEmailPlaceholder}
+                      required
+                      aria-describedby="booking-waitlist-email-hint"
                     />
+                    <p
+                      id="booking-waitlist-email-hint"
+                      className="mt-1.5 text-xs leading-relaxed text-[var(--booking-text-muted)]"
+                    >
+                      {t.waitlistEmailHint}
+                    </p>
                   </div>
                   {waitlistTimeOptions.length > 0 ? (
                     <div>

@@ -3235,12 +3235,11 @@ export async function inviteWaitlistEntry(
   // matches it ('vi' → "Nhắn STOP để ngừng nhận tin."). Best-effort: any read
   // failure defaults to English. The VN-ASCII body above is fixed by design.
   let smsLang: "en" | "vi" = "en";
-  let emailEnabled = true;
   let salonAddress: string | null = null;
   try {
     const { data: langRow } = await svc
       .from("salons")
-      .select("default_notification_locale, email_links_enabled, address" as never)
+      .select("default_notification_locale, address" as never)
       .eq("id", ctx.salon.id)
       .maybeSingle();
     const locale = String(
@@ -3248,8 +3247,6 @@ export async function inviteWaitlistEntry(
         ?.default_notification_locale ?? "",
     ).toLowerCase();
     smsLang = locale === "vi" ? "vi" : "en";
-    emailEnabled =
-      (langRow as { email_links_enabled?: boolean } | null)?.email_links_enabled !== false;
     salonAddress =
       (langRow as { address?: string | null } | null)?.address ?? null;
   } catch {
@@ -3267,7 +3264,7 @@ export async function inviteWaitlistEntry(
 
   // Parallel email channel — same claim link, resilient to US SMS link filtering.
   let emailOk = false;
-  if (emailEnabled && inviteEmail) {
+  if (inviteEmail) {
     const er = await sendCustomerLinkEmail({
       email: inviteEmail,
       clientName: row.client_name,
@@ -3284,7 +3281,9 @@ export async function inviteWaitlistEntry(
           : `Tin vui — vừa có chỗ trống${serviceName ? ` cho ${serviceName}` : ""}${bookingDate ? ` ngày ${bookingDate}` : ""}. Chỗ được giữ trong 20 phút — nhận ngay.`,
       ctaLabel: smsLang === "en" ? "Claim this spot" : "Nhận chỗ này",
       url: claimUrl,
-      respectOptOut: true,
+      // The customer explicitly requested this availability alert when they
+      // joined the waitlist, so treat the claim link as transactional.
+      respectOptOut: false,
     });
     emailOk = er.ok;
   }

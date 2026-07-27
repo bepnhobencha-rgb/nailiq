@@ -2,6 +2,13 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-07-26 (Waitlist email delivery)
+
+- **Required public waitlist email:** customers must provide a valid email before joining the online waitlist; normal appointment booking still keeps email optional.
+- **Accurate customer copy:** the waitlist form and confirmation now say the 20-minute claim link is delivered by email instead of promising an SMS.
+- **Reliable offer accounting:** automated waitlist promotion only reports email success when Resend actually accepts the message; a missing email provider or email API error no longer marks an undelivered offer as notified.
+- **Transactional waitlist invite:** customers explicitly request the availability alert when joining, so the claim-link email is sent whenever a valid waitlist email exists rather than depending on the salon's optional email-link toggle or marketing opt-out. SMS remains available as a secondary channel for future reactivation.
+
 ## 2026-07-26 (AI Voice — connection repair and truthful call outcomes)
 
 - **PM approval:** explicit chat directive `2026-07-26`: “next”, following the production-call diagnosis and proposed repair.
