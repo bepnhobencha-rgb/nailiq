@@ -19,6 +19,8 @@ function job(
     available_at: "2026-07-27T00:00:00.000Z",
     started_at: "2026-07-27T00:00:00.000Z",
     finished_at: null,
+    lease_token: "11111111-1111-4111-8111-111111111111",
+    lease_expires_at: "2026-07-27T00:15:00.000Z",
     last_error: null,
     result: null,
     created_at: "2026-07-27T00:00:00.000Z",

@@ -19,12 +19,12 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260727194500. Refresh these with each schema-changing forward
+ * through 20260727203000. Refresh these with each schema-changing forward
  * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
   tables: 90,
-  columns: 1238,
+  columns: 1240,
   policies: 142,
   /**
    * APP functions only — 65.
@@ -39,9 +39,9 @@ const PRODUCTION = {
    * Verified on production: 253 total = 188 extension-owned + 65 app-owned.
    * The query below excludes anything a `pg_depend` extension edge points at.
    */
-  functions: 75,
+  functions: 78,
   triggers: 25,
-  indexes: 299,
+  indexes: 300,
 } as const;
 
 /**
@@ -69,8 +69,11 @@ const CRITICAL_TABLES = [
 /** Booking cannot work without these; a missing RPC fails at runtime, not at apply time. */
 const CRITICAL_FUNCTIONS = [
   "compute_no_show_risk",
+  "claim_ai_execution_jobs",
   "control_ai_execution_job",
   "decide_ai_approval_request",
+  "finish_ai_execution_job",
+  "recover_stale_ai_execution_jobs",
 ] as const;
 
 const dbUrl = process.env.DB_URL;
