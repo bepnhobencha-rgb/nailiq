@@ -141,11 +141,31 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   if (decision === "approved") {
+    if (!result.execution?.ok) {
+      return htmlPage(
+        "Đã đồng ý — chưa thể xếp hàng",
+        `<span class="badge warn">Đã ghi nhận</span>
+         <h1>Đã ghi nhận quyết định, nhưng chưa thể xếp hàng thực thi.</h1>
+         <p>Không có hành động nào được thực hiện. NailIQ sẽ hiển thị lỗi này để xử lý an toàn.</p>`,
+        dashHref,
+      );
+    }
+
+    if (result.execution.status === "waiting_input") {
+      return htmlPage(
+        "Đã đồng ý — cần thêm thông tin",
+        `<span class="badge ok">✓ Đã đồng ý</span>
+         <h1>Đề xuất đã được duyệt.</h1>
+         <p>Chưa có tin nhắn nào được gửi. NailIQ cần bạn chọn người nhận và kiểm tra consent trước khi có thể thực thi.</p>`,
+        dashHref,
+      );
+    }
+
     return htmlPage(
-      "Đã đồng ý",
+      "Đã xếp hàng",
       `<span class="badge ok">✓ Đã đồng ý</span>
-       <h1>✓ Đã đồng ý. Minh sẽ thực hiện ngay.</h1>
-       <p>Hành động đã được ghi nhận và sẽ được thực thi trong lần chạy tiếp theo.</p>`,
+       <h1>Hành động đã được xếp hàng an toàn.</h1>
+       <p>NailIQ sẽ theo dõi trạng thái thực thi và không chạy trùng cùng một yêu cầu.</p>`,
       dashHref,
     );
   }

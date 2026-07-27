@@ -19,13 +19,13 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260727020207. Refresh these with each schema-changing forward
+ * through 20260727082929. Refresh these with each schema-changing forward
  * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
-  tables: 89,
-  columns: 1222,
-  policies: 140,
+  tables: 90,
+  columns: 1238,
+  policies: 142,
   /**
    * APP functions only — 65.
    *
@@ -41,7 +41,7 @@ const PRODUCTION = {
    */
   functions: 73,
   triggers: 25,
-  indexes: 294,
+  indexes: 299,
 } as const;
 
 /**
@@ -63,6 +63,7 @@ const CRITICAL_TABLES = [
   "salon_members",
   "superadmins",
   "superadmin_audit_logs",
+  "ai_execution_jobs",
 ] as const;
 
 /** Booking cannot work without these; a missing RPC fails at runtime, not at apply time. */
@@ -151,7 +152,7 @@ function main() {
   // The first dump here was taken with --no-privileges and produced 0 grants.
   // Everything above still went green. That is why this check exists.
   console.log("\n── Grant matrix ──\n");
-  const GRANTS = { anon: 57, authenticated: 60, service_role: 94 } as const;
+  const GRANTS = { anon: 57, authenticated: 61, service_role: 95 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
