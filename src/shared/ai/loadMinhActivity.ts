@@ -81,7 +81,13 @@ export async function loadMinhActivity(
       agentLabel: meta.label,
       actionType: r.action_type,
       clientName: String(r.payload?.name ?? ""),
-      messagePreview: String(r.payload?.message_preview ?? r.payload?.summary ?? ""),
+      messagePreview: String(
+        r.payload?.message_preview ??
+          r.payload?.title ??
+          r.payload?.reasoning ??
+          r.payload?.summary ??
+          "",
+      ),
       createdAt: r.created_at,
       outcome: (r.outcome as "converted" | "no_conversion" | null) ?? null,
       outcomeAt: r.outcome_at,
