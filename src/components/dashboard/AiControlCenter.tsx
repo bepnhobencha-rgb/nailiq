@@ -8,11 +8,17 @@ import {
   Check,
   CheckCircle2,
   Clock3,
+  Gauge,
+  Lightbulb,
+  ListChecks,
   ShieldCheck,
   Sparkles,
+  Target,
+  Undo2,
   X,
 } from "lucide-react";
 
+import { buildActionIntelligence } from "@/shared/ai/actionIntelligence";
 import type { ApprovalRow } from "@/shared/ai/approvalRequests";
 import type { MinhActivityData } from "@/shared/ai/loadMinhActivity";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -106,8 +112,15 @@ export function AiControlCenter({ slug, approvals, activity, appUrl, nowIso }: P
             </div>
           ) : (
             <div className="space-y-3">
-              {pending.slice(0, 4).map((request) => (
-                <article key={request.id} className="rounded-2xl border border-nq-border bg-nq-surface p-4 sm:p-5">
+              {pending.slice(0, 4).map((request) => {
+                const intelligence = buildActionIntelligence(
+                  request.action_type,
+                  request.payload,
+                  language,
+                );
+                return (
+                <article key={request.id} className="overflow-hidden rounded-2xl border border-nq-border bg-nq-surface">
+                  <div className="p-4 sm:p-5">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${request.urgency === "urgent" ? "bg-nq-error/15 text-nq-error" : "bg-nq-warning/15 text-nq-warning"}`}>
                       {request.urgency === "urgent" ? (vi ? "Gấp" : "Urgent") : (vi ? "Bình thường" : "Normal")}
@@ -118,6 +131,57 @@ export function AiControlCenter({ slug, approvals, activity, appUrl, nowIso }: P
                     <span className="ml-auto text-xs text-nq-muted">{relativeTime(request.created_at, nowIso, language)}</span>
                   </div>
                   <p className="mt-3 text-sm leading-6 text-nq-foreground">{request.summary}</p>
+
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    <IntelligenceItem
+                      icon={Lightbulb}
+                      label={vi ? "Vì sao AI đề xuất?" : "Why is AI recommending this?"}
+                      value={intelligence.reason}
+                    />
+                    <IntelligenceItem
+                      icon={Target}
+                      label={vi ? "Tác động dự kiến" : "Expected impact"}
+                      value={intelligence.impact}
+                    />
+                    <div className="rounded-xl border border-nq-border/60 bg-nq-bg/45 p-3">
+                      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+                        <ListChecks className="h-3.5 w-3.5 text-nq-primary" aria-hidden />
+                        {vi ? "Bằng chứng" : "Evidence"}
+                      </div>
+                      <ul className="mt-2 space-y-1.5">
+                        {intelligence.evidence.map((item) => (
+                          <li key={item} className="flex gap-2 text-xs leading-5 text-nq-foreground/85">
+                            <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-nq-primary" aria-hidden />
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Signal
+                        icon={Gauge}
+                        label={vi ? "Độ tin cậy" : "Confidence"}
+                        value={intelligence.confidence.label}
+                        tone={
+                          intelligence.confidence.percent != null &&
+                          intelligence.confidence.percent >= 70
+                            ? "success"
+                            : "default"
+                        }
+                      />
+                      <Signal
+                        icon={Undo2}
+                        label={vi ? "Hoàn tác" : "Undo"}
+                        value={intelligence.reversibility.label}
+                        tone={
+                          intelligence.reversibility.reversible === false
+                            ? "warning"
+                            : "default"
+                        }
+                      />
+                    </div>
+                  </div>
+
                   <div className="mt-4 grid grid-cols-2 gap-2">
                     <Link href={`${appUrl}/api/ai/approve?token=${request.approve_token}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-nq-success px-3 text-sm font-semibold text-white">
                       <Check className="h-4 w-4" aria-hidden />
@@ -128,8 +192,17 @@ export function AiControlCenter({ slug, approvals, activity, appUrl, nowIso }: P
                       {vi ? "Từ chối" : "Decline"}
                     </Link>
                   </div>
+                  </div>
+                  {intelligence.reversibility.reversible === false ? (
+                    <p className="border-t border-nq-warning/25 bg-nq-warning/10 px-4 py-2.5 text-xs leading-5 text-nq-warning sm:px-5">
+                      {vi
+                        ? "Hãy kiểm tra kỹ: hành động này không thể được AI hoàn tác tự động sau khi thực hiện."
+                        : "Review carefully: AI cannot automatically undo this action after execution."}
+                    </p>
+                  ) : null}
                 </article>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
@@ -176,6 +249,54 @@ export function AiControlCenter({ slug, approvals, activity, appUrl, nowIso }: P
         </aside>
       </div>
     </main>
+  );
+}
+
+function IntelligenceItem({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Lightbulb;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl border border-nq-border/60 bg-nq-bg/45 p-3">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+        <Icon className="h-3.5 w-3.5 text-nq-primary" aria-hidden />
+        {label}
+      </div>
+      <p className="mt-2 text-xs leading-5 text-nq-foreground/85">{value}</p>
+    </div>
+  );
+}
+
+function Signal({
+  icon: Icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: typeof Gauge;
+  label: string;
+  value: string;
+  tone: "default" | "success" | "warning";
+}) {
+  const valueColor =
+    tone === "success"
+      ? "text-nq-success"
+      : tone === "warning"
+        ? "text-nq-warning"
+        : "text-nq-foreground";
+  return (
+    <div className="rounded-xl border border-nq-border/60 bg-nq-bg/45 p-3">
+      <div className="flex items-center gap-2 text-[11px] text-nq-muted">
+        <Icon className="h-3.5 w-3.5" aria-hidden />
+        {label}
+      </div>
+      <p className={`mt-2 text-xs font-semibold leading-5 ${valueColor}`}>{value}</p>
+    </div>
   );
 }
 
