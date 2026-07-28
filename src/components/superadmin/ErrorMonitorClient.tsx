@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { assessErrorEvidence } from "@/shared/observability/errorEvidence";
 import {
   loadErrorLogs,
   setErrorStatus,
@@ -139,6 +140,13 @@ export function ErrorMonitorClient({ initialRows }: { initialRows: ErrorLogRow[]
                       <span className="font-semibold">Fix:</span> {r.ai_suggested_fix}
                     </p>
                   ) : null}
+                  {assessErrorEvidence(r.route, r.context).status === "conflict" ? (
+                    <p className="mt-2 rounded-md border border-nq-warning/35 bg-nq-warning/10 px-2.5 py-2 text-xs text-nq-warning">
+                      Evidence conflict: this legacy group combines different
+                      routes. AI triage and draft fixes are blocked until a new
+                      route-scoped occurrence is captured.
+                    </p>
+                  ) : null}
                   {r.fix_proposal ? (
                     <p className="mt-2 rounded-md bg-nq-success/10 px-2.5 py-1.5 text-xs text-nq-foreground">
                       ✨ <span className="font-semibold">AI fix:</span> {r.fix_proposal}
@@ -190,7 +198,8 @@ export function ErrorMonitorClient({ initialRows }: { initialRows: ErrorLogRow[]
                 <div className="flex shrink-0 flex-col gap-1.5">
                   {r.status === "open" ? (
                     <>
-                      {!r.ai_summary ? (
+                      {!r.ai_summary &&
+                      assessErrorEvidence(r.route, r.context).status !== "conflict" ? (
                         <button
                           onClick={() => triage(r.id)}
                           className="rounded-md bg-nq-info/15 px-2.5 py-1 text-xs text-nq-info hover:bg-nq-info/25"
@@ -198,7 +207,8 @@ export function ErrorMonitorClient({ initialRows }: { initialRows: ErrorLogRow[]
                           🧠 Triage
                         </button>
                       ) : null}
-                      {!r.fix_pr_url ? (
+                      {!r.fix_pr_url &&
+                      assessErrorEvidence(r.route, r.context).status !== "conflict" ? (
                         <button
                           onClick={() => fix(r.id)}
                           className="rounded-md bg-nq-primary/15 px-2.5 py-1 text-xs text-nq-primary hover:bg-nq-primary/25"
