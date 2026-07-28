@@ -8,7 +8,7 @@ export type ExecutionEffect =
     }
   | {
       kind: "waiting_input";
-      blocker: "recipient_selection_required";
+      blocker: "recipient_selection_required" | "dispatch_not_enabled";
     }
   | {
       kind: "unsupported";
@@ -26,7 +26,10 @@ export function planExecutionEffect(job: ExecutionJobRow): ExecutionEffect {
   if (job.action_type === "bulk_message") {
     return {
       kind: "waiting_input",
-      blocker: "recipient_selection_required",
+      blocker:
+        job.payload.recipient_selection_required === true
+          ? "recipient_selection_required"
+          : "dispatch_not_enabled",
     };
   }
 

@@ -38,12 +38,12 @@ describe("production readiness route", () => {
       checks: {
         database_schema: {
           status: "ok",
-          capability: "record_ai_audience_preparation_v1",
+          capability: "record_ai_campaign_manifest_v1",
         },
       },
     });
     expect(rpc).toHaveBeenCalledWith(
-      "record_ai_audience_preparation",
+      "record_ai_campaign_manifest",
       expect.objectContaining({
         p_job_id: "00000000-0000-0000-0000-000000000001",
         p_salon_id: "00000000-0000-0000-0000-000000000002",
@@ -52,6 +52,7 @@ describe("production readiness route", () => {
           eligible_count: 0,
           no_messages_sent: true,
         }),
+        p_recipients: [],
       }),
     );
   });

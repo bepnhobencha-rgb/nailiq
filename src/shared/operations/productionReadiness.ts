@@ -7,7 +7,7 @@ const PROBE_SALON_ID = "00000000-0000-0000-0000-000000000002";
 const EXPECTED_RESULT = "job_not_preparable";
 
 export const REQUIRED_SCHEMA_CAPABILITY =
-  "record_ai_audience_preparation_v1";
+  "record_ai_campaign_manifest_v1";
 
 export type ProductionReadiness =
   | { ready: true }
@@ -35,17 +35,21 @@ export async function probeProductionReadiness(
     const db = createServiceRoleClient();
     const query = db
       .rpc(
-        "record_ai_audience_preparation" as never,
+        "record_ai_campaign_manifest" as never,
         {
           p_job_id: PROBE_JOB_ID,
           p_salon_id: PROBE_SALON_ID,
           p_summary: {
             segment: "lapsed_regulars_45_365_days",
             no_messages_sent: true,
-            audience_fingerprint: "0123456789abcdef01234567",
+            audience_fingerprint: "e3b0c44298fc1c149afbf4c8",
             candidate_count: 0,
             eligible_count: 0,
+            sms_recipient_count: 0,
+            email_recipient_count: 0,
+            dual_channel_count: 0,
           },
+          p_recipients: [],
           p_now: new Date().toISOString(),
         } as never,
       )

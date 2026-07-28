@@ -633,6 +633,8 @@ function JobAudiencePreparation({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const preparation = audiencePreparationFrom(job.result);
+  const blocker =
+    typeof job.result?.blocker === "string" ? job.result.blocker : null;
 
   const prepare = () => {
     setError(null);
@@ -651,6 +653,26 @@ function JobAudiencePreparation({
   };
 
   if (!preparation) {
+    if (blocker === "dispatch_not_enabled") {
+      return (
+        <p className="mt-2 text-xs leading-5 text-nq-warning">
+          {vi
+            ? "Bạn đã duyệt đúng manifest, nhưng chức năng gửi thật chưa được bật. Không có tin nhắn nào được gửi."
+            : "You approved the exact manifest, but live dispatch is not enabled. No message was sent."}
+        </p>
+      );
+    }
+
+    if (blocker === "release_approval_required") {
+      return (
+        <p className="mt-2 text-xs leading-5 text-nq-warning">
+          {vi
+            ? "Manifest đã được khóa và đang chờ approval phát hành cuối cùng. Chưa gửi tin nhắn."
+            : "The manifest is frozen and awaits final release approval. No message was sent."}
+        </p>
+      );
+    }
+
     return (
       <div className="mt-2">
         <p className="text-xs leading-5 text-nq-warning">
@@ -658,7 +680,8 @@ function JobAudiencePreparation({
             ? "Đang chờ chọn người nhận và kiểm tra consent. Chưa gửi tin nhắn."
             : "Waiting for recipient selection and consent checks. No message was sent."}
         </p>
-        {job.action_type === "bulk_message" ? (
+        {job.action_type === "bulk_message" &&
+        blocker === "recipient_selection_required" ? (
           <button
             type="button"
             disabled={pending}
@@ -709,23 +732,29 @@ function JobAudiencePreparation({
       ) : null}
       <p className="mt-1 text-[11px] font-medium text-nq-warning">
         {vi
-          ? "Đây chỉ là bản kiểm tra. Chưa có tin nhắn nào được gửi."
-          : "This is a dry run only. No message was sent."}
+          ? blocker === "release_approval_required"
+            ? "Manifest đã được khóa. Hãy duyệt yêu cầu phát hành riêng; chưa có tin nhắn nào được gửi."
+            : "Đây chỉ là bản kiểm tra. Chưa có tin nhắn nào được gửi."
+          : blocker === "release_approval_required"
+            ? "The manifest is frozen. Review the separate release approval; no message was sent."
+            : "This is a dry run only. No message was sent."}
       </p>
-      <button
-        type="button"
-        disabled={pending}
-        onClick={prepare}
-        className="mt-2 text-[11px] font-semibold text-nq-primary hover:underline disabled:opacity-60"
-      >
-        {pending
-          ? vi
-            ? "Đang kiểm tra lại…"
-            : "Rechecking…"
-          : vi
-            ? "Kiểm tra lại audience"
-            : "Recheck audience"}
-      </button>
+      {blocker === "recipient_selection_required" ? (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={prepare}
+          className="mt-2 text-[11px] font-semibold text-nq-primary hover:underline disabled:opacity-60"
+        >
+          {pending
+            ? vi
+              ? "Đang kiểm tra lại…"
+              : "Rechecking…"
+            : vi
+              ? "Kiểm tra lại audience"
+              : "Recheck audience"}
+        </button>
+      ) : null}
       {error ? <p className="mt-2 text-xs text-nq-error">{error}</p> : null}
     </div>
   );

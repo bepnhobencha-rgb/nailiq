@@ -14,7 +14,7 @@ const action = readFileSync(
 const migration = readFileSync(
   resolve(
     root,
-    "supabase/migrations/20260728080000_make_ai_audience_preparation_atomic.sql",
+    "supabase/migrations/20260728084526_create_immutable_campaign_release_gate.sql",
   ),
   "utf8",
 );
@@ -26,30 +26,57 @@ describe("AI audience preparation boundary", () => {
     expect(action).toContain("salonId: ctx.salon.id");
   });
 
-  it("keeps the execution job waiting for separate send authorization", () => {
+  it("keeps the execution job waiting for separate release authorization", () => {
     expect(service).toContain('job.status !== "waiting_input"');
-    expect(service).toContain('"record_ai_audience_preparation" as never');
+    expect(service).toContain('"record_ai_campaign_manifest" as never');
     expect(service).toContain("no_messages_sent: true");
-    expect(migration).toContain("'blocker', 'recipient_selection_required'");
+    expect(migration).toContain("'blocker', 'release_approval_required'");
     expect(migration).toContain("and status = 'waiting_input'");
   });
 
-  it("persists the snapshot and audit row atomically and idempotently", () => {
+  it("persists manifest, recipients, release approval, and audit atomically", () => {
     expect(migration).toContain("for update");
-    expect(migration).toContain("return 'unchanged'");
+    expect(migration).toContain("'unchanged'::text");
+    expect(migration).toContain("insert into public.ai_campaign_manifests");
+    expect(migration).toContain(
+      "insert into public.ai_campaign_manifest_recipients",
+    );
+    expect(migration).toContain("insert into public.approval_requests");
     expect(migration).toContain("update public.ai_execution_jobs");
     expect(migration).toContain("insert into public.ai_actions_log");
-    expect(migration).toContain("'execution_audience_prepared'");
+    expect(migration).toContain("'campaign_manifest_prepared'");
     expect(migration).toContain(
-      "revoke all on function public.record_ai_audience_preparation",
+      "revoke all on function public.record_ai_campaign_manifest",
     );
     expect(migration).toContain("to service_role");
   });
 
-  it("fingerprints both identity and resolved channels", () => {
-    expect(service).toContain(
-      '`${profile.id}:${decision.sms ? "s" : ""}${decision.email ? "e" : ""}`',
+  it("recomputes and compares identity/channel fingerprint in the database", () => {
+    expect(service).toContain("client_profile_id: profile.id");
+    expect(migration).toContain("string_agg(");
+    expect(migration).toContain("v_fingerprint <> p_summary");
+    expect(migration).toContain("v_recipient_count <> v_unique_count");
+  });
+
+  it("makes both manifest tables private, RLS-protected, and immutable", () => {
+    expect(migration).toContain(
+      "alter table public.ai_campaign_manifests enable row level security",
     );
+    expect(migration).toContain(
+      "alter table public.ai_campaign_manifest_recipients enable row level security",
+    );
+    expect(migration).toContain(
+      "revoke all on table public.ai_campaign_manifests",
+    );
+    expect(migration).toContain("campaign_manifest_is_immutable");
+    expect(migration).toContain("before update or delete");
+  });
+
+  it("creates a final approval that remains no-send after approval", () => {
+    expect(migration).toContain("'dispatch_enabled', false");
+    expect(migration).toContain("'dispatch_not_enabled'");
+    expect(migration).toContain("'dispatch_authorization_required', true");
+    expect(migration).toContain("'no_messages_sent', true");
   });
 
   it("contains no outbound provider dependency", () => {

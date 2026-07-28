@@ -30,9 +30,28 @@ function job(
 
 describe("execution effect allowlist", () => {
   it("blocks bulk messaging until recipient and consent inputs exist", () => {
-    expect(planExecutionEffect(job("bulk_message"))).toEqual({
+    expect(
+      planExecutionEffect(
+        job("bulk_message", { recipient_selection_required: true }),
+      ),
+    ).toEqual({
       kind: "waiting_input",
       blocker: "recipient_selection_required",
+    });
+  });
+
+  it("keeps an approved exact manifest blocked when live dispatch is absent", () => {
+    expect(
+      planExecutionEffect(
+        job("bulk_message", {
+          recipient_selection_required: false,
+          dispatch_enabled: false,
+          manifest_id: "manifest-1",
+        }),
+      ),
+    ).toEqual({
+      kind: "waiting_input",
+      blocker: "dispatch_not_enabled",
     });
   });
 

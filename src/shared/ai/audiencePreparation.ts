@@ -48,6 +48,12 @@ export type AudiencePreparationSummary = {
   no_messages_sent: true;
 };
 
+export type CampaignManifestRecipient = {
+  client_profile_id: string;
+  sms: boolean;
+  email: boolean;
+};
+
 function normalizedPhone(value: string | null | undefined): string {
   return (value ?? "").replace(/\D/g, "");
 }
@@ -76,7 +82,13 @@ export async function prepareExecutionAudience(input: {
   salonId: string;
   jobId: string;
 }): Promise<
-  | { ok: true; summary: AudiencePreparationSummary }
+  | {
+      ok: true;
+      summary: AudiencePreparationSummary;
+      manifestId: string;
+      releaseApprovalId: string;
+      outcome: "created" | "unchanged";
+    }
   | { ok: false; error: string }
 > {
   const db = createServiceRoleClient();
@@ -214,13 +226,10 @@ export async function prepareExecutionAudience(input: {
     recentRows.map((row) => normalizedPhone(row.client_phone)),
   );
 
-  let smsRecipientCount = 0;
-  let emailRecipientCount = 0;
-  let dualChannelCount = 0;
   let excludedNoConsent = 0;
   let excludedNoChannel = 0;
   let excludedRecentContact = 0;
-  const eligibleAudienceKeys: string[] = [];
+  const recipientsByProfile = new Map<string, CampaignManifestRecipient>();
 
   for (const candidate of candidates) {
     const phone = normalizedPhone(candidate.client_phone);
@@ -258,14 +267,26 @@ export async function prepareExecutionAudience(input: {
       else excludedNoChannel++;
       continue;
     }
-    eligibleAudienceKeys.push(
-      `${profile.id}:${decision.sms ? "s" : ""}${decision.email ? "e" : ""}`,
-    );
-    if (decision.sms) smsRecipientCount++;
-    if (decision.email) emailRecipientCount++;
-    if (decision.sms && decision.email) dualChannelCount++;
+    const previous = recipientsByProfile.get(profile.id);
+    recipientsByProfile.set(profile.id, {
+      client_profile_id: profile.id,
+      sms: Boolean(previous?.sms || decision.sms),
+      email: Boolean(previous?.email || decision.email),
+    });
   }
 
+  const recipients = [...recipientsByProfile.values()].sort((a, b) =>
+    a.client_profile_id.localeCompare(b.client_profile_id),
+  );
+  const eligibleAudienceKeys = recipients.map(
+    (recipient) =>
+      `${recipient.client_profile_id}:${recipient.sms ? "s" : ""}${recipient.email ? "e" : ""}`,
+  );
+  const smsRecipientCount = recipients.filter((item) => item.sms).length;
+  const emailRecipientCount = recipients.filter((item) => item.email).length;
+  const dualChannelCount = recipients.filter(
+    (item) => item.sms && item.email,
+  ).length;
   const preparedAt = new Date().toISOString();
   const summary: AudiencePreparationSummary = {
     prepared_at: preparedAt,
@@ -294,20 +315,39 @@ export async function prepareExecutionAudience(input: {
   };
 
   const { data: transition, error: updateError } = await db.rpc(
-    "record_ai_audience_preparation" as never,
+    "record_ai_campaign_manifest" as never,
     {
       p_job_id: job.id,
       p_salon_id: input.salonId,
       p_summary: summary,
+      p_recipients: recipients,
       p_now: preparedAt,
     } as never,
   );
+  const transitionRow = (
+    Array.isArray(transition) ? transition[0] : transition
+  ) as
+    | {
+        outcome?: string;
+        manifest_id?: string;
+        release_approval_id?: string;
+      }
+    | null;
   if (
     updateError ||
-    (transition !== "updated" && transition !== "unchanged")
+    !transitionRow?.manifest_id ||
+    !transitionRow.release_approval_id ||
+    (transitionRow.outcome !== "created" &&
+      transitionRow.outcome !== "unchanged")
   ) {
     return { ok: false, error: "job_update_failed" };
   }
 
-  return { ok: true, summary };
+  return {
+    ok: true,
+    summary,
+    manifestId: transitionRow.manifest_id,
+    releaseApprovalId: transitionRow.release_approval_id,
+    outcome: transitionRow.outcome,
+  };
 }
