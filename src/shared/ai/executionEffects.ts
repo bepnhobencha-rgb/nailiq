@@ -12,7 +12,7 @@ export type ExecutionEffect =
     }
   | {
       kind: "unsupported";
-      reason: "unsupported_action_type";
+      reason: "unsupported_action_type" | "invalid_operational_note";
     };
 
 /**
@@ -31,13 +31,18 @@ export function planExecutionEffect(job: ExecutionJobRow): ExecutionEffect {
   }
 
   if (job.action_type === "record_operational_note") {
+    const note =
+      typeof job.payload.note === "string" ? job.payload.note.trim() : "";
+    if (!note || note.length > 1000) {
+      return { kind: "unsupported", reason: "invalid_operational_note" };
+    }
     return {
       kind: "internal_audit",
       actionType: "approved_operational_note",
       payload: {
         execution_job_id: job.id,
         approval_request_id: job.approval_request_id,
-        note: job.payload.note ?? null,
+        note,
       },
     };
   }

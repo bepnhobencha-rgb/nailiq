@@ -5,6 +5,33 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Operational notes are NailIQ's first safe real execution effect
+
+**Status.** Implemented on `agent/operational-note-effect`.
+
+**Decision.**
+- An owner-approved `record_operational_note` job writes an
+  `approved_operational_note` entry to the salon's AI activity log and marks the
+  leased job succeeded in one database transaction.
+- The action-specific RPC requires the exact running job and lease token. A
+  stale or overlapping worker cannot execute or finish a newer attempt.
+- A partial unique index on `(agent, action_type, target_id)` makes the effect
+  idempotent across retries, timeouts, and lost responses.
+- Notes are trimmed, must be non-empty, and are capped at 1,000 characters.
+  Invalid payloads are canceled honestly instead of producing a fake success.
+- AI Control Center renders the persisted note in the existing activity stream.
+
+**Why.** The queue previously returned a successful internal-audit result
+without creating the promised operational record. A real operating system must
+distinguish a planned effect from an effect that was committed, and it must
+commit the effect and lifecycle transition atomically.
+
+**Safety.** This is an internal, reversible-by-follow-up-note record only. It
+does not send messages, mutate bookings, change pricing, charge customers, or
+alter authentication.
+
+---
+
 ## 2026-07-28 — Preserve scheduler run history and measure reliability
 
 **Status.** Implemented on `agent/ai-worker-run-history`.

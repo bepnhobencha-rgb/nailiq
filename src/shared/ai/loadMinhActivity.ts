@@ -16,6 +16,7 @@ export const AGENT_META: Record<string, { icon: string; label: string; trackable
   digest:           { icon: "📋", label: "Digest",        trackable: false },
   strategist:       { icon: "🧠", label: "Chiến Lược",   trackable: false },
   outcome_tracker:  { icon: "📊", label: "Kết quả",      trackable: false },
+  ai_execution:     { icon: "⚙️", label: "Thực thi",      trackable: false },
 };
 
 export type MinhLogEntry = {
@@ -56,6 +57,45 @@ export type MinhActivityData = {
   agentStats: AgentStat[];
 };
 
+export type MinhActivityRow = {
+  id: string;
+  agent: string;
+  action_type: string;
+  payload: Record<string, unknown> | null;
+  created_at: string;
+  outcome: string | null;
+  outcome_at: string | null;
+};
+
+export function toMinhLogEntry(row: MinhActivityRow): MinhLogEntry {
+  const meta = AGENT_META[row.agent] ?? {
+    icon: "🤖",
+    label: row.agent,
+    trackable: false,
+  };
+  return {
+    id: row.id,
+    agent: row.agent,
+    agentIcon: meta.icon,
+    agentLabel: meta.label,
+    actionType: row.action_type,
+    clientName: String(row.payload?.name ?? ""),
+    messagePreview: String(
+      row.payload?.message_preview ??
+        row.payload?.title ??
+        row.payload?.reasoning ??
+        row.payload?.summary ??
+        row.payload?.note ??
+        "",
+    ),
+    createdAt: row.created_at,
+    outcome:
+      (row.outcome as "converted" | "no_conversion" | null) ?? null,
+    outcomeAt: row.outcome_at,
+    trackable: meta.trackable,
+  };
+}
+
 export async function loadMinhActivity(
   salonId: string,
   days = 30,
@@ -72,38 +112,8 @@ export async function loadMinhActivity(
     .order("created_at", { ascending: false })
     .limit(200);
 
-  const rows = (data ?? []) as {
-    id: string;
-    agent: string;
-    action_type: string;
-    payload: Record<string, unknown> | null;
-    created_at: string;
-    outcome: string | null;
-    outcome_at: string | null;
-  }[];
-
-  const entries: MinhLogEntry[] = rows.map((r) => {
-    const meta = AGENT_META[r.agent] ?? { icon: "🤖", label: r.agent, trackable: false };
-    return {
-      id: r.id,
-      agent: r.agent,
-      agentIcon: meta.icon,
-      agentLabel: meta.label,
-      actionType: r.action_type,
-      clientName: String(r.payload?.name ?? ""),
-      messagePreview: String(
-        r.payload?.message_preview ??
-          r.payload?.title ??
-          r.payload?.reasoning ??
-          r.payload?.summary ??
-          "",
-      ),
-      createdAt: r.created_at,
-      outcome: (r.outcome as "converted" | "no_conversion" | null) ?? null,
-      outcomeAt: r.outcome_at,
-      trackable: meta.trackable,
-    };
-  });
+  const rows = (data ?? []) as MinhActivityRow[];
+  const entries = rows.map(toMinhLogEntry);
 
   // Stats for trackable agents (winback, rebook, vip_care, first_visit)
   const trackable = entries.filter((e) => e.trackable);
