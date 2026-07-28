@@ -17,6 +17,15 @@ export type ExecutionWorkerHeartbeatRow = {
   updated_at: string;
 };
 
+export type AiWorkerRunRow = {
+  run_id: string;
+  worker_name: AiWorkerName;
+  status: "running" | "succeeded" | "failed";
+  started_at: string;
+  completed_at: string | null;
+  error_code: string | null;
+};
+
 export async function recordExecutionWorkerHeartbeat(input: {
   runId: string;
   phase: ExecutionHeartbeatPhase;
@@ -73,4 +82,23 @@ export async function getAiWorkerHeartbeats(): Promise<
     return [];
   }
   return (data as ExecutionWorkerHeartbeatRow[] | null) ?? [];
+}
+
+export async function getAiWorkerRuns(
+  startedSince: Date,
+): Promise<AiWorkerRunRow[]> {
+  const db = createServiceRoleClient();
+  const { data, error } = await db
+    .from("ai_worker_runs" as never)
+    .select(
+      "run_id, worker_name, status, started_at, completed_at, error_code",
+    )
+    .gte("started_at" as never, startedSince.toISOString())
+    .order("started_at" as never, { ascending: false })
+    .limit(500);
+  if (error) {
+    console.error("[getAiWorkerRuns]", error);
+    return [];
+  }
+  return (data as AiWorkerRunRow[] | null) ?? [];
 }

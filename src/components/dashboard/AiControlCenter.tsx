@@ -350,7 +350,13 @@ function OperatingStatus({
   nowIso: string;
 }) {
   const vi = language === "vi";
-  const { health, worker, managerWorker } = state;
+  const {
+    health,
+    worker,
+    managerWorker,
+    workerReliability24h,
+    managerReliability24h,
+  } = state;
   const workerCopy = {
     healthy: vi ? "Worker vừa chạy thành công" : "Worker recently succeeded",
     running: vi ? "Worker đang chạy" : "Worker is running",
@@ -456,6 +462,11 @@ function OperatingStatus({
             {workerObservedAt ? ` · ${workerObservedAt}` : ""}
             {worker.lastError ? ` · ${worker.lastError}` : ""}
           </p>
+          <ReliabilityLine
+            label={vi ? "Worker · 24 giờ" : "Worker · 24 hours"}
+            reliability={workerReliability24h}
+            vi={vi}
+          />
           <p
             className={`mt-1 text-[11px] font-medium ${
               managerWorker.status === "failed" ||
@@ -469,6 +480,11 @@ function OperatingStatus({
             {managerObservedAt ? ` · ${managerObservedAt}` : ""}
             {managerWorker.lastError ? ` · ${managerWorker.lastError}` : ""}
           </p>
+          <ReliabilityLine
+            label={vi ? "AI Manager · 24 giờ" : "AI Manager · 24 hours"}
+            reliability={managerReliability24h}
+            vi={vi}
+          />
         </div>
       </div>
 
@@ -498,6 +514,32 @@ function OperatingStatus({
         )}
       </div>
     </section>
+  );
+}
+
+function ReliabilityLine({
+  label,
+  reliability,
+  vi,
+}: {
+  label: string;
+  reliability: AiOperatingState["workerReliability24h"];
+  vi: boolean;
+}) {
+  const detail =
+    reliability.successRatePct == null
+      ? vi
+        ? "chưa có lần chạy hoàn tất"
+        : "no completed runs yet"
+      : vi
+        ? `${reliability.successRatePct}% thành công · ${reliability.completedRuns} lần hoàn tất · ${reliability.failedRuns} lỗi`
+        : `${reliability.successRatePct}% successful · ${reliability.completedRuns} completed · ${reliability.failedRuns} failed`;
+  return (
+    <p className="mt-1 text-[11px] text-nq-muted">
+      <span className="font-medium text-nq-foreground/80">{label}</span>
+      {" · "}
+      {detail}
+    </p>
   );
 }
 
