@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { getAllApprovals } from "@/shared/ai/approvalRequests";
+import { getExecutionJobs } from "@/shared/ai/executionQueue";
 import { ApprovalsDashboard } from "@/components/dashboard/ApprovalsDashboard";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -18,15 +19,18 @@ export default async function ApprovalsPage({ params }: Props) {
   if (!ctx) redirect("/register");
   if (!isOwnerOrAdmin(ctx.role)) redirect(`/dashboard/${encodeURIComponent(slug)}`);
 
-  const approvals = await getAllApprovals(ctx.salon.id);
+  const [approvals, executionJobs] = await Promise.all([
+    getAllApprovals(ctx.salon.id),
+    getExecutionJobs(ctx.salon.id, 100),
+  ]);
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://nailiq.ca";
 
   return (
     <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
       <ApprovalsDashboard
-        slug={slug}
         approvals={approvals}
+        executionJobs={executionJobs}
         appUrl={appUrl}
       />
     </div>
