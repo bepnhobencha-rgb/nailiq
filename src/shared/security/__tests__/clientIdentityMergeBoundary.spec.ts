@@ -8,9 +8,9 @@ const read = (file: string) =>
 const migration = read(
   "supabase/migrations/20260728224432_add_reversible_salon_client_identity_merge.sql",
 );
-const action = read(
-  "src/shared/dashboard/clientIdentityReviewAction.ts",
-);
+const action = read("src/shared/dashboard/clientIdentityReviewAction.ts");
+const reports = read("src/shared/dashboard/loadSalonReportsAction.ts");
+const ownerHome = read("src/shared/dashboard/loadOwnerHomeDashboardAction.ts");
 
 describe("salon client identity merge boundary", () => {
   it("keeps global profiles intact and scopes every booking change to a salon", () => {
@@ -72,5 +72,14 @@ describe("salon client identity merge boundary", () => {
     expect(migration).not.toMatch(
       /ON public\.salon_client_identity_merge_events\s+FOR (UPDATE|DELETE)/i,
     );
+  });
+
+  it("keeps owner analytics on the reviewed canonical identity", () => {
+    for (const source of [reports, ownerHome]) {
+      expect(source).toContain("client_profile_id");
+      expect(source).toContain("customerIdentityKey");
+    }
+    expect(reports).toContain("clientIdentities");
+    expect(ownerHome).toContain("priorClientSet");
   });
 });

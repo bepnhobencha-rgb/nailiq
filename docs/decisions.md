@@ -5,6 +5,29 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Analytics follow reviewed customer identity
+
+**Decision.**
+- Owner customer counts and staff repeat-client metrics use the booking's
+  canonical `client_profile_id`, with normalized phone only as a fallback for
+  legacy bookings without a finalized profile.
+- AI outcome tracking resolves a historical action phone through the salon's
+  active identity alias before looking for a return booking.
+- Alias lookup failures stop outcome processing instead of silently recording
+  a false non-conversion.
+
+**Why.** Reversible identity review deliberately preserves the phone submitted
+with each booking while assigning the booking to one canonical profile. Phone-
+grouped analytics would therefore split a reviewed customer back into multiple
+people and teach the AI from incorrect return behavior.
+
+**Safety.** This is read-only analytics behavior. It does not merge profiles,
+rewrite bookings, send messages, change prices, or create financial effects.
+Revoking a merge restores the alias profile on affected bookings, so subsequent
+analytics naturally return to separate identities.
+
+---
+
 ## 2026-07-28 — Manager-owned agents must fail visibly
 
 **Decision.** Every top-level agent invoked by the AI Manager cron must rethrow
