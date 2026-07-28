@@ -39,6 +39,12 @@ function fingerprint(
   route: string,
   message: string,
 ): string {
+  // React's production invariant number is the only stable diagnosis carried
+  // by a minified error. Keep it outside the variable-number normalization so
+  // #310 (hook ordering) can never be grouped with #418 (hydration) merely
+  // because both happened on the same route.
+  const reactInvariant =
+    message.match(/\bminified react error #(\d{1,6})\b/i)?.[1] ?? "";
   const norm = message
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "<uuid>")
     .replace(/0x[0-9a-f]+/gi, "<hex>")
@@ -47,7 +53,7 @@ function fingerprint(
     .slice(0, 300);
   const routeKey = route.trim().slice(0, 300);
   return createHash("sha1")
-    .update(`${level}|${surface}|${routeKey}|${norm}`)
+    .update(`${level}|${surface}|${routeKey}|react:${reactInvariant}|${norm}`)
     .digest("hex")
     .slice(0, 16);
 }
