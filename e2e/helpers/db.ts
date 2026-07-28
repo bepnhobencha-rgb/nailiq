@@ -566,7 +566,7 @@ export async function recordTestCampaignDispatchPreflight(input: {
     (exclusion ?? "eligible");
   const fingerprint = createHash("sha256").update(canonical).digest("hex");
   const { data, error } = await supabase.rpc(
-    "record_ai_campaign_dispatch_preflight" as never,
+    "record_ai_campaign_dispatch_preflight_fresh" as never,
     {
       p_job_id: input.jobId,
       p_salon_id: input.salonId,
@@ -598,7 +598,6 @@ export async function recordTestCampaignDispatchPreflight(input: {
           exclusion,
         },
       ],
-      p_now: now,
     } as never,
   );
   if (error) throw new Error(error.message);
@@ -607,6 +606,7 @@ export async function recordTestCampaignDispatchPreflight(input: {
     preflight_id: string | null;
     preflight_status: string | null;
     preflight_fingerprint: string | null;
+    valid_until: string | null;
   };
 }
 

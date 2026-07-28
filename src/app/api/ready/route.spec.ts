@@ -45,12 +45,12 @@ describe("production readiness route", () => {
       checks: {
         database_schema: {
           status: "ok",
-          capability: "record_ai_campaign_dispatch_preflight_v1",
+          capability: "record_ai_campaign_dispatch_preflight_fresh_v1",
         },
       },
     });
     expect(rpc).toHaveBeenCalledWith(
-      "record_ai_campaign_dispatch_preflight",
+      "record_ai_campaign_dispatch_preflight_fresh",
       expect.objectContaining({
         p_job_id: "00000000-0000-0000-0000-000000000001",
         p_salon_id: "00000000-0000-0000-0000-000000000002",

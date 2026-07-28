@@ -7,7 +7,7 @@ const PROBE_SALON_ID = "00000000-0000-0000-0000-000000000002";
 const EXPECTED_RESULT = "job_not_preflightable";
 
 export const REQUIRED_SCHEMA_CAPABILITY =
-  "record_ai_campaign_dispatch_preflight_v1";
+  "record_ai_campaign_dispatch_preflight_fresh_v1";
 
 export type ProductionReadiness =
   | { ready: true }
@@ -35,7 +35,7 @@ export async function probeProductionReadiness(
     const db = createServiceRoleClient();
     const query = db
       .rpc(
-        "record_ai_campaign_dispatch_preflight" as never,
+        "record_ai_campaign_dispatch_preflight_fresh" as never,
         {
           p_job_id: PROBE_JOB_ID,
           p_salon_id: PROBE_SALON_ID,
@@ -60,7 +60,6 @@ export async function probeProductionReadiness(
             cost_cap_usd_cents: 500,
           },
           p_decisions: [],
-          p_now: new Date().toISOString(),
         } as never,
       )
       .abortSignal(AbortSignal.timeout(timeoutMs));
