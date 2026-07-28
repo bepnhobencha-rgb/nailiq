@@ -350,7 +350,7 @@ function OperatingStatus({
   nowIso: string;
 }) {
   const vi = language === "vi";
-  const { health, worker } = state;
+  const { health, worker, managerWorker } = state;
   const workerCopy = {
     healthy: vi ? "Worker vừa chạy thành công" : "Worker recently succeeded",
     running: vi ? "Worker đang chạy" : "Worker is running",
@@ -364,6 +364,24 @@ function OperatingStatus({
   }[worker.status];
   const workerObservedAt = worker.lastStartedAt
     ? relativeTime(worker.lastStartedAt, nowIso, language)
+    : null;
+  const managerCopy = {
+    healthy: vi
+      ? "AI Manager vừa điều phối thành công"
+      : "AI Manager recently completed",
+    running: vi ? "AI Manager đang điều phối" : "AI Manager is running",
+    failed: vi
+      ? "Lần điều phối AI Manager gần nhất bị lỗi"
+      : "Latest AI Manager run failed",
+    stale: vi
+      ? "AI Manager không chạy hơn 2 giờ"
+      : "AI Manager has not run for over 2 hours",
+    unknown: vi
+      ? "Chưa ghi nhận heartbeat của AI Manager"
+      : "No AI Manager heartbeat has been recorded",
+  }[managerWorker.status];
+  const managerObservedAt = managerWorker.lastStartedAt
+    ? relativeTime(managerWorker.lastStartedAt, nowIso, language)
     : null;
   const copy = {
     healthy: {
@@ -388,7 +406,7 @@ function OperatingStatus({
       title: vi ? "Có công việc AI cần kiểm tra" : "AI work needs review",
       detail: vi
         ? `${health.failed} job lỗi · ${health.stalled} lease quá hạn${health.workerIssue ? " · scheduler cần kiểm tra" : ""}. Hệ thống không che giấu lỗi hoặc tự coi là thành công.`
-        : `${health.failed} failed jobs · ${health.stalled} expired leases${health.workerIssue ? " · scheduler needs review" : ""}. Failures are never hidden or reported as success.`,
+        : `${health.failed} failed jobs · ${health.stalled} expired leases${health.workerIssue ? " · schedulers need review" : ""}. Failures are never hidden or reported as success.`,
     },
   }[health.tone];
   const tone =
@@ -427,12 +445,29 @@ function OperatingStatus({
           </p>
           <p
             className={`mt-1 text-[11px] font-medium ${
-              health.workerIssue ? "text-nq-error" : "text-nq-muted"
+              worker.status === "failed" ||
+              worker.status === "stale" ||
+              worker.status === "unknown"
+                ? "text-nq-error"
+                : "text-nq-muted"
             }`}
           >
             {workerCopy}
             {workerObservedAt ? ` · ${workerObservedAt}` : ""}
             {worker.lastError ? ` · ${worker.lastError}` : ""}
+          </p>
+          <p
+            className={`mt-1 text-[11px] font-medium ${
+              managerWorker.status === "failed" ||
+              managerWorker.status === "stale" ||
+              managerWorker.status === "unknown"
+                ? "text-nq-error"
+                : "text-nq-muted"
+            }`}
+          >
+            {managerCopy}
+            {managerObservedAt ? ` · ${managerObservedAt}` : ""}
+            {managerWorker.lastError ? ` · ${managerWorker.lastError}` : ""}
           </p>
         </div>
       </div>

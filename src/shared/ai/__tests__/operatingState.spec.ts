@@ -76,6 +76,24 @@ describe("AI operating state", () => {
       workerIssue: true,
       needsAttention: 1,
     });
+
+    expect(
+      deriveAiOperatingHealth(
+        {
+          queued: 0,
+          waitingInput: 0,
+          running: 0,
+          failed: 0,
+          stalled: 0,
+        },
+        { ...failedWorker, status: "healthy", lastError: null },
+        failedWorker,
+      ),
+    ).toMatchObject({
+      tone: "issue",
+      workerIssue: true,
+      needsAttention: 1,
+    });
   });
 
   it("derives worker freshness from the persisted scheduler heartbeat", () => {
@@ -105,6 +123,28 @@ describe("AI operating state", () => {
       ).status,
     ).toBe("stale");
     expect(deriveExecutionWorkerHealth(null, NOW).status).toBe("unknown");
+    expect(
+      deriveExecutionWorkerHealth(
+        {
+          ...heartbeat,
+          worker_name: "ai_manager",
+          started_at: "2026-07-27T16:01:00.000Z",
+        },
+        NOW,
+        2 * 60 * 60_000,
+      ).status,
+    ).toBe("healthy");
+    expect(
+      deriveExecutionWorkerHealth(
+        {
+          ...heartbeat,
+          worker_name: "ai_manager",
+          started_at: "2026-07-27T15:59:59.000Z",
+        },
+        NOW,
+        2 * 60 * 60_000,
+      ).status,
+    ).toBe("stale");
   });
 
   it("distinguishes owner input, active work, and an idle healthy queue", () => {

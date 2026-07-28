@@ -5,6 +5,8 @@
  * them hourly is cheap.
  */
 import { NextResponse } from "next/server";
+import { recordAiWorkerHeartbeat } from "@/shared/ai/executionHeartbeat";
+import { summarizeManagerRun } from "@/shared/ai/managerRunSummary";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { salonNowMinutes } from "@/shared/lib/salonTime";
 
@@ -13,9 +15,32 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 min
 
 export async function GET(req: Request): Promise<NextResponse> {
+  const expectedSecret = process.env.CRON_SECRET;
+  if (!expectedSecret) {
+    return NextResponse.json(
+      { ok: false, error: "cron_secret_not_configured" },
+      { status: 503 },
+    );
+  }
   const secret = req.headers.get("authorization")?.replace("Bearer ", "");
-  if (secret !== process.env.CRON_SECRET) {
+  if (secret !== expectedSecret) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const runId = crypto.randomUUID();
+  try {
+    await recordAiWorkerHeartbeat({
+      workerName: "ai_manager",
+      runId,
+      phase: "started",
+      now: new Date(),
+    });
+  } catch (heartbeatError) {
+    console.error("[manager] heartbeat start", heartbeatError);
+    return NextResponse.json(
+      { ok: false, error: "manager_heartbeat_unavailable" },
+      { status: 500 },
+    );
   }
 
   const supabase = createServiceRoleClient();
@@ -28,10 +53,43 @@ export async function GET(req: Request): Promise<NextResponse> {
 
   if (error) {
     console.error("[manager] load salons", error);
+    try {
+      await recordAiWorkerHeartbeat({
+        workerName: "ai_manager",
+        runId,
+        phase: "failed",
+        now: new Date(),
+        error: "salon_load_failed",
+      });
+    } catch (heartbeatError) {
+      console.error("[manager] heartbeat failure", heartbeatError);
+    }
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 
-  if (!salons?.length) return NextResponse.json({ ok: true, salons: 0 });
+  if (!salons?.length) {
+    try {
+      await recordAiWorkerHeartbeat({
+        workerName: "ai_manager",
+        runId,
+        phase: "succeeded",
+        now: new Date(),
+        summary: {
+          salons: 0,
+          agent_runs: 0,
+          agent_failures: 0,
+          failed_agents: [],
+        },
+      });
+    } catch (heartbeatError) {
+      console.error("[manager] heartbeat completion", heartbeatError);
+      return NextResponse.json(
+        { ok: false, error: "manager_heartbeat_unavailable" },
+        { status: 500 },
+      );
+    }
+    return NextResponse.json({ ok: true, salons: 0 });
+  }
 
   const results: Record<string, unknown>[] = [];
 
@@ -51,7 +109,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         entry.outcome_tracker = "ok";
       } catch (e) {
         console.error("[manager] outcome_tracker", salon.slug, e);
-        entry.outcome_tracker = String(e);
+        entry.outcome_tracker = "failed";
       }
 
       // Rebuild SIP from live data if stale (>7 days or never built).
@@ -62,7 +120,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         entry.sip = "ok";
       } catch (e) {
         console.error("[manager] sip rebuild", salon.slug, e);
-        entry.sip = String(e);
+        entry.sip = "failed";
       }
 
       // Cancellation Radar — daily check; spike alert any day, full report on Monday
@@ -72,7 +130,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         entry.cancellation_radar = "ok";
       } catch (e) {
         console.error("[manager] cancellation_radar", salon.slug, e);
-        entry.cancellation_radar = String(e);
+        entry.cancellation_radar = "failed";
       }
 
       // Revenue Report + Staff Performance — Monday only, weekly dedup
@@ -87,7 +145,7 @@ export async function GET(req: Request): Promise<NextResponse> {
           entry.revenue_report = "ok";
         } catch (e) {
           console.error("[manager] revenue_report", salon.slug, e);
-          entry.revenue_report = String(e);
+          entry.revenue_report = "failed";
         }
 
         try {
@@ -96,7 +154,7 @@ export async function GET(req: Request): Promise<NextResponse> {
           entry.staff_performance = "ok";
         } catch (e) {
           console.error("[manager] staff_performance", salon.slug, e);
-          entry.staff_performance = String(e);
+          entry.staff_performance = "failed";
         }
       }
     }
@@ -111,7 +169,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         entry.noshow = "ok";
       } catch (e) {
         console.error("[manager] noshow backfill", salon.slug, e);
-        entry.noshow = String(e);
+        entry.noshow = "failed";
       }
     }
 
@@ -123,7 +181,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         entry.watchdog = "ok";
       } catch (e) {
         console.error("[manager] watchdog", salon.slug, e);
-        entry.watchdog = String(e);
+        entry.watchdog = "failed";
       }
     }
 
@@ -135,7 +193,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         entry.winback = "ok";
       } catch (e) {
         console.error("[manager] winback", salon.slug, e);
-        entry.winback = String(e);
+        entry.winback = "failed";
       }
     }
 
@@ -147,7 +205,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         entry.rebook = "ok";
       } catch (e) {
         console.error("[manager] rebook", salon.slug, e);
-        entry.rebook = String(e);
+        entry.rebook = "failed";
       }
     }
 
@@ -161,7 +219,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         entry.daily_report = "ok";
       } catch (e) {
         console.error("[manager] daily_report", salon.slug, e);
-        entry.daily_report = String(e);
+        entry.daily_report = "failed";
       }
     }
 
@@ -173,7 +231,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         entry.digest = "ok";
       } catch (e) {
         console.error("[manager] digest", salon.slug, e);
-        entry.digest = String(e);
+        entry.digest = "failed";
       }
     }
 
@@ -187,7 +245,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         entry.social_content = "ok";
       } catch (e) {
         console.error("[manager] social_content", salon.slug, e);
-        entry.social_content = String(e);
+        entry.social_content = "failed";
       }
     }
 
@@ -199,7 +257,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         entry.vip_care = "ok";
       } catch (e) {
         console.error("[manager] vip_care", salon.slug, e);
-        entry.vip_care = String(e);
+        entry.vip_care = "failed";
       }
     }
 
@@ -216,7 +274,7 @@ export async function GET(req: Request): Promise<NextResponse> {
           entry.strategist = "ok";
         } catch (e) {
           console.error("[manager] strategist", salon.slug, e);
-          entry.strategist = String(e);
+          entry.strategist = "failed";
         }
       }
     }
@@ -231,7 +289,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         entry.review_responder = "ok";
       } catch (e) {
         console.error("[manager] review_responder", salon.slug, e);
-        entry.review_responder = String(e);
+        entry.review_responder = "failed";
       }
     }
 
@@ -243,7 +301,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         entry.yelp_responder = "ok";
       } catch (e) {
         console.error("[manager] yelp_responder", salon.slug, e);
-        entry.yelp_responder = String(e);
+        entry.yelp_responder = "failed";
       }
     }
 
@@ -255,7 +313,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         entry.gbp_post = "ok";
       } catch (e) {
         console.error("[manager] gbp_post", salon.slug, e);
-        entry.gbp_post = String(e);
+        entry.gbp_post = "failed";
       }
     }
 
@@ -270,12 +328,39 @@ export async function GET(req: Request): Promise<NextResponse> {
         entry.first_visit = "ok";
       } catch (e) {
         console.error("[manager] first_visit", salon.slug, e);
-        entry.first_visit = String(e);
+        entry.first_visit = "failed";
       }
     }
 
     results.push(entry);
   }
 
-  return NextResponse.json({ ok: true, processed: results.length, results });
+  const summary = summarizeManagerRun(results);
+  const hasFailures = summary.agent_failures > 0;
+  try {
+    await recordAiWorkerHeartbeat({
+      workerName: "ai_manager",
+      runId,
+      phase: hasFailures ? "failed" : "succeeded",
+      now: new Date(),
+      summary,
+      error: hasFailures ? "manager_agent_failures" : null,
+    });
+  } catch (heartbeatError) {
+    console.error("[manager] heartbeat completion", heartbeatError);
+    return NextResponse.json(
+      { ok: false, error: "manager_heartbeat_unavailable" },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json(
+    {
+      ok: !hasFailures,
+      processed: results.length,
+      summary,
+      results,
+    },
+    { status: hasFailures ? 500 : 200 },
+  );
 }

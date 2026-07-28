@@ -19,7 +19,7 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260727220000. Refresh these with each schema-changing forward
+ * through 20260728040000. Refresh these with each schema-changing forward
  * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
@@ -39,7 +39,7 @@ const PRODUCTION = {
    * Verified on production: 253 total = 188 extension-owned + 65 app-owned.
    * The query below excludes anything a `pg_depend` extension edge points at.
    */
-  functions: 79,
+  functions: 80,
   triggers: 25,
   indexes: 301,
 } as const;
@@ -76,6 +76,7 @@ const CRITICAL_FUNCTIONS = [
   "finish_ai_execution_job",
   "recover_stale_ai_execution_jobs",
   "record_ai_execution_worker_heartbeat",
+  "record_ai_worker_heartbeat",
 ] as const;
 
 const dbUrl = process.env.DB_URL;

@@ -3,7 +3,7 @@ import "server-only";
 import type { MinhLesson } from "@/shared/ai/lessons";
 import { getLessons } from "@/shared/ai/lessons";
 import {
-  getExecutionWorkerHeartbeat,
+  getAiWorkerHeartbeats,
   type ExecutionWorkerHeartbeatRow,
 } from "@/shared/ai/executionHeartbeat";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -52,6 +52,7 @@ export type LearnedAiControl =
 export type AiOperatingState = {
   health: AiOperatingHealth;
   worker: AiExecutionWorkerHealth;
+  managerWorker: AiExecutionWorkerHealth;
   learnedControls: LearnedAiControl[];
   observedAt: string;
 };
@@ -59,6 +60,13 @@ export type AiOperatingState = {
 export function deriveAiOperatingHealth(
   counts: AiQueueCounts,
   worker: AiExecutionWorkerHealth = {
+    status: "healthy",
+    lastStartedAt: null,
+    lastCompletedAt: null,
+    lastSucceededAt: null,
+    lastError: null,
+  },
+  managerWorker: AiExecutionWorkerHealth = {
     status: "healthy",
     lastStartedAt: null,
     lastCompletedAt: null,
@@ -74,10 +82,12 @@ export function deriveAiOperatingHealth(
     stalled: Math.max(0, counts.stalled),
   };
   const activeWork = normalized.queued + normalized.running;
-  const workerIssue =
-    worker.status === "failed" ||
-    worker.status === "stale" ||
-    worker.status === "unknown";
+  const workerIssue = [worker, managerWorker].some(
+    (candidate) =>
+      candidate.status === "failed" ||
+      candidate.status === "stale" ||
+      candidate.status === "unknown",
+  );
   const needsAttention =
     normalized.waitingInput +
     normalized.failed +
@@ -88,7 +98,9 @@ export function deriveAiOperatingHealth(
       ? "issue"
       : normalized.waitingInput > 0
         ? "attention"
-        : activeWork > 0 || worker.status === "running"
+        : activeWork > 0 ||
+            worker.status === "running" ||
+            managerWorker.status === "running"
           ? "active"
           : "healthy";
 
@@ -98,6 +110,7 @@ export function deriveAiOperatingHealth(
 export function deriveExecutionWorkerHealth(
   heartbeat: ExecutionWorkerHeartbeatRow | null,
   now = new Date(),
+  staleAfterMs = 15 * 60_000,
 ): AiExecutionWorkerHealth {
   const base = {
     lastStartedAt: heartbeat?.started_at ?? null,
@@ -111,7 +124,7 @@ export function deriveExecutionWorkerHealth(
   const startedAtMs = Date.parse(heartbeat.started_at);
   if (
     !Number.isFinite(startedAtMs) ||
-    now.getTime() - startedAtMs > 15 * 60_000
+    now.getTime() - startedAtMs > staleAfterMs
   ) {
     return { ...base, status: "stale" };
   }
@@ -225,7 +238,7 @@ export async function loadAiOperatingState(
     stalled,
     policy,
     segment,
-    heartbeat,
+    heartbeats,
   ] =
     await Promise.all([
       countJobs(salonId, "queued"),
@@ -235,9 +248,17 @@ export async function loadAiOperatingState(
       countJobs(salonId, "running", stalledBefore),
       getLessons(salonId, "policy"),
       getLessons(salonId, "segment"),
-      getExecutionWorkerHeartbeat(),
+      getAiWorkerHeartbeats(),
     ]);
-  const worker = deriveExecutionWorkerHealth(heartbeat, now);
+  const worker = deriveExecutionWorkerHealth(
+    heartbeats.find((row) => row.worker_name === "ai_execution") ?? null,
+    now,
+  );
+  const managerWorker = deriveExecutionWorkerHealth(
+    heartbeats.find((row) => row.worker_name === "ai_manager") ?? null,
+    now,
+    2 * 60 * 60_000,
+  );
 
   return {
     health: deriveAiOperatingHealth({
@@ -246,8 +267,9 @@ export async function loadAiOperatingState(
       running,
       failed,
       stalled,
-    }, worker),
+    }, worker, managerWorker),
     worker,
+    managerWorker,
     learnedControls: deriveLearnedAiControls(
       salonId,
       [...policy, ...segment],

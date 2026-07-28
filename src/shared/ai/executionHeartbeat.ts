@@ -3,9 +3,10 @@ import "server-only";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 export type ExecutionHeartbeatPhase = "started" | "succeeded" | "failed";
+export type AiWorkerName = "ai_execution" | "ai_manager";
 
 export type ExecutionWorkerHeartbeatRow = {
-  worker_name: "ai_execution";
+  worker_name: AiWorkerName;
   run_id: string | null;
   status: "unknown" | "running" | "succeeded" | "failed";
   started_at: string | null;
@@ -23,10 +24,22 @@ export async function recordExecutionWorkerHeartbeat(input: {
   summary?: Record<string, unknown>;
   error?: string | null;
 }): Promise<void> {
+  return recordAiWorkerHeartbeat({ workerName: "ai_execution", ...input });
+}
+
+export async function recordAiWorkerHeartbeat(input: {
+  workerName: AiWorkerName;
+  runId: string;
+  phase: ExecutionHeartbeatPhase;
+  now: Date;
+  summary?: Record<string, unknown>;
+  error?: string | null;
+}): Promise<void> {
   const db = createServiceRoleClient();
   const { data, error } = await db.rpc(
-    "record_ai_execution_worker_heartbeat" as never,
+    "record_ai_worker_heartbeat" as never,
     {
+      p_worker_name: input.workerName,
       p_run_id: input.runId,
       p_phase: input.phase,
       p_now: input.now.toISOString(),
@@ -41,17 +54,23 @@ export async function recordExecutionWorkerHeartbeat(input: {
 export async function getExecutionWorkerHeartbeat(): Promise<
   ExecutionWorkerHeartbeatRow | null
 > {
+  const rows = await getAiWorkerHeartbeats();
+  return rows.find((row) => row.worker_name === "ai_execution") ?? null;
+}
+
+export async function getAiWorkerHeartbeats(): Promise<
+  ExecutionWorkerHeartbeatRow[]
+> {
   const db = createServiceRoleClient();
   const { data, error } = await db
     .from("ai_execution_worker_state" as never)
     .select(
       "worker_name, run_id, status, started_at, completed_at, succeeded_at, last_error, summary, updated_at",
     )
-    .eq("worker_name" as never, "ai_execution")
-    .maybeSingle();
+    .in("worker_name" as never, ["ai_execution", "ai_manager"]);
   if (error) {
-    console.error("[getExecutionWorkerHeartbeat]", error);
-    return null;
+    console.error("[getAiWorkerHeartbeats]", error);
+    return [];
   }
-  return (data as ExecutionWorkerHeartbeatRow | null) ?? null;
+  return (data as ExecutionWorkerHeartbeatRow[] | null) ?? [];
 }

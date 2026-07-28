@@ -5,6 +5,29 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — AI Manager orchestration is fail-honest
+
+**Status.** Implemented on `agent/ai-manager-heartbeat`.
+
+**Decision.**
+- The hourly AI Manager records a fenced start and terminal heartbeat before
+  and after orchestrating salon agents.
+- Missing cron configuration or unavailable heartbeat persistence stops work
+  before any agent runs.
+- Partial agent failures produce a failed manager heartbeat and a non-success
+  HTTP response instead of being hidden behind an overall success.
+- Persisted summaries contain counts and bounded `salon:agent` identities, not
+  raw exception bodies.
+- AI Control Center evaluates the execution worker on a 15-minute freshness
+  window and the hourly manager on a 2-hour freshness window.
+
+**Why.** A healthy execution queue does not prove that Radar, reports,
+win-back, SIP refresh, strategist, and the other scheduled agents are being
+orchestrated. The operating system needs separate evidence that both the action
+executor and the manager brain are alive.
+
+---
+
 ## 2026-07-28 — Outcome metrics use concluded measurement windows
 
 **Status.** Implemented on `agent/honest-outcome-measurement`.
