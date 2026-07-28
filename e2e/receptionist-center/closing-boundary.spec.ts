@@ -214,12 +214,10 @@ test("manual desk booking allows service to finish exactly at close and preserve
     clientName,
   );
   await page
-    .locator('select:has(option:text-is("— Select a service —"))')
+    .getByTestId("desk-service-select")
     .selectOption({ label: `${fixture.serviceName} · $35.00` });
   await page
-    .locator(
-      `select:has(option:text-is("${fixture.staffName}")):not([data-testid])`,
-    )
+    .getByTestId("desk-staff-select")
     .selectOption({ label: fixture.staffName });
 
   const sevenPm = page
@@ -279,12 +277,10 @@ test("Owner can explicitly approve a staff-consented after-hours booking", async
     clientName,
   );
   await page
-    .locator('select:has(option:text-is("— Select a service —"))')
+    .getByTestId("desk-service-select")
     .selectOption({ label: `${fixture.serviceName} · $35.00` });
   await page
-    .locator(
-      `select:has(option:text-is("${fixture.staffName}")):not([data-testid])`,
-    )
+    .getByTestId("desk-staff-select")
     .selectOption({ label: fixture.staffName });
 
   await expect(page.getByTestId("desk-after-hours-panel")).toBeVisible();
