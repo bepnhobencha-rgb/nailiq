@@ -5,6 +5,25 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Outcome metrics use concluded measurement windows
+
+**Status.** Implemented on `agent/honest-outcome-measurement`.
+
+**Decision.**
+- Customer return rates include only actions whose configured measurement
+  window has concluded.
+- Pending actions remain visible but are excluded from the rate denominator.
+- Overall and per-agent metrics expose measurement coverage.
+- Product copy calls the metric an observed return rate and explicitly avoids
+  claiming that AI caused a later booking.
+
+**Why.** Including pending actions understates results before clients have had
+time to respond. A booking after an AI action is also observational attribution,
+not proof of causation. NailIQ must communicate both limits instead of
+presenting false precision.
+
+---
+
 ## 2026-07-27 — An idle queue is healthy only when the worker is alive
 
 **Status.** Implemented on `agent/ai-execution-heartbeat`.

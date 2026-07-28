@@ -68,9 +68,9 @@ export function AiControlCenter({
   const vi = language === "vi";
   const pending = approvals.filter((item) => item.status === "pending");
   const recentActivity = activity.entries.slice(0, 6);
-  const effectiveness =
-    activity.totalSent > 0
-      ? Math.round((activity.converted / activity.totalSent) * 100)
+  const observedReturnRate =
+    activity.measured > 0
+      ? Math.round((activity.converted / activity.measured) * 100)
       : null;
 
   return (
@@ -103,7 +103,21 @@ export function AiControlCenter({
         <Metric label={vi ? "Cần bạn quyết định" : "Needs your decision"} value={pending.length} tone={pending.length > 0 ? "attention" : "default"} />
         <Metric label={vi ? "Hành động 30 ngày" : "30-day actions"} value={activity.entries.length} />
         <Metric label={vi ? "Khách quay lại" : "Customers returned"} value={activity.converted} tone="success" />
-        <Metric label={vi ? "Hiệu quả đo được" : "Measured effectiveness"} value={effectiveness == null ? "—" : `${effectiveness}%`} />
+        <Metric
+          label={vi ? "Tỷ lệ quay lại đã quan sát" : "Observed return rate"}
+          value={
+            observedReturnRate == null ? "—" : `${observedReturnRate}%`
+          }
+          detail={
+            activity.totalSent > 0
+              ? vi
+                ? `Đã đủ thời gian đo ${activity.measured}/${activity.totalSent} hành động (${activity.measurementCoveragePct}%). Không khẳng định quan hệ nhân quả.`
+                : `${activity.measured}/${activity.totalSent} actions have completed their measurement window (${activity.measurementCoveragePct}%). This does not claim causation.`
+              : vi
+                ? "Chưa có hành động khách hàng để đo."
+                : "No customer actions are available to measure yet."
+          }
+        />
       </section>
 
       <OperatingStatus
@@ -828,7 +842,17 @@ function Signal({
   );
 }
 
-function Metric({ label, value, tone = "default" }: { label: string; value: number | string; tone?: "default" | "attention" | "success" }) {
+function Metric({
+  label,
+  value,
+  tone = "default",
+  detail,
+}: {
+  label: string;
+  value: number | string;
+  tone?: "default" | "attention" | "success";
+  detail?: string;
+}) {
   const color = tone === "attention" ? "text-nq-error" : tone === "success" ? "text-nq-success" : "text-nq-foreground";
   const Icon = tone === "attention" ? Clock3 : tone === "success" ? CheckCircle2 : Bot;
   return (
@@ -838,6 +862,9 @@ function Metric({ label, value, tone = "default" }: { label: string; value: numb
         <Icon className={`h-4 w-4 ${color}`} aria-hidden />
       </div>
       <p className={`mt-2 text-2xl font-semibold tabular-nums ${color}`}>{value}</p>
+      {detail ? (
+        <p className="mt-1 text-[11px] leading-4 text-nq-muted">{detail}</p>
+      ) : null}
     </div>
   );
 }
