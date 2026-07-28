@@ -2,6 +2,20 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-07-28 (Canonical customer analytics)
+
+- **Truthful customer counts:** owner dashboard new/total customer metrics and
+  report repeat-client metrics now prefer canonical `client_profile_id` over
+  the preserved phone captured on each booking.
+- **AI outcome continuity:** Outcome Tracker follows active salon-local identity
+  aliases, so a return under the canonical profile is credited to the original
+  governed AI action.
+- **Legacy and failure behavior:** normalized phone remains a fallback for
+  bookings without a profile; failed identity resolution stops the tracker
+  rather than writing a false non-conversion.
+- **No production mutation:** the change is read-only and adds no migration,
+  messaging, booking, pricing, or payment authority.
+
 ## 2026-07-28 (Production readiness gate)
 
 - **Honest release health:** added `/api/ready` to prove database connectivity

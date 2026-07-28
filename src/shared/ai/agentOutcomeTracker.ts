@@ -35,10 +35,13 @@ function cleanPhone(value: unknown): string {
   return String(value ?? "").trim();
 }
 
+function phoneIdentity(value: unknown): string {
+  return cleanPhone(value).replace(/\D/g, "");
+}
+
 function chunks<T>(values: T[], size = 100): T[][] {
-  return Array.from(
-    { length: Math.ceil(values.length / size) },
-    (_, index) => values.slice(index * size, (index + 1) * size),
+  return Array.from({ length: Math.ceil(values.length / size) }, (_, index) =>
+    values.slice(index * size, (index + 1) * size),
   );
 }
 
@@ -56,10 +59,7 @@ async function loadHistoricalTargetPhones(
         !cleanPhone(action.payload?.phone) &&
         action.target_id,
     );
-  const winbackActions = [
-    ...byAgent("winback"),
-    ...byAgent("rebook"),
-  ];
+  const winbackActions = [...byAgent("winback"), ...byAgent("rebook")];
   const firstVisitActions = byAgent("first_visit");
   const vipActions = byAgent("vip_care");
 
@@ -76,10 +76,9 @@ async function loadHistoricalTargetPhones(
     );
     const data = results.flatMap((result) => result.data ?? []);
     const phones = new Map(
-      ((data ?? []) as Array<{ id: string; client_phone: string }>).map((row) => [
-        row.id,
-        cleanPhone(row.client_phone),
-      ]),
+      ((data ?? []) as Array<{ id: string; client_phone: string }>).map(
+        (row) => [row.id, cleanPhone(row.client_phone)],
+      ),
     );
     for (const action of winbackActions) {
       const phone = phones.get(action.target_id!);
@@ -102,10 +101,9 @@ async function loadHistoricalTargetPhones(
     );
     const data = results.flatMap((result) => result.data ?? []);
     const phones = new Map(
-      ((data ?? []) as Array<{ id: string; client_phone: string }>).map((row) => [
-        row.id,
-        cleanPhone(row.client_phone),
-      ]),
+      ((data ?? []) as Array<{ id: string; client_phone: string }>).map(
+        (row) => [row.id, cleanPhone(row.client_phone)],
+      ),
     );
     for (const action of firstVisitActions) {
       const phone = phones.get(action.target_id!);
@@ -139,6 +137,72 @@ async function loadHistoricalTargetPhones(
   return phoneByActionId;
 }
 
+/**
+ * Resolve an action's historical phone to the salon's current canonical
+ * profile. Identity review intentionally keeps the old phone in action logs,
+ * so conversion measurement must follow the active alias rather than split the
+ * same person into two outcomes.
+ */
+async function loadCanonicalProfilesByPhone(
+  salonId: string,
+  phones: string[],
+): Promise<Map<string, string>> {
+  const db = createServiceRoleClient();
+  const normalized = [
+    ...new Set(phones.map(phoneIdentity).filter((phone) => phone.length > 0)),
+  ];
+  const lookupPhones = [
+    ...new Set(
+      phones
+        .map(cleanPhone)
+        .filter((phone) => phone.length > 0)
+        .concat(normalized),
+    ),
+  ];
+  const profileByPhone = new Map<string, string>();
+  if (normalized.length === 0) return profileByPhone;
+
+  const [profileResults, aliasResults] = await Promise.all([
+    Promise.all(
+      chunks(lookupPhones).map((batch) =>
+        db.from("client_profiles").select("id, phone").in("phone", batch),
+      ),
+    ),
+    Promise.all(
+      chunks(lookupPhones).map((batch) =>
+        db
+          .from("salon_client_identity_aliases" as never)
+          .select("alias_phone, canonical_profile_id")
+          .eq("salon_id" as never, salonId)
+          .eq("active" as never, true)
+          .in("alias_phone" as never, batch),
+      ),
+    ),
+  ]);
+
+  for (const result of [...profileResults, ...aliasResults]) {
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  for (const row of profileResults.flatMap((result) => result.data ?? [])) {
+    const key = phoneIdentity(row.phone);
+    if (key) profileByPhone.set(key, String(row.id));
+  }
+  // An active salon alias always wins over the global profile owning that
+  // phone. The global row remains intact for other salons.
+  for (const row of aliasResults.flatMap(
+    (result) => result.data ?? [],
+  ) as Array<{
+    alias_phone: string;
+    canonical_profile_id: string;
+  }>) {
+    const key = phoneIdentity(row.alias_phone);
+    if (key) profileByPhone.set(key, row.canonical_profile_id);
+  }
+
+  return profileByPhone;
+}
+
 export async function runOutcomeTracker(salonId: string): Promise<void> {
   const db = createServiceRoleClient();
 
@@ -169,11 +233,21 @@ export async function runOutcomeTracker(salonId: string): Promise<void> {
     salonId,
     typedActions,
   );
+  const targetPhoneByActionId = new Map(
+    typedActions.map((action) => [
+      action.id,
+      cleanPhone(action.payload?.phone) ||
+        historicalPhones.get(action.id) ||
+        "",
+    ]),
+  );
+  const canonicalProfiles = await loadCanonicalProfilesByPhone(salonId, [
+    ...targetPhoneByActionId.values(),
+  ]);
   const now = new Date();
 
   for (const row of typedActions) {
-    const phone =
-      cleanPhone(row.payload?.phone) || historicalPhones.get(row.id) || "";
+    const phone = targetPhoneByActionId.get(row.id) ?? "";
     if (!phone) continue;
 
     const sentAt = new Date(row.created_at);
@@ -181,15 +255,18 @@ export async function runOutcomeTracker(salonId: string): Promise<void> {
     const deadline = new Date(sentAt.getTime() + windowDays * 86_400_000);
 
     // Check if client booked after the message was sent
-    const { data: booking } = await db
+    let bookingQuery = db
       .from("bookings")
       .select("id")
       .eq("salon_id", salonId)
-      .eq("client_phone", phone)
       .gte("created_at", sentAt.toISOString())
       .not("status", "in", '("cancelled","cancelled_before_window","no_show")')
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+    const canonicalProfileId = canonicalProfiles.get(phoneIdentity(phone));
+    bookingQuery = canonicalProfileId
+      ? bookingQuery.eq("client_profile_id", canonicalProfileId)
+      : bookingQuery.eq("client_phone", phone);
+    const { data: booking } = await bookingQuery.maybeSingle();
 
     if (booking) {
       await db
@@ -229,7 +306,9 @@ const AGENT_LABELS: Record<string, string> = {
   vip_care: "VIP Care",
 };
 
-export async function getOutcomeStats(salonId: string): Promise<OutcomeStats[]> {
+export async function getOutcomeStats(
+  salonId: string,
+): Promise<OutcomeStats[]> {
   const db = createServiceRoleClient();
   const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
 
