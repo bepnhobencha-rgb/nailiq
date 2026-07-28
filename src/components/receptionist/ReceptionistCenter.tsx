@@ -1268,15 +1268,33 @@ function ReceptionistCenterInner({
     // dateOffset (which only spans yesterday/today/tomorrow, so a date-picked
     // day or any offset drift would reload the wrong day, snapping to today).
     const ymd = viewedYmdRef.current;
-    const res = await loadReceptionistCenterDataAction(slug, ymd);
-    if (res.ok) {
-      setData(res.data);
-      markSynced();
-    } else {
-      setShakeMessage(loadErrorCopy(messages.receptionist, res.error));
+    try {
+      const res = await loadReceptionistCenterDataAction(slug, ymd);
+      if (res.ok) {
+        setData(res.data);
+        markSynced();
+      } else {
+        setShakeMessage(loadErrorCopy(messages.receptionist, res.error));
+      }
+      // Keep Week/Month views in sync with this mutation (QA #5).
+      setCalendarRefreshNonce((n) => n + 1);
+    } catch (error) {
+      // Mobile Safari reports a transient Server Action transport failure as
+      // the opaque TypeError "Load failed". Realtime can invoke this callback
+      // several times in one tick, so an uncaught rejection creates duplicate
+      // alerts and can destabilize the board. Preserve the last good snapshot.
+      setConnectionState("offline");
+      setShakeMessage(
+        loadErrorCopy(messages.receptionist, "server_error"),
+      );
+      Sentry.captureException(error, {
+        tags: {
+          "nailiq.surface": "receptionist_center",
+          "nailiq.event": "reload_current_day_failed",
+        },
+        extra: { slug, dateYmd: ymd },
+      });
     }
-    // Keep Week/Month views in sync with this mutation (QA #5).
-    setCalendarRefreshNonce((n) => n + 1);
   }, [slug, messages.receptionist, markSynced]);
 
   /**
@@ -1505,7 +1523,19 @@ function ReceptionistCenterInner({
         authSubscription.unsubscribe();
         void supabase.removeChannel(ch);
       };
-    })();
+    })().catch((error) => {
+      if (!cancelled) {
+        setConnectionState("offline");
+        Sentry.captureException(error, {
+          tags: {
+            "nailiq.surface": "receptionist_center",
+            "nailiq.event": "realtime_setup_failed",
+          },
+          extra: { salonId: data.salon.id },
+        });
+      }
+      return undefined;
+    });
 
     return () => {
       cancelled = true;
