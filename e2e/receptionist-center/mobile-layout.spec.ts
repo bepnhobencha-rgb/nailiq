@@ -28,6 +28,24 @@ test.afterAll(async ({}, testInfo) => {
  * Real iPad Safari behavior remains manual (see deliverables).
  */
 test.describe("Mobile layout", () => {
+  async function expectPrimaryControlSize(
+    locator: import("@playwright/test").Locator,
+  ) {
+    await expect(locator).toBeVisible();
+    const metrics = await locator.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return {
+        width: box.width,
+        height: box.height,
+        fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
+      };
+    });
+
+    expect(metrics.width).toBeGreaterThanOrEqual(44);
+    expect(metrics.height).toBeGreaterThanOrEqual(44);
+    expect(metrics.fontSize).toBeGreaterThanOrEqual(16);
+  }
+
   test("daily brief keeps the schedule primary until details are requested", async ({
     page,
   }) => {
@@ -61,5 +79,29 @@ test.describe("Mobile layout", () => {
     if (!formBox || !gridBox) return;
 
     expect(formBox.y).toBeLessThan(gridBox.y);
+  });
+
+  test("primary Front Desk actions meet 44px touch and 16px text contracts", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await gotoReceptionistCenter(page, fx.slug);
+
+    await expectPrimaryControlSize(page.getByTestId("header-add-walkin"));
+    await expectPrimaryControlSize(page.getByTestId("walkin-submit"));
+
+    // Classic mobile previously hid this CTA below the `sm` breakpoint,
+    // leaving phone users no direct way to create a scheduled appointment.
+    const newAppointment = page.getByTestId("header-add-appointment");
+    await expectPrimaryControlSize(newAppointment);
+    await newAppointment.click();
+
+    const phoneInput = page.locator('input[inputmode="tel"]');
+    await expectPrimaryControlSize(phoneInput);
+    await expectPrimaryControlSize(
+      page.getByRole("button", {
+        name: /create appointment|tạo lịch hẹn/i,
+      }),
+    );
   });
 });

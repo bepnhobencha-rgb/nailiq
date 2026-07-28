@@ -841,8 +841,8 @@ export default function DeskBookingForm({
   ]);
 
   const inputCls =
-    "w-full rounded-md border border-nq-muted/30 bg-nq-bg px-3 py-2 text-sm text-nq-foreground outline-none focus:border-nq-primary/60";
-  const labelCls = "mb-1 block text-xs font-medium text-nq-muted";
+    "min-h-11 w-full rounded-md border border-nq-muted/30 bg-nq-bg px-3 py-2 text-base text-nq-foreground outline-none focus:border-nq-primary/60";
+  const labelCls = "mb-1 block text-base font-medium text-nq-muted";
 
   if (!mounted) return null;
   return createPortal(
@@ -950,7 +950,7 @@ export default function DeskBookingForm({
                             e.preventDefault();
                             pickClient(h);
                           }}
-                          className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-nq-primary/5"
+                          className="flex min-h-11 w-full items-center justify-between gap-2 px-3 py-2 text-left text-base hover:bg-nq-primary/5"
                         >
                           <span className="min-w-0 flex-1 truncate font-medium text-nq-text">
                             {h.name || tx.noName}
@@ -1008,7 +1008,7 @@ export default function DeskBookingForm({
                         key={a.id}
                         type="button"
                         onClick={() => toggleAddon(a.id)}
-                        className={`rounded-full border px-2.5 py-1 text-xs transition ${
+                        className={`min-h-11 rounded-full border px-3 py-2 text-sm transition ${
                           on
                             ? "border-nq-primary bg-nq-primary text-white"
                             : "border-nq-muted/30 bg-nq-bg text-nq-foreground hover:border-nq-primary/50"
@@ -1089,7 +1089,7 @@ export default function DeskBookingForm({
                             setSlotLabel(s.label);
                             desiredSlotRef.current = s.label;
                           }}
-                          className={`rounded px-1 py-1.5 text-xs transition ${
+                          className={`min-h-11 rounded px-2 py-2 text-base transition ${
                             slotLabel === s.label
                               ? "bg-nq-primary text-white"
                               : "bg-nq-surface text-nq-foreground hover:bg-nq-primary/15"
@@ -1208,7 +1208,7 @@ export default function DeskBookingForm({
                       type="button"
                       data-testid="desk-bed-auto"
                       onClick={() => setResourceId(null)}
-                      className={`rounded-full border px-2.5 py-1 text-xs transition ${
+                      className={`min-h-11 rounded-full border px-3 py-2 text-sm transition ${
                         resourceId === null
                           ? "border-nq-primary bg-nq-primary text-white"
                           : "border-nq-muted/40 bg-nq-surface text-nq-foreground hover:border-nq-primary/40"
@@ -1225,7 +1225,7 @@ export default function DeskBookingForm({
                         onClick={() => {
                           if (r.isAvailable) setResourceId(r.id);
                         }}
-                        className={`rounded-full border px-2.5 py-1 text-xs transition ${
+                        className={`min-h-11 rounded-full border px-3 py-2 text-sm transition ${
                           resourceId === r.id
                             ? "border-nq-primary bg-nq-primary text-white"
                             : r.isAvailable
@@ -1289,7 +1289,7 @@ export default function DeskBookingForm({
               type="button"
               disabled={!canSubmit}
               onClick={submit}
-              className="mt-1 w-full rounded-md bg-nq-primary py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              className="mt-1 min-h-11 w-full rounded-md bg-nq-primary px-4 py-2.5 text-base font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {submitting
                 ? tx.submitting
