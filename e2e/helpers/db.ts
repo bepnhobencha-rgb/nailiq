@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import { createClient } from "@supabase/supabase-js";
 import type { Locator, Page } from "@playwright/test";
@@ -380,6 +380,7 @@ export async function seedBulkMessageApproval(salonId: string) {
       payload: {
         recipient_selection_required: true,
         segment: "lapsed_regulars_45_365_days",
+        message: "We miss you — book your next nail appointment.",
       },
       urgency: "normal",
       status: "pending",
@@ -399,14 +400,38 @@ export async function seedBulkMessageApproval(salonId: string) {
   };
 }
 
-export async function recordTestAudiencePreparation(input: {
+export async function seedCampaignRecipient() {
+  const id = randomUUID();
+  const suffix = randomBytes(5).toString("hex");
+  const { error } = await supabase.from("client_profiles").insert({
+    id,
+    phone: `1555${Math.floor(Math.random() * 9_000_000 + 1_000_000)}`,
+    email: `campaign-${suffix}@example.test`,
+    marketing_consent_at: new Date().toISOString(),
+    marketing_email_consent_at: new Date().toISOString(),
+  });
+  if (error) throw new Error(error.message);
+  return id;
+}
+
+export async function recordTestCampaignManifest(input: {
   salonId: string;
   jobId: string;
-  fingerprint: string;
+  clientProfileId: string;
+  sms?: boolean;
+  email?: boolean;
 }) {
   const now = new Date().toISOString();
+  const sms = input.sms ?? true;
+  const email = input.email ?? false;
+  const audienceKey =
+    `${input.clientProfileId}:${sms ? "s" : ""}${email ? "e" : ""}`;
+  const fingerprint = createHash("sha256")
+    .update(audienceKey)
+    .digest("hex")
+    .slice(0, 24);
   const { data, error } = await supabase.rpc(
-    "record_ai_audience_preparation" as never,
+    "record_ai_campaign_manifest" as never,
     {
       p_job_id: input.jobId,
       p_salon_id: input.salonId,
@@ -415,27 +440,45 @@ export async function recordTestAudiencePreparation(input: {
         segment: "lapsed_regulars_45_365_days",
         candidate_count: 2,
         eligible_count: 1,
-        sms_recipient_count: 1,
-        email_recipient_count: 0,
-        dual_channel_count: 0,
+        sms_recipient_count: sms ? 1 : 0,
+        email_recipient_count: email ? 1 : 0,
+        dual_channel_count: sms && email ? 1 : 0,
         excluded_no_consent: 1,
         excluded_no_channel: 0,
         excluded_recent_contact: 0,
         estimated_cost_usd_cents: 0.79,
         candidate_limit: 500,
         may_have_more_candidates: false,
-        audience_fingerprint: input.fingerprint,
+        audience_fingerprint: fingerprint,
         no_messages_sent: true,
       },
+      p_recipients: [
+        {
+          client_profile_id: input.clientProfileId,
+          sms,
+          email,
+        },
+      ],
       p_now: now,
     } as never,
   );
   if (error) throw new Error(error.message);
-  return data as "updated" | "unchanged" | string;
+  const row = (Array.isArray(data) ? data[0] : data) as {
+    outcome: string;
+    manifest_id: string | null;
+    release_approval_id: string | null;
+    audience_fingerprint: string | null;
+    message_sha256: string | null;
+  };
+  return row;
 }
 
-export async function getAudiencePreparationState(jobId: string) {
-  const [{ data: job, error: jobError }, { data: audits, error: auditError }] =
+export async function getCampaignReleaseState(jobId: string) {
+  const [
+    { data: job, error: jobError },
+    { data: manifests, error: manifestError },
+    { data: audits, error: auditError },
+  ] =
     await Promise.all([
       supabase
         .from("ai_execution_jobs" as never)
@@ -443,17 +486,64 @@ export async function getAudiencePreparationState(jobId: string) {
         .eq("id" as never, jobId)
         .single(),
       supabase
+        .from("ai_campaign_manifests" as never)
+        .select("*")
+        .eq("source_execution_job_id" as never, jobId)
+        .order("created_at" as never, { ascending: true }),
+      supabase
         .from("ai_actions_log")
         .select("action_type, payload")
         .eq("agent", "execution_worker")
-        .eq("action_type", "execution_audience_prepared")
+        .eq("action_type", "campaign_manifest_prepared")
         .eq("target_id", jobId)
         .order("created_at", { ascending: true }),
     ]);
   if (jobError) throw new Error(jobError.message);
+  if (manifestError) throw new Error(manifestError.message);
   if (auditError) throw new Error(auditError.message);
+  const manifestRows = (manifests ?? []) as Array<{
+    id: string;
+    salon_id: string;
+    source_execution_job_id: string;
+    source_approval_request_id: string;
+    audience_fingerprint: string;
+    message_sha256: string;
+    message: string;
+    summary: Record<string, unknown>;
+  }>;
+  const manifest = manifestRows.at(-1) ?? null;
+  const [{ data: recipients, error: recipientError }, { data: approval, error: approvalError }] =
+    manifest
+      ? await Promise.all([
+          supabase
+            .from("ai_campaign_manifest_recipients" as never)
+            .select("*")
+            .eq("manifest_id" as never, manifest.id),
+          supabase
+            .from("approval_requests")
+            .select("*")
+            .eq("release_manifest_id", manifest.id)
+            .single(),
+        ])
+      : [
+          { data: [], error: null },
+          { data: null, error: null },
+        ];
+  if (recipientError) throw new Error(recipientError.message);
+  if (approvalError) throw new Error(approvalError.message);
   return {
     job: job as { status: string; result: Record<string, unknown> | null },
+    manifests: manifestRows,
+    manifest,
+    recipients: (recipients ?? []) as Array<Record<string, unknown>>,
+    releaseApproval: approval as
+      | (Record<string, unknown> & {
+          id: string;
+          approve_token: string;
+          status: string;
+          payload: Record<string, unknown>;
+        })
+      | null,
     audits: (audits ?? []) as Array<{
       action_type: string;
       payload: Record<string, unknown>;

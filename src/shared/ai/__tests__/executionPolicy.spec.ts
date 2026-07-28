@@ -15,6 +15,12 @@ describe("executionPolicy", () => {
     expect(initialExecutionStatus({ recipient_selection_required: false })).toBe(
       "queued",
     );
+    expect(initialExecutionStatus({ dispatch_enabled: false })).toBe(
+      "waiting_input",
+    );
+    expect(initialExecutionStatus({ note: "safe internal work" })).toBe(
+      "queued",
+    );
   });
 
   it("only retries due jobs below their attempt limit", () => {

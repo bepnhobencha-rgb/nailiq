@@ -2,10 +2,11 @@ import { expect, test } from "@playwright/test";
 
 import {
   cleanupTestSalon,
-  getAudiencePreparationState,
+  getCampaignReleaseState,
   getApprovalEffectState,
-  recordTestAudiencePreparation,
+  recordTestCampaignManifest,
   seedBulkMessageApproval,
+  seedCampaignRecipient,
   seedOperationalNoteApproval,
   seedTestSalon,
 } from "./helpers/db";
@@ -124,8 +125,9 @@ test.describe("AI approval execution", () => {
     ).toHaveLength(1);
   });
 
-  test("audience preparation is atomic, idempotent, and never sends", async ({
+  test("campaign release is immutable, double-approved, and still never sends", async ({
     page,
+    request,
   }) => {
     const seededSalon = await seedTestSalon({
       slug: `e2e-ai-audience-${test.info().workerIndex}`,
@@ -154,45 +156,134 @@ test.describe("AI approval execution", () => {
     const jobId = waiting.job?.id;
     expect(jobId).toBeTruthy();
 
-    const fingerprint = "a".repeat(24);
+    const clientProfileId = await seedCampaignRecipient();
     const concurrentResults = await Promise.all([
-      recordTestAudiencePreparation({
+      recordTestCampaignManifest({
         salonId: seededSalon.salonId,
         jobId: jobId as string,
-        fingerprint,
+        clientProfileId,
       }),
-      recordTestAudiencePreparation({
+      recordTestCampaignManifest({
         salonId: seededSalon.salonId,
         jobId: jobId as string,
-        fingerprint,
+        clientProfileId,
       }),
     ]);
-    expect(concurrentResults.sort()).toEqual(["unchanged", "updated"]);
+    expect(concurrentResults.map((item) => item.outcome).sort()).toEqual([
+      "created",
+      "unchanged",
+    ]);
+    expect(concurrentResults[0]?.manifest_id).toBe(
+      concurrentResults[1]?.manifest_id,
+    );
+    expect(concurrentResults[0]?.release_approval_id).toBe(
+      concurrentResults[1]?.release_approval_id,
+    );
 
-    const prepared = await getAudiencePreparationState(jobId as string);
+    const prepared = await getCampaignReleaseState(jobId as string);
     expect(prepared.job.status).toBe("waiting_input");
     expect(prepared.job.result).toMatchObject({
-      blocker: "recipient_selection_required",
+      blocker: "release_approval_required",
+      campaign_manifest_id: concurrentResults[0]?.manifest_id,
+      release_approval_id: concurrentResults[0]?.release_approval_id,
+      dispatch_enabled: false,
+      no_messages_sent: true,
       audience_preparation: {
-        audience_fingerprint: fingerprint,
         eligible_count: 1,
+        no_messages_sent: true,
+      },
+    });
+    expect(prepared.manifests).toHaveLength(1);
+    expect(prepared.manifest).toMatchObject({
+      id: concurrentResults[0]?.manifest_id,
+      source_execution_job_id: jobId,
+      message: "We miss you — book your next nail appointment.",
+    });
+    expect(prepared.manifest?.message_sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(prepared.recipients).toEqual([
+      expect.objectContaining({
+        manifest_id: concurrentResults[0]?.manifest_id,
+        salon_id: seededSalon.salonId,
+        client_profile_id: clientProfileId,
+        sms: true,
+        email: false,
+      }),
+    ]);
+    expect(prepared.recipients[0]).not.toHaveProperty("phone");
+    expect(prepared.recipients[0]).not.toHaveProperty("email_address");
+    expect(prepared.releaseApproval).toMatchObject({
+      id: concurrentResults[0]?.release_approval_id,
+      status: "pending",
+      release_manifest_id: concurrentResults[0]?.manifest_id,
+      payload: {
+        proposal_source: "campaign_release_gate",
+        manifest_id: concurrentResults[0]?.manifest_id,
+        recipient_selection_required: false,
+        dispatch_enabled: false,
+        dispatch_authorization_required: true,
         no_messages_sent: true,
       },
     });
     expect(prepared.audits).toHaveLength(1);
     expect(prepared.audits[0]?.payload).toMatchObject({
-      audience_fingerprint: fingerprint,
+      manifest_id: concurrentResults[0]?.manifest_id,
       no_messages_sent: true,
     });
 
-    const changed = await recordTestAudiencePreparation({
-      salonId: seededSalon.salonId,
-      jobId: jobId as string,
-      fingerprint: "b".repeat(24),
+    await page.goto(
+      `/api/ai/approve?token=${encodeURIComponent(
+        prepared.releaseApproval?.approve_token as string,
+      )}`,
+    );
+    await expect(
+      page.getByRole("heading", { name: "Đưa hành động vào hàng đợi?" }),
+    ).toBeVisible();
+    const beforeFinalConfirmation = await getApprovalEffectState(
+      prepared.releaseApproval?.id as string,
+    );
+    expect(beforeFinalConfirmation.approval.status).toBe("pending");
+    expect(beforeFinalConfirmation.job).toBeNull();
+
+    await page
+      .getByRole("button", { name: "Xác nhận đồng ý" })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Đề xuất đã được duyệt." }),
+    ).toBeVisible();
+
+    const approvedRelease = await getApprovalEffectState(
+      prepared.releaseApproval?.id as string,
+    );
+    expect(approvedRelease.approval.status).toBe("approved");
+    expect(approvedRelease.job).toMatchObject({
+      status: "waiting_input",
+      attempt_count: 0,
+      result: { blocker: "dispatch_not_enabled" },
     });
-    expect(changed).toBe("updated");
-    const refreshed = await getAudiencePreparationState(jobId as string);
-    expect(refreshed.job.status).toBe("waiting_input");
-    expect(refreshed.audits).toHaveLength(2);
+
+    const cronSecret = process.env.CRON_SECRET?.trim();
+    expect(cronSecret).toBeTruthy();
+    const workerResponse = await request.get("/api/cron/ai-execution", {
+      headers: { authorization: `Bearer ${cronSecret}` },
+    });
+    expect(workerResponse.ok()).toBeTruthy();
+    const afterWorker = await getApprovalEffectState(
+      prepared.releaseApproval?.id as string,
+    );
+    expect(afterWorker.job).toMatchObject({
+      status: "waiting_input",
+      attempt_count: 0,
+      result: { blocker: "dispatch_not_enabled" },
+    });
+    expect(
+      afterWorker.effects.filter((effect) =>
+        [
+          "sms_sent",
+          "email_sent",
+          "campaign_dispatched",
+          "execution_succeeded",
+        ].includes(effect.action_type),
+      ),
+    ).toEqual([]);
   });
 });

@@ -149,7 +149,10 @@ const EXECUTION_TONE = {
 } as const;
 
 function ExecutionBadge({ job }: { job: ExecutionJobRow }) {
-  const presentation = approvalExecutionPresentation(job.status);
+  const presentation = approvalExecutionPresentation(
+    job.status,
+    job.result?.blocker,
+  );
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${EXECUTION_TONE[presentation.tone]}`}

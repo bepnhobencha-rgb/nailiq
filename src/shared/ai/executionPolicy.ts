@@ -31,7 +31,8 @@ export function canControlExecutionJob(params: {
 export function initialExecutionStatus(
   payload: Record<string, unknown>,
 ): ExecutionJobStatus {
-  return payload.recipient_selection_required === true
+  return payload.recipient_selection_required === true ||
+    payload.dispatch_enabled === false
     ? "waiting_input"
     : "queued";
 }

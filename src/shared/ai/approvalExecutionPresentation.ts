@@ -19,6 +19,13 @@ const PRESENTATION: Record<
 
 export function approvalExecutionPresentation(
   status: ExecutionJobStatus,
+  blocker?: unknown,
 ): ApprovalExecutionPresentation {
+  if (status === "waiting_input" && blocker === "dispatch_not_enabled") {
+    return { label: "Đã duyệt — chưa bật gửi", tone: "attention" };
+  }
+  if (status === "waiting_input" && blocker === "release_approval_required") {
+    return { label: "Chờ duyệt phát hành", tone: "attention" };
+  }
   return PRESENTATION[status];
 }

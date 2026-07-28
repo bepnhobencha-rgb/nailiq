@@ -16,4 +16,13 @@ describe("approvalExecutionPresentation", () => {
   >)("maps %s honestly", (status, label, tone) => {
     expect(approvalExecutionPresentation(status)).toEqual({ label, tone });
   });
+
+  it("names both campaign gates instead of showing a generic input state", () => {
+    expect(
+      approvalExecutionPresentation("waiting_input", "release_approval_required"),
+    ).toEqual({ label: "Chờ duyệt phát hành", tone: "attention" });
+    expect(
+      approvalExecutionPresentation("waiting_input", "dispatch_not_enabled"),
+    ).toEqual({ label: "Đã duyệt — chưa bật gửi", tone: "attention" });
+  });
 });
