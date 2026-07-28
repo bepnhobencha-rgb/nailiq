@@ -29,6 +29,7 @@ import { controlExecutionJobAction } from "@/shared/ai/controlExecutionJobAction
 import { canControlExecutionJob } from "@/shared/ai/executionPolicy";
 import { preflightCampaignAction } from "@/shared/ai/preflightCampaignAction";
 import { prepareAudienceAction } from "@/shared/ai/prepareAudienceAction";
+import { sealCampaignPlanAction } from "@/shared/ai/sealCampaignPlanAction";
 import type { ExecutionJobRow } from "@/shared/ai/executionQueue";
 import type { MinhActivityData } from "@/shared/ai/loadMinhActivity";
 import type {
@@ -633,6 +634,39 @@ type CampaignDispatchPreflightView = {
   no_messages_sent: true;
 };
 
+type CampaignDispatchPlanView = {
+  plan_id: string;
+  plan_status: "sealed";
+  plan_fingerprint: string;
+  recipient_count: number;
+  sms_recipient_count: number;
+  email_recipient_count: number;
+  estimated_cost_usd_cents: number;
+  expires_at: string;
+  dispatch_enabled: false;
+  no_messages_sent: true;
+};
+
+function campaignDispatchPlanFrom(
+  result: Record<string, unknown> | null,
+): CampaignDispatchPlanView | null {
+  const value = result?.dispatch_plan;
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  if (
+    typeof row.plan_id !== "string" ||
+    row.plan_status !== "sealed" ||
+    typeof row.plan_fingerprint !== "string" ||
+    typeof row.recipient_count !== "number" ||
+    typeof row.expires_at !== "string" ||
+    row.dispatch_enabled !== false ||
+    row.no_messages_sent !== true
+  ) {
+    return null;
+  }
+  return row as unknown as CampaignDispatchPlanView;
+}
+
 function campaignDispatchPreflightFrom(
   result: Record<string, unknown> | null,
 ): CampaignDispatchPreflightView | null {
@@ -686,8 +720,12 @@ function JobAudiencePreparation({
   const [error, setError] = useState<string | null>(null);
   const preparation = audiencePreparationFrom(job.result);
   const preflight = campaignDispatchPreflightFrom(job.result);
+  const dispatchPlan = campaignDispatchPlanFrom(job.result);
   const preflightFreshness = preflight
     ? campaignPreflightFreshness(preflight.valid_until, nowIso)
+    : null;
+  const planFreshness = dispatchPlan
+    ? campaignPreflightFreshness(dispatchPlan.expires_at, nowIso)
     : null;
   const blocker =
     typeof job.result?.blocker === "string" ? job.result.blocker : null;
@@ -717,6 +755,22 @@ function JobAudiencePreparation({
           vi
             ? "Không thể chạy kiểm tra an toàn cuối lúc này."
             : "The final safety check could not run right now.",
+        );
+        return;
+      }
+      router.refresh();
+    });
+  };
+
+  const sealPlan = () => {
+    setError(null);
+    startTransition(async () => {
+      const result = await sealCampaignPlanAction({ slug, jobId: job.id });
+      if (!result.ok) {
+        setError(
+          vi
+            ? "Không thể khóa kế hoạch phát hành lúc này."
+            : "The dispatch plan could not be sealed right now.",
         );
         return;
       }
@@ -789,6 +843,27 @@ function JobAudiencePreparation({
                     ? "Kết quả cũ không còn được coi là an toàn để phát hành."
                     : "This old result is no longer considered safe for release."}
               </p>
+              {dispatchPlan ? (
+                <div className="mt-2 rounded-md border border-nq-primary/25 bg-nq-primary/5 p-2">
+                  <p className="text-[11px] font-semibold text-nq-foreground">
+                    {planFreshness === "fresh"
+                      ? vi
+                        ? "Kế hoạch no-send đã được khóa"
+                        : "No-send plan sealed"
+                      : vi
+                        ? "Kế hoạch đã hết hạn"
+                        : "Plan expired"}
+                  </p>
+                  <p className="mt-1 text-[11px] leading-4 text-nq-muted">
+                    {dispatchPlan.recipient_count}{" "}
+                    {vi ? "khách" : "recipients"} · SMS{" "}
+                    {dispatchPlan.sms_recipient_count} · Email{" "}
+                    {dispatchPlan.email_recipient_count} · $
+                    {(dispatchPlan.estimated_cost_usd_cents / 100).toFixed(2)}{" "}
+                    USD
+                  </p>
+                </div>
+              ) : null}
             </>
           ) : (
             <p className="text-xs leading-5 text-nq-warning">
@@ -821,6 +896,25 @@ function JobAudiencePreparation({
                   ? "Chạy kiểm tra an toàn cuối"
                   : "Run final safety check"}
           </button>
+          {preflightFreshness === "fresh" &&
+          preflight?.preflight_status === "ready" &&
+          planFreshness !== "fresh" ? (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={sealPlan}
+              className="ml-2 mt-2 inline-flex min-h-9 items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
+            >
+              <ListChecks className="h-3.5 w-3.5" aria-hidden />
+              {pending
+                ? vi
+                  ? "Đang khóa…"
+                  : "Sealing…"
+                : vi
+                  ? "Khóa kế hoạch no-send"
+                  : "Seal no-send plan"}
+            </button>
+          ) : null}
           {error ? <p className="mt-2 text-xs text-nq-error">{error}</p> : null}
         </div>
       );

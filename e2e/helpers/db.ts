@@ -566,7 +566,7 @@ export async function recordTestCampaignDispatchPreflight(input: {
     (exclusion ?? "eligible");
   const fingerprint = createHash("sha256").update(canonical).digest("hex");
   const { data, error } = await supabase.rpc(
-    "record_ai_campaign_dispatch_preflight_fresh" as never,
+    "record_ai_campaign_preflight_evidence" as never,
     {
       p_job_id: input.jobId,
       p_salon_id: input.salonId,
@@ -607,6 +607,28 @@ export async function recordTestCampaignDispatchPreflight(input: {
     preflight_status: string | null;
     preflight_fingerprint: string | null;
     valid_until: string | null;
+    decision_count: number | null;
+  };
+}
+
+export async function sealTestCampaignDispatchPlan(input: {
+  salonId: string;
+  jobId: string;
+}) {
+  const { data, error } = await supabase.rpc(
+    "seal_ai_campaign_dispatch_plan" as never,
+    {
+      p_job_id: input.jobId,
+      p_salon_id: input.salonId,
+    } as never,
+  );
+  if (error) throw new Error(error.message);
+  return (Array.isArray(data) ? data[0] : data) as {
+    outcome: string;
+    plan_id: string | null;
+    plan_status: string | null;
+    plan_fingerprint: string | null;
+    expires_at: string | null;
   };
 }
 
@@ -614,6 +636,8 @@ export async function getCampaignDispatchPreflightState(jobId: string) {
   const [
     { data: job, error: jobError },
     { data: preflights, error: preflightError },
+    { data: decisions, error: decisionError },
+    { data: plans, error: planError },
     { data: audits, error: auditError },
   ] = await Promise.all([
     supabase
@@ -627,15 +651,30 @@ export async function getCampaignDispatchPreflightState(jobId: string) {
       .eq("release_execution_job_id" as never, jobId)
       .order("created_at" as never, { ascending: true }),
     supabase
+      .from("ai_campaign_dispatch_preflight_decisions" as never)
+      .select(
+        "*, ai_campaign_dispatch_preflights!inner(release_execution_job_id)",
+      )
+      .eq(
+        "ai_campaign_dispatch_preflights.release_execution_job_id" as never,
+        jobId,
+      ),
+    supabase
+      .from("ai_campaign_dispatch_plans" as never)
+      .select("*")
+      .eq("release_execution_job_id" as never, jobId)
+      .order("created_at" as never, { ascending: true }),
+    supabase
       .from("ai_actions_log")
       .select("action_type, payload")
       .eq("agent", "execution_worker")
-      .eq("action_type", "campaign_dispatch_preflight_recorded")
       .eq("target_id", jobId)
       .order("created_at", { ascending: true }),
   ]);
   if (jobError) throw new Error(jobError.message);
   if (preflightError) throw new Error(preflightError.message);
+  if (decisionError) throw new Error(decisionError.message);
+  if (planError) throw new Error(planError.message);
   if (auditError) throw new Error(auditError.message);
   return {
     job: job as {
@@ -644,6 +683,8 @@ export async function getCampaignDispatchPreflightState(jobId: string) {
       result: Record<string, unknown>;
     },
     preflights: (preflights ?? []) as Array<Record<string, unknown>>,
+    decisions: (decisions ?? []) as Array<Record<string, unknown>>,
+    plans: (plans ?? []) as Array<Record<string, unknown>>,
     audits: (audits ?? []) as Array<Record<string, unknown>>,
   };
 }

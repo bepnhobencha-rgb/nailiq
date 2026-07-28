@@ -4,10 +4,9 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 const PROBE_JOB_ID = "00000000-0000-0000-0000-000000000001";
 const PROBE_SALON_ID = "00000000-0000-0000-0000-000000000002";
-const EXPECTED_RESULT = "job_not_preflightable";
 
 export const REQUIRED_SCHEMA_CAPABILITY =
-  "record_ai_campaign_dispatch_preflight_fresh_v1";
+  "immutable_ai_campaign_dispatch_plan_v1";
 
 export type ProductionReadiness =
   | { ready: true }
@@ -33,10 +32,8 @@ export async function probeProductionReadiness(
 ): Promise<ProductionReadiness> {
   try {
     const db = createServiceRoleClient();
-    const query = db
-      .rpc(
-        "record_ai_campaign_dispatch_preflight_fresh" as never,
-        {
+    const evidenceQuery = db
+      .rpc("record_ai_campaign_preflight_evidence" as never, {
           p_job_id: PROBE_JOB_ID,
           p_salon_id: PROBE_SALON_ID,
           p_summary: {
@@ -60,24 +57,39 @@ export async function probeProductionReadiness(
             cost_cap_usd_cents: 500,
           },
           p_decisions: [],
-        } as never,
-      )
+        } as never)
       .abortSignal(AbortSignal.timeout(timeoutMs));
-    const { data, error } = await query;
+    const planQuery = db
+      .rpc("seal_ai_campaign_dispatch_plan" as never, {
+        p_job_id: PROBE_JOB_ID,
+        p_salon_id: PROBE_SALON_ID,
+      } as never)
+      .abortSignal(AbortSignal.timeout(timeoutMs));
+    const [evidenceResult, planResult] = await Promise.all([
+      evidenceQuery,
+      planQuery,
+    ]);
 
-    if (error) {
+    if (evidenceResult.error || planResult.error) {
+      const error = evidenceResult.error ?? planResult.error;
       return {
         ready: false,
         reason:
-          error.code === "PGRST202" || error.code === "42883"
+          error?.code === "PGRST202" || error?.code === "42883"
             ? "schema_capability_missing"
             : "database_unavailable",
       };
     }
-    const probeOutcome = Array.isArray(data)
-      ? (data[0] as { outcome?: unknown } | undefined)?.outcome
-      : data;
-    if (probeOutcome !== EXPECTED_RESULT) {
+    const evidenceOutcome = Array.isArray(evidenceResult.data)
+      ? (evidenceResult.data[0] as { outcome?: unknown } | undefined)?.outcome
+      : evidenceResult.data;
+    const planOutcome = Array.isArray(planResult.data)
+      ? (planResult.data[0] as { outcome?: unknown } | undefined)?.outcome
+      : planResult.data;
+    if (
+      evidenceOutcome !== "job_not_preflightable" ||
+      planOutcome !== "job_not_plannable"
+    ) {
       return { ready: false, reason: "schema_probe_unexpected" };
     }
     return { ready: true };
