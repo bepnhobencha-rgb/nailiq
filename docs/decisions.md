@@ -5,6 +5,24 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Readiness includes cron authorization configuration
+
+**Status.** Implemented on `agent/cron-readiness-gate`.
+
+**Decision.**
+- `/api/ready` reports cron authorization as a separate bounded check.
+- A missing or whitespace-only `CRON_SECRET` makes the deployment not ready
+  even when the database schema is current and reachable.
+- The response reports only whether configuration is present; it never returns
+  the secret, its length, or any derived credential material.
+
+**Why.** Every scheduled HTTP entry point now fails closed without its shared
+secret. Database readiness alone could therefore report a healthy operating
+system while all autonomous schedulers were unable to run. Deployment
+readiness must cover the credential required to invoke the AI operating loop.
+
+---
+
 ## 2026-07-28 — Liveness and production readiness are separate contracts
 
 **Status.** Implemented on `agent/production-readiness-gate`.

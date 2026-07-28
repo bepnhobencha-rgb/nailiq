@@ -4,6 +4,12 @@ type CronAuthorizationError =
   | "cron_secret_not_configured"
   | "unauthorized";
 
+export function isCronAuthorizationConfigured(
+  configuredSecret = process.env.CRON_SECRET,
+): boolean {
+  return Boolean(configuredSecret?.trim());
+}
+
 /**
  * Central fail-closed boundary for every scheduled HTTP entry point.
  *

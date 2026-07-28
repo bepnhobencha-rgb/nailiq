@@ -4,6 +4,7 @@ import {
   probeProductionReadiness,
   REQUIRED_SCHEMA_CAPABILITY,
 } from "@/shared/operations/productionReadiness";
+import { isCronAuthorizationConfigured } from "@/shared/security/cronAuthorization";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -15,7 +16,9 @@ const NO_STORE_HEADERS = {
 
 export async function GET() {
   const readiness = await probeProductionReadiness();
-  const ready = readiness.ready;
+  const cronAuthorizationConfigured =
+    isCronAuthorizationConfigured();
+  const ready = readiness.ready && cronAuthorizationConfigured;
 
   return NextResponse.json(
     {
@@ -24,9 +27,15 @@ export async function GET() {
       version: VERSION,
       checks: {
         database_schema: {
-          status: ready ? "ok" : "error",
+          status: readiness.ready ? "ok" : "error",
           capability: REQUIRED_SCHEMA_CAPABILITY,
-          ...(!ready ? { reason: readiness.reason } : {}),
+          ...(!readiness.ready ? { reason: readiness.reason } : {}),
+        },
+        cron_authorization: {
+          status: cronAuthorizationConfigured ? "ok" : "error",
+          ...(!cronAuthorizationConfigured
+            ? { reason: "cron_secret_not_configured" }
+            : {}),
         },
       },
     },
