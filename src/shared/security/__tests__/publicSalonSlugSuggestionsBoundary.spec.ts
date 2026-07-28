@@ -23,7 +23,9 @@ describe("public salon slug suggestion boundary", () => {
     expect(migration).toContain("SECURITY INVOKER");
     expect(migration).toContain("public.public_salon_profiles");
     expect(migration).not.toMatch(/FROM public\.salons/i);
-    expect(migration).toContain("extensions.similarity");
+    expect(migration).toContain("SET search_path TO public, extensions");
+    expect(migration).toContain("AND similarity(");
+    expect(migration).toContain("RESET search_path");
     expect(migration).toContain("LIMIT 3");
   });
 

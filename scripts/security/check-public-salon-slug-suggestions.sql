@@ -15,7 +15,7 @@ BEGIN
 
   IF (SELECT prosecdef FROM pg_proc WHERE oid = v_oid)
     OR position('public.public_salon_profiles' IN v_definition) = 0
-    OR position('extensions.similarity' IN v_definition) = 0
+    OR position('similarity' IN v_definition) = 0
     OR position('LIMIT 3' IN v_definition) = 0
     OR EXISTS (
       SELECT 1

@@ -4,6 +4,11 @@
 -- the function. Use the booking-safe view instead of reopening public access
 -- to the tenant-owned salons table.
 
+-- pg_trgm lives in public on the linked production database and in extensions
+-- on a freshly folded Supabase. Resolve the extension in either supported
+-- location while compiling the SQL function, then restore the session path.
+SET search_path TO public, extensions;
+
 CREATE OR REPLACE FUNCTION public.suggest_salon_slugs_by_similarity(
   p_input text
 )
@@ -17,12 +22,12 @@ AS $function$
   FROM public.public_salon_profiles AS profile
   WHERE coalesce(trim(p_input), '') <> ''
     AND length(trim(p_input)) BETWEEN 2 AND 63
-    AND extensions.similarity(
+    AND similarity(
       lower(trim(profile.slug::text)),
       lower(trim(p_input))
     ) > 0.12::float
   ORDER BY
-    extensions.similarity(
+    similarity(
       lower(trim(profile.slug::text)),
       lower(trim(p_input))
     ) DESC,
@@ -30,6 +35,8 @@ AS $function$
     profile.slug::text ASC
   LIMIT 3;
 $function$;
+
+RESET search_path;
 
 REVOKE ALL ON FUNCTION public.suggest_salon_slugs_by_similarity(text)
   FROM PUBLIC, anon, authenticated;
@@ -54,7 +61,7 @@ BEGIN
 
   IF (SELECT prosecdef FROM pg_proc WHERE oid = v_oid)
     OR position('public.public_salon_profiles' IN v_definition) = 0
-    OR position('extensions.similarity' IN v_definition) = 0
+    OR position('similarity' IN v_definition) = 0
     OR position('LIMIT 3' IN v_definition) = 0
     OR EXISTS (
       SELECT 1
