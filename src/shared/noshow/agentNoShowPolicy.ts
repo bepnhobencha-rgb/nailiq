@@ -449,5 +449,6 @@ export async function backfillNoShowShadow(salonId: string, cap = 5): Promise<vo
     }
   } catch (e) {
     console.error("[backfillNoShowShadow]", e);
+    throw e;
   }
 }

@@ -340,5 +340,6 @@ export async function runSocialContent(salonId: string): Promise<void> {
     console.log(`[socialContent] ${salonName}: draft sent for ${dayName}`);
   } catch (e) {
     console.error("[runSocialContent]", e);
+    throw e;
   }
 }

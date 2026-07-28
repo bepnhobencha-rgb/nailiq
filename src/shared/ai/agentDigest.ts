@@ -498,5 +498,6 @@ export async function runDigest(salonId: string): Promise<void> {
     } as never);
   } catch (e) {
     console.error("[runDigest]", e);
+    throw e;
   }
 }

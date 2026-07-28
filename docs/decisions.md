@@ -5,6 +5,30 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Manager-owned agents must fail visibly
+
+**Decision.** Every top-level agent invoked by the AI Manager cron must rethrow
+unexpected failures after logging them. Expected feature gates, deduplication,
+missing optional providers, and other intentional no-op paths may still return
+normally.
+
+**Why.** The Manager can only record an agent as failed, sync its durable
+exception signal, and fail its worker heartbeat when the awaited agent rejects.
+Swallowing an unexpected database, provider, or delivery error makes the
+orchestration report `ok` even though the agent did not complete.
+
+**Caller impact.** These entry points are Manager-only except
+`runDailyReport`, whose manual test-report action already catches a rejection
+and returns `send_failed`. No autonomous-send permission or campaign behavior
+changes.
+
+**Guardrail.** `managerAgentFailureBoundary.spec.ts` enumerates every currently
+managed entry point that owns a top-level catch and requires its log boundary to
+rethrow. Manager route tests separately prove a rejected agent produces a
+failed result, a failed heartbeat, and no raw error leakage.
+
+---
+
 ## 2026-07-28 — Scheduler liveness waits until a first run is due
 
 **Status.** Implemented on `agent/cron-first-run-grace`.
