@@ -12,6 +12,7 @@ const STATUS_STYLE: Record<CronRouteHealth["status"], string> = {
   running: "border-nq-primary/40 bg-nq-primary/10 text-nq-primary",
   failed: "border-nq-error/40 bg-nq-error/10 text-nq-error",
   stale: "border-nq-warning/40 bg-nq-warning/10 text-nq-warning",
+  pending: "border-nq-muted/40 bg-nq-muted/10 text-nq-muted",
   missing: "border-nq-warning/40 bg-nq-warning/10 text-nq-warning",
 };
 
@@ -37,7 +38,16 @@ export default async function SystemHealthPage() {
   ]);
   const cronIssues =
     cronHealth?.filter(
-      (worker) => worker.status !== "healthy" && worker.status !== "running",
+      (worker) =>
+        worker.status !== "healthy" &&
+        worker.status !== "running" &&
+        worker.status !== "pending",
+    ).length ?? null;
+  const cronPending =
+    cronHealth?.filter((worker) => worker.status === "pending").length ?? null;
+  const cronHealthy =
+    cronHealth?.filter(
+      (worker) => worker.status === "healthy" || worker.status === "running",
     ).length ?? null;
 
   return (
@@ -69,7 +79,13 @@ export default async function SystemHealthPage() {
                   : STATUS_STYLE.failed
               }`}
             >
-              {cronIssues === 0 ? "16 healthy" : `${cronIssues} need attention`}
+              {[
+                cronIssues ? `${cronIssues} need attention` : null,
+                cronHealthy ? `${cronHealthy} healthy` : null,
+                cronPending ? `${cronPending} awaiting first run` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </span>
           ) : null}
         </div>
@@ -110,7 +126,9 @@ export default async function SystemHealthPage() {
                       </span>
                     </td>
                     <td className="px-2 py-3 text-nq-muted">
-                      {formatTimestamp(worker.lastStartedAt)}
+                      {worker.status === "pending"
+                        ? "Awaiting first scheduled run"
+                        : formatTimestamp(worker.lastStartedAt)}
                     </td>
                     <td className="px-2 py-3 font-mono text-xs text-nq-muted">
                       {worker.lastError ?? "—"}

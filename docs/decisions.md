@@ -5,6 +5,31 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Scheduler liveness waits until a first run is due
+
+**Status.** Implemented on `agent/cron-first-run-grace`.
+
+**Decision.**
+- A worker with no recorded run is `pending`, not `missing`, while its first
+  freshness window is still open after cron monitoring begins.
+- Recorded failures are never softened by this grace period.
+- Once that worker's freshness window expires, no observation becomes a real
+  `missing` incident.
+- System Health reports healthy, pending, and attention counts separately.
+
+**Why.** Five daily workers correctly had no history a few hours after
+production-wide cron recording was deployed, but System Health labeled all five
+as incidents and then called the remaining eleven workers unhealthy by
+implication. An operating system must distinguish “not scheduled yet” from
+“missed its schedule” without hiding actual failures.
+
+**Activation evidence.** The earliest valid start among recorded workers is
+used as the beginning of observable monitoring. This requires no hardcoded
+deployment timestamp and naturally expires into the existing missing-worker
+alarm.
+
+---
+
 ## 2026-07-28 — Error fingerprints preserve stable React invariant codes
 
 **Status.** Implemented on `agent/error-code-fingerprint`.

@@ -2,11 +2,19 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+const mocks = vi.hoisted(() => ({
+  createServiceRoleClient: vi.fn(),
+}));
+
 vi.mock("server-only", () => ({}));
+vi.mock("@/shared/lib/supabase/serviceRole", () => ({
+  createServiceRoleClient: mocks.createServiceRoleClient,
+}));
 
 import {
   CRON_ROUTE_CONTRACTS,
   deriveCronRouteHealth,
+  loadCronOperatingState,
 } from "../cronOperatingState";
 
 const NOW = new Date("2026-07-28T15:00:00.000Z");
@@ -72,6 +80,59 @@ describe("cron operating state", () => {
     ).toBe("stale");
     expect(
       deriveCronRouteHealth(reminders, heartbeat("succeeded"), NOW).status,
+    ).toBe("healthy");
+  });
+
+  it("does not page on a worker before its first scheduled observation is due", () => {
+    const daily = CRON_ROUTE_CONTRACTS.find(
+      (contract) => contract.workerName === "minh_learn",
+    )!;
+
+    expect(
+      deriveCronRouteHealth(
+        daily,
+        null,
+        NOW,
+        new Date("2026-07-28T14:00:00.000Z"),
+      ).status,
+    ).toBe("pending");
+    expect(
+      deriveCronRouteHealth(
+        daily,
+        null,
+        NOW,
+        new Date("2026-07-26T08:00:00.000Z"),
+      ).status,
+    ).toBe("missing");
+  });
+
+  it("never applies first-run grace to a recorded failure", () => {
+    expect(
+      deriveCronRouteHealth(
+        reminders,
+        heartbeat("failed"),
+        NOW,
+        new Date("2026-07-28T14:45:00.000Z"),
+      ).status,
+    ).toBe("failed");
+  });
+
+  it("derives the monitoring start from real recorded worker history", async () => {
+    mocks.createServiceRoleClient.mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockResolvedValue({
+          data: [heartbeat("succeeded", "2026-07-28T14:50:00.000Z")],
+          error: null,
+        }),
+      }),
+    });
+
+    const state = await loadCronOperatingState(NOW);
+    expect(
+      state.find((worker) => worker.workerName === "minh_learn")?.status,
+    ).toBe("pending");
+    expect(
+      state.find((worker) => worker.workerName === "reminders")?.status,
     ).toBe("healthy");
   });
 
