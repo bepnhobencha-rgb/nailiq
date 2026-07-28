@@ -1389,6 +1389,7 @@ export function WalkinAddForm({
         ref={submitRef}
         type="submit"
         variant="primary"
+        size="lg"
         loading={submitting}
         disabled={
           disabled ||

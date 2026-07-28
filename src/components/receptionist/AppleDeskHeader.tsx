@@ -276,7 +276,7 @@ export function AppleDeskHeader({
                 <button
                   type="button"
                   onClick={onAddAppointment}
-                  className="flex min-h-11 w-full items-center rounded-xl px-3 text-left text-sm font-medium text-[var(--rc-new-text)] hover:bg-[var(--rc-new-surface-subtle)]"
+                  className="flex min-h-11 w-full items-center rounded-xl px-3 text-left text-base font-medium text-[var(--rc-new-text)] hover:bg-[var(--rc-new-surface-subtle)]"
                 >
                   {language === "vi" ? "Lịch hẹn mới" : "New appointment"}
                 </button>
@@ -285,7 +285,7 @@ export function AppleDeskHeader({
                 <button
                   type="button"
                   onClick={onAddWalkin}
-                  className="flex min-h-11 w-full items-center rounded-xl px-3 text-left text-sm font-medium text-[var(--rc-new-text)] hover:bg-[var(--rc-new-surface-subtle)]"
+                  className="flex min-h-11 w-full items-center rounded-xl px-3 text-left text-base font-medium text-[var(--rc-new-text)] hover:bg-[var(--rc-new-surface-subtle)]"
                 >
                   {language === "vi" ? "Thêm khách vãng lai" : "Add walk-in"}
                 </button>
@@ -294,7 +294,7 @@ export function AppleDeskHeader({
                 <button
                   type="button"
                   onClick={onAddGroup}
-                  className="flex min-h-11 w-full items-center rounded-xl px-3 text-left text-sm font-medium text-[var(--rc-new-text)] hover:bg-[var(--rc-new-surface-subtle)]"
+                  className="flex min-h-11 w-full items-center rounded-xl px-3 text-left text-base font-medium text-[var(--rc-new-text)] hover:bg-[var(--rc-new-surface-subtle)]"
                 >
                   {language === "vi" ? "Đặt lịch nhóm" : "Group booking"}
                 </button>
