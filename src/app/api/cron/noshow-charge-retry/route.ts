@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { chargeNoShowFee } from "@/shared/integrations/square/noshow";
 import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
+import { runTrackedCron } from "@/shared/security/cronRunHistory";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +24,7 @@ const RETRY_WINDOW_DAYS = 7;
 export async function GET(req: NextRequest) {
   const authorizationError = requireCronAuthorization(req);
   if (authorizationError) return authorizationError;
+  return runTrackedCron("noshow_charge_retry", async () => {
 
   const supabase = createServiceRoleClient();
   const windowStart = new Date(
@@ -80,5 +82,6 @@ export async function GET(req: NextRequest) {
       .eq("id", r.id);
   }
 
-  return NextResponse.json({ ok: true, retried, charged, processedAt: new Date().toISOString() });
+    return NextResponse.json({ ok: true, retried, charged, processedAt: new Date().toISOString() });
+  });
 }

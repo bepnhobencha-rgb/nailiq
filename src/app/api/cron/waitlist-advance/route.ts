@@ -12,6 +12,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { notifyWaitlistForSlot } from "@/shared/noshow/waitlistAutoFill";
 import { refundRefilledLateCancels } from "@/shared/integrations/square/noshow";
 import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
+import { runTrackedCron } from "@/shared/security/cronRunHistory";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +23,7 @@ const CLAIM_WINDOW_MINUTES = 20;
 export async function GET(req: NextRequest) {
   const authorizationError = requireCronAuthorization(req);
   if (authorizationError) return authorizationError;
+  return runTrackedCron("waitlist_advance", async () => {
 
   const supabase = createServiceRoleClient();
 
@@ -73,5 +75,6 @@ export async function GET(req: NextRequest) {
     console.error("[waitlist-advance] late-cancel refund pass failed", e);
   }
 
-  return NextResponse.json({ ok: true, advanced, refunded });
+    return NextResponse.json({ ok: true, advanced, refunded });
+  });
 }

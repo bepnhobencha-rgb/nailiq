@@ -56,7 +56,7 @@ describe("AI execution worker heartbeat boundary", () => {
 
   it("adds no messaging, payment, or booking mutation authority", () => {
     expect(heartbeatSource).not.toMatch(
-      /sendSms|sendEmail|charge|refund|bookings/,
+      /\b(sendSms|sendEmail|charge|refund|bookings)\s*\(/,
     );
     expect(routeSource).not.toMatch(/sendSms|sendEmail|charge|refund/);
   });

@@ -7,7 +7,7 @@ const PROBE_SALON_ID = "00000000-0000-0000-0000-000000000002";
 const PROBE_ALERT_ID = "00000000-0000-0000-0000-000000000004";
 const PROBE_ACTOR_ID = "00000000-0000-0000-0000-000000000005";
 
-export const REQUIRED_SCHEMA_CAPABILITY = "ai_execution_tenant_fence_v1";
+export const REQUIRED_SCHEMA_CAPABILITY = "cron_run_history_v1";
 
 export type ProductionReadiness =
   | { ready: true }
@@ -119,6 +119,12 @@ export async function probeProductionReadiness(
         { p_salon_id: PROBE_SALON_ID } as never,
       )
       .abortSignal(AbortSignal.timeout(timeoutMs));
+    const cronRunHistoryQuery = db
+      .rpc(
+        "ai_cron_worker_supported" as never,
+        { p_worker_name: "reminders" } as never,
+      )
+      .abortSignal(AbortSignal.timeout(timeoutMs));
     const [
       evidenceResult,
       planResult,
@@ -126,6 +132,7 @@ export async function probeProductionReadiness(
       signalResult,
       executionControlResult,
       tenantFenceResult,
+      cronRunHistoryResult,
     ] = await Promise.all([
       evidenceQuery,
       planQuery,
@@ -133,6 +140,7 @@ export async function probeProductionReadiness(
       signalQuery,
       executionControlQuery,
       tenantFenceQuery,
+      cronRunHistoryQuery,
     ]);
 
     if (
@@ -141,7 +149,8 @@ export async function probeProductionReadiness(
       exceptionResult.error ||
       signalResult.error ||
       executionControlResult.error ||
-      tenantFenceResult.error
+      tenantFenceResult.error ||
+      cronRunHistoryResult.error
     ) {
       const error =
         evidenceResult.error ??
@@ -149,7 +158,8 @@ export async function probeProductionReadiness(
         exceptionResult.error ??
         signalResult.error ??
         executionControlResult.error ??
-        tenantFenceResult.error;
+        tenantFenceResult.error ??
+        cronRunHistoryResult.error;
       return {
         ready: false,
         reason:
@@ -180,7 +190,8 @@ export async function probeProductionReadiness(
       exceptionOutcome !== "not_found" ||
       signalOutcome !== "unchanged" ||
       executionControlOutcome !== "not_found" ||
-      tenantFenceResult.data !== false
+      tenantFenceResult.data !== false ||
+      cronRunHistoryResult.data !== true
     ) {
       return { ready: false, reason: "schema_probe_unexpected" };
     }

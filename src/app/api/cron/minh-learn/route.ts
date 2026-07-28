@@ -16,14 +16,16 @@ import { getChannelCostSummary } from "@/shared/ai/channelCostTracker";
 import { processExpiredAndRemind } from "@/shared/ai/approvalRequests";
 import { canRunAutonomousAiForTenant } from "@/shared/ai/tenantExecutionBoundary";
 import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
+import { runTrackedCron } from "@/shared/security/cronRunHistory";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 min
 
-export async function GET(req: Request): Promise<NextResponse> {
+export async function GET(req: Request): Promise<Response> {
   const authorizationError = requireCronAuthorization(req);
   if (authorizationError) return authorizationError;
+  return runTrackedCron("minh_learn", async () => {
 
   const supabase = createServiceRoleClient();
 
@@ -142,7 +144,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     } as never);
   }
 
-  return NextResponse.json(
+    return NextResponse.json(
     {
       ok: agentFailures === 0,
       processed: results.length,
@@ -154,5 +156,6 @@ export async function GET(req: Request): Promise<NextResponse> {
       results,
     },
     { status: agentFailures > 0 ? 500 : 200 },
-  );
+    );
+  });
 }

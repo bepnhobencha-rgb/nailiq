@@ -33,6 +33,12 @@ vi.mock("@/shared/ai/channelCostTracker", () => ({
 vi.mock("@/shared/ai/approvalRequests", () => ({
   processExpiredAndRemind,
 }));
+vi.mock("@/shared/security/cronRunHistory", () => ({
+  runTrackedCron: vi.fn(
+    (_workerName: string, handler: () => Promise<Response>) => handler(),
+  ),
+}));
+vi.mock("server-only", () => ({}));
 
 import { GET } from "./route";
 

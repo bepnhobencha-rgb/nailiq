@@ -9,6 +9,7 @@ import { reminderLang, buildReminderSmsBody } from "@/shared/reminders/reminderS
 import { isUsPhone } from "@/shared/lib/phoneRegion";
 import { sendGroupReminderEmail, type GroupMember } from "@/shared/noshow/sendReminderEmail";
 import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
+import { runTrackedCron } from "@/shared/security/cronRunHistory";
 
 /** Vercel Cron calls this route every 15 minutes with the CRON_SECRET header. */
 export const runtime = "nodejs";
@@ -81,6 +82,7 @@ function buildSmsBody(
 export async function GET(req: Request) {
   const authorizationError = requireCronAuthorization(req);
   if (authorizationError) return authorizationError;
+  return runTrackedCron("reminders", async () => {
 
   const supabase = createServiceRoleClient();
   const now = new Date();
@@ -356,5 +358,6 @@ export async function GET(req: Request) {
 
   await Promise.allSettled([...tasks24h, ...tasks3h]);
 
-  return NextResponse.json({ ok: true, sent24h, sent3h, errors, processedAt: now.toISOString() });
+    return NextResponse.json({ ok: true, sent24h, sent3h, errors, processedAt: now.toISOString() });
+  });
 }
