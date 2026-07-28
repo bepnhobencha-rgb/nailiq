@@ -5,6 +5,27 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Approval-to-effect must be proven through the real runtime path
+
+**Status.** Implemented on `agent/approval-effect-e2e`.
+
+**Decision.**
+- The E2E suite creates a reversible internal operational-note approval in a
+  throwaway local Supabase database.
+- A browser first opens the token with GET and proves no decision or job is
+  created, then submits the real same-origin POST confirmation.
+- The test invokes the authenticated execution cron with a random per-run
+  secret and verifies the durable job, leased attempt, atomic audit-note effect,
+  terminal success, and replay idempotency from the database.
+- All provider credentials remain empty and outbound SMS/calls remain disabled.
+
+**Why.** Unit tests and static migration assertions prove individual contracts
+but not that the deployed route, database transition, worker, and effect compose
+correctly. An operating system needs one fail-closed full-path proof without
+contacting a real customer or mutating production.
+
+---
+
 ## 2026-07-28 — Approval links require an explicit POST confirmation
 
 **Status.** Implemented on `agent/approval-post-confirmation`.

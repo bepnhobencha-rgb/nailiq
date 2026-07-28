@@ -2,6 +2,18 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-07-28 (AI approval-to-effect full-path verification)
+
+- **Real runtime proof:** added a Playwright flow that verifies read-only GET,
+  explicit same-origin POST approval, durable queue creation, authenticated
+  worker execution, atomic operational-note persistence, terminal success, and
+  replay idempotency against a throwaway local Supabase stack.
+- **No external effects:** CI continues to disable outbound SMS and calls, keeps
+  provider credentials empty, and generates a per-run cron credential used only
+  by the disposable app/database pair.
+- **PM approval:** standing NailIQ roadmap authorization in this task permits
+  low-risk tests, CI changes, and reversible internal operational effects.
+
 ## 2026-07-26 (Waitlist email delivery)
 
 - **Required public waitlist email:** customers must provide a valid email before joining the online waitlist; normal appointment booking still keeps email optional.
