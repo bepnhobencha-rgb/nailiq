@@ -267,5 +267,6 @@ ${complianceFooterHtml({ email: c.email, salonName, lang })}
     }
   } catch (e) {
     console.error("[runRebook]", e);
+    throw e;
   }
 }

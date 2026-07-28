@@ -308,5 +308,6 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
     }
   } catch (e) {
     console.error("[runWinback]", e);
+    throw e;
   }
 }

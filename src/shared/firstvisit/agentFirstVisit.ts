@@ -518,5 +518,6 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
     }
   } catch (e) {
     console.error("[runFirstVisitNurture]", e);
+    throw e;
   }
 }

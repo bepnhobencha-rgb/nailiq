@@ -538,5 +538,6 @@ export async function runStrategist(salonId: string): Promise<void> {
     console.log(`[strategist] ${salonName}: ${output.recommendations.length} recommendations sent`);
   } catch (e) {
     console.error("[runStrategist]", e);
+    throw e;
   }
 }

@@ -235,6 +235,7 @@ export async function runWatchdog(salonId: string): Promise<void> {
     }
   } catch (e) {
     console.error("[runWatchdog]", e);
+    throw e;
   }
 }
 

@@ -318,5 +318,6 @@ export async function runStaffPerformance(salonId: string): Promise<void> {
     );
   } catch (e) {
     console.error("[runStaffPerformance]", e);
+    throw e;
   }
 }

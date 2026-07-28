@@ -307,5 +307,6 @@ export async function runRevenueReport(salonId: string): Promise<void> {
     console.log(`[revenue_report] ${salonName}: $${(thisWeek.totalRevenueCents / 100).toFixed(0)} this week (${changeVsLastWeekPct >= 0 ? "+" : ""}${changeVsLastWeekPct}%)`);
   } catch (e) {
     console.error("[runRevenueReport]", e);
+    throw e;
   }
 }

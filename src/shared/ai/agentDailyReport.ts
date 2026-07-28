@@ -274,5 +274,6 @@ export async function runDailyReport(
     ]);
   } catch (e) {
     console.error("[agentDailyReport]", salonId, e);
+    throw e;
   }
 }

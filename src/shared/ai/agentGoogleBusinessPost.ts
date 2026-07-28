@@ -399,5 +399,6 @@ export async function runGbpPost(salonId: string): Promise<void> {
     console.log(`[gbpPost] ${salonName}: ${theme} draft sent for ${todayYmd}`);
   } catch (e) {
     console.error("[runGbpPost]", e);
+    throw e;
   }
 }

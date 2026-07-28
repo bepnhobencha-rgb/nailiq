@@ -596,5 +596,6 @@ export async function runVipCare(salonId: string): Promise<void> {
     }
   } catch (e) {
     console.error("[runVipCare]", e);
+    throw e;
   }
 }

@@ -307,5 +307,6 @@ export async function runCancellationRadar(salonId: string): Promise<void> {
     );
   } catch (e) {
     console.error("[runCancellationRadar]", e);
+    throw e;
   }
 }

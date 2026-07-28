@@ -225,5 +225,6 @@ export async function runReviewResponder(salonId: string): Promise<void> {
     console.log(`[reviewResponder] ${salonName}: +${positive} positive, !${negative} negative`);
   } catch (e) {
     console.error("[runReviewResponder]", e);
+    throw e;
   }
 }
