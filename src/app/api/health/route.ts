@@ -5,10 +5,8 @@ import { NextResponse } from "next/server";
  * "is the Node.js runtime serving requests?" only. Returns 200 + JSON
  * payload so monitors can also assert content type / shape.
  *
- * Intentionally not exported as the deeper readiness probe (DB ping
- * etc.) — that would couple uptime to Supabase availability and create
- * false positives during transient DB issues. If a readiness probe is
- * needed later, add `/api/ready` rather than overloading this one.
+ * Deeper database/schema readiness is exposed separately at `/api/ready`,
+ * keeping liveness stable during a transient dependency incident.
  */
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
