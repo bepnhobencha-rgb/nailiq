@@ -77,15 +77,15 @@ describe("AI execution queue boundary", () => {
 
   it("updates the blank-database schema tripwire", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("tables: 98");
-    expect(parity).toContain("columns: 1327");
-    expect(parity).toContain("policies: 149");
-    expect(parity).toContain("indexes: 323");
-    expect(parity).toContain("functions: 98");
+    expect(parity).toContain("tables: 100");
+    expect(parity).toContain("columns: 1350");
+    expect(parity).toContain("policies: 151");
+    expect(parity).toContain("indexes: 329");
+    expect(parity).toContain("functions: 101");
     expect(parity).toContain('"ai_execution_jobs"');
     expect(parity).toContain('"decide_ai_approval_request"');
     expect(parity).toContain(
-      "const GRANTS = { anon: 57, authenticated: 62, service_role: 103 }",
+      "const GRANTS = { anon: 57, authenticated: 64, service_role: 105 }",
     );
   });
 });

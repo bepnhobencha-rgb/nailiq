@@ -4,8 +4,10 @@ import { ClientProfilesPanel } from "@/components/dashboard/ClientProfilesPanel"
 import { TopHostsPanel } from "@/components/dashboard/TopHostsPanel";
 import { TopSpendersPanel } from "@/components/dashboard/TopSpendersPanel";
 import { MultiNamePhonePanel } from "@/components/dashboard/MultiNamePhonePanel";
+import { ClientIdentityReviewPanel } from "@/components/dashboard/ClientIdentityReviewPanel";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { parseClientSegmentSettings } from "@/shared/dashboard/clientSegmentSettings";
+import { loadClientIdentityReview } from "@/shared/dashboard/clientIdentityReviewAction";
 
 export const dynamic = "force-dynamic";
 
@@ -38,11 +40,16 @@ export default async function ClientsPage({ params }: PageProps) {
   }
 
   // Per-salon lifecycle thresholds (Admin Settings). NULL row → app defaults.
-  const { data: segRow } = await ctx.supabase
-    .from("salons")
-    .select("client_segment_settings")
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
+  const [{ data: segRow }, identityReview] = await Promise.all([
+    ctx.supabase
+      .from("salons")
+      .select("client_segment_settings")
+      .eq("id", ctx.salon.id)
+      .maybeSingle(),
+    ctx.role === "owner" || ctx.role === "admin"
+      ? loadClientIdentityReview(slug)
+      : Promise.resolve(null),
+  ]);
   const seg = parseClientSegmentSettings(
     (segRow as { client_segment_settings?: unknown } | null)
       ?.client_segment_settings,
@@ -57,6 +64,12 @@ export default async function ClientsPage({ params }: PageProps) {
         const isManager = ctx.role === "owner" || ctx.role === "admin";
         return isManager ? (
           <>
+            {identityReview ? (
+              <ClientIdentityReviewPanel
+                slug={slug}
+                initial={identityReview}
+              />
+            ) : null}
             <TopSpendersPanel slug={slug} viewerRole={ctx.role} />
             <TopHostsPanel slug={slug} viewerRole={ctx.role} />
             <MultiNamePhonePanel slug={slug} viewerRole={ctx.role} />
