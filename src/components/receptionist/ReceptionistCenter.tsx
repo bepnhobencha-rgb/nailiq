@@ -3220,7 +3220,7 @@ function ReceptionistCenterInner({
                   variant="secondary"
                   size="sm"
                   data-testid="header-add-appointment"
-                  className="hidden min-h-11 text-base sm:inline-flex"
+                  className="min-h-11 text-base"
                   onClick={() => {
                     // Open a blank form on the currently-viewed date so a
                     // receptionist booking ahead (viewing tomorrow) doesn't

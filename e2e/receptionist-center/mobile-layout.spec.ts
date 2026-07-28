@@ -90,14 +90,9 @@ test.describe("Mobile layout", () => {
     await expectPrimaryControlSize(page.getByTestId("header-add-walkin"));
     await expectPrimaryControlSize(page.getByTestId("walkin-submit"));
 
-    const createMenu = page
-      .locator("summary")
-      .filter({ hasText: /create new|tạo mới/i });
-    await createMenu.click();
-
-    const newAppointment = page.getByRole("button", {
-      name: /new appointment|lịch hẹn mới/i,
-    });
+    // Classic mobile previously hid this CTA below the `sm` breakpoint,
+    // leaving phone users no direct way to create a scheduled appointment.
+    const newAppointment = page.getByTestId("header-add-appointment");
     await expectPrimaryControlSize(newAppointment);
     await newAppointment.click();
 
