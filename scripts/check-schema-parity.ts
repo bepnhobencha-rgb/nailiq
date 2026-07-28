@@ -19,7 +19,7 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260728121000. Refresh these with each schema-changing forward
+ * through 20260728130500. Refresh these with each schema-changing forward
  * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
@@ -27,7 +27,7 @@ const PRODUCTION = {
   columns: 1318,
   policies: 147,
   /**
-   * APP functions only — 93 after the rehearsed forward migrations.
+   * APP functions only — 96 after the rehearsed forward migrations.
    *
    * Counting every `public` function is a trap: many belong to EXTENSIONS
    * (pgcrypto, btree_gist, pg_trgm, uuid-ossp), which production happens to have
@@ -36,7 +36,7 @@ const PRODUCTION = {
    * The query below excludes anything a `pg_depend` extension edge points at,
    * so extension placement cannot distort this release-shape tripwire.
    */
-  functions: 93,
+  functions: 96,
   triggers: 31,
   indexes: 321,
 } as const;
@@ -74,11 +74,13 @@ const CRITICAL_TABLES = [
 const CRITICAL_FUNCTIONS = [
   "compute_no_show_risk",
   "claim_ai_execution_jobs",
+  "cancel_ineligible_ai_execution_jobs",
   "control_ai_execution_job",
   "control_watchdog_alert",
   "decide_ai_approval_request",
   "finish_ai_execution_job",
   "execute_ai_operational_note",
+  "execute_ai_operational_note_v2",
   "recover_stale_ai_execution_jobs",
   "record_ai_audience_preparation",
   "record_ai_campaign_manifest",
@@ -92,6 +94,7 @@ const CRITICAL_FUNCTIONS = [
   "surface_strategist_operational_note_approval",
   "sync_ai_execution_job_exception",
   "sync_ai_manager_operational_exceptions",
+  "ai_tenant_allows_autonomous_execution",
 ] as const;
 
 const dbUrl = process.env.DB_URL;
