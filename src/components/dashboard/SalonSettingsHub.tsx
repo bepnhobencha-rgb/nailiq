@@ -318,6 +318,10 @@ export function SalonSettingsHub({
         : "Integrations, reviews, plan, and advanced settings",
       links: [
         {
+          href: `/dashboard/${encodeURIComponent(slug)}/settings/readiness`,
+          label: vi ? "Kiểm tra sẵn sàng go-live" : "Go-live readiness",
+        },
+        {
           href: "#cat-integrations",
           label: vi ? "Tích hợp & đánh giá" : "Integrations & reviews",
         },
