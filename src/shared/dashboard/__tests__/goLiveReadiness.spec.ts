@@ -32,9 +32,37 @@ describe("evaluateGoLiveReadiness", () => {
 
     expect(result.readyForManualReview).toBe(true);
     expect(result.passedBlocking).toBe(result.totalBlocking);
+    expect(result.approvedForGoLive).toBe(false);
     expect(
       result.checks.find((check) => check.id === "human-approval"),
     ).toMatchObject({ state: "review", blocking: false });
+  });
+
+  it("requires all human attestations before reporting go-live approval", () => {
+    const result = evaluateGoLiveReadiness({
+      ...readyInput,
+      humanAttestations: {
+        hoursConfirmed: true,
+        otpPolicyConfirmed: true,
+        liveRehearsalCompleted: true,
+        ownerApproved: true,
+        ownerApprovalStale: false,
+      },
+    });
+
+    expect(result.approvedForGoLive).toBe(true);
+    expect(
+      result.checks
+        .filter((check) =>
+          [
+            "hours-confirmation",
+            "otp-policy",
+            "human-approval",
+            "owner-approval",
+          ].includes(check.id),
+        )
+        .every((check) => check.state === "pass"),
+    ).toBe(true);
   });
 
   it("fails closed when bookable data is incomplete", () => {

@@ -8,6 +8,11 @@ import type {
 } from "@/shared/dashboard/goLiveReadiness";
 import { cn } from "@/shared/lib/cn";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
+import { GoLiveAttestationControls } from "@/components/dashboard/GoLiveAttestationControls";
+import type {
+  GoLiveAttestationEvent,
+  GoLiveAttestationState,
+} from "@/shared/dashboard/goLiveAttestations";
 
 function CheckCard({
   check,
@@ -97,9 +102,17 @@ function CheckCard({
 export function GoLiveReadinessPanel({
   readiness,
   salonName,
+  slug,
+  role,
+  attestationState,
+  attestationEvents,
 }: {
   readiness: GoLiveReadiness;
   salonName: string;
+  slug: string;
+  role: "owner" | "admin";
+  attestationState: GoLiveAttestationState;
+  attestationEvents: GoLiveAttestationEvent[];
 }) {
   const { language } = useUserLanguage();
   const vi = language === "vi";
@@ -107,13 +120,15 @@ export function GoLiveReadinessPanel({
     (check) =>
       check.id !== "hours-confirmation" &&
       check.id !== "otp-policy" &&
-      check.id !== "human-approval",
+      check.id !== "human-approval" &&
+      check.id !== "owner-approval",
   );
   const human = readiness.checks.filter(
     (check) =>
       check.id === "hours-confirmation" ||
       check.id === "otp-policy" ||
-      check.id === "human-approval",
+      check.id === "human-approval" ||
+      check.id === "owner-approval",
   );
 
   return (
@@ -122,7 +137,7 @@ export function GoLiveReadinessPanel({
         data-testid="go-live-readiness-summary"
         className={cn(
           "rounded-3xl border p-5 sm:p-6",
-          readiness.readyForManualReview
+          readiness.approvedForGoLive
             ? "border-nq-success/35 bg-nq-success/5"
             : "border-nq-primary/30 bg-nq-surface/50",
         )}
@@ -142,15 +157,19 @@ export function GoLiveReadinessPanel({
           <span
             className={cn(
               "rounded-full px-3 py-1.5 text-sm font-semibold",
-              readiness.readyForManualReview
+              readiness.approvedForGoLive
                 ? "bg-nq-success/10 text-nq-success"
                 : "bg-nq-primary/10 text-nq-primary",
             )}
           >
-            {readiness.readyForManualReview
+            {readiness.approvedForGoLive
               ? vi
-                ? "Sẵn sàng kiểm tra thủ công"
-                : "Ready for manual review"
+                ? "Đã được phê duyệt go-live"
+                : "Approved for go-live"
+              : readiness.readyForManualReview
+                ? vi
+                  ? "Sẵn sàng kiểm tra thủ công"
+                  : "Ready for manual review"
               : vi
                 ? "Chưa sẵn sàng go-live"
                 : "Not ready for go-live"}
@@ -200,6 +219,14 @@ export function GoLiveReadinessPanel({
           ))}
         </div>
       </section>
+
+      <GoLiveAttestationControls
+        slug={slug}
+        role={role}
+        readiness={readiness}
+        state={attestationState}
+        events={attestationEvents}
+      />
     </div>
   );
 }
@@ -208,10 +235,16 @@ export function GoLiveReadinessPageContent({
   slug,
   readiness,
   salonName,
+  role,
+  attestationState,
+  attestationEvents,
 }: {
   slug: string;
   readiness: GoLiveReadiness | null;
   salonName: string | null;
+  role: "owner" | "admin" | null;
+  attestationState: GoLiveAttestationState | null;
+  attestationEvents: GoLiveAttestationEvent[];
 }) {
   const { language } = useUserLanguage();
   const vi = language === "vi";
@@ -222,7 +255,7 @@ export function GoLiveReadinessPageContent({
         slug={slug}
         title={vi ? "Sẵn sàng Go-Live" : "Go-Live Readiness"}
       />
-      {!readiness || !salonName ? (
+      {!readiness || !salonName || !role || !attestationState ? (
         <section
           role="alert"
           data-testid="go-live-readiness-unavailable"
@@ -233,7 +266,14 @@ export function GoLiveReadinessPageContent({
             : "Readiness data is unavailable. No go-live decision was made. Please try again."}
         </section>
       ) : (
-        <GoLiveReadinessPanel readiness={readiness} salonName={salonName} />
+        <GoLiveReadinessPanel
+          readiness={readiness}
+          salonName={salonName}
+          slug={slug}
+          role={role}
+          attestationState={attestationState}
+          attestationEvents={attestationEvents}
+        />
       )}
     </>
   );

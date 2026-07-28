@@ -27,6 +27,9 @@ export default async function GoLiveReadinessPage({ params }: Props) {
           slug={slug}
           readiness={result.ok ? result.readiness : null}
           salonName={result.ok ? result.salonName : null}
+          role={result.ok ? result.role : null}
+          attestationState={result.ok ? result.attestationState : null}
+          attestationEvents={result.ok ? result.attestationEvents : []}
         />
       </MobileStack>
     </ResponsiveShell>
