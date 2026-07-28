@@ -5,6 +5,32 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Public salon routes reject impossible slugs before data access
+
+**Status.** Implemented on `agent/public-slug-boundary`.
+
+**Decision.**
+- A public booking slug must match the same lowercase ASCII word-and-single-
+  hyphen grammar produced by salon registration.
+- Malformed route segments return the existing not-found outcome before a
+  Supabase query or similar-slug search is constructed.
+- Valid unknown slugs still perform the normal existence lookup and may offer
+  suggestions; database failures remain distinct from genuine not-found
+  results so live salons are not incorrectly de-indexed.
+
+**Why.** Production operating records showed internet scanners requesting
+segments such as `wp-config.php.bak`. The previous boundary checked only length,
+so impossible salon names reached Supabase and could turn provider/WAF
+responses into noisy application errors. Rejecting syntax that registration
+can never create protects database capacity and keeps operator alerts focused
+on real customer traffic.
+
+**Compatibility.** All five current production salon slugs and every slug
+produced by `slugifySalonName` satisfy the grammar. This does not alter valid
+salon URLs, booking data, authentication, messaging, or financial behavior.
+
+---
+
 ## 2026-07-28 — Every scheduled route has a fail-honest operating record
 
 **Status.** Implemented on `agent/cron-run-history`.
