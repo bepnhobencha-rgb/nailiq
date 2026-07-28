@@ -5,6 +5,31 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Error remediation starts from stored technical evidence
+
+**Status.** Implemented on `agent/fix-choose-salon-hydration`.
+
+**Decision.**
+- The superadmin-only System Health error view loads and exposes the stack and
+  bounded context already stored with each application error.
+- Technical evidence remains collapsed by default and is never added to public
+  error responses or salon-facing surfaces.
+- AI summaries and suggested fixes remain visible, but operators can compare
+  them with the actual stack, route, href, and user-agent evidence before
+  accepting a remediation.
+
+**Why.** The active React hydration alert on `/choose-salon` had been assigned a
+specific component-level explanation by AI even though the operator surface
+showed only the minified message. Source review did not support that conclusion.
+An AI operating system must distinguish evidence from inference; otherwise it
+can confidently repair the wrong component and create a new regression.
+
+**Access boundary.** Loading stack/context still requires an authenticated
+superadmin role before the service-role client is constructed. Tests prove that
+an unauthenticated caller cannot reach the evidence query.
+
+---
+
 ## 2026-07-28 — Public salon routes reject impossible slugs before data access
 
 **Status.** Implemented on `agent/public-slug-boundary`.
