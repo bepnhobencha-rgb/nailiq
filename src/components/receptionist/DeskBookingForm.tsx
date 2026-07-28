@@ -858,6 +858,7 @@ export default function DeskBookingForm({
     >
       <div
         ref={popoverRef}
+        data-testid="desk-booking-form"
         className={
           anchored
             ? "fixed z-[61] w-[min(24rem,calc(100vw-1rem))] overflow-y-auto rounded-xl border border-nq-muted/25 bg-nq-surface p-5 shadow-2xl"
@@ -908,6 +909,7 @@ export default function DeskBookingForm({
             <div>
               <label className={labelCls}>{tx.phone}</label>
               <input
+                data-testid="desk-client-phone"
                 className={inputCls}
                 inputMode="tel"
                 placeholder="+1 (604) 555-1234"
@@ -922,6 +924,7 @@ export default function DeskBookingForm({
             <div className="relative">
               <label className={labelCls}>{tx.name}</label>
               <input
+                data-testid="desk-client-name"
                 className={inputCls}
                 value={name}
                 autoComplete="off"
@@ -944,6 +947,7 @@ export default function DeskBookingForm({
                       <li key={h.phone}>
                         <button
                           type="button"
+                          data-testid="desk-client-search-hit"
                           // onMouseDown (not onClick) fires before the input's
                           // onBlur, so the pick isn't swallowed by the hide.
                           onMouseDown={(e) => {
@@ -973,6 +977,7 @@ export default function DeskBookingForm({
             <div>
               <label className={labelCls}>{tx.email}</label>
               <input
+                data-testid="desk-client-email"
                 className={inputCls}
                 inputMode="email"
                 value={email}
@@ -983,6 +988,7 @@ export default function DeskBookingForm({
             <div>
               <label className={labelCls}>{tx.service}</label>
               <select
+                data-testid="desk-service-select"
                 className={inputCls}
                 value={serviceId}
                 onChange={(e) => setServiceId(e.target.value)}
@@ -1026,6 +1032,7 @@ export default function DeskBookingForm({
             <div>
               <label className={labelCls}>{tx.staff}</label>
               <select
+                data-testid="desk-staff-select"
                 className={inputCls}
                 value={staffId}
                 onChange={(e) => setStaffId(e.target.value)}
@@ -1059,6 +1066,7 @@ export default function DeskBookingForm({
             <div>
               <label className={labelCls}>{tx.date}</label>
               <input
+                data-testid="desk-date-input"
                 type="date"
                 className={inputCls}
                 min={salonToday(timezone, new Date().toISOString())}
@@ -1083,6 +1091,7 @@ export default function DeskBookingForm({
                         <button
                           key={s.label}
                           type="button"
+                          data-testid="desk-time-slot"
                           onClick={() => {
                             // Becomes the new preferred time so a later add-on
                             // change keeps it selected (sticky, like the grid click).
@@ -1287,6 +1296,7 @@ export default function DeskBookingForm({
 
             <button
               type="button"
+              data-testid="desk-booking-submit"
               disabled={!canSubmit}
               onClick={submit}
               className="mt-1 min-h-11 w-full rounded-md bg-nq-primary px-4 py-2.5 text-base font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
