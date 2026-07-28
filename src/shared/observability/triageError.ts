@@ -1,6 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
+import {
+  assessErrorEvidence,
+  evidenceConflictSummary,
+} from "@/shared/observability/errorEvidence";
 
 /**
  * Phase 2 — the "smart" layer. Claude triages a captured error into a
@@ -29,7 +33,9 @@ type ErrRow = {
   context: Record<string, unknown> | null;
 };
 
-export async function triageError(id: string): Promise<{ ok: boolean }> {
+export async function triageError(
+  id: string,
+): Promise<{ ok: boolean; blocked?: "evidence_conflict" }> {
   try {
     const db = createServiceRoleClient();
     const { data } = await db
@@ -39,6 +45,19 @@ export async function triageError(id: string): Promise<{ ok: boolean }> {
       .maybeSingle();
     const e = data as ErrRow | null;
     if (!e) return { ok: false };
+
+    const evidence = assessErrorEvidence(e.route, e.context);
+    if (evidence.status === "conflict") {
+      await db
+        .from("error_logs")
+        .update({
+          ai_summary: evidenceConflictSummary(evidence),
+          ai_suggested_fix:
+            "Wait for a new route-scoped occurrence before triage or code changes.",
+        } as never)
+        .eq("id", id);
+      return { ok: false, blocked: "evidence_conflict" };
+    }
 
     const client = getClient();
     let summary: string;

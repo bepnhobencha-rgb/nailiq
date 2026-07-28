@@ -114,4 +114,26 @@ describe("superadmin error evidence boundary", () => {
     expect(html).toContain("ChooseSalonClient");
     expect(html).toContain("Evidence Browser");
   });
+
+  it("shows the conflict and removes autonomous remediation controls", () => {
+    const html = renderToStaticMarkup(
+      createElement(ErrorMonitorClient, {
+        initialRows: [
+          {
+            ...evidenceRow,
+            context: {
+              ...evidenceRow.context,
+              href: "https://www.nailiq.ca/dashboard/hilite-anaheim/center",
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain("Evidence conflict");
+    expect(html).toContain("AI triage and draft fixes are blocked");
+    expect(html).not.toContain("🧠 Triage");
+    expect(html).not.toContain("✨ Draft fix");
+    expect(html).toContain("Resolve");
+  });
 });

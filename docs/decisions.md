@@ -5,6 +5,31 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Autonomous error remediation fails closed on contradictory evidence
+
+**Status.** Implemented on `agent/error-evidence-gate`.
+
+**Decision.**
+- Before AI triage or a draft fix, the stored error route must agree with the
+  pathname in the latest captured href.
+- A contradictory legacy row receives a deterministic explanation; no model,
+  repository read, GitHub write, or draft PR is attempted.
+- System Health displays the conflict and removes the triage and draft-fix
+  controls while preserving manual resolve/ignore controls.
+- Missing evidence remains visible but is not labeled as a proven conflict.
+
+**Why.** Before route-aware fingerprints were deployed, one row could retain
+the first event's route while its context was replaced by a later occurrence
+from another route. Feeding that mixed record to AI produced a confident but
+unsupported component-level fix. Autonomous remediation must stop when its
+primary evidence contradicts itself rather than convert ambiguity into code.
+
+**Recovery.** Historical rows are not rewritten. A new occurrence uses the
+route-aware fingerprint and creates internally consistent evidence that can be
+triaged safely.
+
+---
+
 ## 2026-07-28 — Production errors are grouped by route as well as message
 
 **Status.** Implemented on `agent/error-fingerprint-route`.
