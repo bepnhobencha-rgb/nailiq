@@ -36,6 +36,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       summary: {
         inspected: summary.inspected,
         recovered: summary.recovered,
+        tenant_canceled: summary.tenantCanceled,
         claimed: summary.claimed,
         succeeded: summary.succeeded,
         failed: summary.failed,

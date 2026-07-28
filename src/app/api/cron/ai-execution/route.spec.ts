@@ -59,6 +59,7 @@ describe("AI execution cron route", () => {
     processExecutionQueue.mockResolvedValue({
       inspected: 1,
       recovered: 0,
+      tenantCanceled: 0,
       claimed: 1,
       succeeded: 1,
       failed: 0,
