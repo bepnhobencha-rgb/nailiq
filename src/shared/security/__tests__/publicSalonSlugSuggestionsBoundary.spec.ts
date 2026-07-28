@@ -12,6 +12,7 @@ const proof = read(
 const rollback = read(
   "scripts/security/rehearse-public-salon-slug-suggestions-rollback.sql",
 );
+const parity = read("scripts/check-schema-parity.ts");
 const route = read("src/app/api/public/salon-suggestions/route.ts");
 const notFound = read("src/app/not-found.tsx");
 const suggestions = read(
@@ -45,6 +46,8 @@ describe("public salon slug suggestion boundary", () => {
     expect(migration).toContain("privilege_type = 'EXECUTE'");
     expect(proof).toContain("public.public_salon_profiles");
     expect(proof).toContain("grantee = 0");
+    expect(parity).toContain("functions: 98");
+    expect(parity).toContain('"suggest_salon_slugs_by_similarity"');
   });
 
   it("rehearses removal without changing the verified final state", () => {
