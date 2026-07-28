@@ -4,9 +4,11 @@ vi.mock("server-only", () => ({}));
 
 import type { MinhLesson } from "@/shared/ai/lessons";
 import {
+  deriveExecutionWorkerHealth,
   deriveAiOperatingHealth,
   deriveLearnedAiControls,
 } from "@/shared/ai/operatingState";
+import type { ExecutionWorkerHeartbeatRow } from "@/shared/ai/executionHeartbeat";
 
 const NOW = new Date("2026-07-27T18:00:00.000Z");
 
@@ -46,7 +48,63 @@ describe("AI operating state", () => {
       stalled: 1,
       activeWork: 3,
       needsAttention: 5,
+      workerIssue: false,
     });
+  });
+
+  it("reports a failed, stale, or missing scheduler as an operating issue", () => {
+    const failedWorker = {
+      status: "failed" as const,
+      lastStartedAt: "2026-07-27T17:58:00.000Z",
+      lastCompletedAt: "2026-07-27T17:58:01.000Z",
+      lastSucceededAt: "2026-07-27T17:50:00.000Z",
+      lastError: "claim_failed",
+    };
+    expect(
+      deriveAiOperatingHealth(
+        {
+          queued: 0,
+          waitingInput: 0,
+          running: 0,
+          failed: 0,
+          stalled: 0,
+        },
+        failedWorker,
+      ),
+    ).toMatchObject({
+      tone: "issue",
+      workerIssue: true,
+      needsAttention: 1,
+    });
+  });
+
+  it("derives worker freshness from the persisted scheduler heartbeat", () => {
+    const heartbeat: ExecutionWorkerHeartbeatRow = {
+      worker_name: "ai_execution",
+      run_id: "run-1",
+      status: "succeeded",
+      started_at: "2026-07-27T17:56:00.000Z",
+      completed_at: "2026-07-27T17:56:01.000Z",
+      succeeded_at: "2026-07-27T17:56:01.000Z",
+      last_error: null,
+      summary: { claimed: 0 },
+      updated_at: "2026-07-27T17:56:01.000Z",
+    };
+
+    expect(deriveExecutionWorkerHealth(heartbeat, NOW).status).toBe("healthy");
+    expect(
+      deriveExecutionWorkerHealth(
+        { ...heartbeat, status: "running" },
+        NOW,
+      ).status,
+    ).toBe("running");
+    expect(
+      deriveExecutionWorkerHealth(
+        { ...heartbeat, started_at: "2026-07-27T17:44:59.000Z" },
+        NOW,
+      ).status,
+    ).toBe("stale");
+    expect(deriveExecutionWorkerHealth(null, NOW).status).toBe("unknown");
   });
 
   it("distinguishes owner input, active work, and an idle healthy queue", () => {

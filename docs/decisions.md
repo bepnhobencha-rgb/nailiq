@@ -5,6 +5,30 @@ Newest entries on top.
 
 ---
 
+## 2026-07-27 — An idle queue is healthy only when the worker is alive
+
+**Status.** Implemented on `agent/ai-execution-heartbeat`.
+
+**Context.** AI Control Center could expose failed jobs and expired per-job
+leases, but it could not distinguish a genuinely idle queue from a scheduler
+that had stopped invoking the execution cron. Queued work could therefore look
+active indefinitely while the worker itself was silent.
+
+**Decision.**
+- Every authorized execution-cron invocation records a fenced start and either
+  a success summary or a bounded failure reason in one service-role-only
+  singleton.
+- A newer overlapping run replaces the run token. An older run cannot overwrite
+  the newer heartbeat when it eventually completes.
+- The worker fails closed when it cannot record its start; AI work never runs
+  invisibly outside the operating record.
+- AI Control Center reports missing, failed, and older-than-15-minute
+  heartbeats as an operating issue even when no individual job is running.
+- The heartbeat adds no messaging, payment, pricing, booking mutation, or
+  authentication authority.
+
+---
+
 ## 2026-07-27 — Execution leases fence stale AI workers
 
 **Status.** Implemented on `agent/ai-execution-leases`.

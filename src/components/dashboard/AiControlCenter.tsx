@@ -336,7 +336,21 @@ function OperatingStatus({
   nowIso: string;
 }) {
   const vi = language === "vi";
-  const { health } = state;
+  const { health, worker } = state;
+  const workerCopy = {
+    healthy: vi ? "Worker vừa chạy thành công" : "Worker recently succeeded",
+    running: vi ? "Worker đang chạy" : "Worker is running",
+    failed: vi ? "Lần chạy worker gần nhất bị lỗi" : "Latest worker run failed",
+    stale: vi
+      ? "Worker không chạy hơn 15 phút"
+      : "Worker has not run for over 15 minutes",
+    unknown: vi
+      ? "Chưa ghi nhận heartbeat của worker"
+      : "No worker heartbeat has been recorded",
+  }[worker.status];
+  const workerObservedAt = worker.lastStartedAt
+    ? relativeTime(worker.lastStartedAt, nowIso, language)
+    : null;
   const copy = {
     healthy: {
       title: vi ? "AI đang vận hành ổn định" : "AI is operating normally",
@@ -359,8 +373,8 @@ function OperatingStatus({
     issue: {
       title: vi ? "Có công việc AI cần kiểm tra" : "AI work needs review",
       detail: vi
-        ? `${health.failed} lỗi · ${health.stalled} worker quá hạn 15 phút. Hệ thống không che giấu lỗi hoặc tự coi là thành công.`
-        : `${health.failed} failed · ${health.stalled} worker leases over 15 minutes. Failures are never hidden or reported as success.`,
+        ? `${health.failed} job lỗi · ${health.stalled} lease quá hạn${health.workerIssue ? " · scheduler cần kiểm tra" : ""}. Hệ thống không che giấu lỗi hoặc tự coi là thành công.`
+        : `${health.failed} failed jobs · ${health.stalled} expired leases${health.workerIssue ? " · scheduler needs review" : ""}. Failures are never hidden or reported as success.`,
     },
   }[health.tone];
   const tone =
@@ -396,6 +410,15 @@ function OperatingStatus({
           <p className="mt-2 text-[11px] text-nq-muted">
             {vi ? "Quan sát" : "Observed"}{" "}
             {relativeTime(state.observedAt, nowIso, language)}
+          </p>
+          <p
+            className={`mt-1 text-[11px] font-medium ${
+              health.workerIssue ? "text-nq-error" : "text-nq-muted"
+            }`}
+          >
+            {workerCopy}
+            {workerObservedAt ? ` · ${workerObservedAt}` : ""}
+            {worker.lastError ? ` · ${worker.lastError}` : ""}
           </p>
         </div>
       </div>
