@@ -350,7 +350,7 @@ export async function preflightCampaignDispatch(input: {
   };
 
   const { data: transition, error: transitionError } = await db.rpc(
-    "record_ai_campaign_dispatch_preflight_fresh" as never,
+    "record_ai_campaign_preflight_evidence" as never,
     {
       p_job_id: job.id,
       p_salon_id: input.salonId,
@@ -365,6 +365,7 @@ export async function preflightCampaignDispatch(input: {
         preflight_status?: "ready" | "blocked";
         preflight_fingerprint?: string;
         valid_until?: string;
+        decision_count?: number;
       }
     | null;
   if (
@@ -375,7 +376,8 @@ export async function preflightCampaignDispatch(input: {
       row.outcome !== "refreshed") ||
     (row.preflight_status !== "ready" && row.preflight_status !== "blocked") ||
     row.preflight_fingerprint !== summary.preflight_fingerprint ||
-    !row.valid_until
+    !row.valid_until ||
+    row.decision_count !== decisions.length
   ) {
     return { ok: false, error: "preflight_record_failed" };
   }

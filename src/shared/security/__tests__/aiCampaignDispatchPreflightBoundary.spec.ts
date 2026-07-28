@@ -67,7 +67,7 @@ describe("AI campaign dispatch preflight boundary", () => {
 
   it("keeps dispatch locked and has no outbound provider dependency", () => {
     expect(service).toContain(
-      '"record_ai_campaign_dispatch_preflight_fresh" as never',
+      '"record_ai_campaign_preflight_evidence" as never',
     );
     expect(service).toContain("dispatch_enabled !== false");
     expect(service).not.toMatch(/twilio|resend/i);

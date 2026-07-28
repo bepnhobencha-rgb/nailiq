@@ -7,6 +7,7 @@ import {
   getApprovalEffectState,
   recordTestCampaignManifest,
   recordTestCampaignDispatchPreflight,
+  sealTestCampaignDispatchPlan,
   seedBulkMessageApproval,
   seedCampaignRecipient,
   seedOperationalNoteApproval,
@@ -316,12 +317,22 @@ test.describe("AI approval execution", () => {
     expect(preflightResults[0]?.valid_until).toBe(
       preflightResults[1]?.valid_until,
     );
+    expect(preflightResults[0]?.decision_count).toBe(1);
 
     const preflightState = await getCampaignDispatchPreflightState(
       approvedRelease.job?.id as string,
     );
     expect(preflightState.preflights).toHaveLength(1);
-    expect(preflightState.audits).toHaveLength(1);
+    expect(preflightState.decisions).toEqual([
+      expect.objectContaining({
+        preflight_id: preflightResults[0]?.preflight_id,
+        salon_id: seededSalon.salonId,
+        client_profile_id: clientProfileId,
+        sms: true,
+        email: false,
+        exclusion: null,
+      }),
+    ]);
     expect(preflightState.job).toMatchObject({
       status: "waiting_input",
       attempt_count: 0,
@@ -343,6 +354,67 @@ test.describe("AI approval execution", () => {
         },
       },
     });
+
+    const planResults = await Promise.all([
+      sealTestCampaignDispatchPlan({
+        salonId: seededSalon.salonId,
+        jobId: approvedRelease.job?.id as string,
+      }),
+      sealTestCampaignDispatchPlan({
+        salonId: seededSalon.salonId,
+        jobId: approvedRelease.job?.id as string,
+      }),
+    ]);
+    expect(planResults.map((item) => item.outcome).sort()).toEqual([
+      "created",
+      "unchanged",
+    ]);
+    expect(planResults[0]?.plan_id).toBe(planResults[1]?.plan_id);
+    expect(planResults[0]?.plan_status).toBe("sealed");
+    expect(planResults[0]?.plan_fingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(planResults[0]?.expires_at).toBe(
+      preflightResults[0]?.valid_until,
+    );
+
+    const plannedState = await getCampaignDispatchPreflightState(
+      approvedRelease.job?.id as string,
+    );
+    expect(plannedState.plans).toEqual([
+      expect.objectContaining({
+        id: planResults[0]?.plan_id,
+        preflight_id: preflightResults[0]?.preflight_id,
+        status: "sealed",
+        recipient_count: 1,
+        sms_recipient_count: 1,
+        email_recipient_count: 0,
+        dispatch_enabled: false,
+        no_messages_sent: true,
+      }),
+    ]);
+    expect(plannedState.job).toMatchObject({
+      status: "waiting_input",
+      attempt_count: 0,
+      result: {
+        blocker: "dispatch_not_enabled",
+        dispatch_enabled: false,
+        no_messages_sent: true,
+        dispatch_plan: {
+          plan_id: planResults[0]?.plan_id,
+          plan_status: "sealed",
+          recipient_count: 1,
+          sms_recipient_count: 1,
+          email_recipient_count: 0,
+          dispatch_enabled: false,
+          no_messages_sent: true,
+        },
+      },
+    });
+    expect(
+      plannedState.audits.filter(
+        (audit) =>
+          audit.action_type === "campaign_dispatch_plan_sealed",
+      ),
+    ).toHaveLength(1);
 
     const workerAfterPreflight = await request.get(
       "/api/cron/ai-execution",

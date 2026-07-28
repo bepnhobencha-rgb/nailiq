@@ -23,7 +23,7 @@ describe("production readiness route", () => {
   });
 
   it("returns ready only when the required database capability responds", async () => {
-    abortSignal.mockResolvedValue({
+    abortSignal.mockResolvedValueOnce({
       data: [
         {
           outcome: "job_not_preflightable",
@@ -32,6 +32,10 @@ describe("production readiness route", () => {
           preflight_fingerprint: null,
         },
       ],
+      error: null,
+    });
+    abortSignal.mockResolvedValueOnce({
+      data: [{ outcome: "job_not_plannable", plan_id: null }],
       error: null,
     });
 
@@ -45,12 +49,12 @@ describe("production readiness route", () => {
       checks: {
         database_schema: {
           status: "ok",
-          capability: "record_ai_campaign_dispatch_preflight_fresh_v1",
+          capability: "immutable_ai_campaign_dispatch_plan_v1",
         },
       },
     });
     expect(rpc).toHaveBeenCalledWith(
-      "record_ai_campaign_dispatch_preflight_fresh",
+      "record_ai_campaign_preflight_evidence",
       expect.objectContaining({
         p_job_id: "00000000-0000-0000-0000-000000000001",
         p_salon_id: "00000000-0000-0000-0000-000000000002",
@@ -63,6 +67,10 @@ describe("production readiness route", () => {
         p_decisions: [],
       }),
     );
+    expect(rpc).toHaveBeenCalledWith("seal_ai_campaign_dispatch_plan", {
+      p_job_id: "00000000-0000-0000-0000-000000000001",
+      p_salon_id: "00000000-0000-0000-0000-000000000002",
+    });
   });
 
   it("reports a missing migration without exposing provider details", async () => {
