@@ -14,4 +14,9 @@ export type OperationalExceptionRow = {
   acknowledged_at: string | null;
   resolved_at: string | null;
   resolution_note: string | null;
+  source_type: string;
+  source_ref: string;
+  occurrence_count: number;
+  first_seen_at: string;
+  last_seen_at: string;
 };

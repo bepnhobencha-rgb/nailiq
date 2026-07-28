@@ -8,7 +8,7 @@ const PROBE_ALERT_ID = "00000000-0000-0000-0000-000000000004";
 const PROBE_ACTOR_ID = "00000000-0000-0000-0000-000000000005";
 
 export const REQUIRED_SCHEMA_CAPABILITY =
-  "ai_operational_exception_lifecycle_v1";
+  "ai_operational_exception_signals_v1";
 
 export type ProductionReadiness =
   | { ready: true }
@@ -76,15 +76,40 @@ export async function probeProductionReadiness(
         p_resolution_note: null,
       } as never)
       .abortSignal(AbortSignal.timeout(timeoutMs));
-    const [evidenceResult, planResult, exceptionResult] = await Promise.all([
+    const signalQuery = db
+      .rpc("record_ai_operational_exception_signal" as never, {
+        p_salon_id: PROBE_SALON_ID,
+        p_dedupe_key: "readiness:nonexistent",
+        p_source_type: "readiness",
+        p_source_ref: "schema_probe",
+        p_kind: "readiness_probe",
+        p_severity: "info",
+        p_title: "Readiness schema probe",
+        p_body: null,
+        p_signal: "recovered",
+        p_evidence: { probe: true, no_write_expected: true },
+        p_now: new Date(0).toISOString(),
+      } as never)
+      .abortSignal(AbortSignal.timeout(timeoutMs));
+    const [evidenceResult, planResult, exceptionResult, signalResult] =
+      await Promise.all([
       evidenceQuery,
       planQuery,
       exceptionQuery,
-    ]);
+       signalQuery,
+      ]);
 
-    if (evidenceResult.error || planResult.error || exceptionResult.error) {
+    if (
+      evidenceResult.error ||
+      planResult.error ||
+      exceptionResult.error ||
+      signalResult.error
+    ) {
       const error =
-        evidenceResult.error ?? planResult.error ?? exceptionResult.error;
+        evidenceResult.error ??
+        planResult.error ??
+        exceptionResult.error ??
+        signalResult.error;
       return {
         ready: false,
         reason:
@@ -102,10 +127,14 @@ export async function probeProductionReadiness(
     const exceptionOutcome = Array.isArray(exceptionResult.data)
       ? (exceptionResult.data[0] as { outcome?: unknown } | undefined)?.outcome
       : exceptionResult.data;
+    const signalOutcome = Array.isArray(signalResult.data)
+      ? (signalResult.data[0] as { outcome?: unknown } | undefined)?.outcome
+      : signalResult.data;
     if (
       evidenceOutcome !== "job_not_preflightable" ||
       planOutcome !== "job_not_plannable" ||
-      exceptionOutcome !== "not_found"
+      exceptionOutcome !== "not_found" ||
+      signalOutcome !== "unchanged"
     ) {
       return { ready: false, reason: "schema_probe_unexpected" };
     }

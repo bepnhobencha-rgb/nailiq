@@ -5,12 +5,14 @@ const {
   recordAiWorkerHeartbeat,
   runWatchdog,
   select,
+  syncManagerExceptionSignals,
   surfaceStrategistOperationalNoteApproval,
 } = vi.hoisted(() => ({
     createServiceRoleClient: vi.fn(),
     recordAiWorkerHeartbeat: vi.fn(),
     runWatchdog: vi.fn(),
     select: vi.fn(),
+    syncManagerExceptionSignals: vi.fn(),
     surfaceStrategistOperationalNoteApproval: vi.fn(),
   }));
 
@@ -29,6 +31,9 @@ vi.mock("@/shared/watchdog/agentWatchdog", () => ({
 vi.mock("@/shared/ai/strategistOperationalNoteApproval", () => ({
   surfaceStrategistOperationalNoteApproval,
 }));
+vi.mock("@/shared/ai/managerExceptionSignals", () => ({
+  syncManagerExceptionSignals,
+}));
 
 import { GET } from "./route";
 
@@ -41,10 +46,12 @@ describe("AI manager cron route", () => {
     recordAiWorkerHeartbeat.mockReset();
     runWatchdog.mockReset();
     surfaceStrategistOperationalNoteApproval.mockReset();
+    syncManagerExceptionSignals.mockReset();
     recordAiWorkerHeartbeat.mockResolvedValue(undefined);
     surfaceStrategistOperationalNoteApproval.mockResolvedValue({
       status: "no_candidate",
     });
+    syncManagerExceptionSignals.mockResolvedValue(undefined);
     createServiceRoleClient.mockReturnValue({
       from: vi.fn(() => ({ select })),
     });
@@ -125,6 +132,46 @@ describe("AI manager cron route", () => {
     );
   });
 
+  it("fails honestly when durable exception synchronization fails", async () => {
+    process.env.CRON_SECRET = "correct-secret";
+    select.mockResolvedValue({
+      data: [
+        {
+          id: "salon-1",
+          slug: "alpha",
+          feature_flags: {},
+          timezone: "America/Vancouver",
+        },
+      ],
+      error: null,
+    });
+    syncManagerExceptionSignals.mockRejectedValue(
+      new Error("exception RPC unavailable"),
+    );
+
+    const response = await GET(
+      new Request("https://nailiq.ca/api/cron/manager", {
+        headers: { authorization: "Bearer correct-secret" },
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      summary: {
+        agent_failures: 1,
+        failed_agents: ["alpha:exception_sync"],
+      },
+      results: [
+        {
+          salon: "alpha",
+          strategist_note: "ok",
+          exception_sync: "failed",
+        },
+      ],
+    });
+  });
+
   it("does not run agents invisibly when the heartbeat cannot start", async () => {
     process.env.CRON_SECRET = "correct-secret";
     recordAiWorkerHeartbeat.mockRejectedValueOnce(
@@ -183,6 +230,14 @@ describe("AI manager cron route", () => {
         phase: "failed",
         error: "manager_agent_failures",
       }),
+    );
+    expect(syncManagerExceptionSignals).toHaveBeenCalledWith(
+      "salon-1",
+      {
+        salon: "alpha",
+        strategist_note: "ok",
+        watchdog: "failed",
+      },
     );
   });
 

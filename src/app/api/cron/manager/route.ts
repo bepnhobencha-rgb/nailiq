@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { recordAiWorkerHeartbeat } from "@/shared/ai/executionHeartbeat";
 import { summarizeManagerRun } from "@/shared/ai/managerRunSummary";
+import { syncManagerExceptionSignals } from "@/shared/ai/managerExceptionSignals";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { salonNowMinutes } from "@/shared/lib/salonTime";
 
@@ -343,6 +344,13 @@ export async function GET(req: Request): Promise<NextResponse> {
         console.error("[manager] first_visit", salon.slug, e);
         entry.first_visit = "failed";
       }
+    }
+
+    try {
+      await syncManagerExceptionSignals(salon.id, entry);
+    } catch (signalError) {
+      console.error("[manager] exception_sync", salon.slug, signalError);
+      entry.exception_sync = "failed";
     }
 
     results.push(entry);

@@ -466,6 +466,115 @@ export async function getOperationalExceptionState(
   };
 }
 
+export async function recordTestOperationalExceptionSignal(input: {
+  salonId: string;
+  dedupeKey: string;
+  sourceType: string;
+  sourceRef: string;
+  signal: "firing" | "recovered";
+  now: string;
+}) {
+  const { data, error } = await supabase.rpc(
+    "record_ai_operational_exception_signal" as never,
+    {
+      p_salon_id: input.salonId,
+      p_dedupe_key: input.dedupeKey,
+      p_source_type: input.sourceType,
+      p_source_ref: input.sourceRef,
+      p_kind: "e2e_system_failure",
+      p_severity: "warning",
+      p_title: "E2E system signal",
+      p_body: "A deterministic E2E signal without provider error content.",
+      p_signal: input.signal,
+      p_evidence: { source: "e2e", raw_error_stored: false },
+      p_now: input.now,
+    } as never,
+  );
+  if (error) throw new Error(error.message);
+  return (Array.isArray(data) ? data[0] : data) as {
+    outcome: string;
+    alert_id: string | null;
+    alert_status: string;
+  };
+}
+
+export async function getOperationalExceptionByDedupe(
+  salonId: string,
+  dedupeKey: string,
+) {
+  const { data, error } = await supabase
+    .from("watchdog_alerts" as never)
+    .select(
+      "id, status, source_type, source_ref, occurrence_count, first_seen_at, last_seen_at, resolved_at, resolution_note" as never,
+    )
+    .eq("salon_id" as never, salonId)
+    .eq("dedupe_key" as never, dedupeKey)
+    .order("created_at" as never, { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as unknown as Array<{
+    id: string;
+    status: string;
+    source_type: string;
+    source_ref: string;
+    occurrence_count: number;
+    first_seen_at: string;
+    last_seen_at: string;
+    resolved_at: string | null;
+    resolution_note: string | null;
+  }>;
+}
+
+export async function exerciseExecutionJobExceptionTrigger(salonId: string) {
+  const approval = await seedOperationalNoteApproval(salonId);
+  const jobId = randomUUID();
+  const { error: insertError } = await supabase
+    .from("ai_execution_jobs" as never)
+    .insert({
+      id: jobId,
+      salon_id: salonId,
+      approval_request_id: approval.approvalId,
+      action_type: "record_operational_note",
+      payload: { note: "E2E trigger evidence" },
+      status: "queued",
+      idempotency_key: `e2e-trigger:${jobId}`,
+      attempt_count: 0,
+      max_attempts: 3,
+    } as never);
+  if (insertError) throw new Error(insertError.message);
+
+  const { error: failedError } = await supabase
+    .from("ai_execution_jobs" as never)
+    .update({
+      status: "failed",
+      attempt_count: 3,
+      last_error: "this raw error must not enter the exception",
+      finished_at: new Date().toISOString(),
+    } as never)
+    .eq("id" as never, jobId);
+  if (failedError) throw new Error(failedError.message);
+
+  const opened = await getOperationalExceptionByDedupe(
+    salonId,
+    `execution_job:${jobId}`,
+  );
+
+  const { error: successError } = await supabase
+    .from("ai_execution_jobs" as never)
+    .update({
+      status: "succeeded",
+      last_error: null,
+      finished_at: new Date().toISOString(),
+    } as never)
+    .eq("id" as never, jobId);
+  if (successError) throw new Error(successError.message);
+
+  const resolved = await getOperationalExceptionByDedupe(
+    salonId,
+    `execution_job:${jobId}`,
+  );
+  return { jobId, opened, resolved };
+}
+
 export async function seedBulkMessageApproval(salonId: string) {
   const summary = "Prepare a consent-checked re-engagement audience.";
   const { data, error } = await supabase
