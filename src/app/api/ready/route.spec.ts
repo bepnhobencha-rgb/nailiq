@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 const { abortSignal, createServiceRoleClient, rpc } = vi.hoisted(() => ({
   abortSignal: vi.fn(),
@@ -14,7 +21,12 @@ vi.mock("server-only", () => ({}));
 import { GET } from "./route";
 
 describe("production readiness route", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   beforeEach(() => {
+    vi.stubEnv("CRON_SECRET", "test-cron-secret");
     abortSignal.mockReset();
     createServiceRoleClient.mockReset();
     rpc.mockReset();
@@ -63,6 +75,9 @@ describe("production readiness route", () => {
         database_schema: {
           status: "ok",
           capability: "ai_execution_tenant_fence_v1",
+        },
+        cron_authorization: {
+          status: "ok",
         },
       },
     });
@@ -141,6 +156,53 @@ describe("production readiness route", () => {
       },
     });
     expect(JSON.stringify(body)).not.toContain("sensitive");
+  });
+
+  it("fails readiness when cron authorization is not configured", async () => {
+    vi.stubEnv("CRON_SECRET", "   ");
+    abortSignal.mockResolvedValueOnce({
+      data: [
+        {
+          outcome: "job_not_preflightable",
+          preflight_id: null,
+          preflight_status: null,
+          preflight_fingerprint: null,
+        },
+      ],
+      error: null,
+    });
+    abortSignal.mockResolvedValueOnce({
+      data: [{ outcome: "job_not_plannable", plan_id: null }],
+      error: null,
+    });
+    abortSignal.mockResolvedValueOnce({
+      data: [{ outcome: "not_found", alert_status: null }],
+      error: null,
+    });
+    abortSignal.mockResolvedValueOnce({
+      data: [{ outcome: "unchanged", alert_id: null }],
+      error: null,
+    });
+    abortSignal.mockResolvedValueOnce({
+      data: [{ outcome: "not_found", job_status: null }],
+      error: null,
+    });
+    abortSignal.mockResolvedValueOnce({ data: false, error: null });
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body).toMatchObject({
+      status: "not_ready",
+      checks: {
+        database_schema: { status: "ok" },
+        cron_authorization: {
+          status: "error",
+          reason: "cron_secret_not_configured",
+        },
+      },
+    });
   });
 
   it("fails closed on an unexpected probe result", async () => {

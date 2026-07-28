@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { requireCronAuthorization } from "../cronAuthorization";
+import {
+  isCronAuthorizationConfigured,
+  requireCronAuthorization,
+} from "../cronAuthorization";
 
 function request(authorization?: string) {
   return new Request("https://nailiq.ca/api/cron/example", {
@@ -9,6 +12,19 @@ function request(authorization?: string) {
 }
 
 describe("requireCronAuthorization", () => {
+  it.each([
+    [undefined, false],
+    ["", false],
+    ["   ", false],
+    ["secret", true],
+    [" secret ", true],
+  ])(
+    "reports whether cron authorization is configured for %j",
+    (secret, expected) => {
+      expect(isCronAuthorizationConfigured(secret)).toBe(expected);
+    },
+  );
+
   it.each([undefined, "", "   "])(
     "fails closed when the configured secret is %j",
     async (secret) => {
