@@ -21,6 +21,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
+import { runTrackedCron } from "@/shared/security/cronRunHistory";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +35,7 @@ const BATCH_LIMIT = 200;
 export async function GET(req: NextRequest) {
   const authorizationError = requireCronAuthorization(req);
   if (authorizationError) return authorizationError;
+  return runTrackedCron("close_stale_in_progress", async () => {
 
   const supabase = createServiceRoleClient();
   const cutoff = new Date(
@@ -79,5 +81,6 @@ export async function GET(req: NextRequest) {
     }),
   );
 
-  return NextResponse.json({ ok: true, closed: ids.length });
+    return NextResponse.json({ ok: true, closed: ids.length });
+  });
 }

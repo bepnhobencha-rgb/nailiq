@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { deliverStaffActionNotification } from "@/shared/notifications/deliverStaffActionNotification";
 import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
+import { runTrackedCron } from "@/shared/security/cronRunHistory";
 
 export const runtime = "nodejs";
 export const maxDuration = 55;
@@ -18,6 +19,7 @@ const BATCH = 100;
 export async function GET(req: NextRequest) {
   const authorizationError = requireCronAuthorization(req);
   if (authorizationError) return authorizationError;
+  return runTrackedCron("send_pending_notifications", async () => {
 
   const supabase = createServiceRoleClient();
   const nowIso = new Date().toISOString();
@@ -73,5 +75,6 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, claimed: delivered, smsCount, emailCount });
+    return NextResponse.json({ ok: true, claimed: delivered, smsCount, emailCount });
+  });
 }

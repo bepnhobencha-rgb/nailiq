@@ -63,6 +63,7 @@ describe("production readiness route", () => {
       error: null,
     });
     abortSignal.mockResolvedValueOnce({ data: false, error: null });
+    abortSignal.mockResolvedValueOnce({ data: true, error: null });
 
     const response = await GET();
     const body = await response.json();
@@ -74,7 +75,7 @@ describe("production readiness route", () => {
       checks: {
         database_schema: {
           status: "ok",
-          capability: "ai_execution_tenant_fence_v1",
+          capability: "cron_run_history_v1",
         },
         cron_authorization: {
           status: "ok",
@@ -131,6 +132,9 @@ describe("production readiness route", () => {
         p_salon_id: "00000000-0000-0000-0000-000000000002",
       },
     );
+    expect(rpc).toHaveBeenCalledWith("ai_cron_worker_supported", {
+      p_worker_name: "reminders",
+    });
   });
 
   it("reports a missing migration without exposing provider details", async () => {
@@ -188,6 +192,7 @@ describe("production readiness route", () => {
       error: null,
     });
     abortSignal.mockResolvedValueOnce({ data: false, error: null });
+    abortSignal.mockResolvedValueOnce({ data: true, error: null });
 
     const response = await GET();
     const body = await response.json();

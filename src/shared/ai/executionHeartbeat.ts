@@ -3,7 +3,27 @@ import "server-only";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 export type ExecutionHeartbeatPhase = "started" | "succeeded" | "failed";
-export type AiWorkerName = "ai_execution" | "ai_manager";
+export type CronWorkerName =
+  | "ai_execution"
+  | "ai_manager"
+  | "campaign_scheduler"
+  | "close_stale_in_progress"
+  | "error_triage"
+  | "minh_learn"
+  | "nail_tryon_cleanup"
+  | "noshow_card_nudge"
+  | "noshow_charge_retry"
+  | "reminders"
+  | "send_pending_notifications"
+  | "spend_sync"
+  | "square_email_consent"
+  | "square_sync"
+  | "waitlist_advance"
+  | "wix_sync";
+export type AiWorkerName = Extract<
+  CronWorkerName,
+  "ai_execution" | "ai_manager"
+>;
 
 export type ExecutionWorkerHeartbeatRow = {
   worker_name: AiWorkerName;
@@ -37,7 +57,7 @@ export async function recordExecutionWorkerHeartbeat(input: {
 }
 
 export async function recordAiWorkerHeartbeat(input: {
-  workerName: AiWorkerName;
+  workerName: CronWorkerName;
   runId: string;
   phase: ExecutionHeartbeatPhase;
   now: Date;
@@ -93,6 +113,7 @@ export async function getAiWorkerRuns(
     .select(
       "run_id, worker_name, status, started_at, completed_at, error_code",
     )
+    .in("worker_name" as never, ["ai_execution", "ai_manager"])
     .gte("started_at" as never, startedSince.toISOString())
     .order("started_at" as never, { ascending: false })
     .limit(500);

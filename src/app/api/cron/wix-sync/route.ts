@@ -7,6 +7,7 @@ import { runForwardSync } from "@/shared/integrations/wix/sync";
 import { pushUnsyncedBookings } from "@/shared/integrations/wix/writeback";
 import { looseServiceClient } from "@/shared/integrations/wix/looseDb";
 import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
+import { runTrackedCron } from "@/shared/security/cronRunHistory";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -14,6 +15,7 @@ export const maxDuration = 60;
 export async function GET(req: NextRequest) {
   const authorizationError = requireCronAuthorization(req);
   if (authorizationError) return authorizationError;
+  return runTrackedCron("wix_sync", async () => {
   if (!process.env.WIX_API_KEY) {
     return NextResponse.json({ ok: false, error: "WIX_API_KEY not set" }, { status: 500 });
   }
@@ -45,5 +47,6 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, results });
+    return NextResponse.json({ ok: true, results });
+  });
 }

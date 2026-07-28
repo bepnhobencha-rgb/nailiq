@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { runDueCampaigns } from "@/shared/reoptin/campaignSchedule";
 import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
+import { runTrackedCron } from "@/shared/security/cronRunHistory";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -13,6 +14,8 @@ export const maxDuration = 300;
 export async function GET(req: Request) {
   const authorizationError = requireCronAuthorization(req);
   if (authorizationError) return authorizationError;
-  const result = await runDueCampaigns();
-  return NextResponse.json({ ok: true, ...result });
+  return runTrackedCron("campaign_scheduler", async () => {
+    const result = await runDueCampaigns();
+    return NextResponse.json({ ok: true, ...result });
+  });
 }

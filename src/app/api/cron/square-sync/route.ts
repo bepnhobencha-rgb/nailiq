@@ -9,6 +9,7 @@ import { reconcileDeposits } from "@/shared/integrations/square/deposits";
 import { reconcileNoShowFeeLinks } from "@/shared/integrations/square/noshow";
 import { syncSquareVisitHistory } from "@/shared/integrations/square/visitSync";
 import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
+import { runTrackedCron } from "@/shared/security/cronRunHistory";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -16,6 +17,7 @@ export const maxDuration = 60;
 export async function GET(req: NextRequest) {
   const authorizationError = requireCronAuthorization(req);
   if (authorizationError) return authorizationError;
+  return runTrackedCron("square_sync", async () => {
 
   const supabase = looseServiceClient();
   const { data: integrations, error } = await supabase
@@ -54,5 +56,6 @@ export async function GET(req: NextRequest) {
     // /api/cron/manager — runs hourly across ALL salons, not just Square ones.
   }
 
-  return NextResponse.json({ ok: true, results });
+    return NextResponse.json({ ok: true, results });
+  });
 }

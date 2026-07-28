@@ -5,6 +5,38 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Every scheduled route has a fail-honest operating record
+
+**Status.** Implemented on `agent/cron-run-history`.
+
+**Decision.**
+- All 16 Vercel cron entry points use one fixed worker allowlist and persist a
+  fenced start plus append-only terminal run outcome.
+- The 14 previously untracked routes enter a shared wrapper only after central
+  cron authorization. If their start cannot be recorded, their work does not
+  run invisibly.
+- Non-success HTTP responses and handler exceptions persist bounded internal
+  categories; raw provider errors, customer data, and message bodies are never
+  added to the scheduler ledger.
+- The SuperAdmin System Health surface evaluates each deployed cron against an
+  explicit freshness contract and distinguishes healthy, running, failed,
+  stale, and never-observed workers.
+- The AI Control Center continues to calculate its two AI-specific reliability
+  metrics from only `ai_execution` and `ai_manager` runs.
+
+**Why.** Authentication and configuration readiness prove that Vercel may call
+the routes, not that every scheduler is actually running successfully.
+Previously 14 routes could stop silently while the system still appeared
+healthy. A nail-salon operating system needs a durable, operator-visible record
+for reminders, integrations, waitlist, notifications, learning, cleanup, and
+the AI workers alike.
+
+**Safety.** This adds observability and fail-honest fencing only. It does not
+invoke a cron manually, authorize campaign delivery, send a message, change a
+booking, charge or refund a customer, or modify authentication.
+
+---
+
 ## 2026-07-28 — Readiness includes cron authorization configuration
 
 **Status.** Implemented on `agent/cron-readiness-gate`.
