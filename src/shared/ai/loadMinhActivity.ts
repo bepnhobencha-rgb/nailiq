@@ -1,4 +1,8 @@
 import "server-only";
+import {
+  deriveOutcomeMeasurement,
+  type ObservedOutcome,
+} from "@/shared/ai/outcomeMeasurement";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 export const AGENT_META: Record<string, { icon: string; label: string; trackable: boolean }> = {
@@ -33,13 +37,19 @@ export type AgentStat = {
   icon: string;
   label: string;
   sent: number;
+  measured: number;
+  pending: number;
   converted: number;
+  noConversion: number;
   pct: number;
+  coveragePct: number;
 };
 
 export type MinhActivityData = {
   entries: MinhLogEntry[];
   totalSent: number;
+  measured: number;
+  measurementCoveragePct: number;
   converted: number;
   pending: number;
   noConversion: number;
@@ -97,36 +107,43 @@ export async function loadMinhActivity(
 
   // Stats for trackable agents (winback, rebook, vip_care, first_visit)
   const trackable = entries.filter((e) => e.trackable);
-  const converted = trackable.filter((e) => e.outcome === "converted").length;
-  const noConversion = trackable.filter((e) => e.outcome === "no_conversion").length;
-  const pending = trackable.filter((e) => e.outcome === null).length;
+  const overall = deriveOutcomeMeasurement(
+    trackable.map((entry) => entry.outcome),
+  );
 
   // Per-agent breakdown
-  const agentMap = new Map<string, { sent: number; converted: number }>();
+  const agentMap = new Map<string, ObservedOutcome[]>();
   for (const e of trackable) {
-    if (!agentMap.has(e.agent)) agentMap.set(e.agent, { sent: 0, converted: 0 });
-    const s = agentMap.get(e.agent)!;
-    s.sent++;
-    if (e.outcome === "converted") s.converted++;
+    if (!agentMap.has(e.agent)) agentMap.set(e.agent, []);
+    agentMap.get(e.agent)!.push(e.outcome);
   }
-  const agentStats: AgentStat[] = Array.from(agentMap.entries()).map(([agent, s]) => {
-    const meta = AGENT_META[agent] ?? { icon: "🤖", label: agent };
-    return {
-      agent,
-      icon: meta.icon,
-      label: meta.label,
-      sent: s.sent,
-      converted: s.converted,
-      pct: s.sent > 0 ? Math.round((s.converted / s.sent) * 100) : 0,
-    };
-  });
+  const agentStats: AgentStat[] = Array.from(agentMap.entries()).map(
+    ([agent, outcomes]) => {
+      const meta = AGENT_META[agent] ?? { icon: "🤖", label: agent };
+      const measurement = deriveOutcomeMeasurement(outcomes);
+      return {
+        agent,
+        icon: meta.icon,
+        label: meta.label,
+        sent: measurement.sent,
+        measured: measurement.measured,
+        pending: measurement.pending,
+        converted: measurement.converted,
+        noConversion: measurement.noConversion,
+        pct: measurement.observedReturnPct ?? 0,
+        coveragePct: measurement.coveragePct,
+      };
+    },
+  );
 
   return {
     entries,
-    totalSent: trackable.length,
-    converted,
-    pending,
-    noConversion,
+    totalSent: overall.sent,
+    measured: overall.measured,
+    measurementCoveragePct: overall.coveragePct,
+    converted: overall.converted,
+    pending: overall.pending,
+    noConversion: overall.noConversion,
     agentStats,
   };
 }
