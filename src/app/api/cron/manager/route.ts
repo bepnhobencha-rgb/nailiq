@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { recordAiWorkerHeartbeat } from "@/shared/ai/executionHeartbeat";
 import { summarizeManagerRun } from "@/shared/ai/managerRunSummary";
 import { syncManagerExceptionSignals } from "@/shared/ai/managerExceptionSignals";
+import { canRunAutonomousAiForTenant } from "@/shared/ai/tenantExecutionBoundary";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { salonNowMinutes } from "@/shared/lib/salonTime";
 
@@ -50,7 +51,9 @@ export async function GET(req: Request): Promise<NextResponse> {
   // no need to filter here. Selecting slug for readable result logs.
   const { data: salons, error } = await supabase
     .from("salons")
-    .select("id, slug, feature_flags, timezone");
+    .select(
+      "id, slug, feature_flags, timezone, archived_at, superadmin_locked_at, subscription_status",
+    );
 
   if (error) {
     console.error("[manager] load salons", error);
@@ -65,10 +68,15 @@ export async function GET(req: Request): Promise<NextResponse> {
     } catch (heartbeatError) {
       console.error("[manager] heartbeat failure", heartbeatError);
     }
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: "salon_load_failed" },
+      { status: 500 },
+    );
   }
 
-  if (!salons?.length) {
+  const eligibleSalons = (salons ?? []).filter(canRunAutonomousAiForTenant);
+
+  if (!eligibleSalons.length) {
     try {
       await recordAiWorkerHeartbeat({
         workerName: "ai_manager",
@@ -94,7 +102,7 @@ export async function GET(req: Request): Promise<NextResponse> {
 
   const results: Record<string, unknown>[] = [];
 
-  for (const salon of salons) {
+  for (const salon of eligibleSalons) {
     const flags = (salon.feature_flags ?? {}) as Record<string, boolean>;
     const tz = (salon as { timezone?: string }).timezone ?? "America/Los_Angeles";
     const salonHour = Math.floor(salonNowMinutes(tz) / 60);

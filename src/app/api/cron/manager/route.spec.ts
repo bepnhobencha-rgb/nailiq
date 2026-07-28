@@ -37,6 +37,12 @@ vi.mock("@/shared/ai/managerExceptionSignals", () => ({
 
 import { GET } from "./route";
 
+const operationalTenant = {
+  archived_at: null,
+  superadmin_locked_at: null,
+  subscription_status: "active",
+};
+
 describe("AI manager cron route", () => {
   const originalSecret = process.env.CRON_SECRET;
 
@@ -123,6 +129,10 @@ describe("AI manager cron route", () => {
       }),
     );
     expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      ok: false,
+      error: "salon_load_failed",
+    });
     expect(recordAiWorkerHeartbeat).toHaveBeenLastCalledWith(
       expect.objectContaining({
         workerName: "ai_manager",
@@ -137,6 +147,7 @@ describe("AI manager cron route", () => {
     select.mockResolvedValue({
       data: [
         {
+          ...operationalTenant,
           id: "salon-1",
           slug: "alpha",
           feature_flags: {},
@@ -172,6 +183,51 @@ describe("AI manager cron route", () => {
     });
   });
 
+  it("does not run autonomous work for canceled, archived, or locked salons", async () => {
+    process.env.CRON_SECRET = "correct-secret";
+    select.mockResolvedValue({
+      data: [
+        {
+          ...operationalTenant,
+          id: "canceled",
+          slug: "canceled",
+          feature_flags: { ai_watchdog: true },
+          timezone: "America/Vancouver",
+          subscription_status: "canceled",
+        },
+        {
+          ...operationalTenant,
+          id: "archived",
+          slug: "archived",
+          feature_flags: { ai_watchdog: true },
+          timezone: "America/Vancouver",
+          archived_at: "2026-07-28T12:00:00.000Z",
+        },
+        {
+          ...operationalTenant,
+          id: "locked",
+          slug: "locked",
+          feature_flags: { ai_watchdog: true },
+          timezone: "America/Vancouver",
+          superadmin_locked_at: "2026-07-28T12:00:00.000Z",
+        },
+      ],
+      error: null,
+    });
+
+    const response = await GET(
+      new Request("https://nailiq.ca/api/cron/manager", {
+        headers: { authorization: "Bearer correct-secret" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, salons: 0 });
+    expect(runWatchdog).not.toHaveBeenCalled();
+    expect(surfaceStrategistOperationalNoteApproval).not.toHaveBeenCalled();
+    expect(syncManagerExceptionSignals).not.toHaveBeenCalled();
+  });
+
   it("does not run agents invisibly when the heartbeat cannot start", async () => {
     process.env.CRON_SECRET = "correct-secret";
     recordAiWorkerHeartbeat.mockRejectedValueOnce(
@@ -191,6 +247,7 @@ describe("AI manager cron route", () => {
     select.mockResolvedValue({
       data: [
         {
+          ...operationalTenant,
           id: "salon-1",
           slug: "alpha",
           feature_flags: { ai_watchdog: true },
@@ -246,6 +303,7 @@ describe("AI manager cron route", () => {
     select.mockResolvedValue({
       data: [
         {
+          ...operationalTenant,
           id: "salon-1",
           slug: "alpha",
           feature_flags: {},
