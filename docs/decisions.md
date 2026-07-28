@@ -5,6 +5,33 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Production errors are grouped by route as well as message
+
+**Status.** Implemented on `agent/error-fingerprint-route`.
+
+**Decision.**
+- The self-hosted error fingerprint includes the bounded request route in
+  addition to level, surface, and normalized message.
+- Variable identifiers inside a message still normalize together when the
+  error occurs on the same route.
+- The exact bounded route written to the error record is also the route used to
+  compute its fingerprint.
+
+**Why.** Technical evidence exposed a grouped React `#418` row whose stored
+route was `/choose-salon` while its latest context href was
+`/dashboard/hilite-anaheim/center`. The database kept the first occurrence's
+route but refreshed context on later occurrences because the fingerprint
+ignored route. That contradictory record led AI triage to recommend fixing the
+wrong component. Route-aware grouping keeps evidence internally consistent and
+lets future occurrences identify the actual failing surface.
+
+**Migration behavior.** Existing grouped rows remain as historical evidence.
+New occurrences use the route-aware fingerprint and naturally create a
+correctly scoped row; no production data rewrite or destructive migration is
+required.
+
+---
+
 ## 2026-07-28 — Error remediation starts from stored technical evidence
 
 **Status.** Implemented on `agent/fix-choose-salon-hydration`.
