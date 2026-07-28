@@ -19,7 +19,7 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260728112951. Refresh these with each schema-changing forward
+ * through 20260728121000. Refresh these with each schema-changing forward
  * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
@@ -96,12 +96,16 @@ const CRITICAL_FUNCTIONS = [
 
 const dbUrl = process.env.DB_URL;
 if (!dbUrl?.trim()) {
-  console.error("check-schema-parity needs DB_URL (from `supabase status -o env`).");
+  console.error(
+    "check-schema-parity needs DB_URL (from `supabase status -o env`).",
+  );
   process.exit(1);
 }
 
 function q(sql: string): string {
-  return execFileSync("psql", [dbUrl!, "-tAc", sql], { encoding: "utf8" }).trim();
+  return execFileSync("psql", [dbUrl!, "-tAc", sql], {
+    encoding: "utf8",
+  }).trim();
 }
 
 function num(sql: string): number {

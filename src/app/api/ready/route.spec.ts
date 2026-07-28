@@ -46,6 +46,10 @@ describe("production readiness route", () => {
       data: [{ outcome: "unchanged", alert_id: null }],
       error: null,
     });
+    abortSignal.mockResolvedValueOnce({
+      data: [{ outcome: "not_found", job_status: null }],
+      error: null,
+    });
 
     const response = await GET();
     const body = await response.json();
@@ -57,7 +61,7 @@ describe("production readiness route", () => {
       checks: {
         database_schema: {
           status: "ok",
-          capability: "ai_operational_exception_signals_v1",
+          capability: "ai_execution_incident_closure_v1",
         },
       },
     });
@@ -86,22 +90,25 @@ describe("production readiness route", () => {
       p_actor_user_id: "00000000-0000-0000-0000-000000000005",
       p_resolution_note: null,
     });
-    expect(rpc).toHaveBeenCalledWith(
-      "record_ai_operational_exception_signal",
-      {
-        p_salon_id: "00000000-0000-0000-0000-000000000002",
-        p_dedupe_key: "readiness:nonexistent",
-        p_source_type: "readiness",
-        p_source_ref: "schema_probe",
-        p_kind: "readiness_probe",
-        p_severity: "info",
-        p_title: "Readiness schema probe",
-        p_body: null,
-        p_signal: "recovered",
-        p_evidence: { probe: true, no_write_expected: true },
-        p_now: "1970-01-01T00:00:00.000Z",
-      },
-    );
+    expect(rpc).toHaveBeenCalledWith("record_ai_operational_exception_signal", {
+      p_salon_id: "00000000-0000-0000-0000-000000000002",
+      p_dedupe_key: "readiness:nonexistent",
+      p_source_type: "readiness",
+      p_source_ref: "schema_probe",
+      p_kind: "readiness_probe",
+      p_severity: "info",
+      p_title: "Readiness schema probe",
+      p_body: null,
+      p_signal: "recovered",
+      p_evidence: { probe: true, no_write_expected: true },
+      p_now: "1970-01-01T00:00:00.000Z",
+    });
+    expect(rpc).toHaveBeenCalledWith("control_ai_execution_job", {
+      p_salon_id: "00000000-0000-0000-0000-000000000002",
+      p_job_id: "00000000-0000-0000-0000-000000000001",
+      p_operation: "cancel",
+      p_actor_user_id: "00000000-0000-0000-0000-000000000005",
+    });
   });
 
   it("reports a missing migration without exposing provider details", async () => {

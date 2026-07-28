@@ -9,7 +9,7 @@ const action = readFileSync(
 const migration = readFileSync(
   resolve(
     process.cwd(),
-    "supabase/migrations/20260727183101_add_ai_execution_job_control.sql",
+    "supabase/migrations/20260728121000_close_canceled_ai_execution_exceptions.sql",
   ),
   "utf8",
 );
@@ -42,6 +42,13 @@ describe("AI execution control boundary", () => {
     expect(migration).toContain("for update");
     expect(migration).toContain("insert into public.ai_actions_log");
     expect(migration).toContain("'actor_user_id', p_actor_user_id");
+  });
+
+  it("never copies raw provider errors into the audit trail", () => {
+    expect(migration).toContain(
+      "'previous_error_present', v_job.last_error is not null",
+    );
+    expect(migration).not.toContain("'previous_error', v_job.last_error");
   });
 
   it("never retries exhausted work or cancels running/terminal work", () => {

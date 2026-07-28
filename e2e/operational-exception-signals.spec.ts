@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   cleanupTestSalon,
+  exerciseCanceledExecutionExceptionClosure,
   exerciseExecutionJobExceptionTrigger,
   getOperationalExceptionByDedupe,
   recordTestOperationalExceptionSignal,
@@ -51,10 +52,7 @@ test.describe("AI operational exception signals", () => {
     );
     expect(first.alert_id ?? concurrentRepeat.alert_id).toBeTruthy();
 
-    let rows = await getOperationalExceptionByDedupe(
-      salon.salonId,
-      dedupeKey,
-    );
+    let rows = await getOperationalExceptionByDedupe(salon.salonId, dedupeKey);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       status: "open",
@@ -125,5 +123,42 @@ test.describe("AI operational exception signals", () => {
       source_ref: state.jobId,
     });
     expect(state.resolved[0].resolved_at).not.toBeNull();
+  });
+
+  test("cancellation closes an exhausted incident without leaking its raw error", async () => {
+    const salon = await seedTestSalon({
+      slug: `e2e-ai-job-cancel-${test.info().workerIndex}`,
+      name: "E2E AI Job Cancellation Salon",
+    });
+    testSlug = salon.slug;
+
+    const state = await exerciseCanceledExecutionExceptionClosure(
+      salon.salonId,
+    );
+    expect(state.opened).toHaveLength(1);
+    expect(state.opened[0].status).toBe("open");
+    expect(state.control).toEqual({
+      outcome: "updated",
+      job_status: "canceled",
+    });
+    expect(state.job).toEqual({ status: "canceled", last_error: null });
+    expect(state.resolved).toHaveLength(1);
+    expect(state.resolved[0]).toMatchObject({
+      status: "resolved",
+      source_type: "ai_execution",
+      source_ref: state.jobId,
+      resolution_note:
+        "Closed automatically after the owner canceled the execution job.",
+    });
+    expect(new Set(state.audit.map((row) => row.action_type))).toEqual(
+      new Set(["operational_exception_auto_resolved", "execution_canceled"]),
+    );
+    expect(JSON.stringify(state.audit)).not.toContain(state.rawError);
+    expect(
+      state.audit.find((row) => row.action_type === "execution_canceled")
+        ?.payload,
+    ).toMatchObject({
+      previous_error_present: true,
+    });
   });
 });
