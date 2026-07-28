@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { deliverStaffActionNotification } from "@/shared/notifications/deliverStaffActionNotification";
+import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
 
 export const runtime = "nodejs";
 export const maxDuration = 55;
@@ -15,10 +16,8 @@ export const maxDuration = 55;
 const BATCH = 100;
 
 export async function GET(req: NextRequest) {
-  const secret = req.headers.get("authorization")?.replace("Bearer ", "");
-  if (secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const authorizationError = requireCronAuthorization(req);
+  if (authorizationError) return authorizationError;
 
   const supabase = createServiceRoleClient();
   const nowIso = new Date().toISOString();

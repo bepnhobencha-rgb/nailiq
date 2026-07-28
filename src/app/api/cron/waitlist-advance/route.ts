@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { notifyWaitlistForSlot } from "@/shared/noshow/waitlistAutoFill";
 import { refundRefilledLateCancels } from "@/shared/integrations/square/noshow";
+import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,10 +20,8 @@ export const dynamic = "force-dynamic";
 const CLAIM_WINDOW_MINUTES = 20;
 
 export async function GET(req: NextRequest) {
-  const secret = req.headers.get("authorization")?.replace("Bearer ", "");
-  if (secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const authorizationError = requireCronAuthorization(req);
+  if (authorizationError) return authorizationError;
 
   const supabase = createServiceRoleClient();
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { recordNailTryOnEvent } from "@/shared/nailTryOn/telemetry";
+import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,10 +10,8 @@ export const maxDuration = 55;
 type QueueRow = { id: number; tryon_session_id: string; object_path: string; attempts: number };
 
 export async function GET(request: Request) {
-  const secret = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const authorizationError = requireCronAuthorization(request);
+  if (authorizationError) return authorizationError;
   const db = createServiceRoleClient();
   await db.rpc("queue_expired_nail_tryon_sessions" as never, { p_limit: 200 } as never);
   const { data, error } = await db.from("nail_tryon_cleanup_queue" as never)

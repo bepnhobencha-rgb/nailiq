@@ -1,25 +1,15 @@
 import { NextResponse } from "next/server";
 import { recordExecutionWorkerHeartbeat } from "@/shared/ai/executionHeartbeat";
 import { processExecutionQueue } from "@/shared/ai/executionWorker";
+import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function GET(req: Request): Promise<NextResponse> {
-  const cronSecret = (process.env.CRON_SECRET ?? "").trim();
-  if (!cronSecret) {
-    return NextResponse.json(
-      { ok: false, error: "cron_secret_not_configured" },
-      { status: 503 },
-    );
-  }
-  if (req.headers.get("authorization") !== `Bearer ${cronSecret}`) {
-    return NextResponse.json(
-      { ok: false, error: "unauthorized" },
-      { status: 401 },
-    );
-  }
+  const authorizationError = requireCronAuthorization(req);
+  if (authorizationError) return authorizationError;
 
   const runId = crypto.randomUUID();
   try {

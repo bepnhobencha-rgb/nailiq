@@ -8,15 +8,14 @@ import { runSquareForwardSync } from "@/shared/integrations/square/sync";
 import { reconcileDeposits } from "@/shared/integrations/square/deposits";
 import { reconcileNoShowFeeLinks } from "@/shared/integrations/square/noshow";
 import { syncSquareVisitHistory } from "@/shared/integrations/square/visitSync";
+import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function GET(req: NextRequest) {
-  const secret = req.headers.get("authorization")?.replace("Bearer ", "");
-  if (secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const authorizationError = requireCronAuthorization(req);
+  if (authorizationError) return authorizationError;
 
   const supabase = looseServiceClient();
   const { data: integrations, error } = await supabase
