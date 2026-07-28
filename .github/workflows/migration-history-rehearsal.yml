@@ -103,6 +103,10 @@ jobs:
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-public-rpc-role-grants-rollback.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-public-salon-slug-suggestions.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-public-salon-slug-suggestions-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-group-slot-probe-grant-rollback.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/check-salon-staff-capability-invoker.sql
