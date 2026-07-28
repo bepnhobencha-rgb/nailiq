@@ -359,6 +359,10 @@ jobs:
           INTERNAL_SECRET="$(openssl rand -hex 24)"
           echo "::add-mask::${INTERNAL_SECRET}"
           echo "INTERNAL_API_SECRET=${INTERNAL_SECRET}" >> "$GITHUB_ENV"
+          # The approval-to-effect spec invokes only the internal audit-note
+          # executor. Give this throwaway app/database pair a per-run cron
+          # credential so the test exercises the real authenticated route.
+          echo "CRON_SECRET=${INTERNAL_SECRET}" >> "$GITHUB_ENV"
 
           echo "→ target: ${API_URL}"
           NEXT_PUBLIC_SUPABASE_URL="${API_URL}" \

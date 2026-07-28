@@ -334,6 +334,92 @@ export async function seedEmptyTestSalon(opts?: {
 }
 
 /**
+ * Seed one reversible, internal-only AI approval for the approval-to-effect E2E.
+ * The execution allowlist turns this into an audit note; it cannot contact a
+ * customer, change a booking or price, or initiate a payment.
+ */
+export async function seedOperationalNoteApproval(salonId: string) {
+  const summary = "Record the approved staffing review in the operating log.";
+  const note = `E2E approved operating note ${randomUUID()}`;
+  const { data, error } = await supabase
+    .from("approval_requests")
+    .insert({
+      salon_id: salonId,
+      action_type: "record_operational_note",
+      summary,
+      payload: { note },
+      urgency: "normal",
+      status: "pending",
+      expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    })
+    .select("id, approve_token")
+    .single();
+
+  if (error || !data?.id || !data.approve_token) {
+    throw new Error(
+      error?.message ?? "seedOperationalNoteApproval: insert failed",
+    );
+  }
+
+  return {
+    approvalId: data.id as string,
+    approveToken: data.approve_token as string,
+    summary,
+    note,
+  };
+}
+
+export async function getApprovalEffectState(approvalId: string) {
+  const [{ data: approval, error: approvalError }, { data: job, error: jobError }] =
+    await Promise.all([
+      supabase
+        .from("approval_requests")
+        .select("status, decided_at")
+        .eq("id", approvalId)
+        .single(),
+      supabase
+        .from("ai_execution_jobs" as never)
+        .select("id, status, attempt_count, result, lease_token")
+        .eq("approval_request_id" as never, approvalId)
+        .maybeSingle(),
+    ]);
+
+  if (approvalError) throw new Error(approvalError.message);
+  if (jobError) throw new Error(jobError.message);
+
+  const executionJob = job as
+    | {
+        id: string;
+        status: string;
+        attempt_count: number;
+        result: Record<string, unknown> | null;
+        lease_token: string | null;
+      }
+    | null;
+
+  const { data: effects, error: effectError } = executionJob
+    ? await supabase
+        .from("ai_actions_log")
+        .select("action_type, target_id, payload")
+        .eq("agent", "ai_execution")
+        .eq("target_id", executionJob.id)
+        .order("created_at", { ascending: true })
+    : { data: [], error: null };
+
+  if (effectError) throw new Error(effectError.message);
+
+  return {
+    approval: approval as { status: string; decided_at: string | null },
+    job: executionJob,
+    effects: (effects ?? []) as Array<{
+      action_type: string;
+      target_id: string | null;
+      payload: Record<string, unknown> | null;
+    }>,
+  };
+}
+
+/**
  * Create a Supabase auth user for E2E tests that exercise email/password sign-in.
  * Uses the service-role admin API so no real email is sent.
  * Returns { userId, email, password }.
