@@ -1,8 +1,8 @@
 {
   "projectRef": "fshmobzyjhmtvndobwsy",
-  "capturedAt": "2026-07-23",
-  "releaseSha": "4868e87d19621b48e55e0099a781a3915a9d47af",
-  "rowCount": 267,
+  "capturedAt": "2026-07-28",
+  "releaseSha": "b1fd112033ed3a592d12d643d3bc1248594dd4ee",
+  "rowCount": 320,
   "migrations": [
     {
       "version": "20260427120000",
@@ -1071,6 +1071,218 @@
     {
       "version": "20260723000000",
       "name": "folded_production_schema_baseline"
+    },
+    {
+      "version": "20260723222235",
+      "name": "restrict_public_page_management"
+    },
+    {
+      "version": "20260723224500",
+      "name": "restrict_service_combo_management"
+    },
+    {
+      "version": "20260724004500",
+      "name": "restrict_salon_settings_updates"
+    },
+    {
+      "version": "20260724013000",
+      "name": "protect_salon_control_plane_columns"
+    },
+    {
+      "version": "20260724015000",
+      "name": "use_security_invoker_public_views"
+    },
+    {
+      "version": "20260724030000",
+      "name": "move_btree_gist_to_extensions"
+    },
+    {
+      "version": "20260724033000",
+      "name": "restrict_server_only_customer_rpcs"
+    },
+    {
+      "version": "20260724040000",
+      "name": "restrict_public_rpc_role_grants"
+    },
+    {
+      "version": "20260724041500",
+      "name": "restrict_group_slot_probe_to_anon"
+    },
+    {
+      "version": "20260724050000",
+      "name": "use_security_invoker_salon_staff_capability"
+    },
+    {
+      "version": "20260724060000",
+      "name": "deny_direct_integration_credential_access"
+    },
+    {
+      "version": "20260724070000",
+      "name": "deny_direct_identity_security_state_access"
+    },
+    {
+      "version": "20260724071500",
+      "name": "deny_direct_capability_token_access"
+    },
+    {
+      "version": "20260724073000",
+      "name": "deny_direct_observability_state_access"
+    },
+    {
+      "version": "20260724080000",
+      "name": "deny_direct_notification_automation_access"
+    },
+    {
+      "version": "20260724083000",
+      "name": "explicit_internal_delivery_policies"
+    },
+    {
+      "version": "20260724090000",
+      "name": "explicit_nail_tryon_state_policies"
+    },
+    {
+      "version": "20260724093000",
+      "name": "explicit_client_intelligence_policies"
+    },
+    {
+      "version": "20260724100000",
+      "name": "explicit_client_profile_policy"
+    },
+    {
+      "version": "20260724103000",
+      "name": "finalize_public_booking_profile"
+    },
+    {
+      "version": "20260724110000",
+      "name": "explicit_booking_addons_policy"
+    },
+    {
+      "version": "20260724163000",
+      "name": "explicit_email_optout_policy"
+    },
+    {
+      "version": "20260724170000",
+      "name": "explicit_payment_disputes_policy"
+    },
+    {
+      "version": "20260724173000",
+      "name": "explicit_reviews_policy"
+    },
+    {
+      "version": "20260725182854",
+      "name": "allow_salon_scoped_booking_events"
+    },
+    {
+      "version": "20260725192550",
+      "name": "allow_operational_salon_member_roles"
+    },
+    {
+      "version": "20260726090000",
+      "name": "fix_single_staff_profile_completion"
+    },
+    {
+      "version": "20260726200033",
+      "name": "add_voice_human_transfer_phone"
+    },
+    {
+      "version": "20260726213000",
+      "name": "allow_final_booking_buffer_after_close"
+    },
+    {
+      "version": "20260726231336",
+      "name": "add_voice_ai_default_language"
+    },
+    {
+      "version": "20260727012622",
+      "name": "add_controlled_after_hours_booking"
+    },
+    {
+      "version": "20260727020207",
+      "name": "add_voice_ai_allowed_languages"
+    },
+    {
+      "version": "20260727082929",
+      "name": "add_ai_execution_queue"
+    },
+    {
+      "version": "20260727183101",
+      "name": "add_ai_execution_job_control"
+    },
+    {
+      "version": "20260727194500",
+      "name": "make_approval_execution_atomic"
+    },
+    {
+      "version": "20260727203000",
+      "name": "add_ai_execution_leases"
+    },
+    {
+      "version": "20260727220000",
+      "name": "add_ai_execution_worker_heartbeat"
+    },
+    {
+      "version": "20260728040000",
+      "name": "add_ai_manager_worker_heartbeat"
+    },
+    {
+      "version": "20260728050000",
+      "name": "add_ai_worker_run_history"
+    },
+    {
+      "version": "20260728060000",
+      "name": "execute_approved_operational_note"
+    },
+    {
+      "version": "20260728070000",
+      "name": "surface_strategist_operational_note"
+    },
+    {
+      "version": "20260728080000",
+      "name": "make_ai_audience_preparation_atomic"
+    },
+    {
+      "version": "20260728084526",
+      "name": "create_immutable_campaign_release_gate"
+    },
+    {
+      "version": "20260728094127",
+      "name": "add_campaign_dispatch_preflight"
+    },
+    {
+      "version": "20260728101931",
+      "name": "add_campaign_preflight_freshness"
+    },
+    {
+      "version": "20260728104312",
+      "name": "add_campaign_dispatch_plan"
+    },
+    {
+      "version": "20260728110610",
+      "name": "add_ai_operational_exception_lifecycle"
+    },
+    {
+      "version": "20260728112951",
+      "name": "add_ai_operational_exception_signals"
+    },
+    {
+      "version": "20260728121000",
+      "name": "close_canceled_ai_execution_exceptions"
+    },
+    {
+      "version": "20260728130500",
+      "name": "fence_ai_execution_by_tenant_state"
+    },
+    {
+      "version": "20260728142000",
+      "name": "track_all_cron_runs"
+    },
+    {
+      "version": "20260728180000",
+      "name": "restore_public_salon_slug_suggestions"
+    },
+    {
+      "version": "20260728220602",
+      "name": "go_live_approval_audit"
     }
   ]
 }
