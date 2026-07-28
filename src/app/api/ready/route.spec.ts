@@ -24,7 +24,15 @@ describe("production readiness route", () => {
 
   it("returns ready only when the required database capability responds", async () => {
     abortSignal.mockResolvedValue({
-      data: "job_not_preparable",
+      data: [
+        {
+          outcome: "job_not_preparable",
+          manifest_id: null,
+          release_approval_id: null,
+          audience_fingerprint: null,
+          message_sha256: null,
+        },
+      ],
       error: null,
     });
 

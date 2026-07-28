@@ -65,7 +65,10 @@ export async function probeProductionReadiness(
             : "database_unavailable",
       };
     }
-    if (data !== EXPECTED_RESULT) {
+    const probeOutcome = Array.isArray(data)
+      ? (data[0] as { outcome?: unknown } | undefined)?.outcome
+      : data;
+    if (probeOutcome !== EXPECTED_RESULT) {
       return { ready: false, reason: "schema_probe_unexpected" };
     }
     return { ready: true };
