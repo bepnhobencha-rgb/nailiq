@@ -12,6 +12,9 @@ describe("AI execution worker boundary", () => {
     "supabase/migrations/20260727203000_add_ai_execution_leases.sql",
   );
   const route = read("src/app/api/cron/ai-execution/route.ts");
+  const authorization = read(
+    "src/shared/security/cronAuthorization.ts",
+  );
   const schedule = read("vercel.json");
   const parity = read("scripts/check-schema-parity.ts");
 
@@ -57,16 +60,17 @@ describe("AI execution worker boundary", () => {
   });
 
   it("requires a configured cron secret and is scheduled", () => {
-    expect(route).toContain('"cron_secret_not_configured"');
-    expect(route).toContain("`Bearer ${cronSecret}`");
+    expect(route).toMatch(/requireCronAuthorization\(\w+\)/);
+    expect(authorization).toContain('"cron_secret_not_configured"');
+    expect(authorization).toContain("`Bearer ${expectedSecret}`");
     expect(schedule).toContain('"/api/cron/ai-execution"');
     expect(schedule).toContain('"*/5 * * * *"');
   });
 
   it("makes every lease RPC a blank-database critical object", () => {
-    expect(parity).toContain("through 20260728121000");
+    expect(parity).toContain("through 20260728130500");
     expect(parity).toContain("columns: 1318");
-    expect(parity).toContain("functions: 93");
+    expect(parity).toContain("functions: 96");
     expect(parity).toContain("indexes: 321");
     expect(parity).toContain('"claim_ai_execution_jobs"');
     expect(parity).toContain('"finish_ai_execution_job"');

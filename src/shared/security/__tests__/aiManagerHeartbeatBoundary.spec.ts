@@ -13,6 +13,10 @@ const routeSource = readFileSync(
   resolve(process.cwd(), "src/app/api/cron/manager/route.ts"),
   "utf8",
 );
+const authorizationSource = readFileSync(
+  resolve(process.cwd(), "src/shared/security/cronAuthorization.ts"),
+  "utf8",
+);
 const summarySource = readFileSync(
   resolve(process.cwd(), "src/shared/ai/managerRunSummary.ts"),
   "utf8",
@@ -48,7 +52,10 @@ describe("AI Manager worker heartbeat boundary", () => {
     );
     expect(started).toBeGreaterThan(-1);
     expect(started).toBeLessThan(loadSalons);
-    expect(routeSource).toContain("cron_secret_not_configured");
+    expect(routeSource).toMatch(/requireCronAuthorization\(\w+\)/);
+    expect(authorizationSource).toContain(
+      "cron_secret_not_configured",
+    );
     expect(routeSource).toContain("manager_heartbeat_unavailable");
   });
 

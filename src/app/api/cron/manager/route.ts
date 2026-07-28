@@ -11,23 +11,15 @@ import { syncManagerExceptionSignals } from "@/shared/ai/managerExceptionSignals
 import { canRunAutonomousAiForTenant } from "@/shared/ai/tenantExecutionBoundary";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { salonNowMinutes } from "@/shared/lib/salonTime";
+import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 min
 
 export async function GET(req: Request): Promise<NextResponse> {
-  const expectedSecret = process.env.CRON_SECRET;
-  if (!expectedSecret) {
-    return NextResponse.json(
-      { ok: false, error: "cron_secret_not_configured" },
-      { status: 503 },
-    );
-  }
-  const secret = req.headers.get("authorization")?.replace("Bearer ", "");
-  if (secret !== expectedSecret) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const authorizationError = requireCronAuthorization(req);
+  if (authorizationError) return authorizationError;
 
   const runId = crypto.randomUUID();
   try {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runDueCampaigns } from "@/shared/reoptin/campaignSchedule";
+import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -10,10 +11,8 @@ export const maxDuration = 300;
  * as a Bearer token.
  */
 export async function GET(req: Request) {
-  const secret = req.headers.get("authorization")?.replace("Bearer ", "");
-  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
-  }
+  const authorizationError = requireCronAuthorization(req);
+  if (authorizationError) return authorizationError;
   const result = await runDueCampaigns();
   return NextResponse.json({ ok: true, ...result });
 }

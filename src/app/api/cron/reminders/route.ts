@@ -8,6 +8,7 @@ import { logNotification } from "@/shared/lib/notificationLog";
 import { reminderLang, buildReminderSmsBody } from "@/shared/reminders/reminderSmsBody";
 import { isUsPhone } from "@/shared/lib/phoneRegion";
 import { sendGroupReminderEmail, type GroupMember } from "@/shared/noshow/sendReminderEmail";
+import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
 
 /** Vercel Cron calls this route every 15 minutes with the CRON_SECRET header. */
 export const runtime = "nodejs";
@@ -78,13 +79,8 @@ function buildSmsBody(
 }
 
 export async function GET(req: Request) {
-  const cronSecret = (process.env.CRON_SECRET ?? "").trim();
-  if (cronSecret) {
-    const auth = req.headers.get("authorization") ?? "";
-    if (auth !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
-  }
+  const authorizationError = requireCronAuthorization(req);
+  if (authorizationError) return authorizationError;
 
   const supabase = createServiceRoleClient();
   const now = new Date();

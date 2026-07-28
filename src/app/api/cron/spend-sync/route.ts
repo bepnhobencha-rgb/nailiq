@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { syncSquareSpend } from "@/shared/integrations/square/spendSync";
+import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
 
 /**
  * Daily: refresh every Square-connected salon's per-customer lifetime spend into
@@ -14,13 +15,8 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function GET(req: Request) {
-  const cronSecret = (process.env.CRON_SECRET ?? "").trim();
-  if (cronSecret) {
-    const auth = req.headers.get("authorization") ?? "";
-    if (auth !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
-  }
+  const authorizationError = requireCronAuthorization(req);
+  if (authorizationError) return authorizationError;
 
   const db = createServiceRoleClient();
   const { data: integrations, error } = await db
