@@ -108,7 +108,10 @@ export async function cleanupTestSalon(slug: string) {
   const salonId = salon.id as string;
 
   await supabase.from("bookings").delete().eq("salon_id", salonId);
-  await supabase.from("booking_waitlist_entries").delete().eq("salon_id", salonId);
+  await supabase
+    .from("booking_waitlist_entries")
+    .delete()
+    .eq("salon_id", salonId);
 
   const { data: staffRows } = await supabase
     .from("staff")
@@ -184,7 +187,8 @@ export async function seedTestSalon(opts?: {
    * `salons.booking_verification_mode` — controls whether OTP / deposit friction is
    * applied. Defaults to 'never' (no friction). Set to 'always_otp' for OTP tests.
    */
-  booking_verification_mode?: "never" | "always_otp" | "auto" | "always_deposit" | "deposit_first";
+  booking_verification_mode?:
+    "never" | "always_otp" | "auto" | "always_deposit" | "deposit_first";
   /**
    * `salons.feature_flags` JSONB overrides. PR2 gates Beta release features
    * (e.g. group_booking) which default OFF — specs that exercise a Beta surface
@@ -236,7 +240,9 @@ export async function seedTestSalon(opts?: {
     .single();
 
   if (salonErr || !salon?.id) {
-    throw new Error(salonErr?.message ?? "seedTestSalon: failed to insert salon");
+    throw new Error(
+      salonErr?.message ?? "seedTestSalon: failed to insert salon",
+    );
   }
 
   const { data: svcRows, error: svcErr } = await supabase
@@ -425,23 +431,25 @@ export async function getOperationalExceptionState(
   salonId: string,
   alertId: string,
 ) {
-  const [{ data: alert, error: alertError }, { data: audit, error: auditError }] =
-    await Promise.all([
-      supabase
-        .from("watchdog_alerts" as never)
-        .select(
-          "id, salon_id, status, acknowledged_at, acknowledged_by, resolved_at, resolved_by, resolution_note" as never,
-        )
-        .eq("salon_id" as never, salonId)
-        .eq("id" as never, alertId)
-        .single(),
-      supabase
-        .from("ai_actions_log")
-        .select("action_type, target_id, payload, created_at")
-        .eq("salon_id", salonId)
-        .eq("target_id", alertId)
-        .order("created_at", { ascending: true }),
-    ]);
+  const [
+    { data: alert, error: alertError },
+    { data: audit, error: auditError },
+  ] = await Promise.all([
+    supabase
+      .from("watchdog_alerts" as never)
+      .select(
+        "id, salon_id, status, acknowledged_at, acknowledged_by, resolved_at, resolved_by, resolution_note" as never,
+      )
+      .eq("salon_id" as never, salonId)
+      .eq("id" as never, alertId)
+      .single(),
+    supabase
+      .from("ai_actions_log")
+      .select("action_type, target_id, payload, created_at")
+      .eq("salon_id", salonId)
+      .eq("target_id", alertId)
+      .order("created_at", { ascending: true }),
+  ]);
   if (alertError || auditError || !alert) {
     throw new Error(
       alertError?.message ??
@@ -575,6 +583,103 @@ export async function exerciseExecutionJobExceptionTrigger(salonId: string) {
   return { jobId, opened, resolved };
 }
 
+export async function exerciseCanceledExecutionExceptionClosure(
+  salonId: string,
+) {
+  const approval = await seedOperationalNoteApproval(salonId);
+  const jobId = randomUUID();
+  const rawError = "provider secret that must not enter the audit trail";
+  const { error: insertError } = await supabase
+    .from("ai_execution_jobs" as never)
+    .insert({
+      id: jobId,
+      salon_id: salonId,
+      approval_request_id: approval.approvalId,
+      action_type: "record_operational_note",
+      payload: { note: "E2E cancellation closure evidence" },
+      status: "queued",
+      idempotency_key: `e2e-cancel-closure:${jobId}`,
+      attempt_count: 0,
+      max_attempts: 3,
+    } as never);
+  if (insertError) throw new Error(insertError.message);
+
+  const { error: failedError } = await supabase
+    .from("ai_execution_jobs" as never)
+    .update({
+      status: "failed",
+      attempt_count: 3,
+      last_error: rawError,
+      finished_at: new Date().toISOString(),
+    } as never)
+    .eq("id" as never, jobId);
+  if (failedError) throw new Error(failedError.message);
+
+  const opened = await getOperationalExceptionByDedupe(
+    salonId,
+    `execution_job:${jobId}`,
+  );
+  const { data: controlData, error: controlError } = await supabase.rpc(
+    "control_ai_execution_job" as never,
+    {
+      p_salon_id: salonId,
+      p_job_id: jobId,
+      p_operation: "cancel",
+      p_actor_user_id: null,
+    } as never,
+  );
+  if (controlError) throw new Error(controlError.message);
+  const control = (
+    Array.isArray(controlData) ? controlData[0] : controlData
+  ) as {
+    outcome: string;
+    job_status: string;
+  };
+
+  const [{ data: job, error: jobError }, { data: audit, error: auditError }] =
+    await Promise.all([
+      supabase
+        .from("ai_execution_jobs" as never)
+        .select("status, last_error" as never)
+        .eq("id" as never, jobId)
+        .single(),
+      supabase
+        .from("ai_actions_log")
+        .select("action_type, target_id, payload")
+        .eq("salon_id", salonId)
+        .in("action_type", [
+          "execution_canceled",
+          "operational_exception_auto_resolved",
+        ])
+        .order("created_at", { ascending: true }),
+    ]);
+  if (jobError || auditError || !job) {
+    throw new Error(
+      jobError?.message ??
+        auditError?.message ??
+        "exerciseCanceledExecutionExceptionClosure: state missing",
+    );
+  }
+
+  const resolved = await getOperationalExceptionByDedupe(
+    salonId,
+    `execution_job:${jobId}`,
+  );
+  return {
+    jobId,
+    rawError,
+    opened,
+    control,
+    job: job as unknown as { status: string; last_error: string | null },
+    resolved,
+    audit: (audit ?? []) as Array<{
+      action_type: string;
+      target_id: string;
+      payload: Record<string, unknown>;
+    }>,
+  };
+}
+
 export async function seedBulkMessageApproval(salonId: string) {
   const summary = "Prepare a consent-checked re-engagement audience.";
   const { data, error } = await supabase
@@ -630,8 +735,7 @@ export async function recordTestCampaignManifest(input: {
   const now = new Date().toISOString();
   const sms = input.sms ?? true;
   const email = input.email ?? false;
-  const audienceKey =
-    `${input.clientProfileId}:${sms ? "s" : ""}${email ? "e" : ""}`;
+  const audienceKey = `${input.clientProfileId}:${sms ? "s" : ""}${email ? "e" : ""}`;
   const fingerprint = createHash("sha256")
     .update(audienceKey)
     .digest("hex")
@@ -684,26 +788,25 @@ export async function getCampaignReleaseState(jobId: string) {
     { data: job, error: jobError },
     { data: manifests, error: manifestError },
     { data: audits, error: auditError },
-  ] =
-    await Promise.all([
-      supabase
-        .from("ai_execution_jobs" as never)
-        .select("status, result")
-        .eq("id" as never, jobId)
-        .single(),
-      supabase
-        .from("ai_campaign_manifests" as never)
-        .select("*")
-        .eq("source_execution_job_id" as never, jobId)
-        .order("created_at" as never, { ascending: true }),
-      supabase
-        .from("ai_actions_log")
-        .select("action_type, payload")
-        .eq("agent", "execution_worker")
-        .eq("action_type", "campaign_manifest_prepared")
-        .eq("target_id", jobId)
-        .order("created_at", { ascending: true }),
-    ]);
+  ] = await Promise.all([
+    supabase
+      .from("ai_execution_jobs" as never)
+      .select("status, result")
+      .eq("id" as never, jobId)
+      .single(),
+    supabase
+      .from("ai_campaign_manifests" as never)
+      .select("*")
+      .eq("source_execution_job_id" as never, jobId)
+      .order("created_at" as never, { ascending: true }),
+    supabase
+      .from("ai_actions_log")
+      .select("action_type, payload")
+      .eq("agent", "execution_worker")
+      .eq("action_type", "campaign_manifest_prepared")
+      .eq("target_id", jobId)
+      .order("created_at", { ascending: true }),
+  ]);
   if (jobError) throw new Error(jobError.message);
   if (manifestError) throw new Error(manifestError.message);
   if (auditError) throw new Error(auditError.message);
@@ -718,23 +821,25 @@ export async function getCampaignReleaseState(jobId: string) {
     summary: Record<string, unknown>;
   }>;
   const manifest = manifestRows.at(-1) ?? null;
-  const [{ data: recipients, error: recipientError }, { data: approval, error: approvalError }] =
-    manifest
-      ? await Promise.all([
-          supabase
-            .from("ai_campaign_manifest_recipients" as never)
-            .select("*")
-            .eq("manifest_id" as never, manifest.id),
-          supabase
-            .from("approval_requests")
-            .select("*")
-            .eq("release_manifest_id", manifest.id)
-            .single(),
-        ])
-      : [
-          { data: [], error: null },
-          { data: null, error: null },
-        ];
+  const [
+    { data: recipients, error: recipientError },
+    { data: approval, error: approvalError },
+  ] = manifest
+    ? await Promise.all([
+        supabase
+          .from("ai_campaign_manifest_recipients" as never)
+          .select("*")
+          .eq("manifest_id" as never, manifest.id),
+        supabase
+          .from("approval_requests")
+          .select("*")
+          .eq("release_manifest_id", manifest.id)
+          .single(),
+      ])
+    : [
+        { data: [], error: null },
+        { data: null, error: null },
+      ];
   if (recipientError) throw new Error(recipientError.message);
   if (approvalError) throw new Error(approvalError.message);
   return {
@@ -896,32 +1001,32 @@ export async function getCampaignDispatchPreflightState(jobId: string) {
 }
 
 export async function getApprovalEffectState(approvalId: string) {
-  const [{ data: approval, error: approvalError }, { data: job, error: jobError }] =
-    await Promise.all([
-      supabase
-        .from("approval_requests")
-        .select("status, decided_at")
-        .eq("id", approvalId)
-        .single(),
-      supabase
-        .from("ai_execution_jobs" as never)
-        .select("id, status, attempt_count, result, lease_token")
-        .eq("approval_request_id" as never, approvalId)
-        .maybeSingle(),
-    ]);
+  const [
+    { data: approval, error: approvalError },
+    { data: job, error: jobError },
+  ] = await Promise.all([
+    supabase
+      .from("approval_requests")
+      .select("status, decided_at")
+      .eq("id", approvalId)
+      .single(),
+    supabase
+      .from("ai_execution_jobs" as never)
+      .select("id, status, attempt_count, result, lease_token")
+      .eq("approval_request_id" as never, approvalId)
+      .maybeSingle(),
+  ]);
 
   if (approvalError) throw new Error(approvalError.message);
   if (jobError) throw new Error(jobError.message);
 
-  const executionJob = job as
-    | {
-        id: string;
-        status: string;
-        attempt_count: number;
-        result: Record<string, unknown> | null;
-        lease_token: string | null;
-      }
-    | null;
+  const executionJob = job as {
+    id: string;
+    status: string;
+    attempt_count: number;
+    result: Record<string, unknown> | null;
+    lease_token: string | null;
+  } | null;
 
   const { data: effects, error: effectError } = executionJob
     ? await supabase
@@ -950,14 +1055,18 @@ export async function getApprovalEffectState(approvalId: string) {
  * Uses the service-role admin API so no real email is sent.
  * Returns { userId, email, password }.
  */
-export async function seedTestUser(opts?: { email?: string; password?: string }) {
+export async function seedTestUser(opts?: {
+  email?: string;
+  password?: string;
+}) {
   // Second instance of the hardcoded-credential bug, missed when
   // helpers/superadmin.ts was fixed: this default password sat in a PUBLIC repo
   // too, and this helper also mints real auth users. Same rule — a fresh random
   // password per run, held only in memory, never logged and never in an artifact.
   // Treat the old constant as permanently compromised.
   const email = opts?.email ?? `e2e-user-${randomUUID()}@nailiq.test.invalid`;
-  const password = opts?.password ?? `E2E-${randomBytes(24).toString("base64url")}#Aa1`;
+  const password =
+    opts?.password ?? `E2E-${randomBytes(24).toString("base64url")}#Aa1`;
 
   const { data, error } = await supabase.auth.admin.createUser({
     email,
@@ -966,7 +1075,9 @@ export async function seedTestUser(opts?: { email?: string; password?: string })
   });
 
   if (error || !data.user?.id) {
-    throw new Error(error?.message ?? "seedTestUser: failed to create auth user");
+    throw new Error(
+      error?.message ?? "seedTestUser: failed to create auth user",
+    );
   }
 
   return { userId: data.user.id, email, password };

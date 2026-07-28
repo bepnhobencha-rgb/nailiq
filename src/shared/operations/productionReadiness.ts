@@ -7,8 +7,7 @@ const PROBE_SALON_ID = "00000000-0000-0000-0000-000000000002";
 const PROBE_ALERT_ID = "00000000-0000-0000-0000-000000000004";
 const PROBE_ACTOR_ID = "00000000-0000-0000-0000-000000000005";
 
-export const REQUIRED_SCHEMA_CAPABILITY =
-  "ai_operational_exception_signals_v1";
+export const REQUIRED_SCHEMA_CAPABILITY = "ai_execution_incident_closure_v1";
 
 export type ProductionReadiness =
   | { ready: true }
@@ -35,7 +34,9 @@ export async function probeProductionReadiness(
   try {
     const db = createServiceRoleClient();
     const evidenceQuery = db
-      .rpc("record_ai_campaign_preflight_evidence" as never, {
+      .rpc(
+        "record_ai_campaign_preflight_evidence" as never,
+        {
           p_job_id: PROBE_JOB_ID,
           p_salon_id: PROBE_SALON_ID,
           p_summary: {
@@ -59,57 +60,86 @@ export async function probeProductionReadiness(
             cost_cap_usd_cents: 500,
           },
           p_decisions: [],
-        } as never)
+        } as never,
+      )
       .abortSignal(AbortSignal.timeout(timeoutMs));
     const planQuery = db
-      .rpc("seal_ai_campaign_dispatch_plan" as never, {
-        p_job_id: PROBE_JOB_ID,
-        p_salon_id: PROBE_SALON_ID,
-      } as never)
+      .rpc(
+        "seal_ai_campaign_dispatch_plan" as never,
+        {
+          p_job_id: PROBE_JOB_ID,
+          p_salon_id: PROBE_SALON_ID,
+        } as never,
+      )
       .abortSignal(AbortSignal.timeout(timeoutMs));
     const exceptionQuery = db
-      .rpc("control_watchdog_alert" as never, {
-        p_salon_id: PROBE_SALON_ID,
-        p_alert_id: PROBE_ALERT_ID,
-        p_operation: "acknowledge",
-        p_actor_user_id: PROBE_ACTOR_ID,
-        p_resolution_note: null,
-      } as never)
+      .rpc(
+        "control_watchdog_alert" as never,
+        {
+          p_salon_id: PROBE_SALON_ID,
+          p_alert_id: PROBE_ALERT_ID,
+          p_operation: "acknowledge",
+          p_actor_user_id: PROBE_ACTOR_ID,
+          p_resolution_note: null,
+        } as never,
+      )
       .abortSignal(AbortSignal.timeout(timeoutMs));
     const signalQuery = db
-      .rpc("record_ai_operational_exception_signal" as never, {
-        p_salon_id: PROBE_SALON_ID,
-        p_dedupe_key: "readiness:nonexistent",
-        p_source_type: "readiness",
-        p_source_ref: "schema_probe",
-        p_kind: "readiness_probe",
-        p_severity: "info",
-        p_title: "Readiness schema probe",
-        p_body: null,
-        p_signal: "recovered",
-        p_evidence: { probe: true, no_write_expected: true },
-        p_now: new Date(0).toISOString(),
-      } as never)
+      .rpc(
+        "record_ai_operational_exception_signal" as never,
+        {
+          p_salon_id: PROBE_SALON_ID,
+          p_dedupe_key: "readiness:nonexistent",
+          p_source_type: "readiness",
+          p_source_ref: "schema_probe",
+          p_kind: "readiness_probe",
+          p_severity: "info",
+          p_title: "Readiness schema probe",
+          p_body: null,
+          p_signal: "recovered",
+          p_evidence: { probe: true, no_write_expected: true },
+          p_now: new Date(0).toISOString(),
+        } as never,
+      )
       .abortSignal(AbortSignal.timeout(timeoutMs));
-    const [evidenceResult, planResult, exceptionResult, signalResult] =
-      await Promise.all([
+    const executionControlQuery = db
+      .rpc(
+        "control_ai_execution_job" as never,
+        {
+          p_salon_id: PROBE_SALON_ID,
+          p_job_id: PROBE_JOB_ID,
+          p_operation: "cancel",
+          p_actor_user_id: PROBE_ACTOR_ID,
+        } as never,
+      )
+      .abortSignal(AbortSignal.timeout(timeoutMs));
+    const [
+      evidenceResult,
+      planResult,
+      exceptionResult,
+      signalResult,
+      executionControlResult,
+    ] = await Promise.all([
       evidenceQuery,
       planQuery,
       exceptionQuery,
-       signalQuery,
-      ]);
+      signalQuery,
+      executionControlQuery,
+    ]);
 
     if (
       evidenceResult.error ||
       planResult.error ||
       exceptionResult.error ||
-      signalResult.error
+      signalResult.error ||
+      executionControlResult.error
     ) {
       const error =
         evidenceResult.error ??
         planResult.error ??
         exceptionResult.error ??
-        signalResult.error;
+        signalResult.error ??
+        executionControlResult.error;
       return {
         ready: false,
         reason:
@@ -130,11 +160,16 @@ export async function probeProductionReadiness(
     const signalOutcome = Array.isArray(signalResult.data)
       ? (signalResult.data[0] as { outcome?: unknown } | undefined)?.outcome
       : signalResult.data;
+    const executionControlOutcome = Array.isArray(executionControlResult.data)
+      ? (executionControlResult.data[0] as { outcome?: unknown } | undefined)
+          ?.outcome
+      : executionControlResult.data;
     if (
       evidenceOutcome !== "job_not_preflightable" ||
       planOutcome !== "job_not_plannable" ||
       exceptionOutcome !== "not_found" ||
-      signalOutcome !== "unchanged"
+      signalOutcome !== "unchanged" ||
+      executionControlOutcome !== "not_found"
     ) {
       return { ready: false, reason: "schema_probe_unexpected" };
     }
