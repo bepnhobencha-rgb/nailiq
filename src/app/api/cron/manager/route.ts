@@ -99,6 +99,19 @@ export async function GET(req: Request): Promise<NextResponse> {
     const salonHour = Math.floor(salonNowMinutes(tz) / 60);
     const entry: Record<string, unknown> = { salon: salon.slug };
 
+    // Surface each real structural strategist recommendation exactly once.
+    // This only creates an owner decision; it never executes the note itself.
+    try {
+      const { surfaceStrategistOperationalNoteApproval } = await import(
+        "@/shared/ai/strategistOperationalNoteApproval"
+      );
+      await surfaceStrategistOperationalNoteApproval(salon.id, new Date());
+      entry.strategist_note = "ok";
+    } catch (e) {
+      console.error("[manager] strategist_note", salon.slug, e);
+      entry.strategist_note = "failed";
+    }
+
     // Outcome tracker — runs at 09:00, checks if Minh's actions led to bookings
     if (salonHour === 9) {
       try {
