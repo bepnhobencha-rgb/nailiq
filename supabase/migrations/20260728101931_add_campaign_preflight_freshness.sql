@@ -8,8 +8,44 @@ alter table public.ai_campaign_dispatch_preflights
   add constraint ai_campaign_dispatch_preflights_valid_window
     check (valid_until > created_at);
 
-alter table public.ai_campaign_dispatch_preflights
-  drop constraint ai_campaign_dispatch_preflights_manifest_id_preflight_fingerprint_key;
+do $$
+declare
+  v_constraint_name name;
+begin
+  select constraint_row.conname
+    into v_constraint_name
+    from pg_constraint constraint_row
+   where constraint_row.conrelid =
+         'public.ai_campaign_dispatch_preflights'::regclass
+     and constraint_row.contype = 'u'
+     and constraint_row.conkey = array[
+       (
+         select column_row.attnum
+           from pg_attribute column_row
+          where column_row.attrelid = constraint_row.conrelid
+            and column_row.attname = 'manifest_id'
+            and not column_row.attisdropped
+       ),
+       (
+         select column_row.attnum
+           from pg_attribute column_row
+          where column_row.attrelid = constraint_row.conrelid
+            and column_row.attname = 'preflight_fingerprint'
+            and not column_row.attisdropped
+       )
+     ]::smallint[];
+
+  if v_constraint_name is null then
+    raise exception
+      'Expected unique constraint on ai_campaign_dispatch_preflights(manifest_id, preflight_fingerprint)';
+  end if;
+
+  execute format(
+    'alter table public.ai_campaign_dispatch_preflights drop constraint %I',
+    v_constraint_name
+  );
+end;
+$$;
 
 create index ai_campaign_dispatch_preflights_manifest_freshness_idx
   on public.ai_campaign_dispatch_preflights (
