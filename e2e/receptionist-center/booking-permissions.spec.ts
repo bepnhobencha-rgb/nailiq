@@ -85,17 +85,18 @@ test.afterAll(async ({}, testInfo) => {
 for (const role of ["owner", "admin", "receptionist"] as const) {
   test(`${role} can access booking create, edit, cancel, and status actions`, async ({
     page,
-    isMobile,
   }) => {
     const member = members.find((candidate) => candidate.role === role);
     if (!member) throw new Error(`missing ${role} fixture`);
 
     await loginAndOpenCenter(page, member);
-    if (isMobile) {
-      await expect(page.getByTestId("header-add-appointment")).toBeHidden();
-    } else {
-      await expect(page.getByTestId("header-add-appointment")).toBeVisible();
-    }
+    const addAppointment = page.getByTestId("header-add-appointment");
+    await expect(addAppointment).toBeVisible();
+    await addAppointment.click();
+    const bookingForm = page.getByTestId("desk-booking-form");
+    await expect(bookingForm).toBeVisible();
+    await bookingForm.getByRole("button", { name: "Close" }).click();
+    await expect(bookingForm).toHaveCount(0);
 
     await openBaselineBooking(page);
     await expect(page.getByTestId("edit-booking-button")).toBeVisible();
