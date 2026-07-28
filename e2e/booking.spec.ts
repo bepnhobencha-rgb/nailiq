@@ -5,6 +5,7 @@ import {
   gotoBookingServiceStep,
   seedTestSalon,
 } from "./helpers/db";
+import { advanceBookingStep } from "./helpers/bookingFlow";
 
 test.describe("Booking Flow", () => {
   let testSlug: string;
@@ -55,14 +56,14 @@ test.describe("Booking Flow", () => {
     await expect(firstAvailableSlot).toHaveAttribute("aria-pressed", "true");
 
     const timeStep = page.getByRole("group", { name: "Choose a time" });
-    const continueFromTime = timeStep.getByRole("button", { name: "Continue" });
-    await expect(continueFromTime).toBeEnabled();
-    await continueFromTime.click();
+    await advanceBookingStep(
+      timeStep,
+      page.getByTestId("booking-info-name"),
+    );
 
     // Phone-first: the phone was captured at the entry gate, so the info step
     // only collects the name now.
-    const clientName = page.locator('input[name="clientName"]');
-    await expect(clientName).toBeVisible();
+    const clientName = page.getByTestId("booking-info-name");
     await clientName.fill("Test Client");
     await page.getByRole("button", { name: "Continue" }).first().click();
 
