@@ -99,7 +99,8 @@ export async function preflightCampaignDispatch(input: {
       summary: CampaignDispatchPreflightSummary;
       preflightId: string;
       status: "ready" | "blocked";
-      outcome: "created" | "unchanged";
+      validUntil: string;
+      outcome: "created" | "unchanged" | "refreshed";
     }
   | { ok: false; error: string }
 > {
@@ -349,13 +350,12 @@ export async function preflightCampaignDispatch(input: {
   };
 
   const { data: transition, error: transitionError } = await db.rpc(
-    "record_ai_campaign_dispatch_preflight" as never,
+    "record_ai_campaign_dispatch_preflight_fresh" as never,
     {
       p_job_id: job.id,
       p_salon_id: input.salonId,
       p_summary: summary,
       p_decisions: decisions,
-      p_now: preflightAt,
     } as never,
   );
   const row = (Array.isArray(transition) ? transition[0] : transition) as
@@ -364,14 +364,18 @@ export async function preflightCampaignDispatch(input: {
         preflight_id?: string;
         preflight_status?: "ready" | "blocked";
         preflight_fingerprint?: string;
+        valid_until?: string;
       }
     | null;
   if (
     transitionError ||
     !row?.preflight_id ||
-    (row.outcome !== "created" && row.outcome !== "unchanged") ||
+    (row.outcome !== "created" &&
+      row.outcome !== "unchanged" &&
+      row.outcome !== "refreshed") ||
     (row.preflight_status !== "ready" && row.preflight_status !== "blocked") ||
-    row.preflight_fingerprint !== summary.preflight_fingerprint
+    row.preflight_fingerprint !== summary.preflight_fingerprint ||
+    !row.valid_until
   ) {
     return { ok: false, error: "preflight_record_failed" };
   }
@@ -381,6 +385,7 @@ export async function preflightCampaignDispatch(input: {
     summary,
     preflightId: row.preflight_id,
     status: row.preflight_status,
+    validUntil: row.valid_until,
     outcome: row.outcome,
   };
 }

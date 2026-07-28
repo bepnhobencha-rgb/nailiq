@@ -24,6 +24,7 @@ import {
 
 import { buildActionIntelligence } from "@/shared/ai/actionIntelligence";
 import type { ApprovalRow } from "@/shared/ai/approvalRequests";
+import { campaignPreflightFreshness } from "@/shared/ai/campaignPreflightFreshness";
 import { controlExecutionJobAction } from "@/shared/ai/controlExecutionJobAction";
 import { canControlExecutionJob } from "@/shared/ai/executionPolicy";
 import { preflightCampaignAction } from "@/shared/ai/preflightCampaignAction";
@@ -318,7 +319,12 @@ export function AiControlCenter({
                         : ""}
                     </p>
                     {job.status === "waiting_input" ? (
-                      <JobAudiencePreparation job={job} slug={slug} vi={vi} />
+                      <JobAudiencePreparation
+                        job={job}
+                        slug={slug}
+                        vi={vi}
+                        nowIso={nowIso}
+                      />
                     ) : null}
                     {job.last_error ? (
                       <p className="mt-2 line-clamp-2 text-xs leading-5 text-nq-error">
@@ -607,6 +613,8 @@ type AudiencePreparationView = {
 
 type CampaignDispatchPreflightView = {
   preflight_at: string;
+  valid_until: string;
+  freshness_minutes: number;
   preflight_status: "ready" | "blocked";
   eligible_count: number;
   sms_recipient_count: number;
@@ -633,6 +641,8 @@ function campaignDispatchPreflightFrom(
   const row = value as Record<string, unknown>;
   if (
     typeof row.preflight_at !== "string" ||
+    typeof row.valid_until !== "string" ||
+    typeof row.freshness_minutes !== "number" ||
     (row.preflight_status !== "ready" &&
       row.preflight_status !== "blocked") ||
     typeof row.eligible_count !== "number" ||
@@ -664,16 +674,21 @@ function JobAudiencePreparation({
   job,
   slug,
   vi,
+  nowIso,
 }: {
   job: ExecutionJobRow;
   slug: string;
   vi: boolean;
+  nowIso: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const preparation = audiencePreparationFrom(job.result);
   const preflight = campaignDispatchPreflightFrom(job.result);
+  const preflightFreshness = preflight
+    ? campaignPreflightFreshness(preflight.valid_until, nowIso)
+    : null;
   const blocker =
     typeof job.result?.blocker === "string" ? job.result.blocker : null;
 
@@ -716,7 +731,11 @@ function JobAudiencePreparation({
           {preflight ? (
             <>
               <p className="text-xs font-semibold text-nq-foreground">
-                {preflight.preflight_status === "ready"
+                {preflightFreshness !== "fresh"
+                  ? vi
+                    ? "Kiểm tra an toàn đã hết hạn"
+                    : "Safety check expired"
+                  : preflight.preflight_status === "ready"
                   ? vi
                     ? "Kiểm tra an toàn đạt"
                     : "Safety check passed"
@@ -760,6 +779,15 @@ function JobAudiencePreparation({
                   : vi
                     ? "vượt giới hạn"
                     : "over limit"}
+              </p>
+              <p className="mt-1 text-[11px] leading-4 text-nq-muted">
+                {preflightFreshness === "fresh"
+                  ? vi
+                    ? `Có hiệu lực tối đa ${preflight.freshness_minutes} phút; phải kiểm tra lại sau khi hết hạn.`
+                    : `Valid for at most ${preflight.freshness_minutes} minutes; rerun after expiry.`
+                  : vi
+                    ? "Kết quả cũ không còn được coi là an toàn để phát hành."
+                    : "This old result is no longer considered safe for release."}
               </p>
             </>
           ) : (

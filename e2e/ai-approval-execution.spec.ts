@@ -310,6 +310,12 @@ test.describe("AI approval execution", () => {
       preflightResults[1]?.preflight_id,
     );
     expect(preflightResults[0]?.preflight_status).toBe("ready");
+    expect(Date.parse(preflightResults[0]?.valid_until as string)).toBeGreaterThan(
+      Date.now(),
+    );
+    expect(preflightResults[0]?.valid_until).toBe(
+      preflightResults[1]?.valid_until,
+    );
 
     const preflightState = await getCampaignDispatchPreflightState(
       approvedRelease.job?.id as string,
@@ -330,6 +336,8 @@ test.describe("AI approval execution", () => {
           estimated_cost_usd_cents: 0.8,
           within_recipient_cap: true,
           within_cost_cap: true,
+          freshness_minutes: 5,
+          valid_until: preflightResults[0]?.valid_until,
           dispatch_enabled: false,
           no_messages_sent: true,
         },

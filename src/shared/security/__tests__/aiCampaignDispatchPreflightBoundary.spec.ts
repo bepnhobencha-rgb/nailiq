@@ -19,6 +19,13 @@ const migration = readFileSync(
   ),
   "utf8",
 );
+const freshnessMigration = readFileSync(
+  resolve(
+    root,
+    "supabase/migrations/20260728101931_add_campaign_preflight_freshness.sql",
+  ),
+  "utf8",
+);
 
 describe("AI campaign dispatch preflight boundary", () => {
   it("authorizes only owner/admin dashboard writes", () => {
@@ -59,11 +66,28 @@ describe("AI campaign dispatch preflight boundary", () => {
   });
 
   it("keeps dispatch locked and has no outbound provider dependency", () => {
-    expect(service).toContain('"record_ai_campaign_dispatch_preflight" as never');
+    expect(service).toContain(
+      '"record_ai_campaign_dispatch_preflight_fresh" as never',
+    );
     expect(service).toContain("dispatch_enabled !== false");
     expect(service).not.toMatch(/twilio|resend/i);
     expect(migration).toContain("'blocker', 'dispatch_not_enabled'");
     expect(migration).toContain("'dispatch_enabled', false");
     expect(migration).toContain("'no_messages_sent', true");
+  });
+
+  it("expires point-in-time evidence and refreshes it idempotently", () => {
+    expect(freshnessMigration).toContain("add column valid_until");
+    expect(freshnessMigration).toContain("interval '5 minutes'");
+    expect(freshnessMigration).toContain(
+      "record_ai_campaign_dispatch_preflight_fresh",
+    );
+    expect(freshnessMigration).toContain("order by candidate.created_at desc");
+    expect(freshnessMigration).toContain("v_outcome := 'refreshed'");
+    expect(freshnessMigration).toContain("'dispatch_enabled', false");
+    expect(freshnessMigration).toContain("'no_messages_sent', true");
+    expect(freshnessMigration).toContain(
+      ") from public, anon, authenticated",
+    );
   });
 });
