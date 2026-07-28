@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { SalonSlugSuggestions } from "@/components/booking/SalonSlugSuggestions";
 
 export const metadata: Metadata = {
   title: { absolute: "Page not found | NailIQ" },
@@ -39,6 +40,7 @@ export default function NotFound() {
           <p>Trang bạn tìm không tồn tại hoặc đã được di chuyển.</p>
           <p>The page you&rsquo;re looking for doesn&rsquo;t exist or may have moved.</p>
         </div>
+        <SalonSlugSuggestions />
         <div className="mt-2 flex flex-col items-center gap-3 sm:flex-row">
           <Link
             href="/"
