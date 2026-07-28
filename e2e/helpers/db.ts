@@ -369,6 +369,103 @@ export async function seedOperationalNoteApproval(salonId: string) {
   };
 }
 
+export async function seedOperationalException(salonId: string) {
+  const { data, error } = await supabase
+    .from("watchdog_alerts" as never)
+    .insert({
+      salon_id: salonId,
+      kind: "e2e_operational_exception",
+      severity: "critical",
+      title: "E2E booking capacity exception",
+      body: "Capacity dropped below the controlled E2E threshold.",
+      dedupe_key: `e2e:${randomUUID()}`,
+      snapshot: { source: "e2e", pii: false },
+    } as never)
+    .select("id, status" as never)
+    .single();
+  if (error || !data) {
+    throw new Error(
+      error?.message ?? "seedOperationalException: insert failed",
+    );
+  }
+  const row = data as unknown as { id: string; status: string };
+  return { alertId: row.id, status: row.status };
+}
+
+export async function controlTestOperationalException(input: {
+  salonId: string;
+  alertId: string;
+  operation: "acknowledge" | "resolve" | "reopen";
+  actorUserId: string;
+  resolutionNote?: string;
+}) {
+  const { data, error } = await supabase.rpc(
+    "control_watchdog_alert" as never,
+    {
+      p_salon_id: input.salonId,
+      p_alert_id: input.alertId,
+      p_operation: input.operation,
+      p_actor_user_id: input.actorUserId,
+      p_resolution_note: input.resolutionNote ?? null,
+    } as never,
+  );
+  if (error) {
+    throw new Error(
+      `controlTestOperationalException(${input.operation}): ${error.message}`,
+    );
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as {
+    outcome: string;
+    alert_status: string;
+  };
+  return row;
+}
+
+export async function getOperationalExceptionState(
+  salonId: string,
+  alertId: string,
+) {
+  const [{ data: alert, error: alertError }, { data: audit, error: auditError }] =
+    await Promise.all([
+      supabase
+        .from("watchdog_alerts" as never)
+        .select(
+          "id, salon_id, status, acknowledged_at, acknowledged_by, resolved_at, resolved_by, resolution_note" as never,
+        )
+        .eq("salon_id" as never, salonId)
+        .eq("id" as never, alertId)
+        .single(),
+      supabase
+        .from("ai_actions_log")
+        .select("action_type, target_id, payload, created_at")
+        .eq("salon_id", salonId)
+        .eq("target_id", alertId)
+        .order("created_at", { ascending: true }),
+    ]);
+  if (alertError || auditError || !alert) {
+    throw new Error(
+      alertError?.message ??
+        auditError?.message ??
+        "getOperationalExceptionState: alert missing",
+    );
+  }
+  return {
+    alert: alert as unknown as {
+      status: string;
+      acknowledged_at: string | null;
+      acknowledged_by: string | null;
+      resolved_at: string | null;
+      resolved_by: string | null;
+      resolution_note: string | null;
+    },
+    audit: (audit ?? []) as Array<{
+      action_type: string;
+      target_id: string;
+      payload: Record<string, unknown>;
+    }>,
+  };
+}
+
 export async function seedBulkMessageApproval(salonId: string) {
   const summary = "Prepare a consent-checked re-engagement audience.";
   const { data, error } = await supabase

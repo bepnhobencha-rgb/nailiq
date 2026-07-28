@@ -4,9 +4,11 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 const PROBE_JOB_ID = "00000000-0000-0000-0000-000000000001";
 const PROBE_SALON_ID = "00000000-0000-0000-0000-000000000002";
+const PROBE_ALERT_ID = "00000000-0000-0000-0000-000000000004";
+const PROBE_ACTOR_ID = "00000000-0000-0000-0000-000000000005";
 
 export const REQUIRED_SCHEMA_CAPABILITY =
-  "immutable_ai_campaign_dispatch_plan_v1";
+  "ai_operational_exception_lifecycle_v1";
 
 export type ProductionReadiness =
   | { ready: true }
@@ -65,13 +67,24 @@ export async function probeProductionReadiness(
         p_salon_id: PROBE_SALON_ID,
       } as never)
       .abortSignal(AbortSignal.timeout(timeoutMs));
-    const [evidenceResult, planResult] = await Promise.all([
+    const exceptionQuery = db
+      .rpc("control_watchdog_alert" as never, {
+        p_salon_id: PROBE_SALON_ID,
+        p_alert_id: PROBE_ALERT_ID,
+        p_operation: "acknowledge",
+        p_actor_user_id: PROBE_ACTOR_ID,
+        p_resolution_note: null,
+      } as never)
+      .abortSignal(AbortSignal.timeout(timeoutMs));
+    const [evidenceResult, planResult, exceptionResult] = await Promise.all([
       evidenceQuery,
       planQuery,
+      exceptionQuery,
     ]);
 
-    if (evidenceResult.error || planResult.error) {
-      const error = evidenceResult.error ?? planResult.error;
+    if (evidenceResult.error || planResult.error || exceptionResult.error) {
+      const error =
+        evidenceResult.error ?? planResult.error ?? exceptionResult.error;
       return {
         ready: false,
         reason:
@@ -86,9 +99,13 @@ export async function probeProductionReadiness(
     const planOutcome = Array.isArray(planResult.data)
       ? (planResult.data[0] as { outcome?: unknown } | undefined)?.outcome
       : planResult.data;
+    const exceptionOutcome = Array.isArray(exceptionResult.data)
+      ? (exceptionResult.data[0] as { outcome?: unknown } | undefined)?.outcome
+      : exceptionResult.data;
     if (
       evidenceOutcome !== "job_not_preflightable" ||
-      planOutcome !== "job_not_plannable"
+      planOutcome !== "job_not_plannable" ||
+      exceptionOutcome !== "not_found"
     ) {
       return { ready: false, reason: "schema_probe_unexpected" };
     }
