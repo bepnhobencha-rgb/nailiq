@@ -38,6 +38,10 @@ describe("production readiness route", () => {
       data: [{ outcome: "job_not_plannable", plan_id: null }],
       error: null,
     });
+    abortSignal.mockResolvedValueOnce({
+      data: [{ outcome: "not_found", alert_status: null }],
+      error: null,
+    });
 
     const response = await GET();
     const body = await response.json();
@@ -49,7 +53,7 @@ describe("production readiness route", () => {
       checks: {
         database_schema: {
           status: "ok",
-          capability: "immutable_ai_campaign_dispatch_plan_v1",
+          capability: "ai_operational_exception_lifecycle_v1",
         },
       },
     });
@@ -70,6 +74,13 @@ describe("production readiness route", () => {
     expect(rpc).toHaveBeenCalledWith("seal_ai_campaign_dispatch_plan", {
       p_job_id: "00000000-0000-0000-0000-000000000001",
       p_salon_id: "00000000-0000-0000-0000-000000000002",
+    });
+    expect(rpc).toHaveBeenCalledWith("control_watchdog_alert", {
+      p_salon_id: "00000000-0000-0000-0000-000000000002",
+      p_alert_id: "00000000-0000-0000-0000-000000000004",
+      p_operation: "acknowledge",
+      p_actor_user_id: "00000000-0000-0000-0000-000000000005",
+      p_resolution_note: null,
     });
   });
 

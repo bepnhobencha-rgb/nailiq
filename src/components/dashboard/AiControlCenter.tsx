@@ -32,17 +32,21 @@ import { prepareAudienceAction } from "@/shared/ai/prepareAudienceAction";
 import { sealCampaignPlanAction } from "@/shared/ai/sealCampaignPlanAction";
 import type { ExecutionJobRow } from "@/shared/ai/executionQueue";
 import type { MinhActivityData } from "@/shared/ai/loadMinhActivity";
+import type { OperationalExceptionRow } from "@/shared/ai/operationalExceptionTypes";
 import type {
   AiOperatingState,
   LearnedAiControl,
 } from "@/shared/ai/operatingState";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { OperationalExceptionInbox } from "@/components/dashboard/OperationalExceptionInbox";
 
 type Props = {
   slug: string;
   approvals: ApprovalRow[];
   activity: MinhActivityData;
   executionJobs: ExecutionJobRow[];
+  operationalExceptions: OperationalExceptionRow[];
+  operationalExceptionCount: number;
   operatingState: AiOperatingState;
   appUrl: string;
   nowIso: string;
@@ -63,6 +67,8 @@ export function AiControlCenter({
   approvals,
   activity,
   executionJobs,
+  operationalExceptions,
+  operationalExceptionCount,
   operatingState,
   appUrl,
   nowIso,
@@ -102,8 +108,13 @@ export function AiControlCenter({
         </Link>
       </header>
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label={vi ? "Tổng quan AI" : "AI overview"}>
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" aria-label={vi ? "Tổng quan AI" : "AI overview"}>
         <Metric label={vi ? "Cần bạn quyết định" : "Needs your decision"} value={pending.length} tone={pending.length > 0 ? "attention" : "default"} />
+        <Metric
+          label={vi ? "Ngoại lệ đang mở" : "Active exceptions"}
+          value={operationalExceptionCount}
+          tone={operationalExceptionCount > 0 ? "attention" : "default"}
+        />
         <Metric label={vi ? "Hành động 30 ngày" : "30-day actions"} value={activity.entries.length} />
         <Metric label={vi ? "Khách quay lại" : "Customers returned"} value={activity.converted} tone="success" />
         <Metric
@@ -126,6 +137,13 @@ export function AiControlCenter({
       <OperatingStatus
         state={operatingState}
         language={language}
+        nowIso={nowIso}
+      />
+
+      <OperationalExceptionInbox
+        slug={slug}
+        exceptions={operationalExceptions}
+        activeCount={operationalExceptionCount}
         nowIso={nowIso}
       />
 
