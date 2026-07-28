@@ -14,7 +14,7 @@ import "server-only";
  *   1. Agent calls createApprovalRequest() instead of acting directly.
  *   2. For urgent requests: email sent immediately with approve/decline buttons.
  *   3. For normal requests: queued; digest includes them; reminders after 24h.
- *   4. Owner taps button → GET /api/ai/approve?token=... → processDecision().
+ *   4. Owner opens GET confirmation, then POSTs the form → processDecision().
  *   5. Resolved decisions refresh a bounded owner-preference policy so repeated
  *      declines reduce future proposals and later approvals can recover them.
  *
