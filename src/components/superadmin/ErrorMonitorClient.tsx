@@ -25,6 +25,15 @@ function timeAgo(iso: string): string {
   return `${Math.round(h / 24)}d ago`;
 }
 
+function formatContext(context: Record<string, unknown> | null): string | null {
+  if (!context || Object.keys(context).length === 0) return null;
+  try {
+    return JSON.stringify(context, null, 2);
+  } catch {
+    return "[Context could not be serialized]";
+  }
+}
+
 export function ErrorMonitorClient({ initialRows }: { initialRows: ErrorLogRow[] }) {
   const [rows, setRows] = useState<ErrorLogRow[]>(initialRows);
   const [filter, setFilter] = useState<"open" | "resolved" | "all">("open");
@@ -147,6 +156,35 @@ export function ErrorMonitorClient({ initialRows }: { initialRows: ErrorLogRow[]
                     >
                       → Review draft PR
                     </a>
+                  ) : null}
+                  {r.stack || formatContext(r.context) ? (
+                    <details className="mt-3 rounded-lg border border-nq-muted/20 bg-nq-bg/40">
+                      <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-nq-muted hover:text-nq-foreground">
+                        Technical evidence
+                      </summary>
+                      <div className="space-y-3 border-t border-nq-muted/20 px-3 py-3">
+                        {r.stack ? (
+                          <div>
+                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-nq-muted">
+                              Stack
+                            </p>
+                            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-black/25 p-2 font-mono text-[11px] leading-relaxed text-nq-foreground">
+                              {r.stack}
+                            </pre>
+                          </div>
+                        ) : null}
+                        {formatContext(r.context) ? (
+                          <div>
+                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-nq-muted">
+                              Context
+                            </p>
+                            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-black/25 p-2 font-mono text-[11px] leading-relaxed text-nq-foreground">
+                              {formatContext(r.context)}
+                            </pre>
+                          </div>
+                        ) : null}
+                      </div>
+                    </details>
                   ) : null}
                 </div>
                 <div className="flex shrink-0 flex-col gap-1.5">
