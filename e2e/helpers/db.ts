@@ -1083,6 +1083,78 @@ export async function seedTestUser(opts?: {
   return { userId: data.user.id, email, password };
 }
 
+/**
+ * Read the durable registration outcome from the database. The browser redirect
+ * alone is not proof that the owner membership, trial, defaults, and no-card
+ * contract were committed.
+ */
+export async function getRegisteredSalonForUser(userId: string) {
+  const { data: member, error: memberError } = await supabase
+    .from("salon_members")
+    .select("salon_id, role")
+    .eq("user_id", userId)
+    .eq("role", "owner")
+    .single();
+
+  if (memberError || !member?.salon_id) {
+    throw new Error(
+      memberError?.message ??
+        "getRegisteredSalonForUser: owner membership was not created",
+    );
+  }
+
+  const salonId = String(member.salon_id);
+  const [
+    { data: salon, error: salonError },
+    { count: serviceCount, error: serviceError },
+    { count: staffCount, error: staffError },
+  ] = await Promise.all([
+    supabase
+      .from("salons")
+      .select(
+        "id, slug, name, timezone, setup_wizard_completed_at, subscription_plan, subscription_status, trial_started_at, trial_ends_at, stripe_customer_id, stripe_subscription_id, payment_provider",
+      )
+      .eq("id", salonId)
+      .single(),
+    supabase
+      .from("services")
+      .select("id", { count: "exact", head: true })
+      .eq("salon_id", salonId),
+    supabase
+      .from("staff")
+      .select("id", { count: "exact", head: true })
+      .eq("salon_id", salonId),
+  ]);
+
+  const firstError = salonError ?? serviceError ?? staffError;
+  if (firstError || !salon) {
+    throw new Error(
+      firstError?.message ??
+        "getRegisteredSalonForUser: salon registration state is missing",
+    );
+  }
+
+  return {
+    memberRole: String(member.role),
+    salon: salon as {
+      id: string;
+      slug: string;
+      name: string;
+      timezone: string;
+      setup_wizard_completed_at: string | null;
+      subscription_plan: string;
+      subscription_status: string;
+      trial_started_at: string | null;
+      trial_ends_at: string | null;
+      stripe_customer_id: string | null;
+      stripe_subscription_id: string | null;
+      payment_provider: string | null;
+    },
+    serviceCount: serviceCount ?? 0,
+    staffCount: staffCount ?? 0,
+  };
+}
+
 /** Remove a Supabase auth user (and any salon they own) from E2E test runs. */
 export async function cleanupTestUser(userId: string) {
   // Remove salon_members first to find any salon owned by this user.

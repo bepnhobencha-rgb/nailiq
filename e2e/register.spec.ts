@@ -15,6 +15,7 @@ import {
   cleanupTestSalon,
   cleanupTestUser,
   getLatestOtp,
+  getRegisteredSalonForUser,
   seedTestSalon,
   seedTestUser,
 } from "./helpers/db";
@@ -27,17 +28,12 @@ function normalizedDigits(raw: string): string {
 }
 
 test.describe("Registration flow", () => {
-  // This describe exercises Supabase password auth via the browser client in a
-  // `next start` (NODE_ENV=production) environment.  Intermittently fails in
-  // GitHub Actions CI — likely a timing gap between supabase-js setting the
-  // session cookie and the server-side session read on the subsequent full-page
-  // navigation.  Skipped in CI; runs locally where dev mode eliminates the gap.
-  test.skip(Boolean(process.env.CI), "email/password auth timing unreliable in CI production build");
-
-  test("New user — email/password sign-in lands on /register/setup", async ({
+  test("New owner creates a salon, receives a no-card 14-day trial, and reaches Dashboard", async ({
     page,
   }) => {
     const { userId, email, password } = await seedTestUser();
+    const uniqueSuffix = userId.slice(0, 8);
+    const salonName = `E2E Registration ${uniqueSuffix}`;
 
     try {
       await page.goto("/register");
@@ -51,10 +47,57 @@ test.describe("Registration flow", () => {
       // Click "Sign in" — signs in to existing account (created by seedTestUser).
       await page.getByRole("button", { name: /^sign in$/i }).click();
 
-      // New user (no salon yet) should land on the setup wizard.
-      await expect(page).toHaveURL(/register\/(setup|success)|dashboard\//, {
+      // A confirmed account with no salon must enter the real setup wizard even
+      // though DEMO_OTP=true is enabled for the rest of the E2E suite.
+      await expect(page).toHaveURL(/\/register\/setup(?:\?|$)/, {
         timeout: 15_000,
       });
+
+      const salonNameInput = page.locator("#register-setup-salon-name");
+      await expect(salonNameInput).toBeEditable();
+      await salonNameInput.fill(salonName);
+
+      const submittedAfter = Date.now();
+      await page
+        .getByRole("button", {
+          name: /create your booking page|tạo trang đặt lịch/i,
+        })
+        .click();
+
+      await expect(page).toHaveURL(/\/register\/success\?/, {
+        timeout: 30_000,
+      });
+
+      const registration = await getRegisteredSalonForUser(userId);
+      const { salon } = registration;
+      const trialStartedAt = Date.parse(salon.trial_started_at ?? "");
+      const trialEndsAt = Date.parse(salon.trial_ends_at ?? "");
+
+      expect(registration.memberRole).toBe("owner");
+      expect(salon.name).toBe(salonName);
+      expect(salon.timezone).toBe("America/Vancouver");
+      expect(salon.setup_wizard_completed_at).toBeTruthy();
+      expect(salon.subscription_plan).toBe("free");
+      expect(salon.subscription_status).toBe("trialing");
+      expect(trialStartedAt).toBeGreaterThanOrEqual(submittedAfter);
+      expect(trialEndsAt - trialStartedAt).toBe(14 * 24 * 60 * 60 * 1_000);
+      expect(salon.stripe_customer_id).toBeNull();
+      expect(salon.stripe_subscription_id).toBeNull();
+      expect(salon.payment_provider).toBeNull();
+      expect(registration.serviceCount).toBeGreaterThan(0);
+      expect(registration.staffCount).toBe(1);
+
+      await page
+        .getByRole("button", {
+          name: /go to dashboard|vào bảng điều khiển/i,
+        })
+        .click();
+
+      await expect(page).toHaveURL(
+        new RegExp(`/dashboard/${salon.slug}(?:[/?#]|$)`),
+        { timeout: 30_000 },
+      );
+      await expect(page.locator("main")).toBeVisible();
     } finally {
       await cleanupTestUser(userId);
     }
