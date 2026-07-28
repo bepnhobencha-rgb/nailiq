@@ -4,39 +4,61 @@
 -- the function. Use the booking-safe view instead of reopening public access
 -- to the tenant-owned salons table.
 
--- pg_trgm lives in public on the linked production database and in extensions
--- on a freshly folded Supabase. Resolve the extension in either supported
--- location while compiling the SQL function, then restore the session path.
-SET search_path TO public, extensions;
+-- The folded Supabase installs pg_trgm in extensions, while older linked
+-- databases may omit it or keep it in another schema. Install it when missing,
+-- preserve an existing installation, and compile the function against the
+-- extension's authoritative namespace.
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions;
 
-CREATE OR REPLACE FUNCTION public.suggest_salon_slugs_by_similarity(
-  p_input text
-)
-RETURNS SETOF text
-LANGUAGE sql
-STABLE
-SECURITY INVOKER
-SET search_path TO 'public', 'extensions'
-AS $function$
-  SELECT profile.slug::text
-  FROM public.public_salon_profiles AS profile
-  WHERE coalesce(trim(p_input), '') <> ''
-    AND length(trim(p_input)) BETWEEN 2 AND 63
-    AND similarity(
-      lower(trim(profile.slug::text)),
-      lower(trim(p_input))
-    ) > 0.12::float
-  ORDER BY
-    similarity(
-      lower(trim(profile.slug::text)),
-      lower(trim(p_input))
-    ) DESC,
-    length(profile.slug::text) ASC,
-    profile.slug::text ASC
-  LIMIT 3;
-$function$;
+DO $migration$
+DECLARE
+  v_extension_schema text;
+BEGIN
+  SELECT namespace.nspname
+  INTO v_extension_schema
+  FROM pg_extension AS extension
+  JOIN pg_namespace AS namespace
+    ON namespace.oid = extension.extnamespace
+  WHERE extension.extname = 'pg_trgm';
 
-RESET search_path;
+  IF v_extension_schema IS NULL THEN
+    RAISE EXCEPTION 'pg_trgm extension is missing';
+  END IF;
+
+  EXECUTE format(
+    $ddl$
+      CREATE OR REPLACE FUNCTION public.suggest_salon_slugs_by_similarity(
+        p_input text
+      )
+      RETURNS SETOF text
+      LANGUAGE sql
+      STABLE
+      SECURITY INVOKER
+      SET search_path TO 'public', 'extensions'
+      AS $function$
+        SELECT profile.slug::text
+        FROM public.public_salon_profiles AS profile
+        WHERE coalesce(trim(p_input), '') <> ''
+          AND length(trim(p_input)) BETWEEN 2 AND 63
+          AND %1$I.similarity(
+            lower(trim(profile.slug::text)),
+            lower(trim(p_input))
+          ) > 0.12::float
+        ORDER BY
+          %1$I.similarity(
+            lower(trim(profile.slug::text)),
+            lower(trim(p_input))
+          ) DESC,
+          length(profile.slug::text) ASC,
+          profile.slug::text ASC
+        LIMIT 3;
+      $function$;
+    $ddl$,
+    v_extension_schema
+  );
+END
+$migration$;
 
 REVOKE ALL ON FUNCTION public.suggest_salon_slugs_by_similarity(text)
   FROM PUBLIC, anon, authenticated;

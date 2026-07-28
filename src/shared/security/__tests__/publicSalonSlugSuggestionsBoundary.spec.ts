@@ -23,9 +23,11 @@ describe("public salon slug suggestion boundary", () => {
     expect(migration).toContain("SECURITY INVOKER");
     expect(migration).toContain("public.public_salon_profiles");
     expect(migration).not.toMatch(/FROM public\.salons/i);
-    expect(migration).toContain("SET search_path TO public, extensions");
-    expect(migration).toContain("AND similarity(");
-    expect(migration).toContain("RESET search_path");
+    expect(migration).toContain(
+      "CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions",
+    );
+    expect(migration).toContain("extension.extname = 'pg_trgm'");
+    expect(migration).toContain("%1$I.similarity(");
     expect(migration).toContain("LIMIT 3");
   });
 
