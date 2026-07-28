@@ -81,7 +81,7 @@ describe("internal-delivery boundary", () => {
     const parity = read("scripts/check-schema-parity.ts");
     expect(parity).toContain("policies: 142");
     expect(parity).toContain(
-      "const GRANTS = { anon: 57, authenticated: 61, service_role: 96 }",
+      "const GRANTS = { anon: 57, authenticated: 61, service_role: 97 }",
     );
   });
 });

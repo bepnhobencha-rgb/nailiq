@@ -5,6 +5,34 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Preserve scheduler run history and measure reliability
+
+**Status.** Implemented on `agent/ai-worker-run-history`.
+
+**Decision.**
+- Persist one service-role-only `ai_worker_runs` row for every execution worker
+  and AI Manager run instead of relying only on mutable last-known heartbeat
+  state.
+- Record the start before work begins and the terminal outcome through the same
+  fenced heartbeat RPC. An overlapping older run may finish its history row but
+  cannot overwrite the newer current heartbeat.
+- Store bounded internal error categories only. Raw provider errors, customer
+  data, message bodies, and credentials do not belong in scheduler history.
+- Show the last 24 hours of completed-run reliability separately for the
+  execution worker and AI Manager. Running jobs are observed but excluded from
+  the success-rate denominator.
+- Treat “no completed runs” as unknown coverage, not as 0% or 100% reliability.
+
+**Why.** A last-known heartbeat proves whether a scheduler is alive now, but a
+later success overwrites evidence of an earlier failure. NailIQ needs durable
+run outcomes to distinguish “healthy now” from “reliably healthy over time”
+without inventing reliability where no completed runs exist.
+
+**Safety.** This milestone adds observability only. It grants no messaging,
+payment, pricing, booking, authentication, or campaign authority.
+
+---
+
 ## 2026-07-28 — AI Manager orchestration is fail-honest
 
 **Status.** Implemented on `agent/ai-manager-heartbeat`.

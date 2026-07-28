@@ -4,6 +4,9 @@ import type { MinhLesson } from "@/shared/ai/lessons";
 import { getLessons } from "@/shared/ai/lessons";
 import {
   getAiWorkerHeartbeats,
+  getAiWorkerRuns,
+  type AiWorkerName,
+  type AiWorkerRunRow,
   type ExecutionWorkerHeartbeatRow,
 } from "@/shared/ai/executionHeartbeat";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -36,6 +39,15 @@ export type AiExecutionWorkerHealth = {
   lastError: string | null;
 };
 
+export type AiWorkerReliability = {
+  observedRuns: number;
+  completedRuns: number;
+  succeededRuns: number;
+  failedRuns: number;
+  runningRuns: number;
+  successRatePct: number | null;
+};
+
 export type LearnedAiControl =
   | {
       kind: "proposal_cooldown";
@@ -53,6 +65,8 @@ export type AiOperatingState = {
   health: AiOperatingHealth;
   worker: AiExecutionWorkerHealth;
   managerWorker: AiExecutionWorkerHealth;
+  workerReliability24h: AiWorkerReliability;
+  managerReliability24h: AiWorkerReliability;
   learnedControls: LearnedAiControl[];
   observedAt: string;
 };
@@ -135,6 +149,33 @@ export function deriveExecutionWorkerHealth(
     return { ...base, status: "running" };
   }
   return { ...base, status: "healthy" };
+}
+
+export function deriveWorkerReliability(
+  runs: AiWorkerRunRow[],
+  workerName: AiWorkerName,
+): AiWorkerReliability {
+  const workerRuns = runs.filter((run) => run.worker_name === workerName);
+  const succeededRuns = workerRuns.filter(
+    (run) => run.status === "succeeded",
+  ).length;
+  const failedRuns = workerRuns.filter((run) => run.status === "failed").length;
+  const runningRuns = workerRuns.filter(
+    (run) => run.status === "running",
+  ).length;
+  const completedRuns = succeededRuns + failedRuns;
+
+  return {
+    observedRuns: workerRuns.length,
+    completedRuns,
+    succeededRuns,
+    failedRuns,
+    runningRuns,
+    successRatePct:
+      completedRuns > 0
+        ? Math.round((succeededRuns / completedRuns) * 100)
+        : null,
+  };
 }
 
 export function deriveLearnedAiControls(
@@ -239,6 +280,7 @@ export async function loadAiOperatingState(
     policy,
     segment,
     heartbeats,
+    recentWorkerRuns,
   ] =
     await Promise.all([
       countJobs(salonId, "queued"),
@@ -249,6 +291,7 @@ export async function loadAiOperatingState(
       getLessons(salonId, "policy"),
       getLessons(salonId, "segment"),
       getAiWorkerHeartbeats(),
+      getAiWorkerRuns(new Date(now.getTime() - 24 * 60 * 60_000)),
     ]);
   const worker = deriveExecutionWorkerHealth(
     heartbeats.find((row) => row.worker_name === "ai_execution") ?? null,
@@ -258,6 +301,14 @@ export async function loadAiOperatingState(
     heartbeats.find((row) => row.worker_name === "ai_manager") ?? null,
     now,
     2 * 60 * 60_000,
+  );
+  const workerReliability24h = deriveWorkerReliability(
+    recentWorkerRuns,
+    "ai_execution",
+  );
+  const managerReliability24h = deriveWorkerReliability(
+    recentWorkerRuns,
+    "ai_manager",
   );
 
   return {
@@ -270,6 +321,8 @@ export async function loadAiOperatingState(
     }, worker, managerWorker),
     worker,
     managerWorker,
+    workerReliability24h,
+    managerReliability24h,
     learnedControls: deriveLearnedAiControls(
       salonId,
       [...policy, ...segment],

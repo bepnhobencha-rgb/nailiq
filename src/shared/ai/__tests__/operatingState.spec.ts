@@ -7,8 +7,12 @@ import {
   deriveExecutionWorkerHealth,
   deriveAiOperatingHealth,
   deriveLearnedAiControls,
+  deriveWorkerReliability,
 } from "@/shared/ai/operatingState";
-import type { ExecutionWorkerHeartbeatRow } from "@/shared/ai/executionHeartbeat";
+import type {
+  AiWorkerRunRow,
+  ExecutionWorkerHeartbeatRow,
+} from "@/shared/ai/executionHeartbeat";
 
 const NOW = new Date("2026-07-27T18:00:00.000Z");
 
@@ -145,6 +149,68 @@ describe("AI operating state", () => {
         2 * 60 * 60_000,
       ).status,
     ).toBe("stale");
+  });
+
+  it("measures reliability from completed runs without counting active runs", () => {
+    const runs: AiWorkerRunRow[] = [
+      {
+        run_id: "execution-success",
+        worker_name: "ai_execution",
+        status: "succeeded",
+        started_at: "2026-07-27T17:55:00.000Z",
+        completed_at: "2026-07-27T17:55:01.000Z",
+        error_code: null,
+      },
+      {
+        run_id: "execution-failed",
+        worker_name: "ai_execution",
+        status: "failed",
+        started_at: "2026-07-27T17:50:00.000Z",
+        completed_at: "2026-07-27T17:50:01.000Z",
+        error_code: "claim_failed",
+      },
+      {
+        run_id: "execution-running",
+        worker_name: "ai_execution",
+        status: "running",
+        started_at: "2026-07-27T17:59:00.000Z",
+        completed_at: null,
+        error_code: null,
+      },
+      {
+        run_id: "manager-success",
+        worker_name: "ai_manager",
+        status: "succeeded",
+        started_at: "2026-07-27T17:00:00.000Z",
+        completed_at: "2026-07-27T17:00:02.000Z",
+        error_code: null,
+      },
+    ];
+
+    expect(deriveWorkerReliability(runs, "ai_execution")).toEqual({
+      observedRuns: 3,
+      completedRuns: 2,
+      succeededRuns: 1,
+      failedRuns: 1,
+      runningRuns: 1,
+      successRatePct: 50,
+    });
+    expect(deriveWorkerReliability(runs, "ai_manager")).toMatchObject({
+      observedRuns: 1,
+      completedRuns: 1,
+      successRatePct: 100,
+    });
+  });
+
+  it("does not invent a reliability rate without a completed run", () => {
+    expect(deriveWorkerReliability([], "ai_manager")).toEqual({
+      observedRuns: 0,
+      completedRuns: 0,
+      succeededRuns: 0,
+      failedRuns: 0,
+      runningRuns: 0,
+      successRatePct: null,
+    });
   });
 
   it("distinguishes owner input, active work, and an idle healthy queue", () => {
