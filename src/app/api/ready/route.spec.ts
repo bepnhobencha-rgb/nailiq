@@ -26,11 +26,10 @@ describe("production readiness route", () => {
     abortSignal.mockResolvedValue({
       data: [
         {
-          outcome: "job_not_preparable",
-          manifest_id: null,
-          release_approval_id: null,
-          audience_fingerprint: null,
-          message_sha256: null,
+          outcome: "job_not_preflightable",
+          preflight_id: null,
+          preflight_status: null,
+          preflight_fingerprint: null,
         },
       ],
       error: null,
@@ -46,21 +45,22 @@ describe("production readiness route", () => {
       checks: {
         database_schema: {
           status: "ok",
-          capability: "record_ai_campaign_manifest_v1",
+          capability: "record_ai_campaign_dispatch_preflight_v1",
         },
       },
     });
     expect(rpc).toHaveBeenCalledWith(
-      "record_ai_campaign_manifest",
+      "record_ai_campaign_dispatch_preflight",
       expect.objectContaining({
         p_job_id: "00000000-0000-0000-0000-000000000001",
         p_salon_id: "00000000-0000-0000-0000-000000000002",
         p_summary: expect.objectContaining({
-          candidate_count: 0,
+          manifest_recipient_count: 0,
           eligible_count: 0,
+          dispatch_enabled: false,
           no_messages_sent: true,
         }),
-        p_recipients: [],
+        p_decisions: [],
       }),
     );
   });
