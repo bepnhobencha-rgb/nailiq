@@ -2,6 +2,19 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-07-28 (Atomic AI audience preparation)
+
+- **Atomic preparation:** a service-role RPC now locks the exact
+  tenant-scoped waiting job and commits its aggregate audience snapshot plus
+  audit event in one transaction.
+- **Replay safety:** concurrent preparation of the same audience produces one
+  update and one audit record; identity or resolved-channel changes generate a
+  new fingerprint and audited snapshot.
+- **No dispatch authority:** jobs remain `waiting_input`,
+  `no_messages_sent=true`, and no provider dependency is introduced.
+- **Runtime coverage:** the approval E2E exercises concurrent identical
+  preparations and a changed fingerprint against throwaway Supabase.
+
 ## 2026-07-28 (AI approval-to-effect full-path verification)
 
 - **Real runtime proof:** added a Playwright flow that verifies read-only GET,

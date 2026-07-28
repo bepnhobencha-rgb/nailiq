@@ -2,7 +2,10 @@ import { expect, test } from "@playwright/test";
 
 import {
   cleanupTestSalon,
+  getAudiencePreparationState,
   getApprovalEffectState,
+  recordTestAudiencePreparation,
+  seedBulkMessageApproval,
   seedOperationalNoteApproval,
   seedTestSalon,
 } from "./helpers/db";
@@ -119,5 +122,77 @@ test.describe("AI approval execution", () => {
         (effect) => effect.action_type === "approved_operational_note",
       ),
     ).toHaveLength(1);
+  });
+
+  test("audience preparation is atomic, idempotent, and never sends", async ({
+    page,
+  }) => {
+    const seededSalon = await seedTestSalon({
+      slug: `e2e-ai-audience-${test.info().workerIndex}`,
+      name: "E2E AI Audience Salon",
+      phone: "15553336666",
+    });
+    testSlug = seededSalon.slug;
+    const seededApproval = await seedBulkMessageApproval(seededSalon.salonId);
+
+    await page.goto(
+      `/api/ai/approve?token=${encodeURIComponent(seededApproval.approveToken)}`,
+    );
+    await page
+      .getByRole("button", { name: "Xác nhận đồng ý" })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Đề xuất đã được duyệt." }),
+    ).toBeVisible();
+
+    const waiting = await getApprovalEffectState(seededApproval.approvalId);
+    expect(waiting.job).toMatchObject({
+      status: "waiting_input",
+      attempt_count: 0,
+      lease_token: null,
+    });
+    const jobId = waiting.job?.id;
+    expect(jobId).toBeTruthy();
+
+    const fingerprint = "a".repeat(24);
+    const concurrentResults = await Promise.all([
+      recordTestAudiencePreparation({
+        salonId: seededSalon.salonId,
+        jobId: jobId as string,
+        fingerprint,
+      }),
+      recordTestAudiencePreparation({
+        salonId: seededSalon.salonId,
+        jobId: jobId as string,
+        fingerprint,
+      }),
+    ]);
+    expect(concurrentResults.sort()).toEqual(["unchanged", "updated"]);
+
+    const prepared = await getAudiencePreparationState(jobId as string);
+    expect(prepared.job.status).toBe("waiting_input");
+    expect(prepared.job.result).toMatchObject({
+      blocker: "recipient_selection_required",
+      audience_preparation: {
+        audience_fingerprint: fingerprint,
+        eligible_count: 1,
+        no_messages_sent: true,
+      },
+    });
+    expect(prepared.audits).toHaveLength(1);
+    expect(prepared.audits[0]?.payload).toMatchObject({
+      audience_fingerprint: fingerprint,
+      no_messages_sent: true,
+    });
+
+    const changed = await recordTestAudiencePreparation({
+      salonId: seededSalon.salonId,
+      jobId: jobId as string,
+      fingerprint: "b".repeat(24),
+    });
+    expect(changed).toBe("updated");
+    const refreshed = await getAudiencePreparationState(jobId as string);
+    expect(refreshed.job.status).toBe("waiting_input");
+    expect(refreshed.audits).toHaveLength(2);
   });
 });
