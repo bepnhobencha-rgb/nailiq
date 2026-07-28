@@ -52,11 +52,11 @@ create index watchdog_alerts_salon_status_severity_created_idx
   on public.watchdog_alerts (
     salon_id,
     status,
-    case severity
+    (case severity
       when 'critical' then 0
       when 'warning' then 1
       else 2
-    end,
+    end),
     created_at desc
   );
 
