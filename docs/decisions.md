@@ -5,6 +5,25 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Approval UI separates decisions from execution outcomes
+
+**Status.** Implemented on `agent/approval-queue-truth`.
+
+**Decision.**
+- The approval page loads owner decisions and execution jobs in parallel and
+  joins them by `approval_request_id`.
+- Pending actions say “approve and queue” rather than claiming they execute
+  immediately.
+- Approved actions expose the real queue lifecycle: queued, waiting for input,
+  running, succeeded, failed, or canceled, including bounded attempt and error
+  information when available.
+
+**Why.** An approval is authorization to begin governed execution; it is not
+proof that the effect already happened. The operator UI must preserve that
+distinction so owners can trust what NailIQ says it has done.
+
+---
+
 ## 2026-07-28 — Structural strategist advice enters the governed execution loop
 
 **Status.** Implemented on `agent/strategist-operational-note-proposals`.
