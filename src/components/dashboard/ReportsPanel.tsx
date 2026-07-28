@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
@@ -59,10 +59,7 @@ export function ReportsPanel({
   hasStaffPerformance,
 }: ReportsPanelProps) {
   const { language } = useUserLanguage();
-  const messages = useMemo(
-    () => getUserMessages(language).receptionist.reports,
-    [language],
-  );
+  const messages = getUserMessages(language).receptionist.reports;
   const [range, setRange] = useState<ReportsDateRange>("today");
   const [state, setState] = useState<
     | { kind: "loading" }
@@ -85,10 +82,10 @@ export function ReportsPanel({
     };
   }, [slug, range]);
 
-  const errorCopy = useMemo(() => {
-    if (state.kind !== "error") return null;
-    return messages.errors[state.error] ?? messages.errors.server_error;
-  }, [state, messages]);
+  const errorCopy =
+    state.kind === "error"
+      ? (messages.errors[state.error] ?? messages.errors.server_error)
+      : null;
 
   return (
     <div className="space-y-4">

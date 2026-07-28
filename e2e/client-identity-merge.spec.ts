@@ -47,6 +47,14 @@ test.describe("reversible salon client identity merge", () => {
     });
     salonId = salon.salonId;
     owner = await seedTestSalonMember(salonId, "owner");
+    const { error: reportsFlagError } = await supabaseAdmin
+      .from("salons")
+      .update({
+        feature_flags: { reports_enabled: true },
+        subscription_plan: "premium",
+      })
+      .eq("id", salonId);
+    if (reportsFlagError) throw new Error(reportsFlagError.message);
 
     const suffix = String(Date.now()).slice(-7);
     canonicalPhone = `1604${suffix}`;
@@ -182,6 +190,14 @@ test.describe("reversible salon client identity merge", () => {
     expect(mergedBooking?.client_profile_id).toBe(canonicalProfileId);
     expect(mergedBooking?.client_phone).toBe(aliasPhone);
 
+    // Reports transitions from a loading render to resolved data. Keep this
+    // real route in the identity flow so hook-order regressions cannot hide
+    // behind unit-only aggregation coverage.
+    await page.goto(`/dashboard/${SLUG}/reports`);
+    await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
+    await expect(page.getByText("This page couldn’t load")).toHaveCount(0);
+
+    await page.goto(`/dashboard/${SLUG}/clients`);
     await page.reload();
     await page.getByRole("button", { name: "Undo merge" }).click();
     await page
