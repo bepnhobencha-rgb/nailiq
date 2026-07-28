@@ -19,29 +19,26 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260728060000. Refresh these with each schema-changing forward
+ * through 20260728070000. Refresh these with each schema-changing forward
  * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
   tables: 92,
-  columns: 1259,
+  columns: 1260,
   policies: 142,
   /**
-   * APP functions only — 65.
+   * APP functions only — 82 after the rehearsed forward migrations.
    *
-   * `select count(*) from pg_proc where nspname='public'` says 253 on production,
-   * and that number is a trap: 188 of them belong to EXTENSIONS (pgcrypto,
-   * btree_gist, pg_trgm, uuid-ossp), which production happens to have installed
-   * into `public` while a clean install puts them in `extensions`. Counting them
-   * made the local database look 188 functions short of a schema it had in fact
-   * reproduced exactly.
+   * Counting every `public` function is a trap: many belong to EXTENSIONS
+   * (pgcrypto, btree_gist, pg_trgm, uuid-ossp), which production happens to have
+   * installed into `public` while a clean install puts them in `extensions`.
    *
-   * Verified on production: 253 total = 188 extension-owned + 65 app-owned.
-   * The query below excludes anything a `pg_depend` extension edge points at.
+   * The query below excludes anything a `pg_depend` extension edge points at,
+   * so extension placement cannot distort this release-shape tripwire.
    */
-  functions: 81,
+  functions: 82,
   triggers: 25,
-  indexes: 304,
+  indexes: 305,
 } as const;
 
 /**
@@ -79,6 +76,7 @@ const CRITICAL_FUNCTIONS = [
   "recover_stale_ai_execution_jobs",
   "record_ai_execution_worker_heartbeat",
   "record_ai_worker_heartbeat",
+  "surface_strategist_operational_note_approval",
 ] as const;
 
 const dbUrl = process.env.DB_URL;

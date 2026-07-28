@@ -5,11 +5,13 @@ const {
   recordAiWorkerHeartbeat,
   runWatchdog,
   select,
+  surfaceStrategistOperationalNoteApproval,
 } = vi.hoisted(() => ({
     createServiceRoleClient: vi.fn(),
     recordAiWorkerHeartbeat: vi.fn(),
     runWatchdog: vi.fn(),
     select: vi.fn(),
+    surfaceStrategistOperationalNoteApproval: vi.fn(),
   }));
 
 vi.mock("@/shared/lib/supabase/serviceRole", () => ({
@@ -24,6 +26,9 @@ vi.mock("@/shared/lib/salonTime", () => ({
 vi.mock("@/shared/watchdog/agentWatchdog", () => ({
   runWatchdog,
 }));
+vi.mock("@/shared/ai/strategistOperationalNoteApproval", () => ({
+  surfaceStrategistOperationalNoteApproval,
+}));
 
 import { GET } from "./route";
 
@@ -35,7 +40,11 @@ describe("AI manager cron route", () => {
     createServiceRoleClient.mockReset();
     recordAiWorkerHeartbeat.mockReset();
     runWatchdog.mockReset();
+    surfaceStrategistOperationalNoteApproval.mockReset();
     recordAiWorkerHeartbeat.mockResolvedValue(undefined);
+    surfaceStrategistOperationalNoteApproval.mockResolvedValue({
+      status: "no_candidate",
+    });
     createServiceRoleClient.mockReturnValue({
       from: vi.fn(() => ({ select })),
     });
@@ -159,16 +168,60 @@ describe("AI manager cron route", () => {
       ok: false,
       summary: {
         salons: 1,
-        agent_runs: 1,
+        agent_runs: 2,
         agent_failures: 1,
         failed_agents: ["alpha:watchdog"],
       },
-      results: [{ salon: "alpha", watchdog: "failed" }],
+      results: [
+        { salon: "alpha", strategist_note: "ok", watchdog: "failed" },
+      ],
     });
     expect(JSON.stringify(body)).not.toContain("sensitive details");
     expect(recordAiWorkerHeartbeat).toHaveBeenLastCalledWith(
       expect.objectContaining({
         workerName: "ai_manager",
+        phase: "failed",
+        error: "manager_agent_failures",
+      }),
+    );
+  });
+
+  it("fails honestly when structural recommendations cannot be surfaced", async () => {
+    process.env.CRON_SECRET = "correct-secret";
+    select.mockResolvedValue({
+      data: [
+        {
+          id: "salon-1",
+          slug: "alpha",
+          feature_flags: {},
+          timezone: "America/Vancouver",
+        },
+      ],
+      error: null,
+    });
+    surfaceStrategistOperationalNoteApproval.mockRejectedValue(
+      new Error("proposal RPC unavailable"),
+    );
+
+    const response = await GET(
+      new Request("https://nailiq.ca/api/cron/manager", {
+        headers: { authorization: "Bearer correct-secret" },
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      summary: {
+        salons: 1,
+        agent_runs: 1,
+        agent_failures: 1,
+        failed_agents: ["alpha:strategist_note"],
+      },
+      results: [{ salon: "alpha", strategist_note: "failed" }],
+    });
+    expect(recordAiWorkerHeartbeat).toHaveBeenLastCalledWith(
+      expect.objectContaining({
         phase: "failed",
         error: "manager_agent_failures",
       }),

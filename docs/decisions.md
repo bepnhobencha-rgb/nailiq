@@ -5,6 +5,33 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Structural strategist advice enters the governed execution loop
+
+**Status.** Implemented on `agent/strategist-operational-note-proposals`.
+
+**Decision.**
+- The hourly AI Manager looks for the latest real
+  `strategist/escalate_structural` activity from the previous 14 days.
+- A service-role-only database function creates one pending
+  `record_operational_note` approval linked to that exact source activity.
+- A partial unique index on `source_action_id` prevents duplicate approvals
+  across cron retries, overlapping runs, and later reprocessing.
+- The source foreign key is retained for auditability; deleting a source cannot
+  silently remove the deduplication identity.
+- The proposal expires after seven days and records bounded reasoning,
+  evidence, expected impact, confidence, and reversibility.
+
+**Why.** The queue had a safe real operational-note effect, but no legitimate
+producer connected strategist analysis to the owner decision. This closes that
+gap without turning an AI recommendation into an automatic action.
+
+**Safety.** The producer creates only an owner decision. It cannot execute the
+note, send messages, change bookings or prices, charge customers, or alter
+authentication. The existing approval transition and leased execution worker
+remain mandatory.
+
+---
+
 ## 2026-07-28 — Operational notes are NailIQ's first safe real execution effect
 
 **Status.** Implemented on `agent/operational-note-effect`.
