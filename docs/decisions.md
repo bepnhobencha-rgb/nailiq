@@ -5,6 +5,32 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Liveness and production readiness are separate contracts
+
+**Status.** Implemented on `agent/production-readiness-gate`.
+
+**Decision.**
+- `/api/health` remains a dependency-free liveness probe: it answers only
+  whether the deployed web runtime is serving requests.
+- `/api/ready` uses a fixed, no-write service-role probe to prove both database
+  connectivity and the latest schema capability required by the deployed app.
+- The readiness probe supplies no request data, cannot match a real job, expects
+  the explicit `job_not_preparable` result, times out after three seconds, and
+  returns bounded error categories without provider or schema details.
+- Missing or stale schema returns HTTP 503 even while liveness remains HTTP 200.
+
+**Why.** PR #1033 initially reached production while its required migration was
+still absent. A healthy Node.js response therefore overstated release health.
+Separate probes let deployment verification detect code/schema skew without
+turning a transient database incident into a false claim that the web process
+itself is down.
+
+**Safety.** The probe uses constant impossible UUIDs and a zero-recipient
+summary. It cannot update an execution job, add an audit row, select a customer,
+or contact a provider.
+
+---
+
 ## 2026-07-28 — Audience preparation is one atomic, idempotent transition
 
 **Status.** Implemented on `agent/atomic-audience-preparation`.

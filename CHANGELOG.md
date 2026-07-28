@@ -2,6 +2,17 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-07-28 (Production readiness gate)
+
+- **Honest release health:** added `/api/ready` to prove database connectivity
+  and the schema capability required by the deployed application; missing
+  migrations now produce HTTP 503 instead of hiding behind a healthy web
+  process.
+- **Stable liveness:** `/api/health` remains dependency-free so monitors can
+  distinguish a dead runtime from an unavailable dependency.
+- **No-write probe:** readiness uses fixed impossible UUIDs, zero recipients,
+  a three-second timeout, no request input, and bounded public error categories.
+
 ## 2026-07-28 (Atomic AI audience preparation)
 
 - **Atomic preparation:** a service-role RPC now locks the exact
