@@ -17,7 +17,13 @@ export type CronRouteHealth = {
   workerName: CronWorkerName;
   label: string;
   schedule: string;
-  status: "healthy" | "running" | "failed" | "stale" | "missing";
+  status:
+    | "healthy"
+    | "running"
+    | "failed"
+    | "stale"
+    | "pending"
+    | "missing";
   lastStartedAt: string | null;
   lastCompletedAt: string | null;
   lastSucceededAt: string | null;
@@ -55,6 +61,7 @@ export function deriveCronRouteHealth(
   contract: (typeof CRON_ROUTE_CONTRACTS)[number],
   heartbeat: CronHeartbeatRow | null,
   now = new Date(),
+  monitoringStartedAt: Date | null = null,
 ): CronRouteHealth {
   const base = {
     workerName: contract.workerName,
@@ -66,6 +73,13 @@ export function deriveCronRouteHealth(
     lastError: heartbeat?.last_error ?? null,
   };
   if (!heartbeat?.started_at || heartbeat.status === "unknown") {
+    if (
+      monitoringStartedAt &&
+      Number.isFinite(monitoringStartedAt.getTime()) &&
+      now.getTime() - monitoringStartedAt.getTime() <= contract.staleAfterMs
+    ) {
+      return { ...base, status: "pending" };
+    }
     return { ...base, status: "missing" };
   }
   if (heartbeat.status === "failed") {
@@ -97,11 +111,19 @@ export async function loadCronOperatingState(
 
   const rows = (data as CronHeartbeatRow[] | null) ?? [];
   const byWorker = new Map(rows.map((row) => [row.worker_name, row]));
+  const firstObservedTimestamp = rows.reduce<number | null>((earliest, row) => {
+    const timestamp = Date.parse(row.started_at ?? "");
+    if (!Number.isFinite(timestamp)) return earliest;
+    return earliest === null || timestamp < earliest ? timestamp : earliest;
+  }, null);
+  const monitoringStartedAt =
+    firstObservedTimestamp === null ? null : new Date(firstObservedTimestamp);
   return CRON_ROUTE_CONTRACTS.map((contract) =>
     deriveCronRouteHealth(
       contract,
       byWorker.get(contract.workerName) ?? null,
       now,
+      monitoringStartedAt,
     ),
   );
 }
