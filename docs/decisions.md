@@ -5,23 +5,26 @@ Newest entries on top.
 
 ---
 
-## 2026-07-28 — Reports loading-to-data transition is hook-order stable
+## 2026-07-28 — Reports data exists before client hydration
 
-**Decision.** The Reports client computes its localized message object and
-error copy directly during render instead of placing those pure lookups behind
-`useMemo`. The customer-identity E2E now opens the real Reports route and waits
-for resolved report content after the merge transition.
+**Decision.** The Reports Server Component loads the initial `today` snapshot
+before rendering the client panel. The client invokes the report Server Action
+only after the owner explicitly changes the date range. The customer-identity
+E2E is part of the CI matrix and repeats the Reports route assertion in WebKit.
 
 **Why.** Production verification after PR #1066 reproduced React invariant
-`#310` when Reports changed from its loading render to resolved data. Build,
-unit, smoke, and the existing E2E suites were green because none exercised this
-feature-gated route through that state transition. Pure localization lookups do
-not need hook memoization, and removing those hooks makes the component immune
-to that order mismatch.
+`#310`. The first repair removed unnecessary component memo hooks, but a fresh
+production load after PR #1067 still failed. The production stack located the
+throwing `useMemo` inside Next.js App Router: the client was dispatching a
+Server Action from its mount effect while the router was still hydrating.
+Chromium CI also gave false confidence because the new identity spec was not in
+the workflow's explicit path matrix. Server-rendering the first snapshot removes
+that mount-time action, and explicit WebKit coverage tests the engine where the
+failure was observed.
 
-**Safety.** This changes render mechanics and test coverage only. Report data,
-permissions, identity resolution, bookings, messaging, and financial behavior
-remain unchanged.
+**Safety.** Date-range changes retain bounded, latest-request-wins loading.
+Report queries, permissions, identity resolution, bookings, messaging, and
+financial behavior remain unchanged.
 
 ---
 

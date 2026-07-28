@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { ReportsPanel } from "@/components/dashboard/ReportsPanel";
+import { loadSalonReports } from "@/shared/dashboard/loadSalonReportsAction";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
 import { getEffectivePlanLimits } from "@/shared/lib/subscriptionPlans";
@@ -56,11 +57,16 @@ export default async function ReportsPage({ params }: PageProps) {
   const currency = parseCurrency(planFields.currency_code);
   const hasStaffPerformance =
     getEffectivePlanLimits(planFields).hasStaffPerformance;
+  // Fetch the first snapshot as part of the Server Component render. Calling
+  // this Server Action from a mount effect races App Router hydration in
+  // WebKit/Safari and can trip React invariant #310.
+  const initialResult = await loadSalonReports(slug, "today");
 
   return (
     <main className="mx-auto w-full max-w-[var(--max-nq-desktop)] px-[var(--pad-nq-section-mobile)] py-6 md:px-6">
       <ReportsPanel
         slug={slug}
+        initialResult={initialResult}
         currency={currency}
         hasStaffPerformance={hasStaffPerformance}
       />

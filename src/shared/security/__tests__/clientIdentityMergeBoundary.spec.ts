@@ -11,6 +11,8 @@ const migration = read(
 const action = read("src/shared/dashboard/clientIdentityReviewAction.ts");
 const reports = read("src/shared/dashboard/loadSalonReportsAction.ts");
 const ownerHome = read("src/shared/dashboard/loadOwnerHomeDashboardAction.ts");
+const reportsPage = read("src/app/dashboard/[slug]/reports/page.tsx");
+const reportsPanel = read("src/components/dashboard/ReportsPanel.tsx");
 
 describe("salon client identity merge boundary", () => {
   it("keeps global profiles intact and scopes every booking change to a salon", () => {
@@ -81,5 +83,16 @@ describe("salon client identity merge boundary", () => {
     }
     expect(reports).toContain("clientIdentities");
     expect(ownerHome).toContain("priorClientSet");
+  });
+
+  it("server-renders the first Reports snapshot before client hydration", () => {
+    expect(reportsPage).toContain(
+      'await loadSalonReports(slug, "today")',
+    );
+    expect(reportsPage).toContain("initialResult={initialResult}");
+    expect(reportsPanel).toContain(
+      "initialResult: LoadSalonReportsResult",
+    );
+    expect(reportsPanel).not.toContain("useEffect");
   });
 });
