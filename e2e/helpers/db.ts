@@ -551,6 +551,103 @@ export async function getCampaignReleaseState(jobId: string) {
   };
 }
 
+export async function recordTestCampaignDispatchPreflight(input: {
+  salonId: string;
+  jobId: string;
+  manifestId: string;
+  clientProfileId: string;
+  exclusion?: "no_consent";
+}) {
+  const now = new Date().toISOString();
+  const exclusion = input.exclusion ?? null;
+  const sms = exclusion === null;
+  const canonical =
+    `${input.clientProfileId.toLowerCase()}:${sms ? "s" : ""}:` +
+    (exclusion ?? "eligible");
+  const fingerprint = createHash("sha256").update(canonical).digest("hex");
+  const { data, error } = await supabase.rpc(
+    "record_ai_campaign_dispatch_preflight" as never,
+    {
+      p_job_id: input.jobId,
+      p_salon_id: input.salonId,
+      p_summary: {
+        preflight_at: now,
+        manifest_id: input.manifestId,
+        manifest_recipient_count: 1,
+        eligible_count: exclusion === null ? 1 : 0,
+        sms_recipient_count: sms ? 1 : 0,
+        email_recipient_count: 0,
+        dual_channel_count: 0,
+        excluded_recent_contact: 0,
+        excluded_no_consent: exclusion === "no_consent" ? 1 : 0,
+        excluded_no_channel: 0,
+        excluded_missing_profile: 0,
+        excluded_manifest_channel_unavailable: 0,
+        estimated_cost_usd_cents: sms ? 0.8 : 0,
+        recipient_cap: 500,
+        cost_cap_usd_cents: 500,
+        preflight_fingerprint: fingerprint,
+        dispatch_enabled: false,
+        no_messages_sent: true,
+      },
+      p_decisions: [
+        {
+          client_profile_id: input.clientProfileId,
+          sms,
+          email: false,
+          exclusion,
+        },
+      ],
+      p_now: now,
+    } as never,
+  );
+  if (error) throw new Error(error.message);
+  return (Array.isArray(data) ? data[0] : data) as {
+    outcome: string;
+    preflight_id: string | null;
+    preflight_status: string | null;
+    preflight_fingerprint: string | null;
+  };
+}
+
+export async function getCampaignDispatchPreflightState(jobId: string) {
+  const [
+    { data: job, error: jobError },
+    { data: preflights, error: preflightError },
+    { data: audits, error: auditError },
+  ] = await Promise.all([
+    supabase
+      .from("ai_execution_jobs" as never)
+      .select("status, attempt_count, result")
+      .eq("id" as never, jobId)
+      .single(),
+    supabase
+      .from("ai_campaign_dispatch_preflights" as never)
+      .select("*")
+      .eq("release_execution_job_id" as never, jobId)
+      .order("created_at" as never, { ascending: true }),
+    supabase
+      .from("ai_actions_log")
+      .select("action_type, payload")
+      .eq("agent", "execution_worker")
+      .eq("action_type", "campaign_dispatch_preflight_recorded")
+      .eq("target_id", jobId)
+      .order("created_at", { ascending: true }),
+  ]);
+  if (jobError) throw new Error(jobError.message);
+  if (preflightError) throw new Error(preflightError.message);
+  if (auditError) throw new Error(auditError.message);
+  return {
+    job: job as {
+      status: string;
+      attempt_count: number;
+      result: Record<string, unknown>;
+    },
+    preflights: (preflights ?? []) as Array<Record<string, unknown>>,
+    audits: (audits ?? []) as Array<Record<string, unknown>>,
+  };
+}
+
 export async function getApprovalEffectState(approvalId: string) {
   const [{ data: approval, error: approvalError }, { data: job, error: jobError }] =
     await Promise.all([

@@ -2,9 +2,11 @@ import { expect, test } from "@playwright/test";
 
 import {
   cleanupTestSalon,
+  getCampaignDispatchPreflightState,
   getCampaignReleaseState,
   getApprovalEffectState,
   recordTestCampaignManifest,
+  recordTestCampaignDispatchPreflight,
   seedBulkMessageApproval,
   seedCampaignRecipient,
   seedOperationalNoteApproval,
@@ -277,6 +279,84 @@ test.describe("AI approval execution", () => {
     });
     expect(
       afterWorker.effects.filter((effect) =>
+        [
+          "sms_sent",
+          "email_sent",
+          "campaign_dispatched",
+          "execution_succeeded",
+        ].includes(effect.action_type),
+      ),
+    ).toEqual([]);
+
+    const preflightResults = await Promise.all([
+      recordTestCampaignDispatchPreflight({
+        salonId: seededSalon.salonId,
+        jobId: approvedRelease.job?.id as string,
+        manifestId: concurrentResults[0]?.manifest_id as string,
+        clientProfileId,
+      }),
+      recordTestCampaignDispatchPreflight({
+        salonId: seededSalon.salonId,
+        jobId: approvedRelease.job?.id as string,
+        manifestId: concurrentResults[0]?.manifest_id as string,
+        clientProfileId,
+      }),
+    ]);
+    expect(preflightResults.map((item) => item.outcome).sort()).toEqual([
+      "created",
+      "unchanged",
+    ]);
+    expect(preflightResults[0]?.preflight_id).toBe(
+      preflightResults[1]?.preflight_id,
+    );
+    expect(preflightResults[0]?.preflight_status).toBe("ready");
+
+    const preflightState = await getCampaignDispatchPreflightState(
+      approvedRelease.job?.id as string,
+    );
+    expect(preflightState.preflights).toHaveLength(1);
+    expect(preflightState.audits).toHaveLength(1);
+    expect(preflightState.job).toMatchObject({
+      status: "waiting_input",
+      attempt_count: 0,
+      result: {
+        blocker: "dispatch_not_enabled",
+        dispatch_enabled: false,
+        no_messages_sent: true,
+        dispatch_preflight: {
+          preflight_status: "ready",
+          eligible_count: 1,
+          sms_recipient_count: 1,
+          estimated_cost_usd_cents: 0.8,
+          within_recipient_cap: true,
+          within_cost_cap: true,
+          dispatch_enabled: false,
+          no_messages_sent: true,
+        },
+      },
+    });
+
+    const workerAfterPreflight = await request.get(
+      "/api/cron/ai-execution",
+      {
+        headers: { authorization: `Bearer ${cronSecret}` },
+      },
+    );
+    expect(workerAfterPreflight.ok()).toBeTruthy();
+    const afterPreflightWorker = await getApprovalEffectState(
+      prepared.releaseApproval?.id as string,
+    );
+    expect(afterPreflightWorker.job).toMatchObject({
+      status: "waiting_input",
+      attempt_count: 0,
+      result: {
+        blocker: "dispatch_not_enabled",
+        dispatch_enabled: false,
+        no_messages_sent: true,
+      },
+    });
+    expect(
+      afterPreflightWorker.effects.filter((effect) =>
         [
           "sms_sent",
           "email_sent",

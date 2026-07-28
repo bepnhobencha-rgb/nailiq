@@ -4,10 +4,10 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 const PROBE_JOB_ID = "00000000-0000-0000-0000-000000000001";
 const PROBE_SALON_ID = "00000000-0000-0000-0000-000000000002";
-const EXPECTED_RESULT = "job_not_preparable";
+const EXPECTED_RESULT = "job_not_preflightable";
 
 export const REQUIRED_SCHEMA_CAPABILITY =
-  "record_ai_campaign_manifest_v1";
+  "record_ai_campaign_dispatch_preflight_v1";
 
 export type ProductionReadiness =
   | { ready: true }
@@ -25,7 +25,7 @@ export type ProductionReadiness =
  *
  * The probe supplies fixed UUIDs that cannot match a real row and a valid,
  * zero-recipient summary. The RPC must therefore stop at its tenant-scoped
- * lookup and return `job_not_preparable`; it cannot update a job or add audit
+ * lookup and return `job_not_preflightable`; it cannot update a job or add audit
  * data. No request input reaches the service-role client.
  */
 export async function probeProductionReadiness(
@@ -35,21 +35,31 @@ export async function probeProductionReadiness(
     const db = createServiceRoleClient();
     const query = db
       .rpc(
-        "record_ai_campaign_manifest" as never,
+        "record_ai_campaign_dispatch_preflight" as never,
         {
           p_job_id: PROBE_JOB_ID,
           p_salon_id: PROBE_SALON_ID,
           p_summary: {
-            segment: "lapsed_regulars_45_365_days",
+            manifest_id: "00000000-0000-0000-0000-000000000003",
             no_messages_sent: true,
-            audience_fingerprint: "e3b0c44298fc1c149afbf4c8",
-            candidate_count: 0,
+            dispatch_enabled: false,
+            preflight_fingerprint:
+              "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            manifest_recipient_count: 0,
             eligible_count: 0,
             sms_recipient_count: 0,
             email_recipient_count: 0,
             dual_channel_count: 0,
+            excluded_recent_contact: 0,
+            excluded_no_consent: 0,
+            excluded_no_channel: 0,
+            excluded_missing_profile: 0,
+            excluded_manifest_channel_unavailable: 0,
+            estimated_cost_usd_cents: 0,
+            recipient_cap: 500,
+            cost_cap_usd_cents: 500,
           },
-          p_recipients: [],
+          p_decisions: [],
           p_now: new Date().toISOString(),
         } as never,
       )

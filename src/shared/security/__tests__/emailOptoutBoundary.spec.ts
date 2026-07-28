@@ -74,9 +74,9 @@ describe("client_email_optouts boundary", () => {
 
   it("updates blank-database parity tripwires", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("policies: 144");
+    expect(parity).toContain("policies: 145");
     expect(parity).toContain(
-      "const GRANTS = { anon: 57, authenticated: 61, service_role: 99 }",
+      "const GRANTS = { anon: 57, authenticated: 61, service_role: 100 }",
     );
   });
 });

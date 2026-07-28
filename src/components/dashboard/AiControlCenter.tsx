@@ -26,6 +26,7 @@ import { buildActionIntelligence } from "@/shared/ai/actionIntelligence";
 import type { ApprovalRow } from "@/shared/ai/approvalRequests";
 import { controlExecutionJobAction } from "@/shared/ai/controlExecutionJobAction";
 import { canControlExecutionJob } from "@/shared/ai/executionPolicy";
+import { preflightCampaignAction } from "@/shared/ai/preflightCampaignAction";
 import { prepareAudienceAction } from "@/shared/ai/prepareAudienceAction";
 import type { ExecutionJobRow } from "@/shared/ai/executionQueue";
 import type { MinhActivityData } from "@/shared/ai/loadMinhActivity";
@@ -604,6 +605,45 @@ type AudiencePreparationView = {
   no_messages_sent: true;
 };
 
+type CampaignDispatchPreflightView = {
+  preflight_at: string;
+  preflight_status: "ready" | "blocked";
+  eligible_count: number;
+  sms_recipient_count: number;
+  email_recipient_count: number;
+  excluded_recent_contact: number;
+  excluded_no_consent: number;
+  excluded_no_channel: number;
+  excluded_missing_profile: number;
+  excluded_manifest_channel_unavailable: number;
+  estimated_cost_usd_cents: number;
+  recipient_cap: number;
+  cost_cap_usd_cents: number;
+  within_recipient_cap: boolean;
+  within_cost_cap: boolean;
+  dispatch_enabled: false;
+  no_messages_sent: true;
+};
+
+function campaignDispatchPreflightFrom(
+  result: Record<string, unknown> | null,
+): CampaignDispatchPreflightView | null {
+  const value = result?.dispatch_preflight;
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  if (
+    typeof row.preflight_at !== "string" ||
+    (row.preflight_status !== "ready" &&
+      row.preflight_status !== "blocked") ||
+    typeof row.eligible_count !== "number" ||
+    row.dispatch_enabled !== false ||
+    row.no_messages_sent !== true
+  ) {
+    return null;
+  }
+  return row as unknown as CampaignDispatchPreflightView;
+}
+
 function audiencePreparationFrom(
   result: Record<string, unknown> | null,
 ): AudiencePreparationView | null {
@@ -633,6 +673,7 @@ function JobAudiencePreparation({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const preparation = audiencePreparationFrom(job.result);
+  const preflight = campaignDispatchPreflightFrom(job.result);
   const blocker =
     typeof job.result?.blocker === "string" ? job.result.blocker : null;
 
@@ -652,14 +693,108 @@ function JobAudiencePreparation({
     });
   };
 
+  const runPreflight = () => {
+    setError(null);
+    startTransition(async () => {
+      const result = await preflightCampaignAction({ slug, jobId: job.id });
+      if (!result.ok) {
+        setError(
+          vi
+            ? "Không thể chạy kiểm tra an toàn cuối lúc này."
+            : "The final safety check could not run right now.",
+        );
+        return;
+      }
+      router.refresh();
+    });
+  };
+
   if (!preparation) {
     if (blocker === "dispatch_not_enabled") {
       return (
-        <p className="mt-2 text-xs leading-5 text-nq-warning">
-          {vi
-            ? "Bạn đã duyệt đúng manifest, nhưng chức năng gửi thật chưa được bật. Không có tin nhắn nào được gửi."
-            : "You approved the exact manifest, but live dispatch is not enabled. No message was sent."}
-        </p>
+        <div className="mt-2 rounded-lg border border-nq-warning/30 bg-nq-warning/5 p-2.5">
+          {preflight ? (
+            <>
+              <p className="text-xs font-semibold text-nq-foreground">
+                {preflight.preflight_status === "ready"
+                  ? vi
+                    ? "Kiểm tra an toàn đạt"
+                    : "Safety check passed"
+                  : vi
+                    ? "Kiểm tra an toàn đang chặn"
+                    : "Safety check is blocking"}
+              </p>
+              <p className="mt-1 text-[11px] leading-4 text-nq-muted">
+                {vi ? "Đủ điều kiện" : "Eligible"}{" "}
+                {preflight.eligible_count} · SMS{" "}
+                {preflight.sms_recipient_count} · Email{" "}
+                {preflight.email_recipient_count} ·{" "}
+                {vi ? "ước tính" : "estimated"} $
+                {(preflight.estimated_cost_usd_cents / 100).toFixed(2)} USD
+              </p>
+              <p className="mt-1 text-[11px] leading-4 text-nq-muted">
+                {vi ? "Đã loại" : "Excluded"}:{" "}
+                {preflight.excluded_recent_contact}{" "}
+                {vi ? "đã liên hệ gần đây" : "recently contacted"},{" "}
+                {preflight.excluded_no_consent}{" "}
+                {vi ? "không còn consent" : "without consent"},{" "}
+                {preflight.excluded_no_channel +
+                  preflight.excluded_manifest_channel_unavailable}{" "}
+                {vi ? "không còn kênh được duyệt" : "without an approved channel"}
+                {preflight.excluded_missing_profile > 0
+                  ? ` · ${preflight.excluded_missing_profile} ${
+                      vi ? "thiếu hồ sơ" : "missing profiles"
+                    }`
+                  : ""}
+                .
+              </p>
+              <p className="mt-1 text-[11px] leading-4 text-nq-muted">
+                {vi ? "Giới hạn" : "Caps"}: {preflight.recipient_cap}{" "}
+                {vi ? "khách" : "recipients"} · $
+                {(preflight.cost_cap_usd_cents / 100).toFixed(2)} USD ·{" "}
+                {preflight.within_recipient_cap &&
+                preflight.within_cost_cap
+                  ? vi
+                    ? "đang trong giới hạn"
+                    : "within limits"
+                  : vi
+                    ? "vượt giới hạn"
+                    : "over limit"}
+              </p>
+            </>
+          ) : (
+            <p className="text-xs leading-5 text-nq-warning">
+              {vi
+                ? "Manifest đã được duyệt. Hãy kiểm tra lại consent, kênh và giới hạn ngay trước khi phát hành."
+                : "The manifest is approved. Recheck consent, channels, and caps immediately before release."}
+            </p>
+          )}
+          <p className="mt-1 text-[11px] font-medium text-nq-warning">
+            {vi
+              ? "Chức năng gửi thật vẫn bị khóa. Không có tin nhắn nào được gửi."
+              : "Live dispatch remains locked. No message was sent."}
+          </p>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={runPreflight}
+            className="mt-2 inline-flex min-h-9 items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
+          >
+            <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+            {pending
+              ? vi
+                ? "Đang kiểm tra…"
+                : "Checking…"
+              : preflight
+                ? vi
+                  ? "Kiểm tra lại"
+                  : "Run again"
+                : vi
+                  ? "Chạy kiểm tra an toàn cuối"
+                  : "Run final safety check"}
+          </button>
+          {error ? <p className="mt-2 text-xs text-nq-error">{error}</p> : null}
+        </div>
       );
     }
 
