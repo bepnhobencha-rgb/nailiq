@@ -118,6 +118,16 @@ test.beforeAll(async ({}, testInfo) => {
   if (error) throw new Error(`closing fixture owner: ${error.message}`);
 });
 
+test.beforeEach(async () => {
+  const { error } = await supabaseAdmin
+    .from("bookings")
+    .delete()
+    .eq("salon_id", fixture.salonId);
+  if (error) {
+    throw new Error(`closing fixture booking reset: ${error.message}`);
+  }
+});
+
 test.afterAll(async ({}, testInfo) => {
   await cleanupTestSalon(fixtureSlug(testInfo.project.name));
   if (owner?.userId) await cleanupTestUser(owner.userId);
