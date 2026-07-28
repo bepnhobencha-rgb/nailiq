@@ -47,16 +47,23 @@ test.describe("Booking Flow", () => {
       .click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
-    await page
-      .locator('[data-testid="time-slot"]')
-      .first()
-      .waitFor({ state: "visible", timeout: 20_000 });
-    await page.locator('[data-testid="time-slot"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).first().click();
+    const firstAvailableSlot = page
+      .locator('[data-testid="time-slot"]:not([disabled])')
+      .first();
+    await expect(firstAvailableSlot).toBeVisible({ timeout: 20_000 });
+    await firstAvailableSlot.click();
+    await expect(firstAvailableSlot).toHaveAttribute("aria-pressed", "true");
+
+    const timeStep = page.getByRole("group", { name: "Choose a time" });
+    const continueFromTime = timeStep.getByRole("button", { name: "Continue" });
+    await expect(continueFromTime).toBeEnabled();
+    await continueFromTime.click();
 
     // Phone-first: the phone was captured at the entry gate, so the info step
     // only collects the name now.
-    await page.fill('input[name="clientName"]', "Test Client");
+    const clientName = page.locator('input[name="clientName"]');
+    await expect(clientName).toBeVisible();
+    await clientName.fill("Test Client");
     await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page.getByTestId("sms-consent").check();
