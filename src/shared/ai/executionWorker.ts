@@ -110,23 +110,19 @@ async function executeClaimedJob(
     };
   }
 
-  await finishJob(job, {
-    status: "succeeded",
-    result: {
-      effect: effect.kind,
-      audit_action_type: effect.actionType,
-      ...effect.payload,
-    },
-    lastError: null,
-    availableAt: null,
-    finishedAt: nowIso,
-    now: nowIso,
-    details: {
-      effect: effect.kind,
-      audit_action_type: effect.actionType,
-      ...effect.payload,
-    },
-  });
+  if (!job.lease_token) throw new StaleExecutionLeaseError();
+  const db = createServiceRoleClient();
+  const { data, error } = await db.rpc(
+    "execute_ai_operational_note" as never,
+    {
+      p_job_id: job.id,
+      p_lease_token: job.lease_token,
+      p_now: nowIso,
+    } as never,
+  );
+  if (error) throw new Error(error.message);
+  if (data !== true) throw new StaleExecutionLeaseError();
+
   return { jobId: job.id, status: "succeeded", attempted: true };
 }
 

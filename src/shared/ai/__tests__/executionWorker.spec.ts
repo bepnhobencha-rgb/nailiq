@@ -42,7 +42,7 @@ describe("processExecutionQueue leases", () => {
     mocks.rpc.mockReset();
   });
 
-  it("finishes only with the fencing token returned by the atomic claim", async () => {
+  it("executes the approved note atomically with the claimed lease", async () => {
     const job = claimedJob();
     mocks.rpc.mockImplementation(async (name: string) => {
       if (name === "recover_stale_ai_execution_jobs") {
@@ -51,7 +51,7 @@ describe("processExecutionQueue leases", () => {
       if (name === "claim_ai_execution_jobs") {
         return { data: [job], error: null };
       }
-      if (name === "finish_ai_execution_job") {
+      if (name === "execute_ai_operational_note") {
         return { data: true, error: null };
       }
       throw new Error(`Unexpected RPC: ${name}`);
@@ -66,22 +66,10 @@ describe("processExecutionQueue leases", () => {
       succeeded: 1,
       failed: 0,
     });
-    expect(mocks.rpc).toHaveBeenCalledWith("finish_ai_execution_job", {
+    expect(mocks.rpc).toHaveBeenCalledWith("execute_ai_operational_note", {
       p_job_id: job.id,
       p_lease_token: job.lease_token,
-      p_status: "succeeded",
-      p_result: expect.objectContaining({
-        effect: "internal_audit",
-        note: "Review staffing",
-      }),
-      p_last_error: null,
-      p_available_at: null,
-      p_finished_at: NOW.toISOString(),
       p_now: NOW.toISOString(),
-      p_details: expect.objectContaining({
-        effect: "internal_audit",
-        note: "Review staffing",
-      }),
     });
   });
 
@@ -110,7 +98,9 @@ describe("processExecutionQueue leases", () => {
       },
     ]);
     expect(
-      mocks.rpc.mock.calls.filter(([name]) => name === "finish_ai_execution_job"),
+      mocks.rpc.mock.calls.filter(
+        ([name]) => name === "execute_ai_operational_note",
+      ),
     ).toHaveLength(1);
   });
 
@@ -124,10 +114,16 @@ describe("processExecutionQueue leases", () => {
       if (name === "claim_ai_execution_jobs") {
         return { data: [job], error: null };
       }
-      finishCalls++;
-      return finishCalls === 1
-        ? { data: null, error: { message: "temporary database error" } }
-        : { data: true, error: null };
+      if (name === "execute_ai_operational_note") {
+        finishCalls++;
+        return finishCalls === 1
+          ? { data: null, error: { message: "temporary database error" } }
+          : { data: true, error: null };
+      }
+      if (name === "finish_ai_execution_job") {
+        return { data: true, error: null };
+      }
+      throw new Error(`Unexpected RPC: ${name}`);
     });
 
     const result = await processExecutionQueue({ now: NOW });

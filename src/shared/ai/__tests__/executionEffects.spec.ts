@@ -38,7 +38,9 @@ describe("execution effect allowlist", () => {
 
   it("allows only an internal operational-note audit effect", () => {
     expect(
-      planExecutionEffect(job("record_operational_note", { note: "Review staffing" })),
+      planExecutionEffect(
+        job("record_operational_note", { note: "  Review staffing  " }),
+      ),
     ).toEqual({
       kind: "internal_audit",
       actionType: "approved_operational_note",
@@ -47,6 +49,21 @@ describe("execution effect allowlist", () => {
         approval_request_id: "approval-1",
         note: "Review staffing",
       },
+    });
+  });
+
+  it("cancels a missing or oversized operational note instead of faking success", () => {
+    expect(planExecutionEffect(job("record_operational_note"))).toEqual({
+      kind: "unsupported",
+      reason: "invalid_operational_note",
+    });
+    expect(
+      planExecutionEffect(
+        job("record_operational_note", { note: "x".repeat(1001) }),
+      ),
+    ).toEqual({
+      kind: "unsupported",
+      reason: "invalid_operational_note",
     });
   });
 
