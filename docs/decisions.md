@@ -5,6 +5,26 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Reports loading-to-data transition is hook-order stable
+
+**Decision.** The Reports client computes its localized message object and
+error copy directly during render instead of placing those pure lookups behind
+`useMemo`. The customer-identity E2E now opens the real Reports route and waits
+for resolved report content after the merge transition.
+
+**Why.** Production verification after PR #1066 reproduced React invariant
+`#310` when Reports changed from its loading render to resolved data. Build,
+unit, smoke, and the existing E2E suites were green because none exercised this
+feature-gated route through that state transition. Pure localization lookups do
+not need hook memoization, and removing those hooks makes the component immune
+to that order mismatch.
+
+**Safety.** This changes render mechanics and test coverage only. Report data,
+permissions, identity resolution, bookings, messaging, and financial behavior
+remain unchanged.
+
+---
+
 ## 2026-07-28 — Analytics follow reviewed customer identity
 
 **Decision.**

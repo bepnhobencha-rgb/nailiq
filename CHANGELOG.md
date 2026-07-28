@@ -2,6 +2,17 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-07-28 (Reports hook-order runtime repair)
+
+- **Production finding:** post-merge browser verification reproduced React
+  invariant `#310` when the feature-gated Reports page transitioned from
+  loading to resolved data.
+- **Repair:** Reports now performs its pure localized-message/error lookups
+  directly during render instead of using two unnecessary memo hooks.
+- **Regression gate:** the reversible identity E2E enables Reports, opens the
+  real route after a merge, and requires resolved report content without the
+  application error boundary.
+
 ## 2026-07-28 (Canonical customer analytics)
 
 - **Truthful customer counts:** owner dashboard new/total customer metrics and
