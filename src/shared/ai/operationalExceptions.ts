@@ -24,7 +24,7 @@ export async function getOperationalExceptions(
 ): Promise<{ items: OperationalExceptionRow[]; activeCount: number }> {
   const db = createServiceRoleClient();
   const columns =
-    "id, kind, severity, title, body, status, created_at, updated_at, acknowledged_at, resolved_at, resolution_note";
+    "id, kind, severity, title, body, status, created_at, updated_at, acknowledged_at, resolved_at, resolution_note, source_type, source_ref, occurrence_count, first_seen_at, last_seen_at";
   const [activeResult, resolvedResult, countResult] = await Promise.all([
     db
       .from("watchdog_alerts" as never)
@@ -77,6 +77,11 @@ export async function getOperationalExceptions(
         resolved_at: row.resolved_at == null ? null : String(row.resolved_at),
         resolution_note:
           row.resolution_note == null ? null : String(row.resolution_note),
+        source_type: String(row.source_type),
+        source_ref: String(row.source_ref),
+        occurrence_count: Number(row.occurrence_count),
+        first_seen_at: String(row.first_seen_at),
+        last_seen_at: String(row.last_seen_at),
       };
     })
     .filter((row): row is OperationalExceptionRow => row !== null)

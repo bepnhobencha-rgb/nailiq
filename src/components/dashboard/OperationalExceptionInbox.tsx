@@ -154,6 +154,15 @@ export function OperationalExceptionInbox({
                     {item.body}
                   </p>
                 ) : null}
+                <p className="mt-2 text-[11px] text-nq-muted">
+                  {item.occurrence_count > 1
+                    ? vi
+                      ? `Lặp lại ${item.occurrence_count} lần · gần nhất ${relativeTime(item.last_seen_at, nowIso, vi)}`
+                      : `Seen ${item.occurrence_count} times · latest ${relativeTime(item.last_seen_at, nowIso, vi)}`
+                    : vi
+                      ? `Nguồn: ${item.source_type.replaceAll("_", " ")}`
+                      : `Source: ${item.source_type.replaceAll("_", " ")}`}
+                </p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <StatusBadge status={item.status} vi={vi} />
                   {item.status === "open" ? (
