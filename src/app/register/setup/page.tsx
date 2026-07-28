@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/server";
 import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
+import { shouldUseAnonymousDemoRegistration } from "@/shared/register/registrationRuntimeMode";
 import RegisterSetupInner, {
   type RegisterSetupInitial,
 } from "./RegisterSetupInner";
@@ -8,16 +9,19 @@ import RegisterSetupInner, {
 export const dynamic = "force-dynamic";
 
 export default async function RegisterSetupPage() {
-  const demo = isDemoOtpRuntime();
-
-  if (demo) {
-    return <RegisterSetupInner isDemoMode={demo} />;
-  }
-
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  const useAnonymousDemoFlow = shouldUseAnonymousDemoRegistration(
+    isDemoOtpRuntime(),
+    Boolean(user),
+  );
+  if (useAnonymousDemoFlow) {
+    return <RegisterSetupInner isDemoMode />;
+  }
+
   if (!user) {
     redirect("/register");
   }
@@ -79,5 +83,5 @@ export default async function RegisterSetupPage() {
     }
   }
 
-  return <RegisterSetupInner isDemoMode={demo} initial={initial} />;
+  return <RegisterSetupInner isDemoMode={false} initial={initial} />;
 }
