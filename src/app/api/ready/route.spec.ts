@@ -50,6 +50,7 @@ describe("production readiness route", () => {
       data: [{ outcome: "not_found", job_status: null }],
       error: null,
     });
+    abortSignal.mockResolvedValueOnce({ data: false, error: null });
 
     const response = await GET();
     const body = await response.json();
@@ -61,7 +62,7 @@ describe("production readiness route", () => {
       checks: {
         database_schema: {
           status: "ok",
-          capability: "ai_execution_incident_closure_v1",
+          capability: "ai_execution_tenant_fence_v1",
         },
       },
     });
@@ -109,6 +110,12 @@ describe("production readiness route", () => {
       p_operation: "cancel",
       p_actor_user_id: "00000000-0000-0000-0000-000000000005",
     });
+    expect(rpc).toHaveBeenCalledWith(
+      "ai_tenant_allows_autonomous_execution",
+      {
+        p_salon_id: "00000000-0000-0000-0000-000000000002",
+      },
+    );
   });
 
   it("reports a missing migration without exposing provider details", async () => {

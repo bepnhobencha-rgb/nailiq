@@ -45,14 +45,17 @@ describe("processExecutionQueue leases", () => {
   it("executes the approved note atomically with the claimed lease", async () => {
     const job = claimedJob();
     mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "cancel_ineligible_ai_execution_jobs") {
+        return { data: 0, error: null };
+      }
       if (name === "recover_stale_ai_execution_jobs") {
         return { data: 0, error: null };
       }
       if (name === "claim_ai_execution_jobs") {
         return { data: [job], error: null };
       }
-      if (name === "execute_ai_operational_note") {
-        return { data: true, error: null };
+      if (name === "execute_ai_operational_note_v2") {
+        return { data: "succeeded", error: null };
       }
       throw new Error(`Unexpected RPC: ${name}`);
     });
@@ -62,11 +65,12 @@ describe("processExecutionQueue leases", () => {
     expect(result).toMatchObject({
       inspected: 1,
       recovered: 0,
+      tenantCanceled: 0,
       claimed: 1,
       succeeded: 1,
       failed: 0,
     });
-    expect(mocks.rpc).toHaveBeenCalledWith("execute_ai_operational_note", {
+    expect(mocks.rpc).toHaveBeenCalledWith("execute_ai_operational_note_v2", {
       p_job_id: job.id,
       p_lease_token: job.lease_token,
       p_now: NOW.toISOString(),
@@ -76,6 +80,9 @@ describe("processExecutionQueue leases", () => {
   it("does not overwrite a newer attempt when its lease is stale", async () => {
     const job = claimedJob();
     mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "cancel_ineligible_ai_execution_jobs") {
+        return { data: 0, error: null };
+      }
       if (name === "recover_stale_ai_execution_jobs") {
         return { data: 0, error: null };
       }
@@ -99,7 +106,7 @@ describe("processExecutionQueue leases", () => {
     ]);
     expect(
       mocks.rpc.mock.calls.filter(
-        ([name]) => name === "execute_ai_operational_note",
+        ([name]) => name === "execute_ai_operational_note_v2",
       ),
     ).toHaveLength(1);
   });
@@ -108,17 +115,20 @@ describe("processExecutionQueue leases", () => {
     const job = claimedJob();
     let finishCalls = 0;
     mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "cancel_ineligible_ai_execution_jobs") {
+        return { data: 3, error: null };
+      }
       if (name === "recover_stale_ai_execution_jobs") {
         return { data: 2, error: null };
       }
       if (name === "claim_ai_execution_jobs") {
         return { data: [job], error: null };
       }
-      if (name === "execute_ai_operational_note") {
+      if (name === "execute_ai_operational_note_v2") {
         finishCalls++;
         return finishCalls === 1
           ? { data: null, error: { message: "temporary database error" } }
-          : { data: true, error: null };
+          : { data: "succeeded", error: null };
       }
       if (name === "finish_ai_execution_job") {
         return { data: true, error: null };
@@ -129,6 +139,7 @@ describe("processExecutionQueue leases", () => {
     const result = await processExecutionQueue({ now: NOW });
 
     expect(result.recovered).toBe(2);
+    expect(result.tenantCanceled).toBe(3);
     expect(result.failed).toBe(1);
     expect(result.outcomes[0]).toMatchObject({
       status: "failed",
@@ -142,5 +153,46 @@ describe("processExecutionQueue leases", () => {
         p_last_error: "temporary database error",
       }),
     );
+  });
+
+  it("reports a tenant-state cancellation without retrying the job", async () => {
+    const job = claimedJob();
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "cancel_ineligible_ai_execution_jobs") {
+        return { data: 0, error: null };
+      }
+      if (name === "recover_stale_ai_execution_jobs") {
+        return { data: 0, error: null };
+      }
+      if (name === "claim_ai_execution_jobs") {
+        return { data: [job], error: null };
+      }
+      if (name === "execute_ai_operational_note_v2") {
+        return { data: "canceled", error: null };
+      }
+      throw new Error(`Unexpected RPC: ${name}`);
+    });
+
+    const result = await processExecutionQueue({ now: NOW });
+
+    expect(result).toMatchObject({
+      claimed: 1,
+      succeeded: 0,
+      failed: 0,
+      canceled: 1,
+    });
+    expect(result.outcomes).toEqual([
+      {
+        jobId: job.id,
+        status: "canceled",
+        attempted: false,
+        error: "tenant_not_operational",
+      },
+    ]);
+    expect(
+      mocks.rpc.mock.calls.some(
+        ([name]) => name === "finish_ai_execution_job",
+      ),
+    ).toBe(false);
   });
 });

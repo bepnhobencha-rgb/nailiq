@@ -15,6 +15,7 @@ type WorkerOutcome = {
 export type ExecutionWorkerSummary = {
   inspected: number;
   recovered: number;
+  tenantCanceled: number;
   claimed: number;
   succeeded: number;
   failed: number;
@@ -34,6 +35,16 @@ async function recoverStaleRunningJobs(now: Date): Promise<number> {
   const db = createServiceRoleClient();
   const { data, error } = await db.rpc(
     "recover_stale_ai_execution_jobs" as never,
+    { p_now: now.toISOString() } as never,
+  );
+  if (error) throw new Error(error.message);
+  return typeof data === "number" ? data : 0;
+}
+
+async function cancelIneligibleTenantJobs(now: Date): Promise<number> {
+  const db = createServiceRoleClient();
+  const { data, error } = await db.rpc(
+    "cancel_ineligible_ai_execution_jobs" as never,
     { p_now: now.toISOString() } as never,
   );
   if (error) throw new Error(error.message);
@@ -113,7 +124,7 @@ async function executeClaimedJob(
   if (!job.lease_token) throw new StaleExecutionLeaseError();
   const db = createServiceRoleClient();
   const { data, error } = await db.rpc(
-    "execute_ai_operational_note" as never,
+    "execute_ai_operational_note_v2" as never,
     {
       p_job_id: job.id,
       p_lease_token: job.lease_token,
@@ -121,7 +132,15 @@ async function executeClaimedJob(
     } as never,
   );
   if (error) throw new Error(error.message);
-  if (data !== true) throw new StaleExecutionLeaseError();
+  if (data === "canceled") {
+    return {
+      jobId: job.id,
+      status: "canceled",
+      attempted: false,
+      error: "tenant_not_operational",
+    };
+  }
+  if (data !== "succeeded") throw new StaleExecutionLeaseError();
 
   return { jobId: job.id, status: "succeeded", attempted: true };
 }
@@ -177,6 +196,7 @@ export async function processExecutionQueue(params?: {
 }): Promise<ExecutionWorkerSummary> {
   const now = params?.now ?? new Date();
   const limit = Math.max(1, Math.min(25, params?.limit ?? 10));
+  const tenantCanceled = await cancelIneligibleTenantJobs(now);
   const recovered = await recoverStaleRunningJobs(now);
   const claimedJobs = await claimJobs(limit, now);
   const outcomes: WorkerOutcome[] = [];
@@ -215,6 +235,7 @@ export async function processExecutionQueue(params?: {
   return {
     inspected: claimedJobs.length,
     recovered,
+    tenantCanceled,
     claimed: claimedJobs.length,
     succeeded: outcomes.filter((item) => item.status === "succeeded").length,
     failed: outcomes.filter((item) => item.status === "failed").length,

@@ -7,7 +7,7 @@ const PROBE_SALON_ID = "00000000-0000-0000-0000-000000000002";
 const PROBE_ALERT_ID = "00000000-0000-0000-0000-000000000004";
 const PROBE_ACTOR_ID = "00000000-0000-0000-0000-000000000005";
 
-export const REQUIRED_SCHEMA_CAPABILITY = "ai_execution_incident_closure_v1";
+export const REQUIRED_SCHEMA_CAPABILITY = "ai_execution_tenant_fence_v1";
 
 export type ProductionReadiness =
   | { ready: true }
@@ -113,18 +113,26 @@ export async function probeProductionReadiness(
         } as never,
       )
       .abortSignal(AbortSignal.timeout(timeoutMs));
+    const tenantFenceQuery = db
+      .rpc(
+        "ai_tenant_allows_autonomous_execution" as never,
+        { p_salon_id: PROBE_SALON_ID } as never,
+      )
+      .abortSignal(AbortSignal.timeout(timeoutMs));
     const [
       evidenceResult,
       planResult,
       exceptionResult,
       signalResult,
       executionControlResult,
+      tenantFenceResult,
     ] = await Promise.all([
       evidenceQuery,
       planQuery,
       exceptionQuery,
       signalQuery,
       executionControlQuery,
+      tenantFenceQuery,
     ]);
 
     if (
@@ -132,14 +140,16 @@ export async function probeProductionReadiness(
       planResult.error ||
       exceptionResult.error ||
       signalResult.error ||
-      executionControlResult.error
+      executionControlResult.error ||
+      tenantFenceResult.error
     ) {
       const error =
         evidenceResult.error ??
         planResult.error ??
         exceptionResult.error ??
         signalResult.error ??
-        executionControlResult.error;
+        executionControlResult.error ??
+        tenantFenceResult.error;
       return {
         ready: false,
         reason:
@@ -169,7 +179,8 @@ export async function probeProductionReadiness(
       planOutcome !== "job_not_plannable" ||
       exceptionOutcome !== "not_found" ||
       signalOutcome !== "unchanged" ||
-      executionControlOutcome !== "not_found"
+      executionControlOutcome !== "not_found" ||
+      tenantFenceResult.data !== false
     ) {
       return { ready: false, reason: "schema_probe_unexpected" };
     }
