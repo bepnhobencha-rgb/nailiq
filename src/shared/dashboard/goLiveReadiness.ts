@@ -34,6 +34,13 @@ export type GoLiveReadinessInput = {
     durationMinutes: number | null;
   }>;
   activeStaffCount: number;
+  humanAttestations?: {
+    hoursConfirmed: boolean;
+    otpPolicyConfirmed: boolean;
+    liveRehearsalCompleted: boolean;
+    ownerApproved: boolean;
+    ownerApprovalStale: boolean;
+  };
 };
 
 export type GoLiveReadiness = {
@@ -41,6 +48,7 @@ export type GoLiveReadiness = {
   passedBlocking: number;
   totalBlocking: number;
   readyForManualReview: boolean;
+  approvedForGoLive: boolean;
 };
 
 function text(value: string | null): string {
@@ -68,6 +76,13 @@ export function evaluateGoLiveReadiness(
         Number.isFinite(service.durationMinutes) &&
         Number(service.durationMinutes) > 0,
     );
+  const attestations = input.humanAttestations ?? {
+    hoursConfirmed: false,
+    otpPolicyConfirmed: false,
+    liveRehearsalCompleted: false,
+    ownerApproved: false,
+    ownerApprovalStale: false,
+  };
 
   const checks: GoLiveReadinessCheck[] = [
     {
@@ -181,7 +196,7 @@ export function evaluateGoLiveReadiness(
     },
     {
       id: "hours-confirmation",
-      state: "review",
+      state: attestations.hoursConfirmed ? "pass" : "review",
       blocking: false,
       titleEn: "Confirm real business hours",
       titleVi: "Xác nhận giờ làm việc thực tế",
@@ -195,7 +210,7 @@ export function evaluateGoLiveReadiness(
     },
     {
       id: "otp-policy",
-      state: "review",
+      state: attestations.otpPolicyConfirmed ? "pass" : "review",
       blocking: false,
       titleEn: "OTP and consent policy",
       titleVi: "Chính sách OTP và đồng ý nhận tin",
@@ -209,7 +224,7 @@ export function evaluateGoLiveReadiness(
     },
     {
       id: "human-approval",
-      state: "review",
+      state: attestations.liveRehearsalCompleted ? "pass" : "review",
       blocking: false,
       titleEn: "Owner-approved live rehearsal",
       titleVi: "Chạy thử có chủ tiệm phê duyệt",
@@ -217,6 +232,23 @@ export function evaluateGoLiveReadiness(
         "A human must test owner and receptionist login, create one approved test booking, verify it at the desk, and record go-live approval.",
       detailVi:
         "Cần người thật kiểm tra đăng nhập Owner và Receptionist, tạo một lịch thử được cho phép, xác minh tại quầy và ghi nhận phê duyệt go-live.",
+    },
+    {
+      id: "owner-approval",
+      state: attestations.ownerApproved ? "pass" : "review",
+      blocking: false,
+      titleEn: "Final owner approval",
+      titleVi: "Chủ tiệm phê duyệt cuối",
+      detailEn: attestations.ownerApproved
+        ? "The owner approved this exact readiness configuration."
+        : attestations.ownerApprovalStale
+          ? "The salon configuration changed after approval. The owner must review and approve again."
+          : "Only an Owner can approve after every technical gate and human prerequisite is complete.",
+      detailVi: attestations.ownerApproved
+        ? "Chủ tiệm đã phê duyệt đúng cấu hình readiness hiện tại."
+        : attestations.ownerApprovalStale
+          ? "Cấu hình tiệm đã thay đổi sau khi phê duyệt. Chủ tiệm cần xem lại và phê duyệt lại."
+          : "Chỉ Owner được phê duyệt sau khi hoàn tất mọi cổng kỹ thuật và xác nhận con người.",
     },
   ];
 
@@ -228,5 +260,11 @@ export function evaluateGoLiveReadiness(
     passedBlocking,
     totalBlocking: blocking.length,
     readyForManualReview: passedBlocking === blocking.length,
+    approvedForGoLive:
+      passedBlocking === blocking.length &&
+      attestations.hoursConfirmed &&
+      attestations.otpPolicyConfirmed &&
+      attestations.liveRehearsalCompleted &&
+      attestations.ownerApproved,
   };
 }
