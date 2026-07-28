@@ -48,15 +48,23 @@ test.describe("Public booking — privacy (reschedule tel)", () => {
     await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page
-      .locator('[data-testid="time-slot"]')
+      .locator('[data-testid="time-slot"]:not([disabled])')
       .first()
       .waitFor({ state: "visible", timeout: 20_000 });
-    await page.locator('[data-testid="time-slot"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).first().click();
+    const timeStep = page.getByRole("group", { name: "Choose a time" });
+    const firstSlot = timeStep
+      .locator('[data-testid="time-slot"]:not([disabled])')
+      .first();
+    await firstSlot.click();
+    await expect(firstSlot).toHaveAttribute("aria-pressed", "true");
+    await advanceBookingStep(
+      timeStep,
+      page.getByTestId("booking-info-name"),
+    );
 
     // Phone-first: the guest's phone is the one entered at the entry gate.
     const guestPhone = GATE_PHONE;
-    await page.fill('input[name="clientName"]', "Security Test Guest");
+    await page.getByTestId("booking-info-name").fill("Security Test Guest");
     await page.getByRole("button", { name: "Continue" }).first().click();
     await page.getByTestId("sms-consent").check();
     await page.getByRole("button", { name: "Confirm booking" }).click();
@@ -108,14 +116,22 @@ test.describe("Public booking — privacy (reschedule tel)", () => {
     await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page
-      .locator('[data-testid="time-slot"]')
+      .locator('[data-testid="time-slot"]:not([disabled])')
       .first()
       .waitFor({ state: "visible", timeout: 20_000 });
-    await page.locator('[data-testid="time-slot"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).first().click();
+    const timeStep = page.getByRole("group", { name: "Choose a time" });
+    const firstSlot = timeStep
+      .locator('[data-testid="time-slot"]:not([disabled])')
+      .first();
+    await firstSlot.click();
+    await expect(firstSlot).toHaveAttribute("aria-pressed", "true");
+    await advanceBookingStep(
+      timeStep,
+      page.getByTestId("booking-info-name"),
+    );
 
     // Phone-first: phone captured at the entry gate; info step takes name only.
-    await page.fill('input[name="clientName"]', "Security Test Guest");
+    await page.getByTestId("booking-info-name").fill("Security Test Guest");
     await page.getByRole("button", { name: "Continue" }).first().click();
     await page.getByTestId("sms-consent").check();
     await page.getByRole("button", { name: "Confirm booking" }).click();

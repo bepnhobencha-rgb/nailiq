@@ -5,6 +5,28 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Audience preparation is one atomic, idempotent transition
+
+**Status.** Implemented on `agent/atomic-audience-preparation`.
+
+**Decision.**
+- A service-role-only RPC locks the tenant-scoped `waiting_input` bulk-message
+  job, validates a bounded aggregate summary, updates the job, and records its
+  audit event in one transaction.
+- Concurrent or repeated preparation with the same audience fingerprint is a
+  no-op and cannot create duplicate audit claims.
+- The fingerprint covers both each eligible profile identity and its resolved
+  SMS/email channel, so a channel-consent change produces a new preparation.
+- The job remains `waiting_input` with `no_messages_sent: true`; preparation is
+  not dispatch authorization.
+
+**Why.** The previous two-call update could persist a prepared audience without
+its audit event, and retries could create duplicate audit rows. Counts alone
+also hid channel changes when the same people remained eligible. NailIQ must
+make every claimed operating transition transactionally true and replay-safe.
+
+---
+
 ## 2026-07-28 — Approval-to-effect must be proven through the real runtime path
 
 **Status.** Implemented on `agent/approval-effect-e2e`.

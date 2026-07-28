@@ -220,7 +220,7 @@ export async function prepareExecutionAudience(input: {
   let excludedNoConsent = 0;
   let excludedNoChannel = 0;
   let excludedRecentContact = 0;
-  const eligibleProfileIds: string[] = [];
+  const eligibleAudienceKeys: string[] = [];
 
   for (const candidate of candidates) {
     const phone = normalizedPhone(candidate.client_phone);
@@ -258,7 +258,9 @@ export async function prepareExecutionAudience(input: {
       else excludedNoChannel++;
       continue;
     }
-    eligibleProfileIds.push(profile.id);
+    eligibleAudienceKeys.push(
+      `${profile.id}:${decision.sms ? "s" : ""}${decision.email ? "e" : ""}`,
+    );
     if (decision.sms) smsRecipientCount++;
     if (decision.email) emailRecipientCount++;
     if (decision.sms && decision.email) dualChannelCount++;
@@ -269,7 +271,7 @@ export async function prepareExecutionAudience(input: {
     prepared_at: preparedAt,
     segment: "lapsed_regulars_45_365_days",
     candidate_count: candidates.length,
-    eligible_count: eligibleProfileIds.length,
+    eligible_count: eligibleAudienceKeys.length,
     sms_recipient_count: smsRecipientCount,
     email_recipient_count: emailRecipientCount,
     dual_channel_count: dualChannelCount,
@@ -285,37 +287,27 @@ export async function prepareExecutionAudience(input: {
     candidate_limit: MAX_AUDIENCE,
     may_have_more_candidates: candidates.length === MAX_AUDIENCE,
     audience_fingerprint: createHash("sha256")
-      .update(eligibleProfileIds.sort().join(":"))
+      .update(eligibleAudienceKeys.sort().join("|"))
       .digest("hex")
       .slice(0, 24),
     no_messages_sent: true,
   };
 
-  const result = {
-    ...(job.result ?? {}),
-    blocker: "recipient_selection_required",
-    audience_preparation: summary,
-  };
-  const { data: updated, error: updateError } = await db
-    .from("ai_execution_jobs" as never)
-    .update({ result, updated_at: preparedAt } as never)
-    .eq("id" as never, job.id)
-    .eq("salon_id" as never, input.salonId)
-    .eq("status" as never, "waiting_input")
-    .select("id")
-    .maybeSingle();
-  if (updateError || !updated) {
+  const { data: transition, error: updateError } = await db.rpc(
+    "record_ai_audience_preparation" as never,
+    {
+      p_job_id: job.id,
+      p_salon_id: input.salonId,
+      p_summary: summary,
+      p_now: preparedAt,
+    } as never,
+  );
+  if (
+    updateError ||
+    (transition !== "updated" && transition !== "unchanged")
+  ) {
     return { ok: false, error: "job_update_failed" };
   }
-
-  await db.from("ai_actions_log" as never).insert({
-    salon_id: input.salonId,
-    agent: "execution_worker",
-    action_type: "execution_audience_prepared",
-    target_id: job.id,
-    payload: summary,
-    undo_deadline: null,
-  } as never);
 
   return { ok: true, summary };
 }

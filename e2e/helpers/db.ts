@@ -369,6 +369,98 @@ export async function seedOperationalNoteApproval(salonId: string) {
   };
 }
 
+export async function seedBulkMessageApproval(salonId: string) {
+  const summary = "Prepare a consent-checked re-engagement audience.";
+  const { data, error } = await supabase
+    .from("approval_requests")
+    .insert({
+      salon_id: salonId,
+      action_type: "bulk_message",
+      summary,
+      payload: {
+        recipient_selection_required: true,
+        segment: "lapsed_regulars_45_365_days",
+      },
+      urgency: "normal",
+      status: "pending",
+      expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    })
+    .select("id, approve_token")
+    .single();
+
+  if (error || !data?.id || !data.approve_token) {
+    throw new Error(error?.message ?? "seedBulkMessageApproval: insert failed");
+  }
+
+  return {
+    approvalId: data.id as string,
+    approveToken: data.approve_token as string,
+    summary,
+  };
+}
+
+export async function recordTestAudiencePreparation(input: {
+  salonId: string;
+  jobId: string;
+  fingerprint: string;
+}) {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase.rpc(
+    "record_ai_audience_preparation" as never,
+    {
+      p_job_id: input.jobId,
+      p_salon_id: input.salonId,
+      p_summary: {
+        prepared_at: now,
+        segment: "lapsed_regulars_45_365_days",
+        candidate_count: 2,
+        eligible_count: 1,
+        sms_recipient_count: 1,
+        email_recipient_count: 0,
+        dual_channel_count: 0,
+        excluded_no_consent: 1,
+        excluded_no_channel: 0,
+        excluded_recent_contact: 0,
+        estimated_cost_usd_cents: 0.79,
+        candidate_limit: 500,
+        may_have_more_candidates: false,
+        audience_fingerprint: input.fingerprint,
+        no_messages_sent: true,
+      },
+      p_now: now,
+    } as never,
+  );
+  if (error) throw new Error(error.message);
+  return data as "updated" | "unchanged" | string;
+}
+
+export async function getAudiencePreparationState(jobId: string) {
+  const [{ data: job, error: jobError }, { data: audits, error: auditError }] =
+    await Promise.all([
+      supabase
+        .from("ai_execution_jobs" as never)
+        .select("status, result")
+        .eq("id" as never, jobId)
+        .single(),
+      supabase
+        .from("ai_actions_log")
+        .select("action_type, payload")
+        .eq("agent", "execution_worker")
+        .eq("action_type", "execution_audience_prepared")
+        .eq("target_id", jobId)
+        .order("created_at", { ascending: true }),
+    ]);
+  if (jobError) throw new Error(jobError.message);
+  if (auditError) throw new Error(auditError.message);
+  return {
+    job: job as { status: string; result: Record<string, unknown> | null },
+    audits: (audits ?? []) as Array<{
+      action_type: string;
+      payload: Record<string, unknown>;
+    }>,
+  };
+}
+
 export async function getApprovalEffectState(approvalId: string) {
   const [{ data: approval, error: approvalError }, { data: job, error: jobError }] =
     await Promise.all([
