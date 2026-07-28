@@ -54,6 +54,46 @@ describe("production error fingerprint", () => {
     expect(first.p_fingerprint).toBe(second.p_fingerprint);
   });
 
+  it("does not collapse different React invariant codes on the same route", async () => {
+    await logError({
+      message: "Error: Minified React error #310",
+      surface: "client",
+      route: "/dashboard/tech-nails/center",
+    });
+    await logError({
+      message: "Error: Minified React error #418",
+      surface: "client",
+      route: "/dashboard/tech-nails/center",
+    });
+
+    const hookOrder = mocks.rpc.mock.calls[0]?.[1] as {
+      p_fingerprint: string;
+    };
+    const hydration = mocks.rpc.mock.calls[1]?.[1] as {
+      p_fingerprint: string;
+    };
+    expect(hookOrder.p_fingerprint).not.toBe(hydration.p_fingerprint);
+  });
+
+  it("still groups the same React invariant when instance numbers vary", async () => {
+    await logError({
+      message:
+        "Minified React error #418 while rendering component instance 123",
+      surface: "client",
+      route: "/choose-salon",
+    });
+    await logError({
+      message:
+        "Minified React error #418 while rendering component instance 987",
+      surface: "client",
+      route: "/choose-salon",
+    });
+
+    const first = mocks.rpc.mock.calls[0]?.[1] as { p_fingerprint: string };
+    const second = mocks.rpc.mock.calls[1]?.[1] as { p_fingerprint: string };
+    expect(first.p_fingerprint).toBe(second.p_fingerprint);
+  });
+
   it("stores the same bounded route used to create the fingerprint", async () => {
     const route = `/${"x".repeat(400)}`;
 

@@ -5,6 +5,29 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Error fingerprints preserve stable React invariant codes
+
+**Status.** Implemented on `agent/error-code-fingerprint`.
+
+**Decision.**
+- A minified React invariant number is included separately in the production
+  error fingerprint before variable numbers are normalized.
+- Variable booking IDs, UUIDs, addresses, and decoder query details still
+  normalize so repeated instances of the same error shape group together.
+- Route, surface, and severity remain part of the fingerprint.
+
+**Why.** Numeric normalization is useful for high-cardinality business IDs, but
+React's production error number is diagnostic evidence rather than instance
+data. Removing it can group unrelated failures such as hook ordering (`#310`)
+and hydration (`#418`) when they occur on the same route, again giving
+operators and AI remediation a mixed record.
+
+**Migration behavior.** No historical data is rewritten. The first recurrence
+after deployment creates a correctly scoped group; later identical occurrences
+increment it normally.
+
+---
+
 ## 2026-07-28 — Autonomous error remediation fails closed on contradictory evidence
 
 **Status.** Implemented on `agent/error-evidence-gate`.
