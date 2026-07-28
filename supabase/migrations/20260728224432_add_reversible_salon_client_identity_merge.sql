@@ -49,7 +49,7 @@ COMMENT ON TABLE public.salon_client_identity_aliases IS
 CREATE TABLE public.salon_client_identity_merge_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   alias_id uuid NOT NULL
-    REFERENCES public.salon_client_identity_aliases(id) ON DELETE RESTRICT,
+    REFERENCES public.salon_client_identity_aliases(id) ON DELETE CASCADE,
   salon_id uuid NOT NULL REFERENCES public.salons(id) ON DELETE CASCADE,
   action text NOT NULL CHECK (action IN ('merge', 'revoke')),
   canonical_profile_id uuid NOT NULL
