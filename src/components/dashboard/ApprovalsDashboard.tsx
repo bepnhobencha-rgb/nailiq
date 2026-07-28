@@ -119,6 +119,7 @@ function PendingCard({
       <div className="flex flex-wrap gap-3">
         <Link
           href={approveUrl}
+          prefetch={false}
           className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-[14px] font-semibold text-white hover:bg-green-700 active:scale-95 transition-transform"
         >
           <CheckCircle className="h-4 w-4" />
@@ -126,6 +127,7 @@ function PendingCard({
         </Link>
         <Link
           href={declineUrl}
+          prefetch={false}
           className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-[14px] font-semibold text-white hover:bg-red-700 active:scale-95 transition-transform"
         >
           <XCircle className="h-4 w-4" />

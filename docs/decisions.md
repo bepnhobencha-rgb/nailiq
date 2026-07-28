@@ -5,6 +5,24 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Approval links require an explicit POST confirmation
+
+**Status.** Implemented on `agent/approval-post-confirmation`.
+
+**Decision.**
+- Opening an approval link with GET is read-only and only renders the proposal.
+- The owner must explicitly submit a same-origin POST before the decision is
+  recorded and an approved action can enter the execution queue.
+- Token pages are not cached, indexed, or allowed to leak their URL as a
+  referrer. Dashboard links also disable framework prefetching.
+
+**Why.** Email security scanners, link preview services, and browser prefetching
+can follow GET links without human intent. A state-changing GET could therefore
+approve or decline an AI action. The POST boundary makes owner confirmation
+observable and mandatory.
+
+---
+
 ## 2026-07-28 — Approval UI separates decisions from execution outcomes
 
 **Status.** Implemented on `agent/approval-queue-truth`.

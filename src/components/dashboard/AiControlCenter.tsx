@@ -225,11 +225,11 @@ export function AiControlCenter({
                   </div>
 
                   <div className="mt-4 grid grid-cols-2 gap-2">
-                    <Link href={`${appUrl}/api/ai/approve?token=${request.approve_token}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-nq-success px-3 text-sm font-semibold text-white">
+                    <Link prefetch={false} href={`${appUrl}/api/ai/approve?token=${request.approve_token}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-nq-success px-3 text-sm font-semibold text-white">
                       <Check className="h-4 w-4" aria-hidden />
                       {vi ? "Đồng ý" : "Approve"}
                     </Link>
-                    <Link href={`${appUrl}/api/ai/approve?token=${request.decline_token}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-nq-error/40 px-3 text-sm font-semibold text-nq-error">
+                    <Link prefetch={false} href={`${appUrl}/api/ai/approve?token=${request.decline_token}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-nq-error/40 px-3 text-sm font-semibold text-nq-error">
                       <X className="h-4 w-4" aria-hidden />
                       {vi ? "Từ chối" : "Decline"}
                     </Link>
