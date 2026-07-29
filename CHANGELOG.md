@@ -2,6 +2,17 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-07-29 (Privacy-safe AI worker diagnostics)
+
+- **Safe heartbeat ledger:** worker and manager heartbeat failures are reduced
+  to allowlisted operational codes before persistence.
+- **Safe cron response:** the execution cron logs internal exceptions
+  server-side but returns and records only a stable failure code.
+- **Historical protection:** Control Center translates heartbeat codes and
+  masks unknown legacy values instead of echoing stored diagnostics.
+- **No new authority:** scheduling, retries, leases, approvals, and execution
+  effects are unchanged.
+
 ## 2026-07-29 (Privacy-safe AI execution failures)
 
 - **Safe persistence:** failed execution attempts persist an allowlisted

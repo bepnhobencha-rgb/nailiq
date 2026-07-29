@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   executionFailureLabel,
   toSafeExecutionFailureCode,
+  toSafeWorkerFailureCode,
+  workerFailureLabel,
 } from "@/shared/ai/executionFailure";
 
 describe("execution failure privacy", () => {
@@ -30,6 +32,29 @@ describe("execution failure privacy", () => {
       "Execution hit a temporary failure. Technical details remain in secure logs.",
     );
     expect(executionFailureLabel("password=secret", "vi")).not.toContain(
+      "secret",
+    );
+  });
+
+  it("allows only known heartbeat codes and bounded HTTP failures", () => {
+    expect(toSafeWorkerFailureCode("manager_agent_failures")).toBe(
+      "manager_agent_failures",
+    );
+    expect(toSafeWorkerFailureCode("http_503")).toBe("http_503");
+    expect(
+      toSafeWorkerFailureCode(
+        "connection failed for customer someone@example.com",
+      ),
+    ).toBe("execution_worker_failed");
+  });
+
+  it("never renders historical raw heartbeat text to the owner", () => {
+    expect(
+      workerFailureLabel("password=secret", "en"),
+    ).toBe(
+      "The worker hit an operating failure; technical details remain in secure logs.",
+    );
+    expect(workerFailureLabel("password=secret", "vi")).not.toContain(
       "secret",
     );
   });

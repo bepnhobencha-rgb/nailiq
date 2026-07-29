@@ -28,7 +28,10 @@ import type { ApprovalRow } from "@/shared/ai/approvalRequests";
 import { campaignPreflightFreshness } from "@/shared/ai/campaignPreflightFreshness";
 import type { AiControlDataSource } from "@/shared/ai/controlCenterData";
 import { controlExecutionJobAction } from "@/shared/ai/controlExecutionJobAction";
-import { executionFailureLabel } from "@/shared/ai/executionFailure";
+import {
+  executionFailureLabel,
+  workerFailureLabel,
+} from "@/shared/ai/executionFailure";
 import { canControlExecutionJob } from "@/shared/ai/executionPolicy";
 import { preflightCampaignAction } from "@/shared/ai/preflightCampaignAction";
 import { prepareAudienceAction } from "@/shared/ai/prepareAudienceAction";
@@ -645,7 +648,9 @@ function OperatingStatus({
           >
             {workerCopy}
             {workerObservedAt ? ` · ${workerObservedAt}` : ""}
-            {worker.lastError ? ` · ${worker.lastError}` : ""}
+            {worker.lastError
+              ? ` · ${workerFailureLabel(worker.lastError, language)}`
+              : ""}
           </p>
           <ReliabilityLine
             label={vi ? "Worker · 24 giờ" : "Worker · 24 hours"}
@@ -663,7 +668,9 @@ function OperatingStatus({
           >
             {managerCopy}
             {managerObservedAt ? ` · ${managerObservedAt}` : ""}
-            {managerWorker.lastError ? ` · ${managerWorker.lastError}` : ""}
+            {managerWorker.lastError
+              ? ` · ${workerFailureLabel(managerWorker.lastError, language)}`
+              : ""}
           </p>
           <ReliabilityLine
             label={vi ? "AI Manager · 24 giờ" : "AI Manager · 24 hours"}

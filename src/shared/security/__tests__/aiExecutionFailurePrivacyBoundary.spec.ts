@@ -7,6 +7,7 @@ function read(path: string): string {
 }
 
 const worker = read("src/shared/ai/executionWorker.ts");
+const heartbeat = read("src/shared/ai/executionHeartbeat.ts");
 const controlCenter = read("src/components/dashboard/AiControlCenter.tsx");
 const approvals = read("src/components/dashboard/ApprovalsDashboard.tsx");
 
@@ -27,5 +28,21 @@ describe("AI execution failure privacy boundary", () => {
     );
     expect(controlCenter).not.toMatch(/>\s*\{job\.last_error\}\s*</);
     expect(approvals).not.toMatch(/>\s*\{job\.last_error\}\s*</);
+  });
+
+  it("sanitizes heartbeat writes and masks historical heartbeat text", () => {
+    expect(heartbeat).toContain("p_error: toSafeWorkerFailureCode(input.error)");
+    expect(controlCenter).toContain(
+      "workerFailureLabel(worker.lastError, language)",
+    );
+    expect(controlCenter).toContain(
+      "workerFailureLabel(managerWorker.lastError, language)",
+    );
+    expect(controlCenter).not.toContain(
+      '${worker.lastError}',
+    );
+    expect(controlCenter).not.toContain(
+      '${managerWorker.lastError}',
+    );
   });
 });
