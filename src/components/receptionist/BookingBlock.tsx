@@ -719,6 +719,36 @@ export function BookingBlock(props: BookingBlockProps) {
   );
 
   if (onClick) {
+    // A late booking exposes a second, independent Start action. HTML forbids
+    // nesting that button inside the booking button (and browsers rewrite the
+    // DOM before React hydrates), so use an accessible button-like container
+    // only for that two-action state.
+    if (showStartButton) {
+      return (
+        <div
+          role="button"
+          tabIndex={0}
+          data-testid={`booking-block-${bookingId}`}
+          data-booking-id={bookingId}
+          data-booking-source={source}
+          className={cn(commonClass, "appearance-none border-0")}
+          style={style}
+          title={tooltipTitle}
+          aria-label={`Booking ${bookingId}: ${clientName}`}
+          onClick={onClick}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              onClick();
+            }
+          }}
+          onPointerDown={onPointerDown}
+        >
+          {inner}
+        </div>
+      );
+    }
+
     return (
       <button
         type="button"
