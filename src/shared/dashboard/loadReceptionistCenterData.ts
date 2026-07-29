@@ -533,6 +533,12 @@ export type ReceptionistCenterDataLoaderDeps = {
   /** Omit in app routes; smoke tests inject a service-role resolver. */
   resolveWrite?: DashboardWriteResolver;
   /**
+   * Server clock snapshot override for deterministic tests. App routes must
+   * only pass this behind their test-environment guard; production callers
+   * omit it and use the real server clock.
+   */
+  observedAtIso?: string;
+  /**
    * Pre-fetched salon row from `getDashboardWriteClient`. When the
    * caller already has the salon row in hand (the only real caller is
    * `/dashboard/[slug]/center/page.tsx`), passing it here lets the
@@ -629,7 +635,7 @@ export async function loadReceptionistCenterData(
     return { ok: false, error: "invalid_date" };
   }
 
-  const observedAtIso = new Date().toISOString();
+  const observedAtIso = deps?.observedAtIso ?? new Date().toISOString();
   const resolveWrite = deps?.resolveWrite ?? defaultResolveWrite;
   const ctx = await resolveWrite(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
