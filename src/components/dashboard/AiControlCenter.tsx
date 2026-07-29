@@ -45,6 +45,7 @@ import { OperationalExceptionInbox } from "@/components/dashboard/OperationalExc
 type Props = {
   slug: string;
   approvals: ApprovalRow[];
+  pendingApprovalCount: number;
   activity: MinhActivityData;
   executionJobs: ExecutionJobRow[];
   operationalExceptions: OperationalExceptionRow[];
@@ -68,6 +69,7 @@ function relativeTime(iso: string, nowIso: string, language: "en" | "vi"): strin
 export function AiControlCenter({
   slug,
   approvals,
+  pendingApprovalCount,
   activity,
   executionJobs,
   operationalExceptions,
@@ -128,7 +130,7 @@ export function AiControlCenter({
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" aria-label={vi ? "Tổng quan AI" : "AI overview"}>
         <Metric
           label={vi ? "Cần bạn quyết định" : "Needs your decision"}
-          value={approvalsAvailable ? pending.length : "—"}
+          value={approvalsAvailable ? pendingApprovalCount : "—"}
           tone={
             approvalsAvailable && pending.length > 0 ? "attention" : "default"
           }
@@ -146,7 +148,7 @@ export function AiControlCenter({
         />
         <Metric
           label={vi ? "Hành động 30 ngày" : "30-day actions"}
-          value={activityAvailable ? activity.entries.length : "—"}
+          value={activityAvailable ? activity.totalActions : "—"}
         />
         <Metric
           label={vi ? "Khách quay lại" : "Customers returned"}
