@@ -5,6 +5,26 @@ Newest entries on top.
 
 ---
 
+## 2026-07-29 — Machine-signaled exceptions own recovery truth
+
+**Decision.** Operational exceptions sourced from AI execution, AI Manager, or
+production readiness may be acknowledged by an owner/admin, but cannot be
+manually resolved or reopened. Their existing firing/recovered signal owns the
+terminal transition. Human-owned and legacy watchdog exceptions keep their
+audited manual resolve/reopen controls.
+
+**Why.** The inbox previously allowed an owner to mark an exhausted execution
+job or failed agent as resolved while the source was still failing. That made
+the exception row contradict queue and operating-health truth. Acknowledgement
+records human awareness without claiming technical recovery.
+
+**Safety.** The replacement RPC remains security-invoker and service-role-only,
+locks one salon-scoped row, and preserves the existing PII-free audit. It
+removes manual authority from machine-owned recovery and adds no execution,
+messaging, booking, payment, pricing, or authentication authority.
+
+---
+
 ## 2026-07-29 — Worker diagnostics use a privacy-safe failure boundary
 
 **Decision.** All AI worker heartbeat writers pass failure values through one
