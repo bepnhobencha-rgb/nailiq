@@ -5,6 +5,7 @@ import {
   cleanupTestUser,
   seedTestUser,
 } from "../helpers/db";
+import { waitForReceptionistHydration } from "../helpers/receptionistHydration";
 import {
   fillReactInput,
   gotoReceptionistCenter,
@@ -147,7 +148,7 @@ async function loginOwner(page: import("@playwright/test").Page): Promise<void> 
     .getByTestId("receptionist-center-loaded")
     .first()
     .waitFor({ state: "attached", timeout: 45_000 });
-  await page.getByTestId("rc-hydrated").waitFor({ state: "attached" });
+  await waitForReceptionistHydration(page, fixture.slug);
 }
 
 test("grid hides click-to-create preview when no service can finish before close", async ({

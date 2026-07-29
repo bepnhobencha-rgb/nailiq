@@ -5,6 +5,53 @@ Newest entries on top.
 
 ---
 
+## 2026-07-29 — Daily digest delivery is provider-acknowledged and replay-safe
+
+**Decision.**
+- A daily digest uses one stable provider idempotency key per salon-local day.
+- Missing recipients, missing provider configuration, and provider rejection
+  are failures rather than successful `digest_sent` claims. A deliberately
+  disabled owner-notification channel remains an intentional no-op.
+- After the provider accepts the email, one service-role-only transaction
+  records the durable delivery, marks the normal approvals actually included
+  in that email as notified, and appends the AI activity audit.
+- Replaying the database acknowledgement cannot create a second salon-day
+  delivery or duplicate activity claim.
+
+**Why.** Production had pending approvals included in daily digests while their
+`notified_at` fields remained empty. The old path also appended `digest_sent`
+after the send function returned even when notifications were disabled, no
+recipient existed, or Resend rejected the request. NailIQ must not confuse an
+attempt with a delivered owner communication, and a retry after an ambiguous
+network/database boundary must not send a second digest.
+
+**Safety.** This changes the accounting and retry behavior of the existing
+one-per-day digest only. It does not enable a notification channel, add
+recipients, send campaigns, authorize approval decisions, or grant messaging,
+booking, pricing, payment, authentication, or security authority.
+
+---
+
+## 2026-07-29 — Hydration readiness is observed without rendering test UI
+
+**Decision.** Receptionist Center publishes its post-commit E2E readiness on a
+window-scoped test signal. The Playwright helper waits for that signal after the
+visible schedule and walk-in form gates. No readiness node is rendered into the
+React tree.
+
+**Why.** PR #1077's production-build trace showed React invariant `#418`
+immediately before the former `rc-hydrated` child appeared. The marker's
+effect-backed state update could insert a child into the streamed parent while
+lower Suspense descendants were still hydrating. The failure repeated on the
+targeted job rerun even though the PR did not change Receptionist UI.
+
+**Coverage.** The persisted-interface E2E continues to reject hydration errors
+across initial Classic load, Preview reload, and Classic reload. The readiness
+signal only changes test observability; it does not change booking, queue,
+message, payment, permission, or authentication behavior.
+
+---
+
 ## 2026-07-28 — Live Board hydration uses one server-owned clock snapshot
 
 **Decision.** Receptionist data includes the exact server observation timestamp.
@@ -12,7 +59,7 @@ The Live Board uses that serialized instant for its server render and first
 client render, then starts its minute clock only after hydration. Client-only
 enhancements no longer force synchronous root updates merely to publish an E2E
 marker, expose `window.location.origin`, or report a redundant hydration flag.
-The E2E marker is committed from a normal effect after hydration instead.
+E2E readiness is published outside the rendered React tree after commit.
 
 **Why.** Production on the exact PR #1074 deployment reproduced React hydration
 invariant `#418` on `/center` in both the New and Classic interfaces. The board
@@ -24,7 +71,7 @@ could occur while lower time-dependent content was still hydrating, producing
 a text mismatch even though a later DOM snapshot looked correct. Server data is
 now adopted only when a later refresh carries a new observation timestamp.
 Wait-link origin is read only after the operator clicks. E2E gates interactions
-on a marker inserted by an effect after React commits hydration; unlike the old
+on a window-scoped post-commit signal; unlike the old rendered marker or
 external-store snapshot, it cannot change the server or first-client tree.
 
 **Coverage.** The persisted-interface E2E captures React hydration errors across

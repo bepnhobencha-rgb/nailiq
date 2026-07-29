@@ -3,6 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 
 import { DEFAULT_OPENING_HOURS_JSON } from "@/shared/dashboard/openingHoursDefaults";
 
+import { waitForReceptionistHydration } from "../helpers/receptionistHydration";
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -575,13 +577,11 @@ export async function gotoReceptionistCenter(
   if (opts?.expectWalkinQueue !== false) {
     await page.getByTestId("walkin-add-form").waitFor({ state: "visible", timeout: 45_000 });
   }
-  // Gate interactions on the post-commit marker. It is rendered from a
-  // useEffect-backed state update, not a synchronous external-store snapshot,
-  // so the server and first client trees still match during hydration.
-  await page.getByTestId("rc-hydrated").waitFor({
-    state: "attached",
-    timeout: 30_000,
-  });
+  // Gate interactions on the post-commit signal without changing the rendered
+  // React tree. A former client-only DOM marker inserted a new child while
+  // streamed descendants were still hydrating and intermittently caused the
+  // React #418 that this gate is meant to protect against.
+  await waitForReceptionistHydration(page, slug);
 }
 
 /** 10-digit test phone satisfying `validateGuestPhone` / public booking rules. */

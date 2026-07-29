@@ -11,6 +11,7 @@
 import { test, expect, type Page } from "@playwright/test";
 
 import { cleanupTestSalon, seedTestSalon } from "../helpers/db";
+import { waitForReceptionistHydration } from "../helpers/receptionistHydration";
 
 const VISUAL_SLUG = "e2e-visual-salon";
 const DEMO_COOKIE = "nailiq-demo-slug";
@@ -151,7 +152,7 @@ test.describe("Visual regression", () => {
           `/dashboard/${VISUAL_SLUG}/center?date=${VISUAL_DATE_YMD}&e2eNow=${encodeURIComponent(VISUAL_NOW_ISO)}`,
         );
         await expect(page.getByTestId("receptionist-center-loaded")).toBeVisible();
-        await expect(page.getByTestId("rc-hydrated")).toHaveCount(1);
+        await waitForReceptionistHydration(page, VISUAL_SLUG);
         // Desktop renders StaffTimelineGrid; the mobile breakpoint swaps it
         // for VerticalDayView after hydration.
         await expect(
