@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { ReportsPanel } from "@/components/dashboard/ReportsPanel";
-import { loadSalonReports } from "@/shared/dashboard/loadSalonReportsAction";
+import { loadSalonReports } from "@/shared/dashboard/loadSalonReports";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
 import { getEffectivePlanLimits } from "@/shared/lib/subscriptionPlans";

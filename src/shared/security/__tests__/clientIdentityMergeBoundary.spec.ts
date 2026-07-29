@@ -12,10 +12,11 @@ const revokeOrderFix = read(
   "supabase/migrations/20260729002306_fix_identity_merge_revoke_order.sql",
 );
 const action = read("src/shared/dashboard/clientIdentityReviewAction.ts");
-const reports = read("src/shared/dashboard/loadSalonReportsAction.ts");
+const reports = read("src/shared/dashboard/loadSalonReports.ts");
 const ownerHome = read("src/shared/dashboard/loadOwnerHomeDashboardAction.ts");
 const reportsPage = read("src/app/dashboard/[slug]/reports/page.tsx");
 const reportsPanel = read("src/components/dashboard/ReportsPanel.tsx");
+const reportsRoute = read("src/app/api/dashboard/reports/route.ts");
 
 describe("salon client identity merge boundary", () => {
   it("keeps global profiles intact and scopes every booking change to a salon", () => {
@@ -110,5 +111,10 @@ describe("salon client identity merge boundary", () => {
       "initialResult: LoadSalonReportsResult",
     );
     expect(reportsPanel).not.toContain("useEffect");
+    expect(reportsPanel).not.toContain("loadSalonReports(");
+    expect(reportsPanel).toContain("/api/dashboard/reports");
+    expect(reports).toContain('import "server-only"');
+    expect(reportsRoute).toContain("await loadSalonReports(slug, range)");
+    expect(reportsRoute).toContain('"Cache-Control": "no-store"');
   });
 });

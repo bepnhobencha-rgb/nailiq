@@ -7,9 +7,10 @@ All notable changes to NailIQ (project and documentation) are recorded here.
 - **Production finding:** post-merge browser verification reproduced React
   invariant `#310` when the feature-gated Reports page transitioned from
   loading to resolved data.
-- **Corrected diagnosis:** removing component-local memo hooks in the first
-  repair did not resolve production. The failing hook belongs to Next.js
-  App Router while a mount-time Server Action races page hydration.
+- **Corrected diagnosis:** removing component-local memo hooks and then moving
+  the initial query to server render did not resolve production. The failing
+  hook belongs to Next.js App Router while the Reports client still registers a
+  Server Action proxy with its action queue.
 - **Repair:** Reports now resolves its initial snapshot in the Server Component
   and hydrates the client with that result. Server Actions only run after an
   explicit date-range selection.
@@ -19,6 +20,10 @@ All notable changes to NailIQ (project and documentation) are recorded here.
   that the alias trigger re-canonicalized bookings during Undo. The revoke RPC
   now deactivates the locked alias before restoring matching bookings, so its
   success result corresponds to the persisted identity state.
+- **Action-queue isolation:** report aggregation is now a `server-only` loader.
+  Initial data is rendered on the server and explicit date-range changes use a
+  same-origin, owner-authorized, non-cacheable GET endpoint, so the Reports
+  client contains no Server Action proxy.
 
 ## 2026-07-28 (Canonical customer analytics)
 

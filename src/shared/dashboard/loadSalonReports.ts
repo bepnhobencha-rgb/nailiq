@@ -1,4 +1,4 @@
-"use server";
+import "server-only";
 
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
