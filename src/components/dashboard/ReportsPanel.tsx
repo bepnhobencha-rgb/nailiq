@@ -6,11 +6,10 @@ import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { KPIWidget } from "@/components/ui/KPIWidget";
 import {
-  loadSalonReports,
   type LoadSalonReportsResult,
   type ReportsDateRange,
   type ReportsSnapshot,
-} from "@/shared/dashboard/loadSalonReportsAction";
+} from "@/shared/dashboard/loadSalonReports";
 import { getUserMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
 import {
@@ -83,7 +82,19 @@ export function ReportsPanel({
     setRange(nextRange);
     setState({ kind: "loading" });
 
-    const result = await loadSalonReports(slug, nextRange);
+    let result: LoadSalonReportsResult;
+    try {
+      const response = await fetch(
+        `/api/dashboard/reports?slug=${encodeURIComponent(slug)}&range=${nextRange}`,
+        { cache: "no-store" },
+      );
+      result = (await response.json()) as LoadSalonReportsResult;
+      if (!response.ok && result.ok) {
+        result = { ok: false, error: "server_error" };
+      }
+    } catch {
+      result = { ok: false, error: "server_error" };
+    }
     if (requestId !== requestSequence.current) return;
 
     setState(

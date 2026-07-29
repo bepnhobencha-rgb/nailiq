@@ -8,19 +8,21 @@ Newest entries on top.
 ## 2026-07-28 — Reports data exists before client hydration
 
 **Decision.** The Reports Server Component loads the initial `today` snapshot
-before rendering the client panel. The client invokes the report Server Action
-only after the owner explicitly changes the date range. The customer-identity
-E2E is part of the CI matrix and repeats the Reports route assertion in WebKit.
+through a `server-only` report loader before rendering the client panel. The
+client contains no Server Action reference; an explicit date-range change uses
+a same-origin, non-cacheable GET route which calls that same authenticated
+loader. The customer-identity E2E is part of the CI matrix and repeats the
+Reports route assertion in WebKit.
 
 **Why.** Production verification after PR #1066 reproduced React invariant
-`#310`. The first repair removed unnecessary component memo hooks, but a fresh
-production load after PR #1067 still failed. The production stack located the
-throwing `useMemo` inside Next.js App Router: the client was dispatching a
-Server Action from its mount effect while the router was still hydrating.
-Chromium CI also gave false confidence because the new identity spec was not in
-the workflow's explicit path matrix. Server-rendering the first snapshot removes
-that mount-time action, and explicit WebKit coverage tests the engine where the
-failure was observed.
+`#310`. The first repair removed unnecessary component memo hooks, but fresh
+production loads after PRs #1067 and #1068 still failed. The production stack
+located the throwing `useMemo` inside Next.js App Router; after #1068 the
+remaining Reports-specific integration with that router was the client-imported
+Server Action proxy. Chromium CI also initially gave false confidence because
+the identity spec was absent from the workflow's explicit path matrix. Removing
+the Server Action boundary entirely keeps report reads out of the action queue;
+explicit WebKit coverage tests the engine where the failure was observed.
 
 **Safety.** Date-range changes retain bounded, latest-request-wins loading.
 Report queries, permissions, identity resolution, bookings, messaging, and
