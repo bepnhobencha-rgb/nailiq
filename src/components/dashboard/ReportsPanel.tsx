@@ -96,7 +96,7 @@ export function ReportsPanel({
               role="tab"
               aria-selected={active}
               data-testid={`reports-range-${r}`}
-              href={`/dashboard/${encodeURIComponent(slug)}/reports?range=${r}`}
+              href={`/dashboard/${encodeURIComponent(slug)}/insights?range=${r}`}
               className={cn(
                 "px-3 py-1.5 transition-colors",
                 active

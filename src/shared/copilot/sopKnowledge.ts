@@ -115,7 +115,7 @@ and set opening hours. A salon is "ready to take bookings" once it has at least
 one service, one active staff member, customized opening hours, and a complete
 profile.
 
-## J. Reports — /dashboard/<slug>/reports
+## J. Reports — /dashboard/<slug>/insights
 Revenue and operational reports (advanced reports are a separate enabled
 feature).
 

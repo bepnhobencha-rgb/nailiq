@@ -193,13 +193,18 @@ test.describe("reversible salon client identity merge", () => {
     // Reports is server-rendered without a client hydration boundary. Keep this
     // real route and a range navigation in the identity flow so App Router and
     // range-query regressions cannot hide behind unit-only coverage.
+    // The legacy /reports URL must redirect before hydration because common
+    // content blockers classify "reports" as telemetry.
     await page.goto(`/dashboard/${SLUG}/reports`);
+    await expect(page).toHaveURL(
+      new RegExp(`/dashboard/${SLUG}/insights$`),
+    );
     await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
     await expect(page.getByText("This page couldn’t load")).toHaveCount(0);
     await expect(page.getByTestId("reports-kpis")).not.toContainText("—");
     await page.getByRole("tab", { name: "This week" }).click();
     await expect(page).toHaveURL(
-      new RegExp(`/dashboard/${SLUG}/reports\\?range=week$`),
+      new RegExp(`/dashboard/${SLUG}/insights\\?range=week$`),
     );
     await expect(page.getByTestId("reports-range-week")).toHaveAttribute(
       "aria-selected",

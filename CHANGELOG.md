@@ -31,10 +31,15 @@ All notable changes to NailIQ (project and documentation) are recorded here.
   hydration/action queue.
 - **Production correction after PR #1070:** production still reproduced `#310`
   with a data-free shell, proving analytics size and transport were not causal.
-  The remaining Reports-only difference was its client component boundary.
   Reports is now a hook-free Server Component; date tabs are ordinary GET links
   using a validated `range` query. The API remains available for authenticated
   programmatic consumers, but the owner page no longer hydrates client code.
+- **Content-blocker root cause after PR #1071:** the server-only route still
+  failed while `/api/dashboard/reports` explicitly returned
+  `ERR_BLOCKED_BY_CLIENT`; same-session `/clients`, `/pulse`, `/reviews`, and an
+  unknown `/insights` URL rendered normally. The canonical page and API now use
+  blocker-safe `/insights` paths. Legacy `/reports` URLs remain as server-side
+  compatibility redirects/aliases, and all dashboard/Coco links use Insights.
 
 ## 2026-07-28 (Canonical customer analytics)
 

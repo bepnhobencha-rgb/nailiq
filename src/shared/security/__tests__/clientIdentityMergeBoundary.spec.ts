@@ -14,9 +14,11 @@ const revokeOrderFix = read(
 const action = read("src/shared/dashboard/clientIdentityReviewAction.ts");
 const reports = read("src/shared/dashboard/loadSalonReports.ts");
 const ownerHome = read("src/shared/dashboard/loadOwnerHomeDashboardAction.ts");
-const reportsPage = read("src/app/dashboard/[slug]/reports/page.tsx");
+const reportsPage = read("src/app/dashboard/[slug]/insights/page.tsx");
+const legacyReportsPage = read("src/app/dashboard/[slug]/reports/page.tsx");
 const reportsPanel = read("src/components/dashboard/ReportsPanel.tsx");
-const reportsRoute = read("src/app/api/dashboard/reports/route.ts");
+const reportsRoute = read("src/app/api/dashboard/insights/route.ts");
+const legacyReportsRoute = read("src/app/api/dashboard/reports/route.ts");
 
 describe("salon client identity merge boundary", () => {
   it("keeps global profiles intact and scopes every booking change to a salon", () => {
@@ -110,9 +112,14 @@ describe("salon client identity merge boundary", () => {
     expect(reportsPanel).not.toContain('"use client"');
     expect(reportsPanel).not.toMatch(/\buse(State|Effect|Memo|Ref)\b/);
     expect(reportsPanel).not.toContain("loadSalonReports(");
-    expect(reportsPanel).toContain("/reports?range=${r}");
+    expect(reportsPanel).toContain("/insights?range=${r}");
+    expect(legacyReportsPage).toContain("/insights${query}");
+    expect(legacyReportsPage).toContain("redirect(");
     expect(reports).toContain('import "server-only"');
     expect(reportsRoute).toContain("await loadSalonReports(slug, range)");
     expect(reportsRoute).toContain('"Cache-Control": "no-store"');
+    expect(legacyReportsRoute).toContain(
+      'export { GET } from "@/app/api/dashboard/insights/route"',
+    );
   });
 });

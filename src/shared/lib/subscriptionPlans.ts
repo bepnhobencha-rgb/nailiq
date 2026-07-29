@@ -26,7 +26,7 @@ export type PlanLimits = {
   /** Max non-cancelled bookings per calendar month (UTC);
    *  `Infinity` for unlimited. */
   maxBookingsPerMonth: number;
-  /** Owner reports panel (`/dashboard/[slug]/reports`). */
+  /** Owner reports panel (`/dashboard/[slug]/insights`). */
   hasReports: boolean;
   /** Per-staff performance drill-down inside the Reports panel —
    *  cancellation rate, no-show rate, service mix, repeat-client

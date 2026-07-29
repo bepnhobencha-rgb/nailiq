@@ -168,7 +168,7 @@ export const SUPERADMIN_PER_SALON_FLAGS: ReadonlyArray<SuperAdminFlagDescriptor>
     key: "reports_enabled",
     group: "analytics",
     label: "Trang Báo cáo & Doanh thu",
-    description: "Bật trang /reports cho owner.",
+    description: "Bật trang /insights cho owner.",
     phase: "live",
   },
   {

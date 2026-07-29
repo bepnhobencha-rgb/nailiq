@@ -60,34 +60,37 @@
 
 ---
 
-## 2026-07-28: Render Reports without a client boundary
+## 2026-07-28: Route Reports through blocker-safe Insights URLs
 
 **Context**: Two production deployments continued to reproduce React invariant
 `#310` in Next's root App Router after removing memo hooks, the Server Action
-proxy, the analytics RSC payload, and finally all initial analytics data. Local
-Chromium/WebKit checks passed; production controls (`clients`, `pulse`,
-`reviews`) worked while only Reports failed.
+proxy, the analytics RSC payload, all initial analytics data, and finally the
+entire client boundary. The verification browser explicitly blocked
+`/api/dashboard/reports` with `ERR_BLOCKED_BY_CLIENT`; production controls
+(`clients`, `pulse`, `reviews`) and an unknown `/insights` path rendered without
+console errors.
 
-**Decision**: Render the complete Reports page as a hook-free Server Component
-and implement date-range changes as validated GET navigation.
+**Decision**: Use `/dashboard/<slug>/insights` and
+`/api/dashboard/insights` as canonical URLs; preserve `/reports` bookmarks and
+API clients through server-side compatibility routes.
 
 **Rationale**:
-- Removes the last Reports-specific hydration boundary from the failing route.
+- Avoids a telemetry-like path token blocked by privacy/content filters.
 - Preserves owner authorization, feature gating and fail-honest error states.
 - Makes each report range addressable, reload-safe and auditable by URL.
 
 **Alternatives rejected**:
-- Client REST fetch after mount: PR #1070 disproved it in production.
-- Server Action or client state tabs: both restore the hydration/action boundary
-  implicated by the route-specific production evidence.
+- More React/App Router rewrites: PRs #1069-#1071 disproved payload, action,
+  hook and client-boundary hypotheses.
+- Remove compatibility URLs: would break existing bookmarks and integrations.
 
-**Trade-offs accepted**: Changing date range performs a normal route navigation
-instead of an in-place client transition.
+**Trade-offs accepted**: Internal route naming differs from the user-facing
+label “Reports”; legacy API calls may still be blocked by the caller's filter.
 
-**Revisit when**: Next/React provides an upstream fix with a production
-regression proving a client Reports boundary no longer trips `#310`.
+**Revisit when**: Major content blockers document that `/reports` is no longer a
+classified telemetry path and a cross-browser production probe confirms it.
 
-**Cost to reverse**: Low; add a small client range controller.
+**Cost to reverse**: Low; swap canonical and compatibility routes.
 
 ---
 

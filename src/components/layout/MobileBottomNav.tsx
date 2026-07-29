@@ -121,11 +121,11 @@ export function MobileBottomNav({
         label: L("Business", "Kinh doanh"),
         href:
           releaseFeatures.advanced_reports === true
-            ? `${dashRoot}/reports`
+            ? `${dashRoot}/insights`
             : `${dashRoot}/pulse`,
         icon: TrendingUp,
         match: (p) =>
-          p.startsWith(`${dashRoot}/reports`) ||
+          p.startsWith(`${dashRoot}/insights`) ||
           p.startsWith(`${dashRoot}/pulse`),
       });
     } else {
