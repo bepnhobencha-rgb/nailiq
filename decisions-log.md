@@ -60,34 +60,34 @@
 
 ---
 
-## 2026-07-28: Keep Reports analytics outside the initial RSC stream
+## 2026-07-28: Render Reports without a client boundary
 
 **Context**: Two production deployments continued to reproduce React invariant
-`#310` in Next's root App Router even after removing memo hooks and the Reports
-Server Action proxy. Local Chromium/WebKit checks passed, while production with
-real analytics data failed during initial route hydration.
+`#310` in Next's root App Router after removing memo hooks, the Server Action
+proxy, the analytics RSC payload, and finally all initial analytics data. Local
+Chromium/WebKit checks passed; production controls (`clients`, `pulse`,
+`reviews`) worked while only Reports failed.
 
-**Decision**: Server-render only the authorized Reports shell and load every
-analytics snapshot through the authenticated, non-cacheable REST boundary after
-client hydration.
+**Decision**: Render the complete Reports page as a hook-free Server Component
+and implement date-range changes as validated GET navigation.
 
 **Rationale**:
-- Keeps data-dependent report work out of Next's root hydration/action queue.
-- Uses one observable transport for both the initial and changed date ranges.
-- Preserves owner authorization and fail-honest error states at the API boundary.
+- Removes the last Reports-specific hydration boundary from the failing route.
+- Preserves owner authorization, feature gating and fail-honest error states.
+- Makes each report range addressable, reload-safe and auditable by URL.
 
 **Alternatives rejected**:
-- Embed the first snapshot in RSC: production evidence disproved this twice.
-- Reintroduce a mount-time Server Action: it couples analytics to the App Router
-  action queue and had already failed production verification.
+- Client REST fetch after mount: PR #1070 disproved it in production.
+- Server Action or client state tabs: both restore the hydration/action boundary
+  implicated by the route-specific production evidence.
 
-**Trade-offs accepted**: The report shell briefly shows a bounded loading state
-before KPIs populate.
+**Trade-offs accepted**: Changing date range performs a normal route navigation
+instead of an in-place client transition.
 
 **Revisit when**: Next/React provides an upstream fix with a production
-regression proving the real-salon initial RSC snapshot no longer trips `#310`.
+regression proving a client Reports boundary no longer trips `#310`.
 
-**Cost to reverse**: Low; restore the server loader call and initial prop.
+**Cost to reverse**: Low; add a small client range controller.
 
 ---
 
