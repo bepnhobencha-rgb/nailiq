@@ -28,6 +28,7 @@ import type { ApprovalRow } from "@/shared/ai/approvalRequests";
 import { campaignPreflightFreshness } from "@/shared/ai/campaignPreflightFreshness";
 import type { AiControlDataSource } from "@/shared/ai/controlCenterData";
 import { controlExecutionJobAction } from "@/shared/ai/controlExecutionJobAction";
+import { executionFailureLabel } from "@/shared/ai/executionFailure";
 import { canControlExecutionJob } from "@/shared/ai/executionPolicy";
 import { preflightCampaignAction } from "@/shared/ai/preflightCampaignAction";
 import { prepareAudienceAction } from "@/shared/ai/prepareAudienceAction";
@@ -416,7 +417,7 @@ export function AiControlCenter({
                     ) : null}
                     {job.last_error ? (
                       <p className="mt-2 line-clamp-2 text-xs leading-5 text-nq-error">
-                        {job.last_error}
+                        {executionFailureLabel(job.last_error, language)}
                       </p>
                     ) : null}
                     <JobRecoveryControls job={job} slug={slug} vi={vi} />

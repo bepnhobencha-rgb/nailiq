@@ -5,6 +5,25 @@ Newest entries on top.
 
 ---
 
+## 2026-07-29 — Execution failures expose safe codes, not raw internals
+
+**Decision.** The AI execution worker writes only an allowlisted operational
+error code to `ai_execution_jobs.last_error` and the durable action audit. Raw
+database/provider errors remain in server-side logs for investigation. Owner
+surfaces translate known codes to operational guidance and render a generic
+message for unknown historical values instead of echoing stored text.
+
+**Why.** A dependency error can contain SQL details, provider responses,
+identifiers, or customer data. Persisting that string into a tenant-visible job
+and then rendering it in the Control Center turned an internal diagnostic into
+an avoidable disclosure boundary.
+
+**Safety.** Retry limits, leases, approval authority, and execution effects are
+unchanged. This narrows persisted and displayed diagnostics; it grants no new
+messaging, booking, payment, pricing, authentication, or execution authority.
+
+---
+
 ## 2026-07-29 — Control Center metrics count beyond preview limits
 
 **Decision.** “Needs your decision” uses an exact count of all pending

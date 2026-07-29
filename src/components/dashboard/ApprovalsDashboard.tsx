@@ -6,6 +6,7 @@ import { CheckCircle, XCircle, Clock, AlertTriangle } from "lucide-react";
 import { approvalExecutionPresentation } from "@/shared/ai/approvalExecutionPresentation";
 import type { ApprovalRow } from "@/shared/ai/approvalRequests";
 import type { ExecutionJobRow } from "@/shared/ai/executionQueue";
+import { executionFailureLabel } from "@/shared/ai/executionFailure";
 
 function timeLabel(iso: string): string {
   try {
@@ -192,7 +193,7 @@ function DecidedRow({
       </p>
       {job?.last_error ? (
         <p className="line-clamp-2 text-[11px] text-nq-error">
-          {job.last_error}
+          {executionFailureLabel(job.last_error, "vi")}
         </p>
       ) : null}
     </div>
