@@ -2,6 +2,18 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-07-29 (Source-owned operational exception recovery)
+
+- **No false resolution:** owner/admin users may acknowledge machine-signaled
+  execution, manager, and readiness exceptions but cannot manually resolve or
+  reopen them while the source owns recovery truth.
+- **Automatic recovery:** those rows close only after the existing source
+  signal proves a later successful run or healthy state.
+- **Honest UI:** Control Center explains the recovery contract and removes
+  controls that could create a false “resolved” state.
+- **Manual workflow preserved:** legacy and human-owned exceptions retain their
+  audited resolve/reopen lifecycle.
+
 ## 2026-07-29 (Privacy-safe AI worker diagnostics)
 
 - **Safe heartbeat ledger:** worker and manager heartbeat failures are reduced
