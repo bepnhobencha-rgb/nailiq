@@ -575,14 +575,9 @@ export async function gotoReceptionistCenter(
   if (opts?.expectWalkinQueue !== false) {
     await page.getByTestId("walkin-add-form").waitFor({ state: "visible", timeout: 45_000 });
   }
-  // Gate on React hydration completing. `rc-hydrated` is rendered by
-  // ReceptionistCenter behind a useSyncExternalStore whose server snapshot is
-  // `false` and whose client snapshot is `true`, so React only renders it once
-  // hydration has finished and the tree is interactive. SSR emits nothing,
-  // making this a reliable hydration-complete signal in the main React tree.
-  // We avoid using BookingDetailDrawer's portal for this because Playwright
-  // WebKit skips elements inside aria-hidden/inert containers (the drawer
-  // wraps its content in inert={!open} when closed).
+  // Gate interactions on the post-commit marker. It is rendered from a
+  // useEffect-backed state update, not a synchronous external-store snapshot,
+  // so the server and first client trees still match during hydration.
   await page.getByTestId("rc-hydrated").waitFor({
     state: "attached",
     timeout: 30_000,

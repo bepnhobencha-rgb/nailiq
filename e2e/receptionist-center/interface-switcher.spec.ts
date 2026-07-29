@@ -33,6 +33,17 @@ test.afterAll(async ({}, testInfo) => {
 test("keeps classic as default and remembers the opt-in preview", async ({
   page,
 }, testInfo) => {
+  const hydrationErrors: string[] = [];
+  page.on("pageerror", (error) => {
+    if (
+      /minified react error #418|hydration failed because|hydration mismatch/i.test(
+        error.message,
+      )
+    ) {
+      hydrationErrors.push(error.message);
+    }
+  });
+
   if (testInfo.project.name === "chromium") {
     await page.setViewportSize({ width: 1280, height: 853 });
   }
@@ -123,6 +134,7 @@ test("keeps classic as default and remembers the opt-in preview", async ({
 
   await page.reload();
   await expect(center).toHaveAttribute("data-receptionist-interface", "classic");
+  expect(hydrationErrors).toEqual([]);
 });
 
 test("keeps New interface calendar, search, and account navigation discoverable", async ({

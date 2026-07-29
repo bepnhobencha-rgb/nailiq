@@ -39,6 +39,11 @@ import {
 type DashboardSupabaseClient = SupabaseClient<Database>;
 
 export interface ReceptionistCenterData {
+  /**
+   * Server-owned wall-clock snapshot for the first render. The receptionist
+   * client hydrates from this exact value before starting its minute tick.
+   */
+  observedAtIso: string;
   salon: {
     id: string;
     name: string;
@@ -624,6 +629,7 @@ export async function loadReceptionistCenterData(
     return { ok: false, error: "invalid_date" };
   }
 
+  const observedAtIso = new Date().toISOString();
   const resolveWrite = deps?.resolveWrite ?? defaultResolveWrite;
   const ctx = await resolveWrite(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
@@ -1575,6 +1581,7 @@ export async function loadReceptionistCenterData(
   return {
     ok: true,
     data: {
+      observedAtIso,
       salon: salonRow,
       staff: enrichedStaff,
       services:

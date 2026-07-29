@@ -41,7 +41,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
 
 import Link from "next/link";
@@ -212,16 +211,6 @@ const ReceptionistPreviewThemePicker = dynamic(
     ),
   { ssr: false },
 );
-
-// Values that only exist on the client. Read through useSyncExternalStore so
-// the server render and the first client render agree (no hydration mismatch)
-// and React swaps the real value in once hydration completes — no effect
-// writing state back on mount.
-const noopSubscribe = () => () => {};
-const getHydratedSnapshot = () => true;
-const getServerFalseSnapshot = () => false;
-const getWindowOrigin = () => window.location.origin;
-const getServerEmptySnapshot = () => "";
 
 export type ReceptionistCenterProps = {
   slug: string;
@@ -440,13 +429,10 @@ function ReceptionistCenterInner({
     };
   }, [drcBg]);
 
-  // Empty-string initial value so SSR and client hydration produce the same
-  // output (same pattern as `originBaseUrl` below). Initialising with
-  // `new Date().toISOString()` makes the server-render timestamp differ from
-  // the client hydration timestamp → React #418 mismatch on overdue overlays,
-  // today-badge, and the now-line. After mount the useEffect sets the real time
-  // immediately, then ticks every minute as before.
-  const [nowIso, setNowIso] = useState<string>("");
+  // Use the loader's server-owned clock snapshot for both SSR and the first
+  // client render. An empty value followed by an immediate effect update can
+  // race streamed/selective hydration in time-dependent descendants.
+  const [nowIso, setNowIso] = useState<string>(initialOk.observedAtIso);
   const nowIsoRef = useRef(nowIso);
   /* Sync ref via effect (not during render) so reloadCurrentDay's callback
      can read the latest value without including nowIso in its deps. */
@@ -456,7 +442,6 @@ function ReceptionistCenterInner({
 
   useEffect(() => {
     const update = () => setNowIso(new Date().toISOString());
-    update(); // Populate immediately after hydration — then tick every minute.
     const tick = window.setInterval(update, 60_000);
     return () => window.clearInterval(tick);
   }, []);
@@ -504,7 +489,19 @@ function ReceptionistCenterInner({
     viewedYmdRef.current = data.selectedDate;
   }, [data.selectedDate]);
 
+  // `data` is already initialized from this exact server observation. Do not
+  // redundantly replace the parent state on mount: an immediate parent update
+  // can race streamed hydration in time-dependent descendants. A later
+  // router.refresh() carries a new observation timestamp and is still adopted.
+  const adoptedServerObservationIsoRef = useRef(initialOk.observedAtIso);
   useEffect(() => {
+    if (
+      initialOk.observedAtIso === adoptedServerObservationIsoRef.current
+    ) {
+      return;
+    }
+    adoptedServerObservationIsoRef.current = initialOk.observedAtIso;
+
     // Only adopt server-provided data when it's for the day the user is viewing.
     // A revalidatePath() / router.refresh() re-runs the loader for its DEFAULT
     // day (today); without this guard it would yank the grid back to today after
@@ -517,19 +514,14 @@ function ReceptionistCenterInner({
   }, [initialOk]);
 
   const [dateOffset, setDateOffset] = useState<-1 | 0 | 1>(0);
-  const {
-    receptionistInterface,
-    setReceptionistInterface,
-    hydrated: interfaceHydrated,
-  } = useReceptionistInterface();
-  const previewInterface =
-    interfaceHydrated && receptionistInterface === "preview";
+  const { receptionistInterface, setReceptionistInterface } =
+    useReceptionistInterface();
+  const previewInterface = receptionistInterface === "preview";
 
   // Publish the opt-in mode to the dashboard shell so New can use the full
   // canvas shown in the approved mockup. Removing/switching back restores the
   // Classic shell immediately; no data or salon preference is changed here.
   useEffect(() => {
-    if (!interfaceHydrated) return;
     if (previewInterface) {
       document.documentElement.dataset.receptionistInterfaceMode = "preview";
       document.documentElement.style.setProperty(
@@ -544,7 +536,7 @@ function ReceptionistCenterInner({
       delete document.documentElement.dataset.receptionistInterfaceMode;
       document.documentElement.style.removeProperty("--rc-new-canvas");
     };
-  }, [interfaceHydrated, newInterfaceBg, previewInterface]);
+  }, [newInterfaceBg, previewInterface]);
 
   // Detect mobile viewport for the VerticalDayView swap (< 640 px).
   // Defaults false (server + first render → desktop grid); effect flips it
@@ -606,16 +598,22 @@ function ReceptionistCenterInner({
   // Week-view anchor (Monday of the visible week). Derived initially from
   // today's salon date so first paint shows the current week.
   const initialMondayYmd = useMemo(
-    () => mondayYmdOf(salonToday(initialOk.salon.timezone)),
-    [initialOk.salon.timezone],
+    () =>
+      mondayYmdOf(
+        salonToday(initialOk.salon.timezone, initialOk.observedAtIso),
+      ),
+    [initialOk.observedAtIso, initialOk.salon.timezone],
   );
   const [weekMondayYmd, setWeekMondayYmd] = useState(initialMondayYmd);
 
   // Month-view anchor (YYYY-MM-01 of the visible month). Starts on the
   // current month so first paint is always the present month.
   const initialMonthFirstYmd = useMemo(
-    () => firstOfMonth(salonToday(initialOk.salon.timezone)),
-    [initialOk.salon.timezone],
+    () =>
+      firstOfMonth(
+        salonToday(initialOk.salon.timezone, initialOk.observedAtIso),
+      ),
+    [initialOk.observedAtIso, initialOk.salon.timezone],
   );
   const [monthFirstYmd, setMonthFirstYmd] = useState(initialMonthFirstYmd);
 
@@ -713,14 +711,16 @@ function ReceptionistCenterInner({
     }
   }, [urlBookingParam, data.bookingsForDay, openBookingDrawer]);
 
-  // E2E hydration signal: renders only after the first client-side effect,
-  // confirming React has fully hydrated and all event handlers are registered.
-  // Used by gotoReceptionistCenter in e2e/receptionist-center/helpers.ts.
-  const rcHydrated = useSyncExternalStore(
-    noopSubscribe,
-    getHydratedSnapshot,
-    getServerFalseSnapshot,
-  );
+  // E2E interaction gate. An effect only runs after React has committed
+  // hydration, so this marker cannot alter the server/first-client tree.
+  // Do not implement this with useSyncExternalStore: its synchronous
+  // post-server snapshot can insert client-only content while streamed
+  // descendants are still hydrating and trigger React #418.
+  const [rcHydrated, setRcHydrated] = useState(false);
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => setRcHydrated(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
 
   const [undoState, setUndoState] = useState<UndoToastState | null>(null);
   const undoTimerRef = useRef<number | null>(null);
@@ -836,17 +836,6 @@ function ReceptionistCenterInner({
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("connected");
   const isOffline = connectionState !== "connected";
-
-  // Origin for guest wait-link buttons. Read AFTER mount (not during render):
-  // deriving it from `window.location.origin` inline made the server render ""
-  // (button hidden) while the client rendered the origin (button shown),
-  // throwing a React #418 hydration mismatch on any queued walk-in. Empty on
-  // the server + first client render (match), populated on mount.
-  const originBaseUrl = useSyncExternalStore(
-    noopSubscribe,
-    getWindowOrigin,
-    getServerEmptySnapshot,
-  );
 
   // Sound alerts (Web Audio, generated tones only). Hook is a no-op
   // when `dashboard_modules.sound_alerts` is off; honors browser
@@ -2370,13 +2359,9 @@ function ReceptionistCenterInner({
   // clearer party alert ("Today {time} group: {name}/{n} not confirmed") and
   // its focus-the-group action. Restricted to today so the "today" copy is
   // accurate and operationally relevant for the front desk.
-  // `nowIso` is "" during the SSR pass (deliberate — avoids a React #418
-  // hydration mismatch on the live timestamp). `formatInSalonTz` throws on an
-  // empty ISO, so skip this today-only alert until the client populates the
-  // real time after mount. Without the guard, SSR crashes with
-  // "salonTime: invalid ISO string" → React #419 (the whole Center fails to
-  // render). The alert is meaningless without "now" anyway, and the client
-  // re-renders immediately once nowIso ticks in.
+  // `nowIso` is normally the loader's server-owned snapshot. Keep the empty
+  // guard as a defensive boundary for malformed legacy fixtures so
+  // `formatInSalonTz` cannot crash the whole Center.
   const todaySalonDate = nowIso ? formatInSalonTz(nowIso, timezone, "date") : "";
   const pendingPartyCard = !nowIso
     ? null
@@ -2847,7 +2832,6 @@ function ReceptionistCenterInner({
             "gap-1 p-1 md:-mt-6 md:min-h-[calc(100dvh+1.5rem)]",
         )}
       >
-        {/* Hydration signal for E2E: only rendered after React useEffect fires. */}
         {rcHydrated && (
           <span
             data-testid="rc-hydrated"
@@ -4146,7 +4130,7 @@ function ReceptionistCenterInner({
                 onSetSoftHold={onSetSoftHold}
                 onClearSoftHold={onClearSoftHold}
                 rushMode={rush.active}
-                waitLinkBaseUrl={originBaseUrl}
+                waitLinkEnabled
                 waitLinkSalonSlug={slug}
                 onCancelWalkin={onCancelWalkin}
                 onStartAssign={(id) => {
