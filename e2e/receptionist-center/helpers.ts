@@ -575,13 +575,20 @@ export async function gotoReceptionistCenter(
   if (opts?.expectWalkinQueue !== false) {
     await page.getByTestId("walkin-add-form").waitFor({ state: "visible", timeout: 45_000 });
   }
-  // Gate interactions on the post-commit marker. It is rendered from a
-  // useEffect-backed state update, not a synchronous external-store snapshot,
-  // so the server and first client trees still match during hydration.
-  await page.getByTestId("rc-hydrated").waitFor({
-    state: "attached",
-    timeout: 30_000,
-  });
+  // Gate interactions on the post-commit signal without changing the rendered
+  // React tree. A former client-only DOM marker inserted a new child while
+  // streamed descendants were still hydrating and intermittently caused the
+  // React #418 that this gate is meant to protect against.
+  await page.waitForFunction(
+    (expectedSlug) =>
+      (
+        window as typeof window & {
+          __NAILIQ_RECEPTIONIST_HYDRATED__?: string;
+        }
+      ).__NAILIQ_RECEPTIONIST_HYDRATED__ === expectedSlug,
+    slug,
+    { timeout: 30_000 },
+  );
 }
 
 /** 10-digit test phone satisfying `validateGuestPhone` / public booking rules. */

@@ -32,6 +32,26 @@ booking, pricing, payment, authentication, or security authority.
 
 ---
 
+## 2026-07-29 — Hydration readiness is observed without rendering test UI
+
+**Decision.** Receptionist Center publishes its post-commit E2E readiness on a
+window-scoped test signal. The Playwright helper waits for that signal after the
+visible schedule and walk-in form gates. No readiness node is rendered into the
+React tree.
+
+**Why.** PR #1077's production-build trace showed React invariant `#418`
+immediately before the former `rc-hydrated` child appeared. The marker's
+effect-backed state update could insert a child into the streamed parent while
+lower Suspense descendants were still hydrating. The failure repeated on the
+targeted job rerun even though the PR did not change Receptionist UI.
+
+**Coverage.** The persisted-interface E2E continues to reject hydration errors
+across initial Classic load, Preview reload, and Classic reload. The readiness
+signal only changes test observability; it does not change booking, queue,
+message, payment, permission, or authentication behavior.
+
+---
+
 ## 2026-07-28 — Live Board hydration uses one server-owned clock snapshot
 
 **Decision.** Receptionist data includes the exact server observation timestamp.
@@ -39,7 +59,7 @@ The Live Board uses that serialized instant for its server render and first
 client render, then starts its minute clock only after hydration. Client-only
 enhancements no longer force synchronous root updates merely to publish an E2E
 marker, expose `window.location.origin`, or report a redundant hydration flag.
-The E2E marker is committed from a normal effect after hydration instead.
+E2E readiness is published outside the rendered React tree after commit.
 
 **Why.** Production on the exact PR #1074 deployment reproduced React hydration
 invariant `#418` on `/center` in both the New and Classic interfaces. The board
@@ -51,7 +71,7 @@ could occur while lower time-dependent content was still hydrating, producing
 a text mismatch even though a later DOM snapshot looked correct. Server data is
 now adopted only when a later refresh carries a new observation timestamp.
 Wait-link origin is read only after the operator clicks. E2E gates interactions
-on a marker inserted by an effect after React commits hydration; unlike the old
+on a window-scoped post-commit signal; unlike the old rendered marker or
 external-store snapshot, it cannot change the server or first-client tree.
 
 **Coverage.** The persisted-interface E2E captures React hydration errors across
