@@ -15,6 +15,10 @@ All notable changes to NailIQ (project and documentation) are recorded here.
   explicit date-range selection.
 - **Regression gate:** the reversible identity E2E is now included in the CI
   matrix and its Reports flow runs in both Chromium and WebKit on pull requests.
+- **Undo integrity found by the gate:** the same newly executed flow exposed
+  that the alias trigger re-canonicalized bookings during Undo. The revoke RPC
+  now deactivates the locked alias before restoring matching bookings, so its
+  success result corresponds to the persisted identity state.
 
 ## 2026-07-28 (Canonical customer analytics)
 

@@ -28,6 +28,25 @@ financial behavior remain unchanged.
 
 ---
 
+## 2026-07-28 — Identity revocation changes trigger-visible state first
+
+**Decision.** The identity-revocation transaction locks and validates the
+active salon alias, marks it inactive, and only then restores matching bookings
+to the alias profile.
+
+**Why.** The booking canonicalization trigger runs before every booking update.
+When revocation restored bookings while the alias remained active, that trigger
+immediately changed the profile back to canonical. The RPC still returned
+success, producing a false Undo. Running the previously omitted E2E in both
+Chromium and WebKit exposed the persisted-data mismatch.
+
+**Safety.** The function remains owner-checked, salon-scoped,
+`SECURITY DEFINER`, and executable only by `service_role`. The order change is
+inside one transaction; a failed booking update rolls back alias deactivation.
+It does not delete profiles, bookings, aliases, or audit history.
+
+---
+
 ## 2026-07-28 — Analytics follow reviewed customer identity
 
 **Decision.**

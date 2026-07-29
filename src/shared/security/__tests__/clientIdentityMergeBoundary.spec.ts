@@ -8,6 +8,9 @@ const read = (file: string) =>
 const migration = read(
   "supabase/migrations/20260728224432_add_reversible_salon_client_identity_merge.sql",
 );
+const revokeOrderFix = read(
+  "supabase/migrations/20260729002306_fix_identity_merge_revoke_order.sql",
+);
 const action = read("src/shared/dashboard/clientIdentityReviewAction.ts");
 const reports = read("src/shared/dashboard/loadSalonReportsAction.ts");
 const ownerHome = read("src/shared/dashboard/loadOwnerHomeDashboardAction.ts");
@@ -62,6 +65,19 @@ describe("salon client identity merge boundary", () => {
       "booking's original client_phone remains unchanged",
     );
     expect(migration).not.toMatch(/SET\s+client_phone\s*=/i);
+  });
+
+  it("deactivates an alias before restoring bookings so the trigger cannot reapply it", () => {
+    const deactivateAt = revokeOrderFix.indexOf("SET active = false");
+    const restoreAt = revokeOrderFix.indexOf(
+      "SET client_profile_id = v_alias.alias_profile_id",
+    );
+    expect(deactivateAt).toBeGreaterThan(0);
+    expect(restoreAt).toBeGreaterThan(deactivateAt);
+    expect(revokeOrderFix).toContain(
+      "FROM PUBLIC, anon, authenticated",
+    );
+    expect(revokeOrderFix).toContain("TO service_role");
   });
 
   it("records immutable merge/revoke evidence", () => {
