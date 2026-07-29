@@ -2,13 +2,21 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const migration = readFileSync(
+const deliveryMigration = readFileSync(
   resolve(
     process.cwd(),
     "supabase/migrations/20260729095000_record_digest_delivery_truth.sql",
   ),
   "utf8",
 );
+const grantMigration = readFileSync(
+  resolve(
+    process.cwd(),
+    "supabase/migrations/20260729100000_restrict_ai_digest_delivery_grants.sql",
+  ),
+  "utf8",
+);
+const migration = `${deliveryMigration}\n${grantMigration}`;
 
 describe("AI digest delivery boundary", () => {
   it("keeps provider acknowledgements service-role-only", () => {
@@ -19,7 +27,10 @@ describe("AI digest delivery boundary", () => {
       /revoke all on table public\.ai_digest_deliveries\s+from public, anon, authenticated/,
     );
     expect(migration).toMatch(
-      /grant select, insert on table public\.ai_digest_deliveries\s+to service_role/,
+      /revoke all on table public\.ai_digest_deliveries from service_role/,
+    );
+    expect(migration).toMatch(
+      /grant select, insert on table public\.ai_digest_deliveries to service_role/,
     );
     expect(migration).toMatch(
       /revoke all on function public\.record_ai_digest_delivery\([\s\S]*?\) from public, anon, authenticated/,
@@ -48,4 +59,3 @@ describe("AI digest delivery boundary", () => {
     );
   });
 });
-
