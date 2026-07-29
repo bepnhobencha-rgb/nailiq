@@ -599,6 +599,43 @@ export async function getAllApprovals(salonId: string): Promise<ApprovalRow[]> {
   return (data as ApprovalRow[] | null) ?? [];
 }
 
+export type ApprovalInboxSnapshot = {
+  items: ApprovalRow[];
+  pendingCount: number;
+};
+
+/**
+ * Owner-facing Control Center snapshot.
+ *
+ * The row list is deliberately bounded for rendering, while the pending badge
+ * uses an independent exact count so a busy salon never sees "100" when more
+ * decisions are actually waiting.
+ */
+export async function getApprovalInboxSnapshot(
+  salonId: string,
+): Promise<ApprovalInboxSnapshot> {
+  const db = createServiceRoleClient();
+  const { data, error, count } = await db
+    .from("approval_requests" as never)
+    .select("*", { count: "exact" })
+    .eq("salon_id" as never, salonId)
+    .eq("status" as never, "pending")
+    .order("created_at" as never, { ascending: false })
+    .limit(100);
+  if (error) {
+    throw new Error("pending_approvals_read_failed", {
+      cause: error,
+    });
+  }
+  if (count == null) {
+    throw new Error("pending_approval_count_unavailable");
+  }
+  return {
+    items: (data as ApprovalRow[] | null) ?? [],
+    pendingCount: count,
+  };
+}
+
 /*
  * ─── EXAMPLE USAGE ────────────────────────────────────────────────────────────
  *

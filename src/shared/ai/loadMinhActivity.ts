@@ -48,6 +48,7 @@ export type AgentStat = {
 
 export type MinhActivityData = {
   entries: MinhLogEntry[];
+  totalActions: number;
   totalSent: number;
   measured: number;
   measurementCoveragePct: number;
@@ -103,9 +104,11 @@ export async function loadMinhActivity(
   const db = createServiceRoleClient();
   const since = new Date(Date.now() - days * 86_400_000).toISOString();
 
-  const { data, error } = await db
+  const { data, error, count } = await db
     .from("ai_actions_log" as never)
-    .select("id, agent, action_type, payload, created_at, outcome, outcome_at")
+    .select("id, agent, action_type, payload, created_at, outcome, outcome_at", {
+      count: "exact",
+    })
     .eq("salon_id", salonId)
     .gte("created_at", since)
     .not("action_type", "in", '("skipped_no_channel","suggestion_pending","digest_sent")')
@@ -114,6 +117,9 @@ export async function loadMinhActivity(
 
   if (error) {
     throw new Error("ai_actions_log_read_failed", { cause: error });
+  }
+  if (count == null) {
+    throw new Error("ai_actions_log_count_unavailable");
   }
   const rows = (data ?? []) as MinhActivityRow[];
   const entries = rows.map(toMinhLogEntry);
@@ -151,6 +157,7 @@ export async function loadMinhActivity(
 
   return {
     entries,
+    totalActions: count,
     totalSent: overall.sent,
     measured: overall.measured,
     measurementCoveragePct: overall.coveragePct,

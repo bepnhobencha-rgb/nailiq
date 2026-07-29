@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 
 import { AiControlCenter } from "@/components/dashboard/AiControlCenter";
-import { getAllApprovals } from "@/shared/ai/approvalRequests";
+import {
+  getApprovalInboxSnapshot,
+  type ApprovalInboxSnapshot,
+} from "@/shared/ai/approvalRequests";
 import {
   loadMinhActivity,
   type MinhActivityData,
@@ -22,6 +25,7 @@ type Props = { params: Promise<{ slug: string }> };
 
 const EMPTY_ACTIVITY: MinhActivityData = {
   entries: [],
+  totalActions: 0,
   totalSent: 0,
   measured: 0,
   measurementCoveragePct: 0,
@@ -29,6 +33,10 @@ const EMPTY_ACTIVITY: MinhActivityData = {
   pending: 0,
   noConversion: 0,
   agentStats: [],
+};
+const EMPTY_APPROVAL_INBOX: ApprovalInboxSnapshot = {
+  items: [],
+  pendingCount: 0,
 };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -54,14 +62,18 @@ export default async function AiControlCenterPage({ params }: Props) {
     operatingStateResult,
     operationalExceptionResult,
   ] = await Promise.allSettled([
-    getAllApprovals(ctx.salon.id),
+    getApprovalInboxSnapshot(ctx.salon.id),
     loadMinhActivity(ctx.salon.id, 30),
     getExecutionJobs(ctx.salon.id, 10),
     loadAiOperatingState(ctx.salon.id, now),
     getOperationalExceptions(ctx.salon.id, 50),
   ]);
   const sources = [
-    resolveAiControlSource("approvals", approvalsResult, []),
+    resolveAiControlSource(
+      "approvals",
+      approvalsResult,
+      EMPTY_APPROVAL_INBOX,
+    ),
     resolveAiControlSource("activity", activityResult, EMPTY_ACTIVITY),
     resolveAiControlSource("execution_queue", executionJobsResult, []),
     resolveAiControlSource("operating_state", operatingStateResult, null),
@@ -88,7 +100,7 @@ export default async function AiControlCenterPage({ params }: Props) {
     operatingStateSource,
     operationalExceptionSource,
   ] = sources;
-  const approvals = approvalsSource.value;
+  const approvalInbox = approvalsSource.value;
   const activity = activitySource.value;
   const executionJobs = executionJobsSource.value;
   const operatingState = operatingStateSource.value;
@@ -99,7 +111,8 @@ export default async function AiControlCenterPage({ params }: Props) {
   return (
     <AiControlCenter
       slug={slug}
-      approvals={approvals}
+      approvals={approvalInbox.items}
+      pendingApprovalCount={approvalInbox.pendingCount}
       activity={activity}
       executionJobs={executionJobs}
       operationalExceptions={operationalExceptionInbox.items}

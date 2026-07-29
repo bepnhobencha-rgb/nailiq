@@ -17,11 +17,11 @@ const lessons = read("src/shared/ai/lessons.ts");
 describe("AI Control Center data-truth boundary", () => {
   it("settles independent sources so one read failure does not hide the rest", () => {
     expect(page).toContain("Promise.allSettled");
-    expect(page).toContain('resolveAiControlSource("approvals"');
-    expect(page).toContain('resolveAiControlSource("activity"');
-    expect(page).toContain('resolveAiControlSource("execution_queue"');
-    expect(page).toContain('resolveAiControlSource("operating_state"');
-    expect(page).toContain('"operational_exceptions",');
+    expect(page).toMatch(/resolveAiControlSource\(\s*"approvals"/);
+    expect(page).toMatch(/resolveAiControlSource\(\s*"activity"/);
+    expect(page).toMatch(/resolveAiControlSource\(\s*"execution_queue"/);
+    expect(page).toMatch(/resolveAiControlSource\(\s*"operating_state"/);
+    expect(page).toMatch(/resolveAiControlSource\(\s*"operational_exceptions"/);
     expect(page).toContain("unavailableSources={unavailableSources}");
   });
 

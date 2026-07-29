@@ -2,6 +2,18 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-07-29 (AI Control Center metric truth)
+
+- **Exact approval count:** “Needs your decision” counts all tenant-scoped
+  pending approvals independently of the bounded pending-card preview.
+- **Exact action count:** “30-day actions” counts the complete filtered window
+  independently of the 200 rows retained for recent activity and outcome
+  presentation.
+- **Fail honest:** a missing exact count activates the existing partial-data
+  state instead of falling back to the preview length.
+- **Read-only scope:** no execution, messaging, pricing, payment, booking,
+  authentication, or production-data mutation was added.
+
 ## 2026-07-29 (AI Control Center data truth)
 
 - **No false zeroes:** approvals, AI activity, execution queue, operating

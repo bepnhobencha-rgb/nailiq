@@ -5,6 +5,26 @@ Newest entries on top.
 
 ---
 
+## 2026-07-29 — Control Center metrics count beyond preview limits
+
+**Decision.** “Needs your decision” uses an exact count of all pending
+approvals while rendering only a bounded newest-pending preview. “30-day
+actions” uses Supabase's exact count for the same filtered 30-day query while
+retaining at most 200 rows for the activity preview and outcome calculations.
+If an exact count is unavailable, that source fails explicitly and the Control
+Center renders the partial-data state introduced in PR #1078.
+
+**Why.** The previous metrics counted the arrays sent to the browser. They
+therefore capped approvals at 100 and actions at 200, and an older pending
+approval could fall outside a mixed-status approval preview. Preview limits are
+performance controls, not business totals.
+
+**Safety.** Both additions are tenant-scoped, read-only aggregate queries. They
+grant no execution, messaging, booking, pricing, payment, authentication, or
+production-mutation authority.
+
+---
+
 ## 2026-07-29 — AI Control Center reports partial read failure explicitly
 
 **Decision.** The owner-facing AI Control Center loads approvals, activity,
