@@ -407,14 +407,7 @@ jobs:
         # this same process.
         run: |
           mkdir -p tmp
-          # TEMP #1075 DIAGNOSTIC: React's production build reduces hydration
-          # mismatches to #418. Run only this PR's receptionist shard in dev so
-          # the retained trace records the exact server/client text pair.
-          if [ "${{ github.event.pull_request.number }}" = "1075" ] && [ "${{ matrix.shard }}" = "2" ]; then
-            nohup npx next dev > tmp/next-server.log 2>&1 &
-          else
-            nohup npx next start > tmp/next-server.log 2>&1 &
-          fi
+          nohup npx next start > tmp/next-server.log 2>&1 &
           echo "$!" > tmp/next-server.pid
           npx --yes wait-on http://localhost:3000 --timeout 30000 --interval 500 || {
             echo "::error::Server did not respond on http://localhost:3000 within 30s"
@@ -450,13 +443,7 @@ jobs:
         # died at "server did not respond" — a symptom that says nothing about the
         # real cause. The pre-flight step above skips the whole job instead, with
         # an explanation.
-        run: |
-          if [ "${{ github.event.pull_request.number }}" = "1075" ] && [ "${{ matrix.shard }}" = "2" ]; then
-            npx playwright test e2e/receptionist-center/interface-switcher.spec.ts \
-              ${{ steps.projects.outputs.flag }} --reporter=list,html,json
-          else
-            npx playwright test ${{ matrix.testpath }} ${{ steps.projects.outputs.flag }} --reporter=list,html,json
-          fi
+        run: npx playwright test ${{ matrix.testpath }} ${{ steps.projects.outputs.flag }} --reporter=list,html,json
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
       - name: Run Reports hydration regression in WebKit
