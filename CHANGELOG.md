@@ -13,6 +13,10 @@ All notable changes to NailIQ (project and documentation) are recorded here.
   up on navigation.
 - **Same authority boundary:** refresh re-runs the existing authenticated,
   tenant-scoped Server Component loaders and adds no client-side data API.
+- **Full-path proof:** Playwright signs in a disposable salon owner, opens the
+  feature-gated Control Center, advances browser time by one minute, and
+  observes the authenticated App Router refresh request without touching
+  production or any outbound provider.
 
 ## 2026-07-29 (Source-owned operational exception recovery)
 
