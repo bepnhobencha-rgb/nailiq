@@ -102,14 +102,15 @@ describe("salon client identity merge boundary", () => {
     expect(ownerHome).toContain("priorClientSet");
   });
 
-  it("keeps analytics work out of the App Router hydration queue", () => {
-    expect(reportsPage).not.toContain("loadSalonReports");
+  it("renders Reports without a client hydration boundary", () => {
+    expect(reportsPage).toContain("loadSalonReports(slug, range)");
+    expect(reportsPage).toContain("searchParams");
     expect(reportsPage).not.toContain("initialResult=");
     expect(reportsPanel).not.toContain("initialResult:");
-    expect(reportsPanel).toContain("useEffect");
-    expect(reportsPanel).toContain('fetchReports(slug, "today")');
+    expect(reportsPanel).not.toContain('"use client"');
+    expect(reportsPanel).not.toMatch(/\buse(State|Effect|Memo|Ref)\b/);
     expect(reportsPanel).not.toContain("loadSalonReports(");
-    expect(reportsPanel).toContain("/api/dashboard/reports");
+    expect(reportsPanel).toContain("/reports?range=${r}");
     expect(reports).toContain('import "server-only"');
     expect(reportsRoute).toContain("await loadSalonReports(slug, range)");
     expect(reportsRoute).toContain('"Cache-Control": "no-store"');

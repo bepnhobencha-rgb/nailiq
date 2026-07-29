@@ -190,12 +190,21 @@ test.describe("reversible salon client identity merge", () => {
     expect(mergedBooking?.client_profile_id).toBe(canonicalProfileId);
     expect(mergedBooking?.client_phone).toBe(aliasPhone);
 
-    // Reports hydrates its stable shell, then loads analytics through the REST
-    // boundary. Keep this real route in the identity flow so hook-order and
-    // post-hydration fetch regressions cannot hide behind unit-only coverage.
+    // Reports is server-rendered without a client hydration boundary. Keep this
+    // real route and a range navigation in the identity flow so App Router and
+    // range-query regressions cannot hide behind unit-only coverage.
     await page.goto(`/dashboard/${SLUG}/reports`);
     await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
     await expect(page.getByText("This page couldn’t load")).toHaveCount(0);
+    await expect(page.getByTestId("reports-kpis")).not.toContainText("—");
+    await page.getByRole("tab", { name: "This week" }).click();
+    await expect(page).toHaveURL(
+      new RegExp(`/dashboard/${SLUG}/reports\\?range=week$`),
+    );
+    await expect(page.getByTestId("reports-range-week")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     await expect(page.getByTestId("reports-kpis")).not.toContainText("—");
 
     await page.goto(`/dashboard/${SLUG}/clients`);

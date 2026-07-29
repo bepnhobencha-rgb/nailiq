@@ -1,14 +1,22 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { ReportsPanel } from "@/components/dashboard/ReportsPanel";
+import {
+  loadSalonReports,
+  type ReportsDateRange,
+} from "@/shared/dashboard/loadSalonReports";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { resolveUserLanguage } from "@/shared/i18n/user/resolveUserLanguage";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
 import { getEffectivePlanLimits } from "@/shared/lib/subscriptionPlans";
 import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 
 export const dynamic = "force-dynamic";
 
-type PageProps = { params: Promise<{ slug: string }> };
+type PageProps = {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ range?: string | string[] }>;
+};
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
@@ -18,7 +26,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-export default async function ReportsPage({ params }: PageProps) {
+export default async function ReportsPage({ params, searchParams }: PageProps) {
   const { slug } = await params;
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) {
@@ -56,13 +64,29 @@ export default async function ReportsPage({ params }: PageProps) {
   const currency = parseCurrency(planFields.currency_code);
   const hasStaffPerformance =
     getEffectivePlanLimits(planFields).hasStaffPerformance;
+  const range = parseReportsRange((await searchParams).range);
+  const [result, language] = await Promise.all([
+    loadSalonReports(slug, range),
+    resolveUserLanguage(),
+  ]);
+
   return (
     <main className="mx-auto w-full max-w-[var(--max-nq-desktop)] px-[var(--pad-nq-section-mobile)] py-6 md:px-6">
       <ReportsPanel
         slug={slug}
+        range={range}
+        result={result}
+        language={language}
         currency={currency}
         hasStaffPerformance={hasStaffPerformance}
       />
     </main>
   );
+}
+
+function parseReportsRange(
+  value: string | string[] | undefined,
+): ReportsDateRange {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  return candidate === "week" || candidate === "month" ? candidate : "today";
 }

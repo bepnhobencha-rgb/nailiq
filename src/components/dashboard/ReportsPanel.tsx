@@ -1,7 +1,3 @@
-"use client";
-
-import { useEffect, useRef, useState } from "react";
-
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { KPIWidget } from "@/components/ui/KPIWidget";
@@ -10,13 +6,15 @@ import {
   type ReportsDateRange,
   type ReportsSnapshot,
 } from "@/shared/dashboard/loadSalonReports";
-import { getUserMessages } from "@/shared/i18n/user";
+import {
+  getUserMessages,
+  type UserLanguage,
+} from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
 import {
   formatCurrency,
   type Currency,
 } from "@/shared/lib/currencyFormat";
-import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 /**
  * Owner-only reports panel.
@@ -45,6 +43,9 @@ function formatMoney(cents: number, currency: Currency): string {
 
 export interface ReportsPanelProps {
   slug: string;
+  range: ReportsDateRange;
+  result: LoadSalonReportsResult;
+  language: UserLanguage;
   /** P0.2 — salon's configured currency. */
   currency: Currency;
   /** Studio-tier (`premium`) gate for the per-staff performance
@@ -54,57 +55,21 @@ export interface ReportsPanelProps {
 
 export function ReportsPanel({
   slug,
+  range,
+  result,
+  language,
   currency,
   hasStaffPerformance,
 }: ReportsPanelProps) {
-  const { language } = useUserLanguage();
   const messages = getUserMessages(language).receptionist.reports;
-  const [range, setRange] = useState<ReportsDateRange>("today");
-  const [state, setState] = useState<
-    | { kind: "loading" }
+  const state:
     | { kind: "ok"; data: ReportsSnapshot }
-    | { kind: "error"; error: Extract<LoadSalonReportsResult, { ok: false }>["error"] }
-  >({ kind: "loading" });
-  const requestSequence = useRef(0);
-
-  useEffect(() => {
-    // Keep the App Router's initial RSC payload small and deterministic. The
-    // production reports snapshot is loaded through the authenticated REST
-    // boundary only after hydration, so a slow/large analytics response cannot
-    // suspend and re-enter Next's root action queue during its first render.
-    const requestId = ++requestSequence.current;
-    let active = true;
-
-    void fetchReports(slug, "today").then((result) => {
-      if (!active || requestId !== requestSequence.current) return;
-      setState(
-        result.ok
-          ? { kind: "ok", data: result.data }
-          : { kind: "error", error: result.error },
-      );
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [slug]);
-
-  async function selectRange(nextRange: ReportsDateRange) {
-    if (nextRange === range) return;
-
-    const requestId = ++requestSequence.current;
-    setRange(nextRange);
-    setState({ kind: "loading" });
-
-    const result = await fetchReports(slug, nextRange);
-    if (requestId !== requestSequence.current) return;
-
-    setState(
-      result.ok
-        ? { kind: "ok", data: result.data }
-        : { kind: "error", error: result.error },
-    );
-  }
+    | {
+        kind: "error";
+        error: Extract<LoadSalonReportsResult, { ok: false }>["error"];
+      } = result.ok
+    ? { kind: "ok", data: result.data }
+    : { kind: "error", error: result.error };
 
   const errorCopy =
     state.kind === "error"
@@ -126,13 +91,12 @@ export function ReportsPanel({
         {(["today", "week", "month"] as const).map((r) => {
           const active = range === r;
           return (
-            <button
+            <a
               key={r}
-              type="button"
               role="tab"
               aria-selected={active}
               data-testid={`reports-range-${r}`}
-              onClick={() => void selectRange(r)}
+              href={`/dashboard/${encodeURIComponent(slug)}/reports?range=${r}`}
               className={cn(
                 "px-3 py-1.5 transition-colors",
                 active
@@ -141,7 +105,7 @@ export function ReportsPanel({
               )}
             >
               {messages.range[r]}
-            </button>
+            </a>
           );
         })}
       </div>
@@ -169,7 +133,6 @@ export function ReportsPanel({
               ? formatMoney(state.data.totalRevenueCents, currency)
               : "—"
           }
-          isLoading={state.kind === "loading"}
         />
         <KPIWidget
           label={messages.kpis.appointments}
@@ -178,26 +141,22 @@ export function ReportsPanel({
               ? String(state.data.appointmentCount)
               : "—"
           }
-          isLoading={state.kind === "loading"}
         />
         <KPIWidget
           label={messages.kpis.completed}
           value={
             state.kind === "ok" ? String(state.data.completedCount) : "—"
           }
-          isLoading={state.kind === "loading"}
         />
         <KPIWidget
           label={messages.kpis.cancelled}
           value={
             state.kind === "ok" ? String(state.data.cancelledCount) : "—"
           }
-          isLoading={state.kind === "loading"}
         />
         <KPIWidget
           label={messages.kpis.noShow}
           value={state.kind === "ok" ? String(state.data.noShowCount) : "—"}
-          isLoading={state.kind === "loading"}
         />
       </section>
 
@@ -477,25 +436,6 @@ export function ReportsPanel({
       </Card>
     </div>
   );
-}
-
-async function fetchReports(
-  slug: string,
-  range: ReportsDateRange,
-): Promise<LoadSalonReportsResult> {
-  try {
-    const response = await fetch(
-      `/api/dashboard/reports?slug=${encodeURIComponent(slug)}&range=${range}`,
-      { cache: "no-store" },
-    );
-    const result = (await response.json()) as LoadSalonReportsResult;
-    if (!response.ok && result.ok) {
-      return { ok: false, error: "server_error" };
-    }
-    return result;
-  } catch {
-    return { ok: false, error: "server_error" };
-  }
 }
 
 function BusyHoursChart({

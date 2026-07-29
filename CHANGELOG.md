@@ -29,6 +29,12 @@ All notable changes to NailIQ (project and documentation) are recorded here.
   snapshot through the REST boundary after mount; explicit range changes use
   the same path. This keeps slow or data-dependent analytics out of Next's root
   hydration/action queue.
+- **Production correction after PR #1070:** production still reproduced `#310`
+  with a data-free shell, proving analytics size and transport were not causal.
+  The remaining Reports-only difference was its client component boundary.
+  Reports is now a hook-free Server Component; date tabs are ordinary GET links
+  using a validated `range` query. The API remains available for authenticated
+  programmatic consumers, but the owner page no longer hydrates client code.
 
 ## 2026-07-28 (Canonical customer analytics)
 
