@@ -575,10 +575,13 @@ export async function gotoReceptionistCenter(
   if (opts?.expectWalkinQueue !== false) {
     await page.getByTestId("walkin-add-form").waitFor({ state: "visible", timeout: 45_000 });
   }
-  // The visible schedule and walk-in form above are interactive client
-  // components, so together they are the hydration gate. Avoid adding a
-  // client-only marker to the root: synchronously inserting that marker while
-  // streamed descendants hydrate can itself create a recoverable mismatch.
+  // Gate interactions on the post-commit marker. It is rendered from a
+  // useEffect-backed state update, not a synchronous external-store snapshot,
+  // so the server and first client trees still match during hydration.
+  await page.getByTestId("rc-hydrated").waitFor({
+    state: "attached",
+    timeout: 30_000,
+  });
 }
 
 /** 10-digit test phone satisfying `validateGuestPhone` / public booking rules. */

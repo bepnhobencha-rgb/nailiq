@@ -711,6 +711,17 @@ function ReceptionistCenterInner({
     }
   }, [urlBookingParam, data.bookingsForDay, openBookingDrawer]);
 
+  // E2E interaction gate. An effect only runs after React has committed
+  // hydration, so this marker cannot alter the server/first-client tree.
+  // Do not implement this with useSyncExternalStore: its synchronous
+  // post-server snapshot can insert client-only content while streamed
+  // descendants are still hydrating and trigger React #418.
+  const [rcHydrated, setRcHydrated] = useState(false);
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => setRcHydrated(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
   const [undoState, setUndoState] = useState<UndoToastState | null>(null);
   const undoTimerRef = useRef<number | null>(null);
 
@@ -2821,6 +2832,13 @@ function ReceptionistCenterInner({
             "gap-1 p-1 md:-mt-6 md:min-h-[calc(100dvh+1.5rem)]",
         )}
       >
+        {rcHydrated && (
+          <span
+            data-testid="rc-hydrated"
+            aria-hidden="true"
+            style={{ display: "none" }}
+          />
+        )}
         {bookingLimitStatus && !bookingLimitStatus.isUnlimited ? (
           <div className="shrink-0 border-b border-nq-border/30 px-[var(--pad-nq-section-mobile)] py-2 md:px-6">
             <div className="mx-auto w-full max-w-[var(--max-nq-desktop)]">
