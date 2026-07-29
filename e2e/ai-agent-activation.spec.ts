@@ -49,6 +49,19 @@ test.describe("AI agent activation impact", () => {
     await loginAs(page, owner);
     await page.goto(`/dashboard/${SLUG}/settings`);
 
+    const aiManagerCategory = page.getByTestId(
+      "settings-category-cat-ai-manager",
+    );
+    const aiManagerCategoryToggle = aiManagerCategory.getByRole("button");
+    await expect(aiManagerCategoryToggle).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    await aiManagerCategoryToggle.click();
+    await expect(aiManagerCategoryToggle).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
     await expect(page.getByTestId("settings-ai-manager-hub")).toBeVisible();
     const winback = page.getByRole("switch", { name: /Win-back|Kéo khách/ });
     await expect(winback).not.toBeChecked();
