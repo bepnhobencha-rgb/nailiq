@@ -5,6 +5,26 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Disabled Insights stays inside the dashboard render tree
+
+**Decision.** When `advanced_reports` is disabled for a salon, the authenticated
+Insights route renders a stable, data-free “not enabled” state inside the
+dashboard instead of throwing `notFound()` after dynamic auth and salon reads.
+
+**Why.** Production evidence after PR #1073 proved the HTTP redirect itself was
+correct, but every direct visit to disabled Insights still persisted React
+invariant `#310`. The page visibly rendered the global 404 and browser console
+capture was empty, yet the application error boundary recorded the App Router
+hook-order failure on the exact deployed chunk. Keeping the result in one
+server-rendered dashboard tree avoids the dynamic 404 transition.
+
+**Safety.** The disabled state contains only existing localized copy and no
+report snapshot, customer data, revenue, staff performance, execution
+permission, or upgrade action. Feature-enabled salons retain the unchanged
+owner/admin report loader and plan gates.
+
+---
+
 ## 2026-07-28 — Reports data exists before client hydration
 
 **Decision.** The Reports Server Component loads the initial `today` snapshot

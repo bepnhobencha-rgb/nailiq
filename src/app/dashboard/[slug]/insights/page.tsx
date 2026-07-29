@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { ReportsPanel } from "@/components/dashboard/ReportsPanel";
+import { Card } from "@/components/ui/Card";
 import {
   loadSalonReports,
   type ReportsDateRange,
 } from "@/shared/dashboard/loadSalonReports";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { getUserMessages } from "@/shared/i18n/user";
 import { resolveUserLanguage } from "@/shared/i18n/user/resolveUserLanguage";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
 import { getEffectivePlanLimits } from "@/shared/lib/subscriptionPlans";
@@ -55,10 +57,28 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
     plan_override?: string | null;
     feature_flags?: Record<string, unknown> | null;
   };
-  // Release flag `advanced_reports` (per-salon) AND platform kill-switch gate
-  // the page. notFound() refuses direct-URL access when disabled.
+  // Keep the disabled state inside the existing dashboard tree. Throwing
+  // notFound() after this route's dynamic auth and salon reads caused Next's
+  // App Router to violate React's hook-order invariant (#310) in production.
+  // The stable state below exposes no report data and avoids a client
+  // navigation/404 boundary entirely.
   if (!(await isReleaseFeatureVisible(planFields, "advanced_reports"))) {
-    notFound();
+    const language = await resolveUserLanguage();
+    const messages = getUserMessages(language).receptionist.reports;
+    return (
+      <main className="mx-auto w-full max-w-[var(--max-nq-desktop)] px-[var(--pad-nq-section-mobile)] py-6 md:px-6">
+        <div className="space-y-4" data-testid="insights-disabled">
+          <h1 className="text-xl font-semibold text-nq-foreground">
+            {messages.pageTitle}
+          </h1>
+          <Card variant="default" padding="md">
+            <p role="status" className="text-sm text-nq-muted">
+              {messages.errors.feature_not_enabled}
+            </p>
+          </Card>
+        </div>
+      </main>
+    );
   }
 
   const currency = parseCurrency(planFields.currency_code);

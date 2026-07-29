@@ -111,6 +111,8 @@ describe("salon client identity merge boundary", () => {
   it("renders Reports without a client hydration boundary", () => {
     expect(reportsPage).toContain("loadSalonReports(slug, range)");
     expect(reportsPage).toContain("searchParams");
+    expect(reportsPage).not.toContain("import { notFound");
+    expect(reportsPage).toContain('data-testid="insights-disabled"');
     expect(reportsPage).not.toContain("initialResult=");
     expect(reportsPanel).not.toContain("initialResult:");
     expect(reportsPanel).not.toContain('"use client"');
