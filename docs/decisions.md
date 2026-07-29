@@ -5,6 +5,26 @@ Newest entries on top.
 
 ---
 
+## 2026-07-29 — Control Center freshness follows tab visibility
+
+**Decision.** AI Control Center re-runs its existing authenticated Server
+Component snapshot every minute while the document is visible. A
+`visibilitychange` back to a stale tab refreshes immediately. Hidden tabs do
+not poll, and both the interval and event listener are removed on unmount.
+
+**Why.** Queue jobs, approvals, worker heartbeats, and operational exceptions
+change independently of owner interaction. A server-rendered snapshot that
+remained frozen until manual reload could present a recovered issue as failed
+or a new exception as absent, undermining the page's role as an operating
+surface.
+
+**Safety.** Refresh uses `router.refresh()` and therefore reuses all existing
+session, role, feature, tenant, and fail-honest read boundaries. It adds no
+browser data API, mutation, execution, messaging, payment, pricing, booking, or
+authentication authority.
+
+---
+
 ## 2026-07-29 — Machine-signaled exceptions own recovery truth
 
 **Decision.** Operational exceptions sourced from AI execution, AI Manager, or

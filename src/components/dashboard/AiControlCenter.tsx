@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -27,6 +27,10 @@ import { buildActionIntelligence } from "@/shared/ai/actionIntelligence";
 import type { ApprovalRow } from "@/shared/ai/approvalRequests";
 import { campaignPreflightFreshness } from "@/shared/ai/campaignPreflightFreshness";
 import type { AiControlDataSource } from "@/shared/ai/controlCenterData";
+import {
+  AI_CONTROL_REFRESH_INTERVAL_MS,
+  shouldRefreshAiControlCenter,
+} from "@/shared/ai/controlCenterFreshness";
 import { controlExecutionJobAction } from "@/shared/ai/controlExecutionJobAction";
 import {
   executionFailureLabel,
@@ -83,6 +87,7 @@ export function AiControlCenter({
   appUrl,
   nowIso,
 }: Props) {
+  const router = useRouter();
   const { language } = useUserLanguage();
   const vi = language === "vi";
   const approvalsAvailable = !unavailableSources.includes("approvals");
@@ -97,6 +102,30 @@ export function AiControlCenter({
     activity.measured > 0
       ? Math.round((activity.converted / activity.measured) * 100)
       : null;
+
+  useEffect(() => {
+    const observedAtMs = Date.parse(nowIso);
+    const refreshIfStale = () => {
+      if (
+        shouldRefreshAiControlCenter({
+          nowMs: Date.now(),
+          observedAtMs,
+          visibilityState: document.visibilityState,
+        })
+      ) {
+        router.refresh();
+      }
+    };
+    const intervalId = window.setInterval(
+      refreshIfStale,
+      AI_CONTROL_REFRESH_INTERVAL_MS,
+    );
+    document.addEventListener("visibilitychange", refreshIfStale);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", refreshIfStale);
+    };
+  }, [nowIso, router]);
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-6 p-4 sm:p-6">
@@ -115,13 +144,24 @@ export function AiControlCenter({
               : "One place to understand what AI recommends, what it is doing, and the outcomes it creates."}
           </p>
         </div>
-        <Link
-          href={`/dashboard/${encodeURIComponent(slug)}/settings`}
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-nq-border bg-nq-surface px-4 text-sm font-medium text-nq-foreground transition-colors hover:border-nq-primary/40"
-        >
-          <ShieldCheck className="h-4 w-4 text-nq-primary" aria-hidden />
-          {vi ? "Quyền tự động hóa" : "Automation permissions"}
-        </Link>
+        <div className="flex flex-col items-stretch gap-2 sm:items-end">
+          <Link
+            href={`/dashboard/${encodeURIComponent(slug)}/settings`}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-nq-border bg-nq-surface px-4 text-sm font-medium text-nq-foreground transition-colors hover:border-nq-primary/40"
+          >
+            <ShieldCheck className="h-4 w-4 text-nq-primary" aria-hidden />
+            {vi ? "Quyền tự động hóa" : "Automation permissions"}
+          </Link>
+          <p
+            data-testid="ai-control-freshness"
+            className="inline-flex items-center justify-center gap-1.5 text-[11px] text-nq-muted sm:justify-end"
+          >
+            <RefreshCcw className="h-3 w-3" aria-hidden />
+            {vi
+              ? "Tự cập nhật mỗi phút khi tab đang mở"
+              : "Updates every minute while this tab is visible"}
+          </p>
+        </div>
       </header>
 
       {unavailableSources.length > 0 ? (

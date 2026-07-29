@@ -2,6 +2,18 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-07-29 (AI Control Center freshness contract)
+
+- **Fresh operating truth:** the Control Center refreshes its server-owned
+  snapshot every minute while the tab is visible.
+- **Return-to-tab recovery:** returning to a stale visible tab triggers an
+  immediate refresh instead of leaving queue, worker, approval, and exception
+  status frozen.
+- **Resource-aware:** hidden tabs do not poll; timers and listeners are cleaned
+  up on navigation.
+- **Same authority boundary:** refresh re-runs the existing authenticated,
+  tenant-scoped Server Component loaders and adds no client-side data API.
+
 ## 2026-07-29 (Source-owned operational exception recovery)
 
 - **No false resolution:** owner/admin users may acknowledge machine-signaled
