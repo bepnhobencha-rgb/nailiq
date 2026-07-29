@@ -7,6 +7,7 @@ import {
   cleanupTestUser,
   seedTestUser,
 } from "../helpers/db";
+import { waitForReceptionistHydration } from "../helpers/receptionistHydration";
 import {
   rcSlug,
   seedReceptionistCenterFixture,
@@ -56,9 +57,7 @@ async function loginAndOpenCenter(page: Page, member: TestMember): Promise<void>
     .getByTestId("receptionist-center-loaded")
     .first()
     .waitFor({ state: "attached", timeout: 45_000 });
-  await page
-    .getByTestId("rc-hydrated")
-    .waitFor({ state: "attached", timeout: 30_000 });
+  await waitForReceptionistHydration(page, fx.slug);
 }
 
 async function openBaselineBooking(page: Page): Promise<void> {

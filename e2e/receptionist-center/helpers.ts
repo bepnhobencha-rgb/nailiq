@@ -3,6 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 
 import { DEFAULT_OPENING_HOURS_JSON } from "@/shared/dashboard/openingHoursDefaults";
 
+import { waitForReceptionistHydration } from "../helpers/receptionistHydration";
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -579,16 +581,7 @@ export async function gotoReceptionistCenter(
   // React tree. A former client-only DOM marker inserted a new child while
   // streamed descendants were still hydrating and intermittently caused the
   // React #418 that this gate is meant to protect against.
-  await page.waitForFunction(
-    (expectedSlug) =>
-      (
-        window as typeof window & {
-          __NAILIQ_RECEPTIONIST_HYDRATED__?: string;
-        }
-      ).__NAILIQ_RECEPTIONIST_HYDRATED__ === expectedSlug,
-    slug,
-    { timeout: 30_000 },
-  );
+  await waitForReceptionistHydration(page, slug);
 }
 
 /** 10-digit test phone satisfying `validateGuestPhone` / public booking rules. */
