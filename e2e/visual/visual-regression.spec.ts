@@ -148,7 +148,7 @@ test.describe("Visual regression", () => {
         await page.goto("/");
         await seedDemoCookie(page, VISUAL_SLUG);
         await page.goto(
-          `/dashboard/${VISUAL_SLUG}/center?date=${VISUAL_DATE_YMD}`,
+          `/dashboard/${VISUAL_SLUG}/center?date=${VISUAL_DATE_YMD}&e2eNow=${encodeURIComponent(VISUAL_NOW_ISO)}`,
         );
         await expect(page.getByTestId("receptionist-center-loaded")).toBeVisible();
         await expect(page.getByTestId("rc-hydrated")).toHaveCount(1);
