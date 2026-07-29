@@ -41,7 +41,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
 
 import Link from "next/link";
@@ -212,16 +211,6 @@ const ReceptionistPreviewThemePicker = dynamic(
     ),
   { ssr: false },
 );
-
-// Values that only exist on the client. Read through useSyncExternalStore so
-// the server render and the first client render agree (no hydration mismatch)
-// and React swaps the real value in once hydration completes — no effect
-// writing state back on mount.
-const noopSubscribe = () => () => {};
-const getHydratedSnapshot = () => true;
-const getServerFalseSnapshot = () => false;
-const getWindowOrigin = () => window.location.origin;
-const getServerEmptySnapshot = () => "";
 
 export type ReceptionistCenterProps = {
   slug: string;
@@ -525,19 +514,14 @@ function ReceptionistCenterInner({
   }, [initialOk]);
 
   const [dateOffset, setDateOffset] = useState<-1 | 0 | 1>(0);
-  const {
-    receptionistInterface,
-    setReceptionistInterface,
-    hydrated: interfaceHydrated,
-  } = useReceptionistInterface();
-  const previewInterface =
-    interfaceHydrated && receptionistInterface === "preview";
+  const { receptionistInterface, setReceptionistInterface } =
+    useReceptionistInterface();
+  const previewInterface = receptionistInterface === "preview";
 
   // Publish the opt-in mode to the dashboard shell so New can use the full
   // canvas shown in the approved mockup. Removing/switching back restores the
   // Classic shell immediately; no data or salon preference is changed here.
   useEffect(() => {
-    if (!interfaceHydrated) return;
     if (previewInterface) {
       document.documentElement.dataset.receptionistInterfaceMode = "preview";
       document.documentElement.style.setProperty(
@@ -552,7 +536,7 @@ function ReceptionistCenterInner({
       delete document.documentElement.dataset.receptionistInterfaceMode;
       document.documentElement.style.removeProperty("--rc-new-canvas");
     };
-  }, [interfaceHydrated, newInterfaceBg, previewInterface]);
+  }, [newInterfaceBg, previewInterface]);
 
   // Detect mobile viewport for the VerticalDayView swap (< 640 px).
   // Defaults false (server + first render → desktop grid); effect flips it
@@ -727,15 +711,6 @@ function ReceptionistCenterInner({
     }
   }, [urlBookingParam, data.bookingsForDay, openBookingDrawer]);
 
-  // E2E hydration signal: renders only after the first client-side effect,
-  // confirming React has fully hydrated and all event handlers are registered.
-  // Used by gotoReceptionistCenter in e2e/receptionist-center/helpers.ts.
-  const rcHydrated = useSyncExternalStore(
-    noopSubscribe,
-    getHydratedSnapshot,
-    getServerFalseSnapshot,
-  );
-
   const [undoState, setUndoState] = useState<UndoToastState | null>(null);
   const undoTimerRef = useRef<number | null>(null);
 
@@ -850,17 +825,6 @@ function ReceptionistCenterInner({
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("connected");
   const isOffline = connectionState !== "connected";
-
-  // Origin for guest wait-link buttons. Read AFTER mount (not during render):
-  // deriving it from `window.location.origin` inline made the server render ""
-  // (button hidden) while the client rendered the origin (button shown),
-  // throwing a React #418 hydration mismatch on any queued walk-in. Empty on
-  // the server + first client render (match), populated on mount.
-  const originBaseUrl = useSyncExternalStore(
-    noopSubscribe,
-    getWindowOrigin,
-    getServerEmptySnapshot,
-  );
 
   // Sound alerts (Web Audio, generated tones only). Hook is a no-op
   // when `dashboard_modules.sound_alerts` is off; honors browser
@@ -2857,14 +2821,6 @@ function ReceptionistCenterInner({
             "gap-1 p-1 md:-mt-6 md:min-h-[calc(100dvh+1.5rem)]",
         )}
       >
-        {/* Hydration signal for E2E: only rendered after React useEffect fires. */}
-        {rcHydrated && (
-          <span
-            data-testid="rc-hydrated"
-            aria-hidden="true"
-            style={{ display: "none" }}
-          />
-        )}
         {bookingLimitStatus && !bookingLimitStatus.isUnlimited ? (
           <div className="shrink-0 border-b border-nq-border/30 px-[var(--pad-nq-section-mobile)] py-2 md:px-6">
             <div className="mx-auto w-full max-w-[var(--max-nq-desktop)]">
@@ -4156,7 +4112,7 @@ function ReceptionistCenterInner({
                 onSetSoftHold={onSetSoftHold}
                 onClearSoftHold={onClearSoftHold}
                 rushMode={rush.active}
-                waitLinkBaseUrl={originBaseUrl}
+                waitLinkEnabled
                 waitLinkSalonSlug={slug}
                 onCancelWalkin={onCancelWalkin}
                 onStartAssign={(id) => {

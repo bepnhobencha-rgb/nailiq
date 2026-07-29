@@ -153,13 +153,9 @@ export interface WalkinQueueSidebarProps {
   /** True when the desk is in rush hour. Cards enlarge the wait
    * number and the form header gets a subtle peripheral fade upstream. */
   rushMode?: boolean;
-  /**
-   * Origin (`https://nailiq.ca`) the customer wait link is built on.
-   * The full URL becomes `${waitLinkBaseUrl}/${slug}/wait/${bookingId}`.
-   * Omit to hide the wait-link button entirely (storybook/tests).
-   */
-  waitLinkBaseUrl?: string;
-  /** Salon slug — only used when `waitLinkBaseUrl` is set. */
+  /** Whether the desk may create a customer wait link. */
+  waitLinkEnabled?: boolean;
+  /** Salon slug — only used when wait links are enabled. */
   waitLinkSalonSlug?: string;
   onCancelWalkin: (bookingId: string) => Promise<void>;
   onStartAssign: (bookingId: string) => void;
@@ -252,7 +248,7 @@ export function WalkinQueueSidebar({
   onSetSoftHold,
   onClearSoftHold,
   rushMode = false,
-  waitLinkBaseUrl,
+  waitLinkEnabled = false,
   waitLinkSalonSlug,
   onCancelWalkin,
   onStartAssign,
@@ -666,7 +662,7 @@ export function WalkinQueueSidebar({
                             }
                             return null;
                           })() : null}
-                          {waitLinkBaseUrl ? (
+                          {waitLinkEnabled ? (
                             <button
                               type="button"
                               disabled={blockOthers}
@@ -698,10 +694,12 @@ export function WalkinQueueSidebar({
         )}
       </div>
 
-      {waitLinkOpenForId && waitLinkBaseUrl && waitLinkSalonSlug ? (() => {
+      {waitLinkOpenForId && waitLinkSalonSlug ? (() => {
         const target = items.find((i) => i.id === waitLinkOpenForId);
         if (!target) return null;
-        const url = `${waitLinkBaseUrl.replace(/\/$/, "")}/${encodeURIComponent(
+        // The modal is reachable only from a post-hydration click, so reading
+        // the browser origin here never participates in SSR/hydration.
+        const url = `${window.location.origin}/${encodeURIComponent(
           waitLinkSalonSlug,
         )}/wait/${target.id}`;
         return (

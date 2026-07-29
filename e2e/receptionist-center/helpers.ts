@@ -575,18 +575,10 @@ export async function gotoReceptionistCenter(
   if (opts?.expectWalkinQueue !== false) {
     await page.getByTestId("walkin-add-form").waitFor({ state: "visible", timeout: 45_000 });
   }
-  // Gate on React hydration completing. `rc-hydrated` is rendered by
-  // ReceptionistCenter behind a useSyncExternalStore whose server snapshot is
-  // `false` and whose client snapshot is `true`, so React only renders it once
-  // hydration has finished and the tree is interactive. SSR emits nothing,
-  // making this a reliable hydration-complete signal in the main React tree.
-  // We avoid using BookingDetailDrawer's portal for this because Playwright
-  // WebKit skips elements inside aria-hidden/inert containers (the drawer
-  // wraps its content in inert={!open} when closed).
-  await page.getByTestId("rc-hydrated").waitFor({
-    state: "attached",
-    timeout: 30_000,
-  });
+  // The visible schedule and walk-in form above are interactive client
+  // components, so together they are the hydration gate. Avoid adding a
+  // client-only marker to the root: synchronously inserting that marker while
+  // streamed descendants hydrate can itself create a recoverable mismatch.
 }
 
 /** 10-digit test phone satisfying `validateGuestPhone` / public booking rules. */

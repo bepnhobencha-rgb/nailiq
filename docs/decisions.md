@@ -9,7 +9,9 @@ Newest entries on top.
 
 **Decision.** Receptionist data includes the exact server observation timestamp.
 The Live Board uses that serialized instant for its server render and first
-client render, then starts its minute clock only after hydration.
+client render, then starts its minute clock only after hydration. Client-only
+enhancements no longer force synchronous root updates merely to publish an E2E
+marker, expose `window.location.origin`, or report a redundant hydration flag.
 
 **Why.** Production on the exact PR #1074 deployment reproduced React hydration
 invariant `#418` on `/center` in both the New and Classic interfaces. The board
@@ -20,6 +22,8 @@ from the same payload. With streamed/selective hydration, either parent update
 could occur while lower time-dependent content was still hydrating, producing
 a text mismatch even though a later DOM snapshot looked correct. Server data is
 now adopted only when a later refresh carries a new observation timestamp.
+Wait-link origin is read only after the operator clicks, and E2E uses visible
+interactive controls as its hydration gate instead of changing the root tree.
 
 **Coverage.** The persisted-interface E2E captures React hydration errors across
 initial load, New-interface reload, and Classic-interface reload.
