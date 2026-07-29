@@ -85,7 +85,7 @@ describe("capability-token boundary", () => {
     const parity = read("scripts/check-schema-parity.ts");
     expect(parity).toContain("policies: 151");
     expect(parity).toContain(
-      "const GRANTS = { anon: 57, authenticated: 64, service_role: 105 }",
+      "const GRANTS = { anon: 57, authenticated: 64, service_role: 106 }",
     );
   });
 });
