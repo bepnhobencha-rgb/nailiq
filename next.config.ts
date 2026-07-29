@@ -60,6 +60,41 @@ export function supabaseConnectSrc(
   return [origin, origin.replace(/^http/, "ws")];
 }
 
+/**
+ * Redirect legacy dashboard URLs at the HTTP routing layer.
+ *
+ * This must not live in an App Router page component: a `redirect()` thrown
+ * while React is mounting the legacy route still asks the client router to
+ * process a flight response. Production browsers with an already-mounted
+ * dashboard can then hit React's hook-order invariant before the destination
+ * loads. A Next config redirect returns the 307 before React or RSC runs and
+ * preserves query parameters such as `?range=week`.
+ */
+export function appRedirects() {
+  return [
+    {
+      source: "/dashboard/:slug/reports",
+      destination: "/dashboard/:slug/insights",
+      permanent: false,
+    },
+    // Pricing lives on the home page for now
+    { source: "/pricing", destination: "/#pricing", permanent: false },
+    // Placeholder pages redirect to contact until real pages exist
+    { source: "/help", destination: "/contact", permanent: false },
+    { source: "/docs", destination: "/contact", permanent: false },
+    { source: "/blog", destination: "/", permanent: false },
+    { source: "/changelog", destination: "/", permanent: false },
+    { source: "/careers", destination: "/contact", permanent: false },
+    { source: "/press", destination: "/contact", permanent: false },
+    // External status page
+    {
+      source: "/status",
+      destination: "https://www.vercel-status.com",
+      permanent: false,
+    },
+  ];
+}
+
 const nextConfig: NextConfig = {
   async headers() {
     const cspDirectives = [
@@ -131,19 +166,7 @@ const nextConfig: NextConfig = {
     ];
   },
   async redirects() {
-    return [
-      // Pricing lives on the home page for now
-      { source: "/pricing", destination: "/#pricing", permanent: false },
-      // Placeholder pages redirect to contact until real pages exist
-      { source: "/help", destination: "/contact", permanent: false },
-      { source: "/docs", destination: "/contact", permanent: false },
-      { source: "/blog", destination: "/", permanent: false },
-      { source: "/changelog", destination: "/", permanent: false },
-      { source: "/careers", destination: "/contact", permanent: false },
-      { source: "/press", destination: "/contact", permanent: false },
-      // External status page
-      { source: "/status", destination: "https://www.vercel-status.com", permanent: false },
-    ];
+    return appRedirects();
   },
 };
 

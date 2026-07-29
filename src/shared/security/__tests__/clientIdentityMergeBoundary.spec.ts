@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -15,7 +15,11 @@ const action = read("src/shared/dashboard/clientIdentityReviewAction.ts");
 const reports = read("src/shared/dashboard/loadSalonReports.ts");
 const ownerHome = read("src/shared/dashboard/loadOwnerHomeDashboardAction.ts");
 const reportsPage = read("src/app/dashboard/[slug]/insights/page.tsx");
-const legacyReportsPage = read("src/app/dashboard/[slug]/reports/page.tsx");
+const nextConfig = read("next.config.ts");
+const legacyReportsPagePath = resolve(
+  process.cwd(),
+  "src/app/dashboard/[slug]/reports/page.tsx",
+);
 const reportsPanel = read("src/components/dashboard/ReportsPanel.tsx");
 const reportsRoute = read("src/app/api/dashboard/insights/route.ts");
 const legacyReportsRoute = read("src/app/api/dashboard/reports/route.ts");
@@ -113,8 +117,9 @@ describe("salon client identity merge boundary", () => {
     expect(reportsPanel).not.toMatch(/\buse(State|Effect|Memo|Ref)\b/);
     expect(reportsPanel).not.toContain("loadSalonReports(");
     expect(reportsPanel).toContain("/insights?range=${r}");
-    expect(legacyReportsPage).toContain("/insights${query}");
-    expect(legacyReportsPage).toContain("redirect(");
+    expect(existsSync(legacyReportsPagePath)).toBe(false);
+    expect(nextConfig).toContain('source: "/dashboard/:slug/reports"');
+    expect(nextConfig).toContain('destination: "/dashboard/:slug/insights"');
     expect(reports).toContain('import "server-only"');
     expect(reportsRoute).toContain("await loadSalonReports(slug, range)");
     expect(reportsRoute).toContain('"Cache-Control": "no-store"');

@@ -193,8 +193,18 @@ test.describe("reversible salon client identity merge", () => {
     // Reports is server-rendered without a client hydration boundary. Keep this
     // real route and a range navigation in the identity flow so App Router and
     // range-query regressions cannot hide behind unit-only coverage.
-    // The legacy /reports URL must redirect before hydration because common
-    // content blockers classify "reports" as telemetry.
+    // The legacy /reports URL must redirect at the HTTP layer, before React or
+    // RSC mounts. A component-level App Router redirect regressed production
+    // with React #310 even though fixture-based navigation reached Insights.
+    const legacyRedirect = await page.context().request.get(
+      `/dashboard/${SLUG}/reports?range=week`,
+      { maxRedirects: 0 },
+    );
+    expect(legacyRedirect.status()).toBe(307);
+    expect(legacyRedirect.headers().location).toBe(
+      `/dashboard/${SLUG}/insights?range=week`,
+    );
+
     await page.goto(`/dashboard/${SLUG}/reports`);
     await expect(page).toHaveURL(
       new RegExp(`/dashboard/${SLUG}/insights$`),
