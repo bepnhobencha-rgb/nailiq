@@ -1,6 +1,7 @@
 import "server-only";
 
 import { planExecutionEffect } from "@/shared/ai/executionEffects";
+import { toSafeExecutionFailureCode } from "@/shared/ai/executionFailure";
 import { nextRetryAt, type ExecutionJobStatus } from "@/shared/ai/executionPolicy";
 import type { ExecutionJobRow } from "@/shared/ai/executionQueue";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -164,7 +165,7 @@ async function recordTransientFailure(
   error: unknown,
   now: Date,
 ): Promise<WorkerOutcome> {
-  const message = error instanceof Error ? error.message : String(error);
+  const safeError = toSafeExecutionFailureCode(error);
   const exhausted = job.attempt_count >= job.max_attempts;
   const availableAt = exhausted
     ? job.available_at
@@ -173,11 +174,11 @@ async function recordTransientFailure(
     status: "failed",
     result: job.result,
     availableAt,
-    lastError: message.slice(0, 1000),
+    lastError: safeError,
     finishedAt: exhausted ? now.toISOString() : null,
     now: now.toISOString(),
     details: {
-      error: message.slice(0, 1000),
+      error_code: safeError,
       exhausted,
       attempt_count: job.attempt_count,
     },
@@ -186,7 +187,7 @@ async function recordTransientFailure(
     jobId: job.id,
     status: "failed",
     attempted: true,
-    error: message,
+    error: safeError,
   };
 }
 
@@ -214,6 +215,10 @@ export async function processExecutionQueue(params?: {
         });
         continue;
       }
+      console.error("[ai-execution] claimed job failed", {
+        jobId: claimedJob.id,
+        error: executionError,
+      });
       try {
         outcomes.push(
           await recordTransientFailure(claimedJob, executionError, now),

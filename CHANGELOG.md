@@ -2,6 +2,20 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-07-29 (Privacy-safe AI execution failures)
+
+- **Safe persistence:** failed execution attempts persist an allowlisted
+  operational code instead of raw database or provider text in both the job and
+  durable AI action audit.
+- **Owner-safe presentation:** AI Control Center and approval history translate
+  known codes into operational guidance and never echo unknown historical error
+  strings.
+- **Secure diagnostics:** detailed exceptions remain server-side for
+  investigation while the bounded retry, lease, and recovery behavior stays
+  unchanged.
+- **No new authority:** this milestone adds no messaging, booking, payment,
+  pricing, authentication, or execution permission.
+
 ## 2026-07-29 (AI Control Center metric truth)
 
 - **Exact approval count:** “Needs your decision” counts all tenant-scoped
