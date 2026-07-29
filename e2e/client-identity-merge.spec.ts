@@ -80,11 +80,11 @@ test.describe("reversible salon client identity merge", () => {
         `Failed to seed identity profiles: ${profileError?.message ?? "missing rows"}`,
       );
     }
-    const canonical = profiles.find((row) =>
-      String(row.phone).endsWith(canonicalPhone.slice(-7)),
+    const canonical = profiles.find(
+      (row) => String(row.phone) === canonicalPhone,
     );
-    const alias = profiles.find((row) =>
-      String(row.phone).endsWith(aliasPhone.slice(-7)),
+    const alias = profiles.find(
+      (row) => String(row.phone) === aliasPhone,
     );
     if (!canonical?.id || !alias?.id) {
       throw new Error("Seeded identity profiles could not be resolved");

@@ -448,6 +448,7 @@ jobs:
           PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
       - name: Run Reports hydration regression in WebKit
         if: >-
+          always() &&
           steps.preflight.outputs.configured == 'true' &&
           matrix.shard == 1 &&
           github.event_name == 'pull_request'
