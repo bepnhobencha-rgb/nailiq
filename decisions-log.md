@@ -60,6 +60,37 @@
 
 ---
 
+## 2026-07-28: Keep Reports analytics outside the initial RSC stream
+
+**Context**: Two production deployments continued to reproduce React invariant
+`#310` in Next's root App Router even after removing memo hooks and the Reports
+Server Action proxy. Local Chromium/WebKit checks passed, while production with
+real analytics data failed during initial route hydration.
+
+**Decision**: Server-render only the authorized Reports shell and load every
+analytics snapshot through the authenticated, non-cacheable REST boundary after
+client hydration.
+
+**Rationale**:
+- Keeps data-dependent report work out of Next's root hydration/action queue.
+- Uses one observable transport for both the initial and changed date ranges.
+- Preserves owner authorization and fail-honest error states at the API boundary.
+
+**Alternatives rejected**:
+- Embed the first snapshot in RSC: production evidence disproved this twice.
+- Reintroduce a mount-time Server Action: it couples analytics to the App Router
+  action queue and had already failed production verification.
+
+**Trade-offs accepted**: The report shell briefly shows a bounded loading state
+before KPIs populate.
+
+**Revisit when**: Next/React provides an upstream fix with a production
+regression proving the real-salon initial RSC snapshot no longer trips `#310`.
+
+**Cost to reverse**: Low; restore the server loader call and initial prop.
+
+---
+
 ## 2026-05-10: Superadmin Foundation Shell V1 — build architecture, defer scale features
 
 **Context**: PR #82 (2026-05-10) shipped a minimal Huy-only Superadmin panel: `/superadmin` route, `public.superadmins` binary membership table, per-salon `plan_override` + `feature_flags` JSONB columns, route gate via `isSuperAdmin(userId)`. The panel covers plan + flag overrides for beta partners but **does not** include sidebar navigation, multi-role gating, salon list, impersonation (login-as-salon), audit logs, announcements, or platform-level feature flags. Founder direction is to build the **architecture shell** for those capabilities now — before scale features — so the route surface, role model, and audit contract are settled while we still have ≤ 3 paying salons.

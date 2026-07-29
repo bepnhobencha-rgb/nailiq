@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
@@ -45,9 +45,6 @@ function formatMoney(cents: number, currency: Currency): string {
 
 export interface ReportsPanelProps {
   slug: string;
-  /** Server-rendered first snapshot. Avoids dispatching a Server Action while
-   *  the App Router is still hydrating the page. */
-  initialResult: LoadSalonReportsResult;
   /** P0.2 — salon's configured currency. */
   currency: Currency;
   /** Studio-tier (`premium`) gate for the per-staff performance
@@ -57,7 +54,6 @@ export interface ReportsPanelProps {
 
 export function ReportsPanel({
   slug,
-  initialResult,
   currency,
   hasStaffPerformance,
 }: ReportsPanelProps) {
@@ -68,12 +64,30 @@ export function ReportsPanel({
     | { kind: "loading" }
     | { kind: "ok"; data: ReportsSnapshot }
     | { kind: "error"; error: Extract<LoadSalonReportsResult, { ok: false }>["error"] }
-  >(
-    initialResult.ok
-      ? { kind: "ok", data: initialResult.data }
-      : { kind: "error", error: initialResult.error },
-  );
+  >({ kind: "loading" });
   const requestSequence = useRef(0);
+
+  useEffect(() => {
+    // Keep the App Router's initial RSC payload small and deterministic. The
+    // production reports snapshot is loaded through the authenticated REST
+    // boundary only after hydration, so a slow/large analytics response cannot
+    // suspend and re-enter Next's root action queue during its first render.
+    const requestId = ++requestSequence.current;
+    let active = true;
+
+    void fetchReports(slug, "today").then((result) => {
+      if (!active || requestId !== requestSequence.current) return;
+      setState(
+        result.ok
+          ? { kind: "ok", data: result.data }
+          : { kind: "error", error: result.error },
+      );
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [slug]);
 
   async function selectRange(nextRange: ReportsDateRange) {
     if (nextRange === range) return;
@@ -82,19 +96,7 @@ export function ReportsPanel({
     setRange(nextRange);
     setState({ kind: "loading" });
 
-    let result: LoadSalonReportsResult;
-    try {
-      const response = await fetch(
-        `/api/dashboard/reports?slug=${encodeURIComponent(slug)}&range=${nextRange}`,
-        { cache: "no-store" },
-      );
-      result = (await response.json()) as LoadSalonReportsResult;
-      if (!response.ok && result.ok) {
-        result = { ok: false, error: "server_error" };
-      }
-    } catch {
-      result = { ok: false, error: "server_error" };
-    }
+    const result = await fetchReports(slug, nextRange);
     if (requestId !== requestSequence.current) return;
 
     setState(
@@ -475,6 +477,25 @@ export function ReportsPanel({
       </Card>
     </div>
   );
+}
+
+async function fetchReports(
+  slug: string,
+  range: ReportsDateRange,
+): Promise<LoadSalonReportsResult> {
+  try {
+    const response = await fetch(
+      `/api/dashboard/reports?slug=${encodeURIComponent(slug)}&range=${range}`,
+      { cache: "no-store" },
+    );
+    const result = (await response.json()) as LoadSalonReportsResult;
+    if (!response.ok && result.ok) {
+      return { ok: false, error: "server_error" };
+    }
+    return result;
+  } catch {
+    return { ok: false, error: "server_error" };
+  }
 }
 
 function BusyHoursChart({

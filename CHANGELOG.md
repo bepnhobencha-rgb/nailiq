@@ -21,9 +21,14 @@ All notable changes to NailIQ (project and documentation) are recorded here.
   now deactivates the locked alias before restoring matching bookings, so its
   success result corresponds to the persisted identity state.
 - **Action-queue isolation:** report aggregation is now a `server-only` loader.
-  Initial data is rendered on the server and explicit date-range changes use a
-  same-origin, owner-authorized, non-cacheable GET endpoint, so the Reports
-  client contains no Server Action proxy.
+  A same-origin, owner-authorized, non-cacheable GET endpoint is the only
+  analytics transport, so the Reports client contains no Server Action proxy.
+- **Production correction after PR #1069:** production still reproduced React
+  `#310` with the analytics snapshot embedded in the initial RSC stream. Reports
+  now hydrates a deterministic shell first and requests the initial `today`
+  snapshot through the REST boundary after mount; explicit range changes use
+  the same path. This keeps slow or data-dependent analytics out of Next's root
+  hydration/action queue.
 
 ## 2026-07-28 (Canonical customer analytics)
 
