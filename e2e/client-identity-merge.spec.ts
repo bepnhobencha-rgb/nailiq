@@ -190,12 +190,13 @@ test.describe("reversible salon client identity merge", () => {
     expect(mergedBooking?.client_profile_id).toBe(canonicalProfileId);
     expect(mergedBooking?.client_phone).toBe(aliasPhone);
 
-    // Reports transitions from a loading render to resolved data. Keep this
-    // real route in the identity flow so hook-order regressions cannot hide
-    // behind unit-only aggregation coverage.
+    // Reports hydrates its stable shell, then loads analytics through the REST
+    // boundary. Keep this real route in the identity flow so hook-order and
+    // post-hydration fetch regressions cannot hide behind unit-only coverage.
     await page.goto(`/dashboard/${SLUG}/reports`);
     await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
     await expect(page.getByText("This page couldn’t load")).toHaveCount(0);
+    await expect(page.getByTestId("reports-kpis")).not.toContainText("—");
 
     await page.goto(`/dashboard/${SLUG}/clients`);
     await page.reload();
