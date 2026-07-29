@@ -14,9 +14,12 @@ client render, then starts its minute clock only after hydration.
 **Why.** Production on the exact PR #1074 deployment reproduced React hydration
 invariant `#418` on `/center` in both the New and Classic interfaces. The board
 previously rendered time-dependent children with an empty clock and immediately
-replaced it in an effect. With streamed/selective hydration, that parent update
-could occur while lower time-dependent content was still hydrating, producing a
-text mismatch even though a later DOM snapshot looked correct.
+replaced it in an effect. It also redundantly replaced the complete server-data
+state from a mount effect even though that state had already been initialized
+from the same payload. With streamed/selective hydration, either parent update
+could occur while lower time-dependent content was still hydrating, producing
+a text mismatch even though a later DOM snapshot looked correct. Server data is
+now adopted only when a later refresh carries a new observation timestamp.
 
 **Coverage.** The persisted-interface E2E captures React hydration errors across
 initial load, New-interface reload, and Classic-interface reload.

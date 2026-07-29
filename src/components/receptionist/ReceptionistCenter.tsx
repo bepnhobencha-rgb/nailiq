@@ -500,7 +500,19 @@ function ReceptionistCenterInner({
     viewedYmdRef.current = data.selectedDate;
   }, [data.selectedDate]);
 
+  // `data` is already initialized from this exact server observation. Do not
+  // redundantly replace the parent state on mount: an immediate parent update
+  // can race streamed hydration in time-dependent descendants. A later
+  // router.refresh() carries a new observation timestamp and is still adopted.
+  const adoptedServerObservationIsoRef = useRef(initialOk.observedAtIso);
   useEffect(() => {
+    if (
+      initialOk.observedAtIso === adoptedServerObservationIsoRef.current
+    ) {
+      return;
+    }
+    adoptedServerObservationIsoRef.current = initialOk.observedAtIso;
+
     // Only adopt server-provided data when it's for the day the user is viewing.
     // A revalidatePath() / router.refresh() re-runs the loader for its DEFAULT
     // day (today); without this guard it would yank the grid back to today after
