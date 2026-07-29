@@ -2115,7 +2115,7 @@ export type UserMessages = {
         server_error: string;
       };
     };
-    /** Reports & analytics page (`/dashboard/[slug]/reports`). */
+    /** Reports & analytics page (`/dashboard/[slug]/insights`). */
     reports: {
       pageTitle: string;
       navLinkLabel: string;
