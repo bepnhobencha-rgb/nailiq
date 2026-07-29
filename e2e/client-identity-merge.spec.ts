@@ -139,6 +139,33 @@ test.describe("reversible salon client identity merge", () => {
   }) => {
     if (!owner) throw new Error("Owner fixture missing");
     await loginAs(page, owner);
+
+    // A disabled dynamic feature must render a stable dashboard state. Calling
+    // notFound() after auth/salon reads emitted React #310 in production even
+    // though the 404 content appeared and browser console capture was empty.
+    const disabledPageErrors: string[] = [];
+    page.on("pageerror", (error) => disabledPageErrors.push(error.message));
+    const { error: disableReportsError } = await supabaseAdmin
+      .from("salons")
+      .update({ feature_flags: { reports_enabled: false } })
+      .eq("id", salonId);
+    if (disableReportsError) throw new Error(disableReportsError.message);
+    await page.goto(`/dashboard/${SLUG}/insights?range=month`);
+    await expect(page.getByTestId("insights-disabled")).toBeVisible();
+    await expect(
+      page.getByText("Advanced reports aren't enabled for this salon."),
+    ).toBeVisible();
+    expect(disabledPageErrors).toEqual([]);
+
+    const { error: enableReportsError } = await supabaseAdmin
+      .from("salons")
+      .update({
+        feature_flags: { reports_enabled: true },
+        subscription_plan: "premium",
+      })
+      .eq("id", salonId);
+    if (enableReportsError) throw new Error(enableReportsError.message);
+
     await page.goto(`/dashboard/${SLUG}/clients`);
 
     const candidateKey = [canonicalProfileId, aliasProfileId].sort().join(":");
