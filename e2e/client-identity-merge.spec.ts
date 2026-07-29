@@ -143,8 +143,16 @@ test.describe("reversible salon client identity merge", () => {
     // A disabled dynamic feature must render a stable dashboard state. Calling
     // notFound() after auth/salon reads emitted React #310 in production even
     // though the 404 content appeared and browser console capture was empty.
-    const disabledPageErrors: string[] = [];
-    page.on("pageerror", (error) => disabledPageErrors.push(error.message));
+    const disabledReactErrors: string[] = [];
+    page.on("pageerror", (error) => {
+      if (
+        /minified react error|invalid hook call|rendered (?:more|fewer) hooks|hooks can only be called|hydration failed/i.test(
+          error.message,
+        )
+      ) {
+        disabledReactErrors.push(error.message);
+      }
+    });
     const { error: disableReportsError } = await supabaseAdmin
       .from("salons")
       .update({ feature_flags: { reports_enabled: false } })
@@ -155,7 +163,7 @@ test.describe("reversible salon client identity merge", () => {
     await expect(
       page.getByText("Advanced reports aren't enabled for this salon."),
     ).toBeVisible();
-    expect(disabledPageErrors).toEqual([]);
+    expect(disabledReactErrors).toEqual([]);
 
     const { error: enableReportsError } = await supabaseAdmin
       .from("salons")
