@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { toSafeWorkerFailureCode } from "@/shared/ai/executionFailure";
 import { recordExecutionWorkerHeartbeat } from "@/shared/ai/executionHeartbeat";
 import { processExecutionQueue } from "@/shared/ai/executionWorker";
 import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
@@ -37,12 +38,14 @@ export async function GET(req: Request): Promise<NextResponse> {
     return NextResponse.json({ ok: true, ...summary });
   } catch (error) {
     console.error("[cron/ai-execution]", error);
+    const safeError =
+      toSafeWorkerFailureCode(error) ?? "execution_worker_failed";
     try {
       await recordExecutionWorkerHeartbeat({
         runId,
         phase: "failed",
         now: new Date(),
-        error: error instanceof Error ? error.message : "execution_failed",
+        error: safeError,
       });
     } catch (heartbeatError) {
       console.error("[cron/ai-execution] heartbeat failure", heartbeatError);
@@ -50,7 +53,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     return NextResponse.json(
       {
         ok: false,
-        error: error instanceof Error ? error.message : "execution_failed",
+        error: safeError,
       },
       { status: 500 },
     );

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { toSafeWorkerFailureCode } from "@/shared/ai/executionFailure";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 export type ExecutionHeartbeatPhase = "started" | "succeeded" | "failed";
@@ -73,7 +74,7 @@ export async function recordAiWorkerHeartbeat(input: {
       p_phase: input.phase,
       p_now: input.now.toISOString(),
       p_summary: input.summary ?? {},
-      p_error: input.error?.slice(0, 1000) ?? null,
+      p_error: toSafeWorkerFailureCode(input.error),
     } as never,
   );
   if (error) throw new Error(error.message);

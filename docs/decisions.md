@@ -5,6 +5,25 @@ Newest entries on top.
 
 ---
 
+## 2026-07-29 — Worker diagnostics use a privacy-safe failure boundary
+
+**Decision.** All AI worker heartbeat writers pass failure values through one
+allowlist before the durable worker state and append-only run history are
+updated. The execution cron returns the same safe code while logging the raw
+exception only server-side. Control Center translates recognized codes and
+masks any unknown historical heartbeat value.
+
+**Why.** Protecting execution-job errors alone left a second path where raw
+database/provider text could be stored in `ai_execution_worker_state` and
+rendered to an owner. Operating health needs actionable status, not internal
+exception bodies.
+
+**Safety.** Scheduler fencing, run history, retry limits, leases, approvals,
+and effects are unchanged. This grants no messaging, booking, payment, pricing,
+authentication, or execution authority.
+
+---
+
 ## 2026-07-29 — Execution failures expose safe codes, not raw internals
 
 **Decision.** The AI execution worker writes only an allowlisted operational
