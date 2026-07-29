@@ -2,16 +2,23 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
-## 2026-07-28 (Reports hook-order runtime repair)
+## 2026-07-28 (Reports WebKit hydration repair)
 
 - **Production finding:** post-merge browser verification reproduced React
   invariant `#310` when the feature-gated Reports page transitioned from
   loading to resolved data.
-- **Repair:** Reports now performs its pure localized-message/error lookups
-  directly during render instead of using two unnecessary memo hooks.
-- **Regression gate:** the reversible identity E2E enables Reports, opens the
-  real route after a merge, and requires resolved report content without the
-  application error boundary.
+- **Corrected diagnosis:** removing component-local memo hooks in the first
+  repair did not resolve production. The failing hook belongs to Next.js
+  App Router while a mount-time Server Action races page hydration.
+- **Repair:** Reports now resolves its initial snapshot in the Server Component
+  and hydrates the client with that result. Server Actions only run after an
+  explicit date-range selection.
+- **Regression gate:** the reversible identity E2E is now included in the CI
+  matrix and its Reports flow runs in both Chromium and WebKit on pull requests.
+- **Undo integrity found by the gate:** the same newly executed flow exposed
+  that the alias trigger re-canonicalized bookings during Undo. The revoke RPC
+  now deactivates the locked alias before restoring matching bookings, so its
+  success result corresponds to the persisted identity state.
 
 ## 2026-07-28 (Canonical customer analytics)
 

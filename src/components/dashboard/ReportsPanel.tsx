@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
@@ -46,6 +46,9 @@ function formatMoney(cents: number, currency: Currency): string {
 
 export interface ReportsPanelProps {
   slug: string;
+  /** Server-rendered first snapshot. Avoids dispatching a Server Action while
+   *  the App Router is still hydrating the page. */
+  initialResult: LoadSalonReportsResult;
   /** P0.2 — salon's configured currency. */
   currency: Currency;
   /** Studio-tier (`premium`) gate for the per-staff performance
@@ -55,6 +58,7 @@ export interface ReportsPanelProps {
 
 export function ReportsPanel({
   slug,
+  initialResult,
   currency,
   hasStaffPerformance,
 }: ReportsPanelProps) {
@@ -65,22 +69,29 @@ export function ReportsPanel({
     | { kind: "loading" }
     | { kind: "ok"; data: ReportsSnapshot }
     | { kind: "error"; error: Extract<LoadSalonReportsResult, { ok: false }>["error"] }
-  >({ kind: "loading" });
+  >(
+    initialResult.ok
+      ? { kind: "ok", data: initialResult.data }
+      : { kind: "error", error: initialResult.error },
+  );
+  const requestSequence = useRef(0);
 
-  useEffect(() => {
-    let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional loading state before async fetch
+  async function selectRange(nextRange: ReportsDateRange) {
+    if (nextRange === range) return;
+
+    const requestId = ++requestSequence.current;
+    setRange(nextRange);
     setState({ kind: "loading" });
-    void (async () => {
-      const res = await loadSalonReports(slug, range);
-      if (cancelled) return;
-      if (res.ok) setState({ kind: "ok", data: res.data });
-      else setState({ kind: "error", error: res.error });
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [slug, range]);
+
+    const result = await loadSalonReports(slug, nextRange);
+    if (requestId !== requestSequence.current) return;
+
+    setState(
+      result.ok
+        ? { kind: "ok", data: result.data }
+        : { kind: "error", error: result.error },
+    );
+  }
 
   const errorCopy =
     state.kind === "error"
@@ -108,7 +119,7 @@ export function ReportsPanel({
               role="tab"
               aria-selected={active}
               data-testid={`reports-range-${r}`}
-              onClick={() => setRange(r)}
+              onClick={() => void selectRange(r)}
               className={cn(
                 "px-3 py-1.5 transition-colors",
                 active

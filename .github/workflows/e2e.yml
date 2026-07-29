@@ -179,6 +179,7 @@ jobs:
               e2e/booking-validation.spec.ts
               e2e/booking.spec.ts
               e2e/content
+              e2e/client-identity-merge.spec.ts
               e2e/dashboard.spec.ts
               e2e/group-booking
               e2e/landing-funnel.spec.ts
@@ -445,6 +446,18 @@ jobs:
         run: npx playwright test ${{ matrix.testpath }} ${{ steps.projects.outputs.flag }} --reporter=list,html,json
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
+      - name: Run Reports hydration regression in WebKit
+        if: >-
+          always() &&
+          steps.preflight.outputs.configured == 'true' &&
+          matrix.shard == 1 &&
+          github.event_name == 'pull_request'
+        # PRs normally run Chromium only for speed. Reports previously passed
+        # that gate but crashed in production WebKit during App Router
+        # hydration, so this affected flow carries an explicit second engine.
+        run: >-
+          npx playwright test e2e/client-identity-merge.spec.ts
+          --project=mobile --reporter=list
       - name: Next server log (the app's side of a failed test)
         # A Playwright failure tells you what the BROWSER saw. When the page says
         # "Could not complete booking. Please try again.", that is the app's
