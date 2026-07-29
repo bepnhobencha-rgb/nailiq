@@ -5,6 +5,33 @@ Newest entries on top.
 
 ---
 
+## 2026-07-29 — Daily digest delivery is provider-acknowledged and replay-safe
+
+**Decision.**
+- A daily digest uses one stable provider idempotency key per salon-local day.
+- Missing recipients, missing provider configuration, and provider rejection
+  are failures rather than successful `digest_sent` claims. A deliberately
+  disabled owner-notification channel remains an intentional no-op.
+- After the provider accepts the email, one service-role-only transaction
+  records the durable delivery, marks the normal approvals actually included
+  in that email as notified, and appends the AI activity audit.
+- Replaying the database acknowledgement cannot create a second salon-day
+  delivery or duplicate activity claim.
+
+**Why.** Production had pending approvals included in daily digests while their
+`notified_at` fields remained empty. The old path also appended `digest_sent`
+after the send function returned even when notifications were disabled, no
+recipient existed, or Resend rejected the request. NailIQ must not confuse an
+attempt with a delivered owner communication, and a retry after an ambiguous
+network/database boundary must not send a second digest.
+
+**Safety.** This changes the accounting and retry behavior of the existing
+one-per-day digest only. It does not enable a notification channel, add
+recipients, send campaigns, authorize approval decisions, or grant messaging,
+booking, pricing, payment, authentication, or security authority.
+
+---
+
 ## 2026-07-28 — Live Board hydration uses one server-owned clock snapshot
 
 **Decision.** Receptionist data includes the exact server observation timestamp.
