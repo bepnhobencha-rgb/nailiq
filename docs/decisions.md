@@ -5,6 +5,27 @@ Newest entries on top.
 
 ---
 
+## 2026-07-28 — Live Board hydration uses one server-owned clock snapshot
+
+**Decision.** Receptionist data includes the exact server observation timestamp.
+The Live Board uses that serialized instant for its server render and first
+client render, then starts its minute clock only after hydration.
+
+**Why.** Production on the exact PR #1074 deployment reproduced React hydration
+invariant `#418` on `/center` in both the New and Classic interfaces. The board
+previously rendered time-dependent children with an empty clock and immediately
+replaced it in an effect. With streamed/selective hydration, that parent update
+could occur while lower time-dependent content was still hydrating, producing a
+text mismatch even though a later DOM snapshot looked correct.
+
+**Coverage.** The persisted-interface E2E captures React hydration errors across
+initial load, New-interface reload, and Classic-interface reload.
+
+**Safety.** The timestamp is operational display state only. This changes no
+booking, queue, message, payment, permission, or authentication behavior.
+
+---
+
 ## 2026-07-28 — Disabled Insights stays inside the dashboard render tree
 
 **Decision.** When `advanced_reports` is disabled for a salon, the authenticated

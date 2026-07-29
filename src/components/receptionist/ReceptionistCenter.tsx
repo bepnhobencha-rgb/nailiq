@@ -440,13 +440,10 @@ function ReceptionistCenterInner({
     };
   }, [drcBg]);
 
-  // Empty-string initial value so SSR and client hydration produce the same
-  // output (same pattern as `originBaseUrl` below). Initialising with
-  // `new Date().toISOString()` makes the server-render timestamp differ from
-  // the client hydration timestamp → React #418 mismatch on overdue overlays,
-  // today-badge, and the now-line. After mount the useEffect sets the real time
-  // immediately, then ticks every minute as before.
-  const [nowIso, setNowIso] = useState<string>("");
+  // Use the loader's server-owned clock snapshot for both SSR and the first
+  // client render. An empty value followed by an immediate effect update can
+  // race streamed/selective hydration in time-dependent descendants.
+  const [nowIso, setNowIso] = useState<string>(initialOk.observedAtIso);
   const nowIsoRef = useRef(nowIso);
   /* Sync ref via effect (not during render) so reloadCurrentDay's callback
      can read the latest value without including nowIso in its deps. */
@@ -456,7 +453,6 @@ function ReceptionistCenterInner({
 
   useEffect(() => {
     const update = () => setNowIso(new Date().toISOString());
-    update(); // Populate immediately after hydration — then tick every minute.
     const tick = window.setInterval(update, 60_000);
     return () => window.clearInterval(tick);
   }, []);
@@ -606,16 +602,22 @@ function ReceptionistCenterInner({
   // Week-view anchor (Monday of the visible week). Derived initially from
   // today's salon date so first paint shows the current week.
   const initialMondayYmd = useMemo(
-    () => mondayYmdOf(salonToday(initialOk.salon.timezone)),
-    [initialOk.salon.timezone],
+    () =>
+      mondayYmdOf(
+        salonToday(initialOk.salon.timezone, initialOk.observedAtIso),
+      ),
+    [initialOk.observedAtIso, initialOk.salon.timezone],
   );
   const [weekMondayYmd, setWeekMondayYmd] = useState(initialMondayYmd);
 
   // Month-view anchor (YYYY-MM-01 of the visible month). Starts on the
   // current month so first paint is always the present month.
   const initialMonthFirstYmd = useMemo(
-    () => firstOfMonth(salonToday(initialOk.salon.timezone)),
-    [initialOk.salon.timezone],
+    () =>
+      firstOfMonth(
+        salonToday(initialOk.salon.timezone, initialOk.observedAtIso),
+      ),
+    [initialOk.observedAtIso, initialOk.salon.timezone],
   );
   const [monthFirstYmd, setMonthFirstYmd] = useState(initialMonthFirstYmd);
 
@@ -2370,13 +2372,9 @@ function ReceptionistCenterInner({
   // clearer party alert ("Today {time} group: {name}/{n} not confirmed") and
   // its focus-the-group action. Restricted to today so the "today" copy is
   // accurate and operationally relevant for the front desk.
-  // `nowIso` is "" during the SSR pass (deliberate — avoids a React #418
-  // hydration mismatch on the live timestamp). `formatInSalonTz` throws on an
-  // empty ISO, so skip this today-only alert until the client populates the
-  // real time after mount. Without the guard, SSR crashes with
-  // "salonTime: invalid ISO string" → React #419 (the whole Center fails to
-  // render). The alert is meaningless without "now" anyway, and the client
-  // re-renders immediately once nowIso ticks in.
+  // `nowIso` is normally the loader's server-owned snapshot. Keep the empty
+  // guard as a defensive boundary for malformed legacy fixtures so
+  // `formatInSalonTz` cannot crash the whole Center.
   const todaySalonDate = nowIso ? formatInSalonTz(nowIso, timezone, "date") : "";
   const pendingPartyCard = !nowIso
     ? null
