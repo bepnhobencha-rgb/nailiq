@@ -103,7 +103,7 @@ export async function loadMinhActivity(
   const db = createServiceRoleClient();
   const since = new Date(Date.now() - days * 86_400_000).toISOString();
 
-  const { data } = await db
+  const { data, error } = await db
     .from("ai_actions_log" as never)
     .select("id, agent, action_type, payload, created_at, outcome, outcome_at")
     .eq("salon_id", salonId)
@@ -112,6 +112,9 @@ export async function loadMinhActivity(
     .order("created_at", { ascending: false })
     .limit(200);
 
+  if (error) {
+    throw new Error("ai_actions_log_read_failed", { cause: error });
+  }
   const rows = (data ?? []) as MinhActivityRow[];
   const entries = rows.map(toMinhLogEntry);
 

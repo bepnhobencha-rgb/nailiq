@@ -5,6 +5,26 @@ Newest entries on top.
 
 ---
 
+## 2026-07-29 — AI Control Center reports partial read failure explicitly
+
+**Decision.** The owner-facing AI Control Center loads approvals, activity,
+execution jobs, operating health, and operational exceptions as independent
+settled sources. A failed source is logged server-side and rendered as
+temporarily unavailable; its metrics use an em dash and its section never
+claims zero work, an empty queue, or healthy operation. Sources that loaded
+successfully remain usable.
+
+**Why.** Several service-role readers previously discarded Supabase errors and
+returned empty arrays or zero counts. A database or schema failure could
+therefore produce reassuring but false UI such as “No decisions are waiting,”
+“No AI activity,” or “AI is operating normally.” An operating system must
+distinguish observed zero from unavailable evidence.
+
+**Safety.** This is read-path truthfulness only. It grants no execution,
+messaging, booking, pricing, payment, authentication, or migration authority.
+
+---
+
 ## 2026-07-29 — Daily digest delivery is provider-acknowledged and replay-safe
 
 **Decision.**
@@ -44,6 +64,15 @@ immediately before the former `rc-hydrated` child appeared. The marker's
 effect-backed state update could insert a child into the streamed parent while
 lower Suspense descendants were still hydrating. The failure repeated on the
 targeted job rerun even though the PR did not change Receptionist UI.
+
+**Correction after the targeted rerun.** Removing the rendered marker improved
+test observability but did not eliminate `#418`, so it was not the root cause.
+Inspection of the actual server HTML then found inline Start `<button>` elements
+nested inside booking `<button>` elements. The browser repaired that invalid
+HTML before hydration, so React received a different tree. Booking blocks with
+the independent Start action now use a keyboard-accessible button-like
+container around the inner real button. The same persisted-interface E2E then
+passed on the PR and on production `main`.
 
 **Coverage.** The persisted-interface E2E continues to reject hydration errors
 across initial Classic load, Preview reload, and Classic reload. The readiness
