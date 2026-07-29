@@ -20,6 +20,7 @@ export type MinhLesson = {
 export async function getLessons(
   salonId: string,
   scope: string,
+  options: { throwOnError?: boolean } = {},
 ): Promise<MinhLesson[]> {
   const fetcher = async () => {
     const db = createServiceRoleClient();
@@ -31,6 +32,9 @@ export async function getLessons(
       .or(`salon_id.is.null,salon_id.eq.${salonId}` as never)
       .order("confidence" as never, { ascending: false });
     if (error) {
+      if (options.throwOnError) {
+        throw new Error("minh_lessons_read_failed", { cause: error });
+      }
       console.error("[getLessons]", error);
       return [] as MinhLesson[];
     }
@@ -46,10 +50,15 @@ export async function getLessons(
   };
 
   // Cache per salon+scope, 5 min
-  const cached = unstable_cache(fetcher, [`minh_lessons_${salonId}_${scope}`], {
-    tags: [`minh_lessons:${salonId}`, "minh_lessons:global"],
-    revalidate: 300,
-  });
+  const errorMode = options.throwOnError ? "strict" : "tolerant";
+  const cached = unstable_cache(
+    fetcher,
+    [`minh_lessons_${salonId}_${scope}_${errorMode}`],
+    {
+      tags: [`minh_lessons:${salonId}`, "minh_lessons:global"],
+      revalidate: 300,
+    },
+  );
   return cached();
 }
 

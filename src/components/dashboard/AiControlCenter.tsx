@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import {
   Activity,
+  AlertTriangle,
   ArrowRight,
   Bot,
   Check,
@@ -25,6 +26,7 @@ import {
 import { buildActionIntelligence } from "@/shared/ai/actionIntelligence";
 import type { ApprovalRow } from "@/shared/ai/approvalRequests";
 import { campaignPreflightFreshness } from "@/shared/ai/campaignPreflightFreshness";
+import type { AiControlDataSource } from "@/shared/ai/controlCenterData";
 import { controlExecutionJobAction } from "@/shared/ai/controlExecutionJobAction";
 import { canControlExecutionJob } from "@/shared/ai/executionPolicy";
 import { preflightCampaignAction } from "@/shared/ai/preflightCampaignAction";
@@ -47,7 +49,8 @@ type Props = {
   executionJobs: ExecutionJobRow[];
   operationalExceptions: OperationalExceptionRow[];
   operationalExceptionCount: number;
-  operatingState: AiOperatingState;
+  operatingState: AiOperatingState | null;
+  unavailableSources: AiControlDataSource[];
   appUrl: string;
   nowIso: string;
 };
@@ -70,11 +73,18 @@ export function AiControlCenter({
   operationalExceptions,
   operationalExceptionCount,
   operatingState,
+  unavailableSources,
   appUrl,
   nowIso,
 }: Props) {
   const { language } = useUserLanguage();
   const vi = language === "vi";
+  const approvalsAvailable = !unavailableSources.includes("approvals");
+  const activityAvailable = !unavailableSources.includes("activity");
+  const executionQueueAvailable =
+    !unavailableSources.includes("execution_queue");
+  const operationalExceptionsAvailable =
+    !unavailableSources.includes("operational_exceptions");
   const pending = approvals.filter((item) => item.status === "pending");
   const recentActivity = activity.entries.slice(0, 6);
   const observedReturnRate =
@@ -108,22 +118,54 @@ export function AiControlCenter({
         </Link>
       </header>
 
+      {unavailableSources.length > 0 ? (
+        <DataAvailabilityAlert
+          sources={unavailableSources}
+          language={language}
+        />
+      ) : null}
+
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" aria-label={vi ? "Tổng quan AI" : "AI overview"}>
-        <Metric label={vi ? "Cần bạn quyết định" : "Needs your decision"} value={pending.length} tone={pending.length > 0 ? "attention" : "default"} />
+        <Metric
+          label={vi ? "Cần bạn quyết định" : "Needs your decision"}
+          value={approvalsAvailable ? pending.length : "—"}
+          tone={
+            approvalsAvailable && pending.length > 0 ? "attention" : "default"
+          }
+        />
         <Metric
           label={vi ? "Ngoại lệ đang mở" : "Active exceptions"}
-          value={operationalExceptionCount}
-          tone={operationalExceptionCount > 0 ? "attention" : "default"}
+          value={
+            operationalExceptionsAvailable ? operationalExceptionCount : "—"
+          }
+          tone={
+            operationalExceptionsAvailable && operationalExceptionCount > 0
+              ? "attention"
+              : "default"
+          }
         />
-        <Metric label={vi ? "Hành động 30 ngày" : "30-day actions"} value={activity.entries.length} />
-        <Metric label={vi ? "Khách quay lại" : "Customers returned"} value={activity.converted} tone="success" />
+        <Metric
+          label={vi ? "Hành động 30 ngày" : "30-day actions"}
+          value={activityAvailable ? activity.entries.length : "—"}
+        />
+        <Metric
+          label={vi ? "Khách quay lại" : "Customers returned"}
+          value={activityAvailable ? activity.converted : "—"}
+          tone={activityAvailable ? "success" : "default"}
+        />
         <Metric
           label={vi ? "Tỷ lệ quay lại đã quan sát" : "Observed return rate"}
           value={
-            observedReturnRate == null ? "—" : `${observedReturnRate}%`
+            activityAvailable && observedReturnRate != null
+              ? `${observedReturnRate}%`
+              : "—"
           }
           detail={
-            activity.totalSent > 0
+            !activityAvailable
+              ? vi
+                ? "Nguồn hoạt động tạm không khả dụng; không hiển thị số 0 thay cho dữ liệu lỗi."
+                : "Activity data is temporarily unavailable; zero is not shown in place of a read failure."
+              : activity.totalSent > 0
               ? vi
                 ? `Đã đủ thời gian đo ${activity.measured}/${activity.totalSent} hành động (${activity.measurementCoveragePct}%). Không khẳng định quan hệ nhân quả.`
                 : `${activity.measured}/${activity.totalSent} actions have completed their measurement window (${activity.measurementCoveragePct}%). This does not claim causation.`
@@ -140,12 +182,14 @@ export function AiControlCenter({
         nowIso={nowIso}
       />
 
-      <OperationalExceptionInbox
-        slug={slug}
-        exceptions={operationalExceptions}
-        activeCount={operationalExceptionCount}
-        nowIso={nowIso}
-      />
+      {operationalExceptionsAvailable ? (
+        <OperationalExceptionInbox
+          slug={slug}
+          exceptions={operationalExceptions}
+          activeCount={operationalExceptionCount}
+          nowIso={nowIso}
+        />
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]">
         <section className="space-y-3">
@@ -163,7 +207,15 @@ export function AiControlCenter({
             </Link>
           </div>
 
-          {pending.length === 0 ? (
+          {!approvalsAvailable ? (
+            <UnavailablePanel
+              message={
+                vi
+                  ? "Không thể tải các quyết định đang chờ. Hãy thử lại trước khi kết luận rằng không có việc cần duyệt."
+                  : "Waiting decisions could not be loaded. Retry before concluding that nothing needs approval."
+              }
+            />
+          ) : pending.length === 0 ? (
             <div className="flex min-h-44 flex-col items-center justify-center rounded-2xl border border-dashed border-nq-border bg-nq-surface/35 p-6 text-center">
               <CheckCircle2 className="h-8 w-8 text-nq-success" aria-hidden />
               <p className="mt-3 text-sm font-medium text-nq-foreground">
@@ -280,7 +332,16 @@ export function AiControlCenter({
             </p>
           </div>
           <div className="rounded-2xl border border-nq-border bg-nq-surface px-4">
-            {recentActivity.length === 0 ? (
+            {!activityAvailable ? (
+              <UnavailablePanel
+                compact
+                message={
+                  vi
+                    ? "Không thể tải nhật ký AI lúc này."
+                    : "AI activity could not be loaded right now."
+                }
+              />
+            ) : recentActivity.length === 0 ? (
               <div className="flex min-h-44 flex-col items-center justify-center text-center">
                 <Bot className="h-8 w-8 text-nq-muted" aria-hidden />
                 <p className="mt-3 text-sm text-nq-muted">{vi ? "Chưa có hoạt động AI." : "No AI activity yet."}</p>
@@ -312,7 +373,13 @@ export function AiControlCenter({
                 {vi ? "Hàng đợi thực thi" : "Execution queue"}
               </h3>
             </div>
-            {executionJobs.length === 0 ? (
+            {!executionQueueAvailable ? (
+              <p className="mt-3 text-xs leading-5 text-nq-error">
+                {vi
+                  ? "Không thể tải hàng đợi. Trạng thái trống không được giả định."
+                  : "The queue could not be loaded. An empty state is not assumed."}
+              </p>
+            ) : executionJobs.length === 0 ? (
               <p className="mt-3 text-xs leading-5 text-nq-muted">
                 {vi
                   ? "Chưa có hành động đã duyệt nào được xếp hàng."
@@ -366,16 +433,105 @@ export function AiControlCenter({
   );
 }
 
+function DataAvailabilityAlert({
+  sources,
+  language,
+}: {
+  sources: AiControlDataSource[];
+  language: "en" | "vi";
+}) {
+  const vi = language === "vi";
+  const labels: Record<AiControlDataSource, { en: string; vi: string }> = {
+    approvals: { en: "approvals", vi: "quyết định chờ duyệt" },
+    activity: { en: "activity", vi: "nhật ký hoạt động" },
+    execution_queue: { en: "execution queue", vi: "hàng đợi thực thi" },
+    operating_state: { en: "operating health", vi: "sức khỏe vận hành" },
+    operational_exceptions: {
+      en: "operational exceptions",
+      vi: "ngoại lệ vận hành",
+    },
+  };
+
+  return (
+    <section
+      role="alert"
+      className="flex gap-3 rounded-2xl border border-nq-error/35 bg-nq-error/5 p-4"
+      data-testid="ai-control-data-unavailable"
+    >
+      <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-nq-error" aria-hidden />
+      <div>
+        <h2 className="text-sm font-semibold text-nq-foreground">
+          {vi
+            ? "Một phần dữ liệu vận hành chưa tải được"
+            : "Some operating data could not be loaded"}
+        </h2>
+        <p className="mt-1 text-xs leading-5 text-nq-muted">
+          {vi
+            ? "NailIQ không thay lỗi đọc bằng số 0 hoặc trạng thái khỏe. Các phần khác vẫn dùng được; hãy tải lại để thử lại."
+            : "NailIQ does not replace read failures with zeroes or a healthy state. Other sections remain available; reload to retry."}
+        </p>
+        <p className="mt-1 text-xs font-medium text-nq-error">
+          {sources.map((source) => labels[source][language]).join(" · ")}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function UnavailablePanel({
+  message,
+  compact = false,
+}: {
+  message: string;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={`flex flex-col items-center justify-center rounded-2xl border border-dashed border-nq-error/35 bg-nq-error/5 p-5 text-center ${
+        compact ? "min-h-36" : "min-h-44"
+      }`}
+    >
+      <AlertTriangle className="h-7 w-7 text-nq-error" aria-hidden />
+      <p className="mt-3 max-w-md text-xs leading-5 text-nq-muted">{message}</p>
+    </div>
+  );
+}
+
 function OperatingStatus({
   state,
   language,
   nowIso,
 }: {
-  state: AiOperatingState;
+  state: AiOperatingState | null;
   language: "en" | "vi";
   nowIso: string;
 }) {
   const vi = language === "vi";
+  if (!state) {
+    return (
+      <section
+        className="flex gap-3 rounded-2xl border border-nq-error/35 bg-nq-error/5 p-4 sm:p-5"
+        aria-label={vi ? "Trạng thái vận hành AI" : "AI operating status"}
+      >
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-nq-error" aria-hidden />
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+            {vi ? "Sức khỏe vận hành" : "Operating health"}
+          </p>
+          <h2 className="mt-1 text-base font-semibold text-nq-foreground">
+            {vi
+              ? "Chưa thể xác minh trạng thái AI"
+              : "AI status could not be verified"}
+          </h2>
+          <p className="mt-1 text-xs leading-5 text-nq-muted">
+            {vi
+              ? "Không hiển thị trạng thái khỏe khi hàng đợi, worker hoặc dữ liệu học chưa đọc được. Hãy tải lại để thử lại."
+              : "A healthy state is not shown while queue, worker, or learning data cannot be read. Reload to retry."}
+          </p>
+        </div>
+      </section>
+    );
+  }
   const {
     health,
     worker,

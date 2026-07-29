@@ -48,11 +48,13 @@ export async function getOperationalExceptions(
   ]);
 
   if (activeResult.error || resolvedResult.error || countResult.error) {
-    console.error(
-      "[getOperationalExceptions]",
-      activeResult.error ?? resolvedResult.error ?? countResult.error,
+    throw new Error(
+      "operational_exceptions_read_failed",
+      {
+        cause:
+          activeResult.error ?? resolvedResult.error ?? countResult.error,
+      },
     );
-    return { items: [], activeCount: 0 };
   }
 
   const data = [...(activeResult.data ?? []), ...(resolvedResult.data ?? [])];

@@ -29,11 +29,14 @@ export async function getExecutionJobs(
   limit = 50,
 ): Promise<ExecutionJobRow[]> {
   const db = createServiceRoleClient();
-  const { data } = await db
+  const { data, error } = await db
     .from("ai_execution_jobs" as never)
     .select("*")
     .eq("salon_id" as never, salonId)
     .order("created_at" as never, { ascending: false })
     .limit(Math.max(1, Math.min(100, limit)));
+  if (error) {
+    throw new Error("ai_execution_jobs_read_failed", { cause: error });
+  }
   return (data as ExecutionJobRow[] | null) ?? [];
 }

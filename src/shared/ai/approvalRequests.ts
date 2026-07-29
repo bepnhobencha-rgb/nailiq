@@ -586,13 +586,16 @@ export async function getPendingApprovals(salonId: string): Promise<ApprovalRow[
  */
 export async function getAllApprovals(salonId: string): Promise<ApprovalRow[]> {
   const db = createServiceRoleClient();
-  const { data } = await db
+  const { data, error } = await db
     .from("approval_requests" as never)
     .select("*")
     .eq("salon_id" as never, salonId)
     .order("created_at" as never, { ascending: false })
     .limit(100);
 
+  if (error) {
+    throw new Error("approval_requests_read_failed", { cause: error });
+  }
   return (data as ApprovalRow[] | null) ?? [];
 }
 

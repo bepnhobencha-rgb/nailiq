@@ -2,6 +2,21 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-07-29 (AI Control Center data truth)
+
+- **No false zeroes:** approvals, AI activity, execution queue, operating
+  health, and operational exceptions now fail explicitly on database read
+  errors instead of silently returning empty data.
+- **Partial availability:** the Control Center settles those sources
+  independently, keeps successful sections available, and identifies each
+  unavailable source without presenting an empty or healthy state.
+- **Hydration diagnosis corrected:** the architectural record now distinguishes
+  the useful test-readiness cleanup from the actual React `#418` root cause:
+  invalid nested booking/Start buttons in server HTML.
+- **No new authority:** the milestone changes read-path presentation only and
+  does not enable live messaging, payment, pricing, booking, authentication, or
+  production data mutation.
+
 ## 2026-07-28 (Reports WebKit hydration repair)
 
 - **Production finding:** post-merge browser verification reproduced React

@@ -260,8 +260,7 @@ async function countJobs(
   }
   const { count, error } = await query;
   if (error) {
-    console.error("[loadAiOperatingState] queue count", status, error);
-    return 0;
+    throw new Error(`ai_execution_${status}_count_failed`, { cause: error });
   }
   return count ?? 0;
 }
@@ -288,10 +287,12 @@ export async function loadAiOperatingState(
       countJobs(salonId, "running"),
       countJobs(salonId, "failed"),
       countJobs(salonId, "running", stalledBefore),
-      getLessons(salonId, "policy"),
-      getLessons(salonId, "segment"),
-      getAiWorkerHeartbeats(),
-      getAiWorkerRuns(new Date(now.getTime() - 24 * 60 * 60_000)),
+      getLessons(salonId, "policy", { throwOnError: true }),
+      getLessons(salonId, "segment", { throwOnError: true }),
+      getAiWorkerHeartbeats({ throwOnError: true }),
+      getAiWorkerRuns(new Date(now.getTime() - 24 * 60 * 60_000), {
+        throwOnError: true,
+      }),
     ]);
   const worker = deriveExecutionWorkerHealth(
     heartbeats.find((row) => row.worker_name === "ai_execution") ?? null,
