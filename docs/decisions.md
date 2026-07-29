@@ -5,6 +5,25 @@ Newest entries on top.
 
 ---
 
+## 2026-07-29 — AI agent activation discloses and confirms operating impact
+
+**Decision.** Every owner-facing AI agent has one allowlisted impact class.
+Enabling an agent that can contact customers or change live booking protection
+requires explicit acknowledgement in both the UI and Server Action. Runtime
+flag keys are validated before membership resolution or any write.
+
+**Why.** Several agents described themselves as draft-only or universally safe
+to enable even though their current handlers can send capped SMS/email or
+change card/deposit requirements. TypeScript cannot validate values crossing a
+Server Action boundary. An operating system must state what a control does and
+fail closed when sensitive activation intent is missing.
+
+**Safety.** Disabling remains one tap. Monitoring, draft-only, and owner-only
+agents do not gain extra friction. The change does not enable any flag or run
+an agent, and existing enabled salons remain unchanged.
+
+---
+
 ## 2026-07-29 — Control Center freshness follows tab visibility
 
 **Decision.** AI Control Center re-runs its existing authenticated Server

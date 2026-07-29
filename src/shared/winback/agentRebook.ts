@@ -13,12 +13,10 @@ import {
 import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
 
 /**
- * AI "Due to Rebook" — the proactive sibling of win-back. Win-back chases
- * customers who are ALREADY 45+ days lapsed; this nudges on-rhythm regulars who
- * are coming DUE for their next visit (by their median cadence) but haven't
- * booked yet — the highest-value moment to reach out. AI drafts a warm "time
- * for your next <service>?" for the owner to review/send. Same spine as the
- * other agents; AI only SUGGESTS. Logs to winback_suggestions with kind='due'.
+ * AI "Due to Rebook" — the proactive sibling of win-back. It finds opted-in
+ * regulars nearing their median cadence, drafts a personalized message,
+ * delivers through the salon's enabled channel, and records the result.
+ * Activation is owner-controlled and each run is capped and deduped.
  */
 
 const str = (v: unknown): string => (v == null ? "" : String(v));

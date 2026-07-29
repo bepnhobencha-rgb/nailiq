@@ -1430,18 +1430,47 @@ export async function updateBookingVerificationMode(
 
 // Types live in aiAgentTypes.ts (no "use server") so client components can import them.
 export type { AiAgentFlagKey, AiAgentFlags } from "@/shared/dashboard/aiAgentTypes";
-import type { AiAgentFlagKey } from "@/shared/dashboard/aiAgentTypes";
+import {
+  AI_AGENT_FLAG_KEYS,
+  isAiAgentFlagKey,
+  requiresAiAgentEnableAcknowledgement,
+  type AiAgentFlagKey,
+} from "@/shared/dashboard/aiAgentTypes";
 
 export type UpdateAiAgentFlagResult =
   | { ok: true }
-  | { ok: false; error: "unauthorized" | "forbidden" | "server_error" };
+  | {
+      ok: false;
+      error:
+        | "unauthorized"
+        | "forbidden"
+        | "invalid_flag"
+        | "invalid_enabled_value"
+        | "impact_confirmation_required"
+        | "server_error";
+    };
 
 /** Owner/admin: merge a single AI agent flag into salons.feature_flags JSONB. */
 export async function updateAiAgentFlag(
   slug: string,
   flagKey: AiAgentFlagKey,
   enabled: boolean,
+  options?: { impactAcknowledged?: boolean },
 ): Promise<UpdateAiAgentFlagResult> {
+  if (!isAiAgentFlagKey(flagKey)) {
+    return { ok: false, error: "invalid_flag" };
+  }
+  if (typeof enabled !== "boolean") {
+    return { ok: false, error: "invalid_enabled_value" };
+  }
+  if (
+    enabled &&
+    requiresAiAgentEnableAcknowledgement(flagKey) &&
+    options?.impactAcknowledged !== true
+  ) {
+    return { ok: false, error: "impact_confirmation_required" };
+  }
+
   const { getDashboardWriteClient } = await import(
     "@/shared/dashboard/setupActions"
   );
@@ -1457,7 +1486,9 @@ export async function updateAiAgentFlag(
     .maybeSingle();
 
   const current = (row?.feature_flags ?? {}) as Record<string, boolean>;
-  const hadAnyAgent = Object.values(current).some(Boolean);
+  const hadAnyAgent = AI_AGENT_FLAG_KEYS.some(
+    (key) => current[key] === true,
+  );
   const merged = { ...current, [flagKey]: enabled };
 
   const { error } = await ctx.supabase
