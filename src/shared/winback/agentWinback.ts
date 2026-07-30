@@ -12,6 +12,7 @@ import {
   getLessons,
 } from "@/shared/ai/lessons";
 import { phoneRegion } from "@/shared/lib/phoneRegion";
+import { isAiAgentPermissionEnabled } from "@/shared/ai/agentPermissionFence";
 
 /**
  * AI Win-back — find opted-in lapsed regulars, draft a warm personalized
@@ -194,6 +195,10 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
     let sentCount = 0;
 
     for (const c of candidates) {
+      // A salon owner can revoke this agent while a multi-customer run is in
+      // progress. Re-read the permission before every external delivery.
+      if (!(await isAiAgentPermissionEnabled(salonId, "ai_winback"))) break;
+
       // Check DB lessons FIRST — lesson #1: US + unregistered A2P → prefer email.
       // This mirrors the code guardrail in channelResolver but reads from the DB
       // so the rule can be adjusted without a code deploy.
@@ -244,6 +249,8 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
 
       // Derive a single canonical channel for logging (prefer email to record deliverability).
       const channel: "sms" | "email" = ch.email ? "email" : "sms";
+
+      if (!(await isAiAgentPermissionEnabled(salonId, "ai_winback"))) break;
 
       // Send to customer first; only log if successful.
       let ok = false;

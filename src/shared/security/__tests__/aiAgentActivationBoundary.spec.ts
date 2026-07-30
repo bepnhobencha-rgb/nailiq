@@ -22,6 +22,16 @@ const schemaParity = readFileSync(
   resolve(process.cwd(), "scripts/check-schema-parity.ts"),
   "utf8",
 );
+const customerOutreachSources = [
+  "src/shared/winback/agentWinback.ts",
+  "src/shared/winback/agentRebook.ts",
+  "src/shared/ai/agentVipCare.ts",
+  "src/shared/firstvisit/agentFirstVisit.ts",
+  "src/app/api/cron/reminders/route.ts",
+].map((path) => ({
+  path,
+  source: readFileSync(resolve(process.cwd(), path), "utf8"),
+}));
 
 describe("AI agent activation boundary", () => {
   it("validates the runtime key before any salon write", () => {
@@ -94,5 +104,12 @@ describe("AI agent activation boundary", () => {
     expect(hub).toContain("data-impact={impact}");
     expect(hub).toContain("impactAcknowledged: needsAcknowledgement");
     expect(hub).not.toContain("safe to enable without risk of over-messaging");
+  });
+
+  it("re-reads customer-outreach permission inside every multi-recipient runner", () => {
+    for (const { path, source } of customerOutreachSources) {
+      expect(source, path).toContain("isAiAgentPermissionEnabled");
+      expect(source, path).toMatch(/await isAiAgentPermissionEnabled\(/);
+    }
   });
 });

@@ -11,6 +11,7 @@ import {
   getLessons,
 } from "@/shared/ai/lessons";
 import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
+import { isAiAgentPermissionEnabled } from "@/shared/ai/agentPermissionFence";
 
 /**
  * AI "Due to Rebook" — the proactive sibling of win-back. It finds opted-in
@@ -151,6 +152,10 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
     let sentCount = 0;
 
     for (const c of candidates) {
+      // Permission is deliberately checked per recipient, not just once at
+      // runner start, so an owner revocation fences the remaining deliveries.
+      if (!(await isAiAgentPermissionEnabled(salonId, "ai_rebook"))) break;
+
       // Resolve channel BEFORE drafting — no point spending AI tokens on a
       // message that can't be delivered.
       const ch = resolveCustomerChannel({
@@ -182,6 +187,8 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
       if (!message) continue;
 
       const channel: "sms" | "email" = ch.email ? "email" : "sms";
+
+      if (!(await isAiAgentPermissionEnabled(salonId, "ai_rebook"))) break;
 
       let ok = false;
       if (ch.sms) {

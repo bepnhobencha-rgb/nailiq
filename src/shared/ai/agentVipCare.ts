@@ -10,6 +10,7 @@ import {
   getLessons,
 } from "@/shared/ai/lessons";
 import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
+import { isAiAgentPermissionEnabled } from "@/shared/ai/agentPermissionFence";
 
 /**
  * AI VIP Care — proactive outreach to high-value customers.
@@ -442,8 +443,10 @@ export async function runVipCare(salonId: string): Promise<void> {
     const emailConsentEnabled = process.env.SQUARE_EMAIL_CONSENT_SEND === "1";
     let sentCount = 0;
 
-    for (const client of clients) {
+    clientLoop: for (const client of clients) {
       if (sentCount >= learnedSendCap) break;
+      if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) break;
+
       // Full opt-in → SMS or email. Email-only consent (Square) → EMAIL ONLY.
       const hasFullConsent = !!client.marketingConsentAt;
       const hasEmailConsent =
@@ -456,7 +459,11 @@ export async function runVipCare(salonId: string): Promise<void> {
       if (client.dateOfBirth && !existing.has(`birthday:${client.id}`)) {
         const days = daysUntilBirthday(client.dateOfBirth);
         if (days === 7) {
+          if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) break;
           const baseMsg = await draftMessage("birthday", client, salonName);
+          if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
+            break clientLoop;
+          }
           // Attach the admin-configured birthday gift (a real voucher code), if any.
           const gift = await issueCareVoucher(svc, salonId, client, birthdayReward, {
             voucherKind: "birthday",
@@ -465,6 +472,9 @@ export async function runVipCare(salonId: string): Promise<void> {
             giftPhraseEn: "Your birthday gift",
           });
           const msg = gift ? `${baseMsg}\n\n${gift.rewardLine}` : baseMsg;
+          if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
+            break clientLoop;
+          }
           const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, clientSmsEnabled, emailOutboundEnabled, salonReplyEmail, smsA2pRegistered);
           if (!ok && reason.startsWith("no_channel")) {
             console.warn(`[runVipCare] no channel for ${client.name} — ${reason}`);
@@ -503,8 +513,12 @@ export async function runVipCare(salonId: string): Promise<void> {
         const key = `milestone_${milestone}:${client.id}`;
         if (existing.has(key)) continue;
         if (client.visitCount < milestone || client.visitCount > milestone + 1) continue;
+        if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) break;
         // Fire when visits == milestone (allow +1 buffer so cron doesn't miss by 1)
         const baseMsg = await draftMessage("milestone", client, salonName, milestone);
+        if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
+          break clientLoop;
+        }
         // Attach the admin-configured milestone gift (a real voucher code), if any.
         const gift = await issueCareVoucher(svc, salonId, client, milestoneReward, {
           voucherKind: "milestone",
@@ -513,6 +527,9 @@ export async function runVipCare(salonId: string): Promise<void> {
           giftPhraseEn: `Your visit #${milestone} gift`,
         });
         const msg = gift ? `${baseMsg}\n\n${gift.rewardLine}` : baseMsg;
+        if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
+          break clientLoop;
+        }
         const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, clientSmsEnabled, emailOutboundEnabled, salonReplyEmail, smsA2pRegistered);
         if (!ok && reason.startsWith("no_channel")) {
           console.warn(`[runVipCare] no channel for ${client.name} (milestone ${milestone}) — ${reason}`);
@@ -551,7 +568,13 @@ export async function runVipCare(salonId: string): Promise<void> {
       if (!existing.has(`vip_inactive:${client.id}`) && client.lastVisitAt) {
         const daysSince = Math.floor((Date.now() - Date.parse(client.lastVisitAt)) / 864e5);
         if (daysSince >= 30 && daysSince < 60) {
+          if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
+            break clientLoop;
+          }
           const msg = await draftMessage("vip_inactive", client, salonName);
+          if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
+            break clientLoop;
+          }
           const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, clientSmsEnabled, emailOutboundEnabled, salonReplyEmail, smsA2pRegistered);
           if (!ok && reason.startsWith("no_channel")) {
             console.warn(`[runVipCare] no channel for ${client.name} — ${reason}`);

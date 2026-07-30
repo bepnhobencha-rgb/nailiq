@@ -1,6 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { isAiAgentPermissionEnabled } from "@/shared/ai/agentPermissionFence";
 import { looseServiceClient, type Row } from "@/shared/integrations/square/looseDb";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
@@ -326,6 +327,15 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
     }
 
     for (const fv of firstVisitors) {
+      if (
+        !(await isAiAgentPermissionEnabled(
+          salonId,
+          "ai_first_visit_nurture",
+        ))
+      ) {
+        break;
+      }
+
       // Skip customers who haven't opted into marketing communications.
       if (!consentedPhones.has(fv.phone)) continue;
 
@@ -368,6 +378,15 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
       const warmth = await draftMessage({ step: 0, clientName: fv.name, salonName, service: fv.service, lang, bookingUrl });
       if (!warmth) continue;
 
+      if (
+        !(await isAiAgentPermissionEnabled(
+          salonId,
+          "ai_first_visit_nurture",
+        ))
+      ) {
+        break;
+      }
+
       let ok = false;
       if (ch.sms) ok = await sendSms(fv.phone, warmth, lang);
       if (ch.email && fv.email) ok = (await sendEmail(fv.email, fv.name, salonName, warmth, null, salonReplyEmail)) || ok;
@@ -403,6 +422,15 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
     let nudgeCount = 0;
 
     for (const seq of sequences) {
+      if (
+        !(await isAiAgentPermissionEnabled(
+          salonId,
+          "ai_first_visit_nurture",
+        ))
+      ) {
+        break;
+      }
+
       const seqId = str(seq.id);
       const phone = str(seq.client_phone);
       const name = str(seq.client_name);
@@ -466,6 +494,15 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
         customerPhone: phone,
       });
       if (ch.noChannel) continue;
+
+      if (
+        !(await isAiAgentPermissionEnabled(
+          salonId,
+          "ai_first_visit_nurture",
+        ))
+      ) {
+        break;
+      }
 
       let ok = false;
       if (ch.sms) ok = await sendSms(phone, body, lang);
