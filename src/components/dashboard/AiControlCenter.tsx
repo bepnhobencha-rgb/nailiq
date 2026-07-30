@@ -24,6 +24,7 @@ import {
 
 import { ApprovalDecisionButtons } from "@/components/dashboard/ApprovalDecisionButtons";
 import { buildActionIntelligence } from "@/shared/ai/actionIntelligence";
+import { approvalDecisionProvenance } from "@/shared/ai/approvalDecisionPresentation";
 import type { ApprovalDisplayRow } from "@/shared/ai/approvalRequests";
 import { campaignPreflightFreshness } from "@/shared/ai/campaignPreflightFreshness";
 import type { AiControlDataSource } from "@/shared/ai/controlCenterData";
@@ -95,6 +96,9 @@ export function AiControlCenter({
   const operationalExceptionsAvailable =
     !unavailableSources.includes("operational_exceptions");
   const pending = approvals.filter((item) => item.status === "pending");
+  const recentDecisions = approvals
+    .filter((item) => item.status !== "pending")
+    .slice(0, 3);
   const recentActivity = activity.entries.slice(0, 6);
   const observedReturnRate =
     activity.measured > 0
@@ -361,6 +365,79 @@ export function AiControlCenter({
               })}
             </div>
           )}
+
+          {approvalsAvailable && recentDecisions.length > 0 ? (
+            <div className="rounded-2xl border border-nq-border bg-nq-surface px-4">
+              <div className="flex items-center justify-between gap-3 border-b border-nq-border/50 py-3">
+                <h3 className="text-sm font-semibold text-nq-foreground">
+                  {vi ? "Quyết định gần đây" : "Recent decisions"}
+                </h3>
+                <Link
+                  href={`/dashboard/${encodeURIComponent(slug)}/approvals`}
+                  className="text-xs font-semibold text-nq-primary hover:underline"
+                >
+                  {vi ? "Xem lịch sử" : "View history"}
+                </Link>
+              </div>
+              <div className="divide-y divide-nq-border/50">
+                {recentDecisions.map((request) => {
+                  const provenance = approvalDecisionProvenance(
+                    request,
+                    language,
+                  );
+                  return (
+                    <article
+                      key={request.id}
+                      className="py-3"
+                      data-testid="ai-control-recent-decision"
+                    >
+                      <div className="flex items-start gap-3">
+                        {request.status === "approved" ? (
+                          <CheckCircle2
+                            className="mt-0.5 h-4 w-4 shrink-0 text-nq-success"
+                            aria-hidden
+                          />
+                        ) : request.status === "declined" ? (
+                          <X
+                            className="mt-0.5 h-4 w-4 shrink-0 text-nq-error"
+                            aria-hidden
+                          />
+                        ) : (
+                          <Clock3
+                            className="mt-0.5 h-4 w-4 shrink-0 text-nq-muted"
+                            aria-hidden
+                          />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <p className="line-clamp-1 text-xs font-medium text-nq-foreground">
+                              {request.summary}
+                            </p>
+                            <span className="text-[11px] text-nq-muted">
+                              {request.decided_at
+                                ? relativeTime(
+                                    request.decided_at,
+                                    nowIso,
+                                    language,
+                                  )
+                                : relativeTime(
+                                    request.created_at,
+                                    nowIso,
+                                    language,
+                                  )}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[11px] leading-5 text-nq-muted">
+                            {provenance.channel} · {provenance.actor}
+                          </p>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </section>
 
         <aside className="space-y-3">

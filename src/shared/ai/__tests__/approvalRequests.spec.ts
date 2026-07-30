@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
+  getUserById: vi.fn(),
   refreshOwnerProposalPreference: vi.fn(),
+  memberships: [] as Array<{
+    salon_id: string;
+    user_id: string;
+    role: string;
+  }>,
   approval: {
     id: "11111111-1111-4111-8111-111111111111",
     salon_id: "22222222-2222-4222-8222-222222222222",
@@ -37,6 +43,11 @@ vi.mock("@/shared/ai/ownerPreference", () => ({
 vi.mock("@/shared/lib/supabase/serviceRole", () => ({
   createServiceRoleClient: () => ({
     rpc: mocks.rpc,
+    auth: {
+      admin: {
+        getUserById: mocks.getUserById,
+      },
+    },
     from: (table: string) => {
       if (table === "approval_requests") {
         return {
@@ -69,12 +80,32 @@ vi.mock("@/shared/lib/supabase/serviceRole", () => ({
         return { insert: vi.fn().mockResolvedValue({ error: null }) };
       }
 
+      if (table === "salon_members") {
+        return {
+          select: () => ({
+            in: () => ({
+              in: () => ({
+                in: async () => ({
+                  data: mocks.memberships,
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+
       throw new Error(`Unexpected table: ${table}`);
     },
   }),
 }));
 
-import { processDecision } from "@/shared/ai/approvalRequests";
+import {
+  processDecision,
+  toApprovalDisplayRow,
+  toApprovalDisplayRows,
+  type ApprovalRow,
+} from "@/shared/ai/approvalRequests";
 
 function transition(
   outcome:
@@ -99,7 +130,9 @@ function transition(
 describe("processDecision", () => {
   beforeEach(() => {
     mocks.rpc.mockReset();
+    mocks.getUserById.mockReset();
     mocks.refreshOwnerProposalPreference.mockReset();
+    mocks.memberships = [];
     mocks.approval.payload = {};
   });
 
@@ -176,5 +209,71 @@ describe("processDecision", () => {
       alreadyDecided: false,
       expired: true,
     });
+  });
+});
+
+describe("approval display boundary", () => {
+  it("strips capability tokens and internal actor IDs from client rows", () => {
+    const display = toApprovalDisplayRow({
+      ...mocks.approval,
+      decided_by: "44444444-4444-4444-8444-444444444444",
+      decision_channel: "dashboard",
+    } as ApprovalRow);
+
+    expect(display).not.toHaveProperty("approve_token");
+    expect(display).not.toHaveProperty("decline_token");
+    expect(display).not.toHaveProperty("decided_by");
+    expect(display.decision_actor).toBeNull();
+  });
+
+  it("names a dashboard actor only after same-salon owner/admin revalidation", async () => {
+    const actorId = "44444444-4444-4444-8444-444444444444";
+    const decided = {
+      ...mocks.approval,
+      decided_by: actorId,
+      decision_channel: "dashboard",
+      status: "approved",
+    } as ApprovalRow;
+    mocks.memberships = [
+      {
+        salon_id: mocks.approval.salon_id,
+        user_id: actorId,
+        role: "owner",
+      },
+    ];
+    mocks.getUserById.mockResolvedValue({
+      data: {
+        user: {
+          email: "owner@example.com",
+          phone: null,
+          user_metadata: { full_name: "Salon Owner" },
+        },
+      },
+      error: null,
+    });
+
+    await expect(toApprovalDisplayRows([decided])).resolves.toMatchObject([
+      {
+        decision_actor: {
+          label: "Salon Owner",
+          role: "owner",
+        },
+      },
+    ]);
+    expect(mocks.getUserById).toHaveBeenCalledWith(actorId);
+
+    mocks.memberships = [
+      {
+        salon_id: "55555555-5555-4555-8555-555555555555",
+        user_id: actorId,
+        role: "owner",
+      },
+    ];
+    mocks.getUserById.mockClear();
+
+    await expect(toApprovalDisplayRows([decided])).resolves.toMatchObject([
+      { decision_actor: null },
+    ]);
+    expect(mocks.getUserById).not.toHaveBeenCalled();
   });
 });

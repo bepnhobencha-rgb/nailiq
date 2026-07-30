@@ -14,9 +14,11 @@ describe("AI Control Center metric-truth boundary", () => {
   it("counts every pending approval independently of its bounded preview", () => {
     expect(approvals).toContain("getApprovalInboxSnapshot");
     expect(approvals).toContain('.eq("status" as never, "pending")');
-    expect(approvals).toContain('.select("*", { count: "exact" })');
+    expect(approvals).toContain(
+      '.select("id", { count: "exact", head: true })',
+    );
     expect(approvals).toContain("pending_approval_count_unavailable");
-    expect(approvals).toContain("pendingCount: count");
+    expect(approvals).toContain("pendingCount: countResult.count");
     expect(page).toContain("pendingApprovalCount={approvalInbox.pendingCount}");
     expect(controlCenter).toContain(
       "approvalsAvailable ? pendingApprovalCount :",

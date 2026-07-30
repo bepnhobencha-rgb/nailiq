@@ -2,6 +2,19 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-07-30 (Owner-visible AI approval provenance)
+
+- **Decision history in context:** AI Control Center now shows recent approved,
+  declined, and expired requests beside the live approval queue.
+- **Human-readable provenance:** the approval history identifies the decision
+  channel, verified dashboard owner/admin, role, and decision time.
+- **Tenant-safe identity:** an actor name is resolved only after revalidating
+  that the auth user still has an owner/admin membership in the same salon.
+- **No secret or internal-ID exposure:** client rows omit approval bearer tokens
+  and raw auth UUIDs.
+- **Honest capability links:** secure email decisions explicitly state that the
+  person who clicked a shared link is not identity-attributed.
+
 ## 2026-07-29 (Attributed dashboard AI approvals)
 
 - **No bearer secrets in dashboard clients:** AI Control Center and the
