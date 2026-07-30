@@ -5,7 +5,10 @@ import {
   gotoBookingServiceStep,
   seedTestSalon,
 } from "./helpers/db";
-import { advanceBookingStep } from "./helpers/bookingFlow";
+import {
+  advanceBookingStep,
+  selectAvailableBookingDate,
+} from "./helpers/bookingFlow";
 
 test.describe("Booking Flow", () => {
   let testSlug: string;
@@ -35,17 +38,7 @@ test.describe("Booking Flow", () => {
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
-    // The month grid is now collapsed behind a "📅 More dates" toggle (#593);
-    // reveal it before picking a specific grid day.
-    await page.locator('[data-testid="date-toggle-calendar"]').click();
-    await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .waitFor({ state: "visible", timeout: 15_000 });
-    await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .click();
+    await selectAvailableBookingDate(page);
     await page.getByRole("button", { name: "Continue" }).first().click();
 
     const firstAvailableSlot = page
@@ -87,16 +80,7 @@ test.describe("Booking Flow", () => {
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
-    // Reveal the collapsed month grid (#593) before picking a grid day.
-    await page.locator('[data-testid="date-toggle-calendar"]').click();
-    await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .waitFor({ state: "visible", timeout: 15_000 });
-    await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .click();
+    await selectAvailableBookingDate(page);
     await page.getByRole("button", { name: "Continue" }).first().click();
 
     const slots = page.locator('[data-testid="time-slot"]');
