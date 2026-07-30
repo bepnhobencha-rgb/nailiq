@@ -852,17 +852,20 @@ export default function DeskBookingForm({
       className={
         anchored
           ? "fixed inset-0 z-[60]"
-          : "fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center"
+          : "fixed inset-0 z-[60] flex items-start justify-center bg-black/50 sm:items-center sm:p-4"
       }
       onClick={onClose}
     >
       <div
         ref={popoverRef}
         data-testid="desk-booking-form"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="desk-booking-heading"
         className={
           anchored
             ? "fixed z-[61] w-[min(24rem,calc(100vw-1rem))] overflow-y-auto rounded-xl border border-nq-muted/25 bg-nq-surface p-5 shadow-2xl"
-            : "w-full max-w-md rounded-xl border border-nq-muted/25 bg-nq-surface p-5 shadow-xl"
+            : "flex h-[100dvh] w-full max-w-md flex-col overflow-hidden bg-nq-surface shadow-xl sm:h-auto sm:max-h-[calc(100dvh-2rem)] sm:rounded-xl sm:border sm:border-nq-muted/25"
         }
         style={
           anchored
@@ -875,25 +878,42 @@ export default function DeskBookingForm({
         }
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-1 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-nq-foreground">
+        <div
+          className={
+            anchored
+              ? "mb-1 flex items-center justify-between"
+              : "flex shrink-0 items-center justify-between border-b border-nq-muted/20 px-4 py-2"
+          }
+        >
+          <h2
+            id="desk-booking-heading"
+            className="text-lg font-semibold text-nq-foreground"
+          >
             {tx.heading}
           </h2>
           <button
+            type="button"
             onClick={onClose}
-            className="text-nq-muted hover:text-nq-foreground"
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-md text-base text-nq-muted hover:bg-nq-primary/10 hover:text-nq-foreground"
             aria-label={tx.close}
           >
             ✕
           </button>
         </div>
+        <div
+          className={
+            anchored
+              ? ""
+              : "min-h-0 flex-1 overflow-y-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3"
+          }
+        >
         {prefilled && initialSlotLabel && !slotLabel && ymd === initialYmd ? (
           // The prefill hint shows the time the receptionist CLICKED on the grid.
           // Only show it while still on the clicked day — once they change the
           // date the clicked time no longer applies, and leaving it up made the
           // hinted time disagree with the times the picker suggests for the new
           // date.
-          <p className="mb-3 text-xs font-medium text-nq-primary">
+          <p className="mb-3 text-base font-medium text-nq-primary">
             {tx.prefillHint(initialSlotLabel, prefillStaffName)}
           </p>
         ) : (
@@ -917,7 +937,7 @@ export default function DeskBookingForm({
                 onChange={(e) => setPhone(e.target.value)}
               />
               {lookupMsg ? (
-                <p className="mt-1 text-[11px] text-nq-muted">{lookupMsg}</p>
+                <p className="mt-1 text-base text-nq-muted">{lookupMsg}</p>
               ) : null}
             </div>
 
@@ -939,7 +959,7 @@ export default function DeskBookingForm({
               />
               {showHits && clientHits.length > 0 ? (
                 <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-lg border border-nq-border bg-nq-surface shadow-lg">
-                  <p className="border-b border-nq-border px-3 py-1.5 text-[11px] text-nq-muted">
+                  <p className="border-b border-nq-border px-3 py-2 text-base text-nq-muted">
                     {tx.searchHint}
                   </p>
                   <ul className="max-h-56 overflow-y-auto">
@@ -962,7 +982,7 @@ export default function DeskBookingForm({
                               <span className="ml-1 text-amber-500">★</span>
                             ) : null}
                           </span>
-                          <span className="shrink-0 text-xs text-nq-muted">
+                          <span className="shrink-0 text-base text-nq-muted">
                             ··· {h.phone.slice(-4)}
                             {h.visitCount > 0 ? tx.visitsTag(h.visitCount) : ""}
                           </span>
@@ -1051,12 +1071,12 @@ export default function DeskBookingForm({
                 ))}
               </select>
               {staffId && staffId !== BOOKING_ANY_STAFF_ID ? (
-                <label className="mt-1.5 flex cursor-pointer items-center gap-2 text-[11px] text-nq-muted">
+                <label className="mt-1.5 flex min-h-11 cursor-pointer items-center gap-2 text-base text-nq-muted">
                   <input
                     type="checkbox"
                     checked={staffRequested}
                     onChange={(e) => setStaffRequested(e.target.checked)}
-                    className="h-3.5 w-3.5 accent-rose-500"
+                    className="h-5 w-5 shrink-0 accent-rose-500"
                   />
                   {tx.staffRequest}
                 </label>
@@ -1080,9 +1100,9 @@ export default function DeskBookingForm({
               <div>
                 <label className={labelCls}>{tx.time}</label>
                 {slotsLoading ? (
-                  <p className="text-xs text-nq-muted">{tx.slotsLoading}</p>
+                  <p className="text-base text-nq-muted">{tx.slotsLoading}</p>
                 ) : slots.filter((s) => s.available).length === 0 ? (
-                  <p className="text-xs text-nq-muted">{tx.noSlots}</p>
+                  <p className="text-base text-nq-muted">{tx.noSlots}</p>
                 ) : (
                   <div className="grid max-h-40 grid-cols-3 gap-1.5 overflow-y-auto rounded-md border border-nq-muted/20 bg-nq-bg p-1.5">
                     {slots
@@ -1119,10 +1139,10 @@ export default function DeskBookingForm({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold text-nq-foreground">
+                    <p className="text-base font-semibold text-nq-foreground">
                       🌙 {tx.afterHoursTitle}
                     </p>
-                    <p className="mt-0.5 text-[11px] leading-relaxed text-nq-muted">
+                    <p className="mt-0.5 text-base leading-relaxed text-nq-muted">
                       {tx.afterHoursDescription}
                     </p>
                   </div>
@@ -1135,7 +1155,7 @@ export default function DeskBookingForm({
                         setSlotLabel("");
                         setAfterHoursConsent(false);
                       }}
-                      className="shrink-0 rounded-md border border-amber-500/50 bg-nq-surface px-2.5 py-1.5 text-[11px] font-semibold text-nq-foreground hover:bg-amber-400/15"
+                      className="min-h-11 shrink-0 rounded-md border border-amber-500/50 bg-nq-surface px-3 py-2 text-base font-semibold text-nq-foreground hover:bg-amber-400/15"
                     >
                       {showAfterHours
                         ? tx.hideAfterHours
@@ -1145,17 +1165,17 @@ export default function DeskBookingForm({
                 </div>
 
                 {staffId === BOOKING_ANY_STAFF_ID ? (
-                  <p className="mt-2 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                  <p className="mt-2 text-base font-medium text-amber-700 dark:text-amber-300">
                     {tx.specificStaffForAfterHours}
                   </p>
                 ) : showAfterHours ? (
                   <>
                     {slotsLoading ? (
-                      <p className="mt-2 text-xs text-nq-muted">
+                      <p className="mt-2 text-base text-nq-muted">
                         {tx.slotsLoading}
                       </p>
                     ) : afterHoursSlots.length === 0 ? (
-                      <p className="mt-2 text-xs text-nq-muted">{tx.noSlots}</p>
+                      <p className="mt-2 text-base text-nq-muted">{tx.noSlots}</p>
                     ) : (
                       <div
                         data-testid="desk-after-hours-slots"
@@ -1170,7 +1190,7 @@ export default function DeskBookingForm({
                               desiredSlotRef.current = slot.label;
                               setAfterHoursConsent(false);
                             }}
-                            className={`rounded border px-1 py-1.5 text-xs transition ${
+                            className={`min-h-11 rounded border px-2 py-2 text-base transition ${
                               slotLabel === slot.label
                                 ? "border-amber-500 bg-amber-400 text-slate-950"
                                 : "border-amber-400/35 bg-nq-surface text-nq-foreground hover:bg-amber-400/15"
@@ -1179,7 +1199,7 @@ export default function DeskBookingForm({
                             <span className="block font-semibold">
                               {slot.label}
                             </span>
-                            <span className="block text-[9px] opacity-75">
+                            <span className="block text-base opacity-75">
                               {tx.afterHoursMinutes(slot.afterHoursMinutes)}
                             </span>
                           </button>
@@ -1187,7 +1207,7 @@ export default function DeskBookingForm({
                       </div>
                     )}
                     {selectedAfterHours ? (
-                      <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-md bg-nq-surface p-2 text-[11px] leading-relaxed text-nq-foreground">
+                      <label className="mt-3 flex min-h-11 cursor-pointer items-start gap-2 rounded-md bg-nq-surface p-2 text-base leading-relaxed text-nq-foreground">
                         <input
                           type="checkbox"
                           data-testid="desk-after-hours-consent"
@@ -1210,7 +1230,7 @@ export default function DeskBookingForm({
               <div data-testid="desk-bed-picker">
                 <label className={labelCls}>{tx.resource}</label>
                 {resourceLoading ? (
-                  <p data-testid="desk-bed-loading" className="text-xs text-nq-muted">{tx.resourceLoading}</p>
+                  <p data-testid="desk-bed-loading" className="text-base text-nq-muted">{tx.resourceLoading}</p>
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
                     <button
@@ -1292,14 +1312,25 @@ export default function DeskBookingForm({
               />
             ) : null}
 
-            {error ? <p className="text-xs text-nq-error">{error}</p> : null}
+            {error ? <p className="text-base text-nq-error">{error}</p> : null}
 
+          </div>
+        )}
+        </div>
+        {data ? (
+          <div
+            className={
+              anchored
+                ? "mt-3"
+                : "shrink-0 border-t border-nq-muted/20 bg-nq-surface px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3"
+            }
+          >
             <button
               type="button"
               data-testid="desk-booking-submit"
               disabled={!canSubmit}
               onClick={submit}
-              className="mt-1 min-h-11 w-full rounded-md bg-nq-primary px-4 py-2.5 text-base font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              className="min-h-11 w-full rounded-md bg-nq-primary px-4 py-2.5 text-base font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {submitting
                 ? tx.submitting
@@ -1308,7 +1339,7 @@ export default function DeskBookingForm({
                   : tx.submit}
             </button>
           </div>
-        )}
+        ) : null}
       </div>
     </div>,
     document.body,
