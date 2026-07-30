@@ -69,4 +69,35 @@ test.describe("AI Control Center freshness", () => {
     await expect(page).toHaveURL(new RegExp(`/dashboard/${SLUG}/ai`));
     await expect(page.getByTestId("ai-control-freshness")).toBeVisible();
   });
+
+  test("slow client navigation keeps App Router hook order stable", async ({
+    page,
+  }) => {
+    if (!owner) throw new Error("owner fixture missing");
+    await loginAs(page, owner);
+    await page.goto(`/dashboard/${SLUG}`);
+
+    await page.route(
+      (url) =>
+        url.pathname === `/dashboard/${SLUG}/ai` &&
+        url.searchParams.has("_rsc"),
+      async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 750));
+        await route.continue();
+      },
+    );
+
+    const aiLink = page.locator(
+      `a[href="/dashboard/${SLUG}/ai"]`,
+    ).first();
+    await expect(aiLink).toBeVisible();
+    await aiLink.click();
+
+    await expect(
+      page.getByRole("heading", { name: "AI Control Center" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "This page couldn’t load" }),
+    ).toHaveCount(0);
+  });
 });
