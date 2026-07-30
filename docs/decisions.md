@@ -5,6 +5,30 @@ Newest entries on top.
 
 ---
 
+## 2026-07-30 — Recent approval decisions expose execution integrity
+
+**Decision.** AI Control Center loads execution traces for the exact bounded
+set of recent decisions inside the active salon. Declined and expired requests
+state explicitly that no execution occurred. Approved requests show the real
+queue lifecycle; if no corresponding job can be proven, the UI reports an
+integrity issue instead of implying success. A trace read failure is a separate
+unavailable source and never becomes an empty or healthy state.
+
+**Why.** Approval provenance proves who authorized an action, but authorization
+is not evidence that a job was created or an effect happened. Joining only
+against the newest general queue rows can also omit a recent decision in a busy
+salon. An operating system must connect decision intent to authoritative
+execution evidence without making the owner infer the gap.
+
+**Safety.** The read is tenant-scoped and restricted to at most twenty trusted
+approval IDs. The browser receives only approval ID, lifecycle status, bounded
+attempt counts, a sanitized blocker category, and timestamps. Raw payloads,
+results, errors, internal job IDs, idempotency keys, and lease credentials stay
+server-side. This adds no execution, messaging, booking, pricing, payment, or
+authentication authority.
+
+---
+
 ## 2026-07-29 — AI operating permissions are atomic and auditable
 
 **Decision.** Owner/admin AI agent toggles execute through one service-only

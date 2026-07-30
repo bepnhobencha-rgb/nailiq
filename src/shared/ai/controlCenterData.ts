@@ -2,6 +2,7 @@ export type AiControlDataSource =
   | "approvals"
   | "activity"
   | "execution_queue"
+  | "decision_execution_trace"
   | "operating_state"
   | "operational_exceptions";
 
