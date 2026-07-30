@@ -375,14 +375,14 @@ export function WalkinQueueSidebar({
       className="flex h-full min-h-0 flex-col bg-nq-surface"
     >
       <header className="flex shrink-0 items-center justify-between gap-2 border-b border-nq-muted/20 px-3 py-2">
-        <h2 className="text-sm font-semibold text-nq-foreground">{labels.title}</h2>
+        <h2 className="text-base font-semibold text-nq-foreground">{labels.title}</h2>
         <div className="flex items-center gap-2">
           {showWaitTime && avgWaitMinutes !== null ? (
-            <span className="text-xs text-nq-muted tabular-nums">
+            <span className="text-base text-nq-muted tabular-nums">
               {labels.avgWait(avgWaitMinutes)}
             </span>
           ) : null}
-          <span className="rounded-full bg-nq-primary/20 px-2.5 py-0.5 font-mono text-xs font-semibold tabular-nums text-nq-primary">
+          <span className="rounded-full bg-nq-primary/20 px-2.5 py-1 font-mono text-base font-semibold tabular-nums text-nq-primary">
             {items.length}
           </span>
           {onClose ? (
@@ -390,7 +390,7 @@ export function WalkinQueueSidebar({
               type="button"
               onClick={onClose}
               aria-label={closeLabel ?? "Close"}
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-nq-border/40 bg-nq-surface/40 text-nq-muted transition-colors hover:bg-nq-surface/80 hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
+              className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md border border-nq-border/40 bg-nq-surface/40 text-base text-nq-muted transition-colors hover:bg-nq-surface/80 hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
             >
               <CloseIcon className="h-4 w-4" aria-hidden />
             </button>
