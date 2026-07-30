@@ -27,6 +27,15 @@ async function loginAs(
   await page.waitForURL(/\/dashboard\//, { timeout: 30_000 });
 }
 
+async function openAiManagerCategory(page: Page) {
+  const category = page.getByTestId("settings-category-cat-ai-manager");
+  const toggle = category.locator(":scope > button");
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByTestId("settings-ai-manager-hub")).toBeVisible();
+}
+
 test.describe("AI agent activation impact", () => {
   test.beforeAll(async () => {
     const salon = await seedTestSalon({
@@ -49,22 +58,7 @@ test.describe("AI agent activation impact", () => {
     await loginAs(page, owner);
     await page.goto(`/dashboard/${SLUG}/settings`);
 
-    const aiManagerCategory = page.getByTestId(
-      "settings-category-cat-ai-manager",
-    );
-    const aiManagerCategoryToggle = aiManagerCategory.locator(
-      ":scope > button",
-    );
-    await expect(aiManagerCategoryToggle).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
-    await aiManagerCategoryToggle.click();
-    await expect(aiManagerCategoryToggle).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
-    await expect(page.getByTestId("settings-ai-manager-hub")).toBeVisible();
+    await openAiManagerCategory(page);
     const winback = page.getByRole("switch", { name: /Win-back|Kéo khách/ });
     await expect(winback).not.toBeChecked();
     await expect(
@@ -81,6 +75,7 @@ test.describe("AI agent activation impact", () => {
     await expect(winback).toBeEnabled();
 
     await page.reload();
+    await openAiManagerCategory(page);
     const persistedWinback = page.getByRole("switch", {
       name: /Win-back|Kéo khách/,
     });
@@ -91,6 +86,7 @@ test.describe("AI agent activation impact", () => {
     await expect(persistedWinback).toBeEnabled();
 
     await page.reload();
+    await openAiManagerCategory(page);
     await expect(
       page.getByRole("switch", { name: /Win-back|Kéo khách/ }),
     ).not.toBeChecked();
