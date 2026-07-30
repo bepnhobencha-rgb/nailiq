@@ -19,15 +19,15 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260730021524. Refresh these with each schema-changing forward
+ * through 20260730053500. Refresh these with each schema-changing forward
  * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
   tables: 102,
-  columns: 1370,
+  columns: 1371,
   policies: 151,
   /**
-   * APP functions only — 104 after the rehearsed forward migrations.
+   * APP functions only — 106 after the rehearsed forward migrations.
    *
    * Counting every `public` function is a trap: many belong to EXTENSIONS
    * (pgcrypto, btree_gist, pg_trgm, uuid-ossp), which production happens to have
@@ -36,8 +36,8 @@ const PRODUCTION = {
    * The query below excludes anything a `pg_depend` extension edge points at,
    * so extension placement cannot distort this release-shape tripwire.
    */
-  functions: 104,
-  triggers: 33,
+  functions: 106,
+  triggers: 34,
   indexes: 334,
 } as const;
 
@@ -83,6 +83,8 @@ const CRITICAL_FUNCTIONS = [
   "control_ai_execution_job",
   "control_watchdog_alert",
   "decide_ai_approval_request",
+  "decide_ai_approval_request_as_actor",
+  "mark_ai_approval_decision_channel",
   "finish_ai_execution_job",
   "execute_ai_operational_note",
   "execute_ai_operational_note_v2",

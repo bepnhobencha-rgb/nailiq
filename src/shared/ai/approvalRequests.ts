@@ -51,9 +51,22 @@ export type ApprovalRow = {
   notified_at: string | null;
   reminded_at: string | null;
   decided_by: string | null;
+  decision_channel: "dashboard" | "email_capability" | null;
   decided_at: string | null;
   created_at: string;
 };
+
+export type ApprovalDisplayRow = Omit<
+  ApprovalRow,
+  "approve_token" | "decline_token"
+>;
+
+export function toApprovalDisplayRow(row: ApprovalRow): ApprovalDisplayRow {
+  const { approve_token: _approveToken, decline_token: _declineToken, ...safe } = row;
+  void _approveToken;
+  void _declineToken;
+  return safe;
+}
 
 type ApprovalDecisionTransition = {
   outcome:

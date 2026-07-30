@@ -2,6 +2,22 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-07-29 (Attributed dashboard AI approvals)
+
+- **No bearer secrets in dashboard clients:** AI Control Center and the
+  approvals inbox send only display-safe approval rows to the browser; raw
+  approve/decline tokens remain server-side.
+- **Named decisions:** authenticated dashboard approvals record the exact
+  owner/admin user in `decided_by` and label the channel as `dashboard`.
+- **Defense in depth:** the atomic database RPC independently rechecks that the
+  actor is an owner/admin of the approval's salon before changing state or
+  creating an execution job.
+- **Honest email attribution:** two-step email links remain capability-based and
+  are labeled `email_capability` without pretending to know which recipient
+  clicked the shared link.
+- **Append-only evidence:** dashboard attribution creates a separate audit event
+  rather than rewriting the original approval decision log.
+
 ## 2026-07-29 (Immediate AI outreach revocation fence)
 
 - **Fresh permission per recipient:** Win-back, Rebook, VIP Care, and First

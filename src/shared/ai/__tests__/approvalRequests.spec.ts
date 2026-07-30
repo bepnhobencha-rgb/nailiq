@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
     notified_at: null,
     reminded_at: null,
     decided_by: null,
+    decision_channel: null,
     decided_at: null,
     created_at: "2026-07-27T00:00:00.000Z",
   },

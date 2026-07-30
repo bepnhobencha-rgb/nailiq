@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { AiControlCenter } from "@/components/dashboard/AiControlCenter";
 import {
   getApprovalInboxSnapshot,
+  toApprovalDisplayRow,
   type ApprovalInboxSnapshot,
 } from "@/shared/ai/approvalRequests";
 import {
@@ -106,12 +107,10 @@ export default async function AiControlCenterPage({ params }: Props) {
   const operatingState = operatingStateSource.value;
   const operationalExceptionInbox = operationalExceptionSource.value;
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://nailiq.ca";
-
   return (
     <AiControlCenter
       slug={slug}
-      approvals={approvalInbox.items}
+      approvals={approvalInbox.items.map(toApprovalDisplayRow)}
       pendingApprovalCount={approvalInbox.pendingCount}
       activity={activity}
       executionJobs={executionJobs}
@@ -119,7 +118,6 @@ export default async function AiControlCenterPage({ params }: Props) {
       operationalExceptionCount={operationalExceptionInbox.activeCount}
       operatingState={operatingState}
       unavailableSources={unavailableSources}
-      appUrl={appUrl}
       nowIso={now.toISOString()}
     />
   );

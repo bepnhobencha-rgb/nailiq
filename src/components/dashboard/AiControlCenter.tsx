@@ -8,7 +8,6 @@ import {
   AlertTriangle,
   ArrowRight,
   Bot,
-  Check,
   CheckCircle2,
   Clock3,
   Gauge,
@@ -23,8 +22,9 @@ import {
   X,
 } from "lucide-react";
 
+import { ApprovalDecisionButtons } from "@/components/dashboard/ApprovalDecisionButtons";
 import { buildActionIntelligence } from "@/shared/ai/actionIntelligence";
-import type { ApprovalRow } from "@/shared/ai/approvalRequests";
+import type { ApprovalDisplayRow } from "@/shared/ai/approvalRequests";
 import { campaignPreflightFreshness } from "@/shared/ai/campaignPreflightFreshness";
 import type { AiControlDataSource } from "@/shared/ai/controlCenterData";
 import {
@@ -52,7 +52,7 @@ import { OperationalExceptionInbox } from "@/components/dashboard/OperationalExc
 
 type Props = {
   slug: string;
-  approvals: ApprovalRow[];
+  approvals: ApprovalDisplayRow[];
   pendingApprovalCount: number;
   activity: MinhActivityData;
   executionJobs: ExecutionJobRow[];
@@ -60,7 +60,6 @@ type Props = {
   operationalExceptionCount: number;
   operatingState: AiOperatingState | null;
   unavailableSources: AiControlDataSource[];
-  appUrl: string;
   nowIso: string;
 };
 
@@ -84,7 +83,6 @@ export function AiControlCenter({
   operationalExceptionCount,
   operatingState,
   unavailableSources,
-  appUrl,
   nowIso,
 }: Props) {
   const router = useRouter();
@@ -343,15 +341,12 @@ export function AiControlCenter({
                     </div>
                   </div>
 
-                  <div className="mt-4 grid grid-cols-2 gap-2">
-                    <Link prefetch={false} href={`${appUrl}/api/ai/approve?token=${request.approve_token}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-nq-success px-3 text-sm font-semibold text-white">
-                      <Check className="h-4 w-4" aria-hidden />
-                      {vi ? "Đồng ý" : "Approve"}
-                    </Link>
-                    <Link prefetch={false} href={`${appUrl}/api/ai/approve?token=${request.decline_token}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-nq-error/40 px-3 text-sm font-semibold text-nq-error">
-                      <X className="h-4 w-4" aria-hidden />
-                      {vi ? "Từ chối" : "Decline"}
-                    </Link>
+                  <div className="mt-4">
+                    <ApprovalDecisionButtons
+                      slug={slug}
+                      approvalId={request.id}
+                      language={language}
+                    />
                   </div>
                   </div>
                   {intelligence.reversibility.reversible === false ? (
