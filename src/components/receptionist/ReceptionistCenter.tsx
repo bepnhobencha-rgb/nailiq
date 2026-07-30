@@ -753,6 +753,21 @@ function ReceptionistCenterInner({
     [],
   );
 
+  // Positive confirmation for the desk's highest-frequency status mutation.
+  // The drawer closes after Start/Complete, so without this message the
+  // receptionist has to infer success from the schedule repaint.
+  const [statusSuccessMessage, setStatusSuccessMessage] = useState<
+    string | null
+  >(null);
+  useEffect(() => {
+    if (!statusSuccessMessage) return;
+    const timer = window.setTimeout(
+      () => setStatusSuccessMessage(null),
+      4500,
+    );
+    return () => window.clearTimeout(timer);
+  }, [statusSuccessMessage]);
+
   // Bumped on every booking mutation (via reloadCurrentDay, which every
   // mutation + realtime change funnels through). Week/Month views include it
   // in their fetch deps so they refetch after a cancel/reschedule done from
@@ -2036,6 +2051,20 @@ function ReceptionistCenterInner({
         );
         return;
       }
+      const successTemplate =
+        (nextStatus === "completed"
+          ? rcMessages.auditLog.statusTransitions.in_progress_to_completed
+          : rcMessages.auditLog.statusTransitions.confirmed_to_in_progress) ??
+        (nextStatus === "completed"
+          ? language === "vi"
+            ? "Hoàn thành dịch vụ cho {name}"
+            : "Completed service for {name}"
+          : language === "vi"
+            ? "Bắt đầu phục vụ {name}"
+            : "Started service for {name}");
+      setStatusSuccessMessage(
+        successTemplate.replace("{name}", b.client_name),
+      );
       closeBookingDrawer();
       await reloadCurrentDay();
       router.refresh();
@@ -4213,6 +4242,19 @@ function ReceptionistCenterInner({
           aria-live="assertive"
         >
           {shakeMessage}
+        </output>
+      ) : null}
+
+      {statusSuccessMessage !== null ? (
+        <output
+          data-testid="desk-status-success"
+          className={cn(
+            "fixed top-14 left-1/2 z-[55] max-w-[min(100vw-2rem,24rem)] -translate-x-1/2",
+            "rounded-xl border border-emerald-400/60 bg-emerald-950/95 px-4 py-3 text-center text-base font-semibold text-emerald-100 shadow-nq-card",
+          )}
+          aria-live="polite"
+        >
+          {statusSuccessMessage}
         </output>
       ) : null}
 

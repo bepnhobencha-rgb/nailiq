@@ -34,6 +34,16 @@ async function gotoWizard(page: Page) {
   await expect(page.getByTestId("ai-prefill-url-input")).toBeVisible({
     timeout: 15_000,
   });
+  await page.waitForFunction(
+    (slug) =>
+      (
+        window as typeof window & {
+          __NAILIQ_AI_PREFILL_HYDRATED__?: string;
+        }
+      ).__NAILIQ_AI_PREFILL_HYDRATED__ === slug,
+    TEST_SLUG,
+    { timeout: 15_000 },
+  );
 }
 
 test.describe("AI Prefill Setup Wizard", () => {
