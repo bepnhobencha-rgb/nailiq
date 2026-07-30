@@ -18,6 +18,10 @@ const migration = readFileSync(
   ),
   "utf8",
 );
+const schemaParity = readFileSync(
+  resolve(process.cwd(), "scripts/check-schema-parity.ts"),
+  "utf8",
+);
 
 describe("AI agent activation boundary", () => {
   it("validates the runtime key before any salon write", () => {
@@ -75,6 +79,14 @@ describe("AI agent activation boundary", () => {
         `when '${flagKey}' then '${impact}'`,
       );
     }
+  });
+
+  it("makes the permission control plane part of blank-database parity", () => {
+    expect(schemaParity).toContain('"ai_agent_permission_audit"');
+    expect(schemaParity).toContain('"set_ai_agent_permission"');
+    expect(schemaParity).toContain(
+      '"reject_ai_agent_permission_audit_mutation"',
+    );
   });
 
   it("presents the impact and asks before activating sensitive agents", () => {

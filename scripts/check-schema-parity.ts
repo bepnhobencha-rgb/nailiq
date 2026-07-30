@@ -19,15 +19,15 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260729100000. Refresh these with each schema-changing forward
+ * through 20260730021524. Refresh these with each schema-changing forward
  * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
-  tables: 101,
-  columns: 1359,
+  tables: 102,
+  columns: 1370,
   policies: 151,
   /**
-   * APP functions only — 102 after the rehearsed forward migrations.
+   * APP functions only — 104 after the rehearsed forward migrations.
    *
    * Counting every `public` function is a trap: many belong to EXTENSIONS
    * (pgcrypto, btree_gist, pg_trgm, uuid-ossp), which production happens to have
@@ -36,9 +36,9 @@ const PRODUCTION = {
    * The query below excludes anything a `pg_depend` extension edge points at,
    * so extension placement cannot distort this release-shape tripwire.
    */
-  functions: 102,
-  triggers: 32,
-  indexes: 332,
+  functions: 104,
+  triggers: 33,
+  indexes: 334,
 } as const;
 
 /**
@@ -72,6 +72,7 @@ const CRITICAL_TABLES = [
   "salon_client_identity_aliases",
   "salon_client_identity_merge_events",
   "ai_digest_deliveries",
+  "ai_agent_permission_audit",
 ] as const;
 
 /** Booking cannot work without these; a missing RPC fails at runtime, not at apply time. */
@@ -105,6 +106,8 @@ const CRITICAL_FUNCTIONS = [
   "revoke_salon_client_identity_merge",
   "apply_salon_client_identity_alias",
   "record_ai_digest_delivery",
+  "reject_ai_agent_permission_audit_mutation",
+  "set_ai_agent_permission",
 ] as const;
 
 const dbUrl = process.env.DB_URL;
@@ -194,7 +197,7 @@ function main() {
   // The first dump here was taken with --no-privileges and produced 0 grants.
   // Everything above still went green. That is why this check exists.
   console.log("\n── Grant matrix ──\n");
-  const GRANTS = { anon: 57, authenticated: 64, service_role: 106 } as const;
+  const GRANTS = { anon: 57, authenticated: 64, service_role: 107 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
