@@ -14,11 +14,9 @@ import {
 import { phoneRegion } from "@/shared/lib/phoneRegion";
 
 /**
- * AI Win-back — find lapsed regulars and draft a warm, personalised "we miss
- * you" message for the owner to review (and later send). Same spine as the other
- * agents: gather (DB, salon-scoped via the winback_candidates RPC) → AI drafts →
- * guard → log to winback_suggestions. The AI only SUGGESTS; sending stays
- * owner-decided, so a wrong draft costs nothing.
+ * AI Win-back — find opted-in lapsed regulars, draft a warm personalized
+ * message, deliver it through the salon's enabled channel, and persist the
+ * result. Activation is owner-controlled and each run is capped and deduped.
  */
 
 const str = (v: unknown): string => (v == null ? "" : String(v));

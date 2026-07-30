@@ -2,6 +2,22 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-07-29 (Explicit AI agent activation impact)
+
+- **Truthful controls:** every AI Manager agent shows whether it only drafts,
+  monitors, contacts the owner, messages customers, or changes booking
+  protection.
+- **Explicit activation:** customer-outreach and live no-show policy agents
+  require a clear owner confirmation before they can be enabled.
+- **Server enforcement:** the Server Action rejects unknown runtime flag keys
+  and sensitive enables without an acknowledged impact; TypeScript types are
+  no longer treated as a security boundary.
+- **Full-path proof:** Playwright dismisses and accepts the real customer
+  outreach confirmation, verifies only the accepted enable persists, then
+  disables it without invoking any manager cron or outbound provider.
+- **No autonomous activation:** this milestone does not enable an agent, send a
+  message, change a booking, or alter an existing salon's saved flags.
+
 ## 2026-07-29 (AI Control Center freshness contract)
 
 - **Fresh operating truth:** the Control Center refreshes its server-owned
