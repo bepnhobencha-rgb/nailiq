@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/client";
-import { getActivityUnreadCount } from "@/shared/dashboard/loadActivityFeedAction";
 
 /**
  * Activity bell in the dashboard top-right chrome. Shows how many new items
@@ -35,8 +34,15 @@ export function ActivityBell() {
 
   const refresh = useCallback(async () => {
     if (!slug) return;
-    const res = await getActivityUnreadCount(slug, getSeen());
-    if (res.ok) {
+    const params = new URLSearchParams({ slug, since: getSeen() });
+    const res = await fetch(`/api/dashboard/activity-unread?${params}`, {
+      cache: "no-store",
+    })
+      .then((response) => response.json())
+      .catch(() => ({ ok: false })) as
+      | { ok: true; count: number }
+      | { ok: false };
+    if (res.ok && Number.isFinite(res.count)) {
       setVisible(true);
       setCount(res.count);
     } else {
