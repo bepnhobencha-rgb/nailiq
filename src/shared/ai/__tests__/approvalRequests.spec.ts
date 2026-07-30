@@ -213,9 +213,17 @@ describe("processDecision", () => {
 });
 
 describe("approval display boundary", () => {
-  it("strips capability tokens and internal actor IDs from client rows", () => {
+  it("rebuilds a minimal owner row without raw payload or internal fields", () => {
     const display = toApprovalDisplayRow({
       ...mocks.approval,
+      payload: {
+        reason: "Low future occupancy",
+        recipients: [
+          { phone: "+16045550001", provider_token: "secret-provider-token" },
+          { phone: "+16045550002" },
+        ],
+        internal_prompt: "secret prompt",
+      },
       decided_by: "44444444-4444-4444-8444-444444444444",
       decision_channel: "dashboard",
     } as ApprovalRow);
@@ -223,6 +231,17 @@ describe("approval display boundary", () => {
     expect(display).not.toHaveProperty("approve_token");
     expect(display).not.toHaveProperty("decline_token");
     expect(display).not.toHaveProperty("decided_by");
+    expect(display).not.toHaveProperty("salon_id");
+    expect(display).not.toHaveProperty("payload");
+    expect(display).not.toHaveProperty("notified_at");
+    expect(display).not.toHaveProperty("reminded_at");
+    expect(JSON.stringify(display)).not.toContain("secret-provider-token");
+    expect(JSON.stringify(display)).not.toContain("+16045550001");
+    expect(JSON.stringify(display)).not.toContain("secret prompt");
+    expect(display.intelligence.en).toMatchObject({
+      reason: "Low future occupancy",
+      impact: "This action will contact 2 customers.",
+    });
     expect(display.decision_actor).toBeNull();
   });
 

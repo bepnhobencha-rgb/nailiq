@@ -23,7 +23,6 @@ import {
 } from "lucide-react";
 
 import { ApprovalDecisionButtons } from "@/components/dashboard/ApprovalDecisionButtons";
-import { buildActionIntelligence } from "@/shared/ai/actionIntelligence";
 import { approvalDecisionProvenance } from "@/shared/ai/approvalDecisionPresentation";
 import { approvalDecisionExecutionPresentation } from "@/shared/ai/approvalExecutionPresentation";
 import type { ApprovalDisplayRow } from "@/shared/ai/approvalRequests";
@@ -294,11 +293,7 @@ export function AiControlCenter({
           ) : (
             <div className="space-y-3">
               {pending.slice(0, 4).map((request) => {
-                const intelligence = buildActionIntelligence(
-                  request.action_type,
-                  request.payload,
-                  language,
-                );
+                const intelligence = request.intelligence[language];
                 return (
                 <article key={request.id} className="overflow-hidden rounded-2xl border border-nq-border bg-nq-surface">
                   <div className="p-4 sm:p-5">
