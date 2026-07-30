@@ -2,6 +2,7 @@
 
 import { formatTranscript } from "@/shared/dashboard/formatTranscript";
 import { customerMessageActivityItem } from "@/shared/dashboard/customerMessageActivity";
+import { aiAgentPermissionActivityItem } from "@/shared/dashboard/aiAgentPermissionActivity";
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -231,6 +232,7 @@ export async function loadActivityFeed(
       notifsRes,
       callsRes,
       auditRes,
+      agentPermissionAuditRes,
       authRes,
       aiRes,
       watchdogRes,
@@ -259,6 +261,12 @@ export async function loadActivityFeed(
       db
         .from("system_audit" as never)
         .select("id, table_name, action, changed_fields, created_at, actor_user_id")
+        .eq("salon_id", salonId)
+        .order("created_at", { ascending: false })
+        .limit(PER_SOURCE),
+      db
+        .from("ai_agent_permission_audit" as never)
+        .select("id, actor_user_id, actor_role, actor_kind, flag_key, impact, enabled, previous_enabled, impact_acknowledged, created_at")
         .eq("salon_id", salonId)
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
@@ -379,10 +387,15 @@ export async function loadActivityFeed(
     // Includes AI-decision OVERRIDE actors so those rows can name who corrected
     // the agent.
     const auditRows = (auditRes.data ?? []) as Array<Record<string, unknown>>;
+    const agentPermissionAuditRows = (
+      agentPermissionAuditRes.data ?? []
+    ) as Array<Record<string, unknown>>;
     const aiRows = (aiRes.data ?? []) as Array<Record<string, unknown>>;
     const auditUserIds = [
       ...new Set(
-        [...auditRows, ...aiRows].map((r) => str(r.actor_user_id)).filter(Boolean),
+        [...auditRows, ...agentPermissionAuditRows, ...aiRows]
+          .map((r) => str(r.actor_user_id))
+          .filter(Boolean),
       ),
     ];
     const nameById = new Map<string, string>();
@@ -399,10 +412,36 @@ export async function loadActivityFeed(
       }
     }
 
+    const permissionTransitionKeys = new Set(
+      agentPermissionAuditRows.map(
+        (r) => `${str(r.created_at)}|${str(r.actor_user_id)}`,
+      ),
+    );
+    for (const r of agentPermissionAuditRows) {
+      items.push(
+        aiAgentPermissionActivityItem(
+          r,
+          r.actor_user_id ? nameById.get(str(r.actor_user_id)) : null,
+        ),
+      );
+    }
+
     for (const r of auditRows) {
       const changed = (r.changed_fields && typeof r.changed_fields === "object"
         ? (r.changed_fields as Record<string, unknown>)
         : {});
+      // set_ai_agent_permission writes both the generic salons audit and the
+      // purpose-built permission audit in one transaction. Prefer the explicit
+      // permission item so the owner sees one truthful event, not two.
+      if (
+        str(r.table_name) === "salons" &&
+        Object.prototype.hasOwnProperty.call(changed, "feature_flags") &&
+        permissionTransitionKeys.has(
+          `${str(r.created_at)}|${str(r.actor_user_id)}`,
+        )
+      ) {
+        continue;
+      }
       const base = describeAudit(str(r.table_name), str(r.action), changed);
       const actorName = r.actor_user_id ? nameById.get(str(r.actor_user_id)) : null;
       const { title, subtitle } = {

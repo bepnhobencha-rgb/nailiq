@@ -37,6 +37,28 @@ export const AI_AGENT_IMPACT: Record<AiAgentFlagKey, AiAgentImpact> = {
   ai_yelp_reply: "draft_only",
 };
 
+export const AI_AGENT_DISPLAY_NAME: Record<AiAgentFlagKey, string> = {
+  ai_noshow_policy_live: "Người Gác Cửa — No-show Guard",
+  ai_watchdog: "Người Canh Tiệm — Watchdog",
+  ai_winback: "Người Kéo Về — Win-back",
+  ai_rebook: "Người Đặt Lại — Rebook",
+  ai_smart_reminders: "Người Nhắc Lịch — Smart Reminders",
+  ai_social_content: "Người Làm Nội Dung — Social Content",
+  ai_vip_care: "Người Chăm VIP — VIP Care",
+  ai_first_visit_nurture: "Người Chăm Khách Mới — First Visit",
+  ai_unified_digest: "Người Báo Cáo — Daily Digest",
+  ai_gbp_post: "Người Đăng Google — GBP Post",
+  ai_yelp_reply: "Người Trả Lời Yelp — Yelp Reply",
+};
+
+export const AI_AGENT_IMPACT_LABEL: Record<AiAgentImpact, string> = {
+  booking_policy: "Có thể thay đổi chính sách đặt lịch",
+  customer_outreach: "Có thể liên hệ trực tiếp với khách",
+  owner_notification: "Chỉ gửi thông báo vận hành cho chủ tiệm",
+  draft_only: "Chỉ tạo bản nháp, không tự đăng hoặc gửi",
+  monitoring: "Chỉ theo dõi và tạo cảnh báo",
+};
+
 export function isAiAgentFlagKey(value: unknown): value is AiAgentFlagKey {
   return (
     typeof value === "string" &&

@@ -1431,7 +1431,7 @@ export async function updateBookingVerificationMode(
 // Types live in aiAgentTypes.ts (no "use server") so client components can import them.
 export type { AiAgentFlagKey, AiAgentFlags } from "@/shared/dashboard/aiAgentTypes";
 import {
-  AI_AGENT_FLAG_KEYS,
+  AI_AGENT_IMPACT,
   isAiAgentFlagKey,
   requiresAiAgentEnableAcknowledgement,
   type AiAgentFlagKey,
@@ -1478,32 +1478,49 @@ export async function updateAiAgentFlag(
   if (!ctx) return { ok: false, error: "unauthorized" };
   if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
-  // Read current flags + ai_profile — safe for low-concurrency settings writes.
-  const { data: row } = await ctx.supabase
-    .from("salons")
-    .select("feature_flags, ai_profile")
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
-
-  const current = (row?.feature_flags ?? {}) as Record<string, boolean>;
-  const hadAnyAgent = AI_AGENT_FLAG_KEYS.some(
-    (key) => current[key] === true,
+  const { data, error } = await createServiceRoleClient().rpc(
+    "set_ai_agent_permission" as never,
+    {
+      p_salon_id: ctx.salon.id,
+      p_actor_user_id: ctx.userId,
+      p_actor_role: ctx.role,
+      p_actor_kind: ctx.kind,
+      p_flag_key: flagKey,
+      p_enabled: enabled,
+      p_impact: AI_AGENT_IMPACT[flagKey],
+      p_impact_acknowledged: options?.impactAcknowledged === true,
+    } as never,
   );
-  const merged = { ...current, [flagKey]: enabled };
-
-  const { error } = await ctx.supabase
-    .from("salons")
-    .update({ feature_flags: merged } as never)
-    .eq("id", ctx.salon.id);
-
   if (error) {
-    console.error("[updateAiAgentFlag]", flagKey, error);
+    console.error("[updateAiAgentFlag]", flagKey, error.code);
+    return { ok: false, error: "server_error" };
+  }
+
+  const result = (data ?? {}) as {
+    success?: boolean;
+    code?: string;
+    changed?: boolean;
+    had_any_agent?: boolean;
+    has_ai_profile?: boolean;
+  };
+  if (!result.success) {
+    if (result.code === "impact_confirmation_required") {
+      return { ok: false, error: "impact_confirmation_required" };
+    }
+    if (result.code === "forbidden" || result.code === "invalid_actor") {
+      return { ok: false, error: "forbidden" };
+    }
     return { ok: false, error: "server_error" };
   }
 
   // First agent ever enabled + no SIP yet → fire-and-forget buildSip so
   // Manager Briefing can open with "Minh đã tự học..." instead of blank slate.
-  if (enabled && !hadAnyAgent && !row?.ai_profile) {
+  if (
+    enabled &&
+    result.changed &&
+    !result.had_any_agent &&
+    !result.has_ai_profile
+  ) {
     import("@/shared/ai/buildSip")
       .then(({ buildSip }) => buildSip(ctx.salon.id))
       .catch((e) => console.error("[updateAiAgentFlag] buildSip", e));

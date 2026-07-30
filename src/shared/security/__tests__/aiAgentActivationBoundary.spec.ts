@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { AI_AGENT_IMPACT } from "@/shared/dashboard/aiAgentTypes";
 
 const actions = readFileSync(
   resolve(process.cwd(), "src/shared/dashboard/salonOwnerActions.ts"),
@@ -8,6 +9,17 @@ const actions = readFileSync(
 );
 const hub = readFileSync(
   resolve(process.cwd(), "src/components/dashboard/AiManagerHub.tsx"),
+  "utf8",
+);
+const migration = readFileSync(
+  resolve(
+    process.cwd(),
+    "supabase/migrations/20260730021524_atomic_ai_agent_permissions.sql",
+  ),
+  "utf8",
+);
+const schemaParity = readFileSync(
+  resolve(process.cwd(), "scripts/check-schema-parity.ts"),
   "utf8",
 );
 
@@ -30,9 +42,51 @@ describe("AI agent activation boundary", () => {
     expect(actions).toContain("options?.impactAcknowledged !== true");
   });
 
-  it("does not mistake unrelated salon flags for an enabled AI agent", () => {
-    expect(actions).toContain("AI_AGENT_FLAG_KEYS.some(");
-    expect(actions).not.toContain("Object.values(current).some(Boolean)");
+  it("moves permission writes behind one service-only atomic RPC", () => {
+    expect(actions).toContain('"set_ai_agent_permission" as never');
+    expect(actions).not.toContain(".update({ feature_flags: merged }");
+    expect(migration).toContain("for update;");
+    expect(migration).toContain("jsonb_set(");
+    expect(migration).toContain(
+      "insert into public.ai_agent_permission_audit",
+    );
+    expect(migration).toContain(
+      "create trigger ai_agent_permission_audit_immutable",
+    );
+    expect(migration).toContain(
+      "raise exception 'ai_agent_permission_audit_is_immutable'",
+    );
+    expect(migration).toContain(
+      "revoke execute on function public.set_ai_agent_permission(",
+    );
+    expect(migration).toContain("from public, anon, authenticated;");
+  });
+
+  it("validates actor, impact, and acknowledgement again inside Postgres", () => {
+    expect(migration).toContain("sm.user_id = p_actor_user_id");
+    expect(migration).toContain("sm.role in ('owner', 'admin')");
+    expect(migration).toContain(
+      "p_impact is distinct from v_expected_impact",
+    );
+    expect(migration).toContain(
+      "and p_impact_acknowledged is distinct from true",
+    );
+  });
+
+  it("keeps the database impact policy aligned with the application allowlist", () => {
+    for (const [flagKey, impact] of Object.entries(AI_AGENT_IMPACT)) {
+      expect(migration).toContain(
+        `when '${flagKey}' then '${impact}'`,
+      );
+    }
+  });
+
+  it("makes the permission control plane part of blank-database parity", () => {
+    expect(schemaParity).toContain('"ai_agent_permission_audit"');
+    expect(schemaParity).toContain('"set_ai_agent_permission"');
+    expect(schemaParity).toContain(
+      '"reject_ai_agent_permission_audit_mutation"',
+    );
   });
 
   it("presents the impact and asks before activating sensitive agents", () => {
