@@ -830,7 +830,7 @@ export function BookingDetailDrawer({
             type="button"
             onClick={handleClose}
             className={cn(
-              "min-h-10 min-w-10 shrink-0 rounded-lg border border-nq-muted/40 text-sm font-medium text-nq-muted",
+              "min-h-11 min-w-11 shrink-0 rounded-lg border border-nq-muted/40 text-base font-medium text-nq-muted",
               "hover:border-nq-muted hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/40",
             )}
             aria-label={copy.closeAria}
@@ -1229,6 +1229,7 @@ export function BookingDetailDrawer({
                 <Badge
                   variant={statusBadgeVariant(model.status)}
                   size="md"
+                  className="text-base"
                   data-testid="booking-drawer-status-badge"
                 >
                   {model.statusLabel}
@@ -1424,6 +1425,7 @@ export function BookingDetailDrawer({
                         <Button
                           type="button"
                           variant="primary"
+                          size="lg"
                           data-testid="drawer-primary-action"
                           loading={primaryAction.busy}
                           disabled={isOffline}

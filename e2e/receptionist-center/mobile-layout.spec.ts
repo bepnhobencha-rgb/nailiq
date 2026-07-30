@@ -7,8 +7,11 @@ import {
   clickWalkinSubmit,
   fillReactInput,
   fillWalkinGuestContact,
+  getBookingRow,
   gotoReceptionistCenter,
+  isoAtUtcYmdHourMinute,
   rcSlug,
+  seedDeskBooking,
   seedReceptionistCenterFixture,
   supabaseAdmin,
   testClientNameMarker,
@@ -299,5 +302,58 @@ test.describe("Mobile layout", () => {
     const emptySlot = emptySlots.first();
     const emptySlotBox = await emptySlot.boundingBox();
     expect(emptySlotBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+  });
+
+  test("receptionist advances customer status on iPhone with clear persisted confirmation", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const clientName = testClientNameMarker();
+    const bookingId = await seedDeskBooking(fx.salonId, {
+      clientName,
+      serviceId: fx.serviceIds[0]!,
+      staffId: fx.freeStaffId,
+      startIso: isoAtUtcYmdHourMinute(fx.ymdUtc, 13, 0),
+      endIso: isoAtUtcYmdHourMinute(fx.ymdUtc, 13, 55),
+      status: "confirmed",
+    });
+    const startedAt = Date.now();
+
+    await gotoReceptionistCenter(page, fx.slug, { dateYmd: fx.ymdUtc });
+    await page.getByTestId(`booking-block-${bookingId}`).click();
+
+    const primaryAction = page.getByTestId("drawer-primary-action");
+    await expectPrimaryControlSize(primaryAction);
+    await expect(primaryAction).toHaveText(/start service|bắt đầu phục vụ/i);
+    await expectReadableScheduleText(
+      page.getByTestId("booking-drawer-status-badge"),
+    );
+    await primaryAction.click();
+
+    const successMessage = page.getByTestId("desk-status-success");
+    await expect(successMessage).toContainText("Started service for");
+    await expect(successMessage).toContainText(clientName);
+    await expect
+      .poll(
+        async () => (await getBookingRow(fx.salonId, bookingId))?.status,
+        { timeout: 15_000 },
+      )
+      .toBe("in_progress");
+
+    await page.getByTestId(`booking-block-${bookingId}`).click();
+    await expectPrimaryControlSize(primaryAction);
+    await expect(primaryAction).toHaveText(/mark complete|đánh dấu hoàn thành/i);
+    await primaryAction.click();
+
+    await expect(successMessage).toContainText("Completed service for");
+    await expect(successMessage).toContainText(clientName);
+    await expect
+      .poll(
+        async () => (await getBookingRow(fx.salonId, bookingId))?.status,
+        { timeout: 15_000 },
+      )
+      .toBe("completed");
+
+    expect(Date.now() - startedAt).toBeLessThan(60_000);
   });
 });
