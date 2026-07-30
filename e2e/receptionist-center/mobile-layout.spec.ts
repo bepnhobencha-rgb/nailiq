@@ -3,7 +3,10 @@ import { test, expect } from "@playwright/test";
 import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
+  clickWalkinService,
+  clickWalkinSubmit,
   fillReactInput,
+  fillWalkinGuestContact,
   gotoReceptionistCenter,
   rcSlug,
   seedReceptionistCenterFixture,
@@ -114,8 +117,20 @@ test.describe("Mobile layout", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await gotoReceptionistCenter(page, fx.slug);
 
-    await expectPrimaryControlSize(page.getByTestId("header-add-walkin"));
+    const addWalkin = page.getByTestId("header-add-walkin");
+    await expectPrimaryControlSize(addWalkin);
+    await addWalkin.click();
+    await expect(page.getByTestId("queue-panel-slideover")).toHaveAttribute(
+      "aria-hidden",
+      "false",
+    );
     await expectPrimaryControlSize(page.getByTestId("walkin-submit"));
+    await expectPrimaryControlSize(page.getByTestId("walkin-details-toggle"));
+    const closeWalkin = page
+      .getByTestId("walkin-queue-sidebar")
+      .getByRole("button", { name: /close|đóng/i });
+    await expectPrimaryControlSize(closeWalkin);
+    await closeWalkin.click();
 
     // Classic mobile previously hid this CTA below the `sm` breakpoint,
     // leaving phone users no direct way to create a scheduled appointment.
@@ -132,6 +147,65 @@ test.describe("Mobile layout", () => {
       page.getByRole("button", {
         name: /create appointment|tạo lịch hẹn/i,
       }),
+    );
+  });
+
+  test("receptionist adds a persisted walk-in on iPhone in under 60 seconds", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await gotoReceptionistCenter(page, fx.slug);
+
+    const clientName = testClientNameMarker();
+    const startedAt = Date.now();
+
+    // Advanced queue metadata stays out of the default speed path.
+    await page.getByTestId("header-add-walkin").click();
+    await expect(page.getByTestId("queue-panel-slideover")).toHaveAttribute(
+      "aria-hidden",
+      "false",
+    );
+    await expect(page.getByTestId("walkin-optional-details")).toHaveCount(0);
+    await fillWalkinGuestContact(page, clientName);
+    await clickWalkinService(page, fx.serviceIds[0]!);
+    await clickWalkinSubmit(page);
+
+    await expect
+      .poll(async () => {
+        const { data, error } = await supabaseAdmin
+          .from("bookings")
+          .select("source,status")
+          .eq("salon_id", fx.salonId)
+          .eq("client_name", clientName)
+          .maybeSingle();
+        if (error) throw new Error(error.message);
+        return data;
+      })
+      .toEqual({ source: "walkin", status: "waiting" });
+
+    expect(Date.now() - startedAt).toBeLessThan(60_000);
+  });
+
+  test("walk-in operational details remain available on demand", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await gotoReceptionistCenter(page, fx.slug);
+
+    await page.getByTestId("header-add-walkin").click();
+    await expect(page.getByTestId("queue-panel-slideover")).toHaveAttribute(
+      "aria-hidden",
+      "false",
+    );
+    const toggle = page.getByTestId("walkin-details-toggle");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByTestId("walkin-optional-details")).toBeVisible();
+    await expectPrimaryControlSize(page.getByTestId("walkin-source"));
+    await expectPrimaryControlSize(page.getByTestId("walkin-priority"));
+    await expectPrimaryControlSize(
+      page.getByTestId("walkin-request-tag-input"),
     );
   });
 

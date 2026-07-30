@@ -1526,6 +1526,8 @@ export type UserMessages = {
         requestTagsPlaceholder: string;
         requestTagAdd: string;
         requestTagRemove: (label: string) => string;
+        moreDetails: string;
+        hideDetails: string;
         /** Walk-in form checkbox: "khách yêu cầu thợ này". Drives the
          * ❤️ icon on the resulting booking chip. */
         staffRequestedByClient: string;
@@ -4021,6 +4023,8 @@ export const userEn: UserMessages = {
         requestTagsPlaceholder: "e.g. Wants Tina",
         requestTagAdd: "Add",
         requestTagRemove: (label: string) => `Remove ${label}`,
+        moreDetails: "More details (optional)",
+        hideDetails: "Hide details",
         staffRequestedByClient: "Customer requested this staff",
         returningCustomer: "Returning customer",
         newCustomer: "New customer",
