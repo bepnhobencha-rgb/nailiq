@@ -5,6 +5,25 @@ Newest entries on top.
 
 ---
 
+## 2026-07-30 — Keep App Router on patched React and Next releases
+
+**Decision.** Pin Next.js 16.2.12 with React and React DOM 19.2.8, and exercise
+AI Control Center through a deliberately delayed client-side route transition
+in E2E.
+
+**Why.** Production verification exposed React error 310 in the framework
+App Router while a non-prefetched AI route was waiting for its Flight response.
+The route returned HTTP 200 and server health remained green, so endpoint-only
+checks could not detect the broken UI. Patch-level framework/runtime upgrades
+plus a slow-navigation test cover the actual browser failure mode.
+
+**Safety.** This changes no NailIQ product authority, data model, migration,
+RLS, authentication policy, messaging, booking, payment, pricing, approval, or
+execution behavior. The versions remain exact-pinned and the complete build,
+unit, smoke, visual, and E2E gates remain required.
+
+---
+
 ## 2026-07-30 — Owner AI observability rows are bounded display models
 
 **Decision.** AI activity and operational exception loaders rebuild explicit
