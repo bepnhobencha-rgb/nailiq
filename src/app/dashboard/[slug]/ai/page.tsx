@@ -15,7 +15,11 @@ import {
   resolveAiControlSource,
   type AiControlDataSource,
 } from "@/shared/ai/controlCenterData";
-import { getExecutionJobs } from "@/shared/ai/executionQueue";
+import {
+  getApprovalExecutionTraces,
+  getExecutionJobs,
+  type ApprovalExecutionTraceRow,
+} from "@/shared/ai/executionQueue";
 import { loadAiOperatingState } from "@/shared/ai/operatingState";
 import { getOperationalExceptions } from "@/shared/ai/operationalExceptions";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
@@ -109,6 +113,25 @@ export default async function AiControlCenterPage({ params }: Props) {
   const approvalDisplayRows = await toApprovalDisplayRows(
     approvalInbox.items,
   );
+  const recentDecisionIds = approvalInbox.items
+    .filter((approval) => approval.status !== "pending")
+    .slice(0, 3)
+    .map((approval) => approval.id);
+  let decisionExecutionTraces: ApprovalExecutionTraceRow[] = [];
+  if (approvalsSource.unavailableSource === null) {
+    try {
+      decisionExecutionTraces = await getApprovalExecutionTraces(
+        ctx.salon.id,
+        recentDecisionIds,
+      );
+    } catch (error) {
+      unavailableSources.push("decision_execution_trace");
+      console.error(
+        "[AiControlCenterPage] decision_execution_trace unavailable",
+        error,
+      );
+    }
+  }
 
   return (
     <AiControlCenter
@@ -117,6 +140,7 @@ export default async function AiControlCenterPage({ params }: Props) {
       pendingApprovalCount={approvalInbox.pendingCount}
       activity={activity}
       executionJobs={executionJobs}
+      decisionExecutionTraces={decisionExecutionTraces}
       operationalExceptions={operationalExceptionInbox.items}
       operationalExceptionCount={operationalExceptionInbox.activeCount}
       operatingState={operatingState}

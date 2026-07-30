@@ -25,6 +25,7 @@ import {
 import { ApprovalDecisionButtons } from "@/components/dashboard/ApprovalDecisionButtons";
 import { buildActionIntelligence } from "@/shared/ai/actionIntelligence";
 import { approvalDecisionProvenance } from "@/shared/ai/approvalDecisionPresentation";
+import { approvalDecisionExecutionPresentation } from "@/shared/ai/approvalExecutionPresentation";
 import type { ApprovalDisplayRow } from "@/shared/ai/approvalRequests";
 import { campaignPreflightFreshness } from "@/shared/ai/campaignPreflightFreshness";
 import type { AiControlDataSource } from "@/shared/ai/controlCenterData";
@@ -41,7 +42,10 @@ import { canControlExecutionJob } from "@/shared/ai/executionPolicy";
 import { preflightCampaignAction } from "@/shared/ai/preflightCampaignAction";
 import { prepareAudienceAction } from "@/shared/ai/prepareAudienceAction";
 import { sealCampaignPlanAction } from "@/shared/ai/sealCampaignPlanAction";
-import type { ExecutionJobRow } from "@/shared/ai/executionQueue";
+import type {
+  ApprovalExecutionTraceRow,
+  ExecutionJobRow,
+} from "@/shared/ai/executionQueue";
 import type { MinhActivityData } from "@/shared/ai/loadMinhActivity";
 import type { OperationalExceptionRow } from "@/shared/ai/operationalExceptionTypes";
 import type {
@@ -57,6 +61,7 @@ type Props = {
   pendingApprovalCount: number;
   activity: MinhActivityData;
   executionJobs: ExecutionJobRow[];
+  decisionExecutionTraces: ApprovalExecutionTraceRow[];
   operationalExceptions: OperationalExceptionRow[];
   operationalExceptionCount: number;
   operatingState: AiOperatingState | null;
@@ -80,6 +85,7 @@ export function AiControlCenter({
   pendingApprovalCount,
   activity,
   executionJobs,
+  decisionExecutionTraces,
   operationalExceptions,
   operationalExceptionCount,
   operatingState,
@@ -93,12 +99,20 @@ export function AiControlCenter({
   const activityAvailable = !unavailableSources.includes("activity");
   const executionQueueAvailable =
     !unavailableSources.includes("execution_queue");
+  const decisionExecutionTraceAvailable =
+    !unavailableSources.includes("decision_execution_trace");
   const operationalExceptionsAvailable =
     !unavailableSources.includes("operational_exceptions");
   const pending = approvals.filter((item) => item.status === "pending");
   const recentDecisions = approvals
     .filter((item) => item.status !== "pending")
     .slice(0, 3);
+  const executionTraceByApproval = new Map(
+    decisionExecutionTraces.map((trace) => [
+      trace.approval_request_id,
+      trace,
+    ]),
+  );
   const recentActivity = activity.entries.slice(0, 6);
   const observedReturnRate =
     activity.measured > 0
@@ -385,6 +399,13 @@ export function AiControlCenter({
                     request,
                     language,
                   );
+                  const execution = decisionExecutionTraceAvailable
+                    ? approvalDecisionExecutionPresentation(
+                        request.status,
+                        executionTraceByApproval.get(request.id),
+                        language,
+                      )
+                    : null;
                   return (
                     <article
                       key={request.id}
@@ -430,6 +451,20 @@ export function AiControlCenter({
                           <p className="mt-1 text-[11px] leading-5 text-nq-muted">
                             {provenance.channel} · {provenance.actor}
                           </p>
+                          {execution ? (
+                            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <DecisionExecutionBadge execution={execution} />
+                              <span className="text-[11px] leading-5 text-nq-muted">
+                                {execution.detail}
+                              </span>
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-[11px] leading-5 text-nq-error">
+                              {vi
+                                ? "Không thể tải dấu vết thực thi; chưa thể xác minh kết quả của quyết định."
+                                : "Execution trace is unavailable; this decision's outcome cannot be verified."}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </article>
@@ -563,6 +598,10 @@ function DataAvailabilityAlert({
     approvals: { en: "approvals", vi: "quyết định chờ duyệt" },
     activity: { en: "activity", vi: "nhật ký hoạt động" },
     execution_queue: { en: "execution queue", vi: "hàng đợi thực thi" },
+    decision_execution_trace: {
+      en: "decision execution trace",
+      vi: "dấu vết quyết định → thực thi",
+    },
     operating_state: { en: "operating health", vi: "sức khỏe vận hành" },
     operational_exceptions: {
       en: "operational exceptions",
@@ -593,6 +632,29 @@ function DataAvailabilityAlert({
         </p>
       </div>
     </section>
+  );
+}
+
+const DECISION_EXECUTION_TONE = {
+  neutral: "bg-nq-muted/10 text-nq-muted",
+  attention: "bg-nq-warning/15 text-nq-warning",
+  active: "bg-nq-primary/10 text-nq-primary",
+  success: "bg-nq-success/15 text-nq-success",
+  error: "bg-nq-error/15 text-nq-error",
+} as const;
+
+function DecisionExecutionBadge({
+  execution,
+}: {
+  execution: ReturnType<typeof approvalDecisionExecutionPresentation>;
+}) {
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${DECISION_EXECUTION_TONE[execution.tone]}`}
+      data-testid="ai-control-decision-execution"
+    >
+      {execution.label}
+    </span>
   );
 }
 
