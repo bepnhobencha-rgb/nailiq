@@ -12,7 +12,9 @@ import { CardWebviewFallback } from "@/components/booking/CardWebviewFallback";
 
 type SquareCard = {
   attach: (sel: string) => Promise<void>;
-  tokenize: () => Promise<{ status: string; token?: string }>;
+  tokenize: (
+    details?: SquareVerifyDetails,
+  ) => Promise<{ status: string; token?: string }>;
 };
 type SquareVerifyDetails = {
   intent: "STORE" | "CHARGE";
@@ -24,10 +26,6 @@ type SquareVerifyDetails = {
 };
 type SquarePayments = {
   card: () => Promise<SquareCard>;
-  verifyBuyer: (
-    source: string,
-    details: SquareVerifyDetails,
-  ) => Promise<{ token?: string } | null>;
 };
 type SquareGlobal = { payments: (appId: string, locationId: string) => SquarePayments };
 declare global {
@@ -63,9 +61,10 @@ function loadSdk(env: "production" | "sandbox"): Promise<SquareGlobal> {
 
 export type ConfirmStepCardHandle = {
   /** Tokenize the entered card AND run Square buyer verification (SCA/AVS/CVV).
-   *  Returns the source token + verification token, or null on failure (an
-   *  error is shown to the user). A wrong CVV/postal fails verification → null,
-   *  so a bad card never gets saved. Called by the confirm button. */
+   *  Square's current SDK embeds verification into the source token. The
+   *  optional legacy verificationToken property remains for caller
+   *  compatibility but is no longer produced. Any verification failure returns
+   *  null, so an unverified card never gets saved. */
   tokenize: () => Promise<{ token: string; verificationToken?: string } | null>;
   /** Clears any stale error shown below the card form. The parent calls this
    *  at the start of each confirm attempt so the user sees a clean slate. */
@@ -88,7 +87,6 @@ type Props = {
 export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
   function ConfirmStepCardCapture({ applicationId, locationId, environment, feeLabel, t }, ref) {
     const cardRef = useRef<SquareCard | null>(null);
-    const paymentsRef = useRef<SquarePayments | null>(null);
     const mountedRef = useRef(false);
     const [error, setError] = useState<string | null>(null);
     const [ready, setReady] = useState(false);
@@ -112,7 +110,6 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
               .addEventListener("errorChanged", () => setError(null));
           } catch { /* event not supported in all SDK versions — safe to ignore */ }
           cardRef.current = card;
-          paymentsRef.current = payments;
           setReady(true);
         } catch {
           if (!cancelled) setError(t.noShowCardError ?? "Could not load the card form.");
@@ -131,33 +128,28 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
           return null;
         }
         try {
-          const res = await cardRef.current.tokenize();
+          // Square now performs buyer verification as part of tokenization.
+          // A failed or timed-out 3DS/CVV/AVS check must stop the save-card
+          // flow instead of silently falling back to an unverified card.
+          const res = await cardRef.current.tokenize({
+            intent: "STORE",
+            customerInitiated: true,
+            sellerKeyedIn: false,
+          });
           if (res.status !== "OK" || !res.token) {
-            setError(t.noShowCardError ?? "Please check your card details.");
+            setError(
+              t.cardVerificationError ??
+                "Card verification could not be completed. Please try again or open this page in Safari or Chrome.",
+            );
             return null;
           }
-          // Buyer verification (SCA/AVS/CVV). When verifyBuyer yields a token we
-          // pass it to CreateCard so Square verifies the card at storage time
-          // and REJECTS a wrong CVV/postal server-side (the real enforcement).
-          // If verifyBuyer itself hiccups (infra / SCA-cancel) we DEGRADE — save
-          // without the token rather than block a legitimate buyer. Net effect:
-          // strictly safer than today (can only ADD a Square-side rejection,
-          // never over-block a real card on a client verify glitch).
-          let verificationToken: string | undefined;
-          try {
-            const v = await paymentsRef.current?.verifyBuyer(res.token, {
-              intent: "STORE",
-              customerInitiated: true,
-              sellerKeyedIn: false,
-            });
-            verificationToken = v?.token ?? undefined;
-          } catch {
-            verificationToken = undefined;
-          }
           setError(null);
-          return { token: res.token, verificationToken };
+          return { token: res.token };
         } catch {
-          setError(t.noShowCardError ?? "Please check your card details.");
+          setError(
+            t.cardVerificationError ??
+              "Card verification timed out. Please try again or open this page in Safari or Chrome.",
+          );
           return null;
         }
       },
