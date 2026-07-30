@@ -54,7 +54,7 @@ describe("owner execution view boundary", () => {
 
   it("shows an approved decision without a job as an integrity issue", () => {
     expect(approvals).toContain(
-      'const missingApprovedExecution = req.status === "approved" && !job',
+      'req.status === "approved" && executionJobsAvailable && !job',
     );
     expect(approvals).toContain("Thiếu dấu vết thực thi");
     expect(approvals).toMatch(

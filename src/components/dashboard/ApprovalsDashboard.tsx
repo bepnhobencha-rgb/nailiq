@@ -148,12 +148,17 @@ function ExecutionBadge({ job }: { job: OwnerExecutionJob }) {
 function DecidedRow({
   req,
   job,
+  executionJobsAvailable,
 }: {
   req: ApprovalDisplayRow;
   job: OwnerExecutionJob | undefined;
+  executionJobsAvailable: boolean;
 }) {
   const provenance = approvalDecisionProvenance(req, "vi");
-  const missingApprovedExecution = req.status === "approved" && !job;
+  const missingApprovedExecution =
+    req.status === "approved" && executionJobsAvailable && !job;
+  const unavailableApprovedExecution =
+    req.status === "approved" && !executionJobsAvailable;
   return (
     <div className="flex flex-col gap-1.5 border-b border-nq-border/40 py-3 last:border-0">
       <div className="flex flex-wrap items-center gap-2">
@@ -163,6 +168,12 @@ function DecidedRow({
           <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-400">
             <AlertTriangle className="h-3 w-3" aria-hidden />
             Thiếu dấu vết thực thi
+          </span>
+        ) : null}
+        {unavailableApprovedExecution ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+            <AlertTriangle className="h-3 w-3" aria-hidden />
+            Chưa xác minh được thực thi
           </span>
         ) : null}
         <span className="text-[12px] font-medium text-nq-foreground line-clamp-1 flex-1">
@@ -197,6 +208,12 @@ function DecidedRow({
           thể xác minh hành động đã được thực thi.
         </p>
       ) : null}
+      {unavailableApprovedExecution ? (
+        <p className="text-[11px] text-amber-700 dark:text-amber-400">
+          Nguồn trạng thái thực thi đang tạm thời không khả dụng. Quyết định này
+          không được xem là đã thực hiện cho đến khi NailIQ xác minh lại.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -204,10 +221,14 @@ function DecidedRow({
 export function ApprovalsDashboard({
   approvals,
   executionJobs,
+  approvalsAvailable,
+  executionJobsAvailable,
   slug,
 }: {
   approvals: ApprovalDisplayRow[];
   executionJobs: OwnerExecutionJob[];
+  approvalsAvailable: boolean;
+  executionJobsAvailable: boolean;
   slug: string;
 }) {
   const pending = approvals.filter((r) => r.status === "pending");
@@ -226,12 +247,49 @@ export function ApprovalsDashboard({
         </p>
       </div>
 
+      {!approvalsAvailable || !executionJobsAvailable ? (
+        <div
+          role="status"
+          className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+        >
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <div className="space-y-1 text-[13px] leading-relaxed">
+              <p className="font-semibold">Một phần dữ liệu chưa thể xác minh</p>
+              {!approvalsAvailable ? (
+                <p>
+                  Nguồn phê duyệt đang tạm thời không khả dụng. NailIQ không
+                  khẳng định rằng hiện không có việc chờ duyệt.
+                </p>
+              ) : null}
+              {!executionJobsAvailable ? (
+                <p>
+                  Nguồn thực thi đang tạm thời không khả dụng. Các quyết định
+                  vẫn hiển thị, nhưng không được xem là đã thực hiện.
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* Pending */}
       <section>
         <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-wider text-nq-muted">
-          Đang chờ ({pending.length})
+          Đang chờ {approvalsAvailable ? `(${pending.length})` : "(chưa xác minh)"}
         </h2>
-        {pending.length === 0 ? (
+        {!approvalsAvailable ? (
+          <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-amber-400 py-10 text-center">
+            <AlertTriangle className="h-8 w-8 text-amber-500" aria-hidden />
+            <p className="text-[15px] font-medium text-nq-foreground">
+              Chưa tải được danh sách chờ duyệt
+            </p>
+            <p className="max-w-md text-[13px] text-nq-muted">
+              Hãy thử tải lại trang. NailIQ sẽ không hiển thị trạng thái trống
+              khi chưa đọc được nguồn phê duyệt.
+            </p>
+          </div>
+        ) : pending.length === 0 ? (
           <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-nq-border py-10 text-center">
             <CheckCircle className="h-8 w-8 text-green-500" />
             <p className="text-[15px] font-medium text-nq-foreground">
@@ -262,6 +320,7 @@ export function ApprovalsDashboard({
                 key={req.id}
                 req={req}
                 job={jobsByApproval.get(req.id)}
+                executionJobsAvailable={executionJobsAvailable}
               />
             ))}
           </div>

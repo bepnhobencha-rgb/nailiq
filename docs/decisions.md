@@ -5,6 +5,29 @@ Newest entries on top.
 
 ---
 
+## 2026-07-30 — Approval inbox keeps source failures distinct from empty state
+
+**Decision.** The owner approval page loads approval requests and execution
+evidence independently. If approval reads fail, the page explicitly reports
+that the waiting count is unverified and does not render the successful empty
+state. If execution reads fail, decisions remain visible but approved rows are
+marked unverified; only a successful execution read with no matching job is
+reported as a missing execution trace.
+
+**Why.** An unavailable database read does not prove there are zero approvals,
+and an unavailable queue read does not prove an approved decision lacks a job.
+Collapsing either failure to an empty array makes the control plane look safe
+precisely when its evidence is incomplete. Owners must still be able to see and
+act on available approvals without mistaking partial data for operational
+truth.
+
+**Safety.** Both reads remain tenant-scoped, bounded, and server-side. The
+change adds no approval, execution, messaging, booking, payment, pricing,
+authentication, schema, or RLS authority. It changes only failure isolation
+and owner-facing truthfulness.
+
+---
+
 ## 2026-07-30 — Owner surfaces receive a minimized execution view
 
 **Decision.** AI Control Center and the approval dashboard load execution jobs

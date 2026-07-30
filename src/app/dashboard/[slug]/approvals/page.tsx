@@ -22,10 +22,28 @@ export default async function ApprovalsPage({ params }: Props) {
   if (!ctx) redirect("/register");
   if (!isOwnerOrAdmin(ctx.role)) redirect(`/dashboard/${encodeURIComponent(slug)}`);
 
-  const [approvals, executionJobs] = await Promise.all([
+  const [approvalsResult, executionJobsResult] = await Promise.allSettled([
     getAllApprovals(ctx.salon.id),
     getOwnerExecutionJobs(ctx.salon.id, 100),
   ]);
+  const approvalsAvailable = approvalsResult.status === "fulfilled";
+  const executionJobsAvailable = executionJobsResult.status === "fulfilled";
+  if (!approvalsAvailable) {
+    console.error(
+      "[ApprovalsPage] approvals unavailable",
+      approvalsResult.reason,
+    );
+  }
+  if (!executionJobsAvailable) {
+    console.error(
+      "[ApprovalsPage] execution_queue unavailable",
+      executionJobsResult.reason,
+    );
+  }
+  const approvals = approvalsAvailable ? approvalsResult.value : [];
+  const executionJobs = executionJobsAvailable
+    ? executionJobsResult.value
+    : [];
   const displayApprovals = await toApprovalDisplayRows(approvals);
 
   return (
@@ -33,6 +51,8 @@ export default async function ApprovalsPage({ params }: Props) {
       <ApprovalsDashboard
         approvals={displayApprovals}
         executionJobs={executionJobs}
+        approvalsAvailable={approvalsAvailable}
+        executionJobsAvailable={executionJobsAvailable}
         slug={slug}
       />
     </div>
