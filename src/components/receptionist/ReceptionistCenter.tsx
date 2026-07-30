@@ -194,6 +194,13 @@ const AppleDeskHeader = dynamic(
     import("./AppleDeskHeader").then((module) => module.AppleDeskHeader),
   { ssr: false },
 );
+const HeaderCustomerSearch = dynamic(
+  () =>
+    import("./AppleDeskHeader").then(
+      (module) => module.HeaderCustomerSearch,
+    ),
+  { ssr: false },
+);
 const AppleCommandBar = dynamic(
   () =>
     import("./AppleCommandBar").then((module) => module.AppleCommandBar),
@@ -3226,6 +3233,24 @@ function ReceptionistCenterInner({
                   })}
                 </div>
               )}
+              {isMobile ? (
+                <div className="h-11 w-11 shrink-0">
+                  <HeaderCustomerSearch
+                    slug={slug}
+                    language={language === "vi" ? "vi" : "en"}
+                    clientHref={`/dashboard/${encodeURIComponent(slug)}/clients`}
+                    surface="mobile"
+                    onSelectClient={(client) => {
+                      setDeskPrefill({
+                        ymd: data.selectedDate,
+                        phone: client.phone,
+                        name: client.name ?? undefined,
+                      });
+                      setDeskBookingOpen(true);
+                    }}
+                  />
+                </div>
+              ) : null}
               {/*
                * Prominent "+ Walk-in" CTA (P1 desk feedback: the queue
                * toggle alone wasn't an obvious "add a walk-in" entry).
