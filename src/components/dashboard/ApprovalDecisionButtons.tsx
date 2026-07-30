@@ -4,7 +4,7 @@ import { Check, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-import { decideApprovalAction } from "@/shared/ai/decideApprovalAction";
+import { postAiControl } from "@/shared/ai/aiControlApi";
 
 export function ApprovalDecisionButtons({
   slug,
@@ -23,7 +23,11 @@ export function ApprovalDecisionButtons({
   const decide = (decision: "approved" | "declined") => {
     setError(null);
     startTransition(async () => {
-      const result = await decideApprovalAction({ slug, approvalId, decision });
+      const result = await postAiControl(slug, {
+        action: "decide_approval",
+        approvalId,
+        decision,
+      });
       if (!result.ok) {
         setError(
           result.error === "already_decided"

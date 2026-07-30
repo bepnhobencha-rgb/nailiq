@@ -32,15 +32,12 @@ import {
   AI_CONTROL_REFRESH_INTERVAL_MS,
   shouldRefreshAiControlCenter,
 } from "@/shared/ai/controlCenterFreshness";
-import { controlExecutionJobAction } from "@/shared/ai/controlExecutionJobAction";
+import { postAiControl } from "@/shared/ai/aiControlApi";
 import {
   executionFailureLabel,
   workerFailureLabel,
 } from "@/shared/ai/executionFailure";
 import { canControlExecutionJob } from "@/shared/ai/executionPolicy";
-import { preflightCampaignAction } from "@/shared/ai/preflightCampaignAction";
-import { prepareAudienceAction } from "@/shared/ai/prepareAudienceAction";
-import { sealCampaignPlanAction } from "@/shared/ai/sealCampaignPlanAction";
 import type { ApprovalExecutionTraceRow } from "@/shared/ai/executionQueue";
 import type {
   OwnerAudiencePreparation,
@@ -998,7 +995,10 @@ function JobAudiencePreparation({
   const prepare = () => {
     setError(null);
     startTransition(async () => {
-      const result = await prepareAudienceAction({ slug, jobId: job.id });
+      const result = await postAiControl(slug, {
+        action: "prepare_audience",
+        jobId: job.id,
+      });
       if (!result.ok) {
         setError(
           vi
@@ -1014,7 +1014,10 @@ function JobAudiencePreparation({
   const runPreflight = () => {
     setError(null);
     startTransition(async () => {
-      const result = await preflightCampaignAction({ slug, jobId: job.id });
+      const result = await postAiControl(slug, {
+        action: "preflight_campaign",
+        jobId: job.id,
+      });
       if (!result.ok) {
         setError(
           vi
@@ -1030,7 +1033,10 @@ function JobAudiencePreparation({
   const sealPlan = () => {
     setError(null);
     startTransition(async () => {
-      const result = await sealCampaignPlanAction({ slug, jobId: job.id });
+      const result = await postAiControl(slug, {
+        action: "seal_campaign",
+        jobId: job.id,
+      });
       if (!result.ok) {
         setError(
           vi
@@ -1322,8 +1328,8 @@ function JobRecoveryControls({
     }
     setError(null);
     startTransition(async () => {
-      const result = await controlExecutionJobAction({
-        slug,
+      const result = await postAiControl(slug, {
+        action: "control_job",
         jobId: job.id,
         operation,
       });
