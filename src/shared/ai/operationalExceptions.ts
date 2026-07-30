@@ -18,24 +18,77 @@ const VALID_SEVERITIES = new Set<OperationalExceptionSeverity>([
   "critical",
 ]);
 
+type OperationalExceptionSourceRow = {
+  id: unknown;
+  severity: unknown;
+  title: unknown;
+  body: unknown;
+  status: unknown;
+  created_at: unknown;
+  resolution_note: unknown;
+  source_type: unknown;
+  occurrence_count: unknown;
+  last_seen_at: unknown;
+};
+
+const OWNER_EXCEPTION_COLUMNS =
+  "id, severity, title, body, status, created_at, resolution_note, source_type, occurrence_count, last_seen_at";
+
+function boundedDisplayText(value: unknown, maxLength: number): string {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+export function toOperationalExceptionDisplayRow(
+  row: OperationalExceptionSourceRow,
+): OperationalExceptionRow | null {
+  const status = String(row.status) as OperationalExceptionStatus;
+  const severity = String(row.severity) as OperationalExceptionSeverity;
+  if (!VALID_STATUSES.has(status) || !VALID_SEVERITIES.has(severity)) {
+    return null;
+  }
+  const sourceType = String(row.source_type);
+  return {
+    id: String(row.id),
+    severity,
+    title: boundedDisplayText(row.title, 160),
+    body:
+      row.body == null ? null : boundedDisplayText(row.body, 600) || null,
+    status,
+    created_at: String(row.created_at),
+    resolution_note:
+      row.resolution_note == null
+        ? null
+        : boundedDisplayText(row.resolution_note, 500) || null,
+    source_type: /^[a-z][a-z0-9_]{0,49}$/.test(sourceType)
+      ? sourceType
+      : "unknown",
+    occurrence_count: Math.max(
+      1,
+      Math.min(1_000_000, Number(row.occurrence_count) || 1),
+    ),
+    last_seen_at: String(row.last_seen_at),
+  };
+}
+
 export async function getOperationalExceptions(
   salonId: string,
   activeLimit = 50,
 ): Promise<{ items: OperationalExceptionRow[]; activeCount: number }> {
   const db = createServiceRoleClient();
-  const columns =
-    "id, kind, severity, title, body, status, created_at, updated_at, acknowledged_at, resolved_at, resolution_note, source_type, source_ref, occurrence_count, first_seen_at, last_seen_at";
   const [activeResult, resolvedResult, countResult] = await Promise.all([
     db
       .from("watchdog_alerts" as never)
-      .select(columns as never)
+      .select(OWNER_EXCEPTION_COLUMNS as never)
       .eq("salon_id" as never, salonId)
       .in("status" as never, ["open", "acknowledged"] as never)
       .order("created_at" as never, { ascending: false })
       .limit(Math.max(1, Math.min(activeLimit, 50))),
     db
       .from("watchdog_alerts" as never)
-      .select(columns as never)
+      .select(OWNER_EXCEPTION_COLUMNS as never)
       .eq("salon_id" as never, salonId)
       .eq("status" as never, "resolved")
       .order("resolved_at" as never, { ascending: false })
@@ -58,34 +111,8 @@ export async function getOperationalExceptions(
   }
 
   const data = [...(activeResult.data ?? []), ...(resolvedResult.data ?? [])];
-  const items = (data as unknown as Array<Record<string, unknown>>)
-    .map((row): OperationalExceptionRow | null => {
-      const status = String(row.status) as OperationalExceptionStatus;
-      const severity = String(row.severity) as OperationalExceptionSeverity;
-      if (!VALID_STATUSES.has(status) || !VALID_SEVERITIES.has(severity)) {
-        return null;
-      }
-      return {
-        id: String(row.id),
-        kind: String(row.kind),
-        severity,
-        title: String(row.title),
-        body: row.body == null ? null : String(row.body),
-        status,
-        created_at: String(row.created_at),
-        updated_at: String(row.updated_at),
-        acknowledged_at:
-          row.acknowledged_at == null ? null : String(row.acknowledged_at),
-        resolved_at: row.resolved_at == null ? null : String(row.resolved_at),
-        resolution_note:
-          row.resolution_note == null ? null : String(row.resolution_note),
-        source_type: String(row.source_type),
-        source_ref: String(row.source_ref),
-        occurrence_count: Number(row.occurrence_count),
-        first_seen_at: String(row.first_seen_at),
-        last_seen_at: String(row.last_seen_at),
-      };
-    })
+  const items = (data as unknown as OperationalExceptionSourceRow[])
+    .map(toOperationalExceptionDisplayRow)
     .filter((row): row is OperationalExceptionRow => row !== null)
     .sort((a, b) => {
       const statusRank = { open: 0, acknowledged: 1, resolved: 2 };
