@@ -5,7 +5,6 @@ import {
   cleanReceptionistData,
   clickWalkinService,
   clickWalkinSubmit,
-  E2E_WALKIN_VALID_PHONE,
   fillReactInput,
   fillWalkinGuestContact,
   getBookingRow,
@@ -25,6 +24,13 @@ type JourneyBooking = {
   status: string;
   start_time_utc: string | null;
 };
+
+function uniqueValidAppointmentPhone(): string {
+  // Keep a known-valid NANP prefix while avoiding collisions with customers
+  // created by other Receptionist Center specs in the shared fixture salon.
+  const lineNumber = 2_000 + (Date.now() % 8_000);
+  return `604555${String(lineNumber).padStart(4, "0")}`;
+}
 
 function nextOpenYmd(ymd: string): string {
   const [year, month, day] = ymd.split("-").map(Number);
@@ -73,7 +79,7 @@ test("operator completes the five essential Front Desk tasks in one shift", asyn
 }) => {
   const appointmentName = testClientNameMarker();
   const walkinName = testClientNameMarker();
-  const appointmentPhone = E2E_WALKIN_VALID_PHONE;
+  const appointmentPhone = uniqueValidAppointmentPhone();
   const canonicalAppointmentPhone = `1${appointmentPhone}`;
   const bookingYmd = nextOpenYmd(fx.ymdUtc);
 
