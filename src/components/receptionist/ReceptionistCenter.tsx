@@ -3234,20 +3234,22 @@ function ReceptionistCenterInner({
                 </div>
               )}
               {isMobile ? (
-                <HeaderCustomerSearch
-                  slug={slug}
-                  language={language === "vi" ? "vi" : "en"}
-                  clientHref={`/dashboard/${encodeURIComponent(slug)}/clients`}
-                  surface="mobile"
-                  onSelectClient={(client) => {
-                    setDeskPrefill({
-                      ymd: data.selectedDate,
-                      phone: client.phone,
-                      name: client.name ?? undefined,
-                    });
-                    setDeskBookingOpen(true);
-                  }}
-                />
+                <div className="h-11 w-11 shrink-0">
+                  <HeaderCustomerSearch
+                    slug={slug}
+                    language={language === "vi" ? "vi" : "en"}
+                    clientHref={`/dashboard/${encodeURIComponent(slug)}/clients`}
+                    surface="mobile"
+                    onSelectClient={(client) => {
+                      setDeskPrefill({
+                        ymd: data.selectedDate,
+                        phone: client.phone,
+                        name: client.name ?? undefined,
+                      });
+                      setDeskBookingOpen(true);
+                    }}
+                  />
+                </div>
               ) : null}
               {/*
                * Prominent "+ Walk-in" CTA (P1 desk feedback: the queue
