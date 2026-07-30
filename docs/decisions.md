@@ -5,6 +5,31 @@ Newest entries on top.
 
 ---
 
+## 2026-07-30 — Owner approval rows exclude raw action payloads
+
+**Decision.** Owner-facing approval queries omit capability tokens and
+notification metadata, then rebuild an explicit browser row. Client Components
+receive only the approval identity and lifecycle fields they render, verified
+decision provenance, and bounded bilingual action intelligence. Raw payloads,
+tenant IDs, internal actor IDs, recipient details, and delivery metadata remain
+server-side.
+
+**Why.** Removing approve/decline tokens alone was insufficient because the
+previous `ApprovalDisplayRow` spread every other database field into Client
+Component props. That serialized the complete action payload—including
+potential recipient and provider data—plus internal tenant and notification
+metadata even though the UI never rendered most of it. An AI control plane must
+make its server/browser contract explicit instead of depending on components
+to ignore sensitive fields.
+
+**Safety.** The server still uses the payload to derive owner-facing reason,
+evidence, expected impact, confidence, and reversibility. Those values are
+bounded before serialization, while raw arrays and unknown fields are dropped.
+This changes no approval decision, execution, messaging, booking, payment,
+pricing, authentication, schema, or RLS authority.
+
+---
+
 ## 2026-07-30 — Approval inbox keeps source failures distinct from empty state
 
 **Decision.** The owner approval page loads approval requests and execution

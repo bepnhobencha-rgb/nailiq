@@ -57,9 +57,11 @@ describe("attributed AI approval boundary", () => {
     expect(controlCenter).not.toContain("decline_token");
     expect(approvalsDashboard).toContain("ApprovalDecisionButtons");
     expect(controlCenter).toContain("ApprovalDecisionButtons");
-    expect(approvalRequests).toContain(
-      '"approve_token" | "decline_token" | "decided_by"',
-    );
+    const ownerProjection = approvalRequests.match(
+      /const OWNER_APPROVAL_COLUMNS =\s*\n?\s*"([^"]+)"/,
+    )?.[1];
+    expect(ownerProjection).toBeDefined();
+    expect(ownerProjection).not.toMatch(/approve_token|decline_token/);
   });
 
   it("only displays a dashboard actor after revalidating salon membership", () => {
