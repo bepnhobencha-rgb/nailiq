@@ -5,6 +5,7 @@ import {
   cleanReceptionistData,
   clickWalkinService,
   clickWalkinSubmit,
+  E2E_WALKIN_VALID_PHONE,
   fillReactInput,
   fillWalkinGuestContact,
   getBookingRow,
@@ -72,7 +73,7 @@ test("operator completes the five essential Front Desk tasks in one shift", asyn
 }) => {
   const appointmentName = testClientNameMarker();
   const walkinName = testClientNameMarker();
-  const appointmentPhone = `604${Math.floor(1_000_000 + Math.random() * 9_000_000)}`;
+  const appointmentPhone = E2E_WALKIN_VALID_PHONE;
   const canonicalAppointmentPhone = `1${appointmentPhone}`;
   const bookingYmd = nextOpenYmd(fx.ymdUtc);
 
