@@ -52,7 +52,9 @@ test.describe("AI agent activation impact", () => {
     const aiManagerCategory = page.getByTestId(
       "settings-category-cat-ai-manager",
     );
-    const aiManagerCategoryToggle = aiManagerCategory.getByRole("button");
+    const aiManagerCategoryToggle = aiManagerCategory.locator(
+      ":scope > button",
+    );
     await expect(aiManagerCategoryToggle).toHaveAttribute(
       "aria-expanded",
       "false",
