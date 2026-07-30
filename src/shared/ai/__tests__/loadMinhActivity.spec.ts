@@ -74,4 +74,28 @@ describe("AI activity presentation", () => {
       trackable: false,
     });
   });
+
+  it("bounds owner-facing activity text and rejects arbitrary agent labels", () => {
+    const entry = toMinhLogEntry({
+      id: "activity-2",
+      agent: "<script>internal-agent</script>",
+      action_type: `action-${"a".repeat(200)}`,
+      payload: {
+        name: `Customer ${"n".repeat(200)}`,
+        reasoning: `Internal detail ${"x".repeat(1_000)}`,
+        provider_token: "must-not-be-serialized",
+      },
+      created_at: "2026-07-30T04:30:00.000Z",
+      outcome: null,
+      outcome_at: null,
+    });
+
+    expect(entry.agent).toBe("unknown");
+    expect(entry.agentLabel).toBe("AI");
+    expect(entry.actionType).toHaveLength(100);
+    expect(entry.clientName).toHaveLength(120);
+    expect(entry.messagePreview).toHaveLength(600);
+    expect(JSON.stringify(entry)).not.toContain("provider_token");
+    expect(JSON.stringify(entry)).not.toContain("must-not-be-serialized");
+  });
 });

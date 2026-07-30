@@ -5,6 +5,27 @@ Newest entries on top.
 
 ---
 
+## 2026-07-30 — Owner AI observability rows are bounded display models
+
+**Decision.** AI activity and operational exception loaders rebuild explicit
+owner-facing rows before passing them to Client Components. Activity labels,
+customer names, action types, and previews are normalized and length-bounded.
+Operational exception queries select only rendered lifecycle fields, omit
+internal kind/source references and unused timestamps, and bound all narrative
+text.
+
+**Why.** These surfaces previously avoided serializing complete database rows,
+but still accepted unbounded strings derived from AI payloads and selected
+internal exception metadata that the browser never used. Operational
+observability is not a reason to widen the server/browser trust boundary.
+
+**Safety.** The owner still sees the same actionable status, severity,
+description, occurrence count, timestamps, resolution note, and guarded
+lifecycle controls. No exception transition, AI execution, messaging, booking,
+payment, pricing, authentication, schema, or RLS authority changes.
+
+---
+
 ## 2026-07-30 — Owner approval rows exclude raw action payloads
 
 **Decision.** Owner-facing approval queries omit capability tokens and

@@ -68,26 +68,37 @@ export type MinhActivityRow = {
   outcome_at: string | null;
 };
 
+function boundedDisplayText(value: unknown, maxLength: number): string {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
 export function toMinhLogEntry(row: MinhActivityRow): MinhLogEntry {
-  const meta = AGENT_META[row.agent] ?? {
+  const agent = /^[a-z][a-z0-9_]{0,49}$/.test(row.agent)
+    ? row.agent
+    : "unknown";
+  const meta = AGENT_META[agent] ?? {
     icon: "🤖",
-    label: row.agent,
+    label: "AI",
     trackable: false,
   };
   return {
     id: row.id,
-    agent: row.agent,
+    agent,
     agentIcon: meta.icon,
     agentLabel: meta.label,
-    actionType: row.action_type,
-    clientName: String(row.payload?.name ?? ""),
-    messagePreview: String(
+    actionType: boundedDisplayText(row.action_type, 100),
+    clientName: boundedDisplayText(row.payload?.name, 120),
+    messagePreview: boundedDisplayText(
       row.payload?.message_preview ??
         row.payload?.title ??
         row.payload?.reasoning ??
         row.payload?.summary ??
         row.payload?.note ??
         "",
+      600,
     ),
     createdAt: row.created_at,
     outcome:
