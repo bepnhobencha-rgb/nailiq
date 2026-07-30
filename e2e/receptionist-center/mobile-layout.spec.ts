@@ -46,6 +46,16 @@ test.describe("Mobile layout", () => {
     expect(metrics.fontSize).toBeGreaterThanOrEqual(16);
   }
 
+  async function expectReadableScheduleText(
+    locator: import("@playwright/test").Locator,
+  ) {
+    await expect(locator).toBeVisible();
+    const fontSize = await locator.evaluate((element) =>
+      Number.parseFloat(getComputedStyle(element).fontSize),
+    );
+    expect(fontSize).toBeGreaterThanOrEqual(16);
+  }
+
   test("daily brief keeps the schedule primary until details are requested", async ({
     page,
   }) => {
@@ -103,5 +113,47 @@ test.describe("Mobile layout", () => {
         name: /create appointment|tạo lịch hẹn/i,
       }),
     );
+  });
+
+  test("today schedule keeps operational details readable and touchable", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await gotoReceptionistCenter(page, fx.slug);
+
+    const booking = page.getByTestId(
+      `booking-block-${fx.displayApptBookingId}`,
+    );
+    await expect(booking).toBeVisible();
+    const bookingButton = booking.locator(":scope > button");
+    await expect(bookingButton).toHaveCount(1);
+    const bookingBox = await bookingButton.boundingBox();
+    expect(bookingBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+    await expectReadableScheduleText(
+      page.getByTestId(`booking-block-client-${fx.displayApptBookingId}`),
+    );
+    await expectReadableScheduleText(
+      page.getByTestId(`booking-block-service-${fx.displayApptBookingId}`),
+    );
+    await expectReadableScheduleText(
+      page.getByTestId(`booking-block-time-${fx.displayApptBookingId}`),
+    );
+    await expectReadableScheduleText(
+      page.getByTestId(`booking-block-staff-${fx.displayApptBookingId}`),
+    );
+
+    for (const label of ["Prev day", "Next day"]) {
+      const control = page.getByRole("button", { name: label, exact: true });
+      await expect(control).toBeVisible();
+      const box = await control.boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+
+    const emptySlots = page.locator('[data-testid^="mobile-empty-slot-"]');
+    expect(await emptySlots.count()).toBeGreaterThan(0);
+    const emptySlot = emptySlots.first();
+    const emptySlotBox = await emptySlot.boundingBox();
+    expect(emptySlotBox?.height ?? 0).toBeGreaterThanOrEqual(44);
   });
 });
