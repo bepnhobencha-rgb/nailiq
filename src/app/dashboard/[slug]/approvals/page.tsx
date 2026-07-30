@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
-import { getAllApprovals } from "@/shared/ai/approvalRequests";
+import {
+  getAllApprovals,
+  toApprovalDisplayRow,
+} from "@/shared/ai/approvalRequests";
 import { getExecutionJobs } from "@/shared/ai/executionQueue";
 import { ApprovalsDashboard } from "@/components/dashboard/ApprovalsDashboard";
 
@@ -24,14 +27,12 @@ export default async function ApprovalsPage({ params }: Props) {
     getExecutionJobs(ctx.salon.id, 100),
   ]);
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://nailiq.ca";
-
   return (
     <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
       <ApprovalsDashboard
-        approvals={approvals}
+        approvals={approvals.map(toApprovalDisplayRow)}
         executionJobs={executionJobs}
-        appUrl={appUrl}
+        slug={slug}
       />
     </div>
   );

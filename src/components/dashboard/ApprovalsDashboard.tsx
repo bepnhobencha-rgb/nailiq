@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { CheckCircle, XCircle, Clock, AlertTriangle } from "lucide-react";
 
+import { ApprovalDecisionButtons } from "@/components/dashboard/ApprovalDecisionButtons";
 import { approvalExecutionPresentation } from "@/shared/ai/approvalExecutionPresentation";
-import type { ApprovalRow } from "@/shared/ai/approvalRequests";
+import type { ApprovalDisplayRow } from "@/shared/ai/approvalRequests";
 import type { ExecutionJobRow } from "@/shared/ai/executionQueue";
 import { executionFailureLabel } from "@/shared/ai/executionFailure";
 
@@ -56,7 +56,7 @@ function UrgencyBadge({ urgency }: { urgency: "urgent" | "normal" }) {
   );
 }
 
-function StatusBadge({ status }: { status: ApprovalRow["status"] }) {
+function StatusBadge({ status }: { status: ApprovalDisplayRow["status"] }) {
   if (status === "approved") {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
@@ -92,14 +92,11 @@ function StatusBadge({ status }: { status: ApprovalRow["status"] }) {
 
 function PendingCard({
   req,
-  appUrl,
+  slug,
 }: {
-  req: ApprovalRow;
-  appUrl: string;
+  req: ApprovalDisplayRow;
+  slug: string;
 }) {
-  const approveUrl = `${appUrl}/api/ai/approve?token=${req.approve_token}`;
-  const declineUrl = `${appUrl}/api/ai/approve?token=${req.decline_token}`;
-
   return (
     <div className="rounded-xl border border-nq-border/60 bg-nq-surface p-5 shadow-sm">
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -117,24 +114,7 @@ function PendingCard({
         {req.summary}
       </p>
 
-      <div className="flex flex-wrap gap-3">
-        <Link
-          href={approveUrl}
-          prefetch={false}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-[14px] font-semibold text-white hover:bg-green-700 active:scale-95 transition-transform"
-        >
-          <CheckCircle className="h-4 w-4" />
-          Đồng ý — đưa vào hàng đợi
-        </Link>
-        <Link
-          href={declineUrl}
-          prefetch={false}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-[14px] font-semibold text-white hover:bg-red-700 active:scale-95 transition-transform"
-        >
-          <XCircle className="h-4 w-4" />
-          Từ chối — bỏ qua
-        </Link>
-      </div>
+      <ApprovalDecisionButtons slug={slug} approvalId={req.id} />
     </div>
   );
 }
@@ -168,7 +148,7 @@ function DecidedRow({
   req,
   job,
 }: {
-  req: ApprovalRow;
+  req: ApprovalDisplayRow;
   job: ExecutionJobRow | undefined;
 }) {
   return (
@@ -203,11 +183,11 @@ function DecidedRow({
 export function ApprovalsDashboard({
   approvals,
   executionJobs,
-  appUrl,
+  slug,
 }: {
-  approvals: ApprovalRow[];
+  approvals: ApprovalDisplayRow[];
   executionJobs: ExecutionJobRow[];
-  appUrl: string;
+  slug: string;
 }) {
   const pending = approvals.filter((r) => r.status === "pending");
   const decided = approvals.filter((r) => r.status !== "pending");
@@ -243,7 +223,7 @@ export function ApprovalsDashboard({
         ) : (
           <div className="space-y-4">
             {pending.map((req) => (
-              <PendingCard key={req.id} req={req} appUrl={appUrl} />
+              <PendingCard key={req.id} req={req} slug={slug} />
             ))}
           </div>
         )}
