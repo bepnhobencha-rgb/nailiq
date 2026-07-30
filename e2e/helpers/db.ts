@@ -26,6 +26,71 @@ assertNotProductionFromEnv();
 
 const supabase = createClient(supabaseUrl, serviceKey);
 
+export async function invokeAiAgentPermission(input: {
+  salonId: string;
+  actorUserId: string;
+  flagKey: string;
+  enabled: boolean;
+  impact: string;
+  impactAcknowledged?: boolean;
+}) {
+  const { data, error } = await supabase.rpc(
+    "set_ai_agent_permission" as never,
+    {
+      p_salon_id: input.salonId,
+      p_actor_user_id: input.actorUserId,
+      p_actor_role: "owner",
+      p_actor_kind: "member",
+      p_flag_key: input.flagKey,
+      p_enabled: input.enabled,
+      p_impact: input.impact,
+      p_impact_acknowledged: input.impactAcknowledged === true,
+    } as never,
+  );
+  if (error) throw error;
+  return data as {
+    success?: boolean;
+    code?: string;
+    changed?: boolean;
+  };
+}
+
+export async function getAiAgentPermissionSnapshot(slug: string) {
+  const { data: salon, error: salonError } = await supabase
+    .from("salons")
+    .select("id, feature_flags")
+    .eq("slug", slug)
+    .single();
+  if (salonError) throw salonError;
+
+  const salonId = (salon as { id: string }).id;
+  const { data: audit, error: auditError } = await supabase
+    .from("ai_agent_permission_audit" as never)
+    .select(
+      "actor_user_id, actor_role, actor_kind, flag_key, impact, enabled, previous_enabled, impact_acknowledged, created_at",
+    )
+    .eq("salon_id", salonId)
+    .order("created_at", { ascending: true });
+  if (auditError) throw auditError;
+
+  return {
+    featureFlags:
+      ((salon as { feature_flags?: Record<string, boolean> }).feature_flags ??
+        {}),
+    audit: (audit ?? []) as Array<{
+      actor_user_id: string | null;
+      actor_role: string;
+      actor_kind: string;
+      flag_key: string;
+      impact: string;
+      enabled: boolean;
+      previous_enabled: boolean;
+      impact_acknowledged: boolean;
+      created_at: string;
+    }>,
+  };
+}
+
 // Public booking calendar (rewritten 2026-05-12) gates each selectable day cell
 // on `salons.opening_hours` via parseOpeningHours(): a NULL value parses to null
 // and BookingCalendarGrid then marks EVERY weekday closed — so the date step has

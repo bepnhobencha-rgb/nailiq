@@ -2,6 +2,26 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-07-29 (Atomic AI agent permissions)
+
+- **No lost toggles:** AI permission changes now lock the salon row and update
+  one JSONB key inside a transaction, so concurrent agent changes preserve one
+  another.
+- **Durable evidence:** every effective grant or revocation records the actor,
+  role, impact, previous state, new state, and acknowledgement in an append-only
+  salon-scoped audit row in the same transaction.
+- **Operator visibility:** permission transitions appear once in the AI tab of
+  Activity Feed with the agent, actor, impact, prior state, and acknowledgement;
+  the matching generic salon audit is suppressed to avoid a duplicate event.
+- **Defense in depth:** Postgres independently validates the agent allowlist,
+  impact class, owner/admin membership, and sensitive-impact acknowledgement;
+  the RPC is callable only by the service role.
+- **Replay truth:** setting an agent to its existing state is a successful no-op
+  and does not create a misleading duplicate audit event.
+- **Full-path proof:** Playwright verifies the real owner UI audit and races two
+  independent permission changes in a throwaway database, then proves both
+  flags and all four transition audits survive.
+
 ## 2026-07-29 (Explicit AI agent activation impact)
 
 - **Truthful controls:** every AI Manager agent shows whether it only drafts,

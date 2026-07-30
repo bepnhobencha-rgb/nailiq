@@ -5,6 +5,27 @@ Newest entries on top.
 
 ---
 
+## 2026-07-29 — AI operating permissions are atomic and auditable
+
+**Decision.** Owner/admin AI agent toggles execute through one service-only
+Postgres function. The function validates the actor and canonical impact,
+locks the salon, updates exactly one flag, and writes an append-only permission
+audit before the transaction can succeed.
+
+**Why.** The previous Server Action performed a read-modify-write on the whole
+`feature_flags` object and ignored the read error. Two concurrent toggles could
+overwrite each other, while the generic salon audit could not prove the
+specific permission, acknowledged impact, or previous state. TypeScript and a
+confirmation dialog are not sufficient control-plane evidence.
+
+**Safety.** The application still authenticates and authorizes the caller
+before using the service client; Postgres repeats the membership and impact
+checks. The function is revoked from public, anonymous, and authenticated
+roles. Replays that request the current state write neither the salon nor a
+duplicate audit. No agent is enabled by this migration.
+
+---
+
 ## 2026-07-29 — AI agent activation discloses and confirms operating impact
 
 **Decision.** Every owner-facing AI agent has one allowlisted impact class.
