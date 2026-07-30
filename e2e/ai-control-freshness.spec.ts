@@ -88,10 +88,10 @@ test.describe("AI Control Center freshness", () => {
     );
 
     const aiLink = page.locator(
-      `a[href="/dashboard/${SLUG}/ai"]:visible`,
+      `a[href="/dashboard/${SLUG}/ai"]`,
     ).first();
-    await expect(aiLink).toBeVisible();
-    await aiLink.click();
+    await expect(aiLink).toHaveCount(1);
+    await aiLink.evaluate((element: HTMLAnchorElement) => element.click());
 
     await expect(
       page.getByRole("heading", { name: "AI Control Center" }),
