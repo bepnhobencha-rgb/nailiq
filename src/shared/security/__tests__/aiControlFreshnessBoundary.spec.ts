@@ -8,19 +8,19 @@ const controlCenter = readFileSync(
 );
 
 describe("AI Control Center freshness boundary", () => {
-  it("refreshes only through the authenticated server-rendered route", () => {
-    expect(controlCenter).toContain("router.refresh()");
+  it("refreshes stale data through a full authenticated document request", () => {
+    expect(controlCenter).toContain("window.location.reload()");
     expect(controlCenter).toContain("document.visibilityState");
-    expect(controlCenter).toContain(
-      'document.addEventListener("visibilitychange", refreshIfStale)',
+    expect(controlCenter).not.toContain(
+      'document.addEventListener("visibilitychange"',
     );
     expect(controlCenter).not.toMatch(/fetch\s*\(/);
   });
 
-  it("cleans up both timer and visibility listener", () => {
+  it("cleans up the background refresh timer", () => {
     expect(controlCenter).toContain("window.clearInterval(intervalId)");
-    expect(controlCenter).toContain(
-      'document.removeEventListener("visibilitychange", refreshIfStale)',
+    expect(controlCenter).not.toContain(
+      'document.removeEventListener("visibilitychange"',
     );
   });
 });
