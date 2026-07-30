@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import {
+  startTransition,
+  useEffect,
+  useState,
+  useTransition,
+} from "react";
 import {
   Activity,
   AlertTriangle,
@@ -132,7 +137,9 @@ export function AiControlCenter({
           visibilityState: document.visibilityState,
         })
       ) {
-        router.refresh();
+        startTransition(() => {
+          router.refresh();
+        });
       }
     };
     const intervalId = window.setInterval(
