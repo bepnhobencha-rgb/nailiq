@@ -5,6 +5,30 @@ Newest entries on top.
 
 ---
 
+## 2026-07-30 — Keep AI mutations out of the rendered App Router action queue
+
+**Decision.** AI Control Center submits its owner-initiated mutations through
+one same-origin JSON API. Client-rendered controls no longer import server
+action references. The API validates the operation and identifiers, preserves
+the existing tenant/role checks inside each mutation, and returns the existing
+result contract.
+
+**Why.** Exact production verification of PR #1101 disproved the lifecycle
+refresh hypothesis: the page still failed with React error 310 inside Next's
+root `useActionQueue` on a clean authenticated document load, while another
+dashboard route on the same deployment rendered without errors. The remaining
+AI-specific App Router input was the set of server action references embedded
+in this unusually dense client surface. A normal fetch keeps those mutations
+outside the hydration action queue without reducing product capability.
+
+**Safety.** The endpoint rejects missing or cross-origin mutation requests,
+validates action-specific identifiers and operations, and delegates
+authorization, tenant isolation, state transitions, idempotency, and audit
+behavior to the existing server implementations. It does not add any messaging,
+campaign dispatch, payment, pricing, or destructive authority.
+
+---
+
 ## 2026-07-30 — Keep lifecycle refreshes out of the App Router queue
 
 **Decision.** AI Control Center keeps its one-minute freshness interval, but a

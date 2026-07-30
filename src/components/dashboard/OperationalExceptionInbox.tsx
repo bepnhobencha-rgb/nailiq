@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { AlertTriangle, CheckCheck, Eye, RotateCcw } from "lucide-react";
 
-import { controlOperationalExceptionAction } from "@/shared/ai/controlOperationalExceptionAction";
+import { postAiControl } from "@/shared/ai/aiControlApi";
 import type {
   OperationalExceptionOperation,
   OperationalExceptionRow,
@@ -66,8 +66,8 @@ export function OperationalExceptionInbox({
     setBusyId(item.id);
     setError(null);
     startTransition(async () => {
-      const result = await controlOperationalExceptionAction({
-        slug,
+      const result = await postAiControl(slug, {
+        action: "control_exception",
         alertId: item.id,
         operation,
         resolutionNote: resolutionNote || undefined,
