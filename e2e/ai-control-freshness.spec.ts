@@ -88,7 +88,7 @@ test.describe("AI Control Center freshness", () => {
     );
 
     const aiLink = page.locator(
-      `a[href="/dashboard/${SLUG}/ai"]`,
+      `a[href="/dashboard/${SLUG}/ai"]:visible`,
     ).first();
     await expect(aiLink).toBeVisible();
     await aiLink.click();
