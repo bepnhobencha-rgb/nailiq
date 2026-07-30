@@ -4,7 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { AiControlCenter } from "@/components/dashboard/AiControlCenter";
 import {
   getApprovalInboxSnapshot,
-  toApprovalDisplayRow,
+  toApprovalDisplayRows,
   type ApprovalInboxSnapshot,
 } from "@/shared/ai/approvalRequests";
 import {
@@ -106,11 +106,14 @@ export default async function AiControlCenterPage({ params }: Props) {
   const executionJobs = executionJobsSource.value;
   const operatingState = operatingStateSource.value;
   const operationalExceptionInbox = operationalExceptionSource.value;
+  const approvalDisplayRows = await toApprovalDisplayRows(
+    approvalInbox.items,
+  );
 
   return (
     <AiControlCenter
       slug={slug}
-      approvals={approvalInbox.items.map(toApprovalDisplayRow)}
+      approvals={approvalDisplayRows}
       pendingApprovalCount={approvalInbox.pendingCount}
       activity={activity}
       executionJobs={executionJobs}

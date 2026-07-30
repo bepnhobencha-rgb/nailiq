@@ -4,7 +4,7 @@ import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import {
   getAllApprovals,
-  toApprovalDisplayRow,
+  toApprovalDisplayRows,
 } from "@/shared/ai/approvalRequests";
 import { getExecutionJobs } from "@/shared/ai/executionQueue";
 import { ApprovalsDashboard } from "@/components/dashboard/ApprovalsDashboard";
@@ -26,11 +26,12 @@ export default async function ApprovalsPage({ params }: Props) {
     getAllApprovals(ctx.salon.id),
     getExecutionJobs(ctx.salon.id, 100),
   ]);
+  const displayApprovals = await toApprovalDisplayRows(approvals);
 
   return (
     <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
       <ApprovalsDashboard
-        approvals={approvals.map(toApprovalDisplayRow)}
+        approvals={displayApprovals}
         executionJobs={executionJobs}
         slug={slug}
       />

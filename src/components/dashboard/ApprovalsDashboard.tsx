@@ -3,6 +3,7 @@
 import { CheckCircle, XCircle, Clock, AlertTriangle } from "lucide-react";
 
 import { ApprovalDecisionButtons } from "@/components/dashboard/ApprovalDecisionButtons";
+import { approvalDecisionProvenance } from "@/shared/ai/approvalDecisionPresentation";
 import { approvalExecutionPresentation } from "@/shared/ai/approvalExecutionPresentation";
 import type { ApprovalDisplayRow } from "@/shared/ai/approvalRequests";
 import type { ExecutionJobRow } from "@/shared/ai/executionQueue";
@@ -151,6 +152,7 @@ function DecidedRow({
   req: ApprovalDisplayRow;
   job: ExecutionJobRow | undefined;
 }) {
+  const provenance = approvalDecisionProvenance(req, "vi");
   return (
     <div className="flex flex-col gap-1.5 border-b border-nq-border/40 py-3 last:border-0">
       <div className="flex flex-wrap items-center gap-2">
@@ -170,6 +172,12 @@ function DecidedRow({
         {job && job.attempt_count > 0
           ? ` · Lần thử ${job.attempt_count}/${job.max_attempts}`
           : ""}
+      </p>
+      <p
+        className="text-[11px] text-nq-muted"
+        data-testid="approval-decision-provenance"
+      >
+        Kênh: {provenance.channel} · Người quyết định: {provenance.actor}
       </p>
       {job?.last_error ? (
         <p className="line-clamp-2 text-[11px] text-nq-error">

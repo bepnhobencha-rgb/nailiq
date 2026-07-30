@@ -56,16 +56,118 @@ export type ApprovalRow = {
   created_at: string;
 };
 
+export type ApprovalDecisionActor = {
+  label: string;
+  role: "owner" | "admin";
+};
+
 export type ApprovalDisplayRow = Omit<
   ApprovalRow,
-  "approve_token" | "decline_token"
->;
+  "approve_token" | "decline_token" | "decided_by"
+> & {
+  decision_actor: ApprovalDecisionActor | null;
+};
 
-export function toApprovalDisplayRow(row: ApprovalRow): ApprovalDisplayRow {
-  const { approve_token: _approveToken, decline_token: _declineToken, ...safe } = row;
+export function toApprovalDisplayRow(
+  row: ApprovalRow,
+  decisionActor: ApprovalDecisionActor | null = null,
+): ApprovalDisplayRow {
+  const {
+    approve_token: _approveToken,
+    decline_token: _declineToken,
+    decided_by: _decidedBy,
+    ...safe
+  } = row;
   void _approveToken;
   void _declineToken;
-  return safe;
+  void _decidedBy;
+  return { ...safe, decision_actor: decisionActor };
+}
+
+function approvalActorLabel(user: {
+  email?: string | null;
+  phone?: string | null;
+  user_metadata?: Record<string, unknown> | null;
+} | null): string {
+  const metadata = user?.user_metadata ?? {};
+  for (const key of ["full_name", "display_name", "name"] as const) {
+    const value = metadata[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  if (user?.email?.trim()) return user.email.trim();
+  if (user?.phone?.trim()) return user.phone.trim();
+  return "Authenticated owner/admin";
+}
+
+/**
+ * Convert server-only approval rows into owner-facing rows without leaking
+ * bearer tokens or internal auth user IDs. Dashboard actors are resolved with
+ * targeted Auth lookups and must still hold an owner/admin membership for the
+ * same salon before their identity is displayed.
+ */
+export async function toApprovalDisplayRows(
+  rows: ApprovalRow[],
+): Promise<ApprovalDisplayRow[]> {
+  const dashboardRows = rows.filter(
+    (row) => row.decision_channel === "dashboard" && row.decided_by,
+  );
+  if (dashboardRows.length === 0) return rows.map((row) => toApprovalDisplayRow(row));
+
+  const userIds = [...new Set(dashboardRows.map((row) => row.decided_by!))];
+  const salonIds = [...new Set(dashboardRows.map((row) => row.salon_id))];
+  const db = createServiceRoleClient();
+  const { data: memberships } = await db
+    .from("salon_members")
+    .select("salon_id, user_id, role")
+    .in("salon_id", salonIds)
+    .in("user_id", userIds)
+    .in("role", ["owner", "admin"]);
+
+  const roleByMembership = new Map<string, ApprovalDecisionActor["role"]>();
+  for (const member of (memberships ?? []) as Array<{
+    salon_id: string;
+    user_id: string;
+    role: string;
+  }>) {
+    if (member.role === "owner" || member.role === "admin") {
+      roleByMembership.set(
+        `${member.salon_id}:${member.user_id}`,
+        member.role,
+      );
+    }
+  }
+
+  const eligibleUserIds = [
+    ...new Set(
+      dashboardRows
+        .filter((row) =>
+          roleByMembership.has(`${row.salon_id}:${row.decided_by}`),
+        )
+        .map((row) => row.decided_by!),
+    ),
+  ];
+  const labels = new Map<string, string>();
+  await Promise.all(
+    eligibleUserIds.map(async (userId) => {
+      const { data, error } = await db.auth.admin.getUserById(userId);
+      labels.set(
+        userId,
+        approvalActorLabel(error ? null : (data.user ?? null)),
+      );
+    }),
+  );
+
+  return rows.map((row) => {
+    if (row.decision_channel !== "dashboard" || !row.decided_by) {
+      return toApprovalDisplayRow(row);
+    }
+    const role = roleByMembership.get(`${row.salon_id}:${row.decided_by}`);
+    if (!role) return toApprovalDisplayRow(row);
+    return toApprovalDisplayRow(row, {
+      label: labels.get(row.decided_by) ?? "Authenticated owner/admin",
+      role,
+    });
+  });
 }
 
 type ApprovalDecisionTransition = {
@@ -620,32 +722,38 @@ export type ApprovalInboxSnapshot = {
 /**
  * Owner-facing Control Center snapshot.
  *
- * The row list is deliberately bounded for rendering, while the pending badge
- * uses an independent exact count so a busy salon never sees "100" when more
- * decisions are actually waiting.
+ * The row list includes pending requests plus recent decisions and is
+ * deliberately bounded for rendering. The pending badge uses an independent
+ * exact count so a busy salon never sees "100" when more decisions are waiting.
  */
 export async function getApprovalInboxSnapshot(
   salonId: string,
 ): Promise<ApprovalInboxSnapshot> {
   const db = createServiceRoleClient();
-  const { data, error, count } = await db
-    .from("approval_requests" as never)
-    .select("*", { count: "exact" })
-    .eq("salon_id" as never, salonId)
-    .eq("status" as never, "pending")
-    .order("created_at" as never, { ascending: false })
-    .limit(100);
-  if (error) {
-    throw new Error("pending_approvals_read_failed", {
-      cause: error,
+  const [itemsResult, countResult] = await Promise.all([
+    db
+      .from("approval_requests" as never)
+      .select("*")
+      .eq("salon_id" as never, salonId)
+      .order("created_at" as never, { ascending: false })
+      .limit(100),
+    db
+      .from("approval_requests" as never)
+      .select("id", { count: "exact", head: true })
+      .eq("salon_id" as never, salonId)
+      .eq("status" as never, "pending"),
+  ]);
+  if (itemsResult.error || countResult.error) {
+    throw new Error("approval_inbox_read_failed", {
+      cause: itemsResult.error ?? countResult.error,
     });
   }
-  if (count == null) {
+  if (countResult.count == null) {
     throw new Error("pending_approval_count_unavailable");
   }
   return {
-    items: (data as ApprovalRow[] | null) ?? [],
-    pendingCount: count,
+    items: (itemsResult.data as ApprovalRow[] | null) ?? [],
+    pendingCount: countResult.count,
   };
 }
 

@@ -21,6 +21,10 @@ const controlCenter = readFileSync(
   resolve(process.cwd(), "src/components/dashboard/AiControlCenter.tsx"),
   "utf8",
 );
+const approvalRequests = readFileSync(
+  resolve(process.cwd(), "src/shared/ai/approvalRequests.ts"),
+  "utf8",
+);
 
 describe("attributed AI approval boundary", () => {
   it("keeps dashboard decisions behind authenticated owner/admin authorization", () => {
@@ -53,6 +57,17 @@ describe("attributed AI approval boundary", () => {
     expect(controlCenter).not.toContain("decline_token");
     expect(approvalsDashboard).toContain("ApprovalDecisionButtons");
     expect(controlCenter).toContain("ApprovalDecisionButtons");
+    expect(approvalRequests).toContain(
+      '"approve_token" | "decline_token" | "decided_by"',
+    );
+  });
+
+  it("only displays a dashboard actor after revalidating salon membership", () => {
+    expect(approvalRequests).toContain('.from("salon_members")');
+    expect(approvalRequests).toContain('.in("role", ["owner", "admin"])');
+    expect(approvalRequests).toContain("roleByMembership.has");
+    expect(controlCenter).toContain("approvalDecisionProvenance");
+    expect(approvalsDashboard).toContain("approvalDecisionProvenance");
   });
 
   it("preserves two-step email capability decisions without claiming an actor", () => {
