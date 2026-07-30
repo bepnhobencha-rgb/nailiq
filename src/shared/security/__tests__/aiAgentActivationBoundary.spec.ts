@@ -22,6 +22,20 @@ const schemaParity = readFileSync(
   resolve(process.cwd(), "scripts/check-schema-parity.ts"),
   "utf8",
 );
+const customerOutreachSources = [
+  "src/shared/winback/agentWinback.ts",
+  "src/shared/winback/agentRebook.ts",
+  "src/shared/ai/agentVipCare.ts",
+  "src/shared/firstvisit/agentFirstVisit.ts",
+  "src/app/api/cron/reminders/route.ts",
+].map((path) => ({
+  path,
+  source: readFileSync(resolve(process.cwd(), path), "utf8"),
+}));
+const noShowPolicy = readFileSync(
+  resolve(process.cwd(), "src/shared/noshow/agentNoShowPolicy.ts"),
+  "utf8",
+);
 
 describe("AI agent activation boundary", () => {
   it("validates the runtime key before any salon write", () => {
@@ -94,5 +108,28 @@ describe("AI agent activation boundary", () => {
     expect(hub).toContain("data-impact={impact}");
     expect(hub).toContain("impactAcknowledged: needsAcknowledgement");
     expect(hub).not.toContain("safe to enable without risk of over-messaging");
+  });
+
+  it("re-reads customer-outreach permission inside every multi-recipient runner", () => {
+    for (const { path, source } of customerOutreachSources) {
+      expect(source, path).toContain("isAiAgentPermissionEnabled");
+      expect(source, path).toMatch(/await isAiAgentPermissionEnabled\(/);
+    }
+  });
+
+  it("re-reads live no-show permission after model work and before booking mutation", () => {
+    const freshPermission = noShowPolicy.indexOf(
+      'isAiAgentPermissionEnabled(\n        ctx.salonId,\n        "ai_noshow_policy_live"',
+    );
+    const liveDecision = noShowPolicy.indexOf(
+      "const live = livePermissionStillEnabled && ai != null",
+    );
+    const bookingMutation = noShowPolicy.indexOf(
+      ".update({ noshow_card_required: cardRequired }",
+    );
+
+    expect(freshPermission).toBeGreaterThan(-1);
+    expect(liveDecision).toBeGreaterThan(freshPermission);
+    expect(bookingMutation).toBeGreaterThan(liveDecision);
   });
 });

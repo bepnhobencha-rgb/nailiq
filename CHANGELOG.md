@@ -2,6 +2,23 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-07-29 (Immediate AI outreach revocation fence)
+
+- **Fresh permission per recipient:** Win-back, Rebook, VIP Care, and First
+  Visit Nurture re-read the owner-controlled agent flag during multi-customer
+  runs and again immediately before delivery.
+- **Smart reminder downgrade:** if Smart Reminders is revoked during a reminder
+  batch, subsequent reminders keep the required deterministic template instead
+  of using stale AI personalization.
+- **Live policy fence:** No-show Guard re-reads its live-policy permission after
+  model work and before any booking mutation, discarding a stale result when
+  the owner revoked the only active mode.
+- **Fail closed:** a missing salon, malformed flags, or a permission-read error
+  is treated as disabled; stale in-memory state never authorizes more outreach.
+- **No live campaign:** tests exercise the permission boundary with mocks and
+  source invariants; this milestone does not enable an agent or contact a real
+  customer.
+
 ## 2026-07-29 (Atomic AI agent permissions)
 
 - **No lost toggles:** AI permission changes now lock the salon row and update
