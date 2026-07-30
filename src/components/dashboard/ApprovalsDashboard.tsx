@@ -6,7 +6,7 @@ import { ApprovalDecisionButtons } from "@/components/dashboard/ApprovalDecision
 import { approvalDecisionProvenance } from "@/shared/ai/approvalDecisionPresentation";
 import { approvalExecutionPresentation } from "@/shared/ai/approvalExecutionPresentation";
 import type { ApprovalDisplayRow } from "@/shared/ai/approvalRequests";
-import type { ExecutionJobRow } from "@/shared/ai/executionQueue";
+import type { OwnerExecutionJob } from "@/shared/ai/executionOwnerView";
 import { executionFailureLabel } from "@/shared/ai/executionFailure";
 
 function timeLabel(iso: string): string {
@@ -130,7 +130,7 @@ const EXECUTION_TONE = {
   error: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
 } as const;
 
-function ExecutionBadge({ job }: { job: ExecutionJobRow }) {
+function ExecutionBadge({ job }: { job: OwnerExecutionJob }) {
   const presentation = approvalExecutionPresentation(
     job.status,
     job.result?.blocker,
@@ -150,14 +150,21 @@ function DecidedRow({
   job,
 }: {
   req: ApprovalDisplayRow;
-  job: ExecutionJobRow | undefined;
+  job: OwnerExecutionJob | undefined;
 }) {
   const provenance = approvalDecisionProvenance(req, "vi");
+  const missingApprovedExecution = req.status === "approved" && !job;
   return (
     <div className="flex flex-col gap-1.5 border-b border-nq-border/40 py-3 last:border-0">
       <div className="flex flex-wrap items-center gap-2">
         <StatusBadge status={req.status} />
         {job ? <ExecutionBadge job={job} /> : null}
+        {missingApprovedExecution ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-400">
+            <AlertTriangle className="h-3 w-3" aria-hidden />
+            Thiếu dấu vết thực thi
+          </span>
+        ) : null}
         <span className="text-[12px] font-medium text-nq-foreground line-clamp-1 flex-1">
           {req.summary}
         </span>
@@ -184,6 +191,12 @@ function DecidedRow({
           {executionFailureLabel(job.last_error, "vi")}
         </p>
       ) : null}
+      {missingApprovedExecution ? (
+        <p className="text-[11px] text-nq-error">
+          Quyết định đã được duyệt nhưng chưa có công việc trong hàng đợi; chưa
+          thể xác minh hành động đã được thực thi.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -194,7 +207,7 @@ export function ApprovalsDashboard({
   slug,
 }: {
   approvals: ApprovalDisplayRow[];
-  executionJobs: ExecutionJobRow[];
+  executionJobs: OwnerExecutionJob[];
   slug: string;
 }) {
   const pending = approvals.filter((r) => r.status === "pending");

@@ -19,7 +19,7 @@ describe("approval execution trace boundary", () => {
 
   it("passes a deliberately minimized trace to the client", () => {
     expect(queue).toContain("export type ApprovalExecutionTraceRow");
-    expect(queue).toContain("blocker: string | null");
+    expect(queue).toContain("blocker: OwnerExecutionBlocker | null");
     const traceType = queue.match(
       /type ApprovalExecutionTraceRow = \{([\s\S]*?)\n\};/,
     )?.[1];

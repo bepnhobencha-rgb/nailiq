@@ -42,10 +42,14 @@ import { canControlExecutionJob } from "@/shared/ai/executionPolicy";
 import { preflightCampaignAction } from "@/shared/ai/preflightCampaignAction";
 import { prepareAudienceAction } from "@/shared/ai/prepareAudienceAction";
 import { sealCampaignPlanAction } from "@/shared/ai/sealCampaignPlanAction";
+import type { ApprovalExecutionTraceRow } from "@/shared/ai/executionQueue";
 import type {
-  ApprovalExecutionTraceRow,
-  ExecutionJobRow,
-} from "@/shared/ai/executionQueue";
+  OwnerAudiencePreparation,
+  OwnerCampaignDispatchPlan,
+  OwnerCampaignDispatchPreflight,
+  OwnerExecutionJob,
+  OwnerExecutionResult,
+} from "@/shared/ai/executionOwnerView";
 import type { MinhActivityData } from "@/shared/ai/loadMinhActivity";
 import type { OperationalExceptionRow } from "@/shared/ai/operationalExceptionTypes";
 import type {
@@ -60,7 +64,7 @@ type Props = {
   approvals: ApprovalDisplayRow[];
   pendingApprovalCount: number;
   activity: MinhActivityData;
-  executionJobs: ExecutionJobRow[];
+  executionJobs: OwnerExecutionJob[];
   decisionExecutionTraces: ApprovalExecutionTraceRow[];
   operationalExceptions: OperationalExceptionRow[];
   operationalExceptionCount: number;
@@ -956,110 +960,22 @@ function LearnedControl({
   );
 }
 
-type AudiencePreparationView = {
-  prepared_at: string;
-  eligible_count: number;
-  sms_recipient_count: number;
-  email_recipient_count: number;
-  excluded_no_consent: number;
-  excluded_no_channel: number;
-  excluded_recent_contact: number;
-  estimated_cost_usd_cents: number;
-  candidate_limit: number;
-  may_have_more_candidates: boolean;
-  no_messages_sent: true;
-};
-
-type CampaignDispatchPreflightView = {
-  preflight_at: string;
-  valid_until: string;
-  freshness_minutes: number;
-  preflight_status: "ready" | "blocked";
-  eligible_count: number;
-  sms_recipient_count: number;
-  email_recipient_count: number;
-  excluded_recent_contact: number;
-  excluded_no_consent: number;
-  excluded_no_channel: number;
-  excluded_missing_profile: number;
-  excluded_manifest_channel_unavailable: number;
-  estimated_cost_usd_cents: number;
-  recipient_cap: number;
-  cost_cap_usd_cents: number;
-  within_recipient_cap: boolean;
-  within_cost_cap: boolean;
-  dispatch_enabled: false;
-  no_messages_sent: true;
-};
-
-type CampaignDispatchPlanView = {
-  plan_id: string;
-  plan_status: "sealed";
-  plan_fingerprint: string;
-  recipient_count: number;
-  sms_recipient_count: number;
-  email_recipient_count: number;
-  estimated_cost_usd_cents: number;
-  expires_at: string;
-  dispatch_enabled: false;
-  no_messages_sent: true;
-};
-
 function campaignDispatchPlanFrom(
-  result: Record<string, unknown> | null,
-): CampaignDispatchPlanView | null {
-  const value = result?.dispatch_plan;
-  if (!value || typeof value !== "object") return null;
-  const row = value as Record<string, unknown>;
-  if (
-    typeof row.plan_id !== "string" ||
-    row.plan_status !== "sealed" ||
-    typeof row.plan_fingerprint !== "string" ||
-    typeof row.recipient_count !== "number" ||
-    typeof row.expires_at !== "string" ||
-    row.dispatch_enabled !== false ||
-    row.no_messages_sent !== true
-  ) {
-    return null;
-  }
-  return row as unknown as CampaignDispatchPlanView;
+  result: OwnerExecutionResult | null,
+): OwnerCampaignDispatchPlan | null {
+  return result?.dispatch_plan ?? null;
 }
 
 function campaignDispatchPreflightFrom(
-  result: Record<string, unknown> | null,
-): CampaignDispatchPreflightView | null {
-  const value = result?.dispatch_preflight;
-  if (!value || typeof value !== "object") return null;
-  const row = value as Record<string, unknown>;
-  if (
-    typeof row.preflight_at !== "string" ||
-    typeof row.valid_until !== "string" ||
-    typeof row.freshness_minutes !== "number" ||
-    (row.preflight_status !== "ready" &&
-      row.preflight_status !== "blocked") ||
-    typeof row.eligible_count !== "number" ||
-    row.dispatch_enabled !== false ||
-    row.no_messages_sent !== true
-  ) {
-    return null;
-  }
-  return row as unknown as CampaignDispatchPreflightView;
+  result: OwnerExecutionResult | null,
+): OwnerCampaignDispatchPreflight | null {
+  return result?.dispatch_preflight ?? null;
 }
 
 function audiencePreparationFrom(
-  result: Record<string, unknown> | null,
-): AudiencePreparationView | null {
-  const value = result?.audience_preparation;
-  if (!value || typeof value !== "object") return null;
-  const row = value as Record<string, unknown>;
-  if (
-    typeof row.prepared_at !== "string" ||
-    typeof row.eligible_count !== "number" ||
-    row.no_messages_sent !== true
-  ) {
-    return null;
-  }
-  return row as unknown as AudiencePreparationView;
+  result: OwnerExecutionResult | null,
+): OwnerAudiencePreparation | null {
+  return result?.audience_preparation ?? null;
 }
 
 function JobAudiencePreparation({
@@ -1068,7 +984,7 @@ function JobAudiencePreparation({
   vi,
   nowIso,
 }: {
-  job: ExecutionJobRow;
+  job: OwnerExecutionJob;
   slug: string;
   vi: boolean;
   nowIso: string;
@@ -1085,8 +1001,7 @@ function JobAudiencePreparation({
   const planFreshness = dispatchPlan
     ? campaignPreflightFreshness(dispatchPlan.expires_at, nowIso)
     : null;
-  const blocker =
-    typeof job.result?.blocker === "string" ? job.result.blocker : null;
+  const blocker = job.result?.blocker ?? null;
 
   const prepare = () => {
     setError(null);
@@ -1380,7 +1295,7 @@ function JobRecoveryControls({
   slug,
   vi,
 }: {
-  job: ExecutionJobRow;
+  job: OwnerExecutionJob;
   slug: string;
   vi: boolean;
 }) {
@@ -1489,10 +1404,10 @@ function ExecutionStatus({
   status,
   vi,
 }: {
-  status: ExecutionJobRow["status"];
+  status: OwnerExecutionJob["status"];
   vi: boolean;
 }) {
-  const labels: Record<ExecutionJobRow["status"], { en: string; vi: string }> = {
+  const labels: Record<OwnerExecutionJob["status"], { en: string; vi: string }> = {
     queued: { en: "Queued", vi: "Đã xếp hàng" },
     waiting_input: { en: "Needs input", vi: "Cần thông tin" },
     running: { en: "Running", vi: "Đang chạy" },

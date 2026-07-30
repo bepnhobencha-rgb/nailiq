@@ -6,7 +6,7 @@ import {
   getAllApprovals,
   toApprovalDisplayRows,
 } from "@/shared/ai/approvalRequests";
-import { getExecutionJobs } from "@/shared/ai/executionQueue";
+import { getOwnerExecutionJobs } from "@/shared/ai/executionQueue";
 import { ApprovalsDashboard } from "@/components/dashboard/ApprovalsDashboard";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -24,7 +24,7 @@ export default async function ApprovalsPage({ params }: Props) {
 
   const [approvals, executionJobs] = await Promise.all([
     getAllApprovals(ctx.salon.id),
-    getExecutionJobs(ctx.salon.id, 100),
+    getOwnerExecutionJobs(ctx.salon.id, 100),
   ]);
   const displayApprovals = await toApprovalDisplayRows(approvals);
 
