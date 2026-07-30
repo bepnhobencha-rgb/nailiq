@@ -1697,6 +1697,8 @@ export const userVi: UserMessages = {
         requestTagsPlaceholder: "ví dụ Muốn gặp Tina",
         requestTagAdd: "Thêm",
         requestTagRemove: (label: string) => `Xóa ${label}`,
+        moreDetails: "Thêm chi tiết (tuỳ chọn)",
+        hideDetails: "Ẩn chi tiết",
         staffRequestedByClient: "Khách yêu cầu thợ này",
         returningCustomer: "Khách quen",
         newCustomer: "Khách mới",
