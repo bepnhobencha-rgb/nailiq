@@ -102,21 +102,6 @@ export async function proxy(request: NextRequest) {
   const pathnameEarly = request.nextUrl.pathname;
   const methodEarly = request.method;
 
-  // Temporary, narrowly scoped production diagnostic for the AI Control
-  // Center hydration crash. A clean document load is unexpectedly followed by
-  // two server-action POSTs. The opaque action id contains no request body,
-  // cookie, token, customer data, or mutation input; it lets us map the
-  // dispatch back to the generated server-reference manifest. Remove after the
-  // source action is identified.
-  if (
-    methodEarly === "POST" &&
-    /^\/dashboard\/[^/]+\/ai$/.test(pathnameEarly)
-  ) {
-    console.info("[ai-control-next-action]", {
-      actionId: request.headers.get("next-action") ?? "missing",
-    });
-  }
-
   // ── Custom-domain → tenant rewrite ──────────────────────────────────────
   // A salon can serve its public booking page on its own domain. Only runs
   // for NON-platform hosts, so nailiq.ca / *.vercel.app / localhost traffic is

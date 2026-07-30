@@ -5,6 +5,27 @@ Newest entries on top.
 
 ---
 
+## 2026-07-30 — Lifecycle telemetry does not use server actions
+
+**Decision.** Dashboard activity-count polling uses a read-only API GET, and
+presence heartbeat uses a same-origin API POST. Neither lifecycle effect
+imports or dispatches a Next server action.
+
+**Why.** A production-only diagnostic on the exact PR #1103 deployment mapped
+the two automatic POSTs preceding React error 310 to
+`getActivityUnreadCount` and `upsertPresence`. Both were mounted in the shared
+dashboard shell and dispatched during hydration. The dense AI Control Center
+made the App Router race reproducible, while lighter dashboard routes could
+finish hydration before the same background work completed.
+
+**Safety.** The activity endpoint is read-only, owner/admin-gated by the
+existing loader, validates its timestamp, and is never cached. The presence
+endpoint requires same-origin POST, bounds its path/battery input, derives the
+user agent from the request, and keeps the existing authenticated RLS write.
+The temporary action-ID log is removed in the same change.
+
+---
+
 ## 2026-07-30 — Keep AI mutations out of the rendered App Router action queue
 
 **Decision.** AI Control Center submits its owner-initiated mutations through
