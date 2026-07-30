@@ -18,7 +18,7 @@ let searchClientPhone: string;
 
 test.beforeAll(async ({}, testInfo) => {
   fx = await seedReceptionistCenterFixture(rcSlug(testInfo.project.name));
-  const suffix = `${Date.now()}`.slice(-7);
+  const suffix = `${Math.floor(1_000_000 + Math.random() * 9_000_000)}`;
   searchClientName = `Te2eGuestSearch${suffix}`;
   searchClientPhone = `1555${suffix}`;
 
