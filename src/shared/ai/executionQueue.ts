@@ -1,6 +1,13 @@
 import "server-only";
 
 import type { ExecutionJobStatus } from "@/shared/ai/executionPolicy";
+import {
+  toOwnerExecutionBlocker,
+  toOwnerExecutionJob,
+  type OwnerExecutionBlocker,
+  type OwnerExecutionJob,
+  type OwnerExecutionJobSource,
+} from "@/shared/ai/executionOwnerView";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 export type ExecutionJobRow = {
@@ -29,26 +36,37 @@ export type ApprovalExecutionTraceRow = {
   status: ExecutionJobStatus;
   attempt_count: number;
   max_attempts: number;
-  blocker: string | null;
+  blocker: OwnerExecutionBlocker | null;
   created_at: string;
   updated_at: string;
 };
 
-export async function getExecutionJobs(
+/**
+ * Loads only the execution fields needed by owner-facing surfaces.
+ *
+ * Internal payloads, tenant IDs, idempotency keys, lease credentials and
+ * timestamps never leave this server module. Result objects and errors are
+ * additionally allowlisted before the values can be serialized to a client.
+ */
+export async function getOwnerExecutionJobs(
   salonId: string,
   limit = 50,
-): Promise<ExecutionJobRow[]> {
+): Promise<OwnerExecutionJob[]> {
   const db = createServiceRoleClient();
   const { data, error } = await db
     .from("ai_execution_jobs" as never)
-    .select("*")
+    .select(
+      "id,approval_request_id,action_type,status,attempt_count,max_attempts,last_error,result,created_at",
+    )
     .eq("salon_id" as never, salonId)
     .order("created_at" as never, { ascending: false })
     .limit(Math.max(1, Math.min(100, limit)));
   if (error) {
     throw new Error("ai_execution_jobs_read_failed", { cause: error });
   }
-  return (data as ExecutionJobRow[] | null) ?? [];
+  return ((data as OwnerExecutionJobSource[] | null) ?? []).map(
+    toOwnerExecutionJob,
+  );
 }
 
 /**
@@ -94,6 +112,6 @@ export async function getApprovalExecutionTraces(
       | null) ?? []
   ).map(({ payload, ...row }) => ({
     ...row,
-    blocker: typeof payload?.blocker === "string" ? payload.blocker : null,
+    blocker: toOwnerExecutionBlocker(payload?.blocker),
   }));
 }

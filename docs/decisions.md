@@ -5,6 +5,32 @@ Newest entries on top.
 
 ---
 
+## 2026-07-30 — Owner surfaces receive a minimized execution view
+
+**Decision.** AI Control Center and the approval dashboard load execution jobs
+through an owner-specific server projection. The browser receives only the job
+identifier needed for guarded controls, approval identifier, action type,
+lifecycle status, bounded attempts, a safe failure code, creation time, and
+allowlisted aggregate campaign summaries. An approved decision without a queue
+job is displayed as an integrity issue.
+
+**Why.** The internal queue row contains operational credentials and sensitive
+implementation data: tenant IDs, payloads, idempotency keys, lease tokens,
+lease timing, raw results, recipient manifests, plan fingerprints, and
+technical errors. TypeScript types alone do not stop a Server Component from
+serializing those values into Client Component props. Selecting a narrow
+projection and rebuilding the result from explicit allowlists makes the
+server/client boundary enforceable and testable.
+
+**Safety.** The query remains tenant-scoped and bounded. Raw error text is
+converted to an approved failure category before serialization. Campaign
+summaries contain counts, caps, freshness, cost estimates, and no-send proof;
+recipient details, provider data, manifest contents, plan IDs, and fingerprints
+are dropped. This changes no queue execution, approval, messaging, payment,
+authentication, schema, or RLS behavior.
+
+---
+
 ## 2026-07-30 — Recent approval decisions expose execution integrity
 
 **Decision.** AI Control Center loads execution traces for the exact bounded

@@ -17,7 +17,7 @@ import {
 } from "@/shared/ai/controlCenterData";
 import {
   getApprovalExecutionTraces,
-  getExecutionJobs,
+  getOwnerExecutionJobs,
   type ApprovalExecutionTraceRow,
 } from "@/shared/ai/executionQueue";
 import { loadAiOperatingState } from "@/shared/ai/operatingState";
@@ -69,7 +69,7 @@ export default async function AiControlCenterPage({ params }: Props) {
   ] = await Promise.allSettled([
     getApprovalInboxSnapshot(ctx.salon.id),
     loadMinhActivity(ctx.salon.id, 30),
-    getExecutionJobs(ctx.salon.id, 10),
+    getOwnerExecutionJobs(ctx.salon.id, 10),
     loadAiOperatingState(ctx.salon.id, now),
     getOperationalExceptions(ctx.salon.id, 50),
   ]);
