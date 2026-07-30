@@ -60,8 +60,10 @@ test.describe("AI Control Center freshness", () => {
 
     const refreshRequest = page.waitForRequest(
       (request) =>
+        request.resourceType() === "document" &&
+        request.method() === "GET" &&
         request.url().includes(`/dashboard/${SLUG}/ai`) &&
-        request.url().includes("_rsc="),
+        !request.url().includes("_rsc="),
     );
     await page.clock.fastForward(60_000);
     await refreshRequest;
