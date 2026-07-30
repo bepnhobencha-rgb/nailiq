@@ -5,6 +5,32 @@ Newest entries on top.
 
 ---
 
+## 2026-07-30 — Keep lifecycle refreshes out of the App Router queue
+
+**Decision.** AI Control Center keeps its one-minute freshness interval, but a
+stale snapshot now reloads the document. It no longer dispatches
+`router.refresh()` or refreshes immediately from `visibilitychange`.
+
+**Why.** PR #1100 proved that wrapping the lifecycle dispatch in
+`startTransition` did not stop React error 310. On its exact production
+deployment, a clean authenticated load still produced two POST requests to the
+AI route before the Next App Router action queue failed. Background freshness
+does not need to share the same action queue as hydration. A bounded document
+GET makes that separation explicit and retains the promised one-minute update.
+
+**Tradeoff.** A stale visible AI Control Center performs a full document reload
+instead of a seamless React Server Component merge. This can reset transient
+local UI state, but it occurs at most once per minute and avoids crashing the
+whole page. User-initiated approval and execution controls retain their
+transitioned server actions.
+
+**Safety.** Authorization, approval, execution, messaging, payment, pricing,
+and persistence behavior are unchanged. E2E must prove the automatic request
+is a document GET rather than an RSC request, and exact production browser
+verification remains mandatory.
+
+---
+
 ## 2026-07-30 — Schedule AI Control Center background refreshes as transitions
 
 **Decision.** Keep the one-minute freshness policy, but wrap its

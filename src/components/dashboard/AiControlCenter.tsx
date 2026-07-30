@@ -2,12 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  startTransition,
-  useEffect,
-  useState,
-  useTransition,
-} from "react";
+import { useEffect, useState, useTransition } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -100,7 +95,6 @@ export function AiControlCenter({
   unavailableSources,
   nowIso,
 }: Props) {
-  const router = useRouter();
   const { language } = useUserLanguage();
   const vi = language === "vi";
   const approvalsAvailable = !unavailableSources.includes("approvals");
@@ -137,21 +131,17 @@ export function AiControlCenter({
           visibilityState: document.visibilityState,
         })
       ) {
-        startTransition(() => {
-          router.refresh();
-        });
+        window.location.reload();
       }
     };
     const intervalId = window.setInterval(
       refreshIfStale,
       AI_CONTROL_REFRESH_INTERVAL_MS,
     );
-    document.addEventListener("visibilitychange", refreshIfStale);
     return () => {
       window.clearInterval(intervalId);
-      document.removeEventListener("visibilitychange", refreshIfStale);
     };
-  }, [nowIso, router]);
+  }, [nowIso]);
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-6 p-4 sm:p-6">

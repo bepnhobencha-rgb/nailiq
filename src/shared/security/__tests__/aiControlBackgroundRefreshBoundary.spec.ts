@@ -10,14 +10,14 @@ const controlCenter = readFileSync(
   "utf8",
 );
 
-describe("AI Control Center refresh transition boundary", () => {
-  it("schedules background App Router refreshes inside a React transition", () => {
-    expect(controlCenter).toContain("startTransition(() => {");
-    expect(controlCenter).toMatch(
-      /startTransition\(\(\) => \{\s*router\.refresh\(\);\s*\}\);/,
-    );
+describe("AI Control Center background refresh boundary", () => {
+  it("keeps lifecycle refreshes out of the App Router action queue", () => {
+    expect(controlCenter).toContain("window.location.reload();");
     expect(controlCenter).not.toMatch(
       /shouldRefreshAiControlCenter\([\s\S]*?\)\s*\{\s*router\.refresh\(\);/,
+    );
+    expect(controlCenter).not.toContain(
+      'document.addEventListener("visibilitychange", refreshIfStale)',
     );
   });
 });
