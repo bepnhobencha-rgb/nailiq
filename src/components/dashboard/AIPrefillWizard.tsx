@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { SetupToast, type SetupToastPayload } from "@/components/ui/Toast";
 import {
@@ -54,6 +54,21 @@ export function AIPrefillWizard({ slug }: { slug: string }) {
   const [importing, setImporting] = useState(false);
   const [toast, setToast] = useState<SetupToastPayload | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Test observability only: server-rendered controls can be visible before
+  // React attaches their event handlers. Expose an explicit readiness signal
+  // so E2E does not type into an inert input and leave Analyze disabled.
+  useEffect(() => {
+    const hydrationWindow = window as typeof window & {
+      __NAILIQ_AI_PREFILL_HYDRATED__?: string;
+    };
+    hydrationWindow.__NAILIQ_AI_PREFILL_HYDRATED__ = slug;
+    return () => {
+      if (hydrationWindow.__NAILIQ_AI_PREFILL_HYDRATED__ === slug) {
+        delete hydrationWindow.__NAILIQ_AI_PREFILL_HYDRATED__;
+      }
+    };
+  }, [slug]);
 
   const handleError = useCallback(
     (code: string) => {
