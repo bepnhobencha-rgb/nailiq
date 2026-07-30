@@ -123,11 +123,12 @@ test.describe("AI agent activation impact", () => {
 
     await page.goto(`/dashboard/${SLUG}/activity`);
     await page.getByTestId("activity-tab-ai").click();
+    const disabledAuditRow = page
+      .getByTestId("activity-row-ai")
+      .filter({ hasText: /đã tắt Người Kéo Về — Win-back/ });
+    await expect(disabledAuditRow).toBeVisible();
     await expect(
-      page.getByText(/đã tắt Người Kéo Về — Win-back/),
-    ).toBeVisible();
-    await expect(
-      page.getByText("Có thể liên hệ trực tiếp với khách"),
+      disabledAuditRow.getByText("Có thể liên hệ trực tiếp với khách"),
     ).toBeVisible();
   });
 
