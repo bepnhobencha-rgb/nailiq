@@ -5,6 +5,26 @@ Newest entries on top.
 
 ---
 
+## 2026-07-30 — Schedule AI Control Center background refreshes as transitions
+
+**Decision.** Keep the one-minute freshness policy, but wrap its
+`router.refresh()` dispatch in React `startTransition`.
+
+**Why.** Production browser verification on the exact PR #1099 deployment
+showed the AI route returning HTTP 200, followed immediately by a POST to the
+same App Router route and React error 310 inside Next's action queue. CI had
+already proved the page and a delayed client navigation on a production build;
+the remaining production-only trigger was the page's lifecycle-driven
+background refresh dispatch. A background refresh is non-urgent work and must
+not interrupt the router's initial render.
+
+**Safety.** This does not alter authorization, approval, execution, messaging,
+payment, pricing, or persistence behavior. The stale threshold and polling
+interval are unchanged. Production browser verification remains required
+because endpoint health cannot detect a client router failure.
+
+---
+
 ## 2026-07-30 — Keep App Router on patched React and Next releases
 
 **Decision.** Pin Next.js 16.2.12 with React and React DOM 19.2.8, and exercise
