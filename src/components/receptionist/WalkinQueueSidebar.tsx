@@ -604,7 +604,7 @@ export function WalkinQueueSidebar({
                               onClick={() => void onCancelWalkin(item.id)}
                               data-testid={`queue-cancel-${item.id}`}
                               className={cn(
-                                "min-h-10 flex-1 rounded-lg border border-nq-muted/40 bg-transparent px-3 text-sm font-medium text-nq-muted transition-colors hover:border-nq-muted hover:text-nq-foreground",
+                                "min-h-11 flex-1 touch-manipulation rounded-lg border border-nq-muted/40 bg-transparent px-3 text-sm font-medium text-nq-muted transition-colors hover:border-nq-muted hover:text-nq-foreground",
                                 blockOthers && "pointer-events-none opacity-45",
                               )}
                             >
@@ -616,7 +616,7 @@ export function WalkinQueueSidebar({
                               onClick={() => onAssignClick(item.id)}
                               data-testid={`queue-assign-${item.id}`}
                               className={cn(
-                                "min-h-10 flex-[1.15] rounded-lg bg-nq-primary px-3 text-sm font-semibold text-nq-navy-deep transition-opacity hover:opacity-95",
+                                "min-h-11 flex-[1.15] touch-manipulation rounded-lg bg-nq-primary px-3 text-sm font-semibold text-nq-navy-deep transition-opacity hover:opacity-95",
                                 blockOthers && "pointer-events-none opacity-45",
                               )}
                             >
@@ -634,7 +634,7 @@ export function WalkinQueueSidebar({
                                   onClick={() => void onClearSoftHold(item.id)}
                                   data-testid={`queue-clear-hold-${item.id}`}
                                   className={cn(
-                                    "min-h-9 w-full rounded-lg border border-amber-500/55 bg-transparent px-3 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-400/15",
+                                    "min-h-11 w-full touch-manipulation rounded-lg border border-amber-500/55 bg-transparent px-3 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-400/15",
                                     blockOthers && "pointer-events-none opacity-45",
                                   )}
                                 >
@@ -652,7 +652,7 @@ export function WalkinQueueSidebar({
                                   }
                                   data-testid={`queue-soft-hold-${item.id}`}
                                   className={cn(
-                                    "min-h-9 w-full rounded-lg border border-nq-muted/35 bg-transparent px-3 text-xs font-medium text-nq-muted transition-colors hover:border-nq-muted hover:text-nq-foreground",
+                                    "min-h-11 w-full touch-manipulation rounded-lg border border-nq-muted/35 bg-transparent px-3 text-xs font-medium text-nq-muted transition-colors hover:border-nq-muted hover:text-nq-foreground",
                                     blockOthers && "pointer-events-none opacity-45",
                                   )}
                                 >
@@ -671,7 +671,7 @@ export function WalkinQueueSidebar({
                               }
                               data-testid={`queue-wait-link-${item.id}`}
                               className={cn(
-                                "min-h-9 w-full rounded-lg border border-nq-muted/35 bg-transparent px-3 text-xs font-medium text-nq-muted transition-colors hover:border-nq-muted hover:text-nq-foreground",
+                                "min-h-11 w-full touch-manipulation rounded-lg border border-nq-muted/35 bg-transparent px-3 text-xs font-medium text-nq-muted transition-colors hover:border-nq-muted hover:text-nq-foreground",
                                 blockOthers && "pointer-events-none opacity-45",
                               )}
                             >

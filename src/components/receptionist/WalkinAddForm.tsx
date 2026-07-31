@@ -1685,7 +1685,7 @@ function AvailabilityCard({
           <button
             type="button"
             onClick={onResetToBestMatch}
-            className="shrink-0 whitespace-nowrap rounded-md border border-nq-muted/35 bg-nq-bg px-2 py-1 text-[11px] font-semibold text-nq-foreground hover:bg-nq-surface focus:outline-none focus:ring-2 focus:ring-nq-primary/35"
+            className="min-h-11 shrink-0 touch-manipulation whitespace-nowrap rounded-md border border-nq-muted/35 bg-nq-bg px-3 py-2 text-xs font-semibold text-nq-foreground hover:bg-nq-surface focus:outline-none focus:ring-2 focus:ring-nq-primary/35"
             data-testid="walkin-availability-reset"
           >
             {labels.pickAnotherStaff}
