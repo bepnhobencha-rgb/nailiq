@@ -51,11 +51,11 @@ console.log("✅ Required milestone 1012 artifacts are present.");
 
 try {
   run("npm run migration:resend-preview");
-} catch (e) {
+} catch {
   if (allowMigrationPreviewFailure) {
     console.warn("⚠️ Migration preview failed, but continuing because ALLOW_PREVIEW_FAILURE=1.");
   } else {
-    throw e;
+    throw new Error("Migration preview failed and ALLOW_PREVIEW_FAILURE is not enabled.");
   }
 }
 
@@ -66,14 +66,14 @@ const healthUrl = process.env.HEALTH_URL || "https://www.nailiq.ca/api/health";
 console.log("\n===== VERSION CHECK (best-effort) =====");
 try {
   run(`curl -sS -m 15 "${versionUrl}"`);
-} catch (e) {
+} catch {
   console.warn(`⚠️ Không gọi được version endpoint: ${versionUrl}`);
 }
 
 console.log("\n===== HEALTH CHECK (best-effort) =====");
 try {
   run(`curl -sS -m 15 "${healthUrl}"`);
-} catch (e) {
+} catch {
   console.warn(`⚠️ Không gọi được health endpoint: ${healthUrl}`);
 }
 
