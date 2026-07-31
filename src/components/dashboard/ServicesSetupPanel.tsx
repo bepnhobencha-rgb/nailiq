@@ -330,7 +330,10 @@ function BulkPricePanel({
 
   if (!open) {
     return (
-      <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border border-nq-border/50 bg-nq-surface px-4 py-2.5 shadow-lg text-sm">
+      <div
+        data-testid="services-bulk-price-panel"
+        className="fixed bottom-20 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border border-nq-border/50 bg-nq-surface px-4 py-2.5 shadow-lg text-sm xl:bottom-6"
+      >
         <span className="text-nq-muted">
           <strong className="text-nq-foreground">{selectedCount}</strong> dịch vụ đã chọn
         </span>
@@ -353,7 +356,10 @@ function BulkPricePanel({
   }
 
   return (
-    <div className="fixed bottom-6 left-1/2 z-40 w-[min(100vw-2rem,22rem)] -translate-x-1/2 rounded-2xl border border-nq-border/50 bg-nq-surface px-4 py-4 shadow-lg">
+    <div
+      data-testid="services-bulk-price-panel"
+      className="fixed bottom-20 left-1/2 z-40 w-[min(100vw-2rem,22rem)] -translate-x-1/2 rounded-2xl border border-nq-border/50 bg-nq-surface px-4 py-4 shadow-lg xl:bottom-6"
+    >
       <p className="mb-3 text-sm font-semibold text-nq-foreground">
         Cập nhật giá cho {selectedCount} dịch vụ
       </p>
@@ -920,7 +926,7 @@ export function ServicesSetupPanel({
 
       {/* ── Undo delete toast ─────────────────────────────────────────────────── */}
       {undoPending && (
-        <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-nq-border/50 bg-nq-surface px-4 py-2.5 shadow-lg text-sm">
+        <div className="fixed bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-nq-border/50 bg-nq-surface px-4 py-2.5 shadow-lg text-sm xl:bottom-6">
           <span>
             {tLabels.removed} <strong>{undoPending.row.name}</strong>
           </span>

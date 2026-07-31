@@ -590,7 +590,7 @@ export function StaffSetupPanel({
 
       {/* ── Undo delete toast ─────────────────────────────────────────────────── */}
       {undoPending && (
-        <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-nq-border/50 bg-nq-surface px-4 py-2.5 shadow-lg text-sm">
+        <div className="fixed bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-nq-border/50 bg-nq-surface px-4 py-2.5 shadow-lg text-sm xl:bottom-6">
           <span>
             {tLabels.removed} <strong>{undoPending.row.name}</strong>
           </span>
