@@ -106,7 +106,9 @@ test("Settings uses one-hand iPhone groups without changing the desktop overview
     await expect(mobileList).toBeVisible();
     await expect(page.getByTestId("settings-desktop-overview")).toBeHidden();
 
-    const groups = mobileList.locator('[data-testid^="settings-mobile-group-"]');
+    const groups = mobileList.locator(
+      '[data-testid^="settings-mobile-group-"]',
+    );
     await expect(groups).toHaveCount(6);
 
     const firstRow = page.getByTestId("settings-mobile-row-operations-0");
@@ -119,15 +121,37 @@ test("Settings uses one-hand iPhone groups without changing the desktop overview
     const firstGroupBox = await firstRow.locator("..").boundingBox();
     expect(firstRowBox?.height ?? 0).toBeGreaterThanOrEqual(48);
     expect(firstRowBox?.width ?? 0).toBeGreaterThanOrEqual(300);
-    const rowInset =
-      (firstGroupBox?.width ?? 0) - (firstRowBox?.width ?? 0);
+    const rowInset = (firstGroupBox?.width ?? 0) - (firstRowBox?.width ?? 0);
     expect(rowInset).toBeGreaterThanOrEqual(0);
     // The group owns a 1px border on each side; the row fills its inner box.
     expect(rowInset).toBeLessThanOrEqual(2);
 
+    const bookingRow = page.getByTestId("settings-mobile-row-booking-1");
+    await expect(bookingRow).toHaveAttribute(
+      "href",
+      `/dashboard/${slug}/settings?section=booking`,
+    );
+    await bookingRow.click();
+    await expect(page).toHaveURL(/[?&]section=booking(?:&|$)/);
+    await expect(mobileList).toBeHidden();
+    await expect(
+      page.getByTestId("settings-mobile-screen-cat-booking"),
+    ).toBeVisible();
+    await expect(page.locator("#cat-booking")).toBeVisible();
+    await expect(page.locator("#cat-notifications")).toBeHidden();
+
+    const mobileBack = page.getByTestId("settings-mobile-screen-back");
+    await expect(mobileBack).toHaveAttribute(
+      "href",
+      `/dashboard/${slug}/settings`,
+    );
+    const mobileBackBox = await mobileBack.boundingBox();
+    expect(mobileBackBox?.height ?? 0).toBeGreaterThanOrEqual(48);
+
     await page.setViewportSize({ width: 1280, height: 900 });
     await expect(mobileList).toBeHidden();
     await expect(page.getByTestId("settings-desktop-overview")).toBeVisible();
+    await expect(page.locator("#cat-notifications")).toBeVisible();
   } finally {
     await cleanupTestSalon(slug);
   }
