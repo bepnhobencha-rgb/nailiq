@@ -1152,7 +1152,7 @@ function JobAudiencePreparation({
             type="button"
             disabled={pending}
             onClick={runPreflight}
-            className="mt-2 inline-flex min-h-9 items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
+            className="mt-2 inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
           >
             <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
             {pending
@@ -1174,7 +1174,7 @@ function JobAudiencePreparation({
               type="button"
               disabled={pending}
               onClick={sealPlan}
-              className="ml-2 mt-2 inline-flex min-h-9 items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
+              className="ml-2 mt-2 inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
             >
               <ListChecks className="h-3.5 w-3.5" aria-hidden />
               {pending
@@ -1214,7 +1214,7 @@ function JobAudiencePreparation({
             type="button"
             disabled={pending}
             onClick={prepare}
-            className="mt-2 inline-flex min-h-9 items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
+            className="mt-2 inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
           >
             <Users className="h-3.5 w-3.5" aria-hidden />
             {pending
@@ -1272,7 +1272,7 @@ function JobAudiencePreparation({
           type="button"
           disabled={pending}
           onClick={prepare}
-          className="mt-2 text-[11px] font-semibold text-nq-primary hover:underline disabled:opacity-60"
+          className="mt-2 inline-flex min-h-11 touch-manipulation items-center rounded-lg px-2 text-[11px] font-semibold text-nq-primary hover:bg-nq-primary/10 disabled:opacity-60"
         >
           {pending
             ? vi
@@ -1357,7 +1357,7 @@ function JobRecoveryControls({
           type="button"
           disabled={pending}
           onClick={() => control("retry")}
-          className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
+          className="inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
         >
           <RefreshCcw className="h-3.5 w-3.5" aria-hidden />
           {pending
@@ -1374,7 +1374,7 @@ function JobRecoveryControls({
           type="button"
           disabled={pending}
           onClick={() => control("cancel")}
-          className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-nq-error/30 px-3 text-xs font-semibold text-nq-error transition-colors hover:bg-nq-error/10 disabled:cursor-wait disabled:opacity-60"
+          className="inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-lg border border-nq-error/30 px-3 text-xs font-semibold text-nq-error transition-colors hover:bg-nq-error/10 disabled:cursor-wait disabled:opacity-60"
         >
           <X className="h-3.5 w-3.5" aria-hidden />
           {pending
