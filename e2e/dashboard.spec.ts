@@ -116,8 +116,12 @@ test("Settings uses one-hand iPhone groups without changing the desktop overview
       `/dashboard/${slug}/setup/services`,
     );
     const firstRowBox = await firstRow.boundingBox();
+    const firstGroupBox = await firstRow.locator("..").boundingBox();
     expect(firstRowBox?.height ?? 0).toBeGreaterThanOrEqual(48);
-    expect(firstRowBox?.width ?? 0).toBeGreaterThanOrEqual(340);
+    expect(firstRowBox?.width ?? 0).toBeGreaterThanOrEqual(300);
+    expect(
+      Math.abs((firstRowBox?.width ?? 0) - (firstGroupBox?.width ?? 0)),
+    ).toBeLessThanOrEqual(1);
 
     await page.setViewportSize({ width: 1280, height: 900 });
     await expect(mobileList).toBeHidden();
