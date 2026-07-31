@@ -879,6 +879,13 @@ export const userVi: UserMessages = {
       completed: "Hoàn thành",
       revenue: "Doanh thu",
       noShows: "Không đến",
+      staffNowTitle: "Nhân viên lúc này",
+      staffBusy: "Đang bận",
+      staffAvailable: "Đang trống",
+      staffNone: "Chưa có nhân viên đang hoạt động",
+      businessSummary: "Chi tiết kinh doanh",
+      businessDetails:
+        "Xem xu hướng doanh thu, dịch vụ, nhân viên và sức khỏe khách hàng",
       vsLastWeek: "so tuần trước",
       monthTitle: "Tháng này",
       last30Days: "30 ngày gần nhất",

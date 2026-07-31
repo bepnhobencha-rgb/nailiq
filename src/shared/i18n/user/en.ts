@@ -631,6 +631,12 @@ export type UserMessages = {
       completed: string;
       revenue: string;
       noShows: string;
+      staffNowTitle: string;
+      staffBusy: string;
+      staffAvailable: string;
+      staffNone: string;
+      businessSummary: string;
+      businessDetails: string;
       vsLastWeek: string;
       monthTitle: string;
       last30Days: string;
@@ -3201,6 +3207,13 @@ export const userEn: UserMessages = {
       completed: "Completed",
       revenue: "Revenue",
       noShows: "No-shows",
+      staffNowTitle: "Staff right now",
+      staffBusy: "Busy",
+      staffAvailable: "Available",
+      staffNone: "No active staff yet",
+      businessSummary: "Business details",
+      businessDetails:
+        "Open revenue trends, services, staff performance, and customer health",
       vsLastWeek: "vs last week",
       monthTitle: "This Month",
       last30Days: "Last 30 days",
