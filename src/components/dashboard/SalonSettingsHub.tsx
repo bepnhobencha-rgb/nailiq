@@ -735,6 +735,7 @@ export function SalonSettingsHub({
                   {salonEmail && !emailVerified ? (
                     <button
                       type="button"
+                      data-testid="settings-email-resend"
                       disabled={resendPending}
                       onClick={() => {
                         setResendSent(false);
@@ -744,7 +745,7 @@ export function SalonSettingsHub({
                           setTimeout(() => setResendSent(false), 4000);
                         });
                       }}
-                      className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-400 transition hover:bg-amber-500/15 disabled:opacity-50"
+                      className="inline-flex min-h-11 touch-manipulation items-center rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-400 transition hover:bg-amber-500/15 disabled:opacity-50"
                     >
                       {resendPending ? "…" : t.emailVerification.resendButton}
                     </button>
@@ -753,6 +754,7 @@ export function SalonSettingsHub({
                   {/* Change email toggle */}
                   <button
                     type="button"
+                    data-testid="settings-email-change"
                     onClick={() => {
                       setEmailEditOpen((v) => !v);
                       setEmailEditError(null);
@@ -760,7 +762,7 @@ export function SalonSettingsHub({
                       setNewEmailInput(salonEmail ?? "");
                     }}
                     className={cn(
-                      "rounded-lg border px-3 py-1.5 text-xs font-medium transition",
+                      "inline-flex min-h-11 touch-manipulation items-center rounded-lg border px-3 py-2 text-xs font-medium transition",
                       emailEditOpen
                         ? "border-nq-border bg-nq-border/20 text-nq-muted"
                         : "border-nq-border bg-nq-surface text-nq-foreground hover:border-nq-primary/40 hover:text-nq-primary",
@@ -805,16 +807,18 @@ export function SalonSettingsHub({
                 >
                   <input
                     type="email"
+                    data-testid="settings-email-input"
                     autoComplete="email"
                     placeholder="you@example.com"
                     value={newEmailInput}
                     onChange={(e) => setNewEmailInput(e.target.value)}
-                    className="h-9 flex-1 min-w-0 rounded-lg border border-nq-border bg-nq-bg px-3 text-sm text-nq-foreground placeholder:text-nq-muted/60 focus:outline-none focus:ring-2 focus:ring-nq-primary/40"
+                    className="min-h-11 flex-1 min-w-0 rounded-lg border border-nq-border bg-nq-bg px-3 py-2 text-base text-nq-foreground placeholder:text-nq-muted/60 focus:outline-none focus:ring-2 focus:ring-nq-primary/40"
                   />
                   <button
                     type="submit"
+                    data-testid="settings-email-save"
                     disabled={emailEditPending}
-                    className="h-9 rounded-lg border border-nq-primary/40 bg-nq-primary/10 px-4 text-xs font-semibold text-nq-primary transition hover:bg-nq-primary/15 disabled:opacity-50"
+                    className="inline-flex min-h-11 touch-manipulation items-center rounded-lg border border-nq-primary/40 bg-nq-primary/10 px-4 py-2 text-xs font-semibold text-nq-primary transition hover:bg-nq-primary/15 disabled:opacity-50"
                   >
                     {emailEditPending
                       ? t.emailVerification.saving
@@ -862,8 +866,9 @@ export function SalonSettingsHub({
 
               <button
                 type="button"
+                data-testid="settings-reminder-advanced"
                 onClick={() => setReminderAdvOpen((v) => !v)}
-                className="mt-3 flex items-center gap-1 text-xs text-nq-muted underline-offset-2 hover:text-nq-foreground hover:underline"
+                className="mt-3 flex min-h-11 touch-manipulation items-center gap-1 rounded-lg px-2 py-2 text-xs text-nq-muted underline-offset-2 hover:bg-nq-bg/50 hover:text-nq-foreground hover:underline"
                 aria-expanded={reminderAdvOpen}
               >
                 {t.reminders.advancedToggle}
@@ -901,8 +906,9 @@ export function SalonSettingsHub({
                   ).map(({ key, label, checked, set, available }) => (
                     <label
                       key={key}
+                      data-testid={`settings-reminder-option-${key}`}
                       className={cn(
-                        "flex items-center gap-3 text-sm",
+                        "flex min-h-11 touch-manipulation items-center gap-3 rounded-lg px-2 py-2 text-sm",
                         available
                           ? "cursor-pointer text-nq-foreground"
                           : "cursor-not-allowed text-nq-muted",
@@ -910,7 +916,7 @@ export function SalonSettingsHub({
                     >
                       <input
                         type="checkbox"
-                        className="h-4 w-4 rounded border-nq-border/60 text-nq-primary focus:ring-nq-primary/40"
+                        className="h-5 w-5 rounded border-nq-border/60 text-nq-primary focus:ring-nq-primary/40"
                         checked={checked}
                         disabled={reminderPending || !available}
                         onChange={(e) => set(e.target.checked)}
@@ -921,9 +927,10 @@ export function SalonSettingsHub({
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
+                      data-testid="settings-reminder-advanced-save"
                       disabled={reminderPending}
                       onClick={handleReminderAdvSave}
-                      className="rounded-xl border border-nq-primary/40 bg-nq-primary/10 px-3 py-1.5 text-xs font-semibold text-nq-primary transition hover:bg-nq-primary/15 disabled:opacity-50"
+                      className="inline-flex min-h-11 touch-manipulation items-center rounded-xl border border-nq-primary/40 bg-nq-primary/10 px-3 py-2 text-xs font-semibold text-nq-primary transition hover:bg-nq-primary/15 disabled:opacity-50"
                     >
                       {reminderPending ? t.reminders.saving : t.reminders.save}
                     </button>

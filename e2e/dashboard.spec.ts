@@ -157,6 +157,41 @@ test("Settings uses one-hand iPhone groups without changing the desktop overview
     const mobileBackBox = await mobileBack.boundingBox();
     expect(mobileBackBox?.height ?? 0).toBeGreaterThanOrEqual(48);
 
+    await page.goto(`/dashboard/${slug}/settings?section=notifications`);
+    await expect(
+      page.getByTestId("settings-mobile-screen-cat-notifications"),
+    ).toBeVisible();
+
+    const emailChange = page.getByTestId("settings-email-change");
+    const reminderAdvanced = page.getByTestId("settings-reminder-advanced");
+    for (const target of [emailChange, reminderAdvanced]) {
+      await expect(target).toBeVisible();
+      const box = await target.boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+
+    await emailChange.click();
+    for (const target of [
+      page.getByTestId("settings-email-input"),
+      page.getByTestId("settings-email-save"),
+    ]) {
+      await expect(target).toBeVisible();
+      const box = await target.boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+
+    await reminderAdvanced.click();
+    for (const target of [
+      page.getByTestId("settings-reminder-option-24h"),
+      page.getByTestId("settings-reminder-option-3h"),
+      page.getByTestId("settings-reminder-option-sms"),
+      page.getByTestId("settings-reminder-advanced-save"),
+    ]) {
+      await expect(target).toBeVisible();
+      const box = await target.boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+
     await page.setViewportSize({ width: 1280, height: 900 });
     await expect(mobileList).toBeHidden();
     await expect(page.getByTestId("settings-desktop-overview")).toBeVisible();
