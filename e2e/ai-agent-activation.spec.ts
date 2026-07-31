@@ -11,9 +11,7 @@ import {
 
 const SLUG = `e2e-ai-agent-activation-${process.env.GITHUB_RUN_ID ?? Date.now()}`;
 let salonId: string | undefined;
-let owner:
-  | Awaited<ReturnType<typeof seedTestSalonMember>>
-  | undefined;
+let owner: Awaited<ReturnType<typeof seedTestSalonMember>> | undefined;
 
 async function loginAs(
   page: Page,
@@ -31,6 +29,15 @@ async function loginAs(
 }
 
 async function openAiManagerCategory(page: Page) {
+  if ((page.viewportSize()?.width ?? 1280) < 768) {
+    await page.goto(`/dashboard/${SLUG}/settings?section=ai-manager`);
+    await expect(
+      page.getByTestId("settings-mobile-screen-cat-ai-manager"),
+    ).toBeVisible();
+    await expect(page.getByTestId("settings-ai-manager-hub")).toBeVisible();
+    return;
+  }
+
   const category = page.getByTestId("settings-category-cat-ai-manager");
   const toggle = category.locator(":scope > button");
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
