@@ -119,9 +119,11 @@ test("Settings uses one-hand iPhone groups without changing the desktop overview
     const firstGroupBox = await firstRow.locator("..").boundingBox();
     expect(firstRowBox?.height ?? 0).toBeGreaterThanOrEqual(48);
     expect(firstRowBox?.width ?? 0).toBeGreaterThanOrEqual(300);
-    expect(
-      Math.abs((firstRowBox?.width ?? 0) - (firstGroupBox?.width ?? 0)),
-    ).toBeLessThanOrEqual(1);
+    const rowInset =
+      (firstGroupBox?.width ?? 0) - (firstRowBox?.width ?? 0);
+    expect(rowInset).toBeGreaterThanOrEqual(0);
+    // The group owns a 1px border on each side; the row fills its inner box.
+    expect(rowInset).toBeLessThanOrEqual(2);
 
     await page.setViewportSize({ width: 1280, height: 900 });
     await expect(mobileList).toBeHidden();
