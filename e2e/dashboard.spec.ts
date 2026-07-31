@@ -198,6 +198,51 @@ test("iPad bottom navigation opens the More sheet", async ({ page }) => {
   }
 });
 
+test("iPad setup actions stay above the dashboard bottom navigation", async ({
+  page,
+}) => {
+  const { slug } = await seedTestSalon({
+    phone: "15557778893",
+    slug: "e2e-owner-ipad-setup-actions",
+    name: "E2E Owner iPad Setup Actions",
+  });
+  const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
+
+  try {
+    await page.setViewportSize({ width: 820, height: 1180 });
+    await page.context().addCookies([
+      {
+        name: "nailiq-demo-slug",
+        value: slug,
+        url: baseURL,
+      },
+    ]);
+    await page.goto(`/dashboard/${slug}/setup/services`);
+
+    const firstServiceCheckbox = page
+      .getByRole("checkbox", { name: /select/i })
+      .first();
+    // The bulk selector is hover-revealed at this width. Force only the
+    // setup interaction; the assertion below measures the rendered surfaces.
+    await firstServiceCheckbox.check({ force: true });
+
+    const bulkPanel = page.getByTestId("services-bulk-price-panel");
+    const bottomNav = page.locator("[data-mobile-bottom-nav]");
+    await expect(bulkPanel).toBeVisible();
+    await expect(bottomNav).toBeVisible();
+
+    const panelBox = await bulkPanel.boundingBox();
+    const navBox = await bottomNav.boundingBox();
+    expect(panelBox).not.toBeNull();
+    expect(navBox).not.toBeNull();
+    expect((panelBox?.y ?? 0) + (panelBox?.height ?? 0)).toBeLessThanOrEqual(
+      navBox?.y ?? 0,
+    );
+  } finally {
+    await cleanupTestSalon(slug);
+  }
+});
+
 test("Booking settings autosave safely and persist server-confirmed selections", async ({
   page,
 }) => {

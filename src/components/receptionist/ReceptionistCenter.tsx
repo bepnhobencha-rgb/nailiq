@@ -4302,7 +4302,7 @@ function ReceptionistCenterInner({
         data-testid="reschedule-error-toast"
         aria-live="assertive"
         className={cn(
-          "fixed bottom-6 left-1/2 z-50 flex max-w-[min(100vw-2rem,26rem)] -translate-x-1/2 px-4",
+          "fixed bottom-20 left-1/2 z-50 flex max-w-[min(100vw-2rem,26rem)] -translate-x-1/2 px-4 xl:bottom-6",
           "motion-safe:transition-[transform,opacity] motion-safe:duration-300 motion-safe:ease-[var(--ease-nq-out,cubic-bezier(0.22,1,0.36,1))]",
           errorToast
             ? "translate-y-0 opacity-100"
