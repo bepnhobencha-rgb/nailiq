@@ -119,11 +119,15 @@ export async function prepareExecutionAudience(input: {
     sms_a2p_registered: boolean;
   };
 
-  // This existing stable RPC provides a bounded, salon-scoped segment:
-  // regulars with 2+ visits, lapsed 45-365 days, no future booking, and a
-  // legacy SMS marketing-consent timestamp. We re-check all consent below.
+  // Bounded, salon-scoped segment: regulars with 2+ visits, lapsed 45-365
+  // days, no future booking, and marketing consent on EITHER channel.
+  //
+  // Deliberately not `winback_candidates`: that RPC gates on the legacy SMS
+  // consent timestamp alone, which erases email-consented customers at
+  // email-only salons. This gate is a superset — every recipient is still
+  // re-checked per channel by `decideAudienceEligibility` below.
   const { data: candidateData, error: candidateError } = await db.rpc(
-    "winback_candidates" as never,
+    "marketing_audience_candidates" as never,
     {
       p_salon_id: input.salonId,
       p_min_visits: 2,
