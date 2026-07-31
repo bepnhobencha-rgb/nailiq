@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { buildStrategistApprovalProposal } from "@/shared/ai/strategistProposal";
+import {
+  buildStrategistApprovalProposal,
+  hasPendingStrategistProposalOfType,
+} from "@/shared/ai/strategistProposal";
 
 describe("buildStrategistApprovalProposal", () => {
   it("creates an honest approval payload from measured salon data", () => {
@@ -46,5 +49,83 @@ describe("buildStrategistApprovalProposal", () => {
 
     expect(proposal.payload.confidence).toBe(0.6);
     expect(proposal.payload.expected_impact).toContain("re-engagement");
+  });
+});
+
+describe("hasPendingStrategistProposalOfType", () => {
+  const criteria = {
+    actionType: "bulk_message",
+    proposalSource: "weekly_strategist",
+  };
+
+  it("blocks a second campaign proposal while one is still pending", () => {
+    expect(
+      hasPendingStrategistProposalOfType(
+        [
+          {
+            action_type: "bulk_message",
+            payload: { proposal_source: "weekly_strategist" },
+          },
+        ],
+        criteria,
+      ),
+    ).toBe(true);
+  });
+
+  it("lets a campaign proposal through while an operational note is pending", () => {
+    // The production regression: all three salons sat blocked behind a pending
+    // record_operational_note, so no campaign proposal was ever created.
+    expect(
+      hasPendingStrategistProposalOfType(
+        [
+          {
+            action_type: "record_operational_note",
+            payload: { proposal_source: "weekly_strategist" },
+          },
+        ],
+        criteria,
+      ),
+    ).toBe(false);
+  });
+
+  it("ignores a matching action type from a different proposal source", () => {
+    expect(
+      hasPendingStrategistProposalOfType(
+        [
+          {
+            action_type: "bulk_message",
+            payload: { proposal_source: "manual_owner_request" },
+          },
+        ],
+        criteria,
+      ),
+    ).toBe(false);
+  });
+
+  it("treats a missing or null payload as no pending proposal", () => {
+    expect(
+      hasPendingStrategistProposalOfType(
+        [
+          { action_type: "bulk_message", payload: null },
+          { action_type: "bulk_message" },
+        ],
+        criteria,
+      ),
+    ).toBe(false);
+  });
+
+  it("finds the match among unrelated pending requests", () => {
+    expect(
+      hasPendingStrategistProposalOfType(
+        [
+          { action_type: "record_operational_note", payload: {} },
+          {
+            action_type: "bulk_message",
+            payload: { proposal_source: "weekly_strategist" },
+          },
+        ],
+        criteria,
+      ),
+    ).toBe(true);
   });
 });
