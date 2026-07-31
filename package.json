@@ -15,6 +15,7 @@
     "test:e2e:report": "playwright show-report",
     "verify:milestone-1012": "node scripts/verify-os-milestone-1012.mjs",
     "migration:resend-run": "bash scripts/run-resend-migration.sh",
+    "migration:resend-run-strict": "bash scripts/migrate-and-verify-resend.sh",
     "resend:verify-full": "bash scripts/verify-resend-full.sh",
     "migration:resend-preview": "node scripts/enable-all-salons-email-outbound.mjs",
     "migration:resend-apply": "node scripts/enable-all-salons-email-outbound.mjs --apply",

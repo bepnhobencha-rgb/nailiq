@@ -10,6 +10,12 @@ cd /Users/huytran/nailiq
 npm run migration:resend-run
 ```
 
+Nếu muốn chạy cùng xác minh `/api/version` và `/api/health` trong một lần và chỉ apply khi bạn đã bật `FORCE_APPLY`:
+
+```bash
+FORCE_APPLY=1 npm run migration:resend-run-strict
+```
+
 ### Ghi chú
 - Script chạy theo cơ chế **dry-run trước**, rồi mới apply, rồi verify lại.
 - Mặc định chỉ xử lý salon đang active (`archived_at IS NULL`).
