@@ -2,6 +2,8 @@
 -- Scope: salon records where email_outbound_enabled is explicitly false.
 -- Default excludes archived salons.
 
+BEGIN;
+
 -- 1) Count before
 SELECT
   COUNT(*) FILTER (WHERE email_outbound_enabled = false AND archived_at IS NULL) AS active_salons_need_resend,
@@ -25,3 +27,5 @@ WHERE email_outbound_enabled = false
 -- 4) Verify after
 SELECT COUNT(*) FILTER (WHERE email_outbound_enabled = false AND archived_at IS NULL) AS active_salons_still_false
 FROM salons;
+
+COMMIT;
