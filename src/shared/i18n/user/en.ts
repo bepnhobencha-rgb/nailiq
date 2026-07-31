@@ -2221,12 +2221,14 @@ export type UserMessages = {
     latenessGrid: {
       /** Inline Start button aria-label and visible label. */
       startShort: string;
-      /** "Auto no-show at {time}" for late/critical badge when auto is ON. */
+      /** "No-show review due at {time}" when automatic review is ON. */
       autoNoShowAt: (time: string) => string;
       /** Badge label when auto is OFF and tier=late. */
       late: string;
       /** Badge label when auto is OFF and tier=critical. */
       veryLate: string;
+      /** Persisted candidate flag requiring a human decision. */
+      noShowDecisionNeeded: string;
       /** Tombstone aria-label template. */
       tombstoneAria: (clientName: string) => string;
       /** Tombstone popover: undo action label. */
@@ -4645,9 +4647,10 @@ export const userEn: UserMessages = {
     },
     latenessGrid: {
       startShort: "Start",
-      autoNoShowAt: (time: string) => `Auto no-show at ${time}`,
+      autoNoShowAt: (time: string) => `No-show review due at ${time}`,
       late: "Late",
       veryLate: "Very late",
+      noShowDecisionNeeded: "No-show decision needed",
       tombstoneAria: (clientName: string) => `No-show: ${clientName}`,
       tombstoneUndo: "Undo no-show",
       tombstoneCharge: (amount: string) => `Charge ${amount}`,

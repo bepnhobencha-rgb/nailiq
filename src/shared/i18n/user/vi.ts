@@ -2306,9 +2306,10 @@ export const userVi: UserMessages = {
     },
     latenessGrid: {
       startShort: "Bắt đầu",
-      autoNoShowAt: (time: string) => `Tự động vắng lúc ${time}`,
+      autoNoShowAt: (time: string) => `Cần xem xét vắng lúc ${time}`,
       late: "Trễ",
       veryLate: "Trễ nhiều",
+      noShowDecisionNeeded: "Cần quyết định vắng",
       tombstoneAria: (clientName: string) => `Vắng mặt: ${clientName}`,
       tombstoneUndo: "Bỏ vắng (đã đến)",
       tombstoneCharge: (amount: string) => `Thu phí ${amount}`,

@@ -103,6 +103,8 @@ export interface GridBooking {
   no_show_count?: number;
   /** AI no-show risk score (0–100) — drives an amber risk ⚠ on the block. */
   no_show_risk_score?: number | null;
+  /** Scheduler-produced flag requiring a human attendance decision. */
+  no_show_candidate_at?: string | null;
   /** No-show fee lifecycle for the booking's no-show card — used by the tombstone. */
   noshow_charge_status?: string | null;
   noshow_card_id?: string | null;
@@ -198,12 +200,14 @@ export interface StaffTimelineGridProps {
       staffRequest: string;
       /** "Start" — inline start button label. */
       startShort?: string;
-      /** "Auto no-show at {time}" template. */
+      /** "No-show review due at {time}" template. */
       autoNoShowAt?: (time: string) => string;
       /** "Late" badge text. */
       lateChip?: string;
       /** "Very late" badge text. */
       veryLateChip?: string;
+      /** Persisted scheduler flag requiring a human attendance decision. */
+      noShowDecisionNeeded?: string;
     };
     /** Localized strings for lateness grid UI and tombstone popovers. */
     latenessGrid?: {
@@ -211,6 +215,7 @@ export interface StaffTimelineGridProps {
       autoNoShowAt: (time: string) => string;
       late: string;
       veryLate: string;
+      noShowDecisionNeeded: string;
       tombstoneAria: (clientName: string) => string;
       tombstoneUndo: string;
       tombstoneCharge: (amount: string) => string;
@@ -262,7 +267,7 @@ export interface StaffTimelineGridProps {
    * horizontal cluster instead of a vertical stack. Default false
    * (Balanced/Advanced keep the existing vertical stack). */
   compactBookingIcons?: boolean;
-  /** Minutes past start when the cron auto-marks no_show. Null = auto OFF. */
+  /** Minutes past start when the cron flags desk review. Null = auto OFF. */
   autoNoShowMinutes?: number | null;
   /** No-show tombstones to render as thin ribbons on the grid. */
   noShowTombstones?: Array<{
@@ -1563,6 +1568,7 @@ function StaffTimelineGridImpl({
                           addonCount={b.addon_count ?? 0}
                           noShowCount={b.no_show_count ?? 0}
                           noShowRiskScore={b.no_show_risk_score ?? null}
+                          noShowCandidate={b.no_show_candidate_at != null}
                           isGroup={b.group_id != null}
                           groupId={b.group_id ?? null}
                           seatTogether={b.seat_together === true}

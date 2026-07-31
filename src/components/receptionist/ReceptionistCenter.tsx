@@ -927,6 +927,7 @@ function ReceptionistCenterInner({
           addon_count: b.addons?.length ?? 0,
           no_show_count: b.client_no_show_count ?? 0,
           no_show_risk_score: b.no_show_risk_score ?? null,
+          no_show_candidate_at: b.no_show_candidate_at ?? null,
           buffer_minutes: b.service_buffer_minutes,
           noshow_card_id: b.noshow_card_id ?? null,
           noshow_fee_cents: b.noshow_fee_cents ?? null,
@@ -4064,6 +4065,8 @@ function ReceptionistCenterInner({
                     autoNoShowAt: rcMessages.latenessGrid.autoNoShowAt,
                     lateChip: rcMessages.latenessGrid.late,
                     veryLateChip: rcMessages.latenessGrid.veryLate,
+                    noShowDecisionNeeded:
+                      rcMessages.latenessGrid.noShowDecisionNeeded,
                   },
                   removedGuest: rcMessages.removedGuest,
                   latenessGrid: rcMessages.latenessGrid,
