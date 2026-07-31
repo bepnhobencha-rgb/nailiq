@@ -157,6 +157,60 @@ test("Settings uses one-hand iPhone groups without changing the desktop overview
   }
 });
 
+test("Booking settings autosave safely and persist server-confirmed selections", async ({
+  page,
+}) => {
+  const { slug } = await seedTestSalon({
+    phone: "15557778891",
+    slug: "e2e-owner-settings-autosave",
+    name: "E2E Owner Settings Autosave",
+  });
+  const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
+
+  try {
+    await page.context().addCookies([
+      {
+        name: "nailiq-demo-slug",
+        value: slug,
+        url: baseURL,
+      },
+    ]);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/dashboard/${slug}/settings?section=booking`);
+
+    const lead = page.getByTestId("settings-booking-lead");
+    const group = page.getByTestId("settings-group-together");
+
+    await expect(
+      page.getByTestId("settings-booking-lead-save-status"),
+    ).toContainText("Saves automatically");
+    await lead.getByRole("button", { name: "1h", exact: true }).click();
+    await expect(
+      page.getByTestId("settings-booking-lead-save-status"),
+    ).toContainText("Saved");
+
+    await group.getByRole("button", { name: "45 min", exact: true }).click();
+    await expect(
+      page.getByTestId("settings-group-together-save-status"),
+    ).toContainText("Saved");
+
+    await page.reload();
+
+    await expect(
+      page
+        .getByTestId("settings-booking-lead")
+        .getByRole("button", { name: "1h", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page
+        .getByTestId("settings-group-together")
+        .getByRole("button", { name: "45 min", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+  } finally {
+    await cleanupTestSalon(slug);
+  }
+});
+
 test("Wrong demo cookie slug is rejected", async () => {
   const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
 

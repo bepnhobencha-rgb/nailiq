@@ -1175,7 +1175,7 @@ export type UpdateGroupTogetherResult =
   | { ok: false; error: "unauthorized" | "forbidden" | "invalid" | "server_error" };
 
 /**
- * Owner-only: writes `salons.group_together_threshold_minutes` — group members
+ * Owner/admin: writes `salons.group_together_threshold_minutes` — group members
  * starting within this spread still count as arriving "together", so the
  * booking flow offers a small offset before suggesting an all-together time.
  * Clamped 0–240.
@@ -1189,7 +1189,7 @@ export async function updateGroupTogetherThreshold(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const m = Math.round(Number(minutes));
   if (!Number.isFinite(m) || m < 0 || m > 240) {
