@@ -105,9 +105,15 @@ test.describe("Booking Flow", () => {
     // exercise month navigation + the today marker.
     await page.locator('[data-testid="date-toggle-calendar"]').click();
     // The calendar opens on the first month that has availability, so there is
-    // always at least one selectable day on arrival.
+    // always at least one selectable day on arrival. On the last day of the
+    // month that day can be today, which intentionally uses `date-today`
+    // instead of `date-day`.
     await expect(
-      page.locator('[data-testid="date-day"]:not([disabled])').first(),
+      page
+        .locator(
+          '[data-testid="date-day"]:not([disabled]), [data-testid="date-today"]:not([disabled])',
+        )
+        .first(),
     ).toBeVisible();
     // "Today" carries its own marker (`date-today`). When today's month has no
     // availability (today closed, or the last day of the month) the calendar

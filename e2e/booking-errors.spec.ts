@@ -280,7 +280,12 @@ test.describe("Booking error scenarios — /[slug]", () => {
     // Reveal the collapsed month grid (#593) before reading a grid day's data-ymd.
     await page.locator('[data-testid="date-toggle-calendar"]').click();
     const pickedDateBtn = page
-      .locator('[data-testid="date-day"]:not([disabled])')
+      // On the last day of a month, today may be the only selectable cell in
+      // the current grid and it intentionally carries the distinct
+      // `date-today` test id.
+      .locator(
+        '[data-testid="date-day"]:not([disabled]), [data-testid="date-today"]:not([disabled])',
+      )
       .first();
     await pickedDateBtn.waitFor({ state: "visible", timeout: 15_000 });
     const ymd = (await pickedDateBtn.getAttribute("data-ymd")) ?? null;
