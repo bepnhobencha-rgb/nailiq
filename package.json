@@ -17,6 +17,7 @@
     "migration:resend-run": "bash scripts/run-resend-migration.sh",
     "migration:resend-preview": "node scripts/enable-all-salons-email-outbound.mjs",
     "migration:resend-apply": "node scripts/enable-all-salons-email-outbound.mjs --apply",
+    "verify:resend-production": "bash scripts/verify-resend-production.sh",
     "db:history:build-rehearsal": "node scripts/build-folded-migration-history.mjs",
     "db:history:audit": "node scripts/audit-migration-history.mjs",
     "db:push": "node scripts/db-push-safe.mjs",
