@@ -10,6 +10,8 @@ import { join } from "node:path";
 const args = new Set(process.argv.slice(2));
 const shouldApply = args.has("--apply");
 const includeArchived = args.has("--include-archived");
+const failIfRemaining = args.has("--fail-if-remaining") || !args.has("--no-fail-if-remaining");
+const outputJson = args.has("--json");
 const rawSampleLimit = Number.parseInt(process.env.RESEND_MIGRATION_SAMPLE_LIMIT ?? "20", 10);
 const sampleLimit = Number.isFinite(rawSampleLimit) && rawSampleLimit > 0 ? rawSampleLimit : 20;
 
@@ -45,6 +47,11 @@ if (!supabaseUrl || !serviceRoleKey) {
 }
 
 const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+function emitResult(result) {
+  if (!outputJson) return;
+  console.log(JSON.stringify(result, null, 2));
+}
 
 function formatSalonRow(salon) {
   const slug = salon.slug || "(no-slug)";
@@ -83,8 +90,26 @@ async function run() {
   }
 
   if (!shouldApply) {
-    if (count === 0) return;
+    if (count === 0) {
+      emitResult({
+        count: 0,
+        changed: 0,
+        remaining: 0,
+        dryRun: true,
+        applied: false,
+        includeArchived,
+      });
+      return;
+    }
     console.log("ℹ️ Chưa chạy áp dụng. Gõ thêm --apply để bật email_outbound cho các salon này.");
+    emitResult({
+      count,
+      changed: 0,
+      remaining: count,
+      dryRun: true,
+      applied: false,
+      includeArchived,
+    });
     return;
   }
 
@@ -126,11 +151,23 @@ async function run() {
 
   const updatedCount = (updatedRows ?? []).length;
   console.log(`✅ Đã cập nhật ${updatedCount} salon.`);
-  if ((remainingCount ?? 0) === 0) {
+  const remaining = remainingCount ?? 0;
+  const success = !failIfRemaining || remaining === 0;
+  if (remaining === 0) {
     console.log("✅ Không còn salon active nào có email_outbound_enabled = false.");
   } else {
-    console.log(`⚠️ Vẫn còn ${remainingCount} salon active có email_outbound_enabled = false.`);
+    console.log(`⚠️ Vẫn còn ${remaining} salon active có email_outbound_enabled = false.`);
   }
+  emitResult({
+    count,
+    changed: updatedCount,
+    remaining,
+    dryRun: false,
+    applied: true,
+    includeArchived,
+    success,
+  });
+  if (!success) process.exit(1);
 }
 
 void run();

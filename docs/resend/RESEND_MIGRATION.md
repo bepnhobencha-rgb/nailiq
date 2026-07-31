@@ -13,7 +13,13 @@ npm run migration:resend-run
 ### Ghi chú
 - Script chạy theo cơ chế **dry-run trước**, rồi mới apply, rồi verify lại.
 - Mặc định chỉ xử lý salon đang active (`archived_at IS NULL`).
-- Muốn tính cả archived (nếu cần): sửa script thêm cờ `--include-archived`.
+- Mặc định khi đã `--apply`, nếu vẫn còn salon chưa chuyển thì script trả lỗi (exit code 1) để automation/CI biết chưa hoàn tất.
+- Muốn tính cả archived (nếu cần): chạy thủ công với cờ `--include-archived`:
+  - `node scripts/enable-all-salons-email-outbound.mjs --apply --include-archived`
+
+### JSON cho automation
+- In kết quả JSON khi cần parse tự động:
+  - `node scripts/enable-all-salons-email-outbound.mjs --apply --json`
 
 ### Kiểm chứng hoàn tất
 - Output cuối cùng phải có:
