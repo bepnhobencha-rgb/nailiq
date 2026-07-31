@@ -3,6 +3,16 @@
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import {
+  Bot,
+  CalendarDays,
+  ChevronRight,
+  MessagesSquare,
+  Palette,
+  Scissors,
+  SlidersHorizontal,
+  type LucideIcon,
+} from "lucide-react";
 import { Toggle } from "@/components/ui/Toggle";
 import {
   updateRemindersEnabled,
@@ -232,12 +242,22 @@ export function SalonSettingsHub({
   const t = messages.salonSettings;
   const base = `/dashboard/${encodeURIComponent(slug)}/setup`;
 
-  const adminGroups = [
+  const adminGroups: {
+    id: string;
+    title: string;
+    description: string;
+    icon: LucideIcon;
+    iconClassName: string;
+    links: { href: string; label: string }[];
+  }[] = [
     {
+      id: "operations",
       title: vi ? "Vận hành tiệm" : "Salon operations",
       description: vi
         ? "Dịch vụ, nhân viên, giờ mở cửa và địa chỉ"
         : "Services, staff, business hours, and address",
+      icon: Scissors,
+      iconClassName: "bg-blue-500",
       links: [
         { href: `${base}/services`, label: t.sectionServices },
         { href: `${base}/staff`, label: t.sectionStaff },
@@ -246,10 +266,13 @@ export function SalonSettingsHub({
       ],
     },
     {
+      id: "booking",
       title: vi ? "Đặt lịch & quầy tiếp tân" : "Booking & front desk",
       description: vi
         ? "Luồng đặt lịch, hàng chờ và quy tắc vận hành"
         : "Booking flow, queues, and operating rules",
+      icon: CalendarDays,
+      iconClassName: "bg-emerald-500",
       links: [
         {
           href: `/dashboard/${encodeURIComponent(slug)}/center?view=day`,
@@ -262,10 +285,13 @@ export function SalonSettingsHub({
       ],
     },
     {
+      id: "communication",
       title: vi ? "Khách hàng & liên lạc" : "Customers & communication",
       description: vi
         ? "Email, SMS, lời nhắc và thông báo"
         : "Email, SMS, reminders, and notifications",
+      icon: MessagesSquare,
+      iconClassName: "bg-violet-500",
       links: [
         {
           href: "#cat-notifications",
@@ -278,10 +304,13 @@ export function SalonSettingsHub({
       ],
     },
     {
+      id: "brand",
       title: vi ? "Thương hiệu & trang đặt lịch" : "Brand & booking page",
       description: vi
         ? "Giao diện, màu sắc và trang khách hàng nhìn thấy"
         : "Appearance, colors, and the customer-facing page",
+      icon: Palette,
+      iconClassName: "bg-pink-500",
       links: [
         { href: "#cat-brand", label: vi ? "Thương hiệu" : "Brand appearance" },
         {
@@ -291,10 +320,13 @@ export function SalonSettingsHub({
       ],
     },
     {
+      id: "ai",
       title: vi ? "AI & tự động hóa" : "AI & automation",
       description: vi
         ? "AI Quản Lý, báo cáo và AI Tiếp Tân"
         : "AI Manager, reports, and AI Receptionist",
+      icon: Bot,
+      iconClassName: "bg-amber-500",
       links: [
         { href: "#cat-ai-manager", label: vi ? "AI Quản Lý" : "AI Manager" },
         {
@@ -312,10 +344,13 @@ export function SalonSettingsHub({
       ],
     },
     {
+      id: "system",
       title: vi ? "Tăng trưởng & hệ thống" : "Growth & system",
       description: vi
         ? "Tích hợp, đánh giá, gói dịch vụ và cài đặt nâng cao"
         : "Integrations, reviews, plan, and advanced settings",
+      icon: SlidersHorizontal,
+      iconClassName: "bg-slate-500",
       links: [
         {
           href: `/dashboard/${encodeURIComponent(slug)}/settings/readiness`,
@@ -371,10 +406,92 @@ export function SalonSettingsHub({
           {t.pageIntro}
         </p>
 
-        {/* A visible admin home: six jobs instead of one long, mixed list. */}
+        {/* Mobile follows the familiar iPhone Settings information model:
+            labelled groups, full-width rows, and one clear destination per tap. */}
         <section
+          data-testid="settings-mobile-list"
+          aria-labelledby="mobile-settings-home-title"
+          className="md:hidden"
+        >
+          <div className="mb-5">
+            <h2
+              id="mobile-settings-home-title"
+              className="text-xl font-semibold tracking-tight text-nq-foreground"
+            >
+              {vi ? "Bạn muốn quản lý gì?" : "What do you want to manage?"}
+            </h2>
+            <p className="mt-1 text-sm leading-5 text-nq-muted">
+              {vi
+                ? "Chọn một mục để đi thẳng đến cài đặt cần dùng."
+                : "Choose a row to go straight to the setting you need."}
+            </p>
+          </div>
+
+          <div className="space-y-6">
+            {adminGroups.map((group) => {
+              const Icon = group.icon;
+              return (
+                <section
+                  key={group.id}
+                  aria-labelledby={`mobile-settings-group-${group.id}`}
+                  data-testid={`settings-mobile-group-${group.id}`}
+                >
+                  <div className="mb-2 flex items-center gap-2 px-1">
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white shadow-sm",
+                        group.iconClassName,
+                      )}
+                    >
+                      <Icon className="h-4 w-4" strokeWidth={2.25} />
+                    </span>
+                    <h3
+                      id={`mobile-settings-group-${group.id}`}
+                      className="text-sm font-semibold text-nq-foreground"
+                    >
+                      {group.title}
+                    </h3>
+                  </div>
+
+                  <div className="overflow-hidden rounded-2xl border border-nq-border/45 bg-nq-surface/65 shadow-sm">
+                    {group.links.map(({ href, label }, index) => (
+                      <Link
+                        key={`${group.id}-${href}-${label}`}
+                        href={href}
+                        data-testid={
+                          href.endsWith("/voice")
+                            ? "settings-voice-ai-link-mobile"
+                            : `settings-mobile-row-${group.id}-${index}`
+                        }
+                        className={cn(
+                          "flex min-h-12 items-center justify-between gap-3 px-4 py-3 text-[15px] font-medium text-nq-foreground",
+                          "transition-colors active:bg-nq-surface hover:bg-nq-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-nq-primary/50",
+                          index > 0 && "border-t border-nq-border/30",
+                        )}
+                      >
+                        <span>{label}</span>
+                        <ChevronRight
+                          aria-hidden
+                          className="h-4 w-4 shrink-0 text-nq-muted/70"
+                        />
+                      </Link>
+                    ))}
+                  </div>
+                  <p className="mt-2 px-1 text-xs leading-5 text-nq-muted">
+                    {group.description}
+                  </p>
+                </section>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* Desktop keeps the broader overview cards. */}
+        <section
+          data-testid="settings-desktop-overview"
           aria-labelledby="admin-settings-home-title"
-          className="rounded-3xl border border-nq-border/40 bg-nq-surface/25 p-3 sm:p-4"
+          className="hidden rounded-3xl border border-nq-border/40 bg-nq-surface/25 p-4 md:block"
         >
           <div className="mb-3 px-1">
             <h2
@@ -393,7 +510,7 @@ export function SalonSettingsHub({
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {adminGroups.map((group) => (
               <article
-                key={group.title}
+                key={group.id}
                 className="rounded-2xl border border-nq-border/40 bg-nq-surface/55 p-4 shadow-sm"
               >
                 <h3 className="text-base font-semibold text-nq-foreground">

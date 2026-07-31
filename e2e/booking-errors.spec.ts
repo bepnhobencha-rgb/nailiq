@@ -7,7 +7,10 @@ import {
   seedTestSalon,
   setReactInputValue,
 } from "./helpers/db";
-import { advanceBookingStep } from "./helpers/bookingFlow";
+import {
+  advanceBookingStep,
+  selectAvailableBookingDate,
+} from "./helpers/bookingFlow";
 
 /**
  * Pre-launch error-path smoke for the public booking page (`/[slug]`).
@@ -277,10 +280,12 @@ test.describe("Booking error scenarios — /[slug]", () => {
       .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
-    // Reveal the collapsed month grid (#593) before reading a grid day's data-ymd.
-    await page.locator('[data-testid="date-toggle-calendar"]').click();
+    // Pick the same future-date policy used by the second guest below. This is
+    // important on the last day of a month: the quick default is "today", but
+    // navigateToTimeStep deliberately advances to the next future day.
+    await selectAvailableBookingDate(page);
     const pickedDateBtn = page
-      .locator('[data-testid="date-day"]:not([disabled])')
+      .locator('[data-testid="date-day"][aria-pressed="true"]')
       .first();
     await pickedDateBtn.waitFor({ state: "visible", timeout: 15_000 });
     const ymd = (await pickedDateBtn.getAttribute("data-ymd")) ?? null;
