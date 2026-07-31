@@ -136,8 +136,10 @@ Other no-show defenses:
   not-yet-arrived booking flagged high-risk shows an amber warning; a client with
   2+ past no-shows shows a red warning by their name. Use these to confirm the
   booking or take a deposit early.
-- Auto no-show: optionally, a confirmed booking that never starts is marked
-  no_show automatically a set number of minutes past its start time.
+- Automatic no-show review: optionally, a confirmed booking that never starts
+  is flagged after the salon's grace period. A permitted desk role must still
+  decide whether to mark no-show; automation never changes status, frees the
+  slot, charges a fee, or affects guest history.
 - Win-back: after a no-show, an optional friendly email invites the client to
   rebook.
 

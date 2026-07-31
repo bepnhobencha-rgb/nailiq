@@ -194,6 +194,13 @@ const AppleDeskHeader = dynamic(
     import("./AppleDeskHeader").then((module) => module.AppleDeskHeader),
   { ssr: false },
 );
+const HeaderCustomerSearch = dynamic(
+  () =>
+    import("./AppleDeskHeader").then(
+      (module) => module.HeaderCustomerSearch,
+    ),
+  { ssr: false },
+);
 const AppleCommandBar = dynamic(
   () =>
     import("./AppleCommandBar").then((module) => module.AppleCommandBar),
@@ -920,6 +927,7 @@ function ReceptionistCenterInner({
           addon_count: b.addons?.length ?? 0,
           no_show_count: b.client_no_show_count ?? 0,
           no_show_risk_score: b.no_show_risk_score ?? null,
+          no_show_candidate_at: b.no_show_candidate_at ?? null,
           buffer_minutes: b.service_buffer_minutes,
           noshow_card_id: b.noshow_card_id ?? null,
           noshow_fee_cents: b.noshow_fee_cents ?? null,
@@ -3226,6 +3234,24 @@ function ReceptionistCenterInner({
                   })}
                 </div>
               )}
+              {isMobile ? (
+                <div className="h-11 w-11 shrink-0">
+                  <HeaderCustomerSearch
+                    slug={slug}
+                    language={language === "vi" ? "vi" : "en"}
+                    clientHref={`/dashboard/${encodeURIComponent(slug)}/clients`}
+                    surface="mobile"
+                    onSelectClient={(client) => {
+                      setDeskPrefill({
+                        ymd: data.selectedDate,
+                        phone: client.phone,
+                        name: client.name ?? undefined,
+                      });
+                      setDeskBookingOpen(true);
+                    }}
+                  />
+                </div>
+              ) : null}
               {/*
                * Prominent "+ Walk-in" CTA (P1 desk feedback: the queue
                * toggle alone wasn't an obvious "add a walk-in" entry).
@@ -4039,6 +4065,8 @@ function ReceptionistCenterInner({
                     autoNoShowAt: rcMessages.latenessGrid.autoNoShowAt,
                     lateChip: rcMessages.latenessGrid.late,
                     veryLateChip: rcMessages.latenessGrid.veryLate,
+                    noShowDecisionNeeded:
+                      rcMessages.latenessGrid.noShowDecisionNeeded,
                   },
                   removedGuest: rcMessages.removedGuest,
                   latenessGrid: rcMessages.latenessGrid,

@@ -9,13 +9,13 @@ type Props = {
   initialMinutes: number;
 };
 
-// 0 = off; otherwise grace minutes past start before auto-marking no-show.
+// 0 = off; otherwise grace minutes past start before flagging for desk review.
 const PRESETS = [0, 15, 30, 60] as const;
 
 /**
- * Owner setting: auto-mark a booking as no-show when it's this many minutes past
- * its start and still un-started. A background job runs every 10 min. Off by
- * default — opting in means the salon trusts "started" to be marked promptly.
+ * Owner/admin setting: flag a booking for no-show review when it is this many
+ * minutes past its start and still un-started. A background job runs every
+ * 10 min. A permitted desk role must still make the final attendance decision.
  */
 export function AutoNoShowSettings({ slug, initialMinutes }: Props) {
   const { language } = useUserLanguage();
@@ -41,12 +41,12 @@ export function AutoNoShowSettings({ slug, initialMinutes }: Props) {
       className="mt-6 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-4"
     >
       <p className="text-sm font-semibold text-nq-foreground">
-        {vi ? "Tự động đánh dấu vắng (no-show)" : "Auto-mark no-shows"}
+        {vi ? "Tự động nhắc xem xét vắng" : "Automatic no-show review"}
       </p>
       <p className="mt-0.5 text-xs text-nq-muted">
         {vi
-          ? "Lịch quá giờ bắt đầu chừng này phút mà CHƯA bắt đầu (chưa bấm “Đang làm”) sẽ tự đánh dấu vắng + giải phóng giường. Chạy nền mỗi 10 phút. Nhớ bấm “Đang làm/Đã đến” khi khách tới để tránh đánh dấu nhầm."
-          : "A booking still un-started this long after its start time is auto-marked no-show + frees the bed. Runs every 10 min. Mark arrivals as started so real guests aren't flagged."}
+          ? "Lịch quá giờ bắt đầu chừng này phút mà chưa bấm “Đang làm” sẽ được gắn cờ để lễ tân xem xét. Hệ thống không tự đánh dấu vắng, không giải phóng chỗ và không tính lịch sử vắng. Chạy nền mỗi 10 phút."
+          : "A booking still un-started this long after its start time is flagged for desk review. The system does not mark a no-show, free the slot, or affect guest history automatically. Runs every 10 min."}
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         {PRESETS.map((m) => {
