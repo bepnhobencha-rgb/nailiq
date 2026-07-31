@@ -21,6 +21,11 @@ Nếu muốn chạy cùng xác minh `/api/version` và `/api/health` trong một
 FORCE_APPLY=1 npm run migration:resend-run-strict
 ```
 
+Hoặc chạy toàn bộ cutover + audit + report một lệnh (chỉ chạy khi `FORCE_APPLY=1`):
+```bash
+FORCE_APPLY=1 npm run cutover:resend-production
+```
+
 Để xem nhanh trạng thái hiện tại trước/sau apply:
 ```bash
 npm run resend:status
