@@ -82,10 +82,9 @@ export interface ReceptionistCenterData {
     staffNotificationSettings: StaffNotificationSettings;
     /**
      * `salons.auto_no_show_minutes` — minutes past start after which the cron
-     * auto-marks a never-started booking as no_show (0/null = off). Drives the
-     * grid's lateness-escalation countdown ("auto no-show at H:MM"). When off,
-     * the grid still escalates on fixed 10/20-minute milestones (visual only,
-     * no auto promise). The cron NEVER charges — that's the desk's call.
+     * flags a never-started booking for human no-show review (0/null = off).
+     * The grid shows the review deadline. The cron never changes status,
+     * releases the slot, charges, or affects guest history.
      */
     autoNoShowMinutes: number | null;
   };
@@ -302,6 +301,8 @@ export interface ReceptionistCenterData {
     sms_confirmation_failed_at: string | null;
     /** No-show risk score 0-100. Higher = more likely to no-show. */
     no_show_risk_score: number | null;
+    /** Scheduler flag: this confirmed booking needs a human attendance decision. */
+    no_show_candidate_at: string | null;
     /** Deposit lifecycle (required/paid/waived/...). Null = no deposit on this booking. */
     deposit_status: string | null;
     /** Deposit amount in cents (paid via Square). Drives the checkout "remaining" line. */
@@ -842,6 +843,7 @@ export async function loadReceptionistCenterData(
       sms_confirmation_sent_at,
       sms_confirmation_failed_at,
       no_show_risk_score,
+      no_show_candidate_at,
       deposit_status,
       deposit_amount_cents,
       wix_booking_id,
@@ -947,6 +949,7 @@ export async function loadReceptionistCenterData(
     addon: ServiceJoinMinimal | ServiceJoinMinimal[] | null;
     resource_id: string | null;
     after_hours_minutes: number | null;
+    no_show_candidate_at: string | null;
     resource: { id: string; name: string; kind: string } | { id: string; name: string; kind: string }[] | null;
   }> | null;
 
@@ -1501,6 +1504,11 @@ export async function loadReceptionistCenterData(
         const n = Number(v);
         return Number.isFinite(n) ? n : null;
       })(),
+      no_show_candidate_at:
+        typeof row.no_show_candidate_at === "string" &&
+        row.no_show_candidate_at.length > 0
+          ? row.no_show_candidate_at
+          : null,
       deposit_status: (row as { deposit_status?: unknown }).deposit_status != null
         ? String((row as { deposit_status?: unknown }).deposit_status)
         : null,

@@ -515,9 +515,17 @@ export async function updateBookingStatus(
   }
 
   const startedAt = new Date().toISOString();
-  const patch: { status: BookingStatus; started_at?: string } = toInProgress
-    ? { status: "in_progress", started_at: startedAt }
-    : { status: nextStatus };
+  const patch: {
+    status: BookingStatus;
+    started_at?: string;
+    no_show_candidate_at: null;
+  } = toInProgress
+    ? {
+        status: "in_progress",
+        started_at: startedAt,
+        no_show_candidate_at: null,
+      }
+    : { status: nextStatus, no_show_candidate_at: null };
 
   const { data: updated, error: upErr } = await supabase
     .from("bookings")
@@ -1052,9 +1060,10 @@ export type UpdateAutoNoShowResult =
   | { ok: false; error: "unauthorized" | "forbidden" | "invalid" | "server_error" };
 
 /**
- * Owner-only: writes `salons.auto_no_show_minutes`. When > 0, a pg_cron worker
- * auto-marks still-`confirmed` bookings as no_show once they're this many
- * minutes past start (and bumps the client's no_show_count). 0 = off.
+ * Owner/admin: writes `salons.auto_no_show_minutes`. When > 0, a pg_cron
+ * worker flags still-`confirmed` bookings for human no-show review once they
+ * are this many minutes past start. It never changes status or guest history.
+ * 0 = off.
  */
 export async function updateAutoNoShowMinutes(
   slug: string,

@@ -13,7 +13,14 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, Clock, Play, Plus } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Play,
+  Plus,
+} from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import {
@@ -638,8 +645,19 @@ function BookingCard({
               </span>
               {autoAtIso ? (
                 <span className="text-[10px] text-white/35">
-                  {language === "vi" ? "Tự đánh dấu vắng" : "Auto no-show"}{" "}
+                  {language === "vi" ? "Xem xét vắng lúc" : "Review due at"}{" "}
                   {formatInSalonTz(autoAtIso, timezone, "shortTime")}
+                </span>
+              ) : null}
+              {booking.no_show_candidate_at ? (
+                <span
+                  data-testid={`booking-block-no-show-candidate-${booking.id}`}
+                  className="inline-flex items-center gap-1 rounded-full bg-nq-error/20 px-2 py-0.5 text-[10px] font-semibold text-nq-error"
+                >
+                  <AlertTriangle size={11} aria-hidden />
+                  {language === "vi"
+                    ? "Cần quyết định vắng"
+                    : "No-show decision needed"}
                 </span>
               ) : null}
               {booking.after_hours_minutes ? (

@@ -1,14 +1,15 @@
 /**
  * Lateness-escalation tier for confirmed/pending bookings past their start time.
  * Drives the grid visual (ring color, badge, countdown) and the inline Start button.
- * Note: this is purely cosmetic — the cron auto-marks no_show but NEVER charges.
+ * The visual tier is derived live. At the configured threshold, the cron
+ * persists a review-candidate flag but never changes status or charges.
  */
 export type LatenessTier = "due" | "late" | "critical" | null;
 
 export interface LatenessResult {
   tier: LatenessTier;
   minutesLate: number;
-  /** ISO string of when the cron will auto-mark no_show (only when autoNoShowMinutes > 0). */
+  /** ISO string of when the booking becomes due for desk review. */
   autoAtIso: string | null;
 }
 
