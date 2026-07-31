@@ -21,6 +21,12 @@ Nếu muốn chạy cùng xác minh `/api/version` và `/api/health` trong một
 FORCE_APPLY=1 npm run migration:resend-run-strict
 ```
 
+Để xem nhanh trạng thái hiện tại trước/sau apply:
+```bash
+npm run resend:status
+npm run resend:status -- --include-archived
+```
+
 ### Ghi chú
 - Script chạy theo cơ chế **dry-run trước**, rồi mới apply, rồi verify lại.
 - Mặc định chỉ xử lý salon đang active (`archived_at IS NULL`).

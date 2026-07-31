@@ -17,6 +17,7 @@
     "migration:resend-run": "bash scripts/run-resend-migration.sh",
     "migration:resend-run-strict": "bash scripts/migrate-and-verify-resend.sh",
     "resend:verify-full": "bash scripts/verify-resend-full.sh",
+    "resend:status": "node scripts/report-resend-migration-status.mjs",
     "migration:resend-preview": "node scripts/enable-all-salons-email-outbound.mjs",
     "migration:resend-apply": "node scripts/enable-all-salons-email-outbound.mjs --apply",
     "verify:resend-production": "bash scripts/verify-resend-production.sh",
