@@ -80,6 +80,53 @@ test("Owner home keeps mobile operations first and moves deep reports to Busines
   }
 });
 
+test("Settings uses one-hand iPhone groups without changing the desktop overview", async ({
+  page,
+}) => {
+  const { slug } = await seedTestSalon({
+    phone: "15557778890",
+    slug: "e2e-owner-mobile-settings",
+    name: "E2E Owner Mobile Settings",
+  });
+  const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
+
+  try {
+    await page.context().addCookies([
+      {
+        name: "nailiq-demo-slug",
+        value: slug,
+        url: baseURL,
+      },
+    ]);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/dashboard/${slug}/settings`);
+
+    const mobileList = page.getByTestId("settings-mobile-list");
+    await expect(mobileList).toBeVisible();
+    await expect(page.getByTestId("settings-desktop-overview")).toBeHidden();
+
+    const groups = mobileList.locator('[data-testid^="settings-mobile-group-"]');
+    await expect(groups).toHaveCount(6);
+
+    const firstRow = page.getByTestId("settings-mobile-row-operations-0");
+    await expect(firstRow).toBeVisible();
+    await expect(firstRow).toHaveAttribute(
+      "href",
+      `/dashboard/${slug}/setup/services`,
+    );
+    const firstRowBox = await firstRow.boundingBox();
+    expect(firstRowBox?.height ?? 0).toBeGreaterThanOrEqual(48);
+    expect(firstRowBox?.width ?? 0).toBeGreaterThanOrEqual(340);
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect(mobileList).toBeHidden();
+    await expect(page.getByTestId("settings-desktop-overview")).toBeVisible();
+  } finally {
+    await cleanupTestSalon(slug);
+  }
+});
+
 test("Wrong demo cookie slug is rejected", async () => {
   const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
 
