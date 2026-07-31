@@ -33,6 +33,26 @@ test.afterAll(async ({}, testInfo) => {
 });
 
 test.describe("Receptionist queue + assign", () => {
+  test("critical queue actions keep 44px touch targets on a phone", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const bookingId = await seedWalkin(fx.salonId, {
+      clientName: testClientNameMarker(),
+      serviceId: fx.serviceIds[0]!,
+    });
+
+    await gotoReceptionistCenter(page, fx.slug);
+
+    for (const action of ["cancel", "assign"] as const) {
+      const target = page.getByTestId(`queue-${action}-${bookingId}`);
+      await expect(target).toBeVisible({ timeout: 15_000 });
+      const box = await target.boundingBox();
+      expect(box, `${action} action must have measurable geometry`).not.toBeNull();
+      expect(box!.height, `${action} action must be at least 44px tall`).toBeGreaterThanOrEqual(44);
+    }
+  });
+
   test("case 1: add walk-in via form — queue item + status pill waiting count", async ({
     page,
   }) => {
