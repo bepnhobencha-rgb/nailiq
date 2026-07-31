@@ -238,6 +238,27 @@ test("iPad setup actions stay above the dashboard bottom navigation", async ({
     expect((panelBox?.y ?? 0) + (panelBox?.height ?? 0)).toBeLessThanOrEqual(
       navBox?.y ?? 0,
     );
+
+    for (const action of await bulkPanel.getByRole("button").all()) {
+      const box = await action.boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+
+    await bulkPanel.getByRole("button", { name: "Cập nhật giá" }).click();
+    const amountInput = bulkPanel.getByRole("textbox");
+    await expect(amountInput).toBeVisible();
+    expect((await amountInput.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(
+      44,
+    );
+
+    for (const option of await bulkPanel.locator("label").all()) {
+      const box = await option.boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+    for (const action of await bulkPanel.getByRole("button").all()) {
+      const box = await action.boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
   } finally {
     await cleanupTestSalon(slug);
   }

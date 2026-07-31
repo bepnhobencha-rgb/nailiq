@@ -597,7 +597,7 @@ export function StaffSetupPanel({
           <button
             type="button"
             onClick={handleUndoDelete}
-            className="font-semibold text-nq-primary"
+            className="min-h-11 touch-manipulation rounded-full px-3 font-semibold text-nq-primary"
           >
             ↺ {tLabels.undo}
           </button>
