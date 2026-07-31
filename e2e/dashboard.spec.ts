@@ -66,6 +66,15 @@ test("Owner home keeps mobile operations first and moves deep reports to Busines
       page.getByTestId("owner-deep-report-leaderboards"),
     ).toBeHidden();
 
+    for (const target of [
+      page.getByTestId("owner-booking-link"),
+      page.getByTestId("owner-refresh"),
+    ]) {
+      await expect(target).toBeVisible();
+      const box = await target.boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+
     const businessLink = page.getByTestId("owner-mobile-business-link");
     await expect(businessLink).toBeVisible();
     await expect(businessLink).toHaveAttribute(
