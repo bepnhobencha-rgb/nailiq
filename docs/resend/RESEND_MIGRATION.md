@@ -10,6 +10,11 @@ cd /Users/huytran/nailiq
 npm run migration:resend-run
 ```
 
+Local/Dry-run có thể cần tắt cảnh báo DNS/network:
+```bash
+ALLOW_PREVIEW_FAILURE=1 npm run verify:milestone-1012
+```
+
 Nếu muốn chạy cùng xác minh `/api/version` và `/api/health` trong một lần và chỉ apply khi bạn đã bật `FORCE_APPLY`:
 
 ```bash

@@ -20,6 +20,16 @@ function run(cmd) {
 }
 
 const repoRoot = process.cwd();
+const requiredFiles = [
+  "src/shared/ai/agentStrategist.ts",
+  "src/shared/ai/strategistProposal.ts",
+  "src/shared/ai/loadMinhActivity.ts",
+  "src/shared/ai/__tests__/strategistProposal.spec.ts",
+  "scripts/enable-all-salons-email-outbound.mjs",
+  "scripts/run-resend-migration.sh",
+  "scripts/verify-resend-full.sh",
+];
+const allowMigrationPreviewFailure = process.env.ALLOW_PREVIEW_FAILURE === "1";
 
 console.log("===== MILESTONE 1012 PRECHECK =====");
 if (!existsSync(`${repoRoot}/scripts/enable-all-salons-email-outbound.mjs`)) {
@@ -31,8 +41,25 @@ if (!existsSync(`${repoRoot}/scripts/run-resend-migration.sh`)) {
   process.exit(1);
 }
 console.log("✅ Migration script files are present.");
+for (const f of requiredFiles) {
+  if (!existsSync(`${repoRoot}/${f}`)) {
+    console.error(`❌ Missing required file: ${f}`);
+    process.exit(1);
+  }
+}
+console.log("✅ Required milestone 1012 artifacts are present.");
 
-run("npm run migration:resend-preview");
+try {
+  run("npm run migration:resend-preview");
+} catch (e) {
+  if (allowMigrationPreviewFailure) {
+    console.warn("⚠️ Migration preview failed, but continuing because ALLOW_PREVIEW_FAILURE=1.");
+  } else {
+    throw e;
+  }
+}
+
+run("npm run test:unit -- src/shared/ai/__tests__/strategistProposal.spec.ts");
 
 const versionUrl = process.env.VERSION_URL || "https://www.nailiq.ca/api/version";
 const healthUrl = process.env.HEALTH_URL || "https://www.nailiq.ca/api/health";
