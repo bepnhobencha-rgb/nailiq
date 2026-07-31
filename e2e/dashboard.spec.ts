@@ -35,6 +35,51 @@ test("Dashboard responds when demo cookie matches slug", async () => {
   }
 });
 
+test("Owner home keeps mobile operations first and moves deep reports to Business", async ({
+  page,
+}) => {
+  const { slug } = await seedTestSalon({
+    phone: "15557778889",
+    slug: "e2e-owner-mobile-home",
+    name: "E2E Owner Mobile Home",
+  });
+  const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
+
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.context().addCookies([
+      {
+        name: "nailiq-demo-slug",
+        value: slug,
+        url: baseURL,
+      },
+    ]);
+    await page.goto(`/dashboard/${slug}`);
+
+    const staffStatus = page.getByTestId("owner-mobile-staff-status");
+    await expect(staffStatus).toBeVisible();
+    await expect(staffStatus).toContainText("Jenny");
+    await expect(staffStatus).toContainText(/Available|Đang trống/);
+
+    await expect(page.getByTestId("owner-deep-report-month")).toBeHidden();
+    await expect(
+      page.getByTestId("owner-deep-report-leaderboards"),
+    ).toBeHidden();
+
+    const businessLink = page.getByTestId("owner-mobile-business-link");
+    await expect(businessLink).toBeVisible();
+    await expect(businessLink).toHaveAttribute(
+      "href",
+      `/dashboard/${slug}/pulse`,
+    );
+
+    const linkBox = await businessLink.boundingBox();
+    expect(linkBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+  } finally {
+    await cleanupTestSalon(slug);
+  }
+});
+
 test("Wrong demo cookie slug is rejected", async () => {
   const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
 

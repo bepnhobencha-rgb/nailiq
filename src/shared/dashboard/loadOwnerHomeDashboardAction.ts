@@ -12,6 +12,10 @@ import { loadUnclosedBookings } from "@/shared/dashboard/loadUnclosedBookings";
 import type { UnclosedBooking } from "@/shared/dashboard/unclosedBookingTypes";
 import { getPendingApprovals } from "@/shared/ai/approvalRequests";
 import { customerIdentityKey } from "@/shared/customer/customerIdentityKey";
+import {
+  buildOwnerHomeStaffSnapshot,
+  type OwnerHomeStaffStatus,
+} from "@/shared/dashboard/ownerHomeStaffSnapshot";
 
 export type OwnerHomeData = {
   currencyCode: string;
@@ -23,6 +27,7 @@ export type OwnerHomeData = {
   todayCompleted: number;
   todayNoShows: number;
   todayRevenueCents: number;
+  currentStaff: OwnerHomeStaffStatus[];
   // This week vs last week (Mon–Sun in salon tz)
   weekRevenueCents: number;
   lastWeekRevenueCents: number;
@@ -144,13 +149,17 @@ export async function loadOwnerHomeDashboard(
     supabase
       .from("bookings")
       .select(
-        "id, status, staff_id, service_id, start_time_utc, price_cents, addon_price_cents, client_phone, client_profile_id, services!bookings_service_id_fkey ( name )",
+        "id, status, staff_id, service_id, start_time_utc, end_time_utc, price_cents, addon_price_cents, client_phone, client_profile_id, services!bookings_service_id_fkey ( name )",
       )
       .eq("salon_id", resolved.salon.id)
       .gte("start_time_utc", windowStart)
       .lt("start_time_utc", windowEnd),
 
-    supabase.from("staff").select("id, name").eq("salon_id", resolved.salon.id),
+    supabase
+      .from("staff")
+      .select("id, name, status, deleted_at")
+      .eq("salon_id", resolved.salon.id)
+      .order("created_at", { ascending: true }),
 
     // For "new clients": canonical profile identities that booked before
     // this month, with normalized-phone fallback for legacy bookings.
@@ -199,6 +208,7 @@ export async function loadOwnerHomeDashboard(
     staff_id: string | null;
     service_id: string;
     start_time_utc: string | null;
+    end_time_utc: string | null;
     price_cents: number | null;
     addon_price_cents: number | null;
     client_phone: string | null;
@@ -363,6 +373,21 @@ export async function loadOwnerHomeDashboard(
     )
     .slice(0, 5);
 
+  const currentStaff = buildOwnerHomeStaffSnapshot({
+    // Keep all staff above so historical leaderboards retain their names,
+    // while the live snapshot only exposes the current active roster.
+    staff: (staffResult.data ?? [])
+      .filter(
+        (staff) => staff.status === "active" && staff.deleted_at == null,
+      )
+      .map((staff) => ({
+        id: String(staff.id),
+        name: staff.name == null ? null : String(staff.name),
+      })),
+    bookings,
+    nowMs: Date.now(),
+  });
+
   return {
     ok: true,
     data: {
@@ -374,6 +399,7 @@ export async function loadOwnerHomeDashboard(
       todayCompleted,
       todayNoShows,
       todayRevenueCents,
+      currentStaff,
       weekRevenueCents,
       lastWeekRevenueCents,
       weekBookings,
