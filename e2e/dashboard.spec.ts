@@ -166,6 +166,38 @@ test("Settings uses one-hand iPhone groups without changing the desktop overview
   }
 });
 
+test("iPad bottom navigation opens the More sheet", async ({ page }) => {
+  const { slug } = await seedTestSalon({
+    phone: "15557778892",
+    slug: "e2e-owner-ipad-more",
+    name: "E2E Owner iPad More",
+  });
+  const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
+
+  try {
+    await page.setViewportSize({ width: 820, height: 1180 });
+    await page.context().addCookies([
+      {
+        name: "nailiq-demo-slug",
+        value: slug,
+        url: baseURL,
+      },
+    ]);
+    await page.goto(`/dashboard/${slug}`);
+
+    const trigger = page.getByTestId("mobile-more-trigger");
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+
+    const sheet = page.getByTestId("mobile-more-sheet");
+    await expect(sheet).toBeVisible();
+    await expect(sheet).toHaveAttribute("role", "dialog");
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  } finally {
+    await cleanupTestSalon(slug);
+  }
+});
+
 test("Booking settings autosave safely and persist server-confirmed selections", async ({
   page,
 }) => {
