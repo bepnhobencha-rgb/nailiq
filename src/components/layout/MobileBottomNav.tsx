@@ -259,6 +259,7 @@ export function MobileBottomNav({
               type="button"
               onClick={() => setMoreOpen(true)}
               aria-expanded={moreOpen}
+              data-testid="mobile-more-trigger"
               className={cn(
                 "relative flex min-h-[3.75rem] w-full touch-manipulation flex-col items-center justify-center gap-1 px-1",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-nq-primary/45",
@@ -276,7 +277,13 @@ export function MobileBottomNav({
       </nav>
 
       {moreOpen ? (
-        <div className="md:hidden fixed inset-0 z-[70]" role="dialog" aria-modal="true" aria-label={L("More tools", "Công cụ khác")}>
+        <div
+          className="fixed inset-0 z-[70] xl:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label={L("More tools", "Công cụ khác")}
+          data-testid="mobile-more-sheet"
+        >
           <button className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMoreOpen(false)} aria-label={L("Close", "Đóng")} />
           <section className="absolute inset-x-0 bottom-0 max-h-[82dvh] overflow-y-auto rounded-t-[1.75rem] border-t border-white/10 bg-nq-surface px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 shadow-2xl">
             <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-nq-muted/35" aria-hidden />
