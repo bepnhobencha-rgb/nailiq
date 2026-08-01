@@ -17,11 +17,7 @@ export const userVi: UserMessages = {
     signInLink: "Đăng nhập →",
     landingUrgency:
       "⚠️ Hầu hết tiệm mất $50–$200 mỗi ngày từ cuộc gọi nhỡ",
-    landingH1Line1:
-      "$29/tháng.|Booking + walk-in queue,",
     landingH1Gold: "dành riêng cho tiệm nail.",
-    landingBody1:
-      "Rẻ hơn Booksy 3-5 lần. Tiếng Việt. Walk-in queue tích hợp sẵn.",
     landingBody2: "Khách đó đặt tiệm khác.",
     landingBody3: "Bạn không bao giờ biết mình đã mất họ.",
     landingCta: "Dùng thử 14 ngày miễn phí",
