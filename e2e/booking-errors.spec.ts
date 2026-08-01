@@ -687,6 +687,7 @@ test.describe("Booking error scenarios — /[slug]", () => {
       page.getByTestId("booking-entry-phone"),
       "abc123",
     );
+    await expect(page.getByTestId("booking-entry-phone-error")).toBeVisible();
     await expect(
       page.locator('[data-testid="service-tile-select"]'),
     ).toHaveCount(0);
