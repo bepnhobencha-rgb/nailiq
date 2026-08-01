@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 
-import { cleanupTestSalon } from "../helpers/db";
+import { cleanupTestSalon, enterBookingPhone } from "../helpers/db";
 import { seedGroupTestSalon } from "./helpers";
 
 /**
@@ -53,9 +53,9 @@ test.describe("Phone-first gate — new customer name", () => {
     await expect(page.getByTestId("booking-phone-gate")).toBeVisible();
 
     // New phone → no recognition → the name field appears.
-    // CountryPhoneField's inner input takes the 10-digit NATIONAL number; the
-    // full E.164 would be sliced to a bogus area code and rejected.
-    await page.getByTestId("booking-entry-phone").fill(newPhone.slice(-10));
+    // Wait for the client gate to hydrate before dispatching the phone input.
+    // Plain locator.fill() can race React hydration in the mobile project.
+    await enterBookingPhone(page, newPhone);
     await expect(page.getByTestId("booking-entry-name")).toBeVisible({
       timeout: 10_000,
     });
