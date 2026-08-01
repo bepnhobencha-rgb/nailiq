@@ -21,9 +21,11 @@ cd /path/to/nailiq-audit
 npm run resend:repair
 ```
 
-Script sẽ:
+Script sẽ (npm script truyền guard `--apply` bắt buộc):
+
 - Set `email_outbound_enabled = true` cho các salon chưa bật.
 - Guard an toàn: chỉ đổi khi giá trị đang là `false` hoặc `null`.
+- Xác minh lại từng salon sau khi ghi và trả exit code khác 0 nếu repair chưa hoàn tất.
 
 ### Yêu cầu môi trường
 
@@ -44,6 +46,7 @@ FROM public.salons;
 ```
 
 Kỳ vọng:
+
 - `enabled_false = 0`
 - `enabled_null = 0`
 
