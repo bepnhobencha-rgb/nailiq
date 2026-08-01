@@ -5,11 +5,11 @@ import {
   REQUIRED_SCHEMA_CAPABILITY,
 } from "@/shared/operations/productionReadiness";
 import { isCronAuthorizationConfigured } from "@/shared/security/cronAuthorization";
+import { deploymentIdentity } from "@/shared/operations/deploymentIdentity";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const VERSION = process.env.npm_package_version ?? "0.0.0";
 const NO_STORE_HEADERS = {
   "cache-control": "no-store, no-cache, must-revalidate",
 };
@@ -24,7 +24,7 @@ export async function GET() {
     {
       status: ready ? "ready" : "not_ready",
       timestamp: new Date().toISOString(),
-      version: VERSION,
+      version: deploymentIdentity(),
       checks: {
         database_schema: {
           status: readiness.ready ? "ok" : "error",
