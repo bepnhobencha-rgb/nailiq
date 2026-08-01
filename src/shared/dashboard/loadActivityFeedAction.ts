@@ -4,6 +4,10 @@ import { formatTranscript } from "@/shared/dashboard/formatTranscript";
 import { customerMessageActivityItem } from "@/shared/dashboard/customerMessageActivity";
 import { aiAgentPermissionActivityItem } from "@/shared/dashboard/aiAgentPermissionActivity";
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
+import {
+  voiceSessionDisplayStatus,
+  voiceSessionStatusLabel,
+} from "@/shared/dashboard/voiceSessionActivity";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { voiceSessionDurationSuffix } from "@/shared/voiceai/sessionDuration";
@@ -362,16 +366,23 @@ export async function loadActivityFeed(
       });
     }
 
+    const activityLoadedAt = Date.now();
     for (const r of (callsRes.data ?? []) as Array<Record<string, unknown>>) {
       const name = str(r.client_name).trim() || str(r.client_phone) || "Cuộc gọi";
       const durStr = voiceSessionDurationSuffix(r.duration_seconds);
+      const displayStatus = voiceSessionDisplayStatus(
+        r.status,
+        r.started_at,
+        r.ended_at,
+        activityLoadedAt,
+      );
       items.push({
         id: `cl-${str(r.id)}`,
         kind: "call",
         when: str(r.created_at) || str(r.started_at),
         title: `Cuộc gọi AI · ${name}`,
-        subtitle: `${str(r.status) || "—"}${durStr}`,
-        status: str(r.status) || null,
+        subtitle: `${voiceSessionStatusLabel(displayStatus)}${durStr}`,
+        status: displayStatus,
         actorRole: null,
         bookingId: null,
         bookingDate: null,
