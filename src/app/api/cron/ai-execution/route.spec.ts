@@ -95,7 +95,7 @@ describe("AI execution cron route", () => {
     });
   });
 
-  it("records a failed run without hiding the original worker error", async () => {
+  it("records and returns a safe code without exposing the worker error", async () => {
     process.env.CRON_SECRET = "correct-secret";
     processExecutionQueue.mockRejectedValue(new Error("claim_failed"));
 
@@ -108,14 +108,14 @@ describe("AI execution cron route", () => {
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({
       ok: false,
-      error: "claim_failed",
+      error: "execution_worker_failed",
     });
     expect(recordExecutionWorkerHeartbeat).toHaveBeenCalledTimes(2);
     expect(recordExecutionWorkerHeartbeat).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
         phase: "failed",
-        error: "claim_failed",
+        error: "execution_worker_failed",
       }),
     );
   });

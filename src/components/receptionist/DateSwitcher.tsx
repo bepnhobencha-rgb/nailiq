@@ -47,7 +47,7 @@ export function DateSwitcher({ selectedOffset, labels, onChange }: DateSwitcherP
             }
             aria-selected={active}
             className={cn(
-              "min-h-8 min-w-[4.5rem] shrink-0 rounded-full px-3 py-1.5 text-sm font-medium transition-[color,background-color,transform] duration-[var(--duration-nq-fast,150ms)] ease-out active:scale-[0.98] motion-reduce:active:scale-100",
+              "min-h-11 min-w-[4.5rem] shrink-0 rounded-full px-3 py-2 text-base font-medium transition-[color,background-color,transform] duration-[var(--duration-nq-fast,150ms)] ease-out active:scale-[0.98] motion-reduce:active:scale-100",
               active
                 ? "bg-nq-primary/18 text-nq-primary shadow-none"
                 : "bg-transparent text-nq-muted hover:text-nq-foreground",

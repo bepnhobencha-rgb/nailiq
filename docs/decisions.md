@@ -5,6 +5,566 @@ Newest entries on top.
 
 ---
 
+## 2026-07-30 — Lifecycle telemetry does not use server actions
+
+**Decision.** Dashboard activity-count polling uses a read-only API GET, and
+presence heartbeat uses a same-origin API POST. Neither lifecycle effect
+imports or dispatches a Next server action.
+
+**Why.** A production-only diagnostic on the exact PR #1103 deployment mapped
+the two automatic POSTs preceding React error 310 to
+`getActivityUnreadCount` and `upsertPresence`. Both were mounted in the shared
+dashboard shell and dispatched during hydration. The dense AI Control Center
+made the App Router race reproducible, while lighter dashboard routes could
+finish hydration before the same background work completed.
+
+**Safety.** The activity endpoint is read-only, owner/admin-gated by the
+existing loader, validates its timestamp, and is never cached. The presence
+endpoint requires same-origin POST, bounds its path/battery input, derives the
+user agent from the request, and keeps the existing authenticated RLS write.
+The temporary action-ID log is removed in the same change.
+
+---
+
+## 2026-07-30 — Keep AI mutations out of the rendered App Router action queue
+
+**Decision.** AI Control Center submits its owner-initiated mutations through
+one same-origin JSON API. Client-rendered controls no longer import server
+action references. The API validates the operation and identifiers, preserves
+the existing tenant/role checks inside each mutation, and returns the existing
+result contract.
+
+**Why.** Exact production verification of PR #1101 disproved the lifecycle
+refresh hypothesis: the page still failed with React error 310 inside Next's
+root `useActionQueue` on a clean authenticated document load, while another
+dashboard route on the same deployment rendered without errors. The remaining
+AI-specific App Router input was the set of server action references embedded
+in this unusually dense client surface. A normal fetch keeps those mutations
+outside the hydration action queue without reducing product capability.
+
+**Safety.** The endpoint rejects missing or cross-origin mutation requests,
+validates action-specific identifiers and operations, and delegates
+authorization, tenant isolation, state transitions, idempotency, and audit
+behavior to the existing server implementations. It does not add any messaging,
+campaign dispatch, payment, pricing, or destructive authority.
+
+---
+
+## 2026-07-30 — Keep lifecycle refreshes out of the App Router queue
+
+**Decision.** AI Control Center keeps its one-minute freshness interval, but a
+stale snapshot now reloads the document. It no longer dispatches
+`router.refresh()` or refreshes immediately from `visibilitychange`.
+
+**Why.** PR #1100 proved that wrapping the lifecycle dispatch in
+`startTransition` did not stop React error 310. On its exact production
+deployment, a clean authenticated load still produced two POST requests to the
+AI route before the Next App Router action queue failed. Background freshness
+does not need to share the same action queue as hydration. A bounded document
+GET makes that separation explicit and retains the promised one-minute update.
+
+**Tradeoff.** A stale visible AI Control Center performs a full document reload
+instead of a seamless React Server Component merge. This can reset transient
+local UI state, but it occurs at most once per minute and avoids crashing the
+whole page. User-initiated approval and execution controls retain their
+transitioned server actions.
+
+**Safety.** Authorization, approval, execution, messaging, payment, pricing,
+and persistence behavior are unchanged. E2E must prove the automatic request
+is a document GET rather than an RSC request, and exact production browser
+verification remains mandatory.
+
+---
+
+## 2026-07-30 — Schedule AI Control Center background refreshes as transitions
+
+**Decision.** Keep the one-minute freshness policy, but wrap its
+`router.refresh()` dispatch in React `startTransition`.
+
+**Why.** Production browser verification on the exact PR #1099 deployment
+showed the AI route returning HTTP 200, followed immediately by a POST to the
+same App Router route and React error 310 inside Next's action queue. CI had
+already proved the page and a delayed client navigation on a production build;
+the remaining production-only trigger was the page's lifecycle-driven
+background refresh dispatch. A background refresh is non-urgent work and must
+not interrupt the router's initial render.
+
+**Safety.** This does not alter authorization, approval, execution, messaging,
+payment, pricing, or persistence behavior. The stale threshold and polling
+interval are unchanged. Production browser verification remains required
+because endpoint health cannot detect a client router failure.
+
+---
+
+## 2026-07-30 — Keep App Router on patched React and Next releases
+
+**Decision.** Pin Next.js 16.2.12 with React and React DOM 19.2.8, and exercise
+AI Control Center through a deliberately delayed client-side route transition
+in E2E.
+
+**Why.** Production verification exposed React error 310 in the framework
+App Router while a non-prefetched AI route was waiting for its Flight response.
+The route returned HTTP 200 and server health remained green, so endpoint-only
+checks could not detect the broken UI. Patch-level framework/runtime upgrades
+plus a slow-navigation test cover the actual browser failure mode.
+
+**Safety.** This changes no NailIQ product authority, data model, migration,
+RLS, authentication policy, messaging, booking, payment, pricing, approval, or
+execution behavior. The versions remain exact-pinned and the complete build,
+unit, smoke, visual, and E2E gates remain required.
+
+---
+
+## 2026-07-30 — Owner AI observability rows are bounded display models
+
+**Decision.** AI activity and operational exception loaders rebuild explicit
+owner-facing rows before passing them to Client Components. Activity labels,
+customer names, action types, and previews are normalized and length-bounded.
+Operational exception queries select only rendered lifecycle fields, omit
+internal kind/source references and unused timestamps, and bound all narrative
+text.
+
+**Why.** These surfaces previously avoided serializing complete database rows,
+but still accepted unbounded strings derived from AI payloads and selected
+internal exception metadata that the browser never used. Operational
+observability is not a reason to widen the server/browser trust boundary.
+
+**Safety.** The owner still sees the same actionable status, severity,
+description, occurrence count, timestamps, resolution note, and guarded
+lifecycle controls. No exception transition, AI execution, messaging, booking,
+payment, pricing, authentication, schema, or RLS authority changes.
+
+---
+
+## 2026-07-30 — Owner approval rows exclude raw action payloads
+
+**Decision.** Owner-facing approval queries omit capability tokens and
+notification metadata, then rebuild an explicit browser row. Client Components
+receive only the approval identity and lifecycle fields they render, verified
+decision provenance, and bounded bilingual action intelligence. Raw payloads,
+tenant IDs, internal actor IDs, recipient details, and delivery metadata remain
+server-side.
+
+**Why.** Removing approve/decline tokens alone was insufficient because the
+previous `ApprovalDisplayRow` spread every other database field into Client
+Component props. That serialized the complete action payload—including
+potential recipient and provider data—plus internal tenant and notification
+metadata even though the UI never rendered most of it. An AI control plane must
+make its server/browser contract explicit instead of depending on components
+to ignore sensitive fields.
+
+**Safety.** The server still uses the payload to derive owner-facing reason,
+evidence, expected impact, confidence, and reversibility. Those values are
+bounded before serialization, while raw arrays and unknown fields are dropped.
+This changes no approval decision, execution, messaging, booking, payment,
+pricing, authentication, schema, or RLS authority.
+
+---
+
+## 2026-07-30 — Approval inbox keeps source failures distinct from empty state
+
+**Decision.** The owner approval page loads approval requests and execution
+evidence independently. If approval reads fail, the page explicitly reports
+that the waiting count is unverified and does not render the successful empty
+state. If execution reads fail, decisions remain visible but approved rows are
+marked unverified; only a successful execution read with no matching job is
+reported as a missing execution trace.
+
+**Why.** An unavailable database read does not prove there are zero approvals,
+and an unavailable queue read does not prove an approved decision lacks a job.
+Collapsing either failure to an empty array makes the control plane look safe
+precisely when its evidence is incomplete. Owners must still be able to see and
+act on available approvals without mistaking partial data for operational
+truth.
+
+**Safety.** Both reads remain tenant-scoped, bounded, and server-side. The
+change adds no approval, execution, messaging, booking, payment, pricing,
+authentication, schema, or RLS authority. It changes only failure isolation
+and owner-facing truthfulness.
+
+---
+
+## 2026-07-30 — Owner surfaces receive a minimized execution view
+
+**Decision.** AI Control Center and the approval dashboard load execution jobs
+through an owner-specific server projection. The browser receives only the job
+identifier needed for guarded controls, approval identifier, action type,
+lifecycle status, bounded attempts, a safe failure code, creation time, and
+allowlisted aggregate campaign summaries. An approved decision without a queue
+job is displayed as an integrity issue.
+
+**Why.** The internal queue row contains operational credentials and sensitive
+implementation data: tenant IDs, payloads, idempotency keys, lease tokens,
+lease timing, raw results, recipient manifests, plan fingerprints, and
+technical errors. TypeScript types alone do not stop a Server Component from
+serializing those values into Client Component props. Selecting a narrow
+projection and rebuilding the result from explicit allowlists makes the
+server/client boundary enforceable and testable.
+
+**Safety.** The query remains tenant-scoped and bounded. Raw error text is
+converted to an approved failure category before serialization. Campaign
+summaries contain counts, caps, freshness, cost estimates, and no-send proof;
+recipient details, provider data, manifest contents, plan IDs, and fingerprints
+are dropped. This changes no queue execution, approval, messaging, payment,
+authentication, schema, or RLS behavior.
+
+---
+
+## 2026-07-30 — Recent approval decisions expose execution integrity
+
+**Decision.** AI Control Center loads execution traces for the exact bounded
+set of recent decisions inside the active salon. Declined and expired requests
+state explicitly that no execution occurred. Approved requests show the real
+queue lifecycle; if no corresponding job can be proven, the UI reports an
+integrity issue instead of implying success. A trace read failure is a separate
+unavailable source and never becomes an empty or healthy state.
+
+**Why.** Approval provenance proves who authorized an action, but authorization
+is not evidence that a job was created or an effect happened. Joining only
+against the newest general queue rows can also omit a recent decision in a busy
+salon. An operating system must connect decision intent to authoritative
+execution evidence without making the owner infer the gap.
+
+**Safety.** The read is tenant-scoped and restricted to at most twenty trusted
+approval IDs. The browser receives only approval ID, lifecycle status, bounded
+attempt counts, a sanitized blocker category, and timestamps. Raw payloads,
+results, errors, internal job IDs, idempotency keys, and lease credentials stay
+server-side. This adds no execution, messaging, booking, pricing, payment, or
+authentication authority.
+
+---
+
+## 2026-07-29 — AI operating permissions are atomic and auditable
+
+**Decision.** Owner/admin AI agent toggles execute through one service-only
+Postgres function. The function validates the actor and canonical impact,
+locks the salon, updates exactly one flag, and writes an append-only permission
+audit before the transaction can succeed.
+
+**Why.** The previous Server Action performed a read-modify-write on the whole
+`feature_flags` object and ignored the read error. Two concurrent toggles could
+overwrite each other, while the generic salon audit could not prove the
+specific permission, acknowledged impact, or previous state. TypeScript and a
+confirmation dialog are not sufficient control-plane evidence.
+
+**Safety.** The application still authenticates and authorizes the caller
+before using the service client; Postgres repeats the membership and impact
+checks. The function is revoked from public, anonymous, and authenticated
+roles. Replays that request the current state write neither the salon nor a
+duplicate audit. No agent is enabled by this migration.
+
+---
+
+## 2026-07-29 — AI agent activation discloses and confirms operating impact
+
+**Decision.** Every owner-facing AI agent has one allowlisted impact class.
+Enabling an agent that can contact customers or change live booking protection
+requires explicit acknowledgement in both the UI and Server Action. Runtime
+flag keys are validated before membership resolution or any write.
+
+**Why.** Several agents described themselves as draft-only or universally safe
+to enable even though their current handlers can send capped SMS/email or
+change card/deposit requirements. TypeScript cannot validate values crossing a
+Server Action boundary. An operating system must state what a control does and
+fail closed when sensitive activation intent is missing.
+
+**Safety.** Disabling remains one tap. Monitoring, draft-only, and owner-only
+agents do not gain extra friction. The change does not enable any flag or run
+an agent, and existing enabled salons remain unchanged.
+
+---
+
+## 2026-07-29 — Control Center freshness follows tab visibility
+
+**Decision.** AI Control Center re-runs its existing authenticated Server
+Component snapshot every minute while the document is visible. A
+`visibilitychange` back to a stale tab refreshes immediately. Hidden tabs do
+not poll, and both the interval and event listener are removed on unmount.
+
+**Why.** Queue jobs, approvals, worker heartbeats, and operational exceptions
+change independently of owner interaction. A server-rendered snapshot that
+remained frozen until manual reload could present a recovered issue as failed
+or a new exception as absent, undermining the page's role as an operating
+surface.
+
+**Safety.** Refresh uses `router.refresh()` and therefore reuses all existing
+session, role, feature, tenant, and fail-honest read boundaries. It adds no
+browser data API, mutation, execution, messaging, payment, pricing, booking, or
+authentication authority.
+
+---
+
+## 2026-07-29 — Machine-signaled exceptions own recovery truth
+
+**Decision.** Operational exceptions sourced from AI execution, AI Manager, or
+production readiness may be acknowledged by an owner/admin, but cannot be
+manually resolved or reopened. Their existing firing/recovered signal owns the
+terminal transition. Human-owned and legacy watchdog exceptions keep their
+audited manual resolve/reopen controls.
+
+**Why.** The inbox previously allowed an owner to mark an exhausted execution
+job or failed agent as resolved while the source was still failing. That made
+the exception row contradict queue and operating-health truth. Acknowledgement
+records human awareness without claiming technical recovery.
+
+**Safety.** The replacement RPC remains security-invoker and service-role-only,
+locks one salon-scoped row, and preserves the existing PII-free audit. It
+removes manual authority from machine-owned recovery and adds no execution,
+messaging, booking, payment, pricing, or authentication authority.
+
+---
+
+## 2026-07-29 — Worker diagnostics use a privacy-safe failure boundary
+
+**Decision.** All AI worker heartbeat writers pass failure values through one
+allowlist before the durable worker state and append-only run history are
+updated. The execution cron returns the same safe code while logging the raw
+exception only server-side. Control Center translates recognized codes and
+masks any unknown historical heartbeat value.
+
+**Why.** Protecting execution-job errors alone left a second path where raw
+database/provider text could be stored in `ai_execution_worker_state` and
+rendered to an owner. Operating health needs actionable status, not internal
+exception bodies.
+
+**Safety.** Scheduler fencing, run history, retry limits, leases, approvals,
+and effects are unchanged. This grants no messaging, booking, payment, pricing,
+authentication, or execution authority.
+
+---
+
+## 2026-07-29 — Execution failures expose safe codes, not raw internals
+
+**Decision.** The AI execution worker writes only an allowlisted operational
+error code to `ai_execution_jobs.last_error` and the durable action audit. Raw
+database/provider errors remain in server-side logs for investigation. Owner
+surfaces translate known codes to operational guidance and render a generic
+message for unknown historical values instead of echoing stored text.
+
+**Why.** A dependency error can contain SQL details, provider responses,
+identifiers, or customer data. Persisting that string into a tenant-visible job
+and then rendering it in the Control Center turned an internal diagnostic into
+an avoidable disclosure boundary.
+
+**Safety.** Retry limits, leases, approval authority, and execution effects are
+unchanged. This narrows persisted and displayed diagnostics; it grants no new
+messaging, booking, payment, pricing, authentication, or execution authority.
+
+---
+
+## 2026-07-29 — Control Center metrics count beyond preview limits
+
+**Decision.** “Needs your decision” uses an exact count of all pending
+approvals while rendering only a bounded newest-pending preview. “30-day
+actions” uses Supabase's exact count for the same filtered 30-day query while
+retaining at most 200 rows for the activity preview and outcome calculations.
+If an exact count is unavailable, that source fails explicitly and the Control
+Center renders the partial-data state introduced in PR #1078.
+
+**Why.** The previous metrics counted the arrays sent to the browser. They
+therefore capped approvals at 100 and actions at 200, and an older pending
+approval could fall outside a mixed-status approval preview. Preview limits are
+performance controls, not business totals.
+
+**Safety.** Both additions are tenant-scoped, read-only aggregate queries. They
+grant no execution, messaging, booking, pricing, payment, authentication, or
+production-mutation authority.
+
+---
+
+## 2026-07-29 — AI Control Center reports partial read failure explicitly
+
+**Decision.** The owner-facing AI Control Center loads approvals, activity,
+execution jobs, operating health, and operational exceptions as independent
+settled sources. A failed source is logged server-side and rendered as
+temporarily unavailable; its metrics use an em dash and its section never
+claims zero work, an empty queue, or healthy operation. Sources that loaded
+successfully remain usable.
+
+**Why.** Several service-role readers previously discarded Supabase errors and
+returned empty arrays or zero counts. A database or schema failure could
+therefore produce reassuring but false UI such as “No decisions are waiting,”
+“No AI activity,” or “AI is operating normally.” An operating system must
+distinguish observed zero from unavailable evidence.
+
+**Safety.** This is read-path truthfulness only. It grants no execution,
+messaging, booking, pricing, payment, authentication, or migration authority.
+
+---
+
+## 2026-07-29 — Daily digest delivery is provider-acknowledged and replay-safe
+
+**Decision.**
+- A daily digest uses one stable provider idempotency key per salon-local day.
+- Missing recipients, missing provider configuration, and provider rejection
+  are failures rather than successful `digest_sent` claims. A deliberately
+  disabled owner-notification channel remains an intentional no-op.
+- After the provider accepts the email, one service-role-only transaction
+  records the durable delivery, marks the normal approvals actually included
+  in that email as notified, and appends the AI activity audit.
+- Replaying the database acknowledgement cannot create a second salon-day
+  delivery or duplicate activity claim.
+
+**Why.** Production had pending approvals included in daily digests while their
+`notified_at` fields remained empty. The old path also appended `digest_sent`
+after the send function returned even when notifications were disabled, no
+recipient existed, or Resend rejected the request. NailIQ must not confuse an
+attempt with a delivered owner communication, and a retry after an ambiguous
+network/database boundary must not send a second digest.
+
+**Safety.** This changes the accounting and retry behavior of the existing
+one-per-day digest only. It does not enable a notification channel, add
+recipients, send campaigns, authorize approval decisions, or grant messaging,
+booking, pricing, payment, authentication, or security authority.
+
+---
+
+## 2026-07-29 — Hydration readiness is observed without rendering test UI
+
+**Decision.** Receptionist Center publishes its post-commit E2E readiness on a
+window-scoped test signal. The Playwright helper waits for that signal after the
+visible schedule and walk-in form gates. No readiness node is rendered into the
+React tree.
+
+**Why.** PR #1077's production-build trace showed React invariant `#418`
+immediately before the former `rc-hydrated` child appeared. The marker's
+effect-backed state update could insert a child into the streamed parent while
+lower Suspense descendants were still hydrating. The failure repeated on the
+targeted job rerun even though the PR did not change Receptionist UI.
+
+**Correction after the targeted rerun.** Removing the rendered marker improved
+test observability but did not eliminate `#418`, so it was not the root cause.
+Inspection of the actual server HTML then found inline Start `<button>` elements
+nested inside booking `<button>` elements. The browser repaired that invalid
+HTML before hydration, so React received a different tree. Booking blocks with
+the independent Start action now use a keyboard-accessible button-like
+container around the inner real button. The same persisted-interface E2E then
+passed on the PR and on production `main`.
+
+**Coverage.** The persisted-interface E2E continues to reject hydration errors
+across initial Classic load, Preview reload, and Classic reload. The readiness
+signal only changes test observability; it does not change booking, queue,
+message, payment, permission, or authentication behavior.
+
+---
+
+## 2026-07-28 — Live Board hydration uses one server-owned clock snapshot
+
+**Decision.** Receptionist data includes the exact server observation timestamp.
+The Live Board uses that serialized instant for its server render and first
+client render, then starts its minute clock only after hydration. Client-only
+enhancements no longer force synchronous root updates merely to publish an E2E
+marker, expose `window.location.origin`, or report a redundant hydration flag.
+E2E readiness is published outside the rendered React tree after commit.
+
+**Why.** Production on the exact PR #1074 deployment reproduced React hydration
+invariant `#418` on `/center` in both the New and Classic interfaces. The board
+previously rendered time-dependent children with an empty clock and immediately
+replaced it in an effect. It also redundantly replaced the complete server-data
+state from a mount effect even though that state had already been initialized
+from the same payload. With streamed/selective hydration, either parent update
+could occur while lower time-dependent content was still hydrating, producing
+a text mismatch even though a later DOM snapshot looked correct. Server data is
+now adopted only when a later refresh carries a new observation timestamp.
+Wait-link origin is read only after the operator clicks. E2E gates interactions
+on a window-scoped post-commit signal; unlike the old rendered marker or
+external-store snapshot, it cannot change the server or first-client tree.
+
+**Coverage.** The persisted-interface E2E captures React hydration errors across
+initial load, New-interface reload, and Classic-interface reload.
+
+**Safety.** The timestamp is operational display state only. This changes no
+booking, queue, message, payment, permission, or authentication behavior.
+
+---
+
+## 2026-07-28 — Disabled Insights stays inside the dashboard render tree
+
+**Decision.** When `advanced_reports` is disabled for a salon, the authenticated
+Insights route renders a stable, data-free “not enabled” state inside the
+dashboard instead of throwing `notFound()` after dynamic auth and salon reads.
+
+**Why.** Production evidence after PR #1073 proved the HTTP redirect itself was
+correct, but every direct visit to disabled Insights still persisted React
+invariant `#310`. The page visibly rendered the global 404 and browser console
+capture was empty, yet the application error boundary recorded the App Router
+hook-order failure on the exact deployed chunk. Keeping the result in one
+server-rendered dashboard tree avoids the dynamic 404 transition.
+
+**Safety.** The disabled state contains only existing localized copy and no
+report snapshot, customer data, revenue, staff performance, execution
+permission, or upgrade action. Feature-enabled salons retain the unchanged
+owner/admin report loader and plan gates.
+
+---
+
+## 2026-07-28 — Reports data exists before client hydration
+
+**Decision.** The Reports Server Component loads the initial `today` snapshot
+through a `server-only` report loader before rendering the client panel. The
+client contains no Server Action reference; an explicit date-range change uses
+a same-origin, non-cacheable GET route which calls that same authenticated
+loader. The customer-identity E2E is part of the CI matrix and repeats the
+Reports route assertion in WebKit.
+
+**Why.** Production verification after PR #1066 reproduced React invariant
+`#310`. The first repair removed unnecessary component memo hooks, but fresh
+production loads after PRs #1067 and #1068 still failed. The production stack
+located the throwing `useMemo` inside Next.js App Router; after #1068 the
+remaining Reports-specific integration with that router was the client-imported
+Server Action proxy. Chromium CI also initially gave false confidence because
+the identity spec was absent from the workflow's explicit path matrix. Removing
+the Server Action boundary entirely keeps report reads out of the action queue;
+explicit WebKit coverage tests the engine where the failure was observed.
+
+**Safety.** Date-range changes retain bounded, latest-request-wins loading.
+Report queries, permissions, identity resolution, bookings, messaging, and
+financial behavior remain unchanged.
+
+---
+
+## 2026-07-28 — Identity revocation changes trigger-visible state first
+
+**Decision.** The identity-revocation transaction locks and validates the
+active salon alias, marks it inactive, and only then restores matching bookings
+to the alias profile.
+
+**Why.** The booking canonicalization trigger runs before every booking update.
+When revocation restored bookings while the alias remained active, that trigger
+immediately changed the profile back to canonical. The RPC still returned
+success, producing a false Undo. Running the previously omitted E2E in both
+Chromium and WebKit exposed the persisted-data mismatch.
+
+**Safety.** The function remains owner-checked, salon-scoped,
+`SECURITY DEFINER`, and executable only by `service_role`. The order change is
+inside one transaction; a failed booking update rolls back alias deactivation.
+It does not delete profiles, bookings, aliases, or audit history.
+
+---
+
+## 2026-07-28 — Analytics follow reviewed customer identity
+
+**Decision.**
+- Owner customer counts and staff repeat-client metrics use the booking's
+  canonical `client_profile_id`, with normalized phone only as a fallback for
+  legacy bookings without a finalized profile.
+- AI outcome tracking resolves a historical action phone through the salon's
+  active identity alias before looking for a return booking.
+- Alias lookup failures stop outcome processing instead of silently recording
+  a false non-conversion.
+
+**Why.** Reversible identity review deliberately preserves the phone submitted
+with each booking while assigning the booking to one canonical profile. Phone-
+grouped analytics would therefore split a reviewed customer back into multiple
+people and teach the AI from incorrect return behavior.
+
+**Safety.** This is read-only analytics behavior. It does not merge profiles,
+rewrite bookings, send messages, change prices, or create financial effects.
+Revoking a merge restores the alias profile on affected bookings, so subsequent
+analytics naturally return to separate identities.
+
+---
+
 ## 2026-07-28 — Manager-owned agents must fail visibly
 
 **Decision.** Every top-level agent invoked by the AI Manager cron must rethrow

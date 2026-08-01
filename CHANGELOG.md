@@ -2,6 +2,221 @@
 
 All notable changes to NailIQ (project and documentation) are recorded here.
 
+## 2026-07-30 (Owner-visible AI approval provenance)
+
+- **Decision history in context:** AI Control Center now shows recent approved,
+  declined, and expired requests beside the live approval queue.
+- **Human-readable provenance:** the approval history identifies the decision
+  channel, verified dashboard owner/admin, role, and decision time.
+- **Tenant-safe identity:** an actor name is resolved only after revalidating
+  that the auth user still has an owner/admin membership in the same salon.
+- **No secret or internal-ID exposure:** client rows omit approval bearer tokens
+  and raw auth UUIDs.
+- **Honest capability links:** secure email decisions explicitly state that the
+  person who clicked a shared link is not identity-attributed.
+
+## 2026-07-29 (Attributed dashboard AI approvals)
+
+- **No bearer secrets in dashboard clients:** AI Control Center and the
+  approvals inbox send only display-safe approval rows to the browser; raw
+  approve/decline tokens remain server-side.
+- **Named decisions:** authenticated dashboard approvals record the exact
+  owner/admin user in `decided_by` and label the channel as `dashboard`.
+- **Defense in depth:** the atomic database RPC independently rechecks that the
+  actor is an owner/admin of the approval's salon before changing state or
+  creating an execution job.
+- **Honest email attribution:** two-step email links remain capability-based and
+  are labeled `email_capability` without pretending to know which recipient
+  clicked the shared link.
+- **Append-only evidence:** dashboard attribution creates a separate audit event
+  rather than rewriting the original approval decision log.
+
+## 2026-07-29 (Immediate AI outreach revocation fence)
+
+- **Fresh permission per recipient:** Win-back, Rebook, VIP Care, and First
+  Visit Nurture re-read the owner-controlled agent flag during multi-customer
+  runs and again immediately before delivery.
+- **Smart reminder downgrade:** if Smart Reminders is revoked during a reminder
+  batch, subsequent reminders keep the required deterministic template instead
+  of using stale AI personalization.
+- **Live policy fence:** No-show Guard re-reads its live-policy permission after
+  model work and before any booking mutation, discarding a stale result when
+  the owner revoked the only active mode.
+- **Fail closed:** a missing salon, malformed flags, or a permission-read error
+  is treated as disabled; stale in-memory state never authorizes more outreach.
+- **No live campaign:** tests exercise the permission boundary with mocks and
+  source invariants; this milestone does not enable an agent or contact a real
+  customer.
+
+## 2026-07-29 (Atomic AI agent permissions)
+
+- **No lost toggles:** AI permission changes now lock the salon row and update
+  one JSONB key inside a transaction, so concurrent agent changes preserve one
+  another.
+- **Durable evidence:** every effective grant or revocation records the actor,
+  role, impact, previous state, new state, and acknowledgement in an append-only
+  salon-scoped audit row in the same transaction.
+- **Operator visibility:** permission transitions appear once in the AI tab of
+  Activity Feed with the agent, actor, impact, prior state, and acknowledgement;
+  the matching generic salon audit is suppressed to avoid a duplicate event.
+- **Defense in depth:** Postgres independently validates the agent allowlist,
+  impact class, owner/admin membership, and sensitive-impact acknowledgement;
+  the RPC is callable only by the service role.
+- **Replay truth:** setting an agent to its existing state is a successful no-op
+  and does not create a misleading duplicate audit event.
+- **Full-path proof:** Playwright verifies the real owner UI audit and races two
+  independent permission changes in a throwaway database, then proves both
+  flags and all four transition audits survive.
+
+## 2026-07-29 (Explicit AI agent activation impact)
+
+- **Truthful controls:** every AI Manager agent shows whether it only drafts,
+  monitors, contacts the owner, messages customers, or changes booking
+  protection.
+- **Explicit activation:** customer-outreach and live no-show policy agents
+  require a clear owner confirmation before they can be enabled.
+- **Server enforcement:** the Server Action rejects unknown runtime flag keys
+  and sensitive enables without an acknowledged impact; TypeScript types are
+  no longer treated as a security boundary.
+- **Full-path proof:** Playwright dismisses and accepts the real customer
+  outreach confirmation, verifies only the accepted enable persists, then
+  disables it without invoking any manager cron or outbound provider.
+- **No autonomous activation:** this milestone does not enable an agent, send a
+  message, change a booking, or alter an existing salon's saved flags.
+
+## 2026-07-29 (AI Control Center freshness contract)
+
+- **Fresh operating truth:** the Control Center refreshes its server-owned
+  snapshot every minute while the tab is visible.
+- **Return-to-tab recovery:** returning to a stale visible tab triggers an
+  immediate refresh instead of leaving queue, worker, approval, and exception
+  status frozen.
+- **Resource-aware:** hidden tabs do not poll; timers and listeners are cleaned
+  up on navigation.
+- **Same authority boundary:** refresh re-runs the existing authenticated,
+  tenant-scoped Server Component loaders and adds no client-side data API.
+- **Full-path proof:** Playwright signs in a disposable salon owner, opens the
+  feature-gated Control Center, advances browser time by one minute, and
+  observes the authenticated App Router refresh request without touching
+  production or any outbound provider.
+
+## 2026-07-29 (Source-owned operational exception recovery)
+
+- **No false resolution:** owner/admin users may acknowledge machine-signaled
+  execution, manager, and readiness exceptions but cannot manually resolve or
+  reopen them while the source owns recovery truth.
+- **Automatic recovery:** those rows close only after the existing source
+  signal proves a later successful run or healthy state.
+- **Honest UI:** Control Center explains the recovery contract and removes
+  controls that could create a false “resolved” state.
+- **Manual workflow preserved:** legacy and human-owned exceptions retain their
+  audited resolve/reopen lifecycle.
+
+## 2026-07-29 (Privacy-safe AI worker diagnostics)
+
+- **Safe heartbeat ledger:** worker and manager heartbeat failures are reduced
+  to allowlisted operational codes before persistence.
+- **Safe cron response:** the execution cron logs internal exceptions
+  server-side but returns and records only a stable failure code.
+- **Historical protection:** Control Center translates heartbeat codes and
+  masks unknown legacy values instead of echoing stored diagnostics.
+- **No new authority:** scheduling, retries, leases, approvals, and execution
+  effects are unchanged.
+
+## 2026-07-29 (Privacy-safe AI execution failures)
+
+- **Safe persistence:** failed execution attempts persist an allowlisted
+  operational code instead of raw database or provider text in both the job and
+  durable AI action audit.
+- **Owner-safe presentation:** AI Control Center and approval history translate
+  known codes into operational guidance and never echo unknown historical error
+  strings.
+- **Secure diagnostics:** detailed exceptions remain server-side for
+  investigation while the bounded retry, lease, and recovery behavior stays
+  unchanged.
+- **No new authority:** this milestone adds no messaging, booking, payment,
+  pricing, authentication, or execution permission.
+
+## 2026-07-29 (AI Control Center metric truth)
+
+- **Exact approval count:** “Needs your decision” counts all tenant-scoped
+  pending approvals independently of the bounded pending-card preview.
+- **Exact action count:** “30-day actions” counts the complete filtered window
+  independently of the 200 rows retained for recent activity and outcome
+  presentation.
+- **Fail honest:** a missing exact count activates the existing partial-data
+  state instead of falling back to the preview length.
+- **Read-only scope:** no execution, messaging, pricing, payment, booking,
+  authentication, or production-data mutation was added.
+
+## 2026-07-29 (AI Control Center data truth)
+
+- **No false zeroes:** approvals, AI activity, execution queue, operating
+  health, and operational exceptions now fail explicitly on database read
+  errors instead of silently returning empty data.
+- **Partial availability:** the Control Center settles those sources
+  independently, keeps successful sections available, and identifies each
+  unavailable source without presenting an empty or healthy state.
+- **Hydration diagnosis corrected:** the architectural record now distinguishes
+  the useful test-readiness cleanup from the actual React `#418` root cause:
+  invalid nested booking/Start buttons in server HTML.
+- **No new authority:** the milestone changes read-path presentation only and
+  does not enable live messaging, payment, pricing, booking, authentication, or
+  production data mutation.
+
+## 2026-07-28 (Reports WebKit hydration repair)
+
+- **Production finding:** post-merge browser verification reproduced React
+  invariant `#310` when the feature-gated Reports page transitioned from
+  loading to resolved data.
+- **Corrected diagnosis:** removing component-local memo hooks and then moving
+  the initial query to server render did not resolve production. The failing
+  hook belongs to Next.js App Router while the Reports client still registers a
+  Server Action proxy with its action queue.
+- **Repair:** Reports now resolves its initial snapshot in the Server Component
+  and hydrates the client with that result. Server Actions only run after an
+  explicit date-range selection.
+- **Regression gate:** the reversible identity E2E is now included in the CI
+  matrix and its Reports flow runs in both Chromium and WebKit on pull requests.
+- **Undo integrity found by the gate:** the same newly executed flow exposed
+  that the alias trigger re-canonicalized bookings during Undo. The revoke RPC
+  now deactivates the locked alias before restoring matching bookings, so its
+  success result corresponds to the persisted identity state.
+- **Action-queue isolation:** report aggregation is now a `server-only` loader.
+  A same-origin, owner-authorized, non-cacheable GET endpoint is the only
+  analytics transport, so the Reports client contains no Server Action proxy.
+- **Production correction after PR #1069:** production still reproduced React
+  `#310` with the analytics snapshot embedded in the initial RSC stream. Reports
+  now hydrates a deterministic shell first and requests the initial `today`
+  snapshot through the REST boundary after mount; explicit range changes use
+  the same path. This keeps slow or data-dependent analytics out of Next's root
+  hydration/action queue.
+- **Production correction after PR #1070:** production still reproduced `#310`
+  with a data-free shell, proving analytics size and transport were not causal.
+  Reports is now a hook-free Server Component; date tabs are ordinary GET links
+  using a validated `range` query. The API remains available for authenticated
+  programmatic consumers, but the owner page no longer hydrates client code.
+- **Content-blocker root cause after PR #1071:** the server-only route still
+  failed while `/api/dashboard/reports` explicitly returned
+  `ERR_BLOCKED_BY_CLIENT`; same-session `/clients`, `/pulse`, `/reviews`, and an
+  unknown `/insights` URL rendered normally. The canonical page and API now use
+  blocker-safe `/insights` paths. Legacy `/reports` URLs remain as server-side
+  compatibility redirects/aliases, and all dashboard/Coco links use Insights.
+
+## 2026-07-28 (Canonical customer analytics)
+
+- **Truthful customer counts:** owner dashboard new/total customer metrics and
+  report repeat-client metrics now prefer canonical `client_profile_id` over
+  the preserved phone captured on each booking.
+- **AI outcome continuity:** Outcome Tracker follows active salon-local identity
+  aliases, so a return under the canonical profile is credited to the original
+  governed AI action.
+- **Legacy and failure behavior:** normalized phone remains a fallback for
+  bookings without a profile; failed identity resolution stops the tracker
+  rather than writing a false non-conversion.
+- **No production mutation:** the change is read-only and adds no migration,
+  messaging, booking, pricing, or payment authority.
+
 ## 2026-07-28 (Production readiness gate)
 
 - **Honest release health:** added `/api/ready` to prove database connectivity

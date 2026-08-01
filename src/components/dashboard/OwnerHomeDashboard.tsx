@@ -3,6 +3,8 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { DashboardPrimaryActions } from "@/components/dashboard/DashboardPrimaryActions";
+import { Badge } from "@/components/ui/Badge";
+import { Card } from "@/components/ui/Card";
 import type { OwnerHomeData } from "@/shared/dashboard/loadOwnerHomeDashboardAction";
 import { unclosedBookingHref } from "@/shared/dashboard/unclosedBookingTypes";
 import { getUserMessages } from "@/shared/i18n/user";
@@ -258,7 +260,8 @@ export function OwnerHomeDashboard({
             href={bookingAbsoluteUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-1 inline-block text-xs text-nq-primary underline-offset-2 hover:underline"
+            data-testid="owner-booking-link"
+            className="mt-1 inline-flex min-h-11 touch-manipulation items-center text-sm font-medium text-nq-primary underline-offset-2 hover:underline"
           >
             {th.bookingLink} ↗
           </a>
@@ -269,7 +272,8 @@ export function OwnerHomeDashboard({
             type="button"
             onClick={onManualRefresh}
             disabled={manualRefreshing}
-            className="inline-flex min-h-9 touch-manipulation items-center gap-1 rounded-lg border border-nq-border/45 bg-nq-surface/45 px-2.5 py-1 text-xs font-semibold text-nq-foreground transition-colors hover:bg-nq-surface/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45 disabled:opacity-55"
+            data-testid="owner-refresh"
+            className="inline-flex min-h-11 touch-manipulation items-center gap-1 rounded-lg border border-nq-border/45 bg-nq-surface/45 px-3 py-1.5 text-sm font-semibold text-nq-foreground transition-colors hover:bg-nq-surface/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45 disabled:opacity-55"
             aria-busy={manualRefreshing}
           >
             <span
@@ -344,7 +348,7 @@ export function OwnerHomeDashboard({
                   <li key={b.id}>
                     <Link
                       href={unclosedBookingHref(slug, b)}
-                      className="flex items-center justify-between gap-3 rounded-xl bg-nq-surface/45 px-3 py-2 transition hover:bg-nq-surface/65"
+                      className="flex min-h-11 touch-manipulation items-center justify-between gap-3 rounded-xl bg-nq-surface/45 px-3 py-2 transition hover:bg-nq-surface/65"
                     >
                       <span className="min-w-0 truncate text-sm text-nq-foreground">
                         {b.clientName}
@@ -369,6 +373,36 @@ export function OwnerHomeDashboard({
           </div>
         </section>
       ) : null}
+
+      {/* ── Staff right now — the fourth owner-home question ───────── */}
+      <section
+        data-testid="owner-mobile-staff-status"
+        aria-label={th.staffNowTitle}
+      >
+        <SectionHeader title={th.staffNowTitle} />
+        <Card padding="sm" className="bg-nq-surface/45">
+          {data.currentStaff.length === 0 ? (
+            <p className="text-base text-nq-muted">{th.staffNone}</p>
+          ) : (
+            <ul className="flex flex-wrap gap-2">
+              {data.currentStaff.map((staff, index) => (
+                <li key={`${staff.name}-${index}`}>
+                  <Badge
+                    variant={staff.status === "busy" ? "info" : "success"}
+                    size="lg"
+                    dot
+                  >
+                    {staff.name} ·{" "}
+                    {staff.status === "busy"
+                      ? th.staffBusy
+                      : th.staffAvailable}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </section>
 
       {/* ── Today's Pulse ────────────────────────────────────────────── */}
       <section aria-label={th.today}>
@@ -397,7 +431,11 @@ export function OwnerHomeDashboard({
       </section>
 
       {/* ── 30-day Sparkline + Month KPIs ────────────────────────────── */}
-      <section aria-label={th.last30Days}>
+      <section
+        data-testid="owner-deep-report-month"
+        aria-label={th.last30Days}
+        className="hidden md:block"
+      >
         <SectionHeader title={th.monthTitle} subtitle={th.last30Days} />
         <div className="rounded-2xl border border-nq-border/40 bg-nq-surface/45 px-4 pb-3 pt-4">
           <div className="mb-3 flex items-end justify-between gap-4">
@@ -426,8 +464,9 @@ export function OwnerHomeDashboard({
 
       {/* ── Top Services + Staff ─────────────────────────────────────── */}
       <section
+        data-testid="owner-deep-report-leaderboards"
         aria-label={`${th.topServicesTitle} & ${th.staffTitle}`}
-        className="grid grid-cols-1 gap-4 sm:grid-cols-2"
+        className="hidden grid-cols-1 gap-4 sm:grid-cols-2 md:grid"
       >
         {/* Top Services */}
         <div>
@@ -520,11 +559,12 @@ export function OwnerHomeDashboard({
 
       {/* ── Customer Health + Tomorrow ────────────────────────────────── */}
       <section
+        data-testid="owner-deep-report-health"
         aria-label={`${th.healthTitle} & ${th.tomorrowTitle}`}
         className="grid grid-cols-1 gap-4 sm:grid-cols-2"
       >
         {/* Customer Health */}
-        <div>
+        <div className="hidden md:block">
           <SectionHeader title={th.healthTitle} subtitle={th.thisMonth} />
           <div className="grid grid-cols-3 gap-2">
             <div className="rounded-2xl border border-nq-border/40 bg-nq-surface/45 px-3 py-3 text-center">
@@ -599,7 +639,7 @@ export function OwnerHomeDashboard({
               </div>
               <Link
                 href={`/dashboard/${slug}/center`}
-                className="mt-3 block w-full rounded-xl bg-nq-primary/12 px-3 py-2 text-center text-sm font-semibold text-nq-primary transition hover:bg-nq-primary/20"
+                className="mt-3 flex min-h-11 w-full touch-manipulation items-center justify-center rounded-xl bg-nq-primary/12 px-3 py-2 text-center text-sm font-semibold text-nq-primary transition hover:bg-nq-primary/20"
               >
                 {th.openReceptionistCenter} →
               </Link>
@@ -607,6 +647,27 @@ export function OwnerHomeDashboard({
           )}
         </div>
       </section>
+
+      <Card
+        as={Link}
+        href={`/dashboard/${encodeURIComponent(slug)}/pulse`}
+        state="interactive"
+        padding="md"
+        data-testid="owner-mobile-business-link"
+        className="flex min-h-14 items-center justify-between gap-3 md:hidden"
+      >
+        <span className="min-w-0">
+          <span className="block text-base font-semibold text-nq-foreground">
+            {th.businessSummary}
+          </span>
+          <span className="mt-1 block text-sm text-nq-muted">
+            {th.businessDetails}
+          </span>
+        </span>
+        <span className="shrink-0 text-lg text-nq-primary" aria-hidden>
+          →
+        </span>
+      </Card>
     </div>
   );
 }

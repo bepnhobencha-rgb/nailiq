@@ -47,7 +47,7 @@ const AREAS: { label: string; path: (slug: string) => string; roles: SalonMember
   { label: "Home / today overview", path: (s) => `/dashboard/${s}`, roles: ["owner", "admin"] },
   { label: "Front Desk (Receptionist Center)", path: (s) => `/dashboard/${s}/center`, roles: ["owner", "admin", "senior", "receptionist", "nail_tech"] },
   { label: "Clients", path: (s) => `/dashboard/${s}/clients`, roles: ["owner", "admin", "senior", "receptionist"] },
-  { label: "Reports", path: (s) => `/dashboard/${s}/reports`, roles: ["owner", "admin"] },
+  { label: "Reports", path: (s) => `/dashboard/${s}/insights`, roles: ["owner", "admin"] },
   { label: "Settings (brand, hours, staff, services, integrations)", path: (s) => `/dashboard/${s}/settings`, roles: ["owner", "admin"] },
   { label: "Setup wizard", path: (s) => `/dashboard/${s}/setup`, roles: ["owner", "admin"] },
 ];

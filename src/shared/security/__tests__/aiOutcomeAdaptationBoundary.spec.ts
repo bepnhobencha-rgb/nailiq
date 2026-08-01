@@ -27,10 +27,17 @@ describe("AI outcome adaptation boundary", () => {
     expect(mutations).toContain('{ onConflict: "id" }');
   });
 
-  it("recovers historical phones without crossing salon boundaries", () => {
+  it("recovers historical phones and follows only active salon aliases", () => {
     expect(tracker).toContain("loadHistoricalTargetPhones");
     expect(tracker).toContain('.eq("salon_id" as never, salonId)');
-    expect(tracker).toContain('cleanPhone(row.payload?.phone) ||');
+    expect(tracker).toContain("loadCanonicalProfilesByPhone");
+    expect(tracker).toContain(
+      '.from("salon_client_identity_aliases" as never)',
+    );
+    expect(tracker).toContain('.eq("active" as never, true)');
+    expect(tracker).toContain(
+      'bookingQuery.eq("client_profile_id", canonicalProfileId)',
+    );
   });
 
   it("records a phone for every newly trackable customer action", () => {

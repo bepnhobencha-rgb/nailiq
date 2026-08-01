@@ -1,5 +1,6 @@
 import "server-only";
 
+import { toSafeWorkerFailureCode } from "@/shared/ai/executionFailure";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 export type ExecutionHeartbeatPhase = "started" | "succeeded" | "failed";
@@ -73,7 +74,7 @@ export async function recordAiWorkerHeartbeat(input: {
       p_phase: input.phase,
       p_now: input.now.toISOString(),
       p_summary: input.summary ?? {},
-      p_error: input.error?.slice(0, 1000) ?? null,
+      p_error: toSafeWorkerFailureCode(input.error),
     } as never,
   );
   if (error) throw new Error(error.message);
@@ -87,9 +88,9 @@ export async function getExecutionWorkerHeartbeat(): Promise<
   return rows.find((row) => row.worker_name === "ai_execution") ?? null;
 }
 
-export async function getAiWorkerHeartbeats(): Promise<
-  ExecutionWorkerHeartbeatRow[]
-> {
+export async function getAiWorkerHeartbeats(
+  options: { throwOnError?: boolean } = {},
+): Promise<ExecutionWorkerHeartbeatRow[]> {
   const db = createServiceRoleClient();
   const { data, error } = await db
     .from("ai_execution_worker_state" as never)
@@ -98,6 +99,9 @@ export async function getAiWorkerHeartbeats(): Promise<
     )
     .in("worker_name" as never, ["ai_execution", "ai_manager"]);
   if (error) {
+    if (options.throwOnError) {
+      throw new Error("ai_worker_heartbeats_read_failed", { cause: error });
+    }
     console.error("[getAiWorkerHeartbeats]", error);
     return [];
   }
@@ -106,6 +110,7 @@ export async function getAiWorkerHeartbeats(): Promise<
 
 export async function getAiWorkerRuns(
   startedSince: Date,
+  options: { throwOnError?: boolean } = {},
 ): Promise<AiWorkerRunRow[]> {
   const db = createServiceRoleClient();
   const { data, error } = await db
@@ -118,6 +123,9 @@ export async function getAiWorkerRuns(
     .order("started_at" as never, { ascending: false })
     .limit(500);
   if (error) {
+    if (options.throwOnError) {
+      throw new Error("ai_worker_runs_read_failed", { cause: error });
+    }
     console.error("[getAiWorkerRuns]", error);
     return [];
   }

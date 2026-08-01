@@ -6,7 +6,10 @@ import {
   gotoBookingServiceStep,
   seedTestSalon,
 } from "./helpers/db";
-import { advanceBookingStep } from "./helpers/bookingFlow";
+import {
+  advanceBookingStep,
+  selectAvailableBookingDate,
+} from "./helpers/bookingFlow";
 
 test.describe("Public booking — privacy (reschedule tel)", () => {
   const slug = "e2e-booking-security";
@@ -35,16 +38,7 @@ test.describe("Public booking — privacy (reschedule tel)", () => {
       .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
-    // Reveal the collapsed month grid (#593) before picking a grid day.
-    await page.locator('[data-testid="date-toggle-calendar"]').click();
-    await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .waitFor({ state: "visible", timeout: 15_000 });
-    await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .click();
+    await selectAvailableBookingDate(page);
     await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page
@@ -103,16 +97,7 @@ test.describe("Public booking — privacy (reschedule tel)", () => {
       .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
-    // Reveal the collapsed month grid (#593) before picking a grid day.
-    await page.locator('[data-testid="date-toggle-calendar"]').click();
-    await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .waitFor({ state: "visible", timeout: 15_000 });
-    await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .click();
+    await selectAvailableBookingDate(page);
     await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page
@@ -154,16 +139,7 @@ async function navigateToBookingInfoStep(page: Page, testSlug: string) {
     .waitFor({ state: "visible", timeout: 15_000 });
   await page.locator('[data-testid="staff-item"]').first().click();
   await page.getByRole("button", { name: "Continue" }).first().click();
-  // Reveal the collapsed month grid (#593) before picking a grid day.
-  await page.locator('[data-testid="date-toggle-calendar"]').click();
-  await page
-    .locator('[data-testid="date-day"]:not([disabled])')
-    .nth(1)
-    .waitFor({ state: "visible", timeout: 15_000 });
-  await page
-    .locator('[data-testid="date-day"]:not([disabled])')
-    .nth(1)
-    .click();
+  await selectAvailableBookingDate(page);
   await page.getByRole("button", { name: "Continue" }).first().click();
   await page
     .locator('[data-testid="time-slot"]')

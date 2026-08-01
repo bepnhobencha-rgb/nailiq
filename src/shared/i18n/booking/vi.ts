@@ -59,6 +59,8 @@ export const bookingVi: BookingMessages = {
   noShowCardSaving: "Đang lưu…",
   noShowCardSaved: "Đã lưu thẻ — chỉ thu {fee} nếu bạn không đến.",
   noShowCardError: "Không lưu được thẻ. Vui lòng kiểm tra lại thông tin.",
+  cardVerificationError:
+    "Xác thực thẻ bị hết thời gian hoặc chưa hoàn tất. Vui lòng thử lại, hoặc mở trang này bằng Safari hay Chrome.",
   cardWebviewHint:
     "Không tải được ô nhập thẻ trong trình duyệt của ứng dụng này. Mở trang bằng Safari hoặc Chrome để hoàn tất — bấm menu ••• rồi chọn \"Mở trong trình duyệt\", hoặc sao chép link bên dưới.",
   cardWebviewCopy: "Sao chép link đặt hẹn",

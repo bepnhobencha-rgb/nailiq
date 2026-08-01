@@ -32,6 +32,10 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import type { ExecutionJobStatus } from "@/shared/ai/executionPolicy";
 import { refreshOwnerProposalPreference } from "@/shared/ai/ownerPreference";
+import {
+  buildActionIntelligence,
+  type ActionIntelligence,
+} from "@/shared/ai/actionIntelligence";
 
 export type ApprovalUrgency = "urgent" | "normal";
 
@@ -51,9 +55,181 @@ export type ApprovalRow = {
   notified_at: string | null;
   reminded_at: string | null;
   decided_by: string | null;
+  decision_channel: "dashboard" | "email_capability" | null;
   decided_at: string | null;
   created_at: string;
 };
+
+export type ApprovalDecisionActor = {
+  label: string;
+  role: "owner" | "admin";
+};
+
+export type ApprovalOwnerSourceRow = Pick<
+  ApprovalRow,
+  | "id"
+  | "salon_id"
+  | "action_type"
+  | "summary"
+  | "payload"
+  | "urgency"
+  | "status"
+  | "expires_at"
+  | "decided_by"
+  | "decision_channel"
+  | "decided_at"
+  | "created_at"
+>;
+
+export type ApprovalDisplayRow = Pick<
+  ApprovalOwnerSourceRow,
+  | "id"
+  | "action_type"
+  | "summary"
+  | "urgency"
+  | "status"
+  | "expires_at"
+  | "decision_channel"
+  | "decided_at"
+  | "created_at"
+> & {
+  decision_actor: ApprovalDecisionActor | null;
+  intelligence: Record<"en" | "vi", ActionIntelligence>;
+};
+
+const OWNER_APPROVAL_COLUMNS =
+  "id,salon_id,action_type,summary,payload,urgency,status,expires_at,decided_by,decision_channel,decided_at,created_at";
+
+function boundedText(value: string, maxLength: number): string {
+  return value.trim().slice(0, maxLength);
+}
+
+function boundedActionIntelligence(
+  value: ActionIntelligence,
+): ActionIntelligence {
+  return {
+    reason: boundedText(value.reason, 600),
+    evidence: value.evidence
+      .slice(0, 4)
+      .map((item) => boundedText(item, 300))
+      .filter(Boolean),
+    impact: boundedText(value.impact, 600),
+    confidence: value.confidence,
+    reversibility: value.reversibility,
+  };
+}
+
+export function toApprovalDisplayRow(
+  row: ApprovalOwnerSourceRow,
+  decisionActor: ApprovalDecisionActor | null = null,
+): ApprovalDisplayRow {
+  return {
+    id: row.id,
+    action_type: boundedText(row.action_type, 100),
+    summary: boundedText(row.summary, 1_000),
+    urgency: row.urgency,
+    status: row.status,
+    expires_at: row.expires_at,
+    decision_channel: row.decision_channel,
+    decided_at: row.decided_at,
+    created_at: row.created_at,
+    decision_actor: decisionActor,
+    intelligence: {
+      en: boundedActionIntelligence(
+        buildActionIntelligence(row.action_type, row.payload, "en"),
+      ),
+      vi: boundedActionIntelligence(
+        buildActionIntelligence(row.action_type, row.payload, "vi"),
+      ),
+    },
+  };
+}
+
+function approvalActorLabel(user: {
+  email?: string | null;
+  phone?: string | null;
+  user_metadata?: Record<string, unknown> | null;
+} | null): string {
+  const metadata = user?.user_metadata ?? {};
+  for (const key of ["full_name", "display_name", "name"] as const) {
+    const value = metadata[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  if (user?.email?.trim()) return user.email.trim();
+  if (user?.phone?.trim()) return user.phone.trim();
+  return "Authenticated owner/admin";
+}
+
+/**
+ * Convert server-only approval rows into owner-facing rows without leaking
+ * bearer tokens or internal auth user IDs. Dashboard actors are resolved with
+ * targeted Auth lookups and must still hold an owner/admin membership for the
+ * same salon before their identity is displayed.
+ */
+export async function toApprovalDisplayRows(
+  rows: ApprovalOwnerSourceRow[],
+): Promise<ApprovalDisplayRow[]> {
+  const dashboardRows = rows.filter(
+    (row) => row.decision_channel === "dashboard" && row.decided_by,
+  );
+  if (dashboardRows.length === 0) return rows.map((row) => toApprovalDisplayRow(row));
+
+  const userIds = [...new Set(dashboardRows.map((row) => row.decided_by!))];
+  const salonIds = [...new Set(dashboardRows.map((row) => row.salon_id))];
+  const db = createServiceRoleClient();
+  const { data: memberships } = await db
+    .from("salon_members")
+    .select("salon_id, user_id, role")
+    .in("salon_id", salonIds)
+    .in("user_id", userIds)
+    .in("role", ["owner", "admin"]);
+
+  const roleByMembership = new Map<string, ApprovalDecisionActor["role"]>();
+  for (const member of (memberships ?? []) as Array<{
+    salon_id: string;
+    user_id: string;
+    role: string;
+  }>) {
+    if (member.role === "owner" || member.role === "admin") {
+      roleByMembership.set(
+        `${member.salon_id}:${member.user_id}`,
+        member.role,
+      );
+    }
+  }
+
+  const eligibleUserIds = [
+    ...new Set(
+      dashboardRows
+        .filter((row) =>
+          roleByMembership.has(`${row.salon_id}:${row.decided_by}`),
+        )
+        .map((row) => row.decided_by!),
+    ),
+  ];
+  const labels = new Map<string, string>();
+  await Promise.all(
+    eligibleUserIds.map(async (userId) => {
+      const { data, error } = await db.auth.admin.getUserById(userId);
+      labels.set(
+        userId,
+        approvalActorLabel(error ? null : (data.user ?? null)),
+      );
+    }),
+  );
+
+  return rows.map((row) => {
+    if (row.decision_channel !== "dashboard" || !row.decided_by) {
+      return toApprovalDisplayRow(row);
+    }
+    const role = roleByMembership.get(`${row.salon_id}:${row.decided_by}`);
+    if (!role) return toApprovalDisplayRow(row);
+    return toApprovalDisplayRow(row, {
+      label: labels.get(row.decided_by) ?? "Authenticated owner/admin",
+      role,
+    });
+  });
+}
 
 type ApprovalDecisionTransition = {
   outcome:
@@ -584,16 +760,65 @@ export async function getPendingApprovals(salonId: string): Promise<ApprovalRow[
 /**
  * Query helper: get all approvals for a salon (used by the dashboard page).
  */
-export async function getAllApprovals(salonId: string): Promise<ApprovalRow[]> {
+export async function getAllApprovals(
+  salonId: string,
+): Promise<ApprovalOwnerSourceRow[]> {
   const db = createServiceRoleClient();
-  const { data } = await db
+  const { data, error } = await db
     .from("approval_requests" as never)
-    .select("*")
+    .select(OWNER_APPROVAL_COLUMNS as never)
     .eq("salon_id" as never, salonId)
     .order("created_at" as never, { ascending: false })
     .limit(100);
 
-  return (data as ApprovalRow[] | null) ?? [];
+  if (error) {
+    throw new Error("approval_requests_read_failed", { cause: error });
+  }
+  return (data as unknown as ApprovalOwnerSourceRow[] | null) ?? [];
+}
+
+export type ApprovalInboxSnapshot = {
+  items: ApprovalOwnerSourceRow[];
+  pendingCount: number;
+};
+
+/**
+ * Owner-facing Control Center snapshot.
+ *
+ * The row list includes pending requests plus recent decisions and is
+ * deliberately bounded for rendering. The pending badge uses an independent
+ * exact count so a busy salon never sees "100" when more decisions are waiting.
+ */
+export async function getApprovalInboxSnapshot(
+  salonId: string,
+): Promise<ApprovalInboxSnapshot> {
+  const db = createServiceRoleClient();
+  const [itemsResult, countResult] = await Promise.all([
+    db
+      .from("approval_requests" as never)
+      .select(OWNER_APPROVAL_COLUMNS as never)
+      .eq("salon_id" as never, salonId)
+      .order("created_at" as never, { ascending: false })
+      .limit(100),
+    db
+      .from("approval_requests" as never)
+      .select("id", { count: "exact", head: true })
+      .eq("salon_id" as never, salonId)
+      .eq("status" as never, "pending"),
+  ]);
+  if (itemsResult.error || countResult.error) {
+    throw new Error("approval_inbox_read_failed", {
+      cause: itemsResult.error ?? countResult.error,
+    });
+  }
+  if (countResult.count == null) {
+    throw new Error("pending_approval_count_unavailable");
+  }
+  return {
+    items:
+      (itemsResult.data as unknown as ApprovalOwnerSourceRow[] | null) ?? [],
+    pendingCount: countResult.count,
+  };
 }
 
 /*

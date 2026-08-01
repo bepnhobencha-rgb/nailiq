@@ -78,7 +78,10 @@ export default defineConfig({
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
-    { name: "mobile", use: { ...devices["iPhone 14"] } },
+    {
+      name: "mobile",
+      use: { ...devices["iPhone 14"], browserName: "webkit" },
+    },
   ],
   webServer: {
     // Pass E2E-required flags so a freshly-started server has demo mode on.

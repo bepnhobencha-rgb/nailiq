@@ -4,11 +4,12 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { AlertTriangle, CheckCheck, Eye, RotateCcw } from "lucide-react";
 
-import { controlOperationalExceptionAction } from "@/shared/ai/controlOperationalExceptionAction";
+import { postAiControl } from "@/shared/ai/aiControlApi";
 import type {
   OperationalExceptionOperation,
   OperationalExceptionRow,
 } from "@/shared/ai/operationalExceptionTypes";
+import { isSourceOwnedOperationalException } from "@/shared/ai/operationalExceptionTypes";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 type Props = {
@@ -65,8 +66,8 @@ export function OperationalExceptionInbox({
     setBusyId(item.id);
     setError(null);
     startTransition(async () => {
-      const result = await controlOperationalExceptionAction({
-        slug,
+      const result = await postAiControl(slug, {
+        action: "control_exception",
         alertId: item.id,
         operation,
         resolutionNote: resolutionNote || undefined,
@@ -125,6 +126,9 @@ export function OperationalExceptionInbox({
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
           {visible.map((item) => {
             const working = pending && busyId === item.id;
+            const sourceOwned = isSourceOwnedOperationalException(
+              item.source_type,
+            );
             return (
               <article
                 key={item.id}
@@ -173,22 +177,33 @@ export function OperationalExceptionInbox({
                       label={vi ? "Đã xem" : "Acknowledge"}
                     />
                   ) : null}
-                  {item.status !== "resolved" ? (
+                  {item.status !== "resolved" && !sourceOwned ? (
                     <ControlButton
                       disabled={working}
                       onClick={() => control(item, "resolve")}
                       icon={CheckCheck}
                       label={vi ? "Đã xử lý" : "Resolve"}
                     />
-                  ) : (
+                  ) : item.status === "resolved" && !sourceOwned ? (
                     <ControlButton
                       disabled={working}
                       onClick={() => control(item, "reopen")}
                       icon={RotateCcw}
                       label={vi ? "Mở lại" : "Reopen"}
                     />
-                  )}
+                  ) : null}
                 </div>
+                {sourceOwned ? (
+                  <p className="mt-2 text-[11px] leading-4 text-nq-muted">
+                    {item.status === "resolved"
+                      ? vi
+                        ? "Nguồn đã phục hồi và hệ thống tự đóng ngoại lệ này."
+                        : "The source recovered and the system closed this exception."
+                      : vi
+                        ? "Hệ thống sẽ tự đóng khi nguồn phục hồi; xác nhận đã xem không che trạng thái lỗi."
+                        : "The system will close this only after the source recovers; acknowledging it does not hide the failure."}
+                  </p>
+                ) : null}
                 {item.status === "resolved" && item.resolution_note ? (
                   <p className="mt-2 text-[11px] leading-4 text-nq-muted">
                     {vi ? "Ghi chú: " : "Resolution: "}

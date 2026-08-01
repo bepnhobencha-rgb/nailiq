@@ -13,7 +13,14 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, Clock, Play, Plus } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Play,
+  Plus,
+} from "lucide-react";
 import { cn } from "@/shared/lib/cn";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import {
@@ -295,13 +302,13 @@ export default function VerticalDayView({
         transition={{ delay: 0.4, duration: 0.5 }}
       >
         <motion.button
-          className="flex items-center gap-0.5 text-white/25 active:text-white/50"
+          className="flex min-h-11 items-center gap-1 px-2 text-sm text-white/40 active:text-white/65"
           whileTap={{ x: -4 }}
           onClick={() => onNavigateDate(addDaysToYmd(selectedDate, -1))}
           aria-label={prevLabel}
         >
           <ChevronLeft size={14} strokeWidth={2} />
-          <span className="text-[10px] tracking-wide">{prevLabel}</span>
+          <span className="tracking-wide">{prevLabel}</span>
         </motion.button>
 
         <span className="text-[9px] tracking-widest text-white/15 uppercase">
@@ -309,12 +316,12 @@ export default function VerticalDayView({
         </span>
 
         <motion.button
-          className="flex items-center gap-0.5 text-white/25 active:text-white/50"
+          className="flex min-h-11 items-center gap-1 px-2 text-sm text-white/40 active:text-white/65"
           whileTap={{ x: 4 }}
           onClick={() => onNavigateDate(addDaysToYmd(selectedDate, 1))}
           aria-label={nextLabel}
         >
-          <span className="text-[10px] tracking-wide">{nextLabel}</span>
+          <span className="tracking-wide">{nextLabel}</span>
           <ChevronRight size={14} strokeWidth={2} />
         </motion.button>
       </motion.div>
@@ -389,11 +396,11 @@ export default function VerticalDayView({
               {/* Time label */}
               <div className="w-12 flex-shrink-0 pt-0.5">
                 {isHour ? (
-                  <span className="text-[11px] font-semibold tracking-wide text-white/50">
+                  <span className="text-base font-semibold tracking-wide text-white/60">
                     {minsToDisplayLabel(slot, language)}
                   </span>
                 ) : (
-                  <span className="text-[10px] text-white/20">
+                  <span className="text-sm text-white/30">
                     {minsToDisplayLabel(slot, language)}
                   </span>
                 )}
@@ -471,7 +478,8 @@ export default function VerticalDayView({
                   </>
                 ) : !assignMode && isHour ? (
                   <button
-                    className="flex h-9 w-full items-center gap-1.5 rounded-lg border border-dashed border-white/[0.08] px-3 text-[11px] text-white/20 transition-colors active:border-white/25 active:text-white/40"
+                    data-testid={`mobile-empty-slot-${slotIndex}`}
+                    className="flex min-h-11 w-full items-center gap-1.5 rounded-lg border border-dashed border-white/[0.08] px-3 text-base text-white/30 transition-colors active:border-white/25 active:text-white/50"
                     onClick={() => {
                       if (onEmptySlotClick && staff.length > 0) {
                         onEmptySlotClick(
@@ -568,7 +576,7 @@ function BookingCard({
     >
       <button
         type="button"
-        className="flex w-full items-start gap-2.5 text-left"
+        className="flex min-h-11 w-full items-start gap-2.5 text-left"
         onClick={(event) => {
           event.stopPropagation();
           onPress();
@@ -587,7 +595,10 @@ function BookingCard({
               className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
               style={{ backgroundColor: dotColor }}
             />
-            <span className="truncate text-sm font-semibold leading-tight text-white/90">
+            <span
+              data-testid={`booking-block-client-${booking.id}`}
+              className="truncate text-base font-semibold leading-tight text-white/90"
+            >
               {booking.client_name}
             </span>
             {booking.is_vip && (
@@ -608,7 +619,10 @@ function BookingCard({
           </div>
 
           {/* Service name */}
-          <div className="mb-1.5 truncate text-xs text-white/50">
+          <div
+            data-testid={`booking-block-service-${booking.id}`}
+            className="mb-1.5 truncate text-base text-white/60"
+          >
             {booking.service_name}
           </div>
 
@@ -631,8 +645,19 @@ function BookingCard({
               </span>
               {autoAtIso ? (
                 <span className="text-[10px] text-white/35">
-                  {language === "vi" ? "Tự đánh dấu vắng" : "Auto no-show"}{" "}
+                  {language === "vi" ? "Xem xét vắng lúc" : "Review due at"}{" "}
                   {formatInSalonTz(autoAtIso, timezone, "shortTime")}
+                </span>
+              ) : null}
+              {booking.no_show_candidate_at ? (
+                <span
+                  data-testid={`booking-block-no-show-candidate-${booking.id}`}
+                  className="inline-flex items-center gap-1 rounded-full bg-nq-error/20 px-2 py-0.5 text-[10px] font-semibold text-nq-error"
+                >
+                  <AlertTriangle size={11} aria-hidden />
+                  {language === "vi"
+                    ? "Cần quyết định vắng"
+                    : "No-show decision needed"}
                 </span>
               ) : null}
               {booking.after_hours_minutes ? (
@@ -649,11 +674,15 @@ function BookingCard({
 
           {/* Time range + staff chip */}
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] text-white/35">
+            <span
+              data-testid={`booking-block-time-${booking.id}`}
+              className="text-base text-white/50"
+            >
               {startStr}–{endStr}
             </span>
             <span
-              className="flex-shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium"
+              data-testid={`booking-block-staff-${booking.id}`}
+              className="flex-shrink-0 rounded-md px-2 py-1 text-base font-medium"
               style={{ backgroundColor: color + "28", color }}
             >
               {staffName}
@@ -674,7 +703,7 @@ function BookingCard({
             <button
               type="button"
               data-testid={`booking-block-start-${booking.id}`}
-              className="inline-flex min-h-8 items-center gap-1 rounded-lg bg-nq-success/20 px-2.5 text-[11px] font-semibold text-nq-success"
+              className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-nq-success/20 px-3 text-base font-semibold text-nq-success"
               onClick={(event) => {
                 event.stopPropagation();
                 onStart();

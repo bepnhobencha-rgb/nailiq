@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { cn } from "@/shared/lib/cn";
@@ -27,18 +27,30 @@ export function UndoToast({
   onUndo,
   onDismiss,
 }: UndoToastProps) {
+  // Portals are absent from the server tree. Rendering one during the first
+  // client pass inserts its text while the surrounding streamed page is still
+  // hydrating, which React reports as #418. Wait until hydration has committed;
+  // undoState itself is client interaction state, so no visible behavior is
+  // lost by deferring this dormant portal for one effect.
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration gate for a document.body portal
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     if (!showCountdown || !open || secondsRemaining > 0) return;
     onDismiss();
   }, [showCountdown, open, secondsRemaining, onDismiss]);
 
-  if (typeof document === "undefined") return null;
+  if (!mounted) return null;
 
   return createPortal(
     <div
       data-testid="undo-toast"
       className={cn(
-        "fixed bottom-36 left-1/2 z-[100] flex max-w-[min(100vw-2rem,28rem)] -translate-x-1/2 px-4 md:bottom-6",
+        "fixed bottom-36 left-1/2 z-[100] flex max-w-[min(100vw-2rem,28rem)] -translate-x-1/2 px-4 xl:bottom-6",
         "motion-safe:transition-[transform,opacity] motion-safe:duration-300 motion-safe:ease-[var(--ease-nq-out,cubic-bezier(0.22,1,0.36,1))]",
         open
           ? "translate-y-0 opacity-100"

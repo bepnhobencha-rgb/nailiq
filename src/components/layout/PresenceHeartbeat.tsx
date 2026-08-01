@@ -2,7 +2,6 @@
 
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
-import { upsertPresence } from "@/shared/dashboard/presenceActions";
 
 const INTERVAL_MS = 30_000;
 
@@ -41,12 +40,15 @@ export function PresenceHeartbeat({ salonId }: Props) {
       } catch {
         // not supported — ignore
       }
-      await upsertPresence({
-        salonId,
-        currentPath: pathnameRef.current ?? "",
-        batteryLevel,
-        userAgent: navigator.userAgent,
-      });
+      await fetch("/api/dashboard/presence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          salonId,
+          currentPath: pathnameRef.current ?? "",
+          batteryLevel,
+        }),
+      }).catch(() => undefined);
     }
 
     void beat();

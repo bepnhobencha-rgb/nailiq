@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import {
   Activity,
+  AlertTriangle,
   ArrowRight,
   Bot,
-  Check,
   CheckCircle2,
   Clock3,
   Gauge,
@@ -22,15 +22,30 @@ import {
   X,
 } from "lucide-react";
 
-import { buildActionIntelligence } from "@/shared/ai/actionIntelligence";
-import type { ApprovalRow } from "@/shared/ai/approvalRequests";
+import { ApprovalDecisionButtons } from "@/components/dashboard/ApprovalDecisionButtons";
+import { approvalDecisionProvenance } from "@/shared/ai/approvalDecisionPresentation";
+import { approvalDecisionExecutionPresentation } from "@/shared/ai/approvalExecutionPresentation";
+import type { ApprovalDisplayRow } from "@/shared/ai/approvalRequests";
 import { campaignPreflightFreshness } from "@/shared/ai/campaignPreflightFreshness";
-import { controlExecutionJobAction } from "@/shared/ai/controlExecutionJobAction";
+import type { AiControlDataSource } from "@/shared/ai/controlCenterData";
+import {
+  AI_CONTROL_REFRESH_INTERVAL_MS,
+  shouldRefreshAiControlCenter,
+} from "@/shared/ai/controlCenterFreshness";
+import { postAiControl } from "@/shared/ai/aiControlApi";
+import {
+  executionFailureLabel,
+  workerFailureLabel,
+} from "@/shared/ai/executionFailure";
 import { canControlExecutionJob } from "@/shared/ai/executionPolicy";
-import { preflightCampaignAction } from "@/shared/ai/preflightCampaignAction";
-import { prepareAudienceAction } from "@/shared/ai/prepareAudienceAction";
-import { sealCampaignPlanAction } from "@/shared/ai/sealCampaignPlanAction";
-import type { ExecutionJobRow } from "@/shared/ai/executionQueue";
+import type { ApprovalExecutionTraceRow } from "@/shared/ai/executionQueue";
+import type {
+  OwnerAudiencePreparation,
+  OwnerCampaignDispatchPlan,
+  OwnerCampaignDispatchPreflight,
+  OwnerExecutionJob,
+  OwnerExecutionResult,
+} from "@/shared/ai/executionOwnerView";
 import type { MinhActivityData } from "@/shared/ai/loadMinhActivity";
 import type { OperationalExceptionRow } from "@/shared/ai/operationalExceptionTypes";
 import type {
@@ -42,13 +57,15 @@ import { OperationalExceptionInbox } from "@/components/dashboard/OperationalExc
 
 type Props = {
   slug: string;
-  approvals: ApprovalRow[];
+  approvals: ApprovalDisplayRow[];
+  pendingApprovalCount: number;
   activity: MinhActivityData;
-  executionJobs: ExecutionJobRow[];
+  executionJobs: OwnerExecutionJob[];
+  decisionExecutionTraces: ApprovalExecutionTraceRow[];
   operationalExceptions: OperationalExceptionRow[];
   operationalExceptionCount: number;
-  operatingState: AiOperatingState;
-  appUrl: string;
+  operatingState: AiOperatingState | null;
+  unavailableSources: AiControlDataSource[];
   nowIso: string;
 };
 
@@ -65,22 +82,63 @@ function relativeTime(iso: string, nowIso: string, language: "en" | "vi"): strin
 export function AiControlCenter({
   slug,
   approvals,
+  pendingApprovalCount,
   activity,
   executionJobs,
+  decisionExecutionTraces,
   operationalExceptions,
   operationalExceptionCount,
   operatingState,
-  appUrl,
+  unavailableSources,
   nowIso,
 }: Props) {
   const { language } = useUserLanguage();
   const vi = language === "vi";
+  const approvalsAvailable = !unavailableSources.includes("approvals");
+  const activityAvailable = !unavailableSources.includes("activity");
+  const executionQueueAvailable =
+    !unavailableSources.includes("execution_queue");
+  const decisionExecutionTraceAvailable =
+    !unavailableSources.includes("decision_execution_trace");
+  const operationalExceptionsAvailable =
+    !unavailableSources.includes("operational_exceptions");
   const pending = approvals.filter((item) => item.status === "pending");
+  const recentDecisions = approvals
+    .filter((item) => item.status !== "pending")
+    .slice(0, 3);
+  const executionTraceByApproval = new Map(
+    decisionExecutionTraces.map((trace) => [
+      trace.approval_request_id,
+      trace,
+    ]),
+  );
   const recentActivity = activity.entries.slice(0, 6);
   const observedReturnRate =
     activity.measured > 0
       ? Math.round((activity.converted / activity.measured) * 100)
       : null;
+
+  useEffect(() => {
+    const observedAtMs = Date.parse(nowIso);
+    const refreshIfStale = () => {
+      if (
+        shouldRefreshAiControlCenter({
+          nowMs: Date.now(),
+          observedAtMs,
+          visibilityState: document.visibilityState,
+        })
+      ) {
+        window.location.reload();
+      }
+    };
+    const intervalId = window.setInterval(
+      refreshIfStale,
+      AI_CONTROL_REFRESH_INTERVAL_MS,
+    );
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [nowIso]);
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-6 p-4 sm:p-6">
@@ -99,31 +157,74 @@ export function AiControlCenter({
               : "One place to understand what AI recommends, what it is doing, and the outcomes it creates."}
           </p>
         </div>
-        <Link
-          href={`/dashboard/${encodeURIComponent(slug)}/settings`}
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-nq-border bg-nq-surface px-4 text-sm font-medium text-nq-foreground transition-colors hover:border-nq-primary/40"
-        >
-          <ShieldCheck className="h-4 w-4 text-nq-primary" aria-hidden />
-          {vi ? "Quyền tự động hóa" : "Automation permissions"}
-        </Link>
+        <div className="flex flex-col items-stretch gap-2 sm:items-end">
+          <Link
+            href={`/dashboard/${encodeURIComponent(slug)}/settings`}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-nq-border bg-nq-surface px-4 text-sm font-medium text-nq-foreground transition-colors hover:border-nq-primary/40"
+          >
+            <ShieldCheck className="h-4 w-4 text-nq-primary" aria-hidden />
+            {vi ? "Quyền tự động hóa" : "Automation permissions"}
+          </Link>
+          <p
+            data-testid="ai-control-freshness"
+            className="inline-flex items-center justify-center gap-1.5 text-[11px] text-nq-muted sm:justify-end"
+          >
+            <RefreshCcw className="h-3 w-3" aria-hidden />
+            {vi
+              ? "Tự cập nhật mỗi phút khi tab đang mở"
+              : "Updates every minute while this tab is visible"}
+          </p>
+        </div>
       </header>
 
+      {unavailableSources.length > 0 ? (
+        <DataAvailabilityAlert
+          sources={unavailableSources}
+          language={language}
+        />
+      ) : null}
+
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" aria-label={vi ? "Tổng quan AI" : "AI overview"}>
-        <Metric label={vi ? "Cần bạn quyết định" : "Needs your decision"} value={pending.length} tone={pending.length > 0 ? "attention" : "default"} />
+        <Metric
+          label={vi ? "Cần bạn quyết định" : "Needs your decision"}
+          value={approvalsAvailable ? pendingApprovalCount : "—"}
+          tone={
+            approvalsAvailable && pending.length > 0 ? "attention" : "default"
+          }
+        />
         <Metric
           label={vi ? "Ngoại lệ đang mở" : "Active exceptions"}
-          value={operationalExceptionCount}
-          tone={operationalExceptionCount > 0 ? "attention" : "default"}
+          value={
+            operationalExceptionsAvailable ? operationalExceptionCount : "—"
+          }
+          tone={
+            operationalExceptionsAvailable && operationalExceptionCount > 0
+              ? "attention"
+              : "default"
+          }
         />
-        <Metric label={vi ? "Hành động 30 ngày" : "30-day actions"} value={activity.entries.length} />
-        <Metric label={vi ? "Khách quay lại" : "Customers returned"} value={activity.converted} tone="success" />
+        <Metric
+          label={vi ? "Hành động 30 ngày" : "30-day actions"}
+          value={activityAvailable ? activity.totalActions : "—"}
+        />
+        <Metric
+          label={vi ? "Khách quay lại" : "Customers returned"}
+          value={activityAvailable ? activity.converted : "—"}
+          tone={activityAvailable ? "success" : "default"}
+        />
         <Metric
           label={vi ? "Tỷ lệ quay lại đã quan sát" : "Observed return rate"}
           value={
-            observedReturnRate == null ? "—" : `${observedReturnRate}%`
+            activityAvailable && observedReturnRate != null
+              ? `${observedReturnRate}%`
+              : "—"
           }
           detail={
-            activity.totalSent > 0
+            !activityAvailable
+              ? vi
+                ? "Nguồn hoạt động tạm không khả dụng; không hiển thị số 0 thay cho dữ liệu lỗi."
+                : "Activity data is temporarily unavailable; zero is not shown in place of a read failure."
+              : activity.totalSent > 0
               ? vi
                 ? `Đã đủ thời gian đo ${activity.measured}/${activity.totalSent} hành động (${activity.measurementCoveragePct}%). Không khẳng định quan hệ nhân quả.`
                 : `${activity.measured}/${activity.totalSent} actions have completed their measurement window (${activity.measurementCoveragePct}%). This does not claim causation.`
@@ -140,12 +241,14 @@ export function AiControlCenter({
         nowIso={nowIso}
       />
 
-      <OperationalExceptionInbox
-        slug={slug}
-        exceptions={operationalExceptions}
-        activeCount={operationalExceptionCount}
-        nowIso={nowIso}
-      />
+      {operationalExceptionsAvailable ? (
+        <OperationalExceptionInbox
+          slug={slug}
+          exceptions={operationalExceptions}
+          activeCount={operationalExceptionCount}
+          nowIso={nowIso}
+        />
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]">
         <section className="space-y-3">
@@ -163,7 +266,15 @@ export function AiControlCenter({
             </Link>
           </div>
 
-          {pending.length === 0 ? (
+          {!approvalsAvailable ? (
+            <UnavailablePanel
+              message={
+                vi
+                  ? "Không thể tải các quyết định đang chờ. Hãy thử lại trước khi kết luận rằng không có việc cần duyệt."
+                  : "Waiting decisions could not be loaded. Retry before concluding that nothing needs approval."
+              }
+            />
+          ) : pending.length === 0 ? (
             <div className="flex min-h-44 flex-col items-center justify-center rounded-2xl border border-dashed border-nq-border bg-nq-surface/35 p-6 text-center">
               <CheckCircle2 className="h-8 w-8 text-nq-success" aria-hidden />
               <p className="mt-3 text-sm font-medium text-nq-foreground">
@@ -176,11 +287,7 @@ export function AiControlCenter({
           ) : (
             <div className="space-y-3">
               {pending.slice(0, 4).map((request) => {
-                const intelligence = buildActionIntelligence(
-                  request.action_type,
-                  request.payload,
-                  language,
-                );
+                const intelligence = request.intelligence[language];
                 return (
                 <article key={request.id} className="overflow-hidden rounded-2xl border border-nq-border bg-nq-surface">
                   <div className="p-4 sm:p-5">
@@ -245,15 +352,12 @@ export function AiControlCenter({
                     </div>
                   </div>
 
-                  <div className="mt-4 grid grid-cols-2 gap-2">
-                    <Link prefetch={false} href={`${appUrl}/api/ai/approve?token=${request.approve_token}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-nq-success px-3 text-sm font-semibold text-white">
-                      <Check className="h-4 w-4" aria-hidden />
-                      {vi ? "Đồng ý" : "Approve"}
-                    </Link>
-                    <Link prefetch={false} href={`${appUrl}/api/ai/approve?token=${request.decline_token}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-nq-error/40 px-3 text-sm font-semibold text-nq-error">
-                      <X className="h-4 w-4" aria-hidden />
-                      {vi ? "Từ chối" : "Decline"}
-                    </Link>
+                  <div className="mt-4">
+                    <ApprovalDecisionButtons
+                      slug={slug}
+                      approvalId={request.id}
+                      language={language}
+                    />
                   </div>
                   </div>
                   {intelligence.reversibility.reversible === false ? (
@@ -268,6 +372,100 @@ export function AiControlCenter({
               })}
             </div>
           )}
+
+          {approvalsAvailable && recentDecisions.length > 0 ? (
+            <div className="rounded-2xl border border-nq-border bg-nq-surface px-4">
+              <div className="flex items-center justify-between gap-3 border-b border-nq-border/50 py-3">
+                <h3 className="text-sm font-semibold text-nq-foreground">
+                  {vi ? "Quyết định gần đây" : "Recent decisions"}
+                </h3>
+                <Link
+                  href={`/dashboard/${encodeURIComponent(slug)}/approvals`}
+                  className="text-xs font-semibold text-nq-primary hover:underline"
+                >
+                  {vi ? "Xem lịch sử" : "View history"}
+                </Link>
+              </div>
+              <div className="divide-y divide-nq-border/50">
+                {recentDecisions.map((request) => {
+                  const provenance = approvalDecisionProvenance(
+                    request,
+                    language,
+                  );
+                  const execution = decisionExecutionTraceAvailable
+                    ? approvalDecisionExecutionPresentation(
+                        request.status,
+                        executionTraceByApproval.get(request.id),
+                        language,
+                      )
+                    : null;
+                  return (
+                    <article
+                      key={request.id}
+                      className="py-3"
+                      data-testid="ai-control-recent-decision"
+                    >
+                      <div className="flex items-start gap-3">
+                        {request.status === "approved" ? (
+                          <CheckCircle2
+                            className="mt-0.5 h-4 w-4 shrink-0 text-nq-success"
+                            aria-hidden
+                          />
+                        ) : request.status === "declined" ? (
+                          <X
+                            className="mt-0.5 h-4 w-4 shrink-0 text-nq-error"
+                            aria-hidden
+                          />
+                        ) : (
+                          <Clock3
+                            className="mt-0.5 h-4 w-4 shrink-0 text-nq-muted"
+                            aria-hidden
+                          />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <p className="line-clamp-1 text-xs font-medium text-nq-foreground">
+                              {request.summary}
+                            </p>
+                            <span className="text-[11px] text-nq-muted">
+                              {request.decided_at
+                                ? relativeTime(
+                                    request.decided_at,
+                                    nowIso,
+                                    language,
+                                  )
+                                : relativeTime(
+                                    request.created_at,
+                                    nowIso,
+                                    language,
+                                  )}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[11px] leading-5 text-nq-muted">
+                            {provenance.channel} · {provenance.actor}
+                          </p>
+                          {execution ? (
+                            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <DecisionExecutionBadge execution={execution} />
+                              <span className="text-[11px] leading-5 text-nq-muted">
+                                {execution.detail}
+                              </span>
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-[11px] leading-5 text-nq-error">
+                              {vi
+                                ? "Không thể tải dấu vết thực thi; chưa thể xác minh kết quả của quyết định."
+                                : "Execution trace is unavailable; this decision's outcome cannot be verified."}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </section>
 
         <aside className="space-y-3">
@@ -280,7 +478,16 @@ export function AiControlCenter({
             </p>
           </div>
           <div className="rounded-2xl border border-nq-border bg-nq-surface px-4">
-            {recentActivity.length === 0 ? (
+            {!activityAvailable ? (
+              <UnavailablePanel
+                compact
+                message={
+                  vi
+                    ? "Không thể tải nhật ký AI lúc này."
+                    : "AI activity could not be loaded right now."
+                }
+              />
+            ) : recentActivity.length === 0 ? (
               <div className="flex min-h-44 flex-col items-center justify-center text-center">
                 <Bot className="h-8 w-8 text-nq-muted" aria-hidden />
                 <p className="mt-3 text-sm text-nq-muted">{vi ? "Chưa có hoạt động AI." : "No AI activity yet."}</p>
@@ -312,7 +519,13 @@ export function AiControlCenter({
                 {vi ? "Hàng đợi thực thi" : "Execution queue"}
               </h3>
             </div>
-            {executionJobs.length === 0 ? (
+            {!executionQueueAvailable ? (
+              <p className="mt-3 text-xs leading-5 text-nq-error">
+                {vi
+                  ? "Không thể tải hàng đợi. Trạng thái trống không được giả định."
+                  : "The queue could not be loaded. An empty state is not assumed."}
+              </p>
+            ) : executionJobs.length === 0 ? (
               <p className="mt-3 text-xs leading-5 text-nq-muted">
                 {vi
                   ? "Chưa có hành động đã duyệt nào được xếp hàng."
@@ -347,7 +560,7 @@ export function AiControlCenter({
                     ) : null}
                     {job.last_error ? (
                       <p className="mt-2 line-clamp-2 text-xs leading-5 text-nq-error">
-                        {job.last_error}
+                        {executionFailureLabel(job.last_error, language)}
                       </p>
                     ) : null}
                     <JobRecoveryControls job={job} slug={slug} vi={vi} />
@@ -366,16 +579,132 @@ export function AiControlCenter({
   );
 }
 
+function DataAvailabilityAlert({
+  sources,
+  language,
+}: {
+  sources: AiControlDataSource[];
+  language: "en" | "vi";
+}) {
+  const vi = language === "vi";
+  const labels: Record<AiControlDataSource, { en: string; vi: string }> = {
+    approvals: { en: "approvals", vi: "quyết định chờ duyệt" },
+    activity: { en: "activity", vi: "nhật ký hoạt động" },
+    execution_queue: { en: "execution queue", vi: "hàng đợi thực thi" },
+    decision_execution_trace: {
+      en: "decision execution trace",
+      vi: "dấu vết quyết định → thực thi",
+    },
+    operating_state: { en: "operating health", vi: "sức khỏe vận hành" },
+    operational_exceptions: {
+      en: "operational exceptions",
+      vi: "ngoại lệ vận hành",
+    },
+  };
+
+  return (
+    <section
+      role="alert"
+      className="flex gap-3 rounded-2xl border border-nq-error/35 bg-nq-error/5 p-4"
+      data-testid="ai-control-data-unavailable"
+    >
+      <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-nq-error" aria-hidden />
+      <div>
+        <h2 className="text-sm font-semibold text-nq-foreground">
+          {vi
+            ? "Một phần dữ liệu vận hành chưa tải được"
+            : "Some operating data could not be loaded"}
+        </h2>
+        <p className="mt-1 text-xs leading-5 text-nq-muted">
+          {vi
+            ? "NailIQ không thay lỗi đọc bằng số 0 hoặc trạng thái khỏe. Các phần khác vẫn dùng được; hãy tải lại để thử lại."
+            : "NailIQ does not replace read failures with zeroes or a healthy state. Other sections remain available; reload to retry."}
+        </p>
+        <p className="mt-1 text-xs font-medium text-nq-error">
+          {sources.map((source) => labels[source][language]).join(" · ")}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+const DECISION_EXECUTION_TONE = {
+  neutral: "bg-nq-muted/10 text-nq-muted",
+  attention: "bg-nq-warning/15 text-nq-warning",
+  active: "bg-nq-primary/10 text-nq-primary",
+  success: "bg-nq-success/15 text-nq-success",
+  error: "bg-nq-error/15 text-nq-error",
+} as const;
+
+function DecisionExecutionBadge({
+  execution,
+}: {
+  execution: ReturnType<typeof approvalDecisionExecutionPresentation>;
+}) {
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${DECISION_EXECUTION_TONE[execution.tone]}`}
+      data-testid="ai-control-decision-execution"
+    >
+      {execution.label}
+    </span>
+  );
+}
+
+function UnavailablePanel({
+  message,
+  compact = false,
+}: {
+  message: string;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={`flex flex-col items-center justify-center rounded-2xl border border-dashed border-nq-error/35 bg-nq-error/5 p-5 text-center ${
+        compact ? "min-h-36" : "min-h-44"
+      }`}
+    >
+      <AlertTriangle className="h-7 w-7 text-nq-error" aria-hidden />
+      <p className="mt-3 max-w-md text-xs leading-5 text-nq-muted">{message}</p>
+    </div>
+  );
+}
+
 function OperatingStatus({
   state,
   language,
   nowIso,
 }: {
-  state: AiOperatingState;
+  state: AiOperatingState | null;
   language: "en" | "vi";
   nowIso: string;
 }) {
   const vi = language === "vi";
+  if (!state) {
+    return (
+      <section
+        className="flex gap-3 rounded-2xl border border-nq-error/35 bg-nq-error/5 p-4 sm:p-5"
+        aria-label={vi ? "Trạng thái vận hành AI" : "AI operating status"}
+      >
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-nq-error" aria-hidden />
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+            {vi ? "Sức khỏe vận hành" : "Operating health"}
+          </p>
+          <h2 className="mt-1 text-base font-semibold text-nq-foreground">
+            {vi
+              ? "Chưa thể xác minh trạng thái AI"
+              : "AI status could not be verified"}
+          </h2>
+          <p className="mt-1 text-xs leading-5 text-nq-muted">
+            {vi
+              ? "Không hiển thị trạng thái khỏe khi hàng đợi, worker hoặc dữ liệu học chưa đọc được. Hãy tải lại để thử lại."
+              : "A healthy state is not shown while queue, worker, or learning data cannot be read. Reload to retry."}
+          </p>
+        </div>
+      </section>
+    );
+  }
   const {
     health,
     worker,
@@ -486,7 +815,9 @@ function OperatingStatus({
           >
             {workerCopy}
             {workerObservedAt ? ` · ${workerObservedAt}` : ""}
-            {worker.lastError ? ` · ${worker.lastError}` : ""}
+            {worker.lastError
+              ? ` · ${workerFailureLabel(worker.lastError, language)}`
+              : ""}
           </p>
           <ReliabilityLine
             label={vi ? "Worker · 24 giờ" : "Worker · 24 hours"}
@@ -504,7 +835,9 @@ function OperatingStatus({
           >
             {managerCopy}
             {managerObservedAt ? ` · ${managerObservedAt}` : ""}
-            {managerWorker.lastError ? ` · ${managerWorker.lastError}` : ""}
+            {managerWorker.lastError
+              ? ` · ${workerFailureLabel(managerWorker.lastError, language)}`
+              : ""}
           </p>
           <ReliabilityLine
             label={vi ? "AI Manager · 24 giờ" : "AI Manager · 24 hours"}
@@ -616,110 +949,22 @@ function LearnedControl({
   );
 }
 
-type AudiencePreparationView = {
-  prepared_at: string;
-  eligible_count: number;
-  sms_recipient_count: number;
-  email_recipient_count: number;
-  excluded_no_consent: number;
-  excluded_no_channel: number;
-  excluded_recent_contact: number;
-  estimated_cost_usd_cents: number;
-  candidate_limit: number;
-  may_have_more_candidates: boolean;
-  no_messages_sent: true;
-};
-
-type CampaignDispatchPreflightView = {
-  preflight_at: string;
-  valid_until: string;
-  freshness_minutes: number;
-  preflight_status: "ready" | "blocked";
-  eligible_count: number;
-  sms_recipient_count: number;
-  email_recipient_count: number;
-  excluded_recent_contact: number;
-  excluded_no_consent: number;
-  excluded_no_channel: number;
-  excluded_missing_profile: number;
-  excluded_manifest_channel_unavailable: number;
-  estimated_cost_usd_cents: number;
-  recipient_cap: number;
-  cost_cap_usd_cents: number;
-  within_recipient_cap: boolean;
-  within_cost_cap: boolean;
-  dispatch_enabled: false;
-  no_messages_sent: true;
-};
-
-type CampaignDispatchPlanView = {
-  plan_id: string;
-  plan_status: "sealed";
-  plan_fingerprint: string;
-  recipient_count: number;
-  sms_recipient_count: number;
-  email_recipient_count: number;
-  estimated_cost_usd_cents: number;
-  expires_at: string;
-  dispatch_enabled: false;
-  no_messages_sent: true;
-};
-
 function campaignDispatchPlanFrom(
-  result: Record<string, unknown> | null,
-): CampaignDispatchPlanView | null {
-  const value = result?.dispatch_plan;
-  if (!value || typeof value !== "object") return null;
-  const row = value as Record<string, unknown>;
-  if (
-    typeof row.plan_id !== "string" ||
-    row.plan_status !== "sealed" ||
-    typeof row.plan_fingerprint !== "string" ||
-    typeof row.recipient_count !== "number" ||
-    typeof row.expires_at !== "string" ||
-    row.dispatch_enabled !== false ||
-    row.no_messages_sent !== true
-  ) {
-    return null;
-  }
-  return row as unknown as CampaignDispatchPlanView;
+  result: OwnerExecutionResult | null,
+): OwnerCampaignDispatchPlan | null {
+  return result?.dispatch_plan ?? null;
 }
 
 function campaignDispatchPreflightFrom(
-  result: Record<string, unknown> | null,
-): CampaignDispatchPreflightView | null {
-  const value = result?.dispatch_preflight;
-  if (!value || typeof value !== "object") return null;
-  const row = value as Record<string, unknown>;
-  if (
-    typeof row.preflight_at !== "string" ||
-    typeof row.valid_until !== "string" ||
-    typeof row.freshness_minutes !== "number" ||
-    (row.preflight_status !== "ready" &&
-      row.preflight_status !== "blocked") ||
-    typeof row.eligible_count !== "number" ||
-    row.dispatch_enabled !== false ||
-    row.no_messages_sent !== true
-  ) {
-    return null;
-  }
-  return row as unknown as CampaignDispatchPreflightView;
+  result: OwnerExecutionResult | null,
+): OwnerCampaignDispatchPreflight | null {
+  return result?.dispatch_preflight ?? null;
 }
 
 function audiencePreparationFrom(
-  result: Record<string, unknown> | null,
-): AudiencePreparationView | null {
-  const value = result?.audience_preparation;
-  if (!value || typeof value !== "object") return null;
-  const row = value as Record<string, unknown>;
-  if (
-    typeof row.prepared_at !== "string" ||
-    typeof row.eligible_count !== "number" ||
-    row.no_messages_sent !== true
-  ) {
-    return null;
-  }
-  return row as unknown as AudiencePreparationView;
+  result: OwnerExecutionResult | null,
+): OwnerAudiencePreparation | null {
+  return result?.audience_preparation ?? null;
 }
 
 function JobAudiencePreparation({
@@ -728,7 +973,7 @@ function JobAudiencePreparation({
   vi,
   nowIso,
 }: {
-  job: ExecutionJobRow;
+  job: OwnerExecutionJob;
   slug: string;
   vi: boolean;
   nowIso: string;
@@ -745,13 +990,15 @@ function JobAudiencePreparation({
   const planFreshness = dispatchPlan
     ? campaignPreflightFreshness(dispatchPlan.expires_at, nowIso)
     : null;
-  const blocker =
-    typeof job.result?.blocker === "string" ? job.result.blocker : null;
+  const blocker = job.result?.blocker ?? null;
 
   const prepare = () => {
     setError(null);
     startTransition(async () => {
-      const result = await prepareAudienceAction({ slug, jobId: job.id });
+      const result = await postAiControl(slug, {
+        action: "prepare_audience",
+        jobId: job.id,
+      });
       if (!result.ok) {
         setError(
           vi
@@ -767,7 +1014,10 @@ function JobAudiencePreparation({
   const runPreflight = () => {
     setError(null);
     startTransition(async () => {
-      const result = await preflightCampaignAction({ slug, jobId: job.id });
+      const result = await postAiControl(slug, {
+        action: "preflight_campaign",
+        jobId: job.id,
+      });
       if (!result.ok) {
         setError(
           vi
@@ -783,7 +1033,10 @@ function JobAudiencePreparation({
   const sealPlan = () => {
     setError(null);
     startTransition(async () => {
-      const result = await sealCampaignPlanAction({ slug, jobId: job.id });
+      const result = await postAiControl(slug, {
+        action: "seal_campaign",
+        jobId: job.id,
+      });
       if (!result.ok) {
         setError(
           vi
@@ -899,7 +1152,7 @@ function JobAudiencePreparation({
             type="button"
             disabled={pending}
             onClick={runPreflight}
-            className="mt-2 inline-flex min-h-9 items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
+            className="mt-2 inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
           >
             <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
             {pending
@@ -921,7 +1174,7 @@ function JobAudiencePreparation({
               type="button"
               disabled={pending}
               onClick={sealPlan}
-              className="ml-2 mt-2 inline-flex min-h-9 items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
+              className="ml-2 mt-2 inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
             >
               <ListChecks className="h-3.5 w-3.5" aria-hidden />
               {pending
@@ -961,7 +1214,7 @@ function JobAudiencePreparation({
             type="button"
             disabled={pending}
             onClick={prepare}
-            className="mt-2 inline-flex min-h-9 items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
+            className="mt-2 inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
           >
             <Users className="h-3.5 w-3.5" aria-hidden />
             {pending
@@ -1019,7 +1272,7 @@ function JobAudiencePreparation({
           type="button"
           disabled={pending}
           onClick={prepare}
-          className="mt-2 text-[11px] font-semibold text-nq-primary hover:underline disabled:opacity-60"
+          className="mt-2 inline-flex min-h-11 touch-manipulation items-center rounded-lg px-2 text-[11px] font-semibold text-nq-primary hover:bg-nq-primary/10 disabled:opacity-60"
         >
           {pending
             ? vi
@@ -1040,7 +1293,7 @@ function JobRecoveryControls({
   slug,
   vi,
 }: {
-  job: ExecutionJobRow;
+  job: OwnerExecutionJob;
   slug: string;
   vi: boolean;
 }) {
@@ -1075,8 +1328,8 @@ function JobRecoveryControls({
     }
     setError(null);
     startTransition(async () => {
-      const result = await controlExecutionJobAction({
-        slug,
+      const result = await postAiControl(slug, {
+        action: "control_job",
         jobId: job.id,
         operation,
       });
@@ -1104,7 +1357,7 @@ function JobRecoveryControls({
           type="button"
           disabled={pending}
           onClick={() => control("retry")}
-          className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
+          className="inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
         >
           <RefreshCcw className="h-3.5 w-3.5" aria-hidden />
           {pending
@@ -1121,7 +1374,7 @@ function JobRecoveryControls({
           type="button"
           disabled={pending}
           onClick={() => control("cancel")}
-          className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-nq-error/30 px-3 text-xs font-semibold text-nq-error transition-colors hover:bg-nq-error/10 disabled:cursor-wait disabled:opacity-60"
+          className="inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-lg border border-nq-error/30 px-3 text-xs font-semibold text-nq-error transition-colors hover:bg-nq-error/10 disabled:cursor-wait disabled:opacity-60"
         >
           <X className="h-3.5 w-3.5" aria-hidden />
           {pending
@@ -1149,10 +1402,10 @@ function ExecutionStatus({
   status,
   vi,
 }: {
-  status: ExecutionJobRow["status"];
+  status: OwnerExecutionJob["status"];
   vi: boolean;
 }) {
-  const labels: Record<ExecutionJobRow["status"], { en: string; vi: string }> = {
+  const labels: Record<OwnerExecutionJob["status"], { en: string; vi: string }> = {
     queued: { en: "Queued", vi: "Đã xếp hàng" },
     waiting_input: { en: "Needs input", vi: "Cần thông tin" },
     running: { en: "Running", vi: "Đang chạy" },

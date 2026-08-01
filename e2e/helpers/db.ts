@@ -7,10 +7,11 @@ import { assertNotProductionFromEnv } from "./guardProduction";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl?.trim() || !serviceKey?.trim()) {
+if (!supabaseUrl?.trim() || !serviceKey?.trim() || !anonKey?.trim()) {
   throw new Error(
-    "e2e/helpers/db requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (see .env.test.local)",
+    "e2e/helpers/db requires NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY (see .env.test.local)",
   );
 }
 
@@ -24,6 +25,71 @@ if (!supabaseUrl?.trim() || !serviceKey?.trim()) {
 assertNotProductionFromEnv();
 
 const supabase = createClient(supabaseUrl, serviceKey);
+
+export async function invokeAiAgentPermission(input: {
+  salonId: string;
+  actorUserId: string;
+  flagKey: string;
+  enabled: boolean;
+  impact: string;
+  impactAcknowledged?: boolean;
+}) {
+  const { data, error } = await supabase.rpc(
+    "set_ai_agent_permission" as never,
+    {
+      p_salon_id: input.salonId,
+      p_actor_user_id: input.actorUserId,
+      p_actor_role: "owner",
+      p_actor_kind: "member",
+      p_flag_key: input.flagKey,
+      p_enabled: input.enabled,
+      p_impact: input.impact,
+      p_impact_acknowledged: input.impactAcknowledged === true,
+    } as never,
+  );
+  if (error) throw error;
+  return data as {
+    success?: boolean;
+    code?: string;
+    changed?: boolean;
+  };
+}
+
+export async function getAiAgentPermissionSnapshot(slug: string) {
+  const { data: salon, error: salonError } = await supabase
+    .from("salons")
+    .select("id, feature_flags")
+    .eq("slug", slug)
+    .single();
+  if (salonError) throw salonError;
+
+  const salonId = (salon as { id: string }).id;
+  const { data: audit, error: auditError } = await supabase
+    .from("ai_agent_permission_audit" as never)
+    .select(
+      "actor_user_id, actor_role, actor_kind, flag_key, impact, enabled, previous_enabled, impact_acknowledged, created_at",
+    )
+    .eq("salon_id", salonId)
+    .order("created_at", { ascending: true });
+  if (auditError) throw auditError;
+
+  return {
+    featureFlags:
+      ((salon as { feature_flags?: Record<string, boolean> }).feature_flags ??
+        {}),
+    audit: (audit ?? []) as Array<{
+      actor_user_id: string | null;
+      actor_role: string;
+      actor_kind: string;
+      flag_key: string;
+      impact: string;
+      enabled: boolean;
+      previous_enabled: boolean;
+      impact_acknowledged: boolean;
+      created_at: string;
+    }>,
+  };
+}
 
 // Public booking calendar (rewritten 2026-05-12) gates each selectable day cell
 // on `salons.opening_hours` via parseOpeningHours(): a NULL value parses to null
@@ -1081,6 +1147,116 @@ export async function seedTestUser(opts?: {
   }
 
   return { userId: data.user.id, email, password };
+}
+
+export async function seedTestSalonMember(
+  salonId: string,
+  role: "owner" | "admin" | "receptionist" | "senior" | "nail_tech",
+) {
+  const user = await seedTestUser();
+  const { error } = await supabase.from("salon_members").insert({
+    salon_id: salonId,
+    user_id: user.userId,
+    role,
+  });
+  if (error) {
+    await supabase.auth.admin.deleteUser(user.userId);
+    throw new Error(`seedTestSalonMember(${role}): ${error.message}`);
+  }
+  return { ...user, role };
+}
+
+export async function prepareTestSalonForGoLive(salonId: string) {
+  const openingHours = {
+    ...SEED_OPENING_HOURS,
+    mon: { ...SEED_OPENING_HOURS.mon, close: "19:00" },
+  };
+  const { error } = await supabase
+    .from("salons")
+    .update({
+      address: "123 E2E Main Street, Vancouver, BC",
+      salon_phone: "+16045550199",
+      timezone: "America/Vancouver",
+      opening_hours: openingHours,
+      profile_complete: true,
+      email: "e2e-ready@nailiq.test.invalid",
+      email_verified: true,
+      email_links_enabled: true,
+      phone_otp_enabled: false,
+    })
+    .eq("id", salonId);
+  if (error) {
+    throw new Error(`prepareTestSalonForGoLive: ${error.message}`);
+  }
+}
+
+export async function changeFirstTestServicePrice(salonId: string) {
+  const { data: service, error: readError } = await supabase
+    .from("services")
+    .select("id, price_cents")
+    .eq("salon_id", salonId)
+    .is("deleted_at", null)
+    .order("id")
+    .limit(1)
+    .single();
+  if (readError || !service?.id) {
+    throw new Error(
+      readError?.message ?? "changeFirstTestServicePrice: service missing",
+    );
+  }
+  const { error } = await supabase
+    .from("services")
+    .update({ price_cents: Number(service.price_cents) + 100 })
+    .eq("id", service.id);
+  if (error) {
+    throw new Error(`changeFirstTestServicePrice: ${error.message}`);
+  }
+}
+
+export async function getGoLiveAttestationHistory(salonId: string) {
+  const { data, error } = await supabase
+    .from("salon_go_live_attestations")
+    .select(
+      "check_key, action, evidence_note, actor_user_id, actor_role, readiness_snapshot_hash, created_at",
+    )
+    .eq("salon_id", salonId)
+    .order("created_at", { ascending: true });
+  if (error) {
+    throw new Error(`getGoLiveAttestationHistory: ${error.message}`);
+  }
+  return data ?? [];
+}
+
+export async function attemptFinalGoLiveApprovalAsMember(input: {
+  salonId: string;
+  userId: string;
+  email: string;
+  password: string;
+  actorRole: "owner" | "admin";
+}) {
+  const memberClient = createClient(supabaseUrl!, anonKey!);
+  const { error: signInError } = await memberClient.auth.signInWithPassword({
+    email: input.email,
+    password: input.password,
+  });
+  if (signInError) {
+    throw new Error(
+      `attemptFinalGoLiveApprovalAsMember sign-in: ${signInError.message}`,
+    );
+  }
+  const { error } = await memberClient
+    .from("salon_go_live_attestations")
+    .insert({
+      salon_id: input.salonId,
+      check_key: "owner_approved",
+      action: "attest",
+      evidence_note: "E2E direct database authorization probe.",
+      actor_user_id: input.userId,
+      actor_role: input.actorRole,
+      readiness_snapshot_hash: "a".repeat(64),
+    });
+  await memberClient.auth.signOut();
+  return { rejected: Boolean(error), code: error?.code ?? null };
 }
 
 /**

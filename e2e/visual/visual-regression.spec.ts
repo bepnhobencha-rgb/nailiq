@@ -11,6 +11,7 @@
 import { test, expect, type Page } from "@playwright/test";
 
 import { cleanupTestSalon, seedTestSalon } from "../helpers/db";
+import { waitForReceptionistHydration } from "../helpers/receptionistHydration";
 
 const VISUAL_SLUG = "e2e-visual-salon";
 const DEMO_COOKIE = "nailiq-demo-slug";
@@ -46,10 +47,22 @@ async function seedDemoCookie(page: Page, slug: string) {
   ]);
 }
 
-async function waitForVisualUi(page: Page) {
-  await page.waitForLoadState("networkidle");
+async function waitForVisualUi(
+  page: Page,
+  { liveDashboard = false }: { liveDashboard?: boolean } = {},
+) {
+  // A live dashboard intentionally keeps heartbeat, realtime and polling
+  // traffic active. `networkidle` is therefore not a valid readiness signal
+  // for those routes; their tests assert a route-specific hydrated element
+  // before calling this helper.
+  await page.waitForLoadState(
+    liveDashboard ? "domcontentloaded" : "networkidle",
+  );
   await page.evaluate(async () => {
     await document.fonts.ready;
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
   });
 }
 
@@ -148,10 +161,10 @@ test.describe("Visual regression", () => {
         await page.goto("/");
         await seedDemoCookie(page, VISUAL_SLUG);
         await page.goto(
-          `/dashboard/${VISUAL_SLUG}/center?date=${VISUAL_DATE_YMD}`,
+          `/dashboard/${VISUAL_SLUG}/center?date=${VISUAL_DATE_YMD}&e2eNow=${encodeURIComponent(VISUAL_NOW_ISO)}`,
         );
         await expect(page.getByTestId("receptionist-center-loaded")).toBeVisible();
-        await expect(page.getByTestId("rc-hydrated")).toHaveCount(1);
+        await waitForReceptionistHydration(page, VISUAL_SLUG);
         // Desktop renders StaffTimelineGrid; the mobile breakpoint swaps it
         // for VerticalDayView after hydration.
         await expect(
@@ -159,7 +172,7 @@ test.describe("Visual regression", () => {
             '[data-testid="staff-timeline-grid"], [data-testid="vertical-day-view"]',
           ),
         ).toBeVisible();
-        await waitForVisualUi(page);
+        await waitForVisualUi(page, { liveDashboard: true });
         await expect(page).toHaveScreenshot(
           `dashboard-center-${vp.label}.png`,
           SCREENSHOT_OPTS,
@@ -171,7 +184,12 @@ test.describe("Visual regression", () => {
         await seedDemoCookie(page, VISUAL_SLUG);
         // /dashboard/[slug]/setup has no index — the first step is /setup/address.
         await page.goto(`/dashboard/${VISUAL_SLUG}/setup/address`);
-        await waitForVisualUi(page);
+        await expect(
+          page.getByRole("heading", {
+            name: "Địa chỉ tiệm · Salon address",
+          }),
+        ).toBeVisible();
+        await waitForVisualUi(page, { liveDashboard: true });
         await expect(page).toHaveScreenshot(
           `dashboard-setup-${vp.label}.png`,
           SCREENSHOT_OPTS,

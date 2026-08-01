@@ -1,10 +1,11 @@
-"use server";
+import "server-only";
 
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { salonDayRangeUtc, salonToday } from "@/shared/lib/salonTime";
+import { customerIdentityKey } from "@/shared/customer/customerIdentityKey";
 
 export type ReportsDateRange = "today" | "week" | "month";
 
@@ -56,7 +57,7 @@ export type StaffPerformanceRow = {
   revenueCents: number;
   /** Top 3 services this staff performed (by count) in the range. */
   topServices: Array<{ name: string; count: number }>;
-  /** Distinct client phones seen >= 2 times for this staff in range. */
+  /** Distinct canonical clients seen >= 2 times for this staff in range. */
   repeatClientCount: number;
 };
 
@@ -64,7 +65,8 @@ export type LoadSalonReportsResult =
   | { ok: true; data: ReportsSnapshot }
   | {
       ok: false;
-      error: "unauthorized" | "forbidden" | "feature_not_enabled" | "server_error";
+      error:
+        "unauthorized" | "forbidden" | "feature_not_enabled" | "server_error";
     };
 
 const TOP_LIMIT = 5;
@@ -125,7 +127,7 @@ export async function loadSalonReports(
     .select(
       `
       id, status, staff_id, service_id, start_time_utc, end_time_utc,
-      price_cents, addon_price_cents, client_phone, booking_channel,
+      price_cents, addon_price_cents, client_phone, client_profile_id, booking_channel,
       services!bookings_service_id_fkey ( name, duration_minutes, price_cents )
     `,
     )
@@ -154,7 +156,11 @@ export async function loadSalonReports(
     return { ok: false, error: "server_error" };
   }
 
-  type ServiceJoin = { name: string; duration_minutes: number; price_cents?: number | null };
+  type ServiceJoin = {
+    name: string;
+    duration_minutes: number;
+    price_cents?: number | null;
+  };
   type BookingRow = {
     id: string;
     status: string;
@@ -165,6 +171,7 @@ export async function loadSalonReports(
     price_cents: number | null;
     addon_price_cents: number | null;
     client_phone: string | null;
+    client_profile_id: string | null;
     booking_channel: string | null;
     services: ServiceJoin | ServiceJoin[] | null;
   };
@@ -228,10 +235,15 @@ function aggregate(
     price_cents: number | null;
     addon_price_cents: number | null;
     client_phone: string | null;
+    client_profile_id: string | null;
     booking_channel: string | null;
     services:
       | { name: string; duration_minutes: number; price_cents?: number | null }
-      | { name: string; duration_minutes: number; price_cents?: number | null }[]
+      | {
+          name: string;
+          duration_minutes: number;
+          price_cents?: number | null;
+        }[]
       | null;
   }>,
   staffNameById: Map<string, string>,
@@ -257,9 +269,9 @@ function aggregate(
     revenueCents: number;
     /** service_id → { name, count } */
     serviceMix: Map<string, { name: string; count: number }>;
-    /** Each entry is a normalized client_phone — duplicates count
-     *  toward repeat detection. */
-    clientPhones: string[];
+    /** Canonical profile identity, with normalized phone fallback for legacy
+     *  bookings that predate profile finalization. */
+    clientIdentities: string[];
   };
   const staffAgg = new Map<string, StaffAgg>();
 
@@ -288,7 +300,8 @@ function aggregate(
     const effectivePriceCents =
       b.price_cents != null ? b.price_cents : (svcRaw?.price_cents ?? null);
     const main =
-      effectivePriceCents != null && Number.isFinite(Number(effectivePriceCents))
+      effectivePriceCents != null &&
+      Number.isFinite(Number(effectivePriceCents))
         ? Number(effectivePriceCents)
         : 0;
     const addon =
@@ -328,7 +341,7 @@ function aggregate(
         noShowCount: 0,
         revenueCents: 0,
         serviceMix: new Map<string, { name: string; count: number }>(),
-        clientPhones: [] as string[],
+        clientIdentities: [] as string[],
       };
       s.appointmentCount += 1;
       if (b.status === "completed") s.completedCount += 1;
@@ -341,9 +354,11 @@ function aggregate(
       };
       svcEntry.count += 1;
       s.serviceMix.set(b.service_id, svcEntry);
-      const phone =
-        typeof b.client_phone === "string" ? b.client_phone.trim() : "";
-      if (phone) s.clientPhones.push(phone);
+      const identity = customerIdentityKey({
+        clientProfileId: b.client_profile_id,
+        clientPhone: b.client_phone,
+      });
+      if (identity) s.clientIdentities.push(identity);
       staffAgg.set(b.staff_id, s);
     }
 
@@ -389,17 +404,15 @@ function aggregate(
     .sort((a, b) => b.appointmentCount - a.appointmentCount)
     .slice(0, TOP_LIMIT);
 
-  const staffPerformance: StaffPerformanceRow[] = Array.from(
-    staffAgg.entries(),
-  )
+  const staffPerformance: StaffPerformanceRow[] = Array.from(staffAgg.entries())
     .map(([staffId, s]) => {
       const total = s.appointmentCount;
-      const phoneCounts = new Map<string, number>();
-      for (const p of s.clientPhones) {
-        phoneCounts.set(p, (phoneCounts.get(p) ?? 0) + 1);
+      const identityCounts = new Map<string, number>();
+      for (const identity of s.clientIdentities) {
+        identityCounts.set(identity, (identityCounts.get(identity) ?? 0) + 1);
       }
       let repeatClientCount = 0;
-      for (const c of phoneCounts.values()) {
+      for (const c of identityCounts.values()) {
         if (c >= 2) repeatClientCount += 1;
       }
       const topServicesForStaff = Array.from(s.serviceMix.values())

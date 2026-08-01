@@ -159,6 +159,25 @@ test.describe("AI approval execution", () => {
     const jobId = waiting.job?.id;
     expect(jobId).toBeTruthy();
 
+    const baseURL =
+      process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.context().addCookies([
+      {
+        name: "nailiq-demo-slug",
+        value: seededSalon.slug,
+        url: baseURL,
+      },
+    ]);
+    await page.goto(`/dashboard/${seededSalon.slug}/ai`);
+    const prepareAudience = page.getByRole("button", {
+      name: /Prepare audience|Chuẩn bị danh sách/,
+    });
+    await expect(prepareAudience).toBeVisible();
+    expect((await prepareAudience.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(
+      44,
+    );
+
     const clientProfileId = await seedCampaignRecipient();
     const concurrentResults = await Promise.all([
       recordTestCampaignManifest({

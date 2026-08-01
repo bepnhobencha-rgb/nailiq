@@ -143,15 +143,24 @@ describe("processExecutionQueue leases", () => {
     expect(result.failed).toBe(1);
     expect(result.outcomes[0]).toMatchObject({
       status: "failed",
-      error: "temporary database error",
+      error: "execution_transient_failure",
     });
     expect(mocks.rpc).toHaveBeenLastCalledWith(
       "finish_ai_execution_job",
       expect.objectContaining({
         p_status: "failed",
         p_available_at: "2026-07-27T20:35:00.000Z",
-        p_last_error: "temporary database error",
+        p_last_error: "execution_transient_failure",
+        p_details: expect.objectContaining({
+          error_code: "execution_transient_failure",
+        }),
       }),
+    );
+    const finishInput = mocks.rpc.mock.calls.find(
+      ([name]) => name === "finish_ai_execution_job",
+    )?.[1];
+    expect(JSON.stringify(finishInput)).not.toContain(
+      "temporary database error",
     );
   });
 

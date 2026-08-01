@@ -701,6 +701,7 @@ export async function markWalkinInProgress(
     .update({
       status: "in_progress",
       started_at: startedAt,
+      no_show_candidate_at: null,
     })
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
@@ -1468,7 +1469,7 @@ export async function markNoShowBooking(
 
   const { data: updated, error: upErr } = await ctx.supabase
     .from("bookings")
-    .update({ status: "no_show" })
+    .update({ status: "no_show", no_show_candidate_at: null } as never)
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .in("status", ["confirmed", "in_progress"])
@@ -1614,7 +1615,7 @@ export async function markNoShowBooking(
 /**
  * Undo a no-show — the customer was just running late after all. Reverts
  * `no_show` → `confirmed` and decrements the client's no_show_count (so a
- * wrongly-flagged guest, incl. an auto-marked one, isn't penalised). Same
+ * wrongly-marked guest isn't penalised). Same
  * front-desk roles as marking.
  */
 export async function undoNoShowBooking(
@@ -1631,7 +1632,7 @@ export async function undoNoShowBooking(
 
   const { data: updated, error: upErr } = await ctx.supabase
     .from("bookings")
-    .update({ status: "confirmed" })
+    .update({ status: "confirmed", no_show_candidate_at: null } as never)
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .eq("status", "no_show")
@@ -1672,8 +1673,8 @@ export async function undoNoShowBooking(
 
 /**
  * Collect the saved no-show fee on demand — for a booking already marked
- * `no_show` whose card was left uncharged (auto-marked by the SQL cron, or a
- * desk mark that deferred the decision). Idempotent: `chargeNoShowFee` guards a
+ * `no_show` whose card was left uncharged because the desk deferred the fee
+ * decision. Idempotent: `chargeNoShowFee` guards a
  * stable Square idempotency key + a 'charged' status check, so double-taps and
  * retries never double-bill. Front-desk roles only; audit-logged.
  */
@@ -3090,6 +3091,7 @@ export async function addDeskAppointment(
     sms_confirmation_sent_at: null,
     sms_confirmation_failed_at: null,
     no_show_risk_score: null,
+    no_show_candidate_at: null,
     deposit_status: null,
     deposit_amount_cents: null,
     wix_booking_id: null,

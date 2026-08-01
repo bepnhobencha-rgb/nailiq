@@ -631,6 +631,12 @@ export type UserMessages = {
       completed: string;
       revenue: string;
       noShows: string;
+      staffNowTitle: string;
+      staffBusy: string;
+      staffAvailable: string;
+      staffNone: string;
+      businessSummary: string;
+      businessDetails: string;
       vsLastWeek: string;
       monthTitle: string;
       last30Days: string;
@@ -1526,6 +1532,8 @@ export type UserMessages = {
         requestTagsPlaceholder: string;
         requestTagAdd: string;
         requestTagRemove: (label: string) => string;
+        moreDetails: string;
+        hideDetails: string;
         /** Walk-in form checkbox: "khách yêu cầu thợ này". Drives the
          * ❤️ icon on the resulting booking chip. */
         staffRequestedByClient: string;
@@ -2115,7 +2123,7 @@ export type UserMessages = {
         server_error: string;
       };
     };
-    /** Reports & analytics page (`/dashboard/[slug]/reports`). */
+    /** Reports & analytics page (`/dashboard/[slug]/insights`). */
     reports: {
       pageTitle: string;
       navLinkLabel: string;
@@ -2213,12 +2221,14 @@ export type UserMessages = {
     latenessGrid: {
       /** Inline Start button aria-label and visible label. */
       startShort: string;
-      /** "Auto no-show at {time}" for late/critical badge when auto is ON. */
+      /** "No-show review due at {time}" when automatic review is ON. */
       autoNoShowAt: (time: string) => string;
       /** Badge label when auto is OFF and tier=late. */
       late: string;
       /** Badge label when auto is OFF and tier=critical. */
       veryLate: string;
+      /** Persisted candidate flag requiring a human decision. */
+      noShowDecisionNeeded: string;
       /** Tombstone aria-label template. */
       tombstoneAria: (clientName: string) => string;
       /** Tombstone popover: undo action label. */
@@ -3199,6 +3209,13 @@ export const userEn: UserMessages = {
       completed: "Completed",
       revenue: "Revenue",
       noShows: "No-shows",
+      staffNowTitle: "Staff right now",
+      staffBusy: "Busy",
+      staffAvailable: "Available",
+      staffNone: "No active staff yet",
+      businessSummary: "Business details",
+      businessDetails:
+        "Open revenue trends, services, staff performance, and customer health",
       vsLastWeek: "vs last week",
       monthTitle: "This Month",
       last30Days: "Last 30 days",
@@ -4021,6 +4038,8 @@ export const userEn: UserMessages = {
         requestTagsPlaceholder: "e.g. Wants Tina",
         requestTagAdd: "Add",
         requestTagRemove: (label: string) => `Remove ${label}`,
+        moreDetails: "More details (optional)",
+        hideDetails: "Hide details",
         staffRequestedByClient: "Customer requested this staff",
         returningCustomer: "Returning customer",
         newCustomer: "New customer",
@@ -4628,9 +4647,10 @@ export const userEn: UserMessages = {
     },
     latenessGrid: {
       startShort: "Start",
-      autoNoShowAt: (time: string) => `Auto no-show at ${time}`,
+      autoNoShowAt: (time: string) => `No-show review due at ${time}`,
       late: "Late",
       veryLate: "Very late",
+      noShowDecisionNeeded: "No-show decision needed",
       tombstoneAria: (clientName: string) => `No-show: ${clientName}`,
       tombstoneUndo: "Undo no-show",
       tombstoneCharge: (amount: string) => `Charge ${amount}`,

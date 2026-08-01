@@ -1,7 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 
-import { cleanupTestSalon } from "../helpers/db";
+import {
+  cleanupTestSalon,
+  setReactInputValue,
+} from "../helpers/db";
 import { seedGroupTestSalon } from "./helpers";
 
 /**
@@ -50,7 +53,12 @@ test.describe("Phone-first entry gate", () => {
     // who merely types a phone number.
     // CountryPhoneField's inner input takes the 10-digit NATIONAL number; the
     // full E.164 would be sliced to a bogus area code and rejected.
-    await page.getByTestId("booking-entry-phone").fill(PHONE.slice(-10));
+    // Use the React-aware helper so the controlled CountryPhoneField receives
+    // an input event even when hydration finishes just after the gate appears.
+    await setReactInputValue(
+      page.getByTestId("booking-entry-phone"),
+      PHONE.slice(-10),
+    );
     const recognized = page.getByTestId("booking-entry-recognized");
     await expect(recognized).toBeVisible({ timeout: 10_000 });
     await expect(recognized).not.toContainText(NAME);

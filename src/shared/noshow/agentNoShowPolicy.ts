@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { looseServiceClient, type Row } from "@/shared/integrations/square/looseDb";
 import { resolvePaymentProvider } from "@/shared/integrations/payments";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { isAiAgentPermissionEnabled } from "@/shared/ai/agentPermissionFence";
 
 /**
  * AI No-Show Policy Agent — the first "AI brain on a deterministic spine".
@@ -367,8 +368,27 @@ export async function runNoShowPolicyAgent(
       /* leave as none */
     }
 
-    // LIVE only when the salon opted into live AND we have a usable decision.
-    const live = ctx.aiLiveEnabled && ai != null;
+    // The model call can outlive an owner's permission change. Re-read the
+    // sensitive live-policy flag before allowing either the caller or this
+    // backfill path to change the booking. If live was the only mode and was
+    // revoked, discard the stale result entirely instead of mislabeling it as
+    // a shadow decision.
+    const livePermissionStillEnabled =
+      ctx.aiLiveEnabled &&
+      (await isAiAgentPermissionEnabled(
+        ctx.salonId,
+        "ai_noshow_policy_live",
+      ));
+    if (
+      ctx.aiLiveEnabled &&
+      !livePermissionStillEnabled &&
+      !ctx.aiShadowEnabled
+    ) {
+      return null;
+    }
+
+    // LIVE only when fresh permission exists AND we have a usable decision.
+    const live = livePermissionStillEnabled && ai != null;
     const cardRequired = ai != null && (ai.protection === "card" || ai.protection === "deposit");
 
     const db = createServiceRoleClient();

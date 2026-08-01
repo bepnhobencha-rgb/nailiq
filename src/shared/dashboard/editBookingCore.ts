@@ -426,6 +426,11 @@ export async function performEditBooking(
     // owns the latest change (last-writer-wins vs the Square booking's updated_at).
     local_updated_at: new Date().toISOString(),
   };
+  if (startMs !== Date.parse(st)) {
+    // A reschedule creates a new attendance window; an old no-show review flag
+    // must never follow the booking to its new time.
+    baseUpdate.no_show_candidate_at = null;
+  }
   if (input.newAddonServiceId !== undefined) {
     baseUpdate.addon_service_id = effectiveAddonId;
     baseUpdate.addon_price_cents = addonPriceCents;

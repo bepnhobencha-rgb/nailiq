@@ -354,7 +354,7 @@ export function AdminCopilot({ slug }: { slug: string; role?: string }) {
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-20 right-5 md:bottom-5 z-50 flex items-center gap-2 rounded-full bg-nq-primary text-nq-bg pl-3.5 pr-4 py-3 shadow-nq-card hover:opacity-90 transition-all hover:scale-105 active:scale-95"
+          className="fixed bottom-20 right-5 z-50 flex items-center gap-2 rounded-full bg-nq-primary py-3 pl-3.5 pr-4 text-nq-bg shadow-nq-card transition-all hover:scale-105 hover:opacity-90 active:scale-95 xl:bottom-5"
           aria-label={COPY.fab[lang]}
         >
           <Sparkles className="w-5 h-5" />
@@ -364,7 +364,7 @@ export function AdminCopilot({ slug }: { slug: string; role?: string }) {
 
       {/* Chat panel */}
       {open && (
-        <div className="fixed inset-0 z-50 sm:inset-auto sm:bottom-5 sm:right-5 flex sm:block items-end">
+        <div className="fixed inset-0 z-50 flex items-end sm:inset-auto sm:bottom-20 sm:right-5 sm:block xl:bottom-5">
           <button className="absolute inset-0 bg-black/40 sm:hidden" onClick={() => setOpen(false)} aria-label="Close" />
           <div className="relative w-full sm:w-[380px] h-[80vh] sm:h-[560px] bg-nq-surface sm:rounded-2xl shadow-nq-card border border-nq-border flex flex-col overflow-hidden animate-[cocoUp_0.2s_ease-out]">
             {/* Header */}

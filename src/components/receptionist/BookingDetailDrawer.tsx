@@ -830,7 +830,7 @@ export function BookingDetailDrawer({
             type="button"
             onClick={handleClose}
             className={cn(
-              "min-h-10 min-w-10 shrink-0 rounded-lg border border-nq-muted/40 text-sm font-medium text-nq-muted",
+              "min-h-11 min-w-11 shrink-0 rounded-lg border border-nq-muted/40 text-base font-medium text-nq-muted",
               "hover:border-nq-muted hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/40",
             )}
             aria-label={copy.closeAria}
@@ -988,7 +988,7 @@ export function BookingDetailDrawer({
                         type="button"
                         data-testid="booking-drawer-phone-toggle"
                         onClick={() => setPhoneRevealed((v) => !v)}
-                        className="inline-flex min-h-8 items-center rounded-md border border-nq-muted/40 px-2 py-1 text-xs font-medium text-nq-muted hover:border-nq-muted hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/40"
+                        className="inline-flex min-h-11 touch-manipulation items-center rounded-md border border-nq-muted/40 px-3 py-1 text-xs font-medium text-nq-muted hover:border-nq-muted hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/40"
                       >
                         {phoneRevealed ? copy.hidePhone : copy.revealPhone}
                       </button>
@@ -1040,7 +1040,7 @@ export function BookingDetailDrawer({
                       type="button"
                       onClick={onViewProfile}
                       data-testid="booking-drawer-view-profile"
-                      className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-nq-muted/40 px-3 text-sm font-medium text-nq-foreground transition hover:border-nq-muted hover:bg-nq-muted/10"
+                      className="inline-flex min-h-11 touch-manipulation items-center gap-1.5 rounded-lg border border-nq-muted/40 px-3 text-sm font-medium text-nq-foreground transition hover:border-nq-muted hover:bg-nq-muted/10"
                     >
                       <span aria-hidden>👤</span>
                       {model.language === "vi" ? "Hồ sơ & lịch sử" : "Profile & history"}
@@ -1052,7 +1052,7 @@ export function BookingDetailDrawer({
                       type="button"
                       onClick={onRebookNext}
                       data-testid="booking-drawer-rebook-next"
-                      className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-nq-primary/45 bg-nq-primary/12 px-3 text-sm font-semibold text-nq-primary transition hover:bg-nq-primary/20"
+                      className="inline-flex min-h-11 touch-manipulation items-center gap-1.5 rounded-lg border border-nq-primary/45 bg-nq-primary/12 px-3 text-sm font-semibold text-nq-primary transition hover:bg-nq-primary/20"
                     >
                       <span aria-hidden>📅</span>
                       {model.language === "vi" ? "Đặt hẹn kế tiếp" : "Book next visit"}
@@ -1191,7 +1191,7 @@ export function BookingDetailDrawer({
                   <button
                     type="button"
                     onClick={onViewPartyCard}
-                    className="mt-2 w-full rounded-md border border-nq-primary/30 py-1.5 text-[11px] font-semibold text-nq-primary hover:bg-nq-primary/10 transition-colors"
+                    className="mt-2 min-h-11 w-full touch-manipulation rounded-md border border-nq-primary/30 px-3 py-2 text-[11px] font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10"
                   >
                     {copy.viewPartyCard}
                   </button>
@@ -1229,6 +1229,7 @@ export function BookingDetailDrawer({
                 <Badge
                   variant={statusBadgeVariant(model.status)}
                   size="md"
+                  className="text-base"
                   data-testid="booking-drawer-status-badge"
                 >
                   {model.statusLabel}
@@ -1424,6 +1425,7 @@ export function BookingDetailDrawer({
                         <Button
                           type="button"
                           variant="primary"
+                          size="lg"
                           data-testid="drawer-primary-action"
                           loading={primaryAction.busy}
                           disabled={isOffline}

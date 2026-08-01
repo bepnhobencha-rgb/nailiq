@@ -5,7 +5,10 @@ import {
   gotoBookingServiceStep,
   seedTestSalon,
 } from "./helpers/db";
-import { advanceBookingStep } from "./helpers/bookingFlow";
+import {
+  advanceBookingStep,
+  selectAvailableBookingDate,
+} from "./helpers/bookingFlow";
 
 test.describe("Booking Flow", () => {
   let testSlug: string;
@@ -35,17 +38,7 @@ test.describe("Booking Flow", () => {
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
-    // The month grid is now collapsed behind a "📅 More dates" toggle (#593);
-    // reveal it before picking a specific grid day.
-    await page.locator('[data-testid="date-toggle-calendar"]').click();
-    await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .waitFor({ state: "visible", timeout: 15_000 });
-    await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .click();
+    await selectAvailableBookingDate(page);
     await page.getByRole("button", { name: "Continue" }).first().click();
 
     const firstAvailableSlot = page
@@ -87,16 +80,7 @@ test.describe("Booking Flow", () => {
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
-    // Reveal the collapsed month grid (#593) before picking a grid day.
-    await page.locator('[data-testid="date-toggle-calendar"]').click();
-    await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .waitFor({ state: "visible", timeout: 15_000 });
-    await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .click();
+    await selectAvailableBookingDate(page);
     await page.getByRole("button", { name: "Continue" }).first().click();
 
     const slots = page.locator('[data-testid="time-slot"]');
@@ -121,9 +105,15 @@ test.describe("Booking Flow", () => {
     // exercise month navigation + the today marker.
     await page.locator('[data-testid="date-toggle-calendar"]').click();
     // The calendar opens on the first month that has availability, so there is
-    // always at least one selectable day on arrival.
+    // always at least one selectable day on arrival. On the last day of the
+    // month that day can be today, which intentionally uses `date-today`
+    // instead of `date-day`.
     await expect(
-      page.locator('[data-testid="date-day"]:not([disabled])').first(),
+      page
+        .locator(
+          '[data-testid="date-day"]:not([disabled]), [data-testid="date-today"]:not([disabled])',
+        )
+        .first(),
     ).toBeVisible();
     // "Today" carries its own marker (`date-today`). When today's month has no
     // availability (today closed, or the last day of the month) the calendar

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { cn } from "@/shared/lib/cn";
+import { formatSalonCreatedDate } from "@/shared/superadmin/formatSalonCreatedDate";
 import type { SuperAdminSalonRow } from "@/shared/superadmin/superadminTypes";
 
 type SortKey =
@@ -13,21 +14,8 @@ type SortKey =
   | "bookings_month";
 type SortDir = "asc" | "desc";
 
-const CREATED_FORMATTER = new Intl.DateTimeFormat("en-US", {
-  year: "numeric",
-  month: "short",
-  day: "numeric",
-});
-
 function effectivePlan(row: SuperAdminSalonRow): string {
   return row.plan_override ?? row.subscription_plan ?? "free";
-}
-
-function formatCreated(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return CREATED_FORMATTER.format(d);
 }
 
 function compare<T>(a: T, b: T): number {
@@ -282,7 +270,7 @@ function SalonRow({ salon }: { salon: SuperAdminSalonRow }) {
       </td>
       <td className="border-b border-nq-border/30 px-4 py-3 text-nq-muted">
         <Link href={detailHref} className="block">
-          {formatCreated(salon.created_at)}
+          {formatSalonCreatedDate(salon.created_at)}
         </Link>
       </td>
       <td className="border-b border-nq-border/30 px-4 py-3 text-right tabular-nums text-nq-foreground">

@@ -339,11 +339,11 @@ export function DashboardSidebar({
           {
             key: "reports",
             label: t.reports,
-            href: `${dashRoot}/reports`,
+            href: `${dashRoot}/insights`,
             // TrendingUp reads as "business analytics" more than the
             // prior BarChart2.
             icon: TrendingUp,
-            match: (p) => p.startsWith(`${dashRoot}/reports`),
+            match: (p) => p.startsWith(`${dashRoot}/insights`),
             // Release flag (advanced_reports, default OFF) + role: the KPI/
             // revenue overview is owner + admin only (matches the page gate).
             hidden:

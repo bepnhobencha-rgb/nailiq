@@ -48,6 +48,7 @@ export type AgentStat = {
 
 export type MinhActivityData = {
   entries: MinhLogEntry[];
+  totalActions: number;
   totalSent: number;
   measured: number;
   measurementCoveragePct: number;
@@ -67,26 +68,37 @@ export type MinhActivityRow = {
   outcome_at: string | null;
 };
 
+function boundedDisplayText(value: unknown, maxLength: number): string {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
 export function toMinhLogEntry(row: MinhActivityRow): MinhLogEntry {
-  const meta = AGENT_META[row.agent] ?? {
+  const agent = /^[a-z][a-z0-9_]{0,49}$/.test(row.agent)
+    ? row.agent
+    : "unknown";
+  const meta = AGENT_META[agent] ?? {
     icon: "🤖",
-    label: row.agent,
+    label: "AI",
     trackable: false,
   };
   return {
     id: row.id,
-    agent: row.agent,
+    agent,
     agentIcon: meta.icon,
     agentLabel: meta.label,
-    actionType: row.action_type,
-    clientName: String(row.payload?.name ?? ""),
-    messagePreview: String(
+    actionType: boundedDisplayText(row.action_type, 100),
+    clientName: boundedDisplayText(row.payload?.name, 120),
+    messagePreview: boundedDisplayText(
       row.payload?.message_preview ??
         row.payload?.title ??
         row.payload?.reasoning ??
         row.payload?.summary ??
         row.payload?.note ??
         "",
+      600,
     ),
     createdAt: row.created_at,
     outcome:
@@ -103,15 +115,23 @@ export async function loadMinhActivity(
   const db = createServiceRoleClient();
   const since = new Date(Date.now() - days * 86_400_000).toISOString();
 
-  const { data } = await db
+  const { data, error, count } = await db
     .from("ai_actions_log" as never)
-    .select("id, agent, action_type, payload, created_at, outcome, outcome_at")
+    .select("id, agent, action_type, payload, created_at, outcome, outcome_at", {
+      count: "exact",
+    })
     .eq("salon_id", salonId)
     .gte("created_at", since)
     .not("action_type", "in", '("skipped_no_channel","suggestion_pending","digest_sent")')
     .order("created_at", { ascending: false })
     .limit(200);
 
+  if (error) {
+    throw new Error("ai_actions_log_read_failed", { cause: error });
+  }
+  if (count == null) {
+    throw new Error("ai_actions_log_count_unavailable");
+  }
   const rows = (data ?? []) as MinhActivityRow[];
   const entries = rows.map(toMinhLogEntry);
 
@@ -148,6 +168,7 @@ export async function loadMinhActivity(
 
   return {
     entries,
+    totalActions: count,
     totalSent: overall.sent,
     measured: overall.measured,
     measurementCoveragePct: overall.coveragePct,

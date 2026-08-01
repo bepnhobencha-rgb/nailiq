@@ -153,13 +153,9 @@ export interface WalkinQueueSidebarProps {
   /** True when the desk is in rush hour. Cards enlarge the wait
    * number and the form header gets a subtle peripheral fade upstream. */
   rushMode?: boolean;
-  /**
-   * Origin (`https://nailiq.ca`) the customer wait link is built on.
-   * The full URL becomes `${waitLinkBaseUrl}/${slug}/wait/${bookingId}`.
-   * Omit to hide the wait-link button entirely (storybook/tests).
-   */
-  waitLinkBaseUrl?: string;
-  /** Salon slug — only used when `waitLinkBaseUrl` is set. */
+  /** Whether the desk may create a customer wait link. */
+  waitLinkEnabled?: boolean;
+  /** Salon slug — only used when wait links are enabled. */
   waitLinkSalonSlug?: string;
   onCancelWalkin: (bookingId: string) => Promise<void>;
   onStartAssign: (bookingId: string) => void;
@@ -252,7 +248,7 @@ export function WalkinQueueSidebar({
   onSetSoftHold,
   onClearSoftHold,
   rushMode = false,
-  waitLinkBaseUrl,
+  waitLinkEnabled = false,
   waitLinkSalonSlug,
   onCancelWalkin,
   onStartAssign,
@@ -379,14 +375,14 @@ export function WalkinQueueSidebar({
       className="flex h-full min-h-0 flex-col bg-nq-surface"
     >
       <header className="flex shrink-0 items-center justify-between gap-2 border-b border-nq-muted/20 px-3 py-2">
-        <h2 className="text-sm font-semibold text-nq-foreground">{labels.title}</h2>
+        <h2 className="text-base font-semibold text-nq-foreground">{labels.title}</h2>
         <div className="flex items-center gap-2">
           {showWaitTime && avgWaitMinutes !== null ? (
-            <span className="text-xs text-nq-muted tabular-nums">
+            <span className="text-base text-nq-muted tabular-nums">
               {labels.avgWait(avgWaitMinutes)}
             </span>
           ) : null}
-          <span className="rounded-full bg-nq-primary/20 px-2.5 py-0.5 font-mono text-xs font-semibold tabular-nums text-nq-primary">
+          <span className="rounded-full bg-nq-primary/20 px-2.5 py-1 font-mono text-base font-semibold tabular-nums text-nq-primary">
             {items.length}
           </span>
           {onClose ? (
@@ -394,7 +390,7 @@ export function WalkinQueueSidebar({
               type="button"
               onClick={onClose}
               aria-label={closeLabel ?? "Close"}
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-nq-border/40 bg-nq-surface/40 text-nq-muted transition-colors hover:bg-nq-surface/80 hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
+              className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md border border-nq-border/40 bg-nq-surface/40 text-base text-nq-muted transition-colors hover:bg-nq-surface/80 hover:text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
             >
               <CloseIcon className="h-4 w-4" aria-hidden />
             </button>
@@ -608,7 +604,7 @@ export function WalkinQueueSidebar({
                               onClick={() => void onCancelWalkin(item.id)}
                               data-testid={`queue-cancel-${item.id}`}
                               className={cn(
-                                "min-h-10 flex-1 rounded-lg border border-nq-muted/40 bg-transparent px-3 text-sm font-medium text-nq-muted transition-colors hover:border-nq-muted hover:text-nq-foreground",
+                                "min-h-11 flex-1 touch-manipulation rounded-lg border border-nq-muted/40 bg-transparent px-3 text-sm font-medium text-nq-muted transition-colors hover:border-nq-muted hover:text-nq-foreground",
                                 blockOthers && "pointer-events-none opacity-45",
                               )}
                             >
@@ -620,7 +616,7 @@ export function WalkinQueueSidebar({
                               onClick={() => onAssignClick(item.id)}
                               data-testid={`queue-assign-${item.id}`}
                               className={cn(
-                                "min-h-10 flex-[1.15] rounded-lg bg-nq-primary px-3 text-sm font-semibold text-nq-navy-deep transition-opacity hover:opacity-95",
+                                "min-h-11 flex-[1.15] touch-manipulation rounded-lg bg-nq-primary px-3 text-sm font-semibold text-nq-navy-deep transition-opacity hover:opacity-95",
                                 blockOthers && "pointer-events-none opacity-45",
                               )}
                             >
@@ -638,7 +634,7 @@ export function WalkinQueueSidebar({
                                   onClick={() => void onClearSoftHold(item.id)}
                                   data-testid={`queue-clear-hold-${item.id}`}
                                   className={cn(
-                                    "min-h-9 w-full rounded-lg border border-amber-500/55 bg-transparent px-3 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-400/15",
+                                    "min-h-11 w-full touch-manipulation rounded-lg border border-amber-500/55 bg-transparent px-3 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-400/15",
                                     blockOthers && "pointer-events-none opacity-45",
                                   )}
                                 >
@@ -656,7 +652,7 @@ export function WalkinQueueSidebar({
                                   }
                                   data-testid={`queue-soft-hold-${item.id}`}
                                   className={cn(
-                                    "min-h-9 w-full rounded-lg border border-nq-muted/35 bg-transparent px-3 text-xs font-medium text-nq-muted transition-colors hover:border-nq-muted hover:text-nq-foreground",
+                                    "min-h-11 w-full touch-manipulation rounded-lg border border-nq-muted/35 bg-transparent px-3 text-xs font-medium text-nq-muted transition-colors hover:border-nq-muted hover:text-nq-foreground",
                                     blockOthers && "pointer-events-none opacity-45",
                                   )}
                                 >
@@ -666,7 +662,7 @@ export function WalkinQueueSidebar({
                             }
                             return null;
                           })() : null}
-                          {waitLinkBaseUrl ? (
+                          {waitLinkEnabled ? (
                             <button
                               type="button"
                               disabled={blockOthers}
@@ -675,7 +671,7 @@ export function WalkinQueueSidebar({
                               }
                               data-testid={`queue-wait-link-${item.id}`}
                               className={cn(
-                                "min-h-9 w-full rounded-lg border border-nq-muted/35 bg-transparent px-3 text-xs font-medium text-nq-muted transition-colors hover:border-nq-muted hover:text-nq-foreground",
+                                "min-h-11 w-full touch-manipulation rounded-lg border border-nq-muted/35 bg-transparent px-3 text-xs font-medium text-nq-muted transition-colors hover:border-nq-muted hover:text-nq-foreground",
                                 blockOthers && "pointer-events-none opacity-45",
                               )}
                             >
@@ -698,10 +694,12 @@ export function WalkinQueueSidebar({
         )}
       </div>
 
-      {waitLinkOpenForId && waitLinkBaseUrl && waitLinkSalonSlug ? (() => {
+      {waitLinkOpenForId && waitLinkSalonSlug ? (() => {
         const target = items.find((i) => i.id === waitLinkOpenForId);
         if (!target) return null;
-        const url = `${waitLinkBaseUrl.replace(/\/$/, "")}/${encodeURIComponent(
+        // The modal is reachable only from a post-hydration click, so reading
+        // the browser origin here never participates in SSR/hydration.
+        const url = `${window.location.origin}/${encodeURIComponent(
           waitLinkSalonSlug,
         )}/wait/${target.id}`;
         return (

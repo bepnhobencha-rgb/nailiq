@@ -10,6 +10,7 @@ import {
   Plus,
   Search,
   Settings,
+  X,
 } from "lucide-react";
 import {
   type ChangeEvent,
@@ -352,16 +353,18 @@ export function AppleDeskHeader({
   );
 }
 
-function HeaderCustomerSearch({
+export function HeaderCustomerSearch({
   slug,
   language,
   clientHref,
   onSelectClient,
+  surface = "desktop",
 }: {
   slug: string;
   language: "en" | "vi";
   clientHref: string;
   onSelectClient: (client: ClientSearchHit) => void;
+  surface?: "desktop" | "mobile";
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -372,6 +375,9 @@ function HeaderCustomerSearch({
   const [hits, setHits] = useState<ClientSearchHit[]>([]);
   const [error, setError] = useState(false);
   const [pending, startTransition] = useTransition();
+  const testIdPrefix =
+    surface === "mobile" ? "mobile-customer-search" : "preview-customer-search";
+  const inputId = `${testIdPrefix}-input`;
 
   useEffect(() => {
     if (!open) return;
@@ -379,8 +385,15 @@ function HeaderCustomerSearch({
     const onPointerDown = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
     document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [open]);
 
   useEffect(
@@ -420,61 +433,92 @@ function HeaderCustomerSearch({
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        data-testid="preview-customer-search-trigger"
+        data-testid={`${testIdPrefix}-trigger`}
         onClick={() => setOpen((current) => !current)}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--rc-new-border)] text-[var(--rc-new-text)] outline-none transition hover:bg-[var(--rc-new-surface-subtle)] focus-visible:ring-2 focus-visible:ring-nq-info"
+        className="inline-flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg border border-nq-border text-nq-foreground outline-none transition hover:bg-nq-surface focus-visible:ring-2 focus-visible:ring-nq-info"
         aria-label={language === "vi" ? "Tìm khách hàng" : "Search customers"}
       >
-        <Search className="h-4 w-4" aria-hidden />
+        <Search className="h-5 w-5" aria-hidden />
       </button>
       {open ? (
-        <div
-          role="dialog"
-          aria-label={language === "vi" ? "Tìm khách hàng" : "Search customers"}
-          data-testid="preview-customer-search"
-          className="absolute right-0 top-full z-50 mt-3 w-80 rounded-2xl border border-[var(--rc-new-border)] bg-[var(--rc-new-surface)] p-3 shadow-xl"
-        >
-          <label className="sr-only" htmlFor="preview-customer-search-input">
+        <>
+          {surface === "mobile" ? (
+            <button
+              type="button"
+              aria-label={language === "vi" ? "Đóng tìm kiếm" : "Close search"}
+              className="fixed inset-0 z-[60] bg-black/55 backdrop-blur-[2px] md:hidden"
+              onClick={() => setOpen(false)}
+            />
+          ) : null}
+          <div
+            role="dialog"
+            aria-modal={surface === "mobile" ? true : undefined}
+            aria-label={language === "vi" ? "Tìm khách hàng" : "Search customers"}
+            data-testid={testIdPrefix}
+            className={cn(
+              "z-[70] rounded-2xl border border-nq-border bg-nq-surface p-3 shadow-xl",
+              surface === "mobile"
+                ? "fixed inset-x-3 top-[max(0.75rem,env(safe-area-inset-top))] max-h-[calc(100dvh-1.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] overflow-hidden"
+                : "absolute right-0 top-full mt-3 w-80",
+            )}
+          >
+            {surface === "mobile" ? (
+              <div className="mb-3 flex min-h-11 items-center justify-between gap-3">
+                <p className="text-lg font-semibold text-nq-foreground">
+                  {language === "vi" ? "Tìm khách hàng" : "Find customer"}
+                </p>
+                <button
+                  type="button"
+                  data-testid={`${testIdPrefix}-close`}
+                  onClick={() => setOpen(false)}
+                  aria-label={language === "vi" ? "Đóng tìm kiếm" : "Close search"}
+                  className="inline-flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl text-nq-muted hover:bg-nq-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-info"
+                >
+                  <X className="h-5 w-5" aria-hidden />
+                </button>
+              </div>
+            ) : null}
+          <label className="sr-only" htmlFor={inputId}>
             {language === "vi" ? "Tên hoặc số điện thoại" : "Name or phone"}
           </label>
           <div className="relative">
             <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--rc-new-muted)]"
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-nq-muted"
               aria-hidden
             />
             <input
               ref={inputRef}
-              id="preview-customer-search-input"
-              data-testid="preview-customer-search-input"
+              id={inputId}
+              data-testid={`${testIdPrefix}-input`}
               value={query}
               onChange={onQueryChange}
               placeholder={
                 language === "vi" ? "Tên hoặc số điện thoại" : "Name or phone"
               }
-              className="min-h-11 w-full rounded-xl border border-[var(--rc-new-border)] bg-[var(--rc-new-surface)] pl-9 pr-3 text-sm text-[var(--rc-new-text)] outline-none placeholder:text-[var(--rc-new-muted)] focus-visible:ring-2 focus-visible:ring-nq-info"
+              className="min-h-11 w-full rounded-xl border border-nq-border bg-nq-surface pl-9 pr-3 text-base text-nq-foreground outline-none placeholder:text-nq-muted focus-visible:ring-2 focus-visible:ring-nq-info"
             />
           </div>
-          <div className="mt-2 max-h-72 overflow-y-auto">
+          <div className="mt-2 max-h-[min(18rem,50dvh)] overflow-y-auto">
             {pending ? (
-              <p role="status" className="px-3 py-3 text-xs text-[var(--rc-new-muted)]">
+              <p role="status" className="px-3 py-3 text-base text-nq-muted">
                 {language === "vi" ? "Đang tìm…" : "Searching…"}
               </p>
             ) : error ? (
-              <p role="alert" className="px-3 py-3 text-xs text-nq-error">
+              <p role="alert" className="px-3 py-3 text-base text-nq-error">
                 {language === "vi"
                   ? "Không tìm được lúc này. Vui lòng thử lại."
                   : "Search is unavailable. Please try again."}
               </p>
             ) : query.trim().length < 2 ? (
-              <p className="px-3 py-3 text-xs text-[var(--rc-new-muted)]">
+              <p className="px-3 py-3 text-base text-nq-muted">
                 {language === "vi"
                   ? "Nhập ít nhất 2 ký tự."
                   : "Enter at least 2 characters."}
               </p>
             ) : hits.length === 0 ? (
-              <p className="px-3 py-3 text-xs text-[var(--rc-new-muted)]">
+              <p className="px-3 py-3 text-base text-nq-muted">
                 {language === "vi" ? "Không tìm thấy khách." : "No customers found."}
               </p>
             ) : (
@@ -486,18 +530,19 @@ function HeaderCustomerSearch({
                     onSelectClient(hit);
                     setOpen(false);
                   }}
-                  className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-[var(--rc-new-surface-subtle)]"
+                  data-testid={`${testIdPrefix}-result`}
+                  className="flex min-h-12 w-full touch-manipulation items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-nq-surface"
                 >
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold text-[var(--rc-new-text)]">
+                    <span className="block truncate text-base font-semibold text-nq-foreground">
                       {hit.name ||
                         (language === "vi" ? "Khách chưa có tên" : "Unnamed customer")}
                     </span>
-                    <span className="block text-xs text-[var(--rc-new-muted)]">
+                    <span className="block text-base text-nq-muted">
                       {formatPhone(hit.phone)}
                     </span>
                   </span>
-                  <span className="shrink-0 text-xs font-medium text-nq-primary">
+                  <span className="shrink-0 text-base font-medium text-nq-primary">
                     {language === "vi" ? "Đặt lịch" : "Book"}
                   </span>
                 </button>
@@ -506,11 +551,12 @@ function HeaderCustomerSearch({
           </div>
           <Link
             href={clientHref}
-            className="mt-2 flex min-h-11 items-center justify-center rounded-xl border border-[var(--rc-new-border)] text-xs font-semibold text-[var(--rc-new-text)] transition hover:bg-[var(--rc-new-surface-subtle)]"
+            className="mt-2 flex min-h-11 items-center justify-center rounded-xl border border-nq-border text-base font-semibold text-nq-foreground transition hover:bg-nq-surface"
           >
             {language === "vi" ? "Xem tất cả khách hàng" : "View all customers"}
           </Link>
-        </div>
+          </div>
+        </>
       ) : null}
     </div>
   );
