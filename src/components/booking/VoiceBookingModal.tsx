@@ -896,7 +896,13 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         const sessRes = await fetch("/api/voice/session", {
           method:  "POST",
           headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({ salonSlug: shopSlug, language }),
+          body:    JSON.stringify({
+            salonSlug: shopSlug,
+            language,
+            renewal: true,
+            sessionId: sessionIdRef.current,
+            sessionCapability: sessionCapabilityRef.current,
+          }),
         });
         if (!sessRes.ok || statusRef.current !== "connected") {
           isRenewingRef.current = false; setIsRenewing(false); return;

@@ -12,6 +12,10 @@ function signingSecret(): string | null {
   );
 }
 
+export function hasVoiceSessionSigningSecret(): boolean {
+  return signingSecret() !== null;
+}
+
 function digest(sessionId: string, secret: string): string {
   return crypto
     .createHmac("sha256", secret)
