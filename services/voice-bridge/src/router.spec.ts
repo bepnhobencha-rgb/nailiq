@@ -53,6 +53,8 @@ import {
   isSilentTransportTool,
   callerPresenceLabel,
   voiceSessionStatusForClose,
+  finalizeVoiceSession,
+  SESSION_FINALIZE_MAX_ATTEMPTS,
 } from "./router";
 
 // ── helpers for reading coordinator output ──────────────────────────────────
@@ -73,6 +75,68 @@ function makeCoord() {
 const plain = (lang: () => string) => ({ kind: "normal" as const, build: plainResponseCreate, language: lang });
 
 describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () => {
+  describe("session finalization delivery", () => {
+    it("retries transient server failures and succeeds without changing the payload", async () => {
+      const fetchImpl = vi.fn()
+        .mockResolvedValueOnce(new Response("unavailable", { status: 503 }))
+        .mockResolvedValueOnce(new Response("ok", { status: 200 }));
+      const sleepImpl = vi.fn().mockResolvedValue(undefined);
+      const payload = { sessionId: "session-1", durationSeconds: 42 };
+
+      const result = await finalizeVoiceSession({
+        url: "https://example.test/api/voice/session/end",
+        secret: "bridge-secret",
+        payload,
+        fetchImpl,
+        sleepImpl,
+      });
+
+      expect(result).toEqual({ ok: true, attempts: 2, status: 200, reason: "ok" });
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      expect(sleepImpl).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(String(fetchImpl.mock.calls[1]![1]!.body))).toEqual(payload);
+    });
+
+    it("does not retry permanent authentication failures", async () => {
+      const fetchImpl = vi.fn().mockResolvedValue(new Response("unauthorized", { status: 401 }));
+      const sleepImpl = vi.fn().mockResolvedValue(undefined);
+
+      const result = await finalizeVoiceSession({
+        url: "https://example.test/api/voice/session/end",
+        secret: "bad-secret",
+        payload: { sessionId: "session-1" },
+        fetchImpl,
+        sleepImpl,
+      });
+
+      expect(result).toEqual({ ok: false, attempts: 1, status: 401, reason: "http" });
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(sleepImpl).not.toHaveBeenCalled();
+    });
+
+    it("bounds repeated network failures", async () => {
+      const fetchImpl = vi.fn().mockRejectedValue(new Error("network down"));
+      const sleepImpl = vi.fn().mockResolvedValue(undefined);
+
+      const result = await finalizeVoiceSession({
+        url: "https://example.test/api/voice/session/end",
+        secret: "bridge-secret",
+        payload: { sessionId: "session-1" },
+        fetchImpl,
+        sleepImpl,
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        attempts: SESSION_FINALIZE_MAX_ATTEMPTS,
+        status: null,
+        reason: "network",
+      });
+      expect(fetchImpl).toHaveBeenCalledTimes(SESSION_FINALIZE_MAX_ATTEMPTS);
+      expect(sleepImpl).toHaveBeenCalledTimes(SESSION_FINALIZE_MAX_ATTEMPTS - 1);
+    });
+  });
+
   it("session.update carries brain + μ-law audio + tuned server VAD (GA shape)", () => {
     const m = sessionUpdateMessage({ instructions: "be Lily", voice: "marin", tools: [{ name: "x" }] }) as {
       type: string;
