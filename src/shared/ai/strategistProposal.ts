@@ -15,6 +15,32 @@ export type StrategistApprovalProposal = {
   payload: Record<string, unknown>;
 };
 
+/**
+ * One outstanding proposal PER ACTION TYPE, not one per salon.
+ *
+ * The strategist writes two unrelated kinds of approval request:
+ * `record_operational_note` (via the surface_strategist_operational_note_approval
+ * RPC) and `bulk_message` (via buildStrategistApprovalProposal). Matching on
+ * `proposal_source` alone let a pending note starve campaign proposals
+ * indefinitely — on 2026-07-31 all three production salons had sat blocked
+ * behind a pending note since 2026-07-28.
+ *
+ * The owner still never sees two pending proposals of the same kind.
+ */
+export function hasPendingStrategistProposalOfType(
+  requests: Array<{
+    action_type: string;
+    payload?: Record<string, unknown> | null;
+  }>,
+  criteria: { actionType: string; proposalSource: string },
+): boolean {
+  return requests.some(
+    (request) =>
+      request.action_type === criteria.actionType &&
+      request.payload?.proposal_source === criteria.proposalSource,
+  );
+}
+
 export function buildStrategistApprovalProposal(
   input: StrategistProposalInput,
 ): StrategistApprovalProposal {

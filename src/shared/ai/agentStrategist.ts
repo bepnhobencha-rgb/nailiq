@@ -6,7 +6,10 @@ import { salonToday } from "@/shared/lib/salonTime";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
 import type { SalonIntelligenceProfile } from "@/shared/ai/types";
 import { createApprovalRequest, getPendingApprovals } from "@/shared/ai/approvalRequests";
-import { buildStrategistApprovalProposal } from "@/shared/ai/strategistProposal";
+import {
+  buildStrategistApprovalProposal,
+  hasPendingStrategistProposalOfType,
+} from "@/shared/ai/strategistProposal";
 import { findProposalCooldown, getLessons } from "@/shared/ai/lessons";
 
 /**
@@ -464,8 +467,9 @@ export async function runStrategist(salonId: string): Promise<void> {
         proposalSource: "weekly_strategist",
       },
     );
-    const hasPendingStrategistProposal = (await getPendingApprovals(salonId)).some(
-      (request) => request.payload?.proposal_source === "weekly_strategist",
+    const hasPendingStrategistProposal = hasPendingStrategistProposalOfType(
+      await getPendingApprovals(salonId),
+      { actionType: "bulk_message", proposalSource: "weekly_strategist" },
     );
     let approvalCreated = hasPendingStrategistProposal;
     let suppressionLogged = false;

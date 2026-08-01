@@ -545,8 +545,29 @@ export async function gotoReceptionistCenter(
     }
   });
 
+  const encodedSlug = encodeURIComponent(slug);
   const q = opts?.dateYmd ? `?date=${encodeURIComponent(opts.dateYmd)}` : "";
-  await page.goto(`/dashboard/${encodeURIComponent(slug)}/center${q}`);
+  const centerUrl = `/dashboard/${encodedSlug}/center${q}`;
+  const waitForCenterOrRedirect = page
+    .waitForURL(new RegExp(`\\/dashboard\\/${encodedSlug}\\/center(?:\\?.*)?\\/?$`), {
+      timeout: 45_000,
+    })
+    .catch(() => {});
+
+  try {
+    // In CI this path sometimes sees a second in-app redirect (for example a
+    // middleware rewrite from `?date=` back to the canonical path). `goto` throws
+    // "interrupted by another navigation" before the final URL settles; we treat
+    // that as a retry signal and continue waiting for stable center-route state.
+    await page.goto(centerUrl, { waitUntil: "domcontentloaded", timeout: 45_000 });
+  } catch (error) {
+    const message = (error as Error | undefined)?.message ?? "";
+    if (!message.includes("interrupted by another navigation")) {
+      throw error;
+    }
+  }
+
+  await waitForCenterOrRedirect;
   // Next.js streams the receptionist-center-loaded wrapper inside a
   // `<div hidden id="S:N">` Suspense placeholder until hydration. The
   // testid is in the DOM throughout SSR streaming but `state: "visible"`
