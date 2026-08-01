@@ -1006,13 +1006,35 @@ export async function updateStaff(
   const supabase = await writableSupabase(slug, r.kind);
   const { data: mine } = await supabase
     .from("staff")
-    .select("id")
+    .select("id, status")
     .eq("id", staffId)
     .eq("salon_id", r.salon.id)
     .is("deleted_at" as never, null)
     .maybeSingle();
 
   if (!mine?.id) return fail("not_found");
+
+  // Guard: deactivating a staff strands their current/future appointments.
+  // Only fire on an actual active→inactive transition (editing an already
+  // inactive member's name/services must not be blocked). "Active" statuses
+  // (pending/confirmed/in_progress/waiting) are unresolved by definition —
+  // i.e. current or upcoming — so the front desk must reassign them first.
+  if (data.status === "inactive" && mine.status !== "inactive") {
+    const { count: openBookingCount, error: openBookingErr } = await supabase
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("salon_id", r.salon.id)
+      .eq("staff_id", staffId)
+      .in("status", ["pending", "confirmed", "in_progress", "waiting"]);
+
+    if (openBookingErr) {
+      console.error("[updateStaff] open booking count", openBookingErr);
+      return fail("server_error");
+    }
+    if ((openBookingCount ?? 0) > 0) {
+      return fail("staff_has_upcoming");
+    }
+  }
 
   if (Object.keys(patch).length > 0) {
     const { error } = await supabase
