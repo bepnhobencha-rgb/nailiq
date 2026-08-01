@@ -8,6 +8,9 @@ import {
   plainResponseCreate,
   zeroAudioRecoveryResponseCreate,
   summarizeRealtimeResponseDone,
+  addRealtimeUsage,
+  EMPTY_REALTIME_USAGE,
+  realtimeUsageFromEvent,
   shouldRecoverZeroAudio,
   createZeroAudioRecoveryGuard,
   ZERO_AUDIO_RECOVERY_MAX_ATTEMPTS,
@@ -233,6 +236,44 @@ describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () =>
       hasFunctionCall: false,
     });
     expect(JSON.stringify(summary)).not.toContain("private");
+  });
+
+  it("aggregates Realtime billing counters without retaining call content", () => {
+    const responseUsage = realtimeUsageFromEvent({
+      type: "response.done",
+      response: {
+        output: [{ transcript: "private booking transcript" }],
+        usage: {
+          input_token_details: {
+            text_tokens: 12,
+            audio_tokens: 34,
+            cached_tokens_details: { text_tokens: 5, audio_tokens: 6 },
+          },
+          output_token_details: { text_tokens: 7, audio_tokens: 89 },
+        },
+      },
+    });
+    const transcriptionUsage = realtimeUsageFromEvent({
+      type: "conversation.item.input_audio_transcription.completed",
+      transcript: "private caller transcript",
+      usage: { input_token_details: { audio_tokens: 21 } },
+    });
+    const total = addRealtimeUsage(
+      { ...EMPTY_REALTIME_USAGE },
+      addRealtimeUsage(responseUsage, transcriptionUsage),
+    );
+
+    expect(total).toMatchObject({
+      responseCount: 1,
+      inputTextTokens: 12,
+      inputAudioTokens: 34,
+      cachedInputTextTokens: 5,
+      cachedInputAudioTokens: 6,
+      outputTextTokens: 7,
+      outputAudioTokens: 89,
+      transcriptionAudioTokens: 21,
+    });
+    expect(JSON.stringify(total)).not.toContain("private");
   });
 
   it("recovers only zero-audio speech outcomes, never tool calls or cancellations", () => {

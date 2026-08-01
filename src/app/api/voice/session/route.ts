@@ -223,6 +223,7 @@ export async function POST(req: NextRequest) {
       .insert({
         salon_id:          salon.id,
         openai_session_id: openaiSessionId ?? null,
+        model:             resolvedModel,
         status:            "active",
         language,
       })

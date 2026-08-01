@@ -108,6 +108,7 @@ export async function POST(req: NextRequest) {
         .from("voice_ai_sessions")
         .insert({
           salon_id: salonId,
+          model: VOICE_MODEL,
           status: "active",
           language,
           ...(from ? { client_phone: from.replace(/\D/g, "") } : {}),

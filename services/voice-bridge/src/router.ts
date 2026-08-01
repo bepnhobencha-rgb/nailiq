@@ -390,6 +390,93 @@ export type RealtimeResponseDoneSummary = {
   hasFunctionCall: boolean;
 };
 
+export type RealtimeUsage = {
+  schemaVersion: 1;
+  responseCount: number;
+  inputTextTokens: number;
+  inputAudioTokens: number;
+  inputImageTokens: number;
+  cachedInputTextTokens: number;
+  cachedInputAudioTokens: number;
+  cachedInputImageTokens: number;
+  outputTextTokens: number;
+  outputAudioTokens: number;
+  transcriptionAudioTokens: number;
+};
+
+export const EMPTY_REALTIME_USAGE: Readonly<RealtimeUsage> = Object.freeze({
+  schemaVersion: 1,
+  responseCount: 0,
+  inputTextTokens: 0,
+  inputAudioTokens: 0,
+  inputImageTokens: 0,
+  cachedInputTextTokens: 0,
+  cachedInputAudioTokens: 0,
+  cachedInputImageTokens: 0,
+  outputTextTokens: 0,
+  outputAudioTokens: 0,
+  transcriptionAudioTokens: 0,
+});
+
+const REALTIME_USAGE_KEYS = [
+  "responseCount",
+  "inputTextTokens",
+  "inputAudioTokens",
+  "inputImageTokens",
+  "cachedInputTextTokens",
+  "cachedInputAudioTokens",
+  "cachedInputImageTokens",
+  "outputTextTokens",
+  "outputAudioTokens",
+  "transcriptionAudioTokens",
+] as const;
+
+function usageRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function usageCount(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  return Math.min(10_000_000, Math.max(0, Math.trunc(value)));
+}
+
+/** Extract numeric billing counters without retaining conversation content. */
+export function realtimeUsageFromEvent(eventValue: unknown): RealtimeUsage {
+  const event = usageRecord(eventValue);
+  const result = { ...EMPTY_REALTIME_USAGE };
+  if (event.type === "response.done") {
+    const usage = usageRecord(usageRecord(event.response).usage);
+    const input = usageRecord(usage.input_token_details);
+    const cached = usageRecord(input.cached_tokens_details);
+    const output = usageRecord(usage.output_token_details);
+    result.responseCount = 1;
+    result.inputTextTokens = usageCount(input.text_tokens);
+    result.inputAudioTokens = usageCount(input.audio_tokens);
+    result.inputImageTokens = usageCount(input.image_tokens);
+    result.cachedInputTextTokens = usageCount(cached.text_tokens);
+    result.cachedInputAudioTokens = usageCount(cached.audio_tokens);
+    result.cachedInputImageTokens = usageCount(cached.image_tokens);
+    result.outputTextTokens = usageCount(output.text_tokens);
+    result.outputAudioTokens = usageCount(output.audio_tokens);
+  } else if (event.type === "conversation.item.input_audio_transcription.completed") {
+    const usage = usageRecord(event.usage);
+    result.transcriptionAudioTokens = usageCount(
+      usageRecord(usage.input_token_details).audio_tokens,
+    );
+  }
+  return result;
+}
+
+export function addRealtimeUsage(current: RealtimeUsage, addition: RealtimeUsage): RealtimeUsage {
+  const result = { ...EMPTY_REALTIME_USAGE };
+  for (const key of REALTIME_USAGE_KEYS) {
+    result[key] = usageCount(current[key] + addition[key]);
+  }
+  return result;
+}
+
 function telemetryTag(value: unknown): string | null {
   if (typeof value === "string") return value.slice(0, 80);
   if (typeof value === "number" || typeof value === "boolean") return String(value);
