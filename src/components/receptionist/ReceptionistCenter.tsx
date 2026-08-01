@@ -4169,6 +4169,7 @@ function ReceptionistCenterInner({
                 }))}
                 currency={data.salon.currencyCode}
                 nowIso={nowIso}
+                timezone={timezone}
                 onAddWalkin={onAddWalkin}
                 onAddAndAssign={onAddAndAssign}
                 autoAssignEnabled={data.salon.walkinAutoAssign}

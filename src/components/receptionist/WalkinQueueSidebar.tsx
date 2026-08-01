@@ -162,6 +162,8 @@ export interface WalkinQueueSidebarProps {
   onCancelAssign: () => void;
   /** Current time for urgency calc — passed by parent so it can re-render every 60s */
   nowIso: string;
+  /** Salon IANA timezone for deterministic queue clock labels. */
+  timezone: string;
   /** Block add form when salon has no services or no staff */
   addFormDisabled?: boolean;
   /**
@@ -254,6 +256,7 @@ export function WalkinQueueSidebar({
   onStartAssign,
   onCancelAssign,
   nowIso,
+  timezone,
   addFormDisabled = false,
   isOffline = false,
   offlineAddDisabledHint,
@@ -565,6 +568,7 @@ export function WalkinQueueSidebar({
                       requestedStaffReadyAtIso={
                         item.requested_staff_ready_at_iso ?? null
                       }
+                      timezone={timezone}
                       showWaitTime={showWaitTime}
                       showVipIndicator={showVipIndicator}
                       emphasizeWait={rushMode}
