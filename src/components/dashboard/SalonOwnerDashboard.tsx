@@ -19,6 +19,7 @@ import { DashboardPrimaryActions } from "@/components/dashboard/DashboardPrimary
 import { SalonOwnerDashboardMain } from "@/components/dashboard/SalonOwnerDashboardMain";
 import {
   nextBookingStatus,
+  groupUpcomingBookingsBySalonDay,
   splitSalonDashboardBookings,
   type SalonOwnerDashboardViewPayload,
 } from "@/components/dashboard/salonDashboardFormat";
@@ -274,41 +275,21 @@ export function SalonOwnerDashboard({
 
   const viewData: SalonOwnerDashboardViewPayload | null = useMemo(() => {
     if (!data) return null;
-    const split = splitSalonDashboardBookings(data.allBookings);
+    const split = splitSalonDashboardBookings(
+      data.allBookings,
+      data.salon.timezone,
+    );
     return { ...data, ...split };
   }, [data]);
 
   const upcomingByDay = useMemo(() => {
     if (!viewData || !viewData.upcoming.length) return [];
     const locale = language === "vi" ? "vi-VN" : "en-US";
-    const map = new Map<
-      string,
-      { label: string; items: SalonDashboardBooking[] }
-    >();
-    for (const b of viewData.upcoming) {
-      if (b.start_time_utc == null) continue;
-      const d = new Date(b.start_time_utc);
-      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-      const label = d.toLocaleDateString(locale, {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-      });
-      const group = map.get(key);
-      if (group) {
-        group.items.push(b);
-      } else {
-        map.set(key, { label, items: [b] });
-      }
-    }
-    return [...map.entries()]
-      .sort((a, b) => {
-        const a0 = a[1].items[0]?.start_time_utc;
-        const b0 = b[1].items[0]?.start_time_utc;
-        if (!a0 || !b0) return 0;
-        return new Date(a0).getTime() - new Date(b0).getTime();
-      })
-      .map(([, v]) => v);
+    return groupUpcomingBookingsBySalonDay(
+      viewData.upcoming,
+      viewData.salon.timezone,
+      locale,
+    );
   }, [viewData, language]);
 
   const onCopy = useCallback(async () => {

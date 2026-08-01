@@ -336,6 +336,7 @@ export type LoadSalonDashboardResult =
         salon_phone: string | null;
         opening_hours: unknown | null;
         profile_complete: boolean;
+        timezone: string;
         vertical: string | null;
       };
       setup: {
@@ -443,6 +444,7 @@ export async function loadSalonOwnerDashboard(
       salon_phone: salon.salon_phone ?? null,
       opening_hours: salon.opening_hours ?? null,
       profile_complete: !!salon.profile_complete,
+      timezone: salon.timezone || "UTC",
       vertical: typeof salon.vertical === "string" ? salon.vertical : null,
     },
     setup: {

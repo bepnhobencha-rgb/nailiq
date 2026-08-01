@@ -1,6 +1,11 @@
 import { getUserMessages } from "@/shared/i18n/user";
 import type { LoadSalonDashboardResult } from "@/shared/dashboard/salonOwnerActions";
 import {
+  salonDayRangeUtc,
+  salonToday,
+  salonYmdOfUtc,
+} from "@/shared/lib/salonTime";
+import {
   OWNER_TODAY_LIST_STATUSES,
   type BookingStatus,
   type SalonDashboardBooking,
@@ -79,39 +84,39 @@ export function formatSalonMoney(cents: number, lang: "en" | "vi"): string {
   }).format(amount);
 }
 
-/**
- * Split fetched bookings using UTC calendar-day boundaries.
- *
- * Previously this used `Date#setHours(0,0,0,0)`, which interprets the boundary
- * in the runtime's local timezone — server (TZ=UTC) and browser (TZ=viewer)
- * produced different start/end timestamps, so SSR and client hydration computed
- * different stats counts and React threw a hydration mismatch (e.g. server
- * "Bookings: 4" vs client "Bookings: 1"). Using `Date.UTC(...)` makes the
- * boundary identical on both sides. Trade-off: "today" is UTC today, not the
- * viewer's local today; for salons in extreme timezones, prefer threading the
- * salon timezone through and using `salonDayRangeUtc` instead.
- */
+/** Split fetched bookings at midnight in the salon's configured timezone.
+ * Explicit timezone boundaries keep SSR and hydration deterministic while
+ * making "today" match the salon's operating day instead of UTC/viewer time. */
+function safeSalonTimezone(timezone: string): string {
+  const candidate = timezone.trim() || "UTC";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: candidate }).format(0);
+    return candidate;
+  } catch {
+    return "UTC";
+  }
+}
+
 export function splitSalonDashboardBookings(
   allBookings: SalonDashboardBooking[],
+  timezone: string,
+  nowIso?: string,
 ): {
   today: SalonDashboardBooking[];
   upcoming: SalonDashboardBooking[];
   stats: SalonDashboardStatsSlice;
 } {
-  const now = new Date();
-  const todayStartMs = Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    now.getUTCDate(),
-    0, 0, 0, 0,
-  );
-  const todayEndMs = todayStartMs + 24 * 60 * 60 * 1000 - 1;
+  const tz = safeSalonTimezone(timezone);
+  const todayYmd = salonToday(tz, nowIso);
+  const { startUtc, endUtc } = salonDayRangeUtc(todayYmd, tz);
+  const todayStartMs = Date.parse(startUtc);
+  const todayEndExclusiveMs = Date.parse(endUtc);
 
   const todayInWindow = allBookings.filter((b) => {
     if (b.start_time_utc == null) return false;
     const t = Date.parse(b.start_time_utc);
     if (Number.isNaN(t)) return false;
-    return t >= todayStartMs && t <= todayEndMs;
+    return t >= todayStartMs && t < todayEndExclusiveMs;
   });
 
   /** Agenda rows only (excludes completed / cancelled / queue-only). Stats still use full `todayInWindow`. */
@@ -121,7 +126,7 @@ export function splitSalonDashboardBookings(
     if (b.start_time_utc == null) return false;
     const t = Date.parse(b.start_time_utc);
     if (Number.isNaN(t)) return false;
-    return t > todayEndMs && b.status === "confirmed";
+    return t >= todayEndExclusiveMs && b.status === "confirmed";
   });
 
   const pending = todayInWindow.filter((b) => b.status === "pending").length;
@@ -140,4 +145,39 @@ export function splitSalonDashboardBookings(
       revenueCents,
     },
   };
+}
+
+export function groupUpcomingBookingsBySalonDay(
+  bookings: SalonDashboardBooking[],
+  timezone: string,
+  locale: string,
+): Array<{ label: string; items: SalonDashboardBooking[] }> {
+  const tz = safeSalonTimezone(timezone);
+  const labelFormatter = new Intl.DateTimeFormat(locale, {
+    timeZone: tz,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+  const groups = new Map<
+    string,
+    { label: string; items: SalonDashboardBooking[] }
+  >();
+
+  for (const booking of bookings) {
+    if (!booking.start_time_utc) continue;
+    const timestamp = Date.parse(booking.start_time_utc);
+    if (Number.isNaN(timestamp)) continue;
+    const date = new Date(timestamp);
+    const key = salonYmdOfUtc(date.toISOString(), tz);
+    const group = groups.get(key);
+    if (group) group.items.push(booking);
+    else groups.set(key, { label: labelFormatter.format(date), items: [booking] });
+  }
+
+  return [...groups.values()].sort((a, b) => {
+    const firstA = Date.parse(a.items[0]?.start_time_utc ?? "");
+    const firstB = Date.parse(b.items[0]?.start_time_utc ?? "");
+    return firstA - firstB;
+  });
 }
