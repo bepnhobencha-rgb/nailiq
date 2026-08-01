@@ -82,10 +82,21 @@ async function handleVoice(req: NextRequest, sigParams: Record<string, string>) 
 
   const { data: salonRow } = await supabase
     .from("salons")
-    .select("voice_ai_enabled")
+    .select("voice_ai_enabled, voice_ai_sessions_this_month, voice_ai_sessions_limit")
     .eq("slug", slug)
     .maybeSingle();
   if (!salonRow || (salonRow as { voice_ai_enabled?: boolean | null }).voice_ai_enabled !== true) {
+    return twimlResponse(sayUnavailable);
+  }
+  const quota = salonRow as {
+    voice_ai_sessions_this_month?: number | null;
+    voice_ai_sessions_limit?: number | null;
+  };
+  if (
+    typeof quota.voice_ai_sessions_this_month === "number" &&
+    typeof quota.voice_ai_sessions_limit === "number" &&
+    quota.voice_ai_sessions_this_month >= quota.voice_ai_sessions_limit
+  ) {
     return twimlResponse(sayUnavailable);
   }
 

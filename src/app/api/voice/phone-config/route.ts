@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
   const supabase = createServiceRoleClient();
   const { data: salonRow } = await supabase
     .from("salons")
-    .select("voice_ai_enabled, voice_ai_default_language, voice_ai_allowed_languages")
+    .select("id, voice_ai_enabled, voice_ai_default_language, voice_ai_allowed_languages")
     .eq("slug", slug)
     .maybeSingle();
   if (!salonRow) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
@@ -93,31 +93,44 @@ export async function POST(req: NextRequest) {
   const ctx = await loadSalonContext(slug);
   if (!ctx) return NextResponse.json({ error: "context_load_failed" }, { status: 500 });
 
-  // Open a session row so the phone call is recorded the same way a web call is.
-  // The bridge threads the returned id onto its tool calls (→ tool_log) and posts
-  // the transcript to /api/voice/session/end when the call ends. Best-effort: a
-  // failure here must not stop the call from connecting.
+  // Reserve the same monthly quota used by browser voice, atomically, before
+  // allowing the bridge to create its first paid model response. A mid-call
+  // language reconfiguration deliberately skips this block: it is the same call.
   let sessionId: string | null = null;
-  try {
-    if (!newSession) throw new Error("skip");   // language-switch re-fetch — no new row
-    const { data: salonIdRow } = await supabase
-      .from("salons").select("id").eq("slug", slug).maybeSingle();
-    const salonId = (salonIdRow as { id?: string } | null)?.id ?? null;
-    if (salonId) {
-      const { data: sess } = await supabase
-        .from("voice_ai_sessions")
-        .insert({
-          salon_id: salonId,
-          model: VOICE_MODEL,
-          status: "active",
-          language,
-          ...(from ? { client_phone: from.replace(/\D/g, "") } : {}),
-        } as never)
-        .select("id")
-        .single();
-      sessionId = (sess as { id?: string } | null)?.id ?? null;
+  if (newSession) {
+    const salonId = (salonRow as { id?: string }).id;
+    const { data: reserved, error: reserveError } = await supabase.rpc(
+      "increment_voice_session_if_under_limit",
+      { p_salon_id: salonId },
+    );
+    if (reserveError) {
+      return NextResponse.json({ error: "quota_unavailable" }, { status: 503 });
     }
-  } catch { /* best-effort — call still connects without a session row */ }
+    if (reserved !== true) {
+      return NextResponse.json({ error: "session_limit_reached" }, { status: 429 });
+    }
+
+    const { data: sess, error: sessionError } = await supabase
+      .from("voice_ai_sessions")
+      .insert({
+        salon_id: salonId,
+        model: VOICE_MODEL,
+        status: "active",
+        language,
+        ...(from ? { client_phone: from.replace(/\D/g, "") } : {}),
+      } as never)
+      .select("id")
+      .single();
+    sessionId = (sess as { id?: string } | null)?.id ?? null;
+    if (sessionError || !sessionId) {
+      // A reservation without a durable row would consume quota invisibly.
+      // Roll it back before failing closed; never start an unmetered call.
+      await supabase.rpc("release_voice_session_reservation", {
+        p_salon_id: salonId,
+      });
+      return NextResponse.json({ error: "session_record_failed" }, { status: 503 });
+    }
+  }
 
   return NextResponse.json({
     model: VOICE_MODEL,
