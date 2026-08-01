@@ -12,7 +12,7 @@ const modal = fs.readFileSync(
   "utf8",
 );
 const migration = fs.readFileSync(
-  path.join(root, "supabase/migrations/20260801133000_release_voice_session_reservation.sql"),
+  path.join(root, "supabase/migrations/20260801132953_release_voice_session_reservation.sql"),
   "utf8",
 );
 
