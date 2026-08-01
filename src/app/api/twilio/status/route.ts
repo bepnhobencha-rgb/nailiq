@@ -26,46 +26,31 @@ const TERMINAL_STATUSES = new Set(["delivered", "undelivered", "failed"]);
 export async function POST(req: NextRequest) {
   const supabase = createServiceRoleClient();
   const authToken = await getTwilioAuthToken(supabase);
+  if (!authToken) {
+    console.error("[twilio/status] auth token unavailable");
+    return new NextResponse("Service unavailable", { status: 503 });
+  }
 
-  if (authToken) {
-    const signature = req.headers.get("x-twilio-signature") ?? "";
-    const url = `${twilioRequestBaseUrl(req)}/api/twilio/status`;
+  const signature = req.headers.get("x-twilio-signature") ?? "";
+  const url = `${twilioRequestBaseUrl(req)}/api/twilio/status`;
+  const rawBody = await req.text();
+  const params = Object.fromEntries(new URLSearchParams(rawBody).entries());
 
-    // Parse body for signature validation
-    const rawBody = await req.text();
-    const params = Object.fromEntries(new URLSearchParams(rawBody).entries());
+  if (!validateTwilioSignature(url, params, signature, authToken)) {
+    console.warn("[twilio/status] invalid signature");
+    return new NextResponse("Forbidden", { status: 403 });
+  }
 
-    if (!validateTwilioSignature(url, params, signature, authToken)) {
-      console.warn("[twilio/status] invalid signature");
-      return new NextResponse("Forbidden", { status: 403 });
-    }
+  const messageSid = params.MessageSid ?? "";
+  const messageStatus = (params.MessageStatus ?? "").toLowerCase();
+  const errorCode = params.ErrorCode?.trim() || null;
 
-    const messageSid = params.MessageSid ?? "";
-    const messageStatus = (params.MessageStatus ?? "").toLowerCase();
-    const errorCode = params.ErrorCode?.trim() || null;
-
-    if (messageSid && TERMINAL_STATUSES.has(messageStatus)) {
-      await updateNotificationBySid(
-        messageSid,
-        messageStatus as "delivered" | "undelivered" | "failed",
-        errorCode,
-      );
-    }
-  } else {
-    // No auth token configured — still parse and update (dev/test mode)
-    const formData = await req.formData().catch(() => null);
-    if (formData) {
-      const messageSid = String(formData.get("MessageSid") ?? "");
-      const messageStatus = String(formData.get("MessageStatus") ?? "").toLowerCase();
-      const errorCode = String(formData.get("ErrorCode") ?? "").trim() || null;
-      if (messageSid && TERMINAL_STATUSES.has(messageStatus)) {
-        await updateNotificationBySid(
-          messageSid,
-          messageStatus as "delivered" | "undelivered" | "failed",
-          errorCode,
-        );
-      }
-    }
+  if (messageSid && TERMINAL_STATUSES.has(messageStatus)) {
+    await updateNotificationBySid(
+      messageSid,
+      messageStatus as "delivered" | "undelivered" | "failed",
+      errorCode,
+    );
   }
 
   // Twilio expects 200 + empty TwiML body
