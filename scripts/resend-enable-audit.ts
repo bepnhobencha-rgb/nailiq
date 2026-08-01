@@ -1,7 +1,7 @@
 /**
  * Audit/repair salons using Resend flag.
  *
- * - Default: writes (set false → true) when needed.
+ * - Default: writes (set false/null → true) when needed.
  * - --dry-run: only report what would change.
  * - --json: output machine-readable JSON summary.
  *
