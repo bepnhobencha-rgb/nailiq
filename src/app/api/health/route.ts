@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { deploymentIdentity } from "@/shared/operations/deploymentIdentity";
 
 /**
  * Liveness endpoint for uptime monitors. No DB, no auth — answers
@@ -11,14 +12,12 @@ import { NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const VERSION = process.env.npm_package_version ?? "0.0.0";
-
 export function GET() {
   return NextResponse.json(
     {
       status: "ok",
       timestamp: new Date().toISOString(),
-      version: VERSION,
+      version: deploymentIdentity(),
     },
     {
       status: 200,

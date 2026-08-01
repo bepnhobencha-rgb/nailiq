@@ -1,3 +1,5 @@
+import { deploymentIdentity } from "@/shared/operations/deploymentIdentity";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -8,10 +10,7 @@ export const dynamic = "force-dynamic";
  * by Vercel at build time; falls back to "dev" locally.
  */
 export function GET() {
-  const id =
-    process.env.VERCEL_GIT_COMMIT_SHA ??
-    process.env.VERCEL_DEPLOYMENT_ID ??
-    "dev";
+  const id = deploymentIdentity();
   return new Response(JSON.stringify({ id }), {
     headers: {
       "Content-Type": "application/json",
