@@ -72,13 +72,15 @@ export async function POST(req: NextRequest) {
 
   // Signature check — Twilio signs the FULL request URL incl. the ?slug= query.
   const authToken = await getTwilioAuthToken(supabase);
-  if (authToken) {
-    const signature = req.headers.get("x-twilio-signature") ?? "";
-    const fullUrl = `${twilioRequestBaseUrl(req)}/api/twilio/sms${req.nextUrl.search}`;
-    if (!validateTwilioSignature(fullUrl, params, signature, authToken)) {
-      console.warn("[twilio/sms] invalid signature");
-      return new NextResponse("Forbidden", { status: 403 });
-    }
+  if (!authToken) {
+    console.error("[twilio/sms] auth token unavailable");
+    return new NextResponse("Service unavailable", { status: 503 });
+  }
+  const signature = req.headers.get("x-twilio-signature") ?? "";
+  const fullUrl = `${twilioRequestBaseUrl(req)}/api/twilio/sms${req.nextUrl.search}`;
+  if (!validateTwilioSignature(fullUrl, params, signature, authToken)) {
+    console.warn("[twilio/sms] invalid signature");
+    return new NextResponse("Forbidden", { status: 403 });
   }
 
   const fromRaw = params.From ?? "";

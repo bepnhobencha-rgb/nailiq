@@ -62,13 +62,15 @@ export async function POST(req: NextRequest) {
   const { createServiceRoleClient } = await import("@/shared/lib/supabase/serviceRole");
   const supabase = createServiceRoleClient();
   const authToken = await getTwilioAuthToken(supabase);
-  if (authToken) {
-    const signature = req.headers.get("x-twilio-signature") ?? "";
-    const url = `${twilioRequestBaseUrl(req)}/api/twilio/inbound`;
-    if (!validateTwilioSignature(url, params, signature, authToken)) {
-      console.warn("[twilio/inbound] invalid signature");
-      return new NextResponse("Forbidden", { status: 403 });
-    }
+  if (!authToken) {
+    console.error("[twilio/inbound] auth token unavailable");
+    return new NextResponse("Service unavailable", { status: 503 });
+  }
+  const signature = req.headers.get("x-twilio-signature") ?? "";
+  const url = `${twilioRequestBaseUrl(req)}/api/twilio/inbound`;
+  if (!validateTwilioSignature(url, params, signature, authToken)) {
+    console.warn("[twilio/inbound] invalid signature");
+    return new NextResponse("Forbidden", { status: 403 });
   }
 
   const action = classify(params.Body ?? "");

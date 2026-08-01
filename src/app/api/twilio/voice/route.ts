@@ -58,13 +58,15 @@ async function handleVoice(req: NextRequest, sigParams: Record<string, string>) 
   // For GET, `sigParams` is empty (all params are already in the URL); for POST
   // the body params are appended, matching Twilio's own signing.
   const authToken = await getTwilioAuthToken(supabase);
-  if (authToken) {
-    const signature = req.headers.get("x-twilio-signature") ?? "";
-    const fullUrl = `${twilioRequestBaseUrl(req)}/api/twilio/voice${req.nextUrl.search}`;
-    if (!validateTwilioSignature(fullUrl, sigParams, signature, authToken)) {
-      console.warn("[twilio/voice] invalid signature");
-      return new NextResponse("Forbidden", { status: 403 });
-    }
+  if (!authToken) {
+    console.error("[twilio/voice] auth token unavailable");
+    return new NextResponse("Service unavailable", { status: 503 });
+  }
+  const signature = req.headers.get("x-twilio-signature") ?? "";
+  const fullUrl = `${twilioRequestBaseUrl(req)}/api/twilio/voice${req.nextUrl.search}`;
+  if (!validateTwilioSignature(fullUrl, sigParams, signature, authToken)) {
+    console.warn("[twilio/voice] invalid signature");
+    return new NextResponse("Forbidden", { status: 403 });
   }
 
   // `From` / `To` are in the body on POST, in the query on GET.
