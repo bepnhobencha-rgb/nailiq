@@ -6,6 +6,7 @@ import { aiAgentPermissionActivityItem } from "@/shared/dashboard/aiAgentPermiss
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { voiceSessionDurationSuffix } from "@/shared/voiceai/sessionDuration";
 
 /**
  * Unified "Activity / Communications log" for the salon owner — one timeline
@@ -363,8 +364,7 @@ export async function loadActivityFeed(
 
     for (const r of (callsRes.data ?? []) as Array<Record<string, unknown>>) {
       const name = str(r.client_name).trim() || str(r.client_phone) || "Cuộc gọi";
-      const dur = Number(r.duration_seconds) || 0;
-      const durStr = dur > 0 ? ` · ${Math.floor(dur / 60)}p${dur % 60}s` : "";
+      const durStr = voiceSessionDurationSuffix(r.duration_seconds);
       items.push({
         id: `cl-${str(r.id)}`,
         kind: "call",
