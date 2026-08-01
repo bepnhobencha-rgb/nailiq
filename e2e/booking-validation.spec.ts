@@ -80,6 +80,11 @@ test.describe("Booking validation — info step", () => {
     await page.goto(`/${testSlug}`);
     await expect(page.getByTestId("booking-phone-gate")).toBeVisible();
     await setReactInputValue(page.getByTestId("booking-entry-phone"), "123");
+    await expect(page.getByTestId("booking-entry-phone")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    await expect(page.getByTestId("booking-entry-phone-error")).toBeVisible();
     await expect(
       page.locator('[data-testid="service-tile-select"]'),
     ).toHaveCount(0);
