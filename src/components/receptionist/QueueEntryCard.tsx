@@ -9,6 +9,7 @@ import {
   type QueueSourceVariant,
 } from "@/components/ui/QueueChip";
 import { cn } from "@/shared/lib/cn";
+import { formatInSalonTz } from "@/shared/lib/salonTime";
 import type {
   QueuePriority,
   QueueRequestTag,
@@ -69,6 +70,8 @@ export type QueueEntryCardProps = {
   /** ISO time the requested staff is projected to be free. Powers the
    * "Ready ~3:25 PM" suffix on the staff line. */
   requestedStaffReadyAtIso?: string | null;
+  /** Salon IANA timezone used to keep the ready clock identical across SSR and hydration. */
+  timezone: string;
   /** When false, hides wait time + urgency colour entirely. */
   showWaitTime?: boolean;
   /** When false, suppresses the VIP source chip (other sources still render). */
@@ -130,6 +133,7 @@ export function QueueEntryCard({
   staffRequestedByClient = false,
   requestedStaffName,
   requestedStaffReadyAtIso,
+  timezone,
   showWaitTime = true,
   showVipIndicator = true,
   emphasizeWait = false,
@@ -158,10 +162,7 @@ export function QueueEntryCard({
     low: labels.priorityLow,
   };
   const requestedStaffReadyClock = requestedStaffReadyAtIso
-    ? new Date(requestedStaffReadyAtIso).toLocaleTimeString("en-US", {
-        hour: "numeric",
-        minute: "2-digit",
-      })
+    ? formatInSalonTz(requestedStaffReadyAtIso, timezone, "time")
     : null;
 
   if (compact) {
