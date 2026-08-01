@@ -15,6 +15,10 @@ const migration = fs.readFileSync(
   path.join(root, "supabase/migrations/20260801132953_release_voice_session_reservation.sql"),
   "utf8",
 );
+const parity = fs.readFileSync(
+  path.join(root, "scripts/check-schema-parity.ts"),
+  "utf8",
+);
 
 describe("Voice session quota and renewal boundary", () => {
   it("reserves quota atomically before minting an OpenAI secret", () => {
@@ -34,6 +38,8 @@ describe("Voice session quota and renewal boundary", () => {
     expect(migration).toMatch(
       /revoke all on function public\.release_voice_session_reservation\(uuid\)[\s\S]*from public, anon, authenticated/i,
     );
+    expect(parity).toContain("functions: 108");
+    expect(parity).toContain('"release_voice_session_reservation"');
   });
 
   it("requires the existing capability for renewal and reuses its row", () => {
