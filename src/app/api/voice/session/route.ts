@@ -10,6 +10,7 @@ import {
   SESSION_TTL_SECONDS,
   type SupportedLanguage,
 } from "@/shared/voiceai/config";
+import { createVoiceSessionCapability } from "@/shared/voiceai/sessionCapability";
 
 export const runtime    = "nodejs";
 export const maxDuration = 30;
@@ -138,10 +139,21 @@ export async function POST(req: NextRequest) {
     sessionRow = data;
   } catch { /* ignore */ }
 
+  const sessionCapability = sessionRow
+    ? createVoiceSessionCapability(sessionRow.id)
+    : null;
+  if (sessionRow && !sessionCapability) {
+    return NextResponse.json(
+      { error: "voice_session_signing_unavailable" },
+      { status: 503 },
+    );
+  }
+
   return NextResponse.json({
     ephemeralKey,
     model:           resolvedModel,
     sessionId:       sessionRow?.id ?? null,
+    sessionCapability,
     expiresAt:       parsed.expires_at ?? Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
     openaiSessionId: openaiSessionId ?? null,
     voice,

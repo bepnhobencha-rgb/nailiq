@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { normalizeVoiceSessionSeconds } from "@/shared/voiceai/sessionDuration";
+import { verifyVoiceSessionCapability } from "@/shared/voiceai/sessionCapability";
 
 export const runtime = "nodejs";
 
@@ -38,6 +39,18 @@ export async function POST(req: NextRequest) {
     language,
   } = body;
   if (!sessionId) return NextResponse.json({ error: "missing_session_id" }, { status: 400 });
+
+  // This route writes with service-role privileges. The Fly bridge authenticates
+  // with its shared secret; a browser receives a capability bound to the exact
+  // session id from /api/voice/session. Never accept an unsigned session update.
+  const bridgeSecret = process.env.VOICE_BRIDGE_SECRET?.trim();
+  const fromBridge = Boolean(bridgeSecret) &&
+    req.headers.get("x-voice-bridge-secret") === bridgeSecret;
+  const browserCapability = req.headers.get("x-voice-session-token");
+  if (!fromBridge && !verifyVoiceSessionCapability(sessionId, browserCapability)) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
   const lang = typeof language === "string" && SUPPORTED.includes(language) ? language : null;
   const status = SESSION_STATUSES.has(requestedStatus) ? requestedStatus : "failed";
 

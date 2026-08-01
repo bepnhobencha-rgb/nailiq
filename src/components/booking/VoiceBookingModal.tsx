@@ -139,6 +139,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
   const processorRef        = useRef<ScriptProcessorNode | null>(null);
   const audioElementRef     = useRef<HTMLAudioElement | null>(null);
   const sessionIdRef        = useRef<string | null>(null);
+  const sessionCapabilityRef = useRef<string | null>(null);
   const timerRef            = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTsRef          = useRef<number>(0);
   const statusRef           = useRef<Status>("idle");
@@ -250,7 +251,12 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       const elapsed = elapsedSessionSeconds(startTsRef.current, Date.now());
       await fetch("/api/voice/session/end", {
         method:  "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(sessionCapabilityRef.current
+            ? { "x-voice-session-token": sessionCapabilityRef.current }
+            : {}),
+        },
         body:    JSON.stringify({
           sessionId:       sid,
           durationSeconds: elapsed,
@@ -1042,10 +1048,11 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         const body = await sessRes.json().catch(() => ({})) as Record<string, string>;
         throw new Error(body.error ?? `session_init_${sessRes.status}`);
       }
-      const { ephemeralKey, model: realtimeModel, sessionId, voice, instructions, expiresAt: expiresAtRaw, altLanguage, altInstructions } = await sessRes.json() as {
+      const { ephemeralKey, model: realtimeModel, sessionId, sessionCapability, voice, instructions, expiresAt: expiresAtRaw, altLanguage, altInstructions } = await sessRes.json() as {
         ephemeralKey:  string;
         model:         string;
         sessionId:     string | null;
+        sessionCapability: string | null;
         voice:         string;
         instructions?: string;
         expiresAt?:    number;
@@ -1056,6 +1063,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         ? { language: altLanguage, instructions: altInstructions }
         : null;
       sessionIdRef.current    = sessionId;
+      sessionCapabilityRef.current = sessionCapability;
       // Store instructions, language, and voice so downstream response.create
       // calls can re-anchor the persona AND lock the voice after each tool
       // exchange (prevents both tone drift and voice age/character variation).
