@@ -2,6 +2,7 @@
  * App Router client instrumentation — `Sentry.init` lives in root `sentry.client.config.ts`.
  */
 import * as Sentry from "@sentry/nextjs";
+import { classifyClientErrorDisposition } from "@/shared/observability/clientErrorDisposition";
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
 
@@ -73,30 +74,25 @@ function maybeRecoverFromStaleDeploy(msg: string): boolean {
   return true;
 }
 
-function isUnactionableNoise(msg: string): boolean {
-  // "Script error." is the browser's cross-origin security mask: when a script loaded from
-  // a different origin (e.g. Supabase Realtime, or any CDN asset) throws, the browser strips
-  // all details and reports exactly this string. No stack, no context — undebuggable and
-  // usually not caused by NailIQ code directly. Filtering it avoids noisy alerts on mobile
-  // Safari which is particularly aggressive about this masking.
-  if (msg === "Script error.") return true;
-  return false;
-}
-
 if (typeof window !== "undefined") {
   window.addEventListener("error", (e) => {
     const msg = e.message || (e.error instanceof Error ? e.error.message : "Unknown error");
     if (isSessionExpiryError(String(msg))) return;
     if (maybeRecoverFromStaleDeploy(String(msg))) return;
-    if (isUnactionableNoise(String(msg))) return;
-    reportClientError(String(msg), e.error instanceof Error ? (e.error.stack ?? null) : null, "error");
+    const stack = e.error instanceof Error ? (e.error.stack ?? null) : null;
+    const evidence = [e.filename, stack].filter(Boolean).join("\n");
+    const disposition = classifyClientErrorDisposition(String(msg), evidence);
+    if (disposition === "ignore") return;
+    reportClientError(String(msg), stack, disposition);
   });
   window.addEventListener("unhandledrejection", (e) => {
     const r = e.reason;
     const msg = r instanceof Error ? r.message : typeof r === "string" ? r : "Unhandled promise rejection";
     if (isSessionExpiryError(String(msg))) return;
     if (maybeRecoverFromStaleDeploy(String(msg))) return;
-    if (isUnactionableNoise(String(msg))) return;
-    reportClientError(String(msg), r instanceof Error ? (r.stack ?? null) : null, "error");
+    const stack = r instanceof Error ? (r.stack ?? null) : null;
+    const disposition = classifyClientErrorDisposition(String(msg), stack);
+    if (disposition === "ignore") return;
+    reportClientError(String(msg), stack, disposition);
   });
 }

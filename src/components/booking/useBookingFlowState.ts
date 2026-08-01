@@ -533,6 +533,13 @@ export function useBookingFlowState(
     return false;
   }, [clientName, clientPhone, clientEmail]);
 
+  // Public waitlist notifications must have a dependable email destination.
+  // Keep the normal booking flow unchanged (email remains optional there).
+  const waitlistContactInvalid = useMemo(() => {
+    if (guestContactInvalid) return true;
+    return !isValidEmailFormat(clientEmail);
+  }, [guestContactInvalid, clientEmail]);
+
   const setBookingClientName = useCallback((v: string) => {
     setClientName(v);
     setInfoNameError(null);
@@ -1783,6 +1790,7 @@ export function useBookingFlowState(
     if (!serviceId || !staffId) return;
     const name = clientName.trim();
     const phone = clientPhone.trim();
+    const email = clientEmail.trim();
     const nameEmpty = name.length === 0;
     const nameTooLong = name.length > BOOKING_GUEST_NAME_MAX;
     const nameWrongChars =
@@ -1791,7 +1799,8 @@ export function useBookingFlowState(
       nameEmpty ||
       nameTooLong ||
       nameWrongChars ||
-      !validateGuestPhone(phone).ok
+      !validateGuestPhone(phone).ok ||
+      !isValidEmailFormat(email)
     ) {
       setError(
         nameEmpty
@@ -1802,7 +1811,11 @@ export function useBookingFlowState(
               ? t.bookingErrors.invalidNameChars
               : phone.length === 0
                 ? t.bookingErrors.phoneRequired
-                : t.bookingErrors.invalidPhone,
+                : !validateGuestPhone(phone).ok
+                  ? t.bookingErrors.invalidPhone
+                  : email.length === 0
+                    ? t.waitlistEmailRequired
+                    : t.bookingErrors.invalidEmail,
       );
       return;
     }
@@ -1817,7 +1830,7 @@ export function useBookingFlowState(
         preferredSlotLabel: waitlistPreferredTime.trim() || null,
         clientName: name,
         clientPhone: phone,
-        clientEmail: clientEmail.trim() || undefined,
+        clientEmail: email,
         source: "slot_unavailable",
       });
       setWaitlistSlotJoined(true);
@@ -1825,9 +1838,11 @@ export function useBookingFlowState(
       setError(
         e instanceof Error && e.message === "invalid_phone"
           ? t.bookingErrors.invalidPhone
-          : e instanceof Error && e.message === "invalid_name_chars"
-            ? t.bookingErrors.invalidNameChars
-          : t.waitlistError,
+          : e instanceof Error && e.message === "invalid_email"
+            ? t.bookingErrors.invalidEmail
+            : e instanceof Error && e.message === "invalid_name_chars"
+              ? t.bookingErrors.invalidNameChars
+              : t.waitlistError,
       );
     } finally {
       setWaitlistSubmitting(false);
@@ -1846,6 +1861,8 @@ export function useBookingFlowState(
     t.bookingErrors.invalidNameChars,
     t.bookingErrors.invalidPhone,
     t.bookingErrors.phoneRequired,
+    t.bookingErrors.invalidEmail,
+    t.waitlistEmailRequired,
     t.waitlistError,
   ]);
 
@@ -1979,6 +1996,7 @@ export function useBookingFlowState(
     staffSummaryLabel,
     confirmTimeLabel,
     guestContactInvalid,
+    waitlistContactInvalid,
     setServiceId: setServiceIdAndClearError,
     setSelectedCombo,
     setStaffId,

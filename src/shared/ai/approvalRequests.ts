@@ -14,8 +14,9 @@ import "server-only";
  *   1. Agent calls createApprovalRequest() instead of acting directly.
  *   2. For urgent requests: email sent immediately with approve/decline buttons.
  *   3. For normal requests: queued; digest includes them; reminders after 24h.
- *   4. Owner taps button → GET /api/ai/approve?token=... → processDecision().
- *   5. Declined: auto-creates a minh_lessons 'policy' lesson so Minh learns.
+ *   4. Owner opens GET confirmation, then POSTs the form → processDecision().
+ *   5. Resolved decisions refresh a bounded owner-preference policy so repeated
+ *      declines reduce future proposals and later approvals can recover them.
  *
  * Example usage (see bottom of file for more):
  *   const requestId = await createApprovalRequest({
@@ -29,13 +30,18 @@ import "server-only";
 
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
-import { createLesson } from "@/shared/ai/lessonMutations";
+import type { ExecutionJobStatus } from "@/shared/ai/executionPolicy";
+import { refreshOwnerProposalPreference } from "@/shared/ai/ownerPreference";
+import {
+  buildActionIntelligence,
+  type ActionIntelligence,
+} from "@/shared/ai/actionIntelligence";
 
 export type ApprovalUrgency = "urgent" | "normal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ApprovalRow = {
+export type ApprovalRow = {
   id: string;
   salon_id: string;
   action_type: string;
@@ -49,8 +55,198 @@ type ApprovalRow = {
   notified_at: string | null;
   reminded_at: string | null;
   decided_by: string | null;
+  decision_channel: "dashboard" | "email_capability" | null;
   decided_at: string | null;
   created_at: string;
+};
+
+export type ApprovalDecisionActor = {
+  label: string;
+  role: "owner" | "admin";
+};
+
+export type ApprovalOwnerSourceRow = Pick<
+  ApprovalRow,
+  | "id"
+  | "salon_id"
+  | "action_type"
+  | "summary"
+  | "payload"
+  | "urgency"
+  | "status"
+  | "expires_at"
+  | "decided_by"
+  | "decision_channel"
+  | "decided_at"
+  | "created_at"
+>;
+
+export type ApprovalDisplayRow = Pick<
+  ApprovalOwnerSourceRow,
+  | "id"
+  | "action_type"
+  | "summary"
+  | "urgency"
+  | "status"
+  | "expires_at"
+  | "decision_channel"
+  | "decided_at"
+  | "created_at"
+> & {
+  decision_actor: ApprovalDecisionActor | null;
+  intelligence: Record<"en" | "vi", ActionIntelligence>;
+};
+
+const OWNER_APPROVAL_COLUMNS =
+  "id,salon_id,action_type,summary,payload,urgency,status,expires_at,decided_by,decision_channel,decided_at,created_at";
+
+function boundedText(value: string, maxLength: number): string {
+  return value.trim().slice(0, maxLength);
+}
+
+function boundedActionIntelligence(
+  value: ActionIntelligence,
+): ActionIntelligence {
+  return {
+    reason: boundedText(value.reason, 600),
+    evidence: value.evidence
+      .slice(0, 4)
+      .map((item) => boundedText(item, 300))
+      .filter(Boolean),
+    impact: boundedText(value.impact, 600),
+    confidence: value.confidence,
+    reversibility: value.reversibility,
+  };
+}
+
+export function toApprovalDisplayRow(
+  row: ApprovalOwnerSourceRow,
+  decisionActor: ApprovalDecisionActor | null = null,
+): ApprovalDisplayRow {
+  return {
+    id: row.id,
+    action_type: boundedText(row.action_type, 100),
+    summary: boundedText(row.summary, 1_000),
+    urgency: row.urgency,
+    status: row.status,
+    expires_at: row.expires_at,
+    decision_channel: row.decision_channel,
+    decided_at: row.decided_at,
+    created_at: row.created_at,
+    decision_actor: decisionActor,
+    intelligence: {
+      en: boundedActionIntelligence(
+        buildActionIntelligence(row.action_type, row.payload, "en"),
+      ),
+      vi: boundedActionIntelligence(
+        buildActionIntelligence(row.action_type, row.payload, "vi"),
+      ),
+    },
+  };
+}
+
+function approvalActorLabel(user: {
+  email?: string | null;
+  phone?: string | null;
+  user_metadata?: Record<string, unknown> | null;
+} | null): string {
+  const metadata = user?.user_metadata ?? {};
+  for (const key of ["full_name", "display_name", "name"] as const) {
+    const value = metadata[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  if (user?.email?.trim()) return user.email.trim();
+  if (user?.phone?.trim()) return user.phone.trim();
+  return "Authenticated owner/admin";
+}
+
+/**
+ * Convert server-only approval rows into owner-facing rows without leaking
+ * bearer tokens or internal auth user IDs. Dashboard actors are resolved with
+ * targeted Auth lookups and must still hold an owner/admin membership for the
+ * same salon before their identity is displayed.
+ */
+export async function toApprovalDisplayRows(
+  rows: ApprovalOwnerSourceRow[],
+): Promise<ApprovalDisplayRow[]> {
+  const dashboardRows = rows.filter(
+    (row) => row.decision_channel === "dashboard" && row.decided_by,
+  );
+  if (dashboardRows.length === 0) return rows.map((row) => toApprovalDisplayRow(row));
+
+  const userIds = [...new Set(dashboardRows.map((row) => row.decided_by!))];
+  const salonIds = [...new Set(dashboardRows.map((row) => row.salon_id))];
+  const db = createServiceRoleClient();
+  const { data: memberships } = await db
+    .from("salon_members")
+    .select("salon_id, user_id, role")
+    .in("salon_id", salonIds)
+    .in("user_id", userIds)
+    .in("role", ["owner", "admin"]);
+
+  const roleByMembership = new Map<string, ApprovalDecisionActor["role"]>();
+  for (const member of (memberships ?? []) as Array<{
+    salon_id: string;
+    user_id: string;
+    role: string;
+  }>) {
+    if (member.role === "owner" || member.role === "admin") {
+      roleByMembership.set(
+        `${member.salon_id}:${member.user_id}`,
+        member.role,
+      );
+    }
+  }
+
+  const eligibleUserIds = [
+    ...new Set(
+      dashboardRows
+        .filter((row) =>
+          roleByMembership.has(`${row.salon_id}:${row.decided_by}`),
+        )
+        .map((row) => row.decided_by!),
+    ),
+  ];
+  const labels = new Map<string, string>();
+  await Promise.all(
+    eligibleUserIds.map(async (userId) => {
+      const { data, error } = await db.auth.admin.getUserById(userId);
+      labels.set(
+        userId,
+        approvalActorLabel(error ? null : (data.user ?? null)),
+      );
+    }),
+  );
+
+  return rows.map((row) => {
+    if (row.decision_channel !== "dashboard" || !row.decided_by) {
+      return toApprovalDisplayRow(row);
+    }
+    const role = roleByMembership.get(`${row.salon_id}:${row.decided_by}`);
+    if (!role) return toApprovalDisplayRow(row);
+    return toApprovalDisplayRow(row, {
+      label: labels.get(row.decided_by) ?? "Authenticated owner/admin",
+      role,
+    });
+  });
+}
+
+type ApprovalDecisionTransition = {
+  outcome:
+    | "approved_queued"
+    | "approved_recovered"
+    | "declined"
+    | "expired"
+    | "already_decided"
+    | "invalid_decision"
+    | "not_found";
+  approval_id: string | null;
+  salon_id: string | null;
+  action_type: string | null;
+  decision_status: ApprovalRow["status"] | null;
+  execution_job_id: string | null;
+  execution_status: ExecutionJobStatus | null;
+  decided_at: string | null;
 };
 
 type SalonMeta = {
@@ -312,6 +508,12 @@ export async function processDecision(
   actionType: string | null;
   alreadyDecided: boolean;
   expired: boolean;
+  execution?: {
+    ok: boolean;
+    jobId: string | null;
+    status: ExecutionJobStatus | null;
+    error: string | null;
+  };
 }> {
   const db = createServiceRoleClient();
 
@@ -329,27 +531,35 @@ export async function processDecision(
   }
 
   const req = row as ApprovalRow;
-
-  // Already decided?
-  if (req.status !== "pending") {
-    const salon = await getSalonMeta(req.salon_id);
+  const { data: transitionRows, error: transitionError } = await db.rpc(
+    "decide_ai_approval_request" as never,
+    { p_token: token, p_decision: decision } as never,
+  );
+  if (transitionError) {
+    console.error("[processDecision] atomic decision", transitionError);
     return {
       ok: false,
-      salonSlug: salon?.slug ?? null,
+      salonSlug: null,
       actionType: req.action_type,
-      alreadyDecided: true,
-      expired: req.status === "expired",
+      alreadyDecided: false,
+      expired: false,
     };
   }
 
-  // Expired?
-  if (new Date(req.expires_at) < new Date()) {
-    // Mark expired if not already
-    await db
-      .from("approval_requests" as never)
-      .update({ status: "expired" } as never)
-      .eq("id" as never, req.id);
+  const transition = (
+    transitionRows as ApprovalDecisionTransition[] | null
+  )?.[0];
+  if (!transition || transition.outcome === "not_found" || transition.outcome === "invalid_decision") {
+    return {
+      ok: false,
+      salonSlug: null,
+      actionType: req.action_type,
+      alreadyDecided: false,
+      expired: false,
+    };
+  }
 
+  if (transition.outcome === "expired") {
     const salon = await getSalonMeta(req.salon_id);
     return {
       ok: false,
@@ -360,31 +570,65 @@ export async function processDecision(
     };
   }
 
-  // Apply decision
-  await db
-    .from("approval_requests" as never)
-    .update({
-      status: decision,
-      decided_at: new Date().toISOString(),
-      // decided_by: cannot resolve without auth here — token auth only
-    } as never)
-    .eq("id" as never, req.id);
+  if (transition.outcome === "already_decided") {
+    const salon = await getSalonMeta(req.salon_id);
+    return {
+      ok: false,
+      salonSlug: salon?.slug ?? null,
+      actionType: req.action_type,
+      alreadyDecided: true,
+      expired: transition.decision_status === "expired",
+    };
+  }
 
-  // On decline: create a lesson so Minh learns to propose less often
-  if (decision === "declined") {
+  // Feed repeated strategist decisions back into future proposal frequency.
+  // This is deliberately advisory: a preference refresh failure must never
+  // roll back or reinterpret the owner's persisted approve/decline decision.
+  const proposalSource =
+    typeof req.payload?.proposal_source === "string"
+      ? req.payload.proposal_source
+      : null;
+  const isNewDecision =
+    transition.outcome === "approved_queued" ||
+    transition.outcome === "declined";
+  if (proposalSource && isNewDecision) {
     try {
-      await createLesson({
+      const preference = await refreshOwnerProposalPreference({
         salonId: req.salon_id,
-        scope: "policy",
-        condition: { action_type: req.action_type },
-        rule: `owner_declined: Owner declined "${req.action_type}" on ${new Date().toISOString().slice(0, 10)}. Reduce frequency or skip this action type.`,
-        source: `decline:${req.id}`,
-        confidence: 0.7,
+        actionType: req.action_type,
+        proposalSource,
       });
+      if (preference.changed) {
+        await db.from("ai_actions_log" as never).insert({
+          salon_id: req.salon_id,
+          agent: "strategist",
+          action_type: preference.active
+            ? "owner_preference_cooldown_activated"
+            : "owner_preference_cooldown_recovered",
+          target_id: req.id,
+          payload: {
+            approval_request_id: req.id,
+            approval_decision: decision,
+            approval_action_type: req.action_type,
+            proposal_source: proposalSource,
+            lesson_id: preference.lessonId,
+          },
+        } as never);
+      }
     } catch (e) {
-      console.error("[processDecision] createLesson", e);
+      console.error("[processDecision] owner preference", e);
     }
   }
+
+  const execution =
+    decision === "approved"
+      ? {
+          ok: true,
+          jobId: transition.execution_job_id,
+          status: transition.execution_status,
+          error: null,
+        }
+      : undefined;
 
   const salon = await getSalonMeta(req.salon_id);
   return {
@@ -393,6 +637,7 @@ export async function processDecision(
     actionType: req.action_type,
     alreadyDecided: false,
     expired: false,
+    execution,
   };
 }
 
@@ -515,16 +760,65 @@ export async function getPendingApprovals(salonId: string): Promise<ApprovalRow[
 /**
  * Query helper: get all approvals for a salon (used by the dashboard page).
  */
-export async function getAllApprovals(salonId: string): Promise<ApprovalRow[]> {
+export async function getAllApprovals(
+  salonId: string,
+): Promise<ApprovalOwnerSourceRow[]> {
   const db = createServiceRoleClient();
-  const { data } = await db
+  const { data, error } = await db
     .from("approval_requests" as never)
-    .select("*")
+    .select(OWNER_APPROVAL_COLUMNS as never)
     .eq("salon_id" as never, salonId)
     .order("created_at" as never, { ascending: false })
     .limit(100);
 
-  return (data as ApprovalRow[] | null) ?? [];
+  if (error) {
+    throw new Error("approval_requests_read_failed", { cause: error });
+  }
+  return (data as unknown as ApprovalOwnerSourceRow[] | null) ?? [];
+}
+
+export type ApprovalInboxSnapshot = {
+  items: ApprovalOwnerSourceRow[];
+  pendingCount: number;
+};
+
+/**
+ * Owner-facing Control Center snapshot.
+ *
+ * The row list includes pending requests plus recent decisions and is
+ * deliberately bounded for rendering. The pending badge uses an independent
+ * exact count so a busy salon never sees "100" when more decisions are waiting.
+ */
+export async function getApprovalInboxSnapshot(
+  salonId: string,
+): Promise<ApprovalInboxSnapshot> {
+  const db = createServiceRoleClient();
+  const [itemsResult, countResult] = await Promise.all([
+    db
+      .from("approval_requests" as never)
+      .select(OWNER_APPROVAL_COLUMNS as never)
+      .eq("salon_id" as never, salonId)
+      .order("created_at" as never, { ascending: false })
+      .limit(100),
+    db
+      .from("approval_requests" as never)
+      .select("id", { count: "exact", head: true })
+      .eq("salon_id" as never, salonId)
+      .eq("status" as never, "pending"),
+  ]);
+  if (itemsResult.error || countResult.error) {
+    throw new Error("approval_inbox_read_failed", {
+      cause: itemsResult.error ?? countResult.error,
+    });
+  }
+  if (countResult.count == null) {
+    throw new Error("pending_approval_count_unavailable");
+  }
+  return {
+    items:
+      (itemsResult.data as unknown as ApprovalOwnerSourceRow[] | null) ?? [],
+    pendingCount: countResult.count,
+  };
 }
 
 /*

@@ -60,6 +60,40 @@
 
 ---
 
+## 2026-07-28: Route Reports through blocker-safe Insights URLs
+
+**Context**: Two production deployments continued to reproduce React invariant
+`#310` in Next's root App Router after removing memo hooks, the Server Action
+proxy, the analytics RSC payload, all initial analytics data, and finally the
+entire client boundary. The verification browser explicitly blocked
+`/api/dashboard/reports` with `ERR_BLOCKED_BY_CLIENT`; production controls
+(`clients`, `pulse`, `reviews`) and an unknown `/insights` path rendered without
+console errors.
+
+**Decision**: Use `/dashboard/<slug>/insights` and
+`/api/dashboard/insights` as canonical URLs; preserve `/reports` bookmarks and
+API clients through server-side compatibility routes.
+
+**Rationale**:
+- Avoids a telemetry-like path token blocked by privacy/content filters.
+- Preserves owner authorization, feature gating and fail-honest error states.
+- Makes each report range addressable, reload-safe and auditable by URL.
+
+**Alternatives rejected**:
+- More React/App Router rewrites: PRs #1069-#1071 disproved payload, action,
+  hook and client-boundary hypotheses.
+- Remove compatibility URLs: would break existing bookmarks and integrations.
+
+**Trade-offs accepted**: Internal route naming differs from the user-facing
+label “Reports”; legacy API calls may still be blocked by the caller's filter.
+
+**Revisit when**: Major content blockers document that `/reports` is no longer a
+classified telemetry path and a cross-browser production probe confirms it.
+
+**Cost to reverse**: Low; swap canonical and compatibility routes.
+
+---
+
 ## 2026-05-10: Superadmin Foundation Shell V1 — build architecture, defer scale features
 
 **Context**: PR #82 (2026-05-10) shipped a minimal Huy-only Superadmin panel: `/superadmin` route, `public.superadmins` binary membership table, per-salon `plan_override` + `feature_flags` JSONB columns, route gate via `isSuperAdmin(userId)`. The panel covers plan + flag overrides for beta partners but **does not** include sidebar navigation, multi-role gating, salon list, impersonation (login-as-salon), audit logs, announcements, or platform-level feature flags. Founder direction is to build the **architecture shell** for those capabilities now — before scale features — so the route surface, role model, and audit contract are settled while we still have ≤ 3 paying salons.

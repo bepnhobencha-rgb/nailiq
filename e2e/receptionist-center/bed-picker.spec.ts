@@ -281,14 +281,11 @@ async function fillServiceAndStaff(
   page: import("@playwright/test").Page,
   fx: BedPickerFixture,
 ) {
-  // Service — select has "— Select a service —" as first option
   await page
-    .locator('select:has(option:text-is("— Select a service —"))')
+    .getByTestId("desk-service-select")
     .selectOption({ label: `${fx.serviceName} · $85.00` });
-
-  // Staff — the modal's staff select does NOT have data-testid; exclude walk-in select
   await page
-    .locator('select:has(option:text-is("' + fx.staffName + '")):not([data-testid])')
+    .getByTestId("desk-staff-select")
     .selectOption({ label: fx.staffName });
 
   // Wait for time slots to appear

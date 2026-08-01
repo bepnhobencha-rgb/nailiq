@@ -8,6 +8,9 @@ import { logNotification } from "@/shared/lib/notificationLog";
 import { reminderLang, buildReminderSmsBody } from "@/shared/reminders/reminderSmsBody";
 import { isUsPhone } from "@/shared/lib/phoneRegion";
 import { sendGroupReminderEmail, type GroupMember } from "@/shared/noshow/sendReminderEmail";
+import { isAiAgentPermissionEnabled } from "@/shared/ai/agentPermissionFence";
+import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
+import { runTrackedCron } from "@/shared/security/cronRunHistory";
 
 /** Vercel Cron calls this route every 15 minutes with the CRON_SECRET header. */
 export const runtime = "nodejs";
@@ -78,13 +81,9 @@ function buildSmsBody(
 }
 
 export async function GET(req: Request) {
-  const cronSecret = (process.env.CRON_SECRET ?? "").trim();
-  if (cronSecret) {
-    const auth = req.headers.get("authorization") ?? "";
-    if (auth !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
-  }
+  const authorizationError = requireCronAuthorization(req);
+  if (authorizationError) return authorizationError;
+  return runTrackedCron("reminders", async () => {
 
   const supabase = createServiceRoleClient();
   const now = new Date();
@@ -304,7 +303,14 @@ export async function GET(req: Request) {
       // risk), gated on the salon's ai_smart_reminders opt-in. Guarded + falls
       // back to the fixed template. Links + STOP stay deterministic.
       let aiLead: string | null = null;
-      if ((salon.feature_flags as Record<string, unknown> | null)?.ai_smart_reminders === true) {
+      if (
+        (salon.feature_flags as Record<string, unknown> | null)
+          ?.ai_smart_reminders === true &&
+        (await isAiAgentPermissionEnabled(
+          booking.salon_id,
+          "ai_smart_reminders",
+        ))
+      ) {
         try {
           const { draftReminderLead, guardReminderLead } = await import(
             "@/shared/reminders/agentSmartReminder"
@@ -360,5 +366,6 @@ export async function GET(req: Request) {
 
   await Promise.allSettled([...tasks24h, ...tasks3h]);
 
-  return NextResponse.json({ ok: true, sent24h, sent3h, errors, processedAt: now.toISOString() });
+    return NextResponse.json({ ok: true, sent24h, sent3h, errors, processedAt: now.toISOString() });
+  });
 }

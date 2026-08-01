@@ -1,5 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import {
+  assessErrorEvidence,
+  evidenceConflictSummary,
+} from "@/shared/observability/errorEvidence";
 
 /**
  * Phase 3 — AI-drafted fix. Claude reads the actual offending file (the repo is
@@ -197,12 +201,18 @@ async function openDraftPr(
 
 export async function draftFix(
   errorId: string,
-): Promise<{ ok: boolean; prUrl?: string | null }> {
+): Promise<{
+  ok: boolean;
+  prUrl?: string | null;
+  blocked?: "evidence_conflict";
+}> {
   try {
     const db = createServiceRoleClient();
     const { data } = await db
       .from("error_logs")
-      .select("id, level, message, surface, route, stack, ai_summary, ai_suggested_fix")
+      .select(
+        "id, level, message, surface, route, stack, context, ai_summary, ai_suggested_fix",
+      )
       .eq("id", errorId)
       .maybeSingle();
     const e = data as {
@@ -211,10 +221,24 @@ export async function draftFix(
       surface: string | null;
       route: string | null;
       stack: string | null;
+      context: Record<string, unknown> | null;
       ai_summary: string | null;
       ai_suggested_fix: string | null;
     } | null;
     if (!e) return { ok: false };
+
+    const evidence = assessErrorEvidence(e.route, e.context);
+    if (evidence.status === "conflict") {
+      await db
+        .from("error_logs")
+        .update({
+          fix_proposal: evidenceConflictSummary(evidence),
+          fix_file: null,
+          fix_pr_url: null,
+        } as never)
+        .eq("id", errorId);
+      return { ok: false, blocked: "evidence_conflict" };
+    }
 
     const client = getClient();
     if (!client) {

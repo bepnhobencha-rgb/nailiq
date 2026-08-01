@@ -20,6 +20,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import {
   sessionUpdateMessage,
   resolveSwitchLanguage,
+  normalizeAllowedLangs,
   appendAudioMessage,
   twilioMediaFrame,
   twilioClearFrame,
@@ -31,6 +32,7 @@ import {
   voiceToolMaxAttempts,
   isSilentTransportTool,
   callerPresenceLabel,
+  voiceSessionStatusForClose,
   functionCallOutput,
   plainResponseCreate,
   zeroAudioRecoveryResponseCreate,
@@ -53,6 +55,7 @@ import {
   extractResponseId,
   isSpeechStarted,
   type TwilioInbound,
+  type SupportedLang,
 } from "./router.js";
 
 const PORT = Number(process.env.PORT ?? 8080);
@@ -85,6 +88,7 @@ wss.on("connection", (twilioWs) => {
   // trusted there only because it arrives with the bridge secret.
   let lastUserUtterance = "";
   let currentLang = "en";
+  let allowedLangs: SupportedLang[] = normalizeAllowedLangs(null);
   let switchingLang = false;
   let userTurnCount = 0;
   let endCallRequested = false;
@@ -155,13 +159,24 @@ wss.on("connection", (twilioWs) => {
         body: JSON.stringify({ slug, from, language: target }),   // no newSession → no new row
       });
       if (r.ok) {
-        const c = (await r.json()) as { instructions: string; voice: string; tools: unknown[] };
+        const c = (await r.json()) as {
+          instructions: string;
+          voice: string;
+          tools: unknown[];
+          allowedLanguages?: unknown;
+          language?: unknown;
+        };
+        allowedLangs = normalizeAllowedLangs(c.allowedLanguages);
+        currentLang = typeof c.language === "string"
+          && allowedLangs.includes(c.language as SupportedLang)
+          ? c.language
+          : allowedLangs[0]!;
         // Reconfigure prompt/voice/tools + transcriber language. Preserve the
         // live barge-in state: if a protected say_this is playing right now, keep
         // interruption OFF so this session.update does not un-protect it.
         openaiWs?.send(JSON.stringify(sessionUpdateMessage({
           instructions: c.instructions, voice: c.voice, tools: c.tools,
-          transcribeLang: target, interruptResponse: !coordinator.isProtectedActive(),
+          transcribeLang: currentLang, interruptResponse: !coordinator.isProtectedActive(),
         })));
       }
       // No separate acknowledgement response. The per-turn reply (fired on
@@ -169,14 +184,14 @@ wss.on("connection", (twilioWs) => {
       // spoken language — a second "ack" response produced a confusing double turn
       // that re-asked for things already known. The session.update above makes the
       // new language stick for every following turn.
-      console.log(`[voice-bridge] switched language → ${target}`);
+      console.log(`[voice-bridge] switched language → ${currentLang}`);
     } catch { /* best-effort — the call continues in the current language */ }
     finally { switchingLang = false; }
   };
 
   const maybeSwitchLanguage = (userText: string): boolean => {
     if (switchingLang) return true;   // a switch is already in flight for this turn
-    const target = resolveSwitchLanguage(userText, currentLang);
+    const target = resolveSwitchLanguage(userText, currentLang, allowedLangs);
     if (!target) return false;
     switchingLang = true;
     currentLang = target;             // update FIRST so a queued say_this speaks the new language
@@ -241,7 +256,7 @@ wss.on("connection", (twilioWs) => {
     }
   };
 
-  const finalizeSession = async () => {
+  const finalizeSession = async (reason: string) => {
     if (!sessionId) return;
     try {
       await fetch(`${NEXT_APP_URL}/api/voice/session/end`, {
@@ -251,7 +266,11 @@ wss.on("connection", (twilioWs) => {
           sessionId,
           durationSeconds: Math.round((Date.now() - startedAt) / 1000),
           transcript,
-          status: "completed",
+          status: voiceSessionStatusForClose({
+            reason,
+            endCallRequested,
+            transportHandoffStarted,
+          }),
           language: currentLang,   // persist the language the call ended in
         }),
       });
@@ -269,7 +288,7 @@ wss.on("connection", (twilioWs) => {
     }
     hangup.onClose();              // never let the fallback timer fire after teardown
     coordinator.onClose();         // stop the queue; no more sends after hangup
-    void finalizeSession();
+    void finalizeSession(reason);
     try { openaiWs?.close(); } catch { /* noop */ }
     try { twilioWs.close(); } catch { /* noop */ }
   };
@@ -455,6 +474,7 @@ wss.on("connection", (twilioWs) => {
     tools: unknown[];
     sessionId?: string | null;
     language?: string;
+    allowedLanguages?: unknown;
   };
 
   const startOpenAi = () => {
@@ -490,7 +510,11 @@ wss.on("connection", (twilioWs) => {
       if (!r.ok) { console.warn("[voice-bridge] phone-config FAILED", r.status); return closeAll("phone_config_failed"); }
       cfg = (await r.json()) as PhoneConfig;
       sessionId = cfg.sessionId ?? "";
-      currentLang = cfg.language ?? "en";
+      allowedLangs = normalizeAllowedLangs(cfg.allowedLanguages);
+      currentLang = typeof cfg.language === "string"
+        && allowedLangs.includes(cfg.language as SupportedLang)
+        ? cfg.language
+        : allowedLangs[0]!;
       if (cfg.model && cfg.model !== REALTIME_MODEL) {
         console.warn(`[voice-bridge] config model ${cfg.model} != socket model ${REALTIME_MODEL}`);
       }

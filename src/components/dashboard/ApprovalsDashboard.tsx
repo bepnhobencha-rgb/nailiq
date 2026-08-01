@@ -1,25 +1,13 @@
 "use client";
 
-import Link from "next/link";
 import { CheckCircle, XCircle, Clock, AlertTriangle } from "lucide-react";
 
-type ApprovalRow = {
-  id: string;
-  salon_id: string;
-  action_type: string;
-  summary: string;
-  payload: Record<string, unknown>;
-  urgency: "urgent" | "normal";
-  status: "pending" | "approved" | "declined" | "expired";
-  approve_token: string;
-  decline_token: string;
-  expires_at: string;
-  notified_at: string | null;
-  reminded_at: string | null;
-  decided_by: string | null;
-  decided_at: string | null;
-  created_at: string;
-};
+import { ApprovalDecisionButtons } from "@/components/dashboard/ApprovalDecisionButtons";
+import { approvalDecisionProvenance } from "@/shared/ai/approvalDecisionPresentation";
+import { approvalExecutionPresentation } from "@/shared/ai/approvalExecutionPresentation";
+import type { ApprovalDisplayRow } from "@/shared/ai/approvalRequests";
+import type { OwnerExecutionJob } from "@/shared/ai/executionOwnerView";
+import { executionFailureLabel } from "@/shared/ai/executionFailure";
 
 function timeLabel(iso: string): string {
   try {
@@ -69,7 +57,7 @@ function UrgencyBadge({ urgency }: { urgency: "urgent" | "normal" }) {
   );
 }
 
-function StatusBadge({ status }: { status: ApprovalRow["status"] }) {
+function StatusBadge({ status }: { status: ApprovalDisplayRow["status"] }) {
   if (status === "approved") {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
@@ -105,16 +93,11 @@ function StatusBadge({ status }: { status: ApprovalRow["status"] }) {
 
 function PendingCard({
   req,
-  appUrl,
   slug,
 }: {
-  req: ApprovalRow;
-  appUrl: string;
+  req: ApprovalDisplayRow;
   slug: string;
 }) {
-  const approveUrl = `${appUrl}/api/ai/approve?token=${req.approve_token}`;
-  const declineUrl = `${appUrl}/api/ai/approve?token=${req.decline_token}`;
-
   return (
     <div className="rounded-xl border border-nq-border/60 bg-nq-surface p-5 shadow-sm">
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -132,31 +115,67 @@ function PendingCard({
         {req.summary}
       </p>
 
-      <div className="flex flex-wrap gap-3">
-        <Link
-          href={approveUrl}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-[14px] font-semibold text-white hover:bg-green-700 active:scale-95 transition-transform"
-        >
-          <CheckCircle className="h-4 w-4" />
-          Đồng ý — thực hiện ngay
-        </Link>
-        <Link
-          href={declineUrl}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-[14px] font-semibold text-white hover:bg-red-700 active:scale-95 transition-transform"
-        >
-          <XCircle className="h-4 w-4" />
-          Từ chối — bỏ qua
-        </Link>
-      </div>
+      <ApprovalDecisionButtons slug={slug} approvalId={req.id} />
     </div>
   );
 }
 
-function DecidedRow({ req }: { req: ApprovalRow }) {
+const EXECUTION_TONE = {
+  neutral: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+  attention:
+    "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  active: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+  success:
+    "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+  error: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+} as const;
+
+function ExecutionBadge({ job }: { job: OwnerExecutionJob }) {
+  const presentation = approvalExecutionPresentation(
+    job.status,
+    job.result?.blocker,
+  );
   return (
-    <div className="flex flex-col gap-1 border-b border-nq-border/40 py-3 last:border-0">
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${EXECUTION_TONE[presentation.tone]}`}
+    >
+      <Clock className="h-3 w-3" aria-hidden />
+      {presentation.label}
+    </span>
+  );
+}
+
+function DecidedRow({
+  req,
+  job,
+  executionJobsAvailable,
+}: {
+  req: ApprovalDisplayRow;
+  job: OwnerExecutionJob | undefined;
+  executionJobsAvailable: boolean;
+}) {
+  const provenance = approvalDecisionProvenance(req, "vi");
+  const missingApprovedExecution =
+    req.status === "approved" && executionJobsAvailable && !job;
+  const unavailableApprovedExecution =
+    req.status === "approved" && !executionJobsAvailable;
+  return (
+    <div className="flex flex-col gap-1.5 border-b border-nq-border/40 py-3 last:border-0">
       <div className="flex flex-wrap items-center gap-2">
         <StatusBadge status={req.status} />
+        {job ? <ExecutionBadge job={job} /> : null}
+        {missingApprovedExecution ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-400">
+            <AlertTriangle className="h-3 w-3" aria-hidden />
+            Thiếu dấu vết thực thi
+          </span>
+        ) : null}
+        {unavailableApprovedExecution ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+            <AlertTriangle className="h-3 w-3" aria-hidden />
+            Chưa xác minh được thực thi
+          </span>
+        ) : null}
         <span className="text-[12px] font-medium text-nq-foreground line-clamp-1 flex-1">
           {req.summary}
         </span>
@@ -168,22 +187,55 @@ function DecidedRow({ req }: { req: ApprovalRow }) {
       </div>
       <p className="text-[11px] text-nq-muted">
         {req.action_type.replace(/_/g, " ")}
+        {job && job.attempt_count > 0
+          ? ` · Lần thử ${job.attempt_count}/${job.max_attempts}`
+          : ""}
       </p>
+      <p
+        className="text-[11px] text-nq-muted"
+        data-testid="approval-decision-provenance"
+      >
+        Kênh: {provenance.channel} · Người quyết định: {provenance.actor}
+      </p>
+      {job?.last_error ? (
+        <p className="line-clamp-2 text-[11px] text-nq-error">
+          {executionFailureLabel(job.last_error, "vi")}
+        </p>
+      ) : null}
+      {missingApprovedExecution ? (
+        <p className="text-[11px] text-nq-error">
+          Quyết định đã được duyệt nhưng chưa có công việc trong hàng đợi; chưa
+          thể xác minh hành động đã được thực thi.
+        </p>
+      ) : null}
+      {unavailableApprovedExecution ? (
+        <p className="text-[11px] text-amber-700 dark:text-amber-400">
+          Nguồn trạng thái thực thi đang tạm thời không khả dụng. Quyết định này
+          không được xem là đã thực hiện cho đến khi NailIQ xác minh lại.
+        </p>
+      ) : null}
     </div>
   );
 }
 
 export function ApprovalsDashboard({
-  slug,
   approvals,
-  appUrl,
+  executionJobs,
+  approvalsAvailable,
+  executionJobsAvailable,
+  slug,
 }: {
+  approvals: ApprovalDisplayRow[];
+  executionJobs: OwnerExecutionJob[];
+  approvalsAvailable: boolean;
+  executionJobsAvailable: boolean;
   slug: string;
-  approvals: ApprovalRow[];
-  appUrl: string;
 }) {
   const pending = approvals.filter((r) => r.status === "pending");
   const decided = approvals.filter((r) => r.status !== "pending");
+  const jobsByApproval = new Map(
+    executionJobs.map((job) => [job.approval_request_id, job]),
+  );
 
   return (
     <div className="space-y-8">
@@ -191,16 +243,53 @@ export function ApprovalsDashboard({
       <div>
         <h1 className="text-2xl font-bold text-nq-foreground">Việc chờ duyệt</h1>
         <p className="mt-1 text-[14px] text-nq-muted">
-          Các hành động Minh muốn thực hiện và cần sự đồng ý của bạn.
+          Các hành động AI đề xuất, quyết định của bạn và trạng thái thực thi thật.
         </p>
       </div>
+
+      {!approvalsAvailable || !executionJobsAvailable ? (
+        <div
+          role="status"
+          className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+        >
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <div className="space-y-1 text-[13px] leading-relaxed">
+              <p className="font-semibold">Một phần dữ liệu chưa thể xác minh</p>
+              {!approvalsAvailable ? (
+                <p>
+                  Nguồn phê duyệt đang tạm thời không khả dụng. NailIQ không
+                  khẳng định rằng hiện không có việc chờ duyệt.
+                </p>
+              ) : null}
+              {!executionJobsAvailable ? (
+                <p>
+                  Nguồn thực thi đang tạm thời không khả dụng. Các quyết định
+                  vẫn hiển thị, nhưng không được xem là đã thực hiện.
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Pending */}
       <section>
         <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-wider text-nq-muted">
-          Đang chờ ({pending.length})
+          Đang chờ {approvalsAvailable ? `(${pending.length})` : "(chưa xác minh)"}
         </h2>
-        {pending.length === 0 ? (
+        {!approvalsAvailable ? (
+          <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-amber-400 py-10 text-center">
+            <AlertTriangle className="h-8 w-8 text-amber-500" aria-hidden />
+            <p className="text-[15px] font-medium text-nq-foreground">
+              Chưa tải được danh sách chờ duyệt
+            </p>
+            <p className="max-w-md text-[13px] text-nq-muted">
+              Hãy thử tải lại trang. NailIQ sẽ không hiển thị trạng thái trống
+              khi chưa đọc được nguồn phê duyệt.
+            </p>
+          </div>
+        ) : pending.length === 0 ? (
           <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-nq-border py-10 text-center">
             <CheckCircle className="h-8 w-8 text-green-500" />
             <p className="text-[15px] font-medium text-nq-foreground">
@@ -213,7 +302,7 @@ export function ApprovalsDashboard({
         ) : (
           <div className="space-y-4">
             {pending.map((req) => (
-              <PendingCard key={req.id} req={req} appUrl={appUrl} slug={slug} />
+              <PendingCard key={req.id} req={req} slug={slug} />
             ))}
           </div>
         )}
@@ -227,7 +316,12 @@ export function ApprovalsDashboard({
           </h2>
           <div className="rounded-xl border border-nq-border/60 bg-nq-surface px-5 py-1">
             {decided.map((req) => (
-              <DecidedRow key={req.id} req={req} />
+              <DecidedRow
+                key={req.id}
+                req={req}
+                job={jobsByApproval.get(req.id)}
+                executionJobsAvailable={executionJobsAvailable}
+              />
             ))}
           </div>
         </section>

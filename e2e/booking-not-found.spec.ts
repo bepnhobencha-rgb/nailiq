@@ -36,6 +36,17 @@ test.describe("public booking — HTTP status", () => {
     expect(response?.status()).toBe(404);
   });
 
+  test("a mistyped salon slug keeps 404 and suggests the live salon", async ({
+    page,
+  }) => {
+    const response = await page.goto("/e2e-not-found-statu");
+    expect(response?.status()).toBe(404);
+
+    await expect(
+      page.getByRole("link", { name: `/${SLUG}` }),
+    ).toBeVisible();
+  });
+
   test("a reserved slug returns a real 404", async ({ page }) => {
     // `aggressive` is in RESERVED_BOOKING_SLUGS — it must never resolve as a
     // salon, and it too went out as 200 under the same Suspense bug.

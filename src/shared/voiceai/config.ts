@@ -28,6 +28,44 @@ export type SupportedVoice = (typeof SUPPORTED_VOICES)[number];
 export const SUPPORTED_LANGUAGES = ["vi", "en", "es", "fr", "zh"] as const;
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 
+export function isSupportedLanguage(value: unknown): value is SupportedLanguage {
+  return typeof value === "string"
+    && SUPPORTED_LANGUAGES.includes(value as SupportedLanguage);
+}
+
+export function normalizeSupportedLanguage(
+  value: unknown,
+  fallback: SupportedLanguage = "en",
+): SupportedLanguage {
+  return isSupportedLanguage(value) ? value : fallback;
+}
+
+export function normalizeAllowedLanguages(
+  value: unknown,
+  fallback: readonly SupportedLanguage[] = SUPPORTED_LANGUAGES,
+): SupportedLanguage[] {
+  if (!Array.isArray(value)) return [...fallback];
+
+  const languages = value.filter(isSupportedLanguage);
+  const unique = [...new Set(languages)];
+  return unique.length > 0 ? unique : [...fallback];
+}
+
+export function resolveAllowedLanguage(
+  requested: unknown,
+  configuredDefault: unknown,
+  allowedValue: unknown,
+): SupportedLanguage {
+  const allowed = normalizeAllowedLanguages(allowedValue);
+  const normalizedDefault = normalizeSupportedLanguage(configuredDefault, allowed[0]!);
+  const safeDefault = allowed.includes(normalizedDefault)
+    ? normalizedDefault
+    : allowed[0]!;
+  return isSupportedLanguage(requested) && allowed.includes(requested)
+    ? requested
+    : safeDefault;
+}
+
 /** Maps salon DB values to OpenAI reasoning_effort values */
 export const REASONING_EFFORT_MAP: Record<string, "low" | "medium" | "high"> = {
   minimal: "low",

@@ -110,7 +110,7 @@ export type GroupBookingParams = {
   /** Which channel created this party: 'online' (public group wizard) or
    *  'desk' (receptionist). Stamped on every member row so reports can group
    *  by origin. Before this existed the whole group path wrote NULL, and
-   *  `loadSalonReportsAction` folds NULL into "online" — so desk-created
+   *  `loadSalonReports` folds NULL into "online" — so desk-created
    *  parties were silently counted as online bookings rather than going
    *  missing. Defaults to 'online' so the public flow stays correct even if a
    *  caller forgets to pass it. */

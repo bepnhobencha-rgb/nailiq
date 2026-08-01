@@ -123,8 +123,8 @@ export function MinhActivityLog({ data }: { data: MinhActivityData }) {
   }, [data.entries, filter]);
 
   const grouped = useMemo(() => groupByDay(filtered), [filtered]);
-  const overallPct = data.totalSent > 0
-    ? Math.round((data.converted / data.totalSent) * 100)
+  const observedReturnPct = data.measured > 0
+    ? Math.round((data.converted / data.measured) * 100)
     : null;
 
   return (
@@ -142,10 +142,19 @@ export function MinhActivityLog({ data }: { data: MinhActivityData }) {
         <StatCard
           label="Quay lại"
           value={data.converted}
-          sub={overallPct != null ? `${overallPct}% hiệu quả` : "chưa có data"}
+          sub={
+            observedReturnPct != null
+              ? `${observedReturnPct}% trên ca đã đủ thời gian đo`
+              : "chưa có ca đủ thời gian đo"
+          }
           tone="green"
         />
-        <StatCard label="Đang chờ" value={data.pending} sub="chưa hết window" tone="yellow" />
+        <StatCard
+          label="Đang chờ"
+          value={data.pending}
+          sub={`${data.measurementCoveragePct}% đã đủ thời gian đo`}
+          tone="yellow"
+        />
         <StatCard label="Không quay lại" value={data.noConversion} tone="red" />
       </div>
 
@@ -153,7 +162,7 @@ export function MinhActivityLog({ data }: { data: MinhActivityData }) {
       {data.agentStats.length > 0 && (
         <div className="rounded-xl border border-nq-border/30 bg-nq-surface/35 p-4">
           <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-nq-muted">
-            Hiệu quả theo agent (30 ngày)
+            Tỷ lệ quay lại đã quan sát theo agent (30 ngày)
           </p>
           <div className="flex flex-wrap gap-2">
             {data.agentStats.map((s) => (
@@ -164,12 +173,18 @@ export function MinhActivityLog({ data }: { data: MinhActivityData }) {
                 <span>{s.icon}</span>
                 <span className="text-xs text-nq-foreground">{s.label}</span>
                 <span className={`text-xs font-bold ${s.pct >= 30 ? "text-green-400" : s.pct >= 10 ? "text-yellow-400" : "text-nq-muted"}`}>
-                  {s.sent > 0 ? `${s.pct}%` : "–"}
+                  {s.measured > 0 ? `${s.pct}%` : "–"}
                 </span>
-                <span className="text-xs text-nq-muted/60">({s.converted}/{s.sent})</span>
+                <span className="text-xs text-nq-muted/60">
+                  ({s.converted}/{s.measured} đã đo · {s.pending} chờ)
+                </span>
               </div>
             ))}
           </div>
+          <p className="mt-3 text-[11px] leading-4 text-nq-muted">
+            Đây là tỷ lệ khách có booking sau hành động trong cửa sổ theo dõi,
+            không phải bằng chứng rằng AI trực tiếp gây ra booking.
+          </p>
         </div>
       )}
 

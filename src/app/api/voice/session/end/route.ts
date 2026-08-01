@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
+import { normalizeVoiceSessionSeconds } from "@/shared/voiceai/sessionDuration";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,7 @@ type EndSessionBody = {
 };
 
 const SUPPORTED = ["vi", "en", "es", "fr", "zh"];
+const SESSION_STATUSES = new Set(["completed", "failed", "abandoned"]);
 
 export async function POST(req: NextRequest) {
   let body: EndSessionBody;
@@ -26,9 +28,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
 
-  const { sessionId, durationSeconds, transcript, status = "completed", clientName, clientPhone, language } = body;
+  const {
+    sessionId,
+    durationSeconds,
+    transcript,
+    status: requestedStatus = "completed",
+    clientName,
+    clientPhone,
+    language,
+  } = body;
   if (!sessionId) return NextResponse.json({ error: "missing_session_id" }, { status: 400 });
   const lang = typeof language === "string" && SUPPORTED.includes(language) ? language : null;
+  const status = SESSION_STATUSES.has(requestedStatus) ? requestedStatus : "failed";
 
   const supabase = createServiceRoleClient();
 
@@ -46,7 +57,9 @@ export async function POST(req: NextRequest) {
     .from("voice_ai_sessions")
     .update({
       status,
-      duration_seconds: Math.max(0, Math.round(durationSeconds ?? 0)),
+      // Treat every caller (browser and bridge) as untrusted. This also keeps a
+      // future client regression from persisting epoch-sized durations again.
+      duration_seconds: normalizeVoiceSessionSeconds(durationSeconds),
       ...(hasTranscript ? { transcript } : {}),
       ended_at:         new Date().toISOString(),
       ...(clientName  ? { client_name:  clientName  } : {}),

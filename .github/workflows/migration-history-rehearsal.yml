@@ -103,6 +103,10 @@ jobs:
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-public-rpc-role-grants-rollback.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-public-salon-slug-suggestions.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-public-salon-slug-suggestions-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-group-slot-probe-grant-rollback.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/check-salon-staff-capability-invoker.sql
@@ -166,6 +170,12 @@ jobs:
             -f scripts/security/check-reviews-boundary.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-reviews-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-ai-execution-tenant-fence.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-cron-run-history.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-source-owned-exception-resolution.sql
 
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.service_categories')" -eq 13
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.platform_flags')" -eq 5

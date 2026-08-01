@@ -48,6 +48,11 @@ import {
 } from "@/shared/booking/getAvailableTimeSlots";
 import { computeBookingTiming } from "@/shared/booking/bookingTiming";
 import {
+  evaluateControlledAfterHours,
+  MAX_AFTER_HOURS_EXTENSION_MINUTES,
+} from "@/shared/booking/controlledAfterHours";
+import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
+import {
   NotifyCustomerPanel,
   type NotifyChannels,
 } from "./NotifyCustomerPanel";
@@ -122,6 +127,17 @@ const COPY = {
     time: "Time *",
     slotsLoading: "Finding open times…",
     noSlots: "No open times this day — pick another date.",
+    afterHoursTitle: "After-hours exception",
+    afterHoursDescription:
+      "Owner/Admin only · selected staff must agree · up to 2 hours after close.",
+    showAfterHours: "Show after-hours times",
+    hideAfterHours: "Hide after-hours times",
+    specificStaffForAfterHours:
+      "Choose a specific staff member to request after-hours consent.",
+    staffConsent:
+      "I confirmed this staff member agreed to work after closing.",
+    afterHoursMinutes: (minutes: number) => `${minutes} min after close`,
+    afterHoursSubmit: "Accept after-hours booking",
     notes: "Notes (optional)",
     submit: "Create appointment",
     submitting: "Creating…",
@@ -168,6 +184,11 @@ const COPY = {
       outside_hours: "That time is outside the salon's hours.",
       booking_limit_reached: "You've hit your plan's booking limit.",
       unauthorized: "You don't have permission to create bookings.",
+      after_hours_not_allowed: "Only an Owner or Admin can approve after-hours.",
+      specific_staff_required: "Choose the staff member who agreed to stay.",
+      staff_consent_required: "Confirm the selected staff member agreed.",
+      after_hours_limit_exceeded: "After-hours is limited to 2 hours past close.",
+      invalid_after_hours_override: "This time is already inside normal hours.",
     } as Record<string, string>,
   },
   vi: {
@@ -190,6 +211,16 @@ const COPY = {
     time: "Giờ *",
     slotsLoading: "Đang tìm giờ trống…",
     noSlots: "Không còn giờ trống ngày này — chọn ngày khác.",
+    afterHoursTitle: "Ngoại lệ ngoài giờ",
+    afterHoursDescription:
+      "Chỉ Owner/Admin · phải có sự đồng ý của thợ · tối đa 2 giờ sau khi đóng cửa.",
+    showAfterHours: "Hiện giờ ngoài giờ",
+    hideAfterHours: "Ẩn giờ ngoài giờ",
+    specificStaffForAfterHours:
+      "Chọn đúng một thợ để xác nhận họ đồng ý làm ngoài giờ.",
+    staffConsent: "Tôi xác nhận thợ này đã đồng ý làm sau giờ đóng cửa.",
+    afterHoursMinutes: (minutes: number) => `${minutes} phút sau giờ đóng cửa`,
+    afterHoursSubmit: "Nhận lịch ngoài giờ",
     notes: "Ghi chú (tuỳ chọn)",
     submit: "Tạo lịch hẹn",
     submitting: "Đang tạo lịch…",
@@ -236,6 +267,11 @@ const COPY = {
       outside_hours: "Giờ này nằm ngoài giờ làm của tiệm.",
       booking_limit_reached: "Đã đạt giới hạn lịch của gói hiện tại.",
       unauthorized: "Bạn không có quyền tạo lịch.",
+      after_hours_not_allowed: "Chỉ Owner hoặc Admin được duyệt lịch ngoài giờ.",
+      specific_staff_required: "Chọn đúng thợ đã đồng ý ở lại.",
+      staff_consent_required: "Xác nhận thợ đã đồng ý làm ngoài giờ.",
+      after_hours_limit_exceeded: "Chỉ được kéo dài tối đa 2 giờ sau đóng cửa.",
+      invalid_after_hours_override: "Giờ này vẫn nằm trong giờ làm bình thường.",
     } as Record<string, string>,
   },
 } as const;
@@ -302,6 +338,11 @@ export default function DeskBookingForm({
   const prefilled = !!(initialStaffId || initialYmd || initialSlotLabel);
 
   const [slots, setSlots] = useState<TimeSlot[]>([]);
+  const [afterHoursSlots, setAfterHoursSlots] = useState<
+    Array<TimeSlot & { afterHoursMinutes: number }>
+  >([]);
+  const [showAfterHours, setShowAfterHours] = useState(false);
+  const [afterHoursConsent, setAfterHoursConsent] = useState(false);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [lookupMsg, setLookupMsg] = useState<string | null>(null);
   // Existing-client typeahead on the name field.
@@ -528,12 +569,13 @@ export default function DeskBookingForm({
     if (!data || !service || !staffId || !ymd || blockMinutes <= 0) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale grid when inputs incomplete
       setSlots([]);
+      setAfterHoursSlots([]);
       return;
     }
     let cancelled = false;
     setSlotsLoading(true);
     setSlotLabel("");
-    void getAvailableTimeSlots({
+    const baseParams = {
       salonId,
       openingHoursRaw: data.salon.opening_hours,
       selectedDate: ymdToLocalNoon(ymd),
@@ -551,10 +593,43 @@ export default function DeskBookingForm({
       shortestServiceMinutes,
       leadMinutes: data.salon.bookingLeadMinutes,
       timezone: data.salon.timezone,
-    })
-      .then((res) => {
+    };
+    const canLoadAfterHours =
+      data.canBookAfterHours &&
+      staffId !== BOOKING_ANY_STAFF_ID &&
+      showAfterHours;
+    void Promise.all([
+      getAvailableTimeSlots(baseParams),
+      canLoadAfterHours
+        ? getAvailableTimeSlots({
+            ...baseParams,
+            closingExtensionMinutes: MAX_AFTER_HOURS_EXTENSION_MINUTES,
+            allowBeyondStaffShiftEnd: true,
+          })
+        : Promise.resolve([]),
+    ])
+      .then(([res, extended]) => {
         if (cancelled) return;
         setSlots(res);
+        setAfterHoursSlots(
+          extended.flatMap((candidate) => {
+            if (!candidate.available) return [];
+            const startMinutes = parseTimeSlotToMinutes(candidate.label);
+            const check = evaluateControlledAfterHours({
+              openingHoursRaw: data.salon.opening_hours,
+              bookingClosedDatesRaw: data.salon.booking_closed_dates,
+              dateYmd: ymd,
+              startMinutes,
+              serviceCompletionMinutes:
+                addonIds.length <= 1
+                  ? bookingTiming.serviceCompletionMinutes
+                  : bookingTiming.blockMinutes,
+            });
+            return check.ok
+              ? [{ ...candidate, afterHoursMinutes: check.afterHoursMinutes }]
+              : [];
+          }),
+        );
         // Keep the PREFERRED time (the grid-clicked time, or one the
         // receptionist picked) selected across service / staff / add-on changes,
         // as long as it's still bookable. Previously this fired once then wiped
@@ -583,9 +658,20 @@ export default function DeskBookingForm({
     closedDateYmdSet,
     shortestServiceMinutes,
     blockMinutes,
+    bookingTiming.blockMinutes,
+    bookingTiming.serviceCompletionMinutes,
     bookingTiming.trailingBufferMinutes,
     addonIds.length,
+    showAfterHours,
   ]);
+
+  useEffect(() => {
+    // Consent belongs to one exact staff/date/service selection and must never
+    // silently carry to a different employee or appointment.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- invalidate a consent tied to the prior booking inputs
+    setAfterHoursConsent(false);
+    setSlotLabel("");
+  }, [staffId, ymd, serviceId, addonIds]);
 
   // Returning-customer recognition (debounced).
   const lookupSeq = useRef(0);
@@ -678,6 +764,9 @@ export default function DeskBookingForm({
     );
   }, []);
 
+  const selectedAfterHours = afterHoursSlots.find(
+    (slot) => slot.label === slotLabel,
+  );
   const canSubmit =
     !!name.trim() &&
     phone.replace(/\D/g, "").length >= 10 &&
@@ -685,6 +774,7 @@ export default function DeskBookingForm({
     !!staffId &&
     !!ymd &&
     !!slotLabel &&
+    (!selectedAfterHours || afterHoursConsent) &&
     !submitting;
 
   const submit = useCallback(async () => {
@@ -710,6 +800,13 @@ export default function DeskBookingForm({
         email: notifyChannels.email && !!email.trim(),
       },
       ...(data?.salon.resourcesEnabled ? { resourceId } : {}),
+      ...(selectedAfterHours
+        ? {
+            afterHoursOverride: {
+              staffConsentConfirmed: afterHoursConsent,
+            },
+          }
+        : {}),
     });
     setSubmitting(false);
     if (res.ok) {
@@ -739,11 +836,13 @@ export default function DeskBookingForm({
     tx,
     resourceId,
     data,
+    selectedAfterHours,
+    afterHoursConsent,
   ]);
 
   const inputCls =
-    "w-full rounded-md border border-nq-muted/30 bg-nq-bg px-3 py-2 text-sm text-nq-foreground outline-none focus:border-nq-primary/60";
-  const labelCls = "mb-1 block text-xs font-medium text-nq-muted";
+    "min-h-11 w-full rounded-md border border-nq-muted/30 bg-nq-bg px-3 py-2 text-base text-nq-foreground outline-none focus:border-nq-primary/60";
+  const labelCls = "mb-1 block text-base font-medium text-nq-muted";
 
   if (!mounted) return null;
   return createPortal(
@@ -753,16 +852,20 @@ export default function DeskBookingForm({
       className={
         anchored
           ? "fixed inset-0 z-[60]"
-          : "fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center"
+          : "fixed inset-0 z-[60] flex items-start justify-center bg-black/50 sm:items-center sm:p-4"
       }
       onClick={onClose}
     >
       <div
         ref={popoverRef}
+        data-testid="desk-booking-form"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="desk-booking-heading"
         className={
           anchored
             ? "fixed z-[61] w-[min(24rem,calc(100vw-1rem))] overflow-y-auto rounded-xl border border-nq-muted/25 bg-nq-surface p-5 shadow-2xl"
-            : "w-full max-w-md rounded-xl border border-nq-muted/25 bg-nq-surface p-5 shadow-xl"
+            : "flex h-[100dvh] w-full max-w-md flex-col overflow-hidden bg-nq-surface shadow-xl sm:h-auto sm:max-h-[calc(100dvh-2rem)] sm:rounded-xl sm:border sm:border-nq-muted/25"
         }
         style={
           anchored
@@ -775,25 +878,42 @@ export default function DeskBookingForm({
         }
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-1 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-nq-foreground">
+        <div
+          className={
+            anchored
+              ? "mb-1 flex items-center justify-between"
+              : "flex shrink-0 items-center justify-between border-b border-nq-muted/20 px-4 py-2"
+          }
+        >
+          <h2
+            id="desk-booking-heading"
+            className="text-lg font-semibold text-nq-foreground"
+          >
             {tx.heading}
           </h2>
           <button
+            type="button"
             onClick={onClose}
-            className="text-nq-muted hover:text-nq-foreground"
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-md text-base text-nq-muted hover:bg-nq-primary/10 hover:text-nq-foreground"
             aria-label={tx.close}
           >
             ✕
           </button>
         </div>
+        <div
+          className={
+            anchored
+              ? ""
+              : "min-h-0 flex-1 overflow-y-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3"
+          }
+        >
         {prefilled && initialSlotLabel && !slotLabel && ymd === initialYmd ? (
           // The prefill hint shows the time the receptionist CLICKED on the grid.
           // Only show it while still on the clicked day — once they change the
           // date the clicked time no longer applies, and leaving it up made the
           // hinted time disagree with the times the picker suggests for the new
           // date.
-          <p className="mb-3 text-xs font-medium text-nq-primary">
+          <p className="mb-3 text-base font-medium text-nq-primary">
             {tx.prefillHint(initialSlotLabel, prefillStaffName)}
           </p>
         ) : (
@@ -809,6 +929,7 @@ export default function DeskBookingForm({
             <div>
               <label className={labelCls}>{tx.phone}</label>
               <input
+                data-testid="desk-client-phone"
                 className={inputCls}
                 inputMode="tel"
                 placeholder="+1 (604) 555-1234"
@@ -816,13 +937,14 @@ export default function DeskBookingForm({
                 onChange={(e) => setPhone(e.target.value)}
               />
               {lookupMsg ? (
-                <p className="mt-1 text-[11px] text-nq-muted">{lookupMsg}</p>
+                <p className="mt-1 text-base text-nq-muted">{lookupMsg}</p>
               ) : null}
             </div>
 
             <div className="relative">
               <label className={labelCls}>{tx.name}</label>
               <input
+                data-testid="desk-client-name"
                 className={inputCls}
                 value={name}
                 autoComplete="off"
@@ -837,7 +959,7 @@ export default function DeskBookingForm({
               />
               {showHits && clientHits.length > 0 ? (
                 <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-lg border border-nq-border bg-nq-surface shadow-lg">
-                  <p className="border-b border-nq-border px-3 py-1.5 text-[11px] text-nq-muted">
+                  <p className="border-b border-nq-border px-3 py-2 text-base text-nq-muted">
                     {tx.searchHint}
                   </p>
                   <ul className="max-h-56 overflow-y-auto">
@@ -845,13 +967,14 @@ export default function DeskBookingForm({
                       <li key={h.phone}>
                         <button
                           type="button"
+                          data-testid="desk-client-search-hit"
                           // onMouseDown (not onClick) fires before the input's
                           // onBlur, so the pick isn't swallowed by the hide.
                           onMouseDown={(e) => {
                             e.preventDefault();
                             pickClient(h);
                           }}
-                          className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-nq-primary/5"
+                          className="flex min-h-11 w-full items-center justify-between gap-2 px-3 py-2 text-left text-base hover:bg-nq-primary/5"
                         >
                           <span className="min-w-0 flex-1 truncate font-medium text-nq-text">
                             {h.name || tx.noName}
@@ -859,7 +982,7 @@ export default function DeskBookingForm({
                               <span className="ml-1 text-amber-500">★</span>
                             ) : null}
                           </span>
-                          <span className="shrink-0 text-xs text-nq-muted">
+                          <span className="shrink-0 text-base text-nq-muted">
                             ··· {h.phone.slice(-4)}
                             {h.visitCount > 0 ? tx.visitsTag(h.visitCount) : ""}
                           </span>
@@ -874,6 +997,7 @@ export default function DeskBookingForm({
             <div>
               <label className={labelCls}>{tx.email}</label>
               <input
+                data-testid="desk-client-email"
                 className={inputCls}
                 inputMode="email"
                 value={email}
@@ -884,6 +1008,7 @@ export default function DeskBookingForm({
             <div>
               <label className={labelCls}>{tx.service}</label>
               <select
+                data-testid="desk-service-select"
                 className={inputCls}
                 value={serviceId}
                 onChange={(e) => setServiceId(e.target.value)}
@@ -909,7 +1034,7 @@ export default function DeskBookingForm({
                         key={a.id}
                         type="button"
                         onClick={() => toggleAddon(a.id)}
-                        className={`rounded-full border px-2.5 py-1 text-xs transition ${
+                        className={`min-h-11 rounded-full border px-3 py-2 text-sm transition ${
                           on
                             ? "border-nq-primary bg-nq-primary text-white"
                             : "border-nq-muted/30 bg-nq-bg text-nq-foreground hover:border-nq-primary/50"
@@ -927,6 +1052,7 @@ export default function DeskBookingForm({
             <div>
               <label className={labelCls}>{tx.staff}</label>
               <select
+                data-testid="desk-staff-select"
                 className={inputCls}
                 value={staffId}
                 onChange={(e) => setStaffId(e.target.value)}
@@ -945,12 +1071,12 @@ export default function DeskBookingForm({
                 ))}
               </select>
               {staffId && staffId !== BOOKING_ANY_STAFF_ID ? (
-                <label className="mt-1.5 flex cursor-pointer items-center gap-2 text-[11px] text-nq-muted">
+                <label className="mt-1.5 flex min-h-11 cursor-pointer items-center gap-2 text-base text-nq-muted">
                   <input
                     type="checkbox"
                     checked={staffRequested}
                     onChange={(e) => setStaffRequested(e.target.checked)}
-                    className="h-3.5 w-3.5 accent-rose-500"
+                    className="h-5 w-5 shrink-0 accent-rose-500"
                   />
                   {tx.staffRequest}
                 </label>
@@ -960,6 +1086,7 @@ export default function DeskBookingForm({
             <div>
               <label className={labelCls}>{tx.date}</label>
               <input
+                data-testid="desk-date-input"
                 type="date"
                 className={inputCls}
                 min={salonToday(timezone, new Date().toISOString())}
@@ -973,9 +1100,9 @@ export default function DeskBookingForm({
               <div>
                 <label className={labelCls}>{tx.time}</label>
                 {slotsLoading ? (
-                  <p className="text-xs text-nq-muted">{tx.slotsLoading}</p>
+                  <p className="text-base text-nq-muted">{tx.slotsLoading}</p>
                 ) : slots.filter((s) => s.available).length === 0 ? (
-                  <p className="text-xs text-nq-muted">{tx.noSlots}</p>
+                  <p className="text-base text-nq-muted">{tx.noSlots}</p>
                 ) : (
                   <div className="grid max-h-40 grid-cols-3 gap-1.5 overflow-y-auto rounded-md border border-nq-muted/20 bg-nq-bg p-1.5">
                     {slots
@@ -984,13 +1111,14 @@ export default function DeskBookingForm({
                         <button
                           key={s.label}
                           type="button"
+                          data-testid="desk-time-slot"
                           onClick={() => {
                             // Becomes the new preferred time so a later add-on
                             // change keeps it selected (sticky, like the grid click).
                             setSlotLabel(s.label);
                             desiredSlotRef.current = s.label;
                           }}
-                          className={`rounded px-1 py-1.5 text-xs transition ${
+                          className={`min-h-11 rounded px-2 py-2 text-base transition ${
                             slotLabel === s.label
                               ? "bg-nq-primary text-white"
                               : "bg-nq-surface text-nq-foreground hover:bg-nq-primary/15"
@@ -1004,19 +1132,112 @@ export default function DeskBookingForm({
               </div>
             ) : null}
 
+            {data.canBookAfterHours && serviceId && staffId && ymd ? (
+              <div
+                data-testid="desk-after-hours-panel"
+                className="rounded-lg border border-amber-400/40 bg-amber-400/10 p-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-base font-semibold text-nq-foreground">
+                      🌙 {tx.afterHoursTitle}
+                    </p>
+                    <p className="mt-0.5 text-base leading-relaxed text-nq-muted">
+                      {tx.afterHoursDescription}
+                    </p>
+                  </div>
+                  {staffId !== BOOKING_ANY_STAFF_ID ? (
+                    <button
+                      type="button"
+                      data-testid="desk-after-hours-toggle"
+                      onClick={() => {
+                        setShowAfterHours((current) => !current);
+                        setSlotLabel("");
+                        setAfterHoursConsent(false);
+                      }}
+                      className="min-h-11 shrink-0 rounded-md border border-amber-500/50 bg-nq-surface px-3 py-2 text-base font-semibold text-nq-foreground hover:bg-amber-400/15"
+                    >
+                      {showAfterHours
+                        ? tx.hideAfterHours
+                        : tx.showAfterHours}
+                    </button>
+                  ) : null}
+                </div>
+
+                {staffId === BOOKING_ANY_STAFF_ID ? (
+                  <p className="mt-2 text-base font-medium text-amber-700 dark:text-amber-300">
+                    {tx.specificStaffForAfterHours}
+                  </p>
+                ) : showAfterHours ? (
+                  <>
+                    {slotsLoading ? (
+                      <p className="mt-2 text-base text-nq-muted">
+                        {tx.slotsLoading}
+                      </p>
+                    ) : afterHoursSlots.length === 0 ? (
+                      <p className="mt-2 text-base text-nq-muted">{tx.noSlots}</p>
+                    ) : (
+                      <div
+                        data-testid="desk-after-hours-slots"
+                        className="mt-2 grid max-h-32 grid-cols-3 gap-1.5 overflow-y-auto"
+                      >
+                        {afterHoursSlots.map((slot) => (
+                          <button
+                            key={slot.label}
+                            type="button"
+                            onClick={() => {
+                              setSlotLabel(slot.label);
+                              desiredSlotRef.current = slot.label;
+                              setAfterHoursConsent(false);
+                            }}
+                            className={`min-h-11 rounded border px-2 py-2 text-base transition ${
+                              slotLabel === slot.label
+                                ? "border-amber-500 bg-amber-400 text-slate-950"
+                                : "border-amber-400/35 bg-nq-surface text-nq-foreground hover:bg-amber-400/15"
+                            }`}
+                          >
+                            <span className="block font-semibold">
+                              {slot.label}
+                            </span>
+                            <span className="block text-base opacity-75">
+                              {tx.afterHoursMinutes(slot.afterHoursMinutes)}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {selectedAfterHours ? (
+                      <label className="mt-3 flex min-h-11 cursor-pointer items-start gap-2 rounded-md bg-nq-surface p-2 text-base leading-relaxed text-nq-foreground">
+                        <input
+                          type="checkbox"
+                          data-testid="desk-after-hours-consent"
+                          checked={afterHoursConsent}
+                          onChange={(event) =>
+                            setAfterHoursConsent(event.target.checked)
+                          }
+                          className="mt-0.5 h-4 w-4 shrink-0 accent-amber-500"
+                        />
+                        <span>{tx.staffConsent}</span>
+                      </label>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+
             {/* Bed/chair picker — resource-mode salons only, shown once slot is chosen */}
             {data?.salon.resourcesEnabled && slotLabel ? (
               <div data-testid="desk-bed-picker">
                 <label className={labelCls}>{tx.resource}</label>
                 {resourceLoading ? (
-                  <p data-testid="desk-bed-loading" className="text-xs text-nq-muted">{tx.resourceLoading}</p>
+                  <p data-testid="desk-bed-loading" className="text-base text-nq-muted">{tx.resourceLoading}</p>
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
                     <button
                       type="button"
                       data-testid="desk-bed-auto"
                       onClick={() => setResourceId(null)}
-                      className={`rounded-full border px-2.5 py-1 text-xs transition ${
+                      className={`min-h-11 rounded-full border px-3 py-2 text-sm transition ${
                         resourceId === null
                           ? "border-nq-primary bg-nq-primary text-white"
                           : "border-nq-muted/40 bg-nq-surface text-nq-foreground hover:border-nq-primary/40"
@@ -1033,7 +1254,7 @@ export default function DeskBookingForm({
                         onClick={() => {
                           if (r.isAvailable) setResourceId(r.id);
                         }}
-                        className={`rounded-full border px-2.5 py-1 text-xs transition ${
+                        className={`min-h-11 rounded-full border px-3 py-2 text-sm transition ${
                           resourceId === r.id
                             ? "border-nq-primary bg-nq-primary text-white"
                             : r.isAvailable
@@ -1091,18 +1312,34 @@ export default function DeskBookingForm({
               />
             ) : null}
 
-            {error ? <p className="text-xs text-nq-error">{error}</p> : null}
+            {error ? <p className="text-base text-nq-error">{error}</p> : null}
 
-            <button
-              type="button"
-              disabled={!canSubmit}
-              onClick={submit}
-              className="mt-1 w-full rounded-md bg-nq-primary py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {submitting ? tx.submitting : tx.submit}
-            </button>
           </div>
         )}
+        </div>
+        {data ? (
+          <div
+            className={
+              anchored
+                ? "mt-3"
+                : "shrink-0 border-t border-nq-muted/20 bg-nq-surface px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3"
+            }
+          >
+            <button
+              type="button"
+              data-testid="desk-booking-submit"
+              disabled={!canSubmit}
+              onClick={submit}
+              className="min-h-11 w-full rounded-md bg-nq-primary px-4 py-2.5 text-base font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {submitting
+                ? tx.submitting
+                : selectedAfterHours
+                  ? tx.afterHoursSubmit
+                  : tx.submit}
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>,
     document.body,

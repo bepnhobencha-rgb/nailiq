@@ -1,6 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
+import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import {
@@ -11,6 +12,7 @@ import {
 import { DEMO_SALON_SLUG, isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 import { slugifySalonName } from "@/shared/lib/slugifySalonName";
 import { getOrCreateDemoSalonOwnerUserId } from "@/shared/register/demoSalonOwner";
+import { shouldUseAnonymousDemoRegistration } from "@/shared/register/registrationRuntimeMode";
 import { phoneDigitsFromAuthUser } from "@/shared/register/authUserPhone";
 import { buildRegistrationDefaultServices } from "@/shared/register/registrationDefaults";
 import { createTrialWindow } from "@/shared/lib/trial";
@@ -96,8 +98,24 @@ export async function completeSalonRegistration(
   const wizardTimezone = normalizeWizardTimezone(extra?.timezone);
 
   const isDemo = isDemoOtpRuntime();
+  let supabase: Awaited<ReturnType<typeof createClient>> | null = null;
+  let user: User | null = null;
+  let authError: unknown = null;
 
-  if (isDemo) {
+  try {
+    supabase = await createClient();
+    const authResult = await supabase.auth.getUser();
+    user = authResult.data.user;
+    authError = authResult.error;
+  } catch (error) {
+    authError = error;
+  }
+
+  // DEMO_OTP is enabled in the local/CI E2E runtime as well as the anonymous
+  // demo. An authenticated account must always use the real owner path;
+  // otherwise CI silently exercises the shared Demo Salon instead of proving
+  // that a new owner can create their own salon.
+  if (shouldUseAnonymousDemoRegistration(isDemo, Boolean(user))) {
     const token = completionTokenRaw?.trim();
     if (!token) {
       return { ok: false, error: "unauthorized" };
@@ -296,25 +314,12 @@ export async function completeSalonRegistration(
     return { ok: true, slug: actualSlug, slugAdjusted: resolvedSlugAdjusted };
   }
 
-  let supabase;
-  try {
-    supabase = await createClient();
-  } catch (e) {
-    console.error("FAILED step 1", e);
+  if (authError) {
+    console.error("FAILED step 1", authError);
     return { ok: false, error: "unauthorized" };
   }
 
-  const {
-    data: { user },
-    error: getUserErr,
-  } = await supabase.auth.getUser();
-
-  if (getUserErr) {
-    console.error("FAILED step 1", getUserErr);
-    return { ok: false, error: "unauthorized" };
-  }
-
-  if (!user) {
+  if (!supabase || !user) {
     console.error("FAILED step 1", new Error("no user"));
     return { ok: false, error: "unauthorized" };
   }

@@ -298,11 +298,9 @@ export async function saveCardOnFile(
     customerId: string;
     sourceId: string;
     idempotencyKey: string;
-    /** SCA/AVS/CVV verification token from the Web Payments SDK
-     *  `verifyBuyer({ intent: "STORE" })`. When present, Square verifies the
-     *  card at storage time and REJECTS a CVV/AVS/3DS failure — so a card typed
-     *  with a wrong CVV/postal no longer vaults silently. Also gives the
-     *  stored-credential liability shift for disputes. */
+    /** Optional legacy verification token. Current Web Payments SDK clients
+     *  request STORE verification during `card.tokenize(details)`, embedding
+     *  the buyer-verification result in the source token. */
     verificationToken?: string;
   },
 ): Promise<{ cardId: string; last4: string; brand: string }> {

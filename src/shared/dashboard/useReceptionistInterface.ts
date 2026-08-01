@@ -59,23 +59,15 @@ function writeStored(next: ReceptionistInterface): void {
 }
 
 const getServerSnapshot = (): ReceptionistInterface => "classic";
-const noopSubscribe = () => () => {};
-const getMountedSnapshot = () => true;
 
 export function useReceptionistInterface(): {
   receptionistInterface: ReceptionistInterface;
   setReceptionistInterface: (next: ReceptionistInterface) => void;
-  hydrated: boolean;
 } {
   const receptionistInterface = useSyncExternalStore(
     subscribe,
     readStored,
     getServerSnapshot,
-  );
-  const hydrated = useSyncExternalStore(
-    noopSubscribe,
-    getMountedSnapshot,
-    () => false,
   );
   const setReceptionistInterface = useCallback(
     (next: ReceptionistInterface) => writeStored(next),
@@ -85,6 +77,5 @@ export function useReceptionistInterface(): {
   return {
     receptionistInterface,
     setReceptionistInterface,
-    hydrated,
   };
 }

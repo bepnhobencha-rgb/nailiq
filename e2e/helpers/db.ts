@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import { createClient } from "@supabase/supabase-js";
 import type { Locator, Page } from "@playwright/test";
@@ -7,10 +7,11 @@ import { assertNotProductionFromEnv } from "./guardProduction";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl?.trim() || !serviceKey?.trim()) {
+if (!supabaseUrl?.trim() || !serviceKey?.trim() || !anonKey?.trim()) {
   throw new Error(
-    "e2e/helpers/db requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (see .env.test.local)",
+    "e2e/helpers/db requires NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY (see .env.test.local)",
   );
 }
 
@@ -24,6 +25,71 @@ if (!supabaseUrl?.trim() || !serviceKey?.trim()) {
 assertNotProductionFromEnv();
 
 const supabase = createClient(supabaseUrl, serviceKey);
+
+export async function invokeAiAgentPermission(input: {
+  salonId: string;
+  actorUserId: string;
+  flagKey: string;
+  enabled: boolean;
+  impact: string;
+  impactAcknowledged?: boolean;
+}) {
+  const { data, error } = await supabase.rpc(
+    "set_ai_agent_permission" as never,
+    {
+      p_salon_id: input.salonId,
+      p_actor_user_id: input.actorUserId,
+      p_actor_role: "owner",
+      p_actor_kind: "member",
+      p_flag_key: input.flagKey,
+      p_enabled: input.enabled,
+      p_impact: input.impact,
+      p_impact_acknowledged: input.impactAcknowledged === true,
+    } as never,
+  );
+  if (error) throw error;
+  return data as {
+    success?: boolean;
+    code?: string;
+    changed?: boolean;
+  };
+}
+
+export async function getAiAgentPermissionSnapshot(slug: string) {
+  const { data: salon, error: salonError } = await supabase
+    .from("salons")
+    .select("id, feature_flags")
+    .eq("slug", slug)
+    .single();
+  if (salonError) throw salonError;
+
+  const salonId = (salon as { id: string }).id;
+  const { data: audit, error: auditError } = await supabase
+    .from("ai_agent_permission_audit" as never)
+    .select(
+      "actor_user_id, actor_role, actor_kind, flag_key, impact, enabled, previous_enabled, impact_acknowledged, created_at",
+    )
+    .eq("salon_id", salonId)
+    .order("created_at", { ascending: true });
+  if (auditError) throw auditError;
+
+  return {
+    featureFlags:
+      ((salon as { feature_flags?: Record<string, boolean> }).feature_flags ??
+        {}),
+    audit: (audit ?? []) as Array<{
+      actor_user_id: string | null;
+      actor_role: string;
+      actor_kind: string;
+      flag_key: string;
+      impact: string;
+      enabled: boolean;
+      previous_enabled: boolean;
+      impact_acknowledged: boolean;
+      created_at: string;
+    }>,
+  };
+}
 
 // Public booking calendar (rewritten 2026-05-12) gates each selectable day cell
 // on `salons.opening_hours` via parseOpeningHours(): a NULL value parses to null
@@ -108,7 +174,10 @@ export async function cleanupTestSalon(slug: string) {
   const salonId = salon.id as string;
 
   await supabase.from("bookings").delete().eq("salon_id", salonId);
-  await supabase.from("booking_waitlist_entries").delete().eq("salon_id", salonId);
+  await supabase
+    .from("booking_waitlist_entries")
+    .delete()
+    .eq("salon_id", salonId);
 
   const { data: staffRows } = await supabase
     .from("staff")
@@ -184,7 +253,8 @@ export async function seedTestSalon(opts?: {
    * `salons.booking_verification_mode` — controls whether OTP / deposit friction is
    * applied. Defaults to 'never' (no friction). Set to 'always_otp' for OTP tests.
    */
-  booking_verification_mode?: "never" | "always_otp" | "auto" | "always_deposit" | "deposit_first";
+  booking_verification_mode?:
+    "never" | "always_otp" | "auto" | "always_deposit" | "deposit_first";
   /**
    * `salons.feature_flags` JSONB overrides. PR2 gates Beta release features
    * (e.g. group_booking) which default OFF — specs that exercise a Beta surface
@@ -236,7 +306,9 @@ export async function seedTestSalon(opts?: {
     .single();
 
   if (salonErr || !salon?.id) {
-    throw new Error(salonErr?.message ?? "seedTestSalon: failed to insert salon");
+    throw new Error(
+      salonErr?.message ?? "seedTestSalon: failed to insert salon",
+    );
   }
 
   const { data: svcRows, error: svcErr } = await supabase
@@ -334,18 +406,733 @@ export async function seedEmptyTestSalon(opts?: {
 }
 
 /**
+ * Seed one reversible, internal-only AI approval for the approval-to-effect E2E.
+ * The execution allowlist turns this into an audit note; it cannot contact a
+ * customer, change a booking or price, or initiate a payment.
+ */
+export async function seedOperationalNoteApproval(salonId: string) {
+  const summary = "Record the approved staffing review in the operating log.";
+  const note = `E2E approved operating note ${randomUUID()}`;
+  const { data, error } = await supabase
+    .from("approval_requests")
+    .insert({
+      salon_id: salonId,
+      action_type: "record_operational_note",
+      summary,
+      payload: { note },
+      urgency: "normal",
+      status: "pending",
+      expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    })
+    .select("id, approve_token")
+    .single();
+
+  if (error || !data?.id || !data.approve_token) {
+    throw new Error(
+      error?.message ?? "seedOperationalNoteApproval: insert failed",
+    );
+  }
+
+  return {
+    approvalId: data.id as string,
+    approveToken: data.approve_token as string,
+    summary,
+    note,
+  };
+}
+
+export async function seedOperationalException(salonId: string) {
+  const { data, error } = await supabase
+    .from("watchdog_alerts" as never)
+    .insert({
+      salon_id: salonId,
+      kind: "e2e_operational_exception",
+      severity: "critical",
+      title: "E2E booking capacity exception",
+      body: "Capacity dropped below the controlled E2E threshold.",
+      dedupe_key: `e2e:${randomUUID()}`,
+      snapshot: { source: "e2e", pii: false },
+    } as never)
+    .select("id, status" as never)
+    .single();
+  if (error || !data) {
+    throw new Error(
+      error?.message ?? "seedOperationalException: insert failed",
+    );
+  }
+  const row = data as unknown as { id: string; status: string };
+  return { alertId: row.id, status: row.status };
+}
+
+export async function controlTestOperationalException(input: {
+  salonId: string;
+  alertId: string;
+  operation: "acknowledge" | "resolve" | "reopen";
+  actorUserId: string;
+  resolutionNote?: string;
+}) {
+  const { data, error } = await supabase.rpc(
+    "control_watchdog_alert" as never,
+    {
+      p_salon_id: input.salonId,
+      p_alert_id: input.alertId,
+      p_operation: input.operation,
+      p_actor_user_id: input.actorUserId,
+      p_resolution_note: input.resolutionNote ?? null,
+    } as never,
+  );
+  if (error) {
+    throw new Error(
+      `controlTestOperationalException(${input.operation}): ${error.message}`,
+    );
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as {
+    outcome: string;
+    alert_status: string;
+  };
+  return row;
+}
+
+export async function getOperationalExceptionState(
+  salonId: string,
+  alertId: string,
+) {
+  const [
+    { data: alert, error: alertError },
+    { data: audit, error: auditError },
+  ] = await Promise.all([
+    supabase
+      .from("watchdog_alerts" as never)
+      .select(
+        "id, salon_id, status, acknowledged_at, acknowledged_by, resolved_at, resolved_by, resolution_note" as never,
+      )
+      .eq("salon_id" as never, salonId)
+      .eq("id" as never, alertId)
+      .single(),
+    supabase
+      .from("ai_actions_log")
+      .select("action_type, target_id, payload, created_at")
+      .eq("salon_id", salonId)
+      .eq("target_id", alertId)
+      .order("created_at", { ascending: true }),
+  ]);
+  if (alertError || auditError || !alert) {
+    throw new Error(
+      alertError?.message ??
+        auditError?.message ??
+        "getOperationalExceptionState: alert missing",
+    );
+  }
+  return {
+    alert: alert as unknown as {
+      status: string;
+      acknowledged_at: string | null;
+      acknowledged_by: string | null;
+      resolved_at: string | null;
+      resolved_by: string | null;
+      resolution_note: string | null;
+    },
+    audit: (audit ?? []) as Array<{
+      action_type: string;
+      target_id: string;
+      payload: Record<string, unknown>;
+    }>,
+  };
+}
+
+export async function recordTestOperationalExceptionSignal(input: {
+  salonId: string;
+  dedupeKey: string;
+  sourceType: string;
+  sourceRef: string;
+  signal: "firing" | "recovered";
+  now: string;
+}) {
+  const { data, error } = await supabase.rpc(
+    "record_ai_operational_exception_signal" as never,
+    {
+      p_salon_id: input.salonId,
+      p_dedupe_key: input.dedupeKey,
+      p_source_type: input.sourceType,
+      p_source_ref: input.sourceRef,
+      p_kind: "e2e_system_failure",
+      p_severity: "warning",
+      p_title: "E2E system signal",
+      p_body: "A deterministic E2E signal without provider error content.",
+      p_signal: input.signal,
+      p_evidence: { source: "e2e", raw_error_stored: false },
+      p_now: input.now,
+    } as never,
+  );
+  if (error) throw new Error(error.message);
+  return (Array.isArray(data) ? data[0] : data) as {
+    outcome: string;
+    alert_id: string | null;
+    alert_status: string;
+  };
+}
+
+export async function getOperationalExceptionByDedupe(
+  salonId: string,
+  dedupeKey: string,
+) {
+  const { data, error } = await supabase
+    .from("watchdog_alerts" as never)
+    .select(
+      "id, status, source_type, source_ref, occurrence_count, first_seen_at, last_seen_at, resolved_at, resolution_note" as never,
+    )
+    .eq("salon_id" as never, salonId)
+    .eq("dedupe_key" as never, dedupeKey)
+    .order("created_at" as never, { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as unknown as Array<{
+    id: string;
+    status: string;
+    source_type: string;
+    source_ref: string;
+    occurrence_count: number;
+    first_seen_at: string;
+    last_seen_at: string;
+    resolved_at: string | null;
+    resolution_note: string | null;
+  }>;
+}
+
+export async function exerciseExecutionJobExceptionTrigger(salonId: string) {
+  const approval = await seedOperationalNoteApproval(salonId);
+  const jobId = randomUUID();
+  const { error: insertError } = await supabase
+    .from("ai_execution_jobs" as never)
+    .insert({
+      id: jobId,
+      salon_id: salonId,
+      approval_request_id: approval.approvalId,
+      action_type: "record_operational_note",
+      payload: { note: "E2E trigger evidence" },
+      status: "queued",
+      idempotency_key: `e2e-trigger:${jobId}`,
+      attempt_count: 0,
+      max_attempts: 3,
+    } as never);
+  if (insertError) throw new Error(insertError.message);
+
+  const { error: failedError } = await supabase
+    .from("ai_execution_jobs" as never)
+    .update({
+      status: "failed",
+      attempt_count: 3,
+      last_error: "this raw error must not enter the exception",
+      finished_at: new Date().toISOString(),
+    } as never)
+    .eq("id" as never, jobId);
+  if (failedError) throw new Error(failedError.message);
+
+  const opened = await getOperationalExceptionByDedupe(
+    salonId,
+    `execution_job:${jobId}`,
+  );
+
+  const { error: successError } = await supabase
+    .from("ai_execution_jobs" as never)
+    .update({
+      status: "succeeded",
+      last_error: null,
+      finished_at: new Date().toISOString(),
+    } as never)
+    .eq("id" as never, jobId);
+  if (successError) throw new Error(successError.message);
+
+  const resolved = await getOperationalExceptionByDedupe(
+    salonId,
+    `execution_job:${jobId}`,
+  );
+  return { jobId, opened, resolved };
+}
+
+export async function exerciseCanceledExecutionExceptionClosure(
+  salonId: string,
+) {
+  const approval = await seedOperationalNoteApproval(salonId);
+  const jobId = randomUUID();
+  const rawError = "provider secret that must not enter the audit trail";
+  const { error: insertError } = await supabase
+    .from("ai_execution_jobs" as never)
+    .insert({
+      id: jobId,
+      salon_id: salonId,
+      approval_request_id: approval.approvalId,
+      action_type: "record_operational_note",
+      payload: { note: "E2E cancellation closure evidence" },
+      status: "queued",
+      idempotency_key: `e2e-cancel-closure:${jobId}`,
+      attempt_count: 0,
+      max_attempts: 3,
+    } as never);
+  if (insertError) throw new Error(insertError.message);
+
+  const { error: failedError } = await supabase
+    .from("ai_execution_jobs" as never)
+    .update({
+      status: "failed",
+      attempt_count: 3,
+      last_error: rawError,
+      finished_at: new Date().toISOString(),
+    } as never)
+    .eq("id" as never, jobId);
+  if (failedError) throw new Error(failedError.message);
+
+  const opened = await getOperationalExceptionByDedupe(
+    salonId,
+    `execution_job:${jobId}`,
+  );
+  const { data: controlData, error: controlError } = await supabase.rpc(
+    "control_ai_execution_job" as never,
+    {
+      p_salon_id: salonId,
+      p_job_id: jobId,
+      p_operation: "cancel",
+      p_actor_user_id: null,
+    } as never,
+  );
+  if (controlError) throw new Error(controlError.message);
+  const control = (
+    Array.isArray(controlData) ? controlData[0] : controlData
+  ) as {
+    outcome: string;
+    job_status: string;
+  };
+
+  const [{ data: job, error: jobError }, { data: audit, error: auditError }] =
+    await Promise.all([
+      supabase
+        .from("ai_execution_jobs" as never)
+        .select("status, last_error" as never)
+        .eq("id" as never, jobId)
+        .single(),
+      supabase
+        .from("ai_actions_log")
+        .select("action_type, target_id, payload")
+        .eq("salon_id", salonId)
+        .in("action_type", [
+          "execution_canceled",
+          "operational_exception_auto_resolved",
+        ])
+        .order("created_at", { ascending: true }),
+    ]);
+  if (jobError || auditError || !job) {
+    throw new Error(
+      jobError?.message ??
+        auditError?.message ??
+        "exerciseCanceledExecutionExceptionClosure: state missing",
+    );
+  }
+
+  const resolved = await getOperationalExceptionByDedupe(
+    salonId,
+    `execution_job:${jobId}`,
+  );
+  return {
+    jobId,
+    rawError,
+    opened,
+    control,
+    job: job as unknown as { status: string; last_error: string | null },
+    resolved,
+    audit: (audit ?? []) as Array<{
+      action_type: string;
+      target_id: string;
+      payload: Record<string, unknown>;
+    }>,
+  };
+}
+
+export async function seedBulkMessageApproval(salonId: string) {
+  const summary = "Prepare a consent-checked re-engagement audience.";
+  const { data, error } = await supabase
+    .from("approval_requests")
+    .insert({
+      salon_id: salonId,
+      action_type: "bulk_message",
+      summary,
+      payload: {
+        recipient_selection_required: true,
+        segment: "lapsed_regulars_45_365_days",
+        message: "We miss you — book your next nail appointment.",
+      },
+      urgency: "normal",
+      status: "pending",
+      expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    })
+    .select("id, approve_token")
+    .single();
+
+  if (error || !data?.id || !data.approve_token) {
+    throw new Error(error?.message ?? "seedBulkMessageApproval: insert failed");
+  }
+
+  return {
+    approvalId: data.id as string,
+    approveToken: data.approve_token as string,
+    summary,
+  };
+}
+
+export async function seedCampaignRecipient() {
+  const id = randomUUID();
+  const suffix = randomBytes(5).toString("hex");
+  const { error } = await supabase.from("client_profiles").insert({
+    id,
+    phone: `1555${Math.floor(Math.random() * 9_000_000 + 1_000_000)}`,
+    email: `campaign-${suffix}@example.test`,
+    marketing_consent_at: new Date().toISOString(),
+    marketing_email_consent_at: new Date().toISOString(),
+  });
+  if (error) throw new Error(error.message);
+  return id;
+}
+
+export async function recordTestCampaignManifest(input: {
+  salonId: string;
+  jobId: string;
+  clientProfileId: string;
+  sms?: boolean;
+  email?: boolean;
+}) {
+  const now = new Date().toISOString();
+  const sms = input.sms ?? true;
+  const email = input.email ?? false;
+  const audienceKey = `${input.clientProfileId}:${sms ? "s" : ""}${email ? "e" : ""}`;
+  const fingerprint = createHash("sha256")
+    .update(audienceKey)
+    .digest("hex")
+    .slice(0, 24);
+  const { data, error } = await supabase.rpc(
+    "record_ai_campaign_manifest" as never,
+    {
+      p_job_id: input.jobId,
+      p_salon_id: input.salonId,
+      p_summary: {
+        prepared_at: now,
+        segment: "lapsed_regulars_45_365_days",
+        candidate_count: 2,
+        eligible_count: 1,
+        sms_recipient_count: sms ? 1 : 0,
+        email_recipient_count: email ? 1 : 0,
+        dual_channel_count: sms && email ? 1 : 0,
+        excluded_no_consent: 1,
+        excluded_no_channel: 0,
+        excluded_recent_contact: 0,
+        estimated_cost_usd_cents: 0.79,
+        candidate_limit: 500,
+        may_have_more_candidates: false,
+        audience_fingerprint: fingerprint,
+        no_messages_sent: true,
+      },
+      p_recipients: [
+        {
+          client_profile_id: input.clientProfileId,
+          sms,
+          email,
+        },
+      ],
+      p_now: now,
+    } as never,
+  );
+  if (error) throw new Error(error.message);
+  const row = (Array.isArray(data) ? data[0] : data) as {
+    outcome: string;
+    manifest_id: string | null;
+    release_approval_id: string | null;
+    audience_fingerprint: string | null;
+    message_sha256: string | null;
+  };
+  return row;
+}
+
+export async function getCampaignReleaseState(jobId: string) {
+  const [
+    { data: job, error: jobError },
+    { data: manifests, error: manifestError },
+    { data: audits, error: auditError },
+  ] = await Promise.all([
+    supabase
+      .from("ai_execution_jobs" as never)
+      .select("status, result")
+      .eq("id" as never, jobId)
+      .single(),
+    supabase
+      .from("ai_campaign_manifests" as never)
+      .select("*")
+      .eq("source_execution_job_id" as never, jobId)
+      .order("created_at" as never, { ascending: true }),
+    supabase
+      .from("ai_actions_log")
+      .select("action_type, payload")
+      .eq("agent", "execution_worker")
+      .eq("action_type", "campaign_manifest_prepared")
+      .eq("target_id", jobId)
+      .order("created_at", { ascending: true }),
+  ]);
+  if (jobError) throw new Error(jobError.message);
+  if (manifestError) throw new Error(manifestError.message);
+  if (auditError) throw new Error(auditError.message);
+  const manifestRows = (manifests ?? []) as Array<{
+    id: string;
+    salon_id: string;
+    source_execution_job_id: string;
+    source_approval_request_id: string;
+    audience_fingerprint: string;
+    message_sha256: string;
+    message: string;
+    summary: Record<string, unknown>;
+  }>;
+  const manifest = manifestRows.at(-1) ?? null;
+  const [
+    { data: recipients, error: recipientError },
+    { data: approval, error: approvalError },
+  ] = manifest
+    ? await Promise.all([
+        supabase
+          .from("ai_campaign_manifest_recipients" as never)
+          .select("*")
+          .eq("manifest_id" as never, manifest.id),
+        supabase
+          .from("approval_requests")
+          .select("*")
+          .eq("release_manifest_id", manifest.id)
+          .single(),
+      ])
+    : [
+        { data: [], error: null },
+        { data: null, error: null },
+      ];
+  if (recipientError) throw new Error(recipientError.message);
+  if (approvalError) throw new Error(approvalError.message);
+  return {
+    job: job as { status: string; result: Record<string, unknown> | null },
+    manifests: manifestRows,
+    manifest,
+    recipients: (recipients ?? []) as Array<Record<string, unknown>>,
+    releaseApproval: approval as
+      | (Record<string, unknown> & {
+          id: string;
+          approve_token: string;
+          status: string;
+          payload: Record<string, unknown>;
+        })
+      | null,
+    audits: (audits ?? []) as Array<{
+      action_type: string;
+      payload: Record<string, unknown>;
+    }>,
+  };
+}
+
+export async function recordTestCampaignDispatchPreflight(input: {
+  salonId: string;
+  jobId: string;
+  manifestId: string;
+  clientProfileId: string;
+  exclusion?: "no_consent";
+}) {
+  const now = new Date().toISOString();
+  const exclusion = input.exclusion ?? null;
+  const sms = exclusion === null;
+  const canonical =
+    `${input.clientProfileId.toLowerCase()}:${sms ? "s" : ""}:` +
+    (exclusion ?? "eligible");
+  const fingerprint = createHash("sha256").update(canonical).digest("hex");
+  const { data, error } = await supabase.rpc(
+    "record_ai_campaign_preflight_evidence" as never,
+    {
+      p_job_id: input.jobId,
+      p_salon_id: input.salonId,
+      p_summary: {
+        preflight_at: now,
+        manifest_id: input.manifestId,
+        manifest_recipient_count: 1,
+        eligible_count: exclusion === null ? 1 : 0,
+        sms_recipient_count: sms ? 1 : 0,
+        email_recipient_count: 0,
+        dual_channel_count: 0,
+        excluded_recent_contact: 0,
+        excluded_no_consent: exclusion === "no_consent" ? 1 : 0,
+        excluded_no_channel: 0,
+        excluded_missing_profile: 0,
+        excluded_manifest_channel_unavailable: 0,
+        estimated_cost_usd_cents: sms ? 0.8 : 0,
+        recipient_cap: 500,
+        cost_cap_usd_cents: 500,
+        preflight_fingerprint: fingerprint,
+        dispatch_enabled: false,
+        no_messages_sent: true,
+      },
+      p_decisions: [
+        {
+          client_profile_id: input.clientProfileId,
+          sms,
+          email: false,
+          exclusion,
+        },
+      ],
+    } as never,
+  );
+  if (error) throw new Error(error.message);
+  return (Array.isArray(data) ? data[0] : data) as {
+    outcome: string;
+    preflight_id: string | null;
+    preflight_status: string | null;
+    preflight_fingerprint: string | null;
+    valid_until: string | null;
+    decision_count: number | null;
+  };
+}
+
+export async function sealTestCampaignDispatchPlan(input: {
+  salonId: string;
+  jobId: string;
+}) {
+  const { data, error } = await supabase.rpc(
+    "seal_ai_campaign_dispatch_plan" as never,
+    {
+      p_job_id: input.jobId,
+      p_salon_id: input.salonId,
+    } as never,
+  );
+  if (error) throw new Error(error.message);
+  return (Array.isArray(data) ? data[0] : data) as {
+    outcome: string;
+    plan_id: string | null;
+    plan_status: string | null;
+    plan_fingerprint: string | null;
+    expires_at: string | null;
+  };
+}
+
+export async function getCampaignDispatchPreflightState(jobId: string) {
+  const [
+    { data: job, error: jobError },
+    { data: preflights, error: preflightError },
+    { data: decisions, error: decisionError },
+    { data: plans, error: planError },
+    { data: audits, error: auditError },
+  ] = await Promise.all([
+    supabase
+      .from("ai_execution_jobs" as never)
+      .select("status, attempt_count, result")
+      .eq("id" as never, jobId)
+      .single(),
+    supabase
+      .from("ai_campaign_dispatch_preflights" as never)
+      .select("*")
+      .eq("release_execution_job_id" as never, jobId)
+      .order("created_at" as never, { ascending: true }),
+    supabase
+      .from("ai_campaign_dispatch_preflight_decisions" as never)
+      .select(
+        "*, ai_campaign_dispatch_preflights!inner(release_execution_job_id)",
+      )
+      .eq(
+        "ai_campaign_dispatch_preflights.release_execution_job_id" as never,
+        jobId,
+      ),
+    supabase
+      .from("ai_campaign_dispatch_plans" as never)
+      .select("*")
+      .eq("release_execution_job_id" as never, jobId)
+      .order("created_at" as never, { ascending: true }),
+    supabase
+      .from("ai_actions_log")
+      .select("action_type, payload")
+      .eq("agent", "execution_worker")
+      .eq("target_id", jobId)
+      .order("created_at", { ascending: true }),
+  ]);
+  if (jobError) throw new Error(jobError.message);
+  if (preflightError) throw new Error(preflightError.message);
+  if (decisionError) throw new Error(decisionError.message);
+  if (planError) throw new Error(planError.message);
+  if (auditError) throw new Error(auditError.message);
+  return {
+    job: job as {
+      status: string;
+      attempt_count: number;
+      result: Record<string, unknown>;
+    },
+    preflights: (preflights ?? []) as Array<Record<string, unknown>>,
+    decisions: (decisions ?? []) as Array<Record<string, unknown>>,
+    plans: (plans ?? []) as Array<Record<string, unknown>>,
+    audits: (audits ?? []) as Array<Record<string, unknown>>,
+  };
+}
+
+export async function getApprovalEffectState(approvalId: string) {
+  const [
+    { data: approval, error: approvalError },
+    { data: job, error: jobError },
+  ] = await Promise.all([
+    supabase
+      .from("approval_requests")
+      .select("status, decided_at")
+      .eq("id", approvalId)
+      .single(),
+    supabase
+      .from("ai_execution_jobs" as never)
+      .select("id, status, attempt_count, result, lease_token")
+      .eq("approval_request_id" as never, approvalId)
+      .maybeSingle(),
+  ]);
+
+  if (approvalError) throw new Error(approvalError.message);
+  if (jobError) throw new Error(jobError.message);
+
+  const executionJob = job as {
+    id: string;
+    status: string;
+    attempt_count: number;
+    result: Record<string, unknown> | null;
+    lease_token: string | null;
+  } | null;
+
+  const { data: effects, error: effectError } = executionJob
+    ? await supabase
+        .from("ai_actions_log")
+        .select("action_type, target_id, payload")
+        .eq("agent", "ai_execution")
+        .eq("target_id", executionJob.id)
+        .order("created_at", { ascending: true })
+    : { data: [], error: null };
+
+  if (effectError) throw new Error(effectError.message);
+
+  return {
+    approval: approval as { status: string; decided_at: string | null },
+    job: executionJob,
+    effects: (effects ?? []) as Array<{
+      action_type: string;
+      target_id: string | null;
+      payload: Record<string, unknown> | null;
+    }>,
+  };
+}
+
+/**
  * Create a Supabase auth user for E2E tests that exercise email/password sign-in.
  * Uses the service-role admin API so no real email is sent.
  * Returns { userId, email, password }.
  */
-export async function seedTestUser(opts?: { email?: string; password?: string }) {
+export async function seedTestUser(opts?: {
+  email?: string;
+  password?: string;
+}) {
   // Second instance of the hardcoded-credential bug, missed when
   // helpers/superadmin.ts was fixed: this default password sat in a PUBLIC repo
   // too, and this helper also mints real auth users. Same rule — a fresh random
   // password per run, held only in memory, never logged and never in an artifact.
   // Treat the old constant as permanently compromised.
   const email = opts?.email ?? `e2e-user-${randomUUID()}@nailiq.test.invalid`;
-  const password = opts?.password ?? `E2E-${randomBytes(24).toString("base64url")}#Aa1`;
+  const password =
+    opts?.password ?? `E2E-${randomBytes(24).toString("base64url")}#Aa1`;
 
   const { data, error } = await supabase.auth.admin.createUser({
     email,
@@ -354,10 +1141,194 @@ export async function seedTestUser(opts?: { email?: string; password?: string })
   });
 
   if (error || !data.user?.id) {
-    throw new Error(error?.message ?? "seedTestUser: failed to create auth user");
+    throw new Error(
+      error?.message ?? "seedTestUser: failed to create auth user",
+    );
   }
 
   return { userId: data.user.id, email, password };
+}
+
+export async function seedTestSalonMember(
+  salonId: string,
+  role: "owner" | "admin" | "receptionist" | "senior" | "nail_tech",
+) {
+  const user = await seedTestUser();
+  const { error } = await supabase.from("salon_members").insert({
+    salon_id: salonId,
+    user_id: user.userId,
+    role,
+  });
+  if (error) {
+    await supabase.auth.admin.deleteUser(user.userId);
+    throw new Error(`seedTestSalonMember(${role}): ${error.message}`);
+  }
+  return { ...user, role };
+}
+
+export async function prepareTestSalonForGoLive(salonId: string) {
+  const openingHours = {
+    ...SEED_OPENING_HOURS,
+    mon: { ...SEED_OPENING_HOURS.mon, close: "19:00" },
+  };
+  const { error } = await supabase
+    .from("salons")
+    .update({
+      address: "123 E2E Main Street, Vancouver, BC",
+      salon_phone: "+16045550199",
+      timezone: "America/Vancouver",
+      opening_hours: openingHours,
+      profile_complete: true,
+      email: "e2e-ready@nailiq.test.invalid",
+      email_verified: true,
+      email_links_enabled: true,
+      phone_otp_enabled: false,
+    })
+    .eq("id", salonId);
+  if (error) {
+    throw new Error(`prepareTestSalonForGoLive: ${error.message}`);
+  }
+}
+
+export async function changeFirstTestServicePrice(salonId: string) {
+  const { data: service, error: readError } = await supabase
+    .from("services")
+    .select("id, price_cents")
+    .eq("salon_id", salonId)
+    .is("deleted_at", null)
+    .order("id")
+    .limit(1)
+    .single();
+  if (readError || !service?.id) {
+    throw new Error(
+      readError?.message ?? "changeFirstTestServicePrice: service missing",
+    );
+  }
+  const { error } = await supabase
+    .from("services")
+    .update({ price_cents: Number(service.price_cents) + 100 })
+    .eq("id", service.id);
+  if (error) {
+    throw new Error(`changeFirstTestServicePrice: ${error.message}`);
+  }
+}
+
+export async function getGoLiveAttestationHistory(salonId: string) {
+  const { data, error } = await supabase
+    .from("salon_go_live_attestations")
+    .select(
+      "check_key, action, evidence_note, actor_user_id, actor_role, readiness_snapshot_hash, created_at",
+    )
+    .eq("salon_id", salonId)
+    .order("created_at", { ascending: true });
+  if (error) {
+    throw new Error(`getGoLiveAttestationHistory: ${error.message}`);
+  }
+  return data ?? [];
+}
+
+export async function attemptFinalGoLiveApprovalAsMember(input: {
+  salonId: string;
+  userId: string;
+  email: string;
+  password: string;
+  actorRole: "owner" | "admin";
+}) {
+  const memberClient = createClient(supabaseUrl!, anonKey!);
+  const { error: signInError } = await memberClient.auth.signInWithPassword({
+    email: input.email,
+    password: input.password,
+  });
+  if (signInError) {
+    throw new Error(
+      `attemptFinalGoLiveApprovalAsMember sign-in: ${signInError.message}`,
+    );
+  }
+  const { error } = await memberClient
+    .from("salon_go_live_attestations")
+    .insert({
+      salon_id: input.salonId,
+      check_key: "owner_approved",
+      action: "attest",
+      evidence_note: "E2E direct database authorization probe.",
+      actor_user_id: input.userId,
+      actor_role: input.actorRole,
+      readiness_snapshot_hash: "a".repeat(64),
+    });
+  await memberClient.auth.signOut();
+  return { rejected: Boolean(error), code: error?.code ?? null };
+}
+
+/**
+ * Read the durable registration outcome from the database. The browser redirect
+ * alone is not proof that the owner membership, trial, defaults, and no-card
+ * contract were committed.
+ */
+export async function getRegisteredSalonForUser(userId: string) {
+  const { data: member, error: memberError } = await supabase
+    .from("salon_members")
+    .select("salon_id, role")
+    .eq("user_id", userId)
+    .eq("role", "owner")
+    .single();
+
+  if (memberError || !member?.salon_id) {
+    throw new Error(
+      memberError?.message ??
+        "getRegisteredSalonForUser: owner membership was not created",
+    );
+  }
+
+  const salonId = String(member.salon_id);
+  const [
+    { data: salon, error: salonError },
+    { count: serviceCount, error: serviceError },
+    { count: staffCount, error: staffError },
+  ] = await Promise.all([
+    supabase
+      .from("salons")
+      .select(
+        "id, slug, name, timezone, setup_wizard_completed_at, subscription_plan, subscription_status, trial_started_at, trial_ends_at, stripe_customer_id, stripe_subscription_id, payment_provider",
+      )
+      .eq("id", salonId)
+      .single(),
+    supabase
+      .from("services")
+      .select("id", { count: "exact", head: true })
+      .eq("salon_id", salonId),
+    supabase
+      .from("staff")
+      .select("id", { count: "exact", head: true })
+      .eq("salon_id", salonId),
+  ]);
+
+  const firstError = salonError ?? serviceError ?? staffError;
+  if (firstError || !salon) {
+    throw new Error(
+      firstError?.message ??
+        "getRegisteredSalonForUser: salon registration state is missing",
+    );
+  }
+
+  return {
+    memberRole: String(member.role),
+    salon: salon as {
+      id: string;
+      slug: string;
+      name: string;
+      timezone: string;
+      setup_wizard_completed_at: string | null;
+      subscription_plan: string;
+      subscription_status: string;
+      trial_started_at: string | null;
+      trial_ends_at: string | null;
+      stripe_customer_id: string | null;
+      stripe_subscription_id: string | null;
+      payment_provider: string | null;
+    },
+    serviceCount: serviceCount ?? 0,
+    staffCount: staffCount ?? 0,
+  };
 }
 
 /** Remove a Supabase auth user (and any salon they own) from E2E test runs. */

@@ -19,29 +19,26 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260726200033. Refresh these with each schema-changing forward
+ * through 20260731184500. Refresh these with each schema-changing forward
  * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
-  tables: 89,
-  columns: 1217,
-  policies: 140,
+  tables: 102,
+  columns: 1372,
+  policies: 151,
   /**
-   * APP functions only — 65.
+   * APP functions only — 107 after the rehearsed forward migrations.
    *
-   * `select count(*) from pg_proc where nspname='public'` says 253 on production,
-   * and that number is a trap: 188 of them belong to EXTENSIONS (pgcrypto,
-   * btree_gist, pg_trgm, uuid-ossp), which production happens to have installed
-   * into `public` while a clean install puts them in `extensions`. Counting them
-   * made the local database look 188 functions short of a schema it had in fact
-   * reproduced exactly.
+   * Counting every `public` function is a trap: many belong to EXTENSIONS
+   * (pgcrypto, btree_gist, pg_trgm, uuid-ossp), which production happens to have
+   * installed into `public` while a clean install puts them in `extensions`.
    *
-   * Verified on production: 253 total = 188 extension-owned + 65 app-owned.
-   * The query below excludes anything a `pg_depend` extension edge points at.
+   * The query below excludes anything a `pg_depend` extension edge points at,
+   * so extension placement cannot distort this release-shape tripwire.
    */
-  functions: 73,
-  triggers: 25,
-  indexes: 294,
+  functions: 107,
+  triggers: 34,
+  indexes: 335,
 } as const;
 
 /**
@@ -63,19 +60,71 @@ const CRITICAL_TABLES = [
   "salon_members",
   "superadmins",
   "superadmin_audit_logs",
+  "ai_execution_jobs",
+  "ai_execution_worker_state",
+  "ai_worker_runs",
+  "ai_campaign_manifests",
+  "ai_campaign_manifest_recipients",
+  "ai_campaign_dispatch_preflights",
+  "ai_campaign_dispatch_preflight_decisions",
+  "ai_campaign_dispatch_plans",
+  "salon_go_live_attestations",
+  "salon_client_identity_aliases",
+  "salon_client_identity_merge_events",
+  "ai_digest_deliveries",
+  "ai_agent_permission_audit",
 ] as const;
 
 /** Booking cannot work without these; a missing RPC fails at runtime, not at apply time. */
-const CRITICAL_FUNCTIONS = ["compute_no_show_risk"] as const;
+const CRITICAL_FUNCTIONS = [
+  "compute_no_show_risk",
+  "claim_ai_execution_jobs",
+  "cancel_ineligible_ai_execution_jobs",
+  "control_ai_execution_job",
+  "control_watchdog_alert",
+  "decide_ai_approval_request",
+  "decide_ai_approval_request_as_actor",
+  "mark_ai_approval_decision_channel",
+  "finish_ai_execution_job",
+  "execute_ai_operational_note",
+  "execute_ai_operational_note_v2",
+  "recover_stale_ai_execution_jobs",
+  "marketing_audience_candidates",
+  "record_ai_audience_preparation",
+  "record_ai_campaign_manifest",
+  "record_ai_campaign_dispatch_preflight",
+  "record_ai_campaign_dispatch_preflight_fresh",
+  "record_ai_campaign_preflight_evidence",
+  "record_ai_operational_exception_signal",
+  "seal_ai_campaign_dispatch_plan",
+  "record_ai_execution_worker_heartbeat",
+  "record_ai_worker_heartbeat",
+  "surface_strategist_operational_note_approval",
+  "sync_ai_execution_job_exception",
+  "sync_ai_manager_operational_exceptions",
+  "ai_tenant_allows_autonomous_execution",
+  "ai_cron_worker_supported",
+  "suggest_salon_slugs_by_similarity",
+  "merge_salon_client_identity",
+  "revoke_salon_client_identity_merge",
+  "apply_salon_client_identity_alias",
+  "record_ai_digest_delivery",
+  "reject_ai_agent_permission_audit_mutation",
+  "set_ai_agent_permission",
+] as const;
 
 const dbUrl = process.env.DB_URL;
 if (!dbUrl?.trim()) {
-  console.error("check-schema-parity needs DB_URL (from `supabase status -o env`).");
+  console.error(
+    "check-schema-parity needs DB_URL (from `supabase status -o env`).",
+  );
   process.exit(1);
 }
 
 function q(sql: string): string {
-  return execFileSync("psql", [dbUrl!, "-tAc", sql], { encoding: "utf8" }).trim();
+  return execFileSync("psql", [dbUrl!, "-tAc", sql], {
+    encoding: "utf8",
+  }).trim();
 }
 
 function num(sql: string): number {
@@ -151,7 +200,7 @@ function main() {
   // The first dump here was taken with --no-privileges and produced 0 grants.
   // Everything above still went green. That is why this check exists.
   console.log("\n── Grant matrix ──\n");
-  const GRANTS = { anon: 57, authenticated: 60, service_role: 94 } as const;
+  const GRANTS = { anon: 57, authenticated: 64, service_role: 107 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (

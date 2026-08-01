@@ -12,15 +12,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { looseServiceClient } from "@/shared/integrations/square/looseDb";
 import { syncSquareEmailConsent } from "@/shared/integrations/square/emailConsentSync";
+import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
+import { runTrackedCron } from "@/shared/security/cronRunHistory";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
-  const secret = req.headers.get("authorization")?.replace("Bearer ", "");
-  if (secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const authorizationError = requireCronAuthorization(req);
+  if (authorizationError) return authorizationError;
+  return runTrackedCron("square_email_consent", async () => {
   if (process.env.SQUARE_EMAIL_CONSENT_SYNC !== "1") {
     return NextResponse.json({ ok: true, skipped: "disabled" });
   }
@@ -49,5 +50,6 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, results });
+    return NextResponse.json({ ok: true, results });
+  });
 }

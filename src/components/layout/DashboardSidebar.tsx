@@ -11,6 +11,7 @@ import {
   Gift,
   History,
   Home,
+  Hourglass,
   Package,
   ChevronLeft,
   Activity,
@@ -31,7 +32,6 @@ import {
   TrendingUp,
   UserCheck,
   Users,
-  ClipboardCheck,
 } from "lucide-react";
 import { LogoutButton } from "@/components/dashboard/LogoutButton";
 import { GlobalLanguageToggle } from "@/components/user/GlobalLanguageToggle";
@@ -54,6 +54,8 @@ type Props = {
   role: string;
   salonName: string;
   walkinQueueCount?: number;
+  /** Active online waitlist entries, kept separate from walk-ins. */
+  waitlistCount?: number;
   /** When > 0, the Walk-in Queue badge flips red (regardless of
    * `walkinQueueCount`). Driven by overdue in-progress bookings. */
   overdueCount?: number;
@@ -119,6 +121,7 @@ type NavSection = {
 const BASIC_NAV_KEYS = new Set([
   "front-desk",
   "queue",
+  "waitlist",
   "calendar",
   "clients",
   "settings",
@@ -134,6 +137,7 @@ const DESKTOP_PRIMARY_NAV_KEYS = new Set([
   "pulse",
   "front-desk",
   "queue",
+  "waitlist",
   "calendar",
   "clients",
   "staff",
@@ -152,6 +156,7 @@ export function DashboardSidebar({
   role,
   salonName,
   walkinQueueCount = 0,
+  waitlistCount = 0,
   overdueCount = 0,
   messagesCount = 0,
   pendingApprovalsCount = 0,
@@ -251,7 +256,7 @@ export function DashboardSidebar({
           },
           {
             key: "queue",
-            label: t.walkinQueue,
+            label: language === "vi" ? "Khách vãng lai" : "Walk-ins",
             // Queue panel renders only in the day view — force it + deep-link #queue.
             href: `${dashRoot}/center?view=day#queue`,
             icon: Clock,
@@ -269,6 +274,19 @@ export function DashboardSidebar({
                   ? walkinQueueCount
                   : 0,
             badgeTone: overdueCount > 0 ? "red" : "gold",
+          },
+          {
+            key: "waitlist",
+            label:
+              language === "vi"
+                ? "Danh sách chờ online"
+                : "Online waitlist",
+            href: `${dashRoot}/center?view=day#waitlist`,
+            icon: Hourglass,
+            match: () => false,
+            hidden: featureOff("receptionist_center"),
+            badge: waitlistCount > 0 ? waitlistCount : undefined,
+            badgeTone: "gold",
           },
           {
             key: "calendar",
@@ -321,11 +339,11 @@ export function DashboardSidebar({
           {
             key: "reports",
             label: t.reports,
-            href: `${dashRoot}/reports`,
+            href: `${dashRoot}/insights`,
             // TrendingUp reads as "business analytics" more than the
             // prior BarChart2.
             icon: TrendingUp,
-            match: (p) => p.startsWith(`${dashRoot}/reports`),
+            match: (p) => p.startsWith(`${dashRoot}/insights`),
             // Release flag (advanced_reports, default OFF) + role: the KPI/
             // revenue overview is owner + admin only (matches the page gate).
             hidden:
@@ -391,32 +409,28 @@ export function DashboardSidebar({
             hidden: role !== "owner" && role !== "admin",
           },
           {
+            key: "ai-control-center",
+            label: language === "vi" ? "Trung tâm AI" : "AI Control Center",
+            href: `${dashRoot}/ai`,
+            icon: Sparkles,
+            match: (p) =>
+              p.startsWith(`${dashRoot}/ai`) ||
+              p.startsWith(`${dashRoot}/manager`) ||
+              p.startsWith(`${dashRoot}/approvals`),
+            hidden:
+              featureOff("ai_control_center") ||
+              (role !== "owner" && role !== "admin"),
+            badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : undefined,
+            badgeTone: "red" as const,
+          },
+          {
             key: "activity",
             label: t.activity,
             href: `${dashRoot}/activity`,
             icon: History,
             match: (p) => p.startsWith(`${dashRoot}/activity`),
-            // Full audit/comms log — owner + admin (matches the page gate).
+            // Full non-AI audit/comms log — owner + admin only.
             hidden: role !== "owner" && role !== "admin",
-          },
-          {
-            key: "manager",
-            label: "Nhật ký Minh",
-            href: `${dashRoot}/manager`,
-            icon: Sparkles,
-            match: (p) => p.startsWith(`${dashRoot}/manager`),
-            hidden: role !== "owner" && role !== "admin",
-          },
-          {
-            key: "approvals",
-            label: t.approvals,
-            href: `${dashRoot}/approvals`,
-            icon: ClipboardCheck,
-            match: (p) => p.startsWith(`${dashRoot}/approvals`),
-            // Minh approval requests — owner + admin only.
-            hidden: role !== "owner" && role !== "admin",
-            badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : undefined,
-            badgeTone: "red" as const,
           },
           {
             key: "messages",
@@ -469,7 +483,6 @@ export function DashboardSidebar({
     language,
     role,
       t.activity,
-      t.approvals,
       t.calendar,
       t.clients,
       t.disputes,
@@ -487,10 +500,10 @@ export function DashboardSidebar({
       t.services,
       t.settings,
       t.staff,
-      t.walkinQueue,
       walkinQueueCount,
-      overdueCount,
-      pendingApprovalsCount,
+    overdueCount,
+    waitlistCount,
+    pendingApprovalsCount,
     releaseFeatures,
     ],
   );

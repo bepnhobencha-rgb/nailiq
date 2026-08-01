@@ -1,3 +1,5 @@
+import { formatInSalonTz } from "@/shared/lib/salonTime";
+
 export type CustomerBookingKind = "walkin" | "appointment";
 
 export type CustomerBookingStatus =
@@ -34,4 +36,12 @@ export function resolveCustomerWaitSurface(
     return "appointment";
   }
   return "waiting";
+}
+
+/** Keep the SSR and browser clock text identical by using the salon timezone. */
+export function formatCustomerWaitReadyClock(
+  readyAroundIso: string,
+  timezone: string,
+): string {
+  return formatInSalonTz(readyAroundIso, timezone, "time");
 }

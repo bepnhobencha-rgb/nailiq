@@ -3,10 +3,19 @@
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { salonDayRangeUtc, salonToday, salonYmdOfUtc } from "@/shared/lib/salonTime";
+import {
+  salonDayRangeUtc,
+  salonToday,
+  salonYmdOfUtc,
+} from "@/shared/lib/salonTime";
 import { loadUnclosedBookings } from "@/shared/dashboard/loadUnclosedBookings";
 import type { UnclosedBooking } from "@/shared/dashboard/unclosedBookingTypes";
 import { getPendingApprovals } from "@/shared/ai/approvalRequests";
+import { customerIdentityKey } from "@/shared/customer/customerIdentityKey";
+import {
+  buildOwnerHomeStaffSnapshot,
+  type OwnerHomeStaffStatus,
+} from "@/shared/dashboard/ownerHomeStaffSnapshot";
 
 export type OwnerHomeData = {
   currencyCode: string;
@@ -18,6 +27,7 @@ export type OwnerHomeData = {
   todayCompleted: number;
   todayNoShows: number;
   todayRevenueCents: number;
+  currentStaff: OwnerHomeStaffStatus[];
   // This week vs last week (Mon–Sun in salon tz)
   weekRevenueCents: number;
   lastWeekRevenueCents: number;
@@ -31,7 +41,11 @@ export type OwnerHomeData = {
   // Top 5 services this month (by count)
   topServices: Array<{ name: string; count: number; revenueCents: number }>;
   // Top 5 staff this month (by appointment count)
-  topStaff: Array<{ name: string; appointmentCount: number; revenueCents: number }>;
+  topStaff: Array<{
+    name: string;
+    appointmentCount: number;
+    revenueCents: number;
+  }>;
   // Customer health
   newClientsThisMonth: number;
   totalClientsThisMonth: number;
@@ -101,62 +115,70 @@ export async function loadOwnerHomeDashboard(
   const [y, mo] = today.split("-").map(Number);
   const firstOfMonth = `${y}-${String(mo).padStart(2, "0")}-01`;
   const nextMonthFirst =
-    mo === 12
-      ? `${y + 1}-01-01`
-      : `${y}-${String(mo + 1).padStart(2, "0")}-01`;
+    mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, "0")}-01`;
 
   // UTC bounds for all ranges
   const { startUtc: windowStart } = salonDayRangeUtc(thirtyDaysAgo, tz);
   const { endUtc: windowEnd } = salonDayRangeUtc(tomorrow, tz);
-  const { startUtc: todayStart, endUtc: todayEnd } = salonDayRangeUtc(today, tz);
+  const { startUtc: todayStart, endUtc: todayEnd } = salonDayRangeUtc(
+    today,
+    tz,
+  );
   const { startUtc: weekStart } = salonDayRangeUtc(monday, tz);
   const { startUtc: weekEnd } = salonDayRangeUtc(addDays(monday, 7), tz);
   const { startUtc: lastWeekStart } = salonDayRangeUtc(lastMonday, tz);
-  const { startUtc: lastWeekEnd } = salonDayRangeUtc(addDays(lastSunday, 1), tz);
+  const { startUtc: lastWeekEnd } = salonDayRangeUtc(
+    addDays(lastSunday, 1),
+    tz,
+  );
   const { startUtc: monthStart } = salonDayRangeUtc(firstOfMonth, tz);
   const { startUtc: monthEnd } = salonDayRangeUtc(nextMonthFirst, tz);
-  const { startUtc: tomorrowStart, endUtc: tomorrowEnd } = salonDayRangeUtc(tomorrow, tz);
+  const { startUtc: tomorrowStart, endUtc: tomorrowEnd } = salonDayRangeUtc(
+    tomorrow,
+    tz,
+  );
 
   // Single booking query covering 30 days + tomorrow
   const [
     bookingsResult,
     staffResult,
-    priorPhonesResult,
+    priorClientsResult,
     pendingApprovals,
     unclosed,
   ] = await Promise.all([
-      supabase
-        .from("bookings")
-        .select(
-          "id, status, staff_id, service_id, start_time_utc, price_cents, addon_price_cents, client_phone, services!bookings_service_id_fkey ( name )",
-        )
-        .eq("salon_id", resolved.salon.id)
-        .gte("start_time_utc", windowStart)
-        .lt("start_time_utc", windowEnd),
+    supabase
+      .from("bookings")
+      .select(
+        "id, status, staff_id, service_id, start_time_utc, end_time_utc, price_cents, addon_price_cents, client_phone, client_profile_id, services!bookings_service_id_fkey ( name )",
+      )
+      .eq("salon_id", resolved.salon.id)
+      .gte("start_time_utc", windowStart)
+      .lt("start_time_utc", windowEnd),
 
-      supabase
-        .from("staff")
-        .select("id, name")
-        .eq("salon_id", resolved.salon.id),
+    supabase
+      .from("staff")
+      .select("id, name, status, deleted_at")
+      .eq("salon_id", resolved.salon.id)
+      .order("created_at", { ascending: true }),
 
-      // For "new clients" calculation: phones that booked before this month
-      supabase
-        .from("bookings")
-        .select("client_phone")
-        .eq("salon_id", resolved.salon.id)
-        .lt("start_time_utc", monthStart)
-        .not("client_phone", "is", null)
-        .neq("status", "cancelled"),
+    // For "new clients": canonical profile identities that booked before
+    // this month, with normalized-phone fallback for legacy bookings.
+    supabase
+      .from("bookings")
+      .select("client_phone, client_profile_id")
+      .eq("salon_id", resolved.salon.id)
+      .lt("start_time_utc", monthStart)
+      .neq("status", "cancelled"),
 
-      getPendingApprovals(resolved.salon.id).catch(() => []),
+    getPendingApprovals(resolved.salon.id).catch(() => []),
 
-      // 4 rows keeps the nudge actionable without pushing today's numbers below
-      // the fold on mobile; the full count is still shown in the subtitle.
-      loadUnclosedBookings(resolved.salon.id, tz, { limit: 4 }).catch(() => ({
-        count: 0,
-        items: [],
-      })),
-    ]);
+    // 4 rows keeps the nudge actionable without pushing today's numbers below
+    // the fold on mobile; the full count is still shown in the subtitle.
+    loadUnclosedBookings(resolved.salon.id, tz, { limit: 4 }).catch(() => ({
+      count: 0,
+      items: [],
+    })),
+  ]);
 
   if (bookingsResult.error) {
     console.error("[loadOwnerHomeDashboard] bookings", bookingsResult.error);
@@ -168,10 +190,15 @@ export async function loadOwnerHomeDashboard(
     staffNameById.set(String(s.id), String(s.name ?? ""));
   }
 
-  const priorPhoneSet = new Set(
-    (priorPhonesResult.data ?? [])
-      .map((r) => r.client_phone as string | null)
-      .filter(Boolean) as string[],
+  const priorClientSet = new Set(
+    (priorClientsResult.data ?? [])
+      .map((row) =>
+        customerIdentityKey({
+          clientProfileId: row.client_profile_id as string | null,
+          clientPhone: row.client_phone as string | null,
+        }),
+      )
+      .filter((identity): identity is string => identity !== null),
   );
 
   type SvcJoin = { name: string };
@@ -181,9 +208,11 @@ export async function loadOwnerHomeDashboard(
     staff_id: string | null;
     service_id: string;
     start_time_utc: string | null;
+    end_time_utc: string | null;
     price_cents: number | null;
     addon_price_cents: number | null;
     client_phone: string | null;
+    client_profile_id: string | null;
     services: SvcJoin | SvcJoin[] | null;
   };
 
@@ -233,8 +262,8 @@ export async function loadOwnerHomeDashboard(
     string,
     { name: string; appointmentCount: number; revenueCents: number }
   >();
-  const monthClientPhones = new Set<string>();
-  const newClientPhones = new Set<string>();
+  const monthClients = new Set<string>();
+  const newClients = new Set<string>();
 
   for (const b of bookings) {
     if (!b.start_time_utc) continue;
@@ -245,7 +274,8 @@ export async function loadOwnerHomeDashboard(
     // Today
     if (inRange(t, todayStart, todayEnd)) {
       if (!isCancelled) todayTotal++;
-      if (b.status === "confirmed" || b.status === "in_progress") todayConfirmed++;
+      if (b.status === "confirmed" || b.status === "in_progress")
+        todayConfirmed++;
       if (b.status === "completed") todayCompleted++;
       if (b.status === "no_show") todayNoShows++;
       todayRevenueCents += rev;
@@ -269,10 +299,14 @@ export async function loadOwnerHomeDashboard(
     if (!isCancelled && inRange(t, monthStart, monthEnd)) {
       monthBookings++;
       monthRevenueCents += rev;
-      if (b.client_phone) {
-        monthClientPhones.add(b.client_phone);
-        if (!priorPhoneSet.has(b.client_phone)) {
-          newClientPhones.add(b.client_phone);
+      const clientIdentity = customerIdentityKey({
+        clientProfileId: b.client_profile_id,
+        clientPhone: b.client_phone,
+      });
+      if (clientIdentity) {
+        monthClients.add(clientIdentity);
+        if (!priorClientSet.has(clientIdentity)) {
+          newClients.add(clientIdentity);
         }
       }
       // Top services
@@ -339,6 +373,21 @@ export async function loadOwnerHomeDashboard(
     )
     .slice(0, 5);
 
+  const currentStaff = buildOwnerHomeStaffSnapshot({
+    // Keep all staff above so historical leaderboards retain their names,
+    // while the live snapshot only exposes the current active roster.
+    staff: (staffResult.data ?? [])
+      .filter(
+        (staff) => staff.status === "active" && staff.deleted_at == null,
+      )
+      .map((staff) => ({
+        id: String(staff.id),
+        name: staff.name == null ? null : String(staff.name),
+      })),
+    bookings,
+    nowMs: Date.now(),
+  });
+
   return {
     ok: true,
     data: {
@@ -350,6 +399,7 @@ export async function loadOwnerHomeDashboard(
       todayCompleted,
       todayNoShows,
       todayRevenueCents,
+      currentStaff,
       weekRevenueCents,
       lastWeekRevenueCents,
       weekBookings,
@@ -359,9 +409,10 @@ export async function loadOwnerHomeDashboard(
       dailyRevenue,
       topServices,
       topStaff,
-      newClientsThisMonth: newClientPhones.size,
-      totalClientsThisMonth: monthClientPhones.size,
-      noShowRateThisWeek: weekNonCancelled > 0 ? weekNoShows / weekNonCancelled : 0,
+      newClientsThisMonth: newClients.size,
+      totalClientsThisMonth: monthClients.size,
+      noShowRateThisWeek:
+        weekNonCancelled > 0 ? weekNoShows / weekNonCancelled : 0,
       tomorrowBookings,
       tomorrowRevenueCents,
       pendingApprovalsCount: pendingApprovals.length,

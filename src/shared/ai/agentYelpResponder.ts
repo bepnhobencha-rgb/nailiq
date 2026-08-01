@@ -307,5 +307,6 @@ export async function runYelpResponder(salonId: string): Promise<void> {
     }
   } catch (e) {
     console.error("[runYelpResponder]", e);
+    throw e;
   }
 }

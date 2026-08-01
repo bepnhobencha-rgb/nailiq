@@ -70,6 +70,7 @@ test("feature_not_enabled for Beta flag OFF by default", () => {
   eq(decide(true, baseRow, "combos"), "feature_not_enabled", "combos default OFF");
   eq(decide(true, baseRow, "advanced_reports"), "feature_not_enabled", "reports default OFF");
   eq(decide(true, baseRow, "group_booking"), "feature_not_enabled", "group default OFF");
+  eq(decide(true, baseRow, "ai_control_center"), "feature_not_enabled", "AI Control Center default OFF");
 });
 
 test("ok when jsonb flag is enabled", () => {
@@ -84,6 +85,14 @@ test("ok when reports/group flags enabled", () => {
   };
   eq(decide(true, row, "advanced_reports"), "ok", "reports on");
   eq(decide(true, row, "group_booking"), "ok", "group on");
+});
+
+test("AI Control Center requires its explicit JSONB flag", () => {
+  const row = {
+    ...baseRow,
+    feature_flags: { ai_control_center_enabled: true },
+  };
+  eq(decide(true, row, "ai_control_center"), "ok", "AI Control Center on");
 });
 
 test("plan-sourced photos: pro plan ok, free not", () => {

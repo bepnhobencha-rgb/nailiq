@@ -22,6 +22,8 @@ type Props = {
   children: ReactNode;
   /** Optional badge count for the Walk-in Queue nav row. */
   walkinQueueCount?: number;
+  /** Active online waitlist entries visible to the front desk. */
+  waitlistCount?: number;
   /** Optional count of `in_progress` bookings whose end time has
    * passed. Drives the sidebar Walk-in Queue badge color (red when
    * > 0, regardless of `walkinQueueCount`). */
@@ -62,6 +64,7 @@ export function DashboardShell({
   salonName,
   children,
   walkinQueueCount,
+  waitlistCount,
   overdueCount,
   messagesCount,
   pendingApprovalsCount,
@@ -92,6 +95,7 @@ export function DashboardShell({
         role={role}
         salonName={salonName}
         walkinQueueCount={walkinQueueCount}
+        waitlistCount={waitlistCount}
         overdueCount={overdueCount}
         messagesCount={messagesCount}
         pendingApprovalsCount={pendingApprovalsCount}
@@ -122,7 +126,9 @@ export function DashboardShell({
       <MobileBottomNav
         slug={slug}
         walkinQueueCount={walkinQueueCount}
+        waitlistCount={waitlistCount}
         overdueCount={overdueCount}
+        pendingApprovalsCount={pendingApprovalsCount}
         role={role}
         releaseFeatures={releaseFeatures}
       />

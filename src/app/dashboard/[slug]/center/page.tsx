@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ date?: string }>;
+  searchParams: Promise<{ date?: string; e2eNow?: string }>;
 };
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
@@ -31,7 +31,7 @@ export default async function ReceptionistCenterPage({
   searchParams,
 }: PageProps) {
   const { slug } = await params;
-  const { date } = await searchParams;
+  const { date, e2eNow } = await searchParams;
 
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) {
@@ -50,10 +50,18 @@ export default async function ReceptionistCenterPage({
   }
   const dateOk = typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date);
   const targetDate = dateOk ? date : salonToday(tz);
+  const e2eClock =
+    process.env.NAILIQ_TEST_BYPASS_SLUG_PIN === "1" &&
+    slug.startsWith("e2e-") &&
+    typeof e2eNow === "string" &&
+    Number.isFinite(Date.parse(e2eNow))
+      ? new Date(e2eNow).toISOString()
+      : undefined;
 
   const [initialResult, limitResult, partyCardsResult] = await Promise.all([
     loadReceptionistCenterData(slug, targetDate, {
       preFetchedSalon: ctx.salon,
+      observedAtIso: e2eClock,
     }),
     loadBookingLimitStatus(slug),
     loadPartyCardsAction(slug),

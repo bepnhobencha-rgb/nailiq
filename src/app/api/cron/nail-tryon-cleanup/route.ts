@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { recordNailTryOnEvent } from "@/shared/nailTryOn/telemetry";
+import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
+import { runTrackedCron } from "@/shared/security/cronRunHistory";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,10 +11,9 @@ export const maxDuration = 55;
 type QueueRow = { id: number; tryon_session_id: string; object_path: string; attempts: number };
 
 export async function GET(request: Request) {
-  const secret = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const authorizationError = requireCronAuthorization(request);
+  if (authorizationError) return authorizationError;
+  return runTrackedCron("nail_tryon_cleanup", async () => {
   const db = createServiceRoleClient();
   await db.rpc("queue_expired_nail_tryon_sessions" as never, { p_limit: 200 } as never);
   const { data, error } = await db.from("nail_tryon_cleanup_queue" as never)
@@ -37,5 +38,6 @@ export async function GET(request: Request) {
     const session = raw as unknown as { salon_id: string } | null;
     if (session) await recordNailTryOnEvent({ salonId: session.salon_id, sessionId, event: "expired_deleted" });
   }
-  return NextResponse.json({ ok: true, queued: rows.length, deleted });
+    return NextResponse.json({ ok: true, queued: rows.length, deleted });
+  });
 }

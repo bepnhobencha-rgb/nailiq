@@ -79,14 +79,17 @@ describe("nail-tryon state boundary", () => {
     expect(generate).toContain("verifySessionCredential");
     expect(attach).toContain("verifySessionCredential");
     expect(intent).toContain("verifySessionCredential");
-    expect(cleanup).toContain("CRON_SECRET");
+    expect(cleanup).toMatch(/requireCronAuthorization\(\w+\)/);
+    expect(
+      read("src/shared/security/cronAuthorization.ts"),
+    ).toContain("CRON_SECRET");
   });
 
   it("updates the blank-database parity tripwire", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("policies: 140");
+    expect(parity).toContain("policies: 151");
     expect(parity).toContain(
-      "const GRANTS = { anon: 57, authenticated: 60, service_role: 94 }",
+      "const GRANTS = { anon: 57, authenticated: 64, service_role: 107 }",
     );
   });
 });

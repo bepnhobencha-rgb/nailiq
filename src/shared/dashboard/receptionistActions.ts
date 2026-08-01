@@ -22,6 +22,7 @@ import {
   canCancelBooking,
   canMarkNoShow,
   canCreateDeskBooking,
+  canCreateAfterHoursDeskBooking,
   canEditBooking,
   canUndoCancel,
 } from "@/shared/lib/salonMemberRole";
@@ -32,6 +33,7 @@ import {
   type BookingTimingSegment,
 } from "@/shared/booking/bookingTiming";
 import { checkBookingWithinOpeningHours } from "@/shared/booking/bookingWithinOpeningHours";
+import { evaluateControlledAfterHours } from "@/shared/booking/controlledAfterHours";
 import {
   salonWallTimeToUtcIso,
   salonDayRangeUtc,
@@ -699,6 +701,7 @@ export async function markWalkinInProgress(
     .update({
       status: "in_progress",
       started_at: startedAt,
+      no_show_candidate_at: null,
     })
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
@@ -1466,7 +1469,7 @@ export async function markNoShowBooking(
 
   const { data: updated, error: upErr } = await ctx.supabase
     .from("bookings")
-    .update({ status: "no_show" })
+    .update({ status: "no_show", no_show_candidate_at: null } as never)
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .in("status", ["confirmed", "in_progress"])
@@ -1612,7 +1615,7 @@ export async function markNoShowBooking(
 /**
  * Undo a no-show — the customer was just running late after all. Reverts
  * `no_show` → `confirmed` and decrements the client's no_show_count (so a
- * wrongly-flagged guest, incl. an auto-marked one, isn't penalised). Same
+ * wrongly-marked guest isn't penalised). Same
  * front-desk roles as marking.
  */
 export async function undoNoShowBooking(
@@ -1629,7 +1632,7 @@ export async function undoNoShowBooking(
 
   const { data: updated, error: upErr } = await ctx.supabase
     .from("bookings")
-    .update({ status: "confirmed" })
+    .update({ status: "confirmed", no_show_candidate_at: null } as never)
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .eq("status", "no_show")
@@ -1670,8 +1673,8 @@ export async function undoNoShowBooking(
 
 /**
  * Collect the saved no-show fee on demand — for a booking already marked
- * `no_show` whose card was left uncharged (auto-marked by the SQL cron, or a
- * desk mark that deferred the decision). Idempotent: `chargeNoShowFee` guards a
+ * `no_show` whose card was left uncharged because the desk deferred the fee
+ * decision. Idempotent: `chargeNoShowFee` guards a
  * stable Square idempotency key + a 'charged' status check, so double-taps and
  * retries never double-bill. Front-desk roles only; audit-logged.
  */
@@ -2309,7 +2312,7 @@ export async function getDeskBookingData(
       ok: true;
       data: NonNullable<
         Awaited<ReturnType<typeof loadBookingServicesForSalonSlug>>
-      >;
+      > & { canBookAfterHours: boolean };
     }
   | { ok: false; error: string }
 > {
@@ -2318,7 +2321,18 @@ export async function getDeskBookingData(
   if (!canCreateDeskBooking(ctx.role)) return fail("unauthorized");
   const data = await loadBookingServicesForSalonSlug(slug);
   if (!data) return fail("not_found");
-  return { ok: true, data };
+  return {
+    ok: true,
+    data: {
+      ...data,
+      // Demo-cookie owners have no attributable auth user and therefore cannot
+      // approve an auditable labor-hours exception.
+      canBookAfterHours:
+        ctx.kind === "member" &&
+        ctx.userId != null &&
+        canCreateAfterHoursDeskBooking(ctx.role),
+    },
+  };
 }
 
 /**
@@ -2359,6 +2373,11 @@ export async function addDeskAppointment(
     /** Explicit bed/chair to assign. `null` = auto-assign first free one.
      *  `undefined` = also auto-assign (backwards compat). */
     resourceId?: string | null;
+    /** Management-only exception. The server independently proves the acting
+     * role, selected staff, time boundary, and 120-minute cap. */
+    afterHoursOverride?: {
+      staffConsentConfirmed?: boolean;
+    };
   },
 ): Promise<OkDeskBooking | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
@@ -2624,17 +2643,50 @@ export async function addDeskAppointment(
   ) {
     return fail("invalid_duration");
   }
+  const serviceCompletionMinutes =
+    addonIds.length <= 1
+      ? bookingTiming.serviceCompletionMinutes
+      : bookingTiming.blockMinutes;
   const hoursCheck = checkBookingWithinOpeningHours({
     openingHoursRaw: ctx.salon.opening_hours,
     bookingClosedDatesRaw: ctx.salon.booking_closed_dates,
     dateYmd,
     startMinutes,
-    serviceCompletionMinutes:
-      addonIds.length <= 1
-        ? bookingTiming.serviceCompletionMinutes
-        : bookingTiming.blockMinutes,
+    serviceCompletionMinutes,
   });
-  if (!hoursCheck.ok) return fail("outside_hours");
+  let afterHoursMinutes: number | null = null;
+  if (!hoursCheck.ok) {
+    if (
+      ctx.kind !== "member" ||
+      !ctx.userId ||
+      !canCreateAfterHoursDeskBooking(ctx.role)
+    ) {
+      return fail("after_hours_not_allowed");
+    }
+    if (isAnyStaff) return fail("specific_staff_required");
+    if (input.afterHoursOverride?.staffConsentConfirmed !== true) {
+      return fail("staff_consent_required");
+    }
+    const override = evaluateControlledAfterHours({
+      openingHoursRaw: ctx.salon.opening_hours,
+      bookingClosedDatesRaw: ctx.salon.booking_closed_dates,
+      dateYmd,
+      startMinutes,
+      serviceCompletionMinutes,
+    });
+    if (!override.ok) {
+      return fail(
+        override.reason === "extension_too_long"
+          ? "after_hours_limit_exceeded"
+          : "outside_hours",
+      );
+    }
+    afterHoursMinutes = override.afterHoursMinutes;
+  } else if (input.afterHoursOverride) {
+    // Never stamp a normal booking as after-hours merely because a client sent
+    // the optional object.
+    return fail("invalid_after_hours_override");
+  }
   const endUtcIso = new Date(
     Date.parse(startUtcIso) + totalMin * 60_000,
   ).toISOString();
@@ -2745,40 +2797,82 @@ export async function addDeskAppointment(
     resolvedResourceId = rr.resourceId;
   }
 
-  const { data: rpcData, error: rpcErr } = await db.rpc(
-    "create_public_booking",
-    {
-      p_salon_id: ctx.salon.id,
-      p_service_id: serviceId,
-      p_staff_id: resolvedStaffId,
-      p_client_name: clientName,
-      p_client_phone: canonicalPhone,
-      p_start_time_utc: startUtcIso,
-      p_end_time_utc: endUtcIso,
-      p_status: "confirmed",
-      p_price_cents: deskPriceCents ?? svc.price_cents ?? null,
-      p_client_notes: clientNotes,
-      p_client_email: clientEmail,
-    } as never,
-  );
-  if (rpcErr) {
-    const code = (rpcErr as { code?: string }).code;
-    if (code === "P0002" || code === "23P01") return fail("time_slot_taken");
-    console.error("[addDeskAppointment] rpc error", rpcErr);
-    return fail("server_error");
+  let bookingId: string;
+  if (afterHoursMinutes != null) {
+    // The public RPC intentionally rejects out-of-hours times. This private
+    // service-role insert is reached only after the authenticated management
+    // checks above; the bookings GiST exclusion still rejects staff overlap.
+    const { data: inserted, error: insertError } = await db
+      .from("bookings")
+      .insert({
+        salon_id: ctx.salon.id,
+        service_id: serviceId,
+        staff_id: resolvedStaffId,
+        client_name: clientName,
+        client_phone: canonicalPhone,
+        client_email: clientEmail,
+        client_notes: clientNotes,
+        client_locale: input.language ?? null,
+        start_time_utc: startUtcIso,
+        end_time_utc: endUtcIso,
+        status: "confirmed",
+        confirmed_at: new Date().toISOString(),
+        source: "appointment",
+        price_cents: deskPriceCents ?? svc.price_cents ?? null,
+        walkin_source: "phone",
+        booking_channel: "desk",
+        staff_requested_by_client: input.staffRequestedByClient === true,
+        resource_id: resolvedResourceId,
+        after_hours_minutes: afterHoursMinutes,
+        after_hours_approved_by: ctx.userId,
+        after_hours_staff_consent: true,
+      } as never)
+      .select("id")
+      .single();
+    if (insertError) {
+      if ((insertError as { code?: string }).code === "23P01") {
+        return fail("time_slot_taken");
+      }
+      console.error("[addDeskAppointment] after-hours insert", insertError);
+      return fail("server_error");
+    }
+    bookingId = String((inserted as { id: string }).id);
+  } else {
+    const { data: rpcData, error: rpcErr } = await db.rpc(
+      "create_public_booking",
+      {
+        p_salon_id: ctx.salon.id,
+        p_service_id: serviceId,
+        p_staff_id: resolvedStaffId,
+        p_client_name: clientName,
+        p_client_phone: canonicalPhone,
+        p_start_time_utc: startUtcIso,
+        p_end_time_utc: endUtcIso,
+        p_status: "confirmed",
+        p_price_cents: deskPriceCents ?? svc.price_cents ?? null,
+        p_client_notes: clientNotes,
+        p_client_email: clientEmail,
+      } as never,
+    );
+    if (rpcErr) {
+      const code = (rpcErr as { code?: string }).code;
+      if (code === "P0002" || code === "23P01") return fail("time_slot_taken");
+      console.error("[addDeskAppointment] rpc error", rpcErr);
+      return fail("server_error");
+    }
+    const result = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as {
+      success?: boolean;
+      booking_id?: string;
+      code?: string;
+    } | null;
+    if (!result?.success || !result.booking_id) {
+      const rCode = result?.code;
+      if (rCode === "slot_conflict") return fail("time_slot_taken");
+      if (rCode === "outside_hours") return fail("outside_hours");
+      return fail("server_error");
+    }
+    bookingId = result.booking_id;
   }
-  const result = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as {
-    success?: boolean;
-    booking_id?: string;
-    code?: string;
-  } | null;
-  if (!result?.success || !result.booking_id) {
-    const rCode = result?.code;
-    if (rCode === "slot_conflict") return fail("time_slot_taken");
-    if (rCode === "outside_hours") return fail("outside_hours");
-    return fail("server_error");
-  }
-  const bookingId = result.booking_id;
 
   // Stamp promo discount when an active campaign applies (server-authoritative)
   if (deskPromoId && basePriceCents && deskPriceCents != null && deskPriceCents < basePriceCents) {
@@ -2863,7 +2957,10 @@ export async function addDeskAppointment(
     salonId: ctx.salon.id,
     actorUserId: ctxActorUserId(ctx),
     actorRole: ctxActorRole(ctx),
-    eventType: "booking_created",
+    eventType:
+      afterHoursMinutes != null
+        ? "booking_after_hours_created"
+        : "booking_created",
     payload: {
       source: "desk_phone",
       staffId: resolvedStaffId,
@@ -2871,6 +2968,13 @@ export async function addDeskAppointment(
       addonServiceIds: addonIds,
       anyStaff: isAnyStaff,
       staffRequestedByClient: input.staffRequestedByClient === true,
+      ...(afterHoursMinutes != null
+        ? {
+            afterHoursMinutes,
+            staffConsentConfirmed: true,
+            approvedBy: ctx.userId,
+          }
+        : {}),
     },
   });
 
@@ -2987,6 +3091,7 @@ export async function addDeskAppointment(
     sms_confirmation_sent_at: null,
     sms_confirmation_failed_at: null,
     no_show_risk_score: null,
+    no_show_candidate_at: null,
     deposit_status: null,
     deposit_amount_cents: null,
     wix_booking_id: null,
@@ -3000,6 +3105,7 @@ export async function addDeskAppointment(
     noshow_charge_status: null,
     resource_id: resolvedResourceId,
     resource_name: null,
+    after_hours_minutes: afterHoursMinutes,
   };
 
   return { ok: true, bookingId, booking: optimisticBooking };
@@ -3131,12 +3237,11 @@ export async function inviteWaitlistEntry(
   // matches it ('vi' → "Nhắn STOP để ngừng nhận tin."). Best-effort: any read
   // failure defaults to English. The VN-ASCII body above is fixed by design.
   let smsLang: "en" | "vi" = "en";
-  let emailEnabled = true;
   let salonAddress: string | null = null;
   try {
     const { data: langRow } = await svc
       .from("salons")
-      .select("default_notification_locale, email_links_enabled, address" as never)
+      .select("default_notification_locale, address" as never)
       .eq("id", ctx.salon.id)
       .maybeSingle();
     const locale = String(
@@ -3144,8 +3249,6 @@ export async function inviteWaitlistEntry(
         ?.default_notification_locale ?? "",
     ).toLowerCase();
     smsLang = locale === "vi" ? "vi" : "en";
-    emailEnabled =
-      (langRow as { email_links_enabled?: boolean } | null)?.email_links_enabled !== false;
     salonAddress =
       (langRow as { address?: string | null } | null)?.address ?? null;
   } catch {
@@ -3163,7 +3266,7 @@ export async function inviteWaitlistEntry(
 
   // Parallel email channel — same claim link, resilient to US SMS link filtering.
   let emailOk = false;
-  if (emailEnabled && inviteEmail) {
+  if (inviteEmail) {
     const er = await sendCustomerLinkEmail({
       email: inviteEmail,
       clientName: row.client_name,
@@ -3180,7 +3283,9 @@ export async function inviteWaitlistEntry(
           : `Tin vui — vừa có chỗ trống${serviceName ? ` cho ${serviceName}` : ""}${bookingDate ? ` ngày ${bookingDate}` : ""}. Chỗ được giữ trong 20 phút — nhận ngay.`,
       ctaLabel: smsLang === "en" ? "Claim this spot" : "Nhận chỗ này",
       url: claimUrl,
-      respectOptOut: true,
+      // The customer explicitly requested this availability alert when they
+      // joined the waitlist, so treat the claim link as transactional.
+      respectOptOut: false,
     });
     emailOk = er.ok;
   }

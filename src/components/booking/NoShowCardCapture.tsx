@@ -80,7 +80,9 @@ type Cfg = {
 // Minimal shape of the Square Web Payments SDK we use.
 type SquareCard = {
   attach: (sel: string) => Promise<void>;
-  tokenize: () => Promise<{ status: string; token?: string }>;
+  tokenize: (
+    details?: SquareVerifyDetails,
+  ) => Promise<{ status: string; token?: string }>;
 };
 type SquareVerifyDetails = {
   intent: "STORE" | "CHARGE";
@@ -92,10 +94,6 @@ type SquareVerifyDetails = {
 };
 type SquarePayments = {
   card: () => Promise<SquareCard>;
-  verifyBuyer: (
-    source: string,
-    details: SquareVerifyDetails,
-  ) => Promise<{ token?: string } | null>;
 };
 type SquareGlobal = { payments: (appId: string, locationId: string) => SquarePayments };
 
@@ -241,7 +239,6 @@ function SquareCardCapture({ bookingId, currencyFormat, t, savedCard, otpSession
   // this flips to true if they tap "Use a different card".
   const [useDifferentCard, setUseDifferentCard] = useState(false);
   const cardRef = useRef<SquareCard | null>(null);
-  const paymentsRef = useRef<SquarePayments | null>(null);
   const mountedRef = useRef(false);
 
   const showReuseTile =
@@ -280,7 +277,6 @@ function SquareCardCapture({ bookingId, currencyFormat, t, savedCard, otpSession
         if (cancelled) return;
         await card.attach("#sq-noshow-card");
         cardRef.current = card;
-        paymentsRef.current = payments;
       } catch {
         if (!cancelled) {
           setStatus("error");
@@ -298,26 +294,21 @@ function SquareCardCapture({ bookingId, currencyFormat, t, savedCard, otpSession
     setStatus("saving");
     setErrorMsg(null);
     try {
-      const result = await cardRef.current.tokenize();
+      // Square's current Web Payments flow performs buyer verification during
+      // tokenization. Never downgrade to an unverified card when 3DS, CVV, or
+      // AVS verification fails or times out.
+      const result = await cardRef.current.tokenize({
+        intent: "STORE",
+        customerInitiated: true,
+        sellerKeyedIn: false,
+      });
       if (result.status !== "OK" || !result.token) {
         setStatus("error");
-        setErrorMsg(t.noShowCardError ?? "Please check your card details.");
+        setErrorMsg(
+          t.cardVerificationError ??
+            "Card verification could not be completed. Please try again or open this page in Safari or Chrome.",
+        );
         return;
-      }
-      // Buyer verification (SCA/AVS/CVV). A token → CreateCard verifies the card
-      // server-side and rejects a wrong CVV/postal. If verifyBuyer hiccups we
-      // DEGRADE (save without it) rather than block a legitimate buyer — strictly
-      // safer than today, never over-blocks a real card on a client glitch.
-      let verificationToken: string | undefined;
-      try {
-        const v = await paymentsRef.current?.verifyBuyer(result.token, {
-          intent: "STORE",
-          customerInitiated: true,
-          sellerKeyedIn: false,
-        });
-        verificationToken = v?.token ?? undefined;
-      } catch {
-        verificationToken = undefined;
       }
       const res = await fetch("/api/booking/square-save-card", {
         method: "POST",
@@ -326,7 +317,6 @@ function SquareCardCapture({ bookingId, currencyFormat, t, savedCard, otpSession
           bookingId,
           sourceId: result.token,
           consent: true,
-          verificationToken,
         }),
       });
       const j = (await res.json()) as { ok?: boolean };
@@ -338,7 +328,10 @@ function SquareCardCapture({ bookingId, currencyFormat, t, savedCard, otpSession
       }
     } catch {
       setStatus("error");
-      setErrorMsg(t.noShowCardError ?? "Could not save the card.");
+      setErrorMsg(
+        t.cardVerificationError ??
+          "Card verification timed out. Please try again or open this page in Safari or Chrome.",
+      );
     }
   }
 

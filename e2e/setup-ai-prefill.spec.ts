@@ -31,7 +31,19 @@ async function gotoWizard(page: Page) {
     },
   ]);
   await page.goto(`/dashboard/${TEST_SLUG}/setup/ai-prefill`);
-  await page.waitForLoadState("networkidle");
+  await expect(page.getByTestId("ai-prefill-url-input")).toBeVisible({
+    timeout: 15_000,
+  });
+  await page.waitForFunction(
+    (slug) =>
+      (
+        window as typeof window & {
+          __NAILIQ_AI_PREFILL_HYDRATED__?: string;
+        }
+      ).__NAILIQ_AI_PREFILL_HYDRATED__ === slug,
+    TEST_SLUG,
+    { timeout: 15_000 },
+  );
 }
 
 test.describe("AI Prefill Setup Wizard", () => {
@@ -206,7 +218,6 @@ test.describe("AI Prefill Setup Wizard", () => {
       },
     ]);
     await page.goto(`/dashboard/${TEST_SLUG}/setup/services`);
-    await page.waitForLoadState("networkidle");
 
     // Banner should be visible (0 services salon)
     await expect(page.getByRole("link", { name: /import from photo/i })).toBeVisible({

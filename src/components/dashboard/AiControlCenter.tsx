@@ -1,0 +1,1504 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, useTransition } from "react";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowRight,
+  Bot,
+  CheckCircle2,
+  Clock3,
+  Gauge,
+  Lightbulb,
+  ListChecks,
+  RefreshCcw,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  Undo2,
+  Users,
+  X,
+} from "lucide-react";
+
+import { ApprovalDecisionButtons } from "@/components/dashboard/ApprovalDecisionButtons";
+import { approvalDecisionProvenance } from "@/shared/ai/approvalDecisionPresentation";
+import { approvalDecisionExecutionPresentation } from "@/shared/ai/approvalExecutionPresentation";
+import type { ApprovalDisplayRow } from "@/shared/ai/approvalRequests";
+import { campaignPreflightFreshness } from "@/shared/ai/campaignPreflightFreshness";
+import type { AiControlDataSource } from "@/shared/ai/controlCenterData";
+import {
+  AI_CONTROL_REFRESH_INTERVAL_MS,
+  shouldRefreshAiControlCenter,
+} from "@/shared/ai/controlCenterFreshness";
+import { postAiControl } from "@/shared/ai/aiControlApi";
+import {
+  executionFailureLabel,
+  workerFailureLabel,
+} from "@/shared/ai/executionFailure";
+import { canControlExecutionJob } from "@/shared/ai/executionPolicy";
+import type { ApprovalExecutionTraceRow } from "@/shared/ai/executionQueue";
+import type {
+  OwnerAudiencePreparation,
+  OwnerCampaignDispatchPlan,
+  OwnerCampaignDispatchPreflight,
+  OwnerExecutionJob,
+  OwnerExecutionResult,
+} from "@/shared/ai/executionOwnerView";
+import type { MinhActivityData } from "@/shared/ai/loadMinhActivity";
+import type { OperationalExceptionRow } from "@/shared/ai/operationalExceptionTypes";
+import type {
+  AiOperatingState,
+  LearnedAiControl,
+} from "@/shared/ai/operatingState";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { OperationalExceptionInbox } from "@/components/dashboard/OperationalExceptionInbox";
+
+type Props = {
+  slug: string;
+  approvals: ApprovalDisplayRow[];
+  pendingApprovalCount: number;
+  activity: MinhActivityData;
+  executionJobs: OwnerExecutionJob[];
+  decisionExecutionTraces: ApprovalExecutionTraceRow[];
+  operationalExceptions: OperationalExceptionRow[];
+  operationalExceptionCount: number;
+  operatingState: AiOperatingState | null;
+  unavailableSources: AiControlDataSource[];
+  nowIso: string;
+};
+
+function relativeTime(iso: string, nowIso: string, language: "en" | "vi"): string {
+  const minutes = Math.max(0, Math.floor((Date.parse(nowIso) - Date.parse(iso)) / 60_000));
+  if (minutes < 1) return language === "vi" ? "Vừa xong" : "Just now";
+  if (minutes < 60) return language === "vi" ? `${minutes} phút trước` : `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return language === "vi" ? `${hours} giờ trước` : `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return language === "vi" ? `${days} ngày trước` : `${days}d ago`;
+}
+
+export function AiControlCenter({
+  slug,
+  approvals,
+  pendingApprovalCount,
+  activity,
+  executionJobs,
+  decisionExecutionTraces,
+  operationalExceptions,
+  operationalExceptionCount,
+  operatingState,
+  unavailableSources,
+  nowIso,
+}: Props) {
+  const { language } = useUserLanguage();
+  const vi = language === "vi";
+  const approvalsAvailable = !unavailableSources.includes("approvals");
+  const activityAvailable = !unavailableSources.includes("activity");
+  const executionQueueAvailable =
+    !unavailableSources.includes("execution_queue");
+  const decisionExecutionTraceAvailable =
+    !unavailableSources.includes("decision_execution_trace");
+  const operationalExceptionsAvailable =
+    !unavailableSources.includes("operational_exceptions");
+  const pending = approvals.filter((item) => item.status === "pending");
+  const recentDecisions = approvals
+    .filter((item) => item.status !== "pending")
+    .slice(0, 3);
+  const executionTraceByApproval = new Map(
+    decisionExecutionTraces.map((trace) => [
+      trace.approval_request_id,
+      trace,
+    ]),
+  );
+  const recentActivity = activity.entries.slice(0, 6);
+  const observedReturnRate =
+    activity.measured > 0
+      ? Math.round((activity.converted / activity.measured) * 100)
+      : null;
+
+  useEffect(() => {
+    const observedAtMs = Date.parse(nowIso);
+    const refreshIfStale = () => {
+      if (
+        shouldRefreshAiControlCenter({
+          nowMs: Date.now(),
+          observedAtMs,
+          visibilityState: document.visibilityState,
+        })
+      ) {
+        window.location.reload();
+      }
+    };
+    const intervalId = window.setInterval(
+      refreshIfStale,
+      AI_CONTROL_REFRESH_INTERVAL_MS,
+    );
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [nowIso]);
+
+  return (
+    <main className="mx-auto w-full max-w-6xl space-y-6 p-4 sm:p-6">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-nq-primary/25 bg-nq-primary/10 px-3 py-1 text-xs font-semibold text-nq-primary">
+            <Sparkles className="h-3.5 w-3.5" aria-hidden />
+            {vi ? "Bộ não vận hành" : "Operating intelligence"}
+          </div>
+          <h1 className="text-2xl font-semibold text-nq-foreground sm:text-3xl">
+            AI Control Center
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm text-nq-muted">
+            {vi
+              ? "Một nơi để hiểu AI đang đề xuất gì, đang làm gì và tạo ra kết quả nào cho tiệm."
+              : "One place to understand what AI recommends, what it is doing, and the outcomes it creates."}
+          </p>
+        </div>
+        <div className="flex flex-col items-stretch gap-2 sm:items-end">
+          <Link
+            href={`/dashboard/${encodeURIComponent(slug)}/settings`}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-nq-border bg-nq-surface px-4 text-sm font-medium text-nq-foreground transition-colors hover:border-nq-primary/40"
+          >
+            <ShieldCheck className="h-4 w-4 text-nq-primary" aria-hidden />
+            {vi ? "Quyền tự động hóa" : "Automation permissions"}
+          </Link>
+          <p
+            data-testid="ai-control-freshness"
+            className="inline-flex items-center justify-center gap-1.5 text-[11px] text-nq-muted sm:justify-end"
+          >
+            <RefreshCcw className="h-3 w-3" aria-hidden />
+            {vi
+              ? "Tự cập nhật mỗi phút khi tab đang mở"
+              : "Updates every minute while this tab is visible"}
+          </p>
+        </div>
+      </header>
+
+      {unavailableSources.length > 0 ? (
+        <DataAvailabilityAlert
+          sources={unavailableSources}
+          language={language}
+        />
+      ) : null}
+
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" aria-label={vi ? "Tổng quan AI" : "AI overview"}>
+        <Metric
+          label={vi ? "Cần bạn quyết định" : "Needs your decision"}
+          value={approvalsAvailable ? pendingApprovalCount : "—"}
+          tone={
+            approvalsAvailable && pending.length > 0 ? "attention" : "default"
+          }
+        />
+        <Metric
+          label={vi ? "Ngoại lệ đang mở" : "Active exceptions"}
+          value={
+            operationalExceptionsAvailable ? operationalExceptionCount : "—"
+          }
+          tone={
+            operationalExceptionsAvailable && operationalExceptionCount > 0
+              ? "attention"
+              : "default"
+          }
+        />
+        <Metric
+          label={vi ? "Hành động 30 ngày" : "30-day actions"}
+          value={activityAvailable ? activity.totalActions : "—"}
+        />
+        <Metric
+          label={vi ? "Khách quay lại" : "Customers returned"}
+          value={activityAvailable ? activity.converted : "—"}
+          tone={activityAvailable ? "success" : "default"}
+        />
+        <Metric
+          label={vi ? "Tỷ lệ quay lại đã quan sát" : "Observed return rate"}
+          value={
+            activityAvailable && observedReturnRate != null
+              ? `${observedReturnRate}%`
+              : "—"
+          }
+          detail={
+            !activityAvailable
+              ? vi
+                ? "Nguồn hoạt động tạm không khả dụng; không hiển thị số 0 thay cho dữ liệu lỗi."
+                : "Activity data is temporarily unavailable; zero is not shown in place of a read failure."
+              : activity.totalSent > 0
+              ? vi
+                ? `Đã đủ thời gian đo ${activity.measured}/${activity.totalSent} hành động (${activity.measurementCoveragePct}%). Không khẳng định quan hệ nhân quả.`
+                : `${activity.measured}/${activity.totalSent} actions have completed their measurement window (${activity.measurementCoveragePct}%). This does not claim causation.`
+              : vi
+                ? "Chưa có hành động khách hàng để đo."
+                : "No customer actions are available to measure yet."
+          }
+        />
+      </section>
+
+      <OperatingStatus
+        state={operatingState}
+        language={language}
+        nowIso={nowIso}
+      />
+
+      {operationalExceptionsAvailable ? (
+        <OperationalExceptionInbox
+          slug={slug}
+          exceptions={operationalExceptions}
+          activeCount={operationalExceptionCount}
+          nowIso={nowIso}
+        />
+      ) : null}
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]">
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-nq-foreground">
+                {vi ? "Cần bạn quyết định" : "Needs your decision"}
+              </h2>
+              <p className="text-xs text-nq-muted">
+                {vi ? "AI không thực hiện các việc nhạy cảm khi chưa được phép." : "AI will not perform sensitive actions without permission."}
+              </p>
+            </div>
+            <Link href={`/dashboard/${encodeURIComponent(slug)}/approvals`} className="text-xs font-semibold text-nq-primary hover:underline">
+              {vi ? "Xem tất cả" : "View all"}
+            </Link>
+          </div>
+
+          {!approvalsAvailable ? (
+            <UnavailablePanel
+              message={
+                vi
+                  ? "Không thể tải các quyết định đang chờ. Hãy thử lại trước khi kết luận rằng không có việc cần duyệt."
+                  : "Waiting decisions could not be loaded. Retry before concluding that nothing needs approval."
+              }
+            />
+          ) : pending.length === 0 ? (
+            <div className="flex min-h-44 flex-col items-center justify-center rounded-2xl border border-dashed border-nq-border bg-nq-surface/35 p-6 text-center">
+              <CheckCircle2 className="h-8 w-8 text-nq-success" aria-hidden />
+              <p className="mt-3 text-sm font-medium text-nq-foreground">
+                {vi ? "Không có quyết định đang chờ" : "No decisions are waiting"}
+              </p>
+              <p className="mt-1 text-xs text-nq-muted">
+                {vi ? "AI sẽ đưa ngoại lệ về đây khi cần bạn kiểm soát." : "AI will bring exceptions here when your control is needed."}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {pending.slice(0, 4).map((request) => {
+                const intelligence = request.intelligence[language];
+                return (
+                <article key={request.id} className="overflow-hidden rounded-2xl border border-nq-border bg-nq-surface">
+                  <div className="p-4 sm:p-5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${request.urgency === "urgent" ? "bg-nq-error/15 text-nq-error" : "bg-nq-warning/15 text-nq-warning"}`}>
+                      {request.urgency === "urgent" ? (vi ? "Gấp" : "Urgent") : (vi ? "Bình thường" : "Normal")}
+                    </span>
+                    <span className="text-[11px] uppercase tracking-wide text-nq-muted">
+                      {request.action_type.replaceAll("_", " ")}
+                    </span>
+                    <span className="ml-auto text-xs text-nq-muted">{relativeTime(request.created_at, nowIso, language)}</span>
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-nq-foreground">{request.summary}</p>
+
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    <IntelligenceItem
+                      icon={Lightbulb}
+                      label={vi ? "Vì sao AI đề xuất?" : "Why is AI recommending this?"}
+                      value={intelligence.reason}
+                    />
+                    <IntelligenceItem
+                      icon={Target}
+                      label={vi ? "Tác động dự kiến" : "Expected impact"}
+                      value={intelligence.impact}
+                    />
+                    <div className="rounded-xl border border-nq-border/60 bg-nq-bg/45 p-3">
+                      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+                        <ListChecks className="h-3.5 w-3.5 text-nq-primary" aria-hidden />
+                        {vi ? "Bằng chứng" : "Evidence"}
+                      </div>
+                      <ul className="mt-2 space-y-1.5">
+                        {intelligence.evidence.map((item) => (
+                          <li key={item} className="flex gap-2 text-xs leading-5 text-nq-foreground/85">
+                            <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-nq-primary" aria-hidden />
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Signal
+                        icon={Gauge}
+                        label={vi ? "Độ tin cậy" : "Confidence"}
+                        value={intelligence.confidence.label}
+                        tone={
+                          intelligence.confidence.percent != null &&
+                          intelligence.confidence.percent >= 70
+                            ? "success"
+                            : "default"
+                        }
+                      />
+                      <Signal
+                        icon={Undo2}
+                        label={vi ? "Hoàn tác" : "Undo"}
+                        value={intelligence.reversibility.label}
+                        tone={
+                          intelligence.reversibility.reversible === false
+                            ? "warning"
+                            : "default"
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <ApprovalDecisionButtons
+                      slug={slug}
+                      approvalId={request.id}
+                      language={language}
+                    />
+                  </div>
+                  </div>
+                  {intelligence.reversibility.reversible === false ? (
+                    <p className="border-t border-nq-warning/25 bg-nq-warning/10 px-4 py-2.5 text-xs leading-5 text-nq-warning sm:px-5">
+                      {vi
+                        ? "Hãy kiểm tra kỹ: hành động này không thể được AI hoàn tác tự động sau khi thực hiện."
+                        : "Review carefully: AI cannot automatically undo this action after execution."}
+                    </p>
+                  ) : null}
+                </article>
+                );
+              })}
+            </div>
+          )}
+
+          {approvalsAvailable && recentDecisions.length > 0 ? (
+            <div className="rounded-2xl border border-nq-border bg-nq-surface px-4">
+              <div className="flex items-center justify-between gap-3 border-b border-nq-border/50 py-3">
+                <h3 className="text-sm font-semibold text-nq-foreground">
+                  {vi ? "Quyết định gần đây" : "Recent decisions"}
+                </h3>
+                <Link
+                  href={`/dashboard/${encodeURIComponent(slug)}/approvals`}
+                  className="text-xs font-semibold text-nq-primary hover:underline"
+                >
+                  {vi ? "Xem lịch sử" : "View history"}
+                </Link>
+              </div>
+              <div className="divide-y divide-nq-border/50">
+                {recentDecisions.map((request) => {
+                  const provenance = approvalDecisionProvenance(
+                    request,
+                    language,
+                  );
+                  const execution = decisionExecutionTraceAvailable
+                    ? approvalDecisionExecutionPresentation(
+                        request.status,
+                        executionTraceByApproval.get(request.id),
+                        language,
+                      )
+                    : null;
+                  return (
+                    <article
+                      key={request.id}
+                      className="py-3"
+                      data-testid="ai-control-recent-decision"
+                    >
+                      <div className="flex items-start gap-3">
+                        {request.status === "approved" ? (
+                          <CheckCircle2
+                            className="mt-0.5 h-4 w-4 shrink-0 text-nq-success"
+                            aria-hidden
+                          />
+                        ) : request.status === "declined" ? (
+                          <X
+                            className="mt-0.5 h-4 w-4 shrink-0 text-nq-error"
+                            aria-hidden
+                          />
+                        ) : (
+                          <Clock3
+                            className="mt-0.5 h-4 w-4 shrink-0 text-nq-muted"
+                            aria-hidden
+                          />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <p className="line-clamp-1 text-xs font-medium text-nq-foreground">
+                              {request.summary}
+                            </p>
+                            <span className="text-[11px] text-nq-muted">
+                              {request.decided_at
+                                ? relativeTime(
+                                    request.decided_at,
+                                    nowIso,
+                                    language,
+                                  )
+                                : relativeTime(
+                                    request.created_at,
+                                    nowIso,
+                                    language,
+                                  )}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[11px] leading-5 text-nq-muted">
+                            {provenance.channel} · {provenance.actor}
+                          </p>
+                          {execution ? (
+                            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <DecisionExecutionBadge execution={execution} />
+                              <span className="text-[11px] leading-5 text-nq-muted">
+                                {execution.detail}
+                              </span>
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-[11px] leading-5 text-nq-error">
+                              {vi
+                                ? "Không thể tải dấu vết thực thi; chưa thể xác minh kết quả của quyết định."
+                                : "Execution trace is unavailable; this decision's outcome cannot be verified."}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <aside className="space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold text-nq-foreground">
+              {vi ? "AI đang làm gì" : "What AI is doing"}
+            </h2>
+            <p className="text-xs text-nq-muted">
+              {vi ? "Dòng hoạt động gần nhất và kết quả quan sát được." : "Recent activity and observed outcomes."}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-nq-border bg-nq-surface px-4">
+            {!activityAvailable ? (
+              <UnavailablePanel
+                compact
+                message={
+                  vi
+                    ? "Không thể tải nhật ký AI lúc này."
+                    : "AI activity could not be loaded right now."
+                }
+              />
+            ) : recentActivity.length === 0 ? (
+              <div className="flex min-h-44 flex-col items-center justify-center text-center">
+                <Bot className="h-8 w-8 text-nq-muted" aria-hidden />
+                <p className="mt-3 text-sm text-nq-muted">{vi ? "Chưa có hoạt động AI." : "No AI activity yet."}</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-nq-border/50">
+                {recentActivity.map((entry) => (
+                  <div key={entry.id} className="flex gap-3 py-3.5">
+                    <span className="text-lg" aria-hidden>{entry.agentIcon}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-xs font-semibold text-nq-foreground">{entry.agentLabel}</p>
+                        {entry.outcome === "converted" ? <CheckCircle2 className="h-3.5 w-3.5 text-nq-success" aria-label={vi ? "Có kết quả" : "Converted"} /> : null}
+                      </div>
+                      <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-nq-muted">
+                        {entry.messagePreview || entry.actionType.replaceAll("_", " ")}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-[11px] text-nq-muted">{relativeTime(entry.createdAt, nowIso, language)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="rounded-2xl border border-nq-border bg-nq-surface p-4">
+            <div className="flex items-center gap-2">
+              <Clock3 className="h-4 w-4 text-nq-primary" aria-hidden />
+              <h3 className="text-sm font-semibold text-nq-foreground">
+                {vi ? "Hàng đợi thực thi" : "Execution queue"}
+              </h3>
+            </div>
+            {!executionQueueAvailable ? (
+              <p className="mt-3 text-xs leading-5 text-nq-error">
+                {vi
+                  ? "Không thể tải hàng đợi. Trạng thái trống không được giả định."
+                  : "The queue could not be loaded. An empty state is not assumed."}
+              </p>
+            ) : executionJobs.length === 0 ? (
+              <p className="mt-3 text-xs leading-5 text-nq-muted">
+                {vi
+                  ? "Chưa có hành động đã duyệt nào được xếp hàng."
+                  : "No approved actions have been queued yet."}
+              </p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {executionJobs.slice(0, 4).map((job) => (
+                  <div
+                    key={job.id}
+                    className="rounded-xl border border-nq-border/60 bg-nq-bg/45 p-3"
+                  >
+                    <div className="flex items-center gap-2">
+                      <p className="min-w-0 flex-1 truncate text-xs font-medium text-nq-foreground">
+                        {job.action_type.replaceAll("_", " ")}
+                      </p>
+                      <ExecutionStatus status={job.status} vi={vi} />
+                    </div>
+                    <p className="mt-1 text-[11px] text-nq-muted">
+                      {relativeTime(job.created_at, nowIso, language)}
+                      {job.attempt_count > 0
+                        ? ` · ${vi ? "Lần thử" : "Attempt"} ${job.attempt_count}/${job.max_attempts}`
+                        : ""}
+                    </p>
+                    {job.status === "waiting_input" ? (
+                      <JobAudiencePreparation
+                        job={job}
+                        slug={slug}
+                        vi={vi}
+                        nowIso={nowIso}
+                      />
+                    ) : null}
+                    {job.last_error ? (
+                      <p className="mt-2 line-clamp-2 text-xs leading-5 text-nq-error">
+                        {executionFailureLabel(job.last_error, language)}
+                      </p>
+                    ) : null}
+                    <JobRecoveryControls job={job} slug={slug} vi={vi} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <Link href={`/dashboard/${encodeURIComponent(slug)}/manager`} className="flex min-h-11 items-center justify-between rounded-xl border border-nq-border px-4 text-sm font-medium text-nq-foreground hover:border-nq-primary/40">
+            <span className="inline-flex items-center gap-2"><Activity className="h-4 w-4 text-nq-primary" aria-hidden />{vi ? "Nhật ký AI đầy đủ" : "Full AI activity"}</span>
+            <ArrowRight className="h-4 w-4 text-nq-muted" aria-hidden />
+          </Link>
+        </aside>
+      </div>
+    </main>
+  );
+}
+
+function DataAvailabilityAlert({
+  sources,
+  language,
+}: {
+  sources: AiControlDataSource[];
+  language: "en" | "vi";
+}) {
+  const vi = language === "vi";
+  const labels: Record<AiControlDataSource, { en: string; vi: string }> = {
+    approvals: { en: "approvals", vi: "quyết định chờ duyệt" },
+    activity: { en: "activity", vi: "nhật ký hoạt động" },
+    execution_queue: { en: "execution queue", vi: "hàng đợi thực thi" },
+    decision_execution_trace: {
+      en: "decision execution trace",
+      vi: "dấu vết quyết định → thực thi",
+    },
+    operating_state: { en: "operating health", vi: "sức khỏe vận hành" },
+    operational_exceptions: {
+      en: "operational exceptions",
+      vi: "ngoại lệ vận hành",
+    },
+  };
+
+  return (
+    <section
+      role="alert"
+      className="flex gap-3 rounded-2xl border border-nq-error/35 bg-nq-error/5 p-4"
+      data-testid="ai-control-data-unavailable"
+    >
+      <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-nq-error" aria-hidden />
+      <div>
+        <h2 className="text-sm font-semibold text-nq-foreground">
+          {vi
+            ? "Một phần dữ liệu vận hành chưa tải được"
+            : "Some operating data could not be loaded"}
+        </h2>
+        <p className="mt-1 text-xs leading-5 text-nq-muted">
+          {vi
+            ? "NailIQ không thay lỗi đọc bằng số 0 hoặc trạng thái khỏe. Các phần khác vẫn dùng được; hãy tải lại để thử lại."
+            : "NailIQ does not replace read failures with zeroes or a healthy state. Other sections remain available; reload to retry."}
+        </p>
+        <p className="mt-1 text-xs font-medium text-nq-error">
+          {sources.map((source) => labels[source][language]).join(" · ")}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+const DECISION_EXECUTION_TONE = {
+  neutral: "bg-nq-muted/10 text-nq-muted",
+  attention: "bg-nq-warning/15 text-nq-warning",
+  active: "bg-nq-primary/10 text-nq-primary",
+  success: "bg-nq-success/15 text-nq-success",
+  error: "bg-nq-error/15 text-nq-error",
+} as const;
+
+function DecisionExecutionBadge({
+  execution,
+}: {
+  execution: ReturnType<typeof approvalDecisionExecutionPresentation>;
+}) {
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${DECISION_EXECUTION_TONE[execution.tone]}`}
+      data-testid="ai-control-decision-execution"
+    >
+      {execution.label}
+    </span>
+  );
+}
+
+function UnavailablePanel({
+  message,
+  compact = false,
+}: {
+  message: string;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={`flex flex-col items-center justify-center rounded-2xl border border-dashed border-nq-error/35 bg-nq-error/5 p-5 text-center ${
+        compact ? "min-h-36" : "min-h-44"
+      }`}
+    >
+      <AlertTriangle className="h-7 w-7 text-nq-error" aria-hidden />
+      <p className="mt-3 max-w-md text-xs leading-5 text-nq-muted">{message}</p>
+    </div>
+  );
+}
+
+function OperatingStatus({
+  state,
+  language,
+  nowIso,
+}: {
+  state: AiOperatingState | null;
+  language: "en" | "vi";
+  nowIso: string;
+}) {
+  const vi = language === "vi";
+  if (!state) {
+    return (
+      <section
+        className="flex gap-3 rounded-2xl border border-nq-error/35 bg-nq-error/5 p-4 sm:p-5"
+        aria-label={vi ? "Trạng thái vận hành AI" : "AI operating status"}
+      >
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-nq-error" aria-hidden />
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+            {vi ? "Sức khỏe vận hành" : "Operating health"}
+          </p>
+          <h2 className="mt-1 text-base font-semibold text-nq-foreground">
+            {vi
+              ? "Chưa thể xác minh trạng thái AI"
+              : "AI status could not be verified"}
+          </h2>
+          <p className="mt-1 text-xs leading-5 text-nq-muted">
+            {vi
+              ? "Không hiển thị trạng thái khỏe khi hàng đợi, worker hoặc dữ liệu học chưa đọc được. Hãy tải lại để thử lại."
+              : "A healthy state is not shown while queue, worker, or learning data cannot be read. Reload to retry."}
+          </p>
+        </div>
+      </section>
+    );
+  }
+  const {
+    health,
+    worker,
+    managerWorker,
+    workerReliability24h,
+    managerReliability24h,
+  } = state;
+  const workerCopy = {
+    healthy: vi ? "Worker vừa chạy thành công" : "Worker recently succeeded",
+    running: vi ? "Worker đang chạy" : "Worker is running",
+    failed: vi ? "Lần chạy worker gần nhất bị lỗi" : "Latest worker run failed",
+    stale: vi
+      ? "Worker không chạy hơn 15 phút"
+      : "Worker has not run for over 15 minutes",
+    unknown: vi
+      ? "Chưa ghi nhận heartbeat của worker"
+      : "No worker heartbeat has been recorded",
+  }[worker.status];
+  const workerObservedAt = worker.lastStartedAt
+    ? relativeTime(worker.lastStartedAt, nowIso, language)
+    : null;
+  const managerCopy = {
+    healthy: vi
+      ? "AI Manager vừa điều phối thành công"
+      : "AI Manager recently completed",
+    running: vi ? "AI Manager đang điều phối" : "AI Manager is running",
+    failed: vi
+      ? "Lần điều phối AI Manager gần nhất bị lỗi"
+      : "Latest AI Manager run failed",
+    stale: vi
+      ? "AI Manager không chạy hơn 2 giờ"
+      : "AI Manager has not run for over 2 hours",
+    unknown: vi
+      ? "Chưa ghi nhận heartbeat của AI Manager"
+      : "No AI Manager heartbeat has been recorded",
+  }[managerWorker.status];
+  const managerObservedAt = managerWorker.lastStartedAt
+    ? relativeTime(managerWorker.lastStartedAt, nowIso, language)
+    : null;
+  const copy = {
+    healthy: {
+      title: vi ? "AI đang vận hành ổn định" : "AI is operating normally",
+      detail: vi
+        ? "Không có công việc bị lỗi, mắc kẹt hoặc đang chờ bạn bổ sung thông tin."
+        : "No work is failed, stalled, or waiting for information from you.",
+    },
+    active: {
+      title: vi ? "AI đang xử lý công việc" : "AI is processing work",
+      detail: vi
+        ? `${health.activeWork} công việc đang xếp hàng hoặc thực thi.`
+        : `${health.activeWork} ${health.activeWork === 1 ? "job is" : "jobs are"} queued or running.`,
+    },
+    attention: {
+      title: vi ? "AI đang chờ thông tin" : "AI is waiting for information",
+      detail: vi
+        ? `${health.waitingInput} công việc đã được duyệt nhưng cần thêm dữ liệu an toàn trước khi chạy.`
+        : `${health.waitingInput} approved ${health.waitingInput === 1 ? "job needs" : "jobs need"} safe execution input.`,
+    },
+    issue: {
+      title: vi ? "Có công việc AI cần kiểm tra" : "AI work needs review",
+      detail: vi
+        ? `${health.failed} job lỗi · ${health.stalled} lease quá hạn${health.workerIssue ? " · scheduler cần kiểm tra" : ""}. Hệ thống không che giấu lỗi hoặc tự coi là thành công.`
+        : `${health.failed} failed jobs · ${health.stalled} expired leases${health.workerIssue ? " · schedulers need review" : ""}. Failures are never hidden or reported as success.`,
+    },
+  }[health.tone];
+  const tone =
+    health.tone === "issue"
+      ? "border-nq-error/35 bg-nq-error/5"
+      : health.tone === "attention"
+        ? "border-nq-warning/35 bg-nq-warning/5"
+        : "border-nq-success/30 bg-nq-success/5";
+  const iconTone =
+    health.tone === "issue"
+      ? "text-nq-error"
+      : health.tone === "attention"
+        ? "text-nq-warning"
+        : "text-nq-success";
+
+  return (
+    <section
+      className={`grid gap-4 rounded-2xl border p-4 sm:p-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] ${tone}`}
+      aria-label={vi ? "Trạng thái vận hành AI" : "AI operating status"}
+    >
+      <div className="flex gap-3">
+        <div className="mt-0.5 rounded-xl border border-current/15 bg-nq-surface p-2.5">
+          <Activity className={`h-5 w-5 ${iconTone}`} aria-hidden />
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+            {vi ? "Sức khỏe vận hành" : "Operating health"}
+          </p>
+          <h2 className="mt-1 text-base font-semibold text-nq-foreground">
+            {copy.title}
+          </h2>
+          <p className="mt-1 text-xs leading-5 text-nq-muted">{copy.detail}</p>
+          <p className="mt-2 text-[11px] text-nq-muted">
+            {vi ? "Quan sát" : "Observed"}{" "}
+            {relativeTime(state.observedAt, nowIso, language)}
+          </p>
+          <p
+            className={`mt-1 text-[11px] font-medium ${
+              worker.status === "failed" ||
+              worker.status === "stale" ||
+              worker.status === "unknown"
+                ? "text-nq-error"
+                : "text-nq-muted"
+            }`}
+          >
+            {workerCopy}
+            {workerObservedAt ? ` · ${workerObservedAt}` : ""}
+            {worker.lastError
+              ? ` · ${workerFailureLabel(worker.lastError, language)}`
+              : ""}
+          </p>
+          <ReliabilityLine
+            label={vi ? "Worker · 24 giờ" : "Worker · 24 hours"}
+            reliability={workerReliability24h}
+            vi={vi}
+          />
+          <p
+            className={`mt-1 text-[11px] font-medium ${
+              managerWorker.status === "failed" ||
+              managerWorker.status === "stale" ||
+              managerWorker.status === "unknown"
+                ? "text-nq-error"
+                : "text-nq-muted"
+            }`}
+          >
+            {managerCopy}
+            {managerObservedAt ? ` · ${managerObservedAt}` : ""}
+            {managerWorker.lastError
+              ? ` · ${workerFailureLabel(managerWorker.lastError, language)}`
+              : ""}
+          </p>
+          <ReliabilityLine
+            label={vi ? "AI Manager · 24 giờ" : "AI Manager · 24 hours"}
+            reliability={managerReliability24h}
+            vi={vi}
+          />
+        </div>
+      </div>
+
+      <div className="border-t border-nq-border/50 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+        <div className="flex items-center gap-2">
+          <Lightbulb className="h-4 w-4 text-nq-primary" aria-hidden />
+          <h3 className="text-sm font-semibold text-nq-foreground">
+            {vi ? "AI đã học và đang áp dụng" : "What AI learned and is applying"}
+          </h3>
+        </div>
+        {state.learnedControls.length === 0 ? (
+          <p className="mt-2 text-xs leading-5 text-nq-muted">
+            {vi
+              ? "Chưa có điều chỉnh tự động nào đang hoạt động. AI vẫn theo giới hạn bạn đã cấu hình."
+              : "No learned adjustment is active. AI is following your configured limits."}
+          </p>
+        ) : (
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {state.learnedControls.slice(0, 4).map((control) => (
+              <LearnedControl
+                key={learnedControlKey(control)}
+                control={control}
+                language={language}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ReliabilityLine({
+  label,
+  reliability,
+  vi,
+}: {
+  label: string;
+  reliability: AiOperatingState["workerReliability24h"];
+  vi: boolean;
+}) {
+  const detail =
+    reliability.successRatePct == null
+      ? vi
+        ? "chưa có lần chạy hoàn tất"
+        : "no completed runs yet"
+      : vi
+        ? `${reliability.successRatePct}% thành công · ${reliability.completedRuns} lần hoàn tất · ${reliability.failedRuns} lỗi`
+        : `${reliability.successRatePct}% successful · ${reliability.completedRuns} completed · ${reliability.failedRuns} failed`;
+  return (
+    <p className="mt-1 text-[11px] text-nq-muted">
+      <span className="font-medium text-nq-foreground/80">{label}</span>
+      {" · "}
+      {detail}
+    </p>
+  );
+}
+
+function learnedControlKey(control: LearnedAiControl): string {
+  return control.kind === "proposal_cooldown"
+    ? `${control.kind}:${control.actionType}:${control.proposalSource ?? "all"}`
+    : `${control.kind}:${control.agent}`;
+}
+
+function LearnedControl({
+  control,
+  language,
+}: {
+  control: LearnedAiControl;
+  language: "en" | "vi";
+}) {
+  const vi = language === "vi";
+  if (control.kind === "proposal_cooldown") {
+    const until = new Intl.DateTimeFormat(vi ? "vi-CA" : "en-CA", {
+      month: "short",
+      day: "numeric",
+    }).format(new Date(control.suppressUntil));
+    return (
+      <div className="rounded-xl border border-nq-border/60 bg-nq-surface/75 p-3">
+        <p className="text-xs font-semibold text-nq-foreground">
+          {vi ? "Giảm đề xuất lặp lại" : "Fewer repeated proposals"}
+        </p>
+        <p className="mt-1 text-[11px] leading-4 text-nq-muted">
+          {vi
+            ? `Bạn thường từ chối ${control.actionType.replaceAll("_", " ")}; AI tạm ngưng đề xuất này đến ${until}.`
+            : `You often declined ${control.actionType.replaceAll("_", " ")}; AI paused this proposal until ${until}.`}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-nq-border/60 bg-nq-surface/75 p-3">
+      <p className="text-xs font-semibold text-nq-foreground">
+        {vi ? "Giảm nhịp liên hệ" : "Reduced contact pace"}
+      </p>
+      <p className="mt-1 text-[11px] leading-4 text-nq-muted">
+        {vi
+          ? `${control.agent} đang chạy ở ${Math.round(control.capMultiplier * 100)}% giới hạn sau khi đo kết quả gần đây.`
+          : `${control.agent} is running at ${Math.round(control.capMultiplier * 100)}% of its cap after recent outcome measurement.`}
+      </p>
+    </div>
+  );
+}
+
+function campaignDispatchPlanFrom(
+  result: OwnerExecutionResult | null,
+): OwnerCampaignDispatchPlan | null {
+  return result?.dispatch_plan ?? null;
+}
+
+function campaignDispatchPreflightFrom(
+  result: OwnerExecutionResult | null,
+): OwnerCampaignDispatchPreflight | null {
+  return result?.dispatch_preflight ?? null;
+}
+
+function audiencePreparationFrom(
+  result: OwnerExecutionResult | null,
+): OwnerAudiencePreparation | null {
+  return result?.audience_preparation ?? null;
+}
+
+function JobAudiencePreparation({
+  job,
+  slug,
+  vi,
+  nowIso,
+}: {
+  job: OwnerExecutionJob;
+  slug: string;
+  vi: boolean;
+  nowIso: string;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const preparation = audiencePreparationFrom(job.result);
+  const preflight = campaignDispatchPreflightFrom(job.result);
+  const dispatchPlan = campaignDispatchPlanFrom(job.result);
+  const preflightFreshness = preflight
+    ? campaignPreflightFreshness(preflight.valid_until, nowIso)
+    : null;
+  const planFreshness = dispatchPlan
+    ? campaignPreflightFreshness(dispatchPlan.expires_at, nowIso)
+    : null;
+  const blocker = job.result?.blocker ?? null;
+
+  const prepare = () => {
+    setError(null);
+    startTransition(async () => {
+      const result = await postAiControl(slug, {
+        action: "prepare_audience",
+        jobId: job.id,
+      });
+      if (!result.ok) {
+        setError(
+          vi
+            ? "Không thể chuẩn bị danh sách lúc này."
+            : "The audience could not be prepared right now.",
+        );
+        return;
+      }
+      router.refresh();
+    });
+  };
+
+  const runPreflight = () => {
+    setError(null);
+    startTransition(async () => {
+      const result = await postAiControl(slug, {
+        action: "preflight_campaign",
+        jobId: job.id,
+      });
+      if (!result.ok) {
+        setError(
+          vi
+            ? "Không thể chạy kiểm tra an toàn cuối lúc này."
+            : "The final safety check could not run right now.",
+        );
+        return;
+      }
+      router.refresh();
+    });
+  };
+
+  const sealPlan = () => {
+    setError(null);
+    startTransition(async () => {
+      const result = await postAiControl(slug, {
+        action: "seal_campaign",
+        jobId: job.id,
+      });
+      if (!result.ok) {
+        setError(
+          vi
+            ? "Không thể khóa kế hoạch phát hành lúc này."
+            : "The dispatch plan could not be sealed right now.",
+        );
+        return;
+      }
+      router.refresh();
+    });
+  };
+
+  if (!preparation) {
+    if (blocker === "dispatch_not_enabled") {
+      return (
+        <div className="mt-2 rounded-lg border border-nq-warning/30 bg-nq-warning/5 p-2.5">
+          {preflight ? (
+            <>
+              <p className="text-xs font-semibold text-nq-foreground">
+                {preflightFreshness !== "fresh"
+                  ? vi
+                    ? "Kiểm tra an toàn đã hết hạn"
+                    : "Safety check expired"
+                  : preflight.preflight_status === "ready"
+                  ? vi
+                    ? "Kiểm tra an toàn đạt"
+                    : "Safety check passed"
+                  : vi
+                    ? "Kiểm tra an toàn đang chặn"
+                    : "Safety check is blocking"}
+              </p>
+              <p className="mt-1 text-[11px] leading-4 text-nq-muted">
+                {vi ? "Đủ điều kiện" : "Eligible"}{" "}
+                {preflight.eligible_count} · SMS{" "}
+                {preflight.sms_recipient_count} · Email{" "}
+                {preflight.email_recipient_count} ·{" "}
+                {vi ? "ước tính" : "estimated"} $
+                {(preflight.estimated_cost_usd_cents / 100).toFixed(2)} USD
+              </p>
+              <p className="mt-1 text-[11px] leading-4 text-nq-muted">
+                {vi ? "Đã loại" : "Excluded"}:{" "}
+                {preflight.excluded_recent_contact}{" "}
+                {vi ? "đã liên hệ gần đây" : "recently contacted"},{" "}
+                {preflight.excluded_no_consent}{" "}
+                {vi ? "không còn consent" : "without consent"},{" "}
+                {preflight.excluded_no_channel +
+                  preflight.excluded_manifest_channel_unavailable}{" "}
+                {vi ? "không còn kênh được duyệt" : "without an approved channel"}
+                {preflight.excluded_missing_profile > 0
+                  ? ` · ${preflight.excluded_missing_profile} ${
+                      vi ? "thiếu hồ sơ" : "missing profiles"
+                    }`
+                  : ""}
+                .
+              </p>
+              <p className="mt-1 text-[11px] leading-4 text-nq-muted">
+                {vi ? "Giới hạn" : "Caps"}: {preflight.recipient_cap}{" "}
+                {vi ? "khách" : "recipients"} · $
+                {(preflight.cost_cap_usd_cents / 100).toFixed(2)} USD ·{" "}
+                {preflight.within_recipient_cap &&
+                preflight.within_cost_cap
+                  ? vi
+                    ? "đang trong giới hạn"
+                    : "within limits"
+                  : vi
+                    ? "vượt giới hạn"
+                    : "over limit"}
+              </p>
+              <p className="mt-1 text-[11px] leading-4 text-nq-muted">
+                {preflightFreshness === "fresh"
+                  ? vi
+                    ? `Có hiệu lực tối đa ${preflight.freshness_minutes} phút; phải kiểm tra lại sau khi hết hạn.`
+                    : `Valid for at most ${preflight.freshness_minutes} minutes; rerun after expiry.`
+                  : vi
+                    ? "Kết quả cũ không còn được coi là an toàn để phát hành."
+                    : "This old result is no longer considered safe for release."}
+              </p>
+              {dispatchPlan ? (
+                <div className="mt-2 rounded-md border border-nq-primary/25 bg-nq-primary/5 p-2">
+                  <p className="text-[11px] font-semibold text-nq-foreground">
+                    {planFreshness === "fresh"
+                      ? vi
+                        ? "Kế hoạch no-send đã được khóa"
+                        : "No-send plan sealed"
+                      : vi
+                        ? "Kế hoạch đã hết hạn"
+                        : "Plan expired"}
+                  </p>
+                  <p className="mt-1 text-[11px] leading-4 text-nq-muted">
+                    {dispatchPlan.recipient_count}{" "}
+                    {vi ? "khách" : "recipients"} · SMS{" "}
+                    {dispatchPlan.sms_recipient_count} · Email{" "}
+                    {dispatchPlan.email_recipient_count} · $
+                    {(dispatchPlan.estimated_cost_usd_cents / 100).toFixed(2)}{" "}
+                    USD
+                  </p>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <p className="text-xs leading-5 text-nq-warning">
+              {vi
+                ? "Manifest đã được duyệt. Hãy kiểm tra lại consent, kênh và giới hạn ngay trước khi phát hành."
+                : "The manifest is approved. Recheck consent, channels, and caps immediately before release."}
+            </p>
+          )}
+          <p className="mt-1 text-[11px] font-medium text-nq-warning">
+            {vi
+              ? "Chức năng gửi thật vẫn bị khóa. Không có tin nhắn nào được gửi."
+              : "Live dispatch remains locked. No message was sent."}
+          </p>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={runPreflight}
+            className="mt-2 inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
+          >
+            <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+            {pending
+              ? vi
+                ? "Đang kiểm tra…"
+                : "Checking…"
+              : preflight
+                ? vi
+                  ? "Kiểm tra lại"
+                  : "Run again"
+                : vi
+                  ? "Chạy kiểm tra an toàn cuối"
+                  : "Run final safety check"}
+          </button>
+          {preflightFreshness === "fresh" &&
+          preflight?.preflight_status === "ready" &&
+          planFreshness !== "fresh" ? (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={sealPlan}
+              className="ml-2 mt-2 inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
+            >
+              <ListChecks className="h-3.5 w-3.5" aria-hidden />
+              {pending
+                ? vi
+                  ? "Đang khóa…"
+                  : "Sealing…"
+                : vi
+                  ? "Khóa kế hoạch no-send"
+                  : "Seal no-send plan"}
+            </button>
+          ) : null}
+          {error ? <p className="mt-2 text-xs text-nq-error">{error}</p> : null}
+        </div>
+      );
+    }
+
+    if (blocker === "release_approval_required") {
+      return (
+        <p className="mt-2 text-xs leading-5 text-nq-warning">
+          {vi
+            ? "Manifest đã được khóa và đang chờ approval phát hành cuối cùng. Chưa gửi tin nhắn."
+            : "The manifest is frozen and awaits final release approval. No message was sent."}
+        </p>
+      );
+    }
+
+    return (
+      <div className="mt-2">
+        <p className="text-xs leading-5 text-nq-warning">
+          {vi
+            ? "Đang chờ chọn người nhận và kiểm tra consent. Chưa gửi tin nhắn."
+            : "Waiting for recipient selection and consent checks. No message was sent."}
+        </p>
+        {job.action_type === "bulk_message" &&
+        blocker === "recipient_selection_required" ? (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={prepare}
+            className="mt-2 inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
+          >
+            <Users className="h-3.5 w-3.5" aria-hidden />
+            {pending
+              ? vi
+                ? "Đang kiểm tra…"
+                : "Checking…"
+              : vi
+                ? "Chuẩn bị danh sách"
+                : "Prepare audience"}
+          </button>
+        ) : null}
+        {error ? <p className="mt-2 text-xs text-nq-error">{error}</p> : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 rounded-lg border border-nq-border/60 bg-nq-surface/70 p-2.5">
+      <p className="text-xs font-semibold text-nq-foreground">
+        {vi
+          ? `${preparation.eligible_count} khách đủ điều kiện`
+          : `${preparation.eligible_count} eligible customers`}
+      </p>
+      <p className="mt-1 text-[11px] leading-4 text-nq-muted">
+        SMS {preparation.sms_recipient_count} · Email{" "}
+        {preparation.email_recipient_count} ·{" "}
+        {vi ? "ước tính" : "estimated"} $
+        {(preparation.estimated_cost_usd_cents / 100).toFixed(2)} USD
+      </p>
+      <p className="mt-1 text-[11px] leading-4 text-nq-muted">
+        {vi ? "Đã loại" : "Excluded"}:{" "}
+        {preparation.excluded_recent_contact}{" "}
+        {vi ? "đã liên hệ trong 24h" : "contacted within 24h"},{" "}
+        {preparation.excluded_no_consent} {vi ? "thiếu consent" : "without consent"},{" "}
+        {preparation.excluded_no_channel} {vi ? "thiếu kênh hợp lệ" : "without a valid channel"}.
+      </p>
+      {preparation.may_have_more_candidates ? (
+        <p className="mt-1 text-[11px] leading-4 text-nq-muted">
+          {vi
+            ? `Bản kiểm tra được giới hạn ở ${preparation.candidate_limit} ứng viên để vận hành an toàn.`
+            : `This dry run is capped at ${preparation.candidate_limit} candidates for safe operation.`}
+        </p>
+      ) : null}
+      <p className="mt-1 text-[11px] font-medium text-nq-warning">
+        {vi
+          ? blocker === "release_approval_required"
+            ? "Manifest đã được khóa. Hãy duyệt yêu cầu phát hành riêng; chưa có tin nhắn nào được gửi."
+            : "Đây chỉ là bản kiểm tra. Chưa có tin nhắn nào được gửi."
+          : blocker === "release_approval_required"
+            ? "The manifest is frozen. Review the separate release approval; no message was sent."
+            : "This is a dry run only. No message was sent."}
+      </p>
+      {blocker === "recipient_selection_required" ? (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={prepare}
+          className="mt-2 inline-flex min-h-11 touch-manipulation items-center rounded-lg px-2 text-[11px] font-semibold text-nq-primary hover:bg-nq-primary/10 disabled:opacity-60"
+        >
+          {pending
+            ? vi
+              ? "Đang kiểm tra lại…"
+              : "Rechecking…"
+            : vi
+              ? "Kiểm tra lại audience"
+              : "Recheck audience"}
+        </button>
+      ) : null}
+      {error ? <p className="mt-2 text-xs text-nq-error">{error}</p> : null}
+    </div>
+  );
+}
+
+function JobRecoveryControls({
+  job,
+  slug,
+  vi,
+}: {
+  job: OwnerExecutionJob;
+  slug: string;
+  vi: boolean;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const canRetry = canControlExecutionJob({
+    operation: "retry",
+    status: job.status,
+    attemptCount: job.attempt_count,
+    maxAttempts: job.max_attempts,
+  });
+  const canCancel = canControlExecutionJob({
+    operation: "cancel",
+    status: job.status,
+    attemptCount: job.attempt_count,
+    maxAttempts: job.max_attempts,
+  });
+
+  if (!canRetry && !canCancel) return null;
+
+  const control = (operation: "retry" | "cancel") => {
+    if (
+      operation === "cancel" &&
+      !window.confirm(
+        vi
+          ? "Hủy công việc AI này? Hành động chưa chạy sẽ không được thực thi."
+          : "Cancel this AI job? Any action that has not run will not be executed.",
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const result = await postAiControl(slug, {
+        action: "control_job",
+        jobId: job.id,
+        operation,
+      });
+      if (!result.ok) {
+        setError(
+          result.error === "invalid_state"
+            ? vi
+              ? "Trạng thái vừa thay đổi. Đang tải lại dữ liệu."
+              : "The job state just changed. Refreshing current data."
+            : vi
+              ? "Không thể cập nhật công việc lúc này."
+              : "The job could not be updated right now.",
+        );
+        router.refresh();
+        return;
+      }
+      router.refresh();
+    });
+  };
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      {canRetry ? (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => control("retry")}
+          className="inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-lg border border-nq-primary/35 px-3 text-xs font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:cursor-wait disabled:opacity-60"
+        >
+          <RefreshCcw className="h-3.5 w-3.5" aria-hidden />
+          {pending
+            ? vi
+              ? "Đang thử lại…"
+              : "Retrying…"
+            : vi
+              ? "Thử lại an toàn"
+              : "Retry safely"}
+        </button>
+      ) : null}
+      {canCancel ? (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => control("cancel")}
+          className="inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-lg border border-nq-error/30 px-3 text-xs font-semibold text-nq-error transition-colors hover:bg-nq-error/10 disabled:cursor-wait disabled:opacity-60"
+        >
+          <X className="h-3.5 w-3.5" aria-hidden />
+          {pending
+            ? vi
+              ? "Đang cập nhật…"
+              : "Updating…"
+            : vi
+              ? "Hủy công việc"
+              : "Cancel job"}
+        </button>
+      ) : null}
+      {job.status === "failed" && job.attempt_count >= job.max_attempts ? (
+        <p className="text-[11px] text-nq-muted">
+          {vi
+            ? "Đã hết số lần thử tự động; có thể hủy để đóng sự cố."
+            : "Automatic attempts are exhausted; cancel to close the incident."}
+        </p>
+      ) : null}
+      {error ? <p className="w-full text-xs text-nq-error">{error}</p> : null}
+    </div>
+  );
+}
+
+function ExecutionStatus({
+  status,
+  vi,
+}: {
+  status: OwnerExecutionJob["status"];
+  vi: boolean;
+}) {
+  const labels: Record<OwnerExecutionJob["status"], { en: string; vi: string }> = {
+    queued: { en: "Queued", vi: "Đã xếp hàng" },
+    waiting_input: { en: "Needs input", vi: "Cần thông tin" },
+    running: { en: "Running", vi: "Đang chạy" },
+    succeeded: { en: "Succeeded", vi: "Thành công" },
+    failed: { en: "Failed", vi: "Thất bại" },
+    canceled: { en: "Canceled", vi: "Đã hủy" },
+  };
+  const tone =
+    status === "succeeded"
+      ? "bg-nq-success/15 text-nq-success"
+      : status === "failed"
+        ? "bg-nq-error/15 text-nq-error"
+        : status === "waiting_input"
+          ? "bg-nq-warning/15 text-nq-warning"
+          : "bg-nq-primary/10 text-nq-primary";
+  return (
+    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${tone}`}>
+      {vi ? labels[status].vi : labels[status].en}
+    </span>
+  );
+}
+
+function IntelligenceItem({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Lightbulb;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl border border-nq-border/60 bg-nq-bg/45 p-3">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+        <Icon className="h-3.5 w-3.5 text-nq-primary" aria-hidden />
+        {label}
+      </div>
+      <p className="mt-2 text-xs leading-5 text-nq-foreground/85">{value}</p>
+    </div>
+  );
+}
+
+function Signal({
+  icon: Icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: typeof Gauge;
+  label: string;
+  value: string;
+  tone: "default" | "success" | "warning";
+}) {
+  const valueColor =
+    tone === "success"
+      ? "text-nq-success"
+      : tone === "warning"
+        ? "text-nq-warning"
+        : "text-nq-foreground";
+  return (
+    <div className="rounded-xl border border-nq-border/60 bg-nq-bg/45 p-3">
+      <div className="flex items-center gap-2 text-[11px] text-nq-muted">
+        <Icon className="h-3.5 w-3.5" aria-hidden />
+        {label}
+      </div>
+      <p className={`mt-2 text-xs font-semibold leading-5 ${valueColor}`}>{value}</p>
+    </div>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  tone = "default",
+  detail,
+}: {
+  label: string;
+  value: number | string;
+  tone?: "default" | "attention" | "success";
+  detail?: string;
+}) {
+  const color = tone === "attention" ? "text-nq-error" : tone === "success" ? "text-nq-success" : "text-nq-foreground";
+  const Icon = tone === "attention" ? Clock3 : tone === "success" ? CheckCircle2 : Bot;
+  return (
+    <div className="rounded-2xl border border-nq-border bg-nq-surface p-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-nq-muted">{label}</p>
+        <Icon className={`h-4 w-4 ${color}`} aria-hidden />
+      </div>
+      <p className={`mt-2 text-2xl font-semibold tabular-nums ${color}`}>{value}</p>
+      {detail ? (
+        <p className="mt-1 text-[11px] leading-4 text-nq-muted">{detail}</p>
+      ) : null}
+    </div>
+  );
+}

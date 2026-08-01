@@ -3,8 +3,7 @@
  *
  * The fixture salon has `auto_no_show_minutes = null` (auto OFF) so:
  *   - lateness tiers use the FIXED 10/20-minute milestones (deterministic), and
- *   - the auto-mark cron skips this salon, so a seeded confirmed-late booking
- *     stays confirmed for the duration of the test (no mid-test status flip).
+ *   - the review cron skips this salon, so no candidate flag appears.
  *
  * Late bookings are seeded relative to real "now" (the grid compares against the
  * live clock); all seeds go on `freeStaffId` to avoid the baseline GIST overlap.
@@ -34,6 +33,26 @@ function lateStart(min: number): { startIso: string; endIso: string } {
     startIso: new Date(start).toISOString(),
     endIso: new Date(start + 45 * 60_000).toISOString(),
   };
+}
+
+/**
+ * The live board only loads the salon's current calendar day. During the
+ * first `min` minutes after UTC midnight, a booking that is genuinely `min`
+ * minutes late belongs to yesterday and therefore cannot appear on today's
+ * board. Skip only that mathematically impossible boundary window; the tier
+ * calculation itself is covered by scripts/test-lateness.ts.
+ */
+function skipIfLatenessCrossesUtcDay(min: number): void {
+  const now = new Date();
+  const utcDayStart = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+  );
+  test.skip(
+    now.getTime() - utcDayStart < min * 60_000,
+    `Cannot render a ${min}-minute-late booking on today's UTC board yet`,
+  );
 }
 
 /** Seed a confirmed booking `min` minutes late on the free staff column. */
@@ -76,6 +95,26 @@ async function readChargeStatus(bookingId: string): Promise<string | null> {
   return v ?? null;
 }
 
+async function readNoShowCandidate(bookingId: string): Promise<{
+  status: string | null;
+  candidateAt: string | null;
+}> {
+  const { data, error } = await supabaseAdmin
+    .from("bookings")
+    .select("status, no_show_candidate_at")
+    .eq("id", bookingId)
+    .maybeSingle();
+  if (error) throw new Error(`readNoShowCandidate: ${error.message}`);
+  const row = data as {
+    status?: string | null;
+    no_show_candidate_at?: string | null;
+  } | null;
+  return {
+    status: row?.status ?? null,
+    candidateAt: row?.no_show_candidate_at ?? null,
+  };
+}
+
 /**
  * A freshly seeded booking can briefly be absent from the server-rendered grid
  * while Supabase's pooled/PostgREST reads catch up with the write.  Re-load the
@@ -115,6 +154,7 @@ test.afterAll(async ({}, testInfo) => {
 
 test.describe("DRC lateness escalation", () => {
   test("due tier (≤10m late): ring only, no clock icon, Start button shown", async ({ page }) => {
+    skipIfLatenessCrossesUtcDay(3);
     const id = await seedLate(3);
     await gotoReceptionistCenter(page, fx.slug);
 
@@ -126,6 +166,7 @@ test.describe("DRC lateness escalation", () => {
   });
 
   test("late tier (10–20m): ring + amber clock icon", async ({ page }) => {
+    skipIfLatenessCrossesUtcDay(13);
     const id = await seedLate(13);
     await gotoReceptionistCenter(page, fx.slug);
 
@@ -134,6 +175,7 @@ test.describe("DRC lateness escalation", () => {
   });
 
   test("critical tier (≥20m): ring + clock icon", async ({ page }) => {
+    skipIfLatenessCrossesUtcDay(23);
     const id = await seedLate(23);
     await gotoReceptionistCenter(page, fx.slug);
 
@@ -141,7 +183,57 @@ test.describe("DRC lateness escalation", () => {
     await expect(page.getByTestId(`booking-block-icon-late-${id}`)).toBeAttached();
   });
 
+  test("scheduler flags a review candidate without changing attendance status", async ({
+    page,
+  }) => {
+    skipIfLatenessCrossesUtcDay(23);
+    const id = await seedLate(23);
+
+    const { error: settingError } = await supabaseAdmin
+      .from("salons")
+      .update({ auto_no_show_minutes: 15 } as never)
+      .eq("id", fx.salonId);
+    if (settingError) throw new Error(`enable candidate review: ${settingError.message}`);
+
+    try {
+      const { error: runError } = await supabaseAdmin.rpc(
+        "auto_mark_no_shows" as never,
+      );
+      if (runError) throw new Error(`auto_mark_no_shows: ${runError.message}`);
+
+      await expect
+        .poll(async () => {
+          const row = await readNoShowCandidate(id);
+          return row.status === "confirmed" && row.candidateAt !== null;
+        }, { timeout: 15_000 })
+        .toBe(true);
+      const first = await readNoShowCandidate(id);
+      expect(first.candidateAt).not.toBeNull();
+
+      // Idempotency: the persisted first-detected timestamp never changes.
+      const { error: rerunError } = await supabaseAdmin.rpc(
+        "auto_mark_no_shows" as never,
+      );
+      if (rerunError) throw new Error(`auto_mark_no_shows rerun: ${rerunError.message}`);
+      await expect(readNoShowCandidate(id)).resolves.toEqual(first);
+
+      await gotoReceptionistCenter(page, fx.slug);
+      await expectServerRenderedItem(
+        page,
+        `booking-block-no-show-candidate-${id}`,
+      );
+      expect((await getBookingRow(fx.salonId, id))?.status).toBe("confirmed");
+    } finally {
+      const { error: restoreError } = await supabaseAdmin
+        .from("salons")
+        .update({ auto_no_show_minutes: null } as never)
+        .eq("id", fx.salonId);
+      if (restoreError) throw new Error(`restore candidate review: ${restoreError.message}`);
+    }
+  });
+
   test("completed booking past start shows NO lateness escalation", async ({ page }) => {
+    skipIfLatenessCrossesUtcDay(13);
     const id = await seedLate(13, "completed");
     await gotoReceptionistCenter(page, fx.slug);
 
@@ -151,6 +243,7 @@ test.describe("DRC lateness escalation", () => {
   });
 
   test("inline Start flips confirmed → in_progress and clears the escalation", async ({ page }) => {
+    skipIfLatenessCrossesUtcDay(13);
     const id = await seedLate(13);
     await gotoReceptionistCenter(page, fx.slug);
 
@@ -246,6 +339,7 @@ test.describe("DRC no-show tombstone + fee decision", () => {
   });
 
   test("marking no-show with a card on file opens the Charge/Waive modal (not an instant mark)", async ({ page }) => {
+    skipIfLatenessCrossesUtcDay(13);
     const id = await seedLate(13);
     await attachCard(id);
     await gotoReceptionistCenter(page, fx.slug);

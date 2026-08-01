@@ -26,6 +26,7 @@ const ctx: SalonVoiceContext = {
   personaName: "Lily",
   personaVoice: "marin",
   reasoningEffort: "low",
+  allowedLanguages: ["en", "fr"],
   upsellEnabled: true,
   businessHours: null,
   services: [{
@@ -69,6 +70,13 @@ describe("compact phone Realtime config", () => {
     expect(prompt).toContain("clear yes");
     expect(prompt).toContain("Gel Manicure");
     expect(prompt).toContain("Anna");
+  });
+
+  it("pins the model to the admin-approved call languages", () => {
+    const prompt = buildPhoneSystemPrompt(ctx, "en", "+17780000000");
+    expect(prompt).toContain("allows only these call languages: English, French");
+    expect(prompt).toContain("Never switch because of a service name");
+    expect(prompt).toContain("Never speak a language outside that list");
   });
 
   it("requires one real-menu upsell and rechecks availability after acceptance", () => {
@@ -164,6 +172,19 @@ describe("compact phone Realtime config", () => {
     expect(prompt).toContain('a closing "cảm ơn"');
     expect(prompt).toContain("call end_call silently");
     expect(prompt).toContain("Do not speak any closing words before end_call");
+  });
+
+  it("repairs connection checks and prevents a staff-preference loop", () => {
+    const prompt = buildPhoneSystemPrompt(ctx, "en", "+17780000000");
+
+    expect(prompt).toContain(
+      '"Hello?", "Are you there?", or "Can you hear me?" during the call is a connection check',
+    );
+    expect(prompt).toContain("then restate the pending question briefly");
+    expect(prompt).toContain("clarify once with two choices");
+    expect(prompt).toContain("use anyone available for the availability lookup");
+    expect(prompt).toContain("Never keep looping on staff preference");
+    expect(prompt).toContain("Never volunteer a staff name");
   });
 
   it("keeps shared tool contracts, adds the phone-only transfer tool, and materially reduces static context", () => {

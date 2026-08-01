@@ -515,9 +515,17 @@ export async function updateBookingStatus(
   }
 
   const startedAt = new Date().toISOString();
-  const patch: { status: BookingStatus; started_at?: string } = toInProgress
-    ? { status: "in_progress", started_at: startedAt }
-    : { status: nextStatus };
+  const patch: {
+    status: BookingStatus;
+    started_at?: string;
+    no_show_candidate_at: null;
+  } = toInProgress
+    ? {
+        status: "in_progress",
+        started_at: startedAt,
+        no_show_candidate_at: null,
+      }
+    : { status: nextStatus, no_show_candidate_at: null };
 
   const { data: updated, error: upErr } = await supabase
     .from("bookings")
@@ -1052,9 +1060,10 @@ export type UpdateAutoNoShowResult =
   | { ok: false; error: "unauthorized" | "forbidden" | "invalid" | "server_error" };
 
 /**
- * Owner-only: writes `salons.auto_no_show_minutes`. When > 0, a pg_cron worker
- * auto-marks still-`confirmed` bookings as no_show once they're this many
- * minutes past start (and bumps the client's no_show_count). 0 = off.
+ * Owner/admin: writes `salons.auto_no_show_minutes`. When > 0, a pg_cron
+ * worker flags still-`confirmed` bookings for human no-show review once they
+ * are this many minutes past start. It never changes status or guest history.
+ * 0 = off.
  */
 export async function updateAutoNoShowMinutes(
   slug: string,
@@ -1175,7 +1184,7 @@ export type UpdateGroupTogetherResult =
   | { ok: false; error: "unauthorized" | "forbidden" | "invalid" | "server_error" };
 
 /**
- * Owner-only: writes `salons.group_together_threshold_minutes` — group members
+ * Owner/admin: writes `salons.group_together_threshold_minutes` — group members
  * starting within this spread still count as arriving "together", so the
  * booking flow offers a small offset before suggesting an all-together time.
  * Clamped 0–240.
@@ -1189,7 +1198,7 @@ export async function updateGroupTogetherThreshold(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner") return { ok: false, error: "forbidden" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const m = Math.round(Number(minutes));
   if (!Number.isFinite(m) || m < 0 || m > 240) {
@@ -1430,18 +1439,47 @@ export async function updateBookingVerificationMode(
 
 // Types live in aiAgentTypes.ts (no "use server") so client components can import them.
 export type { AiAgentFlagKey, AiAgentFlags } from "@/shared/dashboard/aiAgentTypes";
-import type { AiAgentFlagKey } from "@/shared/dashboard/aiAgentTypes";
+import {
+  AI_AGENT_IMPACT,
+  isAiAgentFlagKey,
+  requiresAiAgentEnableAcknowledgement,
+  type AiAgentFlagKey,
+} from "@/shared/dashboard/aiAgentTypes";
 
 export type UpdateAiAgentFlagResult =
   | { ok: true }
-  | { ok: false; error: "unauthorized" | "forbidden" | "server_error" };
+  | {
+      ok: false;
+      error:
+        | "unauthorized"
+        | "forbidden"
+        | "invalid_flag"
+        | "invalid_enabled_value"
+        | "impact_confirmation_required"
+        | "server_error";
+    };
 
 /** Owner/admin: merge a single AI agent flag into salons.feature_flags JSONB. */
 export async function updateAiAgentFlag(
   slug: string,
   flagKey: AiAgentFlagKey,
   enabled: boolean,
+  options?: { impactAcknowledged?: boolean },
 ): Promise<UpdateAiAgentFlagResult> {
+  if (!isAiAgentFlagKey(flagKey)) {
+    return { ok: false, error: "invalid_flag" };
+  }
+  if (typeof enabled !== "boolean") {
+    return { ok: false, error: "invalid_enabled_value" };
+  }
+  if (
+    enabled &&
+    requiresAiAgentEnableAcknowledgement(flagKey) &&
+    options?.impactAcknowledged !== true
+  ) {
+    return { ok: false, error: "impact_confirmation_required" };
+  }
+
   const { getDashboardWriteClient } = await import(
     "@/shared/dashboard/setupActions"
   );
@@ -1449,30 +1487,49 @@ export async function updateAiAgentFlag(
   if (!ctx) return { ok: false, error: "unauthorized" };
   if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
-  // Read current flags + ai_profile — safe for low-concurrency settings writes.
-  const { data: row } = await ctx.supabase
-    .from("salons")
-    .select("feature_flags, ai_profile")
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
-
-  const current = (row?.feature_flags ?? {}) as Record<string, boolean>;
-  const hadAnyAgent = Object.values(current).some(Boolean);
-  const merged = { ...current, [flagKey]: enabled };
-
-  const { error } = await ctx.supabase
-    .from("salons")
-    .update({ feature_flags: merged } as never)
-    .eq("id", ctx.salon.id);
-
+  const { data, error } = await createServiceRoleClient().rpc(
+    "set_ai_agent_permission" as never,
+    {
+      p_salon_id: ctx.salon.id,
+      p_actor_user_id: ctx.userId,
+      p_actor_role: ctx.role,
+      p_actor_kind: ctx.kind,
+      p_flag_key: flagKey,
+      p_enabled: enabled,
+      p_impact: AI_AGENT_IMPACT[flagKey],
+      p_impact_acknowledged: options?.impactAcknowledged === true,
+    } as never,
+  );
   if (error) {
-    console.error("[updateAiAgentFlag]", flagKey, error);
+    console.error("[updateAiAgentFlag]", flagKey, error.code);
+    return { ok: false, error: "server_error" };
+  }
+
+  const result = (data ?? {}) as {
+    success?: boolean;
+    code?: string;
+    changed?: boolean;
+    had_any_agent?: boolean;
+    has_ai_profile?: boolean;
+  };
+  if (!result.success) {
+    if (result.code === "impact_confirmation_required") {
+      return { ok: false, error: "impact_confirmation_required" };
+    }
+    if (result.code === "forbidden" || result.code === "invalid_actor") {
+      return { ok: false, error: "forbidden" };
+    }
     return { ok: false, error: "server_error" };
   }
 
   // First agent ever enabled + no SIP yet → fire-and-forget buildSip so
   // Manager Briefing can open with "Minh đã tự học..." instead of blank slate.
-  if (enabled && !hadAnyAgent && !row?.ai_profile) {
+  if (
+    enabled &&
+    result.changed &&
+    !result.had_any_agent &&
+    !result.has_ai_profile
+  ) {
     import("@/shared/ai/buildSip")
       .then(({ buildSip }) => buildSip(ctx.salon.id))
       .catch((e) => console.error("[updateAiAgentFlag] buildSip", e));

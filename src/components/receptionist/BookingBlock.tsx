@@ -1,7 +1,16 @@
 "use client";
 
 import type React from "react";
-import { Star, Heart, Users, Palette, HeartHandshake, Clock, Play } from "lucide-react";
+import {
+  AlertTriangle,
+  Star,
+  Heart,
+  Users,
+  Palette,
+  HeartHandshake,
+  Clock,
+  Play,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/shared/lib/cn";
@@ -205,17 +214,21 @@ export interface BookingBlockProps {
     source?: BookingSourceLabels;
     /** "Start" — inline start button label (used as aria-label too). */
     startShort?: string;
-    /** "Auto no-show at {time}" template. */
+    /** "No-show review due at {time}" template. */
     autoNoShowAt?: (time: string) => string;
     /** "Late" badge text. */
     lateChip?: string;
     /** "Very late" badge text. */
     veryLateChip?: string;
+    /** Persisted scheduler flag requiring a human attendance decision. */
+    noShowDecisionNeeded?: string;
   };
   /** Lateness tier for confirmed/pending past start (null = not late / not applicable). */
   latenessTier?: LatenessTier;
-  /** Wall-clock time when the cron will auto-mark no_show (in salon tz) — shown in the badge. */
+  /** Wall-clock time when desk review becomes due (in salon tz). */
   autoNoShowAtLabel?: string;
+  /** True after the scheduler has persisted a human-review candidate flag. */
+  noShowCandidate?: boolean;
   /** Called when the inline "Start" button is tapped (only provided when viewer can change status). */
   onStart?: () => void;
   /**
@@ -231,6 +244,8 @@ export interface BookingBlockProps {
   /** Assigned resource name ("Bed 3") shown as a small pill under the service line.
    * Only rendered when resources_enabled is on for the salon. */
   resourceName?: string | null;
+  /** Controlled Owner/Admin exception; renders a compact moon marker. */
+  afterHoursMinutes?: number | null;
 }
 
 /**
@@ -325,8 +340,10 @@ export function BookingBlock(props: BookingBlockProps) {
     isDragging = false,
     latenessTier = null,
     autoNoShowAtLabel,
+    noShowCandidate = false,
     onStart,
     resourceName,
+    afterHoursMinutes = null,
   } = props;
 
   const reduced = useReducedMotion();
@@ -367,9 +384,15 @@ export function BookingBlock(props: BookingBlockProps) {
     hasStaffRequest ||
     isLate ||
     showLateIcon ||
+    noShowCandidate ||
     hasDesign ||
     isGroup ||
     seatTogether;
+    // Moon is text rather than a new icon dependency; it remains recognizable
+    // in every density and is paired with an accessible label.
+  const isAfterHours =
+    afterHoursMinutes != null && Number(afterHoursMinutes) > 0;
+  const hasAnyIcons = hasIcons || isAfterHours;
 
   const lateChipLabel =
     latenessTier === "critical"
@@ -379,7 +402,7 @@ export function BookingBlock(props: BookingBlockProps) {
     showLateness && autoNoShowAtLabel
       ? (iconLabels as { autoNoShowAt?: (t: string) => string })?.autoNoShowAt?.(
           autoNoShowAtLabel,
-        ) ?? `Auto no-show at ${autoNoShowAtLabel}`
+        ) ?? `No-show review due at ${autoNoShowAtLabel}`
       : null;
 
   // Lightweight hover tooltip carrying the un-truncated essentials so the
@@ -603,7 +626,7 @@ export function BookingBlock(props: BookingBlockProps) {
           ) : null}
         </div>
 
-        {hasIcons ? (
+        {hasAnyIcons ? (
           <div
             data-testid={`booking-block-icons-${bookingId}`}
             className={cn(
@@ -624,6 +647,18 @@ export function BookingBlock(props: BookingBlockProps) {
                     : "text-[var(--color-nq-warning)]"
                 }
                 data-testid={`booking-block-icon-late-${bookingId}`}
+              />
+            ) : null}
+            {noShowCandidate ? (
+              <AlertTriangle
+                size={13}
+                strokeWidth={2.5}
+                aria-label={
+                  (iconLabels as { noShowDecisionNeeded?: string })
+                    .noShowDecisionNeeded ?? "No-show decision needed"
+                }
+                className="text-[var(--color-nq-error)]"
+                data-testid={`booking-block-no-show-candidate-${bookingId}`}
               />
             ) : null}
             {sourceMeta ? (
@@ -694,6 +729,16 @@ export function BookingBlock(props: BookingBlockProps) {
                 data-testid={`booking-block-icon-design-${bookingId}`}
               />
             ) : null}
+            {isAfterHours ? (
+              <span
+                aria-label={`After hours · ${afterHoursMinutes} minutes`}
+                title={`After hours · ${afterHoursMinutes} minutes`}
+                data-testid={`booking-block-icon-after-hours-${bookingId}`}
+                className="text-xs leading-none"
+              >
+                🌙
+              </span>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -701,6 +746,36 @@ export function BookingBlock(props: BookingBlockProps) {
   );
 
   if (onClick) {
+    // A late booking exposes a second, independent Start action. HTML forbids
+    // nesting that button inside the booking button (and browsers rewrite the
+    // DOM before React hydrates), so use an accessible button-like container
+    // only for that two-action state.
+    if (showStartButton) {
+      return (
+        <div
+          role="button"
+          tabIndex={0}
+          data-testid={`booking-block-${bookingId}`}
+          data-booking-id={bookingId}
+          data-booking-source={source}
+          className={cn(commonClass, "appearance-none border-0")}
+          style={style}
+          title={tooltipTitle}
+          aria-label={`Booking ${bookingId}: ${clientName}`}
+          onClick={onClick}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              onClick();
+            }
+          }}
+          onPointerDown={onPointerDown}
+        >
+          {inner}
+        </div>
+      );
+    }
+
     return (
       <button
         type="button"

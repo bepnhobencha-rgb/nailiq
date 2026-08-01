@@ -49,6 +49,12 @@ import {
 } from "@/shared/lib/demoOtpMode";
 import type { SalonMemberRole } from "@/shared/lib/salonMemberRole";
 import { normaliseToE164 } from "@/shared/lib/twilioSms";
+import {
+  isSupportedLanguage,
+  normalizeAllowedLanguages,
+  normalizeSupportedLanguage,
+  type SupportedLanguage,
+} from "@/shared/voiceai/config";
 
 export type StaffJobRole = "owner" | "senior" | "nail_tech";
 
@@ -1450,6 +1456,8 @@ export async function getDashboardWriteClient(slug: string): Promise<
 
 export type VoiceAiSettingsInput = {
   voice_ai_enabled:          boolean;
+  voice_ai_default_language: SupportedLanguage;
+  voice_ai_allowed_languages: SupportedLanguage[];
   voice_ai_persona_name:     string;
   voice_ai_persona_voice:    string;
   voice_ai_reasoning_effort: string;
@@ -1478,6 +1486,21 @@ export async function updateVoiceAiSettings(
   const effort = VALID_EFFORTS.includes(input.voice_ai_reasoning_effort as (typeof VALID_EFFORTS)[number])
     ? input.voice_ai_reasoning_effort
     : "low";
+  if (!isSupportedLanguage(input.voice_ai_default_language)) {
+    return { error: "invalid_default_language" };
+  }
+  if (
+    !Array.isArray(input.voice_ai_allowed_languages)
+    || input.voice_ai_allowed_languages.length === 0
+    || input.voice_ai_allowed_languages.some((language) => !isSupportedLanguage(language))
+  ) {
+    return { error: "invalid_allowed_languages" };
+  }
+  const allowedLanguages = normalizeAllowedLanguages(input.voice_ai_allowed_languages, []);
+  const defaultLanguage = normalizeSupportedLanguage(input.voice_ai_default_language);
+  if (!allowedLanguages.includes(defaultLanguage)) {
+    return { error: "default_language_must_be_allowed" };
+  }
   const personaName = input.voice_ai_persona_name.trim().slice(0, 40) || "Lily";
   const rawTransferPhone = input.voice_ai_transfer_phone.trim();
   const transferPhone = rawTransferPhone ? normaliseToE164(rawTransferPhone) : null;
@@ -1487,6 +1510,8 @@ export async function updateVoiceAiSettings(
     .from("salons")
     .update({
       voice_ai_enabled:          input.voice_ai_enabled,
+      voice_ai_default_language: defaultLanguage,
+      voice_ai_allowed_languages: allowedLanguages,
       voice_ai_persona_name:     personaName,
       voice_ai_persona_voice:    voice,
       voice_ai_reasoning_effort: effort,

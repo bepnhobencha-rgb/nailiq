@@ -7,6 +7,7 @@ import {
   cleanupTestUser,
   seedTestUser,
 } from "../helpers/db";
+import { waitForReceptionistHydration } from "../helpers/receptionistHydration";
 import {
   rcSlug,
   seedReceptionistCenterFixture,
@@ -56,9 +57,7 @@ async function loginAndOpenCenter(page: Page, member: TestMember): Promise<void>
     .getByTestId("receptionist-center-loaded")
     .first()
     .waitFor({ state: "attached", timeout: 45_000 });
-  await page
-    .getByTestId("rc-hydrated")
-    .waitFor({ state: "attached", timeout: 30_000 });
+  await waitForReceptionistHydration(page, fx.slug);
 }
 
 async function openBaselineBooking(page: Page): Promise<void> {
@@ -85,17 +84,18 @@ test.afterAll(async ({}, testInfo) => {
 for (const role of ["owner", "admin", "receptionist"] as const) {
   test(`${role} can access booking create, edit, cancel, and status actions`, async ({
     page,
-    isMobile,
   }) => {
     const member = members.find((candidate) => candidate.role === role);
     if (!member) throw new Error(`missing ${role} fixture`);
 
     await loginAndOpenCenter(page, member);
-    if (isMobile) {
-      await expect(page.getByTestId("header-add-appointment")).toBeHidden();
-    } else {
-      await expect(page.getByTestId("header-add-appointment")).toBeVisible();
-    }
+    const addAppointment = page.getByTestId("header-add-appointment");
+    await expect(addAppointment).toBeVisible();
+    await addAppointment.click();
+    const bookingForm = page.getByTestId("desk-booking-form");
+    await expect(bookingForm).toBeVisible();
+    await bookingForm.getByRole("button", { name: "Close" }).click();
+    await expect(bookingForm).toHaveCount(0);
 
     await openBaselineBooking(page);
     await expect(page.getByTestId("edit-booking-button")).toBeVisible();

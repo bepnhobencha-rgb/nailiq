@@ -1,4 +1,8 @@
 import "server-only";
+import {
+  deriveOutcomeMeasurement,
+  type ObservedOutcome,
+} from "@/shared/ai/outcomeMeasurement";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 export const AGENT_META: Record<string, { icon: string; label: string; trackable: boolean }> = {
@@ -12,6 +16,7 @@ export const AGENT_META: Record<string, { icon: string; label: string; trackable
   digest:           { icon: "📋", label: "Digest",        trackable: false },
   strategist:       { icon: "🧠", label: "Chiến Lược",   trackable: false },
   outcome_tracker:  { icon: "📊", label: "Kết quả",      trackable: false },
+  ai_execution:     { icon: "⚙️", label: "Thực thi",      trackable: false },
 };
 
 export type MinhLogEntry = {
@@ -33,18 +38,75 @@ export type AgentStat = {
   icon: string;
   label: string;
   sent: number;
+  measured: number;
+  pending: number;
   converted: number;
+  noConversion: number;
   pct: number;
+  coveragePct: number;
 };
 
 export type MinhActivityData = {
   entries: MinhLogEntry[];
+  totalActions: number;
   totalSent: number;
+  measured: number;
+  measurementCoveragePct: number;
   converted: number;
   pending: number;
   noConversion: number;
   agentStats: AgentStat[];
 };
+
+export type MinhActivityRow = {
+  id: string;
+  agent: string;
+  action_type: string;
+  payload: Record<string, unknown> | null;
+  created_at: string;
+  outcome: string | null;
+  outcome_at: string | null;
+};
+
+function boundedDisplayText(value: unknown, maxLength: number): string {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+export function toMinhLogEntry(row: MinhActivityRow): MinhLogEntry {
+  const agent = /^[a-z][a-z0-9_]{0,49}$/.test(row.agent)
+    ? row.agent
+    : "unknown";
+  const meta = AGENT_META[agent] ?? {
+    icon: "🤖",
+    label: "AI",
+    trackable: false,
+  };
+  return {
+    id: row.id,
+    agent,
+    agentIcon: meta.icon,
+    agentLabel: meta.label,
+    actionType: boundedDisplayText(row.action_type, 100),
+    clientName: boundedDisplayText(row.payload?.name, 120),
+    messagePreview: boundedDisplayText(
+      row.payload?.message_preview ??
+        row.payload?.title ??
+        row.payload?.reasoning ??
+        row.payload?.summary ??
+        row.payload?.note ??
+        "",
+      600,
+    ),
+    createdAt: row.created_at,
+    outcome:
+      (row.outcome as "converted" | "no_conversion" | null) ?? null,
+    outcomeAt: row.outcome_at,
+    trackable: meta.trackable,
+  };
+}
 
 export async function loadMinhActivity(
   salonId: string,
@@ -53,74 +115,66 @@ export async function loadMinhActivity(
   const db = createServiceRoleClient();
   const since = new Date(Date.now() - days * 86_400_000).toISOString();
 
-  const { data } = await db
+  const { data, error, count } = await db
     .from("ai_actions_log" as never)
-    .select("id, agent, action_type, payload, created_at, outcome, outcome_at")
+    .select("id, agent, action_type, payload, created_at, outcome, outcome_at", {
+      count: "exact",
+    })
     .eq("salon_id", salonId)
     .gte("created_at", since)
     .not("action_type", "in", '("skipped_no_channel","suggestion_pending","digest_sent")')
     .order("created_at", { ascending: false })
     .limit(200);
 
-  const rows = (data ?? []) as {
-    id: string;
-    agent: string;
-    action_type: string;
-    payload: Record<string, unknown> | null;
-    created_at: string;
-    outcome: string | null;
-    outcome_at: string | null;
-  }[];
-
-  const entries: MinhLogEntry[] = rows.map((r) => {
-    const meta = AGENT_META[r.agent] ?? { icon: "🤖", label: r.agent, trackable: false };
-    return {
-      id: r.id,
-      agent: r.agent,
-      agentIcon: meta.icon,
-      agentLabel: meta.label,
-      actionType: r.action_type,
-      clientName: String(r.payload?.name ?? ""),
-      messagePreview: String(r.payload?.message_preview ?? r.payload?.summary ?? ""),
-      createdAt: r.created_at,
-      outcome: (r.outcome as "converted" | "no_conversion" | null) ?? null,
-      outcomeAt: r.outcome_at,
-      trackable: meta.trackable,
-    };
-  });
+  if (error) {
+    throw new Error("ai_actions_log_read_failed", { cause: error });
+  }
+  if (count == null) {
+    throw new Error("ai_actions_log_count_unavailable");
+  }
+  const rows = (data ?? []) as MinhActivityRow[];
+  const entries = rows.map(toMinhLogEntry);
 
   // Stats for trackable agents (winback, rebook, vip_care, first_visit)
   const trackable = entries.filter((e) => e.trackable);
-  const converted = trackable.filter((e) => e.outcome === "converted").length;
-  const noConversion = trackable.filter((e) => e.outcome === "no_conversion").length;
-  const pending = trackable.filter((e) => e.outcome === null).length;
+  const overall = deriveOutcomeMeasurement(
+    trackable.map((entry) => entry.outcome),
+  );
 
   // Per-agent breakdown
-  const agentMap = new Map<string, { sent: number; converted: number }>();
+  const agentMap = new Map<string, ObservedOutcome[]>();
   for (const e of trackable) {
-    if (!agentMap.has(e.agent)) agentMap.set(e.agent, { sent: 0, converted: 0 });
-    const s = agentMap.get(e.agent)!;
-    s.sent++;
-    if (e.outcome === "converted") s.converted++;
+    if (!agentMap.has(e.agent)) agentMap.set(e.agent, []);
+    agentMap.get(e.agent)!.push(e.outcome);
   }
-  const agentStats: AgentStat[] = Array.from(agentMap.entries()).map(([agent, s]) => {
-    const meta = AGENT_META[agent] ?? { icon: "🤖", label: agent };
-    return {
-      agent,
-      icon: meta.icon,
-      label: meta.label,
-      sent: s.sent,
-      converted: s.converted,
-      pct: s.sent > 0 ? Math.round((s.converted / s.sent) * 100) : 0,
-    };
-  });
+  const agentStats: AgentStat[] = Array.from(agentMap.entries()).map(
+    ([agent, outcomes]) => {
+      const meta = AGENT_META[agent] ?? { icon: "🤖", label: agent };
+      const measurement = deriveOutcomeMeasurement(outcomes);
+      return {
+        agent,
+        icon: meta.icon,
+        label: meta.label,
+        sent: measurement.sent,
+        measured: measurement.measured,
+        pending: measurement.pending,
+        converted: measurement.converted,
+        noConversion: measurement.noConversion,
+        pct: measurement.observedReturnPct ?? 0,
+        coveragePct: measurement.coveragePct,
+      };
+    },
+  );
 
   return {
     entries,
-    totalSent: trackable.length,
-    converted,
-    pending,
-    noConversion,
+    totalActions: count,
+    totalSent: overall.sent,
+    measured: overall.measured,
+    measurementCoveragePct: overall.coveragePct,
+    converted: overall.converted,
+    pending: overall.pending,
+    noConversion: overall.noConversion,
     agentStats,
   };
 }

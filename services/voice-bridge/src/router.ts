@@ -83,6 +83,35 @@ export function callerPresenceLabel(phone: string): "present" | "missing" {
   return phone ? "present" : "missing";
 }
 
+export type VoiceSessionCloseStatus = "completed" | "failed" | "abandoned";
+
+/**
+ * Translate the transport teardown into a session outcome. Previously every
+ * socket close was persisted as "completed", so a caller hangup in the middle
+ * of a booking looked identical to a fully played farewell.
+ */
+export function voiceSessionStatusForClose(input: {
+  reason: string;
+  endCallRequested: boolean;
+  transportHandoffStarted: boolean;
+}): VoiceSessionCloseStatus {
+  if (
+    input.endCallRequested ||
+    input.transportHandoffStarted ||
+    input.reason === "farewell_fully_played" ||
+    input.reason === "hangup_fallback_timeout" ||
+    input.reason === "hangup_no_live_stream"
+  ) {
+    return "completed";
+  }
+
+  if (input.reason === "twilio_stop" || input.reason === "twilio_ws_closed") {
+    return "abandoned";
+  }
+
+  return "failed";
+}
+
 /**
  * server_vad turn detection, tuned for 8 kHz phone audio. Defaults
  * (threshold 0.5, silence 500ms) false-triggered on line echo and the caller's
@@ -134,19 +163,35 @@ export function interruptToggleMessage(interruptResponse: boolean, transcribeLan
  * unless the signal is strong, because a wrong switch mid-call is worse than
  * staying put. Strong signals:
  *   • Vietnamese: tone-marked vowels / đ — these never appear in en/es text.
- *   • Spanish: ñ / ¿ / ¡, or common Spanish words (short Spanish often has no
- *     special character, so a small function-word list backs up the accents).
+ *   • Spanish/French: distinctive accents, or common booking/function words
+ *     (short turns often have no accent, so small word lists back them up).
  *   • English: common English function words.
  */
 export type SupportedLang = "vi" | "en" | "es" | "fr" | "zh";
+export const SUPPORTED_LANGS: readonly SupportedLang[] = ["vi", "en", "es", "fr", "zh"];
 
 export const LANG_NAMES: Record<string, string> = {
   vi: "Vietnamese", en: "English", es: "Spanish", fr: "French", zh: "Chinese",
 };
 
-export function detectLanguage(text: string): "vi" | "es" | "en" | null {
+export function normalizeAllowedLangs(value: unknown): SupportedLang[] {
+  if (!Array.isArray(value)) return [...SUPPORTED_LANGS];
+  const languages = value.filter(
+    (language): language is SupportedLang =>
+      typeof language === "string"
+      && SUPPORTED_LANGS.includes(language as SupportedLang),
+  );
+  const unique = [...new Set(languages)];
+  return unique.length > 0 ? unique : [...SUPPORTED_LANGS];
+}
+
+export function detectLanguage(text: string): "vi" | "es" | "fr" | "en" | null {
   const t = text.toLowerCase().trim();
   if (!t) return null;
+  // Check high-confidence French phrases before Vietnamese diacritics: French
+  // é/è also occur in the Vietnamese Unicode range used by the next rule.
+  if (/[çœ]/.test(t)) return "fr";
+  if (/\b(bonjour|bonsoir|merci|rendez-vous|ongles|manucure|pédicure|voudrais|souhaite|avec|demain|aujourd'hui|aujourd’hui|s'il vous plaît|s’il vous plaît|disponible|réserver|reserver|je veux|est-ce que|c'est|c’est)\b/.test(t)) return "fr";
   if (/[ăâđêôơưàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i.test(text)) return "vi";
   if (/[ñ¿¡]/.test(text)) return "es";
   if (/\b(hola|gracias|quiero|cita|uñas|una|por favor|buenos|buenas|sí|para|con|cómo|qué|dónde|cuándo|mañana|hoy|reservar|pedicura|manicura|señor|señora)\b/.test(t)) return "es";
@@ -181,11 +226,17 @@ export function detectLanguageRequest(text: string): SupportedLang | null {
  * An explicit request (detectLanguageRequest) wins over the spoken-language
  * heuristic — a caller can ASK in English to be served in Spanish.
  */
-export function resolveSwitchLanguage(text: string, current: string): SupportedLang | null {
+export function resolveSwitchLanguage(
+  text: string,
+  current: string,
+  allowed: readonly SupportedLang[] = SUPPORTED_LANGS,
+): SupportedLang | null {
   const requested = detectLanguageRequest(text);
-  if (requested) return requested !== current ? requested : null;
+  if (requested) {
+    return requested !== current && allowed.includes(requested) ? requested : null;
+  }
   const spoken = detectLanguage(text);
-  if (spoken && spoken !== current) return spoken;
+  if (spoken && spoken !== current && allowed.includes(spoken)) return spoken;
   return null;
 }
 

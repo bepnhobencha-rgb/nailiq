@@ -6,6 +6,10 @@ import {
   gotoBookingServiceStep,
   seedTestSalon,
 } from "./helpers/db";
+import {
+  advanceBookingStep,
+  selectAvailableBookingDate,
+} from "./helpers/bookingFlow";
 
 test.describe("Public booking — privacy (reschedule tel)", () => {
   const slug = "e2e-booking-security";
@@ -34,28 +38,27 @@ test.describe("Public booking — privacy (reschedule tel)", () => {
       .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
-    // Reveal the collapsed month grid (#593) before picking a grid day.
-    await page.locator('[data-testid="date-toggle-calendar"]').click();
-    await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .waitFor({ state: "visible", timeout: 15_000 });
-    await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .click();
+    await selectAvailableBookingDate(page);
     await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page
-      .locator('[data-testid="time-slot"]')
+      .locator('[data-testid="time-slot"]:not([disabled])')
       .first()
       .waitFor({ state: "visible", timeout: 20_000 });
-    await page.locator('[data-testid="time-slot"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).first().click();
+    const timeStep = page.getByRole("group", { name: "Choose a time" });
+    const firstSlot = timeStep
+      .locator('[data-testid="time-slot"]:not([disabled])')
+      .first();
+    await firstSlot.click();
+    await expect(firstSlot).toHaveAttribute("aria-pressed", "true");
+    await advanceBookingStep(
+      timeStep,
+      page.getByTestId("booking-info-name"),
+    );
 
     // Phone-first: the guest's phone is the one entered at the entry gate.
     const guestPhone = GATE_PHONE;
-    await page.fill('input[name="clientName"]', "Security Test Guest");
+    await page.getByTestId("booking-info-name").fill("Security Test Guest");
     await page.getByRole("button", { name: "Continue" }).first().click();
     await page.getByTestId("sms-consent").check();
     await page.getByRole("button", { name: "Confirm booking" }).click();
@@ -94,27 +97,26 @@ test.describe("Public booking — privacy (reschedule tel)", () => {
       .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
-    // Reveal the collapsed month grid (#593) before picking a grid day.
-    await page.locator('[data-testid="date-toggle-calendar"]').click();
-    await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .waitFor({ state: "visible", timeout: 15_000 });
-    await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .click();
+    await selectAvailableBookingDate(page);
     await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page
-      .locator('[data-testid="time-slot"]')
+      .locator('[data-testid="time-slot"]:not([disabled])')
       .first()
       .waitFor({ state: "visible", timeout: 20_000 });
-    await page.locator('[data-testid="time-slot"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).first().click();
+    const timeStep = page.getByRole("group", { name: "Choose a time" });
+    const firstSlot = timeStep
+      .locator('[data-testid="time-slot"]:not([disabled])')
+      .first();
+    await firstSlot.click();
+    await expect(firstSlot).toHaveAttribute("aria-pressed", "true");
+    await advanceBookingStep(
+      timeStep,
+      page.getByTestId("booking-info-name"),
+    );
 
     // Phone-first: phone captured at the entry gate; info step takes name only.
-    await page.fill('input[name="clientName"]', "Security Test Guest");
+    await page.getByTestId("booking-info-name").fill("Security Test Guest");
     await page.getByRole("button", { name: "Continue" }).first().click();
     await page.getByTestId("sms-consent").check();
     await page.getByRole("button", { name: "Confirm booking" }).click();
@@ -137,25 +139,22 @@ async function navigateToBookingInfoStep(page: Page, testSlug: string) {
     .waitFor({ state: "visible", timeout: 15_000 });
   await page.locator('[data-testid="staff-item"]').first().click();
   await page.getByRole("button", { name: "Continue" }).first().click();
-  // Reveal the collapsed month grid (#593) before picking a grid day.
-  await page.locator('[data-testid="date-toggle-calendar"]').click();
-  await page
-    .locator('[data-testid="date-day"]:not([disabled])')
-    .nth(1)
-    .waitFor({ state: "visible", timeout: 15_000 });
-  await page
-    .locator('[data-testid="date-day"]:not([disabled])')
-    .nth(1)
-    .click();
+  await selectAvailableBookingDate(page);
   await page.getByRole("button", { name: "Continue" }).first().click();
   await page
     .locator('[data-testid="time-slot"]')
     .first()
     .waitFor({ state: "visible", timeout: 20_000 });
-  await page.locator('[data-testid="time-slot"]').first().click();
-  await page.getByRole("button", { name: "Continue" }).first().click();
-
-  await expect(page.getByTestId("booking-info-name")).toBeVisible();
+  const timeStep = page.locator(
+    'section[aria-labelledby="time-heading"]',
+  );
+  const firstSlot = timeStep.locator('[data-testid="time-slot"]').first();
+  await firstSlot.click();
+  await expect(firstSlot).toHaveAttribute("aria-pressed", "true");
+  await advanceBookingStep(
+    timeStep,
+    page.getByTestId("booking-info-name"),
+  );
 }
 
 test.describe("Guest name — XSS / charset guard", () => {
@@ -207,4 +206,3 @@ test.describe("Guest name — XSS / charset guard", () => {
     });
   });
 });
-

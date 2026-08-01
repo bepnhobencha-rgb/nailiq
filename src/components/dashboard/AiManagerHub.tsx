@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { useState, useTransition, useRef, useCallback } from "react";
 import { updateAiAgentFlag, updateAiManagerInstructions, updateOwnerNotificationSettings } from "@/shared/dashboard/salonOwnerActions";
-import type { AiAgentFlagKey, AiAgentFlags } from "@/shared/dashboard/aiAgentTypes";
+import {
+  AI_AGENT_IMPACT,
+  requiresAiAgentEnableAcknowledgement,
+  type AiAgentFlagKey,
+  type AiAgentFlags,
+  type AiAgentImpact,
+} from "@/shared/dashboard/aiAgentTypes";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 type Props = {
@@ -50,9 +56,9 @@ const AGENTS: AgentDef[] = [
     nameEn: "Người Kéo Về — Win-back",
     nameVi: "Người Kéo Về — Kéo khách trở lại",
     descEn:
-      'Drafts a friendly "we miss you" email for guests who haven\'t returned in 60+ days — with a one-tap rebook link.',
+      'Automatically sends a capped "we miss you" SMS or email to eligible, consented guests who have not returned in 60+ days.',
     descVi:
-      'Soạn email thân thiện "tụi mình nhớ bạn" cho khách trên 60 ngày chưa quay lại, kèm link đặt lịch 1 chạm.',
+      'Tự động gửi tối đa theo giới hạn tin SMS hoặc email "tụi mình nhớ bạn" cho khách đủ điều kiện, đã đồng ý nhận tin và trên 60 ngày chưa quay lại.',
   },
   {
     key: "ai_rebook",
@@ -60,9 +66,9 @@ const AGENTS: AgentDef[] = [
     nameEn: "Nhịp Tim — Rebook nudge",
     nameVi: "Nhịp Tim — Nhắc đặt lại",
     descEn:
-      "Identifies regulars who are due for their next visit based on their usual rhythm and nudges them before they forget.",
+      "Identifies consented regulars due for their next visit and automatically sends a capped SMS or email rebook nudge.",
     descVi:
-      "Nhận ra khách quen sắp đến lịch theo chu kỳ thường lệ, nhắc họ trước khi họ quên.",
+      "Nhận ra khách quen đã đồng ý nhận tin và đến chu kỳ quay lại, rồi tự động gửi SMS hoặc email nhắc đặt lịch theo giới hạn.",
   },
   {
     key: "ai_smart_reminders",
@@ -90,9 +96,9 @@ const AGENTS: AgentDef[] = [
     nameEn: "VIP Care — Milestone moments",
     nameVi: "VIP Care — Khoảnh khắc đặc biệt",
     descEn:
-      "Spots birthdays, anniversaries, and loyalty milestones — then drafts a warm personal note so your best guests feel seen.",
+      "Spots birthdays and loyalty milestones, then automatically sends eligible VIP guests a capped personal SMS or email.",
     descVi:
-      "Nhận ra sinh nhật, kỷ niệm, cột mốc trung thành — soạn lời chúc ấm áp để khách VIP cảm thấy được trân trọng.",
+      "Nhận ra sinh nhật và cột mốc trung thành, rồi tự động gửi SMS hoặc email cá nhân theo giới hạn cho khách VIP đủ điều kiện.",
   },
   {
     key: "ai_first_visit_nurture",
@@ -149,13 +155,40 @@ function AgentToggle({
 }) {
   const [on, setOn] = useState(initialEnabled);
   const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   function toggle() {
     const next = !on;
+    const needsAcknowledgement =
+      next && requiresAiAgentEnableAcknowledgement(agent.key);
+    if (needsAcknowledgement) {
+      const impact = AI_AGENT_IMPACT[agent.key];
+      const confirmed = window.confirm(
+        impact === "booking_policy"
+          ? vi
+            ? "Agent này có thể thay đổi việc booking mới cần giữ thẻ hoặc đặt cọc. Bạn có chắc muốn bật?"
+            : "This agent can change whether new bookings require a card on file or deposit. Enable it?"
+          : vi
+            ? "Agent này có thể tự động gửi SMS hoặc email cho khách đủ điều kiện theo cài đặt đồng ý nhận tin và giới hạn hiện có. Bạn có chắc muốn bật?"
+            : "This agent can automatically send SMS or email to eligible customers under existing consent and delivery limits. Enable it?",
+      );
+      if (!confirmed) return;
+    }
+
+    setError(null);
     setOn(next);
     startTransition(async () => {
-      const res = await updateAiAgentFlag(slug, agent.key, next);
-      if (!res.ok) setOn(!next);
+      const res = await updateAiAgentFlag(slug, agent.key, next, {
+        impactAcknowledged: needsAcknowledgement,
+      });
+      if (!res.ok) {
+        setOn(!next);
+        setError(
+          vi
+            ? "Không thể thay đổi agent. Hãy tải lại và thử lần nữa."
+            : "The agent setting could not be changed. Refresh and try again.",
+        );
+      }
     });
   }
 
@@ -171,6 +204,12 @@ function AgentToggle({
         <p className="mt-0.5 text-xs text-nq-muted">
           {vi ? agent.descVi : agent.descEn}
         </p>
+        <ImpactBadge impact={AI_AGENT_IMPACT[agent.key]} vi={vi} />
+        {error ? (
+          <p role="alert" className="mt-1 text-xs text-nq-error">
+            {error}
+          </p>
+        ) : null}
       </div>
       <button
         type="button"
@@ -190,6 +229,45 @@ function AgentToggle({
         />
       </button>
     </div>
+  );
+}
+
+function ImpactBadge({
+  impact,
+  vi,
+}: {
+  impact: AiAgentImpact;
+  vi: boolean;
+}) {
+  const copy: Record<AiAgentImpact, { en: string; vi: string }> = {
+    booking_policy: {
+      en: "Changes booking protection",
+      vi: "Thay đổi bảo vệ booking",
+    },
+    customer_outreach: {
+      en: "Can message customers automatically",
+      vi: "Có thể tự động nhắn khách",
+    },
+    owner_notification: {
+      en: "Messages owner only",
+      vi: "Chỉ gửi cho chủ tiệm",
+    },
+    draft_only: {
+      en: "Draft only",
+      vi: "Chỉ tạo bản nháp",
+    },
+    monitoring: {
+      en: "Monitor and alert",
+      vi: "Theo dõi và cảnh báo",
+    },
+  };
+  return (
+    <span
+      data-impact={impact}
+      className="mt-1.5 inline-flex rounded-full border border-nq-border/50 px-2 py-0.5 text-[11px] font-medium text-nq-muted"
+    >
+      {vi ? copy[impact].vi : copy[impact].en}
+    </span>
   );
 }
 
@@ -396,8 +474,8 @@ export function AiManagerHub({ slug, initialFlags, initialInstructions, initialN
           </p>
           <p className="mt-0.5 text-xs text-nq-muted">
             {vi
-              ? "Bật/tắt từng agent AI. Mỗi agent tự điều tiết — bật an toàn mà không lo spam."
-              : "Toggle each AI agent on or off. Every agent self-throttles — safe to enable without risk of over-messaging."}
+              ? "Mỗi agent ghi rõ phạm vi tác động. Agent có thể nhắn khách hoặc thay đổi bảo vệ booking sẽ yêu cầu xác nhận trước khi bật."
+              : "Each agent shows its operating impact. Customer messaging and booking-protection agents require confirmation before activation."}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">

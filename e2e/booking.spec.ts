@@ -5,6 +5,10 @@ import {
   gotoBookingServiceStep,
   seedTestSalon,
 } from "./helpers/db";
+import {
+  advanceBookingStep,
+  selectAvailableBookingDate,
+} from "./helpers/bookingFlow";
 
 test.describe("Booking Flow", () => {
   let testSlug: string;
@@ -34,29 +38,26 @@ test.describe("Booking Flow", () => {
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
-    // The month grid is now collapsed behind a "📅 More dates" toggle (#593);
-    // reveal it before picking a specific grid day.
-    await page.locator('[data-testid="date-toggle-calendar"]').click();
-    await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .waitFor({ state: "visible", timeout: 15_000 });
-    await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .click();
+    await selectAvailableBookingDate(page);
     await page.getByRole("button", { name: "Continue" }).first().click();
 
-    await page
-      .locator('[data-testid="time-slot"]')
-      .first()
-      .waitFor({ state: "visible", timeout: 20_000 });
-    await page.locator('[data-testid="time-slot"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).first().click();
+    const firstAvailableSlot = page
+      .locator('[data-testid="time-slot"]:not([disabled])')
+      .first();
+    await expect(firstAvailableSlot).toBeVisible({ timeout: 20_000 });
+    await firstAvailableSlot.click();
+    await expect(firstAvailableSlot).toHaveAttribute("aria-pressed", "true");
+
+    const timeStep = page.getByRole("group", { name: "Choose a time" });
+    await advanceBookingStep(
+      timeStep,
+      page.getByTestId("booking-info-name"),
+    );
 
     // Phone-first: the phone was captured at the entry gate, so the info step
     // only collects the name now.
-    await page.fill('input[name="clientName"]', "Test Client");
+    const clientName = page.getByTestId("booking-info-name");
+    await clientName.fill("Test Client");
     await page.getByRole("button", { name: "Continue" }).first().click();
 
     await page.getByTestId("sms-consent").check();
@@ -79,16 +80,7 @@ test.describe("Booking Flow", () => {
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
 
-    // Reveal the collapsed month grid (#593) before picking a grid day.
-    await page.locator('[data-testid="date-toggle-calendar"]').click();
-    await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .waitFor({ state: "visible", timeout: 15_000 });
-    await page
-      .locator('[data-testid="date-day"]:not([disabled])')
-      .nth(1)
-      .click();
+    await selectAvailableBookingDate(page);
     await page.getByRole("button", { name: "Continue" }).first().click();
 
     const slots = page.locator('[data-testid="time-slot"]');
@@ -113,9 +105,15 @@ test.describe("Booking Flow", () => {
     // exercise month navigation + the today marker.
     await page.locator('[data-testid="date-toggle-calendar"]').click();
     // The calendar opens on the first month that has availability, so there is
-    // always at least one selectable day on arrival.
+    // always at least one selectable day on arrival. On the last day of the
+    // month that day can be today, which intentionally uses `date-today`
+    // instead of `date-day`.
     await expect(
-      page.locator('[data-testid="date-day"]:not([disabled])').first(),
+      page
+        .locator(
+          '[data-testid="date-day"]:not([disabled]), [data-testid="date-today"]:not([disabled])',
+        )
+        .first(),
     ).toBeVisible();
     // "Today" carries its own marker (`date-today`). When today's month has no
     // availability (today closed, or the last day of the month) the calendar

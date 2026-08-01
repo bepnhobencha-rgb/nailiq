@@ -14,41 +14,48 @@ import { analyzeChannelFailures } from "@/shared/ai/analyzeChannelFailures";
 import { analyzeAgentOutcomes } from "@/shared/ai/analyzeOutcomes";
 import { getChannelCostSummary } from "@/shared/ai/channelCostTracker";
 import { processExpiredAndRemind } from "@/shared/ai/approvalRequests";
+import { canRunAutonomousAiForTenant } from "@/shared/ai/tenantExecutionBoundary";
+import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
+import { runTrackedCron } from "@/shared/security/cronRunHistory";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 min
 
-export async function GET(req: Request): Promise<NextResponse> {
-  const secret = req.headers.get("authorization")?.replace("Bearer ", "");
-  if (secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+export async function GET(req: Request): Promise<Response> {
+  const authorizationError = requireCronAuthorization(req);
+  if (authorizationError) return authorizationError;
+  return runTrackedCron("minh_learn", async () => {
 
   const supabase = createServiceRoleClient();
 
   // Only process salons that have AI features enabled (at least one ai_* flag)
   const { data: salons, error } = await supabase
     .from("salons")
-    .select("id, slug, feature_flags");
+    .select(
+      "id, slug, feature_flags, archived_at, superadmin_locked_at, subscription_status",
+    );
 
   if (error) {
     console.error("[minh-learn] load salons", error);
     return NextResponse.json(
-      { ok: false, error: error.message },
+      { ok: false, error: "salon_load_failed" },
       { status: 500 },
     );
   }
 
-  if (!salons?.length) {
+  const eligibleSalons = (salons ?? []).filter(canRunAutonomousAiForTenant);
+
+  if (!eligibleSalons.length) {
     return NextResponse.json({ ok: true, salons: 0 });
   }
 
   const results: Record<string, unknown>[] = [];
   let totalLessonsCreated = 0;
   let totalLessonsAdjusted = 0;
+  let agentFailures = 0;
 
-  for (const salon of salons) {
+  for (const salon of eligibleSalons) {
     const flags = (salon.feature_flags ?? {}) as Record<string, boolean>;
     // Only run for salons with any AI agent enabled
     const hasAiFeature = Object.entries(flags).some(
@@ -69,7 +76,8 @@ export async function GET(req: Request): Promise<NextResponse> {
       if (channelResult.lessonCreated) totalLessonsCreated++;
     } catch (e) {
       console.error("[minh-learn] channel_failures", salon.slug, e);
-      entry.channel_failures = String(e);
+      entry.channel_failures = "failed";
+      agentFailures++;
     }
 
     // 2. Analyze agent outcomes
@@ -78,11 +86,14 @@ export async function GET(req: Request): Promise<NextResponse> {
       entry.outcome_analysis = {
         agents: Object.keys(outcomeResult.agentStats).length,
         lessonsAdjusted: outcomeResult.lessonsAdjusted,
+        adaptationsActivated: outcomeResult.adaptationsActivated,
+        adaptationsRecovered: outcomeResult.adaptationsRecovered,
       };
       totalLessonsAdjusted += outcomeResult.lessonsAdjusted;
     } catch (e) {
       console.error("[minh-learn] outcome_analysis", salon.slug, e);
-      entry.outcome_analysis = String(e);
+      entry.outcome_analysis = "failed";
+      agentFailures++;
     }
 
     // 3. Cost summary (logged; will be incorporated into digest in a future step)
@@ -96,7 +107,8 @@ export async function GET(req: Request): Promise<NextResponse> {
       };
     } catch (e) {
       console.error("[minh-learn] cost_summary", salon.slug, e);
-      entry.cost_summary = String(e);
+      entry.cost_summary = "failed";
+      agentFailures++;
     }
 
     results.push(entry);
@@ -111,6 +123,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     remindedApprovals = approvalResult.reminded;
   } catch (e) {
     console.error("[minh-learn] approval_requests maintenance", e);
+    agentFailures++;
   }
 
   // Summary log to ai_actions_log (global — salon_id null)
@@ -131,13 +144,18 @@ export async function GET(req: Request): Promise<NextResponse> {
     } as never);
   }
 
-  return NextResponse.json({
-    ok: true,
-    processed: results.length,
-    totalLessonsCreated,
-    totalLessonsAdjusted,
-    expiredApprovals,
-    remindedApprovals,
-    results,
+    return NextResponse.json(
+    {
+      ok: agentFailures === 0,
+      processed: results.length,
+      agentFailures,
+      totalLessonsCreated,
+      totalLessonsAdjusted,
+      expiredApprovals,
+      remindedApprovals,
+      results,
+    },
+    { status: agentFailures > 0 ? 500 : 200 },
+    );
   });
 }

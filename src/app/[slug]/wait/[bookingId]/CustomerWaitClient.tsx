@@ -4,7 +4,10 @@ import { useEffect, useRef, useState } from "react";
 
 import { refreshCustomerWaitState } from "@/shared/booking/loadCustomerWaitStateAction";
 import type { CustomerWaitState } from "@/shared/booking/loadCustomerWaitState";
-import { resolveCustomerWaitSurface } from "@/shared/booking/customerWaitPresentation";
+import {
+  formatCustomerWaitReadyClock,
+  resolveCustomerWaitSurface,
+} from "@/shared/booking/customerWaitPresentation";
 import { createClient } from "@/shared/lib/supabase/client";
 import { cn } from "@/shared/lib/cn";
 import { getCustomerWaitMessages } from "@/shared/i18n/customerWait";
@@ -265,10 +268,10 @@ function WaitingScreen({
   manageLinks: { reschedule: string; cancel: string } | null;
 }) {
   const readyClock = state.readyAroundIso
-    ? new Date(state.readyAroundIso).toLocaleTimeString("en-US", {
-        hour: "numeric",
-        minute: "2-digit",
-      })
+    ? formatCustomerWaitReadyClock(
+        state.readyAroundIso,
+        state.salon.timezone,
+      )
     : null;
   const positionLabel =
     state.queuePosition != null

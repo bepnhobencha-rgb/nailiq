@@ -7,6 +7,10 @@ import {
   seedTestSalon,
   setReactInputValue,
 } from "./helpers/db";
+import {
+  advanceBookingStep,
+  selectAvailableBookingDate,
+} from "./helpers/bookingFlow";
 
 /**
  * Pre-launch error-path smoke for the public booking page (`/[slug]`).
@@ -178,11 +182,18 @@ async function navigateToInfoStep(page: Page, slug: string) {
   const timeStep = page.locator(
     'section[aria-labelledby="time-heading"]',
   );
-  await timeStep.locator('[data-testid="time-slot"]').first().click();
-  await timeStep.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByTestId("booking-info-name")).toBeVisible({
-    timeout: 15_000,
-  });
+  const firstAvailableSlot = timeStep
+    .locator('[data-testid="time-slot"]:not([disabled])')
+    .first();
+  await firstAvailableSlot.click();
+  // The selection is committed through React state. Under CI load the next
+  // click can otherwise land before that state enables the step transition,
+  // leaving the wizard on Time until the Info assertion times out.
+  await expect(firstAvailableSlot).toHaveAttribute("aria-pressed", "true");
+  await advanceBookingStep(
+    timeStep,
+    page.getByTestId("booking-info-name"),
+  );
 }
 
 async function navigateToConfirmStep(
@@ -269,10 +280,12 @@ test.describe("Booking error scenarios — /[slug]", () => {
       .waitFor({ state: "visible", timeout: 15_000 });
     await page.locator('[data-testid="staff-item"]').first().click();
     await page.getByRole("button", { name: "Continue" }).first().click();
-    // Reveal the collapsed month grid (#593) before reading a grid day's data-ymd.
-    await page.locator('[data-testid="date-toggle-calendar"]').click();
+    // Pick the same future-date policy used by the second guest below. This is
+    // important on the last day of a month: the quick default is "today", but
+    // navigateToTimeStep deliberately advances to the next future day.
+    await selectAvailableBookingDate(page);
     const pickedDateBtn = page
-      .locator('[data-testid="date-day"]:not([disabled])')
+      .locator('[data-testid="date-day"][aria-pressed="true"]')
       .first();
     await pickedDateBtn.waitFor({ state: "visible", timeout: 15_000 });
     const ymd = (await pickedDateBtn.getAttribute("data-ymd")) ?? null;

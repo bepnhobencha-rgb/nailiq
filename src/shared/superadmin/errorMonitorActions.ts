@@ -20,11 +20,12 @@ export type ErrorLogRow = {
   fix_proposal: string | null;
   fix_file: string | null;
   fix_pr_url: string | null;
+  stack: string | null;
+  context: Record<string, unknown> | null;
 };
 
 type LoadResult =
-  | { ok: true; rows: ErrorLogRow[] }
-  | { ok: false; error: string };
+  { ok: true; rows: ErrorLogRow[] } | { ok: false; error: string };
 
 async function requireSuperadmin(): Promise<string | null> {
   const supabase = await createClient();
@@ -53,7 +54,7 @@ export async function loadErrorLogs(
   let q = admin
     .from("error_logs")
     .select(
-      "id, level, message, surface, route, salon_id, occurrence_count, first_seen_at, last_seen_at, status, ai_summary, ai_suggested_fix, fix_proposal, fix_file, fix_pr_url",
+      "id, level, message, surface, route, salon_id, occurrence_count, first_seen_at, last_seen_at, status, ai_summary, ai_suggested_fix, fix_proposal, fix_file, fix_pr_url, stack, context",
     )
     .order("last_seen_at", { ascending: false })
     .limit(200);
@@ -77,7 +78,9 @@ export async function triageErrorNow(id: string): Promise<{ ok: boolean }> {
 
 /** AI reads the offending file + drafts a fix (and a draft PR if a GitHub
  *  token is configured). Always a draft for human review. */
-export async function draftFixNow(id: string): Promise<{ ok: boolean; prUrl?: string | null }> {
+export async function draftFixNow(
+  id: string,
+): Promise<{ ok: boolean; prUrl?: string | null }> {
   const uid = await requireSuperadmin();
   if (!uid) return { ok: false };
   const { draftFix } = await import("@/shared/observability/draftFix");

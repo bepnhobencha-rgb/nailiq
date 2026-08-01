@@ -12,6 +12,7 @@
 import {
   isReleaseFeatureEnabled,
   BETA_FEATURE_KEYS,
+  RELEASE_FEATURES,
   type ReleaseFeatureKey,
 } from "@/shared/features/featureRegistry";
 
@@ -54,16 +55,17 @@ const GATED_NAV: { item: string; key: ReleaseFeatureKey }[] = [
   { item: "photos", key: "photos" },
   { item: "combos", key: "combos" },
   { item: "marketing", key: "marketing" },
+  { item: "ai-control-center", key: "ai_control_center" },
 ];
 
 // Base nav items that must never be gated by this map.
 const BASE_NAV = ["front-desk", "queue", "calendar", "clients", "staff", "services", "settings"];
 
-test("empty salon (no flags): all gated beta nav items are hidden", () => {
+test("empty salon follows each gated feature's registry default", () => {
   const m = buildReleaseMap({});
   for (const { item, key } of GATED_NAV) {
-    // reviews/photos are plan-sourced; with no plan they resolve OFF too.
-    eq(hiddenByGate(m, key), true, `${item} should be hidden for empty salon`);
+    const expectedHidden = RELEASE_FEATURES[key].defaultOn !== true;
+    eq(hiddenByGate(m, key), expectedHidden, `${item} should follow its registry default`);
   }
 });
 
@@ -80,6 +82,15 @@ test("loyalty + reports flags ON reveal those nav items", () => {
   });
   eq(hiddenByGate(m, "loyalty"), false, "loyalty visible when flag on");
   eq(hiddenByGate(m, "advanced_reports"), false, "reports visible when flag on");
+});
+
+test("AI Control Center is hidden by default and revealed by its salon flag", () => {
+  const hidden = buildReleaseMap({});
+  eq(hiddenByGate(hidden, "ai_control_center"), true, "AI Control Center hidden by default");
+  const enabled = buildReleaseMap({
+    feature_flags: { ai_control_center_enabled: true },
+  });
+  eq(hiddenByGate(enabled, "ai_control_center"), false, "AI Control Center visible when enabled");
 });
 
 test("photos/reviews keep plan behavior: pro plan reveals them", () => {

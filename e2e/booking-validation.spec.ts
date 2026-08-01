@@ -7,6 +7,10 @@ import {
   seedTestSalon,
   setReactInputValue,
 } from "./helpers/db";
+import {
+  advanceBookingStep,
+  selectAvailableBookingDate,
+} from "./helpers/bookingFlow";
 
 async function navigateToBookingInfo(page: Page, testSlug: string) {
   // Phone-first entry gate (PR #328): a phone is entered at the gate, so the
@@ -31,19 +35,10 @@ async function navigateToBookingInfo(page: Page, testSlug: string) {
   await staffStep.locator('[data-testid="staff-item"]').first().click();
   await staffStep.getByRole("button", { name: "Continue" }).click();
 
-  // Reveal the collapsed month grid (#593) before picking a grid day.
   const dateStep = page.locator(
     'section[aria-labelledby="date-heading"]',
   );
-  await dateStep.locator('[data-testid="date-toggle-calendar"]').click();
-  await dateStep
-    .locator('[data-testid="date-day"]:not([disabled])')
-    .nth(1)
-    .waitFor({ state: "visible", timeout: 15_000 });
-  await dateStep
-    .locator('[data-testid="date-day"]:not([disabled])')
-    .nth(1)
-    .click();
+  await selectAvailableBookingDate(page);
   await dateStep.getByRole("button", { name: "Continue" }).click();
 
   const timeStep = page.locator(
@@ -53,12 +48,13 @@ async function navigateToBookingInfo(page: Page, testSlug: string) {
     .locator('[data-testid="time-slot"]')
     .first()
     .waitFor({ state: "visible", timeout: 20_000 });
-  await timeStep.locator('[data-testid="time-slot"]').first().click();
-  await timeStep.getByRole("button", { name: "Continue" }).click();
-
-  await expect(page.getByTestId("booking-info-name")).toBeVisible({
-    timeout: 15_000,
-  });
+  const firstSlot = timeStep.locator('[data-testid="time-slot"]').first();
+  await firstSlot.click();
+  await expect(firstSlot).toHaveAttribute("aria-pressed", "true");
+  await advanceBookingStep(
+    timeStep,
+    page.getByTestId("booking-info-name"),
+  );
 }
 
 test.describe("Booking validation — info step", () => {

@@ -3,6 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 
 import { DEFAULT_OPENING_HOURS_JSON } from "@/shared/dashboard/openingHoursDefaults";
 
+import { waitForReceptionistHydration } from "../helpers/receptionistHydration";
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -543,8 +545,29 @@ export async function gotoReceptionistCenter(
     }
   });
 
+  const encodedSlug = encodeURIComponent(slug);
   const q = opts?.dateYmd ? `?date=${encodeURIComponent(opts.dateYmd)}` : "";
-  await page.goto(`/dashboard/${encodeURIComponent(slug)}/center${q}`);
+  const centerUrl = `/dashboard/${encodedSlug}/center${q}`;
+  const waitForCenterOrRedirect = page
+    .waitForURL(new RegExp(`\\/dashboard\\/${encodedSlug}\\/center(?:\\?.*)?\\/?$`), {
+      timeout: 45_000,
+    })
+    .catch(() => {});
+
+  try {
+    // In CI this path sometimes sees a second in-app redirect (for example a
+    // middleware rewrite from `?date=` back to the canonical path). `goto` throws
+    // "interrupted by another navigation" before the final URL settles; we treat
+    // that as a retry signal and continue waiting for stable center-route state.
+    await page.goto(centerUrl, { waitUntil: "domcontentloaded", timeout: 45_000 });
+  } catch (error) {
+    const message = (error as Error | undefined)?.message ?? "";
+    if (!message.includes("interrupted by another navigation")) {
+      throw error;
+    }
+  }
+
+  await waitForCenterOrRedirect;
   // Next.js streams the receptionist-center-loaded wrapper inside a
   // `<div hidden id="S:N">` Suspense placeholder until hydration. The
   // testid is in the DOM throughout SSR streaming but `state: "visible"`
@@ -575,18 +598,11 @@ export async function gotoReceptionistCenter(
   if (opts?.expectWalkinQueue !== false) {
     await page.getByTestId("walkin-add-form").waitFor({ state: "visible", timeout: 45_000 });
   }
-  // Gate on React hydration completing. `rc-hydrated` is rendered by
-  // ReceptionistCenter behind a useSyncExternalStore whose server snapshot is
-  // `false` and whose client snapshot is `true`, so React only renders it once
-  // hydration has finished and the tree is interactive. SSR emits nothing,
-  // making this a reliable hydration-complete signal in the main React tree.
-  // We avoid using BookingDetailDrawer's portal for this because Playwright
-  // WebKit skips elements inside aria-hidden/inert containers (the drawer
-  // wraps its content in inert={!open} when closed).
-  await page.getByTestId("rc-hydrated").waitFor({
-    state: "attached",
-    timeout: 30_000,
-  });
+  // Gate interactions on the post-commit signal without changing the rendered
+  // React tree. A former client-only DOM marker inserted a new child while
+  // streamed descendants were still hydrating and intermittently caused the
+  // React #418 that this gate is meant to protect against.
+  await waitForReceptionistHydration(page, slug);
 }
 
 /** 10-digit test phone satisfying `validateGuestPhone` / public booking rules. */

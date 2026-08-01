@@ -63,6 +63,7 @@ export type BetaFeatureKey =
   | "advanced_reports"
   | "experimental_realtime"
   | "admin_copilot"
+  | "ai_control_center"
   | "nail_tryon";
 
 export type ReleaseFeatureKey = BaseFeatureKey | BetaFeatureKey;
@@ -311,6 +312,15 @@ export const RELEASE_FEATURES: Record<ReleaseFeatureKey, ReleaseFeatureDescripto
     defaultOn: true,
     source: { kind: "jsonb", flagKey: "admin_copilot_enabled" },
     description: "In-admin AI assistant (Coco) for salon operations guidance.",
+  },
+  ai_control_center: {
+    key: "ai_control_center",
+    label: "AI Control Center",
+    group: "operations",
+    phase: "beta",
+    defaultOn: false,
+    source: { kind: "jsonb", flagKey: "ai_control_center_enabled" },
+    description: "Unified owner view for AI decisions, activity, and outcomes.",
   },
   nail_tryon: {
     key: "nail_tryon",

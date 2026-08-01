@@ -330,20 +330,23 @@ function BulkPricePanel({
 
   if (!open) {
     return (
-      <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border border-nq-border/50 bg-nq-surface px-4 py-2.5 shadow-lg text-sm">
+      <div
+        data-testid="services-bulk-price-panel"
+        className="fixed bottom-20 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border border-nq-border/50 bg-nq-surface px-4 py-2.5 shadow-lg text-sm xl:bottom-6"
+      >
         <span className="text-nq-muted">
           <strong className="text-nq-foreground">{selectedCount}</strong> dịch vụ đã chọn
         </span>
         <button
           type="button"
-          className="rounded-full bg-nq-primary px-3 py-1 text-xs font-semibold text-white"
+          className="flex min-h-11 touch-manipulation items-center rounded-full bg-nq-primary px-3 text-xs font-semibold text-white"
           onClick={() => setOpen(true)}
         >
           Cập nhật giá
         </button>
         <button
           type="button"
-          className="text-xs text-nq-muted hover:text-nq-foreground"
+          className="min-h-11 touch-manipulation rounded-full px-2 text-xs text-nq-muted hover:text-nq-foreground"
           onClick={onClear}
         >
           Bỏ chọn
@@ -353,20 +356,26 @@ function BulkPricePanel({
   }
 
   return (
-    <div className="fixed bottom-6 left-1/2 z-40 w-[min(100vw-2rem,22rem)] -translate-x-1/2 rounded-2xl border border-nq-border/50 bg-nq-surface px-4 py-4 shadow-lg">
+    <div
+      data-testid="services-bulk-price-panel"
+      className="fixed bottom-20 left-1/2 z-40 w-[min(100vw-2rem,22rem)] -translate-x-1/2 rounded-2xl border border-nq-border/50 bg-nq-surface px-4 py-4 shadow-lg xl:bottom-6"
+    >
       <p className="mb-3 text-sm font-semibold text-nq-foreground">
         Cập nhật giá cho {selectedCount} dịch vụ
       </p>
       <div className="flex flex-col gap-2">
         {(["increase", "decrease", "set"] as BulkMode[]).map((m) => (
-          <label key={m} className="flex items-center gap-2 text-sm text-nq-foreground cursor-pointer">
+          <label
+            key={m}
+            className="flex min-h-11 cursor-pointer touch-manipulation items-center gap-3 rounded-xl px-2 text-sm text-nq-foreground hover:bg-nq-bg/70"
+          >
             <input
               type="radio"
               name="bulk-mode"
               value={m}
               checked={mode === m}
               onChange={() => setMode(m)}
-              className="accent-nq-primary"
+              className="h-5 w-5 accent-nq-primary"
             />
             {m === "increase" ? "Tăng $" : m === "decrease" ? "Giảm $" : "Đặt về $"}
           </label>
@@ -375,14 +384,14 @@ function BulkPricePanel({
           type="text"
           inputMode="decimal"
           placeholder="0.00"
-          className="mt-1 rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2 text-base outline-none focus-visible:border-nq-primary/75"
+          className="mt-1 min-h-11 rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2 text-base outline-none focus-visible:border-nq-primary/75"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
         />
         <div className="mt-1 flex gap-2">
           <button
             type="button"
-            className="flex-1 rounded-xl bg-nq-primary py-2 text-sm font-semibold text-white disabled:opacity-50"
+            className="min-h-11 flex-1 touch-manipulation rounded-xl bg-nq-primary px-4 text-sm font-semibold text-white disabled:opacity-50"
             disabled={centsFromDollarsString(amount) === null}
             onClick={() => {
               const cents = centsFromDollarsString(amount);
@@ -396,7 +405,7 @@ function BulkPricePanel({
           </button>
           <button
             type="button"
-            className="rounded-xl border border-nq-border/50 px-4 py-2 text-sm text-nq-muted"
+            className="min-h-11 touch-manipulation rounded-xl border border-nq-border/50 px-4 text-sm text-nq-muted"
             onClick={() => setOpen(false)}
           >
             Hủy
@@ -920,14 +929,14 @@ export function ServicesSetupPanel({
 
       {/* ── Undo delete toast ─────────────────────────────────────────────────── */}
       {undoPending && (
-        <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-nq-border/50 bg-nq-surface px-4 py-2.5 shadow-lg text-sm">
+        <div className="fixed bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-nq-border/50 bg-nq-surface px-4 py-2.5 shadow-lg text-sm xl:bottom-6">
           <span>
             {tLabels.removed} <strong>{undoPending.row.name}</strong>
           </span>
           <button
             type="button"
             onClick={handleUndoDelete}
-            className="font-semibold text-nq-primary"
+            className="min-h-11 touch-manipulation rounded-full px-3 font-semibold text-nq-primary"
           >
             ↺ {tLabels.undo}
           </button>

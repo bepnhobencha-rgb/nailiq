@@ -58,6 +58,8 @@ export const bookingEn = {
   noShowCardSaving: "Saving…",
   noShowCardSaved: "Card saved — you're only charged {fee} if you no-show.",
   noShowCardError: "Could not save the card. Please check your details.",
+  cardVerificationError:
+    "Card verification timed out or was not completed. Please try again, or open this page in Safari or Chrome.",
   cardWebviewHint:
     "Can't load the card form in this app's browser. Open this page in Safari or Chrome to finish — tap the ••• menu and choose \"Open in browser\", or copy the link below.",
   cardWebviewCopy: "Copy booking link",
@@ -209,12 +211,17 @@ export const bookingEn = {
   waitlistNotifyCta: "Notify me if a slot opens",
   waitlistSubmitting: "Saving…",
   waitlistJoined:
-    "You're on the list. We'll text you if something opens.",
+    "You're on the list. We'll email you if a matching spot opens.",
   waitlistError: "Couldn't save your request. Try again.",
+  waitlistEmailLabel: "Email *",
+  waitlistEmailHint:
+    "Required — we’ll email your secure 20-minute claim link here.",
+  waitlistEmailRequired:
+    "Please enter your email so we can notify you when a spot opens.",
   waitlistPreferredTimeLabel: "Preferred time (optional)",
   waitlistAnyTime: "Any time",
   waitlistInlineTitle: "Don't see the time you want?",
-  waitlistInlineSub: "Get notified the moment a matching spot opens up.",
+  waitlistInlineSub: "Get an email the moment a matching spot opens up.",
   waitlistInlineOpenCta: "Join the waitlist",
   /** Legacy banner copy when both fields are empty on Continue (prefer field-level bookingErrors.*). */
   contactRequiredError: "Please enter your name and phone.",

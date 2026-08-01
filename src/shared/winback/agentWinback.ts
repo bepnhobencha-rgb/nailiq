@@ -6,29 +6,29 @@ import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
 import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
-import { getLessons, findChannelLesson } from "@/shared/ai/lessons";
+import {
+  applyLearnedAgentCap,
+  findChannelLesson,
+  getLessons,
+} from "@/shared/ai/lessons";
 import { phoneRegion } from "@/shared/lib/phoneRegion";
+import { isAiAgentPermissionEnabled } from "@/shared/ai/agentPermissionFence";
+import {
+  collectUnreachablePhones,
+  selectWinbackCandidates,
+  WINBACK_UNREACHABLE_BACKOFF_DAYS,
+  type WinbackCandidate,
+} from "@/shared/winback/winbackCandidateSelection";
 
 /**
- * AI Win-back — find lapsed regulars and draft a warm, personalised "we miss
- * you" message for the owner to review (and later send). Same spine as the other
- * agents: gather (DB, salon-scoped via the winback_candidates RPC) → AI drafts →
- * guard → log to winback_suggestions. The AI only SUGGESTS; sending stays
- * owner-decided, so a wrong draft costs nothing.
+ * AI Win-back — find opted-in lapsed regulars, draft a warm personalized
+ * message, deliver it through the salon's enabled channel, and persist the
+ * result. Activation is owner-controlled and each run is capped and deduped.
  */
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
-const num = (v: unknown): number => (v == null ? 0 : Number(v));
 
-export type WinbackCandidate = {
-  phone: string;
-  name: string;
-  email: string | null;
-  visits: number;
-  lastVisit: string;
-  noShows: number;
-  usualService: string | null;
-};
+export type { WinbackCandidate };
 
 let client: Anthropic | null = null;
 function getClient(): Anthropic | null {
@@ -55,31 +55,56 @@ export async function gatherWinbackCandidates(
   const rows = (data ?? []) as Row[];
   if (rows.length === 0) return [];
 
+  const phones = [...new Set(rows.map((r) => str(r.client_phone)).filter(Boolean))];
+
   // Exclude phones suggested in the last 30 days (don't pester).
   const since = new Date(Date.now() - 30 * 864e5).toISOString();
-  const { data: recent } = await db
-    .from("winback_suggestions")
-    .select("client_phone")
-    .eq("salon_id", salonId)
-    .gte("created_at", since);
-  const suggested = new Set(((recent ?? []) as Row[]).map((r) => str(r.client_phone)));
+  // Exclude phones already found unreachable inside the backoff window, so an
+  // uncontactable customer is not re-evaluated and re-logged on every run.
+  const backoffSince = new Date(
+    Date.now() - WINBACK_UNREACHABLE_BACKOFF_DAYS * 864e5,
+  ).toISOString();
 
-  const out: WinbackCandidate[] = [];
-  for (const r of rows) {
-    const phone = str(r.client_phone);
-    if (suggested.has(phone)) continue;
-    out.push({
-      phone,
-      name: str(r.client_name) || "there",
-      email: str(r.client_email) || null,
-      visits: num(r.visits),
-      lastVisit: str(r.last_visit),
-      noShows: num(r.no_shows),
-      usualService: str(r.usual_service) || null,
-    });
-    if (out.length >= limit) break;
+  const [recentRes, skippedRes, profileRes] = await Promise.all([
+    db
+      .from("winback_suggestions")
+      .select("client_phone")
+      .eq("salon_id", salonId)
+      .gte("created_at", since),
+    db
+      .from("ai_actions_log")
+      .select("payload")
+      .eq("salon_id", salonId)
+      .eq("agent", "winback")
+      .eq("action_type", "skipped_no_channel")
+      .gte("created_at", backoffSince),
+    // Second source for the address: the RPC only reads bookings.client_email.
+    phones.length
+      ? db.from("client_profiles").select("phone, email").in("phone", phones)
+      : Promise.resolve({ data: [] as Row[] }),
+  ]);
+
+  const suggested = new Set(
+    ((recentRes.data ?? []) as Row[]).map((r) => str(r.client_phone)),
+  );
+  const unreachable = collectUnreachablePhones(
+    (skippedRes.data ?? []) as Array<{ payload?: unknown }>,
+  );
+  const profileEmailByPhone = new Map<string, string>();
+  for (const r of (profileRes.data ?? []) as Row[]) {
+    const phone = str(r.phone);
+    const email = str(r.email).trim();
+    if (phone && email && !profileEmailByPhone.has(phone)) {
+      profileEmailByPhone.set(phone, email);
+    }
   }
-  return out;
+
+  return selectWinbackCandidates(rows, {
+    suggestedPhones: suggested,
+    unreachablePhones: unreachable,
+    profileEmailByPhone,
+    limit,
+  });
 }
 
 /** ① AI BRAIN — draft a warm win-back message. Returns null on failure. */
@@ -180,16 +205,22 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
     const emailOutboundEnabled = s.email_outbound_enabled !== false; // default true
     const customerChannelMode = (str(s.customer_channel) || "smart") as CustomerChannelMode;
 
-    const candidates = await gatherWinbackCandidates(salonId, cap);
+    const [channelLessons, segmentLessons] = await Promise.all([
+      getLessons(salonId, "channel"),
+      getLessons(salonId, "segment"),
+    ]);
+    const effectiveCap = applyLearnedAgentCap(cap, segmentLessons, "winback");
+    const candidates = await gatherWinbackCandidates(salonId, effectiveCap);
     if (candidates.length === 0) return;
-
-    // Load channel lessons once per run (global + per-salon, cached 5 min).
-    const channelLessons = await getLessons(salonId, "channel");
 
     const svc = createServiceRoleClient();
     let sentCount = 0;
 
     for (const c of candidates) {
+      // A salon owner can revoke this agent while a multi-customer run is in
+      // progress. Re-read the permission before every external delivery.
+      if (!(await isAiAgentPermissionEnabled(salonId, "ai_winback"))) break;
+
       // Check DB lessons FIRST — lesson #1: US + unregistered A2P → prefer email.
       // This mirrors the code guardrail in channelResolver but reads from the DB
       // so the rule can be adjusted without a code deploy.
@@ -241,6 +272,8 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
       // Derive a single canonical channel for logging (prefer email to record deliverability).
       const channel: "sms" | "email" = ch.email ? "email" : "sms";
 
+      if (!(await isAiAgentPermissionEnabled(salonId, "ai_winback"))) break;
+
       // Send to customer first; only log if successful.
       let ok = false;
       if (ch.sms) {
@@ -281,7 +314,13 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
         agent: "winback",
         action_type: `sent_${channel}`,
         target_id: suggestionId,
-        payload: { name: c.name, channel, reason: ch.reason, message_preview: message.slice(0, 120) },
+        payload: {
+          name: c.name,
+          phone: c.phone,
+          channel,
+          reason: ch.reason,
+          message_preview: message.slice(0, 120),
+        },
         undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
       } as never);
     }
@@ -296,5 +335,6 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
     }
   } catch (e) {
     console.error("[runWinback]", e);
+    throw e;
   }
 }

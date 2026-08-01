@@ -26,16 +26,36 @@ export type LogErrorInput = {
   context?: Record<string, unknown> | null;
 };
 
-/** Normalize a message so near-identical errors share one fingerprint:
- *  strip UUIDs, long hex, and bare numbers (ids/timestamps) → grouping key. */
-function fingerprint(level: string, surface: string, message: string): string {
+/**
+ * Normalize a message so near-identical errors on the same route share one
+ * fingerprint. The route is load-bearing: grouping a React runtime error from
+ * `/choose-salon` with the same minified message from `/dashboard/.../center`
+ * leaves the row's original route paired with the latest occurrence's context,
+ * which sends operators and AI remediation to the wrong component.
+ */
+function fingerprint(
+  level: string,
+  surface: string,
+  route: string,
+  message: string,
+): string {
+  // React's production invariant number is the only stable diagnosis carried
+  // by a minified error. Keep it outside the variable-number normalization so
+  // #310 (hook ordering) can never be grouped with #418 (hydration) merely
+  // because both happened on the same route.
+  const reactInvariant =
+    message.match(/\bminified react error #(\d{1,6})\b/i)?.[1] ?? "";
   const norm = message
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "<uuid>")
     .replace(/0x[0-9a-f]+/gi, "<hex>")
     .replace(/\d+/g, "<n>")
     .trim()
     .slice(0, 300);
-  return createHash("sha1").update(`${level}|${surface}|${norm}`).digest("hex").slice(0, 16);
+  const routeKey = route.trim().slice(0, 300);
+  return createHash("sha1")
+    .update(`${level}|${surface}|${routeKey}|react:${reactInvariant}|${norm}`)
+    .digest("hex")
+    .slice(0, 16);
 }
 
 // E2E / test / demo salons hit the same routes (slugs like `e2e-rc-desktop-…`,
@@ -54,7 +74,8 @@ export async function logError(input: LogErrorInput): Promise<void> {
     if (!message) return;
     const level: ErrorLevel = input.level ?? "error";
     const surface = (input.surface ?? "").toString().slice(0, 60) || null;
-    const fp = fingerprint(level, surface ?? "", message);
+    const route = input.route ? String(input.route).slice(0, 300) : null;
+    const fp = fingerprint(level, surface ?? "", route ?? "", message);
 
     const db = createServiceRoleClient();
     await db.rpc("log_error", {
@@ -62,7 +83,7 @@ export async function logError(input: LogErrorInput): Promise<void> {
       p_level: level,
       p_message: message,
       p_surface: surface,
-      p_route: input.route ? String(input.route).slice(0, 300) : null,
+      p_route: route,
       p_salon_id: input.salonId ?? null,
       p_user_id: input.userId ?? null,
       p_stack: input.stack ? String(input.stack).slice(0, 8000) : null,

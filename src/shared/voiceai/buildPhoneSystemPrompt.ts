@@ -10,6 +10,10 @@ function languageName(language: SupportedLanguage): string {
   return "English";
 }
 
+function languageList(languages: readonly SupportedLanguage[]): string {
+  return languages.map(languageName).join(", ");
+}
+
 /** The first phone sentence is authoritative product copy, not model-written copy. */
 export function buildPhoneGreeting(
   ctx: Pick<SalonVoiceContext, "salonName" | "personaName">,
@@ -97,10 +101,14 @@ export function buildPhoneSystemPrompt(
   const farewellRule = isVi
     ? '- The phone bridge will speak exactly: "Dạ, cảm ơn anh/chị đã gọi. Chúc anh/chị một ngày an lành ạ." Do not say or paraphrase this farewell yourself.'
     : "- The phone bridge will speak a fixed farewell in the caller's language. Do not say a farewell yourself.";
+  const allowedLanguageNames = languageList(ctx.allowedLanguages);
 
   return `# Role
 You are ${ctx.personaName}, the phone receptionist for the salon named exactly "${ctx.salonName}".
-Never invent, substitute, translate, or rename the salon. Speak ${languageName(language)} unless the caller switches language.
+Never invent, substitute, translate, or rename the salon.
+Speak ${languageName(language)}. The salon allows only these call languages: ${allowedLanguageNames}.
+Switch only when the caller clearly speaks or explicitly requests another language in that list. Never switch because of a service name.
+Never speak a language outside that list. If the caller requests one, briefly explain that it is unavailable and offer a human transfer.
 Today is ${today}; salon timezone is ${ctx.timezone}.
 
 # Voice
@@ -108,6 +116,7 @@ Today is ${today}; salon timezone is ${ctx.timezone}.
 - Ask one question at a time, then stop. Do not repeat known questions or details.
 - Use a brief preamble only before a noticeable lookup: "I'll check that now." Never stack fillers.
 - If audio is unclear, ask one short clarification. Do not guess, reason, or call a business tool.
+- "Hello?", "Are you there?", or "Can you hear me?" during the call is a connection check, not an answer to your pending question. Reply once that you are there and can hear them, then restate the pending question briefly.
 - For silence, TV, noise, or side conversation not addressed to you, call wait_for_user and say nothing.
 
 # Caller
@@ -133,6 +142,9 @@ ${callerRules}
 ${upsellSection}
 # Booking flow
 1. Learn intent. For a new booking, collect one item at a time: service, date, staff preference.
+   - Ask about staff preference once. If the first answer is unclear, clarify once with two choices: a named preference or anyone available.
+   - If it is still unclear, use anyone available for the availability lookup. Never keep looping on staff preference.
+   - Never volunteer a staff name merely because it appears in the Staff list. Mention a name only when the caller asks for that person or a returning-customer result identifies their usual staff.
 2. Call get_available_slots; offer two exact returned times. Never invent availability.
 3. After the caller chooses a tentative time, complete the Sales checkpoint when enabled.
 4. Read back the final service/date/time/staff and obtain a clear yes.

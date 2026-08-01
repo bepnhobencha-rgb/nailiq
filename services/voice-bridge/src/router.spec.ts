@@ -34,6 +34,7 @@ import {
   createResponseCoordinator,
   extractResponseId,
   detectLanguageRequest,
+  normalizeAllowedLangs,
   languageAckResponseCreate,
   resolveSwitchLanguage,
   extractAudioDelta,
@@ -48,6 +49,7 @@ import {
   voiceToolMaxAttempts,
   isSilentTransportTool,
   callerPresenceLabel,
+  voiceSessionStatusForClose,
 } from "./router";
 
 // ── helpers for reading coordinator output ──────────────────────────────────
@@ -154,6 +156,29 @@ describe("voice-bridge router — Twilio ↔ OpenAI Realtime translation", () =>
     expect(callerPresenceLabel("+16045551234")).toBe("present");
     expect(callerPresenceLabel("")).toBe("missing");
     expect(callerPresenceLabel("+16045551234")).not.toContain("1234");
+  });
+
+  it("distinguishes a graceful close, human handoff, caller hangup, and bridge failure", () => {
+    expect(voiceSessionStatusForClose({
+      reason: "farewell_fully_played",
+      endCallRequested: true,
+      transportHandoffStarted: false,
+    })).toBe("completed");
+    expect(voiceSessionStatusForClose({
+      reason: "twilio_stop",
+      endCallRequested: false,
+      transportHandoffStarted: true,
+    })).toBe("completed");
+    expect(voiceSessionStatusForClose({
+      reason: "twilio_stop",
+      endCallRequested: false,
+      transportHandoffStarted: false,
+    })).toBe("abandoned");
+    expect(voiceSessionStatusForClose({
+      reason: "openai_ws_error",
+      endCallRequested: false,
+      transportHandoffStarted: false,
+    })).toBe("failed");
   });
 
   it("mark frame round-trips: send a named mark, recognise its Twilio echo (playback-aware hangup)", () => {
@@ -402,7 +427,34 @@ describe("router — language request beats spoken-language detection", () => {
     expect(resolveSwitchLanguage("Can we continue in Spanish?", "en")).toBe("es");
     expect(resolveSwitchLanguage("in english please", "en")).toBeNull();
     expect(resolveSwitchLanguage("mình muốn đặt lịch", "en")).toBe("vi");
+    expect(resolveSwitchLanguage(
+      "Bonjour, je voudrais prendre un rendez-vous pour une manucure",
+      "en",
+    )).toBe("fr");
+    expect(resolveSwitchLanguage(
+      "Je voudrais réserver une pédicure demain",
+      "fr",
+    )).toBeNull();
     expect(resolveSwitchLanguage("yes okay", "en")).toBeNull();
+  });
+
+  it("keeps an English service request in English", () => {
+    expect(resolveSwitchLanguage("booking a pedicure.", "en")).toBeNull();
+  });
+
+  it("never switches outside the salon's configured language allowlist", () => {
+    expect(resolveSwitchLanguage("Please switch to French", "en", ["en"])).toBeNull();
+    expect(resolveSwitchLanguage(
+      "Bonjour, je voudrais prendre un rendez-vous",
+      "en",
+      ["en"],
+    )).toBeNull();
+    expect(resolveSwitchLanguage("Can we continue in French?", "en", ["en", "fr"])).toBe("fr");
+  });
+
+  it("normalizes the phone-config language allowlist defensively", () => {
+    expect(normalizeAllowedLangs(["en", "fr", "en", "de"])).toEqual(["en", "fr"]);
+    expect(normalizeAllowedLangs(null)).toEqual(["vi", "en", "es", "fr", "zh"]);
   });
 });
 

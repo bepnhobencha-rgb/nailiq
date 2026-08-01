@@ -16,6 +16,7 @@ import {
   gotoBookingServiceStep,
   seedTestSalon,
 } from "../helpers/db";
+import { waitForReceptionistHydration } from "../helpers/receptionistHydration";
 
 const A11Y_SLUG = "e2e-a11y-salon";
 const DEMO_COOKIE = "nailiq-demo-slug";
@@ -181,7 +182,10 @@ test.describe("Accessibility", () => {
         { name: DEMO_COOKIE, value: A11Y_SLUG, url: origin },
       ]);
       await page.goto(`/dashboard/${A11Y_SLUG}/center`);
-      await page.waitForLoadState("networkidle");
+      await expect(
+        page.getByTestId("receptionist-center-loaded"),
+      ).toBeVisible();
+      await waitForReceptionistHydration(page, A11Y_SLUG);
       await runAxe(page, "dashboard center");
       await assertImagesHaveAlt(page, "dashboard center");
       await assertInputsHaveLabels(page, "dashboard center");

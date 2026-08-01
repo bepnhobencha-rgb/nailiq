@@ -21,7 +21,15 @@ const SHOWN_EVENTS = ["create", "reschedule", "cancel"] as const;
  * Admin Settings card — per-salon defaults for the "notify the customer?" step
  * on staff create / reschedule / cancel. Self-contained: loads, edits, saves.
  */
-export function StaffNotificationCard({ slug }: { slug: string }) {
+export function StaffNotificationCard({
+  slug,
+  smsOutboundEnabled,
+  emailOutboundEnabled,
+}: {
+  slug: string;
+  smsOutboundEnabled: boolean;
+  emailOutboundEnabled: boolean;
+}) {
   const { language } = useUserLanguage();
   const t = getUserMessages(language).salonSettings.staffNotifications;
 
@@ -48,8 +56,15 @@ export function StaffNotificationCard({ slug }: { slug: string }) {
 
   function onSave() {
     setToast(null);
+    const sanitizedSettings: StaffNotificationSettings = {
+      ...settings,
+      channels: {
+        sms: smsOutboundEnabled && settings.channels.sms,
+        email: emailOutboundEnabled && settings.channels.email,
+      },
+    };
     startSave(async () => {
-      const r = await saveStaffNotificationSettings(slug, settings);
+      const r = await saveStaffNotificationSettings(slug, sanitizedSettings);
       if (r.ok) {
         setSettings(r.settings);
         setToast({ kind: "ok", msg: t.saved });
@@ -94,12 +109,21 @@ export function StaffNotificationCard({ slug }: { slug: string }) {
                 <p className="text-xs font-semibold uppercase tracking-wide text-nq-muted">
                   {t.channelsHeading}
                 </p>
-                {(["sms", "email"] as const).map((ch) => (
-                  <label key={ch} className="flex cursor-pointer items-center gap-3">
+                {(["sms", "email"] as const).map((ch) => {
+                  const available =
+                    ch === "sms" ? smsOutboundEnabled : emailOutboundEnabled;
+                  return (
+                  <label
+                    key={ch}
+                    className={`flex items-center gap-3 ${
+                      available ? "cursor-pointer" : "cursor-not-allowed opacity-60"
+                    }`}
+                  >
                     <input
                       type="checkbox"
                       data-testid={`staff-notif-channel-${ch}`}
-                      checked={settings.channels[ch]}
+                      checked={available && settings.channels[ch]}
+                      disabled={!available}
                       onChange={(e) =>
                         setSettings((s) => ({
                           ...s,
@@ -110,9 +134,15 @@ export function StaffNotificationCard({ slug }: { slug: string }) {
                     />
                     <span className="text-sm text-nq-foreground">
                       {ch === "sms" ? t.smsLabel : t.emailLabel}
+                      {!available
+                        ? language === "vi"
+                          ? " · đang tắt ở Kênh liên lạc với khách"
+                          : " · disabled in Customer communication"
+                        : ""}
                     </span>
                   </label>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Per-event defaults */}

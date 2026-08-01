@@ -172,6 +172,8 @@ jobs:
             name: "non-RC tests"
             testpath: >-
               e2e/accessibility
+              e2e/ai-agent-activation.spec.ts
+              e2e/ai-control-freshness.spec.ts
               e2e/booking-conflict.spec.ts
               e2e/booking-errors.spec.ts
               e2e/booking-otp.spec.ts
@@ -179,6 +181,7 @@ jobs:
               e2e/booking-validation.spec.ts
               e2e/booking.spec.ts
               e2e/content
+              e2e/client-identity-merge.spec.ts
               e2e/dashboard.spec.ts
               e2e/group-booking
               e2e/landing-funnel.spec.ts
@@ -359,6 +362,10 @@ jobs:
           INTERNAL_SECRET="$(openssl rand -hex 24)"
           echo "::add-mask::${INTERNAL_SECRET}"
           echo "INTERNAL_API_SECRET=${INTERNAL_SECRET}" >> "$GITHUB_ENV"
+          # The approval-to-effect spec invokes only the internal audit-note
+          # executor. Give this throwaway app/database pair a per-run cron
+          # credential so the test exercises the real authenticated route.
+          echo "CRON_SECRET=${INTERNAL_SECRET}" >> "$GITHUB_ENV"
 
           echo "→ target: ${API_URL}"
           NEXT_PUBLIC_SUPABASE_URL="${API_URL}" \
@@ -441,6 +448,18 @@ jobs:
         run: npx playwright test ${{ matrix.testpath }} ${{ steps.projects.outputs.flag }} --reporter=list,html,json
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
+      - name: Run Reports hydration regression in WebKit
+        if: >-
+          always() &&
+          steps.preflight.outputs.configured == 'true' &&
+          matrix.shard == 1 &&
+          github.event_name == 'pull_request'
+        # PRs normally run Chromium only for speed. Reports previously passed
+        # that gate but crashed in production WebKit during App Router
+        # hydration, so this affected flow carries an explicit second engine.
+        run: >-
+          npx playwright test e2e/client-identity-merge.spec.ts
+          --project=mobile --reporter=list
       - name: Next server log (the app's side of a failed test)
         # A Playwright failure tells you what the BROWSER saw. When the page says
         # "Could not complete booking. Please try again.", that is the app's
@@ -488,9 +507,12 @@ jobs:
     name: Visual Regression
     runs-on: ubuntu-latest
     needs: i18n-check
-    # Visual baselines drift across OS/browser versions, so we only run
-    # them on push-to-main where the baseline-update flag is meaningful.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Run against the same Ubuntu/browser setup before merge as well as on
+    # main. Waiting until push-to-main let a deterministic clock regression
+    # pass every PR check and only turn the release branch red afterward.
+    # Snapshot refresh remains opt-in through the main commit message below;
+    # PRs can compare baselines but cannot silently rewrite them.
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     timeout-minutes: 30
     permissions:
       contents: write

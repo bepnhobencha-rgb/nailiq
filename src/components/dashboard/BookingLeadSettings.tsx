@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useImmediateSettingSave } from "@/components/dashboard/useImmediateSettingSave";
+import { Button } from "@/components/ui/Button";
 import { updateBookingLeadMinutes } from "@/shared/dashboard/salonOwnerActions";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
@@ -19,17 +20,20 @@ const PRESETS = [0, 15, 30, 60, 120] as const;
 export function BookingLeadSettings({ slug, initialMinutes }: Props) {
   const { language } = useUserLanguage();
   const vi = language === "vi";
-  const [minutes, setMinutes] = useState(initialMinutes);
-  const [pending, startTransition] = useTransition();
-
-  function change(next: number) {
-    const prev = minutes;
-    setMinutes(next);
-    startTransition(async () => {
+  const {
+    value: minutes,
+    status,
+    isSaving,
+    change,
+  } = useImmediateSettingSave({
+    initialValue: initialMinutes,
+    save: async (next) => {
       const res = await updateBookingLeadMinutes(slug, next);
-      if (!res.ok) setMinutes(prev); // revert on failure
-    });
-  }
+      return res.ok
+        ? { ok: true, value: res.minutes }
+        : { ok: false };
+    },
+  });
 
   const label = (m: number) =>
     m === 0
@@ -55,22 +59,47 @@ export function BookingLeadSettings({ slug, initialMinutes }: Props) {
         {PRESETS.map((m) => {
           const on = minutes === m;
           return (
-            <button
+            <Button
               key={m}
-              type="button"
-              disabled={pending}
+              variant={on ? "primary" : "secondary"}
+              size="md"
+              aria-pressed={on}
+              disabled={isSaving}
               onClick={() => change(m)}
-              className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
-                on
-                  ? "border-nq-primary bg-nq-primary/15 text-nq-primary"
-                  : "border-nq-border/40 text-nq-muted hover:border-nq-primary/40"
-              }`}
             >
               {label(m)}
-            </button>
+            </Button>
           );
         })}
       </div>
+      <p
+        data-testid="settings-booking-lead-save-status"
+        className={`mt-3 min-h-5 text-sm ${
+          status === "error"
+            ? "text-nq-error"
+            : status === "saved"
+              ? "text-nq-success"
+              : "text-nq-muted"
+        }`}
+        role="status"
+        aria-live="polite"
+      >
+        {status === "saving"
+          ? vi
+            ? "Đang lưu…"
+            : "Saving…"
+          : status === "saved"
+            ? vi
+              ? "✓ Đã lưu"
+              : "✓ Saved"
+            : status === "error"
+              ? vi
+                ? "Không thể lưu. Chọn lại để thử lại."
+                : "Could not save. Select again to retry."
+              : vi
+                ? "Tự động lưu khi bạn chọn."
+                : "Saves automatically when selected."}
+      </p>
     </section>
   );
 }

@@ -20,6 +20,7 @@ export type MinhLesson = {
 export async function getLessons(
   salonId: string,
   scope: string,
+  options: { throwOnError?: boolean } = {},
 ): Promise<MinhLesson[]> {
   const fetcher = async () => {
     const db = createServiceRoleClient();
@@ -31,6 +32,9 @@ export async function getLessons(
       .or(`salon_id.is.null,salon_id.eq.${salonId}` as never)
       .order("confidence" as never, { ascending: false });
     if (error) {
+      if (options.throwOnError) {
+        throw new Error("minh_lessons_read_failed", { cause: error });
+      }
       console.error("[getLessons]", error);
       return [] as MinhLesson[];
     }
@@ -46,10 +50,15 @@ export async function getLessons(
   };
 
   // Cache per salon+scope, 5 min
-  const cached = unstable_cache(fetcher, [`minh_lessons_${salonId}_${scope}`], {
-    tags: [`minh_lessons:${salonId}`, "minh_lessons:global"],
-    revalidate: 300,
-  });
+  const errorMode = options.throwOnError ? "strict" : "tolerant";
+  const cached = unstable_cache(
+    fetcher,
+    [`minh_lessons_${salonId}_${scope}_${errorMode}`],
+    {
+      tags: [`minh_lessons:${salonId}`, "minh_lessons:global"],
+      revalidate: 300,
+    },
+  );
   return cached();
 }
 
@@ -72,4 +81,72 @@ export function findChannelLesson(
     if (matchCountry && matchA2p && l.rule.startsWith("prefer_email")) return l;
   }
   return null;
+}
+
+const CAP_MULTIPLIER_PREFIX = "cap_multiplier:";
+
+/**
+ * Apply the most conservative active outcome lesson for one agent.
+ *
+ * Learned caps may only reduce an existing code cap, never raise it or pause an
+ * agent completely. That keeps outcome adaptation inside the already-approved
+ * operational envelope while avoiding a single noisy sample shutting work off.
+ */
+export function applyLearnedAgentCap(
+  baseCap: number,
+  lessons: MinhLesson[],
+  agent: string,
+): number {
+  const safeBase = Math.max(1, Math.floor(baseCap));
+  let multiplier = 1;
+
+  for (const lesson of lessons) {
+    if (lesson.scope !== "segment" || lesson.condition.agent !== agent) continue;
+    if (!lesson.rule.startsWith(CAP_MULTIPLIER_PREFIX)) continue;
+    const parsed = Number(lesson.rule.slice(CAP_MULTIPLIER_PREFIX.length));
+    if (!Number.isFinite(parsed)) continue;
+    // Automatic adaptation is deliberately bounded to 25-100% of the cap.
+    multiplier = Math.min(multiplier, Math.max(0.25, Math.min(1, parsed)));
+  }
+
+  return Math.max(1, Math.floor(safeBase * multiplier));
+}
+
+export type ProposalCooldown = {
+  lessonId: string;
+  suppressUntil: string;
+};
+
+/** Find a still-active owner preference cooldown for one proposal workflow. */
+export function findProposalCooldown(
+  lessons: MinhLesson[],
+  context: { actionType: string; proposalSource: string; now?: Date },
+): ProposalCooldown | null {
+  const nowMs = (context.now ?? new Date()).getTime();
+  let latest: ProposalCooldown | null = null;
+
+  for (const lesson of lessons) {
+    if (lesson.scope !== "policy" || lesson.rule !== "proposal_cooldown") {
+      continue;
+    }
+    const condition = lesson.condition;
+    if (condition.action_type !== context.actionType) continue;
+    if (
+      condition.proposal_source &&
+      condition.proposal_source !== context.proposalSource
+    ) {
+      continue;
+    }
+    const suppressUntil = String(condition.suppress_until ?? "");
+    const suppressUntilMs = new Date(suppressUntil).getTime();
+    if (!Number.isFinite(suppressUntilMs) || suppressUntilMs <= nowMs) continue;
+    if (
+      !latest ||
+      suppressUntilMs > new Date(latest.suppressUntil).getTime()
+    ) {
+      latest = { lessonId: lesson.id, suppressUntil };
+    }
+  }
+
+  return latest;
 }

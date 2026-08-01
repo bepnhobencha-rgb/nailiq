@@ -41,7 +41,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
 
 import Link from "next/link";
@@ -122,6 +121,7 @@ import {
   checkBookingConflict,
   type ConflictCheckBooking,
 } from "@/shared/lib/conflictCheck";
+import { buildMinimumServiceMinutesByStaff } from "@/shared/booking/gridCreateAvailability";
 import { cn } from "@/shared/lib/cn";
 import { displayCustomerName } from "@/shared/lib/customerDisplayName";
 import { cleanPhone, formatPhone } from "@/shared/lib/phoneFormat";
@@ -194,6 +194,13 @@ const AppleDeskHeader = dynamic(
     import("./AppleDeskHeader").then((module) => module.AppleDeskHeader),
   { ssr: false },
 );
+const HeaderCustomerSearch = dynamic(
+  () =>
+    import("./AppleDeskHeader").then(
+      (module) => module.HeaderCustomerSearch,
+    ),
+  { ssr: false },
+);
 const AppleCommandBar = dynamic(
   () =>
     import("./AppleCommandBar").then((module) => module.AppleCommandBar),
@@ -211,16 +218,6 @@ const ReceptionistPreviewThemePicker = dynamic(
     ),
   { ssr: false },
 );
-
-// Values that only exist on the client. Read through useSyncExternalStore so
-// the server render and the first client render agree (no hydration mismatch)
-// and React swaps the real value in once hydration completes — no effect
-// writing state back on mount.
-const noopSubscribe = () => () => {};
-const getHydratedSnapshot = () => true;
-const getServerFalseSnapshot = () => false;
-const getWindowOrigin = () => window.location.origin;
-const getServerEmptySnapshot = () => "";
 
 export type ReceptionistCenterProps = {
   slug: string;
@@ -439,13 +436,10 @@ function ReceptionistCenterInner({
     };
   }, [drcBg]);
 
-  // Empty-string initial value so SSR and client hydration produce the same
-  // output (same pattern as `originBaseUrl` below). Initialising with
-  // `new Date().toISOString()` makes the server-render timestamp differ from
-  // the client hydration timestamp → React #418 mismatch on overdue overlays,
-  // today-badge, and the now-line. After mount the useEffect sets the real time
-  // immediately, then ticks every minute as before.
-  const [nowIso, setNowIso] = useState<string>("");
+  // Use the loader's server-owned clock snapshot for both SSR and the first
+  // client render. An empty value followed by an immediate effect update can
+  // race streamed/selective hydration in time-dependent descendants.
+  const [nowIso, setNowIso] = useState<string>(initialOk.observedAtIso);
   const nowIsoRef = useRef(nowIso);
   /* Sync ref via effect (not during render) so reloadCurrentDay's callback
      can read the latest value without including nowIso in its deps. */
@@ -455,7 +449,6 @@ function ReceptionistCenterInner({
 
   useEffect(() => {
     const update = () => setNowIso(new Date().toISOString());
-    update(); // Populate immediately after hydration — then tick every minute.
     const tick = window.setInterval(update, 60_000);
     return () => window.clearInterval(tick);
   }, []);
@@ -469,6 +462,24 @@ function ReceptionistCenterInner({
     selectedDate: initialOk.selectedDate,
     dashboardModules: initialOk.dashboardModules,
   }));
+
+  const minimumServiceMinutesByStaff = useMemo(
+    () =>
+      buildMinimumServiceMinutesByStaff({
+        staffIds: data.staff.map((staff) => staff.id),
+        services: data.services.map((service) => ({
+          id: service.id,
+          durationMinutes: service.duration_minutes,
+          isAddon: service.is_addon === true,
+        })),
+        capabilityRows:
+          data.capabilityRows?.map((row) => ({
+            staffId: row.staff_id,
+            serviceId: row.service_id,
+          })) ?? null,
+      }),
+    [data.staff, data.services, data.capabilityRows],
+  );
 
   // Wall-clock of the last successful server sync (initial SSR load, then
   // every fresh refetch). Surfaced in the disconnect banner as "last updated";
@@ -485,7 +496,19 @@ function ReceptionistCenterInner({
     viewedYmdRef.current = data.selectedDate;
   }, [data.selectedDate]);
 
+  // `data` is already initialized from this exact server observation. Do not
+  // redundantly replace the parent state on mount: an immediate parent update
+  // can race streamed hydration in time-dependent descendants. A later
+  // router.refresh() carries a new observation timestamp and is still adopted.
+  const adoptedServerObservationIsoRef = useRef(initialOk.observedAtIso);
   useEffect(() => {
+    if (
+      initialOk.observedAtIso === adoptedServerObservationIsoRef.current
+    ) {
+      return;
+    }
+    adoptedServerObservationIsoRef.current = initialOk.observedAtIso;
+
     // Only adopt server-provided data when it's for the day the user is viewing.
     // A revalidatePath() / router.refresh() re-runs the loader for its DEFAULT
     // day (today); without this guard it would yank the grid back to today after
@@ -498,19 +521,14 @@ function ReceptionistCenterInner({
   }, [initialOk]);
 
   const [dateOffset, setDateOffset] = useState<-1 | 0 | 1>(0);
-  const {
-    receptionistInterface,
-    setReceptionistInterface,
-    hydrated: interfaceHydrated,
-  } = useReceptionistInterface();
-  const previewInterface =
-    interfaceHydrated && receptionistInterface === "preview";
+  const { receptionistInterface, setReceptionistInterface } =
+    useReceptionistInterface();
+  const previewInterface = receptionistInterface === "preview";
 
   // Publish the opt-in mode to the dashboard shell so New can use the full
   // canvas shown in the approved mockup. Removing/switching back restores the
   // Classic shell immediately; no data or salon preference is changed here.
   useEffect(() => {
-    if (!interfaceHydrated) return;
     if (previewInterface) {
       document.documentElement.dataset.receptionistInterfaceMode = "preview";
       document.documentElement.style.setProperty(
@@ -525,7 +543,7 @@ function ReceptionistCenterInner({
       delete document.documentElement.dataset.receptionistInterfaceMode;
       document.documentElement.style.removeProperty("--rc-new-canvas");
     };
-  }, [interfaceHydrated, newInterfaceBg, previewInterface]);
+  }, [newInterfaceBg, previewInterface]);
 
   // Detect mobile viewport for the VerticalDayView swap (< 640 px).
   // Defaults false (server + first render → desktop grid); effect flips it
@@ -587,16 +605,22 @@ function ReceptionistCenterInner({
   // Week-view anchor (Monday of the visible week). Derived initially from
   // today's salon date so first paint shows the current week.
   const initialMondayYmd = useMemo(
-    () => mondayYmdOf(salonToday(initialOk.salon.timezone)),
-    [initialOk.salon.timezone],
+    () =>
+      mondayYmdOf(
+        salonToday(initialOk.salon.timezone, initialOk.observedAtIso),
+      ),
+    [initialOk.observedAtIso, initialOk.salon.timezone],
   );
   const [weekMondayYmd, setWeekMondayYmd] = useState(initialMondayYmd);
 
   // Month-view anchor (YYYY-MM-01 of the visible month). Starts on the
   // current month so first paint is always the present month.
   const initialMonthFirstYmd = useMemo(
-    () => firstOfMonth(salonToday(initialOk.salon.timezone)),
-    [initialOk.salon.timezone],
+    () =>
+      firstOfMonth(
+        salonToday(initialOk.salon.timezone, initialOk.observedAtIso),
+      ),
+    [initialOk.observedAtIso, initialOk.salon.timezone],
   );
   const [monthFirstYmd, setMonthFirstYmd] = useState(initialMonthFirstYmd);
 
@@ -694,14 +718,21 @@ function ReceptionistCenterInner({
     }
   }, [urlBookingParam, data.bookingsForDay, openBookingDrawer]);
 
-  // E2E hydration signal: renders only after the first client-side effect,
-  // confirming React has fully hydrated and all event handlers are registered.
-  // Used by gotoReceptionistCenter in e2e/receptionist-center/helpers.ts.
-  const rcHydrated = useSyncExternalStore(
-    noopSubscribe,
-    getHydratedSnapshot,
-    getServerFalseSnapshot,
-  );
+  // E2E interaction gate. Keep the signal outside React's rendered tree:
+  // inserting a client-only marker here can update this streamed parent while
+  // lower Suspense descendants are still hydrating and trigger React #418.
+  // The window value is test observability only and causes no product render.
+  useEffect(() => {
+    const hydrationWindow = window as typeof window & {
+      __NAILIQ_RECEPTIONIST_HYDRATED__?: string;
+    };
+    hydrationWindow.__NAILIQ_RECEPTIONIST_HYDRATED__ = slug;
+    return () => {
+      if (hydrationWindow.__NAILIQ_RECEPTIONIST_HYDRATED__ === slug) {
+        delete hydrationWindow.__NAILIQ_RECEPTIONIST_HYDRATED__;
+      }
+    };
+  }, [slug]);
 
   const [undoState, setUndoState] = useState<UndoToastState | null>(null);
   const undoTimerRef = useRef<number | null>(null);
@@ -728,6 +759,21 @@ function ReceptionistCenterInner({
     },
     [],
   );
+
+  // Positive confirmation for the desk's highest-frequency status mutation.
+  // The drawer closes after Start/Complete, so without this message the
+  // receptionist has to infer success from the schedule repaint.
+  const [statusSuccessMessage, setStatusSuccessMessage] = useState<
+    string | null
+  >(null);
+  useEffect(() => {
+    if (!statusSuccessMessage) return;
+    const timer = window.setTimeout(
+      () => setStatusSuccessMessage(null),
+      4500,
+    );
+    return () => window.clearTimeout(timer);
+  }, [statusSuccessMessage]);
 
   // Bumped on every booking mutation (via reloadCurrentDay, which every
   // mutation + realtime change funnels through). Week/Month views include it
@@ -818,17 +864,6 @@ function ReceptionistCenterInner({
     useState<ConnectionState>("connected");
   const isOffline = connectionState !== "connected";
 
-  // Origin for guest wait-link buttons. Read AFTER mount (not during render):
-  // deriving it from `window.location.origin` inline made the server render ""
-  // (button hidden) while the client rendered the origin (button shown),
-  // throwing a React #418 hydration mismatch on any queued walk-in. Empty on
-  // the server + first client render (match), populated on mount.
-  const originBaseUrl = useSyncExternalStore(
-    noopSubscribe,
-    getWindowOrigin,
-    getServerEmptySnapshot,
-  );
-
   // Sound alerts (Web Audio, generated tones only). Hook is a no-op
   // when `dashboard_modules.sound_alerts` is off; honors browser
   // autoplay policy via lazy AudioContext + first-gesture unlock.
@@ -892,11 +927,13 @@ function ReceptionistCenterInner({
           addon_count: b.addons?.length ?? 0,
           no_show_count: b.client_no_show_count ?? 0,
           no_show_risk_score: b.no_show_risk_score ?? null,
+          no_show_candidate_at: b.no_show_candidate_at ?? null,
           buffer_minutes: b.service_buffer_minutes,
           noshow_card_id: b.noshow_card_id ?? null,
           noshow_fee_cents: b.noshow_fee_cents ?? null,
           noshow_charge_status: b.noshow_charge_status ?? null,
           resource_name: b.resource_name ?? null,
+          after_hours_minutes: b.after_hours_minutes ?? null,
         },
       ];
     });
@@ -1248,15 +1285,33 @@ function ReceptionistCenterInner({
     // dateOffset (which only spans yesterday/today/tomorrow, so a date-picked
     // day or any offset drift would reload the wrong day, snapping to today).
     const ymd = viewedYmdRef.current;
-    const res = await loadReceptionistCenterDataAction(slug, ymd);
-    if (res.ok) {
-      setData(res.data);
-      markSynced();
-    } else {
-      setShakeMessage(loadErrorCopy(messages.receptionist, res.error));
+    try {
+      const res = await loadReceptionistCenterDataAction(slug, ymd);
+      if (res.ok) {
+        setData(res.data);
+        markSynced();
+      } else {
+        setShakeMessage(loadErrorCopy(messages.receptionist, res.error));
+      }
+      // Keep Week/Month views in sync with this mutation (QA #5).
+      setCalendarRefreshNonce((n) => n + 1);
+    } catch (error) {
+      // Mobile Safari reports a transient Server Action transport failure as
+      // the opaque TypeError "Load failed". Realtime can invoke this callback
+      // several times in one tick, so an uncaught rejection creates duplicate
+      // alerts and can destabilize the board. Preserve the last good snapshot.
+      setConnectionState("offline");
+      setShakeMessage(
+        loadErrorCopy(messages.receptionist, "server_error"),
+      );
+      Sentry.captureException(error, {
+        tags: {
+          "nailiq.surface": "receptionist_center",
+          "nailiq.event": "reload_current_day_failed",
+        },
+        extra: { slug, dateYmd: ymd },
+      });
     }
-    // Keep Week/Month views in sync with this mutation (QA #5).
-    setCalendarRefreshNonce((n) => n + 1);
   }, [slug, messages.receptionist, markSynced]);
 
   /**
@@ -1485,7 +1540,19 @@ function ReceptionistCenterInner({
         authSubscription.unsubscribe();
         void supabase.removeChannel(ch);
       };
-    })();
+    })().catch((error) => {
+      if (!cancelled) {
+        setConnectionState("offline");
+        Sentry.captureException(error, {
+          tags: {
+            "nailiq.surface": "receptionist_center",
+            "nailiq.event": "realtime_setup_failed",
+          },
+          extra: { salonId: data.salon.id },
+        });
+      }
+      return undefined;
+    });
 
     return () => {
       cancelled = true;
@@ -1992,6 +2059,20 @@ function ReceptionistCenterInner({
         );
         return;
       }
+      const successTemplate =
+        (nextStatus === "completed"
+          ? rcMessages.auditLog.statusTransitions.in_progress_to_completed
+          : rcMessages.auditLog.statusTransitions.confirmed_to_in_progress) ??
+        (nextStatus === "completed"
+          ? language === "vi"
+            ? "Hoàn thành dịch vụ cho {name}"
+            : "Completed service for {name}"
+          : language === "vi"
+            ? "Bắt đầu phục vụ {name}"
+            : "Started service for {name}");
+      setStatusSuccessMessage(
+        successTemplate.replace("{name}", b.client_name),
+      );
       closeBookingDrawer();
       await reloadCurrentDay();
       router.refresh();
@@ -2320,13 +2401,9 @@ function ReceptionistCenterInner({
   // clearer party alert ("Today {time} group: {name}/{n} not confirmed") and
   // its focus-the-group action. Restricted to today so the "today" copy is
   // accurate and operationally relevant for the front desk.
-  // `nowIso` is "" during the SSR pass (deliberate — avoids a React #418
-  // hydration mismatch on the live timestamp). `formatInSalonTz` throws on an
-  // empty ISO, so skip this today-only alert until the client populates the
-  // real time after mount. Without the guard, SSR crashes with
-  // "salonTime: invalid ISO string" → React #419 (the whole Center fails to
-  // render). The alert is meaningless without "now" anyway, and the client
-  // re-renders immediately once nowIso ticks in.
+  // `nowIso` is normally the loader's server-owned snapshot. Keep the empty
+  // guard as a defensive boundary for malformed legacy fixtures so
+  // `formatInSalonTz` cannot crash the whole Center.
   const todaySalonDate = nowIso ? formatInSalonTz(nowIso, timezone, "date") : "";
   const pendingPartyCard = !nowIso
     ? null
@@ -2797,14 +2874,6 @@ function ReceptionistCenterInner({
             "gap-1 p-1 md:-mt-6 md:min-h-[calc(100dvh+1.5rem)]",
         )}
       >
-        {/* Hydration signal for E2E: only rendered after React useEffect fires. */}
-        {rcHydrated && (
-          <span
-            data-testid="rc-hydrated"
-            aria-hidden="true"
-            style={{ display: "none" }}
-          />
-        )}
         {bookingLimitStatus && !bookingLimitStatus.isUnlimited ? (
           <div className="shrink-0 border-b border-nq-border/30 px-[var(--pad-nq-section-mobile)] py-2 md:px-6">
             <div className="mx-auto w-full max-w-[var(--max-nq-desktop)]">
@@ -3165,6 +3234,24 @@ function ReceptionistCenterInner({
                   })}
                 </div>
               )}
+              {isMobile ? (
+                <div className="h-11 w-11 shrink-0">
+                  <HeaderCustomerSearch
+                    slug={slug}
+                    language={language === "vi" ? "vi" : "en"}
+                    clientHref={`/dashboard/${encodeURIComponent(slug)}/clients`}
+                    surface="mobile"
+                    onSelectClient={(client) => {
+                      setDeskPrefill({
+                        ymd: data.selectedDate,
+                        phone: client.phone,
+                        name: client.name ?? undefined,
+                      });
+                      setDeskBookingOpen(true);
+                    }}
+                  />
+                </div>
+              ) : null}
               {/*
                * Prominent "+ Walk-in" CTA (P1 desk feedback: the queue
                * toggle alone wasn't an obvious "add a walk-in" entry).
@@ -3183,6 +3270,7 @@ function ReceptionistCenterInner({
                   variant="primary"
                   size="sm"
                   data-testid="header-add-walkin"
+                  className="min-h-11 text-base"
                   onClick={
                     previewInterface ? openPreviewWalkinAdd : openWalkinAdd
                   }
@@ -3199,7 +3287,7 @@ function ReceptionistCenterInner({
                   variant="secondary"
                   size="sm"
                   data-testid="header-add-appointment"
-                  className="hidden sm:inline-flex"
+                  className="min-h-11 text-base"
                   onClick={() => {
                     // Open a blank form on the currently-viewed date so a
                     // receptionist booking ahead (viewing tomorrow) doesn't
@@ -3882,6 +3970,7 @@ function ReceptionistCenterInner({
                 selectedDate={data.selectedDate}
                 openMinutes={data.salon.openMinutes}
                 closeMinutes={data.salon.closeMinutes}
+                minimumServiceMinutesByStaff={minimumServiceMinutesByStaff}
                 timezone={timezone}
                 nowIso={nowIso}
                 isViewingToday={isViewingToday}
@@ -3976,6 +4065,8 @@ function ReceptionistCenterInner({
                     autoNoShowAt: rcMessages.latenessGrid.autoNoShowAt,
                     lateChip: rcMessages.latenessGrid.late,
                     veryLateChip: rcMessages.latenessGrid.veryLate,
+                    noShowDecisionNeeded:
+                      rcMessages.latenessGrid.noShowDecisionNeeded,
                   },
                   removedGuest: rcMessages.removedGuest,
                   latenessGrid: rcMessages.latenessGrid,
@@ -4094,7 +4185,7 @@ function ReceptionistCenterInner({
                 onSetSoftHold={onSetSoftHold}
                 onClearSoftHold={onClearSoftHold}
                 rushMode={rush.active}
-                waitLinkBaseUrl={originBaseUrl}
+                waitLinkEnabled
                 waitLinkSalonSlug={slug}
                 onCancelWalkin={onCancelWalkin}
                 onStartAssign={(id) => {
@@ -4182,6 +4273,19 @@ function ReceptionistCenterInner({
         </output>
       ) : null}
 
+      {statusSuccessMessage !== null ? (
+        <output
+          data-testid="desk-status-success"
+          className={cn(
+            "fixed top-14 left-1/2 z-[55] max-w-[min(100vw-2rem,24rem)] -translate-x-1/2",
+            "rounded-xl border border-emerald-400/60 bg-emerald-950/95 px-4 py-3 text-center text-base font-semibold text-emerald-100 shadow-nq-card",
+          )}
+          aria-live="polite"
+        >
+          {statusSuccessMessage}
+        </output>
+      ) : null}
+
       <UndoToast
         open={undoState !== null}
         message={undoState?.headline ?? ""}
@@ -4198,7 +4302,7 @@ function ReceptionistCenterInner({
         data-testid="reschedule-error-toast"
         aria-live="assertive"
         className={cn(
-          "fixed bottom-6 left-1/2 z-50 flex max-w-[min(100vw-2rem,26rem)] -translate-x-1/2 px-4",
+          "fixed bottom-20 left-1/2 z-50 flex max-w-[min(100vw-2rem,26rem)] -translate-x-1/2 px-4 xl:bottom-6",
           "motion-safe:transition-[transform,opacity] motion-safe:duration-300 motion-safe:ease-[var(--ease-nq-out,cubic-bezier(0.22,1,0.36,1))]",
           errorToast
             ? "translate-y-0 opacity-100"

@@ -264,13 +264,33 @@ Rules:
 
 // ─── Email send (bypasses sendOwnerAlert suppression) ─────────────────────────
 
-type PendingApprovalDigestItem = {
+export type PendingApprovalDigestItem = {
+  id: string;
   summary: string;
   approve_token: string;
   decline_token: string;
 };
 
-async function sendDigestEmail(
+export type DigestDeliveryResult =
+  | {
+      status: "sent";
+      providerMessageId: string | null;
+      recipientCount: number;
+    }
+  | {
+      status: "skipped";
+      reason: "notifications_disabled";
+    }
+  | {
+      status: "failed";
+      reason:
+        | "settings_unavailable"
+        | "provider_unavailable"
+        | "no_recipients"
+        | "send_failed";
+    };
+
+export async function sendDigestEmail(
   salonId: string,
   salonName: string,
   body: string,
@@ -280,21 +300,30 @@ async function sendDigestEmail(
    *  runDigest, so the slug is threaded down rather than re-queried. */
   slug?: string | null,
   unclosed?: UnclosedBookingsResult,
-): Promise<void> {
+): Promise<DigestDeliveryResult> {
   const db = createServiceRoleClient();
-  const resend = getResendClient();
-  if (!resend) return;
 
-  const { data: salonRow } = await db
+  const { data: salonRow, error: settingsError } = await db
     .from("salons" as never)
     .select("owner_notification_settings")
     .eq("id", salonId)
     .maybeSingle();
 
+  if (settingsError || !salonRow) {
+    return { status: "failed", reason: "settings_unavailable" };
+  }
+
   const rawSettings = (salonRow as { owner_notification_settings?: Record<string, unknown> } | null)
     ?.owner_notification_settings ?? {};
   const settings = parseOwnerNotificationSettings(rawSettings);
-  if (!settings.enabled) return;
+  if (!settings.enabled) {
+    return { status: "skipped", reason: "notifications_disabled" };
+  }
+
+  const resend = getResendClient();
+  if (!resend) {
+    return { status: "failed", reason: "provider_unavailable" };
+  }
 
   // digest_emails override: if set, send only to those addresses.
   // Falls back to all owner/admin members + customEmails when not configured.
@@ -328,7 +357,9 @@ async function sendDigestEmail(
     for (const e of settings.customEmails) emails.push(e);
     recipients = [...new Set(emails.map((e) => e.toLowerCase()))];
   }
-  if (recipients.length === 0) return;
+  if (recipients.length === 0) {
+    return { status: "failed", reason: "no_recipients" };
+  }
 
   const esc = (s: string) =>
     s.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c] ?? c));
@@ -386,18 +417,36 @@ ${unclosed!.items.map((b) => `
   <p style="font-size:12px;color:#aaa;margin:0">— Quản Lý AI · ${salonName}</p>
 </div>`;
 
-  await resend.emails.send({
-    from: getResendFrom(),
-    to: recipients,
-    subject: `${salonName} · Tổng kết ${todayYmd}`,
-    html,
-    text:
-      body +
-      ((unclosed?.count ?? 0) > 0
-        ? `\n\n${unclosed!.count} lịch hẹn chưa chốt sổ — xem trong Bảng điều khiển.`
-        : "") +
-      `\n\n— Quản Lý AI · ${salonName}`,
-  });
+  const { data, error } = await resend.emails.send(
+    {
+      from: getResendFrom(),
+      to: recipients,
+      subject: `${salonName} · Tổng kết ${todayYmd}`,
+      html,
+      text:
+        body +
+        ((unclosed?.count ?? 0) > 0
+          ? `\n\n${unclosed!.count} lịch hẹn chưa chốt sổ — xem trong Bảng điều khiển.`
+          : "") +
+        `\n\n— Quản Lý AI · ${salonName}`,
+    },
+    {
+      // A worker retry after the provider accepted the email but before the
+      // database acknowledgement must not send a second daily digest.
+      idempotencyKey: `nailiq-digest-${salonId}-${todayYmd}`,
+    },
+  );
+
+  if (error) {
+    console.error("[sendDigestEmail] resend", error);
+    return { status: "failed", reason: "send_failed" };
+  }
+
+  return {
+    status: "sent",
+    providerMessageId: data?.id ?? null,
+    recipientCount: recipients.length,
+  };
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -472,12 +521,13 @@ export async function runDigest(salonId: string): Promise<void> {
     const digestApprovals = pendingApprovals
       .filter((r) => r.urgency === "normal")
       .map((r) => ({
+        id: r.id,
         summary: r.summary,
         approve_token: r.approve_token,
         decline_token: r.decline_token,
       }));
 
-    await sendDigestEmail(
+    const delivery = await sendDigestEmail(
       salonId,
       salonName,
       body,
@@ -487,16 +537,29 @@ export async function runDigest(salonId: string): Promise<void> {
       unclosed,
     );
 
-    // Log so we don't send twice
-    await db.from("ai_actions_log" as never).insert({
-      salon_id: salonId,
-      agent: "digest",
-      action_type: "digest_sent",
-      target_id: null,
-      payload: { today: todayYmd, agents_active: agentActions.map((a) => a.agent) },
-      undo_deadline: null,
-    } as never);
+    if (delivery.status === "skipped") return;
+    if (delivery.status === "failed") {
+      throw new Error(`digest_delivery_${delivery.reason}`);
+    }
+
+    const { error: deliveryRecordError } = await db.rpc(
+      "record_ai_digest_delivery" as never,
+      {
+        p_salon_id: salonId,
+        p_digest_date: todayYmd,
+        p_provider_message_id: delivery.providerMessageId,
+        p_sent_at: new Date().toISOString(),
+        p_approval_ids: digestApprovals.map((approval) => approval.id),
+        p_agents_active: agentActions.map((action) => action.agent),
+        p_recipient_count: delivery.recipientCount,
+      } as never,
+    );
+
+    if (deliveryRecordError) {
+      throw new Error("digest_delivery_record_failed");
+    }
   } catch (e) {
     console.error("[runDigest]", e);
+    throw e;
   }
 }

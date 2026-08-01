@@ -31,9 +31,7 @@ describe("reviews boundary", () => {
   it("rehearses the exact legacy write-only ACL then rolls back", () => {
     expect(rollback).toContain("BEGIN;");
     expect(rollback).toContain("ROLLBACK;");
-    expect(rollback).toContain(
-      "GRANT ALL PRIVILEGES ON TABLE public.reviews",
-    );
+    expect(rollback).toContain("GRANT ALL PRIVILEGES ON TABLE public.reviews");
     expect(rollback).toContain("REVOKE SELECT ON TABLE public.reviews");
     expect(rollback).toContain("\\ir check-reviews-boundary.sql");
   });
@@ -41,9 +39,7 @@ describe("reviews boundary", () => {
   it("keeps public token flows and salon reads on validated server paths", () => {
     const page = read("src/app/reviews/[token]/page.tsx");
     const submit = read("src/shared/reviews/submitReviewAction.ts");
-    const dashboard = read(
-      "src/shared/dashboard/loadSalonReviewsAction.ts",
-    );
+    const dashboard = read("src/shared/dashboard/loadSalonReviewsAction.ts");
     const request = read("src/shared/dashboard/sendReviewRequest.ts");
 
     expect(page).toContain("createServiceRoleClient()");
@@ -58,10 +54,10 @@ describe("reviews boundary", () => {
 
   it("updates blank-database parity tripwires", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("through 20260726200033");
-    expect(parity).toContain("policies: 140");
+    expect(parity).toContain("through 20260731184500");
+    expect(parity).toContain("policies: 151");
     expect(parity).toContain(
-      "const GRANTS = { anon: 57, authenticated: 60, service_role: 94 }",
+      "const GRANTS = { anon: 57, authenticated: 64, service_role: 107 }",
     );
   });
 });

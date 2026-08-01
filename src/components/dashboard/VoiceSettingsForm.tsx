@@ -5,6 +5,7 @@ import {
   updateVoiceAiSettings,
   type VoiceAiSettingsInput,
 } from "@/shared/dashboard/setupActions";
+import type { SupportedLanguage } from "@/shared/voiceai/config";
 
 // OpenAI GA Realtime voices. Marin/Cedar are the newest, most natural pair.
 const VOICES = [
@@ -25,6 +26,21 @@ const EFFORTS = [
   { value: "medium", label: "Medium (balanced)" },
   { value: "high",   label: "High (smarter)" },
 ] as const;
+
+const LANGUAGES: ReadonlyArray<{ value: SupportedLanguage; label: string }> = [
+  { value: "en", label: "English" },
+  { value: "fr", label: "Français" },
+  { value: "vi", label: "Tiếng Việt" },
+  { value: "es", label: "Español" },
+  { value: "zh", label: "中文" },
+];
+
+// Keep native select popovers in the dashboard's dark color scheme. Without
+// this, Chromium/WebKit can render a white option menu while inheriting white
+// text from the control, making every unhighlighted option appear blank.
+const SELECT_CLASS_NAME =
+  "min-h-11 w-full rounded-xl border border-nq-muted/40 bg-nq-surface px-4 py-3 text-sm text-nq-foreground [color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-nq-primary/40";
+const OPTION_CLASS_NAME = "bg-nq-surface text-nq-foreground";
 
 type Props = {
   slug: string;
@@ -50,6 +66,27 @@ export function VoiceSettingsForm({ slug, initial }: Props) {
       if ("error" in res) setErr(res.error);
       else setSaved(true);
     });
+  }
+
+  function toggleAllowedLanguage(language: SupportedLanguage) {
+    const isAllowed = form.voice_ai_allowed_languages.includes(language);
+    if (isAllowed && form.voice_ai_allowed_languages.length === 1) {
+      setErr("At least one call language must stay enabled.");
+      return;
+    }
+
+    const nextAllowed = isAllowed
+      ? form.voice_ai_allowed_languages.filter((value) => value !== language)
+      : [...form.voice_ai_allowed_languages, language];
+    setForm((prev) => ({
+      ...prev,
+      voice_ai_allowed_languages: nextAllowed,
+      voice_ai_default_language: nextAllowed.includes(prev.voice_ai_default_language)
+        ? prev.voice_ai_default_language
+        : nextAllowed[0]!,
+    }));
+    setSaved(false);
+    setErr(null);
   }
 
   return (
@@ -104,6 +141,62 @@ export function VoiceSettingsForm({ slug, initial }: Props) {
         </button>
       </div>
 
+      {/* Allowed call languages */}
+      <fieldset className="space-y-3">
+        <legend className="text-sm font-semibold">Languages AI can use</legend>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {LANGUAGES.map((language) => (
+            <label
+              key={language.value}
+              className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-nq-muted/40 bg-nq-surface px-4 py-2 text-sm text-nq-foreground"
+            >
+              <input
+                type="checkbox"
+                checked={form.voice_ai_allowed_languages.includes(language.value)}
+                onChange={() => toggleAllowedLanguage(language.value)}
+                className="h-5 w-5 accent-nq-primary"
+              />
+              <span>{language.label}</span>
+            </label>
+          ))}
+        </div>
+        <p className="text-sm text-[var(--color-text-muted)]">
+          The receptionist may speak only the selected languages. It changes
+          language only when the caller clearly speaks or explicitly requests one.
+        </p>
+      </fieldset>
+
+      {/* Opening language */}
+      <div className="space-y-1.5">
+        <label className="text-sm font-semibold" htmlFor="language-select">
+          Default call language
+        </label>
+        <select
+          id="language-select"
+          value={form.voice_ai_default_language}
+          onChange={(e) => handleChange(
+            "voice_ai_default_language",
+            e.target.value as SupportedLanguage,
+          )}
+          className={SELECT_CLASS_NAME}
+        >
+          {LANGUAGES.filter((language) =>
+            form.voice_ai_allowed_languages.includes(language.value)
+          ).map((language) => (
+            <option
+              key={language.value}
+              value={language.value}
+              className={OPTION_CLASS_NAME}
+            >
+              {language.label}
+            </option>
+          ))}
+        </select>
+        <p className="text-sm text-[var(--color-text-muted)]">
+          Used for the first greeting. This language always remains enabled.
+        </p>
+      </div>
+
       {/* Persona name */}
       <div className="space-y-1.5">
         <label className="text-sm font-semibold" htmlFor="persona-name">AI Persona Name</label>
@@ -125,10 +218,16 @@ export function VoiceSettingsForm({ slug, initial }: Props) {
           id="voice-select"
           value={form.voice_ai_persona_voice}
           onChange={(e) => handleChange("voice_ai_persona_voice", e.target.value)}
-          className="w-full rounded-xl border border-[var(--color-border)] bg-transparent px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          className={SELECT_CLASS_NAME}
         >
           {VOICES.map((v) => (
-            <option key={v.value} value={v.value}>{v.label}</option>
+            <option
+              key={v.value}
+              value={v.value}
+              className={OPTION_CLASS_NAME}
+            >
+              {v.label}
+            </option>
           ))}
         </select>
       </div>
@@ -140,10 +239,16 @@ export function VoiceSettingsForm({ slug, initial }: Props) {
           id="effort-select"
           value={form.voice_ai_reasoning_effort}
           onChange={(e) => handleChange("voice_ai_reasoning_effort", e.target.value)}
-          className="w-full rounded-xl border border-[var(--color-border)] bg-transparent px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+          className={SELECT_CLASS_NAME}
         >
           {EFFORTS.map((ef) => (
-            <option key={ef.value} value={ef.value}>{ef.label}</option>
+            <option
+              key={ef.value}
+              value={ef.value}
+              className={OPTION_CLASS_NAME}
+            >
+              {ef.label}
+            </option>
           ))}
         </select>
       </div>

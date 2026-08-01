@@ -216,6 +216,7 @@ const MOCK_CTX: SalonVoiceContext = {
   personaName:     "Lily",
   personaVoice:    "marin",
   reasoningEffort: "low",
+  allowedLanguages: ["en"],
   upsellEnabled:   true,
   businessHours:   null,
   services: [

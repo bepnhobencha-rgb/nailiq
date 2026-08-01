@@ -1,23 +1,20 @@
-"use client";
-
-import { useEffect, useMemo, useState } from "react";
-
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { KPIWidget } from "@/components/ui/KPIWidget";
 import {
-  loadSalonReports,
   type LoadSalonReportsResult,
   type ReportsDateRange,
   type ReportsSnapshot,
-} from "@/shared/dashboard/loadSalonReportsAction";
-import { getUserMessages } from "@/shared/i18n/user";
+} from "@/shared/dashboard/loadSalonReports";
+import {
+  getUserMessages,
+  type UserLanguage,
+} from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
 import {
   formatCurrency,
   type Currency,
 } from "@/shared/lib/currencyFormat";
-import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 /**
  * Owner-only reports panel.
@@ -46,6 +43,9 @@ function formatMoney(cents: number, currency: Currency): string {
 
 export interface ReportsPanelProps {
   slug: string;
+  range: ReportsDateRange;
+  result: LoadSalonReportsResult;
+  language: UserLanguage;
   /** P0.2 — salon's configured currency. */
   currency: Currency;
   /** Studio-tier (`premium`) gate for the per-staff performance
@@ -55,40 +55,26 @@ export interface ReportsPanelProps {
 
 export function ReportsPanel({
   slug,
+  range,
+  result,
+  language,
   currency,
   hasStaffPerformance,
 }: ReportsPanelProps) {
-  const { language } = useUserLanguage();
-  const messages = useMemo(
-    () => getUserMessages(language).receptionist.reports,
-    [language],
-  );
-  const [range, setRange] = useState<ReportsDateRange>("today");
-  const [state, setState] = useState<
-    | { kind: "loading" }
+  const messages = getUserMessages(language).receptionist.reports;
+  const state:
     | { kind: "ok"; data: ReportsSnapshot }
-    | { kind: "error"; error: Extract<LoadSalonReportsResult, { ok: false }>["error"] }
-  >({ kind: "loading" });
+    | {
+        kind: "error";
+        error: Extract<LoadSalonReportsResult, { ok: false }>["error"];
+      } = result.ok
+    ? { kind: "ok", data: result.data }
+    : { kind: "error", error: result.error };
 
-  useEffect(() => {
-    let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional loading state before async fetch
-    setState({ kind: "loading" });
-    void (async () => {
-      const res = await loadSalonReports(slug, range);
-      if (cancelled) return;
-      if (res.ok) setState({ kind: "ok", data: res.data });
-      else setState({ kind: "error", error: res.error });
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [slug, range]);
-
-  const errorCopy = useMemo(() => {
-    if (state.kind !== "error") return null;
-    return messages.errors[state.error] ?? messages.errors.server_error;
-  }, [state, messages]);
+  const errorCopy =
+    state.kind === "error"
+      ? (messages.errors[state.error] ?? messages.errors.server_error)
+      : null;
 
   return (
     <div className="space-y-4">
@@ -105,13 +91,12 @@ export function ReportsPanel({
         {(["today", "week", "month"] as const).map((r) => {
           const active = range === r;
           return (
-            <button
+            <a
               key={r}
-              type="button"
               role="tab"
               aria-selected={active}
               data-testid={`reports-range-${r}`}
-              onClick={() => setRange(r)}
+              href={`/dashboard/${encodeURIComponent(slug)}/insights?range=${r}`}
               className={cn(
                 "px-3 py-1.5 transition-colors",
                 active
@@ -120,7 +105,7 @@ export function ReportsPanel({
               )}
             >
               {messages.range[r]}
-            </button>
+            </a>
           );
         })}
       </div>
@@ -148,7 +133,6 @@ export function ReportsPanel({
               ? formatMoney(state.data.totalRevenueCents, currency)
               : "—"
           }
-          isLoading={state.kind === "loading"}
         />
         <KPIWidget
           label={messages.kpis.appointments}
@@ -157,26 +141,22 @@ export function ReportsPanel({
               ? String(state.data.appointmentCount)
               : "—"
           }
-          isLoading={state.kind === "loading"}
         />
         <KPIWidget
           label={messages.kpis.completed}
           value={
             state.kind === "ok" ? String(state.data.completedCount) : "—"
           }
-          isLoading={state.kind === "loading"}
         />
         <KPIWidget
           label={messages.kpis.cancelled}
           value={
             state.kind === "ok" ? String(state.data.cancelledCount) : "—"
           }
-          isLoading={state.kind === "loading"}
         />
         <KPIWidget
           label={messages.kpis.noShow}
           value={state.kind === "ok" ? String(state.data.noShowCount) : "—"}
-          isLoading={state.kind === "loading"}
         />
       </section>
 

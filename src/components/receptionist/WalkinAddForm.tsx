@@ -86,6 +86,8 @@ export interface WalkinAddFormProps {
     requestTagsPlaceholder: string;
     requestTagAdd: string;
     requestTagRemove: (label: string) => string;
+    moreDetails: string;
+    hideDetails: string;
     /** "Khách yêu cầu thợ này" checkbox label. */
     staffRequestedByClient: string;
     /** Phone-lookup card copy. */
@@ -359,6 +361,7 @@ export function WalkinAddForm({
   const [staffRequestNote, setStaffRequestNote] = useState("");
   const [staffRequestedByClient, setStaffRequestedByClient] = useState(false);
   const [showMoreServices, setShowMoreServices] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -537,6 +540,7 @@ export function WalkinAddForm({
     setStaffRequestNote("");
     setStaffRequestedByClient(false);
     setShowMoreServices(false);
+    setShowDetails(false);
     setErrorMessage(null);
     setNameError(null);
     setPhoneError(null);
@@ -926,7 +930,7 @@ export function WalkinAddForm({
         />
         {nameError ? (
           <p
-            className="text-xs text-nq-error"
+            className="text-base text-nq-error"
             role="alert"
             data-testid="walkin-name-error"
           >
@@ -979,7 +983,7 @@ export function WalkinAddForm({
         />
         {phoneError ? (
           <p
-            className="text-xs text-nq-error"
+            className="text-base text-nq-error"
             role="alert"
             data-testid="walkin-phone-error"
           >
@@ -991,7 +995,7 @@ export function WalkinAddForm({
           <p
             role="status"
             aria-label={labels.lookupLoadingAria}
-            className="inline-flex items-center gap-1.5 text-xs text-nq-muted"
+            className="inline-flex items-center gap-1.5 text-base text-nq-muted"
             data-testid="walkin-phone-lookup-loading"
           >
             <span
@@ -1004,7 +1008,7 @@ export function WalkinAddForm({
 
         {onPhoneLookup && lookup.kind === "not_found" ? (
           <p
-            className="rounded-md border border-nq-info/35 bg-nq-info/10 px-2.5 py-1.5 text-xs text-nq-foreground"
+            className="rounded-md border border-nq-info/35 bg-nq-info/10 px-3 py-2 text-base text-nq-foreground"
             data-testid="walkin-phone-lookup-newcustomer"
           >
             {labels.newCustomer}
@@ -1027,7 +1031,7 @@ export function WalkinAddForm({
           className="space-y-1"
         >
           {popularServicesLabel ? (
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+            <p className="text-base font-semibold text-nq-muted">
               {popularServicesLabel}
             </p>
           ) : null}
@@ -1042,7 +1046,7 @@ export function WalkinAddForm({
                   disabled={formLocked}
                   onClick={() => setSelectedServiceId(s.id)}
                   className={cn(
-                    "inline-flex max-w-full items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                    "inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full border px-3 py-2 text-base font-medium transition-colors",
                     selected
                       ? "border-nq-primary bg-nq-primary/15 text-nq-primary"
                       : "border-nq-border bg-nq-surface/60 text-nq-foreground hover:border-nq-primary/40",
@@ -1070,7 +1074,7 @@ export function WalkinAddForm({
                 disabled={formLocked}
                 onClick={() => setSelectedServiceId(s.id)}
                 className={cn(
-                  "flex min-h-16 flex-col items-start justify-center rounded-lg border px-2.5 py-2 text-left text-sm transition-[border-color,background-color] duration-[var(--duration-nq-fast,150ms)]",
+                  "flex min-h-16 flex-col items-start justify-center rounded-lg border px-2.5 py-2 text-left text-base transition-[border-color,background-color] duration-[var(--duration-nq-fast,150ms)]",
                   selected
                     ? "border-nq-primary bg-nq-primary/12 text-nq-foreground"
                     : "border-nq-muted/35 bg-nq-surface text-nq-foreground hover:border-nq-muted",
@@ -1080,7 +1084,7 @@ export function WalkinAddForm({
                 <span className="line-clamp-2 font-semibold leading-snug">
                   {s.name}
                 </span>
-                <span className="mt-0.5 font-mono text-[11px] text-nq-muted">
+                <span className="mt-0.5 font-mono text-base text-nq-muted">
                   {s.duration_minutes}m · {formatSvc(s, currency)}
                 </span>
               </button>
@@ -1094,7 +1098,7 @@ export function WalkinAddForm({
               disabled={formLocked}
               onClick={() => setShowMoreServices((v) => !v)}
               className={cn(
-                "text-sm font-medium text-nq-primary hover:text-nq-primary/90",
+                "min-h-11 text-base font-medium text-nq-primary hover:text-nq-primary/90",
                 formLocked && "pointer-events-none opacity-60",
               )}
             >
@@ -1114,14 +1118,14 @@ export function WalkinAddForm({
                         disabled={formLocked}
                         onClick={() => setSelectedServiceId(s.id)}
                         className={cn(
-                          "flex w-full flex-col items-start rounded-md px-2 py-2 text-left text-sm",
+                          "flex min-h-11 w-full flex-col items-start rounded-md px-2 py-2 text-left text-base",
                           selected
                             ? "bg-nq-primary/15 text-nq-primary"
                             : "text-nq-foreground hover:bg-nq-muted/15",
                         )}
                       >
                         <span className="font-medium">{s.name}</span>
-                        <span className="font-mono text-[11px] text-nq-muted">
+                        <span className="font-mono text-base text-nq-muted">
                           {s.duration_minutes}m ·{" "}
                           {formatSvc(s, currency)}
                         </span>
@@ -1135,11 +1139,33 @@ export function WalkinAddForm({
         )}
       </div>
 
+      <button
+        type="button"
+        data-testid="walkin-details-toggle"
+        aria-expanded={showDetails}
+        aria-controls="walkin-optional-details"
+        disabled={formLocked}
+        onClick={() => setShowDetails((current) => !current)}
+        className={cn(
+          "flex min-h-11 w-full items-center justify-between rounded-lg border border-nq-muted/30 bg-nq-surface px-3 py-2 text-left text-base font-medium text-nq-foreground transition-colors hover:border-nq-primary/45",
+          formLocked && "opacity-60",
+        )}
+      >
+        <span>{showDetails ? labels.hideDetails : labels.moreDetails}</span>
+        <span aria-hidden>{showDetails ? "−" : "+"}</span>
+      </button>
+
+      {showDetails ? (
+      <div
+        id="walkin-optional-details"
+        data-testid="walkin-optional-details"
+        className="space-y-3"
+      >
       <div className="grid grid-cols-2 gap-2">
         <div>
           <label
             htmlFor={sourceId}
-            className="mb-1 block text-xs font-medium text-nq-muted"
+            className="mb-1 block text-base font-medium text-nq-muted"
           >
             {labels.sourceLabel}
           </label>
@@ -1152,7 +1178,7 @@ export function WalkinAddForm({
               setWalkinSource((e.target.value || "") as QueueSource | "")
             }
             className={cn(
-              "h-10 w-full rounded-lg border border-nq-muted/35 bg-nq-bg px-2 text-sm text-nq-foreground focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
+              "min-h-11 w-full rounded-lg border border-nq-muted/35 bg-nq-bg px-2 text-base text-nq-foreground focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
               formLocked && "opacity-60",
             )}
           >
@@ -1167,7 +1193,7 @@ export function WalkinAddForm({
         <div>
           <label
             htmlFor={priorityId}
-            className="mb-1 block text-xs font-medium text-nq-muted"
+            className="mb-1 block text-base font-medium text-nq-muted"
           >
             {labels.priorityLabel}
           </label>
@@ -1183,7 +1209,7 @@ export function WalkinAddForm({
             }
             onKeyDown={onPriorityKeyDown}
             className={cn(
-              "h-10 w-full rounded-lg border border-nq-muted/35 bg-nq-bg px-2 text-sm text-nq-foreground focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
+              "min-h-11 w-full rounded-lg border border-nq-muted/35 bg-nq-bg px-2 text-base text-nq-foreground focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
               formLocked && "opacity-60",
             )}
           >
@@ -1200,7 +1226,7 @@ export function WalkinAddForm({
       <div>
         <label
           htmlFor={tagInputId}
-          className="mb-1 block text-xs font-medium text-nq-muted"
+          className="mb-1 block text-base font-medium text-nq-muted"
         >
           {labels.requestTagsLabel}
         </label>
@@ -1216,7 +1242,7 @@ export function WalkinAddForm({
             onChange={(e) => setTagDraft(e.target.value)}
             onKeyDown={onTagInputKeyDown}
             className={cn(
-              "h-10 flex-1 rounded-lg border border-nq-muted/35 bg-nq-bg px-3 text-sm text-nq-foreground placeholder:text-nq-muted focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
+              "min-h-11 flex-1 rounded-lg border border-nq-muted/35 bg-nq-bg px-3 text-base text-nq-foreground placeholder:text-nq-muted focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
               (formLocked || tagsAtCap) && "opacity-60",
             )}
           />
@@ -1228,6 +1254,7 @@ export function WalkinAddForm({
               formLocked || tagsAtCap || tagDraft.trim().length === 0
             }
             onClick={addTag}
+            className="min-h-11 text-base"
           >
             {labels.requestTagAdd}
           </Button>
@@ -1246,7 +1273,7 @@ export function WalkinAddForm({
                   disabled={formLocked}
                   onClick={() => removeTag(tag)}
                   aria-label={labels.requestTagRemove(tag)}
-                  className="inline-flex items-center gap-1 rounded-full border border-nq-border bg-nq-surface/60 px-2 py-0.5 text-xs text-nq-foreground hover:border-nq-primary/40"
+                  className="inline-flex min-h-11 items-center gap-1 rounded-full border border-nq-border bg-nq-surface/60 px-3 py-2 text-base text-nq-foreground hover:border-nq-primary/40"
                 >
                   <span>{tag}</span>
                   <span aria-hidden>×</span>
@@ -1256,12 +1283,14 @@ export function WalkinAddForm({
           </ul>
         ) : null}
       </div>
+      </div>
+      ) : null}
 
       {staffOptions && staffOptions.length > 0 && onCheckAvailability ? (
         <div className="space-y-1.5">
           <label
             htmlFor="walkin-requested-staff"
-            className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted"
+            className="text-base font-semibold text-nq-muted"
           >
             {labels.requestedStaffLabel}
           </label>
@@ -1272,7 +1301,7 @@ export function WalkinAddForm({
             value={selectedStaffId}
             onChange={(e) => setSelectedStaffId(e.target.value)}
             className={cn(
-              "h-11 w-full rounded-lg border border-nq-muted/35 bg-nq-bg px-3 text-sm text-nq-foreground focus:border-nq-primary focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
+              "h-11 w-full rounded-lg border border-nq-muted/35 bg-nq-bg px-3 text-base text-nq-foreground focus:border-nq-primary focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
               formLocked && "opacity-60",
             )}
           >
@@ -1297,7 +1326,7 @@ export function WalkinAddForm({
               role="status"
               data-testid="walkin-group-conflict-warning"
               data-group-time={imminentGroupBookingTime}
-              className="space-y-2 rounded-md border border-amber-500/55 bg-amber-500/10 px-3 py-2 text-xs text-nq-foreground ring-1 ring-amber-400/35"
+              className="space-y-2 rounded-md border border-amber-500/55 bg-amber-500/10 px-3 py-2 text-base text-nq-foreground ring-1 ring-amber-400/35"
             >
               <p>
                 <span aria-hidden>⚠️ </span>
@@ -1315,7 +1344,7 @@ export function WalkinAddForm({
                      * exists to make the "I read this and chose to
                      * continue" explicit. */
                   }}
-                  className="rounded-md border border-amber-500/55 bg-nq-bg px-2 py-1 text-[11px] font-semibold text-nq-foreground hover:bg-nq-surface focus:outline-none focus:ring-2 focus:ring-amber-400/45"
+                  className="min-h-11 rounded-md border border-amber-500/55 bg-nq-bg px-3 py-2 text-base font-semibold text-nq-foreground hover:bg-nq-surface focus:outline-none focus:ring-2 focus:ring-amber-400/45"
                 >
                   {labels.walkinContinueAnyway}
                 </button>
@@ -1323,7 +1352,7 @@ export function WalkinAddForm({
                   type="button"
                   data-testid="walkin-group-conflict-reset"
                   onClick={() => setSelectedStaffId("")}
-                  className="rounded-md border border-nq-muted/35 bg-nq-bg px-2 py-1 text-[11px] font-semibold text-nq-foreground hover:bg-nq-surface focus:outline-none focus:ring-2 focus:ring-nq-primary/35"
+                  className="min-h-11 rounded-md border border-nq-muted/35 bg-nq-bg px-3 py-2 text-base font-semibold text-nq-foreground hover:bg-nq-surface focus:outline-none focus:ring-2 focus:ring-nq-primary/35"
                 >
                   {labels.walkinChooseDifferent}
                 </button>
@@ -1354,7 +1383,7 @@ export function WalkinAddForm({
 
       <label
         className={cn(
-          "flex cursor-pointer items-start gap-2 text-sm text-nq-foreground",
+          "flex min-h-11 cursor-pointer items-center gap-2 text-base text-nq-foreground",
           formLocked && "opacity-60",
         )}
       >
@@ -1364,7 +1393,7 @@ export function WalkinAddForm({
           onChange={(e) => setStaffRequestedByClient(e.target.checked)}
           disabled={formLocked}
           data-testid="walkin-requested-by-client"
-          className="mt-0.5 size-4 cursor-pointer accent-nq-primary"
+          className="size-5 shrink-0 cursor-pointer accent-nq-primary"
         />
         <span className="leading-snug">{labels.staffRequestedByClient}</span>
       </label>
@@ -1377,7 +1406,7 @@ export function WalkinAddForm({
 
       {isOffline && offlineDisabledHint ? (
         <p
-          className="text-xs font-semibold text-nq-error"
+          className="text-base font-semibold text-nq-error"
           role="status"
           data-testid="walkin-offline-hint"
         >
@@ -1389,6 +1418,7 @@ export function WalkinAddForm({
         ref={submitRef}
         type="submit"
         variant="primary"
+        size="lg"
         loading={submitting}
         disabled={
           disabled ||
@@ -1428,7 +1458,7 @@ export function WalkinAddForm({
           >
             <span>{labels.addButton}</span>
             <span
-              className="text-[11px] font-normal opacity-80"
+              className="text-base font-normal opacity-80"
               data-testid="walkin-submit-sublabel"
             >
               {/* Honest binary: the tap either assigns immediately (only when the
@@ -1453,7 +1483,7 @@ export function WalkinAddForm({
       {!submitting &&
       !isOffline &&
       (clientName.trim().length === 0 || selectedServiceId === null) ? (
-        <p className="mt-1.5 text-center text-[11px] text-nq-muted" data-testid="walkin-incomplete-hint">
+        <p className="mt-1.5 text-center text-base text-nq-muted" data-testid="walkin-incomplete-hint">
           {labels.incompleteHint}
         </p>
       ) : null}
@@ -1655,7 +1685,7 @@ function AvailabilityCard({
           <button
             type="button"
             onClick={onResetToBestMatch}
-            className="shrink-0 whitespace-nowrap rounded-md border border-nq-muted/35 bg-nq-bg px-2 py-1 text-[11px] font-semibold text-nq-foreground hover:bg-nq-surface focus:outline-none focus:ring-2 focus:ring-nq-primary/35"
+            className="min-h-11 shrink-0 touch-manipulation whitespace-nowrap rounded-md border border-nq-muted/35 bg-nq-bg px-3 py-2 text-xs font-semibold text-nq-foreground hover:bg-nq-surface focus:outline-none focus:ring-2 focus:ring-nq-primary/35"
             data-testid="walkin-availability-reset"
           >
             {labels.pickAnotherStaff}
