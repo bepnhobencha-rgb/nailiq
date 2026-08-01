@@ -2852,6 +2852,7 @@ export async function addDeskAppointment(
         p_price_cents: deskPriceCents ?? svc.price_cents ?? null,
         p_client_notes: clientNotes,
         p_client_email: clientEmail,
+        p_resource_id: resolvedResourceId,
       } as never,
     );
     if (rpcErr) {
@@ -2883,19 +2884,6 @@ export async function addDeskAppointment(
       } as never).eq("id", bookingId);
     } catch {
       /* best-effort — booking exists with correct price, promo stamp is cosmetic */
-    }
-  }
-
-  // Stamp the assigned resource (bed/chair) when resource-mode is on.
-  // create_public_booking doesn't accept p_resource_id, so we write it here.
-  if (resolvedResourceId) {
-    try {
-      await db
-        .from("bookings")
-        .update({ resource_id: resolvedResourceId } as never)
-        .eq("id", bookingId);
-    } catch {
-      /* best-effort — booking exists, resource link is cosmetic */
     }
   }
 
