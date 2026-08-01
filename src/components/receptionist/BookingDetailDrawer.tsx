@@ -404,6 +404,8 @@ export type BookingDetailDrawerModel = {
   clientNotes: string | null;
   serviceName: string;
   staffName: string;
+  /** Assigned workstation for resource-mode salons (for example, Bed 2). */
+  resourceName: string | null;
   /** Raw booking status — drives the color-coded status Badge (P2:
    * status color must read consistently across the timeline + this
    * panel). The localized text lives in `statusLabel`. */
@@ -1140,6 +1142,21 @@ export function BookingDetailDrawer({
               </p>
               <p className="font-medium text-nq-foreground">{model.staffName}</p>
             </section>
+
+            {model.resourceName ? (
+              <section
+                className="space-y-1 border-t border-nq-muted/15 pt-4"
+                data-testid="drawer-resource-section"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
+                  {model.language === "vi" ? "Giường / Phòng" : "Bed / Room"}
+                </p>
+                <p className="font-medium text-nq-foreground">
+                  <span aria-hidden>🛏 </span>
+                  {model.resourceName}
+                </p>
+              </section>
+            ) : null}
 
             {/* Party composition — "who's going with whom". Lazily loaded for
                 group bookings; only shown for a real multi-person party. */}

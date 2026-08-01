@@ -518,6 +518,22 @@ test.describe("Edit Booking — bed picker", () => {
     await page.getByTestId("edit-booking-form").waitFor({ state: "visible", timeout: 15_000 });
   }
 
+  test("booking drawer shows the assigned bed", async ({ page }) => {
+    await gotoReceptionistCenter(page, fx.slug, {
+      dateYmd: fx.ymdUtc,
+      expectWalkinQueue: false,
+    });
+
+    const chip = page.getByTestId(`booking-block-${fx.editBookingId}`);
+    await chip.waitFor({ state: "visible", timeout: 15_000 });
+    await chip.evaluate((el: HTMLElement) => el.click());
+
+    const resourceSection = page.getByTestId("drawer-resource-section");
+    await expect(resourceSection).toBeVisible();
+    await expect(resourceSection).toContainText("Bed / Room");
+    await expect(resourceSection).toContainText(fx.editBedName);
+  });
+
   test("edit form pre-selects current bed", async ({ page }) => {
     await gotoReceptionistCenter(page, fx.slug, { dateYmd: fx.ymdUtc, expectWalkinQueue: false });
     await openEditFormForEditTarget(page);

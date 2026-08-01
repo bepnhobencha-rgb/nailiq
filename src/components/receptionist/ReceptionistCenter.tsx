@@ -1823,6 +1823,7 @@ function ReceptionistCenterInner({
       clientNotes: b.client_notes ?? null,
       serviceName: b.service_name,
       staffName,
+      resourceName: b.resource_name?.trim() || null,
       status: b.status,
       statusLabel: bookingStatusLabel(messages, b.status),
       sourceLabel,
