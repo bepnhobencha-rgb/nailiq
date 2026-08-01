@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
+import { normalizeVoiceSessionSeconds } from "@/shared/voiceai/sessionDuration";
 
 export const runtime = "nodejs";
 
@@ -56,7 +57,9 @@ export async function POST(req: NextRequest) {
     .from("voice_ai_sessions")
     .update({
       status,
-      duration_seconds: Math.max(0, Math.round(durationSeconds ?? 0)),
+      // Treat every caller (browser and bridge) as untrusted. This also keeps a
+      // future client regression from persisting epoch-sized durations again.
+      duration_seconds: normalizeVoiceSessionSeconds(durationSeconds),
       ...(hasTranscript ? { transcript } : {}),
       ended_at:         new Date().toISOString(),
       ...(clientName  ? { client_name:  clientName  } : {}),

@@ -4,9 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { REALTIME_TOOLS } from "@/shared/voiceai/realtimeTools";
 import { SESSION_TTL_SECONDS } from "@/shared/voiceai/config";
+import { elapsedSessionSeconds } from "@/shared/voiceai/sessionDuration";
 import { bookingResultFooterNote } from "./bookingResultFooter";
 import { isNoActiveResponseError } from "./voiceErrorClassify";
-import { elapsedSessionSeconds } from "./voiceSessionDuration";
 
 type Props = {
   t: BookingMessages;
