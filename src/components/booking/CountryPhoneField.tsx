@@ -23,6 +23,8 @@ type Props = {
   testId?: string;
   inputClassName?: string;
   autoComplete?: string;
+  invalid?: boolean;
+  describedBy?: string;
 };
 
 /** Format 10 NANP digits as (xxx) xxx-xxxx for the national input display.
@@ -65,6 +67,8 @@ export default function CountryPhoneField({
   id = "country-phone",
   testId = "country-phone",
   autoComplete = "tel",
+  invalid = false,
+  describedBy,
 }: Props) {
   const fallback = useMemo(
     () => defaultPhoneCountry(salonTimezone),
@@ -133,7 +137,7 @@ export default function CountryPhoneField({
         data-testid={`${testId}-country`}
         value={iso}
         onChange={(e) => onCountryChange(e.target.value)}
-        className="nq-booking-field"
+        className={`nq-booking-field ${invalid ? "border-nq-error/50" : ""}`}
         style={{ width: showAll ? "150px" : "78px", flexShrink: 0 }}
       >
         {showAll ? (
@@ -169,7 +173,7 @@ export default function CountryPhoneField({
           gap: "6px",
           minWidth: 0,
         }}
-        className="nq-booking-field"
+        className={`nq-booking-field ${invalid ? "border-nq-error/50" : ""}`}
       >
         <span
           aria-hidden="true"
@@ -186,6 +190,8 @@ export default function CountryPhoneField({
           value={national}
           placeholder={language === "vi" ? "Số điện thoại" : "Phone number"}
           maxLength={20}
+          aria-invalid={invalid}
+          aria-describedby={invalid ? describedBy : undefined}
           onChange={(e) => onNationalChange(e.target.value)}
           style={{
             flex: 1,

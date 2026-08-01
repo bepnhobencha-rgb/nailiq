@@ -440,6 +440,8 @@ export function BookingTypeSwitcher({
   const entryLookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const entryValidation = validateGuestPhone(entryPhoneRaw.trim());
   const entryPhone = entryValidation.ok ? entryPhoneRaw.trim() : "";
+  const entryPhoneLocallyInvalid =
+    entryPhoneRaw.trim().length > 0 && !entryValidation.ok;
 
   // A stored session only counts for the exact identity it was issued against:
   // same salon, same edit revision of the field, same normalized digits. Both
@@ -592,7 +594,19 @@ export function BookingTypeSwitcher({
         onChange={handleEntryPhoneChange}
         salonTimezone={salon.timezone}
         language={language}
+        invalid={entryPhoneLocallyInvalid}
+        describedBy="booking-entry-phone-error"
       />
+      {entryPhoneLocallyInvalid ? (
+        <p
+          id="booking-entry-phone-error"
+          data-testid="booking-entry-phone-error"
+          className="mt-1.5 text-xs text-nq-error"
+          role="alert"
+        >
+          {t.bookingErrors.invalidPhone}
+        </p>
+      ) : null}
       {entryCustomer ? (
         // Pre-OTP: generic warm recognition (no PII leak — privacy fix S1).
         // Post-OTP: profile name is known → personalized greeting.
