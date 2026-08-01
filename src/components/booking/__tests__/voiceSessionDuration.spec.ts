@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   elapsedSessionSeconds,
   normalizeVoiceSessionSeconds,
+  voiceSessionDurationSuffix,
 } from "@/shared/voiceai/sessionDuration";
 
 // The exact production row: Hi-Lite Studio, status 'abandoned', 2026-07-30.
@@ -73,5 +74,26 @@ describe("normalizeVoiceSessionSeconds", () => {
   it("clamps an epoch-sized or otherwise excessive report", () => {
     expect(normalizeVoiceSessionSeconds(1785380740)).toBe(1800);
     expect(normalizeVoiceSessionSeconds(1801)).toBe(1800);
+  });
+});
+
+describe("voiceSessionDurationSuffix", () => {
+  it("formats a valid persisted duration", () => {
+    expect(voiceSessionDurationSuffix(134)).toBe(" · 2p14s");
+    expect(voiceSessionDurationSuffix(1800)).toBe(" · 30p0s");
+  });
+
+  it("keeps missing or zero-duration sessions quiet", () => {
+    expect(voiceSessionDurationSuffix(null)).toBe("");
+    expect(voiceSessionDurationSuffix(0)).toBe("");
+  });
+
+  it("labels the historical epoch-sized production value as unknown", () => {
+    expect(voiceSessionDurationSuffix(1785380740)).toBe(
+      " · thời lượng không xác định",
+    );
+    expect(voiceSessionDurationSuffix(1801)).toBe(
+      " · thời lượng không xác định",
+    );
   });
 });
