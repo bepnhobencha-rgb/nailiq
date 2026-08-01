@@ -19,9 +19,7 @@ export type UserMessages = {
     signInLink: string;
     /** Static landing (Landing.html parity) */
     landingUrgency: string;
-    landingH1Line1: string;
     landingH1Gold: string;
-    landingBody1: string;
     landingBody2: string;
     landingBody3: string;
     landingCta: string;
@@ -2349,11 +2347,7 @@ export const userEn: UserMessages = {
     signInLink: "Sign in →",
     landingUrgency:
       "⚠️ Most salons lose $50–$200 every day from missed calls",
-    landingH1Line1:
-      "$29/month.|Booking + walk-in queue,",
     landingH1Gold: "built for nail salons.",
-    landingBody1:
-      "3-5x cheaper than Booksy. Vietnamese-first. Walk-in queue included.",
     landingBody2: "That guest books somewhere else.",
     landingBody3: "You never know you lost them.",
     landingCta: "Try free for 14 days",
