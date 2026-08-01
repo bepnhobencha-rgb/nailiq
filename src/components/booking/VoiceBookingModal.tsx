@@ -5,6 +5,11 @@ import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { REALTIME_TOOLS } from "@/shared/voiceai/realtimeTools";
 import { SESSION_TTL_SECONDS } from "@/shared/voiceai/config";
 import { elapsedSessionSeconds } from "@/shared/voiceai/sessionDuration";
+import {
+  addRealtimeUsage,
+  EMPTY_REALTIME_USAGE,
+  realtimeUsageFromEvent,
+} from "@/shared/voiceai/realtimeUsage";
 import { bookingResultFooterNote } from "./bookingResultFooter";
 import { isNoActiveResponseError } from "./voiceErrorClassify";
 
@@ -140,6 +145,8 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
   const audioElementRef     = useRef<HTMLAudioElement | null>(null);
   const sessionIdRef        = useRef<string | null>(null);
   const sessionCapabilityRef = useRef<string | null>(null);
+  const realtimeUsageRef     = useRef({ ...EMPTY_REALTIME_USAGE });
+  const usageEventIdsRef     = useRef<Set<string>>(new Set());
   const timerRef            = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTsRef          = useRef<number>(0);
   const statusRef           = useRef<Status>("idle");
@@ -262,6 +269,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
           durationSeconds: elapsed,
           transcript:      transcript.map((e) => ({ role: e.role, text: e.text })),
           status:          finalStatus,
+          realtimeUsage:   realtimeUsageRef.current,
         }),
       }).catch(() => null);
     }
@@ -327,6 +335,30 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     sessionId: string | null,
   ) => {
     const type = ev.type as string;
+
+    // OpenAI bills conversational turns per response and transcription
+    // separately. Aggregate only numeric counters; never copy event output,
+    // transcript, tool arguments, or status details into telemetry.
+    if (
+      type === "response.done" ||
+      type === "conversation.item.input_audio_transcription.completed"
+    ) {
+      const response = ev.response && typeof ev.response === "object"
+        ? ev.response as Record<string, unknown>
+        : {};
+      const identity = typeof ev.event_id === "string"
+        ? ev.event_id
+        : type === "response.done" && typeof response.id === "string"
+          ? `response:${response.id}`
+          : null;
+      if (!identity || !usageEventIdsRef.current.has(identity)) {
+        if (identity) usageEventIdsRef.current.add(identity);
+        realtimeUsageRef.current = addRealtimeUsage(
+          realtimeUsageRef.current,
+          realtimeUsageFromEvent(ev),
+        );
+      }
+    }
 
     // ── Tool-call dispatcher ─────────────────────────────────────────────────
     // Deduped via processedCallIdsRef so calling from both the streaming event
@@ -1042,6 +1074,8 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     setStatus("session_init");
     setError(null);
     setBookingResult(null);
+    realtimeUsageRef.current = { ...EMPTY_REALTIME_USAGE };
+    usageEventIdsRef.current.clear();
 
     try {
       // 1. Get ephemeral key + session from server

@@ -3,6 +3,10 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { normalizeVoiceSessionSeconds } from "@/shared/voiceai/sessionDuration";
 import { verifyVoiceSessionCapability } from "@/shared/voiceai/sessionCapability";
+import {
+  estimateRealtimeCostUsd,
+  normalizeRealtimeUsage,
+} from "@/shared/voiceai/realtimeUsage";
 
 export const runtime = "nodejs";
 
@@ -13,6 +17,8 @@ type EndSessionBody = {
   status?:         "completed" | "failed" | "abandoned";
   clientName?:     string;
   clientPhone?:    string;
+  /** Aggregate counters only. The server validates them and owns all pricing. */
+  realtimeUsage?:  unknown;
   /** The language the call ended in. On the phone the caller can switch mid-call
    *  (English → Spanish), and the session row must reflect where it finished. */
   language?:       string;
@@ -36,6 +42,7 @@ export async function POST(req: NextRequest) {
     status: requestedStatus = "completed",
     clientName,
     clientPhone,
+    realtimeUsage,
     language,
   } = body;
   if (!sessionId) return NextResponse.json({ error: "missing_session_id" }, { status: 400 });
@@ -55,6 +62,30 @@ export async function POST(req: NextRequest) {
   const status = SESSION_STATUSES.has(requestedStatus) ? requestedStatus : "failed";
 
   const supabase = createServiceRoleClient();
+
+  const { data: sessionRow, error: sessionReadError } = await supabase
+    .from("voice_ai_sessions")
+    .select("model")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (sessionReadError) {
+    return NextResponse.json({ error: "session_read_failed" }, { status: 500 });
+  }
+  if (!sessionRow) {
+    return NextResponse.json({ error: "session_not_found" }, { status: 404 });
+  }
+
+  const hasRealtimeUsage = realtimeUsage !== null &&
+    typeof realtimeUsage === "object" && !Array.isArray(realtimeUsage);
+  const normalizedUsage = hasRealtimeUsage
+    ? normalizeRealtimeUsage(realtimeUsage)
+    : null;
+  const costEstimate = normalizedUsage
+    ? estimateRealtimeCostUsd(
+        (sessionRow as { model?: string | null }).model,
+        normalizedUsage,
+      )
+    : null;
 
   // `transcript` is now this route's column alone — the per-tool-call record
   // moved to `tool_log`, which logVoiceToolCall appends to during the session.
@@ -78,6 +109,16 @@ export async function POST(req: NextRequest) {
       ...(clientName  ? { client_name:  clientName  } : {}),
       ...(clientPhone ? { client_phone: toCanonicalPhone(clientPhone) ?? clientPhone } : {}),
       ...(lang        ? { language:     lang } : {}),
+      ...(normalizedUsage ? {
+        realtime_usage: {
+          ...normalizedUsage,
+          model: (sessionRow as { model?: string | null }).model ?? null,
+          pricingAsOf: costEstimate?.pricingAsOf ?? null,
+        },
+        // Unknown/new models remain visibly unpriced instead of silently using
+        // a stale rate card. A known model with zero usage is legitimately $0.
+        estimated_cost_usd: costEstimate?.estimatedCostUsd ?? null,
+      } : {}),
     })
     .eq("id", sessionId);
 

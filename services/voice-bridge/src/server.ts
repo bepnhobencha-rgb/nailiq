@@ -37,6 +37,9 @@ import {
   plainResponseCreate,
   zeroAudioRecoveryResponseCreate,
   summarizeRealtimeResponseDone,
+  addRealtimeUsage,
+  EMPTY_REALTIME_USAGE,
+  realtimeUsageFromEvent,
   summarizeRealtimeRateLimitsUpdated,
   isTokenRateLimitExceeded,
   shouldHoldCoordinatorForToolResult,
@@ -55,6 +58,7 @@ import {
   extractResponseId,
   isSpeechStarted,
   type TwilioInbound,
+  type RealtimeUsage,
   type SupportedLang,
 } from "./router.js";
 
@@ -94,6 +98,8 @@ wss.on("connection", (twilioWs) => {
   let endCallRequested = false;
   let forcedFarewellAttempts = 0;
   const handledToolCallIds = new Set<string>();
+  const usageEventIds = new Set<string>();
+  let realtimeUsage: RealtimeUsage = { ...EMPTY_REALTIME_USAGE };
   // The session.update carrying the salon's brain has been sent — until then we
   // do not forward caller audio (it would be handled with the default config).
   let sessionConfigured = false;
@@ -272,6 +278,7 @@ wss.on("connection", (twilioWs) => {
             transportHandoffStarted,
           }),
           language: currentLang,   // persist the language the call ended in
+          realtimeUsage,
         }),
       });
     } catch { /* best-effort — losing the record must not throw on hangup */ }
@@ -542,6 +549,26 @@ wss.on("connection", (twilioWs) => {
       // Surface OpenAI session/response errors + lifecycle events (but not the
       // high-frequency audio deltas) so a failed session.update is visible.
       const t = typeof evt.type === "string" ? evt.type : "";
+      if (
+        t === "response.done" ||
+        t === "conversation.item.input_audio_transcription.completed"
+      ) {
+        const response = evt.response && typeof evt.response === "object"
+          ? evt.response as Record<string, unknown>
+          : {};
+        const identity = typeof evt.event_id === "string"
+          ? evt.event_id
+          : t === "response.done" && typeof response.id === "string"
+            ? `response:${response.id}`
+            : null;
+        if (!identity || !usageEventIds.has(identity)) {
+          if (identity) usageEventIds.add(identity);
+          realtimeUsage = addRealtimeUsage(
+            realtimeUsage,
+            realtimeUsageFromEvent(evt),
+          );
+        }
+      }
       if (t.includes("error")) {
         console.warn("[voice-bridge] openai EVENT", raw.toString().slice(0, 600));
       } else if (!t.includes("audio") && !t.includes("delta")) {

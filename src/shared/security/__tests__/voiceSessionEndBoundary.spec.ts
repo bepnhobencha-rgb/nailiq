@@ -26,4 +26,24 @@ describe("Voice session end authorization boundary", () => {
     expect(mintRoute).toContain("sessionCapability,");
     expect(modal).toContain('"x-voice-session-token": sessionCapabilityRef.current');
   });
+
+  it("prices bounded Realtime usage on the server for both transports", () => {
+    const route = source("src/app/api/voice/session/end/route.ts");
+    const browser = source("src/components/booking/VoiceBookingModal.tsx");
+    const bridge = source("services/voice-bridge/src/server.ts");
+    const usage = source("src/shared/voiceai/realtimeUsage.ts");
+    const migration = source(
+      "supabase/migrations/20260801150439_add_voice_realtime_usage_telemetry.sql",
+    );
+
+    expect(route).toContain("normalizeRealtimeUsage(realtimeUsage)");
+    expect(route).toContain("estimateRealtimeCostUsd(");
+    expect(route).not.toMatch(/estimatedCostUsd\s*[:=]\s*body/);
+    expect(browser).toContain("realtimeUsage:   realtimeUsageRef.current");
+    expect(bridge).toContain("realtimeUsage,");
+    expect(usage).toContain('"gpt-realtime-2.1"');
+    expect(usage).toContain('asOf: "2026-08-01"');
+    expect(migration).toContain("add column if not exists realtime_usage jsonb");
+    expect(migration).toContain("numeric(12, 6)");
+  });
 });
