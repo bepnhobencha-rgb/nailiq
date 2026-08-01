@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   customerBookingKindFromSource,
+  formatCustomerWaitReadyClock,
   resolveCustomerWaitSurface,
 } from "../customerWaitPresentation";
 
@@ -40,5 +41,27 @@ describe("resolveCustomerWaitSurface", () => {
     expect(resolveCustomerWaitSurface("appointment", "no_show")).toBe(
       "cancelled",
     );
+  });
+});
+
+describe("formatCustomerWaitReadyClock", () => {
+  it("formats the initial clock in the salon timezone, not the server timezone", () => {
+    const previousTimezone = process.env.TZ;
+    process.env.TZ = "UTC";
+
+    try {
+      expect(
+        formatCustomerWaitReadyClock(
+          "2026-07-31T14:30:00.000Z",
+          "America/Los_Angeles",
+        ),
+      ).toBe("7:30 AM");
+    } finally {
+      if (previousTimezone === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = previousTimezone;
+      }
+    }
   });
 });
