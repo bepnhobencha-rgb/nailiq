@@ -6,6 +6,11 @@ import { z } from "zod";
 import { prepareTryOnImage } from "./imagePipeline";
 import { configurationPrompt, type NailConfiguration } from "./configurator";
 import { heuristicAutoMapping, sanitizeAutoMapping, type AutoMappingResult, type AutoMappingService } from "./autoMapping";
+import {
+  NAIL_TRYON_GENERATION_TIMEOUT_MS,
+  NAIL_TRYON_MAPPING_TIMEOUT_MS,
+  NAIL_TRYON_QUALITY_TIMEOUT_MS,
+} from "./timeouts";
 
 export const TRYON_COOKIE = "nailiq_tryon";
 export const QUALITY_MODEL = process.env.NAIL_TRYON_QUALITY_MODEL || "gpt-5.6-luna";
@@ -29,13 +34,16 @@ const autoMappingSchema = z.object({
   attributes: z.array(z.string().max(40)).max(12),
 });
 
-function openaiClient() {
+function openaiClient(timeout: number) {
   if (!process.env.OPENAI_API_KEY) throw new Error("openai_not_configured");
-  return new OpenAI();
+  // A retry after an ambiguous image-generation timeout can duplicate provider
+  // spend. Let the route reset its idempotent session lease and let the customer
+  // retry deliberately instead of multiplying the worst-case wait/cost.
+  return new OpenAI({ timeout, maxRetries: 0 });
 }
 
 export async function inspectHandPhoto(bytes: Buffer): Promise<ServerQualityVerdict> {
-  const response = await openaiClient().responses.parse({
+  const response = await openaiClient(NAIL_TRYON_QUALITY_TIMEOUT_MS).responses.parse({
     model: QUALITY_MODEL,
     input: [{
       role: "user",
@@ -68,7 +76,7 @@ export async function autoMapNailDesign(args: {
     durationMinutes: service.durationMinutes ?? null,
   }));
   try {
-    const response = await openaiClient().responses.parse({
+    const response = await openaiClient(NAIL_TRYON_MAPPING_TIMEOUT_MS).responses.parse({
       model: MAPPING_MODEL,
       input: [{
         role: "user",
@@ -110,7 +118,7 @@ export async function generateNailPreview(args: {
     prepareTryOnImage(args.hand, 1280),
     prepareTryOnImage(args.design, 1024),
   ]);
-  const result = await openaiClient().images.edit({
+  const result = await openaiClient(NAIL_TRYON_GENERATION_TIMEOUT_MS).images.edit({
     model: IMAGE_MODEL,
     image: [
       await toFile(hand, "hand.jpg", { type: "image/jpeg" }),
