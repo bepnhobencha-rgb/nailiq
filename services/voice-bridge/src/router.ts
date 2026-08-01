@@ -1065,3 +1065,79 @@ export function extractResponseId(evt: {
   if (typeof evt.response_id === "string") return evt.response_id;
   return null;
 }
+
+export const SESSION_FINALIZE_MAX_ATTEMPTS = 3;
+export const SESSION_FINALIZE_TIMEOUT_MS = 5_000;
+const SESSION_FINALIZE_RETRY_DELAYS_MS = [200, 600] as const;
+
+export type SessionFinalizeResult = {
+  ok: boolean;
+  attempts: number;
+  status: number | null;
+  reason: "ok" | "http" | "network" | "timeout";
+};
+
+/**
+ * Persist the final call record with bounded retries.
+ *
+ * The end-session endpoint performs an idempotent update against one session id,
+ * so retrying a lost response cannot create a second row or double-count quota.
+ * Retry only transient failures; authentication and other 4xx responses need an
+ * operator/configuration fix and must fail fast instead of hammering the app.
+ */
+export async function finalizeVoiceSession(args: {
+  url: string;
+  secret: string;
+  payload: unknown;
+  fetchImpl?: typeof fetch;
+  sleepImpl?: (ms: number) => Promise<void>;
+  timeoutMs?: number;
+}): Promise<SessionFinalizeResult> {
+  const fetchImpl = args.fetchImpl ?? fetch;
+  const sleepImpl = args.sleepImpl ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const timeoutMs = args.timeoutMs ?? SESSION_FINALIZE_TIMEOUT_MS;
+
+  let last: SessionFinalizeResult = {
+    ok: false,
+    attempts: 0,
+    status: null,
+    reason: "network",
+  };
+
+  for (let attempt = 1; attempt <= SESSION_FINALIZE_MAX_ATTEMPTS; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetchImpl(args.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-voice-bridge-secret": args.secret,
+        },
+        body: JSON.stringify(args.payload),
+        signal: controller.signal,
+      });
+      if (response.ok) {
+        return { ok: true, attempts: attempt, status: response.status, reason: "ok" };
+      }
+      last = { ok: false, attempts: attempt, status: response.status, reason: "http" };
+      const transient = response.status === 408 || response.status === 429 || response.status >= 500;
+      if (!transient) return last;
+    } catch (error) {
+      last = {
+        ok: false,
+        attempts: attempt,
+        status: null,
+        reason: error instanceof Error && error.name === "AbortError" ? "timeout" : "network",
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (attempt < SESSION_FINALIZE_MAX_ATTEMPTS) {
+      await sleepImpl(SESSION_FINALIZE_RETRY_DELAYS_MS[attempt - 1] ?? 600);
+    }
+  }
+
+  return last;
+}

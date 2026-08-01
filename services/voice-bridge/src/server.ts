@@ -33,6 +33,7 @@ import {
   isSilentTransportTool,
   callerPresenceLabel,
   voiceSessionStatusForClose,
+  finalizeVoiceSession,
   functionCallOutput,
   plainResponseCreate,
   zeroAudioRecoveryResponseCreate,
@@ -264,24 +265,27 @@ wss.on("connection", (twilioWs) => {
 
   const finalizeSession = async (reason: string) => {
     if (!sessionId) return;
-    try {
-      await fetch(`${NEXT_APP_URL}/api/voice/session/end`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-voice-bridge-secret": BRIDGE_SECRET },
-        body: JSON.stringify({
-          sessionId,
-          durationSeconds: Math.round((Date.now() - startedAt) / 1000),
-          transcript,
-          status: voiceSessionStatusForClose({
-            reason,
-            endCallRequested,
-            transportHandoffStarted,
-          }),
-          language: currentLang,   // persist the language the call ended in
-          realtimeUsage,
+    const result = await finalizeVoiceSession({
+      url: `${NEXT_APP_URL}/api/voice/session/end`,
+      secret: BRIDGE_SECRET,
+      payload: {
+        sessionId,
+        durationSeconds: Math.round((Date.now() - startedAt) / 1000),
+        transcript,
+        status: voiceSessionStatusForClose({
+          reason,
+          endCallRequested,
+          transportHandoffStarted,
         }),
-      });
-    } catch { /* best-effort — losing the record must not throw on hangup */ }
+        language: currentLang,   // persist the language the call ended in
+        realtimeUsage,
+      },
+    });
+    logT(result.ok ? "session_finalize_succeeded" : "session_finalize_failed", {
+      attempts: result.attempts,
+      status: result.status,
+      finalizeReason: result.reason,
+    });
   };
 
   const closeAll = (reason = "unspecified") => {
