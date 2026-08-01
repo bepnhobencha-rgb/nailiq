@@ -44,7 +44,32 @@ function timeAgo(iso: string): string {
   return new Date(ms).toLocaleDateString("vi-VN");
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, kind }: { status: string; kind: ActivityKind }) {
+  if (kind === "call") {
+    const ok = status === "completed";
+    const bad = status === "failed";
+    const active = status === "active";
+    const cls = ok
+      ? "bg-nq-success/15 text-nq-success"
+      : bad
+        ? "bg-nq-error/15 text-nq-error"
+        : "bg-nq-warning/15 text-nq-warning";
+    const label = ok
+      ? "✓ Hoàn tất"
+      : bad
+        ? "✗ Lỗi"
+        : active
+          ? "● Đang gọi"
+          : status === "interrupted"
+            ? "! Gián đoạn"
+            : "Đã kết thúc";
+    return (
+      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${cls}`}>
+        {label}
+      </span>
+    );
+  }
+
   if (status === "saved") {
     return (
       <span className="rounded-full bg-nq-success/15 px-2 py-0.5 text-[10px] font-semibold text-nq-success">
@@ -150,7 +175,7 @@ export function ActivityFeed({ slug, items }: { slug: string; items: ActivityIte
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={`text-sm text-nq-foreground ${unread ? "font-semibold" : "font-normal"}`}>{it.title}</span>
-                    {it.status ? <StatusBadge status={it.status} /> : null}
+                    {it.status ? <StatusBadge status={it.status} kind={it.kind} /> : null}
                     {it.bookingId ? (
                       <span className="text-[10px] font-semibold text-nq-primary">Xem lịch →</span>
                     ) : null}
