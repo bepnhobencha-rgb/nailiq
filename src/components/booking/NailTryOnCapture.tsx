@@ -8,6 +8,13 @@ import {
   type ClientQualityCode,
 } from "@/shared/nailTryOn/imageQuality";
 import { DEFAULT_NAIL_CONFIGURATION, type NailConfiguration } from "@/shared/nailTryOn/configurator";
+import {
+  fetchNailTryOn,
+  NAIL_TRYON_CATALOG_CLIENT_TIMEOUT_MS,
+  NAIL_TRYON_GENERATION_CLIENT_TIMEOUT_MS,
+  NAIL_TRYON_UPLOAD_CLIENT_TIMEOUT_MS,
+  NailTryOnRequestTimeoutError,
+} from "@/shared/nailTryOn/timeouts";
 
 const COPY: Record<Exclude<ClientQualityCode, "pass">, string> = {
   unsupported_format: "Use a JPEG, PNG, or WebP image. / Hãy dùng ảnh JPEG, PNG hoặc WebP.",
@@ -138,7 +145,11 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
     form.set("slug", salonSlug);
     form.set("consent_version", "nail-tryon-v1");
     try {
-      const response = await fetch("/api/nail-tryon/upload", { method: "POST", body: form });
+      const response = await fetchNailTryOn(
+        "/api/nail-tryon/upload",
+        { method: "POST", body: form },
+        NAIL_TRYON_UPLOAD_CLIENT_TIMEOUT_MS,
+      );
       const payload = await response.json() as { sessionId?: string; quality?: string; warning?: boolean; reason?: string; error?: string };
       if (!response.ok || !payload.sessionId || payload.quality !== "pass") {
         setServerMessage(payload.reason || "We could not verify five visible nails. Retake with one hand, palm down.");
@@ -148,12 +159,18 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
         setServerWarning("We can continue, but the AI result may be less accurate. / Bạn vẫn có thể tiếp tục, nhưng kết quả AI có thể kém chính xác hơn.");
       }
       setSessionId(payload.sessionId);
-      const catalogResponse = await fetch(`/api/nail-tryon/catalog?slug=${encodeURIComponent(salonSlug)}`);
+      const catalogResponse = await fetchNailTryOn(
+        `/api/nail-tryon/catalog?slug=${encodeURIComponent(salonSlug)}`,
+        {},
+        NAIL_TRYON_CATALOG_CLIENT_TIMEOUT_MS,
+      );
       const catalog = await catalogResponse.json() as { designs?: CatalogDesign[] };
       setDesigns(catalog.designs || []);
       setStep("catalog");
-    } catch {
-      setServerMessage("Photo verification is temporarily unavailable. Please try again.");
+    } catch (error) {
+      setServerMessage(error instanceof NailTryOnRequestTimeoutError
+        ? "Photo verification took too long. Please try again. / Kiểm tra ảnh quá lâu. Vui lòng thử lại."
+        : "Photo verification is temporarily unavailable. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -168,10 +185,10 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
     setGenerationSeconds(0);
     setServerMessage(null);
     try {
-      const response = await fetch("/api/nail-tryon/generate", {
+      const response = await fetchNailTryOn("/api/nail-tryon/generate", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId, designId, configuration }),
-      });
+      }, NAIL_TRYON_GENERATION_CLIENT_TIMEOUT_MS);
       const payload = await response.json() as { previewUrl?: string; error?: string; retryable?: boolean };
       if (response.status === 409 && payload.error === "generation_in_progress") {
         setServerMessage("Your preview is still finishing. Please wait 15 seconds, then tap the design once. / Ảnh vẫn đang được tạo. Vui lòng đợi 15 giây rồi bấm mẫu một lần.");
@@ -179,8 +196,10 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
       }
       if (!response.ok || !payload.previewUrl) throw new Error(payload.error || "generation_failed");
       setResultUrl(payload.previewUrl);
-    } catch {
-      setServerMessage("The AI preview could not be created. Tap a design to try again. / Chưa tạo được ảnh AI. Hãy chọn lại mẫu để thử lại.");
+    } catch (error) {
+      setServerMessage(error instanceof NailTryOnRequestTimeoutError
+        ? "The AI preview took too long. Choose the design once to retry. / Ảnh AI mất quá nhiều thời gian. Hãy chọn mẫu một lần để thử lại."
+        : "The AI preview could not be created. Tap a design to try again. / Chưa tạo được ảnh AI. Hãy chọn lại mẫu để thử lại.");
     } finally {
       setBusy(false);
     }

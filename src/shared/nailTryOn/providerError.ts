@@ -22,10 +22,12 @@ export function safeProviderError(error: unknown): SafeProviderError {
   const providerType = safeString(source.type);
   const requestId = safeString(source.request_id ?? source.requestId, 120);
 
+  const constructorName = error instanceof Error ? error.constructor.name : "";
   let code: SafeProviderError["code"] = "generation_failed";
   if (status === 401) code = "provider_auth";
   else if (status === 403 || status === 404) code = "provider_access";
   else if (status === 408) code = "provider_timeout";
+  else if (constructorName === "APIConnectionTimeoutError" || providerCode === "ETIMEDOUT") code = "provider_timeout";
   else if (status === 429) code = "provider_rate_limit";
   else if (status !== null && status >= 500) code = "provider_unavailable";
 
