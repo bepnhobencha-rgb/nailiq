@@ -57,7 +57,11 @@ describe("formatCustomerWaitReadyClock", () => {
         ),
       ).toBe("7:30 AM");
     } finally {
-      process.env.TZ = previousTimezone;
+      if (previousTimezone === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = previousTimezone;
+      }
     }
   });
 });
