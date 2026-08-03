@@ -1,5 +1,6 @@
 import "server-only";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { ruleFirstOptimizationEnabled } from "@/shared/ai/executionLimit";
 import { evaluateDeposit } from "@/shared/noshow/evaluateDeposit";
 import { scoreNoShowRisk } from "@/shared/noshow/scoreNoShowRisk";
 import { resolveVertical } from "@/shared/verticals/registry";
@@ -37,7 +38,7 @@ export async function evaluateBookingNoShow(
     const { data: salonSettings } = await supabase
       .from("salons" as never)
       .select(
-        "deposit_high_value_cents, vertical, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, noshow_deposit_escalation_threshold, name",
+        "deposit_high_value_cents, vertical, deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, noshow_deposit_escalation_threshold, name, feature_flags",
       )
       .eq("id", body.salonId)
       .maybeSingle();
@@ -49,6 +50,7 @@ export async function evaluateBookingNoShow(
       deposit_pct_new_customer?: number;
       noshow_deposit_escalation_threshold?: number | null;
       name?: string | null;
+      feature_flags?: Record<string, unknown> | null;
     };
     const highValueThreshold = s.deposit_high_value_cents ?? 10000;
     const businessDescriptor = resolveVertical(s.vertical).aiDescriptor;
@@ -90,6 +92,11 @@ export async function evaluateBookingNoShow(
         hasEmail: body.hasEmail,
         hasPhone: true,
         businessDescriptor,
+      }, {
+        // When rule-first is enabled, avoid paying once to score and again to
+        // decide the same no-show protection. The policy agent is reserved for
+        // the narrow ambiguous band and owns the only possible model call.
+        deterministicOnly: ruleFirstOptimizationEnabled(s.feature_flags),
       }),
     ]);
 

@@ -5,6 +5,31 @@ Newest entries on top.
 
 ---
 
+## 2026-08-03 — Rule-first paid-AI optimization is opt-in and fail-safe
+
+**Decision.** `salons.feature_flags.ai_rule_first_optimization` gates all new
+cost-saving behavior. When absent or false, no-show policy, Digest, and Watchdog
+keep their previous paths. When true:
+
+- no-show risk uses the deterministic scorer and calls the policy model only in
+  the ambiguous 50–69 band; a skipped/limited/failed model call always falls
+  back to the existing deterministic card rule;
+- Digest uses AI only when actions, alerts, approvals, or unclosed appointments
+  need judgment; otherwise it still sends a deterministic daily summary;
+- Watchdog calls AI only for a deterministic material signal (sync failure or
+  staleness, unprotected high risk, no-show spike, or material demand drop);
+- every paid call first claims an atomic, PII-free per-salon slot in Postgres.
+
+**Rollback.** Set `ai_rule_first_optimization=false` for the salon. No schema
+rollback or booking mutation is required. The durable claims then become inert
+and expire naturally.
+
+**Safety.** Limits fail closed for paid AI but fail open to deterministic salon
+behavior. They never block bookings, charge money, send campaigns, or disable
+the existing no-show protection rule.
+
+---
+
 ## 2026-07-30 — Lifecycle telemetry does not use server actions
 
 **Decision.** Dashboard activity-count polling uses a read-only API GET, and

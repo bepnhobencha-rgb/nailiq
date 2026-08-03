@@ -2,6 +2,11 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { looseServiceClient, type Row } from "@/shared/integrations/square/looseDb";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import {
+  claimAiExecutionSlot,
+  ruleFirstOptimizationEnabled,
+} from "@/shared/ai/executionLimit";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 
 /**
  * AI Watchdog — proactive owner alerts. A daily-ish agent (piggybacks on the
@@ -137,11 +142,15 @@ Mỗi cảnh báo gồm: kind (no_show_spike|protection_gap|sync_stuck|low_booki
 Chỉ trả JSON: {"alerts":[{"kind":"...","severity":"...","title":"...","message":"..."}]}`;
 
   try {
-    const resp = await ai.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 700,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const model = "claude-haiku-4-5-20251001";
+    const resp = await trackAnthropicMessage(
+      { salonId: snap.salonId, feature: "watchdog", model },
+      () => ai.messages.create({
+        model,
+        max_tokens: 700,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    );
     const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
     const json = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
     const parsed = JSON.parse(json) as { alerts?: unknown };
@@ -158,6 +167,20 @@ Chỉ trả JSON: {"alerts":[{"kind":"...","severity":"...","title":"...","messa
   } catch {
     return null;
   }
+}
+
+export function hasMaterialWatchdogSignal(snap: OpsSnapshot): boolean {
+  const noShowSpike =
+    snap.noShow7d >= 2 && snap.noShow7d >= Math.max(2, snap.noShowPrev7d * 2);
+  const demandDrop =
+    snap.createdPrev7d >= 5 && snap.created7d <= Math.floor(snap.createdPrev7d / 2);
+  return Boolean(
+    snap.syncError ||
+      (snap.syncStaleMinutes != null && snap.syncStaleMinutes >= 180) ||
+      snap.upcomingHighRiskUnprotected > 0 ||
+      noShowSpike ||
+      demandDrop,
+  );
 }
 
 /** ② CODE SPINE — clamp + cap. Drops empty, caps at 4, info-only when unsure. */
@@ -194,16 +217,28 @@ export async function runWatchdog(salonId: string): Promise<void> {
     const snap = await gatherOpsSnapshot(salonId);
     if (!snap) return;
 
-    const assessed = await agentWatchdogAssess(snap);
-    const alerts = guardWatchdog(assessed);
-
     const svc = createServiceRoleClient();
-    // Mark the run FIRST so a mid-run failure still throttles (avoids hammering
-    // the AI every 5 min if inserts fail).
+    // Persist the cadence before any model call so failures, conditional skips,
+    // and concurrent workers cannot hammer the provider.
     await svc.from("watchdog_state" as never).upsert(
       { salon_id: salonId, last_run_at: new Date().toISOString() } as never,
       { onConflict: "salon_id" } as never,
     );
+
+    if (ruleFirstOptimizationEnabled(flags)) {
+      if (!hasMaterialWatchdogSignal(snap)) return;
+      const claimed = await claimAiExecutionSlot({
+        salonId,
+        feature: "watchdog",
+        dedupeKey: String(Math.floor(Date.now() / (12 * 3600 * 1000))),
+        windowSeconds: 86400,
+        maxCalls: 2,
+      });
+      if (!claimed) return;
+    }
+
+    const assessed = await agentWatchdogAssess(snap);
+    const alerts = guardWatchdog(assessed);
 
     if (alerts.length === 0) return;
 

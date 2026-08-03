@@ -28,6 +28,7 @@ export async function handleBookingProtection(
     const id = (bookingId ?? "").trim();
     const sid = (salonId ?? "").trim();
     if (!id || !sid) return;
+    void channel; // The booking row is the source of truth for channel context.
 
     // Read salon to determine AI flag state and build the SIP (Salon Intelligence
     // Profile). The ai_profile column is NULL until the Manager Briefing (P1) is
@@ -66,11 +67,14 @@ export async function handleBookingProtection(
       );
       // applyToRow=true so the agent writes noshow_card_required directly when
       // in LIVE mode and no surrounding update exists (same as the cron path).
-      await runNoShowPolicyAgent(id, { applyToRow: liveOn });
+      const agentDecision = await runNoShowPolicyAgent(id, {
+        applyToRow: liveOn,
+      });
 
-      // Shadow mode: agent only logged → still need to run the hard rule so the
-      // booking actually gets its card-required flag set.
-      if (!liveOn) {
+      // Shadow mode, a rule-first skip, a durable rate-limit denial, or an AI
+      // failure all fall back to the hard rule. This is essential in LIVE mode:
+      // optimizing away a model call must never leave a booking unprotected.
+      if (!liveOn || !agentDecision) {
         const { ensureNoShowCardRequirement } = await import(
           "@/shared/noshow/ensureNoShowCardRequirement"
         );
