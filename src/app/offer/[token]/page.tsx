@@ -33,6 +33,8 @@ export default async function PrivateOfferPage({ params, searchParams }: Props) 
   if (!offer) notFound();
   const action = startPrivateOfferCheckout.bind(null, offer.accessKey);
   const monthly = formatUsd(offer.monthlyAmountCents);
+  const monthlySetup = formatUsd(offer.monthlySetupAmountCents);
+  const monthlyFirstPayment = formatUsd(offer.monthlyAmountCents + offer.monthlySetupAmountCents);
   const quarterly = offer.quarterlyAmountCents ? formatUsd(offer.quarterlyAmountCents) : null;
   const semiannual = offer.semiannualAmountCents ? formatUsd(offer.semiannualAmountCents) : null;
   const annual = formatUsd(offer.annualAmountCents);
@@ -49,6 +51,7 @@ export default async function PrivateOfferPage({ params, searchParams }: Props) 
             <div className="rounded-2xl border border-white/12 bg-white/7 p-5">
               <p className="text-xs uppercase tracking-[0.14em] text-white/55">Monthly · Hằng tháng</p>
               <p className="mt-2 text-3xl font-semibold">{monthly} USD</p>
+              <p className="mt-1 text-sm text-white/55">First payment {monthlyFirstPayment} including {monthlySetup} one-time setup</p>
             </div>
             <div className="rounded-2xl border border-white/12 bg-white/7 p-5">
               <p className="text-xs uppercase tracking-[0.14em] text-white/55">Annual · Hằng năm</p>
@@ -56,7 +59,7 @@ export default async function PrivateOfferPage({ params, searchParams }: Props) 
               <p className="mt-1 text-sm text-white/55">12-month initial term · Save two months</p>
             </div>
           </div>
-          <p className="mt-8 text-sm leading-6 text-white/55">Standard setup $299 − founding-customer discount $299 = $0 due.</p>
+          <p className="mt-8 text-sm leading-6 text-white/55">The {monthlySetup} one-time setup fee applies only to monthly billing. Setup is waived for every other available schedule.</p>
         </section>
 
         <section className="rounded-[2rem] border border-black/8 bg-white p-7 shadow-lg sm:p-9">
@@ -67,7 +70,7 @@ export default async function PrivateOfferPage({ params, searchParams }: Props) 
 
           <div className="mt-6 space-y-4 text-sm leading-6 text-black/68">
             <p><strong>Initial term:</strong> 12 months beginning after Stripe confirms the first successful payment.</p>
-            <p><strong>Billing:</strong> Choose {monthly} USD monthly{quarterly ? `, ${quarterly} USD every 3 months` : ""}{semiannual ? `, ${semiannual} USD every 6 months` : ""}, or {annual} USD once for the full initial term. These are payment schedules for the same 12-month agreement, not shorter service terms.</p>
+            <p><strong>Billing:</strong> Monthly billing has a first payment of {monthlyFirstPayment} USD ({monthly} subscription + {monthlySetup} one-time setup), then {monthly} USD monthly. Other available schedules are {quarterly ? `${quarterly} USD every 3 months, ` : ""}{semiannual ? `${semiannual} USD every 6 months, ` : ""}{annual} USD annually, with setup waived. These are payment schedules for the same 12-month agreement, not shorter service terms.</p>
             <p><strong>Renewal:</strong> After the initial term, service renews under the selected schedule at the same price unless either party gives at least 30 days&apos; written notice.</p>
             <p><strong>Early termination:</strong> Reduced or discontinued use does not end the initial-term commitment. NailIQ may agree in writing to an early release. Material breach by NailIQ is subject to a 30-day written cure period.</p>
             <p><strong>Included:</strong> Salon website, online booking, Front Desk, staff and service setup, training, managed support, and up to 250 SMS segments monthly under fair-use terms.</p>
@@ -77,7 +80,7 @@ export default async function PrivateOfferPage({ params, searchParams }: Props) 
           <form action={action} className="mt-7 space-y-4">
             <fieldset className="grid gap-3 sm:grid-cols-2">
               <legend className="mb-2 text-sm font-semibold">Billing schedule · Lịch thanh toán</legend>
-              <label className="rounded-xl border border-black/12 p-4"><input name="billingSchedule" type="radio" value="monthly" defaultChecked className="mr-2" />{monthly}/month</label>
+              <label className="rounded-xl border border-black/12 p-4"><input name="billingSchedule" type="radio" value="monthly" defaultChecked className="mr-2" />{monthly}/month + {monthlySetup} setup once</label>
               {quarterly ? <label className="rounded-xl border border-black/12 p-4"><input name="billingSchedule" type="radio" value="quarterly" className="mr-2" />{quarterly}/3 months · no discount</label> : null}
               {semiannual ? <label className="rounded-xl border border-black/12 p-4"><input name="billingSchedule" type="radio" value="semiannual" className="mr-2" />{semiannual}/6 months · no discount</label> : null}
               <label className="rounded-xl border border-black/12 p-4"><input name="billingSchedule" type="radio" value="annual" className="mr-2" />{annual}/year</label>
