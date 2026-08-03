@@ -18,6 +18,8 @@ import {
 import { loadPlatformDisabledFeatures } from "@/shared/features/platformFeatureFlags";
 import { getPendingApprovals } from "@/shared/ai/approvalRequests";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { SubscriptionDeadlineNotice } from "@/components/dashboard/SubscriptionDeadlineNotice";
+import { getPrivateOfferBySalonId } from "@/shared/sales/privateOffers";
 
 type Props = {
   children: ReactNode;
@@ -110,6 +112,33 @@ export default async function DashboardSlugLayout({
     wizardGate.data.setup_wizard_completed_at == null
   ) {
     redirect("/register/setup");
+  }
+
+  // The two personalized Hi-Lite offers passed their July 31 deadline. Keep
+  // public salon pages and booking available, but do not render operational
+  // Dashboard content until Stripe's signed webhook persists a subscription.
+  // This is evaluated server-side on every Dashboard request: localStorage,
+  // client-side CSS, or a direct nested URL cannot bypass the screen.
+  const privateOffer = getPrivateOfferBySalonId(ctx.salon.id);
+  if (privateOffer) {
+    const { data: billingRow } = await createServiceRoleClient()
+      .from("salons")
+      .select("stripe_subscription_id, subscription_status")
+      .eq("id", ctx.salon.id)
+      .maybeSingle();
+    const subscriptionId = (billingRow as { stripe_subscription_id?: string | null } | null)
+      ?.stripe_subscription_id?.trim();
+    const status = (billingRow as { subscription_status?: string | null } | null)
+      ?.subscription_status;
+    const paid = Boolean(subscriptionId) && (status === "active" || status === "trialing");
+    if (!paid) {
+      return (
+        <SubscriptionDeadlineNotice
+          salonName={privateOffer.salonName}
+          offerUrl={`/offer/${encodeURIComponent(privateOffer.accessKey)}`}
+        />
+      );
+    }
   }
 
   const salonName = (ctx.salon.name ?? "").trim() || slug;
