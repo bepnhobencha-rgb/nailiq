@@ -55,10 +55,10 @@ describe("payment_disputes boundary", () => {
 
   it("updates blank-database parity tripwires", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("through 20260801150439");
-    expect(parity).toContain("policies: 151");
+    expect(parity).toContain("through 20260803211026");
+    expect(parity).toContain("policies: 153");
     expect(parity).toContain(
-      "const GRANTS = { anon: 57, authenticated: 64, service_role: 107 }",
+      "const GRANTS = { anon: 57, authenticated: 64, service_role: 109 }",
     );
   });
 });

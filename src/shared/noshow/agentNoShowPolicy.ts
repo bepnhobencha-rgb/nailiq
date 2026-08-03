@@ -4,6 +4,7 @@ import { looseServiceClient, type Row } from "@/shared/integrations/square/loose
 import { resolvePaymentProvider } from "@/shared/integrations/payments";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { isAiAgentPermissionEnabled } from "@/shared/ai/agentPermissionFence";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 
 /**
  * AI No-Show Policy Agent — the first "AI brain on a deterministic spine".
@@ -291,11 +292,15 @@ If card/deposit selected, write a short, warm, professional message to the custo
 Return ONLY JSON: {"protection":"none|card|deposit","feePercent":<0-${ctx.maxFeePercent}>,"reason":"<1 sentence reason>","message":"<message or null>","confidence":"low|medium|high"}`;
 
   try {
-    const resp = await ai.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 400,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const model = "claude-haiku-4-5-20251001";
+    const resp = await trackAnthropicMessage(
+      { salonId: ctx.salonId, feature: "noshow_policy", model },
+      () => ai.messages.create({
+        model,
+        max_tokens: 400,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    );
     const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
     const json = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
     const parsed = JSON.parse(json) as Partial<AiPolicyDecision>;

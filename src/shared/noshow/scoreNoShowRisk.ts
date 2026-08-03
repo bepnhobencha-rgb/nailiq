@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 
 export type RiskScoreInput = {
+  salonId: string;
   clientName: string;
   serviceName: string;
   startTimeUtc: string;
@@ -59,11 +61,15 @@ Customer data:
 Respond with JSON only: {"score": <0-100>, "reasoning": "<1 sentence>"}`;
 
   try {
-    const response = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 100,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const model = "claude-haiku-4-5-20251001";
+    const response = await trackAnthropicMessage(
+      { salonId: input.salonId, feature: "noshow_risk_score", model },
+      () => client.messages.create({
+        model,
+        max_tokens: 100,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    );
 
     const text =
       response.content[0].type === "text" ? response.content[0].text : "";
