@@ -14,6 +14,8 @@ describe("Hi-Lite private-offer enforcement boundary", () => {
     expect(offers).toContain("OFFER_TOKEN_HILITE_HEAD_SPA");
     expect(offers).toContain('salonSlug: "hilite-studio"');
     expect(offers).toContain('monthlyAmountCents: 14_900');
+    expect(offers).toContain('quarterlyAmountCents: 44_700');
+    expect(offers).toContain('semiannualAmountCents: 89_400');
     expect(offers).toContain("OFFER_TOKEN_HILITE_STUDIO");
     expect(offers).toContain("getPrivateOfferBySalonId");
   });
@@ -35,6 +37,18 @@ describe("Hi-Lite private-offer enforcement boundary", () => {
     expect(action).toContain("client_reference_id: offer.salonId");
     expect(action).toContain("private_offer_key: offer.accessKey");
     expect(action).toContain("subscription_data: { metadata }");
+    expect(action).toContain('value === "quarterly" && offer.quarterlyAmountCents');
+    expect(action).toContain('intervalCount: 3');
+    expect(action).toContain('value === "semiannual" && offer.semiannualAmountCents');
+    expect(action).toContain('intervalCount: 6');
+  });
+
+  it("shows 3- and 6-month no-discount schedules only when configured", () => {
+    const page = read("src/app/offer/[token]/page.tsx");
+    expect(page).toContain('value="quarterly"');
+    expect(page).toContain("{quarterly}/3 months · no discount");
+    expect(page).toContain('value="semiannual"');
+    expect(page).toContain("{semiannual}/6 months · no discount");
   });
 
   it("does not prefill or render the private recipient email", () => {

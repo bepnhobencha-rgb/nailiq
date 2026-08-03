@@ -7,6 +7,27 @@ import { getStripeClient, getStripeReturnOrigin } from "@/shared/lib/stripe";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getPrivateOffer } from "@/shared/sales/privateOffers";
 
+type BillingSchedule = "monthly" | "quarterly" | "semiannual" | "annual";
+
+function resolveBillingSchedule(
+  offer: NonNullable<ReturnType<typeof getPrivateOffer>>,
+  value: FormDataEntryValue | null,
+): { schedule: BillingSchedule; amount: number; interval: "month" | "year"; intervalCount?: number } | null {
+  if (value === "monthly") {
+    return { schedule: "monthly", amount: offer.monthlyAmountCents, interval: "month" };
+  }
+  if (value === "quarterly" && offer.quarterlyAmountCents) {
+    return { schedule: "quarterly", amount: offer.quarterlyAmountCents, interval: "month", intervalCount: 3 };
+  }
+  if (value === "semiannual" && offer.semiannualAmountCents) {
+    return { schedule: "semiannual", amount: offer.semiannualAmountCents, interval: "month", intervalCount: 6 };
+  }
+  if (value === "annual") {
+    return { schedule: "annual", amount: offer.annualAmountCents, interval: "year" };
+  }
+  return null;
+}
+
 function fail(token: string, code: string): never {
   redirect(`/offer/${encodeURIComponent(token)}?error=${encodeURIComponent(code)}`);
 }
@@ -22,12 +43,13 @@ export async function startPrivateOfferCheckout(token: string, formData: FormDat
   const accepted = formData.get("agreementAccepted") === "yes";
   const authorityAccepted = formData.get("authorityAccepted") === "yes";
   const renewalAccepted = formData.get("renewalAccepted") === "yes";
-  const billingSchedule = formData.get("billingSchedule") === "annual" ? "annual" : "monthly";
+  const billing = resolveBillingSchedule(offer, formData.get("billingSchedule"));
 
   if (signerName.length < 2 || signerName.length > 120) fail(token, "signer");
   if (signerTitle.length < 2 || signerTitle.length > 100) fail(token, "title");
   if (businessLegalName.length < 2 || businessLegalName.length > 160) fail(token, "business");
   if (!accepted || !authorityAccepted || !renewalAccepted) fail(token, "agreement");
+  if (!billing) fail(token, "billing");
 
   const stripe = getStripeClient();
   if (!stripe) fail(token, "stripe");
@@ -88,9 +110,8 @@ export async function startPrivateOfferCheckout(token: string, formData: FormDat
       automatic_renewal_confirmed: "true",
       acceptance_ip: acceptanceIp,
       initial_term_months: "12",
-      billing_schedule: billingSchedule,
+      billing_schedule: billing.schedule,
     };
-    const amount = billingSchedule === "annual" ? offer.annualAmountCents : offer.monthlyAmountCents;
     const origin = getStripeReturnOrigin();
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
@@ -101,8 +122,11 @@ export async function startPrivateOfferCheckout(token: string, formData: FormDat
         quantity: 1,
         price_data: {
           currency: "usd",
-          unit_amount: amount,
-          recurring: { interval: billingSchedule === "annual" ? "year" : "month" },
+          unit_amount: billing.amount,
+          recurring: {
+            interval: billing.interval,
+            ...(billing.intervalCount ? { interval_count: billing.intervalCount } : {}),
+          },
           product_data: { name: `NailIQ Managed Salon — ${offer.salonName}` },
         },
       }],
@@ -110,7 +134,7 @@ export async function startPrivateOfferCheckout(token: string, formData: FormDat
       subscription_data: { metadata },
       success_url: `${origin}/offer/${offer.accessKey}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/offer/${offer.accessKey}?checkout=cancelled`,
-    }, { idempotencyKey: `private-offer-checkout-${offer.salonId}-${billingSchedule}-${acceptedAt.slice(0, 16)}` });
+    }, { idempotencyKey: `private-offer-checkout-${offer.salonId}-${billing.schedule}-${acceptedAt.slice(0, 16)}` });
     if (!session.url) fail(token, "stripe");
     redirect(session.url);
   } catch (checkoutError) {
