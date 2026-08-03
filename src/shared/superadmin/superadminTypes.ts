@@ -112,6 +112,15 @@ export const SUPERADMIN_PER_SALON_FLAGS: ReadonlyArray<SuperAdminFlagDescriptor>
     phase: "live",
   },
   {
+    key: "ai_rule_first_optimization",
+    group: "intelligence",
+    label: "Rule-first AI Optimization",
+    description:
+      "Giảm AI gọi trùng cho no-show, Digest và Watchdog; tắt để quay lại cách cũ ngay.",
+    phase: "live",
+    danger: true,
+  },
+  {
     key: "nail_tryon_enabled",
     group: "intelligence",
     label: "Thử mẫu nail bằng AI",
