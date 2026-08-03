@@ -44,3 +44,30 @@ comment on table public.ai_usage_events is
 
 comment on column public.ai_usage_events.estimated_cost_usd is
   'Best-effort estimate from the pricing snapshot encoded by the application; provider billing remains authoritative.';
+
+-- Alert-only policy. It never throttles, disables, reroutes, or otherwise
+-- changes model behavior. A policy exists only after an operator intentionally
+-- configures one; the dashboard reports unconfigured tenants truthfully.
+create table public.ai_budget_policies (
+  salon_id uuid primary key references public.salons(id) on delete cascade,
+  monthly_budget_usd numeric(12, 2) not null check (monthly_budget_usd > 0),
+  warning_percent smallint not null default 80
+    check (warning_percent between 1 and 100),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.ai_budget_policies enable row level security;
+
+revoke all on table public.ai_budget_policies from anon, authenticated;
+grant all on table public.ai_budget_policies to service_role;
+
+create policy "service role manages AI budget policies"
+  on public.ai_budget_policies
+  for all
+  to service_role
+  using (true)
+  with check (true);
+
+comment on table public.ai_budget_policies is
+  'Internal alert thresholds only. Exceeding a budget never changes runtime AI behavior.';
