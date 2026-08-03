@@ -79,6 +79,7 @@ export async function evaluateBookingNoShow(
 
     const [riskResult] = await Promise.allSettled([
       scoreNoShowRisk({
+        salonId: body.salonId,
         clientName: body.clientName,
         serviceName: body.serviceName,
         startTimeUtc: body.startTimeUtc,
