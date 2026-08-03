@@ -8,6 +8,7 @@ export type PrivateOffer = {
   salonName: string;
   salonSlug: string;
   monthlyAmountCents: number;
+  monthlySetupAmountCents: number;
   quarterlyAmountCents?: number;
   semiannualAmountCents?: number;
   annualAmountCents: number;
@@ -24,6 +25,7 @@ const PRIVATE_OFFERS: readonly PrivateOffer[] = [
     salonName: "Hi-Lite Head Spa",
     salonSlug: "hilite-anaheim",
     monthlyAmountCents: 19_900,
+    monthlySetupAmountCents: 29_900,
     annualAmountCents: 199_000,
     plan: "premium",
     agreementVersion: AGREEMENT_VERSION,
@@ -34,6 +36,7 @@ const PRIVATE_OFFERS: readonly PrivateOffer[] = [
     salonName: "Hi-Lite Studio",
     salonSlug: "hilite-studio",
     monthlyAmountCents: 14_900,
+    monthlySetupAmountCents: 29_900,
     quarterlyAmountCents: 44_700,
     semiannualAmountCents: 89_400,
     annualAmountCents: 149_000,

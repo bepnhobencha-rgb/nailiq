@@ -111,25 +111,38 @@ export async function startPrivateOfferCheckout(token: string, formData: FormDat
       acceptance_ip: acceptanceIp,
       initial_term_months: "12",
       billing_schedule: billing.schedule,
+      setup_fee_cents: billing.schedule === "monthly" ? String(offer.monthlySetupAmountCents) : "0",
     };
     const origin = getStripeReturnOrigin();
+    const recurringLineItem = {
+      quantity: 1,
+      price_data: {
+        currency: "usd",
+        unit_amount: billing.amount,
+        recurring: {
+          interval: billing.interval,
+          ...(billing.intervalCount ? { interval_count: billing.intervalCount } : {}),
+        },
+        product_data: { name: `NailIQ Managed Salon — ${offer.salonName}` },
+      },
+    };
+    const setupLineItem = {
+        quantity: 1,
+        price_data: {
+          currency: "usd",
+          unit_amount: offer.monthlySetupAmountCents,
+          product_data: { name: `NailIQ one-time setup — ${offer.salonName}` },
+        },
+      };
+    const lineItems = billing.schedule === "monthly"
+      ? [recurringLineItem, setupLineItem]
+      : [recurringLineItem];
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       customer: customerId,
       billing_address_collection: "required",
       client_reference_id: offer.salonId,
-      line_items: [{
-        quantity: 1,
-        price_data: {
-          currency: "usd",
-          unit_amount: billing.amount,
-          recurring: {
-            interval: billing.interval,
-            ...(billing.intervalCount ? { interval_count: billing.intervalCount } : {}),
-          },
-          product_data: { name: `NailIQ Managed Salon — ${offer.salonName}` },
-        },
-      }],
+      line_items: lineItems,
       metadata,
       subscription_data: { metadata },
       success_url: `${origin}/offer/${offer.accessKey}/success?session_id={CHECKOUT_SESSION_ID}`,

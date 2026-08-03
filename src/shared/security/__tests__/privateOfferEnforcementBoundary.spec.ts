@@ -11,6 +11,7 @@ describe("Hi-Lite private-offer enforcement boundary", () => {
     expect(offers).toContain('import "server-only"');
     expect(offers).toContain('salonSlug: "hilite-anaheim"');
     expect(offers).toContain('monthlyAmountCents: 19_900');
+    expect(offers).toContain('monthlySetupAmountCents: 29_900');
     expect(offers).toContain("OFFER_TOKEN_HILITE_HEAD_SPA");
     expect(offers).toContain('salonSlug: "hilite-studio"');
     expect(offers).toContain('monthlyAmountCents: 14_900');
@@ -18,6 +19,17 @@ describe("Hi-Lite private-offer enforcement boundary", () => {
     expect(offers).toContain('semiannualAmountCents: 89_400');
     expect(offers).toContain("OFFER_TOKEN_HILITE_STUDIO");
     expect(offers).toContain("getPrivateOfferBySalonId");
+  });
+
+  it("charges the setup fee exactly once for monthly billing only", () => {
+    const action = read("src/app/offer/[token]/actions.ts");
+    const page = read("src/app/offer/[token]/page.tsx");
+    expect(action).toContain('billing.schedule === "monthly"');
+    expect(action).toContain("unit_amount: offer.monthlySetupAmountCents");
+    expect(action).toContain("NailIQ one-time setup");
+    expect(action).toContain('setup_fee_cents: billing.schedule === "monthly"');
+    expect(page).toContain("{monthly}/month + {monthlySetup} setup once");
+    expect(page).toContain("Setup is waived for every other available schedule");
   });
 
   it("locks only Dashboard rendering and unlocks from persisted Stripe truth", () => {
