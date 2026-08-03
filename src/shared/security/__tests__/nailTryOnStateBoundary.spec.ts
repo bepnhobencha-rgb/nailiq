@@ -87,9 +87,9 @@ describe("nail-tryon state boundary", () => {
 
   it("updates the blank-database parity tripwire", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("policies: 151");
+    expect(parity).toContain("policies: 153");
     expect(parity).toContain(
-      "const GRANTS = { anon: 57, authenticated: 64, service_role: 107 }",
+      "const GRANTS = { anon: 57, authenticated: 64, service_role: 109 }",
     );
   });
 });
