@@ -21,6 +21,7 @@ const errorCopy: Record<string, string> = {
   business: "Enter the business's full legal name.",
   email: "The email must match the salon administrator email on this offer.",
   agreement: "Accept all agreement confirmations before continuing.",
+  billing: "Choose one of the available billing schedules.",
   "already-active": "This salon already has an active Stripe subscription.",
   salon: "This offer could not be matched to the salon record.",
   stripe: "Stripe Checkout could not be opened. No charge was made.",
@@ -32,6 +33,8 @@ export default async function PrivateOfferPage({ params, searchParams }: Props) 
   if (!offer) notFound();
   const action = startPrivateOfferCheckout.bind(null, offer.accessKey);
   const monthly = formatUsd(offer.monthlyAmountCents);
+  const quarterly = offer.quarterlyAmountCents ? formatUsd(offer.quarterlyAmountCents) : null;
+  const semiannual = offer.semiannualAmountCents ? formatUsd(offer.semiannualAmountCents) : null;
   const annual = formatUsd(offer.annualAmountCents);
 
   return (
@@ -64,7 +67,7 @@ export default async function PrivateOfferPage({ params, searchParams }: Props) 
 
           <div className="mt-6 space-y-4 text-sm leading-6 text-black/68">
             <p><strong>Initial term:</strong> 12 months beginning after Stripe confirms the first successful payment.</p>
-            <p><strong>Billing:</strong> Choose {monthly} USD monthly for 12 months, or {annual} USD once for the full initial term. Monthly billing is a payment schedule, not a month-to-month agreement.</p>
+            <p><strong>Billing:</strong> Choose {monthly} USD monthly{quarterly ? `, ${quarterly} USD every 3 months` : ""}{semiannual ? `, ${semiannual} USD every 6 months` : ""}, or {annual} USD once for the full initial term. These are payment schedules for the same 12-month agreement, not shorter service terms.</p>
             <p><strong>Renewal:</strong> After the initial term, service renews under the selected schedule at the same price unless either party gives at least 30 days&apos; written notice.</p>
             <p><strong>Early termination:</strong> Reduced or discontinued use does not end the initial-term commitment. NailIQ may agree in writing to an early release. Material breach by NailIQ is subject to a 30-day written cure period.</p>
             <p><strong>Included:</strong> Salon website, online booking, Front Desk, staff and service setup, training, managed support, and up to 250 SMS segments monthly under fair-use terms.</p>
@@ -75,6 +78,8 @@ export default async function PrivateOfferPage({ params, searchParams }: Props) 
             <fieldset className="grid gap-3 sm:grid-cols-2">
               <legend className="mb-2 text-sm font-semibold">Billing schedule · Lịch thanh toán</legend>
               <label className="rounded-xl border border-black/12 p-4"><input name="billingSchedule" type="radio" value="monthly" defaultChecked className="mr-2" />{monthly}/month</label>
+              {quarterly ? <label className="rounded-xl border border-black/12 p-4"><input name="billingSchedule" type="radio" value="quarterly" className="mr-2" />{quarterly}/3 months · no discount</label> : null}
+              {semiannual ? <label className="rounded-xl border border-black/12 p-4"><input name="billingSchedule" type="radio" value="semiannual" className="mr-2" />{semiannual}/6 months · no discount</label> : null}
               <label className="rounded-xl border border-black/12 p-4"><input name="billingSchedule" type="radio" value="annual" className="mr-2" />{annual}/year</label>
             </fieldset>
             {[
