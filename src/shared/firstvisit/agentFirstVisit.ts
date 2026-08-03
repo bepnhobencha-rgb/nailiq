@@ -13,6 +13,7 @@ import {
   getLessons,
 } from "@/shared/ai/lessons";
 import { salonToday, salonDayRangeUtc } from "@/shared/lib/salonTime";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 
 /**
  * "Lần ghé đầu → chắc chắn có lần 2"
@@ -68,6 +69,7 @@ function toYmd(d: Date): string {
 // ─── AI drafts ────────────────────────────────────────────────────────────────
 
 type DraftContext = {
+  salonId?: string | null;
   step: 0 | 1 | 2;
   clientName: string;
   salonName: string;
@@ -112,11 +114,15 @@ Rules: 1-2 sentences. Warm, zero pressure. Say you'd love to see them again and 
   }
 
   try {
-    const resp = await ai.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 320, // bilingual output is ~2x
-      messages: [{ role: "user", content: prompts[ctx.step] }],
-    });
+    const model = "claude-haiku-4-5-20251001";
+    const resp = await trackAnthropicMessage(
+      { salonId: ctx.salonId ?? null, feature: "first_visit_draft", model },
+      () => ai.messages.create({
+        model,
+        max_tokens: 320, // bilingual output is ~2x
+        messages: [{ role: "user", content: prompts[ctx.step] }],
+      }),
+    );
     const raw = resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
     const clean = raw.replace(/^["']|["']$/g, "").trim();
     return clean.length > 0 && clean.length <= 700 ? clean : null;
@@ -375,7 +381,7 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
       if (insertErr) continue; // already enrolled
 
       // Step 0: same-day warmth (send immediately on enroll)
-      const warmth = await draftMessage({ step: 0, clientName: fv.name, salonName, service: fv.service, lang, bookingUrl });
+      const warmth = await draftMessage({ salonId, step: 0, clientName: fv.name, salonName, service: fv.service, lang, bookingUrl });
       if (!warmth) continue;
 
       if (
@@ -479,7 +485,7 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
         ? null
         : toYmd(addDays(new Date(firstVisitDate), step === 1 ? day2 : day1));
 
-      const message = await draftMessage({ step, clientName: name, salonName, service: seqService, lang, bookingUrl });
+      const message = await draftMessage({ salonId, step, clientName: name, salonName, service: seqService, lang, bookingUrl });
       if (!message) continue;
 
       const body = step >= 1 ? `${message}\n${bookingUrl}` : message;

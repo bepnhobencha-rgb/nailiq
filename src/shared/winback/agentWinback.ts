@@ -13,6 +13,7 @@ import {
 } from "@/shared/ai/lessons";
 import { phoneRegion } from "@/shared/lib/phoneRegion";
 import { isAiAgentPermissionEnabled } from "@/shared/ai/agentPermissionFence";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 import {
   collectUnreachablePhones,
   selectWinbackCandidates,
@@ -112,6 +113,7 @@ export async function agentDraftWinback(
   c: WinbackCandidate,
   salonName: string,
   lang: "en" | "vi",
+  salonId: string | null = null,
 ): Promise<string | null> {
   const ai = getClient();
   if (!ai) return null;
@@ -129,11 +131,15 @@ Salon: ${salonName}.
 Rules: 1-2 sentences, friendly + personal, mention the salon by name, if a service is given naturally reference it (e.g. "ready for your next Hi-Lite Royal?"), gently invite them to come back, NO emojis, NO links (those are added when sent). Return ONLY the message text, nothing else.`;
 
   try {
-    const resp = await ai.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 200,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const model = "claude-haiku-4-5-20251001";
+    const resp = await trackAnthropicMessage(
+      { salonId, feature: "winback_draft", model },
+      () => ai.messages.create({
+        model,
+        max_tokens: 200,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    );
     const text = resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
     const clean = text.replace(/^["']|["']$/g, "").trim();
     return clean.length > 0 && clean.length <= 480 ? clean : null;
@@ -266,7 +272,7 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
       }
 
       const lang: "en" | "vi" = "en";
-      const message = await agentDraftWinback(c, salonName, lang);
+      const message = await agentDraftWinback(c, salonName, lang, salonId);
       if (!message) continue;
 
       // Derive a single canonical channel for logging (prefer email to record deliverability).
