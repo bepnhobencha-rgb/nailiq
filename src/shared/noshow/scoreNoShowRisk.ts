@@ -38,11 +38,13 @@ function getClient(): Anthropic | null {
  */
 export async function scoreNoShowRisk(
   input: RiskScoreInput,
+  options: { deterministicOnly?: boolean } = {},
 ): Promise<RiskScoreResult> {
+  if (options.deterministicOnly) return deterministicNoShowRiskScore(input);
   const client = getClient();
 
   if (!client) {
-    return deterministicScore(input);
+    return deterministicNoShowRiskScore(input);
   }
 
   const businessDescriptor = input.businessDescriptor?.trim() || "an appointment-based business";
@@ -74,15 +76,15 @@ Respond with JSON only: {"score": <0-100>, "reasoning": "<1 sentence>"}`;
     const text =
       response.content[0].type === "text" ? response.content[0].text : "";
     const parsed = JSON.parse(text.trim()) as { score?: unknown; reasoning?: unknown };
-    const score = typeof parsed.score === "number" ? Math.min(100, Math.max(0, Math.round(parsed.score))) : deterministicScore(input).score;
+    const score = typeof parsed.score === "number" ? Math.min(100, Math.max(0, Math.round(parsed.score))) : deterministicNoShowRiskScore(input).score;
     const reasoning = typeof parsed.reasoning === "string" ? parsed.reasoning : "";
     return { score, reasoning };
   } catch {
-    return deterministicScore(input);
+    return deterministicNoShowRiskScore(input);
   }
 }
 
-function deterministicScore(input: RiskScoreInput): RiskScoreResult {
+export function deterministicNoShowRiskScore(input: RiskScoreInput): RiskScoreResult {
   let score = 20; // base risk
 
   if (input.isNewCustomer) score += 25;

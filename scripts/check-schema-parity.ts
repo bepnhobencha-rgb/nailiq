@@ -19,15 +19,15 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260803211026. Refresh these with each schema-changing forward
+ * through 20260803220730. Refresh these with each schema-changing forward
  * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
-  tables: 104,
-  columns: 1393,
-  policies: 153,
+  tables: 105,
+  columns: 1398,
+  policies: 154,
   /**
-   * APP functions only — 108 after the rehearsed forward migrations.
+   * APP functions only — 109 after the rehearsed forward migrations.
    *
    * Counting every `public` function is a trap: many belong to EXTENSIONS
    * (pgcrypto, btree_gist, pg_trgm, uuid-ossp), which production happens to have
@@ -36,9 +36,9 @@ const PRODUCTION = {
    * The query below excludes anything a `pg_depend` extension edge points at,
    * so extension placement cannot distort this release-shape tripwire.
    */
-  functions: 108,
+  functions: 109,
   triggers: 34,
-  indexes: 339,
+  indexes: 341,
 } as const;
 
 /**
@@ -75,6 +75,7 @@ const CRITICAL_TABLES = [
   "ai_agent_permission_audit",
   "ai_usage_events",
   "ai_budget_policies",
+  "ai_execution_limits",
 ] as const;
 
 /** Booking cannot work without these; a missing RPC fails at runtime, not at apply time. */
@@ -114,6 +115,7 @@ const CRITICAL_FUNCTIONS = [
   "reject_ai_agent_permission_audit_mutation",
   "set_ai_agent_permission",
   "release_voice_session_reservation",
+  "claim_ai_execution_slot",
 ] as const;
 
 const dbUrl = process.env.DB_URL;
@@ -203,7 +205,7 @@ function main() {
   // The first dump here was taken with --no-privileges and produced 0 grants.
   // Everything above still went green. That is why this check exists.
   console.log("\n── Grant matrix ──\n");
-  const GRANTS = { anon: 57, authenticated: 64, service_role: 109 } as const;
+  const GRANTS = { anon: 57, authenticated: 64, service_role: 110 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (

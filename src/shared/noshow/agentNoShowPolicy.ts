@@ -4,7 +4,12 @@ import { looseServiceClient, type Row } from "@/shared/integrations/square/loose
 import { resolvePaymentProvider } from "@/shared/integrations/payments";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { isAiAgentPermissionEnabled } from "@/shared/ai/agentPermissionFence";
+import {
+  claimAiExecutionSlot,
+  ruleFirstOptimizationEnabled,
+} from "@/shared/ai/executionLimit";
 import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
+import { deterministicNoShowRiskScore } from "@/shared/noshow/scoreNoShowRisk";
 
 /**
  * AI No-Show Policy Agent — the first "AI brain on a deterministic spine".
@@ -47,6 +52,7 @@ export type PolicyContext = {
   aiShadowEnabled: boolean;
   /** salons.feature_flags.ai_noshow_policy_live — AI decision DRIVES the flag. */
   aiLiveEnabled: boolean;
+  ruleFirstOptimizationEnabled: boolean;
   /** Primary language for customer-facing messages ("en" | "vi"). Defaults to "en". */
   language: "en" | "vi";
   // Group booking context — needed so the AI reasons about the whole-party fee,
@@ -153,6 +159,9 @@ export async function gatherPolicyContext(bookingId: string): Promise<PolicyCont
       (s.feature_flags as Record<string, unknown> | null)?.ai_noshow_policy_shadow === true,
     aiLiveEnabled:
       (s.feature_flags as Record<string, unknown> | null)?.ai_noshow_policy_live === true,
+    ruleFirstOptimizationEnabled: ruleFirstOptimizationEnabled(
+      s.feature_flags as Record<string, unknown> | null,
+    ),
     // Salon's primary language for customer-facing messages. Falls back to "en"
     // (Hi-Lite's guests are English; Vietnamese-first salons set this to "vi").
     language: str(s.default_notification_locale).startsWith("vi") ? "vi" : "en",
@@ -337,6 +346,23 @@ export function clampAndGuard(ai: AiPolicyDecision | null, ctx: PolicyContext): 
   return { ...ai, feePercent };
 }
 
+export function isNoShowPolicyAmbiguous(ctx: PolicyContext): boolean {
+  if (ctx.isVip || !ctx.protectionEnabled || !ctx.providerConnected) return false;
+  const { score } = deterministicNoShowRiskScore({
+    salonId: ctx.salonId,
+    clientName: ctx.clientName,
+    serviceName: ctx.serviceName,
+    startTimeUtc: ctx.startTimeUtc,
+    isNewCustomer: ctx.isNew,
+    visitCount: ctx.visitCount,
+    noShowCount: ctx.noShowCount,
+    bookingSource: ctx.channel,
+    hasEmail: ctx.hasEmail,
+    hasPhone: ctx.hasPhone,
+  });
+  return score >= 50 && score < 70;
+}
+
 /**
  * Run the agent for one booking and LOG the decision vs the rule.
  *
@@ -361,9 +387,6 @@ export async function runNoShowPolicyAgent(
     if (!ctx) return null;
     if (!ctx.aiShadowEnabled && !ctx.aiLiveEnabled) return null; // not opted in
 
-    const aiRaw = await agentDecideNoShowPolicy(ctx);
-    const ai = clampAndGuard(aiRaw, ctx);
-
     // What the current deterministic rule would do (card vs none).
     let ruleProtection: Protection = "none";
     try {
@@ -372,6 +395,21 @@ export async function runNoShowPolicyAgent(
     } catch {
       /* leave as none */
     }
+
+    if (ctx.ruleFirstOptimizationEnabled) {
+      if (!isNoShowPolicyAmbiguous(ctx)) return null;
+      const claimed = await claimAiExecutionSlot({
+        salonId: ctx.salonId,
+        feature: "noshow_policy",
+        dedupeKey: bookingId,
+        windowSeconds: 3600,
+        maxCalls: 20,
+      });
+      if (!claimed) return null;
+    }
+
+    const aiRaw = await agentDecideNoShowPolicy(ctx);
+    const ai = clampAndGuard(aiRaw, ctx);
 
     // The model call can outlive an owner's permission change. Re-read the
     // sensitive live-policy flag before allowing either the caller or this
@@ -469,7 +507,13 @@ export async function backfillNoShowShadow(salonId: string, cap = 5): Promise<vo
       if (ran >= cap) break;
       const id = str(b.id);
       if (seen.has(id)) continue;
-      await runNoShowPolicyAgent(id, { applyToRow: liveOn });
+      const decision = await runNoShowPolicyAgent(id, { applyToRow: liveOn });
+      if (liveOn && !decision) {
+        const { ensureNoShowCardRequirement } = await import(
+          "@/shared/noshow/ensureNoShowCardRequirement"
+        );
+        await ensureNoShowCardRequirement(id);
+      }
       ran++;
     }
   } catch (e) {

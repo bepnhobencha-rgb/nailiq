@@ -1,5 +1,10 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import {
+  claimAiExecutionSlot,
+  ruleFirstOptimizationEnabled,
+} from "@/shared/ai/executionLimit";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { salonToday, salonDayRangeUtc } from "@/shared/lib/salonTime";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
@@ -212,7 +217,12 @@ CẢNH BÁO (nếu có):
 ${alertLines.length > 0 ? alertLines.join("\n") : "Không có cảnh báo."}${approvalsSection}`;
 }
 
-async function draftDigest(context: string, salonName: string, lang: "en" | "vi"): Promise<string | null> {
+async function draftDigest(
+  context: string,
+  salonId: string,
+  salonName: string,
+  lang: "en" | "vi",
+): Promise<string | null> {
   const ai = getAI();
   const langLabel = lang === "vi" ? "tiếng Việt" : "English";
 
@@ -240,8 +250,11 @@ Rules:
   }
 
   try {
-    const resp = await ai.messages.create({
-      model: "claude-sonnet-4-6",
+    const model = "claude-sonnet-4-6";
+    const resp = await trackAnthropicMessage(
+      { salonId, feature: "digest", model },
+      () => ai.messages.create({
+      model,
       // Was 400 — too tight for "3-4 short paragraphs" of Vietnamese prose on
       // an eventful day (many agent actions/alerts), which silently sent a
       // mid-sentence cut-off email once observed in prod (Hi-Lite Studio,
@@ -250,7 +263,8 @@ Rules:
       // of bug recurring for any reason.
       max_tokens: 1024,
       messages: [{ role: "user", content: prompt }],
-    });
+      }),
+    );
     // A response cut off mid-generation is worse than no digest at all — skip
     // sending (caller treats null as "don't send today") rather than mail a
     // broken half-sentence to the owner.
@@ -260,6 +274,32 @@ Rules:
   } catch {
     return null;
   }
+}
+
+export function shouldUseAiDigest(input: {
+  agentActionCount: number;
+  alertCount: number;
+  pendingApprovalCount: number;
+  unclosedCount: number;
+}): boolean {
+  return (
+    input.agentActionCount > 0 ||
+    input.alertCount > 0 ||
+    input.pendingApprovalCount > 0 ||
+    input.unclosedCount > 0
+  );
+}
+
+function deterministicDigestBody(
+  salonName: string,
+  stats: BookingStats,
+  unclosedCount: number,
+): string {
+  const revenue = (stats.revenueCents / 100).toFixed(0);
+  const closeout = unclosedCount > 0
+    ? ` Còn ${unclosedCount} lịch hẹn cần chốt sổ.`
+    : "";
+  return `${salonName}: Hôm nay đã hoàn thành ${stats.completed}/${stats.total} lịch hẹn, doanh thu ghi nhận $${revenue}. Ngày mai hiện có ${stats.tomorrowCount} lịch.${closeout}`;
 }
 
 // ─── Email send (bypasses sendOwnerAlert suppression) ─────────────────────────
@@ -514,7 +554,30 @@ export async function runDigest(salonId: string): Promise<void> {
       .map((r) => r.summary.slice(0, 100) + (r.summary.length > 100 ? "…" : ""));
 
     const context = buildContext(salonName, stats, agentActions, alerts, todayYmd, outcomeLines, instructions, pendingApprovalSummaries, unclosed.count);
-    const body = await draftDigest(context, salonName, "vi");
+    let body: string | null;
+    if (ruleFirstOptimizationEnabled(s.feature_flags)) {
+      const material = shouldUseAiDigest({
+        agentActionCount: agentActions.reduce((sum, item) => sum + item.actions.length, 0),
+        alertCount: alerts.length,
+        pendingApprovalCount: pendingApprovals.length,
+        unclosedCount: unclosed.count,
+      });
+      const claimed = material
+        ? await claimAiExecutionSlot({
+            salonId,
+            feature: "digest",
+            dedupeKey: todayYmd,
+            windowSeconds: 86400,
+            maxCalls: 1,
+          })
+        : false;
+      body = claimed
+        ? (await draftDigest(context, salonId, salonName, "vi")) ??
+          deterministicDigestBody(salonName, stats, unclosed.count)
+        : deterministicDigestBody(salonName, stats, unclosed.count);
+    } else {
+      body = await draftDigest(context, salonId, salonName, "vi");
+    }
     if (!body) return;
 
     // Pass normal-urgency approvals so the digest email renders one-tap buttons
