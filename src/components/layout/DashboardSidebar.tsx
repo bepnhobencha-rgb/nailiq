@@ -20,7 +20,6 @@ import {
   ChevronUp,
   Clock,
   LayoutGrid,
-  Monitor,
   Ellipsis,
   Plus,
   Scissors,
@@ -179,6 +178,7 @@ export function DashboardSidebar({
   );
   // Salon switching now lives inside the single account menu below.
   const showSwitcher = otherSalons.length > 0;
+  const canManageSessions = ["owner", "admin", "manager"].includes(role);
 
   // Account menu state (identity + salon switch + sign out) — one menu.
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -437,14 +437,6 @@ export function DashboardSidebar({
       {
         key: "config",
         items: [
-          {
-            key: "sessions",
-            label: "Sessions",
-            href: `${dashRoot}/sessions`,
-            icon: Monitor,
-            match: (p) => p.startsWith(`${dashRoot}/sessions`),
-            hidden: !["owner", "admin", "manager"].includes(role),
-          },
           {
             key: "settings",
             label: t.settings,
@@ -763,6 +755,20 @@ export function DashboardSidebar({
                     </li>
                   ))}
                 </ul>
+              </>
+            ) : null}
+
+            {canManageSessions ? (
+              <>
+                <div className="my-1 border-t border-nq-border/30" />
+                <Link
+                  href={`${dashRoot}/sessions`}
+                  role="menuitem"
+                  onClick={() => setUserMenuOpen(false)}
+                  className="flex min-h-11 items-center rounded-md px-2 py-2 text-sm text-nq-foreground transition-colors hover:bg-nq-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
+                >
+                  {language === "vi" ? "Phiên đăng nhập" : "Active sessions"}
+                </Link>
               </>
             ) : null}
 
