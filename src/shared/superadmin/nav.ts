@@ -63,8 +63,7 @@ export const SUPERADMIN_NAV: readonly SuperadminNavItem[] = [
     key: "operations",
     label: "Operations",
     href: "/superadmin/operations",
-    // Foundation V1 lit two sub-routes (feature-flags + announcements
-    // via Phase 1F). Index page surfaces them + Phase 2/3 placeholders.
+    // Production operator tools are grouped behind this hub.
     allowedRoles: ["founder", "ops_admin"],
   },
   {
@@ -90,9 +89,7 @@ export const SUPERADMIN_NAV: readonly SuperadminNavItem[] = [
     key: "ai",
     label: "AI Ops",
     href: "/superadmin/ai",
-    phaseLabel: "Coming Phase 3",
     allowedRoles: ["founder", "ai_admin"],
-    mvpHidden: true,
   },
   {
     key: "billing",
@@ -106,9 +103,7 @@ export const SUPERADMIN_NAV: readonly SuperadminNavItem[] = [
     key: "security",
     label: "Security",
     href: "/superadmin/security",
-    phaseLabel: "Coming Phase 2",
     allowedRoles: ["founder", "ops_admin"],
-    mvpHidden: true,
   },
   {
     key: "settings",
