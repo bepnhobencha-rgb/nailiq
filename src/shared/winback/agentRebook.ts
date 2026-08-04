@@ -12,6 +12,7 @@ import {
 } from "@/shared/ai/lessons";
 import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
 import { isAiAgentPermissionEnabled } from "@/shared/ai/agentPermissionFence";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 
 /**
  * AI "Due to Rebook" — the proactive sibling of win-back. It finds opted-in
@@ -91,6 +92,7 @@ export async function agentDraftRebook(
   c: RebookCandidate,
   salonName: string,
   lang: "en" | "vi",
+  salonId: string | null = null,
 ): Promise<string | null> {
   const ai = getClient();
   if (!ai) return null;
@@ -105,11 +107,15 @@ Customer: ${c.name}, comes in roughly every ${weeks} week(s), usually books ${sv
 Rules: 1-2 sentences, friendly + personal, mention the salon by name, gently offer to save them a spot for their next visit, NO emojis, NO links (added when sent). Return ONLY the message text.`;
 
   try {
-    const resp = await ai.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 200,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const model = "claude-haiku-4-5-20251001";
+    const resp = await trackAnthropicMessage(
+      { salonId, feature: "rebook_draft", model },
+      () => ai.messages.create({
+        model,
+        max_tokens: 200,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    );
     const text = resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
     const clean = text.replace(/^["']|["']$/g, "").trim();
     return clean.length > 0 && clean.length <= 480 ? clean : null;
@@ -183,7 +189,7 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
       }
 
       const lang: "en" | "vi" = "en";
-      const message = await agentDraftRebook(c, salonName, lang);
+      const message = await agentDraftRebook(c, salonName, lang, salonId);
       if (!message) continue;
 
       const channel: "sms" | "email" = ch.email ? "email" : "sms";

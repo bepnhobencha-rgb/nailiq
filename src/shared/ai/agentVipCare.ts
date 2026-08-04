@@ -1,5 +1,6 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 import { looseServiceClient, type Row } from "@/shared/integrations/square/looseDb";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
@@ -232,6 +233,7 @@ async function draftMessage(
   client: VipClient,
   salonName: string,
   visitCount?: number,
+  salonId: string | null = null,
 ): Promise<string> {
   const ai = getAI();
   if (!ai) {
@@ -256,11 +258,15 @@ async function draftMessage(
   }
 
   try {
-    const resp = await ai.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 400, // bilingual output is ~2x
-      messages: [{ role: "user", content: prompt }],
-    });
+    const model = "claude-haiku-4-5-20251001";
+    const resp = await trackAnthropicMessage(
+      { salonId, feature: "vip_care_draft", model },
+      () => ai.messages.create({
+        model,
+        max_tokens: 400, // bilingual output is ~2x
+        messages: [{ role: "user", content: prompt }],
+      }),
+    );
     const text = resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
     const clean = text.replace(/^["']|["']$/g, "").trim();
     return clean.length > 10 && clean.length <= 900
@@ -460,7 +466,7 @@ export async function runVipCare(salonId: string): Promise<void> {
         const days = daysUntilBirthday(client.dateOfBirth);
         if (days === 7) {
           if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) break;
-          const baseMsg = await draftMessage("birthday", client, salonName);
+          const baseMsg = await draftMessage("birthday", client, salonName, undefined, salonId);
           if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
             break clientLoop;
           }
@@ -515,7 +521,7 @@ export async function runVipCare(salonId: string): Promise<void> {
         if (client.visitCount < milestone || client.visitCount > milestone + 1) continue;
         if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) break;
         // Fire when visits == milestone (allow +1 buffer so cron doesn't miss by 1)
-        const baseMsg = await draftMessage("milestone", client, salonName, milestone);
+        const baseMsg = await draftMessage("milestone", client, salonName, milestone, salonId);
         if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
           break clientLoop;
         }
@@ -571,7 +577,7 @@ export async function runVipCare(salonId: string): Promise<void> {
           if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
             break clientLoop;
           }
-          const msg = await draftMessage("vip_inactive", client, salonName);
+          const msg = await draftMessage("vip_inactive", client, salonName, undefined, salonId);
           if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
             break clientLoop;
           }

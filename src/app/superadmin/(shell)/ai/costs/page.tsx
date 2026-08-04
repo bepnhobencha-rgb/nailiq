@@ -134,6 +134,69 @@ export default async function AiCostsPage() {
               ))}
             </div>
           </section>
+
+          <section className="mt-8">
+            <h2 className="text-base font-semibold text-nq-foreground">Outcome &amp; ROI</h2>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-nq-muted">
+              Rolling 30-day evidence chain: provider-accepted customer action →
+              booking → completed appointment → attributed service revenue. Cost
+              per conversion uses completed appointments only. “Accepted” does
+              not claim final inbox delivery, and attribution does not prove
+              causation. Wait at least 14–30 days before disabling an agent.
+            </p>
+            <Card padding="none" className="mt-4 overflow-hidden">
+              {result.data.outcomeRoi.length === 0 ? (
+                <p className="p-5 text-sm text-nq-muted">
+                  Collecting the first outcome and cost observations. No agent
+                  decision is ready yet.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[1040px] text-left text-sm">
+                    <thead className="bg-nq-surface/70 text-xs uppercase tracking-wide text-nq-muted">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold">Salon / agent</th>
+                        <th className="px-4 py-3 font-semibold">Accepted</th>
+                        <th className="px-4 py-3 font-semibold">Booked</th>
+                        <th className="px-4 py-3 font-semibold">Completed</th>
+                        <th className="px-4 py-3 font-semibold">Revenue</th>
+                        <th className="px-4 py-3 font-semibold">AI cost</th>
+                        <th className="px-4 py-3 font-semibold">Cost / conversion</th>
+                        <th className="px-4 py-3 font-semibold">Evidence</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.data.outcomeRoi.map((row) => (
+                        <tr key={`${row.salonId}:${row.agent}`} className="border-t border-nq-border/30">
+                          <td className="px-4 py-3">
+                            <p className="font-medium text-nq-foreground">{row.salonName}</p>
+                            <p className="text-xs text-nq-muted">{row.agentLabel}</p>
+                          </td>
+                          <td className="px-4 py-3 tabular-nums text-nq-foreground">{row.acceptedDeliveries}</td>
+                          <td className="px-4 py-3 tabular-nums text-nq-foreground">{row.bookings}</td>
+                          <td className="px-4 py-3 tabular-nums text-nq-foreground">{row.completedAppointments}</td>
+                          <td className="px-4 py-3 tabular-nums text-nq-foreground">${row.attributedRevenueUsd.toFixed(2)}</td>
+                          <td className="px-4 py-3 tabular-nums text-nq-foreground">{usd(row.estimatedAiCostUsd)}</td>
+                          <td className="px-4 py-3 tabular-nums text-nq-foreground">
+                            {row.costPerCompletedConversionUsd === null
+                              ? "—"
+                              : usd(row.costPerCompletedConversionUsd)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge variant={row.decisionReady ? "success" : "warning"} dot>
+                              {row.decisionReady
+                                ? `${row.observationDays}d · review allowed`
+                                : `${row.observationDays}d · collecting`}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          </section>
         </>
       )}
     </main>
