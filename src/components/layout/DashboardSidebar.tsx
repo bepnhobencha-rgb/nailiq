@@ -20,13 +20,11 @@ import {
   ChevronUp,
   Clock,
   LayoutGrid,
-  MessageSquare,
   Monitor,
   Ellipsis,
   Plus,
   Scissors,
   Settings as SettingsIcon,
-  ShieldAlert,
   Sparkles,
   Star,
   TrendingUp,
@@ -59,7 +57,6 @@ type Props = {
   /** When > 0, the Walk-in Queue badge flips red (regardless of
    * `walkinQueueCount`). Driven by overdue in-progress bookings. */
   overdueCount?: number;
-  messagesCount?: number;
   /** Owner-only: every salon this user owns. The footer renders a
    * switcher dropdown when this list contains > 1 entry (the current
    * salon is always one of them; the dropdown lists the others). */
@@ -158,7 +155,6 @@ export function DashboardSidebar({
   walkinQueueCount = 0,
   waitlistCount = 0,
   overdueCount = 0,
-  messagesCount = 0,
   pendingApprovalsCount = 0,
   salons,
   collapsed,
@@ -392,14 +388,6 @@ export function DashboardSidebar({
             hidden: featureOff("combos"),
           },
           {
-            key: "no-show-protection",
-            label: t.noShowProtection,
-            href: `${dashRoot}/no-show-protection`,
-            icon: ShieldAlert,
-            match: (p) => p.startsWith(`${dashRoot}/no-show-protection`),
-            hidden: true,
-          },
-          {
             key: "disputes",
             label: t.disputes,
             href: `${dashRoot}/disputes`,
@@ -431,17 +419,6 @@ export function DashboardSidebar({
             match: (p) => p.startsWith(`${dashRoot}/activity`),
             // Full non-AI audit/comms log — owner + admin only.
             hidden: role !== "owner" && role !== "admin",
-          },
-          {
-            key: "messages",
-            label: t.messages,
-            href: null,
-            icon: MessageSquare,
-            match: () => false,
-            // Static "Soon" pill until messaging ships.
-            badgeLabel: t.messagesSoonBadge,
-            badgeTone: "muted",
-            disabled: true,
           },
           {
             key: "marketing",
@@ -489,9 +466,6 @@ export function DashboardSidebar({
       t.frontDesk,
       t.loyalty,
       t.marketing,
-      t.messages,
-      t.messagesSoonBadge,
-      t.noShowProtection,
       t.pulse,
       t.reports,
       t.photos,
@@ -554,11 +528,6 @@ export function DashboardSidebar({
     ];
   }, [sections, navIsBasic]);
   const quickAddSectionKey = navIsBasic ? "live" : "more";
-
-  // Reference the prop so unused-var lint stays clean. messagesCount is
-  // intentionally not surfaced in the new layout (Messages shows the
-  // static "Soon" badge instead of a numeric count).
-  void messagesCount;
 
   // Hover-expand: when collapsed, hovering reveals the full sidebar as an
   // overlay without shifting the main content (--nq-sidebar-w stays 4rem).
