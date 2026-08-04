@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Check } from "lucide-react";
+import { Check, Monitor } from "lucide-react";
 import { LogoutButton } from "@/components/dashboard/LogoutButton";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { getUserMessages } from "@/shared/i18n/user";
@@ -62,6 +62,7 @@ export function MobileAccountCard({
   const otherSalons = salons.filter((s) => s.slug !== slug);
   const showSwitcher = otherSalons.length > 0;
   const currentName = salonName ?? slug;
+  const canManageSessions = ["owner", "admin", "manager"].includes(role);
 
   return (
     <section
@@ -116,6 +117,18 @@ export function MobileAccountCard({
               ))}
             </ul>
           </div>
+        </div>
+      ) : null}
+
+      {canManageSessions ? (
+        <div className="mt-4 border-t border-nq-border/30 pt-3">
+          <Link
+            href={`/dashboard/${encodeURIComponent(slug)}/sessions`}
+            className="flex min-h-11 touch-manipulation items-center gap-3 rounded-lg px-2 py-2 text-sm font-medium text-nq-foreground transition-colors hover:bg-nq-surface/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
+          >
+            <Monitor className="h-5 w-5 text-nq-primary" aria-hidden />
+            {language === "vi" ? "Phiên đăng nhập" : "Active sessions"}
+          </Link>
         </div>
       ) : null}
 
