@@ -72,6 +72,7 @@ test.describe("Drawer cancel — group-aware scope", () => {
 
     // Group-aware scope chooser appears; default is "just this person".
     await expect(page.getByTestId("cancel-group-scope")).toBeVisible();
+    await expect(page.getByTestId("drawer-cancel-booking")).toHaveCount(0);
     await expect(page.getByTestId("cancel-scope-this")).toHaveAttribute(
       "aria-pressed",
       "true",

@@ -2734,9 +2734,15 @@ function ReceptionistCenterInner({
       : undefined;
 
   // Generic cancel — hidden for Wix-pending (Decline replaces it there to avoid a duplicate reject).
+  // Also hide it while either cancel confirmation is open. Keeping the drawer
+  // action mounted behind the modal exposed two visible "Cancel" controls,
+  // especially on the mobile sheet. Dismissing the modal clears these states,
+  // so the drawer action is restored automatically.
+  const cancelConfirmationOpen = notifyCancel !== null || depositCancel !== null;
   const drawerCancelAction =
     openDrawerBooking &&
     !isWixPending &&
+    !cancelConfirmationOpen &&
     canCancelBooking(viewerRole) &&
     (openDrawerBooking.status === "pending" ||
       openDrawerBooking.status === "confirmed" ||
@@ -4644,6 +4650,7 @@ function ReceptionistCenterInner({
                     <Button
                       type="button"
                       variant="secondary"
+                      data-testid="notify-cancel-keep"
                       onClick={() => setNotifyCancel(null)}
                     >
                       {n.keep}
