@@ -64,8 +64,18 @@ test.describe("Receptionist grid render + ghost", () => {
 
     await expect(page.getByTestId("booking-detail-drawer")).toBeVisible();
 
-    // Cancel now opens the "notify the customer?" confirm — accept it to cancel.
+    // The confirmation must replace the drawer action, not leave two visible
+    // cancel controls stacked on mobile. Dismissing restores the drawer action.
     await page.getByTestId("drawer-cancel-booking").click();
+    await expect(page.getByTestId("notify-cancel-confirm")).toBeVisible();
+    await expect(page.getByTestId("drawer-cancel-booking")).toHaveCount(0);
+    await page.getByTestId("notify-cancel-keep").click();
+    await expect(page.getByTestId("notify-cancel-confirm")).toHaveCount(0);
+    await expect(page.getByTestId("drawer-cancel-booking")).toBeVisible();
+
+    // Re-open and confirm the cancellation.
+    await page.getByTestId("drawer-cancel-booking").click();
+    await expect(page.getByTestId("drawer-cancel-booking")).toHaveCount(0);
     await page.getByTestId("notify-cancel-confirm").click();
 
     await expect(block).toHaveCount(0, { timeout: 15_000 });
