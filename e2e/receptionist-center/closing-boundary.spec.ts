@@ -260,7 +260,7 @@ test("manual desk booking allows service to finish exactly at close and preserve
     });
 });
 
-test("Owner can explicitly approve a staff-consented after-hours booking", async ({
+test("Owner can approve an exact-minute staff-consented after-hours booking", async ({
   page,
   isMobile,
 }) => {
@@ -285,12 +285,8 @@ test("Owner can explicitly approve a staff-consented after-hours booking", async
     .selectOption({ label: fixture.staffName });
 
   await expect(page.getByTestId("desk-after-hours-panel")).toBeVisible();
-  await page.getByTestId("desk-after-hours-toggle").click();
-  const sevenFifteen = page
-    .getByTestId("desk-after-hours-slots")
-    .getByRole("button", { name: /7:15 PM/ });
-  await expect(sevenFifteen).toBeVisible({ timeout: 15_000 });
-  await sevenFifteen.click();
+  await page.getByTestId("desk-custom-time").fill("19:35");
+  await expect(page.getByText("7:35 PM selected")).toBeVisible();
 
   const submit = page.getByRole("button", {
     name: /Accept after-hours booking/i,
@@ -329,9 +325,9 @@ test("Owner can explicitly approve a staff-consented after-hours booking", async
       { timeout: 15_000 },
     )
     .toMatchObject({
-      start_time_utc: `${fixture.dateYmd}T19:15:00.000Z`,
-      end_time_utc: `${fixture.dateYmd}T19:55:00.000Z`,
-      after_hours_minutes: 15,
+      start_time_utc: `${fixture.dateYmd}T19:35:00.000Z`,
+      end_time_utc: `${fixture.dateYmd}T20:15:00.000Z`,
+      after_hours_minutes: 35,
       after_hours_approved_by: owner.userId,
       after_hours_staff_consent: true,
       booking_channel: "desk",
