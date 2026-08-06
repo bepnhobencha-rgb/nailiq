@@ -20,6 +20,8 @@ import { getPendingApprovals } from "@/shared/ai/approvalRequests";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { SubscriptionDeadlineNotice } from "@/components/dashboard/SubscriptionDeadlineNotice";
 import { getPrivateOfferBySalonId } from "@/shared/sales/privateOffers";
+import { loadDashboardAnnouncements } from "@/shared/dashboard/platformAnnouncements";
+import { PlatformAnnouncementBanner } from "@/components/dashboard/PlatformAnnouncementBanner";
 
 type Props = {
   children: ReactNode;
@@ -224,7 +226,10 @@ export default async function DashboardSlugLayout({
   };
   const subscriptionPlan = parseSubscriptionPlan(flagSalon.subscription_plan);
   const daysLeftInTrial = trialDaysRemaining(flagSalon.trial_ends_at);
-  const userLanguage = await resolveUserLanguage();
+  const [userLanguage, platformAnnouncements] = await Promise.all([
+    resolveUserLanguage(),
+    loadDashboardAnnouncements(ctx.role),
+  ]);
   const isTrial =
     flagSalon.subscription_status === "trialing" &&
     daysLeftInTrial != null;
@@ -253,6 +258,10 @@ export default async function DashboardSlugLayout({
         userEmail={userEmail}
         salonId={ctx.salon.id}
       >
+        <PlatformAnnouncementBanner
+          announcements={platformAnnouncements}
+          language={userLanguage}
+        />
         {isTrial ? (
           <div
             className={`mx-4 mt-3 flex items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 text-sm sm:mx-6 sm:mt-4 sm:py-3 ${

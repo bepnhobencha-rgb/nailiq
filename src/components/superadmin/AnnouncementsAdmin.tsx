@@ -33,10 +33,8 @@ const TARGET_LABEL: Record<AnnouncementTarget, string> = {
 /**
  * Phase 1F — platform announcements admin (minimal).
  *
- * Scope: list, create, publish/unpublish, delete. Read paths
- * (dashboard banner rendering) are NOT in this PR — landing the
- * admin surface first means founder can stage announcements ahead
- * of when the banner consumer lands.
+ * Scope: list, create, publish/unpublish, delete. Published announcements
+ * are rendered by the shared salon Dashboard layout for the selected audience.
  *
  * Server actions are gated to `founder | ops_admin` per
  * PERMISSION_MATRIX §8.6.
