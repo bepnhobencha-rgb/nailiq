@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { ActivityItem, ActivityKind } from "@/shared/dashboard/loadActivityFeedAction";
 import { undoAiAction } from "@/shared/ai/undoAiAction";
+import { activityTimeAgo } from "@/shared/dashboard/activityTime";
 
 const KIND_ICON: Record<ActivityKind, string> = {
   event: "🗓️",
@@ -29,20 +30,6 @@ const TABS: { key: ActivityKind | "all"; label: string }[] = [
   { key: "watchdog", label: "Cảnh báo" },
   { key: "winback", label: "Giữ khách" },
 ];
-
-function timeAgo(iso: string): string {
-  const ms = Date.parse(iso);
-  if (!Number.isFinite(ms)) return "";
-  const diff = Date.now() - ms;
-  const m = Math.floor(diff / 60_000);
-  if (m < 1) return "vừa xong";
-  if (m < 60) return `${m} phút trước`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h} giờ trước`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d} ngày trước`;
-  return new Date(ms).toLocaleDateString("vi-VN");
-}
 
 function StatusBadge({ status, kind }: { status: string; kind: ActivityKind }) {
   if (kind === "call") {
@@ -88,11 +75,28 @@ function StatusBadge({ status, kind }: { status: string; kind: ActivityKind }) {
   return <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${cls}`}>{label}</span>;
 }
 
-export function ActivityFeed({ slug, items }: { slug: string; items: ActivityItem[] }) {
+export function ActivityFeed({
+  slug,
+  items,
+  initialNowIso,
+  timeZone,
+}: {
+  slug: string;
+  items: ActivityItem[];
+  initialNowIso: string;
+  timeZone: string;
+}) {
   const [tab, setTab] = useState<ActivityKind | "all">("all");
   const [open, setOpen] = useState<string | null>(null);
   const [undoneIds, setUndoneIds] = useState<Set<string>>(new Set());
   const [undoing, startUndo] = useTransition();
+  // The serialized server instant guarantees identical SSR/client markup.
+  // Start a live clock only after hydration has committed.
+  const [nowMs, setNowMs] = useState(() => Date.parse(initialNowIso));
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   // Read/unread like email: items newer than the last time the owner opened the
   // log show BOLD; already-seen ones are dimmed. Capture the PREVIOUS last-seen
@@ -223,7 +227,7 @@ export function ActivityFeed({ slug, items }: { slug: string; items: ActivityIte
                   ) : null}
                 </div>
                 <span className="shrink-0 text-[10px] tabular-nums text-nq-muted">
-                  {timeAgo(it.when)}
+                  {activityTimeAgo(it.when, nowMs, timeZone)}
                 </span>
               </div>
             );
