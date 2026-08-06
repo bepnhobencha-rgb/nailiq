@@ -2616,6 +2616,11 @@ function ReceptionistCenterInner({
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
       } else {
+        if (r.charge?.attempted && !r.charge.charged) {
+          // Attendance and payment are separate outcomes. Never let the desk
+          // tell a customer they were charged when the provider declined.
+          setShakeMessage(rcMessages.noShowFeeModal.chargeFailed);
+        }
         closeBookingDrawer();
         await reloadCurrentDay();
         router.refresh();
@@ -2691,7 +2696,11 @@ function ReceptionistCenterInner({
         bookingId,
       });
       if (!r.ok) setShakeMessage(messages.receptionist.actionErrorFallback);
-      else {
+      else if (!r.charged) {
+        setShakeMessage(rcMessages.noShowFeeModal.chargeFailed);
+        await reloadCurrentDay();
+        router.refresh();
+      } else {
         await reloadCurrentDay();
         router.refresh();
       }

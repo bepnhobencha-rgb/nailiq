@@ -2299,6 +2299,7 @@ export const userVi: UserMessages = {
       title: "Phí vắng mặt",
       desc: (amount: string) => `Thẻ của khách đã lưu khoản phí ${amount} cho lịch này.`,
       charge: (amount: string) => `Thu phí ${amount} ngay`,
+      chargeFailed: "Đã đánh dấu vắng mặt nhưng chưa thu được tiền. Hãy kiểm tra mục vắng mặt trước khi thông báo cho khách.",
       waive: "Bỏ qua phí",
       cancel: "Huỷ (đánh dấu vắng, quyết định sau)",
     },

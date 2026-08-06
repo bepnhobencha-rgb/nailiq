@@ -2214,6 +2214,7 @@ export type UserMessages = {
       title: string;
       desc: (amount: string) => string;
       charge: (amount: string) => string;
+      chargeFailed: string;
       waive: string;
       cancel: string;
     };
@@ -4640,6 +4641,7 @@ export const userEn: UserMessages = {
       title: "No-show fee",
       desc: (amount: string) => `A fee of ${amount} is saved on this booking's card.`,
       charge: (amount: string) => `Charge ${amount} now`,
+      chargeFailed: "The appointment was marked no-show, but the card was not charged. Check the no-show record before contacting the guest.",
       waive: "Waive fee",
       cancel: "Cancel (mark no-show, decide later)",
     },

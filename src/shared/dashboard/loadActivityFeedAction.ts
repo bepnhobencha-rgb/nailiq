@@ -72,6 +72,9 @@ export type ActivityItem = {
   status: string | null;
   /** Actor role for event rows (owner/senior/nail_tech/system…). */
   actorRole: string | null;
+  /** Raw booking event discriminator. Lets the Activity UI offer a dedicated
+   *  cancelled-history view without inferring state from translated copy. */
+  eventType?: string | null;
   /** Linked booking → deep-link target. */
   bookingId: string | null;
   /** Booking's salon-local date (YYYY-MM-DD) for the /center?date=&booking= link. */
@@ -342,6 +345,7 @@ export async function loadActivityFeed(
         subtitle: null,
         status: null,
         actorRole: role,
+        eventType: str(r.event_type) || null,
         bookingId: r.booking_id ? str(r.booking_id) : null,
         bookingDate: booking?.start_time_utc ? salonDate(str(booking.start_time_utc), tz) : null,
         transcript: null,
