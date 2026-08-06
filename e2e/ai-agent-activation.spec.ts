@@ -128,6 +128,8 @@ test.describe("AI agent activation impact", () => {
       },
     ]);
 
+    const activityPageErrors: string[] = [];
+    page.on("pageerror", (error) => activityPageErrors.push(error.message));
     await page.goto(`/dashboard/${SLUG}/activity`);
     await page.getByTestId("activity-tab-ai").click();
     const disabledAuditRow = page
@@ -137,6 +139,9 @@ test.describe("AI agent activation impact", () => {
     await expect(
       disabledAuditRow.getByText("Có thể liên hệ trực tiếp với khách"),
     ).toBeVisible();
+    expect(activityPageErrors).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/react error #418|hydration/i)]),
+    );
   });
 
   test("concurrent permission changes preserve both flags and audits", async () => {
