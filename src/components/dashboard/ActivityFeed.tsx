@@ -147,7 +147,7 @@ export function ActivityFeed({
           <h1 className="text-lg font-semibold text-nq-foreground">Nhật ký hoạt động</h1>
           <p className="mt-0.5 text-xs text-nq-muted">
             Tin nhắn, email, cuộc gọi và thay đổi lịch — xem lại bất cứ lúc nào. Bấm vào một mục
-            lịch hẹn để mở lịch thật.
+            lịch hẹn đang hoạt động để mở lịch thật. Tab Đã hủy giữ tối đa 200 lịch hủy gần nhất.
           </p>
         </div>
       </div>
