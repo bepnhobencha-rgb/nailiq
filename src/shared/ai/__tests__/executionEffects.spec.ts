@@ -55,6 +55,21 @@ describe("execution effect allowlist", () => {
     });
   });
 
+  it("allows one exact waitlist invite only with a valid booking id", () => {
+    expect(
+      planExecutionEffect(
+        job("waitlist_invite", {
+          booking_id: "11111111-1111-4111-8111-111111111111",
+        }),
+      ),
+    ).toEqual({
+      kind: "waitlist_invite",
+      bookingId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(planExecutionEffect(job("waitlist_invite", { booking_id: "bad" })))
+      .toEqual({ kind: "unsupported", reason: "unsupported_action_type" });
+  });
+
   it("allows only an internal operational-note audit effect", () => {
     expect(
       planExecutionEffect(

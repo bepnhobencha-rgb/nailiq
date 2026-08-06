@@ -57,4 +57,10 @@ describe("buildActionIntelligence", () => {
     expect(result.impact).toContain("did not quantify");
     expect(result.reversibility.reversible).toBeNull();
   });
+
+  it("explains that a waitlist invite contacts one opted-in customer", () => {
+    const result = buildActionIntelligence("waitlist_invite", {}, "vi");
+    expect(result.impact).toContain("một khách đã tự đăng ký waitlist");
+    expect(result.reversibility.reversible).toBe(false);
+  });
 });

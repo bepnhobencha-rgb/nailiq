@@ -112,6 +112,13 @@ export const SUPERADMIN_PER_SALON_FLAGS: ReadonlyArray<SuperAdminFlagDescriptor>
     phase: "live",
   },
   {
+    key: "ai_cancellation_autofill_approval",
+    group: "intelligence",
+    label: "Cancellation Auto-Fill cần duyệt",
+    description: "Khi huỷ tại quầy, tạo đề xuất mời khách waitlist; chỉ liên hệ sau khi Owner/Admin duyệt.",
+    phase: "live",
+  },
+  {
     key: "ai_rule_first_optimization",
     group: "intelligence",
     label: "Rule-first AI Optimization",

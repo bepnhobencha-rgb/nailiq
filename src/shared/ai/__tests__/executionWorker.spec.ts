@@ -2,11 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
+  executeWaitlistInvite: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/shared/lib/supabase/serviceRole", () => ({
   createServiceRoleClient: () => ({ rpc: mocks.rpc }),
+}));
+vi.mock("@/shared/ai/cancellationAutofillApproval", () => ({
+  executeApprovedWaitlistInvite: mocks.executeWaitlistInvite,
 }));
 
 import { processExecutionQueue } from "@/shared/ai/executionWorker";
@@ -40,6 +44,33 @@ function claimedJob(): ExecutionJobRow {
 describe("processExecutionQueue leases", () => {
   beforeEach(() => {
     mocks.rpc.mockReset();
+    mocks.executeWaitlistInvite.mockReset();
+  });
+
+  it("executes one approved waitlist invite and persists a bounded result", async () => {
+    const job = claimedJob();
+    job.action_type = "waitlist_invite";
+    job.payload = { booking_id: "55555555-5555-4555-8555-555555555555" };
+    mocks.executeWaitlistInvite.mockResolvedValue({ outcome: "invite_sent" });
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "cancel_ineligible_ai_execution_jobs") return { data: 0, error: null };
+      if (name === "recover_stale_ai_execution_jobs") return { data: 0, error: null };
+      if (name === "claim_ai_execution_jobs") return { data: [job], error: null };
+      if (name === "finish_ai_execution_job") return { data: true, error: null };
+      throw new Error(`Unexpected RPC: ${name}`);
+    });
+
+    const result = await processExecutionQueue({ now: NOW });
+
+    expect(result.succeeded).toBe(1);
+    expect(mocks.executeWaitlistInvite).toHaveBeenCalledWith(job);
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "finish_ai_execution_job",
+      expect.objectContaining({
+        p_status: "succeeded",
+        p_result: { outcome: "invite_sent" },
+      }),
+    );
   });
 
   it("executes the approved note atomically with the claimed lease", async () => {

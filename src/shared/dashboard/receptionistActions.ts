@@ -831,6 +831,28 @@ export async function cancelDeskBooking(
   // link. Mirrors the same pattern used in markNoShowBooking. Best-effort;
   // never fail the cancel on a notify hiccup.
   try {
+    const { createCancellationAutofillApproval } = await import(
+      "@/shared/ai/cancellationAutofillApproval"
+    );
+    const approval = await createCancellationAutofillApproval({
+      salonId: ctx.salon.id,
+      bookingId,
+    });
+    // With the approval pilot enabled, the queue owns promotion + delivery.
+    // No matching waiter is also considered handled, so we never fall through
+    // and contact someone without approval.
+    if (approval.handled) {
+      if (input.refundDeposit) {
+        const r = await refundDeposit(bookingId);
+        return {
+          ok: true,
+          depositRefunded: r.ok,
+          depositRefundError: r.ok ? undefined : r.reason,
+        };
+      }
+      return { ok: true };
+    }
+
     const svcId = (updated as { service_id?: string | null }).service_id;
     const svc = createServiceRoleClient();
     const { data: wl } = await svc.rpc("notify_waitlist_for_no_show", {

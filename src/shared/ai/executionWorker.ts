@@ -4,6 +4,7 @@ import { planExecutionEffect } from "@/shared/ai/executionEffects";
 import { toSafeExecutionFailureCode } from "@/shared/ai/executionFailure";
 import { nextRetryAt, type ExecutionJobStatus } from "@/shared/ai/executionPolicy";
 import type { ExecutionJobRow } from "@/shared/ai/executionQueue";
+import { executeApprovedWaitlistInvite } from "@/shared/ai/cancellationAutofillApproval";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 type WorkerOutcome = {
@@ -120,6 +121,20 @@ async function executeClaimedJob(
       attempted: true,
       error: effect.reason,
     };
+  }
+
+  if (effect.kind === "waitlist_invite") {
+    const result = await executeApprovedWaitlistInvite(job);
+    await finishJob(job, {
+      status: "succeeded",
+      result,
+      lastError: null,
+      availableAt: null,
+      finishedAt: nowIso,
+      now: nowIso,
+      details: { outcome: result.outcome ?? "completed" },
+    });
+    return { jobId: job.id, status: "succeeded", attempted: true };
   }
 
   if (!job.lease_token) throw new StaleExecutionLeaseError();

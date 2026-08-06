@@ -84,6 +84,10 @@ function impactFallback(
       en: "This may charge a customer for a no-show.",
       vi: "Hành động này có thể tính phí no-show cho khách hàng.",
     },
+    waitlist_invite: {
+      en: "This contacts one opted-in waitlist customer about the exact freed slot.",
+      vi: "Hành động này liên hệ một khách đã tự đăng ký waitlist về đúng chỗ vừa trống.",
+    },
   };
   return known[actionType]?.[language] ?? null;
 }
@@ -94,7 +98,7 @@ function reversibilityValue(
 ): boolean | null {
   const explicit = payload.reversible ?? payload.can_undo;
   if (typeof explicit === "boolean") return explicit;
-  if (["send_us_sms", "bulk_message", "charge_noshow"].includes(actionType)) {
+  if (["send_us_sms", "bulk_message", "charge_noshow", "waitlist_invite"].includes(actionType)) {
     return false;
   }
   return null;

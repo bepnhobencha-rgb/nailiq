@@ -11,6 +11,10 @@ export type ExecutionEffect =
       blocker: "recipient_selection_required" | "dispatch_not_enabled";
     }
   | {
+      kind: "waitlist_invite";
+      bookingId: string;
+    }
+  | {
       kind: "unsupported";
       reason: "unsupported_action_type" | "invalid_operational_note";
     };
@@ -23,6 +27,17 @@ export type ExecutionEffect =
  * with consent, idempotency, and rollback evidence.
  */
 export function planExecutionEffect(job: ExecutionJobRow): ExecutionEffect {
+  if (job.action_type === "waitlist_invite") {
+    const bookingId =
+      typeof job.payload.booking_id === "string"
+        ? job.payload.booking_id.trim()
+        : "";
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bookingId)) {
+      return { kind: "unsupported", reason: "unsupported_action_type" };
+    }
+    return { kind: "waitlist_invite", bookingId };
+  }
+
   if (job.action_type === "bulk_message") {
     return {
       kind: "waiting_input",
