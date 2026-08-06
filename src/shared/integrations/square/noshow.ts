@@ -21,6 +21,7 @@ import {
   getSquareConfig,
   findSuccessfulPaymentByReference,
 } from "@/shared/integrations/square/client";
+import { isSuccessfulNoShowChargeStatus } from "./noshowChargeStatus";
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
@@ -591,7 +592,7 @@ export async function chargeNoShowFee(
       note: opts?.note ?? "No-show fee",
       referenceId: `booking:${bookingId}`,
     });
-    const charged = pay.status === "COMPLETED" || pay.status === "APPROVED";
+    const charged = isSuccessfulNoShowChargeStatus(pay.status);
     await db
       .from("bookings")
       .update({
