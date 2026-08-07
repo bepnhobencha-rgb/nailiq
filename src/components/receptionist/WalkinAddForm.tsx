@@ -241,6 +241,14 @@ export interface WalkinAddFormProps {
    * for backward compatibility with callers that haven't migrated.
    */
   autoAssignEnabled?: boolean;
+  /** One-shot prefill for creating a new walk-in from an immutable no-show.
+   * `prefillKey` prevents reapplying the archived values after a successful
+   * reset or while the receptionist edits the form. */
+  initialClientName?: string;
+  initialClientPhone?: string;
+  initialServiceId?: string;
+  prefillKey?: string;
+  recoveryNotice?: { title: string; description: string };
   /**
    * Bumped by the parent when the receptionist opens the panel via the
    * dedicated "+ Walk-in" action (vs just toggling the queue list). Each
@@ -323,6 +331,11 @@ export function WalkinAddForm({
   onCheckAvailability,
   onAddAndAssign,
   autoAssignEnabled = true,
+  initialClientName,
+  initialClientPhone,
+  initialServiceId,
+  prefillKey,
+  recoveryNotice,
   focusNonce,
 }: WalkinAddFormProps) {
   const nameId = useId();
@@ -397,6 +410,44 @@ export function WalkinAddForm({
   // user types over them we don't want a stale prefill to keep
   // overwriting their input on every render.
   const autoFilledForPhoneRef = useRef<string | null>(null);
+
+  const appliedPrefillKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!prefillKey || appliedPrefillKeyRef.current === prefillKey) return;
+    appliedPrefillKeyRef.current = prefillKey;
+
+    const nextPhone = formatPhoneInputProgressive(initialClientPhone ?? "");
+    const phoneValidation = validateGuestPhone(nextPhone);
+    setClientName(initialClientName ?? "");
+    setClientPhone(nextPhone);
+    setSelectedServiceId(
+      initialServiceId && services.some((service) => service.id === initialServiceId)
+        ? initialServiceId
+        : null,
+    );
+    setStaffRequestNote("");
+    setStaffRequestedByClient(false);
+    setSelectedStaffId("");
+    setErrorMessage(null);
+    setNameError(null);
+    setPhoneError(null);
+    setLookup({ kind: "idle" });
+    lookupRequestSeqRef.current += 1;
+    nameTouchedRef.current = false;
+    phoneTouchedRef.current = false;
+    autoFilledForPhoneRef.current = phoneValidation.ok
+      ? phoneValidation.digits
+      : null;
+
+    const raf = requestAnimationFrame(() => nameRef.current?.focus());
+    return () => cancelAnimationFrame(raf);
+  }, [
+    initialClientName,
+    initialClientPhone,
+    initialServiceId,
+    prefillKey,
+    services,
+  ]);
 
   // Offline locks every interactive control except read-only fields,
   // matching the existing `disabled` semantic; the inline hint below
@@ -876,6 +927,19 @@ export function WalkinAddForm({
       }}
       onKeyDown={onFormKeyDown}
     >
+      {prefillKey && recoveryNotice ? (
+        <div
+          data-testid="walkin-recovery-notice"
+          className="rounded-lg border border-nq-primary/30 bg-nq-primary/10 p-3"
+        >
+          <p className="text-base font-semibold text-nq-foreground">
+            {recoveryNotice.title}
+          </p>
+          <p className="mt-1 text-sm leading-relaxed text-nq-muted">
+            {recoveryNotice.description}
+          </p>
+        </div>
+      ) : null}
       <div className="space-y-2">
         <label htmlFor={nameId} className="sr-only">
           {labels.namePlaceholder}

@@ -1,22 +1,39 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { ReceptionistCenter } from "@/components/receptionist/ReceptionistCenter";
+import {
+  ReceptionistCenter,
+  type ReceptionistRecoveryPrefill,
+} from "@/components/receptionist/ReceptionistCenter";
 import { ReceptionistErrorBoundary } from "@/components/receptionist/ReceptionistErrorBoundary";
 import { loadBookingLimitStatus } from "@/shared/dashboard/loadBookingLimitStatus";
 import { loadReceptionistCenterData } from "@/shared/dashboard/loadReceptionistCenterData";
 import { loadPartyCardsAction } from "@/shared/dashboard/loadPartyCardsAction";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { userEn } from "@/shared/i18n/user";
-import { salonToday } from "@/shared/lib/salonTime";
+import {
+  formatInSalonTz,
+  salonToday,
+  salonYmdOfUtc,
+} from "@/shared/lib/salonTime";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { loadPlatformDisabledFeatures } from "@/shared/features/platformFeatureFlags";
+import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ date?: string; e2eNow?: string }>;
+  searchParams: Promise<{
+    date?: string;
+    e2eNow?: string;
+    recover?: string;
+    recoveryKind?: string;
+  }>;
 };
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
@@ -31,7 +48,7 @@ export default async function ReceptionistCenterPage({
   searchParams,
 }: PageProps) {
   const { slug } = await params;
-  const { date, e2eNow } = await searchParams;
+  const { date, e2eNow, recover, recoveryKind } = await searchParams;
 
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) {
@@ -111,6 +128,124 @@ export default async function ReceptionistCenterPage({
   const featureVisible = (key: Parameters<typeof isReleaseFeatureEnabled>[1]) =>
     !platformDisabled.has(key) && isReleaseFeatureEnabled(flagSalon, key);
 
+  let archivedBookingRecoveryEnabled = featureVisible(
+    "archived_booking_recovery",
+  );
+  if (archivedBookingRecoveryEnabled) {
+    const { data: wixIntegration, error: wixError } =
+      await createServiceRoleClient()
+        .from("wix_integrations")
+        .select("salon_id")
+        .eq("salon_id", ctx.salon.id)
+        .eq("enabled", true)
+        .maybeSingle();
+    // The current pilot intentionally performs no Wix write-back. Fail closed
+    // so a real recovery can never exist on only one of two active calendars.
+    archivedBookingRecoveryEnabled = !wixError && !wixIntegration?.salon_id;
+  }
+
+  // Archived rows stay immutable. The URL carries only the source UUID and
+  // recovery kind; customer details are loaded server-side after proving:
+  // feature flag ON + owner/admin role + same-salon row + terminal status.
+  // Any malformed, cross-tenant, stale, or mismatched link fails closed and
+  // simply opens the normal Center without a prefilled form.
+  let recoveryPrefill: ReceptionistRecoveryPrefill | null = null;
+  const validRecoveryKind =
+    recoveryKind === "cancelled_rebook" || recoveryKind === "no_show_walkin";
+  if (
+    archivedBookingRecoveryEnabled &&
+    isOwnerOrAdmin(ctx.role) &&
+    typeof recover === "string" &&
+    UUID_RE.test(recover) &&
+    validRecoveryKind
+  ) {
+    const expectedStatus =
+      recoveryKind === "cancelled_rebook" ? "cancelled" : "no_show";
+    const [{ data: source }, { data: existingRecovery }] = await Promise.all([
+      ctx.supabase
+        .from("bookings")
+        .select(
+          "id, status, client_name, client_phone, client_email, client_notes, service_id, staff_id, start_time_utc",
+        )
+        .eq("id", recover)
+        .eq("salon_id", ctx.salon.id)
+        .eq("status", expectedStatus)
+        .maybeSingle(),
+      ctx.supabase
+        .from("bookings")
+        .select("id")
+        .eq("salon_id", ctx.salon.id)
+        .eq("recovered_from_booking_id" as never, recover)
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+    if (source?.id && !existingRecovery?.id && initialResult.ok) {
+      const currentServiceIds = new Set(
+        initialResult.data.services.map((service) => service.id),
+      );
+      const currentStaffIds = new Set(
+        initialResult.data.staff.map((staff) => staff.id),
+      );
+      const serviceId =
+        typeof source.service_id === "string" &&
+        currentServiceIds.has(source.service_id)
+          ? source.service_id
+          : null;
+      const clientName =
+        typeof source.client_name === "string" ? source.client_name : "";
+      const clientPhone =
+        typeof source.client_phone === "string" ? source.client_phone : "";
+
+      if (recoveryKind === "cancelled_rebook") {
+        const startIso =
+          typeof source.start_time_utc === "string"
+            ? source.start_time_utc
+            : "";
+        const startMs = Date.parse(startIso);
+        const observedNowMs = Date.parse(initialResult.data.observedAtIso);
+        const originalTimeStillFuture =
+          Number.isFinite(startMs) &&
+          Number.isFinite(observedNowMs) &&
+          startMs > observedNowMs;
+        recoveryPrefill = {
+          kind: "cancelled_rebook",
+          sourceBookingId: String(source.id),
+          clientName,
+          clientPhone,
+          clientEmail:
+            typeof source.client_email === "string"
+              ? source.client_email
+              : null,
+          clientNotes:
+            typeof source.client_notes === "string"
+              ? source.client_notes
+              : null,
+          serviceId,
+          staffId:
+            typeof source.staff_id === "string" &&
+            currentStaffIds.has(source.staff_id)
+              ? source.staff_id
+              : null,
+          originalYmd: originalTimeStillFuture
+            ? salonYmdOfUtc(startIso, tz)
+            : null,
+          originalSlotLabel: originalTimeStillFuture
+            ? formatInSalonTz(startIso, tz, "time")
+            : null,
+        };
+      } else {
+        recoveryPrefill = {
+          kind: "no_show_walkin",
+          sourceBookingId: String(source.id),
+          clientName,
+          clientPhone,
+          serviceId,
+        };
+      }
+    }
+  }
+
   if (!featureVisible("receptionist_center")) {
     redirect(`/dashboard/${encodeURIComponent(slug)}`);
   }
@@ -147,6 +282,8 @@ export default async function ReceptionistCenterPage({
         accentColor={drcAccentColor}
         bgColor={drcBgColor}
         previewBgColor={receptionistPreviewBgColor}
+        archivedBookingRecoveryEnabled={archivedBookingRecoveryEnabled}
+        recoveryPrefill={recoveryPrefill}
       />
     </ReceptionistErrorBoundary>
   );

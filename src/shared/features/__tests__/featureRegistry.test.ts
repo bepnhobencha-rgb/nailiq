@@ -150,7 +150,7 @@ test("every key's descriptor.key matches its map key", () => {
 
 test("registry has the expected Base/Beta inventory", () => {
   eq(BASE_FEATURE_KEYS.length, 10, "Base count");
-  eq(BETA_FEATURE_KEYS.length, 12, "Beta count");
+  eq(BETA_FEATURE_KEYS.length, 14, "Beta count");
   assert(
     BASE_FEATURE_KEYS.every((k) => RELEASE_FEATURES[k].defaultOn === true),
     "all Base defaultOn true",
@@ -165,7 +165,9 @@ test("mapped jsonb/column/plan keys match the known existing keys", () => {
     group_booking: "jsonb:group_booking_enabled",
     loyalty: "jsonb:loyalty_enabled",
     advanced_reports: "jsonb:reports_enabled",
+    ai_control_center: "jsonb:ai_control_center_enabled",
     nail_tryon: "jsonb:nail_tryon_enabled",
+    archived_booking_recovery: "jsonb:archived_booking_recovery_enabled",
     ai_voice: "column:voice_ai_enabled",
     photos: "plan:photo_confirmation",
     reviews: "plan:reviews",
@@ -299,14 +301,16 @@ test("isReleaseFeatureEditable true for every jsonb-sourced feature", () => {
     "loyalty",
     "advanced_reports",
     "admin_copilot",
+    "ai_control_center",
     "nail_tryon",
+    "archived_booking_recovery",
   ] as const;
   for (const k of editable) {
     eq(isReleaseFeatureEditable(k), true, `${k} should be editable`);
   }
   // Count: only these mapped JSONB features are editable across the registry.
   const editableCount = RELEASE_FEATURE_KEYS.filter(isReleaseFeatureEditable).length;
-  eq(editableCount, 7, "exactly 7 editable features");
+  eq(editableCount, 9, "exactly 9 editable features");
 });
 
 test("isReleaseFeatureEditable false for column/plan/registry features", () => {
@@ -324,13 +328,18 @@ test("releaseFeatureEditableFlagKey maps each editable feature to its jsonb key"
   eq(releaseFeatureEditableFlagKey("group_booking"), "group_booking_enabled", "group key");
   eq(releaseFeatureEditableFlagKey("loyalty"), "loyalty_enabled", "loyalty key");
   eq(releaseFeatureEditableFlagKey("advanced_reports"), "reports_enabled", "reports key");
+  eq(
+    releaseFeatureEditableFlagKey("archived_booking_recovery"),
+    "archived_booking_recovery_enabled",
+    "archived recovery key",
+  );
   eq(releaseFeatureEditableFlagKey("ai_voice"), null, "column → null");
   eq(releaseFeatureEditableFlagKey("photos"), null, "plan → null");
   eq(releaseFeatureEditableFlagKey("combos"), null, "registry → null");
 });
 
 test("EDITABLE_RELEASE_FLAG_KEYS contains exactly the mapped jsonb keys", () => {
-  eq(EDITABLE_RELEASE_FLAG_KEYS.size, 7, "7 whitelisted keys");
+  eq(EDITABLE_RELEASE_FLAG_KEYS.size, 9, "9 whitelisted keys");
   for (const fk of [
     "receptionist_center_enabled",
     "walkin_queue_enabled",
@@ -338,7 +347,9 @@ test("EDITABLE_RELEASE_FLAG_KEYS contains exactly the mapped jsonb keys", () => 
     "loyalty_enabled",
     "reports_enabled",
     "admin_copilot_enabled",
+    "ai_control_center_enabled",
     "nail_tryon_enabled",
+    "archived_booking_recovery_enabled",
   ]) {
     assert(EDITABLE_RELEASE_FLAG_KEYS.has(fk), `whitelist has ${fk}`);
   }

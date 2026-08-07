@@ -219,6 +219,42 @@ const ReceptionistPreviewThemePicker = dynamic(
   { ssr: false },
 );
 
+export type ReceptionistRecoveryPrefill =
+  | {
+      kind: "cancelled_rebook";
+      sourceBookingId: string;
+      clientName: string;
+      clientPhone: string;
+      clientEmail: string | null;
+      clientNotes: string | null;
+      serviceId: string | null;
+      staffId: string | null;
+      /** Reuse the old slot only while it is still in the future. */
+      originalYmd: string | null;
+      originalSlotLabel: string | null;
+    }
+  | {
+      kind: "no_show_walkin";
+      sourceBookingId: string;
+      clientName: string;
+      clientPhone: string;
+      serviceId: string | null;
+    };
+
+type ArchivedBookingRecoveryRequest = {
+  sourceBookingId: string;
+  kind: "cancelled_rebook" | "no_show_walkin";
+  requestId: string;
+};
+
+type CancelledBookingRecoveryRequest = ArchivedBookingRecoveryRequest & {
+  kind: "cancelled_rebook";
+};
+
+type NoShowWalkinRecoveryRequest = ArchivedBookingRecoveryRequest & {
+  kind: "no_show_walkin";
+};
+
 export type ReceptionistCenterProps = {
   slug: string;
   /** Server load result (`ok: false` shows localized shell only). */
@@ -244,6 +280,11 @@ export type ReceptionistCenterProps = {
   bgColor?: string | null;
   /** New-only light canvas color; deliberately separate from Classic. */
   previewBgColor?: string | null;
+  /** Additive rollout flag. Terminal cancelled/no-show rows remain immutable;
+   * recovery always creates a separately linked booking. */
+  archivedBookingRecoveryEnabled?: boolean;
+  /** Server-authorized, same-salon source data. URL parameters contain IDs only. */
+  recoveryPrefill?: ReceptionistRecoveryPrefill | null;
 };
 
 function loadErrorCopy(
@@ -396,6 +437,8 @@ function ReceptionistCenterInner({
   accentColor,
   bgColor,
   previewBgColor,
+  archivedBookingRecoveryEnabled,
+  recoveryPrefill,
 }: {
   slug: string;
   initialOk: ReceptionistCenterData;
@@ -409,6 +452,8 @@ function ReceptionistCenterInner({
   accentColor: string | null;
   bgColor: string | null;
   previewBgColor: string | null;
+  archivedBookingRecoveryEnabled: boolean;
+  recoveryPrefill: ReceptionistRecoveryPrefill | null;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1013,13 +1058,27 @@ function ReceptionistCenterInner({
     /** Customer prefill for one-tap rebook from the booking drawer. */
     phone?: string;
     name?: string;
+    email?: string;
+    notes?: string;
     serviceId?: string;
+    recovery?: CancelledBookingRecoveryRequest;
+  } | null>(null);
+  const [walkinPrefill, setWalkinPrefill] = useState<{
+    prefillKey: string;
+    clientName: string;
+    clientPhone: string;
+    serviceId?: string;
+    recovery: NoShowWalkinRecoveryRequest;
   } | null>(null);
   // Desk group booking — gated on the per-salon `group_booking` flag (same
   // flag the PartyCardPanel uses). Mounts DeskGroupForm which reuses the
   // public group scheduler + submit engine end-to-end.
   const [deskGroupOpen, setDeskGroupOpen] = useState(false);
   const openWalkinAdd = useCallback(() => {
+    // Every ordinary "+ Walk-in" launch starts clean. A recovery link is
+    // one-shot state and must never leak into a later, unrelated customer if
+    // the receptionist closes the panel without submitting.
+    setWalkinPrefill(null);
     setQueuePanelOpen(true);
     setAddFocusNonce((n) => n + 1);
   }, [setQueuePanelOpen]);
@@ -1027,6 +1086,77 @@ function ReceptionistCenterInner({
     setPreviewFullQueueOpen(true);
     openWalkinAdd();
   }, [openWalkinAdd]);
+
+  // Apply an archived-booking recovery link exactly once. The client-generated
+  // request UUID is created when the form opens and then lives in form state,
+  // so retries reuse the same idempotency key instead of minting one per render
+  // or submit. Customer data never came through the URL; the server page loaded
+  // and authorized it before serializing `recoveryPrefill`.
+  const appliedRecoveryRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!archivedBookingRecoveryEnabled || !recoveryPrefill) return;
+    const recoveryKey = `${recoveryPrefill.kind}:${recoveryPrefill.sourceBookingId}`;
+    if (appliedRecoveryRef.current === recoveryKey) return;
+    const raf = window.requestAnimationFrame(() => {
+      if (appliedRecoveryRef.current === recoveryKey) return;
+      appliedRecoveryRef.current = recoveryKey;
+
+      const requestId = crypto.randomUUID();
+      if (recoveryPrefill.kind === "cancelled_rebook") {
+        setDeskPrefill({
+          phone: recoveryPrefill.clientPhone || undefined,
+          name: recoveryPrefill.clientName || undefined,
+          email: recoveryPrefill.clientEmail || undefined,
+          notes: recoveryPrefill.clientNotes || undefined,
+          serviceId: recoveryPrefill.serviceId || undefined,
+          staffId: recoveryPrefill.staffId || undefined,
+          ymd: recoveryPrefill.originalYmd || undefined,
+          slotLabel: recoveryPrefill.originalSlotLabel || undefined,
+          recovery: {
+            sourceBookingId: recoveryPrefill.sourceBookingId,
+            kind: "cancelled_rebook",
+            requestId,
+          },
+        });
+        setDeskBookingOpen(true);
+      } else {
+        setViewMode("day");
+        window.localStorage.setItem("nailiq-view-mode", "day");
+        setWalkinPrefill({
+          prefillKey: recoveryKey,
+          clientName: recoveryPrefill.clientName,
+          clientPhone: recoveryPrefill.clientPhone,
+          serviceId: recoveryPrefill.serviceId || undefined,
+          recovery: {
+            sourceBookingId: recoveryPrefill.sourceBookingId,
+            kind: "no_show_walkin",
+            requestId,
+          },
+        });
+        setPreviewFullQueueOpen(true);
+        // Do not use openWalkinAdd here: that helper intentionally clears any
+        // stale recovery before a normal walk-in launch.
+        setQueuePanelOpen(true);
+        setAddFocusNonce((n) => n + 1);
+      }
+
+      // Make reload/back behavior predictable: the recovery form is a one-shot
+      // launch, while the source id remains inside the in-memory form state.
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete("recover");
+      cleanUrl.searchParams.delete("recoveryKind");
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`,
+      );
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [
+    archivedBookingRecoveryEnabled,
+    setQueuePanelOpen,
+    recoveryPrefill,
+  ]);
 
   // Create a real appointment from a claimed waitlist entry — reuse the
   // desk-prefill mechanism (same as onRebookNext): open the existing
@@ -1974,6 +2104,7 @@ function ReceptionistCenterInner({
       walkinSource: input.walkinSource ?? null,
       walkinPriority: input.walkinPriority ?? null,
       walkinRequestTags: input.walkinRequestTags ?? null,
+      recovery: walkinPrefill?.recovery,
     });
     if (!r.ok) {
       return {
@@ -1981,6 +2112,7 @@ function ReceptionistCenterInner({
         error: mutationMessage(messages.receptionist, r.error),
       };
     }
+    setWalkinPrefill(null);
     await reloadCurrentDay();
     router.refresh();
     return { ok: true as const };
@@ -2008,6 +2140,7 @@ function ReceptionistCenterInner({
       walkinSource: input.walkinSource,
       walkinPriority: input.walkinPriority,
       walkinRequestTags: input.walkinRequestTags,
+      recovery: walkinPrefill?.recovery,
     });
     if (!r.ok) {
       return {
@@ -2015,6 +2148,7 @@ function ReceptionistCenterInner({
         error: mutationMessage(messages.receptionist, r.error),
       };
     }
+    setWalkinPrefill(null);
     await reloadCurrentDay();
     router.refresh();
     return { ok: true as const };
@@ -2171,7 +2305,7 @@ function ReceptionistCenterInner({
         // Undo toast (8s). Skipped after a refund — a returned deposit isn't
         // re-collected by restoring, so undo would leave booking + no deposit.
         // Undo also cancels the queued cancel notification server-side.
-        if (!refundDeposit) {
+        if (!refundDeposit && !archivedBookingRecoveryEnabled) {
           const u = messages.receptionist.undo;
           const startLabel = b.start_time_utc
             ? formatInSalonTz(b.start_time_utc, timezone, "time")
@@ -2261,7 +2395,11 @@ function ReceptionistCenterInner({
   // `dashboard_preset = 'reception'` and reloads via realtime.
   // Release flag `tv_mode` (PR2): when OFF, ignore the TV preset and fall
   // through to the normal board (the surface is Beta / not yet GA).
-  if (tvModeEnabled && data.dashboardPreset === "tv") {
+  if (
+    tvModeEnabled &&
+    data.dashboardPreset === "tv" &&
+    recoveryPrefill === null
+  ) {
     return (
       <TVModeView
         slug={slug}
@@ -2820,6 +2958,7 @@ function ReceptionistCenterInner({
 
   const drawerRestoreAction =
     openDrawerBooking &&
+    !archivedBookingRecoveryEnabled &&
     canUndoCancel(viewerRole) &&
     openDrawerBooking.status === "cancelled" &&
     new Date(openDrawerBooking.start_time_utc).getTime() > drawerNowMs + 60_000
@@ -3328,6 +3467,9 @@ function ReceptionistCenterInner({
                   initialServiceId={deskPrefill?.serviceId}
                   initialPhone={deskPrefill?.phone}
                   initialName={deskPrefill?.name}
+                  initialEmail={deskPrefill?.email}
+                  initialNotes={deskPrefill?.notes}
+                  recovery={deskPrefill?.recovery}
                   anchor={deskPrefill?.anchor}
                   onClose={() => {
                     setDeskBookingOpen(false);
@@ -3847,7 +3989,7 @@ function ReceptionistCenterInner({
                 // utility hash changes between versions. Same 320px.
                 !previewInterface &&
                 isViewingToday &&
-                modules.queue_panel &&
+                (modules.queue_panel || walkinPrefill !== null) &&
                 queuePanelOpen
                   ? "md:pr-[20rem]"
                   : "",
@@ -3888,7 +4030,11 @@ function ReceptionistCenterInner({
                 displayName={displayCustomerName}
                 onOpenBooking={(id) => openBookingDrawer(id)}
                 onMarkNoShow={(id) => void triggerMarkNoShow(id)}
-                onUndoNoShow={(id) => void handleUndoNoShow(id)}
+                onUndoNoShow={
+                  archivedBookingRecoveryEnabled
+                    ? undefined
+                    : (id) => void handleUndoNoShow(id)
+                }
               />
 
               {previewInterface && !isMobile ? (
@@ -3968,7 +4114,11 @@ function ReceptionistCenterInner({
                       ? (id) => void handleStartBooking(id)
                       : undefined
                   }
-                  onTombstoneUndo={(id) => void handleTombstoneUndo(id)}
+                  onTombstoneUndo={
+                    archivedBookingRecoveryEnabled
+                      ? undefined
+                      : (id) => void handleTombstoneUndo(id)
+                  }
                   onTombstoneCharge={(id) => void handleTombstoneCharge(id)}
                   onTombstoneWaive={(id) => void handleTombstoneWaive(id)}
                   assigning={assignedSlot}
@@ -4107,7 +4257,11 @@ function ReceptionistCenterInner({
                     : undefined
                 }
                 language={language === "vi" ? "vi" : "en"}
-                onTombstoneUndo={(id) => void handleTombstoneUndo(id)}
+                onTombstoneUndo={
+                  archivedBookingRecoveryEnabled
+                    ? undefined
+                    : (id) => void handleTombstoneUndo(id)
+                }
                 onTombstoneCharge={(id) => void handleTombstoneCharge(id)}
                 onTombstoneWaive={(id) => void handleTombstoneWaive(id)}
               />
@@ -4126,7 +4280,7 @@ function ReceptionistCenterInner({
        */}
       {viewMode === "day" &&
       isViewingToday &&
-      modules.queue_panel &&
+      (modules.queue_panel || walkinPrefill !== null) &&
       (!previewInterface || previewFullQueueOpen) ? (
         <>
           {/* Mobile backdrop — md:hidden so desktop just flexes the
@@ -4139,6 +4293,7 @@ function ReceptionistCenterInner({
               onClick={() => {
                 setQueuePanelOpen(false);
                 setPreviewFullQueueOpen(false);
+                setWalkinPrefill(null);
               }}
               className="md:hidden fixed inset-0 z-30 bg-nq-bg/60"
               data-testid="queue-panel-backdrop"
@@ -4170,6 +4325,7 @@ function ReceptionistCenterInner({
                 onClose={() => {
                   setQueuePanelOpen(false);
                   setPreviewFullQueueOpen(false);
+                  setWalkinPrefill(null);
                 }}
                 closeLabel={rcMessages.queue.closePanel}
                 assigningId={assigningWalkinId}
@@ -4187,7 +4343,9 @@ function ReceptionistCenterInner({
                 timezone={timezone}
                 onAddWalkin={onAddWalkin}
                 onAddAndAssign={onAddAndAssign}
-                autoAssignEnabled={data.salon.walkinAutoAssign}
+                autoAssignEnabled={
+                  data.salon.walkinAutoAssign && walkinPrefill === null
+                }
                 onPhoneLookup={(phone) => lookupClientByPhone(slug, phone)}
                 onCheckAvailability={
                   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- ARCHITECTURE_LOCK: staffId from prop not used; availability checked per-service not per-staff
@@ -4215,8 +4373,26 @@ function ReceptionistCenterInner({
                 offlineAddDisabledHint={
                   rcMessages.connection.offlineAddDisabled
                 }
-                showQuickAdd={modules.quick_add}
+                showQuickAdd={modules.quick_add || walkinPrefill !== null}
                 focusAddNonce={addFocusNonce}
+                initialClientName={walkinPrefill?.clientName}
+                initialClientPhone={walkinPrefill?.clientPhone}
+                initialServiceId={walkinPrefill?.serviceId}
+                prefillKey={walkinPrefill?.prefillKey}
+                recoveryNotice={
+                  walkinPrefill
+                    ? {
+                        title:
+                          language === "vi"
+                            ? "Thêm khách đến trễ như walk-in mới"
+                            : "Add the late guest as a new walk-in",
+                        description:
+                          language === "vi"
+                            ? "Hồ sơ no-show cũ vẫn giữ nguyên và không tự thu thêm phí. Kiểm tra lại thông tin trước khi thêm."
+                            : "The original no-show stays unchanged and no extra fee is charged automatically. Review the details before adding.",
+                      }
+                    : undefined
+                }
                 showWaitTime={modules.wait_time}
                 showVipIndicator={modules.vip_indicators}
                 compact={effectiveDensity === "simple"}
@@ -4734,6 +4910,8 @@ export function ReceptionistCenter({
   accentColor,
   bgColor,
   previewBgColor,
+  archivedBookingRecoveryEnabled = false,
+  recoveryPrefill = null,
 }: ReceptionistCenterProps) {
   if (!initialResult.ok) {
     return <ReceptionistGateError code={initialResult.error} />;
@@ -4750,6 +4928,8 @@ export function ReceptionistCenter({
       accentColor={accentColor ?? null}
       bgColor={bgColor ?? null}
       previewBgColor={previewBgColor ?? null}
+      archivedBookingRecoveryEnabled={archivedBookingRecoveryEnabled}
+      recoveryPrefill={recoveryPrefill}
     />
   );
 }

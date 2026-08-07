@@ -25,7 +25,9 @@ import {
   canCreateAfterHoursDeskBooking,
   canEditBooking,
   canUndoCancel,
+  isOwnerOrAdmin,
 } from "@/shared/lib/salonMemberRole";
+import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 import { loadBookingServicesForSalonSlug } from "@/shared/booking/loadBookingServices";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import {
@@ -114,10 +116,219 @@ function ctxActorUserId(ctx: { userId: string | null }): string | null {
 
 type OkBooking = { ok: true; bookingId: string };
 
+type ArchivedBookingRecoveryKind =
+  | "cancelled_rebook"
+  | "no_show_walkin";
+
+type ArchivedBookingRecoveryInput = {
+  sourceBookingId: string;
+  kind: ArchivedBookingRecoveryKind;
+  /** Client-generated UUID. Persisted as the booking idempotency key so a
+   * retry can be correlated without trusting names, phones, or timestamps. */
+  requestId: string;
+};
+
+type ValidatedArchivedBookingRecovery = ArchivedBookingRecoveryInput & {
+  recoveredByUserId: string;
+};
+
+type ExistingArchivedBookingRecovery = {
+  id: string;
+  idempotencyKey: string | null;
+  kind: ArchivedBookingRecoveryKind | null;
+  recoveredByUserId: string | null;
+};
+
+async function loadExistingArchivedBookingRecovery(
+  salonId: string,
+  sourceBookingId: string,
+): Promise<
+  | { ok: true; existing: ExistingArchivedBookingRecovery | null }
+  | { ok: false }
+> {
+  const db = createServiceRoleClient();
+  const { data, error } = await db
+    .from("bookings")
+    .select(
+      "id, idempotency_key, recovery_kind, recovered_by_user_id" as never,
+    )
+    .eq("salon_id", salonId)
+    .eq("recovered_from_booking_id" as never, sourceBookingId)
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error("[loadExistingArchivedBookingRecovery]", error);
+    return { ok: false };
+  }
+  if (!data) return { ok: true, existing: null };
+  const row = data as unknown as Record<string, unknown>;
+  const rawKind = String(row.recovery_kind ?? "");
+  return {
+    ok: true,
+    existing: {
+      id: String(row.id),
+      idempotencyKey:
+        typeof row.idempotency_key === "string" ? row.idempotency_key : null,
+      kind:
+        rawKind === "cancelled_rebook" || rawKind === "no_show_walkin"
+          ? rawKind
+          : null,
+      recoveredByUserId:
+        typeof row.recovered_by_user_id === "string"
+          ? row.recovered_by_user_id
+          : null,
+    },
+  };
+}
+
+function isSameArchivedBookingRecovery(
+  existing: ExistingArchivedBookingRecovery,
+  recovery: ValidatedArchivedBookingRecovery,
+): boolean {
+  return (
+    existing.idempotencyKey === recovery.requestId &&
+    existing.kind === recovery.kind &&
+    existing.recoveredByUserId === recovery.recoveredByUserId
+  );
+}
+
+async function terminalBookingMustRemainImmutable(
+  salonId: string,
+  bookingId: string,
+): Promise<{ ok: true; immutable: boolean } | { ok: false }> {
+  if (await archivedBookingRecoveryEnabled(salonId)) {
+    return { ok: true, immutable: true };
+  }
+  const existing = await loadExistingArchivedBookingRecovery(
+    salonId,
+    bookingId,
+  );
+  if (!existing.ok) return { ok: false };
+  // Feature rollback may restore the legacy behavior only for untouched
+  // terminal rows. Once a linked child exists, reopening the source would
+  // create two active records and is therefore permanently forbidden.
+  return { ok: true, immutable: existing.existing !== null };
+}
+
+async function archivedBookingRecoveryEnabled(
+  salonId: string,
+): Promise<boolean> {
+  const db = createServiceRoleClient();
+  const { data } = await db
+    .from("salons")
+    .select("feature_flags" as never)
+    .eq("id", salonId)
+    .maybeSingle();
+  return isReleaseFeatureVisible(
+    { feature_flags: (data as { feature_flags?: unknown } | null)?.feature_flags },
+    "archived_booking_recovery",
+  );
+}
+
+async function validateArchivedBookingRecovery(
+  ctx: Awaited<ReturnType<typeof getDashboardWriteClient>>,
+  input: ArchivedBookingRecoveryInput | undefined,
+  expectedKind: ArchivedBookingRecoveryKind,
+): Promise<
+  | {
+      ok: true;
+      recovery: ValidatedArchivedBookingRecovery | null;
+      existingBookingId: string | null;
+    }
+  | { ok: false; error: string }
+> {
+  if (!input) {
+    return { ok: true, recovery: null, existingBookingId: null };
+  }
+  if (!ctx || ctx.kind !== "member" || !ctx.userId || !isOwnerOrAdmin(ctx.role)) {
+    return fail("unauthorized");
+  }
+
+  const sourceBookingId = String(input.sourceBookingId ?? "").trim();
+  const requestId = String(input.requestId ?? "").trim();
+  if (!isUuidLike(sourceBookingId) || !isUuidLike(requestId)) {
+    return fail("invalid_recovery");
+  }
+  if (input.kind !== expectedKind) return fail("invalid_recovery");
+
+  const db = createServiceRoleClient();
+  const expectedStatus =
+    expectedKind === "cancelled_rebook" ? "cancelled" : "no_show";
+  const { data: source, error: sourceError } = await db
+    .from("bookings")
+    .select("id, status")
+    .eq("id", sourceBookingId)
+    .eq("salon_id", ctx.salon.id)
+    .maybeSingle();
+  if (sourceError) {
+    console.error("[validateArchivedBookingRecovery] source", sourceError);
+    return fail("server_error");
+  }
+  if (!source?.id || String(source.status) !== expectedStatus) {
+    return fail("invalid_recovery_source");
+  }
+
+  const existingResult = await loadExistingArchivedBookingRecovery(
+    ctx.salon.id,
+    sourceBookingId,
+  );
+  if (!existingResult.ok) {
+    return fail("server_error");
+  }
+
+  const recovery: ValidatedArchivedBookingRecovery = {
+    sourceBookingId,
+    kind: expectedKind,
+    requestId,
+    recoveredByUserId: ctx.userId,
+  };
+  if (existingResult.existing) {
+    return isSameArchivedBookingRecovery(existingResult.existing, recovery)
+      ? {
+          ok: true,
+          recovery,
+          existingBookingId: existingResult.existing.id,
+        }
+      : fail("already_recovered");
+  }
+
+  // A completed request is acknowledged above even if an operator has since
+  // disabled the pilot or connected Wix. That read-only replay is the core
+  // idempotency guarantee. These gates apply only before creating a new child.
+  if (!(await archivedBookingRecoveryEnabled(ctx.salon.id))) {
+    return fail("feature_not_enabled");
+  }
+
+  const { data: wixIntegration, error: wixError } = await db
+    .from("wix_integrations")
+    .select("salon_id")
+    .eq("salon_id", ctx.salon.id)
+    .eq("enabled", true)
+    .maybeSingle();
+  if (wixError) {
+    console.error("[validateArchivedBookingRecovery] wix", wixError);
+    return fail("server_error");
+  }
+  if (wixIntegration?.salon_id) {
+    return fail("external_calendar_not_supported");
+  }
+
+  return {
+    ok: true,
+    recovery,
+    existingBookingId: null,
+  };
+}
+
 /** Desk appointment row, shaped exactly like one `ReceptionistCenterData.bookingsForDay`
  * item so the client can drop it straight into the grid optimistically. */
 type DeskBookingRow = ReceptionistCenterData["bookingsForDay"][number];
-type OkDeskBooking = { ok: true; bookingId: string; booking: DeskBookingRow };
+type OkDeskBooking = {
+  ok: true;
+  bookingId: string;
+  /** Omitted on an idempotent replay; the client reloads canonical day data. */
+  booking?: DeskBookingRow;
+};
 
 /**
  * Receptionist mutations: demo cookie (`nailiq-demo-slug` + service role) vs
@@ -140,6 +351,9 @@ export async function addWalkinToQueue(
     walkinPriority?: QueuePriority | null;
     walkinRequestTags?: string[] | null;
     partySize?: number | null;
+    /** Terminal booking recovery. The source remains immutable; this insert
+     * creates the new walk-in and links it for audit/idempotency. */
+    recovery?: ArchivedBookingRecoveryInput;
   },
 ): Promise<OkBooking | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
@@ -147,6 +361,17 @@ export async function addWalkinToQueue(
 
   if (ctx.salon.id !== String(input.salonId).trim()) {
     return fail("salon_mismatch");
+  }
+
+  const recoveryResult = await validateArchivedBookingRecovery(
+    ctx,
+    input.recovery,
+    "no_show_walkin",
+  );
+  if (!recoveryResult.ok) return recoveryResult;
+  const recovery = recoveryResult.recovery;
+  if (recoveryResult.existingBookingId) {
+    return { ok: true, bookingId: recoveryResult.existingBookingId };
   }
 
   const clientName = String(input.clientName ?? "").trim();
@@ -283,6 +508,14 @@ export async function addWalkinToQueue(
     walkin_priority: walkinPriority,
     walkin_request_tags: walkinRequestTags,
     party_size: partySize,
+    ...(recovery
+      ? {
+          recovered_from_booking_id: recovery.sourceBookingId,
+          recovery_kind: recovery.kind,
+          recovered_by_user_id: recovery.recoveredByUserId,
+          idempotency_key: recovery.requestId,
+        }
+      : {}),
   } as never;
 
   const { data: inserted, error: insErr } = await supabase
@@ -292,6 +525,20 @@ export async function addWalkinToQueue(
     .maybeSingle();
 
   if (insErr) {
+    if ((insErr as { code?: string }).code === "23505" && recovery) {
+      const raced = await loadExistingArchivedBookingRecovery(
+        ctx.salon.id,
+        recovery.sourceBookingId,
+      );
+      if (
+        raced.ok &&
+        raced.existing &&
+        isSameArchivedBookingRecovery(raced.existing, recovery)
+      ) {
+        return { ok: true, bookingId: raced.existing.id };
+      }
+      return fail("already_recovered");
+    }
     console.error("[addWalkinToQueue] insert", insErr);
     return fail("server_error");
   }
@@ -299,13 +546,15 @@ export async function addWalkinToQueue(
   if (!bid) return fail("server_error");
 
   // Owner/admin "new booking" alert (opt-in, fire-and-forget).
-  after(() =>
-    sendOwnerBookingNotification({
-      salonId: ctx.salon.id,
-      bookingId: bid,
-      event: "new",
-    }),
-  );
+  if (!recovery) {
+    after(() =>
+      sendOwnerBookingNotification({
+        salonId: ctx.salon.id,
+        bookingId: bid,
+        event: "new",
+      }),
+    );
+  }
 
   void logBookingEvent({
     bookingId: bid,
@@ -318,8 +567,28 @@ export async function addWalkinToQueue(
       walkinSource,
       walkinPriority,
       partySize,
+      ...(recovery
+        ? {
+            recoveredFromBookingId: recovery.sourceBookingId,
+            recoveryKind: recovery.kind,
+          }
+        : {}),
     },
   });
+
+  if (recovery) {
+    void logBookingEvent({
+      bookingId: bid,
+      salonId: ctx.salon.id,
+      actorUserId: ctxActorUserId(ctx),
+      actorRole: ctxActorRole(ctx),
+      eventType: "booking_recovered",
+      payload: {
+        sourceBookingId: recovery.sourceBookingId,
+        recoveryKind: recovery.kind,
+      },
+    });
+  }
 
   // Operational metric: explicit "queue_joined" alongside the
   // domain-shaped "walkin_added". The two are intentionally
@@ -337,7 +606,7 @@ export async function addWalkinToQueue(
   // Wix write-back: push new walk-in to Wix calendar. after() runs it post-response so the
   // serverless function stays alive until the Wix call finishes (a bare `void` can be frozen
   // before the request completes), while never blocking the desk.
-  after(() => pushWixCreate(ctx.salon.id, bid));
+  if (!recovery) after(() => pushWixCreate(ctx.salon.id, bid));
 
   return { ok: true, bookingId: bid };
 }
@@ -1650,6 +1919,16 @@ export async function undoNoShowBooking(
     return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
+  // Rollout-safe enforcement: once archived recovery is enabled, no_show is a
+  // terminal audit fact. A late guest gets a new linked walk-in instead.
+  const immutable = await terminalBookingMustRemainImmutable(
+    ctx.salon.id,
+    bookingId,
+  );
+  if (!immutable.ok) return fail("server_error");
+  if (immutable.immutable) {
+    return fail("immutable_terminal_state");
+  }
 
   const { data: updated, error: upErr } = await ctx.supabase
     .from("bookings")
@@ -1875,9 +2154,18 @@ export async function undoCancelBooking(
   if (!canUndoCancel(ctx.role)) return fail("unauthorized");
   if (ctx.salon.id !== String(input.salonId).trim())
     return fail("salon_mismatch");
-
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
+  // The confirmation dialog is the correction boundary. After cancellation,
+  // preserve the original row and create a linked replacement if needed.
+  const immutable = await terminalBookingMustRemainImmutable(
+    ctx.salon.id,
+    bookingId,
+  );
+  if (!immutable.ok) return fail("server_error");
+  if (immutable.immutable) {
+    return fail("immutable_terminal_state");
+  }
 
   const { data: updated, error: upErr } = await ctx.supabase
     .from("bookings")
@@ -1940,9 +2228,16 @@ export async function restoreCancelledBooking(
   if (!canUndoCancel(ctx.role)) return fail("unauthorized");
   if (ctx.salon.id !== String(input.salonId).trim())
     return fail("salon_mismatch");
-
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
+  const immutable = await terminalBookingMustRemainImmutable(
+    ctx.salon.id,
+    bookingId,
+  );
+  if (!immutable.ok) return fail("server_error");
+  if (immutable.immutable) {
+    return fail("immutable_terminal_state");
+  }
 
   const supabase = ctx.supabase;
 
@@ -2054,6 +2349,7 @@ export async function addWalkinAndAssign(
     walkinSource?: QueueSource | null;
     walkinPriority?: QueuePriority | null;
     walkinRequestTags?: string[] | null;
+    recovery?: ArchivedBookingRecoveryInput;
   },
 ): Promise<OkBooking | { ok: false; error: string }> {
   // Salon-level gate: when `walkin_auto_assign` is FALSE the
@@ -2101,10 +2397,15 @@ export async function addWalkinAndAssign(
     walkinSource: input.walkinSource ?? null,
     walkinPriority: input.walkinPriority ?? null,
     walkinRequestTags: input.walkinRequestTags ?? null,
+    recovery: input.recovery,
   });
   if (!created.ok) return created;
 
-  if (!autoAssign) {
+  // Recovery is deliberately one atomic outcome: create a linked WAITING
+  // walk-in. Immediate assignment is a second mutation that can fail after the
+  // durable row exists, making the UI report failure for a successful create.
+  // The desk assigns the visible queue card in the normal next step.
+  if (input.recovery || !autoAssign) {
     // Setting is OFF — leave the booking in `waiting`. The queue card
     // will surface it the same way any other walk-in does, and the
     // receptionist drives the assign from there.
@@ -2399,6 +2700,8 @@ export async function addDeskAppointment(
     afterHoursOverride?: {
       staffConsentConfirmed?: boolean;
     };
+    /** Creates a new appointment linked to an immutable cancelled source. */
+    recovery?: ArchivedBookingRecoveryInput;
   },
 ): Promise<OkDeskBooking | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
@@ -2406,6 +2709,17 @@ export async function addDeskAppointment(
   if (ctx.salon.id !== String(input.salonId).trim())
     return fail("salon_mismatch");
   if (!canCreateDeskBooking(ctx.role)) return fail("unauthorized");
+
+  const recoveryResult = await validateArchivedBookingRecovery(
+    ctx,
+    input.recovery,
+    "cancelled_rebook",
+  );
+  if (!recoveryResult.ok) return recoveryResult;
+  const recovery = recoveryResult.recovery;
+  if (recoveryResult.existingBookingId) {
+    return { ok: true, bookingId: recoveryResult.existingBookingId };
+  }
 
   const clientName = String(input.clientName ?? "").trim();
   if (!clientName || clientName.length > BOOKING_GUEST_NAME_MAX)
@@ -2847,10 +3161,32 @@ export async function addDeskAppointment(
         after_hours_minutes: afterHoursMinutes,
         after_hours_approved_by: ctx.userId,
         after_hours_staff_consent: true,
+        ...(recovery
+          ? {
+              recovered_from_booking_id: recovery.sourceBookingId,
+              recovery_kind: recovery.kind,
+              recovered_by_user_id: recovery.recoveredByUserId,
+              idempotency_key: recovery.requestId,
+            }
+          : {}),
       } as never)
       .select("id")
       .single();
     if (insertError) {
+      if ((insertError as { code?: string }).code === "23505" && recovery) {
+        const raced = await loadExistingArchivedBookingRecovery(
+          ctx.salon.id,
+          recovery.sourceBookingId,
+        );
+        if (
+          raced.ok &&
+          raced.existing &&
+          isSameArchivedBookingRecovery(raced.existing, recovery)
+        ) {
+          return { ok: true, bookingId: raced.existing.id };
+        }
+        return fail("already_recovered");
+      }
       if ((insertError as { code?: string }).code === "23P01") {
         return fail("time_slot_taken");
       }
@@ -2859,22 +3195,45 @@ export async function addDeskAppointment(
     }
     bookingId = String((inserted as { id: string }).id);
   } else {
+    const rpcName = recovery
+      ? "create_recovered_booking"
+      : "create_public_booking";
+    const rpcArgs = recovery
+      ? {
+          p_source_booking_id: recovery.sourceBookingId,
+          p_recovery_kind: recovery.kind,
+          p_recovered_by_user_id: recovery.recoveredByUserId,
+          p_idempotency_key: recovery.requestId,
+          p_salon_id: ctx.salon.id,
+          p_service_id: serviceId,
+          p_staff_id: resolvedStaffId,
+          p_client_name: clientName,
+          p_client_phone: canonicalPhone,
+          p_start_time_utc: startUtcIso,
+          p_end_time_utc: endUtcIso,
+          p_status: "confirmed",
+          p_price_cents: deskPriceCents ?? svc.price_cents ?? null,
+          p_client_notes: clientNotes,
+          p_client_email: clientEmail,
+          p_resource_id: resolvedResourceId,
+        }
+      : {
+          p_salon_id: ctx.salon.id,
+          p_service_id: serviceId,
+          p_staff_id: resolvedStaffId,
+          p_client_name: clientName,
+          p_client_phone: canonicalPhone,
+          p_start_time_utc: startUtcIso,
+          p_end_time_utc: endUtcIso,
+          p_status: "confirmed",
+          p_price_cents: deskPriceCents ?? svc.price_cents ?? null,
+          p_client_notes: clientNotes,
+          p_client_email: clientEmail,
+          p_resource_id: resolvedResourceId,
+        };
     const { data: rpcData, error: rpcErr } = await db.rpc(
-      "create_public_booking",
-      {
-        p_salon_id: ctx.salon.id,
-        p_service_id: serviceId,
-        p_staff_id: resolvedStaffId,
-        p_client_name: clientName,
-        p_client_phone: canonicalPhone,
-        p_start_time_utc: startUtcIso,
-        p_end_time_utc: endUtcIso,
-        p_status: "confirmed",
-        p_price_cents: deskPriceCents ?? svc.price_cents ?? null,
-        p_client_notes: clientNotes,
-        p_client_email: clientEmail,
-        p_resource_id: resolvedResourceId,
-      } as never,
+      rpcName as never,
+      rpcArgs as never,
     );
     if (rpcErr) {
       const code = (rpcErr as { code?: string }).code;
@@ -2886,14 +3245,21 @@ export async function addDeskAppointment(
       success?: boolean;
       booking_id?: string;
       code?: string;
+      replayed?: boolean;
     } | null;
     if (!result?.success || !result.booking_id) {
       const rCode = result?.code;
+      if (rCode === "already_recovered") return fail("already_recovered");
+      if (rCode === "invalid_recovery_source")
+        return fail("invalid_recovery_source");
       if (rCode === "slot_conflict") return fail("time_slot_taken");
       if (rCode === "outside_hours") return fail("outside_hours");
       return fail("server_error");
     }
     bookingId = result.booking_id;
+    if (recovery && result.replayed === true) {
+      return { ok: true, bookingId };
+    }
   }
 
   // Stamp promo discount when an active campaign applies (server-authoritative)
@@ -2952,14 +3318,17 @@ export async function addDeskAppointment(
     /* best-effort */
   }
 
-  // Owner/admin "new booking" alert (opt-in, fire-and-forget).
-  after(() =>
-    sendOwnerBookingNotification({
-      salonId: ctx.salon.id,
-      bookingId,
-      event: "new",
-    }),
-  );
+  // The admin initiating a recovery is already looking at the result. Suppress
+  // the redundant owner alert; this also keeps QA recovery runs outbound-free.
+  if (!recovery) {
+    after(() =>
+      sendOwnerBookingNotification({
+        salonId: ctx.salon.id,
+        bookingId,
+        event: "new",
+      }),
+    );
+  }
 
   void logBookingEvent({
     bookingId,
@@ -2984,8 +3353,28 @@ export async function addDeskAppointment(
             approvedBy: ctx.userId,
           }
         : {}),
+      ...(recovery
+        ? {
+            recoveredFromBookingId: recovery.sourceBookingId,
+            recoveryKind: recovery.kind,
+          }
+        : {}),
     },
   });
+
+  if (recovery) {
+    void logBookingEvent({
+      bookingId,
+      salonId: ctx.salon.id,
+      actorUserId: ctxActorUserId(ctx),
+      actorRole: ctxActorRole(ctx),
+      eventType: "booking_recovered",
+      payload: {
+        sourceBookingId: recovery.sourceBookingId,
+        recoveryKind: recovery.kind,
+      },
+    });
+  }
 
   // Unified no-show protection gate: a desk/phone booking skips the online card
   // capture, so flag "needs card" the same way every other path does. Flag
@@ -2995,8 +3384,19 @@ export async function addDeskAppointment(
   // Confirmation to the customer, gated by the receptionist's notify choice
   // (legacy callers without `notify` keep the always-send behavior). Reuses the
   // existing rich SMS + email confirmation routes.
-  const notifyCreateSms = input.notify ? input.notify.sms === true : true;
-  const notifyCreateEmail = input.notify ? input.notify.email === true : true;
+  // Recovery is outbound-off by default on the server too. A stale or forged
+  // caller that omits `notify` must not inherit the legacy "send both"
+  // behavior; an owner/admin may still explicitly opt into either channel.
+  const notifyCreateSms = recovery
+    ? input.notify?.sms === true
+    : input.notify
+      ? input.notify.sms === true
+      : true;
+  const notifyCreateEmail = recovery
+    ? input.notify?.email === true
+    : input.notify
+      ? input.notify.email === true
+      : true;
   const base =
     (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
   const serviceName = svc.name ?? "";

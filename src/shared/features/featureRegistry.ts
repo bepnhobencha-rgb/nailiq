@@ -64,7 +64,8 @@ export type BetaFeatureKey =
   | "experimental_realtime"
   | "admin_copilot"
   | "ai_control_center"
-  | "nail_tryon";
+  | "nail_tryon"
+  | "archived_booking_recovery";
 
 export type ReleaseFeatureKey = BaseFeatureKey | BetaFeatureKey;
 
@@ -330,6 +331,19 @@ export const RELEASE_FEATURES: Record<ReleaseFeatureKey, ReleaseFeatureDescripto
     defaultOn: false,
     source: { kind: "jsonb", flagKey: "nail_tryon_enabled" },
     description: "Private hand-photo preview with a salon nail design before booking.",
+  },
+  archived_booking_recovery: {
+    key: "archived_booking_recovery",
+    label: "Archived Booking Recovery",
+    group: "operations",
+    phase: "beta",
+    defaultOn: false,
+    source: {
+      kind: "jsonb",
+      flagKey: "archived_booking_recovery_enabled",
+    },
+    description:
+      "Create a linked replacement for a cancelled/no-show booking without reopening history.",
   },
 };
 

@@ -1671,7 +1671,11 @@ function StaffTimelineGridImpl({
                             hasCard={t.hasCard}
                             language={language}
                             currencyCode={currencyCode}
-                            onUndo={() => onTombstoneUndo?.(t.id)}
+                            onUndo={
+                              onTombstoneUndo
+                                ? () => onTombstoneUndo(t.id)
+                                : undefined
+                            }
                             onCharge={
                               canCharge
                                 ? () => onTombstoneCharge?.(t.id)
@@ -1794,7 +1798,7 @@ interface NoShowTombstoneProps {
   hasCard: boolean;
   language: "en" | "vi";
   currencyCode?: import("@/shared/lib/currencyFormat").Currency;
-  onUndo: () => void;
+  onUndo?: () => void;
   onCharge?: () => void;
   onWaive?: () => void;
 }
@@ -1895,16 +1899,18 @@ function NoShowTombstone({
           </div>
 
           {/* Action buttons */}
-          <button
-            type="button"
-            className="w-full rounded-lg px-2 py-1.5 text-left text-sm text-nq-success transition-colors hover:bg-nq-surface/80"
-            onClick={() => {
-              setOpen(false);
-              onUndo();
-            }}
-          >
-            {vi ? "Bỏ vắng (đã đến)" : "Undo no-show"}
-          </button>
+          {onUndo ? (
+            <button
+              type="button"
+              className="w-full rounded-lg px-2 py-1.5 text-left text-sm text-nq-success transition-colors hover:bg-nq-surface/80"
+              onClick={() => {
+                setOpen(false);
+                onUndo();
+              }}
+            >
+              {vi ? "Bỏ vắng (đã đến)" : "Undo no-show"}
+            </button>
+          ) : null}
           {onCharge ? (
             <button
               type="button"
