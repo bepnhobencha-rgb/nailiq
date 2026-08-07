@@ -1,11 +1,14 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
 import { useEffect, useRef, useState } from "react";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { NoShowCardCaptureStripe } from "./NoShowCardCaptureStripe";
 import type { SavedNoShowCard } from "@/shared/noshow/resolveSavedNoShowCard";
 import { reuseNoShowCardAction } from "@/shared/noshow/saveNoShowCardAction";
 import { CardWebviewFallback } from "./CardWebviewFallback";
+import { isInAppBrowser } from "@/shared/lib/inAppBrowser";
+import { useInAppBrowser } from "@/shared/lib/useInAppBrowser";
 
 type CaptureProps = {
   bookingId: string;
@@ -238,6 +241,7 @@ function SquareCardCapture({ bookingId, currencyFormat, t, savedCard, otpSession
   // When a returning customer has a card on file we show the reuse tile first;
   // this flips to true if they tap "Use a different card".
   const [useDifferentCard, setUseDifferentCard] = useState(false);
+  const inAppBrowser = useInAppBrowser();
   const cardRef = useRef<SquareCard | null>(null);
   const mountedRef = useRef(false);
 
@@ -303,6 +307,14 @@ function SquareCardCapture({ bookingId, currencyFormat, t, savedCard, otpSession
         sellerKeyedIn: false,
       });
       if (result.status !== "OK" || !result.token) {
+        Sentry.captureMessage("square_card_tokenization_failed", {
+          level: "warning",
+          tags: {
+            surface: "booking_save_card",
+            square_status: result.status,
+            in_app_browser: String(isInAppBrowser()),
+          },
+        });
         setStatus("error");
         setErrorMsg(
           t.cardVerificationError ??
@@ -326,7 +338,17 @@ function SquareCardCapture({ bookingId, currencyFormat, t, savedCard, otpSession
         setStatus("error");
         setErrorMsg(t.noShowCardError ?? "Could not save the card.");
       }
-    } catch {
+    } catch (cause) {
+      Sentry.captureException(
+        cause instanceof Error ? cause : new Error("square_card_tokenization_threw"),
+        {
+          tags: {
+            surface: "booking_save_card",
+            payment_step: "card_tokenize",
+            in_app_browser: String(isInAppBrowser()),
+          },
+        },
+      );
       setStatus("error");
       setErrorMsg(
         t.cardVerificationError ??
@@ -374,6 +396,15 @@ function SquareCardCapture({ bookingId, currencyFormat, t, savedCard, otpSession
       <p className="mt-1 text-xs leading-relaxed text-[var(--booking-text-muted)]">
         {(t.noShowCardDesc ?? "Add a card to hold your spot. You're only charged {fee} if you don't show up — nothing now.").replace("{fee}", feeLabel)}
       </p>
+      {inAppBrowser ? (
+        <CardWebviewFallback
+          forceVisible
+          hint={t.cardWebviewHint ?? "Card verification may not finish in this app's browser. Open this page in Safari or Chrome, or copy the link below."}
+          copyLabel={t.cardWebviewCopy ?? "Copy booking link"}
+          copiedLabel={t.cardWebviewCopied ?? "Link copied"}
+          openChromeLabel={t.cardWebviewOpenChrome ?? "Open in Chrome"}
+        />
+      ) : null}
       <div
         id="sq-noshow-card"
         className="mt-3 rounded-lg border border-[var(--booking-border)] bg-white p-2"
@@ -383,11 +414,13 @@ function SquareCardCapture({ bookingId, currencyFormat, t, savedCard, otpSession
           {errorMsg}
         </p>
       ) : null}
-      {errorMsg ? (
+      {errorMsg && !inAppBrowser ? (
         <CardWebviewFallback
+          forceVisible
           hint={t.cardWebviewHint ?? "Can't load the card form in this app's browser. Open this page in Safari or Chrome to finish, or copy the link below."}
           copyLabel={t.cardWebviewCopy ?? "Copy booking link"}
           copiedLabel={t.cardWebviewCopied ?? "Link copied"}
+          openChromeLabel={t.cardWebviewOpenChrome ?? "Open in Chrome"}
         />
       ) : null}
       <label className="mt-3 flex cursor-pointer items-start gap-2 text-xs leading-relaxed text-[var(--booking-text-muted)]">

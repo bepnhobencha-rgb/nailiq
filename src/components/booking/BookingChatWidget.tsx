@@ -139,7 +139,7 @@ export function BookingChatWidget({
   );
 
   return (
-    <div className="fixed bottom-6 right-4 z-50 sm:right-6 lg:bottom-8 lg:right-8">
+    <div className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] right-4 z-50 sm:right-6 lg:bottom-8 lg:right-8">
       {/* Chat panel */}
       {open ? (
         <div className="nq-booking-glass mb-3 flex w-[min(340px,calc(100vw-2rem))] flex-col overflow-hidden rounded-3xl border border-[var(--booking-border)] shadow-2xl">

@@ -137,12 +137,10 @@ export function BookingFlowConfirmPanel({
   const [useDifferentCard, setUseDifferentCard] = useState(false);
   const reuseSaved = cardRequired && hasSavedCard && !useDifferentCard;
   const cardRef = useRef<ConfirmStepCardHandle>(null);
-  const [cardError, setCardError] = useState<string | null>(null);
 
   async function handleConfirm() {
     const ack = healthAckOn ? healthAck : undefined;
     if (cardRequired) {
-      setCardError(null);
       cardRef.current?.clearError();
       // One-tap reuse of the saved card — no new tokenization.
       if (reuseSaved) {
@@ -151,7 +149,6 @@ export function BookingFlowConfirmPanel({
       }
       const result = await cardRef.current?.tokenize();
       if (!result) {
-        setCardError(t.noShowCardError ?? "Please check your card details.");
         return;
       }
       await onConfirm({
@@ -570,11 +567,6 @@ export function BookingFlowConfirmPanel({
                 )}
               </span>
             </label>
-            {cardError ? (
-              <p className="mt-2 text-xs text-nq-error" role="alert">
-                {cardError}
-              </p>
-            ) : null}
           </>
         ) : null}
 

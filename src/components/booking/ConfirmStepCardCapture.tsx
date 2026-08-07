@@ -1,5 +1,6 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
 import {
   forwardRef,
   useEffect,
@@ -9,6 +10,8 @@ import {
 } from "react";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { CardWebviewFallback } from "@/components/booking/CardWebviewFallback";
+import { isInAppBrowser } from "@/shared/lib/inAppBrowser";
+import { useInAppBrowser } from "@/shared/lib/useInAppBrowser";
 
 type SquareCard = {
   attach: (sel: string) => Promise<void>;
@@ -90,6 +93,7 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
     const mountedRef = useRef(false);
     const [error, setError] = useState<string | null>(null);
     const [ready, setReady] = useState(false);
+    const inAppBrowser = useInAppBrowser();
 
     useEffect(() => {
       if (mountedRef.current) return;
@@ -137,6 +141,14 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
             sellerKeyedIn: false,
           });
           if (res.status !== "OK" || !res.token) {
+            Sentry.captureMessage("square_card_tokenization_failed", {
+              level: "warning",
+              tags: {
+                surface: "booking_confirm",
+                square_status: res.status,
+                in_app_browser: String(isInAppBrowser()),
+              },
+            });
             setError(
               t.cardVerificationError ??
                 "Card verification could not be completed. Please try again or open this page in Safari or Chrome.",
@@ -145,7 +157,17 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
           }
           setError(null);
           return { token: res.token };
-        } catch {
+        } catch (cause) {
+          Sentry.captureException(
+            cause instanceof Error ? cause : new Error("square_card_tokenization_threw"),
+            {
+              tags: {
+                surface: "booking_confirm",
+                payment_step: "card_tokenize",
+                in_app_browser: String(isInAppBrowser()),
+              },
+            },
+          );
           setError(
             t.cardVerificationError ??
               "Card verification timed out. Please try again or open this page in Safari or Chrome.",
@@ -167,6 +189,15 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
             feeLabel,
           )}
         </p>
+        {inAppBrowser ? (
+          <CardWebviewFallback
+            forceVisible
+            hint={t.cardWebviewHint ?? "Card verification may not finish in this app's browser. Open this page in Safari or Chrome, or copy the link below."}
+            copyLabel={t.cardWebviewCopy ?? "Copy booking link"}
+            copiedLabel={t.cardWebviewCopied ?? "Link copied"}
+            openChromeLabel={t.cardWebviewOpenChrome ?? "Open in Chrome"}
+          />
+        ) : null}
         <div
           id="sq-confirm-card"
           className="mt-3 rounded-lg border border-[var(--booking-border)] bg-white p-2"
@@ -182,11 +213,13 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
             {error}
           </p>
         ) : null}
-        {error ? (
+        {error && !inAppBrowser ? (
           <CardWebviewFallback
+            forceVisible
             hint={t.cardWebviewHint ?? "Can't load the card form in this app's browser. Open this page in Safari or Chrome to finish, or copy the link below."}
             copyLabel={t.cardWebviewCopy ?? "Copy booking link"}
             copiedLabel={t.cardWebviewCopied ?? "Link copied"}
+            openChromeLabel={t.cardWebviewOpenChrome ?? "Open in Chrome"}
           />
         ) : null}
       </div>

@@ -1021,7 +1021,6 @@ export function BookingGroupFlow({
       }
       const result = await cardRef.current?.tokenize();
       if (!result) {
-        setErrorMessage(t.noShowCardError ?? "Vui lòng kiểm tra thông tin thẻ.");
         submittingRef.current = false;
         return;
       }
