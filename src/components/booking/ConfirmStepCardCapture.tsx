@@ -12,6 +12,7 @@ import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { CardWebviewFallback } from "@/components/booking/CardWebviewFallback";
 import { isInAppBrowser } from "@/shared/lib/inAppBrowser";
 import { useInAppBrowser } from "@/shared/lib/useInAppBrowser";
+import { buildSquareStoreBillingContact } from "@/shared/noshow/squareStoreBillingContact";
 
 type SquareCard = {
   attach: (sel: string) => Promise<void>;
@@ -79,6 +80,9 @@ type Props = {
   locationId: string;
   environment: "production" | "sandbox";
   feeLabel: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail: string;
   t: BookingMessages;
 };
 
@@ -88,7 +92,16 @@ type Props = {
  * action can grab the token and save the card as part of creating the booking.
  */
 export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
-  function ConfirmStepCardCapture({ applicationId, locationId, environment, feeLabel, t }, ref) {
+  function ConfirmStepCardCapture({
+    applicationId,
+    locationId,
+    environment,
+    feeLabel,
+    customerName,
+    customerPhone,
+    customerEmail,
+    t,
+  }, ref) {
     const cardRef = useRef<SquareCard | null>(null);
     const mountedRef = useRef(false);
     const [error, setError] = useState<string | null>(null);
@@ -137,6 +150,11 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
           // flow instead of silently falling back to an unverified card.
           const res = await cardRef.current.tokenize({
             intent: "STORE",
+            billingContact: buildSquareStoreBillingContact({
+              name: customerName,
+              phone: customerPhone,
+              email: customerEmail,
+            }),
             customerInitiated: true,
             sellerKeyedIn: false,
           });

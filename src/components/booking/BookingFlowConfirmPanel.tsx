@@ -43,6 +43,7 @@ export function BookingFlowConfirmPanel({
   staffSummaryLabel,
   clientName,
   clientPhone,
+  clientEmail,
   clientNotes,
   upsellCandidates,
   upsellGapMinutes,
@@ -80,6 +81,7 @@ export function BookingFlowConfirmPanel({
   staffSummaryLabel: string;
   clientName: string;
   clientPhone: string;
+  clientEmail: string;
   clientNotes: string;
   upsellCandidates: readonly BookingServiceItem[];
   upsellGapMinutes: number;
@@ -537,6 +539,9 @@ export function BookingFlowConfirmPanel({
                   locationId={cardRequirement.locationId}
                   environment={cardRequirement.environment}
                   feeLabel={formatBookingPrice(cardRequirement.feeCents, currency) ?? ""}
+                  customerName={clientName}
+                  customerPhone={clientPhone}
+                  customerEmail={clientEmail}
                   t={t}
                 />
                 {hasSavedCard ? (
