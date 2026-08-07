@@ -14,9 +14,10 @@ import {
   outboundMessagingEnabled,
   rejectUnauthorizedInternalRequest,
 } from "../_shared/internalAuth.ts";
+import { supabaseSecretKey } from "../_shared/supabaseApiKeys.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const serviceRoleKey = supabaseSecretKey();
 
 const db = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },

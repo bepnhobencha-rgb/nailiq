@@ -44,12 +44,41 @@ describe("privileged Supabase Edge Function authentication", () => {
       "utf8",
     );
 
-    expect(source).toContain("if (!expected) return false");
     expect(source).toContain("if (!presented) return false");
+    expect(source).toContain('req.headers.get("apikey")');
+    expect(source).toContain("acceptedInternalSecretKeys()");
     expect(source).toContain('status: 401');
     expect(source).toContain('crypto.subtle.digest("SHA-256"');
     expect(source).toContain('Deno.env.get("OUTBOUND_MESSAGING_ENABLED") === "true"');
     expect(source).toContain('Deno.env.get("MAX_OUTBOUND_MESSAGES_PER_RUN") ?? "100"');
+  });
+
+  it("reads modern Supabase keys before falling back during migration", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "supabase/functions/_shared/supabaseApiKeys.ts"),
+      "utf8",
+    );
+
+    expect(source).toContain('readNamedKey("SUPABASE_SECRET_KEYS", name)');
+    expect(source).toContain('readNamedKey("SUPABASE_PUBLISHABLE_KEYS", name)');
+    expect(source).toContain('Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")');
+    expect(source).toContain('Deno.env.get("SUPABASE_ANON_KEY")');
+  });
+
+  it.each([...privilegedFunctions, "photo-upload"])(
+    "uses modern Supabase API key environment variables in %s",
+    (slug) => {
+      expect(sourceFor(slug)).toContain('../_shared/supabaseApiKeys.ts');
+    },
+  );
+
+  it.each([
+    "src/app/api/import-website/route.ts",
+    "src/app/api/staff/photo-upload/route.ts",
+  ])("sends the modern secret on the apikey header from %s", (path) => {
+    const source = readFileSync(resolve(process.cwd(), path), "utf8");
+    expect(source).toContain("apikey:");
+    expect(source).not.toContain("Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}");
   });
 
   it.each([

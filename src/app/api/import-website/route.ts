@@ -101,7 +101,7 @@ export async function POST(req: Request) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${serviceRoleKey}`,
+      apikey: serviceRoleKey,
     },
     body: JSON.stringify({
       jobId,

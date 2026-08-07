@@ -1,3 +1,5 @@
+import { acceptedInternalSecretKeys } from "./supabaseApiKeys.ts";
+
 /**
  * Fail-closed authentication for privileged Edge Functions.
  *
@@ -23,15 +25,16 @@ async function constantTimeEqual(left: string, right: string): Promise<boolean> 
 }
 
 export async function isAuthorizedInternalRequest(req: Request): Promise<boolean> {
-  const expected = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
-  if (!expected) return false;
-
+  const apiKey = req.headers.get("apikey")?.trim() ?? "";
   const authorization = req.headers.get("authorization") ?? "";
   const match = authorization.match(/^Bearer\s+(.+)$/i);
-  const presented = match?.[1]?.trim() ?? "";
+  const presented = apiKey || match?.[1]?.trim() || "";
   if (!presented) return false;
 
-  return constantTimeEqual(presented, expected);
+  const comparisons = await Promise.all(
+    acceptedInternalSecretKeys().map((expected) => constantTimeEqual(presented, expected)),
+  );
+  return comparisons.some(Boolean);
 }
 
 export async function rejectUnauthorizedInternalRequest(

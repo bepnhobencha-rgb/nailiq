@@ -77,3 +77,43 @@ enabled = false
 # The Edge Functions in supabase/functions are not exercised by the E2E suite and
 # booting them costs ~30s of CI. Enable this if a spec ever needs one.
 enabled = false
+
+# Hosted deployments use application-level authorization so modern
+# sb_publishable_/sb_secret_ keys can be sent on the `apikey` header. Every
+# privileged function below calls rejectUnauthorizedInternalRequest() before
+# parsing input; photo-upload validates the caller's Supabase Auth JWT itself.
+[functions.photo-upload]
+verify_jwt = false
+
+[functions.photo-enhance]
+verify_jwt = false
+
+[functions.photo-send-sms]
+verify_jwt = false
+
+[functions.pattern-detector]
+verify_jwt = false
+
+[functions.referral-claim]
+verify_jwt = false
+
+[functions.referral-complete]
+verify_jwt = false
+
+[functions.cron-birthday-voucher]
+verify_jwt = false
+
+[functions.cron-welcome-back]
+verify_jwt = false
+
+[functions.cron-trend-refresh]
+verify_jwt = false
+
+[functions.cron-auto-reconfirm]
+verify_jwt = false
+
+[functions.scrape-website]
+verify_jwt = false
+
+[functions.reschedule-sms]
+verify_jwt = false
