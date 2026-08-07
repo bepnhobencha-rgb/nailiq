@@ -116,6 +116,8 @@ export const REALTIME_TOOLS = [
       "  • Whole group → call again with group_id\n" +
       "  • Partial → read each member slot, get confirmation, call again with booking_id for each person to cancel.\n\n" +
       "ALWAYS get verbal confirmation BEFORE passing booking_id or group_id.\n" +
+      "If the server returns late_fee_confirmation_required, disclose the exact amount and call again with late_fee_acknowledged=true ONLY after a clear yes. " +
+      "If it returns late_fee_requires_staff, do not cancel or charge; transfer to salon staff.\n" +
       "After cancellation: thank them and invite to rebook. For partial: confirm count e.g. 'Đã huỷ 2 người, 6 người còn lại giữ nguyên.'",
     parameters: {
       type: "object" as const,
@@ -139,6 +141,16 @@ export const REALTIME_TOOLS = [
         otp_session_id: {
           type: "string",
           description: "The otp_session_id from verify_otp for the phone that OWNS this booking. Required to actually cancel (Path A with booking_id); not needed for the lookup step.",
+        },
+        late_fee_acknowledged: {
+          type: "boolean",
+          description:
+            "Set to true only after cancel_booking returns late_fee_confirmation_required and the verified customer clearly agrees to the exact fee amount. Never set this pre-emptively.",
+        },
+        late_fee_confirmation_token: {
+          type: "string",
+          description:
+            "Opaque signed token returned by late_fee_confirmation_required. Pass it back unchanged together with late_fee_acknowledged=true after the customer's new explicit yes.",
         },
       },
       required: [],

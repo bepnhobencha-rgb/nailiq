@@ -7,6 +7,7 @@ import { deliverStaffActionNotification } from "@/shared/notifications/deliverSt
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { chargeNoShowFee } from "@/shared/integrations/square/noshow";
 import { salonYmdOfUtc } from "@/shared/lib/salonTime";
+import { evaluateLateCancellationPolicy } from "@/shared/noshow/lateCancellationPolicy";
 
 type BookingRow = {
   salon_id: string;
@@ -21,6 +22,8 @@ type BookingRow = {
   noshow_charge_status: string | null;
   noshow_card_last4: string | null;
   noshow_card_brand: string | null;
+  self_cancel_fee_locked_at: string | null;
+  self_cancel_fee_locked_cents: number | null;
 };
 
 type SalonRow = {
@@ -53,6 +56,7 @@ async function evaluateSelfCancel(
       withinWindow: boolean;
       willCharge: boolean;
       feeCents: number;
+      policyLockedByReschedule: boolean;
     }
 > {
   const { data: tokenRow } = await supabase
@@ -70,7 +74,7 @@ async function evaluateSelfCancel(
   const { data: bRow } = await supabase
     .from("bookings" as never)
     .select(
-      "salon_id, service_id, start_time_utc, status, client_email, client_locale, noshow_card_id, noshow_consent_at, noshow_fee_cents, noshow_charge_status, noshow_card_last4, noshow_card_brand",
+      "salon_id, service_id, start_time_utc, status, client_email, client_locale, noshow_card_id, noshow_consent_at, noshow_fee_cents, noshow_charge_status, noshow_card_last4, noshow_card_brand, self_cancel_fee_locked_at, self_cancel_fee_locked_cents",
     )
     .eq("id", tr.booking_id)
     .maybeSingle();
@@ -95,44 +99,34 @@ async function evaluateSelfCancel(
     noshow_fee_percent: null,
   };
 
-  const now = Date.now();
-  const start = new Date(booking.start_time_utc).getTime();
-  const startPast = !Number.isFinite(start) || start <= now;
-  const windowHours =
-    salon.self_cancel_window_hours != null && salon.self_cancel_window_hours > 0
-      ? salon.self_cancel_window_hours
-      : 24;
-  const hoursUntil = (start - now) / 3_600_000;
-  const withinWindow = !startPast && hoursUntil < windowHours;
-
-  // The frozen no-show snapshot (noshow_fee_cents) is noshow_fee_percent% of the
-  // booking base. If the salon set a gentler late-cancel percent, scale it:
-  //   lateFee = snapshot * selfCancelPct / noshowPct
-  const snapshotCents = booking.noshow_fee_cents ?? 0;
-  const noshowPct = salon.noshow_fee_percent ?? 0;
-  const selfPct = salon.self_cancel_fee_percent;
-  const feeCents =
-    selfPct != null && noshowPct > 0
-      ? Math.round((snapshotCents * selfPct) / noshowPct)
-      : snapshotCents;
-
-  const hasChargeableCard =
-    !!booking.noshow_card_id &&
-    !!booking.noshow_consent_at &&
-    feeCents > 0 &&
-    booking.noshow_charge_status !== "charged";
-  const willCharge =
-    salon.self_cancel_fee_enabled === true && withinWindow && hasChargeableCard;
+  const policy = evaluateLateCancellationPolicy({
+    booking: {
+      startTimeUtc: booking.start_time_utc,
+      noShowFeeCents: booking.noshow_fee_cents,
+      noShowCardId: booking.noshow_card_id,
+      noShowConsentAt: booking.noshow_consent_at,
+      noShowChargeStatus: booking.noshow_charge_status,
+      selfCancelFeeLockedAt: booking.self_cancel_fee_locked_at,
+      selfCancelFeeLockedCents: booking.self_cancel_fee_locked_cents,
+    },
+    salon: {
+      selfCancelFeeEnabled: salon.self_cancel_fee_enabled,
+      selfCancelWindowHours: salon.self_cancel_window_hours,
+      selfCancelFeePercent: salon.self_cancel_fee_percent,
+      noShowFeePercent: salon.noshow_fee_percent,
+    },
+  });
 
   return {
     ok: true,
     bookingId: tr.booking_id,
     booking,
     salon,
-    startPast,
-    withinWindow,
-    willCharge,
-    feeCents,
+    startPast: policy.startPast,
+    withinWindow: policy.withinWindow,
+    willCharge: policy.willCharge,
+    feeCents: policy.feeCents,
+    policyLockedByReschedule: policy.policyLockedByReschedule,
   };
 }
 
@@ -155,6 +149,7 @@ export async function GET(req: Request) {
     startPast: ev.startPast,
     withinWindow: ev.withinWindow,
     willCharge: ev.willCharge,
+    policyLockedByReschedule: ev.policyLockedByReschedule,
     feeCents: ev.willCharge ? ev.feeCents : 0,
     last4: ev.willCharge ? ev.booking.noshow_card_last4 : null,
     brand: ev.willCharge ? ev.booking.noshow_card_brand : null,
@@ -210,16 +205,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, code: row?.code ?? "unknown" }, { status: 400 });
   }
 
-  // Audit log — customer cancelled via email link
-  void logBookingEvent({
-    bookingId,
-    salonId: salon_id,
-    actorUserId: null,
-    actorRole: "public_guest",
-    eventType: "booking_cancelled",
-    payload: { reason: "customer_email_link", late: ev.withinWindow },
-  });
-
   // Late-cancel fee — charge synchronously so the response can tell the customer
   // exactly what happened. chargeNoShowFee is idempotent, re-guards card +
   // consent + fee, and records saved→charged|failed. The booking is already
@@ -238,6 +223,29 @@ export async function POST(req: Request) {
       console.error("[cancel-action] late-cancel charge failed", e);
     }
   }
+
+  // One truthful audit record after the synchronous payment attempt. Never
+  // imply a charge happened merely because the booking was inside the window.
+  void logBookingEvent({
+    bookingId,
+    salonId: salon_id,
+    actorUserId: null,
+    actorRole: "public_guest",
+    eventType: "booking_cancelled",
+    payload: {
+      reason: "customer_email_link",
+      late: ev.withinWindow,
+      policy_locked_by_reschedule: ev.policyLockedByReschedule,
+      fee_decision: ev.willCharge
+        ? feeCharged
+          ? "charged"
+          : "failed"
+        : ev.withinWindow
+          ? "not_chargeable"
+          : "not_applicable",
+      fee_cents: ev.willCharge ? ev.feeCents : 0,
+    },
+  });
 
   // Owner alert + customer email + waitlist after the response is flushed.
   after(async () => {

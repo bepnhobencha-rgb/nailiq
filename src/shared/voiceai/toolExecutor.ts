@@ -38,6 +38,13 @@ import {
   SUPPORTED_LANGUAGES,
   type SupportedLanguage,
 } from "@/shared/voiceai/config";
+import { chargeNoShowFee } from "@/shared/integrations/square/noshow";
+import {
+  buildLateCancellationLockPatch,
+  evaluateLateCancellationPolicy,
+  type LateCancellationBookingPolicy,
+  type LateCancellationSalonPolicy,
+} from "@/shared/noshow/lateCancellationPolicy";
 
 /**
  * Shared receptionist tool executor.
@@ -99,7 +106,14 @@ export async function executeVoiceTool(
     return handleFindBooking(supabase, salonSlug, toolArgs);
   }
   if (toolName === "cancel_booking") {
-    return handleCancelBooking(supabase, salonSlug, toolArgs, sessionId, callerVerifiedPhone);
+    return handleCancelBooking(
+      supabase,
+      salonSlug,
+      toolArgs,
+      sessionId,
+      callerVerifiedPhone,
+      trustedUserUtterance,
+    );
   }
   if (toolName === "reschedule_booking") {
     return handleRescheduleBooking(supabase, salonSlug, toolArgs, sessionId, callerVerifiedPhone);
@@ -849,12 +863,180 @@ async function handleConfirmBooking(
 //      the booking to the customer, get verbal OK, then call again with booking_id.
 //
 // This eliminates the "AI skips find_booking → passes phone as booking_id" bug.
+type VoiceCancelSalon = {
+  id: string;
+  timezone?: string | null;
+  currency_code?: string | null;
+  self_cancel_fee_enabled?: boolean | null;
+  self_cancel_window_hours?: number | null;
+  self_cancel_fee_percent?: number | null;
+  noshow_fee_percent?: number | null;
+};
+
+type VoiceCancelBooking = {
+  start_time_utc: string;
+  noshow_card_id?: string | null;
+  noshow_consent_at?: string | null;
+  noshow_fee_cents?: number | null;
+  noshow_charge_status?: string | null;
+  self_cancel_fee_locked_at?: string | null;
+  self_cancel_fee_locked_cents?: number | null;
+};
+
+function voiceSalonLatePolicy(salon: VoiceCancelSalon): LateCancellationSalonPolicy {
+  return {
+    selfCancelFeeEnabled: salon.self_cancel_fee_enabled ?? false,
+    selfCancelWindowHours: salon.self_cancel_window_hours ?? 24,
+    selfCancelFeePercent: salon.self_cancel_fee_percent ?? null,
+    noShowFeePercent: salon.noshow_fee_percent ?? null,
+  };
+}
+
+function voiceBookingLatePolicy(
+  booking: VoiceCancelBooking,
+): LateCancellationBookingPolicy {
+  return {
+    startTimeUtc: booking.start_time_utc,
+    noShowFeeCents: booking.noshow_fee_cents ?? null,
+    noShowCardId: booking.noshow_card_id ?? null,
+    noShowConsentAt: booking.noshow_consent_at ?? null,
+    noShowChargeStatus: booking.noshow_charge_status ?? null,
+    selfCancelFeeLockedAt: booking.self_cancel_fee_locked_at ?? null,
+    selfCancelFeeLockedCents: booking.self_cancel_fee_locked_cents ?? null,
+  };
+}
+
+function isExplicitFeeAcknowledgement(utterance: string | null): boolean {
+  if (!utterance) return false;
+  const normalized = utterance
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[.!?,;:]+$/g, "")
+    .replace(/\s+/g, " ");
+  return new Set([
+    "yes",
+    "yes please",
+    "i agree",
+    "that's okay",
+    "thats okay",
+    "charge it",
+    "ok",
+    "okay",
+    "đồng ý",
+    "tôi đồng ý",
+    "dạ",
+    "vâng",
+    "được",
+    "thu đi",
+    "sí",
+    "si",
+    "de acuerdo",
+    "acepto",
+    "oui",
+    "d'accord",
+    "j'accepte",
+    "是",
+    "可以",
+    "同意",
+    "好的",
+  ]).has(normalized);
+}
+
+const LATE_FEE_CHALLENGE_TTL_MS = 5 * 60_000;
+
+function utteranceFingerprint(utterance: string | null): string {
+  return crypto
+    .createHash("sha256")
+    .update(utterance?.trim() ?? "")
+    .digest("base64url");
+}
+
+function issueLateFeeChallenge(input: {
+  bookingId: string;
+  feeCents: number;
+  sessionId: string | null;
+  currentUtterance: string | null;
+}): string | null {
+  const secret = process.env.VOICE_BRIDGE_SECRET?.trim();
+  if (!secret) return null;
+  const payload = Buffer.from(
+    JSON.stringify({
+      bookingId: input.bookingId,
+      feeCents: input.feeCents,
+      sessionId: input.sessionId ?? "",
+      issuedAt: Date.now(),
+      priorUtterance: utteranceFingerprint(input.currentUtterance),
+    }),
+  ).toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", secret)
+    .update(payload)
+    .digest("base64url");
+  return `${payload}.${signature}`;
+}
+
+function validateLateFeeChallenge(input: {
+  token: string | null;
+  bookingId: string;
+  feeCents: number;
+  sessionId: string | null;
+  currentUtterance: string | null;
+}): boolean {
+  const secret = process.env.VOICE_BRIDGE_SECRET?.trim();
+  if (!secret || !input.token || !input.currentUtterance) return false;
+  const [payload, suppliedSignature, ...extra] = input.token.split(".");
+  if (!payload || !suppliedSignature || extra.length > 0) return false;
+
+  const expectedSignature = crypto
+    .createHmac("sha256", secret)
+    .update(payload)
+    .digest();
+  let supplied: Buffer;
+  try {
+    supplied = Buffer.from(suppliedSignature, "base64url");
+  } catch {
+    return false;
+  }
+  if (
+    supplied.length !== expectedSignature.length ||
+    !crypto.timingSafeEqual(supplied, expectedSignature)
+  ) {
+    return false;
+  }
+
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(payload, "base64url").toString("utf8"),
+    ) as {
+      bookingId?: unknown;
+      feeCents?: unknown;
+      sessionId?: unknown;
+      issuedAt?: unknown;
+      priorUtterance?: unknown;
+    };
+    const ageMs = Date.now() - Number(parsed.issuedAt);
+    return (
+      parsed.bookingId === input.bookingId &&
+      parsed.feeCents === input.feeCents &&
+      parsed.sessionId === (input.sessionId ?? "") &&
+      Number.isFinite(ageMs) &&
+      ageMs >= 0 &&
+      ageMs <= LATE_FEE_CHALLENGE_TTL_MS &&
+      parsed.priorUtterance !== utteranceFingerprint(input.currentUtterance) &&
+      isExplicitFeeAcknowledgement(input.currentUtterance)
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function handleCancelBooking(
   supabase: ReturnType<typeof createServiceRoleClient>,
   salonSlug: string,
   args: Record<string, unknown>,
   sessionId: string | null,
   callerVerifiedPhone: string | null,
+  trustedUserUtterance: string | null,
 ) {
   const bookingId     = args.booking_id     as string | undefined;
   const customerPhone = args.customer_phone as string | undefined;
@@ -874,12 +1056,20 @@ async function handleCancelBooking(
   // Load salon → needed for both paths
   const { data: salon } = await supabase
     .from("salons")
-    .select("id, timezone")
+    .select("id, timezone, currency_code, self_cancel_fee_enabled, self_cancel_window_hours, self_cancel_fee_percent, noshow_fee_percent")
     .eq("slug", salonSlug)
     .single();
   if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
 
-  const tz = (salon as { timezone?: string }).timezone ?? "America/Los_Angeles";
+  const cancelSalon = salon as VoiceCancelSalon;
+  const tz = cancelSalon.timezone ?? "America/Los_Angeles";
+  const latePolicy = voiceSalonLatePolicy(cancelSalon);
+  const currency = cancelSalon.currency_code ?? "USD";
+  const lateFeeAcknowledged = args.late_fee_acknowledged === true;
+  const lateFeeConfirmationToken =
+    typeof args.late_fee_confirmation_token === "string"
+      ? args.late_fee_confirmation_token
+      : null;
 
   // ── Path A: group_id → cancel the WHOLE party ───────────────────────────────
   // Checked FIRST, and before the phone lookup: the phone branch below returns on
@@ -893,14 +1083,16 @@ async function handleCancelBooking(
     // already cancelled (e.g. the organizer dropped out first).
     const { data: groupRows, error: grpErr } = await supabase
       .from("bookings")
-      .select("id, status, client_phone, is_group_organizer")
+      .select("id, status, client_phone, is_group_organizer, start_time_utc, noshow_card_id, noshow_consent_at, noshow_fee_cents, noshow_charge_status, self_cancel_fee_locked_at, self_cancel_fee_locked_cents")
       .eq("salon_id", salon.id)
       .eq("group_id", groupIdArg);
 
-    const party = (groupRows ?? []) as {
-      id: string; status: string;
-      client_phone: string | null; is_group_organizer: boolean | null;
-    }[];
+    const party = (groupRows ?? []) as (VoiceCancelBooking & {
+      id: string;
+      status: string;
+      client_phone: string | null;
+      is_group_organizer: boolean | null;
+    })[];
     const active = party.filter((r) => r.status !== "cancelled");
 
     if (grpErr || active.length === 0) {
@@ -936,6 +1128,23 @@ async function handleCancelBooking(
       callerVerifiedPhone,
     });
     if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
+
+    const chargeableLateMembers = active.filter((row) =>
+      evaluateLateCancellationPolicy({
+        booking: voiceBookingLatePolicy(row),
+        salon: latePolicy,
+      }).willCharge,
+    );
+    if (chargeableLateMembers.length > 0) {
+      return NextResponse.json({
+        error: "late_fee_requires_staff",
+        fee_confirmation_required: true,
+        chargeable_count: chargeableLateMembers.length,
+        currency,
+        hint:
+          "This group cancellation includes card charges. Do not cancel it by voice; ask the customer to contact the salon so staff can review the whole party and choose charge or waive.",
+      });
+    }
 
     const ids = active.map((r) => r.id);
     const { error: cancelErr } = await supabase
@@ -989,7 +1198,7 @@ async function handleCancelBooking(
     // Include staff join so AI can read individual member slots for partial cancellation.
     const { data: phoneRows } = await supabase
       .from("bookings")
-      .select("id, group_id, client_name, start_time_utc, status, services!bookings_service_id_fkey(name), staff!bookings_staff_id_fkey(name)")
+      .select("id, group_id, client_name, start_time_utc, status, noshow_card_id, noshow_consent_at, noshow_fee_cents, noshow_charge_status, self_cancel_fee_locked_at, self_cancel_fee_locked_cents, services!bookings_service_id_fkey(name), staff!bookings_staff_id_fkey(name)")
       .eq("salon_id", salon.id)
       .ilike("client_phone", `%${last9}`)
       .gte("start_time_utc", now)
@@ -1015,6 +1224,10 @@ async function handleCancelBooking(
         timeZone: tz, weekday: "short", month: "short", day: "numeric",
         hour: "numeric", minute: "2-digit", hour12: true,
       });
+      const fee = evaluateLateCancellationPolicy({
+        booking: voiceBookingLatePolicy(r as VoiceCancelBooking),
+        salon: latePolicy,
+      });
       return {
         booking_id:   r.id as string,
         group_id:     (r.group_id as string | null) ?? null,
@@ -1023,6 +1236,14 @@ async function handleCancelBooking(
         date_time:    localTime,
         status:       r.status as string,
         client_name:  r.client_name as string,
+        late_cancel_fee: fee.willCharge
+          ? {
+              confirmation_required: true,
+              amount_cents: fee.feeCents,
+              currency,
+              policy_locked_by_reschedule: fee.policyLockedByReschedule,
+            }
+          : null,
       };
     };
 
@@ -1073,7 +1294,7 @@ async function handleCancelBooking(
   // ── Path C: booking_id provided → cancel that one booking ───────────────────
   const { data: booking } = await supabase
     .from("bookings")
-    .select("id, salon_id, status, client_name, client_phone, group_id, start_time_utc, services!bookings_service_id_fkey(name)")
+    .select("id, salon_id, status, client_name, client_phone, group_id, start_time_utc, noshow_card_id, noshow_consent_at, noshow_fee_cents, noshow_charge_status, self_cancel_fee_locked_at, self_cancel_fee_locked_cents, services!bookings_service_id_fkey(name)")
     .eq("id", bookingId!)
     .eq("salon_id", salon.id)
     .single();
@@ -1084,6 +1305,12 @@ async function handleCancelBooking(
   const bk = booking as any as {
     id: string; status: string; client_name: string; client_phone: string;
     start_time_utc: string;
+    noshow_card_id: string | null;
+    noshow_consent_at: string | null;
+    noshow_fee_cents: number | null;
+    noshow_charge_status: string | null;
+    self_cancel_fee_locked_at: string | null;
+    self_cancel_fee_locked_cents: number | null;
     services: { name: string } | { name: string }[] | null;
   };
   const serviceName = Array.isArray(bk.services)
@@ -1103,6 +1330,49 @@ async function handleCancelBooking(
   });
   if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
 
+  const feePolicy = evaluateLateCancellationPolicy({
+    booking: voiceBookingLatePolicy(bk),
+    salon: latePolicy,
+  });
+  if (feePolicy.willCharge && !lateFeeAcknowledged) {
+    const confirmationToken = issueLateFeeChallenge({
+      bookingId: bookingId!,
+      feeCents: feePolicy.feeCents,
+      sessionId,
+      currentUtterance: trustedUserUtterance,
+    });
+    return NextResponse.json({
+      error: "late_fee_confirmation_required",
+      fee_confirmation_required: true,
+      amount_cents: feePolicy.feeCents,
+      currency,
+      late_fee_confirmation_token: confirmationToken,
+      policy_locked_by_reschedule: feePolicy.policyLockedByReschedule,
+      hint:
+        "Tell the customer the exact late-cancellation fee and ask for a clear yes. Only then call cancel_booking again with late_fee_acknowledged=true.",
+    });
+  }
+  if (
+    feePolicy.willCharge &&
+    lateFeeAcknowledged &&
+    !validateLateFeeChallenge({
+      token: lateFeeConfirmationToken,
+      bookingId: bookingId!,
+      feeCents: feePolicy.feeCents,
+      sessionId,
+      currentUtterance: trustedUserUtterance,
+    })
+  ) {
+    return NextResponse.json({
+      error: "late_fee_confirmation_not_verified",
+      fee_confirmation_required: true,
+      amount_cents: feePolicy.feeCents,
+      currency,
+      hint:
+        "The server did not receive a trusted, explicit yes from the customer. Do not cancel or charge; ask again or transfer to salon staff.",
+    });
+  }
+
   const localTime = new Date(bk.start_time_utc).toLocaleString("en-US", {
     timeZone: tz, weekday: "short", month: "short", day: "numeric",
     hour: "numeric", minute: "2-digit", hour12: true,
@@ -1119,13 +1389,34 @@ async function handleCancelBooking(
     return NextResponse.json({ error: "cancel_failed", detail: updateErr.message }, { status: 500 });
   }
 
+  let feeCharged = false;
+  if (feePolicy.willCharge) {
+    const charge = await chargeNoShowFee(bookingId!, {
+      note: "Late cancellation fee",
+      amountCentsOverride: feePolicy.feeCents,
+    });
+    feeCharged = charge.charged;
+  }
+
   void logBookingEvent({
     bookingId: bookingId!,
     salonId: String(salon.id),
     actorUserId: null,
     actorRole: "system",
     eventType: "booking_cancelled",
-    payload: { reason: "voice_ai_cancel" },
+    payload: {
+      reason: "voice_ai_cancel",
+      late: feePolicy.withinWindow,
+      policy_locked_by_reschedule: feePolicy.policyLockedByReschedule,
+      fee_decision: feePolicy.willCharge
+        ? feeCharged
+          ? "charged"
+          : "failed"
+        : feePolicy.withinWindow
+          ? "not_chargeable"
+          : "not_applicable",
+      fee_cents: feePolicy.willCharge ? feePolicy.feeCents : 0,
+    },
   });
 
   // Owner/admin "cancelled" alert (opt-in, fire-and-forget).
@@ -1154,7 +1445,15 @@ async function handleCancelBooking(
     dateTime:    localTime,
     clientName:  bk.client_name,
     reason,
-    message:     "Lịch hẹn đã được hủy thành công.",
+    feeCharged,
+    feeCents: feePolicy.willCharge ? feePolicy.feeCents : 0,
+    currency,
+    feeFailed: feePolicy.willCharge && !feeCharged,
+    message: feePolicy.willCharge
+      ? feeCharged
+        ? "Lịch hẹn đã được hủy và phí hủy trễ đã được thu thành công."
+        : "Lịch hẹn đã được hủy nhưng thu phí thất bại. Nhân viên cần kiểm tra."
+      : "Lịch hẹn đã được hủy thành công.",
   });
 }
 
@@ -1245,7 +1544,7 @@ async function handleRescheduleBooking(
   // Load salon
   const { data: salon } = await supabase
     .from("salons")
-    .select("id, timezone")
+    .select("id, timezone, self_cancel_fee_enabled, self_cancel_window_hours, self_cancel_fee_percent, noshow_fee_percent")
     .eq("slug", salonSlug)
     .single();
   if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
@@ -1253,7 +1552,7 @@ async function handleRescheduleBooking(
   // Load existing booking — verify it belongs to this salon
   const { data: booking } = await supabase
     .from("bookings")
-    .select("id, salon_id, service_id, staff_id, start_time_utc, end_time_utc, status, client_name, client_phone")
+    .select("id, salon_id, service_id, staff_id, start_time_utc, end_time_utc, status, client_name, client_phone, noshow_fee_cents, self_cancel_fee_locked_at, self_cancel_fee_locked_cents")
     .eq("id", bookingId)
     .eq("salon_id", salon.id)
     .single();
@@ -1327,6 +1626,20 @@ async function handleRescheduleBooking(
 
   // UPDATE booking — preserve ID, history, deposits
   const oldStart = (booking as { start_time_utc: string }).start_time_utc;
+  const rescheduleSalon = salon as VoiceCancelSalon;
+  const rescheduleBooking = booking as {
+    noshow_fee_cents?: number | null;
+    self_cancel_fee_locked_at?: string | null;
+    self_cancel_fee_locked_cents?: number | null;
+  };
+  const lateCancelLockPatch = buildLateCancellationLockPatch({
+    previousStartTimeUtc: oldStart,
+    noShowFeeCents: rescheduleBooking.noshow_fee_cents ?? null,
+    existingLockedAt: rescheduleBooking.self_cancel_fee_locked_at ?? null,
+    existingLockedCents: rescheduleBooking.self_cancel_fee_locked_cents ?? null,
+    salon: voiceSalonLatePolicy(rescheduleSalon),
+    reason: "voice_reschedule",
+  });
   const { error: updateErr } = await supabase
     .from("bookings")
     .update({
@@ -1336,6 +1649,7 @@ async function handleRescheduleBooking(
       rescheduled_from_time_utc: oldStart,
       rescheduled_at:            new Date().toISOString(),
       rescheduled_by:            "voice",
+      ...(lateCancelLockPatch ?? {}),
     })
     .eq("id", bookingId);
 
@@ -1343,6 +1657,22 @@ async function handleRescheduleBooking(
     console.error("[voice/reschedule_booking] update error:", updateErr);
     return NextResponse.json({ error: "reschedule_failed", detail: updateErr.message }, { status: 500 });
   }
+
+  void logBookingEvent({
+    bookingId,
+    salonId: String(salon.id),
+    actorUserId: null,
+    actorRole: "system",
+    eventType: "booking_rescheduled",
+    payload: {
+      reason: "voice_ai_reschedule",
+      previous_start_utc: oldStart,
+      new_start_utc: newStartUtc,
+      late_cancel_policy_locked: Boolean(
+        lateCancelLockPatch || rescheduleBooking.self_cancel_fee_locked_at,
+      ),
+    },
+  });
 
   // Owner/admin "rescheduled" alert (opt-in, fire-and-forget).
   after(() =>
@@ -1371,6 +1701,9 @@ async function handleRescheduleBooking(
     newDate,
     newTimeSlot: newSlot,
     clientName:  (booking as { client_name: string }).client_name,
+    lateCancelPolicyLocked: Boolean(
+      lateCancelLockPatch || rescheduleBooking.self_cancel_fee_locked_at,
+    ),
     message:     "Lịch hẹn đã được dời thành công. Booking ID giữ nguyên.",
   });
 }

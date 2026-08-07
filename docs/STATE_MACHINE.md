@@ -160,6 +160,22 @@ The **only** valid transitions are listed here. Any move not in this list is for
 15. **`rescheduled → cancelled`** — abandonment of the reschedule attempt.
 16. **`completed`, `cancelled`, `no_show`** — terminal. To "undo" a terminal state, create a **new** booking; do not mutate the terminal record.
 
+### Late-cancellation fee integrity across reschedules
+
+- A customer-controlled reschedule (public manage link or AI receptionist) does
+  **not** reset an already-entered late-cancellation window. The server snapshots
+  the applicable fee from the original slot in the same transaction that moves
+  the booking, and later customer reschedules preserve that snapshot.
+- Staff reschedules remain discretionary and do not create this lock. Owners can
+  still disable the salon's self-cancel fee policy as an emergency stop.
+- The AI receptionist may charge an individual late-cancellation fee only after
+  identity verification, exact fee disclosure, and a trusted explicit customer
+  acknowledgement. Group cancellations that could create multiple charges fail
+  closed to staff review.
+- A failed payment never becomes a false success: cancellation and charge outcome
+  are logged separately. No customer path may claim a fee was collected unless
+  the payment provider returned success.
+
 ---
 
 ## 4. Forbidden Transitions
