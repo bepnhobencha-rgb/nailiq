@@ -4,6 +4,11 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { ActivityItem, ActivityKind } from "@/shared/dashboard/loadActivityFeedAction";
 import { undoAiAction } from "@/shared/ai/undoAiAction";
+import {
+  activityItemsForTab,
+  canOpenActivityBooking,
+  type ActivityFeedTab,
+} from "@/shared/dashboard/activityFeedFilter";
 import { activityTimeAgo } from "@/shared/dashboard/activityTime";
 
 const KIND_ICON: Record<ActivityKind, string> = {
@@ -18,9 +23,10 @@ const KIND_ICON: Record<ActivityKind, string> = {
   winback: "💌",
 };
 
-const TABS: { key: ActivityKind | "all"; label: string }[] = [
+const TABS: { key: ActivityFeedTab; label: string }[] = [
   { key: "all", label: "Tất cả" },
   { key: "event", label: "Lịch hẹn" },
+  { key: "cancelled", label: "Đã hủy" },
   { key: "sms", label: "SMS" },
   { key: "email", label: "Email" },
   { key: "call", label: "Cuộc gọi" },
@@ -86,7 +92,7 @@ export function ActivityFeed({
   initialNowIso: string;
   timeZone: string;
 }) {
-  const [tab, setTab] = useState<ActivityKind | "all">("all");
+  const [tab, setTab] = useState<ActivityFeedTab>("all");
   const [open, setOpen] = useState<string | null>(null);
   const [undoneIds, setUndoneIds] = useState<Set<string>>(new Set());
   const [undoing, startUndo] = useTransition();
@@ -124,12 +130,15 @@ export function ActivityFeed({
   }, [seenKey]);
 
   const counts = useMemo(() => {
-    const c: Record<string, number> = { all: items.length };
+    const c: Record<string, number> = {
+      all: items.length,
+      cancelled: items.filter((item) => item.eventType === "booking_cancelled").length,
+    };
     for (const it of items) c[it.kind] = (c[it.kind] ?? 0) + 1;
     return c;
   }, [items]);
 
-  const shown = tab === "all" ? items : items.filter((i) => i.kind === tab);
+  const shown = activityItemsForTab(items, tab);
 
   return (
     <section className="rounded-2xl border border-nq-border bg-nq-surface p-5 sm:p-6">
@@ -138,7 +147,7 @@ export function ActivityFeed({
           <h1 className="text-lg font-semibold text-nq-foreground">Nhật ký hoạt động</h1>
           <p className="mt-0.5 text-xs text-nq-muted">
             Tin nhắn, email, cuộc gọi và thay đổi lịch — xem lại bất cứ lúc nào. Bấm vào một mục
-            lịch hẹn để mở lịch thật.
+            lịch hẹn đang hoạt động để mở lịch thật. Tab Đã hủy giữ tối đa 200 lịch hủy gần nhất.
           </p>
         </div>
       </div>
@@ -168,6 +177,11 @@ export function ActivityFeed({
         <ul className="mt-4 divide-y divide-nq-border/50">
           {shown.map((it) => {
             const unread = Date.parse(it.when) > prevSeenMs;
+            // Cancelled bookings are terminal and intentionally absent from the
+            // live Receptionist Center grid. Linking them there produced a dead
+            // "Xem lịch" affordance. Their durable record remains reviewable in
+            // this dedicated Activity tab.
+            const canOpenBooking = canOpenActivityBooking(it);
             const inner = (
               <div className={`flex items-start gap-3 py-3 ${unread ? "" : "opacity-55"}`}>
                 <span aria-hidden className="relative mt-0.5 text-base">
@@ -180,7 +194,7 @@ export function ActivityFeed({
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={`text-sm text-nq-foreground ${unread ? "font-semibold" : "font-normal"}`}>{it.title}</span>
                     {it.status ? <StatusBadge status={it.status} kind={it.kind} /> : null}
-                    {it.bookingId ? (
+                    {canOpenBooking ? (
                       <span className="text-[10px] font-semibold text-nq-primary">Xem lịch →</span>
                     ) : null}
                   </div>
@@ -234,7 +248,7 @@ export function ActivityFeed({
 
             return (
               <li key={it.id} data-testid={`activity-row-${it.kind}`}>
-                {it.bookingId ? (
+                {canOpenBooking ? (
                   <Link
                     href={`/dashboard/${slug}/center?${it.bookingDate ? `date=${it.bookingDate}&` : ""}booking=${it.bookingId}`}
                     className="block rounded-lg transition-colors hover:bg-nq-border/15"

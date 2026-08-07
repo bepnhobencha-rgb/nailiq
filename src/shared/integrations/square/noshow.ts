@@ -21,6 +21,8 @@ import {
   getSquareConfig,
   findSuccessfulPaymentByReference,
 } from "@/shared/integrations/square/client";
+import { isSuccessfulNoShowChargeStatus } from "./noshowChargeStatus";
+import { noShowPaymentReferenceId } from "./noshowPaymentReference";
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
@@ -558,7 +560,11 @@ export async function chargeNoShowFee(
       // Fee is charged within ~7 days of the appointment (+ up to 3 daily
       // retries); 14 days comfortably covers any prior successful charge.
       const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-      const existing = await findSuccessfulPaymentByReference(cfg, `booking:${bookingId}`, since);
+      const existing = await findSuccessfulPaymentByReference(
+        cfg,
+        noShowPaymentReferenceId(bookingId),
+        since,
+      );
       if (existing) {
         await db
           .from("bookings")
@@ -589,9 +595,9 @@ export async function chargeNoShowFee(
       amountCents: feeCents,
       idempotencyKey: `noshow:${bookingId}${opts?.idempotencySuffix ? `:${opts.idempotencySuffix}` : ""}`,
       note: opts?.note ?? "No-show fee",
-      referenceId: `booking:${bookingId}`,
+      referenceId: noShowPaymentReferenceId(bookingId),
     });
-    const charged = pay.status === "COMPLETED" || pay.status === "APPROVED";
+    const charged = isSuccessfulNoShowChargeStatus(pay.status);
     await db
       .from("bookings")
       .update({

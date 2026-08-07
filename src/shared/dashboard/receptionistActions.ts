@@ -1458,7 +1458,13 @@ export async function markNoShowBooking(
      */
     chargeFee?: boolean;
   },
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<
+  | {
+      ok: true;
+      charge?: { attempted: true; charged: boolean; reason: string };
+    }
+  | { ok: false; error: string }
+> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
   if (!canMarkNoShow(ctx.role)) return fail("unauthorized");
@@ -1530,13 +1536,26 @@ export async function markNoShowBooking(
 
   // No-show fee — the desk decides per-mark whether to collect (decision B).
   // Idempotent (stable idempotency key) + best-effort; never fail the desk action.
+  let chargeResult:
+    | { attempted: true; charged: boolean; reason: string }
+    | undefined;
   if (input.chargeFee === true) {
     try {
       const { chargeNoShowFee } =
         await import("@/shared/integrations/square/noshow");
-      await chargeNoShowFee(bookingId);
+      const result = await chargeNoShowFee(bookingId);
+      chargeResult = {
+        attempted: true,
+        charged: result.charged,
+        reason: result.reason,
+      };
     } catch (e) {
       console.error("[markNoShowBooking] noshow-fee", e);
+      chargeResult = {
+        attempted: true,
+        charged: false,
+        reason: "charge_failed",
+      };
     }
   } else if (input.chargeFee === false) {
     // Waive — stamp 'waived' when a card is on file and nothing's been charged
@@ -1603,13 +1622,15 @@ export async function markNoShowBooking(
       reason: "desk_no_show",
       fee:
         input.chargeFee === true
-          ? "charged"
+          ? chargeResult?.charged
+            ? "charged"
+            : "failed"
           : input.chargeFee === false
             ? "waived"
             : "deferred",
     },
   });
-  return { ok: true };
+  return { ok: true, ...(chargeResult ? { charge: chargeResult } : {}) };
 }
 
 /**

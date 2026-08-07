@@ -72,6 +72,9 @@ export type ActivityItem = {
   status: string | null;
   /** Actor role for event rows (owner/senior/nail_tech/system…). */
   actorRole: string | null;
+  /** Raw booking event discriminator. Lets the Activity UI offer a dedicated
+   *  cancelled-history view without inferring state from translated copy. */
+  eventType?: string | null;
   /** Linked booking → deep-link target. */
   bookingId: string | null;
   /** Booking's salon-local date (YYYY-MM-DD) for the /center?date=&booking= link. */
@@ -244,6 +247,7 @@ export async function loadActivityFeed(
       winbackRes,
       aiActionsRes,
       customerMessagesRes,
+      cancelledBookingsRes,
     ] = await Promise.all([
       db
         .from("booking_events" as never)
@@ -317,6 +321,16 @@ export async function loadActivityFeed(
         .eq("action_type", "customer_message_escalation")
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
+      // Durable cancelled-booking history. Older imports and legacy cancel
+      // paths may predate booking_events, so audit rows alone are not a
+      // complete source of truth for an admin reviewing past cancellations.
+      db
+        .from("bookings" as never)
+        .select("id, client_name, start_time_utc, updated_at")
+        .eq("salon_id", salonId)
+        .eq("status", "cancelled")
+        .order("updated_at", { ascending: false })
+        .limit(200),
     ]);
 
     // Build lookup: winback_suggestion.id → ai_action.id (for undo button)
@@ -342,8 +356,43 @@ export async function loadActivityFeed(
         subtitle: null,
         status: null,
         actorRole: role,
+        eventType: str(r.event_type) || null,
         bookingId: r.booking_id ? str(r.booking_id) : null,
         bookingDate: booking?.start_time_utc ? salonDate(str(booking.start_time_utc), tz) : null,
+        transcript: null,
+      });
+    }
+
+    // Fill cancellation-history gaps from the booking table itself, while
+    // preferring richer booking_events rows whenever they exist.
+    const auditedCancelledBookingIds = new Set(
+      ((eventsRes.data ?? []) as Array<Record<string, unknown>>)
+        .filter((row) => str(row.event_type) === "booking_cancelled")
+        .map((row) => str(row.booking_id))
+        .filter(Boolean),
+    );
+    for (const r of (cancelledBookingsRes.data ?? []) as Array<Record<string, unknown>>) {
+      const bookingId = str(r.id);
+      if (!bookingId || auditedCancelledBookingIds.has(bookingId)) continue;
+      const name = str(r.client_name).trim() || "khách";
+      const start = str(r.start_time_utc);
+      items.push({
+        id: `cancelled-${bookingId}`,
+        kind: "event",
+        when: str(r.updated_at) || start,
+        title: `Lịch đã hủy của ${name}`,
+        subtitle: start
+          ? new Intl.DateTimeFormat("vi-CA", {
+              timeZone: tz,
+              dateStyle: "medium",
+              timeStyle: "short",
+            }).format(new Date(start))
+          : null,
+        status: null,
+        actorRole: null,
+        eventType: "booking_cancelled",
+        bookingId,
+        bookingDate: start ? salonDate(start, tz) : null,
         transcript: null,
       });
     }
@@ -586,9 +635,16 @@ export async function loadActivityFeed(
 
     items.sort((a, b) => Date.parse(b.when) - Date.parse(a.when));
 
-    // Keep enough that no single source (each capped at PER_SOURCE) starves the
-    // others in the merged "All" view; the tabs filter this full set.
-    return { ok: true, items: items.slice(0, 200) };
+    // Keep the unified feed compact while preserving the latest 200 durable
+    // cancellations for the dedicated admin tab. A cancellation may be older
+    // than the overall top 200 but must still remain discoverable.
+    const overall = items.slice(0, 200);
+    const cancellations = items
+      .filter((item) => item.eventType === "booking_cancelled")
+      .slice(0, 200);
+    const byId = new Map(overall.map((item) => [item.id, item]));
+    for (const item of cancellations) byId.set(item.id, item);
+    return { ok: true, items: [...byId.values()] };
   } catch (e) {
     console.error("[loadActivityFeed]", e);
     return { ok: false, error: "server_error" };
