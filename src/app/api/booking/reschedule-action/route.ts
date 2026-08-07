@@ -6,6 +6,7 @@ import { notifyWaitlistForSlot } from "@/shared/noshow/waitlistAutoFill";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { salonYmdOfUtc } from "@/shared/lib/salonTime";
+import { logBookingEvent } from "@/shared/dashboard/auditLog";
 
 type RescheduleBody = {
   token: string;
@@ -87,6 +88,30 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, code: row?.code ?? "unknown" }, { status: 400 });
   }
 
+  const { data: updatedPolicyRow } = await supabase
+    .from("bookings" as never)
+    .select("self_cancel_fee_locked_at")
+    .eq("id", tr.booking_id)
+    .maybeSingle();
+  const policyLockedByReschedule = Boolean(
+    (updatedPolicyRow as { self_cancel_fee_locked_at?: string | null } | null)
+      ?.self_cancel_fee_locked_at,
+  );
+
+  void logBookingEvent({
+    bookingId: tr.booking_id,
+    salonId: b.salon_id,
+    actorUserId: null,
+    actorRole: "public_guest",
+    eventType: "booking_rescheduled",
+    payload: {
+      reason: "customer_email_link",
+      previous_start_utc: b.start_time_utc,
+      new_start_utc: newStart.toISOString(),
+      late_cancel_policy_locked: policyLockedByReschedule,
+    },
+  });
+
   // Notify the first waitlist entry for the freed original slot
   const originalStartUtc = b.start_time_utc;
   const bookingId = tr.booking_id;
@@ -125,5 +150,6 @@ export async function POST(req: Request) {
     serviceName: row.service_name,
     staffName: row.staff_name,
     newStartUtc: row.new_start_utc,
+    lateCancelPolicyLocked: policyLockedByReschedule,
   });
 }

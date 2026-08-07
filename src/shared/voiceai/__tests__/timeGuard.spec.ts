@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 
+// The executor now also owns the server-only late-cancellation charge path.
+// This suite tests time parsing only, so keep the Next.js boundary inert.
+vi.mock("server-only", () => ({}));
+
 // after() only runs in a Next request scope; no-op it (same reason as the gate spec).
 vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>();

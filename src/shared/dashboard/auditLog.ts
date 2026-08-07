@@ -17,6 +17,7 @@ export type BookingEventType =
   | "booking_after_hours_created"
   | "booking_edited"
   | "booking_cancelled"
+  | "booking_rescheduled"
   | "booking_restored"
   | "booking_recovered"
   | "booking_status_changed"

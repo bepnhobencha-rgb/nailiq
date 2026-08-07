@@ -9,6 +9,10 @@ vi.mock("next/server", async (importOriginal) => {
   return { ...actual, after: () => {} };
 });
 
+vi.mock("@/shared/integrations/square/noshow", () => ({
+  chargeNoShowFee: vi.fn(async () => ({ charged: true })),
+}));
+
 import { executeVoiceTool } from "../toolExecutor";
 
 /**
@@ -141,7 +145,10 @@ async function call(
   toolName: string,
   args: Record<string, unknown>,
   fixtures: Record<string, Row[] | Row | null>,
-  opts?: { callerVerifiedPhone?: string | null },
+  opts?: {
+    callerVerifiedPhone?: string | null;
+    trustedUserUtterance?: string | null;
+  },
 ) {
   const res = await executeVoiceTool(
     mockDb(fixtures),
@@ -333,6 +340,154 @@ describe("toolExecutor — cancel_booking routes on the right identifier", () =>
     // Reaches the gate instead of bouncing off the argument check.
     expect(body.error).not.toBe("missing_booking_id_or_phone");
     expect(body.error).toBe("otp_required");
+  });
+});
+
+describe("toolExecutor — late-cancellation payment consent", () => {
+  const chargeableSalon = {
+    ...salonRow,
+    currency_code: "USD",
+    self_cancel_fee_enabled: true,
+    self_cancel_window_hours: 24,
+    self_cancel_fee_percent: 10,
+    noshow_fee_percent: 20,
+  };
+  const chargeableBooking = {
+    id: BOOKING_ID,
+    salon_id: SALON_ID,
+    status: "confirmed",
+    client_name: "Test Customer",
+    client_phone: OWNER_PHONE,
+    group_id: null,
+    start_time_utc: new Date(Date.now() + 12 * 60 * 60_000).toISOString(),
+    noshow_card_id: "card-1",
+    noshow_consent_at: new Date().toISOString(),
+    noshow_fee_cents: 3400,
+    noshow_charge_status: "saved",
+    self_cancel_fee_locked_at: null,
+    self_cancel_fee_locked_cents: null,
+    services: { name: "Head Spa" },
+  };
+
+  it("does not cancel or charge before the verified customer accepts the exact fee", async () => {
+    const body = await call(
+      "cancel_booking",
+      { booking_id: BOOKING_ID },
+      { salons: chargeableSalon, bookings: chargeableBooking },
+      { callerVerifiedPhone: OWNER_PHONE },
+    );
+
+    expect(body.error).toBe("late_fee_confirmation_required");
+    expect(body.amount_cents).toBe(1700);
+    expect(body.currency).toBe("USD");
+    expect(body.success).toBeUndefined();
+  });
+
+  it("charges only after explicit acknowledgement and reports success truthfully", async () => {
+    vi.stubEnv("VOICE_BRIDGE_SECRET", "late-fee-test-secret");
+    const challenge = await call(
+      "cancel_booking",
+      { booking_id: BOOKING_ID },
+      { salons: chargeableSalon, bookings: chargeableBooking },
+      {
+        callerVerifiedPhone: OWNER_PHONE,
+        trustedUserUtterance: "I need to cancel",
+      },
+    );
+    const confirmationToken = challenge.late_fee_confirmation_token;
+    expect(typeof confirmationToken).toBe("string");
+
+    const body = await call(
+      "cancel_booking",
+      {
+        booking_id: BOOKING_ID,
+        late_fee_acknowledged: true,
+        late_fee_confirmation_token: confirmationToken,
+      },
+      { salons: chargeableSalon, bookings: chargeableBooking },
+      {
+        callerVerifiedPhone: OWNER_PHONE,
+        trustedUserUtterance: "Yes",
+      },
+    );
+
+    expect(body.success).toBe(true);
+    expect(body.feeCharged).toBe(true);
+    expect(body.feeCents).toBe(1700);
+    expect(body.feeFailed).toBe(false);
+    vi.unstubAllEnvs();
+  });
+
+  it("does not trust a model-set acknowledgement without a trusted customer yes", async () => {
+    const body = await call(
+      "cancel_booking",
+      { booking_id: BOOKING_ID, late_fee_acknowledged: true },
+      { salons: chargeableSalon, bookings: chargeableBooking },
+      { callerVerifiedPhone: OWNER_PHONE },
+    );
+
+    expect(body.error).toBe("late_fee_confirmation_not_verified");
+    expect(body.success).toBeUndefined();
+  });
+
+  it("rejects replaying the pre-disclosure yes as payment consent", async () => {
+    vi.stubEnv("VOICE_BRIDGE_SECRET", "late-fee-test-secret");
+    const challenge = await call(
+      "cancel_booking",
+      { booking_id: BOOKING_ID },
+      { salons: chargeableSalon, bookings: chargeableBooking },
+      {
+        callerVerifiedPhone: OWNER_PHONE,
+        trustedUserUtterance: "Yes",
+      },
+    );
+
+    const body = await call(
+      "cancel_booking",
+      {
+        booking_id: BOOKING_ID,
+        late_fee_acknowledged: true,
+        late_fee_confirmation_token: challenge.late_fee_confirmation_token,
+      },
+      { salons: chargeableSalon, bookings: chargeableBooking },
+      {
+        callerVerifiedPhone: OWNER_PHONE,
+        trustedUserUtterance: "Yes",
+      },
+    );
+
+    expect(body.error).toBe("late_fee_confirmation_not_verified");
+    expect(body.success).toBeUndefined();
+    vi.unstubAllEnvs();
+  });
+
+  it("fails closed for a group that could create multiple charges", async () => {
+    const body = await call(
+      "cancel_booking",
+      { group_id: GROUP_ID },
+      {
+        salons: chargeableSalon,
+        bookings: [
+          {
+            ...chargeableBooking,
+            id: "b1",
+            group_id: GROUP_ID,
+            is_group_organizer: true,
+          },
+          {
+            ...chargeableBooking,
+            id: "b2",
+            group_id: GROUP_ID,
+            is_group_organizer: false,
+          },
+        ],
+      },
+      { callerVerifiedPhone: OWNER_PHONE },
+    );
+
+    expect(body.error).toBe("late_fee_requires_staff");
+    expect(body.success).toBeUndefined();
+    expect(body.chargeable_count).toBe(2);
   });
 });
 

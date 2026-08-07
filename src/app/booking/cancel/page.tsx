@@ -9,6 +9,7 @@ type Preview = {
   startPast?: boolean;
   withinWindow?: boolean;
   willCharge?: boolean;
+  policyLockedByReschedule?: boolean;
   feeCents?: number;
   last4?: string | null;
   brand?: string | null;
@@ -235,6 +236,14 @@ export default function CancelBookingPage() {
             <p className="mt-1 text-sm text-amber-200/70">
               Vì huỷ sát giờ hẹn, phí <b>{feeStr}</b> sẽ được tính vào thẻ đã lưu.
             </p>
+            {preview?.policyLockedByReschedule && (
+              <p className="mt-2 text-xs text-amber-200/80">
+                This appointment was rescheduled after entering the cancellation
+                window, so the original fee condition still applies. · Lịch này đã
+                được đổi sau khi vào thời hạn tính phí, nên điều kiện phí ban đầu
+                vẫn được giữ.
+              </p>
+            )}
             <p className="mt-2 border-t border-amber-500/20 pt-2 text-xs text-emerald-300/90">
               💚 If we rebook your spot from the waitlist, this fee is refunded
               automatically. · Nếu chúng tôi lấp được chỗ của bạn, phí sẽ được

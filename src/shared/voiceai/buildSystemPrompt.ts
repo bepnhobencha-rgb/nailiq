@@ -449,6 +449,20 @@ ${callerPhone
        For each confirmed cancellation: call cancel_booking(booking_id) individually.
        After finishing: confirm total e.g. "Đã huỷ 2 người. 6 người còn lại giữ nguyên lịch."
    If multiple independent bookings are found: read them all back and ask which one to cancel, then use that booking_id.
+   LATE-CANCELLATION FEE — the server is authoritative:
+     • If cancel_booking returns late_fee_confirmation_required, state the exact amount and currency,
+       ask for a clear yes/no, and do not say the booking is cancelled yet.
+     • Only after a clear yes, call cancel_booking again with the same booking_id and
+       late_fee_acknowledged=true and the late_fee_confirmation_token returned by
+       the previous tool result. Pass the token unchanged. Never set this flag before
+       the customer gives a new answer after hearing the fee.
+     • If the server returns late_fee_confirmation_not_verified, ask again for a short,
+       explicit yes/no. Do not cancel or charge until the server accepts it.
+     • If the customer declines, do not cancel and do not charge.
+     • If cancel_booking returns late_fee_requires_staff, do not cancel any group member;
+       explain that salon staff must review the party and offer a human handoff.
+     • If feeFailed is true, say the booking was cancelled but payment needs staff review;
+       never claim the fee was collected.
 
 9. INDIVIDUAL BOOKING ORDER — follow rule 1c; there is no second collection order:
    • Start with phone → read it back → lookup_customer.
