@@ -3,7 +3,20 @@ import type {
   ActivityKind,
 } from "@/shared/dashboard/loadActivityFeedAction";
 
-export type ActivityFeedTab = ActivityKind | "all" | "cancelled";
+export type ActivityFeedTab = ActivityKind | "all" | "cancelled" | "no_show";
+export type TerminalActivityBookingStatus = "cancelled" | "no_show";
+
+export function terminalActivityBookingStatus(
+  item: ActivityItem,
+): TerminalActivityBookingStatus | null {
+  return item.bookingStatus === "cancelled" || item.bookingStatus === "no_show"
+    ? item.bookingStatus
+    : item.bookingStatusKnown
+      ? null
+      : item.eventType === "booking_cancelled"
+      ? "cancelled"
+      : null;
+}
 
 export function activityItemsForTab(
   items: ActivityItem[],
@@ -11,13 +24,29 @@ export function activityItemsForTab(
 ): ActivityItem[] {
   if (tab === "all") return items;
   if (tab === "cancelled") {
-    return items.filter((item) => item.eventType === "booking_cancelled");
+    return items.filter(
+      (item) =>
+        item.eventType === "booking_cancelled" &&
+        terminalActivityBookingStatus(item) === "cancelled",
+    );
+  }
+  if (tab === "no_show") {
+    return items.filter(
+      (item) =>
+        item.eventType === "booking_status_changed" &&
+        item.terminalEventStatus === "no_show" &&
+        terminalActivityBookingStatus(item) === "no_show",
+    );
   }
   return items.filter((item) => item.kind === tab);
 }
 
-export function canOpenActivityBooking(item: ActivityItem): boolean {
-  return Boolean(
-    item.bookingId && item.eventType !== "booking_cancelled",
-  );
+export function canOpenActivityBooking(
+  item: ActivityItem,
+  archivedBookingFeatureEnabled = false,
+): boolean {
+  if (!item.bookingId) return false;
+  return terminalActivityBookingStatus(item)
+    ? archivedBookingFeatureEnabled
+    : true;
 }

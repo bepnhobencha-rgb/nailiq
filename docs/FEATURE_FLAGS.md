@@ -66,12 +66,15 @@ from `defaultOn` (Base → ON, Beta → OFF).
 | `experimental_realtime` | Experimental realtime widgets | registry default |
 | `admin_copilot` | Admin AI assistant (Coco) | `feature_flags.admin_copilot_enabled` |
 | `nail_tryon` | Scan bàn tay + xem trước mẫu nail | `feature_flags.nail_tryon_enabled` |
+| `archived_booking_recovery` | Linked replacement for cancelled/no-show history | `feature_flags.archived_booking_recovery_enabled` |
 
 **No key duplication.** Where a per-salon toggle already exists, the registry
 maps to it rather than minting a new one:
 - `feature_flags` keys come from `SUPERADMIN_PER_SALON_FLAGS`
   (`receptionist_center_enabled`, `walkin_queue_enabled`,
-  `group_booking_enabled`, `loyalty_enabled`, `reports_enabled`).
+  `group_booking_enabled`, `loyalty_enabled`, `reports_enabled`,
+  `admin_copilot_enabled`, `ai_control_center_enabled`,
+  `nail_tryon_enabled`, `archived_booking_recovery_enabled`).
 - `ai_voice` reuses the dedicated `salons.voice_ai_enabled` column.
 - `photos` / `reviews` reuse billing-side `PLAN_FEATURES` keys.
 
@@ -151,9 +154,8 @@ the last bucket collects features whose state is owned by an external store
 
 ### Editing (PR4b-1)
 
-Only the **5 jsonb-sourced** release features are editable here —
-`receptionist_center`, `walkin_queue`, `group_booking`, `loyalty`,
-`advanced_reports`. Each editable row gets:
+Every **jsonb-sourced** release feature is editable here, including the
+default-off `archived_booking_recovery` pilot. Each editable row gets:
 
 - a **toggle** that sets the mapped `feature_flags` key true/false, and
 - a **"reset to default"** button (only when overridden) that **removes** the

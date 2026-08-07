@@ -1794,6 +1794,12 @@ export type UserMessages = {
       already_started: string;
       invalid_phone: string;
       monthly_booking_limit_reached: string;
+      feature_not_enabled: string;
+      invalid_recovery: string;
+      invalid_recovery_source: string;
+      already_recovered: string;
+      immutable_terminal_state: string;
+      external_calendar_not_supported: string;
     };
     /** Permission-gated copy. Currently the UI hides the buttons entirely
      * for `nail_tech`; these strings are reserved for a future tooltip /
@@ -4254,6 +4260,14 @@ export const userEn: UserMessages = {
       invalid_phone: "Enter a valid guest phone number.",
       monthly_booking_limit_reached:
         "This salon hit its plan's monthly booking limit. Upgrade to continue.",
+      feature_not_enabled: "Archived booking recovery is not enabled for this salon.",
+      invalid_recovery: "This recovery request is invalid. Close it and try again.",
+      invalid_recovery_source: "The original booking is no longer eligible for recovery.",
+      already_recovered: "A replacement booking was already created from this record.",
+      immutable_terminal_state:
+        "Cancelled and no-show records stay locked. Create a new linked booking instead.",
+      external_calendar_not_supported:
+        "Archived recovery is not available while this salon is connected to Wix.",
     },
     permissions: {
       noPermissionEdit: "Contact your owner to edit bookings",

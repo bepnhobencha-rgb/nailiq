@@ -18,6 +18,7 @@ export type BookingEventType =
   | "booking_edited"
   | "booking_cancelled"
   | "booking_restored"
+  | "booking_recovered"
   | "booking_status_changed"
   | "booking_price_set"
   | "walkin_added"

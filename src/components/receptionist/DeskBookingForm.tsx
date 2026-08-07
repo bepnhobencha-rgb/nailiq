@@ -97,6 +97,16 @@ type Props = {
   /** Customer prefill for one-tap rebook from the booking drawer. */
   initialPhone?: string;
   initialName?: string;
+  initialEmail?: string;
+  initialNotes?: string;
+  /** Creates a new booking linked to an immutable cancelled source. The
+   * request id is generated once when the recovery form opens and reused on
+   * every retry for idempotency. */
+  recovery?: {
+    sourceBookingId: string;
+    kind: "cancelled_rebook";
+    requestId: string;
+  };
   /** Per-salon notify config — drives the "notify customer?" panel defaults. */
   notifySettings: StaffNotificationSettings;
   /** Viewport coords of the originating grid click. When set (desktop), the form
@@ -157,6 +167,9 @@ const COPY = {
     noName: "(no name)",
     prefillHint: (time: string, staff: string) =>
       `${time}${staff ? ` · ${staff}` : ""} — pick a service to confirm.`,
+    recoveryTitle: "Create a replacement appointment",
+    recoveryDescription:
+      "The cancelled record stays unchanged. Immediate confirmation starts off; scheduled reminders still follow salon settings.",
     notify: {
       heading: "Notify customer",
       sms: "Text (SMS)",
@@ -195,6 +208,14 @@ const COPY = {
       staff_consent_required: "Confirm the selected staff member agreed.",
       after_hours_limit_exceeded: "After-hours is limited to 2 hours past close.",
       invalid_after_hours_override: "This time is already inside normal hours.",
+      already_recovered:
+        "A replacement booking was already created from this cancelled appointment.",
+      invalid_recovery_source:
+        "This cancelled appointment can no longer be used to create a replacement.",
+      feature_not_enabled:
+        "Archived booking recovery is not enabled for this salon.",
+      external_calendar_not_supported:
+        "Archived recovery is unavailable while this salon is connected to Wix.",
     } as Record<string, string>,
   },
   vi: {
@@ -245,6 +266,9 @@ const COPY = {
     noName: "(chưa có tên)",
     prefillHint: (time: string, staff: string) =>
       `${time}${staff ? ` · ${staff}` : ""} — chọn dịch vụ để xác nhận.`,
+    recoveryTitle: "Tạo lịch hẹn thay thế",
+    recoveryDescription:
+      "Lịch đã huỷ vẫn giữ nguyên. Xác nhận tức thời được tắt sẵn; nhắc hẹn sau đó vẫn theo cài đặt của salon.",
     notify: {
       heading: "Báo cho khách",
       sms: "Tin nhắn (SMS)",
@@ -283,6 +307,14 @@ const COPY = {
       staff_consent_required: "Xác nhận thợ đã đồng ý làm ngoài giờ.",
       after_hours_limit_exceeded: "Chỉ được kéo dài tối đa 2 giờ sau đóng cửa.",
       invalid_after_hours_override: "Giờ này vẫn nằm trong giờ làm bình thường.",
+      already_recovered:
+        "Lịch đã huỷ này đã được dùng để tạo một lịch thay thế.",
+      invalid_recovery_source:
+        "Lịch đã huỷ này không còn hợp lệ để tạo lịch thay thế.",
+      feature_not_enabled:
+        "Salon này chưa bật chức năng tạo lịch từ hồ sơ đã lưu trữ.",
+      external_calendar_not_supported:
+        "Chưa thể tạo lịch từ hồ sơ lưu trữ khi salon đang kết nối Wix.",
     } as Record<string, string>,
   },
 } as const;
@@ -301,6 +333,9 @@ export default function DeskBookingForm({
   initialSlotLabel,
   initialPhone,
   initialName,
+  initialEmail,
+  initialNotes,
+  recovery,
   notifySettings,
   anchor,
 }: Props) {
@@ -308,6 +343,7 @@ export default function DeskBookingForm({
   // "Notify customer?" channels for the booking confirmation — pre-checked per
   // the salon's smart per-event default for 'create'.
   const [notifyChannels, setNotifyChannels] = useState<NotifyChannels>(() => {
+    if (recovery) return { sms: false, email: false };
     const on = defaultNotifyOn(notifySettings, "create");
     return {
       sms: on && notifySettings.channels.sms,
@@ -319,7 +355,7 @@ export default function DeskBookingForm({
 
   const [phone, setPhone] = useState(initialPhone ?? "");
   const [name, setName] = useState(initialName ?? "");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail ?? "");
   const [serviceId, setServiceId] = useState(initialServiceId ?? "");
   const [addonIds, setAddonIds] = useState<string[]>([]);
   const [staffId, setStaffId] = useState(initialStaffId ?? "");
@@ -333,7 +369,7 @@ export default function DeskBookingForm({
   const [slotLabel, setSlotLabel] = useState("");
   const [customTime, setCustomTime] = useState("");
   const customTimeRef = useRef("");
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState(initialNotes ?? "");
   // Bed/resource picker state (resource-mode salons only).
   const [resourceId, setResourceId] = useState<string | null>(null);
   // Raw fetch result, tagged with the time window it was fetched for. What the
@@ -865,6 +901,7 @@ export default function DeskBookingForm({
             },
           }
         : {}),
+      recovery,
     });
     setSubmitting(false);
     if (res.ok) {
@@ -896,6 +933,7 @@ export default function DeskBookingForm({
     data,
     selectedAfterHours,
     afterHoursConsent,
+    recovery,
   ]);
 
   const inputCls =
@@ -965,6 +1003,19 @@ export default function DeskBookingForm({
               : "min-h-0 flex-1 overflow-y-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3"
           }
         >
+        {recovery ? (
+          <div
+            data-testid="desk-recovery-notice"
+            className="mb-3 rounded-lg border border-nq-primary/30 bg-nq-primary/10 p-3"
+          >
+            <p className="text-base font-semibold text-nq-foreground">
+              {tx.recoveryTitle}
+            </p>
+            <p className="mt-1 text-sm leading-relaxed text-nq-muted">
+              {tx.recoveryDescription}
+            </p>
+          </div>
+        ) : null}
         {prefilled && initialSlotLabel && !slotLabel && ymd === initialYmd ? (
           // The prefill hint shows the time the receptionist CLICKED on the grid.
           // Only show it while still on the clicked day — once they change the

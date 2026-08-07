@@ -77,7 +77,7 @@ export function AttentionChipBar({
   displayName: (name: string | null, removedLabel: string) => string;
   onOpenBooking: (id: string) => void;
   onMarkNoShow: (id: string) => void;
-  onUndoNoShow: (id: string) => void;
+  onUndoNoShow?: (id: string) => void;
 }) {
   const [open, setOpen] = useState<ChipKey | null>(null);
 
@@ -291,14 +291,16 @@ export function AttentionChipBar({
                         {formatTime(ns.startTimeUtc)}
                       </span>
                     </span>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => onUndoNoShow(ns.id)}
-                      className="shrink-0 rounded-full border border-emerald-400/40 px-3 py-1 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-400/10 disabled:opacity-50"
-                    >
-                      {vi ? "Bỏ vắng (đã đến)" : "Undo (arrived)"}
-                    </button>
+                    {onUndoNoShow ? (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => onUndoNoShow(ns.id)}
+                        className="shrink-0 rounded-full border border-emerald-400/40 px-3 py-1 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-400/10 disabled:opacity-50"
+                      >
+                        {vi ? "Bỏ vắng (đã đến)" : "Undo (arrived)"}
+                      </button>
+                    ) : null}
                   </Row>
                 ))}
               </Section>

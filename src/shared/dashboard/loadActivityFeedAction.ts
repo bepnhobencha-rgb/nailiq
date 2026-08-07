@@ -24,7 +24,16 @@ import { voiceSessionDurationSuffix } from "@/shared/voiceai/sessionDuration";
  * after gating here). Read-only.
  */
 
-export type ActivityKind = "event" | "sms" | "email" | "call" | "system" | "login" | "ai" | "watchdog" | "winback";
+export type ActivityKind =
+  | "event"
+  | "sms"
+  | "email"
+  | "call"
+  | "system"
+  | "login"
+  | "ai"
+  | "watchdog"
+  | "winback";
 
 const PROTECTION_LABEL: Record<string, string> = {
   none: "không đòi gì",
@@ -77,6 +86,14 @@ export type ActivityItem = {
   eventType?: string | null;
   /** Linked booking → deep-link target. */
   bookingId: string | null;
+  /** Current or event-time terminal state for archived booking rows. */
+  bookingStatus?: "cancelled" | "no_show" | null;
+  /** True when the linked booking row was resolved and its current status was
+   * inspected. This distinguishes an active, formerly-cancelled booking from
+   * a legacy event whose booking relation is unavailable. */
+  bookingStatusKnown?: boolean;
+  /** Terminal status explicitly recorded by this event's payload.to. */
+  terminalEventStatus?: "cancelled" | "no_show" | null;
   /** Booking's salon-local date (YYYY-MM-DD) for the /center?date=&booking= link. */
   bookingDate: string | null;
   /** Full call transcript (call rows only). */
@@ -96,6 +113,7 @@ const EVENT_TITLE: Record<string, string> = {
   booking_edited: "đã sửa lịch hẹn của {name}",
   booking_cancelled: "đã hủy lịch hẹn của {name}",
   booking_restored: "đã khôi phục lịch hẹn của {name}",
+  booking_recovered: "đã tạo hồ sơ phục vụ mới cho {name}",
   booking_status_changed: "đã đổi trạng thái lịch của {name}",
   booking_price_set: "đã đặt giá cho lịch của {name}",
   walkin_added: "đã thêm khách vãng lai {name}",
@@ -130,6 +148,39 @@ const NOTIF_TITLE: Record<string, string> = {
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 
+function terminalBookingStatus(value: unknown): "cancelled" | "no_show" | null {
+  return value === "cancelled" || value === "no_show" ? value : null;
+}
+
+function activityBookingStatus(
+  row: Record<string, unknown>,
+): "cancelled" | "no_show" | null {
+  const booking = row.bookings as { status?: unknown } | null;
+  // Prefer the joined booking's CURRENT state whenever the relationship was
+  // resolved. A legacy event may say payload.to=no_show even though that row
+  // was later restored before terminal immutability existed; treating the old
+  // event as currently archived would produce a dead detail link.
+  if (booking && booking.status != null) {
+    return terminalBookingStatus(booking.status);
+  }
+
+  const payload =
+    row.payload && typeof row.payload === "object"
+      ? (row.payload as Record<string, unknown>)
+      : null;
+  return terminalBookingStatus(payload?.to);
+}
+
+function terminalEventStatus(
+  row: Record<string, unknown>,
+): "cancelled" | "no_show" | null {
+  const payload =
+    row.payload && typeof row.payload === "object"
+      ? (row.payload as Record<string, unknown>)
+      : null;
+  return terminalBookingStatus(payload?.to);
+}
+
 const TABLE_LABEL: Record<string, string> = {
   salons: "Cài đặt tiệm",
   staff: "Nhân viên",
@@ -138,7 +189,11 @@ const TABLE_LABEL: Record<string, string> = {
 };
 
 /** Build a readable line from a system_audit row's changed_fields jsonb. */
-function describeAudit(table: string, action: string, changed: Record<string, unknown>): { title: string; subtitle: string | null } {
+function describeAudit(
+  table: string,
+  action: string,
+  changed: Record<string, unknown>,
+): { title: string; subtitle: string | null } {
   const label = TABLE_LABEL[table] ?? table;
   if (action === "INSERT" || changed._action === "created") {
     return { title: `Đã thêm ${label}`, subtitle: null };
@@ -232,7 +287,9 @@ export async function loadActivityFeed(
       .select("timezone")
       .eq("id", salonId)
       .maybeSingle();
-    const tz = (salonRow as { timezone?: string } | null)?.timezone || "America/Los_Angeles";
+    const tz =
+      (salonRow as { timezone?: string } | null)?.timezone ||
+      "America/Los_Angeles";
 
     const now = new Date().toISOString();
     const [
@@ -247,35 +304,45 @@ export async function loadActivityFeed(
       winbackRes,
       aiActionsRes,
       customerMessagesRes,
-      cancelledBookingsRes,
+      terminalBookingsRes,
     ] = await Promise.all([
       db
         .from("booking_events" as never)
-        .select("id, booking_id, actor_role, event_type, payload, created_at, bookings ( client_name, start_time_utc )")
+        .select(
+          "id, booking_id, actor_role, event_type, payload, created_at, bookings ( client_name, start_time_utc, status )",
+        )
         .eq("salon_id", salonId)
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
       db
         .from("booking_notifications" as never)
-        .select("id, booking_id, notification_type, channel, status, client_phone, body_preview, created_at, bookings ( start_time_utc )")
+        .select(
+          "id, booking_id, notification_type, channel, status, client_phone, body_preview, created_at, bookings ( start_time_utc, status )",
+        )
         .eq("salon_id", salonId)
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
       db
         .from("voice_ai_sessions" as never)
-        .select("id, started_at, ended_at, status, duration_seconds, transcript, client_name, client_phone, created_at")
+        .select(
+          "id, started_at, ended_at, status, duration_seconds, transcript, client_name, client_phone, created_at",
+        )
         .eq("salon_id", salonId)
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
       db
         .from("system_audit" as never)
-        .select("id, table_name, action, changed_fields, created_at, actor_user_id")
+        .select(
+          "id, table_name, action, changed_fields, created_at, actor_user_id",
+        )
         .eq("salon_id", salonId)
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
       db
         .from("ai_agent_permission_audit" as never)
-        .select("id, actor_user_id, actor_role, actor_kind, flag_key, impact, enabled, previous_enabled, impact_acknowledged, created_at")
+        .select(
+          "id, actor_user_id, actor_role, actor_kind, flag_key, impact, enabled, previous_enabled, impact_acknowledged, created_at",
+        )
         .eq("salon_id", salonId)
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
@@ -287,7 +354,9 @@ export async function loadActivityFeed(
         .limit(PER_SOURCE),
       db
         .from("ai_policy_decisions" as never)
-        .select("id, mode, ai_protection, ai_fee_percent, ai_message, ai_reason, ai_confidence, rule_protection, actor_user_id, created_at, bookings ( client_name, start_time_utc )")
+        .select(
+          "id, mode, ai_protection, ai_fee_percent, ai_message, ai_reason, ai_confidence, rule_protection, actor_user_id, created_at, bookings ( client_name, start_time_utc )",
+        )
         .eq("salon_id", salonId)
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
@@ -299,7 +368,9 @@ export async function loadActivityFeed(
         .limit(PER_SOURCE),
       db
         .from("winback_suggestions" as never)
-        .select("id, client_name, visit_count, channel, status, message, kind, created_at")
+        .select(
+          "id, client_name, visit_count, channel, status, message, kind, created_at",
+        )
         .eq("salon_id", salonId)
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
@@ -321,21 +392,36 @@ export async function loadActivityFeed(
         .eq("action_type", "customer_message_escalation")
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
-      // Durable cancelled-booking history. Older imports and legacy cancel
-      // paths may predate booking_events, so audit rows alone are not a
-      // complete source of truth for an admin reviewing past cancellations.
+      // Durable terminal-booking history. Older imports and legacy cancel/
+      // no-show paths may predate booking_events, so audit rows alone are not
+      // a complete source of truth for an admin reviewing archived records.
       db
         .from("bookings" as never)
-        .select("id, client_name, start_time_utc, updated_at")
+        .select(
+          "id, status, client_name, start_time_utc, local_updated_at, created_at",
+        )
         .eq("salon_id", salonId)
-        .eq("status", "cancelled")
-        .order("updated_at", { ascending: false })
-        .limit(200),
+        .in("status", ["cancelled", "no_show"])
+        .order("local_updated_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false, nullsFirst: false })
+        .limit(400),
     ]);
+
+    if (terminalBookingsRes.error) {
+      // The activity timeline should remain available even if the legacy
+      // terminal fallback cannot be read. Audited booking events are still
+      // shown, and this error remains visible in server logs for operators.
+      console.error(
+        "[loadActivityFeed] terminal-booking fallback",
+        terminalBookingsRes.error,
+      );
+    }
 
     // Build lookup: winback_suggestion.id → ai_action.id (for undo button)
     const undoMap = new Map<string, string>();
-    for (const r of (aiActionsRes.data ?? []) as Array<Record<string, unknown>>) {
+    for (const r of (aiActionsRes.data ?? []) as Array<
+      Record<string, unknown>
+    >) {
       const targetId = str(r.target_id);
       const actionId = str(r.id);
       if (targetId && actionId) undoMap.set(targetId, actionId);
@@ -344,7 +430,11 @@ export async function loadActivityFeed(
     const items: ActivityItem[] = [];
 
     for (const r of (eventsRes.data ?? []) as Array<Record<string, unknown>>) {
-      const booking = r.bookings as { client_name?: string | null; start_time_utc?: string | null } | null;
+      const booking = r.bookings as {
+        client_name?: string | null;
+        start_time_utc?: string | null;
+        status?: string | null;
+      } | null;
       const name = (booking?.client_name ?? "").toString().trim() || "khách";
       const role = str(r.actor_role) || "system";
       const tmpl = EVENT_TITLE[str(r.event_type)] ?? str(r.event_type);
@@ -358,29 +448,58 @@ export async function loadActivityFeed(
         actorRole: role,
         eventType: str(r.event_type) || null,
         bookingId: r.booking_id ? str(r.booking_id) : null,
-        bookingDate: booking?.start_time_utc ? salonDate(str(booking.start_time_utc), tz) : null,
+        bookingStatus: activityBookingStatus(r),
+        bookingStatusKnown: Boolean(booking && booking.status != null),
+        terminalEventStatus: terminalEventStatus(r),
+        bookingDate: booking?.start_time_utc
+          ? salonDate(str(booking.start_time_utc), tz)
+          : null,
         transcript: null,
       });
     }
 
     // Fill cancellation-history gaps from the booking table itself, while
     // preferring richer booking_events rows whenever they exist.
-    const auditedCancelledBookingIds = new Set(
+    const auditedTerminalKeys = new Set(
       ((eventsRes.data ?? []) as Array<Record<string, unknown>>)
-        .filter((row) => str(row.event_type) === "booking_cancelled")
-        .map((row) => str(row.booking_id))
+        .map((row) => {
+          const bookingId = str(row.booking_id);
+          if (!bookingId) return "";
+          if (str(row.event_type) === "booking_cancelled") {
+            return `cancelled:${bookingId}`;
+          }
+          if (
+            str(row.event_type) === "booking_status_changed" &&
+            terminalEventStatus(row) === "no_show"
+          ) {
+            return `no_show:${bookingId}`;
+          }
+          return "";
+        })
         .filter(Boolean),
     );
-    for (const r of (cancelledBookingsRes.data ?? []) as Array<Record<string, unknown>>) {
+    for (const r of (terminalBookingsRes.data ?? []) as Array<
+      Record<string, unknown>
+    >) {
       const bookingId = str(r.id);
-      if (!bookingId || auditedCancelledBookingIds.has(bookingId)) continue;
+      const terminalStatus = terminalBookingStatus(r.status);
+      if (
+        !bookingId ||
+        !terminalStatus ||
+        auditedTerminalKeys.has(`${terminalStatus}:${bookingId}`)
+      ) {
+        continue;
+      }
       const name = str(r.client_name).trim() || "khách";
       const start = str(r.start_time_utc);
+      const isNoShow = terminalStatus === "no_show";
       items.push({
-        id: `cancelled-${bookingId}`,
+        id: `${terminalStatus}-${bookingId}`,
         kind: "event",
-        when: str(r.updated_at) || start,
-        title: `Lịch đã hủy của ${name}`,
+        when: str(r.local_updated_at) || str(r.created_at) || start,
+        title: isNoShow
+          ? `Lịch No-show của ${name}`
+          : `Lịch đã hủy của ${name}`,
         subtitle: start
           ? new Intl.DateTimeFormat("vi-CA", {
               timeZone: tz,
@@ -390,17 +509,26 @@ export async function loadActivityFeed(
           : null,
         status: null,
         actorRole: null,
-        eventType: "booking_cancelled",
+        eventType: isNoShow
+          ? "booking_status_changed"
+          : "booking_cancelled",
         bookingId,
+        bookingStatus: terminalStatus,
+        bookingStatusKnown: true,
+        terminalEventStatus: isNoShow ? "no_show" : null,
         bookingDate: start ? salonDate(start, tz) : null,
         transcript: null,
       });
     }
 
     for (const r of (notifsRes.data ?? []) as Array<Record<string, unknown>>) {
-      const booking = r.bookings as { start_time_utc?: string | null } | null;
+      const booking = r.bookings as {
+        start_time_utc?: string | null;
+        status?: string | null;
+      } | null;
       const channel = str(r.channel) || "sms";
-      const title = NOTIF_TITLE[str(r.notification_type)] ?? str(r.notification_type);
+      const title =
+        NOTIF_TITLE[str(r.notification_type)] ?? str(r.notification_type);
       items.push({
         id: `nt-${str(r.id)}`,
         kind: channel === "email" ? "email" : "sms",
@@ -410,14 +538,19 @@ export async function loadActivityFeed(
         status: str(r.status) || null,
         actorRole: null,
         bookingId: r.booking_id ? str(r.booking_id) : null,
-        bookingDate: booking?.start_time_utc ? salonDate(str(booking.start_time_utc), tz) : null,
+        bookingStatus: activityBookingStatus(r),
+        bookingStatusKnown: Boolean(booking && booking.status != null),
+        bookingDate: booking?.start_time_utc
+          ? salonDate(str(booking.start_time_utc), tz)
+          : null,
         transcript: null,
       });
     }
 
     const activityLoadedAt = Date.now();
     for (const r of (callsRes.data ?? []) as Array<Record<string, unknown>>) {
-      const name = str(r.client_name).trim() || str(r.client_phone) || "Cuộc gọi";
+      const name =
+        str(r.client_name).trim() || str(r.client_phone) || "Cuộc gọi";
       const durStr = voiceSessionDurationSuffix(r.duration_seconds);
       const displayStatus = voiceSessionDisplayStatus(
         r.status,
@@ -439,7 +572,9 @@ export async function loadActivityFeed(
       });
     }
 
-    for (const r of (customerMessagesRes.data ?? []) as Array<Record<string, unknown>>) {
+    for (const r of (customerMessagesRes.data ?? []) as Array<
+      Record<string, unknown>
+    >) {
       items.push(customerMessageActivityItem(r));
     }
 
@@ -447,9 +582,8 @@ export async function loadActivityFeed(
     // Includes AI-decision OVERRIDE actors so those rows can name who corrected
     // the agent.
     const auditRows = (auditRes.data ?? []) as Array<Record<string, unknown>>;
-    const agentPermissionAuditRows = (
-      agentPermissionAuditRes.data ?? []
-    ) as Array<Record<string, unknown>>;
+    const agentPermissionAuditRows = (agentPermissionAuditRes.data ??
+      []) as Array<Record<string, unknown>>;
     const aiRows = (aiRes.data ?? []) as Array<Record<string, unknown>>;
     const auditUserIds = [
       ...new Set(
@@ -487,9 +621,10 @@ export async function loadActivityFeed(
     }
 
     for (const r of auditRows) {
-      const changed = (r.changed_fields && typeof r.changed_fields === "object"
-        ? (r.changed_fields as Record<string, unknown>)
-        : {});
+      const changed =
+        r.changed_fields && typeof r.changed_fields === "object"
+          ? (r.changed_fields as Record<string, unknown>)
+          : {};
       // set_ai_agent_permission writes both the generic salons audit and the
       // purpose-built permission audit in one transaction. Prefer the explicit
       // permission item so the owner sees one truthful event, not two.
@@ -503,7 +638,9 @@ export async function loadActivityFeed(
         continue;
       }
       const base = describeAudit(str(r.table_name), str(r.action), changed);
-      const actorName = r.actor_user_id ? nameById.get(str(r.actor_user_id)) : null;
+      const actorName = r.actor_user_id
+        ? nameById.get(str(r.actor_user_id))
+        : null;
       const { title, subtitle } = {
         title: actorName ? `${actorName} · ${base.title}` : base.title,
         subtitle: base.subtitle,
@@ -543,12 +680,16 @@ export async function loadActivityFeed(
     for (const r of aiRows) {
       const booking = r.bookings as { client_name?: string | null } | null;
       const name = (booking?.client_name ?? "").toString().trim() || "khách";
-      const aiP = PROTECTION_LABEL[str(r.ai_protection)] ?? str(r.ai_protection);
-      const ruleP = PROTECTION_LABEL[str(r.rule_protection)] ?? str(r.rule_protection);
+      const aiP =
+        PROTECTION_LABEL[str(r.ai_protection)] ?? str(r.ai_protection);
+      const ruleP =
+        PROTECTION_LABEL[str(r.rule_protection)] ?? str(r.rule_protection);
       const mode = str(r.mode);
       const shadow = mode === "shadow";
       const override = mode === "override";
-      const actorName = r.actor_user_id ? nameById.get(str(r.actor_user_id)) : null;
+      const actorName = r.actor_user_id
+        ? nameById.get(str(r.actor_user_id))
+        : null;
       const pct = r.ai_fee_percent != null ? ` ${str(r.ai_fee_percent)}%` : "";
       const aiMsg = str(r.ai_message).trim();
       // Title: shadow = "đề nghị (thử nghiệm)", live = "quyết định", override =
@@ -587,8 +728,14 @@ export async function loadActivityFeed(
       });
     }
 
-    const SEV_ICON: Record<string, string> = { critical: "🔴", warning: "🟠", info: "🔵" };
-    for (const r of (watchdogRes.data ?? []) as Array<Record<string, unknown>>) {
+    const SEV_ICON: Record<string, string> = {
+      critical: "🔴",
+      warning: "🟠",
+      info: "🔵",
+    };
+    for (const r of (watchdogRes.data ?? []) as Array<
+      Record<string, unknown>
+    >) {
       const sev = str(r.severity);
       const body = str(r.body).trim();
       items.push({
@@ -613,7 +760,8 @@ export async function loadActivityFeed(
       const due = str(r.kind) === "due";
       const verb = sent ? "Đã gửi" : "Gợi ý";
       const suggestionId = str(r.id);
-      const undoActionId = (sent && suggestionId) ? (undoMap.get(suggestionId) ?? null) : null;
+      const undoActionId =
+        sent && suggestionId ? (undoMap.get(suggestionId) ?? null) : null;
       items.push({
         id: `wb-${suggestionId}`,
         kind: "winback",
@@ -635,15 +783,23 @@ export async function loadActivityFeed(
 
     items.sort((a, b) => Date.parse(b.when) - Date.parse(a.when));
 
-    // Keep the unified feed compact while preserving the latest 200 durable
-    // cancellations for the dedicated admin tab. A cancellation may be older
-    // than the overall top 200 but must still remain discoverable.
+    // Keep the unified feed compact while preserving terminal history for the
+    // dedicated admin tabs. A cancelled/no-show row may be older than the
+    // overall top 200 but must still remain discoverable.
     const overall = items.slice(0, 200);
     const cancellations = items
       .filter((item) => item.eventType === "booking_cancelled")
       .slice(0, 200);
+    const noShows = items
+      .filter(
+        (item) =>
+          item.eventType === "booking_status_changed" &&
+          item.terminalEventStatus === "no_show",
+      )
+      .slice(0, 200);
     const byId = new Map(overall.map((item) => [item.id, item]));
     for (const item of cancellations) byId.set(item.id, item);
+    for (const item of noShows) byId.set(item.id, item);
     return { ok: true, items: [...byId.values()] };
   } catch (e) {
     console.error("[loadActivityFeed]", e);

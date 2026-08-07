@@ -1913,6 +1913,14 @@ export const userVi: UserMessages = {
       invalid_phone: "Nhập số điện thoại hợp lệ của khách.",
       monthly_booking_limit_reached:
         "Tiệm đã đạt giới hạn lịch hẹn tháng này theo gói hiện tại. Nâng gói để tiếp tục.",
+      feature_not_enabled: "Tiệm chưa bật chức năng tạo lịch mới từ lịch lưu trữ.",
+      invalid_recovery: "Yêu cầu tạo lịch mới không hợp lệ. Đóng form và thử lại.",
+      invalid_recovery_source: "Lịch gốc không còn đủ điều kiện để tạo lịch mới.",
+      already_recovered: "Đã có một lịch mới được tạo từ hồ sơ này.",
+      immutable_terminal_state:
+        "Lịch Đã huỷ/No-show được khóa để giữ lịch sử. Hãy tạo một lịch mới có liên kết.",
+      external_calendar_not_supported:
+        "Chưa thể tạo lịch từ hồ sơ lưu trữ khi salon đang kết nối Wix.",
     },
     tv: {
       title: "Quầy lễ tân — Màn hình trực tiếp",

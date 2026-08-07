@@ -75,6 +75,15 @@ export const SUPERADMIN_PER_SALON_FLAGS: ReadonlyArray<SuperAdminFlagDescriptor>
     phase: "live",
   },
   {
+    key: "archived_booking_recovery_enabled",
+    group: "operations",
+    label: "Tạo lịch mới từ lịch đã lưu trữ",
+    description:
+      "Cho owner/admin tạo lịch hẹn hoặc walk-in mới có liên kết từ lịch đã huỷ/no-show; không mở lại lịch cũ và không tự thu tiền.",
+    phase: "live",
+    danger: true,
+  },
+  {
     key: "rush_hour_mode_enabled",
     group: "operations",
     label: "Chế độ giờ cao điểm",

@@ -179,6 +179,11 @@ export interface WalkinQueueSidebarProps {
   showQuickAdd?: boolean;
   /** Bumped by the parent on an explicit "+ Walk-in" open → focuses the name field. */
   focusAddNonce?: number;
+  initialClientName?: WalkinAddFormProps["initialClientName"];
+  initialClientPhone?: WalkinAddFormProps["initialClientPhone"];
+  initialServiceId?: WalkinAddFormProps["initialServiceId"];
+  prefillKey?: WalkinAddFormProps["prefillKey"];
+  recoveryNotice?: WalkinAddFormProps["recoveryNotice"];
   /** `wait_time` module — hides urgency styling and wait badges */
   showWaitTime?: boolean;
   /** `vip_indicators` module — hides VIP source chip */
@@ -262,6 +267,11 @@ export function WalkinQueueSidebar({
   offlineAddDisabledHint,
   showQuickAdd = true,
   focusAddNonce,
+  initialClientName,
+  initialClientPhone,
+  initialServiceId,
+  prefillKey,
+  recoveryNotice,
   showWaitTime = true,
   showVipIndicator = true,
   compact = false,
@@ -411,6 +421,11 @@ export function WalkinQueueSidebar({
             onAddAndAssign={onAddAndAssign}
             autoAssignEnabled={autoAssignEnabled}
             focusNonce={focusAddNonce}
+            initialClientName={initialClientName}
+            initialClientPhone={initialClientPhone}
+            initialServiceId={initialServiceId}
+            prefillKey={prefillKey}
+            recoveryNotice={recoveryNotice}
             onPhoneLookup={onPhoneLookup}
             onCheckAvailability={onCheckAvailability}
             staffOptions={staffOptions}

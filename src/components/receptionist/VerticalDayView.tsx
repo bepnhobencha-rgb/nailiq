@@ -462,7 +462,11 @@ export default function VerticalDayView({
                         {...tombstone}
                         language={language}
                         currencyCode={currencyCode}
-                        onUndo={() => onTombstoneUndo?.(tombstone.id)}
+                        onUndo={
+                          onTombstoneUndo
+                            ? () => onTombstoneUndo(tombstone.id)
+                            : undefined
+                        }
                         onCharge={
                           onTombstoneCharge
                             ? () => onTombstoneCharge(tombstone.id)
@@ -738,7 +742,7 @@ function MobileNoShowTombstone({
   hasCard: boolean;
   language: "en" | "vi";
   currencyCode?: import("@/shared/lib/currencyFormat").Currency;
-  onUndo: () => void;
+  onUndo?: () => void;
   onCharge?: () => void;
   onWaive?: () => void;
 }) {
@@ -795,16 +799,18 @@ function MobileNoShowTombstone({
           className="mt-2 grid gap-1 border-t border-nq-error/20 pt-2"
           onClick={(event) => event.stopPropagation()}
         >
-          <button
-            type="button"
-            className="min-h-10 rounded-lg px-2 text-left text-sm text-nq-success"
-            onClick={() => {
-              setOpen(false);
-              onUndo();
-            }}
-          >
-            {vi ? "Bỏ vắng (đã đến)" : "Undo no-show"}
-          </button>
+          {onUndo ? (
+            <button
+              type="button"
+              className="min-h-10 rounded-lg px-2 text-left text-sm text-nq-success"
+              onClick={() => {
+                setOpen(false);
+                onUndo();
+              }}
+            >
+              {vi ? "Bỏ vắng (đã đến)" : "Undo no-show"}
+            </button>
+          ) : null}
           {canResolveFee && onCharge ? (
             <button
               type="button"

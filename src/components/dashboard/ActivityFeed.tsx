@@ -1,12 +1,22 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import type { ActivityItem, ActivityKind } from "@/shared/dashboard/loadActivityFeedAction";
+import { ArchivedBookingDrawer } from "@/components/dashboard/ArchivedBookingDrawer";
+import type {
+  ActivityItem,
+  ActivityKind,
+} from "@/shared/dashboard/loadActivityFeedAction";
+import {
+  loadArchivedBookingDetail,
+  type ArchivedBookingDetail,
+} from "@/shared/dashboard/loadArchivedBookingDetailAction";
 import { undoAiAction } from "@/shared/ai/undoAiAction";
 import {
   activityItemsForTab,
   canOpenActivityBooking,
+  terminalActivityBookingStatus,
   type ActivityFeedTab,
 } from "@/shared/dashboard/activityFeedFilter";
 import { activityTimeAgo } from "@/shared/dashboard/activityTime";
@@ -27,6 +37,7 @@ const TABS: { key: ActivityFeedTab; label: string }[] = [
   { key: "all", label: "Tất cả" },
   { key: "event", label: "Lịch hẹn" },
   { key: "cancelled", label: "Đã hủy" },
+  { key: "no_show", label: "No-show" },
   { key: "sms", label: "SMS" },
   { key: "email", label: "Email" },
   { key: "call", label: "Cuộc gọi" },
@@ -57,7 +68,9 @@ function StatusBadge({ status, kind }: { status: string; kind: ActivityKind }) {
             ? "! Gián đoạn"
             : "Đã kết thúc";
     return (
-      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${cls}`}>
+      <span
+        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${cls}`}
+      >
         {label}
       </span>
     );
@@ -78,7 +91,13 @@ function StatusBadge({ status, kind }: { status: string; kind: ActivityKind }) {
       ? "bg-nq-error/15 text-nq-error"
       : "bg-nq-warning/15 text-nq-warning";
   const label = ok ? "✓ Đã nhận" : bad ? "✗ Lỗi" : "⏳ Đã gửi";
-  return <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${cls}`}>{label}</span>;
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${cls}`}
+    >
+      {label}
+    </span>
+  );
 }
 
 export function ActivityFeed({
@@ -86,14 +105,23 @@ export function ActivityFeed({
   items,
   initialNowIso,
   timeZone,
+  archivedBookingFeatureEnabled,
 }: {
   slug: string;
   items: ActivityItem[];
   initialNowIso: string;
   timeZone: string;
+  archivedBookingFeatureEnabled: boolean;
 }) {
+  const router = useRouter();
   const [tab, setTab] = useState<ActivityFeedTab>("all");
   const [open, setOpen] = useState<string | null>(null);
+  const [archivedDrawerOpen, setArchivedDrawerOpen] = useState(false);
+  const [archivedLoading, setArchivedLoading] = useState(false);
+  const [archivedError, setArchivedError] = useState<string | null>(null);
+  const [archivedDetail, setArchivedDetail] =
+    useState<ArchivedBookingDetail | null>(null);
+  const archivedRequestRef = useRef(0);
   const [undoneIds, setUndoneIds] = useState<Set<string>>(new Set());
   const [undoing, startUndo] = useTransition();
   // The serialized server instant guarantees identical SSR/client markup.
@@ -132,7 +160,8 @@ export function ActivityFeed({
   const counts = useMemo(() => {
     const c: Record<string, number> = {
       all: items.length,
-      cancelled: items.filter((item) => item.eventType === "booking_cancelled").length,
+      cancelled: activityItemsForTab(items, "cancelled").length,
+      no_show: activityItemsForTab(items, "no_show").length,
     };
     for (const it of items) c[it.kind] = (c[it.kind] ?? 0) + 1;
     return c;
@@ -140,129 +169,243 @@ export function ActivityFeed({
 
   const shown = activityItemsForTab(items, tab);
 
+  const closeArchivedDrawer = () => {
+    archivedRequestRef.current += 1;
+    setArchivedDrawerOpen(false);
+  };
+
+  const openArchivedBooking = async (item: ActivityItem) => {
+    const terminalStatus = terminalActivityBookingStatus(item);
+    if (!archivedBookingFeatureEnabled || !terminalStatus || !item.bookingId) {
+      return;
+    }
+
+    const requestId = archivedRequestRef.current + 1;
+    archivedRequestRef.current = requestId;
+    setArchivedDrawerOpen(true);
+    setArchivedLoading(true);
+    setArchivedError(null);
+    setArchivedDetail(null);
+
+    try {
+      const result = await loadArchivedBookingDetail(slug, item.bookingId);
+      if (archivedRequestRef.current !== requestId) return;
+      if (result.ok) {
+        setArchivedDetail(result.detail);
+      } else {
+        const message =
+          result.error === "feature_disabled"
+            ? "Tính năng khôi phục lịch lưu trữ đang tắt cho salon này."
+            : result.error === "not_found"
+              ? "Lịch này không còn ở trạng thái đã huỷ hoặc không đến. Hãy tải lại trang để xem trạng thái mới nhất."
+              : result.error === "unauthorized" || result.error === "forbidden"
+                ? "Bạn không có quyền xem chi tiết lịch này."
+                : result.error === "invalid_booking"
+                  ? "Mã lịch không hợp lệ."
+                  : "Không thể tải chi tiết lịch. Vui lòng thử lại.";
+        setArchivedError(message);
+      }
+    } catch {
+      if (archivedRequestRef.current === requestId) {
+        setArchivedError("Không thể tải chi tiết lịch. Vui lòng thử lại.");
+      }
+    } finally {
+      if (archivedRequestRef.current === requestId) {
+        setArchivedLoading(false);
+      }
+    }
+  };
+
+  const continueArchivedRecovery = (detail: ArchivedBookingDetail) => {
+    const params = new URLSearchParams({
+      recover: detail.id,
+      recoveryKind:
+        detail.status === "no_show" ? "no_show_walkin" : "cancelled_rebook",
+    });
+    closeArchivedDrawer();
+    router.push(
+      `/dashboard/${encodeURIComponent(slug)}/center?${params.toString()}`,
+    );
+  };
+
   return (
-    <section className="rounded-2xl border border-nq-border bg-nq-surface p-5 sm:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold text-nq-foreground">Nhật ký hoạt động</h1>
-          <p className="mt-0.5 text-xs text-nq-muted">
-            Tin nhắn, email, cuộc gọi và thay đổi lịch — xem lại bất cứ lúc nào. Bấm vào một mục
-            lịch hẹn đang hoạt động để mở lịch thật. Tab Đã hủy giữ tối đa 200 lịch hủy gần nhất.
-          </p>
+    <>
+      <section className="rounded-2xl border border-nq-border bg-nq-surface p-5 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-lg font-semibold text-nq-foreground">
+              Nhật ký hoạt động
+            </h1>
+            <p className="mt-0.5 text-xs text-nq-muted">
+              Tin nhắn, email, cuộc gọi và thay đổi lịch — xem lại bất cứ lúc
+              nào. Bấm vào một mục lịch đang hoạt động để mở lịch thật; lịch đã
+              huỷ hoặc không đến sẽ mở bản chi tiết chỉ xem. Nhật ký giữ tối đa
+              400 hồ sơ đã huỷ/no-show gần nhất.
+            </p>
+          </div>
         </div>
-      </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            data-testid={`activity-tab-${t.key}`}
-            className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-              tab === t.key
-                ? "bg-nq-primary text-nq-bg"
-                : "bg-nq-border/30 text-nq-muted hover:text-nq-foreground"
-            }`}
-          >
-            {t.label}
-            {counts[t.key] ? <span className="ml-1 opacity-70">{counts[t.key]}</span> : null}
-          </button>
-        ))}
-      </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              data-testid={`activity-tab-${t.key}`}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                tab === t.key
+                  ? "bg-nq-primary text-nq-bg"
+                  : "bg-nq-border/30 text-nq-muted hover:text-nq-foreground"
+              }`}
+            >
+              {t.label}
+              {counts[t.key] ? (
+                <span className="ml-1 opacity-70">{counts[t.key]}</span>
+              ) : null}
+            </button>
+          ))}
+        </div>
 
-      {shown.length === 0 ? (
-        <p className="mt-6 text-sm italic text-nq-muted">Chưa có hoạt động nào.</p>
-      ) : (
-        <ul className="mt-4 divide-y divide-nq-border/50">
-          {shown.map((it) => {
-            const unread = Date.parse(it.when) > prevSeenMs;
-            // Cancelled bookings are terminal and intentionally absent from the
-            // live Receptionist Center grid. Linking them there produced a dead
-            // "Xem lịch" affordance. Their durable record remains reviewable in
-            // this dedicated Activity tab.
-            const canOpenBooking = canOpenActivityBooking(it);
-            const inner = (
-              <div className={`flex items-start gap-3 py-3 ${unread ? "" : "opacity-55"}`}>
-                <span aria-hidden className="relative mt-0.5 text-base">
-                  {KIND_ICON[it.kind]}
-                  {unread ? (
-                    <span className="absolute -left-2 top-1.5 h-1.5 w-1.5 rounded-full bg-nq-primary" />
-                  ) : null}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`text-sm text-nq-foreground ${unread ? "font-semibold" : "font-normal"}`}>{it.title}</span>
-                    {it.status ? <StatusBadge status={it.status} kind={it.kind} /> : null}
-                    {canOpenBooking ? (
-                      <span className="text-[10px] font-semibold text-nq-primary">Xem lịch →</span>
+        {shown.length === 0 ? (
+          <p className="mt-6 text-sm italic text-nq-muted">
+            Chưa có hoạt động nào.
+          </p>
+        ) : (
+          <ul className="mt-4 divide-y divide-nq-border/50">
+            {shown.map((it) => {
+              const unread = Date.parse(it.when) > prevSeenMs;
+              const terminalStatus = terminalActivityBookingStatus(it);
+              const canOpenBooking = canOpenActivityBooking(
+                it,
+                archivedBookingFeatureEnabled,
+              );
+              const inner = (
+                <div
+                  className={`flex items-start gap-3 py-3 ${unread ? "" : "opacity-55"}`}
+                >
+                  <span aria-hidden className="relative mt-0.5 text-base">
+                    {KIND_ICON[it.kind]}
+                    {unread ? (
+                      <span className="absolute -left-2 top-1.5 h-1.5 w-1.5 rounded-full bg-nq-primary" />
+                    ) : null}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`text-sm text-nq-foreground ${unread ? "font-semibold" : "font-normal"}`}
+                      >
+                        {it.title}
+                      </span>
+                      {it.status ? (
+                        <StatusBadge status={it.status} kind={it.kind} />
+                      ) : null}
+                      {canOpenBooking ? (
+                        <span className="text-[10px] font-semibold text-nq-primary">
+                          {terminalStatus ? "Xem chi tiết →" : "Xem lịch →"}
+                        </span>
+                      ) : null}
+                    </div>
+                    {it.subtitle ? (
+                      <p
+                        className={`mt-0.5 text-xs text-nq-muted ${open === it.id ? "" : "truncate"}`}
+                      >
+                        {it.subtitle}
+                      </p>
+                    ) : null}
+                    {(it.kind === "call" ||
+                      it.kind === "ai" ||
+                      it.kind === "watchdog" ||
+                      it.kind === "winback") &&
+                    it.transcript ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setOpen(open === it.id ? null : it.id);
+                        }}
+                        className="mt-1 text-[11px] font-semibold text-nq-primary"
+                      >
+                        {open === it.id
+                          ? it.kind === "call"
+                            ? "Ẩn bản ghi"
+                            : "Ẩn chi tiết"
+                          : it.kind === "call"
+                            ? "Xem bản ghi cuộc gọi"
+                            : "Xem chi tiết →"}
+                      </button>
+                    ) : null}
+                    {open === it.id && it.transcript ? (
+                      <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap rounded-xl bg-nq-border/20 p-3 text-[11px] leading-relaxed text-nq-foreground">
+                        {it.transcript}
+                      </pre>
+                    ) : null}
+                    {it.undoActionId && !undoneIds.has(it.undoActionId) ? (
+                      <button
+                        type="button"
+                        disabled={undoing}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          const actionId = it.undoActionId!;
+                          startUndo(async () => {
+                            const r = await undoAiAction(slug, actionId);
+                            if (r.ok)
+                              setUndoneIds((s) => new Set(s).add(actionId));
+                          });
+                        }}
+                        className="mt-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 transition-colors hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-400"
+                      >
+                        ↩ Undo (60 phút)
+                      </button>
+                    ) : it.undoActionId && undoneIds.has(it.undoActionId) ? (
+                      <span className="mt-1.5 inline-block text-[11px] text-nq-muted">
+                        ↩ Đã undo
+                      </span>
                     ) : null}
                   </div>
-                  {it.subtitle ? (
-                    <p className={`mt-0.5 text-xs text-nq-muted ${open === it.id ? "" : "truncate"}`}>{it.subtitle}</p>
-                  ) : null}
-                  {(it.kind === "call" || it.kind === "ai" || it.kind === "watchdog" || it.kind === "winback") && it.transcript ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setOpen(open === it.id ? null : it.id);
-                      }}
-                      className="mt-1 text-[11px] font-semibold text-nq-primary"
-                    >
-                      {open === it.id
-                        ? it.kind === "call" ? "Ẩn bản ghi" : "Ẩn chi tiết"
-                        : it.kind === "call" ? "Xem bản ghi cuộc gọi" : "Xem chi tiết →"}
-                    </button>
-                  ) : null}
-                  {open === it.id && it.transcript ? (
-                    <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap rounded-xl bg-nq-border/20 p-3 text-[11px] leading-relaxed text-nq-foreground">
-                      {it.transcript}
-                    </pre>
-                  ) : null}
-                  {it.undoActionId && !undoneIds.has(it.undoActionId) ? (
-                    <button
-                      type="button"
-                      disabled={undoing}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        const actionId = it.undoActionId!;
-                        startUndo(async () => {
-                          const r = await undoAiAction(slug, actionId);
-                          if (r.ok) setUndoneIds((s) => new Set(s).add(actionId));
-                        });
-                      }}
-                      className="mt-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 transition-colors hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-400"
-                    >
-                      ↩ Undo (60 phút)
-                    </button>
-                  ) : it.undoActionId && undoneIds.has(it.undoActionId) ? (
-                    <span className="mt-1.5 inline-block text-[11px] text-nq-muted">↩ Đã undo</span>
-                  ) : null}
+                  <span className="shrink-0 text-[10px] tabular-nums text-nq-muted">
+                    {activityTimeAgo(it.when, nowMs, timeZone)}
+                  </span>
                 </div>
-                <span className="shrink-0 text-[10px] tabular-nums text-nq-muted">
-                  {activityTimeAgo(it.when, nowMs, timeZone)}
-                </span>
-              </div>
-            );
+              );
 
-            return (
-              <li key={it.id} data-testid={`activity-row-${it.kind}`}>
-                {canOpenBooking ? (
-                  <Link
-                    href={`/dashboard/${slug}/center?${it.bookingDate ? `date=${it.bookingDate}&` : ""}booking=${it.bookingId}`}
-                    className="block rounded-lg transition-colors hover:bg-nq-border/15"
-                  >
-                    {inner}
-                  </Link>
-                ) : (
-                  inner
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
+              return (
+                <li key={it.id} data-testid={`activity-row-${it.kind}`}>
+                  {canOpenBooking && terminalStatus ? (
+                    <button
+                      type="button"
+                      onClick={() => void openArchivedBooking(it)}
+                      className="block w-full rounded-lg text-left transition-colors hover:bg-nq-border/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary"
+                      data-testid="activity-open-archived-booking"
+                    >
+                      {inner}
+                    </button>
+                  ) : canOpenBooking ? (
+                    <Link
+                      href={`/dashboard/${encodeURIComponent(slug)}/center?${it.bookingDate ? `date=${encodeURIComponent(it.bookingDate)}&` : ""}booking=${encodeURIComponent(it.bookingId ?? "")}`}
+                      className="block rounded-lg transition-colors hover:bg-nq-border/15"
+                    >
+                      {inner}
+                    </Link>
+                  ) : (
+                    inner
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <ArchivedBookingDrawer
+        isOpen={archivedDrawerOpen}
+        onClose={closeArchivedDrawer}
+        detail={archivedDetail}
+        loading={archivedLoading}
+        error={archivedError}
+        featureEnabled={archivedBookingFeatureEnabled}
+        timeZone={timeZone}
+        onRecover={continueArchivedRecovery}
+      />
+    </>
   );
 }
