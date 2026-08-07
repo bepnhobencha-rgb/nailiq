@@ -59,7 +59,7 @@ export const bookingEn = {
   noShowCardSaved: "Card saved — you're only charged {fee} if you no-show.",
   noShowCardError: "Could not save the card. Please check your details.",
   cardVerificationError:
-    "Card verification timed out or was not completed. Please try again, or open this page in Safari or Chrome.",
+    "We couldn't verify this card. Check the card details and postal code, then try again. If it still fails, open this page in Safari or Chrome.",
   cardWebviewHint:
     "Card verification may not finish in this app's browser. Open this page in Safari or Chrome before entering your card — tap the button below or use the ••• menu and choose \"Open in browser\".",
   cardWebviewOpenChrome: "Open safely in Chrome",

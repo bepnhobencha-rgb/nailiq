@@ -416,6 +416,7 @@ function SquareCardCapture({ bookingId, currencyFormat, t, savedCard, otpSession
       ) : null}
       {errorMsg && !inAppBrowser ? (
         <CardWebviewFallback
+          forceVisible
           hint={t.cardWebviewHint ?? "Can't load the card form in this app's browser. Open this page in Safari or Chrome to finish, or copy the link below."}
           copyLabel={t.cardWebviewCopy ?? "Copy booking link"}
           copiedLabel={t.cardWebviewCopied ?? "Link copied"}

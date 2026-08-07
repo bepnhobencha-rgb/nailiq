@@ -25,4 +25,16 @@ describe("Square card-capture failure UX boundary", () => {
       /if \(!result\) \{\s*setErrorMessage\(t\.noShowCardError/,
     );
   });
+
+  it("always offers an escape hatch after card verification fails", () => {
+    const confirmCapture = read("src/components/booking/ConfirmStepCardCapture.tsx");
+    const postBookingCapture = read("src/components/booking/NoShowCardCapture.tsx");
+
+    expect(confirmCapture).toMatch(
+      /\{error && !inAppBrowser \? \(\s*<CardWebviewFallback\s+forceVisible/,
+    );
+    expect(postBookingCapture).toMatch(
+      /\{errorMsg && !inAppBrowser \? \(\s*<CardWebviewFallback\s+forceVisible/,
+    );
+  });
 });
