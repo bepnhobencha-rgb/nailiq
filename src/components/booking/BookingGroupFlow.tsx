@@ -4052,6 +4052,9 @@ function ConfirmStep({
             locationId={cardRequirement.locationId}
             environment={cardRequirement.environment}
             feeLabel={formatCurrency(cardRequirement.feeCents, currencyCode) ?? ""}
+            customerName={organizer?.name ?? members[0]?.name ?? ""}
+            customerPhone={primaryPhone}
+            customerEmail={primaryEmail}
             t={t}
           />
           <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-[var(--booking-text-muted)]">

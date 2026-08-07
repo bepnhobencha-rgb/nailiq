@@ -19,4 +19,30 @@ describe("Square card-on-file buyer verification boundary", () => {
       expect(source).not.toMatch(/DEGRADE|downgrade to an unverified source token/i);
     });
   }
+
+  it("includes the booking identity in pre-booking STORE verification", () => {
+    const capture = readFileSync(
+      "src/components/booking/ConfirmStepCardCapture.tsx",
+      "utf8",
+    );
+    const individual = readFileSync(
+      "src/components/booking/BookingFlowConfirmPanel.tsx",
+      "utf8",
+    );
+    const group = readFileSync(
+      "src/components/booking/BookingGroupFlow.tsx",
+      "utf8",
+    );
+
+    expect(capture).toContain("billingContact: buildSquareStoreBillingContact");
+    expect(capture).toContain("name: customerName");
+    expect(capture).toContain("phone: customerPhone");
+    expect(capture).toContain("email: customerEmail");
+
+    for (const source of [individual, group]) {
+      expect(source).toContain("customerName=");
+      expect(source).toContain("customerPhone=");
+      expect(source).toContain("customerEmail=");
+    }
+  });
 });

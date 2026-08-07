@@ -523,6 +523,7 @@ export function BookingFlow({
             staffSummaryLabel={flow.staffSummaryLabel}
             clientName={flow.clientName}
             clientPhone={flow.clientPhone}
+            clientEmail={flow.clientEmail}
             clientNotes={flow.clientNotes}
             upsellCandidates={flow.upsellCandidates}
             upsellGapMinutes={flow.upsellGapMinutes}
