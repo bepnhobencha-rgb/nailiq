@@ -14,6 +14,14 @@ describe("Square card-capture failure UX boundary", () => {
     expect(fallback).toContain('data-testid="card-webview-open-chrome"');
   });
 
+  it("handles asynchronous clipboard permission rejection without a false copied state", () => {
+    const fallback = read("src/components/booking/CardWebviewFallback.tsx");
+
+    expect(fallback).toContain("navigator.clipboard?.writeText(url)");
+    expect(fallback).toMatch(/void write\s*\.then\([\s\S]*?\.catch\(/);
+    expect(fallback).toMatch(/\.catch\(\(\) => \{[\s\S]*?setCopied\(false\)/);
+  });
+
   it("does not add a second generic error when the child already reported tokenization failure", () => {
     const individual = read("src/components/booking/BookingFlowConfirmPanel.tsx");
     const group = read("src/components/booking/BookingGroupFlow.tsx");

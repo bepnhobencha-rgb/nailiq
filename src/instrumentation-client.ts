@@ -3,6 +3,7 @@
  */
 import * as Sentry from "@sentry/nextjs";
 import { classifyClientErrorDisposition } from "@/shared/observability/clientErrorDisposition";
+import { normalizePromiseRejection } from "@/shared/observability/normalizePromiseRejection";
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
 
@@ -86,11 +87,9 @@ if (typeof window !== "undefined") {
     reportClientError(String(msg), stack, disposition);
   });
   window.addEventListener("unhandledrejection", (e) => {
-    const r = e.reason;
-    const msg = r instanceof Error ? r.message : typeof r === "string" ? r : "Unhandled promise rejection";
+    const { message: msg, stack } = normalizePromiseRejection(e.reason);
     if (isSessionExpiryError(String(msg))) return;
     if (maybeRecoverFromStaleDeploy(String(msg))) return;
-    const stack = r instanceof Error ? (r.stack ?? null) : null;
     const disposition = classifyClientErrorDisposition(String(msg), stack);
     if (disposition === "ignore") return;
     reportClientError(String(msg), stack, disposition);

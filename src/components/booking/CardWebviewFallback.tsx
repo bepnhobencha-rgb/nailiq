@@ -42,11 +42,21 @@ export function CardWebviewFallback({
 
   const onCopy = () => {
     try {
-      void navigator.clipboard?.writeText(url);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
+      const write = navigator.clipboard?.writeText(url);
+      if (!write) return;
+      void write
+        .then(() => {
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 2000);
+        })
+        .catch(() => {
+          // Clipboard permission failures reject asynchronously on iOS Safari
+          // and embedded browsers. The URL remains visible for manual copy.
+          setCopied(false);
+        });
     } catch {
       /* clipboard blocked in some WebViews — the URL is shown for manual copy */
+      setCopied(false);
     }
   };
 
