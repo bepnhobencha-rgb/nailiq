@@ -61,7 +61,8 @@ export const bookingEn = {
   cardVerificationError:
     "Card verification timed out or was not completed. Please try again, or open this page in Safari or Chrome.",
   cardWebviewHint:
-    "Can't load the card form in this app's browser. Open this page in Safari or Chrome to finish — tap the ••• menu and choose \"Open in browser\", or copy the link below.",
+    "Card verification may not finish in this app's browser. Open this page in Safari or Chrome before entering your card — tap the button below or use the ••• menu and choose \"Open in browser\".",
+  cardWebviewOpenChrome: "Open safely in Chrome",
   cardWebviewCopy: "Copy booking link",
   cardWebviewCopied: "Link copied",
   noShowConsent:

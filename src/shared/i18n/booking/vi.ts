@@ -62,7 +62,8 @@ export const bookingVi: BookingMessages = {
   cardVerificationError:
     "Xác thực thẻ bị hết thời gian hoặc chưa hoàn tất. Vui lòng thử lại, hoặc mở trang này bằng Safari hay Chrome.",
   cardWebviewHint:
-    "Không tải được ô nhập thẻ trong trình duyệt của ứng dụng này. Mở trang bằng Safari hoặc Chrome để hoàn tất — bấm menu ••• rồi chọn \"Mở trong trình duyệt\", hoặc sao chép link bên dưới.",
+    "Xác thực thẻ có thể không hoàn tất trong trình duyệt của ứng dụng này. Hãy mở trang bằng Safari hoặc Chrome trước khi nhập thẻ — bấm nút bên dưới hoặc menu ••• rồi chọn \"Mở trong trình duyệt\".",
+  cardWebviewOpenChrome: "Mở an toàn bằng Chrome",
   cardWebviewCopy: "Sao chép link đặt hẹn",
   cardWebviewCopied: "Đã sao chép link",
   noShowConsent:
