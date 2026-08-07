@@ -37,4 +37,13 @@ describe("Square card-capture failure UX boundary", () => {
       /\{errorMsg && !inAppBrowser \? \(\s*<CardWebviewFallback\s+forceVisible/,
     );
   });
+
+  it("keeps the booking AI trigger above mobile browser chrome", () => {
+    const chatWidget = read("src/components/booking/BookingChatWidget.tsx");
+
+    expect(chatWidget).toContain(
+      "bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))]",
+    );
+    expect(chatWidget).toContain("lg:bottom-8");
+  });
 });
