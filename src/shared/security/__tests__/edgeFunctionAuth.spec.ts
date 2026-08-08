@@ -53,7 +53,7 @@ describe("privileged Supabase Edge Function authentication", () => {
     expect(source).toContain('Deno.env.get("MAX_OUTBOUND_MESSAGES_PER_RUN") ?? "100"');
   });
 
-  it("reads modern Supabase keys before falling back during migration", () => {
+  it("fails closed on modern Supabase keys without accepting legacy keys", () => {
     const source = readFileSync(
       resolve(process.cwd(), "supabase/functions/_shared/supabaseApiKeys.ts"),
       "utf8",
@@ -61,8 +61,9 @@ describe("privileged Supabase Edge Function authentication", () => {
 
     expect(source).toContain('readNamedKey("SUPABASE_SECRET_KEYS", name)');
     expect(source).toContain('readNamedKey("SUPABASE_PUBLISHABLE_KEYS", name)');
-    expect(source).toContain('Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")');
-    expect(source).toContain('Deno.env.get("SUPABASE_ANON_KEY")');
+    expect(source).not.toContain('Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")');
+    expect(source).not.toContain('Deno.env.get("SUPABASE_ANON_KEY")');
+    expect(source).toContain("return [supabaseSecretKey()]");
   });
 
   it.each([...privilegedFunctions, "photo-upload"])(
