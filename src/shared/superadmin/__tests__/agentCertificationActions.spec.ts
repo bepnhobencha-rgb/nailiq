@@ -32,6 +32,28 @@ const emptyEvidence = {
 };
 
 describe("Agent Certification Matrix", () => {
+  it("includes all 20 operational agents, including Daily Report", () => {
+    const rows = buildAgentCertificationMatrix({
+      salons: [salon],
+      evidence: {
+        ...emptyEvidence,
+        actions: [{
+          salon_id: "s1",
+          agent: "daily_report",
+          created_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows).toHaveLength(20);
+    expect(rows.find((row) => row.agent === "daily_report")).toMatchObject({
+      agentLabel: "Daily Report",
+      status: "certified",
+      evidenceCount: 1,
+    });
+  });
+
   it("distinguishes certified, waiting, and unconfigured agents", () => {
     const rows = buildAgentCertificationMatrix({
       salons: [salon],
