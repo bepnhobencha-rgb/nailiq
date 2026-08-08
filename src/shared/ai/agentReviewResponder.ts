@@ -18,7 +18,8 @@ import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
  * Dedup: stores review.time (Unix timestamp) in ai_actions_log payload so we
  * never re-draft the same review.
  *
- * Gate: salons.google_place_id is non-null + GOOGLE_MAPS_API_KEY env is set.
+ * Gate: feature_flags.ai_google_reply = true + salons.google_place_id is
+ * non-null + GOOGLE_MAPS_API_KEY env is set.
  */
 
 let anthropic: Anthropic | null = null;
@@ -134,11 +135,14 @@ export async function runReviewResponder(salonId: string): Promise<void> {
     const db = looseServiceClient();
     const { data: salon } = await db
       .from("salons" as never)
-      .select("name, google_place_id" as never)
+      .select("name, feature_flags, google_place_id" as never)
       .eq("id" as never, salonId)
       .maybeSingle();
 
     const s = (salon as Row | null) ?? {};
+    const flags = (s.feature_flags as Record<string, unknown> | null) ?? {};
+    if (flags.ai_google_reply !== true) return;
+
     const placeId = String(s.google_place_id ?? "").trim();
     if (!placeId) return;
 
