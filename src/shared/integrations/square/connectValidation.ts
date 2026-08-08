@@ -1,7 +1,18 @@
 const SQUARE_API = "https://connect.squareup.com/v2";
+const SQUARE_TOKEN_STATUS = "https://connect.squareup.com/oauth2/token/status";
 const SQUARE_VERSION = "2024-12-18";
 
 type FetchLike = typeof fetch;
+
+export type SquareConnectionValidationCode =
+  | "invalid_credentials"
+  | "token_expired"
+  | "token_revoked"
+  | "client_disabled"
+  | "insufficient_scopes"
+  | "square_forbidden"
+  | "square_unavailable"
+  | "location_ambiguous";
 
 export type ValidatedSquareConnection = {
   merchantId: string;
@@ -13,12 +24,7 @@ export type ValidatedSquareConnection = {
 };
 
 export class SquareConnectionValidationError extends Error {
-  constructor(
-    public readonly code:
-      | "invalid_credentials"
-      | "square_unavailable"
-      | "location_ambiguous",
-  ) {
+  constructor(public readonly code: SquareConnectionValidationCode) {
     super(code);
     this.name = "SquareConnectionValidationError";
   }
@@ -44,15 +50,43 @@ function cleanString(value: unknown): string | null {
     : null;
 }
 
-async function squareJson(
-  path: string,
+function authenticationErrorCode(
+  payload: Record<string, unknown>,
+  status: number,
+): SquareConnectionValidationCode {
+  const errors = Array.isArray(payload.errors)
+    ? (payload.errors as Array<{ code?: unknown }>)
+    : [];
+  const providerCode = errors
+    .map((error) => cleanString(error.code))
+    .find(Boolean);
+
+  switch (providerCode) {
+    case "ACCESS_TOKEN_EXPIRED":
+      return "token_expired";
+    case "ACCESS_TOKEN_REVOKED":
+      return "token_revoked";
+    case "CLIENT_DISABLED":
+      return "client_disabled";
+    case "INSUFFICIENT_SCOPES":
+      return "insufficient_scopes";
+    case "FORBIDDEN":
+      return "square_forbidden";
+    default:
+      return status === 403 ? "square_forbidden" : "invalid_credentials";
+  }
+}
+
+async function squareRequest(
+  url: string,
   accessToken: string,
   fetchImpl: FetchLike,
+  method: "GET" | "POST",
 ): Promise<Record<string, unknown>> {
   let response: Response;
   try {
-    response = await fetchImpl(`${SQUARE_API}${path}`, {
-      method: "GET",
+    response = await fetchImpl(url, {
+      method,
       cache: "no-store",
       signal: AbortSignal.timeout(10_000),
       headers: {
@@ -70,12 +104,27 @@ async function squareJson(
     unknown
   >;
   if (response.status === 401 || response.status === 403) {
-    throw new SquareConnectionValidationError("invalid_credentials");
+    throw new SquareConnectionValidationError(
+      authenticationErrorCode(payload, response.status),
+    );
   }
   if (!response.ok) {
     throw new SquareConnectionValidationError("square_unavailable");
   }
   return payload;
+}
+
+async function squareJson(
+  path: string,
+  accessToken: string,
+  fetchImpl: FetchLike,
+): Promise<Record<string, unknown>> {
+  return squareRequest(
+    `${SQUARE_API}${path}`,
+    accessToken,
+    fetchImpl,
+    "GET",
+  );
 }
 
 /**
@@ -87,6 +136,13 @@ export async function validateSquareProductionConnection(
   accessToken: string,
   fetchImpl: FetchLike = fetch,
 ): Promise<ValidatedSquareConnection> {
+  await squareRequest(
+    SQUARE_TOKEN_STATUS,
+    accessToken,
+    fetchImpl,
+    "POST",
+  );
+
   const [locationsPayload, merchantsPayload] = await Promise.all([
     squareJson("/locations", accessToken, fetchImpl),
     squareJson("/merchants", accessToken, fetchImpl),
@@ -134,7 +190,12 @@ export async function validateSquareProductionConnection(
   } catch (error) {
     if (
       error instanceof SquareConnectionValidationError &&
-      error.code === "invalid_credentials"
+      [
+        "invalid_credentials",
+        "token_expired",
+        "token_revoked",
+        "client_disabled",
+      ].includes(error.code)
     ) {
       throw error;
     }

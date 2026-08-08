@@ -14,6 +14,9 @@ function jsonResponse(body: unknown, status = 200) {
 function squareFetch({ bookingProfile = true } = {}) {
   return vi.fn(async (input: string | URL | Request) => {
     const url = String(input);
+    if (url.endsWith("/oauth2/token/status")) {
+      return jsonResponse({ merchant_id: "M_STUDIO" });
+    }
     if (url.endsWith("/locations")) {
       return jsonResponse({
         locations: [
@@ -60,8 +63,11 @@ describe("validateSquareProductionConnection", () => {
       bookingSyncReady: true,
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    for (const call of vi.mocked(fetchMock).mock.calls) {
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    const calls = vi.mocked(fetchMock).mock.calls;
+    expect(String(calls[0][0])).toContain("/oauth2/token/status");
+    expect((calls[0][1] as RequestInit).method).toBe("POST");
+    for (const call of calls.slice(1)) {
       const init = call[1] as RequestInit;
       expect(init.method).toBe("GET");
       expect(init.body).toBeUndefined();
@@ -123,4 +129,29 @@ describe("validateSquareProductionConnection", () => {
     );
     expect(String(caught)).not.toContain("secret-production-token");
   });
+
+  it.each([
+    ["ACCESS_TOKEN_EXPIRED", "token_expired", 401],
+    ["ACCESS_TOKEN_REVOKED", "token_revoked", 401],
+    ["CLIENT_DISABLED", "client_disabled", 401],
+    ["INSUFFICIENT_SCOPES", "insufficient_scopes", 403],
+    ["FORBIDDEN", "square_forbidden", 403],
+  ])(
+    "maps Square %s without exposing provider details",
+    async (providerCode, expectedCode, status) => {
+      const fetchMock = vi.fn(async () =>
+        jsonResponse(
+          { errors: [{ code: providerCode, detail: "private provider detail" }] },
+          status,
+        ),
+      ) as unknown as typeof fetch;
+
+      await expect(
+        validateSquareProductionConnection(
+          "secret-production-token",
+          fetchMock,
+        ),
+      ).rejects.toMatchObject({ code: expectedCode });
+    },
+  );
 });

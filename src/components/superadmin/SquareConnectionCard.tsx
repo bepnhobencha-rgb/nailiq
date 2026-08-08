@@ -20,6 +20,16 @@ const ERROR_COPY: Record<SquareConnectError, string> = {
   rate_limited: "Too many attempts. Wait 15 minutes before trying again.",
   invalid_credentials:
     "Square rejected this production token. Copy a fresh Production Access token.",
+  token_expired:
+    "Square reports that this Production token expired. Copy the current token from the Production credentials page.",
+  token_revoked:
+    "Square reports that this Production token was revoked. Sign in again and copy the current Production token.",
+  client_disabled:
+    "Square has disabled this application or account. Resolve the Square account review before retrying.",
+  insufficient_scopes:
+    "Square accepted the token, but it lacks the required Locations or Merchants permissions.",
+  square_forbidden:
+    "Square accepted the token but blocked Production API access. Check the Square account verification and restrictions.",
   square_unavailable:
     "Square could not be verified right now. Nothing was saved; try again later.",
   location_ambiguous:
