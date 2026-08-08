@@ -13,6 +13,7 @@ vi.mock("@/shared/lib/supabase/serviceRole", () => ({
 import {
   estimateAnthropicCostUsd,
   normalizeAnthropicUsage,
+  trackAnthropicFetch,
   trackAnthropicStream,
 } from "@/shared/ai/usageLedger";
 
@@ -155,6 +156,65 @@ describe("AI usage ledger", () => {
         input_tokens: 10,
         output_tokens: 0,
         error_code: "stream_cancelled",
+      }),
+    );
+  });
+
+  it("tracks raw-fetch usage without consuming the feature response body", async () => {
+    mocks.insert.mockResolvedValueOnce({ error: null });
+    const payload = {
+      content: [{ type: "text", text: "feature output" }],
+      usage: {
+        input_tokens: 500,
+        output_tokens: 25,
+        cache_read_input_tokens: 100,
+        cache_creation_input_tokens: 50,
+      },
+    };
+    const response = await trackAnthropicFetch(
+      {
+        salonId: "00000000-0000-4000-8000-000000000002",
+        feature: "client_360_summary",
+        model: "claude-haiku-4-5-20251001",
+      },
+      async () => Response.json(payload),
+    );
+
+    await expect(response.json()).resolves.toEqual(payload);
+    expect(mocks.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        salon_id: "00000000-0000-4000-8000-000000000002",
+        feature: "client_360_summary",
+        status: "succeeded",
+        input_tokens: 500,
+        output_tokens: 25,
+        cache_read_input_tokens: 100,
+        cache_creation_input_tokens: 50,
+        estimated_cost_usd: 0.000697,
+        error_code: null,
+      }),
+    );
+  });
+
+  it("records a safe HTTP failure while preserving the response", async () => {
+    mocks.insert.mockResolvedValueOnce({ error: null });
+    const response = await trackAnthropicFetch(
+      {
+        salonId: null,
+        feature: "service_description",
+        model: "claude-haiku-4-5-20251001",
+      },
+      async () => new Response("provider unavailable", { status: 503 }),
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.text()).resolves.toBe("provider unavailable");
+    expect(mocks.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "failed",
+        input_tokens: 0,
+        output_tokens: 0,
+        error_code: "http_503",
       }),
     );
   });

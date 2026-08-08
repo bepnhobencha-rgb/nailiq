@@ -2,6 +2,7 @@
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { trackAnthropicFetch } from "@/shared/ai/usageLedger";
 import { inferReturnCadenceDays } from "@/shared/booking/returnRhythm";
 import { getSalonDisplayName } from "@/shared/dashboard/salonClientName";
 import { isFrontDeskRole } from "@/shared/lib/salonMemberRole";
@@ -980,23 +981,30 @@ Respond ONLY with valid JSON in this exact format (no markdown, no extra text):
   let nextAction: string;
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": anthropicKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
+    const res = await trackAnthropicFetch(
+      {
+        salonId,
+        feature: "client_360_summary",
         model: HAIKU_MODEL,
-        // 512 tokens is enough for the short JSON output while preventing
-        // the truncation that previously cut the response mid-word at 200.
-        // The tightened prompt (summary ≤160 chars, nextAction ≤120 chars)
-        // ensures the JSON stays well within this budget.
-        max_tokens: 512,
-        messages: [{ role: "user", content: prompt }],
+      },
+      () => fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": anthropicKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: HAIKU_MODEL,
+          // 512 tokens is enough for the short JSON output while preventing
+          // the truncation that previously cut the response mid-word at 200.
+          // The tightened prompt (summary ≤160 chars, nextAction ≤120 chars)
+          // ensures the JSON stays well within this budget.
+          max_tokens: 512,
+          messages: [{ role: "user", content: prompt }],
+        }),
       }),
-    });
+    );
 
     if (!res.ok) {
       console.error("[generateClient360Summary] anthropic http", res.status);
