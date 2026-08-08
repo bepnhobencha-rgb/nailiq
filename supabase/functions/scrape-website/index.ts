@@ -4,6 +4,10 @@
 // Pipeline: fetch HTML → Claude extract → download images → upsert salon/services/sections → email.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  type EdgeUsageLedgerClient,
+  trackAnthropicEdgeFetch,
+} from "../_shared/aiUsageLedger.ts";
 import { rejectUnauthorizedInternalRequest } from "../_shared/internalAuth.ts";
 import { safeOutboundFetch } from "../_shared/safeOutboundFetch.ts";
 import { supabaseSecretKey } from "../_shared/supabaseApiKeys.ts";
@@ -14,6 +18,7 @@ const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const RESEND_FROM = Deno.env.get("RESEND_FROM") ?? "NailIQ <noreply@nailiq.ca>";
 const SITE_URL = (Deno.env.get("NEXT_PUBLIC_SITE_URL") ?? "https://nailiq.ca").replace(/\/$/, "");
+const ANTHROPIC_MODEL = "claude-sonnet-4-6";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -162,6 +167,8 @@ type ExtractedSalon = {
 };
 
 async function extractWithClaude(
+  db: EdgeUsageLedgerClient,
+  salonId: string,
   pageTitle: string,
   metaDesc: string,
   bodyText: string,
@@ -204,19 +211,27 @@ Rules:
 - brand_color: valid 6-digit hex with #, or empty string "".
 - All string fields: empty string "" if unknown, never null.`;
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
+  const res = await trackAnthropicEdgeFetch(
+    db,
+    {
+      salonId,
+      feature: "website_import",
+      model: ANTHROPIC_MODEL,
     },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 2048,
-      messages: [{ role: "user", content: prompt }],
+    () => fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: ANTHROPIC_MODEL,
+        max_tokens: 2048,
+        messages: [{ role: "user", content: prompt }],
+      }),
     }),
-  });
+  );
 
   if (!res.ok) {
     throw new Error(`Anthropic ${res.status}: ${await res.text()}`);
@@ -428,7 +443,13 @@ Deno.serve(async (req: Request) => {
     // ── 2. AI extraction ───────────────────────────────────────────────────
     await updateJob(db, jobId, { status: "extracting", progress: 40 });
 
-    const extracted = await extractWithClaude(pageTitle, metaDesc, bodyText);
+    const extracted = await extractWithClaude(
+      db as unknown as EdgeUsageLedgerClient,
+      salonId,
+      pageTitle,
+      metaDesc,
+      bodyText,
+    );
 
     await updateJob(db, jobId, { progress: 60 });
 

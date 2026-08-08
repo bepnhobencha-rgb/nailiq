@@ -3,12 +3,17 @@
 // Uses Claude Haiku vision to analyze the nail photo and populate ai_* fields.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  type EdgeUsageLedgerClient,
+  trackAnthropicEdgeFetch,
+} from "../_shared/aiUsageLedger.ts";
 import { rejectUnauthorizedInternalRequest } from "../_shared/internalAuth.ts";
 import { supabaseSecretKey } from "../_shared/supabaseApiKeys.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = supabaseSecretKey();
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
+const ANTHROPIC_MODEL = "claude-haiku-4-5-20251001";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -30,32 +35,44 @@ type AiAnalysisResult = {
   is_appropriate: boolean;
 };
 
-async function analyzeWithClaude(imageBase64: string, mimeType: string): Promise<AiAnalysisResult> {
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
+async function analyzeWithClaude(
+  db: EdgeUsageLedgerClient,
+  salonId: string,
+  imageBase64: string,
+  mimeType: string,
+): Promise<AiAnalysisResult> {
+  const response = await trackAnthropicEdgeFetch(
+    db,
+    {
+      salonId,
+      feature: "photo_enhance",
+      model: ANTHROPIC_MODEL,
     },
-    body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 512,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: mimeType,
-                data: imageBase64,
+    () => fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: ANTHROPIC_MODEL,
+        max_tokens: 512,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: mimeType,
+                  data: imageBase64,
+                },
               },
-            },
-            {
-              type: "text",
-              text: `Analyze this nail photo. Return only valid JSON with this exact shape:
+              {
+                type: "text",
+                text: `Analyze this nail photo. Return only valid JSON with this exact shape:
 {
   "detected_services": ["list of nail services visible, e.g. gel manicure, acrylic fill, nail art"],
   "detected_colors": ["list of color names visible on nails"],
@@ -68,12 +85,13 @@ Rules:
 - is_appropriate = false only if the photo contains explicit/inappropriate content
 - All arrays may be empty if nothing detected
 Return ONLY the JSON object, no explanation.`,
-            },
-          ],
-        },
-      ],
+              },
+            ],
+          },
+        ],
+      }),
     }),
-  });
+  );
 
   if (!response.ok) {
     const errText = await response.text();
@@ -166,7 +184,12 @@ Deno.serve(async (req: Request) => {
   // Analyze with Claude
   let analysis: AiAnalysisResult;
   try {
-    analysis = await analyzeWithClaude(imageBase64, mimeType);
+    analysis = await analyzeWithClaude(
+      db as unknown as EdgeUsageLedgerClient,
+      photoRow.salon_id,
+      imageBase64,
+      mimeType,
+    );
   } catch (err) {
     console.error("[photo-enhance] Claude analysis error:", err);
     // Update with a failed/low-quality marker rather than crashing

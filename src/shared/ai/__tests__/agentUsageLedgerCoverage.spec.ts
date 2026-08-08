@@ -81,6 +81,20 @@ const REST_COVERAGE: ReadonlyArray<{
   },
 ];
 
+const EDGE_REST_COVERAGE: ReadonlyArray<{
+  file: string;
+  features: readonly string[];
+}> = [
+  {
+    file: "supabase/functions/photo-enhance/index.ts",
+    features: ["photo_enhance"],
+  },
+  {
+    file: "supabase/functions/scrape-website/index.ts",
+    features: ["website_import"],
+  },
+];
+
 describe("AI Agent cost-ledger boundary", () => {
   for (const entry of COVERAGE) {
     it(`tracks every Anthropic call in ${entry.file}`, () => {
@@ -107,6 +121,24 @@ describe("AI Agent cost-ledger boundary", () => {
       )?.length ?? 0;
       const trackedCalls = source.match(
         /trackAnthropicFetch\s*\(/g,
+      )?.length ?? 0;
+
+      expect(rawCalls).toBeGreaterThan(0);
+      expect(trackedCalls).toBe(rawCalls);
+      for (const feature of entry.features) {
+        expect(source).toContain(`feature: "${feature}"`);
+      }
+    });
+  }
+
+  for (const entry of EDGE_REST_COVERAGE) {
+    it(`tracks every Edge Anthropic REST call in ${entry.file}`, () => {
+      const source = readFileSync(join(process.cwd(), entry.file), "utf8");
+      const rawCalls = source.match(
+        /fetch\s*\(\s*["']https:\/\/api\.anthropic\.com\/v1\/messages["']/g,
+      )?.length ?? 0;
+      const trackedCalls = source.match(
+        /trackAnthropicEdgeFetch\s*\(/g,
       )?.length ?? 0;
 
       expect(rawCalls).toBeGreaterThan(0);
