@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 vi.mock("server-only", () => ({}));
 
@@ -296,16 +298,34 @@ describe("Agent Certification Matrix", () => {
     expect([...staleSalons]).toEqual(["stale"]);
   });
 
-  it("maps durable Manager exceptions by the agent alert type", () => {
+  it("maps durable Manager exceptions by the schema-backed source reference", () => {
     const failures = activeAgentFailureKeys(
       [
-        { salon_id: "s1", alert_type: "watchdog", status: "open" },
-        { salon_id: "s1", alert_type: "digest", status: "resolved" },
-        { salon_id: "unknown", alert_type: "winback", status: "open" },
+        { salon_id: "s1", source_ref: "watchdog", status: "open" },
+        { salon_id: "s1", source_ref: "digest", status: "resolved" },
+        { salon_id: "unknown", source_ref: "winback", status: "open" },
       ],
       new Map([["s1", "alpha-salon"]]),
     );
 
     expect([...failures]).toEqual(["alpha-salon:watchdog"]);
+  });
+
+  it("queries the durable exception column that exists in the production schema", () => {
+    const actionSource = readFileSync(
+      resolve(process.cwd(), "src/shared/superadmin/agentCertificationActions.ts"),
+      "utf8",
+    );
+    const schemaSource = readFileSync(
+      resolve(
+        process.cwd(),
+        "supabase/migrations/20260728112951_add_ai_operational_exception_signals.sql",
+      ),
+      "utf8",
+    );
+
+    expect(schemaSource).toContain("add column if not exists source_ref text");
+    expect(actionSource).toContain('.select("salon_id, source_ref, status" as never)');
+    expect(actionSource).not.toContain("alert_type");
   });
 });

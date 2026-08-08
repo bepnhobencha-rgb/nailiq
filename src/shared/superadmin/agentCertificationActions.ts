@@ -37,7 +37,7 @@ type EvidenceRow = {
 
 type ActiveAgentExceptionRow = {
   salon_id: string;
-  alert_type: string | null;
+  source_ref: string | null;
   status: string;
 };
 
@@ -131,10 +131,10 @@ export function activeAgentFailureKeys(
     const slug = salonSlugById.get(row.salon_id);
     if (
       slug &&
-      row.alert_type &&
+      row.source_ref &&
       ["open", "acknowledged"].includes(row.status)
     ) {
-      failures.add(`${slug}:${row.alert_type}`);
+      failures.add(`${slug}:${row.source_ref}`);
     }
   }
   return failures;
@@ -244,7 +244,7 @@ export async function loadAgentCertificationMatrix(): Promise<
       db.from("ai_worker_runs" as never).select("started_at, status, summary" as never).eq("worker_name" as never, "ai_manager").order("started_at" as never, { ascending: false }).limit(1),
       db.from("ai_execution_worker_state" as never).select("worker_name, status" as never).in("worker_name" as never, ["ai_execution", "reminders"]),
       db.from("watchdog_alerts" as never)
-        .select("salon_id, alert_type, status" as never)
+        .select("salon_id, source_ref, status" as never)
         .eq("source_type" as never, "ai_manager")
         .eq("kind" as never, "manager_agent_failure")
         .in("status" as never, ["open", "acknowledged"] as never),
