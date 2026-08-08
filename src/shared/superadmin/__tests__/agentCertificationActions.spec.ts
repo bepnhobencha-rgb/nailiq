@@ -56,6 +56,20 @@ describe("Agent Certification Matrix", () => {
     });
   });
 
+  it("marks Daily Report unconfigured when Unified Digest replaces it", () => {
+    const rows = buildAgentCertificationMatrix({
+      salons: [{
+        ...salon,
+        feature_flags: { ...salon.feature_flags, ai_unified_digest: true },
+      }],
+      evidence: emptyEvidence,
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "daily_report")?.status)
+      .toBe("not_configured");
+  });
+
   it("distinguishes certified, waiting, and unconfigured agents", () => {
     const rows = buildAgentCertificationMatrix({
       salons: [salon],

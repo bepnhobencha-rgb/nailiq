@@ -143,7 +143,7 @@ export function activeAgentFailureKeys(
 const AGENTS: readonly AgentDefinition[] = [
   { key: "outcome_tracker", label: "Outcome Tracker", cadence: "Daily", failureKey: "outcome_tracker", configured: always, evidence: (input, salonId) => input.actions.filter((row) => row.salon_id === salonId && Boolean(row.outcome_at)) },
   { key: "cancellation_radar", label: "Cancellation Radar", cadence: "Daily", failureKey: "cancellation_radar", configured: flag("ai_cancellation_radar"), evidence: actionEvidence("cancellation_radar") },
-  { key: "daily_report", label: "Daily Report", cadence: "Daily at 21:00", failureKey: "daily_report", configured: always, evidence: actionEvidence("daily_report") },
+  { key: "daily_report", label: "Daily Report", cadence: "Daily at 21:00", failureKey: "daily_report", configured: (salon) => salon.feature_flags?.ai_unified_digest !== true, evidence: actionEvidence("daily_report") },
   { key: "revenue_report", label: "Revenue Report", cadence: "Weekly", failureKey: "revenue_report", configured: flag("ai_revenue_report"), evidence: actionEvidence("revenue_report") },
   { key: "staff_performance", label: "Staff Performance", cadence: "Weekly", failureKey: "staff_performance", configured: flag("ai_staff_performance"), evidence: actionEvidence("staff_performance") },
   { key: "noshow", label: "No-show Policy", cadence: "Hourly / event-driven", failureKey: "noshow", configured: (salon) => salon.feature_flags?.ai_noshow_policy_live === true || salon.feature_flags?.ai_noshow_policy_shadow === true, evidence: (input, salonId) => [...usageEvidence(["noshow_policy", "noshow_risk_score"])(input, salonId), ...input.policies.filter((row) => row.salon_id === salonId)] },
