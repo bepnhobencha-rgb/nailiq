@@ -24,9 +24,10 @@ import {
   outboundMessagingEnabled,
   rejectUnauthorizedInternalRequest,
 } from "../_shared/internalAuth.ts";
+import { supabaseSecretKey } from "../_shared/supabaseApiKeys.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SERVICE_ROLE_KEY = supabaseSecretKey();
 
 const TEMPLATE_KEY = "booking_reschedule";
 const CHANNEL = "sms";
