@@ -4,6 +4,7 @@ import { looseServiceClient, type Row } from "@/shared/integrations/square/loose
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
 import type { SalonIntelligenceProfile } from "@/shared/ai/types";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 
 /**
  * Agent Nhân Viên (Weekly Staff Performance Report) — Runs every Monday at 09:00.
@@ -99,6 +100,7 @@ async function gatherStaffStats(
 type StaffInsight = { summary: string; alerts: string[] };
 
 async function analyzeStaff(
+  salonId: string,
   salonName: string,
   lang: "vi" | "en",
   thisWeek: StaffStat[],
@@ -131,11 +133,16 @@ Trả JSON:
 Chỉ trả JSON, không markdown.`;
 
   try {
-    const resp = await ai.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 300,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const model = "claude-haiku-4-5-20251001";
+    const resp = await trackAnthropicMessage(
+      { salonId, feature: "staff_performance", model },
+      () =>
+        ai.messages.create({
+          model,
+          max_tokens: 300,
+          messages: [{ role: "user", content: prompt }],
+        }),
+    );
     const raw = resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
     const cleaned = raw.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
     const parsed = JSON.parse(cleaned) as StaffInsight;
@@ -278,7 +285,13 @@ export async function runStaffPerformance(salonId: string): Promise<void> {
       .filter((s) => !thisWeekIds.has(s.staffId) && s.completed + s.noShow >= 2)
       .map((s) => s.name);
 
-    const insight = await analyzeStaff(salonName, lang, thisWeek, absentStaff);
+    const insight = await analyzeStaff(
+      salonId,
+      salonName,
+      lang,
+      thisWeek,
+      absentStaff,
+    );
     if (!insight) return;
 
     const { subject, bodyText, bodyHtml } = buildStaffEmail(

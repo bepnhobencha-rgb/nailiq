@@ -4,6 +4,7 @@ import { looseServiceClient, type Row } from "@/shared/integrations/square/loose
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
 import type { SalonIntelligenceProfile } from "@/shared/ai/types";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 
 /**
  * AI Yelp Review Responder — Minh's Yelp agent.
@@ -100,6 +101,7 @@ type DraftResult = {
 };
 
 async function draftReply(
+  salonId: string,
   salonName: string,
   sip: Partial<SalonIntelligenceProfile> | null,
   review: YelpReview,
@@ -156,12 +158,17 @@ Rules:
     : `Write an empathetic reply to this ${review.rating}★ Yelp review:\n\n"${review.text}"\n\nReply only (no labels):`;
 
   try {
-    const resp = await ai.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 300,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
-    });
+    const model = "claude-haiku-4-5-20251001";
+    const resp = await trackAnthropicMessage(
+      { salonId, feature: "yelp_responder", model },
+      () =>
+        ai.messages.create({
+          model,
+          max_tokens: 300,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userPrompt }],
+        }),
+    );
     const reply = resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
     if (!reply) return null;
     return { reply, tone: isPositive ? "positive" : "escalate" };
@@ -211,7 +218,7 @@ export async function runYelpResponder(salonId: string): Promise<void> {
 
     // Process each new review — sequential to avoid rate-limiting AI
     for (const review of newReviews) {
-      const draft = await draftReply(salonName, sip, review);
+      const draft = await draftReply(salonId, salonName, sip, review);
       if (!draft) continue;
 
       const stars = "★".repeat(review.rating) + "☆".repeat(5 - review.rating);

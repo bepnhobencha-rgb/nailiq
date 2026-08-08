@@ -73,6 +73,28 @@ describe("Agent Certification Matrix", () => {
     expect(rows.find((row) => row.agent === "vip_care")?.status).toBe("not_configured");
   });
 
+  it("requires explicit permission before Google Review Responder is configured", () => {
+    const withoutPermission = buildAgentCertificationMatrix({
+      salons: [{ ...salon, google_place_id: "place-1" }],
+      evidence: emptyEvidence,
+      failedAgents: new Set(),
+    });
+    const withPermission = buildAgentCertificationMatrix({
+      salons: [{
+        ...salon,
+        google_place_id: "place-1",
+        feature_flags: { ...salon.feature_flags, ai_google_reply: true },
+      }],
+      evidence: emptyEvidence,
+      failedAgents: new Set(),
+    });
+
+    expect(withoutPermission.find((row) => row.agent === "review_responder")?.status)
+      .toBe("not_configured");
+    expect(withPermission.find((row) => row.agent === "review_responder")?.status)
+      .toBe("waiting_data");
+  });
+
   it("uses a fresh outcome timestamp for Outcome Tracker evidence", () => {
     const rows = buildAgentCertificationMatrix({
       salons: [salon],

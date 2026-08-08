@@ -104,6 +104,7 @@ export async function sendSaveCardLink(
         "@/shared/noshow/agentNoShowPolicy"
       );
       const drafted = await draftSaveCardMessages({
+        salonId: ctx.salon.id,
         lang: en ? "en" : "vi",
         salonName,
         clientName: (bk as { client_name?: string }).client_name ?? null,

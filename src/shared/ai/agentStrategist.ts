@@ -11,6 +11,7 @@ import {
   hasPendingStrategistProposalOfType,
 } from "@/shared/ai/strategistProposal";
 import { findProposalCooldown, getLessons } from "@/shared/ai/lessons";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 
 /**
  * AI Chiến Lược Gia (Weekly Strategist) — Runs every Sunday at 21:00 salon time.
@@ -267,6 +268,7 @@ CLIENT RETENTION (last 28 days)
 }
 
 async function runAnalysis(
+  salonId: string,
   salonName: string,
   vertical: string,
   sip: Partial<SalonIntelligenceProfile> | null,
@@ -311,11 +313,16 @@ Respond with ONLY valid JSON, no markdown fences, in exactly this format:
 }`;
 
   try {
-    const resp = await ai.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 800,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const model = "claude-sonnet-4-6";
+    const resp = await trackAnthropicMessage(
+      { salonId, feature: "strategist", model },
+      () =>
+        ai.messages.create({
+          model,
+          max_tokens: 800,
+          messages: [{ role: "user", content: prompt }],
+        }),
+    );
     const raw = resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
     if (!raw) return null;
 
@@ -451,7 +458,14 @@ export async function runStrategist(salonId: string): Promise<void> {
     const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
     const settingsUrl = `${SITE_URL}/dashboard/${salonSlug}/settings`;
 
-    const output = await runAnalysis(salonName, vertical, sip, data, settingsUrl);
+    const output = await runAnalysis(
+      salonId,
+      salonName,
+      vertical,
+      sip,
+      data,
+      settingsUrl,
+    );
     if (!output) return;
 
     const { subject, bodyText, bodyHtml } = buildEmail(salonName, output, settingsUrl);

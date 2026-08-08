@@ -5,6 +5,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { salonToday, salonDayRangeUtc } from "@/shared/lib/salonTime";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
 import type { SalonIntelligenceProfile } from "@/shared/ai/types";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 
 /**
  * AI Social Content — Người Viết Bài Phase 1.
@@ -164,6 +165,7 @@ type SocialDraft = {
 };
 
 async function draftCaption(
+  salonId: string,
   salonName: string,
   vertical: string,
   sip: Partial<SalonIntelligenceProfile> | null,
@@ -226,11 +228,16 @@ HASHTAGS: [hashtags here]
 IMAGE: [image suggestion here]`;
 
   try {
-    const resp = await ai.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 400,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const model = "claude-haiku-4-5-20251001";
+    const resp = await trackAnthropicMessage(
+      { salonId, feature: "social_content", model },
+      () =>
+        ai.messages.create({
+          model,
+          max_tokens: 400,
+          messages: [{ role: "user", content: prompt }],
+        }),
+    );
     const raw = resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
     if (!raw) return null;
 
@@ -281,7 +288,15 @@ export async function runSocialContent(salonId: string): Promise<void> {
     const season = getSeasonContext(todayYmd);
     const dayName = dayOfWeekName(todayYmd);
 
-    const draft = await draftCaption(salonName, vertical, sip, stats, season, dayName);
+    const draft = await draftCaption(
+      salonId,
+      salonName,
+      vertical,
+      sip,
+      stats,
+      season,
+      dayName,
+    );
     if (!draft) return;
 
     const bookingUrl = `${(process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca"}/${str(s.slug)}`;
