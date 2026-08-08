@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const COVERAGE: ReadonlyArray<{
   file: string;
   features: readonly string[];
+  tracker?: "trackAnthropicMessage" | "trackAnthropicStream";
 }> = [
   { file: "src/shared/ai/agentDailyReport.ts", features: ["daily_report"] },
   { file: "src/shared/ai/agentDigest.ts", features: ["digest"] },
@@ -51,6 +52,11 @@ const COVERAGE: ReadonlyArray<{
     file: "src/shared/observability/draftFix.ts",
     features: ["error_fix_file", "error_fix_draft"],
   },
+  {
+    file: "src/app/api/chat/booking/route.ts",
+    features: ["booking_chat"],
+    tracker: "trackAnthropicStream",
+  },
 ];
 
 describe("AI Agent cost-ledger boundary", () => {
@@ -58,7 +64,10 @@ describe("AI Agent cost-ledger boundary", () => {
     it(`tracks every Anthropic call in ${entry.file}`, () => {
       const source = readFileSync(join(process.cwd(), entry.file), "utf8");
       const rawCalls = source.match(/\.messages\.create\s*\(/g)?.length ?? 0;
-      const trackedCalls = source.match(/trackAnthropicMessage\s*\(/g)?.length ?? 0;
+      const tracker = entry.tracker ?? "trackAnthropicMessage";
+      const trackedCalls = source.match(
+        new RegExp(`${tracker}\\s*\\(`, "g"),
+      )?.length ?? 0;
 
       expect(rawCalls).toBeGreaterThan(0);
       expect(trackedCalls).toBe(rawCalls);

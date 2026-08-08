@@ -101,6 +101,36 @@ async function writeUsageEvent(row: Record<string, unknown>): Promise<void> {
   }
 }
 
+async function writeAnthropicUsageEvent(input: {
+  context: {
+    salonId: string | null;
+    feature: string;
+    model: string;
+  };
+  status: "succeeded" | "failed";
+  usage: NormalizedAnthropicUsage;
+  startedAt: number;
+  errorCode: string | null;
+}): Promise<void> {
+  await writeUsageEvent({
+    salon_id: input.context.salonId,
+    provider: "anthropic",
+    feature: input.context.feature,
+    model: input.context.model,
+    status: input.status,
+    input_tokens: input.usage.inputTokens,
+    output_tokens: input.usage.outputTokens,
+    cache_read_input_tokens: input.usage.cacheReadInputTokens,
+    cache_creation_input_tokens: input.usage.cacheCreationInputTokens,
+    estimated_cost_usd: estimateAnthropicCostUsd(
+      input.context.model,
+      input.usage,
+    ),
+    latency_ms: Math.max(0, Date.now() - input.startedAt),
+    error_code: input.errorCode,
+  });
+}
+
 export async function trackAnthropicMessage<T extends { usage: AnthropicUsage }>(
   context: {
     salonId: string | null;
@@ -113,36 +143,121 @@ export async function trackAnthropicMessage<T extends { usage: AnthropicUsage }>
   try {
     const response = await execute();
     const usage = normalizeAnthropicUsage(response.usage);
-    await writeUsageEvent({
-      salon_id: context.salonId,
-      provider: "anthropic",
-      feature: context.feature,
-      model: context.model,
+    await writeAnthropicUsageEvent({
+      context,
       status: "succeeded",
-      input_tokens: usage.inputTokens,
-      output_tokens: usage.outputTokens,
-      cache_read_input_tokens: usage.cacheReadInputTokens,
-      cache_creation_input_tokens: usage.cacheCreationInputTokens,
-      estimated_cost_usd: estimateAnthropicCostUsd(context.model, usage),
-      latency_ms: Math.max(0, Date.now() - startedAt),
-      error_code: null,
+      usage,
+      startedAt,
+      errorCode: null,
     });
     return response;
   } catch (error) {
-    await writeUsageEvent({
-      salon_id: context.salonId,
-      provider: "anthropic",
-      feature: context.feature,
-      model: context.model,
+    await writeAnthropicUsageEvent({
+      context,
       status: "failed",
-      input_tokens: 0,
-      output_tokens: 0,
-      cache_read_input_tokens: 0,
-      cache_creation_input_tokens: 0,
-      estimated_cost_usd: null,
-      latency_ms: Math.max(0, Date.now() - startedAt),
-      error_code: safeErrorCode(error),
+      usage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+      },
+      startedAt,
+      errorCode: safeErrorCode(error),
     });
     throw error;
   }
+}
+
+export async function trackAnthropicStream(
+  context: {
+    salonId: string | null;
+    feature: string;
+    model: string;
+  },
+  execute: () => Promise<
+    AsyncIterable<Anthropic.Messages.RawMessageStreamEvent>
+  >,
+): Promise<AsyncIterable<Anthropic.Messages.RawMessageStreamEvent>> {
+  const startedAt = Date.now();
+  let source: AsyncIterable<Anthropic.Messages.RawMessageStreamEvent>;
+  try {
+    source = await execute();
+  } catch (error) {
+    await writeAnthropicUsageEvent({
+      context,
+      status: "failed",
+      usage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+      },
+      startedAt,
+      errorCode: safeErrorCode(error),
+    });
+    throw error;
+  }
+
+  return {
+    async *[Symbol.asyncIterator]() {
+      let usage: NormalizedAnthropicUsage = {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+      };
+      let recorded = false;
+      try {
+        for await (const event of source) {
+          if (event.type === "message_start") {
+            usage = normalizeAnthropicUsage(event.message.usage);
+          } else if (event.type === "message_delta") {
+            usage = {
+              inputTokens: nonNegativeInteger(
+                event.usage.input_tokens ?? usage.inputTokens,
+              ),
+              outputTokens: nonNegativeInteger(event.usage.output_tokens),
+              cacheReadInputTokens: nonNegativeInteger(
+                event.usage.cache_read_input_tokens ??
+                  usage.cacheReadInputTokens,
+              ),
+              cacheCreationInputTokens: nonNegativeInteger(
+                event.usage.cache_creation_input_tokens ??
+                  usage.cacheCreationInputTokens,
+              ),
+            };
+          }
+          yield event;
+        }
+        await writeAnthropicUsageEvent({
+          context,
+          status: "succeeded",
+          usage,
+          startedAt,
+          errorCode: null,
+        });
+        recorded = true;
+      } catch (error) {
+        await writeAnthropicUsageEvent({
+          context,
+          status: "failed",
+          usage,
+          startedAt,
+          errorCode: safeErrorCode(error),
+        });
+        recorded = true;
+        throw error;
+      } finally {
+        if (!recorded) {
+          await writeAnthropicUsageEvent({
+            context,
+            status: "failed",
+            usage,
+            startedAt,
+            errorCode: "stream_cancelled",
+          });
+        }
+      }
+    },
+  };
 }
