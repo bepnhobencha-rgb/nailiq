@@ -59,6 +59,28 @@ const COVERAGE: ReadonlyArray<{
   },
 ];
 
+const REST_COVERAGE: ReadonlyArray<{
+  file: string;
+  features: readonly string[];
+}> = [
+  {
+    file: "src/shared/dashboard/aiPrefillServicesAction.ts",
+    features: ["ai_prefill_services"],
+  },
+  {
+    file: "src/shared/dashboard/extractBrandFromWebsiteAction.ts",
+    features: ["brand_extractor"],
+  },
+  {
+    file: "src/shared/dashboard/loadClientProfile360Action.ts",
+    features: ["client_360_summary"],
+  },
+  {
+    file: "src/shared/dashboard/setupActions.ts",
+    features: ["service_description"],
+  },
+];
+
 describe("AI Agent cost-ledger boundary", () => {
   for (const entry of COVERAGE) {
     it(`tracks every Anthropic call in ${entry.file}`, () => {
@@ -67,6 +89,24 @@ describe("AI Agent cost-ledger boundary", () => {
       const tracker = entry.tracker ?? "trackAnthropicMessage";
       const trackedCalls = source.match(
         new RegExp(`${tracker}\\s*\\(`, "g"),
+      )?.length ?? 0;
+
+      expect(rawCalls).toBeGreaterThan(0);
+      expect(trackedCalls).toBe(rawCalls);
+      for (const feature of entry.features) {
+        expect(source).toContain(`feature: "${feature}"`);
+      }
+    });
+  }
+
+  for (const entry of REST_COVERAGE) {
+    it(`tracks every raw Anthropic REST call in ${entry.file}`, () => {
+      const source = readFileSync(join(process.cwd(), entry.file), "utf8");
+      const rawCalls = source.match(
+        /fetch\s*\(\s*["']https:\/\/api\.anthropic\.com\/v1\/messages["']/g,
+      )?.length ?? 0;
+      const trackedCalls = source.match(
+        /trackAnthropicFetch\s*\(/g,
       )?.length ?? 0;
 
       expect(rawCalls).toBeGreaterThan(0);

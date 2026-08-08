@@ -49,6 +49,7 @@ import {
 } from "@/shared/lib/demoOtpMode";
 import type { SalonMemberRole } from "@/shared/lib/salonMemberRole";
 import { normaliseToE164 } from "@/shared/lib/twilioSms";
+import { trackAnthropicFetch } from "@/shared/ai/usageLedger";
 import {
   isSupportedLanguage,
   normalizeAllowedLanguages,
@@ -198,6 +199,7 @@ function fail(msg: string): Fail {
 const ANTHROPIC_DESCRIPTION_MODEL = "claude-haiku-4-5-20251001";
 async function generateServiceDescription(
   name: string,
+  salonId: string,
 ): Promise<string | null> {
   // Variable name avoids the local pre-commit hook's
   // `(api[_-]?key|secret|...)[ \t]*=` heuristic — `anthropicKey`
@@ -208,24 +210,31 @@ async function generateServiceDescription(
   if (!safeName) return null;
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": anthropicKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
+    const res = await trackAnthropicFetch(
+      {
+        salonId,
+        feature: "service_description",
         model: ANTHROPIC_DESCRIPTION_MODEL,
-        max_tokens: 80,
-        messages: [
-          {
-            role: "user",
-            content: `Write a 1-line description (max 10 words) for a nail salon service called '${safeName}'. Tone: premium, warm, Canadian market. No emoji. Output ONLY the description, nothing else.`,
-          },
-        ],
+      },
+      () => fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": anthropicKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: ANTHROPIC_DESCRIPTION_MODEL,
+          max_tokens: 80,
+          messages: [
+            {
+              role: "user",
+              content: `Write a 1-line description (max 10 words) for a nail salon service called '${safeName}'. Tone: premium, warm, Canadian market. No emoji. Output ONLY the description, nothing else.`,
+            },
+          ],
+        }),
       }),
-    });
+    );
 
     if (!res.ok) {
       console.error(
@@ -582,7 +591,7 @@ export async function addService(
     typeof description === "string" && description.trim().length > 0;
   let descriptionGenerated = false;
   if (!userProvidedDescription) {
-    const generated = await generateServiceDescription(name);
+    const generated = await generateServiceDescription(name, r.salon.id);
     if (generated) {
       const { error: descErr } = await supabase
         .from("services")
@@ -783,7 +792,7 @@ export async function updateService(
       typeof patch.name === "string" && patch.name.trim().length > 0
         ? String(patch.name)
         : mine.name;
-    const generated = await generateServiceDescription(nameForGen);
+    const generated = await generateServiceDescription(nameForGen, r.salon.id);
     if (generated) {
       const { error: descErr } = await supabase
         .from("services")

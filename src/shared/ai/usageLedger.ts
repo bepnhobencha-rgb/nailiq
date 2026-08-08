@@ -261,3 +261,88 @@ export async function trackAnthropicStream(
     },
   };
 }
+
+function normalizeAnthropicFetchUsage(
+  value: unknown,
+): NormalizedAnthropicUsage | null {
+  if (!value || typeof value !== "object") return null;
+  const usage = (value as { usage?: unknown }).usage;
+  if (!usage || typeof usage !== "object") return null;
+  const counters = usage as {
+    input_tokens?: unknown;
+    output_tokens?: unknown;
+    cache_read_input_tokens?: unknown;
+    cache_creation_input_tokens?: unknown;
+  };
+  if (
+    typeof counters.input_tokens !== "number" ||
+    typeof counters.output_tokens !== "number"
+  ) {
+    return null;
+  }
+  return {
+    inputTokens: nonNegativeInteger(counters.input_tokens),
+    outputTokens: nonNegativeInteger(counters.output_tokens),
+    cacheReadInputTokens: nonNegativeInteger(
+      counters.cache_read_input_tokens,
+    ),
+    cacheCreationInputTokens: nonNegativeInteger(
+      counters.cache_creation_input_tokens,
+    ),
+  };
+}
+
+export async function trackAnthropicFetch(
+  context: {
+    salonId: string | null;
+    feature: string;
+    model: string;
+  },
+  execute: () => Promise<Response>,
+): Promise<Response> {
+  const startedAt = Date.now();
+  try {
+    const response = await execute();
+    let usage: NormalizedAnthropicUsage | null = null;
+    if (response.ok) {
+      try {
+        usage = normalizeAnthropicFetchUsage(
+          await response.clone().json(),
+        );
+      } catch {
+        usage = null;
+      }
+    }
+    await writeAnthropicUsageEvent({
+      context,
+      status: response.ok ? "succeeded" : "failed",
+      usage: usage ?? {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+      },
+      startedAt,
+      errorCode: response.ok
+        ? usage
+          ? null
+          : "usage_unavailable"
+        : `http_${response.status}`,
+    });
+    return response;
+  } catch (error) {
+    await writeAnthropicUsageEvent({
+      context,
+      status: "failed",
+      usage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+      },
+      startedAt,
+      errorCode: safeErrorCode(error),
+    });
+    throw error;
+  }
+}

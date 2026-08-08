@@ -1,6 +1,7 @@
 "use server";
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { trackAnthropicFetch } from "@/shared/ai/usageLedger";
 import { isValidBrandColor } from "@/shared/lib/brandColor";
 
 /**
@@ -87,33 +88,40 @@ export async function extractBrandFromImageUrl(
   // problems we hit doing it server-side go away.
   let vision;
   try {
-    vision = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": visionKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
+    vision = await trackAnthropicFetch(
+      {
+        salonId: ctx.salon.id,
+        feature: "brand_extractor",
         model: "claude-sonnet-4-6",
-        max_tokens: 256,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image",
-                source: { type: "url", url: imageUrl },
-              },
-              {
-                type: "text",
-                text: 'Look at this brand image (hero photo, logo, or storefront). Identify the dominant brand color and overall theme mode. Respond with ONLY a JSON object, no commentary, no markdown fences: {"primary_color":"#RRGGBB","theme_mode":"light"|"dark"}. The primary_color must be a 6-digit hex literal starting with #. theme_mode is "light" if the brand vibe is bright/airy, "dark" if moody/luxe.',
-              },
-            ],
-          },
-        ],
+      },
+      () => fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": visionKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 256,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "image",
+                  source: { type: "url", url: imageUrl },
+                },
+                {
+                  type: "text",
+                  text: 'Look at this brand image (hero photo, logo, or storefront). Identify the dominant brand color and overall theme mode. Respond with ONLY a JSON object, no commentary, no markdown fences: {"primary_color":"#RRGGBB","theme_mode":"light"|"dark"}. The primary_color must be a 6-digit hex literal starting with #. theme_mode is "light" if the brand vibe is bright/airy, "dark" if moody/luxe.',
+                },
+              ],
+            },
+          ],
+        }),
       }),
-    });
+    );
   } catch (e) {
     console.error("[extractBrandFromImageUrl] anthropic fetch", e);
     return { ok: false, error: "vision_failed" };
