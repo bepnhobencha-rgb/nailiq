@@ -65,6 +65,8 @@ type Props = {
   noshowRequirePriorNoshow: boolean;
   noshowMinNoshowCount: number;
   noshowRequireHighRisk: boolean;
+  /** Require a card for appointments starting within N hours; null = off. */
+  noshowShortNoticeHours: number | null;
   /** Prior-no-show count that escalates to upfront pay-to-confirm deposit; null = off. */
   noshowDepositEscalationThreshold: number | null;
   noshowFeePercent: number;
@@ -604,6 +606,7 @@ export function NoShowProtectionHub({
   noshowRequirePriorNoshow: initialReqPrior,
   noshowMinNoshowCount: initialMinCount,
   noshowRequireHighRisk: initialReqRisk,
+  noshowShortNoticeHours: initialShortNoticeHours,
   noshowDepositEscalationThreshold: initialEscalation,
   noshowFeePercent: initialNoshowPct,
   noshowRiskThreshold: initialNoshowThreshold,
@@ -648,6 +651,12 @@ export function NoShowProtectionHub({
   const [reqPrior, setReqPrior] = useState(initialReqPrior);
   const [minCount, setMinCount] = useState(String(initialMinCount));
   const [reqRisk, setReqRisk] = useState(initialReqRisk);
+  const [shortNoticeOn, setShortNoticeOn] = useState(
+    initialShortNoticeHours != null,
+  );
+  const [shortNoticeHours, setShortNoticeHours] = useState(
+    String(initialShortNoticeHours ?? 24),
+  );
   // Escalation: ON when a threshold is set. The number input holds the count.
   const [escalationOn, setEscalationOn] = useState(initialEscalation != null);
   const [escalationThreshold, setEscalationThreshold] = useState(
@@ -674,6 +683,9 @@ export function NoShowProtectionHub({
         noshow_require_prior_noshow: reqPrior,
         noshow_min_noshow_count: parseInt(minCount, 10) || 1,
         noshow_require_high_risk: reqRisk,
+        noshow_short_notice_hours: shortNoticeOn
+          ? parseInt(shortNoticeHours, 10) || 24
+          : null,
         noshow_deposit_escalation_threshold: escalationOn
           ? parseInt(escalationThreshold, 10) || 2
           : null,
@@ -889,9 +901,32 @@ export function NoShowProtectionHub({
                   />
                   <span>Booking rủi ro cao (AI) · High-risk bookings</span>
                 </label>
+                <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm text-nq-text">
+                  <input
+                    type="checkbox"
+                    data-testid="rule-short-notice"
+                    checked={shortNoticeOn}
+                    onChange={(e) => setShortNoticeOn(e.target.checked)}
+                    className="h-4 w-4 accent-nq-primary"
+                  />
+                  <span className="flex flex-wrap items-center gap-1">
+                    Lịch đặt sát giờ — trong
+                    <input
+                      type="number"
+                      min="1"
+                      max="168"
+                      data-testid="rule-short-notice-hours"
+                      value={shortNoticeHours}
+                      disabled={!shortNoticeOn}
+                      onChange={(e) => setShortNoticeHours(e.target.value)}
+                      className="w-16 rounded-lg border border-nq-border/40 bg-nq-bg px-2 py-1 text-sm text-nq-text focus:outline-none focus:border-nq-primary/50 disabled:opacity-40"
+                    />
+                    giờ · Short-notice appointments
+                  </span>
+                </label>
                 <p className="mt-2 text-xs text-nq-muted">
-                  {reqNew || reqPrior || reqRisk
-                    ? "Chỉ những nhóm được tick mới bị hỏi lưu thẻ. Khách quen sạch lịch sử không bị làm phiền."
+                  {reqNew || reqPrior || reqRisk || shortNoticeOn
+                    ? "Chỉ những nhóm được tick mới bị hỏi lưu thẻ. Quy tắc đặt sát giờ áp dụng cho cả khách quen."
                     : "⚠️ Tắt hết → KHÔNG ai bị hỏi lưu thẻ (không có bảo vệ no-show)."}
                 </p>
               </div>

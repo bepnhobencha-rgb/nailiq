@@ -21,6 +21,8 @@ export type CardGateRules = {
   /** Ask high-risk bookings (AI risk ≥ threshold) for a card. Server-only — the
    *  risk score doesn't exist pre-booking, so the client gate ignores it. */
   requireHighRisk: boolean;
+  /** Require a card when the appointment starts within N hours. NULL = off. */
+  shortNoticeHours: number | null;
 };
 
 type RuleRow = {
@@ -28,18 +30,36 @@ type RuleRow = {
   noshow_require_prior_noshow?: boolean | null;
   noshow_min_noshow_count?: number | null;
   noshow_require_high_risk?: boolean | null;
+  noshow_short_notice_hours?: number | null;
 };
 
 /** Parse rules from a `salons` row, with backward-compatible defaults (all on,
  *  after the 1st no-show). NULL/undefined → default-on. */
 export function parseCardGateRules(row: RuleRow | null | undefined): CardGateRules {
   const n = Number(row?.noshow_min_noshow_count);
+  const shortNotice = Number(row?.noshow_short_notice_hours);
   return {
     requireNewCustomer: row?.noshow_require_new_customer !== false,
     requirePriorNoShow: row?.noshow_require_prior_noshow !== false,
     minNoShowCount: Number.isFinite(n) && n >= 1 ? Math.round(n) : 1,
     requireHighRisk: row?.noshow_require_high_risk !== false,
+    shortNoticeHours:
+      Number.isFinite(shortNotice) && shortNotice >= 1
+        ? Math.min(168, Math.round(shortNotice))
+        : null,
   };
+}
+
+/** True only for a valid FUTURE appointment at or inside the configured window. */
+export function isShortNoticeAppointment(
+  startTimeUtc: string | null | undefined,
+  shortNoticeHours: number | null,
+  nowMs: number = Date.now(),
+): boolean {
+  if (shortNoticeHours == null || shortNoticeHours < 1) return false;
+  const startMs = Date.parse(startTimeUtc ?? "");
+  if (!Number.isFinite(startMs) || startMs <= nowMs) return false;
+  return startMs - nowMs <= shortNoticeHours * 60 * 60 * 1000;
 }
 
 /** History-only gate (what the CLIENT can know pre-booking: new + no-show count). */

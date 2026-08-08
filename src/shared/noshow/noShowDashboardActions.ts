@@ -441,6 +441,9 @@ export async function updateNoShowCardSettings(
     noshow_require_prior_noshow?: boolean;
     noshow_min_noshow_count?: number;
     noshow_require_high_risk?: boolean;
+    /** Require a consented card for appointments starting within N hours.
+     *  null disables the short-notice rule. */
+    noshow_short_notice_hours?: number | null;
     /** Charge the no-show fee % when a customer self-cancels late (opt-in). */
     self_cancel_fee_enabled?: boolean;
     /** Hours before start that a self-cancel counts as "late" (fee-eligible). */
@@ -477,6 +480,15 @@ export async function updateNoShowCardSettings(
   }
   if (typeof settings.noshow_require_high_risk === "boolean") {
     patch.noshow_require_high_risk = settings.noshow_require_high_risk;
+  }
+  if (settings.noshow_short_notice_hours !== undefined) {
+    patch.noshow_short_notice_hours =
+      settings.noshow_short_notice_hours == null
+        ? null
+        : Math.min(
+            168,
+            Math.max(1, Math.round(settings.noshow_short_notice_hours)),
+          );
   }
   if (settings.noshow_fee_percent != null) {
     patch.noshow_fee_percent = clampPct(settings.noshow_fee_percent);

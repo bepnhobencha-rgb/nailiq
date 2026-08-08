@@ -1,7 +1,11 @@
 "use server";
 
 import { looseServiceClient, type Row } from "@/shared/integrations/square/looseDb";
-import { parseCardGateRules, cardRequiredByHistory } from "@/shared/noshow/cardGateRules";
+import {
+  parseCardGateRules,
+  cardRequiredByHistory,
+  isShortNoticeAppointment,
+} from "@/shared/noshow/cardGateRules";
 import { resolvePaymentProvider } from "@/shared/integrations/payments";
 import { getSquareConfig } from "@/shared/integrations/square/client";
 
@@ -36,6 +40,9 @@ export async function resolveNoShowCardRequirement(args: {
   salonId: string;
   serviceId: string;
   clientPhone: string;
+  /** Selected appointment start, derived from the salon-local slot. Required
+   *  for the optional short-notice card rule; omitted preserves legacy rules. */
+  appointmentStartUtc?: string | null;
   /** For a GROUP booking: ALL members' service ids (incl. the organizer). When
    *  whole-party protection is on, the displayed fee covers the whole group so
    *  it matches what the server saves on the organizer's card. */
@@ -47,7 +54,7 @@ export async function resolveNoShowCardRequirement(args: {
     // Policy on the salon.
     const { data: salon } = await db
       .from("salons")
-      .select("noshow_protection_enabled, noshow_fee_percent, noshow_group_whole_party, noshow_deposit_escalation_threshold, noshow_require_new_customer, noshow_require_prior_noshow, noshow_min_noshow_count, noshow_require_high_risk")
+      .select("noshow_protection_enabled, noshow_fee_percent, noshow_group_whole_party, noshow_deposit_escalation_threshold, noshow_require_new_customer, noshow_require_prior_noshow, noshow_min_noshow_count, noshow_require_high_risk, noshow_short_notice_hours")
       .eq("id", args.salonId)
       .maybeSingle();
     const s = (salon ?? {}) as Row;
@@ -115,7 +122,13 @@ export async function resolveNoShowCardRequirement(args: {
       }
     }
     void hadNoShow; // superseded by the configurable rule check below
-    if (!cardRequiredByHistory({ isNew, noShowCount }, rules)) return { required: false };
+    const shortNotice = isShortNoticeAppointment(
+      args.appointmentStartUtc,
+      rules.shortNoticeHours,
+    );
+    if (!shortNotice && !cardRequiredByHistory({ isNew, noShowCount }, rules)) {
+      return { required: false };
+    }
 
     // Public Web Payments SDK params.
     const cfg = await getSquareConfig(db, args.salonId);

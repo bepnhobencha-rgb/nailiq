@@ -678,6 +678,15 @@ export function BookingGroupFlow({
   // at the confirm step from the organizer's phone + service, exactly like the
   // individual flow — drives the card-entry form shown BEFORE the group is
   // created.
+  const groupCardRequirementStartUtc = useMemo(() => {
+    if (!scheduleResult?.ok) return null;
+    const startMs =
+      scheduleResult.arrangements[selectedArrangementIdx]?.groupStartMs;
+    return typeof startMs === "number" && Number.isFinite(startMs)
+      ? new Date(startMs).toISOString()
+      : null;
+  }, [scheduleResult, selectedArrangementIdx]);
+
   useEffect(() => {
     if (step !== 5) {
       return;
@@ -697,6 +706,7 @@ export function BookingGroupFlow({
       salonId: salon.id,
       serviceId: svcId,
       clientPhone: v.digits,
+      appointmentStartUtc: groupCardRequirementStartUtc,
       // Whole-party protection: the organizer's card fee covers every member's
       // service, so show the party total upfront (matches what's saved/charged).
       groupServiceIds: members
@@ -716,7 +726,13 @@ export function BookingGroupFlow({
     return () => {
       alive = false;
     };
-  }, [step, primaryPhone, members, salon.id]);
+  }, [
+    step,
+    primaryPhone,
+    members,
+    salon.id,
+    groupCardRequirementStartUtc,
+  ]);
 
   // ── Helpers ────────────────────────────────────────────────────
   function applySize(n: number) {
