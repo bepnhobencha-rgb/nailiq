@@ -249,7 +249,10 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     setIsRenewing(false);
   }, []);
 
-  const endSession = useCallback(async (finalStatus: "completed" | "abandoned" | "failed") => {
+  const endSession = useCallback(async (
+    finalStatus: "completed" | "abandoned" | "failed",
+    keepalive = false,
+  ) => {
     cleanup();
     const sid = sessionIdRef.current;
     if (sid) {
@@ -258,6 +261,9 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       const elapsed = elapsedSessionSeconds(startTsRef.current, Date.now());
       await fetch("/api/voice/session/end", {
         method:  "POST",
+        // Only the unmount path opts into keepalive. Normal, awaited endings
+        // may carry a longer transcript than the browser's keepalive budget.
+        keepalive,
         headers: {
           "Content-Type": "application/json",
           ...(sessionCapabilityRef.current
@@ -1394,7 +1400,11 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     // setting status before it awaits. There is nothing to derive here.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- connect to the realtime session on mount
     void start();
-    return () => { void endSessionRef.current("abandoned"); };
+    return () => {
+      // Navigation can otherwise cancel the final telemetry write and leave
+      // the durable session permanently `active`.
+      void endSessionRef.current("abandoned", true);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

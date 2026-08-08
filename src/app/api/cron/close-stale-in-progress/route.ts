@@ -22,6 +22,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
 import { runTrackedCron } from "@/shared/security/cronRunHistory";
+import { SESSION_TTL_SECONDS } from "@/shared/voiceai/config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +32,7 @@ export const maxDuration = 55;
  *  badge clears the next morning rather than staying red for a week. */
 const STALE_AFTER_HOURS = 12;
 const BATCH_LIMIT = 200;
+const VOICE_SESSION_GRACE_MINUTES = 5;
 
 export async function GET(req: NextRequest) {
   const authorizationError = requireCronAuthorization(req);
@@ -44,7 +46,7 @@ export async function GET(req: NextRequest) {
 
   const { data: stale, error: findErr } = await supabase
     .from("bookings")
-    .select("id, salon_id, client_name, start_time_utc, end_time_utc")
+    .select("id, salon_id, start_time_utc, end_time_utc")
     .eq("status", "in_progress")
     .lt("end_time_utc", cutoff)
     .limit(BATCH_LIMIT);
@@ -55,32 +57,64 @@ export async function GET(req: NextRequest) {
   }
 
   const rows = stale ?? [];
-  if (rows.length === 0) {
-    return NextResponse.json({ ok: true, closed: 0 });
-  }
-
   const ids = rows.map((r) => (r as { id: string }).id);
-  // Re-assert the status in the WHERE clause: if the desk closed one of these
-  // between the read and this write, leave their value alone.
-  const { error: updErr } = await supabase
-    .from("bookings")
-    .update({ status: "completed" } as never)
-    .in("id", ids)
-    .eq("status", "in_progress");
+  if (ids.length > 0) {
+    // Re-assert the status in the WHERE clause: if the desk closed one of these
+    // between the read and this write, leave their value alone.
+    const { error: updErr } = await supabase
+      .from("bookings")
+      .update({ status: "completed" } as never)
+      .in("id", ids)
+      .eq("status", "in_progress");
 
-  if (updErr) {
-    console.error("[close-stale-in-progress] update failed", updErr);
-    return NextResponse.json({ error: "update_failed" }, { status: 500 });
+    if (updErr) {
+      console.error("[close-stale-in-progress] update failed", updErr);
+      return NextResponse.json({ error: "update_failed" }, { status: 500 });
+    }
+
+    console.warn(
+      `[close-stale-in-progress] auto-closed ${ids.length} abandoned booking(s)`,
+      rows.map((r) => {
+        const b = r as { id: string; salon_id: string; end_time_utc: string };
+        return { id: b.id, salonId: b.salon_id, endedAt: b.end_time_utc };
+      }),
+    );
   }
 
-  console.warn(
-    `[close-stale-in-progress] auto-closed ${ids.length} abandoned booking(s)`,
-    rows.map((r) => {
-      const b = r as { id: string; salon_id: string; end_time_utc: string };
-      return { id: b.id, salonId: b.salon_id, endedAt: b.end_time_utc };
-    }),
-  );
+  // A Realtime key cannot outlive SESSION_TTL_SECONDS. If the browser closes
+  // before its keepalive request reaches us, the session is interrupted rather
+  // than still running. Re-asserting `active` in this atomic update prevents a
+  // successful finalizer that wins the race from being overwritten.
+  const voiceCutoff = new Date(
+    Date.now() -
+      (SESSION_TTL_SECONDS + VOICE_SESSION_GRACE_MINUTES * 60) * 1_000,
+  ).toISOString();
+  const { data: abandonedVoice, error: voiceErr } = await supabase
+    .from("voice_ai_sessions")
+    .update({ status: "abandoned" } as never)
+    .eq("status", "active")
+    .lt("started_at", voiceCutoff)
+    .select("id");
 
-    return NextResponse.json({ ok: true, closed: ids.length });
+  if (voiceErr) {
+    console.error("[close-stale-in-progress] voice cleanup failed", voiceErr);
+    return NextResponse.json(
+      { error: "voice_cleanup_failed" },
+      { status: 500 },
+    );
+  }
+
+  const voiceAbandoned = abandonedVoice?.length ?? 0;
+  if (voiceAbandoned > 0) {
+    console.warn(
+      `[close-stale-in-progress] marked ${voiceAbandoned} expired voice session(s) abandoned`,
+    );
+  }
+
+    return NextResponse.json({
+      ok: true,
+      closed: ids.length,
+      voice_abandoned: voiceAbandoned,
+    });
   });
 }

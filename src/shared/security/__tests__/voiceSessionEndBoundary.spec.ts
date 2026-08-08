@@ -25,6 +25,8 @@ describe("Voice session end authorization boundary", () => {
     expect(mintRoute).toContain("createVoiceSessionCapability(sessionRow.id)");
     expect(mintRoute).toContain("sessionCapability,");
     expect(modal).toContain('"x-voice-session-token": sessionCapabilityRef.current');
+    expect(modal).toContain("keepalive,");
+    expect(modal).toContain('endSessionRef.current("abandoned", true)');
   });
 
   it("prices bounded Realtime usage on the server for both transports", () => {
