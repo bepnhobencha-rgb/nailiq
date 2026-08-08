@@ -1,5 +1,11 @@
 import "server-only";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import {
+  decideOutcomeResolution,
+  outcomeDeadline,
+  OUTCOME_WINDOW_DAYS,
+  sortLatestActionFirst,
+} from "@/shared/ai/outcomeAttribution";
 
 /**
  * Outcome Tracker — did Minh's action actually bring the client back?
@@ -14,18 +20,12 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
  *   vip_care   30d — milestone messages, relaxed window
  */
 
-const WINDOW_DAYS: Record<string, number> = {
-  winback: 21,
-  rebook: 14,
-  first_visit: 28,
-  vip_care: 30,
-};
-
-const TRACKABLE_AGENTS = Object.keys(WINDOW_DAYS);
+const TRACKABLE_AGENTS = Object.keys(OUTCOME_WINDOW_DAYS);
 
 type TrackableAction = {
   id: string;
   agent: string;
+  action_type: string;
   target_id: string | null;
   created_at: string;
   payload: Record<string, unknown> | null;
@@ -74,6 +74,9 @@ async function loadHistoricalTargetPhones(
           .in("id" as never, batch),
       ),
     );
+    for (const result of results) {
+      if (result.error) throw new Error(result.error.message);
+    }
     const data = results.flatMap((result) => result.data ?? []);
     const phones = new Map(
       ((data ?? []) as Array<{ id: string; client_phone: string }>).map(
@@ -99,6 +102,9 @@ async function loadHistoricalTargetPhones(
           .in("id" as never, batch),
       ),
     );
+    for (const result of results) {
+      if (result.error) throw new Error(result.error.message);
+    }
     const data = results.flatMap((result) => result.data ?? []);
     const phones = new Map(
       ((data ?? []) as Array<{ id: string; client_phone: string }>).map(
@@ -121,6 +127,9 @@ async function loadHistoricalTargetPhones(
           .in("id" as never, batch),
       ),
     );
+    for (const result of results) {
+      if (result.error) throw new Error(result.error.message);
+    }
     const data = results.flatMap((result) => result.data ?? []);
     const phones = new Map(
       ((data ?? []) as Array<{ id: string; phone: string }>).map((row) => [
@@ -210,9 +219,9 @@ export async function runOutcomeTracker(salonId: string): Promise<void> {
   const cutoffOld = new Date(Date.now() - 60 * 86_400_000).toISOString();
   const cutoffNew = new Date(Date.now() - 7 * 86_400_000).toISOString();
 
-  const { data: actions } = await db
+  const { data: actions, error: actionsError } = await db
     .from("ai_actions_log" as never)
-    .select("id, agent, target_id, created_at, payload")
+    .select("id, agent, action_type, target_id, created_at, payload")
     .eq("salon_id", salonId)
     .in("agent", TRACKABLE_AGENTS)
     // A row = a message that actually went out. No agent ever writes the literal
@@ -226,9 +235,13 @@ export async function runOutcomeTracker(salonId: string): Promise<void> {
     .gte("created_at", cutoffOld)
     .lte("created_at", cutoffNew);
 
+  if (actionsError) throw new Error(actionsError.message);
+
   if (!actions?.length) return;
 
-  const typedActions = actions as TrackableAction[];
+  // Last-touch attribution: process the newest outreach first so one booking
+  // cannot be credited to every earlier message in the same nurture sequence.
+  const typedActions = sortLatestActionFirst(actions as TrackableAction[]);
   const historicalPhones = await loadHistoricalTargetPhones(
     salonId,
     typedActions,
@@ -246,46 +259,141 @@ export async function runOutcomeTracker(salonId: string): Promise<void> {
   ]);
   const now = new Date();
 
+  const { data: priorAttributions, error: priorAttributionsError } = await db
+    .from("ai_actions_log" as never)
+    .select("outcome_booking_id")
+    .eq("salon_id", salonId)
+    .in("agent", TRACKABLE_AGENTS)
+    .eq("outcome", "converted")
+    .not("outcome_booking_id", "is", null)
+    .gte("created_at", cutoffOld);
+  if (priorAttributionsError) throw new Error(priorAttributionsError.message);
+  const attributedBookingIds = new Set(
+    ((priorAttributions ?? []) as Array<{ outcome_booking_id: string | null }>)
+      .map((row) => row.outcome_booking_id)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const nextNewerTouchByIdentity = new Map<string, string>();
+
   for (const row of typedActions) {
     const phone = targetPhoneByActionId.get(row.id) ?? "";
-    if (!phone) continue;
+    if (!phone) {
+      const deadline =
+        new Date(row.created_at).getTime() +
+        (OUTCOME_WINDOW_DAYS[row.agent] ?? 21) * 86_400_000;
+      if (now.getTime() >= deadline) {
+        const { data: existingGap, error: gapReadError } = await db
+          .from("ai_actions_log" as never)
+          .select("id")
+          .eq("salon_id", salonId)
+          .eq("agent", "outcome_tracker")
+          .eq("action_type", "identity_unavailable")
+          .eq("target_id", row.id)
+          .limit(1)
+          .maybeSingle();
+        if (gapReadError) throw new Error(gapReadError.message);
+        if (!existingGap) {
+          const { error: gapWriteError } = await db
+            .from("ai_actions_log" as never)
+            .insert({
+              salon_id: salonId,
+              agent: "outcome_tracker",
+              action_type: "identity_unavailable",
+              target_id: row.id,
+              payload: {
+                source_agent: row.agent,
+                source_action_type: row.action_type,
+                source_created_at: row.created_at,
+                reason: "historical_identity_missing",
+              },
+              undo_deadline: null,
+            } as never);
+          if (gapWriteError) throw new Error(gapWriteError.message);
+        }
+      }
+      continue;
+    }
 
     const sentAt = new Date(row.created_at);
-    const windowDays = WINDOW_DAYS[row.agent] ?? 21;
-    const deadline = new Date(sentAt.getTime() + windowDays * 86_400_000);
+    const identity = phoneIdentity(phone);
+    const canonicalProfileId = canonicalProfiles.get(identity);
+    const deadline = outcomeDeadline(row.agent, row.created_at);
+    const nextNewerTouch = nextNewerTouchByIdentity.get(identity) ?? null;
+    const queryUpperBound =
+      nextNewerTouch && new Date(nextNewerTouch) < deadline
+        ? { value: nextNewerTouch, inclusive: false }
+        : { value: deadline.toISOString(), inclusive: true };
+    const bookingQueries = [];
+    if (canonicalProfileId) {
+      let profileQuery = db
+          .from("bookings")
+          .select("id, created_at")
+          .eq("salon_id", salonId)
+          .eq("client_profile_id", canonicalProfileId)
+          .gte("created_at", sentAt.toISOString())
+          .not("status", "in", '("cancelled","cancelled_before_window","no_show")')
+          .order("created_at", { ascending: true })
+          .limit(20);
+      profileQuery = queryUpperBound.inclusive
+        ? profileQuery.lte("created_at", queryUpperBound.value)
+        : profileQuery.lt("created_at", queryUpperBound.value);
+      bookingQueries.push(profileQuery);
+    }
+    const lookupPhones = [...new Set([phone, phoneIdentity(phone)].filter(Boolean))];
+    let phoneQuery = db
+        .from("bookings")
+        .select("id, created_at")
+        .eq("salon_id", salonId)
+        .in("client_phone", lookupPhones)
+        .gte("created_at", sentAt.toISOString())
+        .not("status", "in", '("cancelled","cancelled_before_window","no_show")')
+        .order("created_at", { ascending: true })
+        .limit(20);
+    phoneQuery = queryUpperBound.inclusive
+      ? phoneQuery.lte("created_at", queryUpperBound.value)
+      : phoneQuery.lt("created_at", queryUpperBound.value);
+    bookingQueries.push(phoneQuery);
+    const bookingResults = await Promise.all(bookingQueries);
+    for (const result of bookingResults) {
+      if (result.error) throw new Error(result.error.message);
+    }
+    const booking = bookingResults
+      .flatMap((result) => result.data ?? [])
+      .sort((left, right) => left.created_at.localeCompare(right.created_at))
+      .find((candidate) => !attributedBookingIds.has(candidate.id)) ?? null;
+    const bookingId = booking?.id ?? null;
+    const resolution = decideOutcomeResolution({
+      agent: row.agent,
+      sentAt: row.created_at,
+      candidateBookingId: bookingId,
+      bookingAlreadyAttributed: Boolean(
+        bookingId && attributedBookingIds.has(bookingId),
+      ),
+      now,
+    });
 
-    // Check if client booked after the message was sent
-    let bookingQuery = db
-      .from("bookings")
-      .select("id")
-      .eq("salon_id", salonId)
-      .gte("created_at", sentAt.toISOString())
-      .not("status", "in", '("cancelled","cancelled_before_window","no_show")')
-      .limit(1);
-    const canonicalProfileId = canonicalProfiles.get(phoneIdentity(phone));
-    bookingQuery = canonicalProfileId
-      ? bookingQuery.eq("client_profile_id", canonicalProfileId)
-      : bookingQuery.eq("client_phone", phone);
-    const { data: booking } = await bookingQuery.maybeSingle();
-
-    if (booking) {
-      await db
+    if (resolution === "converted" && bookingId) {
+      const { error: updateError } = await db
         .from("ai_actions_log" as never)
         .update({
           outcome: "converted",
           outcome_at: now.toISOString(),
-          outcome_booking_id: (booking as { id: string }).id,
+          outcome_booking_id: bookingId,
         } as never)
         .eq("id", row.id);
-    } else if (now >= deadline) {
-      await db
+      if (updateError) throw new Error(updateError.message);
+      attributedBookingIds.add(bookingId);
+    } else if (resolution === "no_conversion") {
+      const { error: updateError } = await db
         .from("ai_actions_log" as never)
         .update({
           outcome: "no_conversion",
           outcome_at: now.toISOString(),
         } as never)
         .eq("id", row.id);
+      if (updateError) throw new Error(updateError.message);
     }
+    nextNewerTouchByIdentity.set(identity, row.created_at);
     // else: window not yet expired — leave NULL, check again tomorrow
   }
 }
@@ -312,7 +420,7 @@ export async function getOutcomeStats(
   const db = createServiceRoleClient();
   const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
 
-  const { data } = await db
+  const { data, error } = await db
     .from("ai_actions_log" as never)
     .select("agent, outcome")
     .eq("salon_id", salonId)
@@ -322,7 +430,9 @@ export async function getOutcomeStats(
     // nothing.
     .neq("action_type", "skipped_no_channel")
     .not("outcome", "is", null)
-    .gte("created_at", since);
+    .gte("outcome_at", since);
+
+  if (error) throw new Error(error.message);
 
   const map = new Map<string, { sent: number; converted: number }>();
   for (const r of (data ?? []) as { agent: string; outcome: string }[]) {

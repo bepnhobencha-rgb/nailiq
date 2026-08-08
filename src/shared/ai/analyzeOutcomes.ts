@@ -56,7 +56,10 @@ export async function analyzeAgentOutcomes(
     // that no agent writes — is what makes the self-learning loop see data.
     .neq("action_type" as never, "skipped_no_channel")
     .not("outcome" as never, "is", null)
-    .gte("created_at" as never, since);
+    // Measure outcomes resolved during the window. Filtering by action creation
+    // time drops legitimate 14-30 day conversions as soon as their older
+    // outreach row ages out of the report.
+    .gte("outcome_at" as never, since);
 
   if (error) {
     console.error("[analyzeAgentOutcomes] query", salonId, error);

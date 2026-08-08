@@ -14,6 +14,10 @@ import {
 } from "@/shared/ai/lessons";
 import { salonToday, salonDayRangeUtc } from "@/shared/lib/salonTime";
 import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
+import {
+  firstVisitInitialFollowUpStep,
+  normalizeFirstVisitFollowUpStep,
+} from "@/shared/firstvisit/sequenceProgress";
 
 /**
  * "Lần ghé đầu → chắc chắn có lần 2"
@@ -360,7 +364,7 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
       const [day1] = stepDays(fv.service);
 
       // Skip if already enrolled (unique constraint on salon_id + client_phone)
-      const { error: insertErr } = await svc
+      const { data: insertedSequence, error: insertErr } = await svc
         .from("first_visit_sequences" as never)
         .insert({
           salon_id: salonId,
@@ -372,13 +376,16 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
           first_visit_date: fv.visitDate,
           channel,
           status: "active",
-          step: 0,
+          // Step 0 is the warmth message sent immediately below. The next due
+          // action must therefore be step 1, never a second copy of step 0.
+          step: firstVisitInitialFollowUpStep(),
           next_action_date: toYmd(addDays(new Date(fv.visitDate), day1)),
         } as never)
         .select("id")
         .single();
 
       if (insertErr) continue; // already enrolled
+      const sequenceId = (insertedSequence as { id?: string } | null)?.id ?? null;
 
       // Step 0: same-day warmth (send immediately on enroll)
       const warmth = await draftMessage({ salonId, step: 0, clientName: fv.name, salonName, service: fv.service, lang, bookingUrl });
@@ -402,7 +409,9 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
           salon_id: salonId,
           agent: "first_visit",
           action_type: "warmth_sent",
-          target_id: null,
+          // A durable target lets Outcome Tracker recover identity even if an
+          // older payload shape did not contain the phone.
+          target_id: sequenceId,
           payload: {
             name: fv.name,
             phone: fv.phone,
@@ -442,7 +451,9 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
       const name = str(seq.client_name);
       const email = str(seq.client_email) || null;
       const seqService = str(seq.first_service) || null;
-      const step = Number(seq.step) as 1 | 2;
+      // Legacy sequences were persisted at step 0 after warmth had already
+      // been sent. Normalize them to step 1 instead of repeating warmth.
+      const step = normalizeFirstVisitFollowUpStep(seq.step);
       const channel = str(seq.channel) as "sms" | "email";
       const firstVisitDate = str(seq.first_visit_date);
 

@@ -68,4 +68,26 @@ describe("Agent Certification Matrix", () => {
 
     expect(rows.find((row) => row.agent === "vip_care")?.status).toBe("not_configured");
   });
+
+  it("uses a fresh outcome timestamp for Outcome Tracker evidence", () => {
+    const rows = buildAgentCertificationMatrix({
+      salons: [salon],
+      evidence: {
+        ...emptyEvidence,
+        actions: [{
+          salon_id: "s1",
+          agent: "winback",
+          created_at: "2026-06-17T00:00:00Z",
+          outcome_at: "2026-07-28T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "outcome_tracker")).toMatchObject({
+      status: "certified",
+      evidenceCount: 1,
+      lastEvidenceAt: "2026-07-28T00:00:00Z",
+    });
+  });
 });
