@@ -12,6 +12,7 @@ import {
 } from "@/shared/ai/lessons";
 import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
 import { isAiAgentPermissionEnabled } from "@/shared/ai/agentPermissionFence";
+import { selectSalonRelatedManualVipIds } from "@/shared/ai/vipCareIsolation";
 
 /**
  * AI VIP Care — proactive outreach to high-value customers.
@@ -62,13 +63,53 @@ async function loadVipClients(salonId: string): Promise<VipClient[]> {
     ((spendRows ?? []) as Row[]).map((r) => [str(r.client_profile_id), r]),
   );
 
-  // Manually-flagged VIPs who might not be in spend table yet
-  const { data: manualVips } = await (db as ReturnType<typeof looseServiceClient>)
+  // `is_vip` is global today, so a manual flag is not enough to prove this
+  // customer belongs to this salon. Limit the relationship lookup to the small
+  // set of manual VIP ids, then include only customers with this salon's spend,
+  // booking, or Square-visit history. This prevents cross-tenant outreach.
+  const { data: manualVips, error: manualVipsError } = await (db as ReturnType<typeof looseServiceClient>)
     .from("client_profiles" as never)
     .select("id" as never)
     .eq("is_vip" as never, true);
-  for (const r of (manualVips ?? []) as Row[]) {
-    if (!spendSet.has(str(r.id))) spendSet.set(str(r.id), r);
+  if (manualVipsError) throw new Error(manualVipsError.message);
+
+  const manualVipIds = ((manualVips ?? []) as Row[])
+    .map((row) => str(row.id))
+    .filter(Boolean);
+  if (manualVipIds.length > 0) {
+    const [bookingRelationships, squareRelationships] = await Promise.all([
+      (db as ReturnType<typeof looseServiceClient>)
+        .from("bookings" as never)
+        .select("client_profile_id" as never)
+        .eq("salon_id" as never, salonId)
+        .in("client_profile_id" as never, manualVipIds),
+      (db as ReturnType<typeof looseServiceClient>)
+        .from("square_visit_history" as never)
+        .select("client_profile_id" as never)
+        .eq("salon_id" as never, salonId)
+        .in("client_profile_id" as never, manualVipIds),
+    ]);
+    if (bookingRelationships.error) {
+      throw new Error(bookingRelationships.error.message);
+    }
+    if (squareRelationships.error) {
+      throw new Error(squareRelationships.error.message);
+    }
+
+    const relatedManualVipIds = selectSalonRelatedManualVipIds({
+      manualVipIds,
+      spendProfileIds: spendSet.keys(),
+      bookingProfileIds: ((bookingRelationships.data ?? []) as Row[])
+        .map((row) => str(row.client_profile_id)),
+      squareVisitProfileIds: ((squareRelationships.data ?? []) as Row[])
+        .map((row) => str(row.client_profile_id)),
+    });
+    for (const row of (manualVips ?? []) as Row[]) {
+      const profileId = str(row.id);
+      if (relatedManualVipIds.has(profileId) && !spendSet.has(profileId)) {
+        spendSet.set(profileId, row);
+      }
+    }
   }
 
   if (spendSet.size === 0) return [];
