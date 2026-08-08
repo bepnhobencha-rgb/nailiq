@@ -51,6 +51,17 @@ describe("Square Connect credential boundary", () => {
     expect(action).toContain("if (integrationWritten)");
   });
 
+  it("updates only columns that exist on the salons table", () => {
+    const salonWriteBlocks = action.match(
+      /\.from\("salons"\)\s*\.update\(\{[\s\S]*?\}\s*as never\)/g,
+    );
+    expect(salonWriteBlocks).toHaveLength(2);
+    for (const block of salonWriteBlocks ?? []) {
+      expect(block).toContain("payment_provider");
+      expect(block).not.toContain("updated_at");
+    }
+  });
+
   it("keeps every new Square write path and deposit switch off", () => {
     expect(action).toContain("deposit_enabled: sameIdentity");
     expect(action).toContain("sync_push_create: sameIdentity");
