@@ -342,7 +342,7 @@ export async function connectSquareSalon(
 
     const { error: salonUpdateError } = await admin
       .from("salons")
-      .update({ payment_provider: "square", updated_at: now } as never)
+      .update({ payment_provider: "square" } as never)
       .eq("id", id);
     if (salonUpdateError) throw new Error("salon_update_failed");
     salonWritten = true;
@@ -391,7 +391,6 @@ export async function connectSquareSalon(
         .from("salons")
         .update({
           payment_provider: salon.payment_provider ?? null,
-          updated_at: new Date().toISOString(),
         } as never)
         .eq("id", id);
     }
