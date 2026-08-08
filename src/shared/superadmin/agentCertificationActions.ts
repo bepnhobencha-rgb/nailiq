@@ -3,6 +3,7 @@ import "server-only";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getSuperAdminRole } from "@/shared/lib/superadmin";
+import { SESSION_TTL_SECONDS } from "@/shared/voiceai/config";
 
 export type CertificationStatus =
   | "certified"
@@ -23,11 +24,22 @@ type SalonRow = {
 type EvidenceRow = {
   salon_id: string;
   agent?: string | null;
+  action_type?: string | null;
   feature?: string | null;
+  notification_type?: string | null;
   status?: string | null;
+  model?: string | null;
+  realtime_usage?: unknown;
+  estimated_cost_usd?: number | string | null;
   created_at?: string | null;
   started_at?: string | null;
   outcome_at?: string | null;
+};
+
+type ActiveAgentExceptionRow = {
+  salon_id: string;
+  alert_type: string | null;
+  status: string;
 };
 
 type AgentDefinition = {
@@ -73,9 +85,62 @@ export type AgentCertificationData = {
 const flag = (key: string) => (salon: SalonRow) => salon.feature_flags?.[key] === true;
 const always = () => true;
 const actionEvidence = (agent: string) => (input: EvidenceInput, salonId: string) =>
-  input.actions.filter((row) => row.salon_id === salonId && row.agent === agent);
+  input.actions.filter(
+    (row) =>
+      row.salon_id === salonId &&
+      row.agent === agent &&
+      row.action_type !== "skipped_no_channel",
+  );
 const usageEvidence = (features: string[]) => (input: EvidenceInput, salonId: string) =>
-  input.usage.filter((row) => row.salon_id === salonId && features.includes(row.feature ?? ""));
+  input.usage.filter(
+    (row) =>
+      row.salon_id === salonId &&
+      features.includes(row.feature ?? "") &&
+      row.status === "succeeded",
+  );
+
+function hasCompleteVoiceTelemetry(row: EvidenceRow): boolean {
+  if (row.status !== "completed" || !row.model?.trim()) return false;
+  if (row.estimated_cost_usd == null) return false;
+  if (!row.realtime_usage || typeof row.realtime_usage !== "object") return false;
+  return (row.realtime_usage as { schemaVersion?: unknown }).schemaVersion === 1;
+}
+
+export function staleVoiceSessionSalonIds(
+  rows: EvidenceRow[],
+  now = new Date(),
+): Set<string> {
+  const staleBefore =
+    now.getTime() - (SESSION_TTL_SECONDS + 5 * 60) * 1_000;
+  return new Set(
+    rows
+      .filter(
+        (row) =>
+          row.status === "active" &&
+          Boolean(row.started_at) &&
+          Date.parse(row.started_at!) < staleBefore,
+      )
+      .map((row) => row.salon_id),
+  );
+}
+
+export function activeAgentFailureKeys(
+  rows: ActiveAgentExceptionRow[],
+  salonSlugById: Map<string, string>,
+): Set<string> {
+  const failures = new Set<string>();
+  for (const row of rows) {
+    const slug = salonSlugById.get(row.salon_id);
+    if (
+      slug &&
+      row.alert_type &&
+      ["open", "acknowledged"].includes(row.status)
+    ) {
+      failures.add(`${slug}:${row.alert_type}`);
+    }
+  }
+  return failures;
+}
 
 const AGENTS: readonly AgentDefinition[] = [
   { key: "outcome_tracker", label: "Outcome Tracker", cadence: "Daily", failureKey: "outcome_tracker", configured: always, evidence: (input, salonId) => input.actions.filter((row) => row.salon_id === salonId && Boolean(row.outcome_at)) },
@@ -94,9 +159,9 @@ const AGENTS: readonly AgentDefinition[] = [
   { key: "yelp_responder", label: "Yelp Responder", cadence: "Every 4 hours", failureKey: "yelp_responder", configured: (salon) => salon.feature_flags?.ai_yelp_reply === true && Boolean(salon.yelp_business_id), evidence: actionEvidence("yelp_responder") },
   { key: "gbp_post", label: "Google Business Post", cadence: "1st and 15th", failureKey: "gbp_post", configured: (salon) => salon.feature_flags?.ai_gbp_post === true && Boolean(salon.google_place_id), evidence: actionEvidence("gbp_post") },
   { key: "first_visit", label: "First Visit Nurture", cadence: "Daily", failureKey: "first_visit", configured: flag("ai_first_visit_nurture"), evidence: actionEvidence("first_visit") },
-  { key: "smart_reminders", label: "Smart Reminders", cadence: "Scheduled", failureKey: "smart_reminders", configured: flag("ai_smart_reminders"), evidence: (input, salonId) => input.notifications.filter((row) => row.salon_id === salonId) },
-  { key: "ai_execution", label: "AI Execution", cadence: "Every 5 minutes", failureKey: "ai_execution", configured: flag("ai_control_center_enabled"), evidence: (input, salonId) => input.jobs.filter((row) => row.salon_id === salonId) },
-  { key: "voice_ai", label: "AI Receptionist", cadence: "Event-driven", failureKey: "voice_ai", configured: (salon) => salon.voice_ai_enabled === true, evidence: (input, salonId) => input.voice.filter((row) => row.salon_id === salonId) },
+  { key: "smart_reminders", label: "Smart Reminders", cadence: "Scheduled", failureKey: "smart_reminders", configured: flag("ai_smart_reminders"), evidence: (input, salonId) => input.notifications.filter((row) => row.salon_id === salonId && ["reminder_24h", "reminder_3h"].includes(row.notification_type ?? "") && ["sent", "delivered"].includes(row.status ?? "")) },
+  { key: "ai_execution", label: "AI Execution", cadence: "Every 5 minutes", failureKey: "ai_execution", configured: flag("ai_control_center_enabled"), evidence: (input, salonId) => input.jobs.filter((row) => row.salon_id === salonId && row.status === "succeeded") },
+  { key: "voice_ai", label: "AI Receptionist", cadence: "Event-driven", failureKey: "voice_ai", configured: (salon) => salon.voice_ai_enabled === true, evidence: (input, salonId) => input.voice.filter((row) => row.salon_id === salonId && hasCompleteVoiceTelemetry(row)) },
 ];
 
 function evidenceAt(row: EvidenceRow): string | null {
@@ -129,7 +194,7 @@ export function buildAgentCertificationMatrix(input: {
     const reason = status === "not_configured"
       ? "Required feature flag or provider configuration is missing."
       : status === "failed"
-        ? "The latest AI Manager run reported this agent as failed."
+        ? "An active operational failure signal exists for this agent or worker."
         : status === "certified"
           ? "Production evidence exists inside the 30-day certification window."
           : "Configured, but no eligible production event has occurred in the window.";
@@ -164,31 +229,51 @@ export async function loadAgentCertificationMatrix(): Promise<
     const generatedAt = new Date().toISOString();
     const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
     const limit = 10_000;
-    const [salons, actions, usage, voice, policies, notifications, jobs, managerRuns, workerStates] = await Promise.all([
+    const staleVoiceBefore = new Date(
+      Date.now() - (SESSION_TTL_SECONDS + 5 * 60) * 1_000,
+    ).toISOString();
+    const [salons, actions, usage, voice, policies, notifications, jobs, managerRuns, workerStates, activeAgentExceptions, staleVoiceSessions] = await Promise.all([
       db.from("salons").select("id, name, slug, feature_flags, voice_ai_enabled, google_place_id, yelp_business_id").is("archived_at", null).order("name"),
       db.from("ai_actions_log" as never)
-        .select("salon_id, agent, created_at, outcome_at" as never)
+        .select("salon_id, agent, action_type, created_at, outcome_at" as never)
         .or(`created_at.gte.${since},outcome_at.gte.${since}` as never)
         .limit(limit),
       db.from("ai_usage_events" as never).select("salon_id, feature, status, created_at" as never).gte("created_at" as never, since).limit(limit),
-      db.from("voice_ai_sessions" as never).select("salon_id, status, started_at" as never).gte("started_at" as never, since).limit(limit),
+      db.from("voice_ai_sessions" as never).select("salon_id, status, model, realtime_usage, estimated_cost_usd, started_at" as never).gte("started_at" as never, since).limit(limit),
       db.from("ai_policy_decisions" as never).select("salon_id, created_at" as never).gte("created_at" as never, since).limit(limit),
-      db.from("booking_notifications" as never).select("salon_id, status, created_at" as never).gte("created_at" as never, since).limit(limit),
+      db.from("booking_notifications" as never).select("salon_id, notification_type, status, created_at" as never).gte("created_at" as never, since).limit(limit),
       db.from("ai_execution_jobs" as never).select("salon_id, status, created_at" as never).gte("created_at" as never, since).limit(limit),
       db.from("ai_worker_runs" as never).select("started_at, status, summary" as never).eq("worker_name" as never, "ai_manager").order("started_at" as never, { ascending: false }).limit(1),
       db.from("ai_execution_worker_state" as never).select("worker_name, status" as never).in("worker_name" as never, ["ai_execution", "reminders"]),
+      db.from("watchdog_alerts" as never)
+        .select("salon_id, alert_type, status" as never)
+        .eq("source_type" as never, "ai_manager")
+        .eq("kind" as never, "manager_agent_failure")
+        .in("status" as never, ["open", "acknowledged"] as never),
+      db.from("voice_ai_sessions" as never)
+        .select("salon_id, status, started_at" as never)
+        .eq("status" as never, "active")
+        .lt("started_at" as never, staleVoiceBefore),
     ]);
-    const results = [salons, actions, usage, voice, policies, notifications, jobs, managerRuns, workerStates];
+    const results = [salons, actions, usage, voice, policies, notifications, jobs, managerRuns, workerStates, activeAgentExceptions, staleVoiceSessions];
     if (results.some((result) => result.error)) {
       console.error("[superadmin/agent-certification] query unavailable", results.map((result) => result.error?.code ?? null));
       return { ok: false, error: "unavailable" };
     }
-    const latestRun = (managerRuns.data?.[0] ?? null) as { started_at?: string; summary?: { failed_agents?: unknown } } | null;
-    const failedAgents = new Set(
-      Array.isArray(latestRun?.summary?.failed_agents)
-        ? latestRun.summary.failed_agents.filter((value): value is string => typeof value === "string")
-        : [],
+    const latestRun = (managerRuns.data?.[0] ?? null) as { started_at?: string } | null;
+    const salonSlugById = new Map(
+      ((salons.data ?? []) as SalonRow[]).map((salon) => [salon.id, salon.slug]),
     );
+    const failedAgents = activeAgentFailureKeys(
+      (activeAgentExceptions.data ?? []) as unknown as ActiveAgentExceptionRow[],
+      salonSlugById,
+    );
+    for (const salonId of staleVoiceSessionSalonIds(
+      (staleVoiceSessions.data ?? []) as unknown as EvidenceRow[],
+    )) {
+      const slug = salonSlugById.get(salonId);
+      if (slug) failedAgents.add(`${slug}:voice_ai`);
+    }
     const failedWorkers = new Set(
       ((workerStates.data ?? []) as unknown as Array<{ worker_name: string; status: string }>)
         .filter((row) => row.status === "failed")

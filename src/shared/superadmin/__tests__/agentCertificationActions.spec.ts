@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { buildAgentCertificationMatrix } from "@/shared/superadmin/agentCertificationActions";
+import {
+  activeAgentFailureKeys,
+  buildAgentCertificationMatrix,
+  staleVoiceSessionSalonIds,
+} from "@/shared/superadmin/agentCertificationActions";
 
 const salon = {
   id: "s1",
@@ -11,6 +15,7 @@ const salon = {
   feature_flags: {
     ai_winback: true,
     ai_rebook: true,
+    ai_smart_reminders: true,
     ai_vip_care: false,
   },
   voice_ai_enabled: false,
@@ -89,5 +94,195 @@ describe("Agent Certification Matrix", () => {
       evidenceCount: 1,
       lastEvidenceAt: "2026-07-28T00:00:00Z",
     });
+  });
+
+  it("does not certify Smart Reminders from unrelated booking notifications", () => {
+    const rows = buildAgentCertificationMatrix({
+      salons: [salon],
+      evidence: {
+        ...emptyEvidence,
+        notifications: [{
+          salon_id: "s1",
+          notification_type: "booking_confirmation",
+          status: "delivered",
+          created_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "smart_reminders")?.status).toBe(
+      "waiting_data",
+    );
+  });
+
+  it("certifies Smart Reminders only from a successful reminder artifact", () => {
+    const rows = buildAgentCertificationMatrix({
+      salons: [salon],
+      evidence: {
+        ...emptyEvidence,
+        notifications: [{
+          salon_id: "s1",
+          notification_type: "reminder_24h",
+          status: "sent",
+          created_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "smart_reminders")).toMatchObject({
+      status: "certified",
+      evidenceCount: 1,
+    });
+  });
+
+  it("does not certify abandoned or incomplete AI Receptionist sessions", () => {
+    const rows = buildAgentCertificationMatrix({
+      salons: [{ ...salon, voice_ai_enabled: true }],
+      evidence: {
+        ...emptyEvidence,
+        voice: [{
+          salon_id: "s1",
+          status: "abandoned",
+          model: "gpt-realtime-2.1",
+          realtime_usage: { schemaVersion: 1 },
+          estimated_cost_usd: 0.01,
+          started_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "voice_ai")?.status).toBe(
+      "waiting_data",
+    );
+  });
+
+  it("certifies AI Receptionist only with a completed telemetry artifact", () => {
+    const rows = buildAgentCertificationMatrix({
+      salons: [{ ...salon, voice_ai_enabled: true }],
+      evidence: {
+        ...emptyEvidence,
+        voice: [{
+          salon_id: "s1",
+          status: "completed",
+          model: "gpt-realtime-2.1",
+          realtime_usage: { schemaVersion: 1 },
+          estimated_cost_usd: 0.01,
+          started_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "voice_ai")).toMatchObject({
+      status: "certified",
+      evidenceCount: 1,
+    });
+  });
+
+  it("does not certify usage-backed agents from failed model calls", () => {
+    const rows = buildAgentCertificationMatrix({
+      salons: [{
+        ...salon,
+        feature_flags: { ...salon.feature_flags, ai_watchdog: true },
+      }],
+      evidence: {
+        ...emptyEvidence,
+        usage: [{
+          salon_id: "s1",
+          feature: "watchdog",
+          status: "failed",
+          created_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "watchdog")?.status).toBe(
+      "waiting_data",
+    );
+  });
+
+  it("does not certify customer-outreach agents from skipped sends", () => {
+    const rows = buildAgentCertificationMatrix({
+      salons: [salon],
+      evidence: {
+        ...emptyEvidence,
+        actions: [{
+          salon_id: "s1",
+          agent: "winback",
+          action_type: "skipped_no_channel",
+          created_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "winback")?.status).toBe(
+      "waiting_data",
+    );
+  });
+
+  it("does not certify AI Execution from canceled or failed jobs", () => {
+    const rows = buildAgentCertificationMatrix({
+      salons: [{
+        ...salon,
+        feature_flags: {
+          ...salon.feature_flags,
+          ai_control_center_enabled: true,
+        },
+      }],
+      evidence: {
+        ...emptyEvidence,
+        jobs: [{
+          salon_id: "s1",
+          status: "failed",
+          created_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "ai_execution")?.status).toBe(
+      "waiting_data",
+    );
+  });
+
+  it("detects voice sessions that outlive the realtime session TTL", () => {
+    const now = new Date("2026-08-08T12:00:00Z");
+    const staleSalons = staleVoiceSessionSalonIds([
+      {
+        salon_id: "stale",
+        status: "active",
+        started_at: "2026-08-08T11:20:00Z",
+      },
+      {
+        salon_id: "recent",
+        status: "active",
+        started_at: "2026-08-08T11:50:00Z",
+      },
+      {
+        salon_id: "ended",
+        status: "abandoned",
+        started_at: "2026-08-08T10:00:00Z",
+      },
+    ], now);
+
+    expect([...staleSalons]).toEqual(["stale"]);
+  });
+
+  it("maps durable Manager exceptions by the agent alert type", () => {
+    const failures = activeAgentFailureKeys(
+      [
+        { salon_id: "s1", alert_type: "watchdog", status: "open" },
+        { salon_id: "s1", alert_type: "digest", status: "resolved" },
+        { salon_id: "unknown", alert_type: "winback", status: "open" },
+      ],
+      new Map([["s1", "alpha-salon"]]),
+    );
+
+    expect([...failures]).toEqual(["alpha-salon:watchdog"]);
   });
 });
