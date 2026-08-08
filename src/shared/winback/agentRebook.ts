@@ -23,6 +23,10 @@ import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
+const errorCode = (error: unknown): string => {
+  if (!error || typeof error !== "object" || !("code" in error)) return "unknown";
+  return str(error.code) || "unknown";
+};
 
 export type RebookCandidate = {
   phone: string;
@@ -50,22 +54,32 @@ export async function gatherRebookCandidates(
 ): Promise<RebookCandidate[]> {
   const db = looseServiceClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await (db as any).rpc("rebook_due_candidates", {
+  const { data, error } = await (db as any).rpc("rebook_due_candidates", {
     p_salon_id: salonId,
     p_min_visits: 3,
     p_lookahead_days: 14,
     p_overdue_days: 30,
     p_limit: limit * 4,
   });
+  if (error) {
+    throw new Error(
+      `rebook candidates query failed [${errorCode(error)}]: ${str(error.message) || "database error"}`,
+    );
+  }
   const rows = (data ?? []) as Row[];
   if (rows.length === 0) return [];
 
   const since = new Date(Date.now() - 30 * 864e5).toISOString();
-  const { data: recent } = await db
+  const { data: recent, error: recentError } = await db
     .from("winback_suggestions")
     .select("client_phone")
     .eq("salon_id", salonId)
     .gte("created_at", since);
+  if (recentError) {
+    throw new Error(
+      `rebook dedupe query failed [${errorCode(recentError)}]: ${str(recentError.message) || "database error"}`,
+    );
+  }
   const suggested = new Set(((recent ?? []) as Row[]).map((r) => str(r.client_phone)));
 
   const out: RebookCandidate[] = [];
@@ -174,7 +188,10 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
       });
 
       if (ch.noChannel) {
-        console.warn(`[runRebook] no channel for ${c.name} — reason: ${ch.reason}`);
+        console.warn("[runRebook] no eligible channel", {
+          salonId,
+          reason: ch.reason,
+        });
         // Awaited — `void` on a PostgrestBuilder never issued the insert, so
         // Minh's audit trail had no record of skipped customers.
         await svc.from("ai_actions_log" as never).insert({
