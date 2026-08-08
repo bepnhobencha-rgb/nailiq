@@ -125,7 +125,7 @@ export async function noShowCardDecision(
   const db = looseServiceClient();
   const { data } = await db
     .from("bookings")
-    .select("salon_id, price_cents, no_show_risk_score, noshow_card_id, client_phone, group_id")
+    .select("salon_id, price_cents, no_show_risk_score, noshow_card_id, noshow_card_required, client_phone, group_id")
     .eq("id", bookingId)
     .maybeSingle();
   const b = data as Row | null;
@@ -160,6 +160,26 @@ export async function noShowCardDecision(
     (await depositsEnabled(db, str(b.salon_id)))
   ) {
     return { required: false, feeCents: 0, reason: "escalated to deposit" };
+  }
+  // A guarded live AI decision is persisted on the booking. Honour that
+  // server-authored requirement even when the legacy history/risk gate would
+  // not ask, while still deriving the amount solely from salon policy.
+  if (b.noshow_card_required === true) {
+    const { baseCents, partySize } = await noShowBaseCents(
+      db,
+      b,
+      policy.wholeParty,
+    );
+    const feeCents = Math.round((baseCents * policy.percent) / 100);
+    if (feeCents <= 0) {
+      return { required: false, feeCents: 0, reason: "fee is zero" };
+    }
+    return {
+      required: true,
+      feeCents,
+      reason: "booking policy requires card",
+      partySize,
+    };
   }
   const highRisk = risk >= policy.threshold;
   // Configurable gate (same pure helper the CLIENT pre-booking gate uses, plus
@@ -424,12 +444,25 @@ export async function autoAttachReturningCard(
     const db = looseServiceClient();
     const { data } = await db
       .from("bookings")
-      .select("id, salon_id, price_cents, client_phone, noshow_card_id, group_id")
+      .select("id, salon_id, price_cents, client_phone, noshow_card_id, group_id, deposit_required, deposit_status")
       .eq("id", bookingId)
       .maybeSingle();
     const b = data as Row | null;
     if (!b) return { attached: false, reason: "booking not found" };
-    if (b.noshow_card_id) return { attached: true, reason: "already saved" };
+    if (b.noshow_card_id) {
+      await db
+        .from("bookings")
+        .update({ noshow_card_required: false } as never)
+        .eq("id", bookingId);
+      return { attached: true, reason: "already saved" };
+    }
+    const depositStatus = str(b.deposit_status);
+    const hasActiveDeposit =
+      ["required", "pending", "held", "paid"].includes(depositStatus) ||
+      (b.deposit_required === true && !depositStatus);
+    if (hasActiveDeposit) {
+      return { attached: false, reason: "deposit already protects booking" };
+    }
 
     const phone = str(b.client_phone).replace(/\D/g, "");
     if (phone.length < 8) return { attached: false, reason: "no usable phone" };
@@ -487,6 +520,7 @@ export async function autoAttachReturningCard(
         noshow_charge_status: "saved",
         noshow_consent_at: new Date().toISOString(),
         noshow_consent_meta: consentMeta,
+        noshow_card_required: false,
       } as never)
       .eq("id", bookingId);
 
