@@ -7,6 +7,10 @@ const mutations = readFileSync(
   resolve(root, "src/shared/ai/lessonMutations.ts"),
   "utf8",
 );
+const analysis = readFileSync(
+  resolve(root, "src/shared/ai/analyzeOutcomes.ts"),
+  "utf8",
+);
 const tracker = readFileSync(
   resolve(root, "src/shared/ai/agentOutcomeTracker.ts"),
   "utf8",
@@ -35,15 +39,30 @@ describe("AI outcome adaptation boundary", () => {
       '.from("salon_client_identity_aliases" as never)',
     );
     expect(tracker).toContain('.eq("active" as never, true)');
-    expect(tracker).toContain(
-      'bookingQuery.eq("client_profile_id", canonicalProfileId)',
-    );
+    expect(tracker).toContain('.eq("client_profile_id", canonicalProfileId)');
+    expect(tracker).toContain('.in("client_phone", lookupPhones)');
   });
 
   it("records a phone for every newly trackable customer action", () => {
     for (const agent of agents) {
       expect(agent).toMatch(/payload:\s*\{[\s\S]{0,180}phone[,:]/);
     }
+  });
+
+  it("uses resolution time for the rolling outcome window", () => {
+    expect(tracker).toContain('.gte("outcome_at", since)');
+    expect(analysis).toContain('.gte("outcome_at" as never, since)');
+  });
+
+  it("bounds last-touch attribution and surfaces persistence failures", () => {
+    expect(tracker).toContain("nextNewerTouchByIdentity");
+    expect(tracker).toContain('profileQuery.lte("created_at"');
+    expect(tracker).toContain('profileQuery.lt("created_at"');
+    expect(tracker).toContain(
+      ".find((candidate) => !attributedBookingIds.has(candidate.id))",
+    );
+    expect(tracker).toContain("if (actionsError) throw");
+    expect(tracker).toContain("if (updateError) throw");
   });
 
   it("applies learned caps without introducing a new sender", () => {

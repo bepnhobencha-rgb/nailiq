@@ -100,7 +100,9 @@ const AGENTS: readonly AgentDefinition[] = [
 ];
 
 function evidenceAt(row: EvidenceRow): string | null {
-  return row.created_at ?? row.started_at ?? row.outcome_at ?? null;
+  // An outcome can resolve weeks after the original action. Prefer the
+  // resolution time so a fresh conversion is not displayed as stale evidence.
+  return row.outcome_at ?? row.created_at ?? row.started_at ?? null;
 }
 
 export function buildAgentCertificationMatrix(input: {
@@ -164,7 +166,10 @@ export async function loadAgentCertificationMatrix(): Promise<
     const limit = 10_000;
     const [salons, actions, usage, voice, policies, notifications, jobs, managerRuns, workerStates] = await Promise.all([
       db.from("salons").select("id, name, slug, feature_flags, voice_ai_enabled, google_place_id, yelp_business_id").is("archived_at", null).order("name"),
-      db.from("ai_actions_log" as never).select("salon_id, agent, created_at, outcome_at" as never).gte("created_at" as never, since).limit(limit),
+      db.from("ai_actions_log" as never)
+        .select("salon_id, agent, created_at, outcome_at" as never)
+        .or(`created_at.gte.${since},outcome_at.gte.${since}` as never)
+        .limit(limit),
       db.from("ai_usage_events" as never).select("salon_id, feature, status, created_at" as never).gte("created_at" as never, since).limit(limit),
       db.from("voice_ai_sessions" as never).select("salon_id, status, started_at" as never).gte("started_at" as never, since).limit(limit),
       db.from("ai_policy_decisions" as never).select("salon_id, created_at" as never).gte("created_at" as never, since).limit(limit),
