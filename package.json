@@ -13,6 +13,7 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
     "test:e2e:report": "playwright show-report",
+    "test:integration:outcome-isolation": "vitest run e2e/integration/outcome-tracker-isolation.unit.spec.ts",
     "db:history:build-rehearsal": "node scripts/build-folded-migration-history.mjs",
     "db:history:audit": "node scripts/audit-migration-history.mjs",
     "db:push": "node scripts/db-push-safe.mjs",

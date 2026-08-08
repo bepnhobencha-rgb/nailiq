@@ -115,6 +115,10 @@ jobs:
           bash scripts/apply-baseline.sh "${DB_URL}"
           npx tsx scripts/check-schema-parity.ts
           npx tsx scripts/seed-e2e.ts
+      - name: Outcome Tracker — tenant isolation and zero outbound
+        env:
+          RUN_OUTCOME_TRACKER_INTEGRATION: "1"
+        run: npm run test:integration:outcome-isolation
       - run: npx playwright install --with-deps chromium
       - run: npm run build
       - name: Start server
