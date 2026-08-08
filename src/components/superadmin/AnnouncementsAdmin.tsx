@@ -9,12 +9,14 @@ import {
   deleteAnnouncement,
   updateAnnouncementPublish,
 } from "@/shared/superadmin/announcementsActions";
+import { draftReleaseUpdate } from "@/shared/superadmin/releaseConciergeAction";
 import {
   ANNOUNCEMENT_SEVERITIES,
   ANNOUNCEMENT_TARGETS,
   type AnnouncementSeverity,
   type AnnouncementTarget,
   type PlatformAnnouncement,
+  type ReleaseConciergeDraft,
 } from "@/shared/superadmin/announcementsTypes";
 
 const SEVERITY_BADGE: Record<AnnouncementSeverity, string> = {
@@ -47,6 +49,7 @@ export function AnnouncementsAdmin({
   const router = useRouter();
   const [items, setItems] = useState<PlatformAnnouncement[]>(initial);
   const [showCreate, setShowCreate] = useState(false);
+  const [aiDraft, setAiDraft] = useState<ReleaseConciergeDraft | null>(null);
 
   function refresh() {
     router.refresh();
@@ -75,12 +78,18 @@ export function AnnouncementsAdmin({
 
       {showCreate ? (
         <CreateAnnouncementForm
+          aiDraft={aiDraft}
+          onAiDraftChange={setAiDraft}
           onCreated={(row) => {
             setItems((cur) => [row, ...cur]);
+            setAiDraft(null);
             setShowCreate(false);
             refresh();
           }}
-          onCancel={() => setShowCreate(false)}
+          onCancel={() => {
+            setAiDraft(null);
+            setShowCreate(false);
+          }}
         />
       ) : null}
 
@@ -113,9 +122,13 @@ export function AnnouncementsAdmin({
 }
 
 function CreateAnnouncementForm({
+  aiDraft,
+  onAiDraftChange,
   onCreated,
   onCancel,
 }: {
+  aiDraft: ReleaseConciergeDraft | null;
+  onAiDraftChange: (draft: ReleaseConciergeDraft | null) => void;
   onCreated: (row: PlatformAnnouncement) => void;
   onCancel: () => void;
 }) {
@@ -126,6 +139,32 @@ function CreateAnnouncementForm({
   const [publishNow, setPublishNow] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [aiPending, startAiTransition] = useTransition();
+  const [changeSummary, setChangeSummary] = useState("");
+  const [aiStatus, setAiStatus] = useState<string | null>(null);
+
+  function generateDraft() {
+    setError(null);
+    setAiStatus(null);
+    startAiTransition(async () => {
+      const result = await draftReleaseUpdate(changeSummary);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      const next = result.draft;
+      setTitle(next.title);
+      setBody(next.body);
+      setSeverity(next.severity);
+      setTarget(next.target);
+      onAiDraftChange(next);
+      setAiStatus(
+        result.usedAi
+          ? "AI draft ready. Review every field before publishing."
+          : "Safe fallback draft ready because AI was unavailable. Review before publishing.",
+      );
+    });
+  }
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -168,6 +207,57 @@ function CreateAnnouncementForm({
       data-testid="announcements-create-form"
       className="flex flex-col gap-3 rounded-2xl border border-nq-border/40 bg-nq-surface/40 p-5"
     >
+      <section className="flex flex-col gap-3 rounded-xl border border-nq-primary/30 bg-nq-primary/5 p-4">
+        <div>
+          <p className="text-sm font-semibold text-nq-foreground">
+            AI Release Concierge
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-nq-muted">
+            Describe what changed. AI prepares bilingual in-app and email copy,
+            but it cannot publish or send anything.
+          </p>
+        </div>
+        <textarea
+          value={changeSummary}
+          onChange={(event) => setChangeSummary(event.target.value)}
+          rows={4}
+          maxLength={4_000}
+          placeholder="Example: Owners can now require a card for bookings made within 24 hours. The setting is off by default."
+          className="rounded-lg border border-nq-border/50 bg-nq-bg/85 px-3 py-2 text-sm text-nq-foreground outline-none focus-visible:border-nq-primary/80"
+        />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-nq-muted" role="status">
+            {aiStatus ?? "No email will be sent from this screen."}
+          </p>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={aiPending || changeSummary.trim().length < 10}
+            onClick={generateDraft}
+          >
+            {aiPending ? "Drafting…" : "Draft with AI"}
+          </Button>
+        </div>
+        {aiDraft ? (
+          <div className="rounded-lg border border-nq-border/45 bg-nq-bg/55 p-3 text-xs text-nq-muted">
+            <p className="font-semibold text-nq-foreground">
+              Recommendation: {aiDraft.notificationMode.replace("_", " ")}
+            </p>
+            <p className="mt-1">{aiDraft.reason}</p>
+            <details className="mt-3">
+              <summary className="cursor-pointer font-semibold text-nq-foreground">
+                Email preview — not sent
+              </summary>
+              <p className="mt-2 font-semibold text-nq-foreground">
+                {aiDraft.emailSubject}
+              </p>
+              <p className="mt-1 whitespace-pre-line">{aiDraft.emailBody}</p>
+            </details>
+          </div>
+        ) : null}
+      </section>
+
       <label className="flex flex-col gap-1.5">
         <span className="text-xs font-medium text-nq-muted">Title</span>
         <input

@@ -83,6 +83,33 @@ export type DeleteAnnouncementResult =
       error: "unauthorized" | "not_found" | "audit_failed" | "server_error";
     };
 
+export const RELEASE_NOTIFICATION_MODES = [
+  "silent",
+  "in_app",
+  "digest",
+  "important",
+] as const;
+export type ReleaseNotificationMode =
+  (typeof RELEASE_NOTIFICATION_MODES)[number];
+
+export type ReleaseConciergeDraft = {
+  title: string;
+  body: string;
+  severity: AnnouncementSeverity;
+  target: AnnouncementTarget;
+  notificationMode: ReleaseNotificationMode;
+  emailSubject: string;
+  emailBody: string;
+  reason: string;
+};
+
+export type DraftReleaseUpdateResult =
+  | { ok: true; draft: ReleaseConciergeDraft; usedAi: boolean }
+  | {
+      ok: false;
+      error: "unauthorized" | "invalid_payload" | "server_error";
+    };
+
 export function isAnnouncementSeverity(
   value: unknown,
 ): value is AnnouncementSeverity {
