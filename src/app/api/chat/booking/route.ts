@@ -4,6 +4,7 @@ import { createClient } from "@/shared/lib/supabase/server";
 import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
 import { resolveVertical } from "@/shared/verticals/registry";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
+import { trackAnthropicStream } from "@/shared/ai/usageLedger";
 
 let anthropicClient: Anthropic | null = null;
 function getClient(): Anthropic | null {
@@ -111,13 +112,20 @@ Guidelines:
   const ai = getClient();
   if (!ai) return new Response("AI unavailable", { status: 503 });
 
-  const stream = await ai.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 256,
-    system: systemPrompt,
-    messages: safeMessages,
-    stream: true,
-  });
+  const stream = await trackAnthropicStream(
+    {
+      salonId,
+      feature: "booking_chat",
+      model: "claude-haiku-4-5-20251001",
+    },
+    () => ai.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 256,
+      system: systemPrompt,
+      messages: safeMessages,
+      stream: true,
+    }),
+  );
 
   const encoder = new TextEncoder();
   const readable = new ReadableStream({
