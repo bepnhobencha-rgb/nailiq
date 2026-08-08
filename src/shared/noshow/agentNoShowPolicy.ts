@@ -200,6 +200,7 @@ export type SaveCardMessages = { sms: string; email: string };
  * Returns null on any failure → caller falls back to its fixed template.
  */
 export async function draftSaveCardMessages(input: {
+  salonId: string;
   lang: "en" | "vi";
   salonName: string;
   clientName?: string | null;
@@ -222,11 +223,16 @@ Rules:
 Return ONLY JSON: {"sms":"<message>","email":"<message>"}`;
 
   try {
-    const resp = await ai.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 300,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const model = "claude-haiku-4-5-20251001";
+    const resp = await trackAnthropicMessage(
+      { salonId: input.salonId, feature: "noshow_save_card_message", model },
+      () =>
+        ai.messages.create({
+          model,
+          max_tokens: 300,
+          messages: [{ role: "user", content: prompt }],
+        }),
+    );
     const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
     const json = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
     const parsed = JSON.parse(json) as Partial<SaveCardMessages>;

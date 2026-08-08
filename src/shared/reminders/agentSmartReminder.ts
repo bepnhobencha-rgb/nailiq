@@ -1,5 +1,6 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 
 /**
  * AI Smart Reminder — personalises the SMS reminder LEAD line (the part before
@@ -20,6 +21,7 @@ function getClient(): Anthropic | null {
 }
 
 export async function draftReminderLead(input: {
+  salonId: string;
   clientName: string;
   serviceName: string;
   salonName: string;
@@ -49,11 +51,16 @@ Tone: if risk is high or medium, warmly ask them to tap Confirm so we can hold t
 Rules: ONE line, max 200 characters, NO emojis, NO links/URLs, no "Reply STOP" (added separately). Return ONLY the line.`;
 
   try {
-    const resp = await ai.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 160,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const model = "claude-haiku-4-5-20251001";
+    const resp = await trackAnthropicMessage(
+      { salonId: input.salonId, feature: "smart_reminder", model },
+      () =>
+        ai.messages.create({
+          model,
+          max_tokens: 160,
+          messages: [{ role: "user", content: prompt }],
+        }),
+    );
     const text = resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
     return text.replace(/^["']|["']$/g, "").trim() || null;
   } catch {

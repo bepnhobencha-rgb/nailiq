@@ -7,6 +7,7 @@ import { salonToday, salonDayRangeUtc } from "@/shared/lib/salonTime";
 import { defaultSip } from "./defaultSip";
 import { sendOwnerAlert } from "./sendOwnerAlert";
 import type { SalonIntelligenceProfile } from "./types";
+import { trackAnthropicMessage } from "./usageLedger";
 
 /**
  * Báo Cáo Viên — AI daily report sent to owner at 21:00 salon local time.
@@ -219,16 +220,21 @@ export async function runDailyReport(
             (stats.careEmails > 0 ? `Customer care: ${stats.careEmails} emails sent (VIP Care + first-visit).\n` : "") +
             `Est. revenue: $${rev}. Tomorrow: ${stats.tomorrowCount} bookings scheduled.`;
     } else {
-      const msg = await ai.messages.create({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 300,
-        messages: [
-          {
-            role: "user",
-            content: buildPrompt(salonName, sip, stats, todayYmd),
-          },
-        ],
-      });
+      const model = "claude-haiku-4-5-20251001";
+      const msg = await trackAnthropicMessage(
+        { salonId, feature: "daily_report", model },
+        () =>
+          ai.messages.create({
+            model,
+            max_tokens: 300,
+            messages: [
+              {
+                role: "user",
+                content: buildPrompt(salonName, sip, stats, todayYmd),
+              },
+            ],
+          }),
+      );
       summary =
         msg.content[0]?.type === "text" ? msg.content[0].text.trim() : "";
     }

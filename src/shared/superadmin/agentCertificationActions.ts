@@ -153,7 +153,7 @@ const AGENTS: readonly AgentDefinition[] = [
   { key: "social_content", label: "Social Content", cadence: "Mon/Wed/Fri", failureKey: "social_content", configured: flag("ai_social_content"), evidence: actionEvidence("social_content") },
   { key: "vip_care", label: "VIP Care", cadence: "Daily, eligibility-based", failureKey: "vip_care", configured: flag("ai_vip_care"), evidence: actionEvidence("vip_care") },
   { key: "strategist", label: "Strategist", cadence: "Weekly", failureKey: "strategist", configured: always, evidence: actionEvidence("strategist") },
-  { key: "review_responder", label: "Google Review Responder", cadence: "Every 4 hours", failureKey: "review_responder", configured: (salon) => Boolean(salon.google_place_id), evidence: actionEvidence("review_responder") },
+  { key: "review_responder", label: "Google Review Responder", cadence: "Every 4 hours", failureKey: "review_responder", configured: (salon) => salon.feature_flags?.ai_google_reply === true && Boolean(salon.google_place_id), evidence: actionEvidence("review_responder") },
   { key: "yelp_responder", label: "Yelp Responder", cadence: "Every 4 hours", failureKey: "yelp_responder", configured: (salon) => salon.feature_flags?.ai_yelp_reply === true && Boolean(salon.yelp_business_id), evidence: actionEvidence("yelp_responder") },
   { key: "gbp_post", label: "Google Business Post", cadence: "1st and 15th", failureKey: "gbp_post", configured: (salon) => salon.feature_flags?.ai_gbp_post === true && Boolean(salon.google_place_id), evidence: actionEvidence("gbp_post") },
   { key: "first_visit", label: "First Visit Nurture", cadence: "Daily", failureKey: "first_visit", configured: flag("ai_first_visit_nurture"), evidence: actionEvidence("first_visit") },

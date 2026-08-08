@@ -218,6 +218,7 @@ export async function GET(req: Request) {
       const memberToken = await generateReminderToken(m.bookingId, booking.salon_id);
       if (!memberToken) continue;
       await sendReminderEmail({
+        salonId: booking.salon_id,
         tokenId: memberToken.id,
         clientName: m.name,
         clientEmail: m.email,
@@ -276,6 +277,7 @@ export async function GET(req: Request) {
     // Email channel
     if (wantsEmail) {
       const result = await sendReminderEmail({
+        salonId:      booking.salon_id,
         tokenId:      token.id,
         clientName:   booking.client_name,
         clientEmail:  booking.client_email!,
@@ -317,6 +319,7 @@ export async function GET(req: Request) {
           );
           const lang: "en" | "vi" = String(booking.client_locale ?? "").toLowerCase().startsWith("vi") ? "vi" : "en";
           const drafted = await draftReminderLead({
+            salonId: booking.salon_id,
             clientName: booking.client_name ?? "",
             serviceName: booking.services?.name ?? "appointment",
             salonName: salon.name ?? "",
