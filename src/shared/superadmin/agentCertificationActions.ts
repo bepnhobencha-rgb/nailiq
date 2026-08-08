@@ -26,7 +26,6 @@ type EvidenceRow = {
   agent?: string | null;
   action_type?: string | null;
   feature?: string | null;
-  notification_type?: string | null;
   status?: string | null;
   model?: string | null;
   realtime_usage?: unknown;
@@ -56,7 +55,6 @@ type EvidenceInput = {
   usage: EvidenceRow[];
   voice: EvidenceRow[];
   policies: EvidenceRow[];
-  notifications: EvidenceRow[];
   jobs: EvidenceRow[];
 };
 
@@ -159,7 +157,7 @@ const AGENTS: readonly AgentDefinition[] = [
   { key: "yelp_responder", label: "Yelp Responder", cadence: "Every 4 hours", failureKey: "yelp_responder", configured: (salon) => salon.feature_flags?.ai_yelp_reply === true && Boolean(salon.yelp_business_id), evidence: actionEvidence("yelp_responder") },
   { key: "gbp_post", label: "Google Business Post", cadence: "1st and 15th", failureKey: "gbp_post", configured: (salon) => salon.feature_flags?.ai_gbp_post === true && Boolean(salon.google_place_id), evidence: actionEvidence("gbp_post") },
   { key: "first_visit", label: "First Visit Nurture", cadence: "Daily", failureKey: "first_visit", configured: flag("ai_first_visit_nurture"), evidence: actionEvidence("first_visit") },
-  { key: "smart_reminders", label: "Smart Reminders", cadence: "Scheduled", failureKey: "smart_reminders", configured: flag("ai_smart_reminders"), evidence: (input, salonId) => input.notifications.filter((row) => row.salon_id === salonId && ["reminder_24h", "reminder_3h"].includes(row.notification_type ?? "") && ["sent", "delivered"].includes(row.status ?? "")) },
+  { key: "smart_reminders", label: "Smart Reminders", cadence: "Scheduled", failureKey: "smart_reminders", configured: flag("ai_smart_reminders"), evidence: usageEvidence(["smart_reminder"]) },
   { key: "ai_execution", label: "AI Execution", cadence: "Every 5 minutes", failureKey: "ai_execution", configured: flag("ai_control_center_enabled"), evidence: (input, salonId) => input.jobs.filter((row) => row.salon_id === salonId && row.status === "succeeded") },
   { key: "voice_ai", label: "AI Receptionist", cadence: "Event-driven", failureKey: "voice_ai", configured: (salon) => salon.voice_ai_enabled === true, evidence: (input, salonId) => input.voice.filter((row) => row.salon_id === salonId && hasCompleteVoiceTelemetry(row)) },
 ];
@@ -232,7 +230,7 @@ export async function loadAgentCertificationMatrix(): Promise<
     const staleVoiceBefore = new Date(
       Date.now() - (SESSION_TTL_SECONDS + 5 * 60) * 1_000,
     ).toISOString();
-    const [salons, actions, usage, voice, policies, notifications, jobs, managerRuns, workerStates, activeAgentExceptions, staleVoiceSessions] = await Promise.all([
+    const [salons, actions, usage, voice, policies, jobs, managerRuns, workerStates, activeAgentExceptions, staleVoiceSessions] = await Promise.all([
       db.from("salons").select("id, name, slug, feature_flags, voice_ai_enabled, google_place_id, yelp_business_id").is("archived_at", null).order("name"),
       db.from("ai_actions_log" as never)
         .select("salon_id, agent, action_type, created_at, outcome_at" as never)
@@ -241,7 +239,6 @@ export async function loadAgentCertificationMatrix(): Promise<
       db.from("ai_usage_events" as never).select("salon_id, feature, status, created_at" as never).gte("created_at" as never, since).limit(limit),
       db.from("voice_ai_sessions" as never).select("salon_id, status, model, realtime_usage, estimated_cost_usd, started_at" as never).gte("started_at" as never, since).limit(limit),
       db.from("ai_policy_decisions" as never).select("salon_id, created_at" as never).gte("created_at" as never, since).limit(limit),
-      db.from("booking_notifications" as never).select("salon_id, notification_type, status, created_at" as never).gte("created_at" as never, since).limit(limit),
       db.from("ai_execution_jobs" as never).select("salon_id, status, created_at" as never).gte("created_at" as never, since).limit(limit),
       db.from("ai_worker_runs" as never).select("started_at, status, summary" as never).eq("worker_name" as never, "ai_manager").order("started_at" as never, { ascending: false }).limit(1),
       db.from("ai_execution_worker_state" as never).select("worker_name, status" as never).in("worker_name" as never, ["ai_execution", "reminders"]),
@@ -255,7 +252,7 @@ export async function loadAgentCertificationMatrix(): Promise<
         .eq("status" as never, "active")
         .lt("started_at" as never, staleVoiceBefore),
     ]);
-    const results = [salons, actions, usage, voice, policies, notifications, jobs, managerRuns, workerStates, activeAgentExceptions, staleVoiceSessions];
+    const results = [salons, actions, usage, voice, policies, jobs, managerRuns, workerStates, activeAgentExceptions, staleVoiceSessions];
     if (results.some((result) => result.error)) {
       console.error("[superadmin/agent-certification] query unavailable", results.map((result) => result.error?.code ?? null));
       return { ok: false, error: "unavailable" };
@@ -290,7 +287,6 @@ export async function loadAgentCertificationMatrix(): Promise<
         usage: (usage.data ?? []) as unknown as EvidenceRow[],
         voice: (voice.data ?? []) as unknown as EvidenceRow[],
         policies: (policies.data ?? []) as unknown as EvidenceRow[],
-        notifications: (notifications.data ?? []) as unknown as EvidenceRow[],
         jobs: (jobs.data ?? []) as unknown as EvidenceRow[],
       },
       failedAgents,
@@ -308,7 +304,7 @@ export async function loadAgentCertificationMatrix(): Promise<
       latestManagerRunAt: latestRun?.started_at ?? null,
       matrix,
       counts,
-      truncated: [actions, usage, voice, policies, notifications, jobs]
+      truncated: [actions, usage, voice, policies, jobs]
         .some((result) => (result.data?.length ?? 0) === limit),
     } };
   } catch (error) {

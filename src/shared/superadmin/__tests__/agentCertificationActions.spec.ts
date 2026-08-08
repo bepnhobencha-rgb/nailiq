@@ -28,7 +28,6 @@ const emptyEvidence = {
   usage: [],
   voice: [],
   policies: [],
-  notifications: [],
   jobs: [],
 };
 
@@ -96,35 +95,15 @@ describe("Agent Certification Matrix", () => {
     });
   });
 
-  it("does not certify Smart Reminders from unrelated booking notifications", () => {
+  it("certifies Smart Reminders from a successful model-call artifact", () => {
     const rows = buildAgentCertificationMatrix({
       salons: [salon],
       evidence: {
         ...emptyEvidence,
-        notifications: [{
+        usage: [{
           salon_id: "s1",
-          notification_type: "booking_confirmation",
-          status: "delivered",
-          created_at: "2026-08-03T00:00:00Z",
-        }],
-      },
-      failedAgents: new Set(),
-    });
-
-    expect(rows.find((row) => row.agent === "smart_reminders")?.status).toBe(
-      "waiting_data",
-    );
-  });
-
-  it("certifies Smart Reminders only from a successful reminder artifact", () => {
-    const rows = buildAgentCertificationMatrix({
-      salons: [salon],
-      evidence: {
-        ...emptyEvidence,
-        notifications: [{
-          salon_id: "s1",
-          notification_type: "reminder_24h",
-          status: "sent",
+          feature: "smart_reminder",
+          status: "succeeded",
           created_at: "2026-08-03T00:00:00Z",
         }],
       },
