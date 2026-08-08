@@ -5,7 +5,9 @@ import { DeletedRecordsSection } from "@/components/superadmin/DeletedRecordsSec
 import { ImpersonateButton } from "@/components/superadmin/ImpersonateButton";
 import { SalonOverrideCard } from "@/components/superadmin/SalonOverrideCard";
 import { SalonReleaseFeaturesCard } from "@/components/superadmin/SalonReleaseFeaturesCard";
+import { SquareConnectionCard } from "@/components/superadmin/SquareConnectionCard";
 import type { SuperAdminSalonDetail } from "@/shared/superadmin/superadminTypes";
+import type { SquareConnectionStatus } from "@/shared/superadmin/squareConnectionTypes";
 
 /**
  * Read-only detail view for a single salon
@@ -28,8 +30,10 @@ import type { SuperAdminSalonDetail } from "@/shared/superadmin/superadminTypes"
  */
 export function SalonDetailView({
   salon,
+  squareConnection,
 }: {
   salon: SuperAdminSalonDetail;
+  squareConnection: SquareConnectionStatus | null;
 }) {
   return (
     <main className="mx-auto w-full max-w-5xl px-5 py-8 md:px-8">
@@ -54,6 +58,13 @@ export function SalonDetailView({
           salonId={salon.id}
           salonName={salon.name || salon.slug}
         />
+        {squareConnection ? (
+          <SquareConnectionCard
+            salonId={salon.id}
+            salonName={salon.name || salon.slug}
+            status={squareConnection}
+          />
+        ) : null}
         <SalonOverrideCard salon={salon} />
         <SalonReleaseFeaturesCard salon={salon} />
         <DeletedRecordsSection salonId={salon.id} />

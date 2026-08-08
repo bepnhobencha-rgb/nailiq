@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { SalonDetailView } from "@/components/superadmin/SalonDetailView";
 import { loadSalonDetail } from "@/shared/superadmin/superadminActions";
+import { loadSquareConnectionStatus } from "@/shared/superadmin/squareConnectionActions";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,10 @@ type Props = { params: Promise<{ salonId: string }> };
  */
 export default async function SuperadminSalonDetailPage({ params }: Props) {
   const { salonId } = await params;
-  const result = await loadSalonDetail(salonId);
+  const [result, squareResult] = await Promise.all([
+    loadSalonDetail(salonId),
+    loadSquareConnectionStatus(salonId),
+  ]);
 
   if (!result.ok) {
     if (result.error === "not_found") notFound();
@@ -34,5 +38,10 @@ export default async function SuperadminSalonDetailPage({ params }: Props) {
     );
   }
 
-  return <SalonDetailView salon={result.salon} />;
+  return (
+    <SalonDetailView
+      salon={result.salon}
+      squareConnection={squareResult.ok ? squareResult.status : null}
+    />
+  );
 }

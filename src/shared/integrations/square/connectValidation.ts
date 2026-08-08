@@ -1,0 +1,157 @@
+const SQUARE_API = "https://connect.squareup.com/v2";
+const SQUARE_VERSION = "2024-12-18";
+
+type FetchLike = typeof fetch;
+
+export type ValidatedSquareConnection = {
+  merchantId: string;
+  merchantBusinessName: string | null;
+  locationId: string;
+  locationName: string;
+  currency: string | null;
+  bookingSyncReady: boolean;
+};
+
+export class SquareConnectionValidationError extends Error {
+  constructor(
+    public readonly code:
+      | "invalid_credentials"
+      | "square_unavailable"
+      | "location_ambiguous",
+  ) {
+    super(code);
+    this.name = "SquareConnectionValidationError";
+  }
+}
+
+type SquareLocation = {
+  id?: unknown;
+  merchant_id?: unknown;
+  name?: unknown;
+  business_name?: unknown;
+  status?: unknown;
+  currency?: unknown;
+};
+
+type SquareMerchant = {
+  id?: unknown;
+  business_name?: unknown;
+};
+
+function cleanString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
+}
+
+async function squareJson(
+  path: string,
+  accessToken: string,
+  fetchImpl: FetchLike,
+): Promise<Record<string, unknown>> {
+  let response: Response;
+  try {
+    response = await fetchImpl(`${SQUARE_API}${path}`, {
+      method: "GET",
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Square-Version": SQUARE_VERSION,
+        Accept: "application/json",
+      },
+    });
+  } catch {
+    throw new SquareConnectionValidationError("square_unavailable");
+  }
+
+  const payload = (await response.json().catch(() => ({}))) as Record<
+    string,
+    unknown
+  >;
+  if (response.status === 401 || response.status === 403) {
+    throw new SquareConnectionValidationError("invalid_credentials");
+  }
+  if (!response.ok) {
+    throw new SquareConnectionValidationError("square_unavailable");
+  }
+  return payload;
+}
+
+/**
+ * Validates a production personal access token without creating a payment,
+ * booking, customer, or webhook. Exactly one ACTIVE location is required so
+ * NailIQ never guesses which business a credential belongs to.
+ */
+export async function validateSquareProductionConnection(
+  accessToken: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<ValidatedSquareConnection> {
+  const [locationsPayload, merchantsPayload] = await Promise.all([
+    squareJson("/locations", accessToken, fetchImpl),
+    squareJson("/merchants", accessToken, fetchImpl),
+  ]);
+
+  const locations = Array.isArray(locationsPayload.locations)
+    ? (locationsPayload.locations as SquareLocation[])
+    : [];
+  const active = locations.filter((location) => location.status === "ACTIVE");
+  if (active.length !== 1) {
+    throw new SquareConnectionValidationError("location_ambiguous");
+  }
+
+  const location = active[0];
+  const locationId = cleanString(location.id);
+  const merchantIdFromLocation = cleanString(location.merchant_id);
+  if (!locationId || !merchantIdFromLocation) {
+    throw new SquareConnectionValidationError("square_unavailable");
+  }
+
+  const merchants = Array.isArray(merchantsPayload.merchant)
+    ? (merchantsPayload.merchant as SquareMerchant[])
+    : Array.isArray(merchantsPayload.merchants)
+      ? (merchantsPayload.merchants as SquareMerchant[])
+      : [];
+  const merchant = merchants.find(
+    (candidate) => cleanString(candidate.id) === merchantIdFromLocation,
+  );
+
+  let bookingSyncReady = false;
+  try {
+    const profilesPayload = await squareJson(
+      "/bookings/location-booking-profiles",
+      accessToken,
+      fetchImpl,
+    );
+    const profiles = Array.isArray(profilesPayload.location_booking_profiles)
+      ? (profilesPayload.location_booking_profiles as Array<{
+          location_id?: unknown;
+        }>)
+      : [];
+    bookingSyncReady = profiles.some(
+      (profile) => cleanString(profile.location_id) === locationId,
+    );
+  } catch (error) {
+    if (
+      error instanceof SquareConnectionValidationError &&
+      error.code === "invalid_credentials"
+    ) {
+      throw error;
+    }
+    // A Square account can accept cards without enabling Square Bookings.
+    // Keep booking sync disabled instead of rejecting a valid payment account.
+    bookingSyncReady = false;
+  }
+
+  return {
+    merchantId: merchantIdFromLocation,
+    merchantBusinessName: cleanString(merchant?.business_name),
+    locationId,
+    locationName:
+      cleanString(location.name) ??
+      cleanString(location.business_name) ??
+      "Square location",
+    currency: cleanString(location.currency)?.toUpperCase() ?? null,
+    bookingSyncReady,
+  };
+}
