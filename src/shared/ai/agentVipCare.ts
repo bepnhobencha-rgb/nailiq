@@ -13,6 +13,13 @@ import {
 import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
 import { isAiAgentPermissionEnabled } from "@/shared/ai/agentPermissionFence";
 import { selectSalonRelatedManualVipIds } from "@/shared/ai/vipCareIsolation";
+import { applyVipEmailSuppression } from "@/shared/ai/vipCareDelivery";
+import {
+  complianceFooterHtml,
+  isEmailSuppressed,
+  listUnsubscribeHeaders,
+  unsubscribeUrl,
+} from "@/shared/lib/emailCompliance";
 
 /**
  * AI VIP Care — proactive outreach to high-value customers.
@@ -322,21 +329,11 @@ async function sendMessage(
   client: VipClient,
   message: string,
   bookingUrl: string,
-  channelMode: CustomerChannelMode,
-  smsOutboundEnabled: boolean,
-  emailOutboundEnabled: boolean,
+  ch: ReturnType<typeof resolveCustomerChannel>,
+  salonName: string,
+  salonAddress?: string | null,
   salonReplyEmail?: string | null,
-  smsA2pRegistered?: boolean,
 ): Promise<{ ok: boolean; channel: "sms" | "email"; reason: string }> {
-  const ch = resolveCustomerChannel({
-    mode: channelMode,
-    smsOutboundEnabled,
-    emailOutboundEnabled,
-    customerEmail: client.email,
-    smsA2pRegistered,
-    customerPhone: client.phone,
-  });
-
   if (ch.noChannel) {
     return { ok: false, channel: "sms", reason: ch.reason };
   }
@@ -353,13 +350,20 @@ async function sendMessage(
     if (resend) {
       const esc = (x: string) =>
         x.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] ?? c));
-      const html = `<div style="max-width:480px;margin:0 auto;font-family:-apple-system,Segoe UI,sans-serif;color:#1a1a1a"><p style="font-size:15px;line-height:1.7;margin:0 0 16px">${esc(message)}</p><a href="${bookingUrl}" style="display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:14px">Book now</a></div>`;
+      const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#faf9f7;">
+<div style="max-width:480px;margin:0 auto;padding:28px 22px;font-family:-apple-system,Segoe UI,sans-serif;color:#1a1a1a">
+  <p style="font-size:15px;line-height:1.7;margin:0 0 16px">${esc(message)}</p>
+  <a href="${bookingUrl}" style="display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:14px">Book now</a>
+  ${complianceFooterHtml({ email: client.email, salonName, salonAddress, lang: "en" })}
+</div>
+</body></html>`;
       const { error } = await resend.emails.send({
         from: getResendFrom(),
         to: client.email,
-        subject: message.slice(0, 80),
+        subject: `A note from ${salonName}`,
         html,
-        text: fullText,
+        text: `${fullText}\n\nUnsubscribe: ${unsubscribeUrl(client.email)}`,
+        headers: listUnsubscribeHeaders(client.email),
         ...(salonReplyEmail ? { replyTo: salonReplyEmail } : {}),
       });
       ok = ok || !error;
@@ -431,7 +435,7 @@ export async function runVipCare(salonId: string): Promise<void> {
     const db = looseServiceClient();
     const { data: salon } = await db
       .from("salons" as never)
-      .select("name, email, slug, feature_flags, sms_outbound_enabled, sms_a2p_registered, email_outbound_enabled, customer_channel, birthday_reward_type, birthday_reward_percent, birthday_reward_amount_cents, birthday_reward_valid_days, milestone_reward_type, milestone_reward_percent, milestone_reward_amount_cents, milestone_reward_valid_days" as never)
+      .select("name, email, address, slug, feature_flags, sms_outbound_enabled, sms_a2p_registered, email_outbound_enabled, customer_channel, birthday_reward_type, birthday_reward_percent, birthday_reward_amount_cents, birthday_reward_valid_days, milestone_reward_type, milestone_reward_percent, milestone_reward_amount_cents, milestone_reward_valid_days" as never)
       .eq("id" as never, salonId)
       .maybeSingle();
 
@@ -441,6 +445,7 @@ export async function runVipCare(salonId: string): Promise<void> {
 
     const salonName = str(s.name) || "our salon";
     const salonSlug = str(s.slug) || "";
+    const salonAddress = str(s.address) || null;
     const salonReplyEmail = str(s.email) || null;
     const smsOutboundEnabled = s.sms_outbound_enabled !== false; // default true
     const emailOutboundEnabled = s.email_outbound_enabled !== false; // default true
@@ -501,11 +506,34 @@ export async function runVipCare(salonId: string): Promise<void> {
       if (!hasEmailConsent) continue;
       // Only a full opt-in permits a text; email-only consent forces email.
       const clientSmsEnabled = smsOutboundEnabled && hasFullConsent;
+      const baseDelivery = resolveCustomerChannel({
+        mode: customerChannelMode,
+        smsOutboundEnabled: clientSmsEnabled,
+        emailOutboundEnabled,
+        customerEmail: client.email,
+        smsA2pRegistered,
+        customerPhone: client.phone,
+      });
+      const emailSuppressed = baseDelivery.email && client.email
+        ? await isEmailSuppressed(client.email).catch(() => true)
+        : false;
+      const delivery = applyVipEmailSuppression(baseDelivery, emailSuppressed);
 
       // ── Birthday (7 days out) ─────────────────────────────────
       if (client.dateOfBirth && !existing.has(`birthday:${client.id}`)) {
         const days = daysUntilBirthday(client.dateOfBirth);
         if (days === 7) {
+          if (delivery.noChannel) {
+            await svc.from("ai_actions_log" as never).insert({
+              salon_id: salonId,
+              agent: "vip_care",
+              action_type: "skipped_no_channel",
+              target_id: client.id,
+              payload: { name: client.name, event: "birthday", reason: delivery.reason },
+              undo_deadline: null,
+            } as never);
+            continue clientLoop;
+          }
           if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) break;
           const baseMsg = await draftMessage("birthday", client, salonName, undefined, salonId);
           if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
@@ -522,7 +550,7 @@ export async function runVipCare(salonId: string): Promise<void> {
           if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
             break clientLoop;
           }
-          const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, clientSmsEnabled, emailOutboundEnabled, salonReplyEmail, smsA2pRegistered);
+          const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, delivery, salonName, salonAddress, salonReplyEmail);
           if (!ok && reason.startsWith("no_channel")) {
             console.warn(`[runVipCare] no channel for ${client.name} — ${reason}`);
             await svc.from("ai_actions_log" as never).insert({
@@ -560,6 +588,17 @@ export async function runVipCare(salonId: string): Promise<void> {
         const key = `milestone_${milestone}:${client.id}`;
         if (existing.has(key)) continue;
         if (client.visitCount < milestone || client.visitCount > milestone + 1) continue;
+        if (delivery.noChannel) {
+          await svc.from("ai_actions_log" as never).insert({
+            salon_id: salonId,
+            agent: "vip_care",
+            action_type: "skipped_no_channel",
+            target_id: client.id,
+            payload: { name: client.name, event: `milestone_${milestone}`, reason: delivery.reason },
+            undo_deadline: null,
+          } as never);
+          continue clientLoop;
+        }
         if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) break;
         // Fire when visits == milestone (allow +1 buffer so cron doesn't miss by 1)
         const baseMsg = await draftMessage("milestone", client, salonName, milestone, salonId);
@@ -577,7 +616,7 @@ export async function runVipCare(salonId: string): Promise<void> {
         if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
           break clientLoop;
         }
-        const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, clientSmsEnabled, emailOutboundEnabled, salonReplyEmail, smsA2pRegistered);
+        const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, delivery, salonName, salonAddress, salonReplyEmail);
         if (!ok && reason.startsWith("no_channel")) {
           console.warn(`[runVipCare] no channel for ${client.name} (milestone ${milestone}) — ${reason}`);
           await svc.from("ai_actions_log" as never).insert({
@@ -615,6 +654,17 @@ export async function runVipCare(salonId: string): Promise<void> {
       if (!existing.has(`vip_inactive:${client.id}`) && client.lastVisitAt) {
         const daysSince = Math.floor((Date.now() - Date.parse(client.lastVisitAt)) / 864e5);
         if (daysSince >= 30 && daysSince < 60) {
+          if (delivery.noChannel) {
+            await svc.from("ai_actions_log" as never).insert({
+              salon_id: salonId,
+              agent: "vip_care",
+              action_type: "skipped_no_channel",
+              target_id: client.id,
+              payload: { name: client.name, event: "vip_inactive", reason: delivery.reason, days_since: daysSince },
+              undo_deadline: null,
+            } as never);
+            continue clientLoop;
+          }
           if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
             break clientLoop;
           }
@@ -622,7 +672,7 @@ export async function runVipCare(salonId: string): Promise<void> {
           if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
             break clientLoop;
           }
-          const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, customerChannelMode, clientSmsEnabled, emailOutboundEnabled, salonReplyEmail, smsA2pRegistered);
+          const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, delivery, salonName, salonAddress, salonReplyEmail);
           if (!ok && reason.startsWith("no_channel")) {
             console.warn(`[runVipCare] no channel for ${client.name} — ${reason}`);
             await svc.from("ai_actions_log" as never).insert({
