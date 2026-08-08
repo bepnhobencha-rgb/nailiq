@@ -5,6 +5,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { defaultSip } from "./defaultSip";
 import type { SalonIntelligenceProfile } from "./types";
+import { trackAnthropicMessage } from "./usageLedger";
 
 // ---------------------------------------------------------------------------
 // Anthropic client (module-level singleton, mirrors agentWinback.ts pattern)
@@ -151,11 +152,18 @@ Rules:
 
   let sip: SalonIntelligenceProfile;
   try {
-    const message = await ai.messages.create({
-      model: "claude-sonnet-4-5",
-      max_tokens: 512,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const message = await trackAnthropicMessage(
+      {
+        salonId,
+        feature: "sip_builder",
+        model: "claude-sonnet-4-5",
+      },
+      () => ai.messages.create({
+        model: "claude-sonnet-4-5",
+        max_tokens: 512,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    );
 
     const raw = message.content
       .filter((b) => b.type === "text")
