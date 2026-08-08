@@ -16,7 +16,7 @@ import { deterministicNoShowRiskScore } from "@/shared/noshow/scoreNoShowRisk";
  *
  * Instead of a hardcoded threshold (risk ≥ 60, new/returning, fixed deposit %),
  * an AI weighs the WHOLE customer context and decides the protection per booking
- * in a flexible, human way (require a card, take a deposit, or trust them) AND
+ * in a flexible, human way (require a card or trust them) AND
  * drafts the customer-facing ask. The AI NEVER charges and NEVER acts directly:
  *  - clampAndGuard() (deterministic) validates/clamps the AI's output,
  *  - in SHADOW mode the decision is only LOGGED (ai_policy_decisions) vs the
@@ -39,6 +39,11 @@ export type PolicyContext = {
   channel: string;
   hasEmail: boolean;
   hasPhone: boolean;
+  /** Protection already exists on this booking; never ask for it again. */
+  hasCardOnFile: boolean;
+  hasActiveDeposit: boolean;
+  /** Hours between booking creation and appointment start. */
+  leadTimeHours: number;
   isNew: boolean;
   visitCount: number;
   noShowCount: number;
@@ -88,7 +93,7 @@ export async function gatherPolicyContext(bookingId: string): Promise<PolicyCont
   const db = looseServiceClient();
   const { data } = await db
     .from("bookings")
-    .select("id, salon_id, client_name, client_phone, client_email, service_id, price_cents, start_time_utc, booking_channel, source, group_id")
+    .select("id, salon_id, client_name, client_phone, client_email, service_id, price_cents, start_time_utc, created_at, booking_channel, source, group_id, noshow_card_id, deposit_required, deposit_status")
     .eq("id", bookingId)
     .maybeSingle();
   const b = data as Row | null;
@@ -97,6 +102,12 @@ export async function gatherPolicyContext(bookingId: string): Promise<PolicyCont
   const salonId = str(b.salon_id);
   const phone = str(b.client_phone).replace(/\D/g, "");
   const groupId = str(b.group_id);
+  const startMs = Date.parse(str(b.start_time_utc));
+  const createdMs = Date.parse(str(b.created_at));
+  const leadTimeHours = Number.isFinite(startMs) && Number.isFinite(createdMs)
+    ? Math.max(0, Math.round((startMs - createdMs) / 3_600_000))
+    : 0;
+  const depositStatus = str(b.deposit_status);
 
   const [{ data: svc }, { data: salon }, stats, { data: profile }, provider, groupResult] = await Promise.all([
     b.service_id ? db.from("services").select("name").eq("id", str(b.service_id)).maybeSingle() : Promise.resolve({ data: null }),
@@ -146,6 +157,11 @@ export async function gatherPolicyContext(bookingId: string): Promise<PolicyCont
     channel: str(b.booking_channel) || str(b.source) || "online",
     hasEmail: str(b.client_email).trim().length > 0,
     hasPhone: phone.length >= 8,
+    hasCardOnFile: str(b.noshow_card_id).trim().length > 0,
+    hasActiveDeposit:
+      ["required", "pending", "held", "paid"].includes(depositStatus) ||
+      (b.deposit_required === true && !depositStatus),
+    leadTimeHours,
     isNew: visitCount <= 0,
     visitCount,
     noShowCount,
@@ -269,36 +285,36 @@ export async function agentDecideNoShowPolicy(ctx: PolicyContext): Promise<AiPol
   const prompt = isVi
     ? `Bạn là quản lý phụ trách chính sách chống no-show cho một ${ctx.vertical}. Quyết định mức bảo vệ cho lượt hẹn này một cách LINH HOẠT và NHÂN VĂN (giữ trải nghiệm cao cấp cho khách quen, chặt với rủi ro thật), KHÔNG máy móc theo ngưỡng.
 
-Lựa chọn:
+Lựa chọn được hệ thống hỗ trợ:
 - "none": tin khách, không đòi gì.
 - "card": yêu cầu lưu thẻ (chỉ bị trừ phí nếu thật sự vắng).
-- "deposit": yêu cầu đặt cọc trước.
 
 Bối cảnh:
-- Khách: ${ctx.clientName} | ${ctx.isNew ? "KHÁCH MỚI" : `quay lại, đã đến ${ctx.visitCount} lần`} | số lần no-show trước: ${ctx.noShowCount} | VIP: ${ctx.isVip}
+- Khách: ${ctx.isNew ? "KHÁCH MỚI" : `quay lại, đã đến ${ctx.visitCount} lần`} | số lần no-show trước: ${ctx.noShowCount} | VIP: ${ctx.isVip}
 - Liên hệ: ${ctx.hasPhone ? "có SĐT" : "KHÔNG SĐT"}, ${ctx.hasEmail ? "có email" : "không email"}
-- Lượt hẹn: ${ctx.serviceName}, giá slot ~$${(ctx.priceCents / 100).toFixed(0)}, lúc ${when}, kênh ${ctx.channel}
+- Lượt hẹn: ${ctx.serviceName}, giá slot ~$${(ctx.priceCents / 100).toFixed(0)}, lúc ${when}, đặt trước ${ctx.leadTimeHours} giờ, kênh ${ctx.channel}
 ${groupLineVi}- Tiệm: bảo vệ no-show ${ctx.protectionEnabled ? "BẬT" : "TẮT"}, cổng thanh toán ${ctx.providerConnected ? "đã nối" : "CHƯA nối"}, phí mặc định ${ctx.defaultFeePercent}%.
 
-Nếu chọn card/deposit, soạn 1 lời nhắn ngắn, ấm áp, lịch sự cho khách bằng tiếng Việt (xưng hô thân thiện).
+Không tự thay đổi phần trăm phí; hệ thống luôn dùng đúng mức ${ctx.defaultFeePercent}% do salon cấu hình.
+Nếu chọn card, soạn 1 lời nhắn ngắn, ấm áp, lịch sự cho khách bằng tiếng Việt (xưng hô thân thiện).
 
-Chỉ trả JSON: {"protection":"none|card|deposit","feePercent":<0-${ctx.maxFeePercent}>,"reason":"<1 câu tiếng Việt vì sao>","message":"<lời nhắn hoặc null>","confidence":"low|medium|high"}`
+Chỉ trả JSON: {"protection":"none|card","reason":"<1 câu tiếng Việt vì sao>","message":"<lời nhắn hoặc null>","confidence":"low|medium|high"}`
     : `You are the no-show policy manager for a ${ctx.vertical}. Decide protection for this appointment FLEXIBLY and HUMANELY (preserve a premium experience for loyal regulars, be firm for real risks), NOT by rigid thresholds.
 
 Options:
 - "none": trust the customer, require nothing.
 - "card": require a card on file (only charged on a confirmed no-show).
-- "deposit": require an upfront deposit.
 
 Context:
-- Customer: ${ctx.clientName} | ${ctx.isNew ? "NEW CUSTOMER" : `returning, ${ctx.visitCount} visit(s)`} | prior no-shows: ${ctx.noShowCount} | VIP: ${ctx.isVip}
+- Customer: ${ctx.isNew ? "NEW CUSTOMER" : `returning, ${ctx.visitCount} visit(s)`} | prior no-shows: ${ctx.noShowCount} | VIP: ${ctx.isVip}
 - Contact: ${ctx.hasPhone ? "has phone" : "NO PHONE"}, ${ctx.hasEmail ? "has email" : "no email"}
-- Appointment: ${ctx.serviceName}, slot price ~$${(ctx.priceCents / 100).toFixed(0)}, at ${when}, channel: ${ctx.channel}
+- Appointment: ${ctx.serviceName}, slot price ~$${(ctx.priceCents / 100).toFixed(0)}, at ${when}, booked ${ctx.leadTimeHours} hour(s) ahead, channel: ${ctx.channel}
 ${groupLineEn}- Salon: no-show protection ${ctx.protectionEnabled ? "ON" : "OFF"}, payment gateway ${ctx.providerConnected ? "connected" : "NOT connected"}, default fee ${ctx.defaultFeePercent}%.
 
-If card/deposit selected, write a short, warm, professional message to the customer in English.
+Do not change the fee percentage; the system always uses the salon-configured ${ctx.defaultFeePercent}%.
+If card is selected, write a short, warm, professional message to the customer in English.
 
-Return ONLY JSON: {"protection":"none|card|deposit","feePercent":<0-${ctx.maxFeePercent}>,"reason":"<1 sentence reason>","message":"<message or null>","confidence":"low|medium|high"}`;
+Return ONLY JSON: {"protection":"none|card","reason":"<1 sentence reason>","message":"<message or null>","confidence":"low|medium|high"}`;
 
   try {
     const model = "claude-haiku-4-5-20251001";
@@ -313,11 +329,10 @@ Return ONLY JSON: {"protection":"none|card|deposit","feePercent":<0-${ctx.maxFee
     const text = resp.content[0]?.type === "text" ? resp.content[0].text : "";
     const json = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
     const parsed = JSON.parse(json) as Partial<AiPolicyDecision>;
-    const protection: Protection =
-      parsed.protection === "card" || parsed.protection === "deposit" ? parsed.protection : "none";
+    const protection: Protection = parsed.protection === "card" ? "card" : "none";
     return {
       protection,
-      feePercent: typeof parsed.feePercent === "number" ? parsed.feePercent : ctx.defaultFeePercent,
+      feePercent: protection === "card" ? ctx.defaultFeePercent : 0,
       reason: typeof parsed.reason === "string" ? parsed.reason : "",
       message: typeof parsed.message === "string" && parsed.message.trim() ? parsed.message.trim() : null,
       confidence: parsed.confidence === "low" || parsed.confidence === "high" ? parsed.confidence : "medium",
@@ -333,21 +348,63 @@ export function clampAndGuard(ai: AiPolicyDecision | null, ctx: PolicyContext): 
   if (!ai) return null;
   if (ai.confidence === "low") return null; // not sure enough → let the rule decide
 
+  // Deposit decisions are not executed by this agent. Fail closed to the
+  // deterministic path instead of pretending a deposit was created.
+  if (ai.protection === "deposit") return null;
+
+  // A booking that already has a card or active deposit is protected. Asking
+  // again adds friction and caused nearly every production disagreement found
+  // in the 2026-08 audit.
+  if (ctx.hasCardOnFile || ctx.hasActiveDeposit) {
+    return {
+      protection: "none",
+      feePercent: 0,
+      reason: `${ai.reason} (booking đã được bảo vệ → không yêu cầu lại)`,
+      message: null,
+      confidence: ai.confidence,
+    };
+  }
+
   // Can only ask for money when a provider is connected + protection is on.
-  if ((ai.protection === "card" || ai.protection === "deposit") && (!ctx.providerConnected || !ctx.protectionEnabled)) {
+  if (ai.protection === "card" && (!ctx.providerConnected || !ctx.protectionEnabled)) {
     return { protection: "none", feePercent: 0, reason: `${ai.reason} (cổng/bảo vệ chưa sẵn → không đòi)`, message: null, confidence: ai.confidence };
   }
   // VIP courtesy guard (kept conservative for v1).
   if (ctx.isVip && ai.protection !== "none") {
     return { protection: "none", feePercent: 0, reason: `${ai.reason} (VIP → giữ ưu ái, không đòi)`, message: null, confidence: ai.confidence };
   }
-  // Clamp the fee/deposit percent to the salon's allowed band.
-  const feePercent = ai.protection === "none" ? 0 : Math.min(ctx.maxFeePercent, Math.max(0, Math.round(ai.feePercent || 0)));
+  // The model never sets money policy. Use only the owner-configured percentage.
+  const feePercent = ai.protection === "none"
+    ? 0
+    : Math.min(
+        ctx.maxFeePercent,
+        Math.max(0, Math.round(ctx.defaultFeePercent)),
+      );
   return { ...ai, feePercent };
 }
 
+/** A model may add protection only with high confidence and may not remove a
+ * deterministic card requirement until outcome calibration proves that doing
+ * so is safe. This keeps the AI useful at the uncertain edge without letting a
+ * prompt variation weaken an owner's configured policy. */
+export function guardPolicyDelta(
+  ai: AiPolicyDecision | null,
+  ruleProtection: Protection,
+): AiPolicyDecision | null {
+  if (!ai) return null;
+  if (ruleProtection === "card" && ai.protection === "none") return null;
+  if (ai.protection !== ruleProtection && ai.confidence !== "high") return null;
+  return ai;
+}
+
 export function isNoShowPolicyAmbiguous(ctx: PolicyContext): boolean {
-  if (ctx.isVip || !ctx.protectionEnabled || !ctx.providerConnected) return false;
+  if (
+    ctx.isVip ||
+    ctx.hasCardOnFile ||
+    ctx.hasActiveDeposit ||
+    !ctx.protectionEnabled ||
+    !ctx.providerConnected
+  ) return false;
   const { score } = deterministicNoShowRiskScore({
     salonId: ctx.salonId,
     clientName: ctx.clientName,
@@ -383,9 +440,48 @@ export async function runNoShowPolicyAgent(
   opts: { applyToRow?: boolean } = {},
 ): Promise<{ cardRequired: boolean } | null> {
   try {
-    const ctx = await gatherPolicyContext(bookingId);
+    let ctx = await gatherPolicyContext(bookingId);
     if (!ctx) return null;
     if (!ctx.aiShadowEnabled && !ctx.aiLiveEnabled) return null; // not opted in
+
+    // In live mode, carry forward an already-authorized returning card before
+    // asking AI. Shadow stays strictly log-only. The operation is idempotent,
+    // never charges, and gives every booking channel the same protection state.
+    if (ctx.aiLiveEnabled && !ctx.hasCardOnFile && !ctx.hasActiveDeposit) {
+      try {
+        const { autoAttachReturningCard } = await import(
+          "@/shared/integrations/square/noshow"
+        );
+        const carried = await autoAttachReturningCard(bookingId);
+        if (carried.attached) {
+          ctx = (await gatherPolicyContext(bookingId)) ?? ctx;
+        }
+      } catch {
+        /* best-effort; deterministic fallback below remains authoritative */
+      }
+    }
+
+    // Existing card/deposit protection is already the desired outcome. Avoid
+    // spending AI credit and, in live mode, return an authoritative guarded
+    // decision so callers do not run a second card/deposit mechanism.
+    if (ctx.hasCardOnFile || ctx.hasActiveDeposit) {
+      const livePermissionStillEnabled =
+        ctx.aiLiveEnabled &&
+        (await isAiAgentPermissionEnabled(
+          ctx.salonId,
+          "ai_noshow_policy_live",
+        ));
+      if (!livePermissionStillEnabled) return null;
+
+      if (opts.applyToRow) {
+        const db = createServiceRoleClient();
+        await db
+          .from("bookings" as never)
+          .update({ noshow_card_required: false } as never)
+          .eq("id", bookingId);
+      }
+      return { cardRequired: false };
+    }
 
     // What the current deterministic rule would do (card vs none).
     let ruleProtection: Protection = "none";
@@ -409,7 +505,10 @@ export async function runNoShowPolicyAgent(
     }
 
     const aiRaw = await agentDecideNoShowPolicy(ctx);
-    const ai = clampAndGuard(aiRaw, ctx);
+    const ai = guardPolicyDelta(
+      clampAndGuard(aiRaw, ctx),
+      ruleProtection,
+    );
 
     // The model call can outlive an owner's permission change. Re-read the
     // sensitive live-policy flag before allowing either the caller or this
@@ -432,7 +531,7 @@ export async function runNoShowPolicyAgent(
 
     // LIVE only when fresh permission exists AND we have a usable decision.
     const live = livePermissionStillEnabled && ai != null;
-    const cardRequired = ai != null && (ai.protection === "card" || ai.protection === "deposit");
+    const cardRequired = ai?.protection === "card";
 
     const db = createServiceRoleClient();
     await db.from("ai_policy_decisions" as never).insert({

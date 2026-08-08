@@ -5,6 +5,8 @@ vi.mock("server-only", () => ({}));
 import { ruleFirstOptimizationEnabled } from "@/shared/ai/executionLimit";
 import { shouldUseAiDigest } from "@/shared/ai/agentDigest";
 import {
+  clampAndGuard,
+  guardPolicyDelta,
   isNoShowPolicyAmbiguous,
   type PolicyContext,
 } from "@/shared/noshow/agentNoShowPolicy";
@@ -20,6 +22,9 @@ const policyContext = (overrides: Partial<PolicyContext> = {}): PolicyContext =>
   channel: "online",
   hasEmail: true,
   hasPhone: true,
+  hasCardOnFile: false,
+  hasActiveDeposit: false,
+  leadTimeHours: 48,
   isNew: false,
   visitCount: 3,
   noShowCount: 0,
@@ -51,6 +56,72 @@ describe("rule-first AI optimization", () => {
     expect(isNoShowPolicyAmbiguous(policyContext())).toBe(false);
     expect(isNoShowPolicyAmbiguous(policyContext({ isNew: true, hasEmail: false }))).toBe(true);
     expect(isNoShowPolicyAmbiguous(policyContext({ isVip: true, isNew: true, hasEmail: false }))).toBe(false);
+    expect(isNoShowPolicyAmbiguous(policyContext({ isNew: true, hasEmail: false, hasCardOnFile: true }))).toBe(false);
+    expect(isNoShowPolicyAmbiguous(policyContext({ isNew: true, hasEmail: false, hasActiveDeposit: true }))).toBe(false);
+  });
+
+  it("never asks twice when a booking already has card or deposit protection", () => {
+    const ai = {
+      protection: "card" as const,
+      feePercent: 50,
+      reason: "risk",
+      message: "Please save a card",
+      confidence: "high" as const,
+    };
+
+    expect(clampAndGuard(ai, policyContext({ hasCardOnFile: true }))).toMatchObject({
+      protection: "none",
+      feePercent: 0,
+      message: null,
+    });
+    expect(clampAndGuard(ai, policyContext({ hasActiveDeposit: true }))).toMatchObject({
+      protection: "none",
+      feePercent: 0,
+      message: null,
+    });
+  });
+
+  it("keeps money policy deterministic and rejects an unsupported AI deposit", () => {
+    expect(clampAndGuard({
+      protection: "card",
+      feePercent: 50,
+      reason: "risk",
+      message: "Please save a card",
+      confidence: "high",
+    }, policyContext({ defaultFeePercent: 17 }))).toMatchObject({
+      protection: "card",
+      feePercent: 17,
+    });
+
+    expect(clampAndGuard({
+      protection: "deposit",
+      feePercent: 50,
+      reason: "risk",
+      message: "Please pay",
+      confidence: "high",
+    }, policyContext())).toBeNull();
+  });
+
+  it("never weakens the hard rule and requires high confidence for added friction", () => {
+    const none = {
+      protection: "none" as const,
+      feePercent: 0,
+      reason: "trust",
+      message: null,
+      confidence: "high" as const,
+    };
+    const mediumCard = {
+      protection: "card" as const,
+      feePercent: 20,
+      reason: "uncertain",
+      message: "Please save a card",
+      confidence: "medium" as const,
+    };
+    const highCard = { ...mediumCard, confidence: "high" as const };
+
+    expect(guardPolicyDelta(none, "card")).toBeNull();
+    expect(guardPolicyDelta(mediumCard, "none")).toBeNull();
+    expect(guardPolicyDelta(highCard, "none")).toEqual(highCard);
   });
 
   it("uses an AI digest only when owner judgment adds value", () => {
