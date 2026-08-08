@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import {
@@ -78,11 +79,18 @@ message: ${e.message}
 stack: ${(e.stack ?? "").slice(0, 1500)}
 context: ${JSON.stringify(e.context ?? {}).slice(0, 500)}`;
 
-      const resp = await client.messages.create({
-        model: "claude-haiku-4-5",
-        max_tokens: 320,
-        messages: [{ role: "user", content: prompt }],
-      });
+      const resp = await trackAnthropicMessage(
+        {
+          salonId: null,
+          feature: "error_triage",
+          model: "claude-haiku-4-5",
+        },
+        () => client.messages.create({
+          model: "claude-haiku-4-5",
+          max_tokens: 320,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      );
       const text =
         resp.content?.find((b) => b.type === "text")?.type === "text"
           ? (resp.content.find((b) => b.type === "text") as { text: string }).text

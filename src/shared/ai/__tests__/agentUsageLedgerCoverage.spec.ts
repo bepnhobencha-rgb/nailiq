@@ -26,6 +26,31 @@ const COVERAGE: ReadonlyArray<{
   { file: "src/shared/watchdog/agentWatchdog.ts", features: ["watchdog"] },
   { file: "src/shared/winback/agentRebook.ts", features: ["rebook_draft"] },
   { file: "src/shared/winback/agentWinback.ts", features: ["winback_draft"] },
+  { file: "src/shared/ai/buildSip.ts", features: ["sip_builder"] },
+  {
+    file: "src/shared/ai/managerBriefingAction.ts",
+    features: ["manager_briefing"],
+  },
+  {
+    file: "src/shared/dashboard/loadOwnerPulse.ts",
+    features: ["owner_pulse"],
+  },
+  {
+    file: "src/app/api/dashboard/copilot/route.ts",
+    features: ["admin_copilot"],
+  },
+  {
+    file: "src/app/api/twilio/sms/route.ts",
+    features: ["sms_receptionist"],
+  },
+  {
+    file: "src/shared/observability/triageError.ts",
+    features: ["error_triage"],
+  },
+  {
+    file: "src/shared/observability/draftFix.ts",
+    features: ["error_fix_file", "error_fix_draft"],
+  },
 ];
 
 describe("AI Agent cost-ledger boundary", () => {

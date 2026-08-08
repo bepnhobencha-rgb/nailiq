@@ -3,6 +3,7 @@
 import { unstable_cache } from "next/cache";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import Anthropic from "@anthropic-ai/sdk";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import {
@@ -398,16 +399,23 @@ async function generateBriefing(input: BriefingInput): Promise<string | null> {
       input.language === "vi"
         ? "Vietnamese (tiếng Việt, thân thiện, ngắn gọn)"
         : "English (friendly, concise)";
-    const resp = await anthropic.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 160,
-      messages: [
-        {
-          role: "user",
-          content: `You are a salon owner's assistant. Write EXACTLY 2 short sentences in ${lang} summarizing how the salon is doing today for an owner who is away. Lead with the most important signal (money vs last week, or an attention item). Be specific with numbers, warm, no fluff, no markdown, no emoji. Facts: ${JSON.stringify(facts)}`,
-        },
-      ],
-    });
+    const resp = await trackAnthropicMessage(
+      {
+        salonId: input.salonId,
+        feature: "owner_pulse",
+        model: "claude-haiku-4-5-20251001",
+      },
+      () => anthropic.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 160,
+        messages: [
+          {
+            role: "user",
+            content: `You are a salon owner's assistant. Write EXACTLY 2 short sentences in ${lang} summarizing how the salon is doing today for an owner who is away. Lead with the most important signal (money vs last week, or an attention item). Be specific with numbers, warm, no fluff, no markdown, no emoji. Facts: ${JSON.stringify(facts)}`,
+          },
+        ],
+      }),
+    );
     const text = resp.content
       .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
       .map((b) => b.text)
