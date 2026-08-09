@@ -1,7 +1,10 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import type { PlatformAnnouncement } from "@/shared/superadmin/announcementsTypes";
+import {
+  localizedAnnouncementContent,
+  type PlatformAnnouncement,
+} from "@/shared/superadmin/announcementsTypes";
 
 const STYLE = {
   info: "border-sky-500/45 bg-sky-500/10 text-nq-foreground",
@@ -46,7 +49,9 @@ export function PlatformAnnouncementBanner({
 
   return (
     <div className="mx-4 mt-3 flex flex-col gap-2 sm:mx-6 sm:mt-4">
-      {visible.map((announcement) => (
+      {visible.map((announcement) => {
+        const content = localizedAnnouncementContent(announcement, language);
+        return (
         <section
           key={announcement.id}
           className={`rounded-2xl border px-4 py-3 shadow-sm ${STYLE[announcement.severity]}`}
@@ -55,22 +60,23 @@ export function PlatformAnnouncementBanner({
         >
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="font-semibold leading-snug">{announcement.title}</p>
+              <p className="font-semibold leading-snug">{content.title}</p>
               <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-nq-muted">
-                {announcement.body}
+                {content.body}
               </p>
             </div>
             <button
               type="button"
               onClick={() => dismiss(announcement)}
               className="shrink-0 rounded-lg border border-current/20 px-2.5 py-1.5 text-xs font-semibold hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary"
-              aria-label={`${language === "vi" ? "Ẩn thông báo" : "Dismiss announcement"}: ${announcement.title}`}
+              aria-label={`${language === "vi" ? "Ẩn thông báo" : "Dismiss announcement"}: ${content.title}`}
             >
               {language === "vi" ? "Đã hiểu" : "Dismiss"}
             </button>
           </div>
         </section>
-      ))}
+        );
+      })}
     </div>
   );
 }

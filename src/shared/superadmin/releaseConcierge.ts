@@ -7,13 +7,23 @@ import {
 } from "@/shared/superadmin/announcementsTypes";
 
 const releaseDraftSchema = z.object({
-  title: z.string().trim().min(1).max(120),
-  body: z.string().trim().min(1).max(2_000),
+  localized: z.object({
+    en: z.object({
+      title: z.string().trim().min(1).max(120),
+      body: z.string().trim().min(1).max(2_000),
+      emailSubject: z.string().trim().min(1).max(160),
+      emailBody: z.string().trim().min(1).max(4_000),
+    }),
+    vi: z.object({
+      title: z.string().trim().min(1).max(120),
+      body: z.string().trim().min(1).max(2_000),
+      emailSubject: z.string().trim().min(1).max(160),
+      emailBody: z.string().trim().min(1).max(4_000),
+    }),
+  }),
   severity: z.enum(ANNOUNCEMENT_SEVERITIES),
   target: z.enum(ANNOUNCEMENT_TARGETS),
   notificationMode: z.enum(RELEASE_NOTIFICATION_MODES),
-  emailSubject: z.string().trim().min(1).max(160),
-  emailBody: z.string().trim().min(1).max(4_000),
   reason: z.string().trim().min(1).max(300),
 });
 
@@ -53,13 +63,24 @@ export function fallbackReleaseConciergeDraft(
 ): ReleaseConciergeDraft {
   const clean = changeSummary.replace(/\s+/g, " ").trim().slice(0, 700);
   return {
-    title: "NailIQ product update / Cập nhật NailIQ",
-    body: `What's new: ${clean}\n\nCó gì mới: ${clean}`,
+    localized: {
+      en: {
+        title: "A NailIQ improvement is ready",
+        body: `What's new: ${clean}\n\nWhat you need to do: No action is required unless the message above says otherwise.`,
+        emailSubject: "A NailIQ improvement for your salon",
+        emailBody: `Hello,\n\nNailIQ has an improvement for your salon.\n\n${clean}\n\nWhat you need to do: No action is required unless the message above says otherwise.\n\nNeed help? Call 778-868-0738 or email support@nailiq.ca.`,
+      },
+      vi: {
+        title: "NailIQ vừa có một cải tiến mới",
+        body: `Có gì mới: ${clean}\n\nBạn cần làm gì: Không cần thao tác, trừ khi nội dung trên có hướng dẫn khác.`,
+        emailSubject: "NailIQ vừa có một cải tiến dành cho salon của bạn",
+        emailBody: `Xin chào,\n\nNailIQ vừa có một cải tiến dành cho salon của bạn.\n\n${clean}\n\nBạn cần làm gì: Không cần thao tác, trừ khi nội dung trên có hướng dẫn khác.\n\nCần hỗ trợ? Gọi 778-868-0738 hoặc email support@nailiq.ca.`,
+      },
+    },
     severity: "info",
     target: "owners",
     notificationMode: "in_app",
-    emailSubject: "NailIQ product update / Cập nhật NailIQ",
-    emailBody: `NailIQ has an update for your salon.\n\n${clean}\n\nNailIQ có một cập nhật dành cho salon của bạn.`,
-    reason: "Safe fallback: in-app draft for owners; no email is sent.",
+    reason:
+      "Safe fallback: separate English and Vietnamese owner drafts; no email is sent.",
   };
 }

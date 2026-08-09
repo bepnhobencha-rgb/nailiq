@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import type { ReleaseReviewContext } from "@/shared/superadmin/releaseReviewContext";
 
 const REVIEWED_KEY_PREFIX = "nailiq:release-review:handled:";
@@ -29,6 +30,8 @@ export function ReleaseReviewNotice({
   review: ReleaseReviewContext | null;
 }) {
   const router = useRouter();
+  const { language } = useUserLanguage();
+  const vi = language === "vi";
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -92,22 +95,25 @@ export function ReleaseReviewNotice({
     >
       <div className="min-w-0">
         <p className="text-sm font-semibold text-nq-foreground">
-          New release ready for review
+          {vi
+            ? "Có thay đổi mới — bạn có muốn thông báo cho salon?"
+            : "New change — should salon owners be notified?"}
         </p>
         <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-nq-muted">
           {activeReview.changeSummary}
         </p>
         <p className="mt-1 text-xs text-nq-muted">
-          Nothing is sent or published until a Superadmin approves it. Email
-          links are read-only until that decision is confirmed.
+          {vi
+            ? "Bản cập nhật đã hoạt động. NailIQ chưa gửi hay đăng thông báo nào."
+            : "The update is already active. Nothing is sent or published until you review and confirm."}
         </p>
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         <Button type="button" variant="ghost" size="md" onClick={dismissReview}>
-          No notice needed
+          {vi ? "Không cần thông báo" : "No notice needed"}
         </Button>
         <Button type="button" variant="primary" size="md" onClick={openReview}>
-          Review draft
+          {vi ? "Có, tạo thông báo" : "Yes, prepare a notice"}
         </Button>
       </div>
     </section>

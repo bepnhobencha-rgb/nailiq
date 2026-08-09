@@ -142,8 +142,10 @@ function CreateAnnouncementForm({
   onCreated: (row: PlatformAnnouncement) => void;
   onCancel: () => void;
 }) {
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
+  const [titleEn, setTitleEn] = useState("");
+  const [bodyEn, setBodyEn] = useState("");
+  const [titleVi, setTitleVi] = useState("");
+  const [bodyVi, setBodyVi] = useState("");
   const [severity, setSeverity] = useState<AnnouncementSeverity>("info");
   const [target, setTarget] = useState<AnnouncementTarget>("all");
   const [publishNow, setPublishNow] = useState(false);
@@ -163,8 +165,10 @@ function CreateAnnouncementForm({
         return;
       }
       const next = result.draft;
-      setTitle(next.title);
-      setBody(next.body);
+      setTitleEn(next.localized.en.title);
+      setBodyEn(next.localized.en.body);
+      setTitleVi(next.localized.vi.title);
+      setBodyVi(next.localized.vi.body);
       setSeverity(next.severity);
       setTarget(next.target);
       onAiDraftChange(next);
@@ -179,15 +183,24 @@ function CreateAnnouncementForm({
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (title.trim().length === 0 || body.trim().length === 0) {
-      setError("Title and body are both required.");
+    if (
+      titleEn.trim().length === 0 ||
+      bodyEn.trim().length === 0 ||
+      titleVi.trim().length === 0 ||
+      bodyVi.trim().length === 0
+    ) {
+      setError("English and Vietnamese title/body are all required.");
       return;
     }
     startTransition(async () => {
       const publishedAt = publishNow ? new Date().toISOString() : null;
       const result = await createAnnouncement({
-        title: title.trim(),
-        body: body.trim(),
+        title: titleEn.trim(),
+        body: bodyEn.trim(),
+        titleEn: titleEn.trim(),
+        bodyEn: bodyEn.trim(),
+        titleVi: titleVi.trim(),
+        bodyVi: bodyVi.trim(),
         severity,
         target,
         publishedAt,
@@ -199,8 +212,12 @@ function CreateAnnouncementForm({
       // Optimistic row — caller will router.refresh() to pull canonical.
       onCreated({
         id: result.id,
-        title: title.trim(),
-        body: body.trim(),
+        title: titleEn.trim(),
+        body: bodyEn.trim(),
+        localized: {
+          en: { title: titleEn.trim(), body: bodyEn.trim() },
+          vi: { title: titleVi.trim(), body: bodyVi.trim() },
+        },
         severity,
         target,
         publishedAt,
@@ -223,8 +240,9 @@ function CreateAnnouncementForm({
             AI Release Concierge
           </p>
           <p className="mt-1 text-xs leading-relaxed text-nq-muted">
-            Describe what changed. AI prepares bilingual in-app and email copy,
-            but it cannot publish or send anything.
+            Describe what changed. AI prepares separate English and Vietnamese
+            versions. Each Owner/Admin will see the language saved on their
+            account. AI cannot publish or send anything.
           </p>
         </div>
         <textarea
@@ -257,41 +275,82 @@ function CreateAnnouncementForm({
             <p className="mt-1">{aiDraft.reason}</p>
             <details className="mt-3">
               <summary className="cursor-pointer font-semibold text-nq-foreground">
-                Email preview — not sent
+                Email previews by account language — not sent
               </summary>
-              <p className="mt-2 font-semibold text-nq-foreground">
-                {aiDraft.emailSubject}
-              </p>
-              <p className="mt-1 whitespace-pre-line">{aiDraft.emailBody}</p>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                {(["en", "vi"] as const).map((locale) => (
+                  <section
+                    key={locale}
+                    className="rounded-lg border border-nq-border/45 bg-nq-surface/45 p-3"
+                  >
+                    <p className="font-semibold uppercase text-nq-foreground">
+                      {locale === "en" ? "English" : "Tiếng Việt"}
+                    </p>
+                    <p className="mt-2 font-semibold text-nq-foreground">
+                      {aiDraft.localized[locale].emailSubject}
+                    </p>
+                    <p className="mt-1 whitespace-pre-line">
+                      {aiDraft.localized[locale].emailBody}
+                    </p>
+                  </section>
+                ))}
+              </div>
             </details>
           </div>
         ) : null}
       </section>
 
-      <label className="flex flex-col gap-1.5">
-        <span className="text-xs font-medium text-nq-muted">Title</span>
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          required
-          maxLength={120}
-          autoFocus
-          className="rounded-lg border border-nq-border/50 bg-nq-bg/85 px-3 py-2 text-sm text-nq-foreground outline-none focus-visible:border-nq-primary/80"
-        />
-      </label>
-
-      <label className="flex flex-col gap-1.5">
-        <span className="text-xs font-medium text-nq-muted">Body</span>
-        <textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          required
-          rows={3}
-          maxLength={2_000}
-          className="rounded-lg border border-nq-border/50 bg-nq-bg/85 px-3 py-2 text-sm text-nq-foreground outline-none focus-visible:border-nq-primary/80"
-        />
-      </label>
+      <div className="grid gap-3 md:grid-cols-2">
+        {(["en", "vi"] as const).map((locale) => {
+          const isEnglish = locale === "en";
+          return (
+            <section
+              key={locale}
+              className="flex flex-col gap-3 rounded-xl border border-nq-border/40 bg-nq-bg/40 p-4"
+            >
+              <div>
+                <p className="text-sm font-semibold text-nq-foreground">
+                  {isEnglish ? "English" : "Tiếng Việt"}
+                </p>
+                <p className="mt-1 text-xs text-nq-muted">
+                  Shown only to accounts using {isEnglish ? "English" : "Vietnamese"}.
+                </p>
+              </div>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-nq-muted">Title</span>
+                <input
+                  type="text"
+                  value={isEnglish ? titleEn : titleVi}
+                  onChange={(event) =>
+                    isEnglish
+                      ? setTitleEn(event.target.value)
+                      : setTitleVi(event.target.value)
+                  }
+                  required
+                  maxLength={120}
+                  autoFocus={isEnglish}
+                  className="rounded-lg border border-nq-border/50 bg-nq-bg/85 px-3 py-2 text-sm text-nq-foreground outline-none focus-visible:border-nq-primary/80"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-nq-muted">Body</span>
+                <textarea
+                  value={isEnglish ? bodyEn : bodyVi}
+                  onChange={(event) =>
+                    isEnglish
+                      ? setBodyEn(event.target.value)
+                      : setBodyVi(event.target.value)
+                  }
+                  required
+                  rows={5}
+                  maxLength={2_000}
+                  className="rounded-lg border border-nq-border/50 bg-nq-bg/85 px-3 py-2 text-sm text-nq-foreground outline-none focus-visible:border-nq-primary/80"
+                />
+              </label>
+            </section>
+          );
+        })}
+      </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5">
@@ -425,7 +484,7 @@ function AnnouncementRow({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-base font-semibold tracking-tight text-nq-foreground">
-              {announcement.title}
+              {announcement.localized.en.title}
             </h3>
             <span
               className={cn(
@@ -449,7 +508,11 @@ function AnnouncementRow({
             )}
           </div>
           <p className="mt-2 whitespace-pre-wrap text-sm text-nq-muted">
-            {announcement.body}
+            <span className="font-medium text-nq-foreground">English</span>
+            {"\n"}{announcement.localized.en.body}
+            {"\n\n"}
+            <span className="font-medium text-nq-foreground">Tiếng Việt</span>
+            {"\n"}{announcement.localized.vi.body}
           </p>
         </div>
       </header>
