@@ -14,6 +14,7 @@ export type CronWorkerName =
   | "nail_tryon_cleanup"
   | "noshow_card_nudge"
   | "noshow_charge_retry"
+  | "release_review"
   | "reminders"
   | "send_pending_notifications"
   | "spend_sync"

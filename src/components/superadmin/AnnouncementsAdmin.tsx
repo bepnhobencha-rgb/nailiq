@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import { markReleaseReviewHandled } from "@/components/superadmin/ReleaseReviewNotice";
 import { cn } from "@/shared/lib/cn";
 import {
   createAnnouncement,
@@ -18,6 +19,7 @@ import {
   type PlatformAnnouncement,
   type ReleaseConciergeDraft,
 } from "@/shared/superadmin/announcementsTypes";
+import type { ReleaseReviewContext } from "@/shared/superadmin/releaseReviewContext";
 
 const SEVERITY_BADGE: Record<AnnouncementSeverity, string> = {
   info: "border-sky-500/55 bg-sky-400/15 text-sky-700",
@@ -43,12 +45,14 @@ const TARGET_LABEL: Record<AnnouncementTarget, string> = {
  */
 export function AnnouncementsAdmin({
   initial,
+  releaseReview,
 }: {
   initial: PlatformAnnouncement[];
+  releaseReview?: ReleaseReviewContext | null;
 }) {
   const router = useRouter();
   const [items, setItems] = useState<PlatformAnnouncement[]>(initial);
-  const [showCreate, setShowCreate] = useState(false);
+  const [showCreate, setShowCreate] = useState(Boolean(releaseReview));
   const [aiDraft, setAiDraft] = useState<ReleaseConciergeDraft | null>(null);
 
   function refresh() {
@@ -79,9 +83,13 @@ export function AnnouncementsAdmin({
       {showCreate ? (
         <CreateAnnouncementForm
           aiDraft={aiDraft}
+          initialChangeSummary={releaseReview?.changeSummary ?? ""}
           onAiDraftChange={setAiDraft}
           onCreated={(row) => {
             setItems((cur) => [row, ...cur]);
+            if (releaseReview) {
+              markReleaseReviewHandled(releaseReview.deploymentId);
+            }
             setAiDraft(null);
             setShowCreate(false);
             refresh();
@@ -123,11 +131,13 @@ export function AnnouncementsAdmin({
 
 function CreateAnnouncementForm({
   aiDraft,
+  initialChangeSummary,
   onAiDraftChange,
   onCreated,
   onCancel,
 }: {
   aiDraft: ReleaseConciergeDraft | null;
+  initialChangeSummary: string;
   onAiDraftChange: (draft: ReleaseConciergeDraft | null) => void;
   onCreated: (row: PlatformAnnouncement) => void;
   onCancel: () => void;
@@ -140,7 +150,7 @@ function CreateAnnouncementForm({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [aiPending, startAiTransition] = useTransition();
-  const [changeSummary, setChangeSummary] = useState("");
+  const [changeSummary, setChangeSummary] = useState(initialChangeSummary);
   const [aiStatus, setAiStatus] = useState<string | null>(null);
 
   function generateDraft() {

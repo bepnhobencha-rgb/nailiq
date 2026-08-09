@@ -48,6 +48,7 @@ export const CRON_ROUTE_CONTRACTS: ReadonlyArray<{
   { workerName: "nail_tryon_cleanup", label: "Nail try-on cleanup", schedule: "Hourly", staleAfterMs: 3 * HOUR },
   { workerName: "noshow_card_nudge", label: "No-show card nudge", schedule: "Twice daily", staleAfterMs: 30 * HOUR },
   { workerName: "noshow_charge_retry", label: "No-show charge retry", schedule: "Daily", staleAfterMs: 30 * HOUR },
+  { workerName: "release_review", label: "Release review email", schedule: "Every 5 minutes", staleAfterMs: 15 * MINUTE },
   { workerName: "reminders", label: "Booking reminders", schedule: "Every 15 minutes", staleAfterMs: 45 * MINUTE },
   { workerName: "send_pending_notifications", label: "Pending notifications", schedule: "Every minute", staleAfterMs: 5 * MINUTE },
   { workerName: "spend_sync", label: "Channel spend sync", schedule: "Daily", staleAfterMs: 30 * HOUR },
