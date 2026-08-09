@@ -171,6 +171,7 @@ import { PartyCardPanel } from "@/components/receptionist/PartyCardPanel";
 import { AttentionChipBar } from "@/components/receptionist/AttentionChipBar";
 import { NailiqSuggestionBar } from "@/components/receptionist/NailiqSuggestionBar";
 import { ReceptionistInterfaceSwitcher } from "@/components/receptionist/ReceptionistInterfaceSwitcher";
+import { ReceptionistDisplayMenu } from "@/components/receptionist/ReceptionistDisplayMenu";
 import { DailyBriefCard } from "@/components/receptionist/DailyBriefCard";
 import DeskBookingForm from "@/components/receptionist/DeskBookingForm";
 import DeskGroupForm from "@/components/receptionist/DeskGroupForm";
@@ -3185,29 +3186,116 @@ function ReceptionistCenterInner({
                 {data.salon.name}
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <ReceptionistInterfaceSwitcher
-                value={receptionistInterface}
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 xl:mr-32 2xl:mr-0">
+              <ReceptionistDisplayMenu
                 language={language === "vi" ? "vi" : "en"}
-                onChange={(next) => {
-                  if (next === "classic") setPreviewFullQueueOpen(false);
-                  setReceptionistInterface(next);
-                }}
-                className={
-                  previewInterface
-                    ? "border-[var(--rc-new-border-strong)] bg-[var(--rc-new-surface)] text-[var(--rc-new-text)] hover:bg-[var(--rc-new-surface-subtle)]"
-                    : undefined
-                }
-              />
-              {previewInterface &&
-              (viewerRole === "owner" || viewerRole === "admin") ? (
-                <ReceptionistPreviewThemePicker
-                  slug={slug}
-                  currentBg={newInterfaceBg}
+              >
+                <ReceptionistInterfaceSwitcher
+                  value={receptionistInterface}
                   language={language === "vi" ? "vi" : "en"}
-                  onBgChange={setNewInterfaceBg}
+                  onChange={(next) => {
+                    if (next === "classic") setPreviewFullQueueOpen(false);
+                    setReceptionistInterface(next);
+                  }}
+                  className={
+                    previewInterface
+                      ? "border-[var(--rc-new-border-strong)] bg-[var(--rc-new-surface)] text-[var(--rc-new-text)] hover:bg-[var(--rc-new-surface-subtle)]"
+                      : undefined
+                  }
                 />
-              ) : null}
+                {previewInterface &&
+                (viewerRole === "owner" || viewerRole === "admin") ? (
+                  <ReceptionistPreviewThemePicker
+                    slug={slug}
+                    currentBg={newInterfaceBg}
+                    language={language === "vi" ? "vi" : "en"}
+                    onBgChange={setNewInterfaceBg}
+                  />
+                ) : null}
+                {previewInterface ? (
+                  <div
+                    role="tablist"
+                    aria-label={rcMessages.viewMode.ariaLabel}
+                    className="grid w-full grid-cols-3 overflow-hidden rounded-lg border border-nq-border text-xs font-semibold"
+                  >
+                    {(["day", "week", "month"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="tab"
+                        aria-selected={viewMode === mode}
+                        data-testid={`mobile-display-view-${mode}`}
+                        onClick={() => {
+                          if (mode === "week") {
+                            setWeekMondayYmd(mondayYmdOf(data.selectedDate));
+                          } else if (mode === "month") {
+                            setMonthFirstYmd(firstOfMonth(data.selectedDate));
+                          }
+                          onChangeViewMode(mode);
+                        }}
+                        className={cn(
+                          "min-h-10 px-2 transition-colors",
+                          viewMode === mode
+                            ? "bg-nq-primary/15 text-nq-primary"
+                            : "text-nq-muted hover:text-nq-foreground",
+                        )}
+                      >
+                        {rcMessages.viewMode[mode]}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                {!previewInterface &&
+                isViewingToday &&
+                viewMode === "day" &&
+                !isForced ? (
+                  <button
+                    type="button"
+                    data-testid="basic-mode-toggle"
+                    aria-pressed={basicMode}
+                    aria-label={
+                      basicMode
+                        ? rcMessages.basicMode.toggleOffAria
+                        : rcMessages.basicMode.toggleOnAria
+                    }
+                    onClick={toggleBasicMode}
+                    className={cn(
+                      "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                      basicMode
+                        ? "border-nq-primary bg-nq-primary/15 text-nq-primary"
+                        : "border-nq-border bg-nq-surface text-nq-muted hover:text-nq-foreground",
+                    )}
+                  >
+                    {rcMessages.basicMode.toggle}
+                  </button>
+                ) : null}
+                {!previewInterface &&
+                viewerRole !== "nail_tech" &&
+                !basicModeActive ? (
+                  <DensitySlider
+                    slug={slug}
+                    value={data.dashboardDensity}
+                    labels={rcMessages.density}
+                    onChanged={onDensityChanged}
+                    onError={(msg) => setShakeMessage(msg)}
+                  />
+                ) : null}
+                {!previewInterface &&
+                viewerRole === "owner" &&
+                !basicModeActive ? (
+                  <DrcThemePicker
+                    slug={slug}
+                    currentAccent={drcAccent}
+                    onAccentChange={setDrcAccent}
+                    currentBg={drcBg}
+                    onBgChange={setDrcBg}
+                  />
+                ) : null}
+                <UserLanguageToggle
+                  language={language}
+                  onLanguageChange={setLanguage}
+                />
+              </ReceptionistDisplayMenu>
               {/* Status pill duplicates the Now Bar's Waiting + In service
                   counts, so it's hidden in Basic Mode. Balanced/Advanced
                   keep it (no Now Bar there). */}
@@ -3241,7 +3329,7 @@ function ReceptionistCenterInner({
                   variant="info"
                   state="subtle"
                   size="sm"
-                  className="hidden xl:inline-flex"
+                  className="hidden 2xl:inline-flex"
                 >
                   {rcMessages.roleBadge.ownerView}
                 </Badge>
@@ -3287,65 +3375,6 @@ function ReceptionistCenterInner({
                * per PERMISSION_MATRIX §3 to give senior write access
                * to a personal density.
                */}
-              {/* Basic Mode toggle — per-device front-desk cockpit. Shown
-                  on the live day board for every role (it's a personal view
-                  preference, not a salon-wide setting). Hidden when the salon
-                  forces Basic Mode (the toggle would be a no-op). */}
-              {isViewingToday &&
-              viewMode === "day" &&
-              !isForced &&
-              !previewInterface ? (
-                <button
-                  type="button"
-                  data-testid="basic-mode-toggle"
-                  aria-pressed={basicMode}
-                  aria-label={
-                    basicMode
-                      ? rcMessages.basicMode.toggleOffAria
-                      : rcMessages.basicMode.toggleOnAria
-                  }
-                  onClick={toggleBasicMode}
-                  data-rush-fade
-                  className={cn(
-                    "hidden rounded-md border px-2.5 py-1 text-xs font-medium transition-colors xl:inline-flex",
-                    basicMode
-                      ? "border-nq-primary bg-nq-primary/15 text-nq-primary"
-                      : "border-nq-border bg-nq-surface text-nq-muted hover:text-nq-foreground",
-                  )}
-                >
-                  {rcMessages.basicMode.toggle}
-                </button>
-              ) : null}
-              {/* Density slider is hidden in Basic Mode — Basic Mode is the
-                  simplified view, so the density control would be redundant
-                  clutter. Reappears when Basic Mode is off. */}
-              {viewerRole !== "nail_tech" &&
-              !basicModeActive &&
-              !previewInterface ? (
-                <span className="hidden xl:inline" data-rush-fade>
-                  <DensitySlider
-                    slug={slug}
-                    value={data.dashboardDensity}
-                    labels={rcMessages.density}
-                    onChanged={onDensityChanged}
-                    onError={(msg) => setShakeMessage(msg)}
-                  />
-                </span>
-              ) : null}
-              {/* DRC color theme picker — owner-only, subtle palette icon */}
-              {viewerRole === "owner" &&
-              !basicModeActive &&
-              !previewInterface ? (
-                <span className="hidden xl:inline" data-rush-fade>
-                  <DrcThemePicker
-                    slug={slug}
-                    currentAccent={drcAccent}
-                    onAccentChange={setDrcAccent}
-                    currentBg={drcBg}
-                    onBgChange={setDrcBg}
-                  />
-                </span>
-              ) : null}
               {/* Day / Week view-mode toggle. Day is the live desk job;
                   Week is a read-only planning glance per
                   DASHBOARD_LAYOUT_RULES §3. Pair color with text label
@@ -3363,7 +3392,7 @@ function ReceptionistCenterInner({
                   data-rush-fade
                   className={cn(
                     "overflow-hidden rounded-md border border-nq-border bg-nq-surface text-xs font-medium",
-                    previewInterface ? "inline-flex" : "hidden xl:inline-flex",
+                    "hidden xl:inline-flex",
                   )}
                 >
                   {(["day", "week", "month"] as const).map((mode) => {
@@ -3425,7 +3454,7 @@ function ReceptionistCenterInner({
                   variant="primary"
                   size="sm"
                   data-testid="header-add-walkin"
-                  className="min-h-11 text-base"
+                  className="hidden min-h-11 text-base md:inline-flex"
                   onClick={
                     previewInterface ? openPreviewWalkinAdd : openWalkinAdd
                   }
@@ -3442,7 +3471,7 @@ function ReceptionistCenterInner({
                   variant="secondary"
                   size="sm"
                   data-testid="header-add-appointment"
-                  className="min-h-11 text-base"
+                  className="hidden min-h-11 text-base md:inline-flex"
                   onClick={() => {
                     // Open a blank form on the currently-viewed date so a
                     // receptionist booking ahead (viewing tomorrow) doesn't
@@ -3589,12 +3618,6 @@ function ReceptionistCenterInner({
                   ) : null}
                 </button>
               ) : null}
-              <span data-rush-fade>
-                <UserLanguageToggle
-                  language={language}
-                  onLanguageChange={setLanguage}
-                />
-              </span>
             </div>
           </div>
           <div
@@ -4105,6 +4128,22 @@ function ReceptionistCenterInner({
                   }}
                   onNavigateDate={(ymd) => void navigateToYmd(ymd)}
                   onAddBooking={() => setDeskBookingOpen(true)}
+                  onAddWalkin={
+                    isViewingToday &&
+                    modules.queue_panel &&
+                    modules.quick_add &&
+                    canCreateDeskBooking(viewerRole) &&
+                    !isSetupIncomplete
+                      ? previewInterface
+                        ? openPreviewWalkinAdd
+                        : openWalkinAdd
+                      : undefined
+                  }
+                  onAddGroup={
+                    groupBookingEnabled
+                      ? () => setDeskGroupOpen(true)
+                      : undefined
+                  }
                   language={language === "vi" ? "vi" : "en"}
                   autoNoShowMinutes={data.salon.autoNoShowMinutes}
                   currencyCode={data.salon.currencyCode}

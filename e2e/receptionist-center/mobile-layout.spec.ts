@@ -77,6 +77,14 @@ test.describe("Mobile layout", () => {
     expect(fontSize).toBeGreaterThanOrEqual(16);
   }
 
+  async function chooseMobileCreate(
+    page: import("@playwright/test").Page,
+    target: "walkin" | "appointment",
+  ) {
+    await page.getByTestId("mobile-create-menu-trigger").click();
+    await page.getByTestId(`mobile-create-${target}`).click();
+  }
+
   test("daily brief keeps the schedule primary until details are requested", async ({
     page,
   }) => {
@@ -120,7 +128,10 @@ test.describe("Mobile layout", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await gotoReceptionistCenter(page, fx.slug);
 
-    const addWalkin = page.getByTestId("header-add-walkin");
+    const createMenu = page.getByTestId("mobile-create-menu-trigger");
+    await expectPrimaryControlSize(createMenu);
+    await createMenu.click();
+    const addWalkin = page.getByTestId("mobile-create-walkin");
     await expectPrimaryControlSize(addWalkin);
     await addWalkin.click();
     await expect(page.getByTestId("queue-panel-slideover")).toHaveAttribute(
@@ -135,9 +146,8 @@ test.describe("Mobile layout", () => {
     await expectPrimaryControlSize(closeWalkin);
     await closeWalkin.click();
 
-    // Classic mobile previously hid this CTA below the `sm` breakpoint,
-    // leaving phone users no direct way to create a scheduled appointment.
-    const newAppointment = page.getByTestId("header-add-appointment");
+    await createMenu.click();
+    const newAppointment = page.getByTestId("mobile-create-appointment");
     await expectPrimaryControlSize(newAppointment);
     await newAppointment.click();
 
@@ -163,7 +173,7 @@ test.describe("Mobile layout", () => {
     const startedAt = Date.now();
 
     // Advanced queue metadata stays out of the default speed path.
-    await page.getByTestId("header-add-walkin").click();
+    await chooseMobileCreate(page, "walkin");
     await expect(page.getByTestId("queue-panel-slideover")).toHaveAttribute(
       "aria-hidden",
       "false",
@@ -195,7 +205,7 @@ test.describe("Mobile layout", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await gotoReceptionistCenter(page, fx.slug);
 
-    await page.getByTestId("header-add-walkin").click();
+    await chooseMobileCreate(page, "walkin");
     await expect(page.getByTestId("queue-panel-slideover")).toHaveAttribute(
       "aria-hidden",
       "false",
@@ -223,7 +233,7 @@ test.describe("Mobile layout", () => {
     const bookingYmd = nextOpenYmd(fx.ymdUtc);
     const startedAt = Date.now();
 
-    await page.getByTestId("header-add-appointment").click();
+    await chooseMobileCreate(page, "appointment");
     const form = page.getByTestId("desk-booking-form");
     await expect(form).toBeVisible();
     await fillReactInput(page.getByTestId("desk-client-phone"), clientPhone);
