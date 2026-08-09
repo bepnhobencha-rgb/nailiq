@@ -1,5 +1,6 @@
 import { AnnouncementsAdmin } from "@/components/superadmin/AnnouncementsAdmin";
 import { loadAnnouncements } from "@/shared/superadmin/announcementsActions";
+import { currentReleaseReviewContext } from "@/shared/superadmin/releaseReviewContext";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +15,18 @@ export const dynamic = "force-dynamic";
  * NOT in this PR — the admin lands first so founder can stage
  * messages before the read path arrives.
  */
-export default async function AnnouncementsPage() {
+export default async function AnnouncementsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ release?: string | string[] }>;
+}) {
   const result = await loadAnnouncements();
+  const params = await searchParams;
+  const requestedRelease =
+    typeof params.release === "string" ? params.release : null;
+  const currentRelease = currentReleaseReviewContext();
+  const releaseReview =
+    currentRelease?.deploymentId === requestedRelease ? currentRelease : null;
 
   return (
     <main className="mx-auto w-full max-w-5xl px-5 py-8 md:px-8">
@@ -29,7 +40,10 @@ export default async function AnnouncementsPage() {
       </header>
 
       {result.ok ? (
-        <AnnouncementsAdmin initial={result.announcements} />
+        <AnnouncementsAdmin
+          initial={result.announcements}
+          releaseReview={releaseReview}
+        />
       ) : (
         <p
           role="alert"

@@ -5,6 +5,8 @@ import { getSuperAdminRole } from "@/shared/lib/superadmin";
 import { SuperadminSidebar } from "@/components/superadmin/SuperadminSidebar";
 import { SuperadminBottomNav } from "@/components/superadmin/SuperadminBottomNav";
 import { SuperadminTopBar } from "@/components/superadmin/SuperadminTopBar";
+import { ReleaseReviewNotice } from "@/components/superadmin/ReleaseReviewNotice";
+import { currentReleaseReviewContext } from "@/shared/superadmin/releaseReviewContext";
 
 export const dynamic = "force-dynamic";
 
@@ -61,13 +63,20 @@ export default async function SuperadminShellLayout({
   }
   if (needsMfa) redirect("/superadmin/mfa");
 
+  const releaseReview = ["founder", "ops_admin"].includes(role)
+    ? currentReleaseReviewContext()
+    : null;
+
   return (
     <div className="min-h-dvh bg-nq-bg text-nq-foreground">
       <SuperadminSidebar role={role} />
       <SuperadminBottomNav role={role} />
       {/* Mobile-only top bar with wordmark + sign-out; hidden at md+ where sidebar handles it */}
       <SuperadminTopBar />
-      <div className="md:pl-60 pb-14 md:pb-0">{children}</div>
+      <div className="md:pl-60 pb-14 md:pb-0">
+        <ReleaseReviewNotice review={releaseReview} />
+        {children}
+      </div>
     </div>
   );
 }
