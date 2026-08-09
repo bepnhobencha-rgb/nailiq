@@ -13,6 +13,7 @@ import {
   utcIsoToSalonMinutesFromMidnight,
 } from "@/shared/lib/salonTime";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
+import { compareBookingStartInstants } from "@/shared/dashboard/bookingStartComparison";
 import { getResourceMode, resolveFreeResource } from "@/shared/booking/resolveResource";
 import {
   type BookingRowDb,
@@ -34,6 +35,7 @@ function isUuidLike(value: string): boolean {
 type BookingEditRow = {
   id?: unknown;
   status?: unknown;
+  staff_id?: unknown;
   service_id?: unknown;
   start_time_utc?: unknown;
   end_time_utc?: unknown;
@@ -128,8 +130,8 @@ export async function performEditBooking(
     return { ok: false, error: "server_error" };
   }
 
-  const startMs = Date.parse(slotStartUtc);
-  if (Number.isNaN(startMs)) {
+  const nextStartMs = Date.parse(slotStartUtc);
+  if (Number.isNaN(nextStartMs)) {
     return { ok: false, error: "server_error" };
   }
 
@@ -178,6 +180,12 @@ export async function performEditBooking(
   if (!st || !en) {
     return { ok: false, error: "server_error" };
   }
+  const startComparison = compareBookingStartInstants(st, slotStartUtc);
+  if (!startComparison.ok) {
+    return { ok: false, error: "server_error" };
+  }
+  const startMs = startComparison.nextMs;
+  const startChanged = startComparison.changed;
 
   const status = String(bookingData.status);
   if (status !== "pending" && status !== "confirmed") {
@@ -192,7 +200,7 @@ export async function performEditBooking(
   // so an unchanged-time edit (staff/service only) on an already-past booking
   // isn't mis-flagged as moving to the past.
   const PAST_GRACE_MS = 2 * 60 * 1000;
-  if (startMs !== Date.parse(st) && startMs < Date.now() - PAST_GRACE_MS) {
+  if (startChanged && startMs < Date.now() - PAST_GRACE_MS) {
     return { ok: false, error: "past_date" };
   }
 
@@ -321,7 +329,7 @@ export async function performEditBooking(
   const previousServiceId = String(bookingData.service_id ?? "").trim();
   const previousAddonId = String(bookingData.addon_service_id ?? "").trim();
   const affectsServiceWindow =
-    startMs !== Date.parse(st) ||
+    startChanged ||
     newServiceId !== previousServiceId ||
     (effectiveAddonId ?? "") !== previousAddonId;
 
@@ -426,7 +434,7 @@ export async function performEditBooking(
     // owns the latest change (last-writer-wins vs the Square booking's updated_at).
     local_updated_at: new Date().toISOString(),
   };
-  if (startMs !== Date.parse(st)) {
+  if (startChanged) {
     // A reschedule creates a new attendance window; an old no-show review flag
     // must never follow the booking to its new time.
     baseUpdate.no_show_candidate_at = null;
@@ -517,17 +525,30 @@ export async function performEditBooking(
     eventType: "booking_edited",
     payload: {
       newStaffId,
+      previousStaffId: String(bookingData.staff_id ?? "").trim() || null,
       newServiceId,
+      previousServiceId: previousServiceId || null,
+      previousStartTimeUtc: st,
       newStartTimeUtc: slotStartUtc,
       newEndTimeUtc: slotEndUtc,
       addonChanged: input.newAddonServiceId !== undefined,
+      previousAddonServiceId: previousAddonId || null,
       newAddonServiceId: effectiveAddonId,
     },
   });
 
   // Only when the start time actually moved (a pure staff/service swap isn't a
   // reschedule) do we fire reschedule notifications. Opt-in, fire-and-forget.
-  if (slotStartUtc && slotStartUtc !== st) {
+  if (startChanged) {
+    const changedFields: Array<"time" | "staff" | "service" | "addon"> = [
+      "time",
+    ];
+    if (newStaffId !== String(bookingData.staff_id ?? "").trim()) {
+      changedFields.push("staff");
+    }
+    if (newServiceId !== previousServiceId) changedFields.push("service");
+    if ((effectiveAddonId ?? "") !== previousAddonId) changedFields.push("addon");
+
     // Owner/admin "rescheduled" alert.
     after(() =>
       sendOwnerBookingNotification({
@@ -535,6 +556,8 @@ export async function performEditBooking(
         bookingId,
         event: "reschedule",
         previousStartUtc: st || null,
+        changedBy: actor?.role ?? "system",
+        changedFields,
       }),
     );
 

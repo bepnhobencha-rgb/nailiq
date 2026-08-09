@@ -125,6 +125,8 @@ export async function POST(req: Request) {
       bookingId,
       event: "reschedule",
       previousStartUtc: originalStartUtc,
+      changedBy: "customer",
+      changedFields: ["time"],
     });
 
     const sb = createServiceRoleClient();
