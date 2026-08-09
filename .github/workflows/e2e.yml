@@ -510,6 +510,26 @@ jobs:
           path: playwright-report/
           retention-days: 14
 
+  # Keep the branch-protection contract stable while the implementation runs
+  # Receptionist Chromium and Mobile in parallel. This required check becomes
+  # green only after every E2E matrix job succeeds; no admin bypass or branch
+  # protection change is needed during the rollout.
+  receptionist-center-gate:
+    name: E2E (Playwright) — receptionist-center
+    runs-on: ubuntu-latest
+    needs: e2e
+    if: always()
+    steps:
+      - name: Require every E2E shard to pass
+        env:
+          E2E_RESULT: ${{ needs.e2e.result }}
+        run: |
+          if [ "$E2E_RESULT" != "success" ]; then
+            echo "::error::At least one E2E shard did not pass: $E2E_RESULT"
+            exit 1
+          fi
+          echo "All isolated E2E shards passed."
+
   visual-tests:
     name: Visual Regression
     runs-on: ubuntu-latest
