@@ -78,7 +78,7 @@ describe("AI execution queue boundary", () => {
   it("updates the blank-database schema tripwire", () => {
     const parity = read("scripts/check-schema-parity.ts");
     expect(parity).toContain("tables: 106");
-    expect(parity).toContain("columns: 1419");
+    expect(parity).toContain("columns: 1423");
     expect(parity).toContain("policies: 155");
     expect(parity).toContain("indexes: 348");
     expect(parity).toContain("functions: 112");
