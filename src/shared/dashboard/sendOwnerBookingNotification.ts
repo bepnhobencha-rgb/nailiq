@@ -7,6 +7,14 @@ import {
   shouldNotify,
   type OwnerNotificationEvent,
 } from "@/shared/dashboard/ownerNotificationSettings";
+import { compareBookingStartInstants } from "@/shared/dashboard/bookingStartComparison";
+import {
+  ownerNotificationActorLabel,
+  ownerNotificationChangesLabel,
+  ownerRescheduleTimeLabels,
+  type OwnerNotificationActor,
+  type OwnerNotificationChangeField,
+} from "@/shared/dashboard/ownerBookingNotificationCopy";
 
 /**
  * Email owner/admin when a booking is created / rescheduled / cancelled /
@@ -23,6 +31,10 @@ export type OwnerNotifyInput = {
   event: OwnerNotificationEvent;
   /** Previous start time (UTC ISO) for reschedule emails. */
   previousStartUtc?: string | null;
+  /** Who initiated the change, shown to the owner/admin for clarity. */
+  changedBy?: OwnerNotificationActor | null;
+  /** Fields changed as part of a real reschedule (time is always included). */
+  changedFields?: OwnerNotificationChangeField[] | null;
   /** Party size for group bookings (>1). Renders a "Group · Nhóm · N" badge so
    *  the owner knows the email represents a whole party, not one guest. */
   groupSize?: number | null;
@@ -477,6 +489,26 @@ export async function sendOwnerBookingNotification(
     } | null;
     if (!b) return;
 
+    // Defense in depth: never label an unchanged appointment as rescheduled.
+    // The desk path already suppresses this, but this guard protects future
+    // callers from equivalent ISO strings such as `+00:00` vs `.000Z`.
+    if (event === "reschedule" && input.previousStartUtc && b.start_time_utc) {
+      const comparison = compareBookingStartInstants(
+        input.previousStartUtc,
+        b.start_time_utc,
+      );
+      if (comparison.ok && !comparison.changed) {
+        await logNotify(admin, {
+          salonId,
+          bookingId,
+          event,
+          status: "skipped",
+          error: "same_start_instant",
+        });
+        return;
+      }
+    }
+
     const [svcRes, staffRes, profRes] = await Promise.all([
       b.service_id
         ? admin
@@ -556,6 +588,8 @@ export async function sendOwnerBookingNotification(
     const channelKey = (b.booking_channel || b.source || "").trim();
     const channelStr = CHANNEL_LABEL[channelKey] || null;
     const phone = b.client_phone?.trim() || null;
+    const changedByLabel = ownerNotificationActorLabel(input.changedBy);
+    const changedFieldsLabel = ownerNotificationChangesLabel(input.changedFields);
 
     // Customer recognition badge (no-show history → VIP → new → returning).
     const visits = prof?.visit_count ?? 0;
@@ -598,7 +632,15 @@ export async function sendOwnerBookingNotification(
     ];
     if (priceStr) detail.push(["Price · Giá", priceStr]);
     detail.push(["Staff · Thợ", staffName]);
-    if (channelStr) detail.push(["Channel · Kênh", channelStr]);
+    if (event === "reschedule" && changedByLabel) {
+      detail.push(["Changed by · Người thay đổi", changedByLabel]);
+    }
+    if (event === "reschedule" && changedFieldsLabel) {
+      detail.push(["Changed · Nội dung", changedFieldsLabel]);
+    }
+    if (channelStr) {
+      detail.push(["Original booking source · Nguồn đặt ban đầu", channelStr]);
+    }
     const detailHtml = detail
       .map(
         ([k, v], i) =>
@@ -614,12 +656,25 @@ export async function sendOwnerBookingNotification(
       )
       .join("");
 
-    const oldTimeHtml =
-      event === "reschedule" && input.previousStartUtc
-        ? `<div style="font-size:13px;color:#6b7280;margin-top:6px">Old time · Giờ cũ: <s>${esc(
-            fmt(input.previousStartUtc),
-          )}</s></div>`
-        : "";
+    const rescheduleTime =
+      event === "reschedule" && input.previousStartUtc && b.start_time_utc
+        ? ownerRescheduleTimeLabels({
+            previousStartUtc: input.previousStartUtc,
+            nextStartUtc: b.start_time_utc,
+            timezone: tz,
+            durationMin,
+          })
+        : null;
+    const appointmentTimeHtml = rescheduleTime
+      ? `<div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:1px">Before · Trước khi đổi</div>
+            <div style="font-size:14px;color:#6b7280;margin-top:5px"><s>${esc(rescheduleTime.before)}</s></div>
+            <div style="font-size:18px;color:${style.accent};font-weight:700;margin:8px 0">↓</div>
+            <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:1px">After · Sau khi đổi</div>
+            <div style="font-size:19px;font-weight:700;color:#111827;margin-top:5px">${esc(rescheduleTime.afterDate)}</div>
+            <div style="font-size:15px;color:#374151;margin-top:2px">${esc(rescheduleTime.afterTime)}</div>`
+      : `<div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:1px">Appointment · Lịch hẹn</div>
+            <div style="font-size:19px;font-weight:700;color:#111827;margin-top:5px">${esc(dateStr)}</div>
+            <div style="font-size:15px;color:#374151;margin-top:2px">${esc(timeStr)}${durationMin ? ` · ${durationMin} min` : ""}</div>`;
 
     const phoneHtml = phone
       ? `<a href="tel:${esc(phone.replace(/[^\d+]/g, ""))}" style="display:inline-block;margin-top:8px;color:#374151;font-size:14px;text-decoration:none">📞 ${esc(
@@ -645,10 +700,7 @@ export async function sendOwnerBookingNotification(
         ${phoneHtml}
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;border:1px solid #eef0f2;border-radius:10px;margin:18px 0"><tr>
           <td style="padding:14px 16px">
-            <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:1px">Appointment · Lịch hẹn</div>
-            <div style="font-size:19px;font-weight:700;color:#111827;margin-top:5px">${esc(dateStr)}</div>
-            <div style="font-size:15px;color:#374151;margin-top:2px">${esc(timeStr)}${durationMin ? ` · ${durationMin} min` : ""}</div>
-            ${oldTimeHtml}
+            ${appointmentTimeHtml}
           </td>
         </tr></table>
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px">${detailHtml}</table>
@@ -675,11 +727,21 @@ export async function sendOwnerBookingNotification(
       `Service / Dịch vụ: ${serviceName}${durationMin ? ` · ${durationMin} min` : ""}`,
       ...(priceStr ? [`Price / Giá: ${priceStr}`] : []),
       `Staff / Thợ: ${staffName}`,
-      ...(channelStr ? [`Channel / Kênh: ${channelStr}`] : []),
-      `Time / Giờ: ${fmt(b.start_time_utc)}`,
-      ...(event === "reschedule" && input.previousStartUtc
-        ? [`Old time / Giờ cũ: ${fmt(input.previousStartUtc)}`]
+      ...(event === "reschedule" && changedByLabel
+        ? [`Changed by / Người thay đổi: ${changedByLabel}`]
         : []),
+      ...(event === "reschedule" && changedFieldsLabel
+        ? [`Changed / Nội dung: ${changedFieldsLabel}`]
+        : []),
+      ...(channelStr
+        ? [`Original booking source / Nguồn đặt ban đầu: ${channelStr}`]
+        : []),
+      ...(rescheduleTime
+        ? [
+            `Before / Trước khi đổi: ${rescheduleTime.before}`,
+            `After / Sau khi đổi: ${rescheduleTime.afterDate} ${rescheduleTime.afterTime}`,
+          ]
+        : [`Time / Giờ: ${fmt(b.start_time_utc)}`]),
       "",
       `Open dashboard: ${dashboardUrl}`,
     ];

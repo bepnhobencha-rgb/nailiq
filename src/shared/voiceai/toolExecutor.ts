@@ -1681,6 +1681,11 @@ async function handleRescheduleBooking(
       bookingId,
       event: "reschedule",
       previousStartUtc: oldStart,
+      changedBy: "voice_ai",
+      changedFields:
+        resolvedStaffId && resolvedStaffId !== currentStaffId
+          ? ["time", "staff"]
+          : ["time"],
     }),
   );
 
