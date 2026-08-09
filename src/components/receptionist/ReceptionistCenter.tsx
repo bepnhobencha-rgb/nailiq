@@ -4122,12 +4122,25 @@ function ReceptionistCenterInner({
                   openMinutes={data.salon.openMinutes}
                   closeMinutes={data.salon.closeMinutes}
                   onBookingClick={(id) => openBookingDrawer(id)}
-                  onEmptySlotClick={(staffId, ymd, slotLabel) => {
-                    setDeskPrefill({ staffId, ymd, slotLabel, anchor: undefined });
-                    setDeskBookingOpen(true);
-                  }}
+                  onEmptySlotClick={
+                    canCreateDeskBooking(viewerRole)
+                      ? (staffId, ymd, slotLabel) => {
+                          setDeskPrefill({
+                            staffId,
+                            ymd,
+                            slotLabel,
+                            anchor: undefined,
+                          });
+                          setDeskBookingOpen(true);
+                        }
+                      : undefined
+                  }
                   onNavigateDate={(ymd) => void navigateToYmd(ymd)}
-                  onAddBooking={() => setDeskBookingOpen(true)}
+                  onAddBooking={
+                    canCreateDeskBooking(viewerRole)
+                      ? () => setDeskBookingOpen(true)
+                      : undefined
+                  }
                   onAddWalkin={
                     isViewingToday &&
                     modules.queue_panel &&
@@ -4140,7 +4153,7 @@ function ReceptionistCenterInner({
                       : undefined
                   }
                   onAddGroup={
-                    groupBookingEnabled
+                    groupBookingEnabled && canCreateDeskBooking(viewerRole)
                       ? () => setDeskGroupOpen(true)
                       : undefined
                   }
