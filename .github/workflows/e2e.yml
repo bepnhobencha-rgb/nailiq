@@ -172,7 +172,6 @@ jobs:
             name: "non-RC tests"
             project: "auto"
             browser: "auto"
-            main_only: false
             testpath: >-
               e2e/accessibility
               e2e/ai-agent-activation.spec.ts
@@ -202,13 +201,11 @@ jobs:
             name: "receptionist-center — chromium"
             project: "chromium"
             browser: "chromium"
-            main_only: false
             testpath: "e2e/receptionist-center"
           - shard: 3
             name: "receptionist-center — mobile"
             project: "mobile"
             browser: "webkit"
-            main_only: true
             testpath: "e2e/receptionist-center"
     env:
       # ── NO PRODUCTION SECRETS. NONE. ────────────────────────────────────────
@@ -279,13 +276,8 @@ jobs:
       # booking-errors conflict tests to insert at wrong UTC offsets.
       TZ: America/Los_Angeles
     steps:
-      - name: Explain skipped main-only shard
-        if: github.event_name == 'pull_request' && matrix.main_only == true
-        run: echo "::notice::Mobile Receptionist coverage runs on push-to-main"
       - uses: actions/checkout@v6
-        if: github.event_name != 'pull_request' || matrix.main_only != true
       - name: Pre-flight — is the schema baseline present?
-        if: github.event_name != 'pull_request' || matrix.main_only != true
         id: preflight
         # E2E uses the checked-in schema snapshot as its stable local fixture.
         # The folded migration history is independently rebuilt and applied to
@@ -416,7 +408,7 @@ jobs:
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "flag=--project=chromium" >> "$GITHUB_OUTPUT"
             echo "browsers=chromium" >> "$GITHUB_OUTPUT"
-            echo "::notice::PR run — chromium only (mobile coverage runs on push-to-main)"
+            echo "::notice::PR non-RC run — chromium only; Receptionist mobile runs in its dedicated shard"
           else
             echo "flag=" >> "$GITHUB_OUTPUT"
             echo "browsers=chromium webkit" >> "$GITHUB_OUTPUT"
