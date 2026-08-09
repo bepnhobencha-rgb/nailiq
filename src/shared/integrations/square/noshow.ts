@@ -12,7 +12,11 @@
  */
 import "server-only";
 import { looseServiceClient, type Row } from "./looseDb";
-import { parseCardGateRules, cardRequiredFull } from "@/shared/noshow/cardGateRules";
+import {
+  parseCardGateRules,
+  cardRequiredFull,
+  isShortNoticeAppointment,
+} from "@/shared/noshow/cardGateRules";
 import { resolvePaymentProvider } from "@/shared/integrations/payments";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import {
@@ -35,7 +39,7 @@ type Db = ReturnType<typeof looseServiceClient>;
 async function loadPolicy(db: Db, salonId: string) {
   const { data } = await db
     .from("salons")
-    .select("noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold, noshow_group_whole_party, noshow_deposit_escalation_threshold, noshow_require_new_customer, noshow_require_prior_noshow, noshow_min_noshow_count, noshow_require_high_risk")
+    .select("noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold, noshow_group_whole_party, noshow_deposit_escalation_threshold, noshow_require_new_customer, noshow_require_prior_noshow, noshow_min_noshow_count, noshow_require_high_risk, noshow_short_notice_hours")
     .eq("id", salonId)
     .maybeSingle();
   const r = (data as Row) ?? {};
@@ -125,7 +129,7 @@ export async function noShowCardDecision(
   const db = looseServiceClient();
   const { data } = await db
     .from("bookings")
-    .select("salon_id, price_cents, no_show_risk_score, noshow_card_id, noshow_card_required, client_phone, group_id")
+    .select("salon_id, price_cents, no_show_risk_score, noshow_card_id, noshow_card_required, client_phone, group_id, start_time_utc")
     .eq("id", bookingId)
     .maybeSingle();
   const b = data as Row | null;
@@ -182,11 +186,18 @@ export async function noShowCardDecision(
     };
   }
   const highRisk = risk >= policy.threshold;
+  const shortNotice = isShortNoticeAppointment(
+    str(b.start_time_utc),
+    policy.rules.shortNoticeHours,
+  );
   // Configurable gate (same pure helper the CLIENT pre-booking gate uses, plus
   // the server-only high-risk trigger). Server is always a superset of the
   // client, so a customer shown the card form is never rejected at save time.
   void hadNoShow; // superseded by rule-driven noShowCount check
-  if (!cardRequiredFull({ isNew, noShowCount, highRisk }, policy.rules)) {
+  if (
+    !shortNotice &&
+    !cardRequiredFull({ isNew, noShowCount, highRisk }, policy.rules)
+  ) {
     return {
       required: false,
       feeCents: 0,
@@ -201,7 +212,13 @@ export async function noShowCardDecision(
   return {
     required: true,
     feeCents,
-    reason: isNew ? "new customer" : hadNoShow ? "prior no-show" : `risk ${risk} ≥ ${policy.threshold}`,
+    reason: shortNotice
+      ? `short notice ≤ ${policy.rules.shortNoticeHours}h`
+      : isNew
+        ? "new customer"
+        : hadNoShow
+          ? "prior no-show"
+          : `risk ${risk} ≥ ${policy.threshold}`,
     partySize,
   };
 }

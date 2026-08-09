@@ -2,6 +2,7 @@
 
 import { saveNoShowCardForBooking, reuseNoShowCardForBooking } from "@/shared/integrations/square/noshow";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { ensureNoShowCardRequirement } from "@/shared/noshow/ensureNoShowCardRequirement";
 
 /**
  * On a card save/reuse FAILURE, never cancel the booking — a system glitch
@@ -20,6 +21,21 @@ async function flagNeedsCard(bookingId: string): Promise<void> {
       () => {},
       () => {},
     );
+}
+
+/**
+ * Defense-in-depth for public booking callers that submit without a card token.
+ *
+ * The normal confirmation UI blocks required-card bookings before creation.
+ * This post-create check prevents a hand-crafted/browser-bypassed submission
+ * from becoming silently unprotected: it re-derives the rule from production
+ * data and flags the booking for desk follow-up when a card is still required.
+ * It never charges, cancels, or blocks a real customer's booking.
+ */
+export async function ensureNoShowCardRequirementAction(
+  bookingId: string,
+): Promise<{ required: boolean; feeCents: number }> {
+  return ensureNoShowCardRequirement(bookingId);
 }
 
 /**

@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-const state = vi.hoisted(() => ({ aiRequired: true }));
+const state = vi.hoisted(() => ({
+  aiRequired: true,
+  shortNoticeHours: null as number | null,
+  startTimeUtc: "2099-01-01T12:00:00.000Z",
+}));
 
 vi.mock("@/shared/integrations/payments", () => ({
   resolvePaymentProvider: vi.fn(async () => ({ kind: "test" })),
@@ -26,6 +30,7 @@ vi.mock("@/shared/integrations/square/looseDb", () => ({
                 noshow_card_required: state.aiRequired,
                 client_phone: "5555550100",
                 group_id: null,
+                start_time_utc: state.startTimeUtc,
               },
             };
           }
@@ -41,6 +46,7 @@ vi.mock("@/shared/integrations/square/looseDb", () => ({
                 noshow_require_prior_noshow: true,
                 noshow_min_noshow_count: 1,
                 noshow_require_high_risk: true,
+                noshow_short_notice_hours: state.shortNoticeHours,
               },
             };
           }
@@ -58,6 +64,8 @@ import { noShowCardDecision } from "@/shared/integrations/square/noshow";
 describe("AI-persisted no-show card requirement", () => {
   beforeEach(() => {
     state.aiRequired = true;
+    state.shortNoticeHours = null;
+    state.startTimeUtc = "2099-01-01T12:00:00.000Z";
   });
 
   it("honors a guarded AI requirement and derives money from salon policy", async () => {
@@ -74,6 +82,18 @@ describe("AI-persisted no-show card requirement", () => {
     await expect(noShowCardDecision("booking-1")).resolves.toMatchObject({
       required: false,
       feeCents: 0,
+    });
+  });
+
+  it("requires a card for a clean returning customer booked within 24 hours", async () => {
+    state.aiRequired = false;
+    state.shortNoticeHours = 24;
+    state.startTimeUtc = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+
+    await expect(noShowCardDecision("booking-1")).resolves.toMatchObject({
+      required: true,
+      feeCents: 1_000,
+      reason: "short notice ≤ 24h",
     });
   });
 });

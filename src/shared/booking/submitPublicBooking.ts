@@ -22,7 +22,11 @@ import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 import { runPublicBookingSideEffects } from "@/shared/booking/publicBookingSideEffects";
-import { saveNoShowCardAction, reuseNoShowCardAction } from "@/shared/noshow/saveNoShowCardAction";
+import {
+  ensureNoShowCardRequirementAction,
+  saveNoShowCardAction,
+  reuseNoShowCardAction,
+} from "@/shared/noshow/saveNoShowCardAction";
 import { computeTax } from "@/shared/tax/computeTax";
 import type { TaxLine } from "@/shared/tax/taxTypes";
 import { healthAckRequired } from "@/shared/lib/healthAck";
@@ -845,6 +849,12 @@ export async function submitPublicBooking(
     if (!reused.ok) {
       console.error("[submitPublicBooking] card reuse failed — booking kept + flagged:", reused.reason, bookingId);
     }
+  } else if (bookingId) {
+    // Defense-in-depth: the real UI never reaches this branch when a card is
+    // required, but a crafted caller can invoke this browser module directly.
+    // Re-evaluate from trusted booking/salon data and flag the row for desk
+    // follow-up. No charge, cancellation, or customer communication occurs.
+    await ensureNoShowCardRequirementAction(bookingId);
   }
 
   // Finalize identity evidence only after the card/reuse step, which needs the

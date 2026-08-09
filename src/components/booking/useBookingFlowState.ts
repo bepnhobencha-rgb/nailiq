@@ -41,7 +41,10 @@ import { generateBookingCalendarIcs } from "@/components/booking/bookingCalendar
 import { formatSalonDisplayName } from "@/shared/lib/salonDisplay";
 import { fireBookingConfetti } from "@/components/booking/bookingConfetti";
 import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
-import { parseTimeSlotOnDate } from "@/shared/booking/parseBookingTimeSlot";
+import {
+  parseTimeSlotOnDate,
+  parseTimeSlotToMinutes,
+} from "@/shared/booking/parseBookingTimeSlot";
 import { localDayBoundsFromLocalDate } from "@/shared/booking/localDayBounds";
 import { fetchBookingOccupancyForRange } from "@/shared/booking/fetchBookingOccupancy";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
@@ -64,6 +67,7 @@ import {
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import * as Sentry from "@sentry/nextjs";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
+import { salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
 
 export type ReturningCustomer = {
   found: true;
@@ -1420,9 +1424,26 @@ export function useBookingFlowState(
   // The key carries every argument the request is made with, so a stale answer
   // can never be read back under a different service or phone.
   const cardRequirementPhone = validateGuestPhone(clientPhone.trim());
+  const cardRequirementStartUtc = useMemo(() => {
+    if (step !== "confirm" || !timeSlot) return null;
+    try {
+      return salonWallTimeToUtcIso(
+        bookingDateYmdFromLocalDate(selectedDate),
+        parseTimeSlotToMinutes(timeSlot),
+        salon.timezone,
+      );
+    } catch {
+      return null;
+    }
+  }, [step, timeSlot, selectedDate, salon.timezone]);
   const cardRequirementKey =
-    step === "confirm" && serviceId && cardRequirementPhone.ok
-      ? JSON.stringify([salon.id, serviceId, cardRequirementPhone.digits])
+    step === "confirm" && serviceId && cardRequirementPhone.ok && cardRequirementStartUtc
+      ? JSON.stringify([
+          salon.id,
+          serviceId,
+          cardRequirementPhone.digits,
+          cardRequirementStartUtc,
+        ])
       : null;
   const cardRequirement =
     cardRequirementKey && fetchedCardRequirement?.key === cardRequirementKey
@@ -1442,6 +1463,7 @@ export function useBookingFlowState(
       salonId: salon.id,
       serviceId,
       clientPhone: clientPhoneDigits,
+      appointmentStartUtc: cardRequirementStartUtc,
     })
       .then((r) => {
         if (alive) setFetchedCardRequirement({ key: requestKey, requirement: r });
