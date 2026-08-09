@@ -12,8 +12,15 @@ import {
 } from "@/shared/ai/lessons";
 import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
 import { isAiAgentPermissionEnabled } from "@/shared/ai/agentPermissionFence";
+import {
+  applyVipEmailSuppression,
+  buildVipActionDedupeKeys,
+} from "@/shared/ai/vipCareDelivery";
+import {
+  fetchAllVipRows,
+  fetchVipRowsForIds,
+} from "@/shared/ai/vipCareData";
 import { selectSalonRelatedManualVipIds } from "@/shared/ai/vipCareIsolation";
-import { applyVipEmailSuppression } from "@/shared/ai/vipCareDelivery";
 import {
   complianceFooterHtml,
   isEmailSuppressed,
@@ -60,62 +67,70 @@ type VipClient = {
 async function loadVipClients(salonId: string): Promise<VipClient[]> {
   const db = looseServiceClient();
 
-  // Base: clients who have spend records at this salon (5+ visits OR $100+ OR manually VIP)
-  const { data: spendRows } = await (db as ReturnType<typeof looseServiceClient>)
-    .from("salon_client_spend" as never)
-    .select("client_profile_id, total_spend_cents, payment_count" as never)
-    .eq("salon_id" as never, salonId);
+  // Load every tenant-scoped relationship first. These tables can exceed the
+  // Supabase per-response row cap, so unpaged reads would silently omit real
+  // customers and make visit/milestone decisions from incomplete data.
+  const [spendRows, salonBookings, salonSquareVisits] = await Promise.all([
+    fetchAllVipRows("spend", (from, to) =>
+      db
+        .from("salon_client_spend")
+        .select("client_profile_id, total_spend_cents, payment_count")
+        .eq("salon_id", salonId)
+        .order("client_profile_id")
+        .range(from, to)),
+    fetchAllVipRows("bookings", (from, to) =>
+      db
+        .from("bookings")
+        .select("client_profile_id, status, start_time_utc")
+        .eq("salon_id", salonId)
+        .order("id")
+        .range(from, to)),
+    fetchAllVipRows("square_visits", (from, to) =>
+      db
+        .from("square_visit_history")
+        .select("client_profile_id, visit_date")
+        .eq("salon_id", salonId)
+        .order("id")
+        .range(from, to)),
+  ]);
 
-  const spendSet = new Map<string, Row>(
-    ((spendRows ?? []) as Row[]).map((r) => [str(r.client_profile_id), r]),
-  );
+  const spendSet = new Map<string, Row>();
+  for (const row of spendRows) {
+    const profileId = str(row.client_profile_id);
+    if (profileId) spendSet.set(profileId, row);
+  }
 
   // `is_vip` is global today, so a manual flag is not enough to prove this
-  // customer belongs to this salon. Limit the relationship lookup to the small
-  // set of manual VIP ids, then include only customers with this salon's spend,
-  // booking, or Square-visit history. This prevents cross-tenant outreach.
-  const { data: manualVips, error: manualVipsError } = await (db as ReturnType<typeof looseServiceClient>)
-    .from("client_profiles" as never)
-    .select("id" as never)
-    .eq("is_vip" as never, true);
-  if (manualVipsError) throw new Error(manualVipsError.message);
-
-  const manualVipIds = ((manualVips ?? []) as Row[])
-    .map((row) => str(row.id))
-    .filter(Boolean);
-  if (manualVipIds.length > 0) {
-    const [bookingRelationships, squareRelationships] = await Promise.all([
-      (db as ReturnType<typeof looseServiceClient>)
-        .from("bookings" as never)
-        .select("client_profile_id" as never)
-        .eq("salon_id" as never, salonId)
-        .in("client_profile_id" as never, manualVipIds),
-      (db as ReturnType<typeof looseServiceClient>)
-        .from("square_visit_history" as never)
-        .select("client_profile_id" as never)
-        .eq("salon_id" as never, salonId)
-        .in("client_profile_id" as never, manualVipIds),
-    ]);
-    if (bookingRelationships.error) {
-      throw new Error(bookingRelationships.error.message);
-    }
-    if (squareRelationships.error) {
-      throw new Error(squareRelationships.error.message);
-    }
-
-    const relatedManualVipIds = selectSalonRelatedManualVipIds({
-      manualVipIds,
-      spendProfileIds: spendSet.keys(),
-      bookingProfileIds: ((bookingRelationships.data ?? []) as Row[])
-        .map((row) => str(row.client_profile_id)),
-      squareVisitProfileIds: ((squareRelationships.data ?? []) as Row[])
-        .map((row) => str(row.client_profile_id)),
-    });
-    for (const row of (manualVips ?? []) as Row[]) {
-      const profileId = str(row.id);
-      if (relatedManualVipIds.has(profileId) && !spendSet.has(profileId)) {
-        spendSet.set(profileId, row);
-      }
+  // customer belongs to this salon. Start with this salon's relationships,
+  // then ask which related profiles are manual VIPs. This is both tenant-safe
+  // and avoids reading global VIP identities before proving relationship.
+  const relatedProfileIds = new Set([
+    ...spendSet.keys(),
+    ...salonBookings.map((row) => str(row.client_profile_id)),
+    ...salonSquareVisits.map((row) => str(row.client_profile_id)),
+  ].filter(Boolean));
+  const manualVips = await fetchVipRowsForIds(
+    "manual_vips",
+    relatedProfileIds,
+    (ids, from, to) =>
+      db
+        .from("client_profiles")
+        .select("id")
+        .eq("is_vip", true)
+        .in("id", ids)
+        .order("id")
+        .range(from, to),
+  );
+  const relatedManualVipIds = selectSalonRelatedManualVipIds({
+    manualVipIds: manualVips.map((row) => str(row.id)),
+    spendProfileIds: spendSet.keys(),
+    bookingProfileIds: salonBookings.map((row) => str(row.client_profile_id)),
+    squareVisitProfileIds: salonSquareVisits.map((row) => str(row.client_profile_id)),
+  });
+  for (const row of manualVips) {
+    const profileId = str(row.id);
+    if (relatedManualVipIds.has(profileId) && !spendSet.has(profileId)) {
+      spendSet.set(profileId, row);
     }
   }
 
@@ -124,32 +139,39 @@ async function loadVipClients(salonId: string): Promise<VipClient[]> {
   const ids = Array.from(spendSet.keys());
 
   // Load profile details
-  const { data: profiles } = await (db as ReturnType<typeof looseServiceClient>)
-    .from("client_profiles" as never)
-    .select("id, phone, name, email, date_of_birth, is_vip, marketing_consent_at, marketing_email_consent_at" as never)
-    .in("id" as never, ids);
+  const profiles = await fetchVipRowsForIds(
+    "profiles",
+    ids,
+    (profileIds, from, to) =>
+      db
+        .from("client_profiles")
+        .select("id, phone, name, email, date_of_birth, is_vip, marketing_consent_at, marketing_email_consent_at")
+        .in("id", profileIds)
+        .order("id")
+        .range(from, to),
+  );
 
-  if (!profiles?.length) return [];
+  if (profiles.length === 0) return [];
 
   // Count completed bookings per client at this salon. Track each visit day
   // too, so Square-imported visits below can be merged without double-counting
   // a NailIQ booking that was also paid through Square (same-day overlap).
-  const { data: bookingCounts } = await (db as ReturnType<typeof looseServiceClient>)
-    .from("bookings" as never)
-    .select("client_profile_id, start_time_utc" as never)
-    .eq("salon_id" as never, salonId)
-    .eq("status" as never, "completed")
-    .in("client_profile_id" as never, ids);
-
   const visitCountMap = new Map<string, number>();
   const bookingDayMap = new Map<string, Set<string>>();
-  for (const b of (bookingCounts ?? []) as Row[]) {
+  const lastVisitMap = new Map<string, string>();
+  for (const b of salonBookings) {
     const cid = str(b.client_profile_id);
+    if (!spendSet.has(cid) || b.status !== "completed") continue;
     visitCountMap.set(cid, (visitCountMap.get(cid) ?? 0) + 1);
-    const day = str(b.start_time_utc).slice(0, 10);
+    const completedAt = str(b.start_time_utc);
+    const day = completedAt.slice(0, 10);
     if (day) {
       if (!bookingDayMap.has(cid)) bookingDayMap.set(cid, new Set());
       bookingDayMap.get(cid)!.add(day);
+    }
+    const previous = lastVisitMap.get(cid);
+    if (completedAt && (!previous || completedAt > previous)) {
+      lastVisitMap.set(cid, completedAt);
     }
   }
 
@@ -159,16 +181,11 @@ async function loadVipClients(salonId: string): Promise<VipClient[]> {
   // seen and the milestone / win-back triggers never fire. Count only Square
   // visit-days with no matching completed booking that day (avoids double count
   // for the overlap set). Salons without any Square rows are unaffected.
-  const { data: squareVisits } = await (db as ReturnType<typeof looseServiceClient>)
-    .from("square_visit_history" as never)
-    .select("client_profile_id, visit_date" as never)
-    .eq("salon_id" as never, salonId)
-    .in("client_profile_id" as never, ids);
-
   const squareDayMap = new Map<string, Set<string>>();
   const squareLastMap = new Map<string, string>();
-  for (const v of (squareVisits ?? []) as Row[]) {
+  for (const v of salonSquareVisits) {
     const cid = str(v.client_profile_id);
+    if (!spendSet.has(cid)) continue;
     const day = str(v.visit_date).slice(0, 10);
     if (!cid || !day) continue;
     if (!squareDayMap.has(cid)) squareDayMap.set(cid, new Set());
@@ -183,19 +200,6 @@ async function loadVipClients(salonId: string): Promise<VipClient[]> {
     if (extra > 0) visitCountMap.set(cid, (visitCountMap.get(cid) ?? 0) + extra);
   }
 
-  // Latest booking per client
-  const { data: latestRows } = await (db as ReturnType<typeof looseServiceClient>)
-    .from("bookings" as never)
-    .select("client_profile_id, start_time_utc" as never)
-    .eq("salon_id" as never, salonId)
-    .in("client_profile_id" as never, ids)
-    .order("start_time_utc" as never, { ascending: false });
-
-  const lastVisitMap = new Map<string, string>();
-  for (const b of (latestRows ?? []) as Row[]) {
-    const cid = str(b.client_profile_id);
-    if (!lastVisitMap.has(cid)) lastVisitMap.set(cid, str(b.start_time_utc));
-  }
   // Fold in Square last-visit dates — imported clients have no booking rows,
   // and even booked clients may have a more recent Square-only payment.
   for (const [cid, day] of squareLastMap) {
@@ -204,7 +208,7 @@ async function loadVipClients(salonId: string): Promise<VipClient[]> {
   }
 
   const out: VipClient[] = [];
-  for (const p of (profiles as Row[])) {
+  for (const p of profiles) {
     const id = str(p.id);
     const spend = spendSet.get(id);
     const visits = visitCountMap.get(id) ?? 0;
@@ -233,35 +237,23 @@ async function loadVipClients(salonId: string): Promise<VipClient[]> {
 // Check which ai_actions_log entries already exist for this salon's vip_care agent
 async function loadExistingActions(salonId: string): Promise<Set<string>> {
   const db = createServiceRoleClient();
-  const since = new Date(Date.now() - 366 * 864e5).toISOString(); // last year
-  const { data } = await db
-    .from("ai_actions_log" as never)
-    .select("action_type, target_id, created_at" as never)
-    .eq("salon_id" as never, salonId)
-    .eq("agent" as never, "vip_care")
-    .gte("created_at" as never, since);
+  const rows = await fetchAllVipRows("existing_actions", (from, to) =>
+    db
+      .from("ai_actions_log" as never)
+      .select("action_type, target_id, created_at" as never)
+      .eq("salon_id" as never, salonId)
+      .eq("agent" as never, "vip_care")
+      .order("id" as never)
+      .range(from, to) as unknown as PromiseLike<{
+        data: Row[] | null;
+        error: { message: string } | null;
+      }>);
 
-  const keys = new Set<string>();
-  const yearStart = `${new Date().getUTCFullYear()}-01-01T00:00:00.000Z`;
-  const thirtyAgo = new Date(Date.now() - 30 * 864e5).toISOString();
-
-  for (const row of (data ?? []) as unknown as Row[]) {
-    const type = str(row.action_type);
-    const tid = str(row.target_id);
-    const at = str(row.created_at);
-
-    if (type.startsWith("milestone_")) {
-      // Milestones are one-time; any entry blocks forever
-      keys.add(`${type}:${tid}`);
-    } else if (type === "birthday" && at >= yearStart) {
-      // Birthday once per calendar year
-      keys.add(`birthday:${tid}`);
-    } else if (type === "vip_inactive" && at >= thirtyAgo) {
-      // Inactive nudge at most once per 30 days
-      keys.add(`vip_inactive:${tid}`);
-    }
-  }
-  return keys;
+  return buildVipActionDedupeKeys(rows as Array<{
+    action_type: unknown;
+    target_id: unknown;
+    created_at: unknown;
+  }>);
 }
 
 // Days until next occurrence of a month/day birthday (0..365)
@@ -433,11 +425,12 @@ function clientCodeToken(client: VipClient): string {
 export async function runVipCare(salonId: string): Promise<void> {
   try {
     const db = looseServiceClient();
-    const { data: salon } = await db
+    const { data: salon, error: salonError } = await db
       .from("salons" as never)
       .select("name, email, address, slug, feature_flags, sms_outbound_enabled, sms_a2p_registered, email_outbound_enabled, customer_channel, birthday_reward_type, birthday_reward_percent, birthday_reward_amount_cents, birthday_reward_valid_days, milestone_reward_type, milestone_reward_percent, milestone_reward_amount_cents, milestone_reward_valid_days" as never)
       .eq("id" as never, salonId)
       .maybeSingle();
+    if (salonError) throw new Error(`[vip_care:salon] ${salonError.message}`);
 
     const s = (salon as Row | null) ?? {};
     const flags = (s.feature_flags as Record<string, unknown> | null) ?? {};
@@ -552,7 +545,11 @@ export async function runVipCare(salonId: string): Promise<void> {
           }
           const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, delivery, salonName, salonAddress, salonReplyEmail);
           if (!ok && reason.startsWith("no_channel")) {
-            console.warn(`[runVipCare] no channel for ${client.name} — ${reason}`);
+            console.warn("[runVipCare] delivery skipped", {
+              salonId,
+              event: "birthday",
+              reason,
+            });
             await svc.from("ai_actions_log" as never).insert({
               salon_id: salonId,
               agent: "vip_care",
@@ -618,7 +615,11 @@ export async function runVipCare(salonId: string): Promise<void> {
         }
         const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, delivery, salonName, salonAddress, salonReplyEmail);
         if (!ok && reason.startsWith("no_channel")) {
-          console.warn(`[runVipCare] no channel for ${client.name} (milestone ${milestone}) — ${reason}`);
+          console.warn("[runVipCare] delivery skipped", {
+            salonId,
+            event: `milestone_${milestone}`,
+            reason,
+          });
           await svc.from("ai_actions_log" as never).insert({
             salon_id: salonId,
             agent: "vip_care",
@@ -674,7 +675,11 @@ export async function runVipCare(salonId: string): Promise<void> {
           }
           const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, delivery, salonName, salonAddress, salonReplyEmail);
           if (!ok && reason.startsWith("no_channel")) {
-            console.warn(`[runVipCare] no channel for ${client.name} — ${reason}`);
+            console.warn("[runVipCare] delivery skipped", {
+              salonId,
+              event: "vip_inactive",
+              reason,
+            });
             await svc.from("ai_actions_log" as never).insert({
               salon_id: salonId,
               agent: "vip_care",

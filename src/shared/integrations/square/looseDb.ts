@@ -29,6 +29,7 @@ export interface LooseQuery extends PromiseLike<ListResult> {
   lt(col: string, val: unknown): LooseQuery;
   order(col: string, opts?: { ascending?: boolean }): LooseQuery;
   limit(count: number): LooseQuery;
+  range(from: number, to: number): LooseQuery;
   maybeSingle(): Promise<Result>;
   single(): Promise<Result>;
 }
