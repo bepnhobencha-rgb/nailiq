@@ -3186,7 +3186,7 @@ function ReceptionistCenterInner({
                 {data.salon.name}
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 xl:mr-32 2xl:mr-0">
               <ReceptionistDisplayMenu
                 language={language === "vi" ? "vi" : "en"}
               >
@@ -3329,7 +3329,7 @@ function ReceptionistCenterInner({
                   variant="info"
                   state="subtle"
                   size="sm"
-                  className="hidden xl:inline-flex"
+                  className="hidden 2xl:inline-flex"
                 >
                   {rcMessages.roleBadge.ownerView}
                 </Badge>
