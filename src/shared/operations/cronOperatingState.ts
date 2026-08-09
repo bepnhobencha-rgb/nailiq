@@ -42,7 +42,7 @@ export const CRON_ROUTE_CONTRACTS: ReadonlyArray<{
   { workerName: "ai_execution", label: "AI execution", schedule: "Every 5 minutes", staleAfterMs: 15 * MINUTE },
   { workerName: "ai_manager", label: "AI manager", schedule: "Hourly", staleAfterMs: 2 * HOUR },
   { workerName: "campaign_scheduler", label: "Campaign scheduler", schedule: "Every 15 minutes", staleAfterMs: 45 * MINUTE },
-  { workerName: "close_stale_in_progress", label: "Close stale bookings", schedule: "Daily", staleAfterMs: 30 * HOUR },
+  { workerName: "close_stale_in_progress", label: "Close stale operational states", schedule: "Hourly", staleAfterMs: 3 * HOUR },
   { workerName: "error_triage", label: "Error triage", schedule: "Every 10 minutes", staleAfterMs: 30 * MINUTE },
   { workerName: "minh_learn", label: "Minh learning", schedule: "Daily", staleAfterMs: 30 * HOUR },
   { workerName: "nail_tryon_cleanup", label: "Nail try-on cleanup", schedule: "Hourly", staleAfterMs: 3 * HOUR },

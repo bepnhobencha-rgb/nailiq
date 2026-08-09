@@ -5,6 +5,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { salonToday, salonDayRangeUtc } from "@/shared/lib/salonTime";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
 import type { SalonIntelligenceProfile } from "@/shared/ai/types";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 
 /**
  * AI Google Business Post — Minh's GBP content agent.
@@ -23,7 +24,6 @@ import type { SalonIntelligenceProfile } from "@/shared/ai/types";
  */
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
-const num = (v: unknown): number => (v == null ? 0 : Number(v));
 
 let anthropic: Anthropic | null = null;
 function getAI(): Anthropic | null {
@@ -158,6 +158,7 @@ async function alreadySentThisPeriod(salonId: string, todayYmd: string): Promise
 }
 
 async function draftPost(
+  salonId: string,
   salonName: string,
   vertical: string,
   sip: Partial<SalonIntelligenceProfile> | null,
@@ -234,11 +235,16 @@ CTA: [Book Now | Learn More | Call Now]
 IMAGE: [image suggestion here]`;
 
   try {
-    const resp = await ai.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 600,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const model = "claude-haiku-4-5-20251001";
+    const resp = await trackAnthropicMessage(
+      { salonId, feature: "gbp_post", model },
+      () =>
+        ai.messages.create({
+          model,
+          max_tokens: 600,
+          messages: [{ role: "user", content: prompt }],
+        }),
+    );
     const raw = resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
     if (!raw) return null;
 
@@ -300,7 +306,16 @@ export async function runGbpPost(salonId: string): Promise<void> {
     const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
     const bookingUrl = slug ? `${appUrl}/${slug}` : appUrl;
 
-    const draft = await draftPost(salonName, vertical, sip, stats, season, theme, bookingUrl);
+    const draft = await draftPost(
+      salonId,
+      salonName,
+      vertical,
+      sip,
+      stats,
+      season,
+      theme,
+      bookingUrl,
+    );
     if (!draft) return;
 
     // GBP management link — takes owner straight to the Posts tab

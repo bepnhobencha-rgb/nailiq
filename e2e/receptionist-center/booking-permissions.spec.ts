@@ -67,6 +67,19 @@ async function openBaselineBooking(page: Page): Promise<void> {
   await expect(page.getByTestId("booking-detail-drawer")).toBeVisible();
 }
 
+async function openCreateAppointment(page: Page): Promise<void> {
+  const desktopControl = page.getByTestId("header-add-appointment");
+  if (await desktopControl.isVisible()) {
+    await desktopControl.click();
+    return;
+  }
+
+  const mobileMenu = page.getByTestId("mobile-create-menu-trigger");
+  await expect(mobileMenu).toBeVisible();
+  await mobileMenu.click();
+  await page.getByTestId("mobile-create-appointment").click();
+}
+
 test.beforeAll(async ({}, testInfo) => {
   fx = await seedReceptionistCenterFixture(rcSlug(testInfo.project.name));
   members = await Promise.all(
@@ -89,9 +102,7 @@ for (const role of ["owner", "admin", "receptionist"] as const) {
     if (!member) throw new Error(`missing ${role} fixture`);
 
     await loginAndOpenCenter(page, member);
-    const addAppointment = page.getByTestId("header-add-appointment");
-    await expect(addAppointment).toBeVisible();
-    await addAppointment.click();
+    await openCreateAppointment(page);
     const bookingForm = page.getByTestId("desk-booking-form");
     await expect(bookingForm).toBeVisible();
     await bookingForm.getByRole("button", { name: "Close" }).click();
@@ -111,7 +122,11 @@ test("nail tech cannot access booking create, edit, cancel, or another tech's st
   if (!member) throw new Error("missing nail_tech fixture");
 
   await loginAndOpenCenter(page, member);
-  await expect(page.getByTestId("header-add-appointment")).toHaveCount(0);
+  await expect(
+    page.locator(
+      '[data-testid="header-add-appointment"], [data-testid="mobile-create-menu-trigger"], [data-testid="mobile-create-appointment"]',
+    ),
+  ).toHaveCount(0);
   await expect(page.getByTestId("header-add-walkin")).toHaveCount(0);
 
   await openBaselineBooking(page);

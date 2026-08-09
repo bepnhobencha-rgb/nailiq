@@ -56,6 +56,7 @@ describe("client_email_optouts boundary", () => {
     const page = read("src/app/unsubscribe/page.tsx");
     const rebook = read("src/shared/winback/agentRebook.ts");
     const firstVisit = read("src/shared/firstvisit/agentFirstVisit.ts");
+    const vipCare = read("src/shared/ai/agentVipCare.ts");
     const staffAction = read(
       "src/shared/notifications/deliverStaffActionNotification.ts",
     );
@@ -67,6 +68,11 @@ describe("client_email_optouts boundary", () => {
     expect(page).toContain("We could not update your email preferences");
     expect(rebook).toContain("isEmailSuppressed(c.email).catch(() => true)");
     expect(firstVisit).toContain("isEmailSuppressed(to).catch(() => true)");
+    expect(vipCare).toContain(
+      "isEmailSuppressed(client.email).catch(() => true)",
+    );
+    expect(vipCare).toContain("listUnsubscribeHeaders(client.email)");
+    expect(vipCare).toContain("complianceFooterHtml({ email: client.email");
     expect(staffAction).toContain(
       "isEmailSuppressed(to).catch(() => true)",
     );

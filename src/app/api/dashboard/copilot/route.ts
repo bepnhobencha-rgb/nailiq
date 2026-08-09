@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { copilotRateLimit } from "@/shared/copilot/copilotRateLimit";
@@ -144,13 +145,20 @@ export async function POST(req: NextRequest) {
     let finalText = "";
     let proposal: CocoBookingProposal | null = null;
     for (let step = 0; step < 4; step++) {
-      const resp = await anthropic.messages.create({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 1500,
-        system,
-        tools: COPILOT_TOOLS,
-        messages: convo,
-      });
+      const resp = await trackAnthropicMessage(
+        {
+          salonId: ctx.salon.id,
+          feature: "admin_copilot",
+          model: "claude-haiku-4-5-20251001",
+        },
+        () => anthropic.messages.create({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 1500,
+          system,
+          tools: COPILOT_TOOLS,
+          messages: convo,
+        }),
+      );
 
       if (resp.stop_reason === "tool_use") {
         convo.push({ role: "assistant", content: resp.content });

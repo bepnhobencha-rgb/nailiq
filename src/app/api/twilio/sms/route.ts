@@ -18,6 +18,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getTwilioAuthToken, validateTwilioSignature, twilioRequestBaseUrl } from "@/shared/lib/twilioSignature";
 import { loadSalonContext } from "@/shared/voiceai/loadSalonContext";
@@ -125,15 +126,22 @@ export async function POST(req: NextRequest) {
 
   const ai = new Anthropic({ apiKey });
   const complete: LlmComplete = async ({ system: sys, tools: t, messages }) => {
-    const resp = await ai.messages.create({
-      model: SMS_AGENT_MODEL,
-      max_tokens: SMS_MAX_REPLY_TOKENS,
-      system: sys,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      tools: t as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      messages: messages as any,
-    });
+    const resp = await trackAnthropicMessage(
+      {
+        salonId: salon.id!,
+        feature: "sms_receptionist",
+        model: SMS_AGENT_MODEL,
+      },
+      () => ai.messages.create({
+        model: SMS_AGENT_MODEL,
+        max_tokens: SMS_MAX_REPLY_TOKENS,
+        system: sys,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tools: t as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        messages: messages as any,
+      }),
+    );
     return { stop_reason: resp.stop_reason, content: resp.content as unknown as ContentBlock[] };
   };
 

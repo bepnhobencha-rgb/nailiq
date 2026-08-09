@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { looseServiceClient, type Row } from "@/shared/integrations/square/looseDb";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 
 /**
  * AI Review Responder — polls Google Places API for new reviews, drafts replies,
@@ -18,7 +19,8 @@ import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
  * Dedup: stores review.time (Unix timestamp) in ai_actions_log payload so we
  * never re-draft the same review.
  *
- * Gate: salons.google_place_id is non-null + GOOGLE_MAPS_API_KEY env is set.
+ * Gate: feature_flags.ai_google_reply = true + salons.google_place_id is
+ * non-null + GOOGLE_MAPS_API_KEY env is set.
  */
 
 let anthropic: Anthropic | null = null;
@@ -82,6 +84,7 @@ async function loadProcessedReviewTimes(salonId: string): Promise<Set<number>> {
 }
 
 async function draftReply(
+  salonId: string,
   review: PlaceReview,
   salonName: string,
   lang: string,
@@ -113,11 +116,16 @@ Keep it to 2-3 sentences. No hashtags. No emojis unless the review used them. No
 Return ONLY the reply text.`;
 
   try {
-    const resp = await anthropic!.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 300,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const model = "claude-sonnet-4-6";
+    const resp = await trackAnthropicMessage(
+      { salonId, feature: "review_responder", model },
+      () =>
+        anthropic!.messages.create({
+          model,
+          max_tokens: 300,
+          messages: [{ role: "user", content: prompt }],
+        }),
+    );
     const text = resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
     const clean = text.replace(/^["']|["']$/g, "").trim();
     return clean.length > 10 ? clean : "";
@@ -134,11 +142,14 @@ export async function runReviewResponder(salonId: string): Promise<void> {
     const db = looseServiceClient();
     const { data: salon } = await db
       .from("salons" as never)
-      .select("name, google_place_id" as never)
+      .select("name, feature_flags, google_place_id" as never)
       .eq("id" as never, salonId)
       .maybeSingle();
 
     const s = (salon as Row | null) ?? {};
+    const flags = (s.feature_flags as Record<string, unknown> | null) ?? {};
+    if (flags.ai_google_reply !== true) return;
+
     const placeId = String(s.google_place_id ?? "").trim();
     if (!placeId) return;
 
@@ -158,7 +169,12 @@ export async function runReviewResponder(salonId: string): Promise<void> {
 
     for (const review of fresh) {
       const isPositive = review.rating >= 4;
-      const draft = await draftReply(review, salonName, review.language ?? "");
+      const draft = await draftReply(
+        salonId,
+        review,
+        salonName,
+        review.language ?? "",
+      );
       if (!draft) continue;
 
       const actionType = isPositive ? "draft_review_reply" : "escalate_review_reply";

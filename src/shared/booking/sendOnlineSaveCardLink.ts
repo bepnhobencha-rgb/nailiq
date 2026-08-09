@@ -88,6 +88,7 @@ export async function sendOnlineSaveCardLink(bookingId: string): Promise<void> {
         "@/shared/noshow/agentNoShowPolicy"
       );
       const drafted = await draftSaveCardMessages({
+        salonId,
         lang,
         salonName,
         clientName: String(b.client_name ?? "") || null,

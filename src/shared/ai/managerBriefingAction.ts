@@ -5,6 +5,7 @@
 // when all are answered it outputs a structured SIP draft JSON.
 
 import Anthropic from "@anthropic-ai/sdk";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import type { SalonIntelligenceProfile } from "@/shared/ai/types";
@@ -183,12 +184,19 @@ export async function runManagerBriefing(input: {
   }
 
   try {
-    const resp = await anthropic.messages.create({
-      model: "claude-sonnet-4-5",
-      max_tokens: 1500,
-      system: systemPrompt,
-      messages: convo,
-    });
+    const resp = await trackAnthropicMessage(
+      {
+        salonId: ctx.salon.id,
+        feature: "manager_briefing",
+        model: "claude-sonnet-4-5",
+      },
+      () => anthropic.messages.create({
+        model: "claude-sonnet-4-5",
+        max_tokens: 1500,
+        system: systemPrompt,
+        messages: convo,
+      }),
+    );
 
     const reply = extractText(resp.content);
     if (!reply) {

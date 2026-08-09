@@ -294,7 +294,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     }
 
     // Review Responder — poll Google Reviews every 4 hours (hours 8, 12, 16, 20)
-    if ([8, 12, 16, 20].includes(salonHour)) {
+    if ([8, 12, 16, 20].includes(salonHour) && flags.ai_google_reply) {
       try {
         const { runReviewResponder } = await import(
           "@/shared/ai/agentReviewResponder"

@@ -12,6 +12,12 @@ import {
 } from "@/shared/voiceai/realtimeUsage";
 import { bookingResultFooterNote } from "./bookingResultFooter";
 import { isNoActiveResponseError } from "./voiceErrorClassify";
+import {
+  classifyVoiceFailure,
+  voiceSessionChannelFromPathname,
+  type VoiceClientDiagnostics,
+  type VoiceFailureCode,
+} from "@/shared/voiceai/clientDiagnostics";
 
 type Props = {
   t: BookingMessages;
@@ -147,6 +153,19 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
   const sessionCapabilityRef = useRef<string | null>(null);
   const realtimeUsageRef     = useRef({ ...EMPTY_REALTIME_USAGE });
   const usageEventIdsRef     = useRef<Set<string>>(new Set());
+  const sessionFinalizedRef  = useRef(false);
+  const clientDiagnosticsRef = useRef<VoiceClientDiagnostics>({
+    schemaVersion: 1,
+    channel: "web_direct",
+    requested: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      sampleRate: 24000,
+    },
+    applied: null,
+    outputMode: "media_element",
+  });
   const timerRef            = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTsRef          = useRef<number>(0);
   const statusRef           = useRef<Status>("idle");
@@ -249,15 +268,27 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     setIsRenewing(false);
   }, []);
 
-  const endSession = useCallback(async (finalStatus: "completed" | "abandoned" | "failed") => {
-    cleanup();
+  const endSession = useCallback(async (
+    finalStatus: "completed" | "abandoned" | "failed",
+    keepalive = false,
+    failureCode?: VoiceFailureCode,
+  ) => {
     const sid = sessionIdRef.current;
+    if (sessionFinalizedRef.current) {
+      cleanup();
+      return;
+    }
+    sessionFinalizedRef.current = true;
+    cleanup();
     if (sid) {
       // startTsRef is only stamped on session.updated. Abandoning before that
       // would otherwise report Date.now() itself as the duration.
       const elapsed = elapsedSessionSeconds(startTsRef.current, Date.now());
       await fetch("/api/voice/session/end", {
         method:  "POST",
+        // Only the unmount path opts into keepalive. Normal, awaited endings
+        // may carry a longer transcript than the browser's keepalive budget.
+        keepalive,
         headers: {
           "Content-Type": "application/json",
           ...(sessionCapabilityRef.current
@@ -270,10 +301,19 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
           transcript:      transcript.map((e) => ({ role: e.role, text: e.text })),
           status:          finalStatus,
           realtimeUsage:   realtimeUsageRef.current,
+          failureCode,
+          clientDiagnostics: clientDiagnosticsRef.current,
         }),
       }).catch(() => null);
     }
   }, [cleanup, transcript]);
+
+  // WebSocket callbacks are long-lived and would otherwise retain the first
+  // render's empty transcript. Always finalize through the latest callback.
+  const endSessionRef = useRef(endSession);
+  useEffect(() => {
+    endSessionRef.current = endSession;
+  }, [endSession]);
 
   // Keep hangupAfterDelayRef up-to-date whenever endSession changes identity
   useEffect(() => {
@@ -902,7 +942,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       setError(isRateLimit ? v.openaiRateLimit : msg);
       statusRef.current = "error";
       setStatus("error");
-      cleanup();
+      void endSessionRef.current("failed", false, "realtime_error");
     }
   }, [cleanup]);  // eslint-disable-line react-hooks/exhaustive-deps
   // Note: setBookingResult is a stable React setter; wsRef/processedCallIdsRef
@@ -1017,7 +1057,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
                   setError("connection_failed");
                   statusRef.current = "error";
                   setStatus("error");
-                  cleanup();
+                  void endSessionRef.current("failed", false, "ws_connect_failed");
                 }
               };
               newWs.onclose = (evt) => {
@@ -1027,9 +1067,11 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
                     setError(`connection_closed_${evt.code}`);
                     statusRef.current = "error";
                     setStatus("error");
+                    void endSessionRef.current("failed", false, "ws_closed_unexpected");
                   } else {
                     statusRef.current = "ended";
                     setStatus("ended");
+                    void endSessionRef.current("abandoned", false, "ws_closed_clean");
                   }
                 }
               };
@@ -1076,13 +1118,26 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     setBookingResult(null);
     realtimeUsageRef.current = { ...EMPTY_REALTIME_USAGE };
     usageEventIdsRef.current.clear();
+    sessionFinalizedRef.current = false;
+    sessionIdRef.current = null;
+    sessionCapabilityRef.current = null;
+    clientDiagnosticsRef.current = {
+      ...clientDiagnosticsRef.current,
+      channel: voiceSessionChannelFromPathname(window.location.pathname),
+      applied: null,
+      outputMode: "media_element",
+    };
 
     try {
       // 1. Get ephemeral key + session from server
       const sessRes = await fetch("/api/voice/session", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ salonSlug: shopSlug, language }),
+        body:    JSON.stringify({
+          salonSlug: shopSlug,
+          language,
+          channel: clientDiagnosticsRef.current.channel,
+        }),
       });
       if (!sessRes.ok) {
         const body = await sessRes.json().catch(() => ({})) as Record<string, string>;
@@ -1136,6 +1191,19 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
         },
       });
       streamRef.current = stream;
+      const applied = stream.getAudioTracks()[0]?.getSettings();
+      clientDiagnosticsRef.current = {
+        ...clientDiagnosticsRef.current,
+        applied: applied ? {
+          echoCancellation: typeof applied.echoCancellation === "boolean"
+            ? applied.echoCancellation : null,
+          noiseSuppression: typeof applied.noiseSuppression === "boolean"
+            ? applied.noiseSuppression : null,
+          autoGainControl: typeof applied.autoGainControl === "boolean"
+            ? applied.autoGainControl : null,
+          sampleRate: typeof applied.sampleRate === "number" ? applied.sampleRate : null,
+        } : null,
+      };
 
       // 3. AudioContext for mic capture + playback
       statusRef.current = "connecting";
@@ -1174,6 +1242,10 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       audioElementRef.current = audioEl;
       // Start playback — must be called after a user gesture (button tap already happened)
       audioEl.play().catch(() => {
+        clientDiagnosticsRef.current = {
+          ...clientDiagnosticsRef.current,
+          outputMode: "audio_context_fallback",
+        };
         // Fallback: connect directly to AudioContext destination if autoplay blocked
         outputGain.disconnect(mediaStreamDest);
         outputGain.connect(audioCtx.destination);
@@ -1323,7 +1395,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
           setError("connection_failed");
           statusRef.current = "error";
           setStatus("error");
-          cleanup();
+          void endSessionRef.current("failed", false, "ws_connect_failed");
         }
       };
 
@@ -1335,9 +1407,11 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
             setError(`connection_closed_${e.code}`);
             statusRef.current = "error";
             setStatus("error");
+            void endSessionRef.current("failed", false, "ws_closed_unexpected");
           } else {
             statusRef.current = "ended";
             setStatus("ended");
+            void endSessionRef.current("abandoned", false, "ws_closed_clean");
           }
         }
       };
@@ -1345,6 +1419,11 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     } catch (err) {
       const msg  = err instanceof Error ? err.message : String(err);
       const name = err instanceof Error ? err.name   : "";
+      const failureStage = statusRef.current === "session_init"
+        ? "session_init"
+        : statusRef.current === "mic_request"
+          ? "mic_request"
+          : "connecting";
       const code =
         name === "NotAllowedError"        ? v.micPermissionDenied
         : name === "NotFoundError"        ? v.micError
@@ -1356,9 +1435,13 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       setError(code);
       statusRef.current = "error";
       setStatus("error");
-      cleanup();
+      await endSessionRef.current(
+        "failed",
+        false,
+        classifyVoiceFailure(name, msg, failureStage),
+      );
     }
-  }, [shopSlug, language, v, cleanup, handleRealtimeEvent]);
+  }, [shopSlug, language, v, handleRealtimeEvent]);
 
   const handleStop = useCallback(async () => {
     statusRef.current = "ended";
@@ -1372,17 +1455,6 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     onClose();
   }, [endSession, cleanup, onClose]);
 
-  // `endSession` closes over `transcript`, so the unmount cleanup must call the
-  // LATEST one. Running `start()` on mount needs empty deps, and the cleanup of
-  // an empty-deps effect keeps the closure from the FIRST render — where the
-  // transcript is still []. That is how every closed call ended up reporting an
-  // empty transcript, which the end route then wrote over the tool log.
-  // Same ref indirection the hangup/nudge callbacks above already use.
-  const endSessionRef = useRef(endSession);
-  useEffect(() => {
-    endSessionRef.current = endSession;
-  }, [endSession]);
-
   // Same indirection for the duration ticker's hard cap — see handleStopRef.
   useEffect(() => {
     handleStopRef.current = handleStop;
@@ -1394,7 +1466,11 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
     // setting status before it awaits. There is nothing to derive here.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- connect to the realtime session on mount
     void start();
-    return () => { void endSessionRef.current("abandoned"); };
+    return () => {
+      // Navigation can otherwise cancel the final telemetry write and leave
+      // the durable session permanently `active`.
+      void endSessionRef.current("abandoned", true);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

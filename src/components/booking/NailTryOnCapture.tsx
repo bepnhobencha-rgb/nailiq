@@ -77,6 +77,9 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
   const [selectedDesign, setSelectedDesign] = useState<CatalogDesign | null>(null);
   const [generationSeconds, setGenerationSeconds] = useState(0);
   const [configuration, setConfiguration] = useState<NailConfiguration>(DEFAULT_NAIL_CONFIGURATION);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deletionMessage, setDeletionMessage] = useState<string | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const libraryInputRef = useRef<HTMLInputElement>(null);
 
@@ -96,6 +99,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
     setPreviewUrl(url);
     setFileName(file.name || "hand-photo");
     setPhoto(file);
+    setDeletionMessage(null);
     setQuality("checking");
 
     try {
@@ -134,6 +138,47 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
     setServerWarning(null);
     if (cameraInputRef.current) cameraInputRef.current.value = "";
     if (libraryInputRef.current) libraryInputRef.current.value = "";
+  }
+
+  async function deleteUploadedPhoto() {
+    if (!sessionId || deleting) return;
+    setDeleting(true);
+    setServerMessage(null);
+    try {
+      const response = await fetch("/api/nail-tryon/session", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+      const payload = await response.json() as {
+        deletion?: "complete" | "queued";
+        error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error || "delete_failed");
+
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+      setQuality(null);
+      setFileName("");
+      setPhoto(null);
+      setSessionId(null);
+      setDesigns([]);
+      setStep("capture");
+      setResultUrl(null);
+      setSelectedDesign(null);
+      setServerWarning(null);
+      setConsented(false);
+      setDeleteConfirmOpen(false);
+      if (cameraInputRef.current) cameraInputRef.current.value = "";
+      if (libraryInputRef.current) libraryInputRef.current.value = "";
+      setDeletionMessage(payload.deletion === "queued"
+        ? "Your photo is locked and scheduled for permanent deletion. / Ảnh đã bị khóa và đang được xóa vĩnh viễn."
+        : "Your photo was permanently deleted. / Ảnh của bạn đã được xóa vĩnh viễn.");
+    } catch {
+      setServerMessage("We could not finish deleting the photo. Please try again. / Chưa thể hoàn tất xóa ảnh. Vui lòng thử lại.");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   async function uploadAndVerify() {
@@ -251,7 +296,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
         <section className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-xl shadow-black/5">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700"><ShieldCheck aria-hidden /></div>
           <h2 className="mt-5 text-xl font-semibold text-neutral-950">Your photo stays private</h2>
-          <p className="mt-2 text-sm leading-6 text-neutral-600">NailIQ processes this hand photo only to create your AI preview. An unused photo expires after 24 hours. You can delete it sooner.</p>
+          <p className="mt-2 text-sm leading-6 text-neutral-600">NailIQ processes this hand photo only to create your AI preview. Unused photos are deleted after 24 hours. After upload, you can delete yours immediately.</p>
           <label className="mt-5 flex cursor-pointer gap-3 rounded-2xl bg-neutral-50 p-4 text-sm text-neutral-700">
             <input type="checkbox" checked={consented} onChange={(event) => setConsented(event.target.checked)} className="mt-0.5 h-5 w-5 accent-black" />
             <span>I agree to this photo processing. I understand the AI preview may differ from the real result.</span>
@@ -339,6 +384,50 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
           />
         </section>
       )}
+
+      {deletionMessage ? (
+        <p className="mt-5 rounded-2xl bg-emerald-50 p-4 text-sm font-medium text-emerald-900" role="status">
+          {deletionMessage}
+        </p>
+      ) : null}
+
+      {sessionId ? (
+        <section className="mt-5 rounded-2xl border border-neutral-200 bg-white p-4">
+          {!deleteConfirmOpen ? (
+            <button
+              type="button"
+              disabled={busy || deleting}
+              onClick={() => setDeleteConfirmOpen(true)}
+              className="min-h-11 w-full rounded-full border border-red-200 px-4 text-sm font-semibold text-red-700 disabled:opacity-50"
+            >
+              Delete my photo now / Xóa ảnh của tôi ngay
+            </button>
+          ) : (
+            <div role="alert">
+              <p className="text-sm font-semibold text-neutral-950">Permanently delete this photo?</p>
+              <p className="mt-1 text-xs leading-5 text-neutral-600">The hand photo and AI preview cannot be recovered. / Ảnh bàn tay và ảnh AI sẽ không thể khôi phục.</p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={() => setDeleteConfirmOpen(false)}
+                  className="min-h-11 rounded-full border border-neutral-300 px-3 text-sm font-semibold text-neutral-800 disabled:opacity-50"
+                >
+                  Cancel / Hủy
+                </button>
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={() => void deleteUploadedPhoto()}
+                  className="min-h-11 rounded-full bg-red-700 px-3 text-sm font-semibold text-white disabled:bg-red-300"
+                >
+                  {deleting ? "Deleting… / Đang xóa…" : "Delete permanently / Xóa vĩnh viễn"}
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+      ) : null}
 
       <a href={`/${salonSlug}`} className="mx-auto mt-6 block w-fit text-sm font-medium text-neutral-600 underline-offset-4 hover:underline">Back to booking</a>
     </div>

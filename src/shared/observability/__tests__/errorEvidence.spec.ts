@@ -26,6 +26,12 @@ vi.mock("@/shared/lib/resend", () => ({
   getResendFrom: vi.fn(),
 }));
 
+vi.mock("@/shared/ai/usageLedger", () => ({
+  trackAnthropicMessage: vi.fn(
+    async (_context: unknown, execute: () => Promise<unknown>) => execute(),
+  ),
+}));
+
 import {
   assessErrorEvidence,
   evidenceConflictSummary,

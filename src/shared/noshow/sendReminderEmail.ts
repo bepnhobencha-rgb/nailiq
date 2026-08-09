@@ -1,8 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { complianceFooterHtml, listUnsubscribeHeaders, isEmailSuppressed } from "@/shared/lib/emailCompliance";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 
 export type ReminderEmailInput = {
+  salonId: string;
   tokenId: string;
   clientName: string;
   clientEmail: string;
@@ -62,11 +64,16 @@ Details:
 
 Only output the message text, nothing else.`;
 
-    const response = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 150,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const model = "claude-haiku-4-5-20251001";
+    const response = await trackAnthropicMessage(
+      { salonId: input.salonId, feature: "reminder_email", model },
+      () =>
+        client.messages.create({
+          model,
+          max_tokens: 150,
+          messages: [{ role: "user", content: prompt }],
+        }),
+    );
 
     if (response.content[0].type === "text") {
       return response.content[0].text.trim();

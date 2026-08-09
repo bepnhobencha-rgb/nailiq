@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 vi.mock("server-only", () => ({}));
 
-import { buildAgentCertificationMatrix } from "@/shared/superadmin/agentCertificationActions";
+import {
+  activeAgentFailureKeys,
+  buildAgentCertificationMatrix,
+  staleVoiceSessionSalonIds,
+} from "@/shared/superadmin/agentCertificationActions";
 
 const salon = {
   id: "s1",
@@ -11,6 +17,7 @@ const salon = {
   feature_flags: {
     ai_winback: true,
     ai_rebook: true,
+    ai_smart_reminders: true,
     ai_vip_care: false,
   },
   voice_ai_enabled: false,
@@ -23,11 +30,46 @@ const emptyEvidence = {
   usage: [],
   voice: [],
   policies: [],
-  notifications: [],
   jobs: [],
 };
 
 describe("Agent Certification Matrix", () => {
+  it("includes all 20 operational agents, including Daily Report", () => {
+    const rows = buildAgentCertificationMatrix({
+      salons: [salon],
+      evidence: {
+        ...emptyEvidence,
+        actions: [{
+          salon_id: "s1",
+          agent: "daily_report",
+          created_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows).toHaveLength(20);
+    expect(rows.find((row) => row.agent === "daily_report")).toMatchObject({
+      agentLabel: "Daily Report",
+      status: "certified",
+      evidenceCount: 1,
+    });
+  });
+
+  it("marks Daily Report unconfigured when Unified Digest replaces it", () => {
+    const rows = buildAgentCertificationMatrix({
+      salons: [{
+        ...salon,
+        feature_flags: { ...salon.feature_flags, ai_unified_digest: true },
+      }],
+      evidence: emptyEvidence,
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "daily_report")?.status)
+      .toBe("not_configured");
+  });
+
   it("distinguishes certified, waiting, and unconfigured agents", () => {
     const rows = buildAgentCertificationMatrix({
       salons: [salon],
@@ -69,6 +111,28 @@ describe("Agent Certification Matrix", () => {
     expect(rows.find((row) => row.agent === "vip_care")?.status).toBe("not_configured");
   });
 
+  it("requires explicit permission before Google Review Responder is configured", () => {
+    const withoutPermission = buildAgentCertificationMatrix({
+      salons: [{ ...salon, google_place_id: "place-1" }],
+      evidence: emptyEvidence,
+      failedAgents: new Set(),
+    });
+    const withPermission = buildAgentCertificationMatrix({
+      salons: [{
+        ...salon,
+        google_place_id: "place-1",
+        feature_flags: { ...salon.feature_flags, ai_google_reply: true },
+      }],
+      evidence: emptyEvidence,
+      failedAgents: new Set(),
+    });
+
+    expect(withoutPermission.find((row) => row.agent === "review_responder")?.status)
+      .toBe("not_configured");
+    expect(withPermission.find((row) => row.agent === "review_responder")?.status)
+      .toBe("waiting_data");
+  });
+
   it("uses a fresh outcome timestamp for Outcome Tracker evidence", () => {
     const rows = buildAgentCertificationMatrix({
       salons: [salon],
@@ -89,5 +153,193 @@ describe("Agent Certification Matrix", () => {
       evidenceCount: 1,
       lastEvidenceAt: "2026-07-28T00:00:00Z",
     });
+  });
+
+  it("certifies Smart Reminders from a successful model-call artifact", () => {
+    const rows = buildAgentCertificationMatrix({
+      salons: [salon],
+      evidence: {
+        ...emptyEvidence,
+        usage: [{
+          salon_id: "s1",
+          feature: "smart_reminder",
+          status: "succeeded",
+          created_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "smart_reminders")).toMatchObject({
+      status: "certified",
+      evidenceCount: 1,
+    });
+  });
+
+  it("does not certify abandoned or incomplete AI Receptionist sessions", () => {
+    const rows = buildAgentCertificationMatrix({
+      salons: [{ ...salon, voice_ai_enabled: true }],
+      evidence: {
+        ...emptyEvidence,
+        voice: [{
+          salon_id: "s1",
+          status: "abandoned",
+          model: "gpt-realtime-2.1",
+          realtime_usage: { schemaVersion: 1 },
+          estimated_cost_usd: 0.01,
+          started_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "voice_ai")?.status).toBe(
+      "waiting_data",
+    );
+  });
+
+  it("certifies AI Receptionist only with a completed telemetry artifact", () => {
+    const rows = buildAgentCertificationMatrix({
+      salons: [{ ...salon, voice_ai_enabled: true }],
+      evidence: {
+        ...emptyEvidence,
+        voice: [{
+          salon_id: "s1",
+          status: "completed",
+          model: "gpt-realtime-2.1",
+          realtime_usage: { schemaVersion: 1 },
+          estimated_cost_usd: 0.01,
+          started_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "voice_ai")).toMatchObject({
+      status: "certified",
+      evidenceCount: 1,
+    });
+  });
+
+  it("does not certify usage-backed agents from failed model calls", () => {
+    const rows = buildAgentCertificationMatrix({
+      salons: [{
+        ...salon,
+        feature_flags: { ...salon.feature_flags, ai_watchdog: true },
+      }],
+      evidence: {
+        ...emptyEvidence,
+        usage: [{
+          salon_id: "s1",
+          feature: "watchdog",
+          status: "failed",
+          created_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "watchdog")?.status).toBe(
+      "waiting_data",
+    );
+  });
+
+  it("does not certify customer-outreach agents from skipped sends", () => {
+    const rows = buildAgentCertificationMatrix({
+      salons: [salon],
+      evidence: {
+        ...emptyEvidence,
+        actions: [{
+          salon_id: "s1",
+          agent: "winback",
+          action_type: "skipped_no_channel",
+          created_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "winback")?.status).toBe(
+      "waiting_data",
+    );
+  });
+
+  it("does not certify AI Execution from canceled or failed jobs", () => {
+    const rows = buildAgentCertificationMatrix({
+      salons: [{
+        ...salon,
+        feature_flags: {
+          ...salon.feature_flags,
+          ai_control_center_enabled: true,
+        },
+      }],
+      evidence: {
+        ...emptyEvidence,
+        jobs: [{
+          salon_id: "s1",
+          status: "failed",
+          created_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "ai_execution")?.status).toBe(
+      "waiting_data",
+    );
+  });
+
+  it("detects voice sessions that outlive the realtime session TTL", () => {
+    const now = new Date("2026-08-08T12:00:00Z");
+    const staleSalons = staleVoiceSessionSalonIds([
+      {
+        salon_id: "stale",
+        status: "active",
+        started_at: "2026-08-08T11:20:00Z",
+      },
+      {
+        salon_id: "recent",
+        status: "active",
+        started_at: "2026-08-08T11:50:00Z",
+      },
+      {
+        salon_id: "ended",
+        status: "abandoned",
+        started_at: "2026-08-08T10:00:00Z",
+      },
+    ], now);
+
+    expect([...staleSalons]).toEqual(["stale"]);
+  });
+
+  it("maps durable Manager exceptions by the schema-backed source reference", () => {
+    const failures = activeAgentFailureKeys(
+      [
+        { salon_id: "s1", source_ref: "watchdog", status: "open" },
+        { salon_id: "s1", source_ref: "digest", status: "resolved" },
+        { salon_id: "unknown", source_ref: "winback", status: "open" },
+      ],
+      new Map([["s1", "alpha-salon"]]),
+    );
+
+    expect([...failures]).toEqual(["alpha-salon:watchdog"]);
+  });
+
+  it("queries the durable exception column that exists in the production schema", () => {
+    const actionSource = readFileSync(
+      resolve(process.cwd(), "src/shared/superadmin/agentCertificationActions.ts"),
+      "utf8",
+    );
+    const schemaSource = readFileSync(
+      resolve(
+        process.cwd(),
+        "supabase/migrations/20260728112951_add_ai_operational_exception_signals.sql",
+      ),
+      "utf8",
+    );
+
+    expect(schemaSource).toContain("add column if not exists source_ref text");
+    expect(actionSource).toContain('.select("salon_id, source_ref, status" as never)');
+    expect(actionSource).not.toContain("alert_type");
   });
 });

@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import {
   assessErrorEvidence,
@@ -250,16 +251,23 @@ export async function draftFix(
     }
 
     // 1. Which file? Claude reads the error/stack and names the likely repo path.
-    const idResp = await client.messages.create({
-      model: FIX_MODEL,
-      max_tokens: 200,
-      messages: [
-        {
-          role: "user",
-          content: `NailIQ is a Next.js 16 + Supabase salon SaaS. Source lives under src/. Given this error, reply ONLY JSON {"file":"<most likely repo-relative source path, e.g. src/shared/booking/submitGroupBooking.ts, or empty if unknown>"}.\n\nmessage: ${e.message}\nstack: ${(e.stack ?? "").slice(0, 1500)}\nsummary: ${e.ai_summary ?? ""}`,
-        },
-      ],
-    });
+    const idResp = await trackAnthropicMessage(
+      {
+        salonId: null,
+        feature: "error_fix_file",
+        model: FIX_MODEL,
+      },
+      () => client.messages.create({
+        model: FIX_MODEL,
+        max_tokens: 200,
+        messages: [
+          {
+            role: "user",
+            content: `NailIQ is a Next.js 16 + Supabase salon SaaS. Source lives under src/. Given this error, reply ONLY JSON {"file":"<most likely repo-relative source path, e.g. src/shared/booking/submitGroupBooking.ts, or empty if unknown>"}.\n\nmessage: ${e.message}\nstack: ${(e.stack ?? "").slice(0, 1500)}\nsummary: ${e.ai_summary ?? ""}`,
+          },
+        ],
+      }),
+    );
     const guessed = String((parseJson(textOf(idResp))?.file ?? "")).trim().replace(/^\/+/, "");
     // Minified prod stacks rarely carry the source path and the LLM guess often
     // misses dynamic segments (dashboard/center → dashboard/[slug]/center), so
@@ -280,22 +288,29 @@ export async function draftFix(
     ]
       .filter(Boolean)
       .join("\n");
-    const fixResp = await client.messages.create({
-      model: FIX_MODEL,
-      max_tokens: 4000,
-      messages: [
-        {
-          role: "user",
-          content: `You are fixing a bug in NailIQ (Next.js 16 + TypeScript). A first-pass triage already diagnosed this error — weigh its diagnosis before proposing a fix, but trust the actual file content over the triage if they conflict. Given the error and ${fileContent ? "the current file content" : "(file not fetchable — propose from the error alone)"}, reply ONLY JSON:
+    const fixResp = await trackAnthropicMessage(
+      {
+        salonId: null,
+        feature: "error_fix_draft",
+        model: FIX_MODEL,
+      },
+      () => client.messages.create({
+        model: FIX_MODEL,
+        max_tokens: 4000,
+        messages: [
+          {
+            role: "user",
+            content: `You are fixing a bug in NailIQ (Next.js 16 + TypeScript). A first-pass triage already diagnosed this error — weigh its diagnosis before proposing a fix, but trust the actual file content over the triage if they conflict. Given the error and ${fileContent ? "the current file content" : "(file not fetchable — propose from the error alone)"}, reply ONLY JSON:
 {"root_cause":"one sentence","change_summary":"what to change, plainly","pr_title":"conventional-commit style","pr_body":"short markdown explanation","corrected_file":${fileContent ? '"the FULL corrected file content if the fix is small + safe, else empty string"' : '""'}}
 
 error.message: ${e.message}
 error.stack: ${(e.stack ?? "").slice(0, 1500)}
 ${triageBlock ? `${triageBlock}\n` : ""}file: ${filePath || "(unknown)"}
 ${fileContent ? `\n--- current ${filePath} ---\n${fileContent}` : ""}`,
-        },
-      ],
-    });
+          },
+        ],
+      }),
+    );
     const fix = parseJson(textOf(fixResp)) ?? {};
     const rootCause = String(fix.root_cause ?? "").slice(0, 500);
     const changeSummary = String(fix.change_summary ?? "").slice(0, 800);

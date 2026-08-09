@@ -30,6 +30,22 @@ test.afterAll(async ({}, testInfo) => {
   await cleanupTestSalon(rcSlug(testInfo.project.name));
 });
 
+async function openDisplayMenu(page: import("@playwright/test").Page) {
+  const panel = page.getByTestId("receptionist-display-menu");
+  if (!(await panel.isVisible())) {
+    await page.getByTestId("receptionist-display-menu-trigger").click();
+  }
+  await expect(panel).toBeVisible();
+}
+
+async function closeDisplayMenu(page: import("@playwright/test").Page) {
+  const panel = page.getByTestId("receptionist-display-menu");
+  if (await panel.isVisible()) {
+    await page.getByTestId("receptionist-display-menu-trigger").click();
+  }
+  await expect(panel).not.toBeVisible();
+}
+
 test("keeps classic as default and remembers the opt-in preview", async ({
   page,
 }, testInfo) => {
@@ -50,12 +66,14 @@ test("keeps classic as default and remembers the opt-in preview", async ({
   await gotoReceptionistCenter(page, fx.slug);
 
   const center = page.getByTestId("receptionist-center-loaded");
+  await openDisplayMenu(page);
   const switcher = page.getByTestId("receptionist-interface-switcher");
 
   await expect(center).toHaveAttribute("data-receptionist-interface", "classic");
   await expect(switcher).toHaveAttribute("aria-pressed", "false");
 
   await switcher.click();
+  await expect(page.getByTestId("receptionist-display-menu")).not.toBeVisible();
   await expect(center).toHaveAttribute("data-receptionist-interface", "preview");
   if ((page.viewportSize()?.width ?? 0) >= 768) {
     await expect(page.getByTestId("preview-apple-header")).toBeVisible();
@@ -78,6 +96,7 @@ test("keeps classic as default and remembers the opt-in preview", async ({
       contentType: "image/png",
     });
   } else {
+    await openDisplayMenu(page);
     const themePicker = page.getByTestId("preview-theme-picker");
     const visibleThemeTrigger = themePicker.locator("button:visible").first();
     await expect(visibleThemeTrigger).toBeVisible();
@@ -94,6 +113,7 @@ test("keeps classic as default and remembers the opt-in preview", async ({
       position: { x: 2, y: 2 },
     });
     await expect(themePanel).toHaveCount(0);
+    await closeDisplayMenu(page);
 
     const queueToggle = page.getByTestId("queue-panel-toggle");
     await expect(queueToggle).toBeVisible();
@@ -123,6 +143,7 @@ test("keeps classic as default and remembers the opt-in preview", async ({
       .getByTestId("receptionist-interface-switcher")
       .click();
   } else {
+    await openDisplayMenu(page);
     await page
       .locator('[data-testid="receptionist-interface-switcher"]:visible')
       .click();
@@ -144,9 +165,11 @@ test("keeps New interface calendar, search, and account navigation discoverable"
     await page.setViewportSize({ width: 1280, height: 853 });
   }
   await gotoReceptionistCenter(page, fx.slug);
+  await openDisplayMenu(page);
   await page
     .locator('[data-testid="receptionist-interface-switcher"]:visible')
     .click();
+  await expect(page.getByTestId("receptionist-display-menu")).not.toBeVisible();
   await expect(page.getByTestId("receptionist-center-loaded")).toHaveAttribute(
     "data-receptionist-interface",
     "preview",
@@ -189,13 +212,13 @@ test("keeps New interface calendar, search, and account navigation discoverable"
     );
     await expect(accountMenu.getByRole("button", { name: "Sign out" })).toBeVisible();
   } else {
-    const modeToggle = page.getByTestId("view-mode-toggle");
-    await expect(modeToggle).toBeVisible();
-    await modeToggle.getByRole("tab", { name: "Week" }).click();
+    await openDisplayMenu(page);
+    await page.getByTestId("mobile-display-view-week").click();
     await expect(page.getByTestId("week-view")).toBeVisible();
-    await modeToggle.getByRole("tab", { name: "Month" }).click();
+    await page.getByTestId("mobile-display-view-month").click();
     await expect(page.getByTestId("month-view")).toBeVisible();
-    await modeToggle.getByRole("tab", { name: "Day" }).click();
+    await page.getByTestId("mobile-display-view-day").click();
+    await closeDisplayMenu(page);
 
     await page.getByTestId("preview-mobile-calendar-trigger").click();
     await expect(page.getByTestId("preview-mobile-calendar-date-input")).toBeVisible();

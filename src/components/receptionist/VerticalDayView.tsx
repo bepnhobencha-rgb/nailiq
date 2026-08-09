@@ -133,7 +133,9 @@ export interface VerticalDayViewProps {
   onBookingClick: (id: string) => void;
   onEmptySlotClick?: (staffId: string, ymd: string, timeLabel: string) => void;
   onNavigateDate: (ymd: string) => void;
-  onAddBooking: () => void;
+  onAddBooking?: () => void;
+  onAddWalkin?: () => void;
+  onAddGroup?: () => void;
   language?: "en" | "vi";
   autoNoShowMinutes?: number | null;
   currencyCode?: import("@/shared/lib/currencyFormat").Currency;
@@ -175,6 +177,8 @@ export default function VerticalDayView({
   onEmptySlotClick,
   onNavigateDate,
   onAddBooking,
+  onAddWalkin,
+  onAddGroup,
   language = "en",
   autoNoShowMinutes,
   currencyCode,
@@ -190,6 +194,7 @@ export default function VerticalDayView({
   const open = openMinutes ?? DEFAULT_OPEN;
   const close = closeMinutes ?? DEFAULT_CLOSE;
   const assignMode = assigning !== null && onAssignSlot !== undefined;
+  const createMenuRef = useRef<HTMLDetailsElement>(null);
 
   // Stable colour + name lookup by staff id
   const staffColorMap = useMemo(() => {
@@ -278,7 +283,12 @@ export default function VerticalDayView({
     [selectedDate, onNavigateDate],
   );
 
-  const addLabel = language === "vi" ? "Tạo hẹn" : "New appointment";
+  const addLabel = language === "vi" ? "Tạo" : "Create";
+
+  const runCreateAction = useCallback((action: () => void) => {
+    if (createMenuRef.current) createMenuRef.current.open = false;
+    action();
+  }, []);
 
   const prevLabel = language === "vi" ? "Hôm qua" : "Prev day";
   const nextLabel = language === "vi" ? "Ngày mai" : "Next day";
@@ -480,7 +490,9 @@ export default function VerticalDayView({
                       />
                     ))}
                   </>
-                ) : !assignMode && isHour ? (
+                ) : !assignMode &&
+                  isHour &&
+                  (onEmptySlotClick || onAddBooking) ? (
                   <button
                     data-testid={`mobile-empty-slot-${slotIndex}`}
                     className="flex min-h-11 w-full items-center gap-1.5 rounded-lg border border-dashed border-white/[0.08] px-3 text-base text-white/30 transition-colors active:border-white/25 active:text-white/50"
@@ -492,7 +504,7 @@ export default function VerticalDayView({
                           minsToLabel(slot),
                         );
                       } else {
-                        onAddBooking();
+                        onAddBooking?.();
                       }
                     }}
                   >
@@ -506,16 +518,63 @@ export default function VerticalDayView({
         );
       })}
 
-      {/* Floating action button — "+ New appt" (left side avoids Ask Coco on right) */}
-      <div className="fixed bottom-20 left-4 z-30">
-        <button
-          onClick={onAddBooking}
-          className="flex items-center gap-2 rounded-full bg-nq-primary px-4 py-3 text-sm font-semibold text-black shadow-lg transition-transform active:scale-95"
+      {/* One mobile create entry point replaces the duplicate header actions. */}
+      {onAddBooking || onAddWalkin || onAddGroup ? (
+        <details
+          ref={createMenuRef}
+          className="group fixed bottom-20 left-4 z-40"
         >
-          <Plus size={16} strokeWidth={2.5} />
-          {addLabel}
-        </button>
-      </div>
+          <summary
+            data-testid="mobile-create-menu-trigger"
+            className="flex cursor-pointer list-none items-center gap-2 rounded-full bg-nq-primary px-4 py-3 text-base font-semibold text-black shadow-lg transition-transform active:scale-95 [&::-webkit-details-marker]:hidden"
+            aria-label={
+              language === "vi"
+                ? "Tạo lịch hoặc khách vãng lai"
+                : "Create booking or walk-in"
+            }
+          >
+            <Plus
+              size={16}
+              strokeWidth={2.5}
+              className="transition-transform group-open:rotate-45"
+              aria-hidden
+            />
+            {addLabel}
+          </summary>
+          <div className="absolute bottom-full left-0 mb-2 w-56 rounded-2xl border border-white/15 bg-[#181225] p-2 shadow-2xl">
+            {onAddWalkin ? (
+              <button
+                type="button"
+                data-testid="mobile-create-walkin"
+                onClick={() => runCreateAction(onAddWalkin)}
+                className="min-h-11 w-full rounded-xl px-3 text-left text-base font-semibold text-white/90 transition-colors hover:bg-white/10"
+              >
+                {language === "vi" ? "Khách vãng lai" : "Walk-in customer"}
+              </button>
+            ) : null}
+            {onAddBooking ? (
+              <button
+                type="button"
+                data-testid="mobile-create-appointment"
+                onClick={() => runCreateAction(onAddBooking)}
+                className="min-h-11 w-full rounded-xl px-3 text-left text-base font-semibold text-white/90 transition-colors hover:bg-white/10"
+              >
+                {language === "vi" ? "Hẹn mới" : "New appointment"}
+              </button>
+            ) : null}
+            {onAddGroup ? (
+              <button
+                type="button"
+                data-testid="mobile-create-group"
+                onClick={() => runCreateAction(onAddGroup)}
+                className="min-h-11 w-full rounded-xl px-3 text-left text-base font-semibold text-white/90 transition-colors hover:bg-white/10"
+              >
+                {language === "vi" ? "Hẹn nhóm" : "Group booking"}
+              </button>
+            ) : null}
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }

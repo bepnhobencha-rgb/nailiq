@@ -99,7 +99,10 @@
     frame = document.createElement("iframe");
     frame.className = "nq-embed-frame";
     frame.setAttribute("title", "Book an appointment");
-    frame.setAttribute("allow", "payment; clipboard-write");
+    // Voice booking runs inside this cross-origin iframe on salon websites.
+    // Microphone access must be explicitly delegated by the host frame;
+    // otherwise getUserMedia() fails even after the customer grants permission.
+    frame.setAttribute("allow", "microphone; payment; clipboard-write");
     frame.setAttribute("loading", "lazy");
 
     panel.appendChild(spinner);

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { resolveVertical } from "@/shared/verticals/registry";
+import { trackAnthropicFetch } from "@/shared/ai/usageLedger";
 import {
   getEffectivePlanLimits,
 } from "@/shared/lib/subscriptionPlans";
@@ -110,6 +111,7 @@ async function resolveSalonDescriptor(ctx: DashboardWriteCtx): Promise<string> {
 }
 
 async function callClaudeVision(
+  salonId: string,
   imageContent:
     | { type: "url"; url: string }
     | { type: "base64"; media_type: string; data: string },
@@ -150,27 +152,34 @@ async function callClaudeVision(
 
   let res: Response;
   try {
-    res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
+    res = await trackAnthropicFetch(
+      {
+        salonId,
+        feature: "ai_prefill_services",
         model: "claude-sonnet-4-6",
-        max_tokens: 2048,
-        messages: [
-          {
-            role: "user",
-            content: [
-              imageBlock,
-              { type: "text", text: buildMenuExtractionPrompt(businessDescriptor) },
-            ],
-          },
-        ],
+      },
+      () => fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 2048,
+          messages: [
+            {
+              role: "user",
+              content: [
+                imageBlock,
+                { type: "text", text: buildMenuExtractionPrompt(businessDescriptor) },
+              ],
+            },
+          ],
+        }),
       }),
-    });
+    );
   } catch (e) {
     console.error("[aiPrefillServices] fetch error", e);
     return { ok: false, error: "vision_failed" };
@@ -249,6 +258,7 @@ export async function analyzeMenuImage(
   const safeMime = allowed.includes(mimeType) ? mimeType : "image/jpeg";
 
   const vision = await callClaudeVision(
+    ctx.salon.id,
     {
       type: "base64",
       media_type: safeMime,
@@ -302,6 +312,7 @@ export async function analyzeMenuImageUrl(
   }
 
   const vision = await callClaudeVision(
+    ctx.salon.id,
     { type: "url", url: imageUrl },
     await resolveSalonDescriptor(ctx),
   );
