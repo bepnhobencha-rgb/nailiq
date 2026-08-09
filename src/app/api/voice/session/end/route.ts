@@ -7,6 +7,10 @@ import {
   estimateRealtimeCostUsd,
   normalizeRealtimeUsage,
 } from "@/shared/voiceai/realtimeUsage";
+import {
+  normalizeVoiceClientDiagnostics,
+  normalizeVoiceFailureCode,
+} from "@/shared/voiceai/clientDiagnostics";
 
 export const runtime = "nodejs";
 
@@ -22,6 +26,10 @@ type EndSessionBody = {
   /** The language the call ended in. On the phone the caller can switch mid-call
    *  (English → Spanish), and the session row must reflect where it finished. */
   language?:       string;
+  /** Privacy-safe enum only; raw browser/provider errors are never persisted. */
+  failureCode?:    unknown;
+  /** Bounded booleans and sample rate only; never device id or user agent. */
+  clientDiagnostics?: unknown;
 };
 
 const SUPPORTED = ["vi", "en", "es", "fr", "zh"];
@@ -44,6 +52,8 @@ export async function POST(req: NextRequest) {
     clientPhone,
     realtimeUsage,
     language,
+    failureCode,
+    clientDiagnostics,
   } = body;
   if (!sessionId) return NextResponse.json({ error: "missing_session_id" }, { status: 400 });
 
@@ -60,6 +70,8 @@ export async function POST(req: NextRequest) {
 
   const lang = typeof language === "string" && SUPPORTED.includes(language) ? language : null;
   const status = SESSION_STATUSES.has(requestedStatus) ? requestedStatus : "failed";
+  const normalizedFailureCode = normalizeVoiceFailureCode(failureCode);
+  const normalizedClientDiagnostics = normalizeVoiceClientDiagnostics(clientDiagnostics);
 
   const supabase = createServiceRoleClient();
 
@@ -109,11 +121,18 @@ export async function POST(req: NextRequest) {
       ...(clientName  ? { client_name:  clientName  } : {}),
       ...(clientPhone ? { client_phone: toCanonicalPhone(clientPhone) ?? clientPhone } : {}),
       ...(lang        ? { language:     lang } : {}),
+      ...(normalizedFailureCode ? { error_message: normalizedFailureCode } : {}),
       ...(normalizedUsage ? {
         realtime_usage: {
           ...normalizedUsage,
           model: (sessionRow as { model?: string | null }).model ?? null,
           pricingAsOf: costEstimate?.pricingAsOf ?? null,
+          // Privacy-safe environment facts live beside the bounded usage
+          // snapshot so session finalization remains one atomic row update.
+          // Never include device ids, user agent, transcript, or caller data.
+          ...(normalizedClientDiagnostics ? {
+            clientDiagnostics: normalizedClientDiagnostics,
+          } : {}),
         },
         // Unknown/new models remain visibly unpriced instead of silently using
         // a stale rate card. A known model with zero usage is legitimately $0.
