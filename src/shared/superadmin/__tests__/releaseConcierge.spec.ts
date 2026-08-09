@@ -9,13 +9,23 @@ describe("AI Release Concierge draft boundary", () => {
   it("accepts a valid bounded routing draft", () => {
     const result = parseReleaseConciergeDraft(
       JSON.stringify({
-        title: "Booking update / Cập nhật đặt hẹn",
-        body: "What changed: safer booking.\n\nCó gì mới: đặt hẹn an toàn hơn.",
+        localized: {
+          en: {
+            title: "Booking update",
+            body: "What changed: safer booking.",
+            emailSubject: "NailIQ booking update",
+            emailBody: "A booking workflow changed.",
+          },
+          vi: {
+            title: "Cập nhật đặt hẹn",
+            body: "Có gì mới: đặt hẹn an toàn hơn.",
+            emailSubject: "NailIQ cập nhật đặt hẹn",
+            emailBody: "Quy trình đặt hẹn đã thay đổi.",
+          },
+        },
         severity: "info",
         target: "owners",
         notificationMode: "in_app",
-        emailSubject: "NailIQ booking update",
-        emailBody: "A booking workflow changed.\n\nQuy trình đặt hẹn đã thay đổi.",
         reason: "Owners need context, but no immediate action is required.",
       }),
     );
@@ -27,13 +37,23 @@ describe("AI Release Concierge draft boundary", () => {
     expect(
       parseReleaseConciergeDraft(
         JSON.stringify({
-          title: "x",
-          body: "x".repeat(2_001),
+          localized: {
+            en: {
+              title: "x",
+              body: "x".repeat(2_001),
+              emailSubject: "x",
+              emailBody: "x",
+            },
+            vi: {
+              title: "x",
+              body: "x",
+              emailSubject: "x",
+              emailBody: "x",
+            },
+          },
           severity: "critical",
           target: "customers",
           notificationMode: "blast",
-          emailSubject: "x",
-          emailBody: "x",
           reason: "x",
         }),
       ),
@@ -46,6 +66,10 @@ describe("AI Release Concierge draft boundary", () => {
     );
     expect(result.notificationMode).toBe("in_app");
     expect(result.target).toBe("owners");
+    expect(result.localized.en.body).not.toContain("Có gì mới");
+    expect(result.localized.vi.body).not.toContain("What's new");
+    expect(result.localized.en.emailBody).toContain("778-868-0738");
+    expect(result.localized.vi.emailBody).toContain("support@nailiq.ca");
     expect(result.reason).toContain("no email is sent");
   });
 

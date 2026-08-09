@@ -2,6 +2,7 @@ import "server-only";
 
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import type { UserLanguage } from "@/shared/i18n/user/types";
 import type { ReleaseReviewContext } from "@/shared/superadmin/releaseReviewContext";
 
 const RELEASE_REVIEW_RECIPIENT = "thehuytgvn@gmail.com";
@@ -44,27 +45,77 @@ export function buildReleaseReviewEmail(input: {
   reviewId: string;
   deploymentId: string;
   changeSummary: string;
+  language?: UserLanguage;
 }): { subject: string; html: string; text: string } {
   const approveUrl = releaseReviewDecisionUrl(input.reviewId, "approved");
   const declineUrl = releaseReviewDecisionUrl(input.reviewId, "declined");
-  const shortId = input.deploymentId.slice(0, 8);
-  const subject = `[NailIQ cần duyệt] Bản cập nhật ${shortId}`;
+  const language = input.language === "vi" ? "vi" : "en";
+  const isVietnamese = language === "vi";
+  const copy = isVietnamese
+    ? {
+        subject: "NailIQ: Có cần thông báo thay đổi này cho salon không?",
+        eyebrow: "NailIQ · Xem trước thông báo",
+        heading: "Bạn có muốn thông báo thay đổi này cho chủ salon?",
+        intro:
+          "Bản cập nhật đã hoạt động. Lựa chọn dưới đây chỉ quyết định NailIQ có chuẩn bị nội dung thông báo cho salon hay không.",
+        summaryLabel: "Ghi chú nội bộ về thay đổi",
+        approve: "Có, tạo thông báo",
+        decline: "Không cần thông báo",
+        safety:
+          "NailIQ chưa gửi gì cho salon. Chọn “Có” sẽ mở bản nháp để bạn đọc và chỉnh sửa bằng tiếng Anh và tiếng Việt trước khi gửi.",
+      }
+    : {
+        subject: "NailIQ: Should salon owners be notified about this change?",
+        eyebrow: "NailIQ · Notice preview",
+        heading: "Would you like to notify salon owners about this change?",
+        intro:
+          "The update is already active. Your choice below only decides whether NailIQ should prepare a notice for salon owners.",
+        summaryLabel: "Internal change note",
+        approve: "Yes, prepare a notice",
+        decline: "No notice needed",
+        safety:
+          "Nothing has been sent to salons. Choosing “Yes” opens English and Vietnamese drafts for your review and editing before anything is sent.",
+      };
+  const subject = copy.subject;
   const html = `<div style="max-width:560px;margin:0 auto;padding:24px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;color:#171717">
-  <p style="margin:0 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#737373">NailIQ · Release Review</p>
-  <h1 style="margin:0 0 16px;font-size:24px;line-height:1.25">Bản cập nhật mới cần bạn xem</h1>
-  <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#404040">NailIQ đã ghi nhận một bản cập nhật production. Hãy chọn hướng xử lý phù hợp.</p>
+  <p style="margin:0 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#737373">${esc(copy.eyebrow)}</p>
+  <h1 style="margin:0 0 16px;font-size:24px;line-height:1.25">${esc(copy.heading)}</h1>
+  <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#404040">${esc(copy.intro)}</p>
   <div style="margin:0 0 22px;padding:16px;border:1px solid #e5e5e5;border-radius:12px;background:#fafafa">
-    <p style="margin:0 0 6px;font-size:12px;color:#737373">Commit ${esc(shortId)}</p>
+    <p style="margin:0 0 6px;font-size:12px;color:#737373">${esc(copy.summaryLabel)}</p>
     <p style="margin:0;font-size:15px;line-height:1.55">${esc(input.changeSummary)}</p>
   </div>
   <div style="margin:0 0 20px">
-    <a href="${esc(approveUrl)}" style="display:inline-block;margin:0 8px 8px 0;padding:12px 20px;border-radius:999px;background:#171717;color:#fff;text-decoration:none;font-size:14px;font-weight:700">Duyệt</a>
-    <a href="${esc(declineUrl)}" style="display:inline-block;margin:0 0 8px;padding:12px 20px;border:1px solid #d4d4d4;border-radius:999px;background:#fff;color:#171717;text-decoration:none;font-size:14px;font-weight:700">Từ chối</a>
+    <a href="${esc(approveUrl)}" style="display:inline-block;margin:0 8px 8px 0;padding:12px 20px;border-radius:999px;background:#171717;color:#fff;text-decoration:none;font-size:14px;font-weight:700">${esc(copy.approve)}</a>
+    <a href="${esc(declineUrl)}" style="display:inline-block;margin:0 0 8px;padding:12px 20px;border:1px solid #d4d4d4;border-radius:999px;background:#fff;color:#171717;text-decoration:none;font-size:14px;font-weight:700">${esc(copy.decline)}</a>
   </div>
-  <p style="margin:0;font-size:12px;line-height:1.55;color:#737373">An toàn: mở liên kết chưa làm thay đổi dữ liệu. NailIQ yêu cầu bạn đăng nhập Superadmin và xác nhận thêm một lần. Duyệt chỉ mở bản nháp để kiểm tra; không tự gửi cho salon.</p>
+  <p style="margin:0;font-size:12px;line-height:1.55;color:#737373">${esc(copy.safety)}</p>
 </div>`;
-  const text = `NailIQ có bản cập nhật production cần bạn xem.\n\nCommit: ${shortId}\n${input.changeSummary}\n\nDuyệt: ${approveUrl}\nTừ chối: ${declineUrl}\n\nMở liên kết chưa làm thay đổi dữ liệu. Bạn phải đăng nhập Superadmin và xác nhận thêm một lần. Duyệt chỉ mở bản nháp; không tự gửi cho salon.`;
+  const text = `${copy.heading}\n\n${copy.intro}\n\n${copy.summaryLabel}:\n${input.changeSummary}\n\n${copy.approve}: ${approveUrl}\n${copy.decline}: ${declineUrl}\n\n${copy.safety}`;
   return { subject, html, text };
+}
+
+async function releaseReviewRecipientLanguage(
+  email: string,
+): Promise<UserLanguage> {
+  try {
+    const admin = createServiceRoleClient();
+    const { data, error } = await admin.auth.admin.listUsers({
+      page: 1,
+      perPage: 1000,
+    });
+    if (error) {
+      console.error("[release-review] recipient language", error);
+      return "en";
+    }
+    const user = data.users.find(
+      (candidate) => candidate.email?.toLowerCase() === email.toLowerCase(),
+    );
+    return user?.user_metadata?.user_language === "vi" ? "vi" : "en";
+  } catch (error) {
+    console.error("[release-review] recipient language", error);
+    return "en";
+  }
 }
 
 async function findOrCreateReview(
@@ -169,6 +220,7 @@ export async function ensureReleaseReviewEmail(
       reviewId: row.id,
       deploymentId: row.deployment_id,
       changeSummary: row.change_summary,
+      language: await releaseReviewRecipientLanguage(row.recipient_email),
     });
     const { data, error } = await resend.emails.send(
       {

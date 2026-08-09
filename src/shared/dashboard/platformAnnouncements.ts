@@ -10,6 +10,10 @@ type AnnouncementRow = {
   id: string;
   title: string;
   body: string;
+  title_en: string | null;
+  body_en: string | null;
+  title_vi: string | null;
+  body_vi: string | null;
   severity: string;
   target: string;
   published_at: string | null;
@@ -48,10 +52,18 @@ function mapAnnouncement(row: AnnouncementRow): PlatformAnnouncement | null {
   if (!isAnnouncementSeverity(row.severity) || !isAnnouncementTarget(row.target)) {
     return null;
   }
+  const titleEn = row.title_en?.trim() || row.title;
+  const bodyEn = row.body_en?.trim() || row.body;
+  const titleVi = row.title_vi?.trim() || titleEn;
+  const bodyVi = row.body_vi?.trim() || bodyEn;
   return {
     id: row.id,
     title: row.title,
     body: row.body,
+    localized: {
+      en: { title: titleEn, body: bodyEn },
+      vi: { title: titleVi, body: bodyVi },
+    },
     severity: row.severity,
     target: row.target,
     publishedAt: row.published_at,
@@ -70,7 +82,7 @@ export async function loadDashboardAnnouncements(
     const { data, error } = (await supabase
       .from("platform_announcements")
       .select(
-        "id, title, body, severity, target, published_at, expires_at, created_at, updated_at" as never,
+        "id, title, body, title_en, body_en, title_vi, body_vi, severity, target, published_at, expires_at, created_at, updated_at" as never,
       )
       .in("target", announcementTargetsForRole(role))
       .not("published_at", "is", null)

@@ -22,6 +22,10 @@ export type PlatformAnnouncement = {
   id: string;
   title: string;
   body: string;
+  localized: {
+    en: { title: string; body: string };
+    vi: { title: string; body: string };
+  };
   severity: AnnouncementSeverity;
   target: AnnouncementTarget;
   /** ISO string; null when the row is still a draft. */
@@ -32,6 +36,15 @@ export type PlatformAnnouncement = {
   updatedAt: string;
 };
 
+export function localizedAnnouncementContent(
+  announcement: PlatformAnnouncement,
+  language: string,
+): { title: string; body: string } {
+  return language === "vi"
+    ? announcement.localized.vi
+    : announcement.localized.en;
+}
+
 export type LoadAnnouncementsResult =
   | { ok: true; announcements: PlatformAnnouncement[] }
   | { ok: false; error: "unauthorized" | "server_error" };
@@ -39,6 +52,10 @@ export type LoadAnnouncementsResult =
 export type CreateAnnouncementInput = {
   title: string;
   body: string;
+  titleEn: string;
+  bodyEn: string;
+  titleVi: string;
+  bodyVi: string;
   severity: AnnouncementSeverity;
   target: AnnouncementTarget;
   /** Set non-null to publish immediately; omit/null for draft. */
@@ -93,13 +110,23 @@ export type ReleaseNotificationMode =
   (typeof RELEASE_NOTIFICATION_MODES)[number];
 
 export type ReleaseConciergeDraft = {
-  title: string;
-  body: string;
+  localized: {
+    en: {
+      title: string;
+      body: string;
+      emailSubject: string;
+      emailBody: string;
+    };
+    vi: {
+      title: string;
+      body: string;
+      emailSubject: string;
+      emailBody: string;
+    };
+  };
   severity: AnnouncementSeverity;
   target: AnnouncementTarget;
   notificationMode: ReleaseNotificationMode;
-  emailSubject: string;
-  emailBody: string;
   reason: string;
 };
 

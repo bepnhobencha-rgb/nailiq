@@ -79,6 +79,10 @@ function mapRow(row: {
   id: string;
   title: string;
   body: string;
+  title_en: string | null;
+  body_en: string | null;
+  title_vi: string | null;
+  body_vi: string | null;
   severity: string;
   target: string;
   published_at: string | null;
@@ -86,10 +90,18 @@ function mapRow(row: {
   created_at: string;
   updated_at: string;
 }): PlatformAnnouncement {
+  const titleEn = row.title_en?.trim() || row.title;
+  const bodyEn = row.body_en?.trim() || row.body;
+  const titleVi = row.title_vi?.trim() || titleEn;
+  const bodyVi = row.body_vi?.trim() || bodyEn;
   return {
     id: row.id,
     title: row.title,
     body: row.body,
+    localized: {
+      en: { title: titleEn, body: bodyEn },
+      vi: { title: titleVi, body: bodyVi },
+    },
     severity: (isAnnouncementSeverity(row.severity)
       ? row.severity
       : "info") as AnnouncementSeverity,
@@ -118,7 +130,7 @@ export async function loadAnnouncements(): Promise<LoadAnnouncementsResult> {
   const { data, error } = (await admin
     .from("platform_announcements")
     .select(
-      "id, title, body, severity, target, published_at, expires_at, created_at, updated_at" as never,
+      "id, title, body, title_en, body_en, title_vi, body_vi, severity, target, published_at, expires_at, created_at, updated_at" as never,
     )
     .order("created_at", { ascending: false })) as {
     data:
@@ -126,6 +138,10 @@ export async function loadAnnouncements(): Promise<LoadAnnouncementsResult> {
           id: string;
           title: string;
           body: string;
+          title_en: string | null;
+          body_en: string | null;
+          title_vi: string | null;
+          body_vi: string | null;
           severity: string;
           target: string;
           published_at: string | null;
@@ -153,10 +169,26 @@ export async function createAnnouncement(
 
   const title = (input.title ?? "").trim();
   const body = (input.body ?? "").trim();
+  const titleEn = (input.titleEn ?? "").trim();
+  const bodyEn = (input.bodyEn ?? "").trim();
+  const titleVi = (input.titleVi ?? "").trim();
+  const bodyVi = (input.bodyVi ?? "").trim();
   if (title.length === 0 || title.length > TITLE_MAX_LEN) {
     return { ok: false, error: "invalid_payload" };
   }
   if (body.length === 0 || body.length > BODY_MAX_LEN) {
+    return { ok: false, error: "invalid_payload" };
+  }
+  if (
+    titleEn.length === 0 ||
+    titleEn.length > TITLE_MAX_LEN ||
+    bodyEn.length === 0 ||
+    bodyEn.length > BODY_MAX_LEN ||
+    titleVi.length === 0 ||
+    titleVi.length > TITLE_MAX_LEN ||
+    bodyVi.length === 0 ||
+    bodyVi.length > BODY_MAX_LEN
+  ) {
     return { ok: false, error: "invalid_payload" };
   }
   if (!isAnnouncementSeverity(input.severity)) {
@@ -196,6 +228,10 @@ export async function createAnnouncement(
       {
         title,
         body,
+        title_en: titleEn,
+        body_en: bodyEn,
+        title_vi: titleVi,
+        body_vi: bodyVi,
         severity: input.severity,
         target: input.target,
         published_at: publishedAt ? publishedAt.toISOString() : null,
@@ -220,6 +256,7 @@ export async function createAnnouncement(
     insertRes.data.id,
     {
       title,
+      localized_languages: ["en", "vi"],
       severity: input.severity,
       target: input.target,
       published_at: publishedAt ? publishedAt.toISOString() : null,
