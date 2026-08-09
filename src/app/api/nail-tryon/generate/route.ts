@@ -66,7 +66,20 @@ export async function POST(request: Request) {
     const preview = await generateNailPreview({ hand: Buffer.from(await hand.arrayBuffer()), design: Buffer.from(await reference.arrayBuffer()), designMime: reference.type, designName: design.name, promptHint: design.prompt_hint, configuration: parsed.data.configuration });
     const { error: uploadError } = await db.storage.from("nail-tryon").upload(outputPath, preview, { contentType: "image/jpeg", upsert: false });
     if (uploadError) throw uploadError;
-    await db.from("nail_tryon_sessions" as never).update({ status: "ready", result_image_path: outputPath, updated_at: new Date().toISOString() } as never).eq("id", session.id);
+    const { data: completed, error: completionError } = await db
+      .from("nail_tryon_sessions" as never)
+      .update({ status: "ready", result_image_path: outputPath, updated_at: new Date().toISOString() } as never)
+      .eq("id", session.id)
+      .eq("status", "generating")
+      .select("id")
+      .maybeSingle();
+    if (completionError) throw completionError;
+    if (!completed) {
+      // The customer may have deleted the session while the provider was
+      // working. Never resurrect it or leave the late preview in Storage.
+      await db.storage.from("nail-tryon").remove([outputPath]);
+      return NextResponse.json({ error: "session_deleted" }, { status: 410 });
+    }
     await recordNailTryOnEvent({ salonId: session.salon_id, sessionId: session.id, event: "generation_ready", properties: { designVersion: design.version } });
     const { data: signed } = await db.storage.from("nail-tryon").createSignedUrl(outputPath, 300);
     return NextResponse.json({ status: "ready", previewUrl: signed?.signedUrl });
@@ -78,7 +91,10 @@ export async function POST(request: Request) {
       ...safeError,
     });
     await db.storage.from("nail-tryon").remove([outputPath]).catch(() => undefined);
-    await db.from("nail_tryon_sessions" as never).update({ status: "quality_passed", error_code: safeError.code, updated_at: new Date().toISOString() } as never).eq("id", session.id);
+    await db.from("nail_tryon_sessions" as never)
+      .update({ status: "quality_passed", error_code: safeError.code, updated_at: new Date().toISOString() } as never)
+      .eq("id", session.id)
+      .eq("status", "generating");
     await recordNailTryOnEvent({ salonId: session.salon_id, sessionId: session.id, event: "generation_failed", properties: { code: safeError.code, status: safeError.status, providerCode: safeError.providerCode, requestId: safeError.requestId } });
     return NextResponse.json({ error: safeError.code, retryable: true }, { status: 502 });
   }

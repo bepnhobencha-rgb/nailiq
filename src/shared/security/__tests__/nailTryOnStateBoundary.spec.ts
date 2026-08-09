@@ -61,6 +61,9 @@ describe("nail-tryon state boundary", () => {
     const intent = read(
       "src/app/api/nail-tryon/booking-intent/route.ts",
     );
+    const deletion = read(
+      "src/app/api/nail-tryon/session/route.ts",
+    );
     const cleanup = read(
       "src/app/api/cron/nail-tryon-cleanup/route.ts",
     );
@@ -71,6 +74,7 @@ describe("nail-tryon state boundary", () => {
       generate,
       attach,
       intent,
+      deletion,
       cleanup,
     ]) {
       expect(source).toContain("createServiceRoleClient");
@@ -79,6 +83,12 @@ describe("nail-tryon state boundary", () => {
     expect(generate).toContain("verifySessionCredential");
     expect(attach).toContain("verifySessionCredential");
     expect(intent).toContain("verifySessionCredential");
+    expect(deletion).toContain("verifySessionCredential");
+    expect(deletion).toMatch(/\.from\("nail-tryon"\)\s*\.remove\(paths\)/);
+    expect(deletion).toContain('status: "deleted"');
+    expect(
+      generate.match(/\.eq\("status", "generating"\)/g)?.length,
+    ).toBeGreaterThanOrEqual(2);
     expect(cleanup).toMatch(/requireCronAuthorization\(\w+\)/);
     expect(
       read("src/shared/security/cronAuthorization.ts"),
