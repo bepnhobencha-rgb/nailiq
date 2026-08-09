@@ -24,11 +24,22 @@ export function ReceptionistDisplayMenu({
   const label = language === "vi" ? "Tùy chọn hiển thị" : "Display options";
 
   return (
-    <details className={cn("group relative", className)}>
+    <details
+      className={cn("group relative", className)}
+      onClick={(event) => {
+        const target = event.target;
+        if (
+          target instanceof Element &&
+          target.closest('[data-testid="receptionist-interface-switcher"]')
+        ) {
+          event.currentTarget.removeAttribute("open");
+        }
+      }}
+    >
       <summary
         data-testid="receptionist-display-menu-trigger"
         aria-label={label}
-        className="inline-flex min-h-10 cursor-pointer list-none items-center gap-2 rounded-lg border border-nq-border bg-nq-surface px-2.5 text-xs font-semibold text-nq-muted outline-none transition hover:text-nq-foreground focus-visible:ring-2 focus-visible:ring-nq-primary/45 [&::-webkit-details-marker]:hidden"
+        className="relative z-[90] inline-flex min-h-10 cursor-pointer list-none items-center gap-2 rounded-lg border border-nq-border bg-nq-surface px-2.5 text-xs font-semibold text-nq-muted outline-none transition hover:text-nq-foreground focus-visible:ring-2 focus-visible:ring-nq-primary/45 [&::-webkit-details-marker]:hidden"
       >
         <SlidersHorizontal className="h-4 w-4" aria-hidden />
         <span className="hidden sm:inline">

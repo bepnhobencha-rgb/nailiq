@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { cleanupTestSalon } from "../helpers/db";
 import {
@@ -62,6 +62,19 @@ async function latestBooking(
 
 let fx: ReceptionistCenterFixture;
 
+async function openCreateAppointment(page: Page): Promise<void> {
+  const desktopControl = page.getByTestId("header-add-appointment");
+  if (await desktopControl.isVisible()) {
+    await desktopControl.click();
+    return;
+  }
+
+  const mobileMenu = page.getByTestId("mobile-create-menu-trigger");
+  await expect(mobileMenu).toBeVisible();
+  await mobileMenu.click();
+  await page.getByTestId("mobile-create-appointment").click();
+}
+
 test.beforeAll(async ({}, testInfo) => {
   fx = await seedReceptionistCenterFixture(rcSlug(testInfo.project.name));
 });
@@ -96,7 +109,7 @@ test("operator completes the five essential Front Desk tasks in one shift", asyn
 
   // 2. Create a scheduled appointment through the real desk form. A future
   // fixture day avoids wall-clock-dependent "past slot" filtering.
-  await page.getByTestId("header-add-appointment").click();
+  await openCreateAppointment(page);
   await expect(page.getByTestId("desk-booking-form")).toBeVisible();
   await fillReactInput(page.getByTestId("desk-client-phone"), appointmentPhone);
   await fillReactInput(page.getByTestId("desk-client-name"), appointmentName);
@@ -139,7 +152,7 @@ test("operator completes the five essential Front Desk tasks in one shift", asyn
 
   // 3. Find the customer from the same Front Desk form. The hit must be scoped
   // to this salon and selecting it must restore the known phone.
-  await page.getByTestId("header-add-appointment").click();
+  await openCreateAppointment(page);
   await fillReactInput(page.getByTestId("desk-client-name"), appointmentName);
   const searchHit = page
     .getByTestId("desk-client-search-hit")
