@@ -62,6 +62,14 @@ async function latestBooking(
 
 let fx: ReceptionistCenterFixture;
 
+function visibleCreateAppointmentControl(page: import("@playwright/test").Page) {
+  return page
+    .locator(
+      '[data-testid="header-add-appointment"]:visible, [data-testid="mobile-create-appointment"]:visible',
+    )
+    .first();
+}
+
 test.beforeAll(async ({}, testInfo) => {
   fx = await seedReceptionistCenterFixture(rcSlug(testInfo.project.name));
 });
@@ -96,7 +104,7 @@ test("operator completes the five essential Front Desk tasks in one shift", asyn
 
   // 2. Create a scheduled appointment through the real desk form. A future
   // fixture day avoids wall-clock-dependent "past slot" filtering.
-  await page.getByTestId("header-add-appointment").click();
+  await visibleCreateAppointmentControl(page).click();
   await expect(page.getByTestId("desk-booking-form")).toBeVisible();
   await fillReactInput(page.getByTestId("desk-client-phone"), appointmentPhone);
   await fillReactInput(page.getByTestId("desk-client-name"), appointmentName);
@@ -139,7 +147,7 @@ test("operator completes the five essential Front Desk tasks in one shift", asyn
 
   // 3. Find the customer from the same Front Desk form. The hit must be scoped
   // to this salon and selecting it must restore the known phone.
-  await page.getByTestId("header-add-appointment").click();
+  await visibleCreateAppointmentControl(page).click();
   await fillReactInput(page.getByTestId("desk-client-name"), appointmentName);
   const searchHit = page
     .getByTestId("desk-client-search-hit")

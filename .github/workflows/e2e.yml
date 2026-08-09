@@ -158,15 +158,11 @@ jobs:
     name: E2E (Playwright) — ${{ matrix.name }}
     runs-on: ubuntu-latest
     needs: i18n-check
-    # 120, not 65: on push-to-main the shard runs chromium AND mobile, and the
-    # receptionist-center shard's mobile failures each retry once at ~45s. At 65
-    # the RC shard was KILLED mid-run at exactly 65m (run 29438056294: RC started
-    # 17:49:55, cancelled 18:55:31) — so mobile RC numbers were never captured
-    # and "cancelled" was misread as fail-fast/concurrency. fail-fast is already
-    # false; this is a pure time budget. Raising it lets every shard finish and
-    # report honestly — it hides nothing (the suite stays red), it just stops a
-    # slow-but-legitimate shard from being cut off before it reports.
-    timeout-minutes: 120
+    # Receptionist desktop and mobile use separate throwaway databases, so they
+    # can run in parallel without fixture cleanup races. Forty-five minutes is
+    # enough for the slowest isolated shard while still surfacing a true hang
+    # promptly instead of occupying a runner for two hours.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -174,6 +170,9 @@ jobs:
           # Shard 1: all non-receptionist-center specs.
           - shard: 1
             name: "non-RC tests"
+            project: "auto"
+            browser: "auto"
+            main_only: false
             testpath: >-
               e2e/accessibility
               e2e/ai-agent-activation.spec.ts
@@ -196,14 +195,20 @@ jobs:
               e2e/register.spec.ts
               e2e/setup-ai-prefill.spec.ts
               e2e/superadmin
-          # Shard 2: ALL receptionist-center specs in ONE shard.
-          # RECEPTIONIST_E2E_SLUG is shared across spec files — they all call
-          # seedReceptionistCenterFixture() which does cleanupTestSalon() first.
-          # If RC specs were split across multiple parallel shards, simultaneous
-          # cleanupTestSalon calls would race and cause unique-slug INSERT failures.
-          # Keeping all RC specs in a single serial shard eliminates that race.
+          # Receptionist specs remain serial inside each browser job because
+          # they share a fixture slug. The browser jobs themselves are safe to
+          # parallelize: each runner owns a separate throwaway Supabase stack.
           - shard: 2
-            name: "receptionist-center"
+            name: "receptionist-center — chromium"
+            project: "chromium"
+            browser: "chromium"
+            main_only: false
+            testpath: "e2e/receptionist-center"
+          - shard: 3
+            name: "receptionist-center — mobile"
+            project: "mobile"
+            browser: "webkit"
+            main_only: true
             testpath: "e2e/receptionist-center"
     env:
       # ── NO PRODUCTION SECRETS. NONE. ────────────────────────────────────────
@@ -274,8 +279,13 @@ jobs:
       # booking-errors conflict tests to insert at wrong UTC offsets.
       TZ: America/Los_Angeles
     steps:
+      - name: Explain skipped main-only shard
+        if: github.event_name == 'pull_request' && matrix.main_only == true
+        run: echo "::notice::Mobile Receptionist coverage runs on push-to-main"
       - uses: actions/checkout@v6
+        if: github.event_name != 'pull_request' || matrix.main_only != true
       - name: Pre-flight — is the schema baseline present?
+        if: github.event_name != 'pull_request' || matrix.main_only != true
         id: preflight
         # E2E uses the checked-in schema snapshot as its stable local fixture.
         # The folded migration history is independently rebuilt and applied to
@@ -395,9 +405,26 @@ jobs:
         # Re-running the seed must replace the fixture, not duplicate it. If this
         # step fails, a re-run of a flaky job would corrupt its own database.
         run: npx tsx scripts/seed-e2e.ts
+      - name: Decide which project(s) and browser(s) to run
+        if: steps.preflight.outputs.configured == 'true'
+        id: projects
+        run: |
+          if [ "${{ matrix.project }}" != "auto" ]; then
+            echo "flag=--project=${{ matrix.project }}" >> "$GITHUB_OUTPUT"
+            echo "browsers=${{ matrix.browser }}" >> "$GITHUB_OUTPUT"
+            echo "::notice::Dedicated ${{ matrix.project }} shard"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "flag=--project=chromium" >> "$GITHUB_OUTPUT"
+            echo "browsers=chromium" >> "$GITHUB_OUTPUT"
+            echo "::notice::PR run — chromium only (mobile coverage runs on push-to-main)"
+          else
+            echo "flag=" >> "$GITHUB_OUTPUT"
+            echo "browsers=chromium webkit" >> "$GITHUB_OUTPUT"
+            echo "::notice::Non-PR non-RC run — chromium + mobile"
+          fi
       - name: Install Playwright browsers
         if: steps.preflight.outputs.configured == 'true'
-        run: npx playwright install --with-deps chromium webkit
+        run: npx playwright install --with-deps ${{ steps.projects.outputs.browsers }}
       - name: Build app
         if: steps.preflight.outputs.configured == 'true'
         run: npm run build
@@ -422,22 +449,6 @@ jobs:
             exit 1
           }
           echo "::notice::Production server up after pre-flight check"
-      - name: Decide which project(s) to run
-        if: steps.preflight.outputs.configured == 'true'
-        id: projects
-        # PR runs are gated by E2E, so a slow/flaky project blocks merges.
-        # Mobile specs (especially receptionist-center) have pre-existing
-        # failures that retry 45s each — they pad shard runtimes past the
-        # 25-min budget. Skip them on PR; full chromium+mobile still runs
-        # on push-to-main so regressions get caught before release.
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "flag=--project=chromium" >> "$GITHUB_OUTPUT"
-            echo "::notice::PR run — chromium only (mobile coverage runs on push-to-main)"
-          else
-            echo "flag=" >> "$GITHUB_OUTPUT"
-            echo "::notice::Non-PR run — chromium + mobile"
-          fi
       - name: Run E2E tests
         if: steps.preflight.outputs.configured == 'true'
         # Each shard runs its dedicated spec paths (matrix.testpath). Explicit

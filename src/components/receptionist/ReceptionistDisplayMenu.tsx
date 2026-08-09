@@ -24,7 +24,18 @@ export function ReceptionistDisplayMenu({
   const label = language === "vi" ? "Tùy chọn hiển thị" : "Display options";
 
   return (
-    <details className={cn("group relative", className)}>
+    <details
+      className={cn("group relative", className)}
+      onClick={(event) => {
+        const target = event.target;
+        if (
+          target instanceof Element &&
+          target.closest('[data-testid="receptionist-interface-switcher"]')
+        ) {
+          event.currentTarget.removeAttribute("open");
+        }
+      }}
+    >
       <summary
         data-testid="receptionist-display-menu-trigger"
         aria-label={label}
