@@ -6,7 +6,6 @@ import { REALTIME_TOOLS } from "@/shared/voiceai/realtimeTools";
 import {
   VOICE_MODEL,
   OPENAI_CLIENT_SECRETS_URL,
-  DEFAULT_VAD,
   SESSION_TTL_SECONDS,
   type SupportedLanguage,
 } from "@/shared/voiceai/config";
@@ -17,6 +16,7 @@ import {
 } from "@/shared/voiceai/sessionCapability";
 import { clientIp } from "@/shared/lib/inAppRateLimit";
 import crypto from "node:crypto";
+import { normalizeVoiceSessionChannel } from "@/shared/voiceai/clientDiagnostics";
 
 export const runtime    = "nodejs";
 export const maxDuration = 30;
@@ -31,6 +31,7 @@ export async function POST(req: NextRequest) {
   let renewal = false;
   let existingSessionId: string | null = null;
   let existingSessionCapability: string | null = null;
+  let channel: unknown = "web_direct";
   try {
     ({
       salonSlug,
@@ -38,17 +39,20 @@ export async function POST(req: NextRequest) {
       renewal = false,
       sessionId: existingSessionId = null,
       sessionCapability: existingSessionCapability = null,
+      channel = "web_direct",
     } = await req.json() as {
       salonSlug: string;
       language?: SupportedLanguage;
       renewal?: boolean;
       sessionId?: string | null;
       sessionCapability?: string | null;
+      channel?: unknown;
     });
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
   if (!salonSlug) return NextResponse.json({ error: "missing_salon_slug" }, { status: 400 });
+  const normalizedChannel = normalizeVoiceSessionChannel(channel);
 
   // Load salon + check voice_ai_enabled
   const supabase = createServiceRoleClient();
@@ -226,6 +230,11 @@ export async function POST(req: NextRequest) {
         model:             resolvedModel,
         status:            "active",
         language,
+        tool_log: [{
+          at: new Date().toISOString(),
+          type: "session_start",
+          channel: normalizedChannel,
+        }],
       })
       .select("id")
       .single();
