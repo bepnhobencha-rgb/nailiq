@@ -407,8 +407,8 @@ jobs:
             echo "::notice::Dedicated ${{ matrix.project }} shard"
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "flag=--project=chromium" >> "$GITHUB_OUTPUT"
-            echo "browsers=chromium" >> "$GITHUB_OUTPUT"
-            echo "::notice::PR non-RC run — chromium only; Receptionist mobile runs in its dedicated shard"
+            echo "browsers=chromium webkit" >> "$GITHUB_OUTPUT"
+            echo "::notice::PR non-RC run — Chromium plus the explicit Reports WebKit regression"
           else
             echo "flag=" >> "$GITHUB_OUTPUT"
             echo "browsers=chromium webkit" >> "$GITHUB_OUTPUT"
