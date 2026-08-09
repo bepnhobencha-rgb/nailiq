@@ -61,12 +61,24 @@ export function ReleaseReviewNotice({
   const activeReview = review;
 
   function openReview() {
+    if (activeReview.reviewId) {
+      router.push(
+        `/superadmin/operations/release-reviews/${encodeURIComponent(activeReview.reviewId)}?intent=approved`,
+      );
+      return;
+    }
     router.push(
       `/superadmin/operations/announcements?release=${encodeURIComponent(activeReview.deploymentId)}`,
     );
   }
 
   function dismissReview() {
+    if (activeReview.reviewId) {
+      router.push(
+        `/superadmin/operations/release-reviews/${encodeURIComponent(activeReview.reviewId)}?intent=declined`,
+      );
+      return;
+    }
     markReleaseReviewHandled(activeReview.deploymentId);
     setVisible(false);
   }
@@ -86,7 +98,8 @@ export function ReleaseReviewNotice({
           {activeReview.changeSummary}
         </p>
         <p className="mt-1 text-xs text-nq-muted">
-          Nothing is sent or published until a Superadmin approves it.
+          Nothing is sent or published until a Superadmin approves it. Email
+          links are read-only until that decision is confirmed.
         </p>
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2">

@@ -7,6 +7,7 @@ import { SuperadminBottomNav } from "@/components/superadmin/SuperadminBottomNav
 import { SuperadminTopBar } from "@/components/superadmin/SuperadminTopBar";
 import { ReleaseReviewNotice } from "@/components/superadmin/ReleaseReviewNotice";
 import { currentReleaseReviewContext } from "@/shared/superadmin/releaseReviewContext";
+import { resolveReleaseReviewNotice } from "@/shared/superadmin/releaseReviewStore";
 
 export const dynamic = "force-dynamic";
 
@@ -64,7 +65,7 @@ export default async function SuperadminShellLayout({
   if (needsMfa) redirect("/superadmin/mfa");
 
   const releaseReview = ["founder", "ops_admin"].includes(role)
-    ? currentReleaseReviewContext()
+    ? await resolveReleaseReviewNotice(currentReleaseReviewContext())
     : null;
 
   return (

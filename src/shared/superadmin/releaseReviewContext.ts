@@ -13,6 +13,7 @@ type ReleaseEnvironment = {
 export type ReleaseReviewContext = {
   deploymentId: string;
   changeSummary: string;
+  reviewId?: string;
 };
 
 /**
