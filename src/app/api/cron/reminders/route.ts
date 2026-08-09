@@ -132,12 +132,13 @@ export async function GET(req: Request) {
 
   /** Fetch all members of a group for the consolidated reminder. */
   async function fetchGroupMembers(groupId: string): Promise<GroupMember[]> {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("bookings" as never)
       .select("id, client_name, client_email, status, start_time_utc, services!bookings_service_id_fkey(name), staff(name)")
       .eq("group_id", groupId)
       .in("status", ["pending", "confirmed"])
       .order("start_time_utc");
+    if (error) throw new Error("group_members_query_failed");
     return ((data ?? []) as {
       id: string;
       client_name: string;
@@ -160,11 +161,12 @@ export async function GET(req: Request) {
   /** Mark reminder sent for every member of a group (so they don't get individual emails later). */
   async function markGroupReminderSent(groupId: string, reminderType: "24h" | "3h") {
     const col = reminderType === "24h" ? "reminder_24h_sent_at" : "reminder_3h_sent_at";
-    await supabase
+    const { error } = await supabase
       .from("bookings" as never)
       .update({ [col]: new Date().toISOString() } as never)
       .eq("group_id", groupId)
       .in("status", ["pending", "confirmed"]);
+    if (error) throw new Error("group_reminder_marker_failed");
   }
 
   async function processGroupReminder(booking: BookingRow, reminderType: "24h" | "3h") {
@@ -355,10 +357,11 @@ export async function GET(req: Request) {
     if (!anySuccess) return;
 
     const col = reminderType === "24h" ? "reminder_24h_sent_at" : "reminder_3h_sent_at";
-    await supabase
+    const { error: markerError } = await supabase
       .from("bookings" as never)
       .update({ [col]: new Date().toISOString() } as never)
       .eq("id", booking.id);
+    if (markerError) throw new Error("reminder_marker_failed");
 
     if (reminderType === "24h") sent24h++;
     else sent3h++;
@@ -367,7 +370,27 @@ export async function GET(req: Request) {
   const tasks24h = ((need24h ?? []) as BookingRow[]).map((b) => processReminder(b, "24h"));
   const tasks3h  = ((need3h  ?? []) as BookingRow[]).map((b) => processReminder(b, "3h"));
 
-  await Promise.allSettled([...tasks24h, ...tasks3h]);
+  const taskResults = await Promise.allSettled([...tasks24h, ...tasks3h]);
+  const taskFailures = taskResults.filter(
+    (result): result is PromiseRejectedResult => result.status === "rejected",
+  ).length;
+  if (taskFailures > 0) {
+    // Keep the worker heartbeat honest without logging rejection reasons that
+    // may contain customer/provider data. Explicit channel failures are already
+    // included in `errors`; unexpected task exceptions are counted separately.
+    console.error("[reminders] processing failures", { taskFailures });
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "processing_failed",
+        sent24h,
+        sent3h,
+        errors: errors + taskFailures,
+        processedAt: now.toISOString(),
+      },
+      { status: 500 },
+    );
+  }
 
     return NextResponse.json({ ok: true, sent24h, sent3h, errors, processedAt: now.toISOString() });
   });
