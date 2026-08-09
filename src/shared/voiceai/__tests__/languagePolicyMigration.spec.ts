@@ -26,7 +26,7 @@ describe("Voice AI language policy migration", () => {
   });
 
   it("advances the blank-database schema parity tripwire", () => {
-    expect(parity).toContain("through 20260807071017");
-    expect(parity).toContain("columns: 1404");
+    expect(parity).toContain("through 20260809204005");
+    expect(parity).toContain("columns: 1419");
   });
 });
