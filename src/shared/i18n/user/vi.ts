@@ -1428,6 +1428,24 @@ export const userVi: UserMessages = {
       today: "Hôm nay",
       tomorrow: "Ngày mai",
     },
+    dateNavigator: {
+      chooseDate: "Chọn ngày",
+      previous: {
+        day: "Ngày trước",
+        week: "Tuần trước",
+        month: "Tháng trước",
+      },
+      next: {
+        day: "Ngày sau",
+        week: "Tuần sau",
+        month: "Tháng sau",
+      },
+      current: {
+        day: "Hôm nay",
+        week: "Tuần này",
+        month: "Tháng này",
+      },
+    },
     jumpToNow: "Hiện tại",
     statusPill: {
       waitingLabel: "CHỜ",

@@ -146,6 +146,14 @@ export interface StaffTimelineGridProps {
   isViewingToday: boolean;
   /** Increment (e.g. from parent) to smooth-scroll to the current time column. */
   jumpToNowTrigger: number;
+  /**
+   * Shell V2 uses this to show "Now" only when the marker exists but has
+   * scrolled out of sight. Classic can omit it and keep its established CTA.
+   */
+  onNowLineStateChange?: (state: {
+    available: boolean;
+    visible: boolean;
+  }) => void;
   existingBookings: GridBooking[];
   onBookingClick: (bookingId: string) => void;
   onSlotClick: (staffId: string, slotStartUtc: string) => void;
@@ -463,6 +471,7 @@ function StaffTimelineGridImpl({
   nowIso,
   isViewingToday,
   jumpToNowTrigger,
+  onNowLineStateChange,
   existingBookings,
   onBookingClick,
   onSlotClick,
@@ -875,6 +884,49 @@ function StaffTimelineGridImpl({
     hourEnd,
     totalSlots,
   ]);
+
+  const lastReportedNowStateRef = useRef<{
+    available: boolean;
+    visible: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!onNowLineStateChange) return;
+    const el = scrollRef.current;
+
+    const report = () => {
+      const available = nowLineLeftPx !== null && el !== null;
+      let visible = false;
+      if (available && el && nowLineLeftPx !== null) {
+        // The staff rail is sticky over the left side of the scroll viewport.
+        // Convert the timeline-relative marker position into viewport space so
+        // "Now" appears only after the marker leaves the usable time area.
+        const markerViewportX = STAFF_COL_WIDTH + nowLineLeftPx - el.scrollLeft;
+        visible =
+          markerViewportX >= STAFF_COL_WIDTH &&
+          markerViewportX <= el.clientWidth;
+      }
+
+      const previous = lastReportedNowStateRef.current;
+      if (
+        previous?.available === available &&
+        previous.visible === visible
+      ) {
+        return;
+      }
+      const next = { available, visible };
+      lastReportedNowStateRef.current = next;
+      onNowLineStateChange(next);
+    };
+
+    report();
+    el?.addEventListener("scroll", report, { passive: true });
+    window.addEventListener("resize", report);
+    return () => {
+      el?.removeEventListener("scroll", report);
+      window.removeEventListener("resize", report);
+    };
+  }, [nowLineLeftPx, onNowLineStateChange]);
 
   const assignMode = assigning !== null;
   // Click-to-create is active when we're NOT assigning a walk-in AND the

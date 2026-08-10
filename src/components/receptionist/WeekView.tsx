@@ -91,6 +91,8 @@ export interface WeekViewProps {
   onPrevWeek: () => void;
   onThisWeek: () => void;
   onNextWeek: () => void;
+  /** Shell V2 owns period navigation in the desk header. */
+  showNavigation?: boolean;
   /**
    * Pre-resolved context from the SSR parent — enables the fast-path in
    * `getBookingsForRangeAction` that skips the 3-call auth chain and instead
@@ -120,6 +122,7 @@ export function WeekView({
   onPrevWeek,
   onThisWeek,
   onNextWeek,
+  showNavigation = true,
   hint,
   refreshNonce,
 }: WeekViewProps) {
@@ -199,6 +202,7 @@ export function WeekView({
       // from filling the space the sidebar gives back when collapsed.
       className="mx-auto flex w-full flex-col gap-3 px-[var(--pad-nq-section-mobile)] py-4 md:px-6"
     >
+      {showNavigation ? (
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wide text-nq-muted">
@@ -233,6 +237,7 @@ export function WeekView({
           </button>
         </div>
       </div>
+      ) : null}
 
       <div className="overflow-x-auto">
         <ul

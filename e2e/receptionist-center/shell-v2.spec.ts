@@ -40,10 +40,12 @@ async function expectCalmShell(page: Page, width: number, height: number) {
   await expect(shell).toHaveAttribute("data-receptionist-shell", "v2");
   await expect(shell).toHaveAttribute("data-receptionist-density", "pro");
   await expect(page.getByTestId("nailiq-suggestion-bar")).toBeVisible();
-  await expect(page.getByTestId("viewed-date-chip")).not.toContainText(
+  await expect(page.getByTestId("shell-v2-date-navigator")).toBeVisible();
+  await expect(page.getByTestId("shell-v2-date-label")).not.toContainText(
     /\bToday\b/i,
   );
-  await expect(page.getByTestId("date-switcher-today")).toBeVisible();
+  await expect(page.getByTestId("shell-v2-date-current")).toHaveCount(0);
+  await expect(page.getByTestId("date-switcher-today")).toHaveCount(0);
   await expect(page.getByTestId("nailiq-daily-brief-summary")).toHaveCount(0);
   await expect(page.getByTestId("receptionist-kpi-bar")).toHaveCount(0);
   await expect(page.getByTestId("receptionist-display-menu-trigger")).toHaveCount(0);
@@ -123,9 +125,13 @@ test.describe("Receptionist option-B shell", () => {
 
     await page.getByTestId("shell-v2-calendar-view-week").click();
     await expect(page.getByTestId("week-view")).toBeVisible();
+    await expect(page.getByTestId("week-view-prev")).toHaveCount(0);
+    await expect(page.getByTestId("jump-to-now")).toHaveCount(0);
 
     await page.getByTestId("shell-v2-calendar-view-month").click();
     await expect(page.getByTestId("month-view")).toBeVisible();
+    await expect(page.getByTestId("month-view-prev")).toHaveCount(0);
+    await expect(page.getByTestId("jump-to-now")).toHaveCount(0);
 
     await page.getByTestId("shell-v2-calendar-view-day").click();
     await expect(page.getByTestId("staff-timeline-grid")).toBeVisible();
@@ -178,7 +184,30 @@ test.describe("Receptionist option-B shell", () => {
     await expect(page.getByTestId("month-view")).toBeVisible();
   });
 
-  test("a day outside yesterday today tomorrow has no false active shortcut", async ({ page }) => {
+  test("date navigator reveals Today only after leaving today", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await gotoReceptionistCenter(page, fx.slug, {
+      expectWalkinQueue: false,
+      shellV2: true,
+    });
+
+    await expect(page.getByTestId("shell-v2-date-current")).toHaveCount(0);
+    await page.getByTestId("shell-v2-date-next").click();
+
+    await expect(page.getByTestId("staff-timeline-grid")).toBeVisible();
+    await expect(page.getByTestId("shell-v2-date-current")).toBeVisible();
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("date"))
+      .toBe(shiftYmd(fx.ymdUtc, 1));
+
+    await page.getByTestId("shell-v2-date-current").click();
+    await expect(page.getByTestId("shell-v2-date-current")).toHaveCount(0);
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("date"))
+      .toBe(fx.ymdUtc);
+  });
+
+  test("week selection survives reload and uses the shared period navigator", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await gotoReceptionistCenter(page, fx.slug, {
       expectWalkinQueue: false,
@@ -186,23 +215,20 @@ test.describe("Receptionist option-B shell", () => {
     });
 
     await page.getByTestId("shell-v2-calendar-view-week").click();
-    await page.getByTestId("week-view-next").click();
-    await page
-      .getByTestId(`week-view-day-button-${shiftYmd(fx.ymdUtc, 7)}`)
-      .click();
+    await expect(page.getByTestId("week-view")).toBeVisible();
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get("view"))
+      .toBe("week");
+    await expect(page.getByTestId("week-view-next")).toHaveCount(0);
 
-    await expect(page.getByTestId("staff-timeline-grid")).toBeVisible();
-    await expect(page.getByTestId("date-switcher-yesterday")).toHaveAttribute(
+    await page.getByTestId("shell-v2-date-next").click();
+    await expect(page.getByTestId("shell-v2-date-current")).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByTestId("week-view")).toBeVisible();
+    await expect(page.getByTestId("shell-v2-calendar-view-week")).toHaveAttribute(
       "aria-selected",
-      "false",
-    );
-    await expect(page.getByTestId("date-switcher-today")).toHaveAttribute(
-      "aria-selected",
-      "false",
-    );
-    await expect(page.getByTestId("date-switcher-tomorrow")).toHaveAttribute(
-      "aria-selected",
-      "false",
+      "true",
     );
   });
 });
