@@ -31,10 +31,15 @@ test.describe("Nail Try-On camera fallback", () => {
 
     await page.goto(`/${SLUG}/try-on`);
     await page.getByRole("checkbox").check();
-    await page.getByRole("button", { name: /Tap to open camera/i }).click();
+    await page.getByRole("button", { name: "Continue" }).click();
 
-    await expect(page.getByRole("alert")).toContainText("Camera permission was not granted");
-    await expect(page.getByRole("button", { name: /Use device camera/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Choose photo/i })).toBeVisible();
+    const openCamera = page.getByRole("button", { name: /Open camera/i });
+    await expect(openCamera).toHaveCount(1);
+    await openCamera.click();
+
+    await expect(page.getByRole("alert")).toContainText("Camera access is unavailable");
+    await expect(page.getByRole("button", { name: "Take photo" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Choose from library" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Open camera$/i })).toHaveCount(0);
   });
 });
