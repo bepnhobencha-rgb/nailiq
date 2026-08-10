@@ -95,6 +95,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
   const [deletionMessage, setDeletionMessage] = useState<string | null>(null);
   const [cameraState, setCameraState] = useState<CameraState>("idle");
   const [cameraMessage, setCameraMessage] = useState<string | null>(null);
+  const [supportsDirectCapture, setSupportsDirectCapture] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const libraryInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -119,6 +120,15 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
       stopCamera();
     };
   }, [stopCamera]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const mobileDevice = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+        || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      setSupportsDirectCapture(mobileDevice);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     if (!busy || step !== "result") return;
@@ -472,32 +482,56 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
               ) : null}
               {cameraState === "fallback" ? (
                 <div className="mt-4 grid gap-3">
-                  <button
-                    type="button"
-                    onClick={() => cameraInputRef.current?.click()}
-                    className="flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-neutral-950 px-5 text-base font-semibold text-white"
-                  >
-                    <Camera className="h-5 w-5" aria-hidden />
-                    {L("Take photo", "Chụp ảnh")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => libraryInputRef.current?.click()}
-                    className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-neutral-300 bg-white px-5 font-semibold text-neutral-900"
-                  >
+                  {supportsDirectCapture ? (
+                    <label className="relative flex min-h-14 w-full cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-full bg-neutral-950 px-5 text-base font-semibold text-white">
+                      <Camera className="h-5 w-5" aria-hidden />
+                      {L("Take a new photo", "Chụp ảnh mới")}
+                      <input
+                        ref={cameraInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                        aria-label={L("Take a new photo", "Chụp ảnh mới")}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file) void inspect(file);
+                        }}
+                      />
+                    </label>
+                  ) : null}
+                  <label className={`relative flex w-full cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-full px-5 font-semibold ${supportsDirectCapture ? "min-h-12 border border-neutral-300 bg-white text-neutral-900" : "min-h-14 bg-neutral-950 text-base text-white"}`}>
                     <ImagePlus className="h-5 w-5" aria-hidden />
-                    {L("Choose from library", "Chọn từ thư viện")}
-                  </button>
+                    {L("Choose an existing photo", "Chọn ảnh có sẵn")}
+                    <input
+                      ref={libraryInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                      aria-label={L("Choose an existing photo", "Chọn ảnh có sẵn")}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) void inspect(file);
+                      }}
+                    />
+                  </label>
                 </div>
               ) : cameraState !== "live" ? (
-                <button
-                  type="button"
-                  onClick={() => libraryInputRef.current?.click()}
-                  className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-full text-sm font-semibold text-neutral-700"
-                >
+                <label className="relative mt-4 flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-full text-sm font-semibold text-neutral-700">
                   <ImagePlus className="h-5 w-5" aria-hidden />
                   {L("Choose an existing photo", "Chọn ảnh có sẵn")}
-                </button>
+                  <input
+                    ref={libraryInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                    aria-label={L("Choose an existing photo", "Chọn ảnh có sẵn")}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) void inspect(file);
+                    }}
+                  />
+                </label>
               ) : null}
               <p className="mt-3 text-center text-xs leading-5 text-neutral-500">
                 {L("Palm down · Five nails · Even light", "Úp bàn tay · Đủ 5 móng · Ánh sáng đều")}
@@ -522,29 +556,6 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
               </div>
             </div>
           )}
-          <input
-            ref={cameraInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="sr-only"
-            aria-label={L("Take a hand photo with the rear camera", "Chụp bàn tay bằng camera sau")}
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void inspect(file);
-            }}
-          />
-          <input
-            ref={libraryInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            className="sr-only"
-            aria-label={L("Choose an existing hand photo", "Chọn ảnh bàn tay có sẵn")}
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void inspect(file);
-            }}
-          />
         </section>
       )}
 
