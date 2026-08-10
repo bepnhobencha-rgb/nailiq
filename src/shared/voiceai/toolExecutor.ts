@@ -8,7 +8,8 @@ import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { computeTimeSlots } from "@/shared/booking/getAvailableTimeSlots";
 import { parseOpeningHours, type DayKey, type OpeningHoursWeek } from "@/shared/dashboard/openingHoursDefaults";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
-import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
+import { computeBookingTiming } from "@/shared/booking/bookingTiming";
+import { checkGroupWithinOpeningHours } from "@/shared/booking/groupBookingHoursPolicy";
 import { salonDayRangeUtc, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
 import {
   tryAlignedArrangement,
@@ -1860,6 +1861,7 @@ type ServiceInfo = {
   name:      string;
   totalMin:  number;   // duration + buffer
   bufferMin: number;   // per-service buffer ("Chuẩn bị") — drives inter-wave gap
+  serviceCompletionMin: number;
   priceCents: number | null;
 };
 
@@ -1867,6 +1869,7 @@ type GroupCtx = {
   salonId:         string;
   timezone:        string;
   openingWeek:     OpeningHoursWeek;
+  bookingClosedDates: unknown;
   dayHours:        { open: string; close: string; closed: boolean };
   resolvedMembers: ResolvedMember[];
   staffList:       StaffRow[];
@@ -1890,11 +1893,16 @@ async function loadGroupCtx(
   // 1. Salon
   const { data: salonRaw } = await supabase
     .from("salons")
-    .select("id, timezone, opening_hours")
+    .select("id, timezone, opening_hours, booking_closed_dates")
     .eq("slug", salonSlug)
     .single();
   if (!salonRaw) return { error: "salon_not_found", status: 404 };
-  const salon = salonRaw as unknown as { id: string; timezone?: string; opening_hours?: unknown };
+  const salon = salonRaw as unknown as {
+    id: string;
+    timezone?: string;
+    opening_hours?: unknown;
+    booking_closed_dates?: unknown;
+  };
   const timezone = (typeof salon.timezone === "string" && salon.timezone.trim())
     ? salon.timezone.trim()
     : "America/Vancouver";
@@ -1905,6 +1913,12 @@ async function loadGroupCtx(
   const dayKey = dayKeyForYmd(dateYmd);
   const dayHours = dayKey ? openingWeek[dayKey] : null;
   if (!dayHours || dayHours.closed) return { error: "salon_closed_on_this_day", status: 409 };
+  if (
+    Array.isArray(salon.booking_closed_dates) &&
+    salon.booking_closed_dates.some((value) => String(value) === dateYmd)
+  ) {
+    return { error: "salon_closed_on_this_day", status: 409 };
+  }
 
   // 3. Expand service_assignments → flat service-id list (validates counts)
   const expandedServiceIds: string[] = [];
@@ -1930,11 +1944,16 @@ async function loadGroupCtx(
 
   const serviceById = new Map<string, ServiceInfo>();
   for (const r of svcRows ?? []) {
+    const timing = computeBookingTiming({
+      durationMinutes: r.duration_minutes,
+      bufferMinutes: r.buffer_minutes,
+    });
     serviceById.set(String(r.id), {
       id:         String(r.id),
       name:       String(r.name ?? ""),
-      totalMin:   serviceBlockMinutes(r.duration_minutes, r.buffer_minutes),
+      totalMin:   timing.blockMinutes,
       bufferMin:  Number(r.buffer_minutes) || 0,
+      serviceCompletionMin: timing.serviceCompletionMinutes,
       priceCents: r.price_cents != null ? Number(r.price_cents) : null,
     });
   }
@@ -2010,6 +2029,7 @@ async function loadGroupCtx(
     salonId:         String(salon.id),
     timezone,
     openingWeek,
+    bookingClosedDates: salon.booking_closed_dates,
     dayHours,
     resolvedMembers,
     staffList,
@@ -2356,6 +2376,39 @@ async function handleConfirmGroupBooking(
     }
   }
 
+  // Final write-time hours gate. `sync_start` intentionally re-runs the fast
+  // aligned scheduler here; that primitive only checks capacity/conflicts, so
+  // without this policy check a crafted Voice/SMS confirmation could anchor a
+  // group before opening or after closing.
+  const finalHoursCheck = checkGroupWithinOpeningHours({
+    openingHoursRaw: ctx.openingWeek,
+    bookingClosedDatesRaw: ctx.bookingClosedDates,
+    members: finalAssignments.map((assignment) => {
+      const member =
+        ctx.resolvedMembers.find((candidate) => candidate.index === assignment.memberIdx) ??
+        ctx.resolvedMembers[assignment.memberIdx]!;
+      const service = ctx.serviceById.get(member.serviceId)!;
+      return {
+        dateYmd,
+        startMinutes:
+          parseHm24(utcMsToSalonHm24(assignment.startMs, ctx.timezone)) ?? -1,
+        serviceCompletionMinutes: service.serviceCompletionMin,
+      };
+    }),
+  });
+  if (!finalHoursCheck.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        reason: "outside_hours",
+        member_number: finalHoursCheck.memberIndex + 1,
+        message:
+          "That group time is outside the salon's opening hours. Please call get_group_available_slots again.",
+      },
+      { status: 409 },
+    );
+  }
+
   // 5. Build the insert_group_bookings payload
   //    Part A: use Guest N placeholders — real names come from Party Link claiming.
   //    Guest numbering follows wave order so wave 1 = Guest 1…k, wave 2 = Guest k+1…
@@ -2377,6 +2430,7 @@ async function handleConfirmGroupBooking(
       start_time_utc:            new Date(a.startMs).toISOString(),
       end_time_utc:              new Date(a.endMs).toISOString(),
       price_cents:               svc.priceCents,
+      addon_service_ids:         [],
       wave_number:               a.waveNumber,
       staff_requested_by_client: false,
       idempotency_key:           idempotencyKey,
