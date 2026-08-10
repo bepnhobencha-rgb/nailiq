@@ -228,6 +228,15 @@ test("iPad bottom navigation opens the More sheet", async ({ page }) => {
     await expect(sheet).toBeVisible();
     await expect(sheet).toHaveAttribute("role", "dialog");
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+    const languageMenu = sheet.getByTestId("user-language-menu");
+    await expect(languageMenu).toBeVisible();
+    for (const language of ["English", "Tiếng Việt"]) {
+      const option = languageMenu.getByRole("button", { name: language });
+      await expect(option).toBeVisible();
+      const box = await option.boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
   } finally {
     await cleanupTestSalon(slug);
   }

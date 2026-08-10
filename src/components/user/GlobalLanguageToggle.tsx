@@ -15,13 +15,20 @@ import { UserLanguageToggle } from "@/components/user/UserLanguageToggle";
  * English is the product default (see `resolveUserLanguage`); this is the
  * explicit opt-in that then sticks for the user across pages and tabs.
  */
-export function GlobalLanguageToggle({ className }: { className?: string }) {
+export function GlobalLanguageToggle({
+  className,
+  variant = "compact",
+}: {
+  className?: string;
+  variant?: "compact" | "menu";
+}) {
   const router = useRouter();
   const { language, setLanguage } = useUserLanguage();
   return (
     <UserLanguageToggle
       language={language}
       className={className}
+      variant={variant}
       onLanguageChange={(next) => {
         if (next === language) return;
         setLanguage(next);

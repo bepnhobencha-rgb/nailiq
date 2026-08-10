@@ -13,6 +13,7 @@ import {
   Home,
   Hourglass,
   LayoutGrid,
+  Languages,
   Megaphone,
   Scissors,
   Settings,
@@ -24,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
+import { GlobalLanguageToggle } from "@/components/user/GlobalLanguageToggle";
 import { type ReleaseFeatureMap } from "@/components/layout/DashboardSidebar";
 import { cn } from "@/shared/lib/cn";
 import { getUserMessages } from "@/shared/i18n/user";
@@ -323,6 +325,33 @@ export function MobileBottomNav({
                   </ul>
                 </section>
               ))}
+              <section aria-labelledby="mobile-more-language">
+                <h3
+                  id="mobile-more-language"
+                  className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-[0.12em] text-nq-muted"
+                >
+                  {L("Preferences", "Tuỳ chọn")}
+                </h3>
+                <div className="rounded-2xl border border-nq-border/40 bg-nq-bg/45 p-4">
+                  <div className="mb-3 flex items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-nq-primary/12 text-nq-primary">
+                      <Languages className="h-5 w-5" aria-hidden />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[15px] font-semibold text-nq-foreground">
+                        {L("Language", "Ngôn ngữ")}
+                      </p>
+                      <p className="text-xs text-nq-muted">
+                        {L(
+                          "Choose the dashboard language",
+                          "Chọn ngôn ngữ cho trang quản lý",
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <GlobalLanguageToggle variant="menu" />
+                </div>
+              </section>
             </div>
           </section>
         </div>
