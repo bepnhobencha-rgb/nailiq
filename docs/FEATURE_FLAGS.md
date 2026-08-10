@@ -65,6 +65,7 @@ from `defaultOn` (Base → ON, Beta → OFF).
 | `advanced_reports` | Advanced analytics | `feature_flags.reports_enabled` |
 | `experimental_realtime` | Experimental realtime widgets | registry default |
 | `admin_copilot` | Admin AI assistant (Coco) | `feature_flags.admin_copilot_enabled` |
+| `receptionist_shell_v2` | Calmer Front Desk shell (option B pilot) | `feature_flags.receptionist_shell_v2_enabled` |
 | `nail_tryon` | Scan bàn tay + xem trước mẫu nail | `feature_flags.nail_tryon_enabled` |
 | `archived_booking_recovery` | Linked replacement for cancelled/no-show history | `feature_flags.archived_booking_recovery_enabled` |
 

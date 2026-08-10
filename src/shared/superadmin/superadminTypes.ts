@@ -75,6 +75,14 @@ export const SUPERADMIN_PER_SALON_FLAGS: ReadonlyArray<SuperAdminFlagDescriptor>
     phase: "live",
   },
   {
+    key: "receptionist_shell_v2_enabled",
+    group: "operations",
+    label: "Vỏ Tiếp tân gọn (Phương án B)",
+    description:
+      "Thử giao diện Tiếp tân gọn: một nút Tạo và một Trung tâm hành động; không đổi lưới hay dữ liệu lịch.",
+    phase: "live",
+  },
+  {
     key: "archived_booking_recovery_enabled",
     group: "operations",
     label: "Tạo lịch mới từ lịch đã lưu trữ",

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { addDeskAppointment } from "@/shared/dashboard/receptionistActions";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { cn } from "@/shared/lib/cn";
 
 // Coco — the in-admin agentic assistant for the salon dashboard. It guides and
 // reads only; any "do it for me" is rendered as a deep-link to the page where
@@ -211,7 +212,14 @@ function Markdown({ text, nav }: { text: string; nav: (href: string) => void }) 
   return <div className="text-sm leading-relaxed text-nq-foreground/90">{blocks}</div>;
 }
 
-export function AdminCopilot({ slug }: { slug: string; role?: string }) {
+export function AdminCopilot({
+  slug,
+  compactFab = false,
+}: {
+  slug: string;
+  role?: string;
+  compactFab?: boolean;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const { language: lang, setLanguage } = useUserLanguage();
@@ -221,6 +229,8 @@ export function AdminCopilot({ slug }: { slug: string; role?: string }) {
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const compactOnCenter =
+    compactFab && pathname.startsWith(`/dashboard/${encodeURIComponent(slug)}/center`);
 
   const nav = useCallback(
     (href: string) => {
@@ -354,11 +364,18 @@ export function AdminCopilot({ slug }: { slug: string; role?: string }) {
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-20 right-5 z-50 flex items-center gap-2 rounded-full bg-nq-primary py-3 pl-3.5 pr-4 text-nq-bg shadow-nq-card transition-all hover:scale-105 hover:opacity-90 active:scale-95 xl:bottom-5"
+          className={cn(
+            "fixed bottom-20 right-5 z-50 flex min-h-11 items-center justify-center gap-2 rounded-full bg-nq-primary text-nq-bg shadow-nq-card transition-opacity hover:opacity-90 xl:bottom-5",
+            compactOnCenter
+              ? "min-w-11 px-3 xl:right-[21rem]"
+              : "pl-3.5 pr-4",
+          )}
           aria-label={COPY.fab[lang]}
         >
           <Sparkles className="w-5 h-5" />
-          <span className="text-sm font-semibold">{COPY.fab[lang]}</span>
+          <span className={cn("text-sm font-semibold", compactOnCenter && "sr-only")}>
+            {COPY.fab[lang]}
+          </span>
         </button>
       )}
 

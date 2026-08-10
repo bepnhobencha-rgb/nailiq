@@ -64,6 +64,7 @@ export type BetaFeatureKey =
   | "experimental_realtime"
   | "admin_copilot"
   | "ai_control_center"
+  | "receptionist_shell_v2"
   | "nail_tryon"
   | "archived_booking_recovery";
 
@@ -322,6 +323,16 @@ export const RELEASE_FEATURES: Record<ReleaseFeatureKey, ReleaseFeatureDescripto
     defaultOn: false,
     source: { kind: "jsonb", flagKey: "ai_control_center_enabled" },
     description: "Unified owner view for AI decisions, activity, and outcomes.",
+  },
+  receptionist_shell_v2: {
+    key: "receptionist_shell_v2",
+    label: "Receptionist Shell V2",
+    group: "operations",
+    phase: "beta",
+    defaultOn: false,
+    source: { kind: "jsonb", flagKey: "receptionist_shell_v2_enabled" },
+    description:
+      "Calmer Front Desk shell with one create menu and one action center; the scheduling grid is unchanged.",
   },
   nail_tryon: {
     key: "nail_tryon",

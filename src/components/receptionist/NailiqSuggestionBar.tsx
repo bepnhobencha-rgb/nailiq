@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Sparkles } from "lucide-react";
 
+import { Button } from "@/components/ui/Button";
 import { cn } from "@/shared/lib/cn";
 import {
   computeCriticalAlerts,
@@ -27,6 +28,8 @@ type Props = {
   allClear: string;
   reasons: Record<CriticalAlertKey | NextActionKind | "all_clear", string>;
   onAction: (target: CockpitActionTarget) => void;
+  trailing?: ReactNode;
+  comfortableTouch?: boolean;
 };
 
 /**
@@ -44,6 +47,8 @@ export function NailiqSuggestionBar({
   allClear,
   reasons,
   onAction,
+  trailing,
+  comfortableTouch = false,
 }: Props) {
   const suggestion = useMemo(() => {
     const alerts = computeCriticalAlerts(inputs, labels);
@@ -102,15 +107,22 @@ export function NailiqSuggestionBar({
             {suggestion.reason}
           </p>
         </div>
-        {suggestion.action ? (
-          <button
-            type="button"
+        <div className="flex shrink-0 items-center gap-2">
+          {trailing}
+          {suggestion.action ? (
+          <Button
+            size="sm"
+            variant="primary"
             onClick={() => onAction(suggestion.action!.target)}
-            className="min-h-8 shrink-0 rounded-lg bg-nq-primary px-3 text-xs font-semibold text-nq-bg transition-colors hover:bg-nq-primary/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/60"
+            className={cn(
+              "shrink-0 px-3 text-xs",
+              comfortableTouch && "min-h-11",
+            )}
           >
             {suggestion.action.label}
-          </button>
-        ) : null}
+          </Button>
+          ) : null}
+        </div>
       </div>
     </div>
   );
