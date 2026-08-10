@@ -181,6 +181,21 @@ test("operator completes the five essential Front Desk tasks in one shift", asyn
     })
     .toEqual({ source: "walkin", status: "waiting" });
 
+  // On mobile the walk-in queue is a full-screen slide-over and intentionally
+  // stays open after adding a guest so the operator can continue intake. Close
+  // it before the journey moves back to the schedule; otherwise a same-day
+  // navigation can keep the overlay mounted and hide the appointment block.
+  if ((page.viewportSize()?.width ?? 1280) < 640) {
+    const queuePanel = page.getByTestId("walkin-queue-sidebar");
+    await queuePanel.getByRole("button", { name: "Close" }).click();
+    // The slide-over stays mounted for a smooth exit transition; its semantic
+    // closed state is `aria-hidden=true` rather than DOM removal.
+    await expect(page.getByTestId("queue-panel-slideover")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+  }
+
   // 5. Change appointment status and prove the UI action reached the database.
   const persistedAppointment = await latestBooking(fx.salonId, appointmentName);
   if (!persistedAppointment) throw new Error("Appointment was not persisted");

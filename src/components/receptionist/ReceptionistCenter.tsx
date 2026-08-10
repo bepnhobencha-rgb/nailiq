@@ -59,7 +59,11 @@ import {
 import { ConnectionBanner, type ConnectionState } from "./ConnectionBanner";
 import { DateSwitcher } from "./DateSwitcher";
 import { ViewedDateChip } from "./ViewedDateChip";
-import { CalendarViewModeControl } from "./CalendarViewModeControl";
+import {
+  CalendarViewModeControl,
+  type ReceptionistCalendarViewMode,
+} from "./CalendarViewModeControl";
+import { ShellV2DateNavigator } from "./ShellV2DateNavigator";
 import { DensitySlider } from "./DensitySlider";
 import { KPIBar } from "./KPIBar";
 import { BasicCockpit } from "./BasicCockpit";
@@ -110,6 +114,10 @@ import {
   type NotifyChannels,
 } from "./NotifyCustomerPanel";
 import { resolveCustomerLocale } from "@/shared/notifications/resolveCustomerLocale";
+import {
+  localDateToYmd,
+  ymdToLocalDate,
+} from "@/shared/lib/localDateYmd";
 import { buildStaffActionSms } from "@/shared/notifications/staffActionMessages";
 import { getStaffAvailability } from "@/shared/dashboard/availabilityEngine";
 import {
@@ -431,6 +439,12 @@ function ReceptionistGateError({
   );
 }
 
+function shiftYmdByDays(ymd: string, days: number): string {
+  const date = ymdToLocalDate(ymd);
+  date.setDate(date.getDate() + days);
+  return localDateToYmd(date);
+}
+
 function ReceptionistCenterInner({
   slug,
   initialOk,
@@ -622,7 +636,8 @@ function ReceptionistCenterInner({
   // SSR-safe: state starts at `day`; the URL/localStorage sync runs in
   // an effect after mount.
   const urlViewParam = searchParams?.get("view") ?? null;
-  const [viewMode, setViewMode] = useState<"day" | "week" | "month">("day");
+  const [viewMode, setViewMode] =
+    useState<ReceptionistCalendarViewMode>("day");
   useEffect(() => {
     if (typeof window === "undefined") return;
     /* eslint-disable react-hooks/set-state-in-effect -- one-shot hydration from URL or localStorage */
@@ -646,37 +661,58 @@ function ReceptionistCenterInner({
     else if (stored === "month") setViewMode("month");
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [urlViewParam]);
-  const onChangeViewMode = useCallback((next: "day" | "week" | "month") => {
-    setViewMode(next);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("nailiq-view-mode", next);
-      // Reset page scroll so the new view's content is visible from the top.
-      // Month/week calendars can be taller than the viewport on mobile;
-      // without this, switching to Day view leaves the user looking at
-      // empty space below the grid.
-      window.scrollTo({ top: 0, behavior: "instant" });
-    }
-  }, []);
+  const replaceCenterSearchParams = useCallback(
+    (updates: Record<string, string | null>) => {
+      if (typeof window === "undefined") return;
+      const url = new URL(window.location.href);
+      for (const [key, value] of Object.entries(updates)) {
+        if (value === null) url.searchParams.delete(key);
+        else url.searchParams.set(key, value);
+      }
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${url.pathname}${url.search}${url.hash}`,
+      );
+    },
+    [],
+  );
+
+  const onChangeViewMode = useCallback(
+    (next: ReceptionistCalendarViewMode) => {
+      setViewMode(next);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("nailiq-view-mode", next);
+        replaceCenterSearchParams({ view: next });
+        // Reset page scroll so the new view's content is visible from the top.
+        // Month/week calendars can be taller than the viewport on mobile;
+        // without this, switching to Day view leaves the user looking at
+        // empty space below the grid.
+        window.scrollTo({ top: 0, behavior: "instant" });
+      }
+    },
+    [replaceCenterSearchParams],
+  );
 
   // Week-view anchor (Monday of the visible week). Derived initially from
-  // today's salon date so first paint shows the current week.
+  // selected salon date so a `?date=` deep link survives a reload.
   const initialMondayYmd = useMemo(
     () =>
       mondayYmdOf(
-        salonToday(initialOk.salon.timezone, initialOk.observedAtIso),
+        initialOk.selectedDate,
       ),
-    [initialOk.observedAtIso, initialOk.salon.timezone],
+    [initialOk.selectedDate],
   );
   const [weekMondayYmd, setWeekMondayYmd] = useState(initialMondayYmd);
 
   // Month-view anchor (YYYY-MM-01 of the visible month). Starts on the
-  // current month so first paint is always the present month.
+  // selected month so a `?date=` deep link survives a reload.
   const initialMonthFirstYmd = useMemo(
     () =>
       firstOfMonth(
-        salonToday(initialOk.salon.timezone, initialOk.observedAtIso),
+        initialOk.selectedDate,
       ),
-    [initialOk.observedAtIso, initialOk.salon.timezone],
+    [initialOk.selectedDate],
   );
   const [monthFirstYmd, setMonthFirstYmd] = useState(initialMonthFirstYmd);
 
@@ -893,6 +929,20 @@ function ReceptionistCenterInner({
 
   /** Increments when receptionist taps "Now" — grid smooth-scrolls to current slot. */
   const [jumpToNowTrigger, setJumpToNowTrigger] = useState(0);
+  const [nowLineState, setNowLineState] = useState({
+    available: false,
+    visible: false,
+  });
+  const onNowLineStateChange = useCallback(
+    (next: { available: boolean; visible: boolean }) => {
+      setNowLineState((current) =>
+        current.available === next.available && current.visible === next.visible
+          ? current
+          : next,
+      );
+    },
+    [],
+  );
 
   // Sidebar "Hàng chờ" (clock) tab deep-links to /center#queue. The effect that
   // OPENS the panel for that hash lives just after useQueuePanelOpen below (it
@@ -2093,24 +2143,37 @@ function ReceptionistCenterInner({
     };
   }, [messages]);
 
-  const onDateSwitchChange = async (next: -1 | 0 | 1) => {
-    if (!timezone || dayLoading) return;
-    const snapshot = dateOffset;
-    setDateOffset(next);
-    setDayLoading(true);
-    setAssigningWalkinId(null);
-    setUndoState(null);
-    const ymd = salonDateOffset(timezone, next, nowIso || undefined);
-    const res = await loadReceptionistCenterDataAction(slug, ymd);
-    setDayLoading(false);
-    if (!res.ok) {
-      setDateOffset(snapshot);
-      setShakeMessage(loadErrorCopy(messages.receptionist, res.error));
-      return;
-    }
-    setData(res.data);
-    markSynced();
-  };
+  const onDateSwitchChange = useCallback(
+    async (next: -1 | 0 | 1) => {
+      if (!timezone || dayLoading) return;
+      const snapshot = dateOffset;
+      setDateOffset(next);
+      setDayLoading(true);
+      setAssigningWalkinId(null);
+      setUndoState(null);
+      const ymd = salonDateOffset(timezone, next, nowIso || undefined);
+      const res = await loadReceptionistCenterDataAction(slug, ymd);
+      setDayLoading(false);
+      if (!res.ok) {
+        setDateOffset(snapshot);
+        setShakeMessage(loadErrorCopy(messages.receptionist, res.error));
+        return;
+      }
+      setData(res.data);
+      replaceCenterSearchParams({ date: ymd, booking: null });
+      markSynced();
+    },
+    [
+      dateOffset,
+      dayLoading,
+      markSynced,
+      messages.receptionist,
+      nowIso,
+      replaceCenterSearchParams,
+      slug,
+      timezone,
+    ],
+  );
 
   const onAddWalkin = async (input: {
     clientName: string;
@@ -2408,13 +2471,90 @@ function ReceptionistCenterInner({
         setDayLoading(false);
         if (res.ok) {
           setData(res.data);
+          replaceCenterSearchParams({ date: ymd, booking: null });
           markSynced();
         } else {
           setShakeMessage(loadErrorCopy(rcMessages, res.error));
         }
       }
     },
-    [timezone, nowIso, onDateSwitchChange, slug, markSynced, rcMessages],
+    [
+      timezone,
+      nowIso,
+      onDateSwitchChange,
+      slug,
+      markSynced,
+      rcMessages,
+      replaceCenterSearchParams,
+    ],
+  );
+
+  const moveCalendarPeriod = useCallback(
+    (direction: -1 | 1) => {
+      if (viewMode === "day") {
+        void navigateToYmd(shiftYmdByDays(data.selectedDate, direction));
+        return;
+      }
+      if (viewMode === "week") {
+        setWeekMondayYmd((current) => {
+          const next = shiftWeek(current, direction);
+          replaceCenterSearchParams({ date: next, booking: null });
+          return next;
+        });
+        return;
+      }
+      setMonthFirstYmd((current) => {
+        const next = shiftMonth(current, direction);
+        replaceCenterSearchParams({ date: next, booking: null });
+        return next;
+      });
+    }, [
+      data.selectedDate,
+      navigateToYmd,
+      replaceCenterSearchParams,
+      viewMode,
+    ],
+  );
+
+  const returnToCurrentPeriod = useCallback(() => {
+    const today = salonToday(timezone, nowIso || undefined);
+    if (viewMode === "day") {
+      void navigateToYmd(today);
+      return;
+    }
+    if (viewMode === "week") {
+      const monday = mondayYmdOf(today);
+      setWeekMondayYmd(monday);
+      replaceCenterSearchParams({ date: monday, booking: null });
+      return;
+    }
+    const month = firstOfMonth(today);
+    setMonthFirstYmd(month);
+    replaceCenterSearchParams({ date: month, booking: null });
+  }, [
+    navigateToYmd,
+    nowIso,
+    replaceCenterSearchParams,
+    timezone,
+    viewMode,
+  ]);
+
+  const selectCalendarDate = useCallback(
+    (ymd: string) => {
+      if (viewMode === "day") {
+        void navigateToYmd(ymd);
+        return;
+      }
+      if (viewMode === "week") {
+        const monday = mondayYmdOf(ymd);
+        setWeekMondayYmd(monday);
+        replaceCenterSearchParams({ date: monday, booking: null });
+        return;
+      }
+      const month = firstOfMonth(ymd);
+      setMonthFirstYmd(month);
+      replaceCenterSearchParams({ date: month, booking: null });
+    }, [navigateToYmd, replaceCenterSearchParams, viewMode],
   );
 
   // TV Mode preset → full-screen read-only display per
@@ -3762,10 +3902,22 @@ function ReceptionistCenterInner({
             aria-busy={dayLoading}
           >
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-              {/* Yesterday/Today/Tomorrow only drives the Day view's data
-                  loader. In Week/Month it was a dead click (QA M8), so hide it
-                  outside Day view. */}
-              {viewMode === "day" ? (
+              {receptionistShellV2Enabled ? (
+                <ShellV2DateNavigator
+                  mode={viewMode}
+                  dayYmd={data.selectedDate}
+                  weekMondayYmd={weekMondayYmd}
+                  monthFirstYmd={monthFirstYmd}
+                  todayYmd={salonToday(timezone, nowIso || undefined)}
+                  language={language === "vi" ? "vi" : "en"}
+                  labels={rcMessages.dateNavigator}
+                  disabled={viewMode === "day" && dayLoading}
+                  onPrevious={() => moveCalendarPeriod(-1)}
+                  onNext={() => moveCalendarPeriod(1)}
+                  onCurrent={returnToCurrentPeriod}
+                  onSelectDate={selectCalendarDate}
+                />
+              ) : viewMode === "day" ? (
                 <>
                   {/* Always-visible date anchor — tells you which day you're
                       viewing, especially after drilling in from Month view. */}
@@ -3840,7 +3992,12 @@ function ReceptionistCenterInner({
                 </span>
               ) : null}
             </div>
-            {isViewingToday ? (
+            {(receptionistShellV2Enabled
+              ? viewMode === "day" &&
+                isViewingToday &&
+                nowLineState.available &&
+                !nowLineState.visible
+              : isViewingToday) ? (
               <button
                 type="button"
                 data-testid="jump-to-now"
@@ -4057,6 +4214,7 @@ function ReceptionistCenterInner({
             removedGuest={rcMessages.removedGuest}
             hint={calendarHint}
             refreshNonce={calendarRefreshNonce}
+            showNavigation={!receptionistShellV2Enabled}
             onDayClick={(ymd) => {
               // Switch to Day view for the tapped date.
               onChangeViewMode("day");
@@ -4101,6 +4259,7 @@ function ReceptionistCenterInner({
             removedGuest={rcMessages.removedGuest}
             hint={calendarHint}
             refreshNonce={calendarRefreshNonce}
+            showNavigation={!receptionistShellV2Enabled}
             onDayClick={(ymd) => {
               // Tapping a day flips back to Day view and (when the day
               // is yesterday/today/tomorrow) slots into the existing
@@ -4306,6 +4465,11 @@ function ReceptionistCenterInner({
                 nowIso={nowIso}
                 isViewingToday={isViewingToday}
                 jumpToNowTrigger={jumpToNowTrigger}
+                onNowLineStateChange={
+                  receptionistShellV2Enabled
+                    ? onNowLineStateChange
+                    : undefined
+                }
                 existingBookings={gridBookings}
                 onBookingClick={(id) => openBookingDrawer(id)}
                 onSlotClick={(staffId, utc) =>

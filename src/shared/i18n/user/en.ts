@@ -1226,6 +1226,12 @@ export type UserMessages = {
       today: string;
       tomorrow: string;
     };
+    dateNavigator: {
+      chooseDate: string;
+      previous: { day: string; week: string; month: string };
+      next: { day: string; week: string; month: string };
+      current: { day: string; week: string; month: string };
+    };
     /** Scroll timeline to current time (today). */
     jumpToNow: string;
     statusPill: {
@@ -3761,6 +3767,24 @@ export const userEn: UserMessages = {
       yesterday: "Yesterday",
       today: "Today",
       tomorrow: "Tomorrow",
+    },
+    dateNavigator: {
+      chooseDate: "Choose date",
+      previous: {
+        day: "Previous day",
+        week: "Previous week",
+        month: "Previous month",
+      },
+      next: {
+        day: "Next day",
+        week: "Next week",
+        month: "Next month",
+      },
+      current: {
+        day: "Today",
+        week: "This week",
+        month: "This month",
+      },
     },
     jumpToNow: "Now",
     statusPill: {

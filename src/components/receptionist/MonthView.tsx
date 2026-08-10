@@ -122,6 +122,8 @@ export interface MonthViewProps {
   onPrevMonth: () => void;
   onThisMonth: () => void;
   onNextMonth: () => void;
+  /** Shell V2 owns period navigation in the desk header. */
+  showNavigation?: boolean;
   /**
    * Pre-resolved context from the SSR parent — enables the fast-path in
    * `getBookingsForRangeAction` that skips the 3-call auth chain and instead
@@ -167,6 +169,7 @@ export function MonthView({
   onPrevMonth,
   onThisMonth,
   onNextMonth,
+  showNavigation = true,
   hint,
   refreshNonce,
 }: MonthViewProps) {
@@ -264,6 +267,7 @@ export function MonthView({
       className="mx-auto flex w-full flex-col gap-3 px-[var(--pad-nq-section-mobile)] py-4 md:px-6"
     >
       {/* ── Navigation header ───────────────────────────────────────────── */}
+      {showNavigation ? (
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wide text-nq-muted">
@@ -300,6 +304,7 @@ export function MonthView({
           </button>
         </div>
       </div>
+      ) : null}
 
       {/* ── Main area: calendar + detail panel ──────────────────────────── */}
       <div className="flex items-start gap-3 overflow-x-hidden">
