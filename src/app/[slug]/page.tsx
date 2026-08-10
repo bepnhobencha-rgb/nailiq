@@ -275,7 +275,7 @@ async function PublicBookingRouteBody({
             />
             {nailTryOnSalon ? (
               <a
-                href={`/${normalizedSlug}/try-on`}
+                href={`/${normalizedSlug}/try-on?lang=${lang}`}
                 className="mb-5 flex min-h-14 items-center justify-between gap-4 rounded-2xl border border-[color-mix(in_srgb,var(--salon-primary)_35%,transparent)] bg-[color-mix(in_srgb,var(--salon-primary)_10%,var(--booking-surface))] px-4 py-3 transition hover:-translate-y-0.5"
               >
                 <span>

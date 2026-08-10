@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, Check, ImagePlus, RotateCcw, ShieldCheck } from "lucide-react";
+import { Camera, ImagePlus, RotateCcw, ShieldCheck, X } from "lucide-react";
 import {
   evaluateClientImageQuality,
   inspectPixels,
@@ -21,14 +21,14 @@ import {
   NailTryOnRequestTimeoutError,
 } from "@/shared/nailTryOn/timeouts";
 
-const COPY: Record<Exclude<ClientQualityCode, "pass">, string> = {
-  unsupported_format: "Use a JPEG, PNG, or WebP image. / Hãy dùng ảnh JPEG, PNG hoặc WebP.",
-  file_too_large: "This photo is over 10 MB. / Ảnh lớn hơn 10 MB.",
-  resolution_too_low: "Move closer—the hand needs more detail. / Hãy chụp gần hơn để thấy rõ móng.",
-  resolution_too_high: "Choose a smaller image. / Hãy chọn ảnh có kích thước nhỏ hơn.",
-  too_dark: "The preview may be less accurate in low light. / Ảnh tối có thể làm kết quả kém chính xác.",
-  too_bright: "Glare may reduce preview accuracy. / Ánh sáng chói có thể làm kết quả kém chính xác.",
-  blurred: "This photo looks a little soft, but you may continue. / Ảnh hơi mờ nhưng bạn vẫn có thể tiếp tục.",
+const COPY: Record<Exclude<ClientQualityCode, "pass">, { en: string; vi: string }> = {
+  unsupported_format: { en: "Use a JPEG, PNG, or WebP image.", vi: "Hãy dùng ảnh JPEG, PNG hoặc WebP." },
+  file_too_large: { en: "This photo is over 10 MB.", vi: "Ảnh lớn hơn 10 MB." },
+  resolution_too_low: { en: "Move closer—the hand needs more detail.", vi: "Hãy chụp gần hơn để thấy rõ móng." },
+  resolution_too_high: { en: "Choose a smaller image.", vi: "Hãy chọn ảnh có kích thước nhỏ hơn." },
+  too_dark: { en: "The preview may be less accurate in low light.", vi: "Ảnh tối có thể làm kết quả kém chính xác." },
+  too_bright: { en: "Glare may reduce preview accuracy.", vi: "Ánh sáng chói có thể làm kết quả kém chính xác." },
+  blurred: { en: "This photo looks a little soft, but you may continue.", vi: "Ảnh hơi mờ nhưng bạn vẫn có thể tiếp tục." },
 };
 
 const BLOCKING_CLIENT_CODES = new Set<ClientQualityCode>([
@@ -39,6 +39,7 @@ type Props = {
   salonName: string;
   salonSlug: string;
   brandColor: string;
+  language: "en" | "vi";
 };
 
 type CatalogDesign = { id: string; name: string; description: string | null; previewUrl: string | null };
@@ -67,11 +68,17 @@ const FINISHES: Array<{ value: NailConfiguration["finish"]; label: string }> = [
 const ART_STYLES: Array<{ value: NailConfiguration["artStyle"]; label: string }> = [
   { value: "design", label: "Use design" }, { value: "solid", label: "Solid" }, { value: "french", label: "French" }, { value: "micro_french", label: "Micro French" }, { value: "ombre", label: "Ombré" }, { value: "aura", label: "Aura" },
 ];
-export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
+export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }: Props) {
+  const vi = language === "vi";
+  const L = (en: string, viText: string) => (vi ? viText : en);
+  const localizedPair = (copy: string) => {
+    const [en, viText] = copy.split(" / ");
+    return vi ? (viText || en) : en;
+  };
   const [consented, setConsented] = useState(false);
+  const [consentChecked, setConsentChecked] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [quality, setQuality] = useState<ClientQualityCode | "checking" | null>(null);
-  const [fileName, setFileName] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [designs, setDesigns] = useState<CatalogDesign[]>([]);
@@ -88,6 +95,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
   const [deletionMessage, setDeletionMessage] = useState<string | null>(null);
   const [cameraState, setCameraState] = useState<CameraState>("idle");
   const [cameraMessage, setCameraMessage] = useState<string | null>(null);
+  const [supportsDirectCapture, setSupportsDirectCapture] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const libraryInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -114,6 +122,15 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
   }, [stopCamera]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const mobileDevice = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+        || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      setSupportsDirectCapture(mobileDevice);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     if (!busy || step !== "result") return;
     const timer = window.setInterval(() => setGenerationSeconds((seconds) => seconds + 1), 1000);
     return () => window.clearInterval(timer);
@@ -126,7 +143,6 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     const url = URL.createObjectURL(file);
     setPreviewUrl(url);
-    setFileName(file.name || "hand-photo");
     setPhoto(file);
     setDeletionMessage(null);
     setQuality("checking");
@@ -162,7 +178,6 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     setQuality(null);
-    setFileName("");
     setPhoto(null);
     setServerMessage(null);
     setServerWarning(null);
@@ -248,7 +263,6 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       setPreviewUrl(null);
       setQuality(null);
-      setFileName("");
       setPhoto(null);
       setSessionId(null);
       setDesigns([]);
@@ -257,6 +271,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
       setSelectedDesign(null);
       setServerWarning(null);
       setConsented(false);
+      setConsentChecked(false);
       setDeleteConfirmOpen(false);
       if (cameraInputRef.current) cameraInputRef.current.value = "";
       if (libraryInputRef.current) libraryInputRef.current.value = "";
@@ -345,29 +360,31 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: brandColor }} />
           {salonName}
         </span>
-        <h1 className="mt-4 text-3xl font-semibold tracking-tight text-neutral-950">Try on your next nail look</h1>
-        <p className="mt-2 text-sm leading-6 text-neutral-600">One clear photo. Palm down, fingers relaxed, all five nails visible.</p>
+        <p className="mt-5 text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">
+          {step === "capture" ? L("Step 1 of 3", "Bước 1/3") : step === "catalog" ? L("Step 2 of 3", "Bước 2/3") : L("Step 3 of 3", "Bước 3/3")}
+        </p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-neutral-950">{L("Try on nails", "Thử mẫu nail")}</h1>
+        <p className="mt-2 text-sm leading-6 text-neutral-600">{L("Take one clear hand photo.", "Chụp một ảnh bàn tay rõ nét.")}</p>
       </div>
 
       {step === "catalog" ? (
         <section className="rounded-3xl border border-neutral-200 bg-white p-5 shadow-xl shadow-black/5 sm:p-7">
-          <p className="text-xs font-semibold uppercase tracking-widest text-neutral-500">Step 2 of 3</p>
-          <h2 className="mt-2 text-2xl font-semibold text-neutral-950">Build your nail look</h2>
+          <h2 className="text-2xl font-semibold text-neutral-950">{L("Build your nail look", "Tạo mẫu nail của bạn")}</h2>
           {serverWarning ? <p className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900" role="status">{serverWarning}</p> : null}
           <div className="mt-5 space-y-5">
-            <fieldset><legend className="text-sm font-semibold text-neutral-900">1. Length / Độ dài</legend><div className="mt-2 flex flex-wrap gap-2">{LENGTHS.map((option) => <button key={option.value} type="button" aria-pressed={configuration.length === option.value} onClick={() => setConfiguration((current) => ({ ...current, length: option.value }))} className={`rounded-full border px-3 py-2 text-xs font-semibold ${configuration.length === option.value ? "border-neutral-950 bg-neutral-950 text-white" : "border-neutral-300 text-neutral-700"}`}>{option.label}</button>)}</div><p className="mt-2 text-xs text-neutral-500" aria-live="polite">{LENGTH_HINTS[configuration.length]}</p></fieldset>
-            <fieldset><legend className="text-sm font-semibold text-neutral-900">2. Shape / Dáng móng</legend><div className="mt-2 flex flex-wrap gap-2">{SHAPES.map((option) => <button key={option.value} type="button" aria-pressed={configuration.shape === option.value} onClick={() => setConfiguration((current) => ({ ...current, shape: option.value }))} className={`rounded-full border px-3 py-2 text-xs font-semibold ${configuration.shape === option.value ? "border-neutral-950 bg-neutral-950 text-white" : "border-neutral-300 text-neutral-700"}`}>{option.label}</button>)}</div></fieldset>
-            <fieldset><legend className="text-sm font-semibold text-neutral-900">3. Color / Màu</legend><div className="mt-2 grid grid-cols-4 gap-2">{COLORS.map((option) => <button key={option.value} type="button" aria-pressed={configuration.color === option.value} onClick={() => setConfiguration((current) => ({ ...current, color: option.value }))} className={`rounded-2xl border p-2 text-center text-[11px] font-semibold ${configuration.color === option.value ? "border-neutral-950 ring-2 ring-neutral-950/20" : "border-neutral-200"}`}><span className="mx-auto block h-8 w-8 rounded-full border border-black/10" style={{ background: option.swatch }} /><span className="mt-1 block">{option.label}</span></button>)}</div></fieldset>
-            <fieldset><legend className="text-sm font-semibold text-neutral-900">4. Style / Kiểu sơn</legend><div className="mt-2 flex flex-wrap gap-2">{ART_STYLES.map((option) => <button key={option.value} type="button" aria-pressed={configuration.artStyle === option.value} onClick={() => setConfiguration((current) => ({ ...current, artStyle: option.value }))} className={`rounded-full border px-3 py-2 text-xs font-semibold ${configuration.artStyle === option.value ? "border-neutral-950 bg-neutral-950 text-white" : "border-neutral-300 text-neutral-700"}`}>{option.label}</button>)}</div></fieldset>
-            <fieldset><legend className="text-sm font-semibold text-neutral-900">5. Finish / Hiệu ứng</legend><div className="mt-2 flex flex-wrap gap-2">{FINISHES.map((option) => <button key={option.value} type="button" aria-pressed={configuration.finish === option.value} onClick={() => setConfiguration((current) => ({ ...current, finish: option.value }))} className={`rounded-full border px-3 py-2 text-xs font-semibold ${configuration.finish === option.value ? "border-neutral-950 bg-neutral-950 text-white" : "border-neutral-300 text-neutral-700"}`}>{option.label}</button>)}</div></fieldset>
+            <fieldset><legend className="text-sm font-semibold text-neutral-900">1. {L("Length", "Độ dài")}</legend><div className="mt-2 flex flex-wrap gap-2">{LENGTHS.map((option) => <button key={option.value} type="button" aria-pressed={configuration.length === option.value} onClick={() => setConfiguration((current) => ({ ...current, length: option.value }))} className={`rounded-full border px-3 py-2 text-xs font-semibold ${configuration.length === option.value ? "border-neutral-950 bg-neutral-950 text-white" : "border-neutral-300 text-neutral-700"}`}>{option.label}</button>)}</div><p className="mt-2 text-xs text-neutral-500" aria-live="polite">{localizedPair(LENGTH_HINTS[configuration.length])}</p></fieldset>
+            <fieldset><legend className="text-sm font-semibold text-neutral-900">2. {L("Shape", "Dáng móng")}</legend><div className="mt-2 flex flex-wrap gap-2">{SHAPES.map((option) => <button key={option.value} type="button" aria-pressed={configuration.shape === option.value} onClick={() => setConfiguration((current) => ({ ...current, shape: option.value }))} className={`rounded-full border px-3 py-2 text-xs font-semibold ${configuration.shape === option.value ? "border-neutral-950 bg-neutral-950 text-white" : "border-neutral-300 text-neutral-700"}`}>{option.label}</button>)}</div></fieldset>
+            <fieldset><legend className="text-sm font-semibold text-neutral-900">3. {L("Color", "Màu")}</legend><div className="mt-2 grid grid-cols-4 gap-2">{COLORS.map((option) => <button key={option.value} type="button" aria-pressed={configuration.color === option.value} onClick={() => setConfiguration((current) => ({ ...current, color: option.value }))} className={`rounded-2xl border p-2 text-center text-[11px] font-semibold ${configuration.color === option.value ? "border-neutral-950 ring-2 ring-neutral-950/20" : "border-neutral-200"}`}><span className="mx-auto block h-8 w-8 rounded-full border border-black/10" style={{ background: option.swatch }} /><span className="mt-1 block">{option.label}</span></button>)}</div></fieldset>
+            <fieldset><legend className="text-sm font-semibold text-neutral-900">4. {L("Style", "Kiểu sơn")}</legend><div className="mt-2 flex flex-wrap gap-2">{ART_STYLES.map((option) => <button key={option.value} type="button" aria-pressed={configuration.artStyle === option.value} onClick={() => setConfiguration((current) => ({ ...current, artStyle: option.value }))} className={`rounded-full border px-3 py-2 text-xs font-semibold ${configuration.artStyle === option.value ? "border-neutral-950 bg-neutral-950 text-white" : "border-neutral-300 text-neutral-700"}`}>{option.label}</button>)}</div></fieldset>
+            <fieldset><legend className="text-sm font-semibold text-neutral-900">5. {L("Finish", "Hiệu ứng")}</legend><div className="mt-2 flex flex-wrap gap-2">{FINISHES.map((option) => <button key={option.value} type="button" aria-pressed={configuration.finish === option.value} onClick={() => setConfiguration((current) => ({ ...current, finish: option.value }))} className={`rounded-full border px-3 py-2 text-xs font-semibold ${configuration.finish === option.value ? "border-neutral-950 bg-neutral-950 text-white" : "border-neutral-300 text-neutral-700"}`}>{option.label}</button>)}</div></fieldset>
           </div>
-          <h3 className="mt-6 text-sm font-semibold text-neutral-900">6. Decoration / Mẫu trang trí</h3>
+          <h3 className="mt-6 text-sm font-semibold text-neutral-900">6. {L("Decoration", "Mẫu trang trí")}</h3>
           {designs.length ? <div className="mt-5 grid grid-cols-2 gap-3">{designs.map((design) => (
             <button key={design.id} type="button" disabled={busy} onClick={() => void generate(design.id)} className="overflow-hidden rounded-2xl border border-neutral-200 text-left transition hover:border-neutral-500 disabled:opacity-60">
               {design.previewUrl ? <img src={design.previewUrl} alt={design.name} className="aspect-square w-full object-cover" /> : <div className="aspect-square bg-neutral-100" />}
               <span className="block p-3 text-sm font-semibold text-neutral-900">{design.name}</span>
             </button>
-          ))}</div> : <p className="mt-5 rounded-2xl bg-neutral-50 p-4 text-sm text-neutral-600">This salon has not published try-on designs yet.</p>}
+          ))}</div> : <p className="mt-5 rounded-2xl bg-neutral-50 p-4 text-sm text-neutral-600">{L("This salon has not published try-on designs yet.", "Salon chưa đăng mẫu thử nào.")}</p>}
           {busy ? <p className="mt-4 rounded-2xl bg-blue-50 p-4 text-sm text-blue-900" role="status">{generationSeconds < 20 ? "Preparing your nail preview… / Đang chuẩn bị ảnh…" : generationSeconds < 50 ? "Applying the design to your nails… / Đang thử mẫu lên móng…" : "Adding the final details—please keep this page open. / Đang hoàn thiện, vui lòng giữ trang này mở."}</p> : null}
           {serverMessage ? <p className="mt-4 text-sm text-red-700" role="alert">{serverMessage}</p> : null}
         </section>
@@ -378,18 +395,28 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
             {!resultUrl && selectedDesign?.previewUrl ? <div className="absolute bottom-4 right-4 w-24 overflow-hidden rounded-2xl border-4 border-white bg-white shadow-xl"><img src={selectedDesign.previewUrl} alt={`Selected design: ${selectedDesign.name}`} className="aspect-square w-full object-cover" /><p className="truncate px-2 py-1 text-center text-[10px] font-semibold text-neutral-800">{selectedDesign.name}</p></div> : null}
           </div>
           <div className="p-5 sm:p-7">
-            {resultUrl ? <><p className="text-xs font-semibold uppercase tracking-widest text-emerald-700">AI preview ready</p><h2 className="mt-2 text-2xl font-semibold text-neutral-950">See yourself in this look</h2><p className="mt-2 text-sm text-neutral-600">AI preview—actual color and result may vary.</p><a href={`/${salonSlug}?tryon=${encodeURIComponent(sessionId || "")}`} className="mt-5 flex min-h-12 items-center justify-center rounded-full bg-neutral-950 px-5 font-semibold text-white">Continue to booking</a></> : <><p className="text-xs font-semibold uppercase tracking-widest text-blue-700">Design selected instantly</p><h2 className="mt-2 text-2xl font-semibold text-neutral-950">{selectedDesign?.name || "Preparing your look"}</h2>{busy ? <p className="mt-3 rounded-2xl bg-blue-50 p-4 text-sm text-blue-900" role="status">{generationSeconds < 20 ? "Preparing your nail preview… / Đang chuẩn bị ảnh…" : generationSeconds < 50 ? "Applying the design to your nails… / Đang thử mẫu lên móng…" : "Adding the final details—please keep this page open. / Đang hoàn thiện, vui lòng giữ trang này mở."}</p> : null}{serverMessage ? <p className="mt-3 rounded-2xl bg-red-50 p-4 text-sm text-red-800" role="alert">{serverMessage}</p> : null}{!busy ? <button type="button" onClick={() => { setServerMessage(null); setStep("catalog"); }} className="mt-4 min-h-12 w-full rounded-full border border-neutral-300 px-5 font-semibold text-neutral-800">Choose another design / Chọn mẫu khác</button> : null}</>}
+            {resultUrl ? <><p className="text-xs font-semibold uppercase tracking-widest text-emerald-700">{L("AI preview ready", "Ảnh thử AI đã sẵn sàng")}</p><h2 className="mt-2 text-2xl font-semibold text-neutral-950">{L("See yourself in this look", "Xem mẫu trên tay bạn")}</h2><p className="mt-2 text-sm text-neutral-600">{L("AI preview—actual color and result may vary.", "Ảnh thử AI—màu sắc và kết quả thực tế có thể khác.")}</p><a href={`/${salonSlug}?tryon=${encodeURIComponent(sessionId || "")}&lang=${language}`} className="mt-5 flex min-h-14 items-center justify-center rounded-full bg-neutral-950 px-5 font-semibold text-white">{L("Continue to booking", "Tiếp tục đặt lịch")}</a></> : <><p className="text-xs font-semibold uppercase tracking-widest text-blue-700">{L("Design selected", "Đã chọn mẫu")}</p><h2 className="mt-2 text-2xl font-semibold text-neutral-950">{selectedDesign?.name || L("Preparing your look", "Đang chuẩn bị mẫu")}</h2>{busy ? <p className="mt-3 rounded-2xl bg-blue-50 p-4 text-sm text-blue-900" role="status">{generationSeconds < 20 ? L("Preparing your nail preview…", "Đang chuẩn bị ảnh…") : generationSeconds < 50 ? L("Applying the design to your nails…", "Đang thử mẫu lên móng…") : L("Adding final details—please keep this page open.", "Đang hoàn thiện, vui lòng giữ trang này mở.")}</p> : null}{serverMessage ? <p className="mt-3 rounded-2xl bg-red-50 p-4 text-sm text-red-800" role="alert">{serverMessage}</p> : null}{!busy ? <button type="button" onClick={() => { setServerMessage(null); setStep("catalog"); }} className="mt-4 min-h-12 w-full rounded-full border border-neutral-300 px-5 font-semibold text-neutral-800">{L("Choose another design", "Chọn mẫu khác")}</button> : null}</>}
           </div>
         </section>
       ) : !consented ? (
-        <section className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-xl shadow-black/5">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700"><ShieldCheck aria-hidden /></div>
-          <h2 className="mt-5 text-xl font-semibold text-neutral-950">Your photo stays private</h2>
-          <p className="mt-2 text-sm leading-6 text-neutral-600">NailIQ processes this hand photo only to create your AI preview. Unused photos are deleted after 24 hours. After upload, you can delete yours immediately.</p>
-          <label className="mt-5 flex cursor-pointer gap-3 rounded-2xl bg-neutral-50 p-4 text-sm text-neutral-700">
-            <input type="checkbox" checked={consented} onChange={(event) => setConsented(event.target.checked)} className="mt-0.5 h-5 w-5 accent-black" />
-            <span>I agree to this photo processing. I understand the AI preview may differ from the real result.</span>
+        <section className="rounded-[28px] border border-black/5 bg-white p-6 shadow-[0_12px_40px_rgba(0,0,0,0.06)]">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 text-emerald-700"><ShieldCheck aria-hidden /></div>
+          <h2 className="mt-5 text-center text-xl font-semibold text-neutral-950">{L("Your photo stays private", "Ảnh của bạn được bảo mật")}</h2>
+          <p className="mx-auto mt-2 max-w-sm text-center text-sm leading-6 text-neutral-600">
+            {L("Used only for your AI preview. Unused photos are deleted after 24 hours.", "Chỉ dùng để tạo ảnh thử mẫu AI. Ảnh không dùng sẽ được xóa sau 24 giờ.")}
+          </p>
+          <label className="mt-6 flex cursor-pointer gap-3 rounded-2xl bg-neutral-50 p-4 text-sm leading-5 text-neutral-700">
+            <input type="checkbox" checked={consentChecked} onChange={(event) => setConsentChecked(event.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-black" />
+            <span>{L("I agree to process this photo and understand the preview may differ from the final result.", "Tôi đồng ý xử lý ảnh này và hiểu rằng ảnh thử có thể khác kết quả thực tế.")}</span>
           </label>
+          <button
+            type="button"
+            disabled={!consentChecked}
+            onClick={() => setConsented(true)}
+            className="mt-4 min-h-14 w-full rounded-full bg-neutral-950 px-5 text-base font-semibold text-white transition disabled:bg-neutral-200 disabled:text-neutral-400"
+          >
+            {L("Continue", "Tiếp tục")}
+          </button>
         </section>
       ) : (
         <section className="overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-xl shadow-black/5">
@@ -401,77 +428,113 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
                   autoPlay
                   muted
                   playsInline
-                  aria-label="Live rear-camera preview"
+                  aria-label={L("Live rear-camera preview", "Xem trước camera sau")}
                   className={`absolute inset-0 h-full w-full object-cover ${cameraState === "live" ? "block" : "hidden"}`}
                 />
                 <div className="pointer-events-none absolute inset-7 rounded-[40%] border-2 border-dashed border-white/70 shadow-[0_0_0_999px_rgba(0,0,0,0.2)]" />
                 {cameraState === "live" ? (
-                  <div className="absolute inset-x-0 bottom-4 z-10 flex flex-col items-center gap-2 px-4">
-                    <p className="rounded-full bg-black/70 px-4 py-2 text-center text-xs font-medium">One hand, palm down, five nails visible / Một bàn tay, úp xuống, thấy đủ năm móng</p>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        stopCamera();
+                        setCameraState("idle");
+                        setCameraMessage(null);
+                      }}
+                      className="absolute right-4 top-4 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-black/65 text-white backdrop-blur"
+                      aria-label={L("Close camera", "Đóng camera")}
+                    >
+                      <X className="h-5 w-5" aria-hidden />
+                    </button>
+                    <div className="absolute inset-x-0 bottom-4 z-10 flex flex-col items-center gap-2 px-4">
+                    <p className="rounded-full bg-black/70 px-4 py-2 text-center text-xs font-medium">{L("Palm down · Five nails visible", "Úp bàn tay · Thấy đủ 5 móng")}</p>
                     <button
                       type="button"
                       onClick={() => void captureLivePhoto()}
                       className="flex min-h-14 min-w-14 items-center justify-center rounded-full border-4 border-white bg-white/25 shadow-lg outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-white"
-                      aria-label="Capture hand photo / Chụp ảnh bàn tay"
+                      aria-label={L("Capture hand photo", "Chụp ảnh bàn tay")}
                     >
                       <span className="h-10 w-10 rounded-full bg-white" aria-hidden />
                     </button>
                   </div>
+                  </>
                 ) : (
                   <button
                     type="button"
-                    disabled={cameraState === "starting"}
+                    disabled={cameraState === "starting" || cameraState === "fallback"}
                     onClick={() => void startLiveCamera()}
-                    className="relative z-10 flex min-h-44 w-full flex-col items-center justify-center px-6 text-center outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white disabled:cursor-wait"
+                    className="relative z-10 flex min-h-44 w-full flex-col items-center justify-center px-6 text-center outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white disabled:cursor-default"
                   >
                     <span className="flex h-20 w-20 items-center justify-center rounded-full border border-white/30 bg-white/10"><Camera className="h-9 w-9" aria-hidden /></span>
-                    <span className="mt-4 text-sm font-semibold">{cameraState === "starting" ? "Opening camera… / Đang mở camera…" : "Tap to open camera / Chạm để mở camera"}</span>
-                    <span className="mt-1 text-xs text-white/70">Place one hand inside the guide / Đặt một bàn tay trong khung</span>
+                    <span className="mt-4 text-sm font-semibold">
+                      {cameraState === "starting" ? L("Opening camera…", "Đang mở camera…") : cameraState === "fallback" ? L("Use a photo instead", "Hãy dùng ảnh thay thế") : L("Open camera", "Mở camera")}
+                    </span>
+                    <span className="mt-1 text-xs text-white/70">{L("Place one hand inside the guide", "Đặt một bàn tay trong khung")}</span>
                   </button>
                 )}
               </div>
-              {cameraMessage ? <p className="mt-3 rounded-2xl bg-amber-50 p-4 text-sm text-amber-950" role="alert">{cameraMessage}</p> : null}
-              <ul className="mt-5 grid grid-cols-2 gap-2 text-xs text-neutral-600">
-                {["Palm down / Úp bàn tay", "Five nails visible / Thấy đủ 5 móng", "Soft, even light / Ánh sáng đều", "Hold still / Giữ yên"].map((item) => <li key={item} className="flex items-center gap-2"><Check className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />{item}</li>)}
-              </ul>
-              <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (cameraState === "live") {
-                      stopCamera();
-                      setCameraState("idle");
-                      setCameraMessage(null);
-                      return;
-                    }
-                    void startLiveCamera();
-                  }}
-                  className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-neutral-950 px-5 font-semibold text-white"
-                >
-                  <Camera className="h-5 w-5" aria-hidden />
-                  {cameraState === "live" ? "Close camera / Tắt camera" : "Open camera / Mở camera"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => libraryInputRef.current?.click()}
-                  className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-neutral-300 bg-white px-5 font-semibold text-neutral-900"
-                >
-                  <ImagePlus className="h-5 w-5" aria-hidden />
-                  Choose photo / Chọn ảnh
-                </button>
-              </div>
+              {cameraMessage ? (
+                <p className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-950" role="alert">
+                  {cameraState === "fallback"
+                    ? L("Camera access is unavailable. You can still take or choose a photo.", "Không thể mở camera trực tiếp. Bạn vẫn có thể chụp hoặc chọn ảnh.")
+                    : cameraMessage}
+                </p>
+              ) : null}
               {cameraState === "fallback" ? (
-                <button
-                  type="button"
-                  onClick={() => cameraInputRef.current?.click()}
-                  className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-neutral-300 bg-neutral-50 px-5 font-semibold text-neutral-900"
-                >
-                  <Camera className="h-5 w-5" aria-hidden />
-                  Use device camera / Dùng camera thiết bị
-                </button>
+                <div className="mt-4 grid gap-3">
+                  {supportsDirectCapture ? (
+                    <label className="relative flex min-h-14 w-full cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-full bg-neutral-950 px-5 text-base font-semibold text-white">
+                      <Camera className="h-5 w-5" aria-hidden />
+                      {L("Take a new photo", "Chụp ảnh mới")}
+                      <input
+                        ref={cameraInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                        aria-label={L("Take a new photo", "Chụp ảnh mới")}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file) void inspect(file);
+                        }}
+                      />
+                    </label>
+                  ) : null}
+                  <label className={`relative flex w-full cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-full px-5 font-semibold ${supportsDirectCapture ? "min-h-12 border border-neutral-300 bg-white text-neutral-900" : "min-h-14 bg-neutral-950 text-base text-white"}`}>
+                    <ImagePlus className="h-5 w-5" aria-hidden />
+                    {L("Choose an existing photo", "Chọn ảnh có sẵn")}
+                    <input
+                      ref={libraryInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                      aria-label={L("Choose an existing photo", "Chọn ảnh có sẵn")}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) void inspect(file);
+                      }}
+                    />
+                  </label>
+                </div>
+              ) : cameraState !== "live" ? (
+                <label className="relative mt-4 flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-full text-sm font-semibold text-neutral-700">
+                  <ImagePlus className="h-5 w-5" aria-hidden />
+                  {L("Choose an existing photo", "Chọn ảnh có sẵn")}
+                  <input
+                    ref={libraryInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                    aria-label={L("Choose an existing photo", "Chọn ảnh có sẵn")}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) void inspect(file);
+                    }}
+                  />
+                </label>
               ) : null}
               <p className="mt-3 text-center text-xs leading-5 text-neutral-500">
-                Camera access starts only after you tap. It stops immediately after capture or when you leave. / Camera chỉ mở khi bạn chạm và sẽ tắt ngay sau khi chụp hoặc rời trang.
+                {L("Palm down · Five nails · Even light", "Úp bàn tay · Đủ 5 móng · Ánh sáng đều")}
               </p>
             </div>
           ) : (
@@ -479,44 +542,20 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={previewUrl} alt="Your hand photo preview" className="aspect-[4/3] w-full bg-neutral-100 object-contain" />
               <div className="p-5 sm:p-7">
-                <p className="truncate text-xs text-neutral-400">{fileName}</p>
-                {quality === "checking" ? <p className="mt-2 font-medium text-neutral-700" role="status">Checking light and sharpness…</p> : null}
+                {quality === "checking" ? <p className="text-center font-medium text-neutral-700" role="status">{L("Checking photo…", "Đang kiểm tra ảnh…")}</p> : null}
                 {quality === "pass" ? (
-                  <div className="mt-2 rounded-2xl bg-emerald-50 p-4 text-emerald-900" role="status"><p className="font-semibold">Photo looks ready</p><p className="mt-1 text-sm">Next, NailIQ will verify that exactly one hand and five nails are visible.</p></div>
+                  <div className="rounded-2xl bg-emerald-50 p-4 text-center text-emerald-900" role="status"><p className="font-semibold">{L("Photo ready", "Ảnh đã sẵn sàng")}</p><p className="mt-1 text-sm">{L("One more quick check before choosing a design.", "Kiểm tra nhanh một lần nữa trước khi chọn mẫu.")}</p></div>
                 ) : null}
                 {quality && quality !== "checking" && quality !== "pass" ? (
-                  <div className="mt-2 rounded-2xl bg-amber-50 p-4 text-amber-950" role="alert"><p className="font-semibold">{BLOCKING_CLIENT_CODES.has(quality) ? "Please choose another photo / Hãy chọn ảnh khác" : "Photo quality warning / Cảnh báo chất lượng ảnh"}</p><p className="mt-1 text-sm">{COPY[quality]}</p></div>
+                  <div className="rounded-2xl bg-amber-50 p-4 text-amber-950" role="alert"><p className="font-semibold">{BLOCKING_CLIENT_CODES.has(quality) ? L("Choose another photo", "Hãy chọn ảnh khác") : L("Photo quality warning", "Ảnh chưa thật rõ")}</p><p className="mt-1 text-sm">{COPY[quality][language]}</p></div>
                 ) : null}
-                <button type="button" onClick={reset} className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-neutral-300 px-5 font-semibold text-neutral-800"><RotateCcw className="h-4 w-4" aria-hidden />Retake</button>
                 {serverMessage ? <p className="mt-3 rounded-2xl bg-red-50 p-4 text-sm text-red-800" role="alert">{serverMessage}</p> : null}
                 {serverWarning ? <p className="mt-3 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900" role="status">{serverWarning}</p> : null}
-                {quality && quality !== "checking" && !BLOCKING_CLIENT_CODES.has(quality) ? <button type="button" disabled={busy} onClick={() => void uploadAndVerify()} className="mt-3 min-h-12 w-full rounded-full bg-neutral-950 px-5 font-semibold text-white disabled:bg-neutral-300 disabled:text-neutral-600">{busy ? "Verifying hand and nails…" : quality === "pass" ? "Continue to designs" : "Continue anyway / Vẫn tiếp tục"}</button> : null}
+                {quality && quality !== "checking" && !BLOCKING_CLIENT_CODES.has(quality) ? <button type="button" disabled={busy} onClick={() => void uploadAndVerify()} className="mt-4 min-h-14 w-full rounded-full bg-neutral-950 px-5 text-base font-semibold text-white disabled:bg-neutral-300 disabled:text-neutral-600">{busy ? L("Checking hand…", "Đang kiểm tra bàn tay…") : quality === "pass" ? L("Use this photo", "Dùng ảnh này") : L("Use anyway", "Vẫn dùng ảnh này")}</button> : null}
+                <button type="button" onClick={reset} className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-full text-sm font-semibold text-neutral-700"><RotateCcw className="h-4 w-4" aria-hidden />{L("Retake", "Chụp lại")}</button>
               </div>
             </div>
           )}
-          <input
-            ref={cameraInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="sr-only"
-            aria-label="Take a hand photo with the rear camera"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void inspect(file);
-            }}
-          />
-          <input
-            ref={libraryInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            className="sr-only"
-            aria-label="Choose an existing hand photo"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void inspect(file);
-            }}
-          />
         </section>
       )}
 
@@ -564,7 +603,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
         </section>
       ) : null}
 
-      <a href={`/${salonSlug}`} className="mx-auto mt-6 block w-fit text-sm font-medium text-neutral-600 underline-offset-4 hover:underline">Back to booking</a>
+      <a href={`/${salonSlug}?lang=${language}`} className="mx-auto mt-6 block w-fit text-sm font-medium text-neutral-600 underline-offset-4 hover:underline">{L("Back to booking", "Quay lại đặt lịch")}</a>
     </div>
   );
 }

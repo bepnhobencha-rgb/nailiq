@@ -19,6 +19,14 @@ test.describe("Nail Try-On camera fallback", () => {
 
   test("keeps photo upload available when camera permission is denied", async ({ page }) => {
     await page.addInitScript(() => {
+      Object.defineProperty(navigator, "userAgent", {
+        configurable: true,
+        value: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)",
+      });
+      Object.defineProperty(navigator, "maxTouchPoints", {
+        configurable: true,
+        value: 5,
+      });
       Object.defineProperty(navigator, "mediaDevices", {
         configurable: true,
         value: {
@@ -31,10 +39,45 @@ test.describe("Nail Try-On camera fallback", () => {
 
     await page.goto(`/${SLUG}/try-on`);
     await page.getByRole("checkbox").check();
-    await page.getByRole("button", { name: /Tap to open camera/i }).click();
+    await page.getByRole("button", { name: "Continue" }).click();
 
-    await expect(page.getByRole("alert")).toContainText("Camera permission was not granted");
-    await expect(page.getByRole("button", { name: /Use device camera/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Choose photo/i })).toBeVisible();
+    const openCamera = page.getByRole("button", { name: /Open camera/i });
+    await expect(openCamera).toHaveCount(1);
+    await openCamera.click();
+
+    await expect(page.getByRole("alert")).toContainText("Camera access is unavailable");
+    await expect(page.getByLabel("Take a new photo")).toBeVisible();
+    await expect(page.getByLabel("Take a new photo")).toHaveAttribute("capture", "environment");
+    await expect(page.getByLabel("Choose an existing photo")).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Open camera$/i })).toHaveCount(0);
+
+    const cameraChooser = page.waitForEvent("filechooser");
+    await page.getByLabel("Take a new photo").click();
+    await cameraChooser;
+
+    const libraryChooser = page.waitForEvent("filechooser");
+    await page.getByLabel("Choose an existing photo").click();
+    await libraryChooser;
+  });
+
+  test("does not offer a misleading camera-file action on desktop", async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "mediaDevices", {
+        configurable: true,
+        value: {
+          getUserMedia: async () => {
+            throw new DOMException("Permission denied", "NotAllowedError");
+          },
+        },
+      });
+    });
+
+    await page.goto(`/${SLUG}/try-on`);
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: /Open camera/i }).click();
+
+    await expect(page.getByLabel("Take a new photo")).toHaveCount(0);
+    await expect(page.getByLabel("Choose an existing photo")).toBeVisible();
   });
 });
