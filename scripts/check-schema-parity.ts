@@ -19,7 +19,7 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260809214049. Refresh these with each schema-changing forward
+ * through 20260810104500. Refresh these with each schema-changing forward
  * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
@@ -27,7 +27,7 @@ const PRODUCTION = {
   columns: 1423,
   policies: 155,
   /**
-   * APP functions only — 112 after the rehearsed forward migrations.
+   * APP functions only — 113 after the rehearsed forward migrations.
    *
    * Counting every `public` function is a trap: many belong to EXTENSIONS
    * (pgcrypto, btree_gist, pg_trgm, uuid-ossp), which production happens to have
@@ -36,7 +36,7 @@ const PRODUCTION = {
    * The query below excludes anything a `pg_depend` extension edge points at,
    * so extension placement cannot distort this release-shape tripwire.
    */
-  functions: 112,
+  functions: 113,
   triggers: 37,
   indexes: 348,
 } as const;
@@ -120,6 +120,7 @@ const CRITICAL_FUNCTIONS = [
   "create_recovered_booking",
   "validate_archived_booking_recovery",
   "protect_archived_booking_recovery_flag",
+  "insert_controlled_after_hours_group_bookings",
 ] as const;
 
 const dbUrl = process.env.DB_URL;
