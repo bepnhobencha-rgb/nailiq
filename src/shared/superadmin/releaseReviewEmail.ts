@@ -4,6 +4,7 @@ import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import type { UserLanguage } from "@/shared/i18n/user/types";
 import type { ReleaseReviewContext } from "@/shared/superadmin/releaseReviewContext";
+import { presentReleaseReview } from "@/shared/superadmin/releaseReviewPresentation";
 
 const RELEASE_REVIEW_RECIPIENT = "thehuytgvn@gmail.com";
 const CLAIM_LEASE_MS = 10 * 60 * 1_000;
@@ -51,26 +52,37 @@ export function buildReleaseReviewEmail(input: {
   const declineUrl = releaseReviewDecisionUrl(input.reviewId, "declined");
   const language = input.language === "vi" ? "vi" : "en";
   const isVietnamese = language === "vi";
+  const presentation = presentReleaseReview({
+    deploymentId: input.deploymentId,
+    changeSummary: input.changeSummary,
+    language,
+  });
   const copy = isVietnamese
     ? {
-        subject: "NailIQ: Có cần thông báo thay đổi này cho salon không?",
+        subject: `NailIQ ${presentation.releaseLabel}: Có cần thông báo thay đổi này cho salon không?`,
         eyebrow: "NailIQ · Xem trước thông báo",
         heading: "Bạn có muốn thông báo thay đổi này cho chủ salon?",
         intro:
           "Bản cập nhật đã hoạt động. Lựa chọn dưới đây chỉ quyết định NailIQ có chuẩn bị nội dung thông báo cho salon hay không.",
-        summaryLabel: "Ghi chú nội bộ về thay đổi",
+        changeLabel: "Thay đổi gì",
+        impactLabel: "Ảnh hưởng",
+        actionLabel: "Salon cần làm gì",
+        recommendationLabel: "Đề xuất của NailIQ",
         approve: "Có, tạo thông báo",
         decline: "Không cần thông báo",
         safety:
           "NailIQ chưa gửi gì cho salon. Chọn “Có” sẽ mở bản nháp để bạn đọc và chỉnh sửa bằng tiếng Anh và tiếng Việt trước khi gửi.",
       }
     : {
-        subject: "NailIQ: Should salon owners be notified about this change?",
+        subject: `NailIQ ${presentation.releaseLabel}: Should salon owners be notified about this change?`,
         eyebrow: "NailIQ · Notice preview",
         heading: "Would you like to notify salon owners about this change?",
         intro:
           "The update is already active. Your choice below only decides whether NailIQ should prepare a notice for salon owners.",
-        summaryLabel: "Internal change note",
+        changeLabel: "What changed",
+        impactLabel: "Impact",
+        actionLabel: "What salons need to do",
+        recommendationLabel: "NailIQ recommendation",
         approve: "Yes, prepare a notice",
         decline: "No notice needed",
         safety:
@@ -82,8 +94,14 @@ export function buildReleaseReviewEmail(input: {
   <h1 style="margin:0 0 16px;font-size:24px;line-height:1.25">${esc(copy.heading)}</h1>
   <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#404040">${esc(copy.intro)}</p>
   <div style="margin:0 0 22px;padding:16px;border:1px solid #e5e5e5;border-radius:12px;background:#fafafa">
-    <p style="margin:0 0 6px;font-size:12px;color:#737373">${esc(copy.summaryLabel)}</p>
-    <p style="margin:0;font-size:15px;line-height:1.55">${esc(input.changeSummary)}</p>
+    <p style="margin:0 0 6px;font-size:12px;color:#737373">${esc(copy.changeLabel)}</p>
+    <p style="margin:0 0 14px;font-size:15px;line-height:1.55;font-weight:600">${esc(presentation.changeTitle)}</p>
+    <p style="margin:0 0 6px;font-size:12px;color:#737373">${esc(copy.impactLabel)}</p>
+    <p style="margin:0 0 14px;font-size:15px;line-height:1.55">${esc(presentation.impact)}</p>
+    <p style="margin:0 0 6px;font-size:12px;color:#737373">${esc(copy.actionLabel)}</p>
+    <p style="margin:0 0 14px;font-size:15px;line-height:1.55">${esc(presentation.salonAction)}</p>
+    <p style="margin:0 0 6px;font-size:12px;color:#737373">${esc(copy.recommendationLabel)}</p>
+    <p style="margin:0;font-size:15px;line-height:1.55;font-weight:600">${esc(presentation.recommendation)}</p>
   </div>
   <div style="margin:0 0 20px">
     <a href="${esc(approveUrl)}" style="display:inline-block;margin:0 8px 8px 0;padding:12px 20px;border-radius:999px;background:#171717;color:#fff;text-decoration:none;font-size:14px;font-weight:700">${esc(copy.approve)}</a>
@@ -91,7 +109,7 @@ export function buildReleaseReviewEmail(input: {
   </div>
   <p style="margin:0;font-size:12px;line-height:1.55;color:#737373">${esc(copy.safety)}</p>
 </div>`;
-  const text = `${copy.heading}\n\n${copy.intro}\n\n${copy.summaryLabel}:\n${input.changeSummary}\n\n${copy.approve}: ${approveUrl}\n${copy.decline}: ${declineUrl}\n\n${copy.safety}`;
+  const text = `${copy.heading}\n\n${copy.intro}\n\n${copy.changeLabel}:\n${presentation.changeTitle}\n\n${copy.impactLabel}:\n${presentation.impact}\n\n${copy.actionLabel}:\n${presentation.salonAction}\n\n${copy.recommendationLabel}:\n${presentation.recommendation}\n\n${copy.approve}: ${approveUrl}\n${copy.decline}: ${declineUrl}\n\n${copy.safety}`;
   return { subject, html, text };
 }
 
