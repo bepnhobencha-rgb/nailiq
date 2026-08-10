@@ -11,6 +11,12 @@ import {
 
 let fx: ReceptionistCenterFixture;
 
+function shiftYmd(ymd: string, days: number): string {
+  const [year, month, day] = ymd.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  return date.toISOString().slice(0, 10);
+}
+
 test.beforeAll(async ({}, testInfo) => {
   fx = await seedReceptionistCenterFixture(rcSlug(testInfo.project.name));
 });
@@ -141,5 +147,62 @@ test.describe("Receptionist option-B shell", () => {
     await trigger.click();
     await page.getByTestId("shell-v2-calendar-menu-month").click();
     await expect(page.getByTestId("month-view")).toBeVisible();
+  });
+
+  test("compact desktop calendar menu stays above the timeline", async ({ page }) => {
+    await page.setViewportSize({ width: 1260, height: 500 });
+    await gotoReceptionistCenter(page, fx.slug, {
+      expectWalkinQueue: false,
+      shellV2: true,
+    });
+
+    await page.getByTestId("shell-v2-calendar-view-menu-trigger").click();
+    const month = page.getByTestId("shell-v2-calendar-menu-month");
+    await expect(page.getByTestId("shell-v2-calendar-menu-day")).toBeVisible();
+    await expect(page.getByTestId("shell-v2-calendar-menu-week")).toBeVisible();
+    await expect(month).toBeVisible();
+
+    const box = await month.boundingBox();
+    expect(box).not.toBeNull();
+    const topTestId = await page.evaluate(
+      ({ x, y }) =>
+        document
+          .elementFromPoint(x, y)
+          ?.closest<HTMLElement>("[data-testid]")
+          ?.dataset.testid ?? null,
+      { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 },
+    );
+    expect(topTestId).toBe("shell-v2-calendar-menu-month");
+
+    await month.click();
+    await expect(page.getByTestId("month-view")).toBeVisible();
+  });
+
+  test("a day outside yesterday today tomorrow has no false active shortcut", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await gotoReceptionistCenter(page, fx.slug, {
+      expectWalkinQueue: false,
+      shellV2: true,
+    });
+
+    await page.getByTestId("shell-v2-calendar-view-week").click();
+    await page.getByTestId("week-view-next").click();
+    await page
+      .getByTestId(`week-view-day-button-${shiftYmd(fx.ymdUtc, 7)}`)
+      .click();
+
+    await expect(page.getByTestId("staff-timeline-grid")).toBeVisible();
+    await expect(page.getByTestId("date-switcher-yesterday")).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+    await expect(page.getByTestId("date-switcher-today")).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+    await expect(page.getByTestId("date-switcher-tomorrow")).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
   });
 });

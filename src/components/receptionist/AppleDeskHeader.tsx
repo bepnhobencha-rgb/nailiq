@@ -28,12 +28,13 @@ import {
 } from "@/shared/dashboard/searchClientsAction";
 import { formatPhone } from "@/shared/lib/phoneFormat";
 import { cn } from "@/shared/lib/cn";
+import { localDateToYmd, ymdToLocalDate } from "@/shared/lib/localDateYmd";
 
 type AppleDeskHeaderProps = {
   slug: string;
   salonName: string;
   selectedDate: string;
-  selectedOffset: -1 | 0 | 1;
+  selectedOffset: -1 | 0 | 1 | null;
   viewMode: "day" | "week" | "month";
   connectionState: "connected" | "reconnecting" | "offline";
   language: "en" | "vi";
@@ -61,6 +62,12 @@ function dateLabel(ymd: string, language: "en" | "vi"): string {
     month: "long",
     day: "numeric",
   }).format(date);
+}
+
+function shiftYmd(ymd: string, days: number): string {
+  const date = ymdToLocalDate(ymd);
+  date.setDate(date.getDate() + days);
+  return localDateToYmd(date);
 }
 
 export function AppleDeskHeader({
@@ -125,7 +132,13 @@ export function AppleDeskHeader({
       >
         <button
           type="button"
-          onClick={() => onDateChange((selectedOffset - 1) as -1 | 0)}
+          onClick={() => {
+            if (selectedOffset === null) {
+              onSelectDate(shiftYmd(selectedDate, -1));
+              return;
+            }
+            onDateChange((selectedOffset - 1) as -1 | 0);
+          }}
           disabled={selectedOffset === -1}
           className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--rc-new-border)] text-[var(--rc-new-text)] transition hover:bg-[var(--rc-new-surface-subtle)] disabled:cursor-not-allowed disabled:opacity-35"
           aria-label={language === "vi" ? "Ngày trước" : "Previous day"}
@@ -209,7 +222,13 @@ export function AppleDeskHeader({
         </details>
         <button
           type="button"
-          onClick={() => onDateChange((selectedOffset + 1) as 0 | 1)}
+          onClick={() => {
+            if (selectedOffset === null) {
+              onSelectDate(shiftYmd(selectedDate, 1));
+              return;
+            }
+            onDateChange((selectedOffset + 1) as 0 | 1);
+          }}
           disabled={selectedOffset === 1}
           className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--rc-new-border)] text-[var(--rc-new-text)] transition hover:bg-[var(--rc-new-surface-subtle)] disabled:cursor-not-allowed disabled:opacity-35"
           aria-label={language === "vi" ? "Ngày sau" : "Next day"}

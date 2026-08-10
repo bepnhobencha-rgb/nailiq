@@ -572,7 +572,7 @@ function ReceptionistCenterInner({
     }
   }, [initialOk]);
 
-  const [dateOffset, setDateOffset] = useState<-1 | 0 | 1>(0);
+  const [dateOffset, setDateOffset] = useState<-1 | 0 | 1 | null>(0);
   const { receptionistInterface, setReceptionistInterface } =
     useReceptionistInterface();
   // Shell V2 deliberately reuses the stable Classic timeline. The stored
@@ -703,6 +703,7 @@ function ReceptionistCenterInner({
       const tomorrow = salonDateOffset(tz, 1, nowIso || undefined);
       if (data.selectedDate === yesterday) setDateOffset(-1);
       else if (data.selectedDate === tomorrow) setDateOffset(1);
+      else setDateOffset(null);
     }
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [data.salon.timezone, data.selectedDate, nowIso]);
@@ -3212,6 +3213,10 @@ function ReceptionistCenterInner({
           data-preview-header={previewInterface ? "true" : undefined}
           className={cn(
             "shrink-0 border-b border-nq-muted/20 px-[var(--pad-nq-section-mobile)] py-2.5 backdrop-blur-sm md:px-6 md:py-3",
+            // backdrop-filter creates a stacking context. Give Shell V2's
+            // header an explicit layer so Calendar/Create popovers render
+            // above the timeline instead of being painted underneath it.
+            receptionistShellV2Enabled && "relative z-30",
             previewInterface &&
               "md:hidden",
           )}
