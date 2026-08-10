@@ -34,6 +34,10 @@ async function expectCalmShell(page: Page, width: number, height: number) {
   await expect(shell).toHaveAttribute("data-receptionist-shell", "v2");
   await expect(shell).toHaveAttribute("data-receptionist-density", "pro");
   await expect(page.getByTestId("nailiq-suggestion-bar")).toBeVisible();
+  await expect(page.getByTestId("viewed-date-chip")).not.toContainText(
+    /\bToday\b/i,
+  );
+  await expect(page.getByTestId("date-switcher-today")).toBeVisible();
   await expect(page.getByTestId("nailiq-daily-brief-summary")).toHaveCount(0);
   await expect(page.getByTestId("receptionist-kpi-bar")).toHaveCount(0);
   await expect(page.getByTestId("receptionist-display-menu-trigger")).toHaveCount(0);
@@ -50,6 +54,18 @@ async function expectCalmShell(page: Page, width: number, height: number) {
   expect(box).not.toBeNull();
   expect(box!.width).toBeGreaterThanOrEqual(44);
   expect(box!.height).toBeGreaterThanOrEqual(44);
+
+  if (width >= 1280) {
+    await expect(page.getByTestId("shell-v2-calendar-view-tabs")).toBeVisible();
+    await expect(
+      page.getByTestId("shell-v2-calendar-view-menu-trigger"),
+    ).toBeHidden();
+  } else {
+    await expect(
+      page.getByTestId("shell-v2-calendar-view-menu-trigger"),
+    ).toBeVisible();
+    await expect(page.getByTestId("shell-v2-calendar-view-tabs")).toBeHidden();
+  }
 
   if (width >= 768) {
     const controlsBox = await page
@@ -90,5 +106,40 @@ test.describe("Receptionist option-B shell", () => {
 
   test("mobile keeps the vertical schedule and one create entry", async ({ page }) => {
     await expectCalmShell(page, 390, 844);
+  });
+
+  test("desktop exposes day, week, and month without display settings", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await gotoReceptionistCenter(page, fx.slug, {
+      expectWalkinQueue: false,
+      shellV2: true,
+    });
+
+    await page.getByTestId("shell-v2-calendar-view-week").click();
+    await expect(page.getByTestId("week-view")).toBeVisible();
+
+    await page.getByTestId("shell-v2-calendar-view-month").click();
+    await expect(page.getByTestId("month-view")).toBeVisible();
+
+    await page.getByTestId("shell-v2-calendar-view-day").click();
+    await expect(page.getByTestId("staff-timeline-grid")).toBeVisible();
+  });
+
+  test("iPad calendar menu switches to the month overview", async ({ page }) => {
+    await page.setViewportSize({ width: 820, height: 1180 });
+    await gotoReceptionistCenter(page, fx.slug, {
+      expectWalkinQueue: false,
+      shellV2: true,
+    });
+
+    const trigger = page.getByTestId("shell-v2-calendar-view-menu-trigger");
+    await expect(trigger).toBeVisible();
+    const triggerBox = await trigger.boundingBox();
+    expect(triggerBox).not.toBeNull();
+    expect(triggerBox!.height).toBeGreaterThanOrEqual(44);
+
+    await trigger.click();
+    await page.getByTestId("shell-v2-calendar-menu-month").click();
+    await expect(page.getByTestId("month-view")).toBeVisible();
   });
 });
