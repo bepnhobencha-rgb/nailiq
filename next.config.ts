@@ -163,6 +163,20 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // Nail Try-On is the only public surface that needs camera access.
+        // Browsers still require an explicit user permission prompt; keeping
+        // this route-specific avoids widening camera access across NailIQ.
+        // This rule must stay after the common rule so its same-name header
+        // overrides camera=() only for /:slug/try-on.
+        source: "/:slug/try-on",
+        headers: [
+          {
+            key: "Permissions-Policy",
+            value: "camera=(self), microphone=(), geolocation=()",
+          },
+        ],
+      },
     ];
   },
   async redirects() {
