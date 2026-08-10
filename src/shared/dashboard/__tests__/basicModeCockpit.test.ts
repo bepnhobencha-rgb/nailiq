@@ -41,10 +41,12 @@ const labels: CockpitLabels = {
   partyPendingCount: (time, n) => `party-count:${time}:${n}`,
   suggestWalkin: (name) => `suggest:${name}`,
   actionOpenQueue: "OpenQueue",
+  actionOpenWaitlist: "OpenWaitlist",
   actionAddWalkin: "+Walkin",
   actionOpenParty: "OpenParty",
   actionOpenBooking: "OpenBooking",
   alertOverdue: (n) => `a-overdue:${n}`,
+  alertOnlineWaitlist: (n, minutes) => `a-waitlist:${n}:${minutes}`,
   alertOverdueNamed: (name, time) => `a-overdue-named:${name}:${time}`,
   alertNotStarted: (n) => `a-notstarted:${n}`,
   alertNotStartedNamed: (name, time) => `a-notstarted-named:${name}:${time}`,
@@ -166,6 +168,21 @@ test("deterministic — same input twice yields identical output", () => {
 
 test("no alerts when all clear → empty + zero overflow", () => {
   assertEqual(computeCriticalAlerts(base, labels), { shown: [], overflowCount: 0 });
+});
+
+test("online waitlist is the top alert and opens the Waitlist panel", () => {
+  const r = computeCriticalAlerts(
+    {
+      ...base,
+      onlineWaitlistCount: 2,
+      onlineWaitlistOldestMinutes: 7,
+      overdueCount: 1,
+    },
+    labels,
+  );
+  assertEqual(r.shown[0]!.key, "online_waitlist");
+  assertEqual(r.shown[0]!.text, "a-waitlist:2:7");
+  assertEqual(r.shown[0]!.action?.target, "open_waitlist");
 });
 
 test("overdue + long-wait are the top two; rest overflow", () => {

@@ -65,6 +65,7 @@ export type BetaFeatureKey =
   | "admin_copilot"
   | "ai_control_center"
   | "receptionist_shell_v2"
+  | "waitlist_attention"
   | "nail_tryon"
   | "archived_booking_recovery";
 
@@ -333,6 +334,16 @@ export const RELEASE_FEATURES: Record<ReleaseFeatureKey, ReleaseFeatureDescripto
     source: { kind: "jsonb", flagKey: "receptionist_shell_v2_enabled" },
     description:
       "Calmer Front Desk shell with one create menu and one action center; the scheduling grid is unchanged.",
+  },
+  waitlist_attention: {
+    key: "waitlist_attention",
+    label: "Waitlist Attention Alerts",
+    group: "operations",
+    phase: "beta",
+    defaultOn: false,
+    source: { kind: "jsonb", flagKey: "waitlist_attention_enabled" },
+    description:
+      "Realtime Action Center alert and bounded sound reminder for unresolved online waitlist requests.",
   },
   nail_tryon: {
     key: "nail_tryon",

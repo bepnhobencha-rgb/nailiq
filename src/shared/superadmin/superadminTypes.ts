@@ -83,6 +83,14 @@ export const SUPERADMIN_PER_SALON_FLAGS: ReadonlyArray<SuperAdminFlagDescriptor>
     phase: "live",
   },
   {
+    key: "waitlist_attention_enabled",
+    group: "operations",
+    label: "Cảnh báo khách Waitlist",
+    description:
+      "Cảnh báo tức thời trong Action Center, phát âm báo ngắn và nhắc lại một lần nếu khách online chưa được mở xem.",
+    phase: "live",
+  },
+  {
     key: "archived_booking_recovery_enabled",
     group: "operations",
     label: "Tạo lịch mới từ lịch đã lưu trữ",

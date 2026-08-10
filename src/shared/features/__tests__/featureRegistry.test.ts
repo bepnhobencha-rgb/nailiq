@@ -150,7 +150,7 @@ test("every key's descriptor.key matches its map key", () => {
 
 test("registry has the expected Base/Beta inventory", () => {
   eq(BASE_FEATURE_KEYS.length, 10, "Base count");
-  eq(BETA_FEATURE_KEYS.length, 15, "Beta count");
+  eq(BETA_FEATURE_KEYS.length, 16, "Beta count");
   assert(
     BASE_FEATURE_KEYS.every((k) => RELEASE_FEATURES[k].defaultOn === true),
     "all Base defaultOn true",
@@ -167,6 +167,7 @@ test("mapped jsonb/column/plan keys match the known existing keys", () => {
     advanced_reports: "jsonb:reports_enabled",
     ai_control_center: "jsonb:ai_control_center_enabled",
     receptionist_shell_v2: "jsonb:receptionist_shell_v2_enabled",
+    waitlist_attention: "jsonb:waitlist_attention_enabled",
     nail_tryon: "jsonb:nail_tryon_enabled",
     archived_booking_recovery: "jsonb:archived_booking_recovery_enabled",
     ai_voice: "column:voice_ai_enabled",
@@ -304,6 +305,7 @@ test("isReleaseFeatureEditable true for every jsonb-sourced feature", () => {
     "admin_copilot",
     "ai_control_center",
     "receptionist_shell_v2",
+    "waitlist_attention",
     "nail_tryon",
     "archived_booking_recovery",
   ] as const;
@@ -312,7 +314,7 @@ test("isReleaseFeatureEditable true for every jsonb-sourced feature", () => {
   }
   // Count: only these mapped JSONB features are editable across the registry.
   const editableCount = RELEASE_FEATURE_KEYS.filter(isReleaseFeatureEditable).length;
-  eq(editableCount, 10, "exactly 10 editable features");
+  eq(editableCount, 11, "exactly 11 editable features");
 });
 
 test("isReleaseFeatureEditable false for column/plan/registry features", () => {
@@ -335,13 +337,18 @@ test("releaseFeatureEditableFlagKey maps each editable feature to its jsonb key"
     "archived_booking_recovery_enabled",
     "archived recovery key",
   );
+  eq(
+    releaseFeatureEditableFlagKey("waitlist_attention"),
+    "waitlist_attention_enabled",
+    "waitlist attention key",
+  );
   eq(releaseFeatureEditableFlagKey("ai_voice"), null, "column → null");
   eq(releaseFeatureEditableFlagKey("photos"), null, "plan → null");
   eq(releaseFeatureEditableFlagKey("combos"), null, "registry → null");
 });
 
 test("EDITABLE_RELEASE_FLAG_KEYS contains exactly the mapped jsonb keys", () => {
-  eq(EDITABLE_RELEASE_FLAG_KEYS.size, 10, "10 whitelisted keys");
+  eq(EDITABLE_RELEASE_FLAG_KEYS.size, 11, "11 whitelisted keys");
   for (const fk of [
     "receptionist_center_enabled",
     "walkin_queue_enabled",
@@ -351,6 +358,7 @@ test("EDITABLE_RELEASE_FLAG_KEYS contains exactly the mapped jsonb keys", () => 
     "admin_copilot_enabled",
     "ai_control_center_enabled",
     "receptionist_shell_v2_enabled",
+    "waitlist_attention_enabled",
     "nail_tryon_enabled",
     "archived_booking_recovery_enabled",
   ]) {
