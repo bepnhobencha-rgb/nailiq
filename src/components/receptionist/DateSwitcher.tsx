@@ -3,8 +3,8 @@
 import { cn } from "@/shared/lib/cn";
 
 export interface DateSwitcherProps {
-  /** Current selected offset from today: -1, 0, 1 */
-  selectedOffset: -1 | 0 | 1;
+  /** Current selected offset from today; null for any other calendar day. */
+  selectedOffset: -1 | 0 | 1 | null;
   /** Localized labels */
   labels: {
     yesterday: string;
