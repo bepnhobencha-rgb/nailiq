@@ -51,6 +51,8 @@ import {
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { salonToday } from "@/shared/lib/salonTime";
 import { hmToMinutes } from "@/shared/booking/hmToMinutes";
+import { computeBookingTiming } from "@/shared/booking/bookingTiming";
+import { evaluateControlledAfterHours } from "@/shared/booking/controlledAfterHours";
 import { GROUP_MAX_SIZE } from "@/shared/config/constants";
 import { MAX_WAVES } from "@/shared/booking/groupSchedulerCore";
 
@@ -170,9 +172,29 @@ const COPY = {
       monthly_booking_limit_reached: "You've hit your plan's booking limit.",
       duplicate_submission: "This group was already created.",
       unauthorized: "You don't have permission to create bookings.",
+      after_hours_not_allowed:
+        "Only an Owner or Admin can approve after-hours.",
+      specific_staff_required:
+        "Choose a specific staff member for every guest.",
+      staff_consent_required:
+        "Confirm consent from every selected staff member.",
+      after_hours_limit_exceeded:
+        "This party would finish more than 2 hours after close.",
+      outside_hours:
+        "This time is not eligible for a controlled after-hours exception.",
+      invalid_after_hours_override:
+        "This booking is already inside normal hours.",
       server_error: "Couldn't create the group. Try again.",
     } as Record<string, string>,
     submitFallback: "Couldn't create the group. Try again.",
+    afterHoursTitle: "Controlled after-hours group",
+    afterHoursBody:
+      "Owner/Admin only. Select a specific staff member for every guest and confirm that every selected staff member agreed. Service may finish up to 2 hours after close.",
+    afterHoursPickStaff:
+      "Select a specific staff member for every guest first.",
+    afterHoursConsent:
+      "I confirmed every selected staff member agreed to work after closing.",
+    createAfterHoursGroup: "Create approved after-hours group",
   },
   vi: {
     heading: "Tạo hẹn nhóm",
@@ -244,9 +266,24 @@ const COPY = {
       monthly_booking_limit_reached: "Đã đạt giới hạn lịch của gói hiện tại.",
       duplicate_submission: "Nhóm này đã được tạo.",
       unauthorized: "Bạn không có quyền tạo lịch.",
+      after_hours_not_allowed: "Chỉ Owner hoặc Admin được duyệt ngoài giờ.",
+      specific_staff_required: "Hãy chọn rõ thợ cho từng khách.",
+      staff_consent_required: "Hãy xác nhận tất cả thợ đã đồng ý.",
+      after_hours_limit_exceeded:
+        "Nhóm này sẽ kết thúc quá 2 giờ sau khi đóng cửa.",
+      outside_hours: "Giờ này không đủ điều kiện ngoại lệ ngoài giờ.",
+      invalid_after_hours_override:
+        "Lịch này vẫn nằm trong giờ hoạt động bình thường.",
       server_error: "Không tạo được nhóm. Thử lại.",
     } as Record<string, string>,
     submitFallback: "Không tạo được nhóm. Thử lại.",
+    afterHoursTitle: "Nhóm ngoài giờ có kiểm soát",
+    afterHoursBody:
+      "Chỉ Owner/Admin. Phải chọn rõ thợ cho từng khách và xác nhận tất cả thợ đã đồng ý. Dịch vụ được kết thúc tối đa 2 giờ sau khi tiệm đóng cửa.",
+    afterHoursPickStaff: "Trước tiên hãy chọn rõ thợ cho từng khách.",
+    afterHoursConsent:
+      "Tôi xác nhận tất cả thợ đã chọn đồng ý làm sau giờ đóng cửa.",
+    createAfterHoursGroup: "Tạo nhóm ngoài giờ đã duyệt",
   },
 } as const;
 
@@ -285,9 +322,12 @@ export default function DeskGroupForm({
   // Visual busy/free preview shown alongside the "Specific time" picker —
   // purely additive: a fetch failure just leaves this null and the native
   // time input above keeps working exactly as before.
-  const [dayTimeline, setDayTimeline] = useState<GroupDayTimelineResult | null>(null);
+  const [dayTimeline, setDayTimeline] = useState<GroupDayTimelineResult | null>(
+    null,
+  );
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [seatTogether, setSeatTogether] = useState(true);
+  const [afterHoursConsent, setAfterHoursConsent] = useState(false);
 
   const [scheduling, setScheduling] = useState(false);
   const [scheduleResult, setScheduleResult] =
@@ -347,6 +387,7 @@ export default function DeskGroupForm({
         return next;
       });
       setScheduleResult(null);
+      setAfterHoursConsent(false);
     },
     [maxSize],
   );
@@ -368,6 +409,7 @@ export default function DeskGroupForm({
       // Any member edit invalidates prior schedule results.
       setScheduleResult(null);
       setError(null);
+      setAfterHoursConsent(false);
     },
     [capability],
   );
@@ -390,16 +432,15 @@ export default function DeskGroupForm({
       // Offer to rebook the last group this lead organized (>= 2 members).
       void loadLastGroup(slug, phone).then((g) => {
         if (seq !== lookupSeq.current) return;
-        setLastGroup(
-          g.ok && g.found && g.memberCount >= 2 ? g.members : null,
-        );
+        setLastGroup(g.ok && g.found && g.memberCount >= 2 ? g.members : null);
       });
       const res = await lookupClientByPhone(slug, phone);
       if (seq !== lookupSeq.current) return;
       // A name to show only if the profile actually carries one (a known
       // customer can exist without a stored name, e.g. an old import). Don't
       // claim "đã điền sẵn" when we filled nothing.
-      const resolvedName = res.ok && res.found ? (res.profile.name ?? "").trim() : "";
+      const resolvedName =
+        res.ok && res.found ? (res.profile.name ?? "").trim() : "";
       if (res.ok && res.found && resolvedName) {
         const p = res.profile;
         setMembers((prev) => {
@@ -433,7 +474,10 @@ export default function DeskGroupForm({
   // receptionist just picks a date. Clamped to the per-salon size ceiling.
   const applyLastGroup = useCallback(() => {
     if (!lastGroup || lastGroup.length === 0) return;
-    const clamped = lastGroup.slice(0, Math.max(MIN_SIZE, Math.min(maxSize, lastGroup.length)));
+    const clamped = lastGroup.slice(
+      0,
+      Math.max(MIN_SIZE, Math.min(maxSize, lastGroup.length)),
+    );
     setSize(clamped.length);
     setMembers(
       clamped.map((m) => ({
@@ -444,6 +488,7 @@ export default function DeskGroupForm({
       })),
     );
     setScheduleResult(null);
+    setAfterHoursConsent(false);
     setError(null);
     setRebookMsg(tx.rebookDone);
   }, [lastGroup, maxSize, tx]);
@@ -494,6 +539,67 @@ export default function DeskGroupForm({
   const digits = phone.replace(/\D/g, "");
   const allServicesPicked = members.every((m) => !!m.serviceId);
   const arrivalOk = arrivalKind !== "specific" || specificTime.length > 0;
+  const everyMemberHasSpecificStaff = members.every(
+    (member) => member.preferredStaffId != null,
+  );
+
+  // UI preview only; the server repeats every rule with authoritative rows.
+  // This tells management whether the exact requested time is genuinely an
+  // after-hours case (rather than merely a busy in-hours slot).
+  const controlledAfterHoursEligible = useMemo(() => {
+    if (
+      !data?.canBookAfterHours ||
+      arrivalKind !== "specific" ||
+      !specificTime ||
+      !ymd ||
+      !allServicesPicked
+    ) {
+      return false;
+    }
+    const startMinutes = hmToMinutes(specificTime);
+    if (!Number.isFinite(startMinutes)) return false;
+    let hasAfterHoursMember = false;
+    for (const member of members) {
+      const service = data.services.find(
+        (item) => item.id === member.serviceId,
+      );
+      if (!service) return false;
+      const addOns = member.addonServiceIds.flatMap((id) => {
+        const addOn = data.addOns.find((item) => item.id === id);
+        return addOn
+          ? [
+              {
+                durationMinutes: addOn.durationMinutes,
+                bufferMinutes: addOn.bufferMinutes,
+                concurrent: addOn.addonConcurrent,
+              },
+            ]
+          : [];
+      });
+      const timing = computeBookingTiming(
+        {
+          durationMinutes: service.durationMinutes,
+          bufferMinutes: service.bufferMinutes,
+        },
+        addOns,
+      );
+      const evaluation = evaluateControlledAfterHours({
+        openingHoursRaw: data.salon.opening_hours,
+        bookingClosedDatesRaw: data.salon.booking_closed_dates,
+        dateYmd: ymd,
+        startMinutes,
+        serviceCompletionMinutes: timing.serviceCompletionMinutes,
+      });
+      if (evaluation.ok) hasAfterHoursMember = true;
+      else if (evaluation.reason !== "inside_hours") return false;
+    }
+    return hasAfterHoursMember;
+  }, [data, arrivalKind, specificTime, ymd, allServicesPicked, members]);
+
+  const showControlledAfterHours =
+    controlledAfterHoursEligible &&
+    scheduleResult?.ok === false &&
+    scheduleResult.reason === "no_slots";
 
   // ── Find times ─────────────────────────────────────────────────
   const runScheduler = useCallback(async () => {
@@ -543,7 +649,11 @@ export default function DeskGroupForm({
   const memberServicesKey = useMemo(
     () =>
       JSON.stringify(
-        members.map((m) => [m.serviceId, m.addonServiceIds, m.preferredStaffId]),
+        members.map((m) => [
+          m.serviceId,
+          m.addonServiceIds,
+          m.preferredStaffId,
+        ]),
       ),
     [members],
   );
@@ -583,12 +693,15 @@ export default function DeskGroupForm({
   // ── Create group ───────────────────────────────────────────────
   const createGroup = useCallback(async () => {
     if (submitting) return;
-    if (
-      !scheduleResult ||
-      !scheduleResult.ok ||
-      !scheduleResult.arrangements[selectedIdx] ||
-      !data
-    ) {
+    const usingControlledAfterHours =
+      showControlledAfterHours &&
+      everyMemberHasSpecificStaff &&
+      afterHoursConsent;
+    const selectedArrangement =
+      scheduleResult?.ok === true
+        ? scheduleResult.arrangements[selectedIdx]
+        : null;
+    if ((!selectedArrangement && !usingControlledAfterHours) || !data) {
       return;
     }
     if (digits.length < 10) {
@@ -598,44 +711,56 @@ export default function DeskGroupForm({
     setError(null);
     setSubmitting(true);
     try {
-      const arr = scheduleResult.arrangements[selectedIdx];
       const timezone = data.salon.timezone;
       // Map each assignment → salon-local "HH:MM" (24h). The scheduler returns
       // UTC ISO; submitGroupBooking expects salon-local time. Convert via Intl
       // in the salon timezone so DST is handled correctly. (Mirrors
       // BookingGroupFlow.tsx onSubmit exactly.)
-      const payload: GroupBookingMember[] = arr.assignments
-        .slice()
-        .sort((a, b) => a.memberIndex - b.memberIndex)
-        .map((a) => {
-          const draft = members[a.memberIndex];
-          const parts = new Intl.DateTimeFormat("en-US", {
-            timeZone: timezone,
-            hour: "2-digit",
-            minute: "2-digit",
-            hourCycle: "h23",
-          }).formatToParts(new Date(a.startUtcIso));
-          const hh = parts.find((p) => p.type === "hour")?.value ?? "00";
-          const mm = parts.find((p) => p.type === "minute")?.value ?? "00";
-          const time24 = `${hh}:${mm}`;
-          // Identity Layer: only the lead/đại diện (member 0) carries the
-          // contact phone+email. Other guests have no contact of their own, so
-          // they go in with an empty phone and the server marks them
-          // is_party_member — instead of copying the lead's number onto every
-          // row (the root cause of one phone fanning out into many names).
-          const isLead = a.memberIndex === 0;
-          return {
-            name: draft?.name.trim() || tx.namePlaceholder(a.memberIndex + 1),
-            phone: isLead ? phone : "",
-            email: isLead ? email.trim() || undefined : undefined,
-            serviceId: draft?.serviceId ?? "",
-            staffId: a.staffId,
+      const payload: GroupBookingMember[] = usingControlledAfterHours
+        ? members.map((draft, memberIndex) => ({
+            name: draft.name.trim() || tx.namePlaceholder(memberIndex + 1),
+            phone: memberIndex === 0 ? phone : "",
+            email: memberIndex === 0 ? email.trim() || undefined : undefined,
+            serviceId: draft.serviceId,
+            staffId: draft.preferredStaffId!,
             date: ymd,
-            time: time24,
-            waveNumber: a.waveNumber,
-            addonServiceIds: draft?.addonServiceIds ?? [],
-          };
-        });
+            time: specificTime,
+            waveNumber: 1,
+            addonServiceIds: draft.addonServiceIds,
+          }))
+        : selectedArrangement!.assignments
+            .slice()
+            .sort((a, b) => a.memberIndex - b.memberIndex)
+            .map((a) => {
+              const draft = members[a.memberIndex];
+              const parts = new Intl.DateTimeFormat("en-US", {
+                timeZone: timezone,
+                hour: "2-digit",
+                minute: "2-digit",
+                hourCycle: "h23",
+              }).formatToParts(new Date(a.startUtcIso));
+              const hh = parts.find((p) => p.type === "hour")?.value ?? "00";
+              const mm = parts.find((p) => p.type === "minute")?.value ?? "00";
+              const time24 = `${hh}:${mm}`;
+              // Identity Layer: only the lead/đại diện (member 0) carries the
+              // contact phone+email. Other guests have no contact of their own, so
+              // they go in with an empty phone and the server marks them
+              // is_party_member — instead of copying the lead's number onto every
+              // row (the root cause of one phone fanning out into many names).
+              const isLead = a.memberIndex === 0;
+              return {
+                name:
+                  draft?.name.trim() || tx.namePlaceholder(a.memberIndex + 1),
+                phone: isLead ? phone : "",
+                email: isLead ? email.trim() || undefined : undefined,
+                serviceId: draft?.serviceId ?? "",
+                staffId: a.staffId,
+                date: ymd,
+                time: time24,
+                waveNumber: a.waveNumber,
+                addonServiceIds: draft?.addonServiceIds ?? [],
+              };
+            });
 
       // Desk wrapper: enforces receptionist auth + mints the OTP session
       // server-side when the salon requires phone-OTP (the receptionist vouches
@@ -646,6 +771,9 @@ export default function DeskGroupForm({
         seatTogether,
         language,
         idempotencyKey: crypto.randomUUID(),
+        ...(usingControlledAfterHours
+          ? { afterHoursOverride: { staffConsentConfirmed: true } }
+          : {}),
       });
       if (res.ok) {
         onCreated();
@@ -664,11 +792,15 @@ export default function DeskGroupForm({
     scheduleResult,
     selectedIdx,
     data,
+    showControlledAfterHours,
+    everyMemberHasSpecificStaff,
+    afterHoursConsent,
     digits.length,
     members,
     phone,
     email,
     ymd,
+    specificTime,
     salonId,
     seatTogether,
     language,
@@ -688,7 +820,8 @@ export default function DeskGroupForm({
         : "bg-nq-surface text-nq-foreground hover:bg-nq-primary/15 border border-nq-muted/25"
     }`;
   const tickCls = (active: boolean, feasible: boolean) => {
-    if (active) return "min-h-11 rounded-md bg-nq-primary px-1.5 py-1.5 text-xs font-medium text-white transition";
+    if (active)
+      return "min-h-11 rounded-md bg-nq-primary px-1.5 py-1.5 text-xs font-medium text-white transition";
     if (!feasible)
       return "min-h-11 cursor-not-allowed rounded-md border border-nq-muted/15 bg-nq-surface/40 px-1.5 py-1.5 text-xs text-nq-muted/50 line-through transition";
     return "min-h-11 rounded-md border border-nq-muted/25 bg-nq-surface px-1.5 py-1.5 text-xs text-nq-foreground transition hover:bg-nq-primary/15";
@@ -798,7 +931,9 @@ export default function DeskGroupForm({
                           </button>
                         ) : null}
                         {rebookMsg ? (
-                          <p className="mt-1 text-[11px] text-nq-muted">{rebookMsg}</p>
+                          <p className="mt-1 text-[11px] text-nq-muted">
+                            {rebookMsg}
+                          </p>
                         ) : null}
                       </div>
                     ) : null}
@@ -910,6 +1045,7 @@ export default function DeskGroupForm({
                   onChange={(e) => {
                     setYmd(e.target.value);
                     setScheduleResult(null);
+                    setAfterHoursConsent(false);
                   }}
                 />
               </div>
@@ -930,6 +1066,7 @@ export default function DeskGroupForm({
                       onClick={() => {
                         setArrivalKind(kind);
                         setScheduleResult(null);
+                        setAfterHoursConsent(false);
                       }}
                       className={pillCls(arrivalKind === kind)}
                     >
@@ -947,6 +1084,7 @@ export default function DeskGroupForm({
                       onChange={(e) => {
                         setSpecificTime(e.target.value);
                         setScheduleResult(null);
+                        setAfterHoursConsent(false);
                       }}
                     />
                     {timelineLoading ? (
@@ -962,13 +1100,15 @@ export default function DeskGroupForm({
                       <div className="mt-2 space-y-2">
                         {(["morning", "afternoon", "evening"] as const).map(
                           (section) => {
-                            const sectionTicks = dayTimeline.ticks.filter((t) => {
-                              const mins = hmToMinutes(t.time);
-                              if (section === "morning") return mins < 720;
-                              if (section === "afternoon")
-                                return mins >= 720 && mins < 1020;
-                              return mins >= 1020;
-                            });
+                            const sectionTicks = dayTimeline.ticks.filter(
+                              (t) => {
+                                const mins = hmToMinutes(t.time);
+                                if (section === "morning") return mins < 720;
+                                if (section === "afternoon")
+                                  return mins >= 720 && mins < 1020;
+                                return mins >= 1020;
+                              },
+                            );
                             if (sectionTicks.length === 0) return null;
                             return (
                               <div key={section}>
@@ -981,10 +1121,15 @@ export default function DeskGroupForm({
                                       key={t.time}
                                       type="button"
                                       disabled={!t.feasible}
-                                      title={!t.feasible ? tx.timelineBusy : undefined}
+                                      title={
+                                        !t.feasible
+                                          ? tx.timelineBusy
+                                          : undefined
+                                      }
                                       onClick={() => {
                                         setSpecificTime(t.time);
                                         setScheduleResult(null);
+                                        setAfterHoursConsent(false);
                                       }}
                                       className={tickCls(
                                         specificTime === t.time,
@@ -1051,6 +1196,37 @@ export default function DeskGroupForm({
               </div>
             ) : null}
 
+            {showControlledAfterHours ? (
+              <div
+                data-testid="controlled-group-after-hours"
+                className="rounded-lg border border-amber-400/50 bg-amber-400/10 p-3"
+              >
+                <p className="text-sm font-semibold text-nq-foreground">
+                  🌙 {tx.afterHoursTitle}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-nq-muted">
+                  {tx.afterHoursBody}
+                </p>
+                {!everyMemberHasSpecificStaff ? (
+                  <p className="mt-2 text-xs font-medium text-amber-300">
+                    {tx.afterHoursPickStaff}
+                  </p>
+                ) : (
+                  <label className="mt-3 flex cursor-pointer items-start gap-2 text-xs leading-5 text-nq-foreground">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 accent-nq-primary"
+                      checked={afterHoursConsent}
+                      onChange={(event) =>
+                        setAfterHoursConsent(event.target.checked)
+                      }
+                    />
+                    {tx.afterHoursConsent}
+                  </label>
+                )}
+              </div>
+            ) : null}
+
             {arrangements.length > 0 ? (
               <div>
                 <p className={labelCls}>{tx.chooseArrangement}</p>
@@ -1107,14 +1283,23 @@ export default function DeskGroupForm({
 
             {error ? <p className="text-xs text-nq-error">{error}</p> : null}
 
-            {arrangements.length > 0 ? (
+            {arrangements.length > 0 || showControlledAfterHours ? (
               <button
                 type="button"
-                disabled={submitting || digits.length < 10}
+                disabled={
+                  submitting ||
+                  digits.length < 10 ||
+                  (showControlledAfterHours &&
+                    (!everyMemberHasSpecificStaff || !afterHoursConsent))
+                }
                 onClick={() => void createGroup()}
                 className="w-full rounded-md bg-nq-primary py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {submitting ? tx.creating : tx.createGroup}
+                {submitting
+                  ? tx.creating
+                  : showControlledAfterHours
+                    ? tx.createAfterHoursGroup
+                    : tx.createGroup}
               </button>
             ) : null}
           </div>
