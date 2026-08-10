@@ -59,6 +59,7 @@ import {
 import { ConnectionBanner, type ConnectionState } from "./ConnectionBanner";
 import { DateSwitcher } from "./DateSwitcher";
 import { ViewedDateChip } from "./ViewedDateChip";
+import { CalendarViewModeControl } from "./CalendarViewModeControl";
 import { DensitySlider } from "./DensitySlider";
 import { KPIBar } from "./KPIBar";
 import { BasicCockpit } from "./BasicCockpit";
@@ -678,6 +679,18 @@ function ReceptionistCenterInner({
     [initialOk.observedAtIso, initialOk.salon.timezone],
   );
   const [monthFirstYmd, setMonthFirstYmd] = useState(initialMonthFirstYmd);
+
+  const onCalendarViewModeChange = useCallback(
+    (next: "day" | "week" | "month") => {
+      if (next === "week") {
+        setWeekMondayYmd(mondayYmdOf(data.selectedDate));
+      } else if (next === "month") {
+        setMonthFirstYmd(firstOfMonth(data.selectedDate));
+      }
+      onChangeViewMode(next);
+    },
+    [data.selectedDate, onChangeViewMode],
+  );
 
   useEffect(() => {
     const tz = data.salon.timezone;
@@ -3178,14 +3191,7 @@ function ReceptionistCenterInner({
             }
             onDateChange={(next) => void onDateSwitchChange(next)}
             onSelectDate={(ymd) => void navigateToYmd(ymd)}
-            onViewModeChange={(next) => {
-              if (next === "week") {
-                setWeekMondayYmd(mondayYmdOf(data.selectedDate));
-              } else if (next === "month") {
-                setMonthFirstYmd(firstOfMonth(data.selectedDate));
-              }
-              onChangeViewMode(next);
-            }}
+            onViewModeChange={onCalendarViewModeChange}
             onSelectClient={(client) => {
               setDeskPrefill({
                 ymd: data.selectedDate,
@@ -3259,10 +3265,18 @@ function ReceptionistCenterInner({
               )}
             >
               {receptionistShellV2Enabled ? (
-                <UserLanguageToggle
-                  language={language}
-                  onLanguageChange={setLanguage}
-                />
+                <>
+                  <UserLanguageToggle
+                    language={language}
+                    onLanguageChange={setLanguage}
+                  />
+                  <CalendarViewModeControl
+                    value={viewMode}
+                    labels={rcMessages.viewMode}
+                    language={language === "vi" ? "vi" : "en"}
+                    onChange={onCalendarViewModeChange}
+                  />
+                </>
               ) : (
                 <ReceptionistDisplayMenu
                   language={language === "vi" ? "vi" : "en"}
@@ -3465,7 +3479,7 @@ function ReceptionistCenterInner({
                   Basic Mode is a front-desk "today" view — the
                   Day/Week/Month toggle is hidden there (Yesterday/Today/
                   Tomorrow remains). Balanced/Advanced keep the toggle. */}
-              {basicModeActive ? null : (
+              {receptionistShellV2Enabled || basicModeActive ? null : (
                 <div
                   role="tablist"
                   aria-label={rcMessages.viewMode.ariaLabel}
@@ -3485,7 +3499,7 @@ function ReceptionistCenterInner({
                         role="tab"
                         aria-selected={active}
                         data-testid={`view-mode-${mode}`}
-                        onClick={() => onChangeViewMode(mode)}
+                        onClick={() => onCalendarViewModeChange(mode)}
                         className={cn(
                           "px-2.5 py-1 transition-colors",
                           active

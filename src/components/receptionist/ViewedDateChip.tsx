@@ -36,8 +36,6 @@ export function ViewedDateChip({
     month: "long",
     year: "numeric",
   }).format(date);
-  const todayLabel = language === "vi" ? "Hôm nay" : "Today";
-
   return (
     <div className="flex shrink-0 items-center gap-2.5" data-testid="viewed-date-chip">
       {/* Calendar tear-off tile */}
@@ -60,11 +58,6 @@ export function ViewedDateChip({
       <div className="min-w-0">
         <p className="flex items-center gap-1.5 text-sm font-semibold capitalize text-nq-foreground">
           <span className="truncate">{weekday}</span>
-          {isToday ? (
-            <span className="shrink-0 rounded-full bg-nq-primary/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-nq-primary">
-              {todayLabel}
-            </span>
-          ) : null}
         </p>
         <p className="truncate text-xs text-nq-muted">{full}</p>
       </div>
