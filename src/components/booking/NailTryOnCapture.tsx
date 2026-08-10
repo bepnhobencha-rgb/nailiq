@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, Check, ImagePlus, RotateCcw, ShieldCheck } from "lucide-react";
 import {
   evaluateClientImageQuality,
   inspectPixels,
   type ClientQualityCode,
 } from "@/shared/nailTryOn/imageQuality";
+import {
+  cameraStartMessage,
+  REAR_CAMERA_CONSTRAINTS,
+  stopMediaStream,
+} from "@/shared/nailTryOn/camera";
 import { DEFAULT_NAIL_CONFIGURATION, type NailConfiguration } from "@/shared/nailTryOn/configurator";
 import {
   fetchNailTryOn,
@@ -37,6 +42,7 @@ type Props = {
 };
 
 type CatalogDesign = { id: string; name: string; description: string | null; previewUrl: string | null };
+type CameraState = "idle" | "starting" | "live" | "fallback";
 const LENGTHS: Array<{ value: NailConfiguration["length"]; label: string }> = [
   { value: "natural", label: "Natural" }, { value: "x_short", label: "X-Short" }, { value: "short", label: "Short" }, { value: "medium", label: "Medium" }, { value: "long", label: "Long" }, { value: "extra_long", label: "X-Long" }, { value: "xx_long", label: "XX-Long" },
 ];
@@ -80,12 +86,32 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deletionMessage, setDeletionMessage] = useState<string | null>(null);
+  const [cameraState, setCameraState] = useState<CameraState>("idle");
+  const [cameraMessage, setCameraMessage] = useState<string | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const libraryInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const cameraRequestRef = useRef(0);
+
+  const stopCamera = useCallback(() => {
+    cameraRequestRef.current += 1;
+    stopMediaStream(cameraStreamRef.current);
+    cameraStreamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+  }, []);
 
   useEffect(() => () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
   }, [previewUrl]);
+
+  useEffect(() => {
+    window.addEventListener("pagehide", stopCamera);
+    return () => {
+      window.removeEventListener("pagehide", stopCamera);
+      stopCamera();
+    };
+  }, [stopCamera]);
 
   useEffect(() => {
     if (!busy || step !== "result") return;
@@ -94,6 +120,9 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
   }, [busy, step]);
 
   async function inspect(file: File) {
+    stopCamera();
+    setCameraState("idle");
+    setCameraMessage(null);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     const url = URL.createObjectURL(file);
     setPreviewUrl(url);
@@ -129,6 +158,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
   }
 
   function reset() {
+    stopCamera();
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     setQuality(null);
@@ -136,8 +166,67 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
     setPhoto(null);
     setServerMessage(null);
     setServerWarning(null);
+    setCameraState("idle");
+    setCameraMessage(null);
     if (cameraInputRef.current) cameraInputRef.current.value = "";
     if (libraryInputRef.current) libraryInputRef.current.value = "";
+  }
+
+  async function startLiveCamera() {
+    stopCamera();
+    setCameraMessage(null);
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraState("fallback");
+      setCameraMessage("Live camera is not available here. Use your device camera or choose a photo. / Không thể mở camera trực tiếp tại đây. Hãy dùng camera thiết bị hoặc chọn ảnh.");
+      return;
+    }
+
+    const requestId = cameraRequestRef.current;
+    setCameraState("starting");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(REAR_CAMERA_CONSTRAINTS);
+      if (requestId !== cameraRequestRef.current) {
+        stopMediaStream(stream);
+        return;
+      }
+
+      cameraStreamRef.current = stream;
+      if (!videoRef.current) throw new Error("camera_preview_unavailable");
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+      setCameraState("live");
+    } catch (error) {
+      stopCamera();
+      setCameraState("fallback");
+      setCameraMessage(cameraStartMessage(error));
+    }
+  }
+
+  async function captureLivePhoto() {
+    const video = videoRef.current;
+    if (!video || video.videoWidth < 1 || video.videoHeight < 1) {
+      setCameraMessage("The camera is still starting. Please wait a moment and try again. / Camera đang khởi động. Vui lòng chờ một chút rồi thử lại.");
+      return;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      setCameraMessage("We could not capture this frame. Please choose a photo instead. / Chưa thể chụp ảnh này. Vui lòng chọn ảnh có sẵn.");
+      return;
+    }
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    if (!blob) {
+      setCameraMessage("We could not capture this frame. Please choose a photo instead. / Chưa thể chụp ảnh này. Vui lòng chọn ảnh có sẵn.");
+      return;
+    }
+
+    const file = new File([blob], `nail-tryon-${Date.now()}.jpg`, { type: "image/jpeg" });
+    await inspect(file);
   }
 
   async function deleteUploadedPhoto() {
@@ -307,23 +396,60 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
           {!previewUrl ? (
             <div className="p-5 sm:p-7">
               <div className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-3xl bg-neutral-950 text-white">
-                <div className="absolute inset-7 rounded-[40%] border-2 border-dashed border-white/50" />
-                <div className="relative text-center">
-                  <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border border-white/20 bg-white/10"><Camera className="h-9 w-9" aria-hidden /></div>
-                  <p className="mt-4 text-sm font-medium">Place one hand inside the guide</p>
-                </div>
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  aria-label="Live rear-camera preview"
+                  className={`absolute inset-0 h-full w-full object-cover ${cameraState === "live" ? "block" : "hidden"}`}
+                />
+                <div className="pointer-events-none absolute inset-7 rounded-[40%] border-2 border-dashed border-white/70 shadow-[0_0_0_999px_rgba(0,0,0,0.2)]" />
+                {cameraState === "live" ? (
+                  <div className="absolute inset-x-0 bottom-4 z-10 flex flex-col items-center gap-2 px-4">
+                    <p className="rounded-full bg-black/70 px-4 py-2 text-center text-xs font-medium">One hand, palm down, five nails visible / Một bàn tay, úp xuống, thấy đủ năm móng</p>
+                    <button
+                      type="button"
+                      onClick={() => void captureLivePhoto()}
+                      className="flex min-h-14 min-w-14 items-center justify-center rounded-full border-4 border-white bg-white/25 shadow-lg outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-white"
+                      aria-label="Capture hand photo / Chụp ảnh bàn tay"
+                    >
+                      <span className="h-10 w-10 rounded-full bg-white" aria-hidden />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={cameraState === "starting"}
+                    onClick={() => void startLiveCamera()}
+                    className="relative z-10 flex min-h-44 w-full flex-col items-center justify-center px-6 text-center outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white disabled:cursor-wait"
+                  >
+                    <span className="flex h-20 w-20 items-center justify-center rounded-full border border-white/30 bg-white/10"><Camera className="h-9 w-9" aria-hidden /></span>
+                    <span className="mt-4 text-sm font-semibold">{cameraState === "starting" ? "Opening camera… / Đang mở camera…" : "Tap to open camera / Chạm để mở camera"}</span>
+                    <span className="mt-1 text-xs text-white/70">Place one hand inside the guide / Đặt một bàn tay trong khung</span>
+                  </button>
+                )}
               </div>
+              {cameraMessage ? <p className="mt-3 rounded-2xl bg-amber-50 p-4 text-sm text-amber-950" role="alert">{cameraMessage}</p> : null}
               <ul className="mt-5 grid grid-cols-2 gap-2 text-xs text-neutral-600">
-                {["Palm down", "Five nails visible", "Soft, even light", "No motion blur"].map((item) => <li key={item} className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-600" aria-hidden />{item}</li>)}
+                {["Palm down / Úp bàn tay", "Five nails visible / Thấy đủ 5 móng", "Soft, even light / Ánh sáng đều", "Hold still / Giữ yên"].map((item) => <li key={item} className="flex items-center gap-2"><Check className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />{item}</li>)}
               </ul>
               <div className="mt-6 grid gap-3 sm:grid-cols-2">
                 <button
                   type="button"
-                  onClick={() => cameraInputRef.current?.click()}
+                  onClick={() => {
+                    if (cameraState === "live") {
+                      stopCamera();
+                      setCameraState("idle");
+                      setCameraMessage(null);
+                      return;
+                    }
+                    void startLiveCamera();
+                  }}
                   className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-neutral-950 px-5 font-semibold text-white"
                 >
                   <Camera className="h-5 w-5" aria-hidden />
-                  Take photo / Chụp ảnh
+                  {cameraState === "live" ? "Close camera / Tắt camera" : "Open camera / Mở camera"}
                 </button>
                 <button
                   type="button"
@@ -334,9 +460,18 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor }: Props) {
                   Choose photo / Chọn ảnh
                 </button>
               </div>
+              {cameraState === "fallback" ? (
+                <button
+                  type="button"
+                  onClick={() => cameraInputRef.current?.click()}
+                  className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-neutral-300 bg-neutral-50 px-5 font-semibold text-neutral-900"
+                >
+                  <Camera className="h-5 w-5" aria-hidden />
+                  Use device camera / Dùng camera thiết bị
+                </button>
+              ) : null}
               <p className="mt-3 text-center text-xs leading-5 text-neutral-500">
-                On a phone, “Take photo” opens the rear camera. If camera access
-                is unavailable, choose an existing photo instead.
+                Camera access starts only after you tap. It stops immediately after capture or when you leave. / Camera chỉ mở khi bạn chạm và sẽ tắt ngay sau khi chụp hoặc rời trang.
               </p>
             </div>
           ) : (
