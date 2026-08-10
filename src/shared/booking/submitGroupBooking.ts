@@ -7,17 +7,15 @@ import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit
 import { stampGroupBookingIdentity } from "@/shared/booking/groupBookingSideEffects";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
-import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
+import { computeBookingTiming } from "@/shared/booking/bookingTiming";
+import { checkGroupWithinOpeningHours } from "@/shared/booking/groupBookingHoursPolicy";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { salonDayRangeUtc, salonToday, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
 import { createPublicClient } from "@/shared/lib/supabase/publicClient";
-import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
-import { hmToMinutes } from "@/shared/booking/hmToMinutes";
-import { dayKeyFromLocalDate } from "@/shared/booking/dayKeyFromDate";
 
 /**
  * Group booking submission — 2–4 friends/family booking together.
@@ -424,17 +422,24 @@ export async function submitGroupBooking(
     buffer: number;
     priceCents: number | null;
   }>();
-  // addonById: is_addon rows only — block + priceCents + concurrent flag.
-  type AddonInfo = { block: number; priceCents: number | null; concurrent: boolean };
+  // addonById: is_addon rows only. Keep the timing segments separate so the
+  // same closing-boundary model used by individual bookings can determine
+  // customer service completion (excluding only the final cleanup buffer).
+  type AddonInfo = {
+    duration: number;
+    buffer: number;
+    priceCents: number | null;
+    concurrent: boolean;
+  };
   const addonById = new Map<string, AddonInfo>();
 
   for (const s of services ?? []) {
     const sTyped = s as typeof s & { is_addon?: unknown; addon_timing?: unknown };
     const isAddon = sTyped.is_addon === true;
     if (isAddon) {
-      const block = serviceBlockMinutes(s.duration_minutes, s.buffer_minutes);
       addonById.set(String(s.id), {
-        block,
+        duration: Number(s.duration_minutes) || 0,
+        buffer: Number(s.buffer_minutes) || 0,
         priceCents: s.price_cents != null ? Number(s.price_cents) : null,
         concurrent: sTyped.addon_timing === "concurrent",
       });
@@ -504,10 +509,10 @@ export async function submitGroupBooking(
     endUtcIso: string;
     startMs: number;
     endMs: number;
-    durationMin: number;
-    bufferMin: number;
+    serviceCompletionMin: number;
     priceCents: number | null;
     addonPriceCents: number | null;
+    addonIds: string[];
     /** First add-on id for the legacy addon_service_id column. */
     firstAddonId: string | null;
   };
@@ -517,26 +522,39 @@ export async function submitGroupBooking(
 
     // Add-on resolution: sum sequential block minutes + prices.
     // Invalid / non-is_addon IDs are silently skipped (don't hard-fail).
-    let addonBlockMin = 0;
     let addonPriceCentsSum = 0;
     let hasAddonPrice = false;
     let firstAddonId: string | null = null;
+    const addonIds: string[] = [];
+    const addonTimingSegments: {
+      durationMinutes: number;
+      bufferMinutes: number;
+      concurrent: boolean;
+    }[] = [];
     for (const aid of m.addonServiceIds ?? []) {
       const addon = addonById.get(aid);
       if (!addon) continue; // not is_addon for this salon — skip
       if (firstAddonId === null) firstAddonId = aid;
-      if (!addon.concurrent) addonBlockMin += addon.block;
+      addonIds.push(aid);
+      addonTimingSegments.push({
+        durationMinutes: addon.duration,
+        bufferMinutes: addon.buffer,
+        concurrent: addon.concurrent,
+      });
       if (addon.priceCents != null) {
         addonPriceCentsSum += addon.priceCents;
         hasAddonPrice = true;
       }
     }
 
-    const totalMin = svc.duration + svc.buffer + addonBlockMin;
+    const timing = computeBookingTiming(
+      { durationMinutes: svc.duration, bufferMinutes: svc.buffer },
+      addonTimingSegments,
+    );
     const startMinutes = parseHmToMinutes(m.time)!;
     const startUtcIso = salonWallTimeToUtcIso(m.date, startMinutes, timezone);
     const startMs = Date.parse(startUtcIso);
-    const endMs = startMs + totalMin * 60_000;
+    const endMs = startMs + timing.blockMinutes * 60_000;
 
     // Preserve null price semantics (same as loadGroupSmartSchedule).
     const basePriceCents = svc.priceCents;
@@ -551,10 +569,10 @@ export async function submitGroupBooking(
       endUtcIso: new Date(endMs).toISOString(),
       startMs,
       endMs,
-      durationMin: svc.duration,
-      bufferMin: svc.buffer,
+      serviceCompletionMin: timing.serviceCompletionMinutes,
       priceCents: effectivePriceCents,
       addonPriceCents: hasAddonPrice ? addonPriceCentsSum : null,
+      addonIds,
       firstAddonId,
     });
   }
@@ -562,26 +580,18 @@ export async function submitGroupBooking(
   // 5.5. Opening-hours guard — each member's slot must fall within the
   // salon's open window. The group scheduler enforces this on the read
   // path, but a crafted payload could bypass it entirely.
-  const openingWeek = parseOpeningHours(salonRow.opening_hours);
-  if (openingWeek) {
-    for (let i = 0; i < resolved.length; i++) {
-      const r = resolved[i];
-      const [y, mo, d] = r.member.date.split("-").map(Number);
-      const localDate = new Date(y!, (mo ?? 1) - 1, d ?? 1);
-      const dayKey = dayKeyFromLocalDate(localDate);
-      const dayHours = dayKey ? openingWeek[dayKey] : null;
-      if (!dayHours || dayHours.closed) return fail("salon_closed_day");
-      const openM = hmToMinutes(dayHours.open);
-      const closeM = hmToMinutes(dayHours.close);
-      if (openM === null || closeM === null) continue;
-      const startM = parseHmToMinutes(r.member.time)!;
-      // Only the SERVICE must finish by close; the trailing buffer (reset gap
-      // for the next booking) may run past close for the last appointment.
-      const serviceEndM = startM + r.durationMin;
-      if (startM < openM || serviceEndM > closeM) {
-        return fail("invalid_time", i + 1);
-      }
-    }
+  const hoursCheck = checkGroupWithinOpeningHours({
+    openingHoursRaw: salonRow.opening_hours,
+    bookingClosedDatesRaw: salonRow.booking_closed_dates,
+    members: resolved.map((r) => ({
+      dateYmd: r.member.date,
+      startMinutes: parseHmToMinutes(r.member.time)!,
+      serviceCompletionMinutes: r.serviceCompletionMin,
+    })),
+  });
+  if (!hoursCheck.ok) {
+    if (hoursCheck.reason === "closed_day") return fail("salon_closed_day");
+    return fail("invalid_time", hoursCheck.memberIndex + 1);
   }
 
   // 6. Cross-member conflict check (app-level pre-flight) ------------
@@ -694,6 +704,10 @@ export async function submitGroupBooking(
       price_cents: r.priceCents,
       // Add-on legacy columns: first addon id + sum of addon prices.
       addon_service_id: r.firstAddonId,
+      // Complete authoritative add-on list for the database hours guard. The
+      // legacy single column remains for compatibility; this array lets the
+      // SECURITY DEFINER boundary verify every sequential add-on before write.
+      addon_service_ids: r.addonIds,
       addon_price_cents: r.addonPriceCents,
       wave_number: r.member.waveNumber ?? 1,
       // Couple/group "seat next to each other" preference. Persisted
@@ -788,6 +802,9 @@ export async function submitGroupBooking(
     }
     if (code === "duplicate_submission") return fail("duplicate_submission");
     if (code === "invalid_group_size") return fail("invalid_group_size");
+    if (code === "outside_hours" || code === "invalid_booking_time") {
+      return fail("invalid_time");
+    }
     Sentry.captureMessage("insert_group_bookings unknown error code", {
       level: "error",
       extra: { code },
