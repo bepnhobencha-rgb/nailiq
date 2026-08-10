@@ -37,6 +37,7 @@ import type { DashboardModulesConfig } from "@/shared/dashboard/dashboardModules
 
 export const SOUND_ALERT_TYPES = [
   "new_walkin",
+  "new_waitlist",
   "overdue_booking",
   "vip_arrival",
 ] as const;
@@ -66,6 +67,13 @@ const TONE_RECIPES: Record<SoundAlertType, ReadonlyArray<ToneStep>> = {
   new_walkin: [
     { freq: 660, ms: 150, gain: 0.22 },
     { freq: 880, ms: 150, gain: 0.26 },
+  ],
+  // Distinct, calm rising cue for a new online lead waiting for a response.
+  // Three compact steps make it recognizable without sounding like an alarm.
+  new_waitlist: [
+    { freq: 587, ms: 110, gain: 0.2 },
+    { freq: 740, ms: 110, gain: 0.22 },
+    { freq: 880, ms: 140, gain: 0.24 },
   ],
   // Single attention tone (A4). 350ms — medium urgency, no harmonics.
   overdue_booking: [{ freq: 440, ms: 350, gain: 0.28 }],

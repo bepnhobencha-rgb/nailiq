@@ -193,6 +193,8 @@ import {
 } from "@/shared/dashboard/loadBookingCustomerContextAction";
 import { useReceptionistInterface } from "@/shared/dashboard/useReceptionistInterface";
 
+const WAITLIST_REMINDER_DELAY_MS = 2 * 60 * 1000;
+
 // New is opt-in. Keep its visual bundle out of the Classic default path while
 // reusing the same parent data/actions once the user switches interfaces.
 const AppleDayTimeline = dynamic(
@@ -296,6 +298,8 @@ export type ReceptionistCenterProps = {
   archivedBookingRecoveryEnabled?: boolean;
   /** Calm option-B shell. Additive, per-salon, and OFF by default. */
   receptionistShellV2Enabled?: boolean;
+  /** Realtime Waitlist attention pilot. Per-salon and OFF by default. */
+  waitlistAttentionEnabled?: boolean;
   /** Server-authorized, same-salon source data. URL parameters contain IDs only. */
   recoveryPrefill?: ReceptionistRecoveryPrefill | null;
 };
@@ -458,6 +462,7 @@ function ReceptionistCenterInner({
   previewBgColor,
   archivedBookingRecoveryEnabled,
   receptionistShellV2Enabled,
+  waitlistAttentionEnabled,
   recoveryPrefill,
 }: {
   slug: string;
@@ -474,6 +479,7 @@ function ReceptionistCenterInner({
   previewBgColor: string | null;
   archivedBookingRecoveryEnabled: boolean;
   receptionistShellV2Enabled: boolean;
+  waitlistAttentionEnabled: boolean;
   recoveryPrefill: ReceptionistRecoveryPrefill | null;
 }) {
   const router = useRouter();
@@ -1678,7 +1684,7 @@ function ReceptionistCenterInner({
       });
 
       const filter = `salon_id=eq.${data.salon.id}`;
-      const ch = supabase
+      let ch = supabase
         .channel(`receptionist-center-${data.salon.id}`)
         .on(
           "postgres_changes",
@@ -1691,8 +1697,24 @@ function ReceptionistCenterInner({
           () => {
             if (!cancelled) void reloadCurrentDay();
           },
-        )
-        .subscribe((status, err) => {
+        );
+
+      if (waitlistAttentionEnabled) {
+        ch = ch.on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "booking_waitlist_entries",
+            filter,
+          },
+          () => {
+            if (!cancelled) void reloadCurrentDay();
+          },
+        );
+      }
+
+      ch = ch.subscribe((status, err) => {
           // Map Supabase realtime status → operational connection state.
           // SUBSCRIBED is the healthy steady-state; CHANNEL_ERROR /
           // TIMED_OUT both mean "trying to recover" → reconnecting;
@@ -1768,10 +1790,10 @@ function ReceptionistCenterInner({
         cleanup?.();
       });
     };
-  }, [data.salon.id, reloadCurrentDay]);
+  }, [data.salon.id, reloadCurrentDay, waitlistAttentionEnabled]);
 
   /**
-   * Sound-alert change detector. Three triggers:
+   * Sound-alert change detector. Four triggers:
    *   - `vip_arrival` — a walk-in row appears whose id we haven't
    *     seen before AND whose `walkin_source === "vip"`. Takes
    *     precedence over `new_walkin` (warm chime > generic two-tone)
@@ -1779,6 +1801,9 @@ function ReceptionistCenterInner({
    *   - `new_walkin` — walkin queue length increases AND no VIP
    *     arrival fired this tick. Dedupe-by-length avoids re-firing
    *     when the same walk-ins reload.
+   *   - `new_waitlist` — a newly observed online request is still waiting.
+   *     Fires once immediately and once after two minutes only if staff have
+   *     not opened the Waitlist. The per-salon pilot flag gates this trigger.
    *   - `overdue_booking` — an `in_progress` booking whose end_time
    *     is now in the past, fired ONCE per booking id (set-tracked).
    *
@@ -1792,9 +1817,35 @@ function ReceptionistCenterInner({
   const prevWalkinCountRef = useRef(0);
   const seenVipIdsRef = useRef<Set<string>>(new Set());
   const seenLateIdsRef = useRef<Set<string>>(new Set());
+  const seenWaitlistIdsRef = useRef<Set<string>>(new Set());
+  const acknowledgedWaitlistIdsRef = useRef<Set<string>>(new Set());
+  const activeWaitlistIdsRef = useRef<Set<string>>(new Set());
+  const waitlistReminderTimersRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    const timers = waitlistReminderTimersRef.current;
+    return () => {
+      for (const timer of timers.values()) window.clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
   useEffect(() => {
     const queueLength = data.walkinQueue.length;
     const nowMs = Date.parse(nowIso);
+    const waitingWaitlistIds = new Set(
+      waitlistAttentionEnabled
+        ? data.onlineWaitlist
+            .filter((entry) => entry.status === "waiting")
+            .map((entry) => entry.id)
+        : [],
+    );
+    activeWaitlistIdsRef.current = waitingWaitlistIds;
+
+    for (const [id, timer] of waitlistReminderTimersRef.current) {
+      if (!waitingWaitlistIds.has(id)) {
+        window.clearTimeout(timer);
+        waitlistReminderTimersRef.current.delete(id);
+      }
+    }
 
     if (!hasSoundInitedRef.current) {
       // Seed only — no alerts on initial mount / reload.
@@ -1811,6 +1862,7 @@ function ReceptionistCenterInner({
           seenLateIdsRef.current.add(b.id);
         }
       }
+      for (const id of waitingWaitlistIds) seenWaitlistIdsRef.current.add(id);
       prevWalkinCountRef.current = queueLength;
       hasSoundInitedRef.current = true;
       return;
@@ -1832,6 +1884,25 @@ function ReceptionistCenterInner({
     }
     prevWalkinCountRef.current = queueLength;
 
+    // New online Waitlist requests are leads waiting for a human response.
+    // Sound once immediately, then once more after two minutes only when the
+    // row is still waiting and the receptionist has not opened the Waitlist.
+    for (const id of waitingWaitlistIds) {
+      if (seenWaitlistIdsRef.current.has(id)) continue;
+      seenWaitlistIdsRef.current.add(id);
+      playAlert("new_waitlist");
+      const timer = window.setTimeout(() => {
+        waitlistReminderTimersRef.current.delete(id);
+        if (
+          activeWaitlistIdsRef.current.has(id) &&
+          !acknowledgedWaitlistIdsRef.current.has(id)
+        ) {
+          playAlert("new_waitlist");
+        }
+      }, WAITLIST_REMINDER_DELAY_MS);
+      waitlistReminderTimersRef.current.set(id, timer);
+    }
+
     // Newly overdue bookings.
     for (const b of data.bookingsForDay) {
       if (b.status !== "in_progress") continue;
@@ -1841,7 +1912,14 @@ function ReceptionistCenterInner({
       seenLateIdsRef.current.add(b.id);
       playAlert("overdue_booking");
     }
-  }, [data.walkinQueue, data.bookingsForDay, nowIso, playAlert]);
+  }, [
+    data.walkinQueue,
+    data.onlineWaitlist,
+    data.bookingsForDay,
+    nowIso,
+    playAlert,
+    waitlistAttentionEnabled,
+  ]);
 
   const detailModel = useMemo((): BookingDetailDrawerModel | null => {
     const id = drawerBookingId;
@@ -2734,8 +2812,24 @@ function ReceptionistCenterInner({
   // Use organizer name so the alert reads "Sarah's party · 2pm: 1 slot unclaimed"
   // rather than the anonymous "Guest 2 hasn't confirmed" which gives no context.
   const pendingPartyOrganizerName = pendingPartyCard?.organizerName ?? null;
+  const unresolvedOnlineWaitlist = waitlistAttentionEnabled
+    ? data.onlineWaitlist.filter((entry) => entry.status === "waiting")
+    : [];
+  const oldestOnlineWaitlistMinutes = unresolvedOnlineWaitlist.reduce<
+    number | null
+  >((oldest, entry) => {
+    const createdMs = Date.parse(entry.createdAt);
+    const observedMs = Date.parse(nowIso);
+    if (!Number.isFinite(createdMs) || !Number.isFinite(observedMs)) {
+      return oldest;
+    }
+    const minutes = Math.max(0, Math.floor((observedMs - createdMs) / 60_000));
+    return oldest === null ? minutes : Math.max(oldest, minutes);
+  }, null);
 
   const cockpitInputs: CockpitInputs = {
+    onlineWaitlistCount: unresolvedOnlineWaitlist.length,
+    onlineWaitlistOldestMinutes: oldestOnlineWaitlistMinutes,
     waitingCount: data.kpiSnapshot.waitingCount,
     inProgressCount: data.kpiSnapshot.inProgressCount,
     comingUpCount: data.kpiSnapshot.comingUpCount,
@@ -2771,10 +2865,12 @@ function ReceptionistCenterInner({
     partyPendingCount: rcMessages.basicMode.partyPendingCount,
     suggestWalkin: rcMessages.basicMode.suggestWalkin,
     actionOpenQueue: rcMessages.basicMode.actionOpenQueue,
+    actionOpenWaitlist: rcMessages.basicMode.actionOpenWaitlist,
     actionAddWalkin: rcMessages.basicMode.actionAddWalkin,
     actionOpenParty: rcMessages.basicMode.actionOpenParty,
     actionOpenBooking: rcMessages.basicMode.actionOpenBooking,
     alertOverdue: rcMessages.basicMode.alertOverdue,
+    alertOnlineWaitlist: rcMessages.basicMode.alertOnlineWaitlist,
     alertOverdueNamed: rcMessages.basicMode.alertOverdueNamed,
     alertNotStarted: rcMessages.basicMode.alertNotStarted,
     alertNotStartedNamed: rcMessages.basicMode.alertNotStartedNamed,
@@ -2798,6 +2894,24 @@ function ReceptionistCenterInner({
       // Confirmed-but-not-started guest → open the booking so the receptionist
       // can mark arrived / no-show (same affordance as the attention chip).
       if (firstNotStartedId) openBookingDrawer(firstNotStartedId);
+      return;
+    }
+    if (target === "open_waitlist") {
+      for (const entry of unresolvedOnlineWaitlist) {
+        acknowledgedWaitlistIdsRef.current.add(entry.id);
+        const timer = waitlistReminderTimersRef.current.get(entry.id);
+        if (timer !== undefined) {
+          window.clearTimeout(timer);
+          waitlistReminderTimersRef.current.delete(entry.id);
+        }
+      }
+      setQueuePanelOpen(true);
+      window.setTimeout(() => {
+        document.getElementById("waitlist")?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 50);
       return;
     }
     if (target === "open_party") {
@@ -5241,6 +5355,7 @@ export function ReceptionistCenter({
   previewBgColor,
   archivedBookingRecoveryEnabled = false,
   receptionistShellV2Enabled = false,
+  waitlistAttentionEnabled = false,
   recoveryPrefill = null,
 }: ReceptionistCenterProps) {
   if (!initialResult.ok) {
@@ -5260,6 +5375,7 @@ export function ReceptionistCenter({
       previewBgColor={previewBgColor ?? null}
       archivedBookingRecoveryEnabled={archivedBookingRecoveryEnabled}
       receptionistShellV2Enabled={receptionistShellV2Enabled}
+      waitlistAttentionEnabled={waitlistAttentionEnabled}
       recoveryPrefill={recoveryPrefill}
     />
   );

@@ -135,6 +135,7 @@ export default async function ReceptionistCenterPage({
         slug.startsWith("e2e-")));
   const receptionistShellV2Enabled =
     featureVisible("receptionist_shell_v2") || receptionistShellPreview;
+  const waitlistAttentionEnabled = featureVisible("waitlist_attention");
 
   let archivedBookingRecoveryEnabled = featureVisible(
     "archived_booking_recovery",
@@ -292,6 +293,7 @@ export default async function ReceptionistCenterPage({
         previewBgColor={receptionistPreviewBgColor}
         archivedBookingRecoveryEnabled={archivedBookingRecoveryEnabled}
         receptionistShellV2Enabled={receptionistShellV2Enabled}
+        waitlistAttentionEnabled={waitlistAttentionEnabled}
         recoveryPrefill={recoveryPrefill}
       />
     </ReceptionistErrorBoundary>

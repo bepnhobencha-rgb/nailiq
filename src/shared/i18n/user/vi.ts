@@ -1500,6 +1500,7 @@ export const userVi: UserMessages = {
       aiAllClear: "Quầy đang vận hành tốt — chưa có việc gấp",
       aiReasons: {
         overdue: "Vì dịch vụ đã qua giờ kết thúc dự kiến.",
+        online_waitlist: "Vì có khách online đang chờ tiệm phản hồi.",
         not_started: "Vì đã qua giờ hẹn nhưng khách chưa được bắt đầu.",
         long_wait: "Vì khách đã chờ lâu hơn mục tiêu của tiệm.",
         no_staff_for_waiting: "Vì đang có khách chờ nhưng chưa có thợ sẵn sàng.",
@@ -1532,11 +1533,16 @@ export const userVi: UserMessages = {
         `${n} khách chưa nhận slot · ${time}`,
       suggestWalkin: (name: string) => `${name} đang sẵn sàng. Có thể nhận khách vãng lai.`,
       actionOpenQueue: "Mở hàng chờ",
+      actionOpenWaitlist: "Xem và xử lý ngay",
       actionAddWalkin: "+ Khách vãng lai",
       actionOpenParty: "Mở booking nhóm",
       actionOpenBooking: "Mở lịch",
       alertOverdue: (n: number) =>
         n === 1 ? "1 lịch trễ giờ" : `${n} lịch trễ giờ`,
+      alertOnlineWaitlist: (n: number, minutes: number) =>
+        n === 1
+          ? `Khách online mới đang chờ · ${minutes} phút`
+          : `${n} khách online đang chờ · lâu nhất ${minutes} phút`,
       alertOverdueNamed: (name: string, time: string) =>
         `${name} trễ giờ · ${time}`,
       alertNotStarted: (n: number) =>

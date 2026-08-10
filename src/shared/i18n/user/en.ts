@@ -1294,6 +1294,7 @@ export type UserMessages = {
       aiAllClear: string;
       aiReasons: {
         overdue: string;
+        online_waitlist: string;
         not_started: string;
         long_wait: string;
         no_staff_for_waiting: string;
@@ -1320,11 +1321,13 @@ export type UserMessages = {
       suggestWalkin: (name: string) => string;
       // Action button labels
       actionOpenQueue: string;
+      actionOpenWaitlist: string;
       actionAddWalkin: string;
       actionOpenParty: string;
       actionOpenBooking: string;
       // Critical alert texts
       alertOverdue: (n: number) => string;
+      alertOnlineWaitlist: (n: number, minutes: number) => string;
       alertOverdueNamed: (name: string, time: string) => string;
       alertNotStarted: (n: number) => string;
       alertNotStartedNamed: (name: string, time: string) => string;
@@ -3840,6 +3843,7 @@ export const userEn: UserMessages = {
       aiAllClear: "The desk is on track — no urgent action right now",
       aiReasons: {
         overdue: "Because the scheduled service end time has passed.",
+        online_waitlist: "Because an online customer is waiting for the salon to respond.",
         not_started: "Because the appointment time passed and service has not started.",
         long_wait: "Because this guest has waited longer than the salon’s target.",
         no_staff_for_waiting: "Because guests are waiting and no staff member is available.",
@@ -3872,11 +3876,16 @@ export const userEn: UserMessages = {
         `${n} guests haven't claimed their slot · ${time}`,
       suggestWalkin: (name: string) => `${name} is available. You can add a walk-in.`,
       actionOpenQueue: "Open queue",
+      actionOpenWaitlist: "View and respond",
       actionAddWalkin: "+ Walk-in",
       actionOpenParty: "Open party bookings",
       actionOpenBooking: "Open booking",
       alertOverdue: (n: number) =>
         n === 1 ? "1 booking overdue" : `${n} bookings overdue`,
+      alertOnlineWaitlist: (n: number, minutes: number) =>
+        n === 1
+          ? `New online customer waiting · ${minutes} min`
+          : `${n} online customers waiting · oldest ${minutes} min`,
       alertOverdueNamed: (name: string, time: string) =>
         `${name} overdue · ${time}`,
       alertNotStarted: (n: number) =>

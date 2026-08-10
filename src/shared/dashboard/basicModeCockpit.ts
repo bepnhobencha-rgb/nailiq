@@ -19,6 +19,7 @@ import {
 /** Where a Next Action / alert button takes the receptionist. */
 export type CockpitActionTarget =
   | "open_queue"
+  | "open_waitlist"
   | "add_walkin"
   | "open_party"
   | "open_overdue"
@@ -43,6 +44,7 @@ export type NextAction = {
 };
 
 export type CriticalAlertKey =
+  | "online_waitlist"
   | "overdue"
   | "not_started"
   | "long_wait"
@@ -61,6 +63,10 @@ export type CriticalAlert = {
 
 /** Inputs the cockpit needs — all already computed elsewhere (no new queries). */
 export type CockpitInputs = {
+  /** Unresolved online waitlist requests that still need staff attention. */
+  onlineWaitlistCount?: number;
+  /** Age of the oldest unresolved online waitlist request. */
+  onlineWaitlistOldestMinutes?: number | null;
   waitingCount: number;
   inProgressCount: number;
   comingUpCount: number;
@@ -130,11 +136,13 @@ export type CockpitLabels = {
   suggestWalkin: (name: string) => string;
   // Action button labels
   actionOpenQueue: string;
+  actionOpenWaitlist: string;
   actionAddWalkin: string;
   actionOpenParty: string;
   actionOpenBooking: string;
   // Critical alert texts
   alertOverdue: (n: number) => string;
+  alertOnlineWaitlist: (n: number, minutes: number) => string;
   /** Clearer single-overdue copy with customer + time (no phone). */
   alertOverdueNamed: (name: string, time: string) => string;
   /** "{n} guests overdue to start" (multiple not-started). */
@@ -284,10 +292,26 @@ export function computeCriticalAlerts(
   config: ReceptionistBasicModeConfig = RECEPTIONIST_BASIC_MODE_CONFIG,
 ): CriticalAlertsResult {
   const openQueue = { target: "open_queue" as const, label: labels.actionOpenQueue };
+  const openWaitlist = {
+    target: "open_waitlist" as const,
+    label: labels.actionOpenWaitlist,
+  };
   const openParty = { target: "open_party" as const, label: labels.actionOpenParty };
   const openBooking = { target: "open_overdue" as const, label: labels.actionOpenBooking };
 
   const all: CriticalAlert[] = [];
+
+  if ((i.onlineWaitlistCount ?? 0) > 0) {
+    all.push({
+      key: "online_waitlist",
+      text: labels.alertOnlineWaitlist(
+        i.onlineWaitlistCount ?? 0,
+        i.onlineWaitlistOldestMinutes ?? 0,
+      ),
+      tone: "warning",
+      action: openWaitlist,
+    });
+  }
 
   if (i.overdueCount > 0) {
     all.push({
