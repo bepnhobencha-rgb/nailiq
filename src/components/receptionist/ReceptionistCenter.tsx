@@ -3524,18 +3524,12 @@ function ReceptionistCenterInner({
               )}
             >
               {receptionistShellV2Enabled ? (
-                <>
-                  <UserLanguageToggle
-                    language={language}
-                    onLanguageChange={setLanguage}
-                  />
-                  <CalendarViewModeControl
-                    value={viewMode}
-                    labels={rcMessages.viewMode}
-                    language={language === "vi" ? "vi" : "en"}
-                    onChange={onCalendarViewModeChange}
-                  />
-                </>
+                <CalendarViewModeControl
+                  value={viewMode}
+                  labels={rcMessages.viewMode}
+                  language={language === "vi" ? "vi" : "en"}
+                  onChange={onCalendarViewModeChange}
+                />
               ) : (
                 <ReceptionistDisplayMenu
                   language={language === "vi" ? "vi" : "en"}

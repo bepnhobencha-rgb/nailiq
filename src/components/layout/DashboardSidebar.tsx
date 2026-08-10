@@ -12,6 +12,7 @@ import {
   History,
   Home,
   Hourglass,
+  Languages,
   Package,
   ChevronLeft,
   Activity,
@@ -661,6 +662,7 @@ export function DashboardSidebar({
           onClick={() => setUserMenuOpen((prev) => !prev)}
           aria-haspopup="menu"
           aria-expanded={userMenuOpen}
+          data-testid="dashboard-account-trigger"
           title={!showExpanded ? userEmail ?? "Account" : undefined}
           className={cn(
             "flex w-full min-h-11 touch-manipulation items-center gap-3 rounded-lg px-2 py-2",
@@ -698,6 +700,7 @@ export function DashboardSidebar({
           <div
             ref={userMenuPopoverRef}
             role="menu"
+            data-testid="dashboard-account-menu"
             className={cn(
               "absolute z-50 rounded-lg border border-nq-border/40 bg-nq-surface p-1 shadow-nq-card",
               !showExpanded
@@ -777,11 +780,14 @@ export function DashboardSidebar({
 
             {/* Language — switches every surface (UI + server + AI) in lockstep */}
             <div className="my-1 border-t border-nq-border/30" />
-            <div className="flex items-center justify-between gap-2 px-2 py-1.5">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-nq-muted">
-                {language === "vi" ? "Ngôn ngữ" : "Language"}
-              </span>
-              <GlobalLanguageToggle />
+            <div className="px-2 py-2">
+              <div className="mb-2 flex items-center gap-2 text-nq-muted">
+                <Languages className="h-4 w-4" aria-hidden />
+                <span className="text-[11px] font-semibold uppercase tracking-wide">
+                  {language === "vi" ? "Ngôn ngữ" : "Language"}
+                </span>
+              </div>
+              <GlobalLanguageToggle variant="menu" />
             </div>
 
             {/* Sign out */}

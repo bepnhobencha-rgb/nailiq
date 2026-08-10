@@ -52,6 +52,7 @@ async function expectCalmShell(page: Page, width: number, height: number) {
   await expect(page.getByTestId("header-add-walkin")).toHaveCount(0);
   await expect(page.getByTestId("header-add-appointment")).toHaveCount(0);
   await expect(page.getByTestId("header-add-group")).toHaveCount(0);
+  await expect(page.getByTestId("user-language-toggle")).toHaveCount(0);
 
   const createTrigger =
     width < 640
