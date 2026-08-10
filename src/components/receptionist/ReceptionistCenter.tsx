@@ -3248,7 +3248,16 @@ function ReceptionistCenterInner({
                 {data.salon.name}
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3 xl:mr-32 2xl:mr-0">
+            <div
+              className={cn(
+                "flex flex-wrap items-center gap-2 sm:gap-3 2xl:mr-0",
+                // DashboardViewControls is fixed in the top-right corner. At
+                // iPad widths it previously sat on top of Shell V2's primary
+                // Create action and intercepted taps. Reserve its footprint
+                // from md through xl; desktop releases it again at 2xl.
+                receptionistShellV2Enabled ? "md:mr-32" : "xl:mr-32",
+              )}
+            >
               {receptionistShellV2Enabled ? (
                 <UserLanguageToggle
                   language={language}

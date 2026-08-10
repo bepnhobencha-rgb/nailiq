@@ -51,6 +51,20 @@ async function expectCalmShell(page: Page, width: number, height: number) {
   expect(box!.width).toBeGreaterThanOrEqual(44);
   expect(box!.height).toBeGreaterThanOrEqual(44);
 
+  if (width >= 768) {
+    const controlsBox = await page
+      .getByTestId("dashboard-view-controls")
+      .boundingBox();
+    expect(controlsBox).not.toBeNull();
+    const overlapsControls = !(
+      box!.x + box!.width <= controlsBox!.x ||
+      controlsBox!.x + controlsBox!.width <= box!.x ||
+      box!.y + box!.height <= controlsBox!.y ||
+      controlsBox!.y + controlsBox!.height <= box!.y
+    );
+    expect(overlapsControls).toBe(false);
+  }
+
   await createTrigger.click();
   await expect(
     width < 640
