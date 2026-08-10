@@ -32,6 +32,7 @@ async function expectCalmShell(page: Page, width: number, height: number) {
 
   const shell = page.getByTestId("receptionist-center-loaded").last();
   await expect(shell).toHaveAttribute("data-receptionist-shell", "v2");
+  await expect(shell).toHaveAttribute("data-receptionist-density", "pro");
   await expect(page.getByTestId("nailiq-suggestion-bar")).toBeVisible();
   await expect(page.getByTestId("nailiq-daily-brief-summary")).toHaveCount(0);
   await expect(page.getByTestId("receptionist-kpi-bar")).toHaveCount(0);

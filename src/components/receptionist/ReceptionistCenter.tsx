@@ -1401,11 +1401,15 @@ function ReceptionistCenterInner({
     [data.salon.id, timezone],
   );
   const modules = data.dashboardModules;
-  // Rush mode forces density to "simple" so the desk renders with
-  // the highest-contrast / lowest-noise rhythm. We override the
-  // visual config without persisting back to the salon — when rush
-  // clears, density returns to the user's saved choice.
-  const effectiveDensity = rush.active ? "simple" : data.dashboardDensity;
+  // Shell V2 has one deliberate, predictable information level: Pro. We only
+  // override the visual config in memory; the salon's saved density remains
+  // untouched and returns immediately if the pilot flag is disabled. Legacy
+  // keeps the existing rush-hour Simple override.
+  const effectiveDensity: DensityLevel = receptionistShellV2Enabled
+    ? "pro"
+    : rush.active
+      ? "simple"
+      : data.dashboardDensity;
   const densityConfig = useMemo(
     () => densityConfigFor(effectiveDensity),
     [effectiveDensity],
@@ -3076,6 +3080,7 @@ function ReceptionistCenterInner({
         data-rush-mode={rush.active ? "on" : "off"}
         data-receptionist-interface={previewInterface ? "preview" : "classic"}
         data-receptionist-shell={receptionistShellV2Enabled ? "v2" : "legacy"}
+        data-receptionist-density={effectiveDensity}
         style={{
           ...drcCssVars,
           backgroundColor: previewInterface ? newInterfaceBg : drcBg,
