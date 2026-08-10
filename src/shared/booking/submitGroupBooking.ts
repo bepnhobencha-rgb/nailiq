@@ -9,11 +9,16 @@ import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimi
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
 import { computeBookingTiming } from "@/shared/booking/bookingTiming";
 import { checkGroupWithinOpeningHours } from "@/shared/booking/groupBookingHoursPolicy";
+import { evaluateControlledAfterHours } from "@/shared/booking/controlledAfterHours";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
-import { salonDayRangeUtc, salonToday, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
+import {
+  salonDayRangeUtc,
+  salonToday,
+  salonWallTimeToUtcIso,
+} from "@/shared/lib/salonTime";
 import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 
@@ -177,6 +182,12 @@ export type GroupBookingResult =
         // step 2 and submit. Recoverable only by sending the user
         // back to step 2 to pick a different service.
         | "service_unavailable"
+        | "after_hours_not_allowed"
+        | "specific_staff_required"
+        | "staff_consent_required"
+        | "after_hours_limit_exceeded"
+        | "outside_hours"
+        | "invalid_after_hours_override"
         // Salon's plan-tier monthly booking cap would be exceeded by
         // this group submit. Recoverable only by the salon owner
         // upgrading the plan.
@@ -192,6 +203,25 @@ export type GroupBookingResult =
        *  re-pick). */
       memberIndex?: number | null;
     };
+
+/**
+ * Server-only escape hatch used by the authenticated front-desk action.
+ *
+ * This is intentionally NOT part of GroupBookingParams: public, Voice and SMS
+ * callers can only reach the normal `insert_group_bookings` boundary, which
+ * rejects out-of-hours rows. The desk action supplies a privileged writer only
+ * after proving Owner/Admin, an attributable auth user and staff consent.
+ */
+export type TrustedGroupBookingExecution = {
+  controlledAfterHours: {
+    actorUserId: string;
+    staffConsentConfirmed: true;
+  };
+  insertGroupBookings: (payload: Array<Record<string, unknown>>) => Promise<{
+    data: unknown;
+    error: { code?: string; message?: string } | null;
+  }>;
+};
 
 const HHMM_RE = /^(\d{1,2}):(\d{2})$/;
 
@@ -225,6 +255,7 @@ function fail(
 
 export async function submitGroupBooking(
   params: GroupBookingParams,
+  trustedExecution?: TrustedGroupBookingExecution,
 ): Promise<GroupBookingResult> {
   const scope = Sentry.getCurrentScope();
   scope.setTag("booking.flow", "submit_group_booking");
@@ -256,10 +287,17 @@ export async function submitGroupBooking(
   // DB RPC and the UI formula `Math.min(activeStaffCount, 20)`. The
   // effective limit is still the salon's active-staff count, enforced
   // by the scheduler; this check is just an absolute safety fence.
-  if (!Array.isArray(params.members) || params.members.length < 2 || params.members.length > 20) {
+  if (
+    !Array.isArray(params.members) ||
+    params.members.length < 2 ||
+    params.members.length > 20
+  ) {
     return fail("invalid_group_size");
   }
-  if (typeof params.idempotencyKey !== "string" || params.idempotencyKey.trim().length === 0) {
+  if (
+    typeof params.idempotencyKey !== "string" ||
+    params.idempotencyKey.trim().length === 0
+  ) {
     return fail("invalid_input");
   }
   // P1 #20 (QA re-sweep 2026-05-12) — granular per-field reasons.
@@ -353,10 +391,7 @@ export async function submitGroupBooking(
       params.members.length,
     );
   } catch (e) {
-    if (
-      e instanceof Error &&
-      e.message === "monthly_booking_limit_reached"
-    ) {
+    if (e instanceof Error && e.message === "monthly_booking_limit_reached") {
       return fail("monthly_booking_limit_reached");
     }
     throw e;
@@ -398,7 +433,9 @@ export async function submitGroupBooking(
   scope.setTag("group.size", String(params.members.length));
 
   // 3. Services ------------------------------------------------------
-  const serviceIds = Array.from(new Set(params.members.map((m) => m.serviceId)));
+  const serviceIds = Array.from(
+    new Set(params.members.map((m) => m.serviceId)),
+  );
 
   // Union add-on ids so we can fetch all in one query.
   const addonIdSet = new Set<string>();
@@ -411,17 +448,22 @@ export async function submitGroupBooking(
 
   const { data: services, error: svcErr } = await supabase
     .from("public_service_catalog")
-    .select("id, name, duration_minutes, buffer_minutes, price_cents, is_addon, addon_timing")
+    .select(
+      "id, name, duration_minutes, buffer_minutes, price_cents, is_addon, addon_timing",
+    )
     .in("id", allFetchIds)
     .eq("salon_id", salonRow.id);
   if (svcErr) return fail("server_error");
 
-  const serviceById = new Map<string, {
-    id: string;
-    duration: number;
-    buffer: number;
-    priceCents: number | null;
-  }>();
+  const serviceById = new Map<
+    string,
+    {
+      id: string;
+      duration: number;
+      buffer: number;
+      priceCents: number | null;
+    }
+  >();
   // addonById: is_addon rows only. Keep the timing segments separate so the
   // same closing-boundary model used by individual bookings can determine
   // customer service completion (excluding only the final cleanup buffer).
@@ -434,7 +476,10 @@ export async function submitGroupBooking(
   const addonById = new Map<string, AddonInfo>();
 
   for (const s of services ?? []) {
-    const sTyped = s as typeof s & { is_addon?: unknown; addon_timing?: unknown };
+    const sTyped = s as typeof s & {
+      is_addon?: unknown;
+      addon_timing?: unknown;
+    };
     const isAddon = sTyped.is_addon === true;
     if (isAddon) {
       addonById.set(String(s.id), {
@@ -496,6 +541,41 @@ export async function submitGroupBooking(
         memberNumber: i + 1,
         memberIndex: i,
       };
+    }
+  }
+
+  // Write-time capability proof. The scheduler already filters staff, but a
+  // crafted payload must not assign a service/add-on to someone who cannot do
+  // it. As elsewhere in NailIQ, zero capability rows means legacy "all staff
+  // can do all services"; once any rows exist, every requested item must match.
+  if (trustedExecution) {
+    const { data: capabilityRows, error: capabilityError } = await supabase
+      .from("staff_services")
+      .select("staff_id, service_id")
+      .in("staff_id", staffIds)
+      .in("service_id", allFetchIds);
+    if (capabilityError) return fail("server_error");
+    if ((capabilityRows ?? []).length > 0) {
+      const capabilityKeys = new Set(
+        (capabilityRows ?? []).map(
+          (row) => `${String(row.staff_id)}:${String(row.service_id)}`,
+        ),
+      );
+      for (let i = 0; i < params.members.length; i++) {
+        const member = params.members[i];
+        const requiredIds = [
+          member.serviceId,
+          ...(member.addonServiceIds ?? []),
+        ];
+        if (
+          requiredIds.some(
+            (serviceId) =>
+              !capabilityKeys.has(`${member.staffId}:${serviceId}`),
+          )
+        ) {
+          return fail("staff_unavailable", i + 1);
+        }
+      }
     }
   }
 
@@ -589,9 +669,61 @@ export async function submitGroupBooking(
       serviceCompletionMinutes: r.serviceCompletionMin,
     })),
   });
+  let controlledAfterHoursMinutes: Array<number | null> = resolved.map(
+    () => null,
+  );
   if (!hoursCheck.ok) {
-    if (hoursCheck.reason === "closed_day") return fail("salon_closed_day");
-    return fail("invalid_time", hoursCheck.memberIndex + 1);
+    if (!trustedExecution) {
+      if (hoursCheck.reason === "closed_day") return fail("salon_closed_day");
+      return fail("invalid_time", hoursCheck.memberIndex + 1);
+    }
+    if (
+      !trustedExecution.controlledAfterHours.actorUserId ||
+      trustedExecution.controlledAfterHours.staffConsentConfirmed !== true
+    ) {
+      return fail("staff_consent_required");
+    }
+    // Controlled exceptions are all-explicit: no member may use an auto/Any
+    // sentinel. The active-staff check below independently proves every UUID.
+    if (
+      params.members.some((member) => !/^[0-9a-f-]{36}$/i.test(member.staffId))
+    ) {
+      return fail("specific_staff_required");
+    }
+    const afterHoursByMember: Array<number | null> = [];
+    for (let memberIndex = 0; memberIndex < resolved.length; memberIndex++) {
+      const r = resolved[memberIndex];
+      const evaluation = evaluateControlledAfterHours({
+        openingHoursRaw: salonRow.opening_hours,
+        bookingClosedDatesRaw: salonRow.booking_closed_dates,
+        dateYmd: r.member.date,
+        startMinutes: parseHmToMinutes(r.member.time)!,
+        serviceCompletionMinutes: r.serviceCompletionMin,
+      });
+      if (evaluation.ok) {
+        afterHoursByMember.push(evaluation.afterHoursMinutes);
+        continue;
+      }
+      // A shorter member may still finish inside hours while another member in
+      // the same party crosses close. That row remains a normal-hours row.
+      if (evaluation.reason === "inside_hours") {
+        afterHoursByMember.push(null);
+        continue;
+      }
+      return fail(
+        evaluation.reason === "closed_day"
+          ? "salon_closed_day"
+          : evaluation.reason === "extension_too_long"
+            ? "after_hours_limit_exceeded"
+            : "outside_hours",
+        memberIndex + 1,
+      );
+    }
+    controlledAfterHoursMinutes = afterHoursByMember;
+  } else if (trustedExecution) {
+    // Never stamp a normal group as after-hours because a crafted caller sent
+    // the optional server-only execution object.
+    return fail("invalid_after_hours_override");
   }
 
   // 6. Cross-member conflict check (app-level pre-flight) ------------
@@ -721,6 +853,9 @@ export async function submitGroupBooking(
       // jsonb key; absent/null → column stays null and the SMS sender falls
       // back to customer_preferences.
       client_locale: params.language ?? null,
+      // Ignored by the public RPC. The private desk RPC consumes this value to
+      // stamp the matching booking row after the atomic group insert.
+      after_hours_minutes: controlledAfterHoursMinutes[i],
     };
   });
 
@@ -749,10 +884,26 @@ export async function submitGroupBooking(
     otpToConsume = sessionId;
   }
 
-  const { data: rpcData, error: rpcErr } = await supabase.rpc(
-    "insert_group_bookings",
-    { p_bookings: payload },
-  );
+  let rpcData: unknown;
+  let rpcErr: { code?: string; message?: string } | null;
+  if (trustedExecution) {
+    try {
+      const privateWrite = await trustedExecution.insertGroupBookings(payload);
+      rpcData = privateWrite.data;
+      rpcErr = privateWrite.error;
+    } catch (error) {
+      Sentry.captureException(error, {
+        tags: { "booking.rpc": "insert_controlled_after_hours_group_bookings" },
+      });
+      return fail("server_error");
+    }
+  } else {
+    const publicWrite = await supabase.rpc("insert_group_bookings", {
+      p_bookings: payload,
+    });
+    rpcData = publicWrite.data;
+    rpcErr = publicWrite.error;
+  }
 
   if (rpcErr) {
     Sentry.captureException(rpcErr, {
@@ -779,14 +930,12 @@ export async function submitGroupBooking(
     return fail("server_error");
   }
 
-  const result = rpcData as
-    | {
-        success?: boolean;
-        code?: string;
-        group_id?: string;
-        booking_ids?: string[];
-      }
-    | null;
+  const result = rpcData as {
+    success?: boolean;
+    code?: string;
+    group_id?: string;
+    booking_ids?: string[];
+  } | null;
   if (!result || typeof result !== "object") return fail("server_error");
   if (result.success === false) {
     const code = result.code ?? "";
@@ -908,9 +1057,10 @@ export async function submitGroupBooking(
         p_marketing_consent: false,
       } as never,
     );
-    const finalizeResult = finalized as
-      | { success?: boolean; code?: string }
-      | null;
+    const finalizeResult = finalized as {
+      success?: boolean;
+      code?: string;
+    } | null;
     if (finalizeError || finalizeResult?.success !== true) {
       Sentry.captureMessage("group_booking_profile_finalize_failed", {
         level: "error",
@@ -929,7 +1079,8 @@ export async function submitGroupBooking(
       const consumeAppUrl =
         typeof window !== "undefined"
           ? ""
-          : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+          : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() ||
+            "https://nailiq.ca";
       void fetch(`${consumeAppUrl}/api/booking-otp/consume-session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -940,7 +1091,9 @@ export async function submitGroupBooking(
 
   await Promise.all(
     params.members.map(async (m, i) => {
-      const addonIds = (m.addonServiceIds ?? []).filter((aid) => addonById.has(aid));
+      const addonIds = (m.addonServiceIds ?? []).filter((aid) =>
+        addonById.has(aid),
+      );
       if (addonIds.length === 0) return;
       const bookingId = bookingIdList[i];
       if (!bookingId) return;
@@ -950,7 +1103,11 @@ export async function submitGroupBooking(
           p_service_ids: addonIds,
         });
       } catch (e) {
-        console.error("[submitGroupBooking] add_booking_addons failed for member", i, e);
+        console.error(
+          "[submitGroupBooking] add_booking_addons failed for member",
+          i,
+          e,
+        );
       }
     }),
   );
@@ -969,7 +1126,8 @@ export async function submitGroupBooking(
       const appUrl =
         typeof window !== "undefined"
           ? ""
-          : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+          : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() ||
+            "https://nailiq.ca";
       await fetch(`${appUrl}/api/booking/sms-confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1008,7 +1166,8 @@ export async function submitGroupBooking(
           const appUrl =
             typeof window !== "undefined"
               ? ""
-              : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+              : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() ||
+                "https://nailiq.ca";
           await fetch(`${appUrl}/api/vouchers/redeem`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1022,7 +1181,10 @@ export async function submitGroupBooking(
             }),
           });
         } catch (e) {
-          console.error("[submitGroupBooking] voucher redeem dispatch failed", e);
+          console.error(
+            "[submitGroupBooking] voucher redeem dispatch failed",
+            e,
+          );
         }
       })();
     }
