@@ -188,7 +188,12 @@ test("operator completes the five essential Front Desk tasks in one shift", asyn
   if ((page.viewportSize()?.width ?? 1280) < 640) {
     const queuePanel = page.getByTestId("walkin-queue-sidebar");
     await queuePanel.getByRole("button", { name: "Close" }).click();
-    await expect(queuePanel).toHaveCount(0);
+    // The slide-over stays mounted for a smooth exit transition; its semantic
+    // closed state is `aria-hidden=true` rather than DOM removal.
+    await expect(page.getByTestId("queue-panel-slideover")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
   }
 
   // 5. Change appointment status and prove the UI action reached the database.
