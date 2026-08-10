@@ -60,6 +60,7 @@ export function AttentionChipBar({
   onOpenBooking,
   onMarkNoShow,
   onUndoNoShow,
+  embedded = false,
 }: {
   language: "en" | "vi";
   overdue: AttentionOverdueItem[];
@@ -78,6 +79,8 @@ export function AttentionChipBar({
   onOpenBooking: (id: string) => void;
   onMarkNoShow: (id: string) => void;
   onUndoNoShow?: (id: string) => void;
+  /** Compact trigger for use inside the unified Action Center bar. */
+  embedded?: boolean;
 }) {
   const [open, setOpen] = useState<ChipKey | null>(null);
 
@@ -110,10 +113,15 @@ export function AttentionChipBar({
   const toggle = (key: ChipKey) => setOpen((cur) => (cur === key ? null : key));
 
   return (
-    <div className="relative z-20 mx-3 mt-3">
+    <div
+      className={cn(
+        "relative z-20",
+        embedded ? "shrink-0" : "mx-3 mt-3",
+      )}
+    >
       {/* ── Chip row ─────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="xl:hidden">
+        <span className={embedded ? "contents" : "xl:hidden"}>
           <Chip
             testId="attention-chip-all"
             active={open === "all"}
@@ -123,10 +131,11 @@ export function AttentionChipBar({
             icon="✓"
             label={vi ? "Việc cần xử lý" : "Action center"}
             count={totalItems}
+            largeTouch={embedded}
           />
         </span>
 
-        <span className="hidden xl:contents">
+        <span className={embedded ? "hidden" : "hidden xl:contents"}>
           {hasOverdue ? (
             <Chip
               testId="attention-chip-overdue"
@@ -203,11 +212,13 @@ export function AttentionChipBar({
             role="dialog"
             aria-modal="false"
             className={cn(
-              "absolute left-0 right-0 top-full z-30 mt-1.5",
+              "absolute top-full z-30 mt-1.5",
+              embedded
+                ? "right-0 w-[min(34rem,calc(100vw-2rem))]"
+                : "left-0 right-0",
               "max-h-[60vh] overflow-y-auto overflow-x-hidden",
               "rounded-2xl border border-nq-border/50 bg-nq-bg/95 backdrop-blur",
               "shadow-[var(--shadow-nq-lg,0_12px_32px_rgba(0,0,0,0.28))]",
-              "animate-[nq-attn-pop_140ms_var(--ease-nq-out,ease-out)]",
             )}
           >
             {open === "all" ? (
@@ -340,8 +351,6 @@ export function AttentionChipBar({
           </div>
         </>
       ) : null}
-
-      <style>{`@keyframes nq-attn-pop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}`}</style>
     </div>
   );
 }
@@ -358,6 +367,7 @@ function Chip({
   label,
   count,
   subBadge,
+  largeTouch = false,
 }: {
   testId: string;
   active: boolean;
@@ -368,6 +378,7 @@ function Chip({
   label: string;
   count: number;
   subBadge?: string | null;
+  largeTouch?: boolean;
 }) {
   const toneCls =
     tone === "danger"
@@ -384,6 +395,7 @@ function Chip({
       aria-expanded={active}
       className={cn(
         "group relative inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-all",
+        largeTouch && "min-h-11",
         toneCls,
         active && "ring-2 ring-current/30",
         "hover:brightness-110 active:scale-[0.97]",

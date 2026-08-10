@@ -150,7 +150,7 @@ test("every key's descriptor.key matches its map key", () => {
 
 test("registry has the expected Base/Beta inventory", () => {
   eq(BASE_FEATURE_KEYS.length, 10, "Base count");
-  eq(BETA_FEATURE_KEYS.length, 14, "Beta count");
+  eq(BETA_FEATURE_KEYS.length, 15, "Beta count");
   assert(
     BASE_FEATURE_KEYS.every((k) => RELEASE_FEATURES[k].defaultOn === true),
     "all Base defaultOn true",
@@ -166,6 +166,7 @@ test("mapped jsonb/column/plan keys match the known existing keys", () => {
     loyalty: "jsonb:loyalty_enabled",
     advanced_reports: "jsonb:reports_enabled",
     ai_control_center: "jsonb:ai_control_center_enabled",
+    receptionist_shell_v2: "jsonb:receptionist_shell_v2_enabled",
     nail_tryon: "jsonb:nail_tryon_enabled",
     archived_booking_recovery: "jsonb:archived_booking_recovery_enabled",
     ai_voice: "column:voice_ai_enabled",
@@ -302,6 +303,7 @@ test("isReleaseFeatureEditable true for every jsonb-sourced feature", () => {
     "advanced_reports",
     "admin_copilot",
     "ai_control_center",
+    "receptionist_shell_v2",
     "nail_tryon",
     "archived_booking_recovery",
   ] as const;
@@ -310,7 +312,7 @@ test("isReleaseFeatureEditable true for every jsonb-sourced feature", () => {
   }
   // Count: only these mapped JSONB features are editable across the registry.
   const editableCount = RELEASE_FEATURE_KEYS.filter(isReleaseFeatureEditable).length;
-  eq(editableCount, 9, "exactly 9 editable features");
+  eq(editableCount, 10, "exactly 10 editable features");
 });
 
 test("isReleaseFeatureEditable false for column/plan/registry features", () => {
@@ -339,7 +341,7 @@ test("releaseFeatureEditableFlagKey maps each editable feature to its jsonb key"
 });
 
 test("EDITABLE_RELEASE_FLAG_KEYS contains exactly the mapped jsonb keys", () => {
-  eq(EDITABLE_RELEASE_FLAG_KEYS.size, 9, "9 whitelisted keys");
+  eq(EDITABLE_RELEASE_FLAG_KEYS.size, 10, "10 whitelisted keys");
   for (const fk of [
     "receptionist_center_enabled",
     "walkin_queue_enabled",
@@ -348,6 +350,7 @@ test("EDITABLE_RELEASE_FLAG_KEYS contains exactly the mapped jsonb keys", () => 
     "reports_enabled",
     "admin_copilot_enabled",
     "ai_control_center_enabled",
+    "receptionist_shell_v2_enabled",
     "nail_tryon_enabled",
     "archived_booking_recovery_enabled",
   ]) {

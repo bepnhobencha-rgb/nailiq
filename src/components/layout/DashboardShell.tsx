@@ -133,7 +133,11 @@ export function DashboardShell({
           feature; nail_tech is view-only so the operational copilot is hidden
           for them. The API route re-checks both (defence in depth). */}
       {releaseFeatures?.admin_copilot && role !== "nail_tech" && (
-        <AdminCopilot slug={slug} role={role} />
+        <AdminCopilot
+          slug={slug}
+          role={role}
+          compactFab={releaseFeatures.receptionist_shell_v2 === true}
+        />
       )}
     </div>
   );

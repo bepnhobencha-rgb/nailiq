@@ -259,17 +259,20 @@ export function DashboardSidebar({
             match: () => false,
             hidden:
               featureOff("receptionist_center") || featureOff("walkin_queue"),
-            // Combined badge: overdue count takes precedence over
-            // waiting count (so the receptionist sees "1 overdue" in
-            // red, not "3 waiting" in gold). When ONLY waiting > 0, we
-            // surface the waiting count in gold.
+            // Shell V2 keeps this badge truthful to the queue. Legacy retains
+            // its existing overdue-first behaviour until that salon opts in.
             badge:
-              overdueCount > 0
-                ? overdueCount
-                : walkinQueueCount > 0
-                  ? walkinQueueCount
-                  : 0,
-            badgeTone: overdueCount > 0 ? "red" : "gold",
+              releaseFeatures.receptionist_shell_v2 === true
+                ? walkinQueueCount
+                : overdueCount > 0
+                  ? overdueCount
+                  : walkinQueueCount,
+            badgeTone:
+              releaseFeatures.receptionist_shell_v2 === true
+                ? "gold"
+                : overdueCount > 0
+                  ? "red"
+                  : "gold",
           },
           {
             key: "waitlist",
@@ -467,10 +470,10 @@ export function DashboardSidebar({
       t.settings,
       t.staff,
       walkinQueueCount,
-    overdueCount,
-    waitlistCount,
-    pendingApprovalsCount,
-    releaseFeatures,
+      overdueCount,
+      waitlistCount,
+      pendingApprovalsCount,
+      releaseFeatures,
     ],
   );
 

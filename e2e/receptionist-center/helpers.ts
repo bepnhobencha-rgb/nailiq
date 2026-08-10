@@ -511,7 +511,11 @@ export async function getBookingRow(
 export async function gotoReceptionistCenter(
   page: Page,
   slug: string,
-  opts?: { dateYmd?: string; expectWalkinQueue?: boolean },
+  opts?: {
+    dateYmd?: string;
+    expectWalkinQueue?: boolean;
+    shellV2?: boolean;
+  },
 ): Promise<void> {
   const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
 
@@ -546,8 +550,11 @@ export async function gotoReceptionistCenter(
   });
 
   const encodedSlug = encodeURIComponent(slug);
-  const q = opts?.dateYmd ? `?date=${encodeURIComponent(opts.dateYmd)}` : "";
-  const centerUrl = `/dashboard/${encodedSlug}/center${q}`;
+  const query = new URLSearchParams();
+  if (opts?.dateYmd) query.set("date", opts.dateYmd);
+  if (opts?.shellV2) query.set("shell", "v2");
+  const queryString = query.toString();
+  const centerUrl = `/dashboard/${encodedSlug}/center${queryString ? `?${queryString}` : ""}`;
   const waitForCenterOrRedirect = page
     .waitForURL(new RegExp(`\\/dashboard\\/${encodedSlug}\\/center(?:\\?.*)?\\/?$`), {
       timeout: 45_000,

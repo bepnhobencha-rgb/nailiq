@@ -29,6 +29,7 @@ type PageProps = {
     e2eNow?: string;
     recover?: string;
     recoveryKind?: string;
+    shell?: string;
   }>;
 };
 
@@ -48,7 +49,7 @@ export default async function ReceptionistCenterPage({
   searchParams,
 }: PageProps) {
   const { slug } = await params;
-  const { date, e2eNow, recover, recoveryKind } = await searchParams;
+  const { date, e2eNow, recover, recoveryKind, shell } = await searchParams;
 
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) {
@@ -127,6 +128,13 @@ export default async function ReceptionistCenterPage({
   const platformDisabled = await loadPlatformDisabledFeatures();
   const featureVisible = (key: Parameters<typeof isReleaseFeatureEnabled>[1]) =>
     !platformDisabled.has(key) && isReleaseFeatureEnabled(flagSalon, key);
+  const receptionistShellPreview =
+    shell === "v2" &&
+    (process.env.VERCEL_ENV === "preview" ||
+      (process.env.NAILIQ_TEST_BYPASS_SLUG_PIN === "1" &&
+        slug.startsWith("e2e-")));
+  const receptionistShellV2Enabled =
+    featureVisible("receptionist_shell_v2") || receptionistShellPreview;
 
   let archivedBookingRecoveryEnabled = featureVisible(
     "archived_booking_recovery",
@@ -283,6 +291,7 @@ export default async function ReceptionistCenterPage({
         bgColor={drcBgColor}
         previewBgColor={receptionistPreviewBgColor}
         archivedBookingRecoveryEnabled={archivedBookingRecoveryEnabled}
+        receptionistShellV2Enabled={receptionistShellV2Enabled}
         recoveryPrefill={recoveryPrefill}
       />
     </ReceptionistErrorBoundary>

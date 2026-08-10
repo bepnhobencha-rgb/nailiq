@@ -79,7 +79,13 @@ export function MobileBottomNav({
     (en: string, vi: string) => (language === "vi" ? vi : en),
     [language],
   );
-  const queueBadge = overdueCount > 0 ? overdueCount : walkinQueueCount;
+  const shellV2 = releaseFeatures.receptionist_shell_v2 === true;
+  const queueBadge = shellV2
+    ? walkinQueueCount
+    : overdueCount > 0
+      ? overdueCount
+      : walkinQueueCount;
+  const queueUrgent = !shellV2 && overdueCount > 0;
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -136,11 +142,11 @@ export function MobileBottomNav({
         icon: Clock,
         match: () => false,
         badge: queueBadge,
-        urgent: overdueCount > 0,
+        urgent: queueUrgent,
       });
     }
     return common;
-  }, [L, dashRoot, isOwner, overdueCount, queueBadge, releaseFeatures.advanced_reports, t.clients]);
+  }, [L, dashRoot, isOwner, queueBadge, queueUrgent, releaseFeatures.advanced_reports, t.clients]);
 
   const moreGroups = useMemo<MobileGroup[]>(() => {
     const groups: MobileGroup[] = [
@@ -155,7 +161,7 @@ export function MobileBottomNav({
             icon: Clock,
             match: () => false,
             badge: queueBadge,
-            urgent: overdueCount > 0,
+            urgent: queueUrgent,
           },
           {
             key: "waitlist",
@@ -235,7 +241,7 @@ export function MobileBottomNav({
       });
     }
     return groups;
-  }, [L, dashRoot, isOwner, overdueCount, pendingApprovalsCount, queueBadge, releaseFeatures, t, waitlistCount]);
+  }, [L, dashRoot, isOwner, pendingApprovalsCount, queueBadge, queueUrgent, releaseFeatures, t, waitlistCount]);
 
   const moreItems = moreGroups.flatMap((group) => group.items);
   const secondaryActive = moreItems.some((item) => item.match(pathname));
@@ -268,7 +274,7 @@ export function MobileBottomNav({
             >
               <span className="relative inline-flex">
                 <Ellipsis className="h-6 w-6" aria-hidden />
-                {moreBadge > 0 ? <Badge variant={overdueCount > 0 ? "danger" : "vip"} className="absolute -right-3 -top-1 h-4 min-w-4 px-1 text-[10px]">{moreBadge}</Badge> : null}
+                {moreBadge > 0 ? <Badge variant={queueUrgent ? "danger" : "vip"} className="absolute -right-3 -top-1 h-4 min-w-4 px-1 text-[10px]">{moreBadge}</Badge> : null}
               </span>
               <span className="max-w-full truncate text-[11px] font-semibold leading-none">{L("More", "Thêm")}</span>
             </button>

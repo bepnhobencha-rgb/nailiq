@@ -170,6 +170,7 @@ import { BookingLimitBanner } from "@/components/dashboard/BookingLimitBanner";
 import { PartyCardPanel } from "@/components/receptionist/PartyCardPanel";
 import { AttentionChipBar } from "@/components/receptionist/AttentionChipBar";
 import { NailiqSuggestionBar } from "@/components/receptionist/NailiqSuggestionBar";
+import { ReceptionistCreateMenu } from "@/components/receptionist/ReceptionistCreateMenu";
 import { ReceptionistInterfaceSwitcher } from "@/components/receptionist/ReceptionistInterfaceSwitcher";
 import { ReceptionistDisplayMenu } from "@/components/receptionist/ReceptionistDisplayMenu";
 import { DailyBriefCard } from "@/components/receptionist/DailyBriefCard";
@@ -284,6 +285,8 @@ export type ReceptionistCenterProps = {
   /** Additive rollout flag. Terminal cancelled/no-show rows remain immutable;
    * recovery always creates a separately linked booking. */
   archivedBookingRecoveryEnabled?: boolean;
+  /** Calm option-B shell. Additive, per-salon, and OFF by default. */
+  receptionistShellV2Enabled?: boolean;
   /** Server-authorized, same-salon source data. URL parameters contain IDs only. */
   recoveryPrefill?: ReceptionistRecoveryPrefill | null;
 };
@@ -439,6 +442,7 @@ function ReceptionistCenterInner({
   bgColor,
   previewBgColor,
   archivedBookingRecoveryEnabled,
+  receptionistShellV2Enabled,
   recoveryPrefill,
 }: {
   slug: string;
@@ -454,6 +458,7 @@ function ReceptionistCenterInner({
   bgColor: string | null;
   previewBgColor: string | null;
   archivedBookingRecoveryEnabled: boolean;
+  receptionistShellV2Enabled: boolean;
   recoveryPrefill: ReceptionistRecoveryPrefill | null;
 }) {
   const router = useRouter();
@@ -569,7 +574,11 @@ function ReceptionistCenterInner({
   const [dateOffset, setDateOffset] = useState<-1 | 0 | 1>(0);
   const { receptionistInterface, setReceptionistInterface } =
     useReceptionistInterface();
-  const previewInterface = receptionistInterface === "preview";
+  // Shell V2 deliberately reuses the stable Classic timeline. The stored
+  // interface preference is not mutated, so disabling the pilot restores the
+  // exact previous experience.
+  const previewInterface =
+    !receptionistShellV2Enabled && receptionistInterface === "preview";
 
   // Publish the opt-in mode to the dashboard shell so New can use the full
   // canvas shown in the approved mockup. Removing/switching back restores the
@@ -1392,11 +1401,15 @@ function ReceptionistCenterInner({
     [data.salon.id, timezone],
   );
   const modules = data.dashboardModules;
-  // Rush mode forces density to "simple" so the desk renders with
-  // the highest-contrast / lowest-noise rhythm. We override the
-  // visual config without persisting back to the salon — when rush
-  // clears, density returns to the user's saved choice.
-  const effectiveDensity = rush.active ? "simple" : data.dashboardDensity;
+  // Shell V2 has one deliberate, predictable information level: Pro. We only
+  // override the visual config in memory; the salon's saved density remains
+  // untouched and returns immediately if the pilot flag is disabled. Legacy
+  // keeps the existing rush-hour Simple override.
+  const effectiveDensity: DensityLevel = receptionistShellV2Enabled
+    ? "pro"
+    : rush.active
+      ? "simple"
+      : data.dashboardDensity;
   const densityConfig = useMemo(
     () => densityConfigFor(effectiveDensity),
     [effectiveDensity],
@@ -2432,7 +2445,11 @@ function ReceptionistCenterInner({
     data.services.length === 0 || data.staff.length === 0;
 
   // ── Basic Mode cockpit data (deterministic; display-only) ───────
-  const basicModeActive = basicMode && isViewingToday && viewMode === "day";
+  const basicModeActive =
+    !receptionistShellV2Enabled &&
+    basicMode &&
+    isViewingToday &&
+    viewMode === "day";
 
   // ── Groups summary for the AttentionChipBar "Groups" chip ───────────
   // Non-basic modes surface upcoming parties through the chip bar's dropdown
@@ -3013,12 +3030,57 @@ function ReceptionistCenterInner({
         }
       : undefined;
 
+  const renderAttentionCenter = (embedded = false) => (
+    <AttentionChipBar
+      language={language === "vi" ? "vi" : "en"}
+      overdue={attentionOverdue}
+      noShowsToday={noShowsTodayList}
+      groupSummary={previewInterface ? null : groupSummary}
+      groupsContent={
+        !previewInterface && showGroupsChip ? (
+          <PartyCardPanel
+            initialCards={partyCards}
+            slug={slug}
+            salonId={data.salon.id}
+            currencyCode={data.salon.currencyCode}
+            labels={rcMessages.partyCard}
+            canCancel={canCancelBooking(viewerRole)}
+          />
+        ) : null
+      }
+      waitlistSummary={waitlistSummary}
+      waitlistContent={
+        waitlistSummary ? (
+          <OnlineWaitlistPanel
+            slug={slug}
+            entries={data.onlineWaitlist}
+            onCreateBooking={createBookingFromClaim}
+          />
+        ) : null
+      }
+      busy={drawerBusy}
+      removedLabel={attentionRemovedLabel}
+      formatTime={(utcIso) => formatInSalonTz(utcIso, timezone, "time")}
+      displayName={displayCustomerName}
+      onOpenBooking={(id) => openBookingDrawer(id)}
+      onMarkNoShow={(id) => void triggerMarkNoShow(id)}
+      onUndoNoShow={
+        archivedBookingRecoveryEnabled
+          ? undefined
+          : (id) => void handleUndoNoShow(id)
+      }
+      embedded={embedded}
+    />
+  );
+
   return (
     <>
       <div
         data-testid="receptionist-center-loaded"
         data-rush-mode={rush.active ? "on" : "off"}
-        data-receptionist-interface={receptionistInterface}
+        data-receptionist-interface={previewInterface ? "preview" : "classic"}
+        data-receptionist-shell={receptionistShellV2Enabled ? "v2" : "legacy"}
+        data-receptionist-density={effectiveDensity}
         style={{
           ...drcCssVars,
           backgroundColor: previewInterface ? newInterfaceBg : drcBg,
@@ -3186,10 +3248,25 @@ function ReceptionistCenterInner({
                 {data.salon.name}
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3 xl:mr-32 2xl:mr-0">
-              <ReceptionistDisplayMenu
-                language={language === "vi" ? "vi" : "en"}
-              >
+            <div
+              className={cn(
+                "flex flex-wrap items-center gap-2 sm:gap-3 2xl:mr-0",
+                // DashboardViewControls is fixed in the top-right corner. At
+                // iPad widths it previously sat on top of Shell V2's primary
+                // Create action and intercepted taps. Reserve its footprint
+                // from md through xl; desktop releases it again at 2xl.
+                receptionistShellV2Enabled ? "md:mr-32" : "xl:mr-32",
+              )}
+            >
+              {receptionistShellV2Enabled ? (
+                <UserLanguageToggle
+                  language={language}
+                  onLanguageChange={setLanguage}
+                />
+              ) : (
+                <ReceptionistDisplayMenu
+                  language={language === "vi" ? "vi" : "en"}
+                >
                 <ReceptionistInterfaceSwitcher
                   value={receptionistInterface}
                   language={language === "vi" ? "vi" : "en"}
@@ -3295,14 +3372,16 @@ function ReceptionistCenterInner({
                   language={language}
                   onLanguageChange={setLanguage}
                 />
-              </ReceptionistDisplayMenu>
+                </ReceptionistDisplayMenu>
+              )}
               {/* Status pill duplicates the Now Bar's Waiting + In service
                   counts, so it's hidden in Basic Mode. Balanced/Advanced
                   keep it (no Now Bar there). */}
               {isViewingToday &&
               modules.kpi_bar &&
               !basicModeActive &&
-              !previewInterface ? (
+              !previewInterface &&
+              !receptionistShellV2Enabled ? (
                 <StatusPill
                   waitingCount={queueItems.length}
                   inProgressCount={inProgressToday}
@@ -3323,7 +3402,8 @@ function ReceptionistCenterInner({
                */}
               {viewerRole === "owner" &&
               !basicModeActive &&
-              !previewInterface ? (
+              !previewInterface &&
+              !receptionistShellV2Enabled ? (
                 <Badge
                   data-testid="role-badge-owner"
                   variant="info"
@@ -3333,7 +3413,8 @@ function ReceptionistCenterInner({
                 >
                   {rcMessages.roleBadge.ownerView}
                 </Badge>
-              ) : viewerRole === "nail_tech" ? (
+              ) : viewerRole === "nail_tech" &&
+                !receptionistShellV2Enabled ? (
                 <Badge
                   data-testid="role-badge-nail-tech"
                   variant="neutral"
@@ -3436,6 +3517,29 @@ function ReceptionistCenterInner({
                   />
                 </div>
               ) : null}
+              {receptionistShellV2Enabled && !isMobile ? (
+                <ReceptionistCreateMenu
+                  language={language === "vi" ? "vi" : "en"}
+                  canAddWalkin={
+                    isViewingToday &&
+                    viewMode === "day" &&
+                    modules.queue_panel &&
+                    modules.quick_add &&
+                    canCreateDeskBooking(viewerRole) &&
+                    !isSetupIncomplete
+                  }
+                  canAddAppointment={
+                    viewMode === "day" && canCreateDeskBooking(viewerRole)
+                  }
+                  canAddGroup={viewMode === "day" && groupBookingEnabled}
+                  onAddWalkin={openWalkinAdd}
+                  onAddAppointment={() => {
+                    setDeskPrefill({ ymd: data.selectedDate });
+                    setDeskBookingOpen(true);
+                  }}
+                  onAddGroup={() => setDeskGroupOpen(true)}
+                />
+              ) : null}
               {/*
                * Prominent "+ Walk-in" CTA (P1 desk feedback: the queue
                * toggle alone wasn't an obvious "add a walk-in" entry).
@@ -3445,7 +3549,8 @@ function ReceptionistCenterInner({
                * Gated to the surfaces where adding is actually possible:
                * today's day view with the queue + quick-add modules on.
                */}
-              {isViewingToday &&
+              {!receptionistShellV2Enabled &&
+              isViewingToday &&
               viewMode === "day" &&
               modules.queue_panel &&
               modules.quick_add &&
@@ -3466,7 +3571,9 @@ function ReceptionistCenterInner({
               ) : null}
               {/* "New appointment" — book a phone-in customer for a FUTURE date
                  (not gated to today, unlike the walk-in queue). */}
-              {viewMode === "day" && canCreateDeskBooking(viewerRole) ? (
+              {!receptionistShellV2Enabled &&
+              viewMode === "day" &&
+              canCreateDeskBooking(viewerRole) ? (
                 <Button
                   variant="secondary"
                   size="sm"
@@ -3533,7 +3640,9 @@ function ReceptionistCenterInner({
               ) : null}
               {/* "Group" — book a group/party for a future date. Gated on the
                  same per-salon `group_booking` flag as the party-card strip. */}
-              {viewMode === "day" && groupBookingEnabled ? (
+              {!receptionistShellV2Enabled &&
+              viewMode === "day" &&
+              groupBookingEnabled ? (
                 <Button
                   variant="secondary"
                   size="sm"
@@ -3592,7 +3701,10 @@ function ReceptionistCenterInner({
                   aria-pressed={queuePanelOpen}
                   data-testid="queue-panel-toggle"
                   className={cn(
-                    "relative inline-flex min-h-9 touch-manipulation items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                    "relative inline-flex touch-manipulation items-center gap-1.5 rounded-md border py-1 text-xs font-medium transition-colors",
+                    receptionistShellV2Enabled
+                      ? "min-h-11 px-3"
+                      : "min-h-9 px-2.5",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45",
                     queuePanelOpen
                       ? "border-nq-primary/40 bg-nq-primary/15 text-nq-primary"
@@ -3714,7 +3826,12 @@ function ReceptionistCenterInner({
                 type="button"
                 data-testid="jump-to-now"
                 onClick={() => setJumpToNowTrigger((n) => n + 1)}
-                className="shrink-0 rounded-full border border-nq-primary/35 bg-nq-primary/10 px-2.5 py-1 text-xs font-medium text-nq-primary transition hover:bg-nq-primary/[0.16] active:scale-[0.98] motion-reduce:active:scale-100"
+                className={cn(
+                  "shrink-0 rounded-full border border-nq-primary/35 bg-nq-primary/10 py-1 text-xs font-medium text-nq-primary transition hover:bg-nq-primary/[0.16] active:scale-[0.98] motion-reduce:active:scale-100",
+                  receptionistShellV2Enabled
+                    ? "min-h-11 px-3"
+                    : "px-2.5",
+                )}
               >
                 {rcMessages.jumpToNow}
               </button>
@@ -3769,7 +3886,10 @@ function ReceptionistCenterInner({
           />
         ) : null}
 
-        {!previewInterface && isViewingToday && viewMode === "day" ? (
+        {!previewInterface &&
+        !receptionistShellV2Enabled &&
+        isViewingToday &&
+        viewMode === "day" ? (
           <DailyBriefCard
             bookings={data.bookingsForDay}
             readyStaffCount={availableStaffCount}
@@ -3789,10 +3909,22 @@ function ReceptionistCenterInner({
           <NailiqSuggestionBar
             inputs={cockpitInputs}
             labels={cockpitLabels}
-            heading={rcMessages.basicMode.aiSuggestionHeading}
+            heading={
+              receptionistShellV2Enabled
+                ? language === "vi"
+                  ? "Việc cần làm"
+                  : "Action center"
+                : rcMessages.basicMode.aiSuggestionHeading
+            }
             allClear={rcMessages.basicMode.aiAllClear}
             reasons={rcMessages.basicMode.aiReasons}
             onAction={onCockpitAction}
+            comfortableTouch={receptionistShellV2Enabled}
+            trailing={
+              receptionistShellV2Enabled
+                ? renderAttentionCenter(true)
+                : undefined
+            }
           />
         ) : null}
 
@@ -3804,7 +3936,7 @@ function ReceptionistCenterInner({
          * "now" semantics (Coming up 30m, Overdue, Next available) so
          * historical/future date views must not pretend they are live.
          */}
-        {previewInterface ? null : basicModeActive ? (
+        {previewInterface || receptionistShellV2Enabled ? null : basicModeActive ? (
           /* Basic Mode replaces the full KPI band with the Front Desk
              Cockpit: Critical Alerts (max 2) + Next Action + 4-card Now Bar.
              Revenue / avg-wait / next-available clutter is intentionally
@@ -4018,47 +4150,9 @@ function ReceptionistCenterInner({
                   : "",
               )}
             >
-              <AttentionChipBar
-                language={language === "vi" ? "vi" : "en"}
-                overdue={attentionOverdue}
-                noShowsToday={noShowsTodayList}
-                groupSummary={previewInterface ? null : groupSummary}
-                groupsContent={
-                  !previewInterface && showGroupsChip ? (
-                    <PartyCardPanel
-                      initialCards={partyCards}
-                      slug={slug}
-                      salonId={data.salon.id}
-                      currencyCode={data.salon.currencyCode}
-                      labels={rcMessages.partyCard}
-                      canCancel={canCancelBooking(viewerRole)}
-                    />
-                  ) : null
-                }
-                waitlistSummary={waitlistSummary}
-                waitlistContent={
-                  waitlistSummary ? (
-                    <OnlineWaitlistPanel
-                      slug={slug}
-                      entries={data.onlineWaitlist}
-                      onCreateBooking={createBookingFromClaim}
-                    />
-                  ) : null
-                }
-                busy={drawerBusy}
-                removedLabel={attentionRemovedLabel}
-                formatTime={(utcIso) =>
-                  formatInSalonTz(utcIso, timezone, "time")
-                }
-                displayName={displayCustomerName}
-                onOpenBooking={(id) => openBookingDrawer(id)}
-                onMarkNoShow={(id) => void triggerMarkNoShow(id)}
-                onUndoNoShow={
-                  archivedBookingRecoveryEnabled
-                    ? undefined
-                    : (id) => void handleUndoNoShow(id)
-                }
-              />
+              {receptionistShellV2Enabled
+                ? null
+                : renderAttentionCenter()}
 
               {previewInterface && !isMobile ? (
                 <div
@@ -4963,6 +5057,7 @@ export function ReceptionistCenter({
   bgColor,
   previewBgColor,
   archivedBookingRecoveryEnabled = false,
+  receptionistShellV2Enabled = false,
   recoveryPrefill = null,
 }: ReceptionistCenterProps) {
   if (!initialResult.ok) {
@@ -4981,6 +5076,7 @@ export function ReceptionistCenter({
       bgColor={bgColor ?? null}
       previewBgColor={previewBgColor ?? null}
       archivedBookingRecoveryEnabled={archivedBookingRecoveryEnabled}
+      receptionistShellV2Enabled={receptionistShellV2Enabled}
       recoveryPrefill={recoveryPrefill}
     />
   );
