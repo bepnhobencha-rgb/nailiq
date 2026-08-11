@@ -68,6 +68,9 @@ export type BookingSalonMeta = {
   /** Release flag `group_booking` (PR2). When false, the public booking page
    *  hides the Individual/Group toggle and renders the individual flow only. */
   groupBookingEnabled: boolean;
+  /** QA-first presentation flag. Groups the existing time slots into a short,
+   *  customer-friendly period picker without changing availability logic. */
+  bookingTimePeriodsEnabled: boolean;
   /** `salons.vertical` slug (nail_salon | head_spa | …). Drives schema.org
    *  type, staff-role label, and hero tagline fallback. Defaults to
    *  `"nail_salon"` for legacy rows. */
@@ -524,6 +527,9 @@ export async function loadBookingServicesForSalonSlug(
         },
         "group_booking",
       ),
+      bookingTimePeriodsEnabled:
+        ((salon as { feature_flags?: Record<string, unknown> | null }).feature_flags
+          ?.booking_time_periods_enabled) === true,
       // `salons.vertical` added by migration 20260604120000. Cast-tolerant:
       // a row on the prior schema returns undefined → "nail_salon".
       vertical:
