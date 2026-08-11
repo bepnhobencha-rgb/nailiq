@@ -97,7 +97,7 @@ export async function POST(req: Request) {
   // Check if SMS is enabled for this salon
   const { data: salon } = await db
     .from("salons")
-    .select("name, slug, subscription_plan, plan_override, address, email_outbound_enabled, timezone, default_notification_locale")
+    .select("name, slug, subscription_plan, plan_override, address, sms_outbound_enabled, email_outbound_enabled, timezone, default_notification_locale")
     .eq("id", salonId)
     .maybeSingle();
 
@@ -235,36 +235,51 @@ export async function POST(req: Request) {
       : "";
   const message = baseMessage + addrLine + manageLink;
   const statusCallbackUrl = `${SITE_URL}/api/twilio/status`;
-  const result = await sendSmsReminder(clientPhone, message, { statusCallbackUrl, salonIsTest, lang: lang === "en" ? "en" : "vi" });
+  // The salon-level switch is a hard operational kill-switch. Keep consent
+  // evidence above, but do not call Twilio, stamp the booking as sent, or fan
+  // out group-member texts while outbound SMS is disabled.
+  const smsOutboundEnabled =
+    (salon as { sms_outbound_enabled?: boolean | null }).sms_outbound_enabled !== false;
+  const result = smsOutboundEnabled
+    ? await sendSmsReminder(clientPhone, message, {
+        statusCallbackUrl,
+        salonIsTest,
+        lang: lang === "en" ? "en" : "vi",
+      })
+    : { ok: true as const, error: undefined, messageSid: undefined };
 
   // Track on bookings row (legacy columns kept for now).
   // Awaited: a PostgrestBuilder only issues its request from `then()`, so the
   // `void`-ed form here never wrote — every one of these columns was NULL.
-  const { error: trackError } = await db
-    .from("bookings")
-    .update(
-      result.ok
-        ? { sms_confirmation_sent_at: new Date().toISOString() }
-        : {
-            sms_confirmation_failed_at: new Date().toISOString(),
-            sms_confirmation_error: result.error ?? "unknown",
-          },
-    )
-    .eq("id", bookingId);
-  if (trackError) console.error("[sms-confirm] sms_confirmation tracking write failed", trackError.message);
+  if (smsOutboundEnabled) {
+    const { error: trackError } = await db
+      .from("bookings")
+      .update(
+        result.ok
+          ? { sms_confirmation_sent_at: new Date().toISOString() }
+          : {
+              sms_confirmation_failed_at: new Date().toISOString(),
+              sms_confirmation_error: result.error ?? "unknown",
+            },
+      )
+      .eq("id", bookingId);
+    if (trackError) console.error("[sms-confirm] sms_confirmation tracking write failed", trackError.message);
+  }
 
   // Log to central notifications table
-  void logNotification({
-    bookingId,
-    salonId,
-    notificationType: "booking_confirmation",
-    channel: "sms",
-    clientPhone,
-    messageSid: result.messageSid,
-    bodyPreview: message,
-    ok: result.ok,
-    errorMessage: result.error,
-  });
+  if (smsOutboundEnabled) {
+    void logNotification({
+      bookingId,
+      salonId,
+      notificationType: "booking_confirmation",
+      channel: "sms",
+      clientPhone,
+      messageSid: result.messageSid,
+      bodyPreview: message,
+      ok: result.ok,
+      errorMessage: result.error,
+    });
+  }
 
   const emailOutboundEnabled = (salon as { email_outbound_enabled?: boolean | null }).email_outbound_enabled !== false;
 
@@ -300,7 +315,7 @@ export async function POST(req: Request) {
   // Each non-organizer member gets a personal SMS with their slot details and
   // a unique RSVP link so they can confirm or decline attendance without
   // needing to contact the organizer.
-  if (isGroup && groupId) {
+  if (smsOutboundEnabled && isGroup && groupId) {
     void sendGroupMemberSms({
       db,
       groupId,
