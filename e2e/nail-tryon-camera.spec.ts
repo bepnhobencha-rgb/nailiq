@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import path from "node:path";
 
 import { cleanupTestSalon, seedTestSalon } from "./helpers/db";
 
@@ -79,5 +80,29 @@ test.describe("Nail Try-On camera fallback", () => {
 
     await expect(page.getByLabel("Take a new photo")).toHaveCount(0);
     await expect(page.getByLabel("Choose an existing photo")).toBeVisible();
+  });
+
+  test("offers an easier 4+1 capture and combines both views locally", async ({ page }) => {
+    await page.goto(`/${SLUG}/try-on`);
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Continue" }).click();
+
+    await expect(page.getByRole("button", { name: "One photo" })).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: "Easy 4+1" }).click();
+    await expect(page.getByRole("button", { name: "Easy 4+1" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText("Four fingers", { exact: true })).toBeVisible();
+    await expect(page.getByText("Thumb", { exact: true })).toBeVisible();
+
+    const fixture = path.resolve(
+      process.cwd(),
+      "e2e/visual/visual-regression.spec.ts-snapshots/booking-desktop-chromium-linux.png",
+    );
+    await page.getByLabel("Choose an existing photo").setInputFiles(fixture);
+    await expect(page.getByRole("alert")).toContainText("Four fingers saved");
+    await expect(page.getByText("Thumb", { exact: true })).toBeVisible();
+
+    await page.getByLabel("Choose an existing photo").setInputFiles(fixture);
+    await expect(page.getByAltText("Your hand photo preview")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
   });
 });

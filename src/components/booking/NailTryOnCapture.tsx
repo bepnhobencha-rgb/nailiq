@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, ImagePlus, RotateCcw, ShieldCheck, X } from "lucide-react";
+import { Camera, Check, ImagePlus, RotateCcw, ShieldCheck, Sparkles, X } from "lucide-react";
 import {
   evaluateClientImageQuality,
   inspectPixels,
@@ -20,6 +20,7 @@ import {
   NAIL_TRYON_UPLOAD_CLIENT_TIMEOUT_MS,
   NailTryOnRequestTimeoutError,
 } from "@/shared/nailTryOn/timeouts";
+import type { NailTryOnCaptureMode } from "@/shared/nailTryOn/captureMode";
 
 const COPY: Record<Exclude<ClientQualityCode, "pass">, { en: string; vi: string }> = {
   unsupported_format: { en: "Use a JPEG, PNG, or WebP image.", vi: "Hãy dùng ảnh JPEG, PNG hoặc WebP." },
@@ -44,6 +45,90 @@ type Props = {
 
 type CatalogDesign = { id: string; name: string; description: string | null; previewUrl: string | null };
 type CameraState = "idle" | "starting" | "live" | "fallback";
+type CaptureStage = "single" | "four" | "thumb";
+type HandSide = "left" | "right";
+type CoachStatus = "idle" | "positioning" | "too_dark" | "too_bright" | "soft" | "hold_still" | "countdown" | "capturing";
+
+function drawCoverImage(
+  context: CanvasRenderingContext2D,
+  bitmap: ImageBitmap,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+) {
+  const scale = Math.max(width / bitmap.width, height / bitmap.height);
+  const sourceWidth = width / scale;
+  const sourceHeight = height / scale;
+  const sourceX = (bitmap.width - sourceWidth) / 2;
+  const sourceY = (bitmap.height - sourceHeight) / 2;
+  context.drawImage(bitmap, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
+}
+
+async function composeFourPlusOneCapture(fourFingers: File, thumb: File) {
+  const [fourBitmap, thumbBitmap] = await Promise.all([
+    createImageBitmap(fourFingers, { imageOrientation: "from-image" }),
+    createImageBitmap(thumb, { imageOrientation: "from-image" }),
+  ]);
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1600;
+    canvas.height = 1200;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("canvas_unavailable");
+
+    context.fillStyle = "#f5f5f4";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    drawCoverImage(context, fourBitmap, 0, 0, 1180, 1200);
+    context.fillStyle = "#d4af37";
+    context.fillRect(1180, 0, 16, 1200);
+    drawCoverImage(context, thumbBitmap, 1196, 0, 404, 1200);
+
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    if (!blob) throw new Error("capture_board_failed");
+    return new File([blob], `nail-tryon-4-plus-1-${Date.now()}.jpg`, { type: "image/jpeg" });
+  } finally {
+    fourBitmap.close();
+    thumbBitmap.close();
+  }
+}
+
+function SmartHandGuide({
+  handSide,
+  stage,
+  active,
+}: {
+  handSide: HandSide;
+  stage: CaptureStage;
+  active: boolean;
+}) {
+  const isThumbOnly = stage === "thumb";
+  const showThumb = stage !== "four";
+  const stroke = active ? "#34d399" : "rgba(255,255,255,0.82)";
+  return (
+    <svg
+      viewBox="0 0 120 90"
+      aria-hidden
+      className={`pointer-events-none absolute inset-4 h-[calc(100%-2rem)] w-[calc(100%-2rem)] transition-transform ${handSide === "left" ? "-scale-x-100" : ""}`}
+    >
+      {isThumbOnly ? (
+        <>
+          <path d="M42 73 C34 55 38 27 52 14 C62 6 78 12 78 25 L77 63 C76 76 52 82 42 73Z" fill="rgba(255,255,255,0.06)" stroke={stroke} strokeWidth="2" strokeDasharray="4 3" />
+          <ellipse cx="64" cy="23" rx="9" ry="13" fill="none" stroke={stroke} strokeWidth="2.4" />
+        </>
+      ) : (
+        <>
+          <path d="M31 76 C25 63 24 47 28 36 L31 17 C32 10 43 10 44 18 L45 31 L48 11 C49 3 61 4 61 12 L61 31 L66 10 C68 3 79 5 79 13 L76 34 L83 17 C86 10 96 14 94 22 L88 45 C93 39 101 35 107 39 C112 43 108 50 103 54 L87 73 C78 84 39 86 31 76Z" fill="rgba(255,255,255,0.06)" stroke={stroke} strokeWidth="2" strokeDasharray="4 3" />
+          <ellipse cx="38" cy="19" rx="5" ry="8" fill="none" stroke={stroke} strokeWidth="2" />
+          <ellipse cx="55" cy="13" rx="5" ry="8" fill="none" stroke={stroke} strokeWidth="2" />
+          <ellipse cx="72" cy="14" rx="5" ry="8" fill="none" stroke={stroke} strokeWidth="2" />
+          <ellipse cx="88" cy="22" rx="5" ry="8" fill="none" stroke={stroke} strokeWidth="2" />
+          {showThumb ? <ellipse cx="102" cy="46" rx="8" ry="5" fill="none" stroke={stroke} strokeWidth="2" /> : null}
+        </>
+      )}
+    </svg>
+  );
+}
 const LENGTHS: Array<{ value: NailConfiguration["length"]; label: string }> = [
   { value: "natural", label: "Natural" }, { value: "x_short", label: "X-Short" }, { value: "short", label: "Short" }, { value: "medium", label: "Medium" }, { value: "long", label: "Long" }, { value: "extra_long", label: "X-Long" }, { value: "xx_long", label: "XX-Long" },
 ];
@@ -96,22 +181,46 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
   const [cameraState, setCameraState] = useState<CameraState>("idle");
   const [cameraMessage, setCameraMessage] = useState<string | null>(null);
   const [supportsDirectCapture, setSupportsDirectCapture] = useState(false);
+  const [captureMode, setCaptureMode] = useState<NailTryOnCaptureMode>("single");
+  const [captureStage, setCaptureStage] = useState<CaptureStage>("single");
+  const [handSide, setHandSide] = useState<HandSide>("right");
+  const [fourFingerPhoto, setFourFingerPhoto] = useState<File | null>(null);
+  const [fourFingerPreviewUrl, setFourFingerPreviewUrl] = useState<string | null>(null);
+  const [coachStatus, setCoachStatus] = useState<CoachStatus>("idle");
+  const [coachCountdown, setCoachCountdown] = useState<number | null>(null);
+  const [coachRunning, setCoachRunning] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const libraryInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const cameraRequestRef = useRef(0);
+  const coachIntervalRef = useRef<number | null>(null);
+  const coachPreviousFrameRef = useRef<Uint8ClampedArray | null>(null);
+  const coachStableFramesRef = useRef(0);
+  const coachCaptureLockRef = useRef(false);
 
   const stopCamera = useCallback(() => {
     cameraRequestRef.current += 1;
+    if (coachIntervalRef.current !== null) window.clearInterval(coachIntervalRef.current);
+    coachIntervalRef.current = null;
+    coachPreviousFrameRef.current = null;
+    coachStableFramesRef.current = 0;
+    coachCaptureLockRef.current = false;
     stopMediaStream(cameraStreamRef.current);
     cameraStreamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+    setCoachStatus("idle");
+    setCoachCountdown(null);
+    setCoachRunning(false);
   }, []);
 
   useEffect(() => () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
   }, [previewUrl]);
+
+  useEffect(() => () => {
+    if (fourFingerPreviewUrl) URL.revokeObjectURL(fourFingerPreviewUrl);
+  }, [fourFingerPreviewUrl]);
 
   useEffect(() => {
     window.addEventListener("pagehide", stopCamera);
@@ -173,9 +282,16 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
     }
   }
 
-  function reset() {
+  function clearFourPlusOneDraft() {
+    if (fourFingerPreviewUrl) URL.revokeObjectURL(fourFingerPreviewUrl);
+    setFourFingerPhoto(null);
+    setFourFingerPreviewUrl(null);
+  }
+
+  function reset(nextMode: NailTryOnCaptureMode = captureMode) {
     stopCamera();
     if (previewUrl) URL.revokeObjectURL(previewUrl);
+    clearFourPlusOneDraft();
     setPreviewUrl(null);
     setQuality(null);
     setPhoto(null);
@@ -183,8 +299,15 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
     setServerWarning(null);
     setCameraState("idle");
     setCameraMessage(null);
+    setCaptureStage(nextMode === "four_plus_one" ? "four" : "single");
     if (cameraInputRef.current) cameraInputRef.current.value = "";
     if (libraryInputRef.current) libraryInputRef.current.value = "";
+  }
+
+  function chooseCaptureMode(nextMode: NailTryOnCaptureMode) {
+    if (nextMode === captureMode && !previewUrl && !fourFingerPhoto) return;
+    reset(nextMode);
+    setCaptureMode(nextMode);
   }
 
   async function startLiveCamera() {
@@ -211,6 +334,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
       setCameraState("live");
+      setCoachStatus("positioning");
     } catch (error) {
       stopCamera();
       setCameraState("fallback");
@@ -241,7 +365,114 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
     }
 
     const file = new File([blob], `nail-tryon-${Date.now()}.jpg`, { type: "image/jpeg" });
-    await inspect(file);
+    await acceptCapturedPhoto(file);
+  }
+
+  async function acceptCapturedPhoto(file: File) {
+    if (captureMode !== "four_plus_one") {
+      await inspect(file);
+      return;
+    }
+
+    if (captureStage === "four") {
+      stopCamera();
+      clearFourPlusOneDraft();
+      const url = URL.createObjectURL(file);
+      setFourFingerPhoto(file);
+      setFourFingerPreviewUrl(url);
+      setCaptureStage("thumb");
+      setCameraState("idle");
+      setCameraMessage(L("Four fingers saved. Now capture the thumb.", "Đã lưu 4 ngón. Bây giờ chụp riêng ngón cái."));
+      return;
+    }
+
+    if (!fourFingerPhoto) {
+      setCaptureStage("four");
+      setCameraMessage(L("Capture four fingers first.", "Hãy chụp 4 ngón trước."));
+      return;
+    }
+
+    try {
+      setCameraMessage(L("Combining both views…", "Đang ghép hai góc chụp…"));
+      const captureBoard = await composeFourPlusOneCapture(fourFingerPhoto, file);
+      await inspect(captureBoard);
+      clearFourPlusOneDraft();
+    } catch {
+      setCameraMessage(L("We could not combine these photos. Please retake them.", "Chưa thể ghép hai ảnh. Vui lòng chụp lại."));
+    }
+  }
+
+  function stopAutoCoach() {
+    if (coachIntervalRef.current !== null) window.clearInterval(coachIntervalRef.current);
+    coachIntervalRef.current = null;
+    coachPreviousFrameRef.current = null;
+    coachStableFramesRef.current = 0;
+    setCoachCountdown(null);
+    setCoachStatus("positioning");
+    setCoachRunning(false);
+  }
+
+  function startAutoCoach() {
+    const video = videoRef.current;
+    if (!video || cameraState !== "live" || coachIntervalRef.current !== null) return;
+    coachStableFramesRef.current = 0;
+    coachCaptureLockRef.current = false;
+    coachPreviousFrameRef.current = null;
+    setCoachStatus("positioning");
+    setCoachCountdown(null);
+    setCoachRunning(true);
+
+    coachIntervalRef.current = window.setInterval(() => {
+      const currentVideo = videoRef.current;
+      if (!currentVideo || currentVideo.videoWidth < 1 || currentVideo.videoHeight < 1 || coachCaptureLockRef.current) return;
+      const canvas = document.createElement("canvas");
+      canvas.width = 96;
+      canvas.height = 72;
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      if (!context) return;
+      context.drawImage(currentVideo, 0, 0, canvas.width, canvas.height);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+      const stats = inspectPixels(pixels.data, canvas.width, canvas.height);
+
+      let nextStatus: CoachStatus = "countdown";
+      if (stats.meanLuma < 48) nextStatus = "too_dark";
+      else if (stats.meanLuma > 235) nextStatus = "too_bright";
+      else if (stats.edgeVariance < 5.5) nextStatus = "soft";
+
+      const previous = coachPreviousFrameRef.current;
+      let motion = 0;
+      if (previous?.length === pixels.data.length) {
+        let samples = 0;
+        for (let offset = 0; offset < pixels.data.length; offset += 32) {
+          motion += Math.abs(pixels.data[offset] - previous[offset]);
+          samples += 1;
+        }
+        motion /= Math.max(1, samples);
+      }
+      coachPreviousFrameRef.current = new Uint8ClampedArray(pixels.data);
+
+      if (nextStatus === "countdown" && previous && motion > 12) nextStatus = "hold_still";
+      if (nextStatus !== "countdown") {
+        coachStableFramesRef.current = 0;
+        setCoachCountdown(null);
+        setCoachStatus(nextStatus);
+        return;
+      }
+
+      coachStableFramesRef.current += 1;
+      const remaining = Math.max(1, 4 - coachStableFramesRef.current);
+      setCoachStatus("countdown");
+      setCoachCountdown(remaining);
+      if (coachStableFramesRef.current < 4) return;
+
+      coachCaptureLockRef.current = true;
+      if (coachIntervalRef.current !== null) window.clearInterval(coachIntervalRef.current);
+      coachIntervalRef.current = null;
+      setCoachCountdown(null);
+      setCoachStatus("capturing");
+      setCoachRunning(false);
+      void captureLivePhoto();
+    }, 450);
   }
 
   async function deleteUploadedPhoto() {
@@ -293,6 +524,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
     form.set("photo", photo);
     form.set("slug", salonSlug);
     form.set("consent_version", "nail-tryon-v1");
+    form.set("capture_mode", captureMode);
     try {
       const response = await fetchNailTryOn(
         "/api/nail-tryon/upload",
@@ -301,7 +533,9 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
       );
       const payload = await response.json() as { sessionId?: string; quality?: string; warning?: boolean; reason?: string; error?: string };
       if (!response.ok || !payload.sessionId || payload.quality !== "pass") {
-        setServerMessage(payload.reason || "We could not verify five visible nails. Retake with one hand, palm down.");
+        setServerMessage(captureMode === "four_plus_one"
+          ? L("We could not verify four nails plus the thumbnail. Please retake both views.", "Chưa thấy rõ 4 móng và ngón cái. Vui lòng chụp lại hai góc.")
+          : L("We could not verify five visible nails. Retake with one hand, palm down.", "Chưa thấy rõ đủ 5 móng. Vui lòng úp tay và chụp lại."));
         return;
       }
       if (payload.warning) {
@@ -353,6 +587,25 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
       setBusy(false);
     }
   }
+
+  const capturePrompt = captureStage === "thumb"
+    ? L("Place only the thumbnail inside the guide", "Đặt riêng móng cái vào khung")
+    : captureStage === "four"
+      ? L("Keep four fingers together inside the guide", "Đặt 4 ngón ngay ngắn trong khung")
+      : L("Fan the fingers and angle the thumb outward", "Xòe nhẹ 4 ngón và đưa ngón cái ra ngoài");
+  const coachMessage = coachStatus === "too_dark"
+    ? L("More light, please", "Cần thêm ánh sáng")
+    : coachStatus === "too_bright"
+      ? L("Move away from glare", "Tránh vùng ánh sáng chói")
+      : coachStatus === "soft"
+        ? L("Move closer and focus", "Đưa tay gần hơn và lấy nét")
+        : coachStatus === "hold_still"
+          ? L("Hold still…", "Giữ yên…")
+          : coachStatus === "countdown" && coachCountdown
+            ? L(`Ready · ${coachCountdown}`, `Sẵn sàng · ${coachCountdown}`)
+            : coachStatus === "capturing"
+              ? L("Capturing…", "Đang chụp…")
+              : capturePrompt;
   return (
     <div className="mx-auto w-full max-w-lg">
       <div className="mb-8 text-center">
@@ -364,7 +617,11 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
           {step === "capture" ? L("Step 1 of 3", "Bước 1/3") : step === "catalog" ? L("Step 2 of 3", "Bước 2/3") : L("Step 3 of 3", "Bước 3/3")}
         </p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-neutral-950">{L("Try on nails", "Thử mẫu nail")}</h1>
-        <p className="mt-2 text-sm leading-6 text-neutral-600">{L("Take one clear hand photo.", "Chụp một ảnh bàn tay rõ nét.")}</p>
+        <p className="mt-2 text-sm leading-6 text-neutral-600">
+          {captureMode === "four_plus_one"
+            ? L("Capture four fingers, then the thumb. NailIQ combines both views.", "Chụp 4 ngón trước, rồi ngón cái. NailIQ sẽ tự ghép hai góc.")
+            : L("Smart guidance helps you show all five nails.", "Hướng dẫn thông minh giúp bạn chụp rõ đủ 5 móng.")}
+        </p>
       </div>
 
       {step === "catalog" ? (
@@ -422,6 +679,58 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
         <section className="overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-xl shadow-black/5">
           {!previewUrl ? (
             <div className="p-5 sm:p-7">
+              <div className="mb-4 grid grid-cols-2 rounded-2xl bg-neutral-100 p-1" aria-label={L("Photo capture mode", "Cách chụp ảnh")}>
+                <button
+                  type="button"
+                  aria-pressed={captureMode === "single"}
+                  onClick={() => chooseCaptureMode("single")}
+                  className={`min-h-11 rounded-xl px-3 text-sm font-semibold transition ${captureMode === "single" ? "bg-white text-neutral-950 shadow-sm" : "text-neutral-500"}`}
+                >
+                  {L("One photo", "Một ảnh")}
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={captureMode === "four_plus_one"}
+                  onClick={() => chooseCaptureMode("four_plus_one")}
+                  className={`min-h-11 rounded-xl px-3 text-sm font-semibold transition ${captureMode === "four_plus_one" ? "bg-white text-neutral-950 shadow-sm" : "text-neutral-500"}`}
+                >
+                  {L("Easy 4+1", "Dễ hơn 4+1")}
+                </button>
+              </div>
+
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-neutral-700">
+                  {captureMode === "four_plus_one" ? (
+                    <>
+                      <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${captureStage === "thumb" ? "bg-emerald-100 text-emerald-800" : "bg-neutral-950 text-white"}`}>
+                        {captureStage === "thumb" ? <Check className="h-4 w-4" aria-hidden /> : "1"}
+                      </span>
+                      <span>{L("Four fingers", "4 ngón")}</span>
+                      <span className="h-px w-5 bg-neutral-300" />
+                      <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${captureStage === "thumb" ? "bg-neutral-950 text-white" : "bg-neutral-200 text-neutral-500"}`}>2</span>
+                      <span>{L("Thumb", "Ngón cái")}</span>
+                    </>
+                  ) : (
+                    <span className="inline-flex items-center gap-2"><Sparkles className="h-4 w-4 text-amber-600" aria-hidden />{L("Smart Hand Coach", "Hướng dẫn thông minh")}</span>
+                  )}
+                </div>
+                {captureStage !== "thumb" ? (
+                  <div className="flex rounded-full bg-neutral-100 p-1" aria-label={L("Choose hand", "Chọn bàn tay")}>
+                    {(["left", "right"] as const).map((side) => (
+                      <button
+                        key={side}
+                        type="button"
+                        aria-pressed={handSide === side}
+                        onClick={() => setHandSide(side)}
+                        className={`min-h-8 rounded-full px-3 text-xs font-semibold ${handSide === side ? "bg-white text-neutral-950 shadow-sm" : "text-neutral-500"}`}
+                      >
+                        {side === "left" ? L("Left", "Tay trái") : L("Right", "Tay phải")}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
               <div className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-3xl bg-neutral-950 text-white">
                 <video
                   ref={videoRef}
@@ -431,7 +740,8 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
                   aria-label={L("Live rear-camera preview", "Xem trước camera sau")}
                   className={`absolute inset-0 h-full w-full object-cover ${cameraState === "live" ? "block" : "hidden"}`}
                 />
-                <div className="pointer-events-none absolute inset-7 rounded-[40%] border-2 border-dashed border-white/70 shadow-[0_0_0_999px_rgba(0,0,0,0.2)]" />
+                <div className="pointer-events-none absolute inset-0 bg-black/15" />
+                <SmartHandGuide handSide={handSide} stage={captureStage} active={coachStatus === "countdown" || coachStatus === "capturing"} />
                 {cameraState === "live" ? (
                   <>
                     <button
@@ -446,17 +756,36 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
                     >
                       <X className="h-5 w-5" aria-hidden />
                     </button>
+                    {captureStage === "thumb" && fourFingerPreviewUrl ? (
+                      <div className="absolute left-4 top-4 z-10 w-20 overflow-hidden rounded-xl border-2 border-emerald-400 bg-black shadow-lg">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={fourFingerPreviewUrl} alt={L("Saved four-finger photo", "Ảnh 4 ngón đã lưu")} className="aspect-square w-full object-cover" />
+                        <p className="bg-black/80 px-1 py-1 text-center text-[10px] font-semibold text-white">{L("Saved", "Đã lưu")}</p>
+                      </div>
+                    ) : null}
                     <div className="absolute inset-x-0 bottom-4 z-10 flex flex-col items-center gap-2 px-4">
-                    <p className="rounded-full bg-black/70 px-4 py-2 text-center text-xs font-medium">{L("Palm down · Five nails visible", "Úp bàn tay · Thấy đủ 5 móng")}</p>
-                    <button
-                      type="button"
-                      onClick={() => void captureLivePhoto()}
-                      className="flex min-h-14 min-w-14 items-center justify-center rounded-full border-4 border-white bg-white/25 shadow-lg outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-white"
-                      aria-label={L("Capture hand photo", "Chụp ảnh bàn tay")}
-                    >
-                      <span className="h-10 w-10 rounded-full bg-white" aria-hidden />
-                    </button>
-                  </div>
+                      <p className={`rounded-full px-4 py-2 text-center text-xs font-semibold backdrop-blur ${coachStatus === "countdown" || coachStatus === "capturing" ? "bg-emerald-500/90 text-black" : "bg-black/75 text-white"}`} role="status" aria-live="polite">
+                        {coachMessage}
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={coachRunning ? stopAutoCoach : startAutoCoach}
+                          disabled={coachStatus === "capturing"}
+                          className="min-h-11 rounded-full bg-white px-4 text-xs font-bold text-neutral-950 shadow-lg disabled:opacity-60"
+                        >
+                          {coachRunning ? L("Stop", "Dừng") : L("Auto capture", "Tự chụp")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void captureLivePhoto()}
+                          className="flex min-h-14 min-w-14 items-center justify-center rounded-full border-4 border-white bg-white/25 shadow-lg outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-white"
+                          aria-label={L("Capture hand photo", "Chụp ảnh bàn tay")}
+                        >
+                          <span className="h-10 w-10 rounded-full bg-white" aria-hidden />
+                        </button>
+                      </div>
+                    </div>
                   </>
                 ) : (
                   <button
@@ -469,7 +798,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
                     <span className="mt-4 text-sm font-semibold">
                       {cameraState === "starting" ? L("Opening camera…", "Đang mở camera…") : cameraState === "fallback" ? L("Use a photo instead", "Hãy dùng ảnh thay thế") : L("Open camera", "Mở camera")}
                     </span>
-                    <span className="mt-1 text-xs text-white/70">{L("Place one hand inside the guide", "Đặt một bàn tay trong khung")}</span>
+                    <span className="mt-1 max-w-xs text-xs text-white/70">{capturePrompt}</span>
                   </button>
                 )}
               </div>
@@ -495,7 +824,8 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
                         aria-label={L("Take a new photo", "Chụp ảnh mới")}
                         onChange={(event) => {
                           const file = event.target.files?.[0];
-                          if (file) void inspect(file);
+                          event.currentTarget.value = "";
+                          if (file) void acceptCapturedPhoto(file);
                         }}
                       />
                     </label>
@@ -511,7 +841,8 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
                       aria-label={L("Choose an existing photo", "Chọn ảnh có sẵn")}
                       onChange={(event) => {
                         const file = event.target.files?.[0];
-                        if (file) void inspect(file);
+                        event.currentTarget.value = "";
+                        if (file) void acceptCapturedPhoto(file);
                       }}
                     />
                   </label>
@@ -528,13 +859,16 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
                     aria-label={L("Choose an existing photo", "Chọn ảnh có sẵn")}
                     onChange={(event) => {
                       const file = event.target.files?.[0];
-                      if (file) void inspect(file);
+                      event.currentTarget.value = "";
+                      if (file) void acceptCapturedPhoto(file);
                     }}
                   />
                 </label>
               ) : null}
               <p className="mt-3 text-center text-xs leading-5 text-neutral-500">
-                {L("Palm down · Five nails · Even light", "Úp bàn tay · Đủ 5 móng · Ánh sáng đều")}
+                {captureMode === "four_plus_one"
+                  ? L("Two guided photos · One AI generation", "Hai ảnh hướng dẫn · Chỉ một lần tạo AI")
+                  : L("Palm down · Thumb angled outward · Even light", "Úp bàn tay · Đưa ngón cái ra ngoài · Ánh sáng đều")}
               </p>
             </div>
           ) : (
@@ -552,7 +886,7 @@ export function NailTryOnCapture({ salonName, salonSlug, brandColor, language }:
                 {serverMessage ? <p className="mt-3 rounded-2xl bg-red-50 p-4 text-sm text-red-800" role="alert">{serverMessage}</p> : null}
                 {serverWarning ? <p className="mt-3 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900" role="status">{serverWarning}</p> : null}
                 {quality && quality !== "checking" && !BLOCKING_CLIENT_CODES.has(quality) ? <button type="button" disabled={busy} onClick={() => void uploadAndVerify()} className="mt-4 min-h-14 w-full rounded-full bg-neutral-950 px-5 text-base font-semibold text-white disabled:bg-neutral-300 disabled:text-neutral-600">{busy ? L("Checking hand…", "Đang kiểm tra bàn tay…") : quality === "pass" ? L("Use this photo", "Dùng ảnh này") : L("Use anyway", "Vẫn dùng ảnh này")}</button> : null}
-                <button type="button" onClick={reset} className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-full text-sm font-semibold text-neutral-700"><RotateCcw className="h-4 w-4" aria-hidden />{L("Retake", "Chụp lại")}</button>
+                <button type="button" onClick={() => reset()} className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-full text-sm font-semibold text-neutral-700"><RotateCcw className="h-4 w-4" aria-hidden />{L("Retake", "Chụp lại")}</button>
               </div>
             </div>
           )}
