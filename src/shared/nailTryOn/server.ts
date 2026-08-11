@@ -5,6 +5,11 @@ import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { prepareTryOnImage } from "./imagePipeline";
 import { configurationPrompt, type NailConfiguration } from "./configurator";
+import {
+  NAIL_TRYON_CAPTURE_LAYOUT_INSTRUCTION,
+  nailTryOnQualityPrompt,
+  type NailTryOnCaptureMode,
+} from "./captureMode";
 import { heuristicAutoMapping, sanitizeAutoMapping, type AutoMappingResult, type AutoMappingService } from "./autoMapping";
 import {
   NAIL_TRYON_GENERATION_TIMEOUT_MS,
@@ -42,13 +47,16 @@ function openaiClient(timeout: number) {
   return new OpenAI({ timeout, maxRetries: 0 });
 }
 
-export async function inspectHandPhoto(bytes: Buffer): Promise<ServerQualityVerdict> {
+export async function inspectHandPhoto(
+  bytes: Buffer,
+  captureMode: NailTryOnCaptureMode = "single",
+): Promise<ServerQualityVerdict> {
   const response = await openaiClient(NAIL_TRYON_QUALITY_TIMEOUT_MS).responses.parse({
     model: QUALITY_MODEL,
     input: [{
       role: "user",
       content: [
-        { type: "input_text", text: "Quality-check this nail try-on photo. Pass only when it shows exactly one real human hand, dorsal side/palm down, with five fingernails clearly visible and not materially occluded. Do not diagnose health or identify the person. Return only the requested structure." },
+        { type: "input_text", text: nailTryOnQualityPrompt(captureMode) },
         { type: "input_image", detail: "high", image_url: `data:image/jpeg;base64,${bytes.toString("base64")}` },
       ],
     }],
@@ -126,6 +134,7 @@ export async function generateNailPreview(args: {
     ],
     prompt: [
       "Edit the FIRST image only. Apply the nail art shown in the SECOND reference image to the five visible fingernail plates.",
+      NAIL_TRYON_CAPTURE_LAYOUT_INSTRUCTION,
       `Design name: ${args.designName}.`,
       args.promptHint ? `Salon guidance: ${args.promptHint}.` : "",
       configurationPrompt(args.configuration),

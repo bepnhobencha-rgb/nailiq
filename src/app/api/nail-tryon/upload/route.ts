@@ -6,6 +6,7 @@ import { inspectHandPhoto, TRYON_COOKIE } from "@/shared/nailTryOn/server";
 import { createSessionCredential } from "@/shared/nailTryOn/sessionCredential";
 import { recordNailTryOnEvent } from "@/shared/nailTryOn/telemetry";
 import { decideServerQuality } from "@/shared/nailTryOn/qualityPolicy";
+import { parseNailTryOnCaptureMode } from "@/shared/nailTryOn/captureMode";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,6 +19,7 @@ export async function POST(request: Request) {
   const photo = form?.get("photo") as File | null;
   const slug = String(form?.get("slug") || "");
   const consentVersion = String(form?.get("consent_version") || "");
+  const captureMode = parseNailTryOnCaptureMode(form?.get("capture_mode"));
   if (!photo || !slug || consentVersion !== "nail-tryon-v1") {
     return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   }
@@ -72,7 +74,7 @@ export async function POST(request: Request) {
   await recordNailTryOnEvent({ salonId: salon.id, sessionId, event: "upload_received", properties: { bytes: normalized.byteLength } });
 
   try {
-    const verdict = await inspectHandPhoto(normalized);
+    const verdict = await inspectHandPhoto(normalized, captureMode);
     const decision = decideServerQuality(verdict);
     const passed = decision.passed;
     const qualityCode = decision.code;
@@ -90,7 +92,7 @@ export async function POST(request: Request) {
       warning: decision.warning,
       reason: verdict.reason,
     }, { status: passed ? 201 : 422 });
-    await recordNailTryOnEvent({ salonId: salon.id, sessionId, event: passed ? "quality_passed" : "quality_rejected", properties: { code: passed ? (decision.warning ? qualityCode : "pass") : qualityCode, warning: decision.warning, visibleNails: verdict.visibleNails } });
+    await recordNailTryOnEvent({ salonId: salon.id, sessionId, event: passed ? "quality_passed" : "quality_rejected", properties: { code: passed ? (decision.warning ? qualityCode : "pass") : qualityCode, warning: decision.warning, visibleNails: verdict.visibleNails, captureMode } });
     response.cookies.set(TRYON_COOKIE, credential.cookieValue, {
       httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 24 * 60 * 60,
     });
