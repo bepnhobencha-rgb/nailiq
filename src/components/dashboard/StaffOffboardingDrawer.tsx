@@ -9,6 +9,7 @@ import {
   loadStaffOffboardingPreview,
   type StaffOffboardingPreview,
 } from "@/shared/dashboard/staffOffboardingActions";
+import { resolveStaffOffboardingContactPlan } from "@/shared/dashboard/staffOffboardingPolicy";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 type Props = {
@@ -44,6 +45,7 @@ export function StaffOffboardingDrawer({
   const [assignments, setAssignments] = useState<Record<string, string>>({});
   const [notifyEmail, setNotifyEmail] = useState(false);
   const [notifySms, setNotifySms] = useState(false);
+  const [manualContactConfirmed, setManualContactConfirmed] = useState(false);
   const [revokeAccess, setRevokeAccess] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,6 +68,7 @@ export function StaffOffboardingDrawer({
       setError(null);
       setNotifyEmail(false);
       setNotifySms(false);
+      setManualContactConfirmed(false);
       setRevokeAccess(result.preview.hasLogin && !result.preview.accessIsOwner);
       const suggested: Record<string, string> = {};
       for (const booking of result.preview.bookings) {
@@ -114,12 +117,29 @@ export function StaffOffboardingDrawer({
   }, [reassignable]);
   const emailRecipients = reassignable.filter((booking) => booking.hasEmail).length;
   const smsRecipients = reassignable.filter((booking) => booking.hasPhone).length;
+  const requestedBookings = reassignable.filter(
+    (booking) => booking.customerRequestedStaff,
+  );
+  const requestedWithoutSelectedChannel = requestedBookings.filter(
+    (booking) =>
+      resolveStaffOffboardingContactPlan({
+        customerRequestedStaff: true,
+        hasEmail: booking.hasEmail,
+        hasPhone: booking.hasPhone,
+        notifyEmail,
+        notifySms,
+        manualContactConfirmed: false,
+      }) === null,
+  );
+  const requestedContactReady =
+    requestedWithoutSelectedChannel.length === 0 || manualContactConfirmed;
   const canComplete =
     Boolean(activePreview) &&
     !activePreview?.accessIsOwner &&
     blockers.length === 0 &&
     !hasNoCandidate &&
     missingAssignments.length === 0 &&
+    requestedContactReady &&
     !saving;
 
   function errorMessage(code: string): string {
@@ -152,6 +172,14 @@ export function StaffOffboardingDrawer({
         "Nhân viên này đã ở trạng thái Không hoạt động.",
         "This staff member is already inactive.",
       ],
+      requested_staff_contact_required: [
+        "Có khách đã yêu cầu đích danh nhân viên này. Hãy chọn Email/SMS hoặc xác nhận sẽ liên hệ trực tiếp.",
+        "A guest requested this staff member. Choose Email/SMS or confirm direct contact.",
+      ],
+      preference_cleanup_failed: [
+        "Chưa xóa được nhân viên đã nghỉ khỏi hồ sơ ưa thích. Không có lịch nào được chuyển.",
+        "The inactive provider could not be cleared from customer preferences. No appointments were moved.",
+      ],
     };
     const pair = copy[code];
     return pair ? pair[vi ? 0 : 1] : vi ? "Không hoàn tất được. Vui lòng thử lại." : "Could not finish. Try again.";
@@ -169,6 +197,7 @@ export function StaffOffboardingDrawer({
       })),
       notifyEmail,
       notifySms,
+      manualContactConfirmed,
       revokeAccess,
     });
     setSaving(false);
@@ -306,6 +335,16 @@ export function StaffOffboardingDrawer({
                           : "Pending"}
                     </span>
                   </div>
+                  {booking.customerRequestedStaff ? (
+                    <p
+                      className="mt-3 rounded-xl border border-nq-warning/40 bg-nq-warning/10 px-3 py-2 text-sm text-nq-foreground"
+                      data-testid={`staff-offboarding-requested-${booking.id}`}
+                    >
+                      {vi
+                        ? `Khách đã yêu cầu đích danh ${activePreview.staffName}. Nhân viên thay thế chưa phải lựa chọn mới của khách.`
+                        : `The guest specifically requested ${activePreview.staffName}. The replacement is not yet the guest's new preference.`}
+                    </p>
+                  ) : null}
                   <label className="mt-3 block text-sm font-medium text-nq-foreground">
                     {vi ? "Chuyển cho" : "Reassign to"}
                     <select
@@ -376,6 +415,43 @@ export function StaffOffboardingDrawer({
                 </span>
               </label>
             </div>
+            {requestedBookings.length > 0 ? (
+              <div className="mt-3 rounded-xl border border-nq-warning/40 bg-nq-warning/10 p-3">
+                <p className="text-sm font-semibold text-nq-foreground">
+                  {vi
+                    ? `${requestedBookings.length} khách đã yêu cầu đích danh ${activePreview.staffName}`
+                    : `${requestedBookings.length} guest(s) specifically requested ${activePreview.staffName}`}
+                </p>
+                <p className="mt-1 text-sm text-nq-muted">
+                  {vi
+                    ? "NailIQ sẽ không tự coi nhân viên thay thế là thợ ưa thích mới của khách."
+                    : "NailIQ will not make the replacement the guest's new preferred provider."}
+                </p>
+                {requestedWithoutSelectedChannel.length > 0 ? (
+                  <label className="mt-3 flex min-h-11 items-center gap-3 rounded-xl border border-nq-border/40 bg-nq-surface px-3">
+                    <input
+                      type="checkbox"
+                      checked={manualContactConfirmed}
+                      onChange={(event) =>
+                        setManualContactConfirmed(event.target.checked)
+                      }
+                      data-testid="staff-offboarding-manual-contact"
+                    />
+                    <span className="text-sm text-nq-foreground">
+                      {vi
+                        ? `Tôi sẽ liên hệ trực tiếp ${requestedWithoutSelectedChannel.length} khách chưa được chọn kênh thông báo`
+                        : `I will directly contact ${requestedWithoutSelectedChannel.length} guest(s) without a selected notice channel`}
+                    </span>
+                  </label>
+                ) : (
+                  <p className="mt-2 text-sm font-medium text-nq-success">
+                    {vi
+                      ? "Đã có kênh thông báo cho tất cả khách yêu cầu đích danh."
+                      : "Every guest with a named request has a notice channel."}
+                  </p>
+                )}
+              </div>
+            ) : null}
           </section>
 
           <section className="rounded-2xl border border-nq-border/50 bg-nq-bg/50 p-4">
