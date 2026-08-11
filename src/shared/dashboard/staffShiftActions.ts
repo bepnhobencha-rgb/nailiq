@@ -49,6 +49,8 @@ export interface StaffShiftRow {
   day_of_week: DayOfWeek;
   start_time: string;
   end_time: string;
+  break_start_time: string | null;
+  break_end_time: string | null;
   is_active: boolean;
 }
 
@@ -60,7 +62,7 @@ export async function listStaffShifts(
 
   const { data, error } = await ctx.supabase
     .from("staff_shifts")
-    .select("id, staff_id, day_of_week, start_time, end_time, is_active")
+    .select("id, staff_id, day_of_week, start_time, end_time, break_start_time, break_end_time, is_active")
     .eq("salon_id", ctx.salon.id)
     .order("staff_id")
     .order("day_of_week");
@@ -79,6 +81,8 @@ export async function upsertStaffShift(
   dayOfWeek: string,
   startTime: string,
   endTime: string,
+  breakStartTime?: string | null,
+  breakEndTime?: string | null,
 ): Promise<{ ok: boolean; id?: string; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
@@ -94,6 +98,21 @@ export async function upsertStaffShift(
   }
   if (startTime >= endTime) {
     return { ok: false, error: "start_must_be_before_end" };
+  }
+  const cleanBreakStart = breakStartTime?.trim() || null;
+  const cleanBreakEnd = breakEndTime?.trim() || null;
+  if ((cleanBreakStart === null) !== (cleanBreakEnd === null)) {
+    return { ok: false, error: "break_pair_required" };
+  }
+  if (
+    cleanBreakStart &&
+    (!TIME_RE.test(cleanBreakStart) ||
+      !TIME_RE.test(cleanBreakEnd ?? "") ||
+      startTime >= cleanBreakStart ||
+      cleanBreakStart >= (cleanBreakEnd ?? "") ||
+      (cleanBreakEnd ?? "") >= endTime)
+  ) {
+    return { ok: false, error: "invalid_break" };
   }
 
   // Verify the staff member belongs to this salon
@@ -115,6 +134,8 @@ export async function upsertStaffShift(
         day_of_week: dayOfWeek,
         start_time: startTime,
         end_time: endTime,
+        break_start_time: cleanBreakStart,
+        break_end_time: cleanBreakEnd,
         is_active: true,
       },
       { onConflict: "staff_id,day_of_week" },

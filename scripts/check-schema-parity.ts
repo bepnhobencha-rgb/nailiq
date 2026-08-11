@@ -19,15 +19,15 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260810104500. Refresh these with each schema-changing forward
+ * through 20260811002004. Refresh these with each schema-changing forward
  * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
   tables: 106,
-  columns: 1423,
+  columns: 1427,
   policies: 155,
   /**
-   * APP functions only — 113 after the rehearsed forward migrations.
+   * APP functions only — 115 after the rehearsed forward migrations.
    *
    * Counting every `public` function is a trap: many belong to EXTENSIONS
    * (pgcrypto, btree_gist, pg_trgm, uuid-ossp), which production happens to have
@@ -36,8 +36,8 @@ const PRODUCTION = {
    * The query below excludes anything a `pg_depend` extension edge points at,
    * so extension placement cannot distort this release-shape tripwire.
    */
-  functions: 113,
-  triggers: 37,
+  functions: 115,
+  triggers: 39,
   indexes: 348,
 } as const;
 
