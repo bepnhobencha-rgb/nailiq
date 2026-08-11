@@ -31,9 +31,15 @@ function eq(a: unknown, b: unknown) {
 test("null → defaults", () => {
   eq(parseStaffNotificationSettings(null), DEFAULT_STAFF_NOTIFICATION_SETTINGS);
 });
-test("default smart per-event: cancel+reschedule ON, no_show OFF", () => {
+test("default smart per-event: guest-impacting events ON, no_show OFF", () => {
   const d = DEFAULT_STAFF_NOTIFICATION_SETTINGS;
-  eq(d.eventDefaults, { create: true, reschedule: true, cancel: true, no_show: false });
+  eq(d.eventDefaults, {
+    create: true,
+    reschedule: true,
+    cancel: true,
+    no_show: false,
+    staff_change: true,
+  });
   eq(d.defaultLocale, "en");
 });
 
@@ -43,6 +49,7 @@ test("partial events merge with defaults", () => {
   eq(s.eventDefaults.cancel, false);
   eq(s.eventDefaults.reschedule, true); // untouched default
   eq(s.eventDefaults.no_show, false);
+  eq(s.eventDefaults.staff_change, true);
 });
 test("enabled defaults true, explicit false respected", () => {
   eq(parseStaffNotificationSettings({}).enabled, true);

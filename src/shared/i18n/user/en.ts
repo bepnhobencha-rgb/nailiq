@@ -3652,7 +3652,7 @@ export const userEn: UserMessages = {
     saveFailed: "Could not save. Try again.",
     deleteFailed: "Could not delete. Try again.",
     staffTitle: "Staff",
-    removeStaff: "Remove staff",
+    removeStaff: "Offboard staff member",
     editStaff: "Edit staff",
     addStaff: "Add staff",
     staffSaved: "✓ Staff member saved",

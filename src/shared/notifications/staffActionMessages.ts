@@ -21,6 +21,8 @@ export interface StaffActionMessageVars {
   whenLabel: string;
   /** Salon phone for "call us" lines. Optional. */
   salonPhone?: string | null;
+  /** New provider name for a staff-only reassignment. */
+  staffName?: string | null;
 }
 
 function greet(name: string, locale: SupportedLocale): string {
@@ -60,6 +62,8 @@ export function buildStaffActionSms(
         return `${g}lịch hẹn ${svc} của bạn tại ${salon} (${v.whenLabel}) đã được huỷ.${call}`.trim();
       case "no_show":
         return null;
+      case "staff_change":
+        return `${g}lịch hẹn ${svc} của bạn tại ${salon} vẫn giữ nguyên vào ${v.whenLabel} và sẽ do ${v.staffName?.trim() || "một nhân viên khác"} phục vụ.${call}`.trim();
     }
   }
 
@@ -72,6 +76,8 @@ export function buildStaffActionSms(
       return `${g}your ${svc} appointment at ${salon} (${v.whenLabel}) has been cancelled.${call}`.trim();
     case "no_show":
       return null;
+    case "staff_change":
+      return `${g}your ${svc} appointment at ${salon} remains scheduled for ${v.whenLabel} and will be with ${v.staffName?.trim() || "another team member"}.${call}`.trim();
   }
 }
 
@@ -92,6 +98,8 @@ export function buildStaffActionEmailSubject(
         return `Lịch hẹn đã huỷ — ${salon}`;
       case "no_show":
         return null;
+      case "staff_change":
+        return `Cập nhật nhân viên phục vụ — ${salon}`;
     }
   }
   switch (event) {
@@ -103,5 +111,7 @@ export function buildStaffActionEmailSubject(
       return `Appointment cancelled — ${salon}`;
     case "no_show":
       return null;
+    case "staff_change":
+      return `Appointment provider updated — ${salon}`;
   }
 }

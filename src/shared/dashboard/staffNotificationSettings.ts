@@ -18,13 +18,19 @@
 import type { SupportedLocale } from "@/shared/notifications/resolveCustomerLocale";
 import { DEFAULT_CUSTOMER_LOCALE } from "@/shared/notifications/resolveCustomerLocale";
 
-export type StaffNotifyEvent = "create" | "reschedule" | "cancel" | "no_show";
+export type StaffNotifyEvent =
+  | "create"
+  | "reschedule"
+  | "cancel"
+  | "no_show"
+  | "staff_change";
 
 export const STAFF_NOTIFY_EVENTS: StaffNotifyEvent[] = [
   "create",
   "reschedule",
   "cancel",
   "no_show",
+  "staff_change",
 ];
 
 export type StaffNotifyChannel = "sms" | "email";
@@ -49,7 +55,13 @@ export const DEFAULT_STAFF_NOTIFICATION_SETTINGS: StaffNotificationSettings = {
   channels: { sms: true, email: true },
   // Cancel + reschedule: the customer NEEDS to know → ON. Create: confirm the
   // desk booking → ON. No-show: rarely worth a ping → OFF.
-  eventDefaults: { create: true, reschedule: true, cancel: true, no_show: false },
+  eventDefaults: {
+    create: true,
+    reschedule: true,
+    cancel: true,
+    no_show: false,
+    staff_change: true,
+  },
 };
 
 function normLocale(v: unknown): SupportedLocale {

@@ -44,7 +44,7 @@ export async function deliverStaffActionNotification(
   const { data: bk, error: bkErr } = await supabase
     .from("bookings")
     .select(
-      "id, client_phone, client_email, client_name, client_locale, start_time_utc, service:service_id(name)",
+      "id, client_phone, client_email, client_name, client_locale, start_time_utc, service:service_id(name), staff:staff_id(name)",
     )
     .eq("id", input.bookingId)
     .eq("salon_id", input.salonId)
@@ -61,6 +61,7 @@ export async function deliverStaffActionNotification(
     client_locale: string | null;
     start_time_utc: string;
     service: { name: string | null } | { name: string | null }[] | null;
+    staff: { name: string | null } | { name: string | null }[] | null;
   };
 
   const { data: salonRow } = await supabase
@@ -87,6 +88,9 @@ export async function deliverStaffActionNotification(
   const serviceName = Array.isArray(row.service)
     ? (row.service[0]?.name ?? "")
     : (row.service?.name ?? "");
+  const staffName = Array.isArray(row.staff)
+    ? (row.staff[0]?.name ?? "")
+    : (row.staff?.name ?? "");
 
   const whenLabel = new Intl.DateTimeFormat(
     locale === "vi" ? "vi-VN" : "en-US",
@@ -107,6 +111,7 @@ export async function deliverStaffActionNotification(
     serviceName,
     whenLabel,
     salonPhone: salon.phone,
+    staffName,
   };
 
   let smsSent = false;
