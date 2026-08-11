@@ -17,7 +17,7 @@ Quy ước:
 
 | Nhóm | Trạng thái | Bằng chứng hiện tại | Gap còn lại |
 |---|---:|---|---|
-| Onboarding salon | ⚠️ | Setup có address, hours, services, staff; QA tenant hoạt động | Chưa chạy lại từ tài khoản trắng đến trạng thái ready trên production |
+| Onboarding salon | ✅ | Production đã chạy từ đăng ký email mới → xác nhận → tạo salon → hours/address → public page ready; hệ thống tự seed 10 dịch vụ và 1 staff | Không có blocker onboarding đã biết |
 | Services / price / duration | ✅ | Production QA đã create, edit giá/thời lượng và soft-delete; DB sạch sau test | Không có blocker đã biết |
 | Staff / skills | ✅ | Production QA đã create, edit role/skills; offboarding an toàn đạt; PR #1225/#1226 và E2E desktop/mobile đạt | Không dùng hard-delete trong Pilot 1; giữ lịch sử bằng inactive |
 | Working hours / break / day off | ⚠️ | Hours và closed-date UI đã hiện đúng; conflict break có test | Cần một test production tạo slot trong break/day-off và xác nhận bị chặn |
@@ -26,7 +26,7 @@ Quy ước:
 | Group / party booking | ✅ | Production group booking 2–3 người đã thành công; race/duplicate đã được sửa | Không gửi reminder thật trong QA |
 | Resource / chair conflicts | ⚠️ | Resource/bed picker và conflict E2E tồn tại | Feature đang tắt trên Salon QA; chưa có bằng chứng production theo tenant |
 | Reschedule / cancel | ✅ | Luồng production đã được chạy; route/token và E2E tương ứng đạt | Không có blocker đã biết |
-| Confirmations / reminders | ⚠️ | UI/config/cron và suppression guard tồn tại; confirmation path có test | SMS/email QA đang tắt; chưa có delivery receipt end-to-end bằng kênh sandbox/được phép |
+| Confirmations / reminders | ⚠️ | UI/config/cron và suppression guard tồn tại; QA booking xác nhận thành công với số 555 bị Twilio guard suppress | Phát hiện route confirmation chưa tôn trọng `sms_outbound_enabled`; fix + regression test đang chờ deploy/retest; chưa có delivery receipt end-to-end bằng kênh sandbox/được phép |
 | Deposit / no-show | ⚠️ | No-show thủ công production đạt; booking event được ghi; test QA không charge | Deposit/card-on-file/charge/skip/idempotency/refund chưa được chứng minh trên một provider kết nối |
 | Client database / history | ✅ | Directory, search, profile/history và tenant isolation có production/E2E evidence | Không có blocker đã biết cho Pilot 1 |
 | Square integration | ❌ | Code, schema và webhook tồn tại | Salon QA có `payment_provider = null`, không có `square_integrations`; chưa thể test tiền end-to-end |
@@ -42,8 +42,8 @@ Quy ước:
    tắt hoàn toàn deposit/card charge trong lời hứa Pilot 1 và dùng no-show thủ công.
 2. **Chứng minh reminder delivery có kiểm soát.** Dùng số/email QA được phép,
    không dùng dữ liệu khách thật; kiểm tra send, receipt, retry, opt-out và audit.
-3. **Chạy onboarding mới hoàn toàn.** Tạo một salon QA trắng, đi từ đăng ký đến
-   public booking ready mà không sửa DB thủ công.
+3. **Deploy và retest SMS kill-switch.** Khi `sms_outbound_enabled = false`,
+   confirmation route không được gọi Twilio, ghi sent timestamp hoặc fan-out nhóm.
 4. **Chứng minh break/day-off trên production.** Slot bị chặn ở public booking và
    receptionist desk, đồng thời không tạo booking trong DB.
 5. **Diễn tập support/error.** Một lỗi có chủ đích phải xuất hiện trong monitoring,
@@ -97,3 +97,10 @@ Quy ước:
 - No-show QA booking: `f755b507-c62f-48c5-ba1a-a5785e62f6ae` → `no_show`,
   `deposit_status = not_required`, không có charge, có `booking_status_changed` event.
 - Salon QA payment: `payment_provider = null`, không có Square integration.
+- Fresh onboarding QA: salon `nailiq-onboarding-qa-2026-08-11`
+  (`3f75cf3d-a8d8-4725-ac62-be3884e1711a`) đã đạt “Trang đặt lịch đã sẵn sàng”; booking
+  `c230d86f-a35e-4837-bb60-921299cfc8fa` xác nhận thành công cho Staff 1 lúc
+  2026-08-12 09:00 PDT, không deposit.
+- Safety evidence: SMS/email outbound đều false, payment provider null; số QA 555
+  được ghi `SUPPRESSED_fictional_test_number_*`, không gửi tới khách thật. Bằng chứng
+  này đồng thời phát hiện confirmation route đã bỏ qua salon SMS switch.
