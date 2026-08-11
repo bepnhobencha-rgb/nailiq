@@ -26,7 +26,7 @@ Quy ước:
 | Group / party booking | ✅ | Production group booking 2–3 người đã thành công; race/duplicate đã được sửa | Không gửi reminder thật trong QA |
 | Resource / chair conflicts | ⚠️ | Resource/bed picker và conflict E2E tồn tại | Feature đang tắt trên Salon QA; chưa có bằng chứng production theo tenant |
 | Reschedule / cancel | ✅ | Luồng production đã được chạy; route/token và E2E tương ứng đạt | Không có blocker đã biết |
-| Confirmations / reminders | ⚠️ | UI/config/cron và suppression guard tồn tại; QA booking xác nhận thành công với số 555 bị Twilio guard suppress | Phát hiện route confirmation chưa tôn trọng `sms_outbound_enabled`; fix + regression test đang chờ deploy/retest; chưa có delivery receipt end-to-end bằng kênh sandbox/được phép |
+| Confirmations / reminders | ⚠️ | UI/config/cron và suppression guard tồn tại; production retest sau commit `691c0e5a` xác nhận `sms_outbound_enabled = false` không gọi/log SMS | Chưa có delivery receipt end-to-end bằng kênh sandbox/được phép |
 | Deposit / no-show | ⚠️ | No-show thủ công production đạt; booking event được ghi; test QA không charge | Deposit/card-on-file/charge/skip/idempotency/refund chưa được chứng minh trên một provider kết nối |
 | Client database / history | ✅ | Directory, search, profile/history và tenant isolation có production/E2E evidence | Không có blocker đã biết cho Pilot 1 |
 | Square integration | ❌ | Code, schema và webhook tồn tại | Salon QA có `payment_provider = null`, không có `square_integrations`; chưa thể test tiền end-to-end |
@@ -42,11 +42,9 @@ Quy ước:
    tắt hoàn toàn deposit/card charge trong lời hứa Pilot 1 và dùng no-show thủ công.
 2. **Chứng minh reminder delivery có kiểm soát.** Dùng số/email QA được phép,
    không dùng dữ liệu khách thật; kiểm tra send, receipt, retry, opt-out và audit.
-3. **Deploy và retest SMS kill-switch.** Khi `sms_outbound_enabled = false`,
-   confirmation route không được gọi Twilio, ghi sent timestamp hoặc fan-out nhóm.
-4. **Chứng minh break/day-off trên production.** Slot bị chặn ở public booking và
+3. **Chứng minh break/day-off trên production.** Slot bị chặn ở public booking và
    receptionist desk, đồng thời không tạo booking trong DB.
-5. **Diễn tập support/error.** Một lỗi có chủ đích phải xuất hiện trong monitoring,
+4. **Diễn tập support/error.** Một lỗi có chủ đích phải xuất hiện trong monitoring,
    có mã tra cứu, tenant đúng và hướng xử lý cho owner.
 
 ## P1 — cần xong trước mở rộng 5 pilot
@@ -104,3 +102,7 @@ Quy ước:
 - Safety evidence: SMS/email outbound đều false, payment provider null; số QA 555
   được ghi `SUPPRESSED_fictional_test_number_*`, không gửi tới khách thật. Bằng chứng
   này đồng thời phát hiện confirmation route đã bỏ qua salon SMS switch.
+- SMS kill-switch production retest sau merge `691c0e5a`: booking
+  `33ee9a9a-393f-46cf-8567-f1a08a817083` được xác nhận, nhưng
+  `sms_confirmation_sent_at` và `sms_confirmation_failed_at` đều NULL, đồng thời
+  không có `booking_notifications` channel SMS. Không có outbound SMS attempt.
