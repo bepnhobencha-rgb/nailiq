@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import {
@@ -7,6 +8,12 @@ import {
   type SuperAdminRole,
 } from "@/shared/lib/superadmin";
 import { writeAuditLog } from "@/shared/superadmin/audit";
+import {
+  graceDeadline,
+  pauseTenant,
+  resumeTenant,
+  type TenantPauseReason,
+} from "@/shared/subscriptions/tenantPause";
 import {
   EDITABLE_RELEASE_FLAG_KEYS,
   RELEASE_FEATURE_KEYS,
@@ -38,6 +45,7 @@ import {
   type SuperAdminFeatureFlags,
   type SuperAdminSalonDetail,
   type SuperAdminSalonRow,
+  type TenantControlResult,
   type UpdateCategoryInput,
   type UpdatePlatformFlagResult,
   type UpdateSalonFlagsInput,
@@ -94,7 +102,7 @@ export async function loadAllSalons(): Promise<LoadAllSalonsResult> {
   const { data, error } = (await admin
     .from("salons")
     .select(
-      "id, slug, name, phone, subscription_plan, plan_override, feature_flags, is_beta, admin_notes, created_at, voice_ai_enabled" as never,
+      "id, slug, name, phone, subscription_plan, subscription_status, plan_override, feature_flags, is_beta, admin_notes, created_at, voice_ai_enabled, archived_at, tenant_pause_reason, tenant_pause_note, payment_grace_ends_at" as never,
     )
     .order("created_at", { ascending: false })) as {
     data:
@@ -110,6 +118,11 @@ export async function loadAllSalons(): Promise<LoadAllSalonsResult> {
           admin_notes?: string | null;
           created_at?: string | null;
           voice_ai_enabled?: boolean | null;
+          subscription_status?: string | null;
+          archived_at?: string | null;
+          tenant_pause_reason?: string | null;
+          tenant_pause_note?: string | null;
+          payment_grace_ends_at?: string | null;
         }>
       | null;
     error: unknown;
@@ -167,6 +180,16 @@ export async function loadAllSalons(): Promise<LoadAllSalonsResult> {
       created_at: row.created_at ?? null,
       bookings_this_month: monthlyCounts.get(id) ?? 0,
       voice_ai_enabled: Boolean(row.voice_ai_enabled),
+      subscription_status:
+        typeof row.subscription_status === "string" ? row.subscription_status : null,
+      archived_at: row.archived_at ?? null,
+      tenant_pause_reason:
+        row.tenant_pause_reason === "manual" || row.tenant_pause_reason === "non_payment"
+          ? row.tenant_pause_reason
+          : null,
+      tenant_pause_note:
+        typeof row.tenant_pause_note === "string" ? row.tenant_pause_note : null,
+      payment_grace_ends_at: row.payment_grace_ends_at ?? null,
     };
   });
 
@@ -288,7 +311,7 @@ export async function loadSalonDetail(
   const { data: row, error } = (await admin
     .from("salons")
     .select(
-      "id, slug, name, phone, subscription_plan, plan_override, feature_flags, is_beta, admin_notes, created_at, timezone, currency_code, brand_color, theme_mode, voice_ai_enabled" as never,
+      "id, slug, name, phone, subscription_plan, subscription_status, plan_override, feature_flags, is_beta, admin_notes, created_at, timezone, currency_code, brand_color, theme_mode, voice_ai_enabled, archived_at, tenant_pause_reason, tenant_pause_note, payment_grace_ends_at" as never,
     )
     .eq("id", id)
     .maybeSingle()) as {
@@ -309,6 +332,11 @@ export async function loadSalonDetail(
           brand_color?: string | null;
           theme_mode?: string | null;
           voice_ai_enabled?: boolean | null;
+          subscription_status?: string | null;
+          archived_at?: string | null;
+          tenant_pause_reason?: string | null;
+          tenant_pause_note?: string | null;
+          payment_grace_ends_at?: string | null;
         }
       | null;
     error: unknown;
@@ -425,9 +453,165 @@ export async function loadSalonDetail(
         ? lastBookingData.created_at
         : null,
     voice_ai_enabled: Boolean(row.voice_ai_enabled),
+    subscription_status:
+      typeof row.subscription_status === "string" ? row.subscription_status : null,
+    archived_at: row.archived_at ?? null,
+    tenant_pause_reason:
+      row.tenant_pause_reason === "manual" || row.tenant_pause_reason === "non_payment"
+        ? row.tenant_pause_reason
+        : null,
+    tenant_pause_note:
+      typeof row.tenant_pause_note === "string" ? row.tenant_pause_note : null,
+    payment_grace_ends_at: row.payment_grace_ends_at ?? null,
   };
 
   return { ok: true, salon: detail };
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+async function loadTenantControlBefore(admin: ReturnType<typeof createServiceRoleClient>, salonId: string) {
+  const { data, error } = await admin
+    .from("salons")
+    .select(
+      "id, slug, archived_at, subscription_status, tenant_pause_reason, tenant_pause_note, payment_grace_ends_at, sms_outbound_enabled, email_outbound_enabled, reminders_enabled, voice_ai_enabled, voice_ai_upsell_enabled, winback_enabled, phone_otp_enabled, email_links_enabled" as never,
+    )
+    .eq("id", salonId)
+    .maybeSingle();
+  return { data: data as Record<string, unknown> | null, error };
+}
+
+export async function pauseSalonTenant(
+  salonId: string,
+  reason: TenantPauseReason,
+  note: string,
+): Promise<TenantControlResult> {
+  const caller = await requireSuperAdminCaller();
+  if (!caller) return { ok: false, error: "unauthorized" };
+  const id = salonId.trim();
+  const cleanNote = note.trim();
+  if (!UUID_RE.test(id) || !["manual", "non_payment"].includes(reason) || cleanNote.length < 3 || cleanNote.length > 500) {
+    return { ok: false, error: "invalid_payload" };
+  }
+
+  const admin = createServiceRoleClient();
+  const before = await loadTenantControlBefore(admin, id);
+  if (before.error) return { ok: false, error: "server_error" };
+  if (!before.data) return { ok: false, error: "not_found" };
+
+  const audited = await writeAuditLog({
+    actorUserId: caller.userId,
+    actorRole: caller.role,
+    action: reason === "non_payment" ? "tenant_pause_non_payment" : "tenant_pause_manual",
+    targetKind: "salon",
+    targetId: id,
+    beforeJsonb: before.data,
+    afterJsonb: { archived: true, reason, outbound: false, wixSquareChanged: false },
+    reason: cleanNote,
+  });
+  if (!audited) return { ok: false, error: "server_error" };
+
+  const paused = await pauseTenant(admin, {
+    salonId: id,
+    reason,
+    note: cleanNote,
+    actorUserId: caller.userId,
+  });
+  if (!paused.ok) {
+    console.error("[superadmin/pauseSalonTenant] update", paused.error);
+    return { ok: false, error: "server_error" };
+  }
+  revalidatePath(`/superadmin/salons/${id}`);
+  revalidatePath("/superadmin/salons");
+  return { ok: true };
+}
+
+export async function beginSalonPaymentGrace(
+  salonId: string,
+  days: number,
+  note: string,
+): Promise<TenantControlResult> {
+  const caller = await requireSuperAdminCaller();
+  if (!caller) return { ok: false, error: "unauthorized" };
+  const id = salonId.trim();
+  const cleanNote = note.trim();
+  if (!UUID_RE.test(id) || !Number.isFinite(days) || days < 1 || days > 30 || cleanNote.length < 3 || cleanNote.length > 500) {
+    return { ok: false, error: "invalid_payload" };
+  }
+
+  const admin = createServiceRoleClient();
+  const before = await loadTenantControlBefore(admin, id);
+  if (before.error) return { ok: false, error: "server_error" };
+  if (!before.data) return { ok: false, error: "not_found" };
+  if (before.data.archived_at) return { ok: false, error: "invalid_payload" };
+  const deadline = graceDeadline(days);
+
+  const audited = await writeAuditLog({
+    actorUserId: caller.userId,
+    actorRole: caller.role,
+    action: "tenant_payment_grace_start",
+    targetKind: "salon",
+    targetId: id,
+    beforeJsonb: before.data,
+    afterJsonb: { subscription_status: "past_due", payment_grace_ends_at: deadline },
+    reason: cleanNote,
+  });
+  if (!audited) return { ok: false, error: "server_error" };
+
+  const { error } = await admin
+    .from("salons")
+    .update({
+      subscription_status: "past_due",
+      payment_grace_ends_at: deadline,
+      tenant_pause_note: cleanNote,
+    } as never)
+    .eq("id", id);
+  if (error) {
+    console.error("[superadmin/beginSalonPaymentGrace] update", error);
+    return { ok: false, error: "server_error" };
+  }
+  revalidatePath(`/superadmin/salons/${id}`);
+  revalidatePath("/superadmin/salons");
+  return { ok: true };
+}
+
+export async function resumeSalonTenant(
+  salonId: string,
+  note: string,
+): Promise<TenantControlResult> {
+  const caller = await requireSuperAdminCaller();
+  if (!caller) return { ok: false, error: "unauthorized" };
+  const id = salonId.trim();
+  const cleanNote = note.trim();
+  if (!UUID_RE.test(id) || cleanNote.length < 3 || cleanNote.length > 500) {
+    return { ok: false, error: "invalid_payload" };
+  }
+
+  const admin = createServiceRoleClient();
+  const before = await loadTenantControlBefore(admin, id);
+  if (before.error) return { ok: false, error: "server_error" };
+  if (!before.data) return { ok: false, error: "not_found" };
+
+  const audited = await writeAuditLog({
+    actorUserId: caller.userId,
+    actorRole: caller.role,
+    action: "tenant_resume",
+    targetKind: "salon",
+    targetId: id,
+    beforeJsonb: before.data,
+    afterJsonb: { archived: false, restoredFromSnapshot: true, wixSquareChanged: false },
+    reason: cleanNote,
+  });
+  if (!audited) return { ok: false, error: "server_error" };
+
+  const resumed = await resumeTenant(admin, id);
+  if (!resumed.ok) {
+    console.error("[superadmin/resumeSalonTenant] update", resumed.error);
+    return { ok: false, error: "server_error" };
+  }
+  revalidatePath(`/superadmin/salons/${id}`);
+  revalidatePath("/superadmin/salons");
+  return { ok: true };
 }
 
 export async function updateSalonFlags(

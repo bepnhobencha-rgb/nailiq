@@ -342,11 +342,23 @@ export type SuperAdminSalonRow = {
   created_at: string | null;
   /** Voice AI feature gate — toggled per-salon by SuperAdmin. */
   voice_ai_enabled: boolean;
+  subscription_status: string | null;
+  archived_at: string | null;
+  tenant_pause_reason: "manual" | "non_payment" | null;
+  tenant_pause_note: string | null;
+  payment_grace_ends_at: string | null;
   /** Bookings whose `start_time_utc` falls in the current calendar
    * month (UTC). Excludes status='cancelled' since those represent
    * voided traffic, not real demand. */
   bookings_this_month: number;
 };
+
+export type TenantControlResult =
+  | { ok: true }
+  | {
+      ok: false;
+      error: "unauthorized" | "invalid_payload" | "not_found" | "server_error";
+    };
 
 export type LoadAllSalonsResult =
   | { ok: true; salons: SuperAdminSalonRow[] }
