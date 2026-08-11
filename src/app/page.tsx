@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Inter, Playfair_Display } from "next/font/google";
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { LandingHero } from "@/components/landing/LandingHero";
 import { LandingFeatures } from "@/components/landing/LandingFeatures";
@@ -9,20 +8,6 @@ import { LandingFAQ } from "@/components/landing/LandingFAQ";
 import { LandingFinalCta } from "@/components/landing/LandingFinalCta";
 import { LandingFooter } from "@/components/landing/LandingFooter";
 import { getLandingJsonLd } from "@/shared/seo/jsonLd";
-
-const landingInter = Inter({
-  subsets: ["latin", "vietnamese"],
-  variable: "--font-landing-inter",
-  display: "swap",
-});
-
-const landingPlayfair = Playfair_Display({
-  weight: "700",
-  style: ["italic"],
-  subsets: ["latin", "vietnamese"],
-  variable: "--font-landing-playfair",
-  display: "swap",
-});
 
 const landingDescription =
   "NailIQ provides done-for-you website, online booking, staff scheduling and salon setup. Keep using Square, Clover, Toast or your current POS.";
@@ -68,7 +53,7 @@ export default function Home() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
       />
       <div
-        className={`${landingInter.variable} ${landingPlayfair.variable} min-h-screen bg-nq-bg text-nq-foreground antialiased font-[family-name:var(--font-landing-inter),system-ui,-apple-system,sans-serif]`}
+        className="min-h-screen bg-nq-bg text-nq-foreground antialiased font-[family-name:var(--font-landing-inter),system-ui,-apple-system,sans-serif]"
       >
         <LandingNavbar />
         <main>

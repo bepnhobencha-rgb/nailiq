@@ -17,6 +17,7 @@
  */
 
 const API = "https://api.vercel.com";
+const VERCEL_API_TIMEOUT_MS = 5_000;
 
 // Vercel's anycast IP for apex (root) domains, and CNAME target for subdomains.
 export const VERCEL_APEX_IP = "76.76.21.21";
@@ -63,8 +64,15 @@ function createVercelDomainsClient(cfg: VercelDomainsConfig) {
     suffix ? `${suffix}${cfg.teamId ? `&teamId=${cfg.teamId}` : ""}` : q;
 
   async function call(path: string, init?: RequestInit) {
+    // Domain status is helpful settings metadata, not a reason to make the
+    // entire salon Settings page unavailable. Bound the external dependency
+    // so callers can degrade to an error status when Vercel is slow.
+    const timeoutSignal = AbortSignal.timeout(VERCEL_API_TIMEOUT_MS);
     const res = await fetch(`${API}${path}`, {
       ...init,
+      signal: init?.signal
+        ? AbortSignal.any([init.signal, timeoutSignal])
+        : timeoutSignal,
       headers: {
         Authorization: `Bearer ${cfg.token}`,
         "Content-Type": "application/json",
