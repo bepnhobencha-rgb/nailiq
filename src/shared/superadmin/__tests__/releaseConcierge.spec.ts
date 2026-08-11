@@ -25,12 +25,14 @@ describe("AI Release Concierge draft boundary", () => {
         },
         severity: "info",
         target: "owners",
+        audienceRoles: ["owner", "admin"],
         notificationMode: "in_app",
         reason: "Owners need context, but no immediate action is required.",
       }),
     );
     expect(result?.notificationMode).toBe("in_app");
     expect(result?.target).toBe("owners");
+    expect(result?.audienceRoles).toEqual(["owner", "admin"]);
   });
 
   it("rejects invented routing values and oversized content", () => {
@@ -53,6 +55,7 @@ describe("AI Release Concierge draft boundary", () => {
           },
           severity: "critical",
           target: "customers",
+          audienceRoles: ["customer"],
           notificationMode: "blast",
           reason: "x",
         }),
@@ -66,6 +69,8 @@ describe("AI Release Concierge draft boundary", () => {
     );
     expect(result.notificationMode).toBe("in_app");
     expect(result.target).toBe("owners");
+    expect(result.audienceRoles).toEqual(["owner", "admin"]);
+    expect(result.localized.en.body).not.toContain("released");
     expect(result.localized.en.body).not.toContain("Có gì mới");
     expect(result.localized.vi.body).not.toContain("What's new");
     expect(result.localized.en.emailBody).toContain("778-868-0738");

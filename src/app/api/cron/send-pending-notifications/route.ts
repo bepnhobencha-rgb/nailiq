@@ -10,6 +10,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { deliverStaffActionNotification } from "@/shared/notifications/deliverStaffActionNotification";
 import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
 import { runTrackedCron } from "@/shared/security/cronRunHistory";
+import { deliverPendingPlatformAnnouncementEmails } from "@/shared/superadmin/platformAnnouncementEmail";
 
 export const runtime = "nodejs";
 export const maxDuration = 55;
@@ -75,6 +76,16 @@ export async function GET(req: NextRequest) {
     }
   }
 
-    return NextResponse.json({ ok: true, claimed: delivered, smsCount, emailCount });
+    const platformNotices = await deliverPendingPlatformAnnouncementEmails(
+      supabase,
+    );
+
+    return NextResponse.json({
+      ok: true,
+      claimed: delivered,
+      smsCount,
+      emailCount,
+      platformNotices,
+    });
   });
 }
