@@ -7,6 +7,7 @@ import { createSessionCredential } from "@/shared/nailTryOn/sessionCredential";
 import { recordNailTryOnEvent } from "@/shared/nailTryOn/telemetry";
 import { decideServerQuality } from "@/shared/nailTryOn/qualityPolicy";
 import { parseNailTryOnCaptureMode } from "@/shared/nailTryOn/captureMode";
+import { isBlockingNailTryOnResolution } from "@/shared/nailTryOn/imageQuality";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -39,7 +40,11 @@ export async function POST(request: Request) {
   try {
     const input = Buffer.from(await photo.arrayBuffer());
     const metadata = await sharp(input, { limitInputPixels: 20_000_000 }).metadata();
-    if (!metadata.width || !metadata.height || metadata.width < 720 || metadata.height < 720) {
+    if (
+      !metadata.width
+      || !metadata.height
+      || isBlockingNailTryOnResolution(metadata.width, metadata.height)
+    ) {
       return NextResponse.json({ error: "resolution_too_low" }, { status: 422 });
     }
     normalized = await sharp(input, { limitInputPixels: 20_000_000 })

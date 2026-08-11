@@ -25,7 +25,8 @@ import type { NailTryOnCaptureMode } from "@/shared/nailTryOn/captureMode";
 const COPY: Record<Exclude<ClientQualityCode, "pass">, { en: string; vi: string }> = {
   unsupported_format: { en: "Use a JPEG, PNG, or WebP image.", vi: "Hãy dùng ảnh JPEG, PNG hoặc WebP." },
   file_too_large: { en: "This photo is over 10 MB.", vi: "Ảnh lớn hơn 10 MB." },
-  resolution_too_low: { en: "Move closer—the hand needs more detail.", vi: "Hãy chụp gần hơn để thấy rõ móng." },
+  resolution_too_low: { en: "This image is too small. Use the original photo or camera.", vi: "Ảnh này có độ phân giải quá thấp. Hãy dùng ảnh gốc hoặc camera." },
+  resolution_suboptimal: { en: "This image is smaller than ideal, but you can still continue.", vi: "Ảnh hơi nhỏ nhưng bạn vẫn có thể tiếp tục." },
   resolution_too_high: { en: "Choose a smaller image.", vi: "Hãy chọn ảnh có kích thước nhỏ hơn." },
   too_dark: { en: "The preview may be less accurate in low light.", vi: "Ảnh tối có thể làm kết quả kém chính xác." },
   too_bright: { en: "Glare may reduce preview accuracy.", vi: "Ánh sáng chói có thể làm kết quả kém chính xác." },

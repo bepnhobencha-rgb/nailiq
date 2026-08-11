@@ -9,7 +9,11 @@ describe("nail try-on camera", () => {
   it("requests the rear camera without audio", () => {
     expect(REAR_CAMERA_CONSTRAINTS).toEqual({
       audio: false,
-      video: { facingMode: { ideal: "environment" } },
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
     });
   });
 
