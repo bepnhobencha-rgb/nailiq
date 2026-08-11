@@ -1,15 +1,12 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { SetupToast, type SetupToastPayload } from "@/components/ui/Toast";
 import { cn } from "@/shared/lib/cn";
 import {
-  deleteStaff,
-  updateStaff,
   type StaffJobRole,
   type StaffStatus,
 } from "@/shared/dashboard/setupActions";
@@ -21,6 +18,7 @@ import { StaffDrawer } from "@/components/dashboard/StaffDrawer";
 import { StaffAccessControl } from "@/components/dashboard/StaffAccessControl";
 import { AddTeamMemberSheet } from "@/components/dashboard/AddTeamMemberSheet";
 import type { StaffAccessInfo } from "@/shared/dashboard/staffAccess";
+import { StaffOffboardingDrawer } from "@/components/dashboard/StaffOffboardingDrawer";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -65,25 +63,6 @@ const ROLE_ICONS: Record<string, string> = {
 
 function getRoleIcon(role: string): string {
   return ROLE_ICONS[role] ?? "👤";
-}
-
-const UNDO_TIMEOUT_MS = 5000;
-
-function mapDeleteStaffError(
-  code: string,
-  messages: {
-    staffHasBookings: string;
-    minStaffRequired: string;
-    removeFailed: string;
-  },
-): string {
-  if (code === "minimum_staff") {
-    return messages.minStaffRequired;
-  }
-  if (code === "staff_has_bookings" || code === "in_use") {
-    return messages.staffHasBookings;
-  }
-  return messages.removeFailed;
 }
 
 // ── ServicesCheckboxList (exported so StaffDrawer can import) ──────────────────
@@ -187,7 +166,6 @@ function StaffCompactRow({
   pendingLabel,
   inactiveLabel,
   isLast,
-  pendingId,
   canDelete,
   editLabel,
   removeLabel,
@@ -199,15 +177,12 @@ function StaffCompactRow({
   pendingLabel: string;
   inactiveLabel: string;
   isLast: boolean;
-  pendingId: string | null;
   canDelete: boolean;
   editLabel: string;
   removeLabel: string;
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const isPending = pendingId === row.id;
-
   return (
     <div
       className={cn(
@@ -244,15 +219,10 @@ function StaffCompactRow({
         title={editLabel}
         aria-label={`${editLabel} — ${row.name}`}
         data-testid={`staff-edit-${row.id}`}
-        disabled={pendingId !== null}
         className="shrink-0 rounded-lg p-1.5 text-nq-muted transition-colors hover:bg-nq-surface hover:text-nq-foreground disabled:opacity-50"
         onClick={onEdit}
       >
-        {isPending ? (
-          <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
-        ) : (
-          "✏️"
-        )}
+        ✏️
       </button>
 
       {/* Delete button */}
@@ -261,11 +231,11 @@ function StaffCompactRow({
         title={removeLabel}
         aria-label={`${removeLabel} — ${row.name}`}
         data-testid={`staff-delete-${row.id}`}
-        disabled={pendingId !== null || !canDelete}
+        disabled={!canDelete}
         className="shrink-0 rounded-lg p-1.5 text-nq-muted transition-colors hover:bg-nq-error/10 hover:text-nq-error disabled:opacity-50"
         onClick={onDelete}
       >
-        🗑️
+        🚪
       </button>
     </div>
   );
@@ -308,8 +278,6 @@ export function StaffSetupPanel({
   const router = useRouter();
 
   const [rows, setRows] = useState(initialRows);
-  const [pendingId, setPendingId] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
   const [toast, setToast] = useState<SetupToastPayload | null>(null);
   const [search, setSearch] = useState("");
 
@@ -320,12 +288,10 @@ export function StaffSetupPanel({
   // All-in-one "Add team member" sheet (create staff + optional login at once)
   const [addSheetOpen, setAddSheetOpen] = useState(false);
 
-  // Undo-delete state
-  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [undoPending, setUndoPending] = useState<{
-    row: SetupStaffRow;
-    timer: ReturnType<typeof setTimeout>;
-  } | null>(null);
+  // Safe offboarding assistant. This replaces destructive optimistic delete:
+  // bookings are reassigned first and the profile remains for audit/history.
+  const [offboardingStaffId, setOffboardingStaffId] = useState<string | null>(null);
+  const [offboardingOpen, setOffboardingOpen] = useState(false);
 
   // Sync rows from server
   useEffect(() => {
@@ -335,164 +301,15 @@ export function StaffSetupPanel({
 
   const refresh = useCallback(() => router.refresh(), [router]);
 
-  // Any mutation in flight
-  const isMutating = pendingId !== null;
-
   // Plan-cap gate (UX only — server re-validates)
   const atStaffLimit =
     Number.isFinite(maxStaff) && rows.length >= maxStaff;
 
-  // ── handleUpdate (unchanged logic) ────────────────────────────────────────────
-  const handleUpdate = useCallback(
-    async (
-      staffId: string,
-      patch: Partial<Pick<SetupStaffRow, "name" | "job_role" | "status">> & {
-        serviceIds?: string[];
-      },
-    ) => {
-      setFormError(null);
-      setPendingId(staffId);
-      let res: Awaited<ReturnType<typeof updateStaff>>;
-      try {
-        res = await updateStaff(slug, staffId, {
-          name: patch.name,
-          role: patch.job_role,
-          status: patch.status,
-          serviceIds: patch.serviceIds,
-        });
-      } catch (err) {
-        Sentry.captureMessage("[StaffSetupPanel] updateStaff threw", {
-          level: "error",
-          tags: { "salon.action": "update_staff", "salon.slug": slug },
-          extra: { staffId, patch, error: String(err) },
-        });
-        setPendingId(null);
-        setFormError(tLabels.saveFailed);
-        setToast({ variant: "error", message: tLabels.saveConnectionFailed });
-        return;
-      }
-      setPendingId(null);
-      if (!res.ok) {
-        // Deactivating a staff who still has open/upcoming appointments is
-        // blocked server-side — surface the reassign-first guidance instead
-        // of a generic save error.
-        const blocked = res.error === "staff_has_upcoming";
-        const message = blocked
-          ? setupErrors.staffHasUpcoming
-          : tLabels.saveFailed;
-        setFormError(message);
-        setToast({
-          variant: "error",
-          message: blocked ? message : tLabels.saveConnectionFailed,
-        });
-        return;
-      }
-      setRows((prev) =>
-        prev.map((r) =>
-          r.id === staffId
-            ? {
-                ...r,
-                name: patch.name ?? r.name,
-                job_role: patch.job_role ?? r.job_role,
-                status: patch.status ?? r.status,
-              }
-            : r,
-        ),
-      );
-      setToast({ variant: "success", message: tLabels.staffSaved });
-      refresh();
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- tLabels.staffSaved is a message string that doesn't change within a session
-    [refresh, slug],
-  );
-
-  // ── handleDeleteOptimistic — optimistic remove + undo window ──────────────────
-  const handleDeleteOptimistic = useCallback(
-    (staffId: string) => {
-      // Clear any previous undo timer
-      if (undoTimerRef.current !== null) {
-        clearTimeout(undoTimerRef.current);
-        undoTimerRef.current = null;
-      }
-      // If there was a previous undo pending that hasn't fired yet,
-      // commit the real delete immediately for that row
-      if (undoPending !== null) {
-        const prevId = undoPending.row.id;
-        void deleteStaff(slug, prevId).catch(() => {
-          // Best-effort: if this fails we accept the ghost row
-        });
-      }
-
-      const rowToDelete = rows.find((r) => r.id === staffId);
-      if (!rowToDelete) return;
-
-      // Optimistically remove from UI
-      setRows((prev) => prev.filter((r) => r.id !== staffId));
-
-      // Set up undo window
-      const timer = setTimeout(async () => {
-        setUndoPending(null);
-        undoTimerRef.current = null;
-        // Commit the real delete
-        setFormError(null);
-        setPendingId(staffId);
-        let res: Awaited<ReturnType<typeof deleteStaff>>;
-        try {
-          res = await deleteStaff(slug, staffId);
-        } catch (err) {
-          Sentry.captureMessage("[StaffSetupPanel] deleteStaff threw", {
-            level: "error",
-            tags: { "salon.action": "delete_staff", "salon.slug": slug },
-            extra: { staffId, error: String(err) },
-          });
-          setPendingId(null);
-          // Restore the row on error
-          setRows((prev) => [...prev, rowToDelete]);
-          setFormError(tLabels.removeFailed);
-          setToast({ variant: "error", message: tLabels.saveConnectionFailed });
-          return;
-        }
-        setPendingId(null);
-        if (!res.ok) {
-          setFormError(
-            mapDeleteStaffError(res.error, {
-              staffHasBookings: setupErrors.staffHasBookings,
-              minStaffRequired: tLabels.minStaffRequired,
-              removeFailed: tLabels.removeFailed,
-            }),
-          );
-          setToast({ variant: "error", message: tLabels.saveConnectionFailed });
-          // Restore the row on server-side error
-          setRows((prev) => [...prev, rowToDelete]);
-          return;
-        }
-        setToast({ variant: "success", message: tLabels.staffRemoved });
-        refresh();
-      }, UNDO_TIMEOUT_MS);
-
-      undoTimerRef.current = timer;
-      setUndoPending({ row: rowToDelete, timer });
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- tLabels.staffRemoved is a message string that doesn't change within a session
-    [rows, undoPending, slug, setupErrors, refresh],
-  );
-
-  const handleUndoDelete = useCallback(() => {
-    if (undoPending === null) return;
-    clearTimeout(undoPending.timer);
-    undoTimerRef.current = null;
-    // Restore the row
-    setRows((prev) => [...prev, undoPending.row]);
-    setUndoPending(null);
-  }, [undoPending]);
-
-  // Cleanup timer on unmount
-  useEffect(
-    () => () => {
-      if (undoTimerRef.current !== null) clearTimeout(undoTimerRef.current);
-    },
-    [],
-  );
+  const openOffboarding = useCallback((staffId: string) => {
+    setDrawerOpen(false);
+    setOffboardingStaffId(staffId);
+    setOffboardingOpen(true);
+  }, []);
 
   // ── Filtered rows ──────────────────────────────────────────────────────────────
   const filteredRows = rows.filter((r) =>
@@ -503,12 +320,6 @@ export function StaffSetupPanel({
     <div className="flex flex-col gap-4">
       <SetupToast toast={toast} onDismiss={() => setToast(null)} />
 
-      {formError ? (
-        <p className="rounded-xl border border-nq-error/40 bg-nq-error/10 px-4 py-3 text-sm text-nq-error">
-          {formError}
-        </p>
-      ) : null}
-
       {/* ── Header row: title + "Thêm" button ────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold text-nq-foreground">
@@ -517,7 +328,7 @@ export function StaffSetupPanel({
         <Button
           variant="primary"
           size="sm"
-          disabled={atStaffLimit || isMutating}
+          disabled={atStaffLimit}
           onClick={() => setAddSheetOpen(true)}
         >
           + {tLabels.addStaff}
@@ -573,15 +384,14 @@ export function StaffSetupPanel({
                   pendingLabel={setupStaffCopy.pendingBadge}
                   inactiveLabel={setupStaffCopy.inactiveBadge}
                   isLast
-                  pendingId={pendingId}
-                  canDelete={rows.length > 1}
+                  canDelete={rows.length > 1 && row.status === "active"}
                   editLabel={tLabels.editStaff}
                   removeLabel={tLabels.removeStaff}
                   onEdit={() => {
                     setDrawerStaff(row);
                     setDrawerOpen(true);
                   }}
-                  onDelete={() => handleDeleteOptimistic(row.id)}
+                  onDelete={() => openOffboarding(row.id)}
                 />
                 <StaffAccessControl
                   slug={slug}
@@ -595,22 +405,6 @@ export function StaffSetupPanel({
               </div>
             );
           })}
-        </div>
-      )}
-
-      {/* ── Undo delete toast ─────────────────────────────────────────────────── */}
-      {undoPending && (
-        <div className="fixed bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-nq-border/50 bg-nq-surface px-4 py-2.5 shadow-lg text-sm xl:bottom-6">
-          <span>
-            {tLabels.removed} <strong>{undoPending.row.name}</strong>
-          </span>
-          <button
-            type="button"
-            onClick={handleUndoDelete}
-            className="min-h-11 touch-manipulation rounded-full px-3 font-semibold text-nq-primary"
-          >
-            ↺ {tLabels.undo}
-          </button>
         </div>
       )}
 
@@ -643,10 +437,27 @@ export function StaffSetupPanel({
         }}
         onRequestDelete={(id) => {
           setDrawerOpen(false);
-          handleDeleteOptimistic(id);
+          openOffboarding(id);
         }}
-        canDelete={rows.length > 1}
+        canDelete={rows.length > 1 && drawerStaff?.status === "active"}
         atStaffLimit={atStaffLimit}
+      />
+
+      <StaffOffboardingDrawer
+        key={`${offboardingStaffId ?? "none"}-${offboardingOpen ? "open" : "closed"}`}
+        slug={slug}
+        staffId={offboardingStaffId}
+        isOpen={offboardingOpen}
+        onClose={() => setOffboardingOpen(false)}
+        onCompleted={(message) => {
+          setRows((current) =>
+            current.map((row) =>
+              row.id === offboardingStaffId ? { ...row, status: "inactive" } : row,
+            ),
+          );
+          setToast({ variant: "success", message });
+          refresh();
+        }}
       />
 
       {/* ── Add team member (all-in-one: provider + optional login) ───────────── */}

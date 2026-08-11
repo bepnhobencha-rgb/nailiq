@@ -1311,7 +1311,7 @@ export const userVi: UserMessages = {
     saveFailed: "Không lưu được. Thử lại.",
     deleteFailed: "Không xoá được. Thử lại.",
     staffTitle: "Nhân viên",
-    removeStaff: "Xoá nhân viên",
+    removeStaff: "Cho nhân viên nghỉ việc",
     editStaff: "Chỉnh sửa nhân viên",
     addStaff: "Thêm nhân viên",
     staffSaved: "✓ Đã lưu nhân viên",

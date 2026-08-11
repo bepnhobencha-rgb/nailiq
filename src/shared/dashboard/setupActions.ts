@@ -1023,12 +1023,17 @@ export async function updateStaff(
 
   if (!mine?.id) return fail("not_found");
 
-  // Guard: deactivating a staff strands their current/future appointments.
-  // Only fire on an actual active→inactive transition (editing an already
-  // inactive member's name/services must not be blocked). "Active" statuses
+  // Guard: changing an active staff to ANY non-active state strands their
+  // current/future appointments. (Previously active→pending bypassed the
+  // inactive-only guard and silently hid the staff from the schedule.)
+  // "Active" booking statuses
   // (pending/confirmed/in_progress/waiting) are unresolved by definition —
   // i.e. current or upcoming — so the front desk must reassign them first.
-  if (data.status === "inactive" && mine.status !== "inactive") {
+  if (
+    data.status !== undefined &&
+    data.status !== "active" &&
+    mine.status === "active"
+  ) {
     const { count: openBookingCount, error: openBookingErr } = await supabase
       .from("bookings")
       .select("id", { count: "exact", head: true })

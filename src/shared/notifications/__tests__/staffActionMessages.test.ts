@@ -31,6 +31,7 @@ const vars = {
   serviceName: "Hi Lite Classic",
   whenLabel: "Sat, Jun 14 at 2:00 PM",
   salonPhone: "(714) 555-1234",
+  staffName: "Anna",
 };
 
 test("EN cancel mentions cancelled + service + time", () => {
@@ -56,6 +57,17 @@ test("no_show SMS is null (handled by win-back)", () => {
   assert(buildStaffActionSms("no_show", "vi", vars) === null, "null vi");
 });
 
+test("staff_change keeps time and names the replacement without saying rescheduled", () => {
+  const en = buildStaffActionSms("staff_change", "en", vars)!;
+  assert(en.includes("remains scheduled"), "keeps original schedule");
+  assert(en.includes("Anna"), "names replacement");
+  assert(!en.includes("moved"), "does not claim time moved");
+
+  const vi = buildStaffActionSms("staff_change", "vi", vars)!;
+  assert(vi.includes("vẫn giữ nguyên"), "vi says time stays unchanged");
+  assert(vi.includes("Anna"), "vi names replacement");
+});
+
 test("empty name → no leading greeting", () => {
   const m = buildStaffActionSms("cancel", "en", { ...vars, customerName: "" })!;
   assert(m.startsWith("your "), "starts with 'your'");
@@ -70,6 +82,7 @@ test("email subjects per event + locale", () => {
   assert(buildStaffActionEmailSubject("cancel", "en", "X")!.includes("cancelled"), "en cancel subj");
   assert(buildStaffActionEmailSubject("cancel", "vi", "X")!.includes("huỷ"), "vi cancel subj");
   assert(buildStaffActionEmailSubject("no_show", "en", "X") === null, "no_show null");
+  assert(buildStaffActionEmailSubject("staff_change", "vi", "X")!.includes("nhân viên"), "staff change vi");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

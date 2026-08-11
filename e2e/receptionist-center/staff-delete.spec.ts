@@ -13,7 +13,7 @@ const _RUN_SUFFIX =
   process.env.PLAYWRIGHT_WORKER_INDEX ??
   String(Date.now()).slice(-6);
 
-/** Run-scoped slug; torn down in afterAll. Row scoping: stable `data-testid="staff-delete-<id>"` on the row's delete button. */
+/** Run-scoped slug; torn down in afterAll. */
 const E2E_STAFF_DELETE_SLUG = `e2e-staff-delete-${_RUN_SUFFIX}`;
 const ANCHOR_NAME = "E2E_ST_ANCHOR";
 const NAME_BLOCK = "E2E_ST_BLOCK";
@@ -48,7 +48,7 @@ function isoAtUtcYmdHourMinute(
 }
 
 /**
- * The 🗑️ delete button for a given staff id. Rows are scoped by the stable
+ * The safe-offboarding button for a given staff id. Rows are scoped by the stable
  * `data-testid="staff-delete-<id>"` on the icon button — the panel renders
  * compact rows (drawer-based edit), not inline-editable `<li>` inputs.
  */
@@ -165,22 +165,6 @@ async function resetEphemeralStaffAndBookings(salonId: string): Promise<void> {
   if (sErr) throw new Error(sErr.message);
 }
 
-async function getStaffByName(
-  salonId: string,
-  name: string,
-): Promise<{ id: string } | null> {
-  const { data, error } = await supabaseAdmin
-    .from("staff")
-    .select("id")
-    .eq("salon_id", salonId)
-    .eq("name", name)
-    .is("deleted_at" as never, null) // deleteStaff soft-deletes; filter them out
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-  return data ?? null;
-}
-
 let fx: Fixture;
 
 test.beforeAll(async () => {
@@ -195,10 +179,10 @@ test.afterAll(async () => {
   await cleanupTestSalon(E2E_STAFF_DELETE_SLUG);
 });
 
-test.describe("Setup staff delete", () => {
+test.describe("Safe staff offboarding", () => {
   test.describe.configure({ timeout: 60_000 });
 
-  test("st-1: cannot delete staff with future booking", async ({ page }) => {
+  test("st-1: reassigns future booking before deactivation", async ({ page }) => {
     const { data: blockStaff, error: insErr } = await supabaseAdmin
       .from("staff")
       .insert({
@@ -228,23 +212,31 @@ test.describe("Setup staff delete", () => {
     await gotoSetupStaff(page, fx.slug);
 
     await staffDeleteBtn(page, blockId).click();
+    await expect(page.getByRole("heading", { name: /Offboard staff member|Cho nhân viên nghỉ việc/i })).toBeVisible();
+    await expect(page.getByTestId("staff-offboarding-complete")).toBeEnabled();
+    await page.getByTestId("staff-offboarding-complete").click();
 
-    // Delete is optimistic: the row vanishes, then after the undo window
-    // (UNDO_TIMEOUT_MS) the server-side delete runs and is rejected because
-    // the staff has a future booking → the formError banner appears and the
-    // row is restored. `<p class="text-nq-error">` is that formError banner.
-    const errBanner = page.locator("p.text-nq-error").filter({
-      hasText: /upcoming bookings|Reassign|booking sắp tới|Nhân viên/i,
-    });
-    await expect(errBanner.first()).toBeVisible({ timeout: 20_000 });
-
-    // Row restored (delete button back) and staff still present in the DB.
-    await expect(staffDeleteBtn(page, blockId)).toBeVisible();
-    const stillThere = await getStaffByName(fx.salonId, NAME_BLOCK);
-    expect(stillThere?.id).toBe(blockId);
+    await expect
+      .poll(async () => {
+        const { data } = await supabaseAdmin
+          .from("bookings")
+          .select("staff_id")
+          .eq("salon_id", fx.salonId)
+          .eq("client_name", "E2E_ST_BOOK_FUTURE")
+          .single();
+        return data?.staff_id;
+      })
+      .toBe(fx.anchorStaffId);
+    const { data: staffAfter } = await supabaseAdmin
+      .from("staff")
+      .select("status,deleted_at")
+      .eq("id", blockId)
+      .single();
+    expect(staffAfter?.status).toBe("inactive");
+    expect(staffAfter?.deleted_at).toBeNull();
   });
 
-  test("st-2: can delete staff with only completed history", async ({
+  test("st-2: preserves completed appointment attribution", async ({
     page,
   }) => {
     const { data: okStaff, error: insErr } = await supabaseAdmin
@@ -276,17 +268,19 @@ test.describe("Setup staff delete", () => {
     await gotoSetupStaff(page, fx.slug);
 
     await staffDeleteBtn(page, okId).click();
+    await expect(page.getByTestId("staff-offboarding-complete")).toBeEnabled();
+    await page.getByTestId("staff-offboarding-complete").click();
 
-    // Optimistic removal: the row's delete button detaches immediately.
-    await expect(staffDeleteBtn(page, okId)).toHaveCount(0, {
-      timeout: 15_000,
-    });
-
-    // After the undo window (UNDO_TIMEOUT_MS) the server-side delete commits;
-    // poll the DB until the soft-delete lands.
     await expect
-      .poll(async () => getStaffByName(fx.salonId, NAME_OK), { timeout: 15_000 })
-      .toBeNull();
+      .poll(async () => {
+        const { data } = await supabaseAdmin
+          .from("staff")
+          .select("status")
+          .eq("id", okId)
+          .single();
+        return data?.status;
+      })
+      .toBe("inactive");
 
     const { data: bookingRow, error: bErr } = await supabaseAdmin
       .from("bookings")
@@ -298,6 +292,14 @@ test.describe("Setup staff delete", () => {
     if (bErr) throw new Error(bErr.message);
     expect(bookingRow?.id).toBe(bookingId);
     expect(bookingRow?.status).toBe("completed");
-    expect(bookingRow?.staff_id).toBeNull();
+    expect(bookingRow?.staff_id).toBe(okId);
+
+    const { data: staffAfter } = await supabaseAdmin
+      .from("staff")
+      .select("status,deleted_at")
+      .eq("id", okId)
+      .single();
+    expect(staffAfter?.status).toBe("inactive");
+    expect(staffAfter?.deleted_at).toBeNull();
   });
 });
