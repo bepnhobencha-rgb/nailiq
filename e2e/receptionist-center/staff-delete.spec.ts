@@ -271,6 +271,17 @@ test.describe("Safe staff offboarding", () => {
     await expect(page.getByTestId("staff-offboarding-complete")).toBeEnabled();
     await page.getByTestId("staff-offboarding-complete").click();
 
+    await expect
+      .poll(async () => {
+        const { data } = await supabaseAdmin
+          .from("staff")
+          .select("status")
+          .eq("id", okId)
+          .single();
+        return data?.status;
+      })
+      .toBe("inactive");
+
     const { data: bookingRow, error: bErr } = await supabaseAdmin
       .from("bookings")
       .select("id,status,staff_id")
