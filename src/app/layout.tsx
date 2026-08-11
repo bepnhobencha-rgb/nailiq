@@ -1,4 +1,17 @@
 import type { Metadata } from "next";
+import "@fontsource/be-vietnam-pro/400.css";
+import "@fontsource/be-vietnam-pro/500.css";
+import "@fontsource/be-vietnam-pro/600.css";
+import "@fontsource/be-vietnam-pro/700.css";
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/500.css";
+import "@fontsource/jetbrains-mono/600.css";
+import "@fontsource/jetbrains-mono/700.css";
+import "@fontsource/inter/400.css";
+import "@fontsource/inter/500.css";
+import "@fontsource/inter/600.css";
+import "@fontsource/inter/700.css";
+import "@fontsource/playfair-display/700-italic.css";
 import { getSiteUrl } from "@/shared/seo/site";
 import { UserLanguageProvider } from "@/shared/lib/UserLanguageContext";
 import { resolveUserLanguage } from "@/shared/i18n/user/resolveUserLanguage";
