@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "@/shared/lib/motionClient";
 import { Button } from "@/components/ui/Button";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
@@ -12,6 +12,14 @@ import {
   type BookingMotionDir,
 } from "@/components/booking/bookingMotion";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
+import {
+  bestAvailableTimeSlots,
+  groupTimeSlotsByPeriod,
+  TIME_SLOT_PERIODS,
+  type TimeSlotPeriod,
+} from "@/shared/booking/timeSlotPeriods";
+
+type TimeSlotView = "best" | TimeSlotPeriod | "all";
 
 export function BookingFlowTimePanel({
   t,
@@ -19,6 +27,7 @@ export function BookingFlowTimePanel({
   timeSlot,
   slotsLoading,
   popularSlotLabels = [],
+  timePeriodsEnabled = false,
   timezoneAbbr,
   stepDir,
   reducedMotion,
@@ -47,6 +56,8 @@ export function BookingFlowTimePanel({
   timeSlot: string | null;
   slotsLoading: boolean;
   popularSlotLabels?: string[];
+  /** QA-first presentation flag. Availability and booking submission stay unchanged. */
+  timePeriodsEnabled?: boolean;
   /** Short tz token, e.g. "PDT" or "GMT+7". Empty string hides the label. */
   timezoneAbbr: string;
   stepDir: BookingMotionDir;
@@ -74,6 +85,49 @@ export function BookingFlowTimePanel({
   // Inline waitlist join is offered even when slots exist (customer's preferred
   // time is taken) — expanded on demand so it never distracts a normal booking.
   const [waitlistOpen, setWaitlistOpen] = useState(false);
+  const [timeSlotView, setTimeSlotView] = useState<TimeSlotView>("best");
+
+  const groupedTimeSlots = useMemo(
+    () => groupTimeSlotsByPeriod(timeSlots),
+    [timeSlots],
+  );
+  const suggestedTimeSlots = useMemo(
+    () => bestAvailableTimeSlots(timeSlots, 3),
+    [timeSlots],
+  );
+  const availablePeriodCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        TIME_SLOT_PERIODS.map((period) => [
+          period,
+          groupedTimeSlots[period].filter((slot) => slot.available).length,
+        ]),
+      ) as Record<TimeSlotPeriod, number>,
+    [groupedTimeSlots],
+  );
+  const availablePeriods = TIME_SLOT_PERIODS.filter(
+    (period) => availablePeriodCounts[period] > 0,
+  );
+  const effectiveTimeSlotView: TimeSlotView =
+    !timePeriodsEnabled || availablePeriods.length === 0
+      ? "all"
+      : timeSlotView === "all"
+        ? "all"
+        : timeSlotView !== "best" && availablePeriodCounts[timeSlotView] === 0
+          ? "best"
+          : timeSlotView;
+  const visibleTimeSlots =
+    effectiveTimeSlotView === "all"
+      ? timeSlots
+      : effectiveTimeSlotView === "best"
+        ? suggestedTimeSlots
+        : groupedTimeSlots[effectiveTimeSlotView];
+  const periodLabels: Record<TimeSlotPeriod, string> = {
+    morning: t.timeMorning,
+    midday: t.timeMidday,
+    afternoon: t.timeAfternoon,
+    evening: t.timeEvening,
+  };
 
   const waitlistJoinedMsg = (
     <p className="rounded-2xl border border-nq-success/35 bg-nq-success/12 px-4 py-3 text-center text-sm font-medium text-nq-success">
@@ -367,8 +421,61 @@ export function BookingFlowTimePanel({
           </div>
         ) : (
           <>
+          {timePeriodsEnabled && availablePeriods.length > 0 ? (
+            <div className="mb-5 space-y-3" data-testid="time-period-picker">
+              <div
+                className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                role="group"
+                aria-label={t.stepTimeHeading}
+              >
+                <button
+                  type="button"
+                  data-testid="time-period-best"
+                  aria-pressed={effectiveTimeSlotView === "best"}
+                  onClick={() => setTimeSlotView("best")}
+                  className={cn(
+                    "min-h-11 shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition-colors",
+                    effectiveTimeSlotView === "best"
+                      ? "border-[var(--salon-primary)] bg-[var(--salon-primary)] text-[var(--booking-bg)]"
+                      : "border-[var(--booking-border)] bg-[var(--booking-bg-input)] text-[var(--booking-text)] hover:border-[var(--salon-primary)]/60",
+                  )}
+                >
+                  ✨ {t.timeBestSuggestions}
+                </button>
+                {availablePeriods.map((period) => (
+                  <button
+                    key={period}
+                    type="button"
+                    data-testid={`time-period-${period}`}
+                    aria-pressed={effectiveTimeSlotView === period}
+                    onClick={() => setTimeSlotView(period)}
+                    className={cn(
+                      "min-h-11 shrink-0 rounded-full border px-4 py-2 text-left text-sm transition-colors",
+                      effectiveTimeSlotView === period
+                        ? "border-[var(--salon-primary)] bg-[color-mix(in_srgb,var(--salon-primary)_18%,transparent)] text-[var(--booking-text)]"
+                        : "border-[var(--booking-border)] bg-[var(--booking-bg-input)] text-[var(--booking-text)] hover:border-[var(--salon-primary)]/60",
+                    )}
+                  >
+                    <span className="block font-semibold">{periodLabels[period]}</span>
+                    <span className="block text-[11px] text-[var(--booking-text-muted)]">
+                      {t.timeOpenCount.replace("{n}", String(availablePeriodCounts[period]))}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                data-testid="time-period-show-all"
+                aria-pressed={effectiveTimeSlotView === "all"}
+                onClick={() => setTimeSlotView(effectiveTimeSlotView === "all" ? "best" : "all")}
+                className="min-h-11 text-sm font-semibold text-[var(--salon-primary)] underline decoration-[var(--salon-primary)]/35 underline-offset-4"
+              >
+                {effectiveTimeSlotView === "all" ? t.timeShowLess : t.timeShowAll}
+              </button>
+            </div>
+          ) : null}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-3 lg:gap-5">
-            {timeSlots.map((slot) => {
+            {visibleTimeSlots.map((slot) => {
               const selected = timeSlot === slot.label;
               const disabled = !slot.available;
               const popular = !disabled && popularSlotLabels.includes(slot.label);
