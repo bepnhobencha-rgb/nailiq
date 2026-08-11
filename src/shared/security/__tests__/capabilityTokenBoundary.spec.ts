@@ -83,9 +83,9 @@ describe("capability-token boundary", () => {
 
   it("updates the blank-database parity tripwire", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("policies: 155");
+    expect(parity).toContain("policies: 156");
     expect(parity).toContain(
-      "const GRANTS = { anon: 57, authenticated: 64, service_role: 111 }",
+      "const GRANTS = { anon: 57, authenticated: 64, service_role: 112 }",
     );
   });
 });

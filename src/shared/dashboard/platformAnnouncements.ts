@@ -3,8 +3,13 @@ import { createClient } from "@/shared/lib/supabase/server";
 import {
   isAnnouncementSeverity,
   isAnnouncementTarget,
+  isReleaseNotificationMode,
   type PlatformAnnouncement,
 } from "@/shared/superadmin/announcementsTypes";
+import {
+  audienceIncludesMemberRole,
+  normalizeReleaseAudienceRoles,
+} from "@/shared/superadmin/releaseAudience";
 
 type AnnouncementRow = {
   id: string;
@@ -14,6 +19,13 @@ type AnnouncementRow = {
   body_en: string | null;
   title_vi: string | null;
   body_vi: string | null;
+  audience_roles: unknown;
+  notification_mode: string;
+  email_requested: boolean;
+  email_subject_en: string | null;
+  email_body_en: string | null;
+  email_subject_vi: string | null;
+  email_body_vi: string | null;
   severity: string;
   target: string;
   published_at: string | null;
@@ -56,6 +68,9 @@ function mapAnnouncement(row: AnnouncementRow): PlatformAnnouncement | null {
   const bodyEn = row.body_en?.trim() || row.body;
   const titleVi = row.title_vi?.trim() || titleEn;
   const bodyVi = row.body_vi?.trim() || bodyEn;
+  const audienceRoles = normalizeReleaseAudienceRoles(
+    Array.isArray(row.audience_roles) ? row.audience_roles : [],
+  );
   return {
     id: row.id,
     title: row.title,
@@ -66,6 +81,23 @@ function mapAnnouncement(row: AnnouncementRow): PlatformAnnouncement | null {
     },
     severity: row.severity,
     target: row.target,
+    audienceRoles,
+    notificationMode: isReleaseNotificationMode(row.notification_mode)
+      ? row.notification_mode
+      : "in_app",
+    email: {
+      requested: row.email_requested === true,
+      localized: {
+        en: {
+          subject: row.email_subject_en?.trim() || titleEn,
+          body: row.email_body_en?.trim() || bodyEn,
+        },
+        vi: {
+          subject: row.email_subject_vi?.trim() || titleVi,
+          body: row.email_body_vi?.trim() || bodyVi,
+        },
+      },
+    },
     publishedAt: row.published_at,
     expiresAt: row.expires_at,
     createdAt: row.created_at,
@@ -82,7 +114,7 @@ export async function loadDashboardAnnouncements(
     const { data, error } = (await supabase
       .from("platform_announcements")
       .select(
-        "id, title, body, title_en, body_en, title_vi, body_vi, severity, target, published_at, expires_at, created_at, updated_at" as never,
+        "id, title, body, title_en, body_en, title_vi, body_vi, audience_roles, notification_mode, email_requested, email_subject_en, email_body_en, email_subject_vi, email_body_vi, severity, target, published_at, expires_at, created_at, updated_at" as never,
       )
       .in("target", announcementTargetsForRole(role))
       .not("published_at", "is", null)
@@ -99,6 +131,14 @@ export async function loadDashboardAnnouncements(
 
     return (data ?? [])
       .filter((row) => isActiveAnnouncement(row, now))
+      .filter((row) =>
+        audienceIncludesMemberRole(
+          normalizeReleaseAudienceRoles(
+            Array.isArray(row.audience_roles) ? row.audience_roles : [],
+          ),
+          role,
+        ),
+      )
       .map(mapAnnouncement)
       .filter((row): row is PlatformAnnouncement => row !== null)
       .slice(0, 3);

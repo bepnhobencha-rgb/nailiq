@@ -13,13 +13,20 @@ import {
 import { draftReleaseUpdate } from "@/shared/superadmin/releaseConciergeAction";
 import {
   ANNOUNCEMENT_SEVERITIES,
-  ANNOUNCEMENT_TARGETS,
+  RELEASE_AUDIENCE_ROLES,
+  RELEASE_NOTIFICATION_MODES,
   type AnnouncementSeverity,
   type AnnouncementTarget,
   type PlatformAnnouncement,
+  type ReleaseAudienceRole,
   type ReleaseConciergeDraft,
+  type ReleaseNotificationMode,
 } from "@/shared/superadmin/announcementsTypes";
 import type { ReleaseReviewContext } from "@/shared/superadmin/releaseReviewContext";
+import {
+  legacyTargetForAudience,
+  RELEASE_AUDIENCE_LABELS,
+} from "@/shared/superadmin/releaseAudience";
 
 const SEVERITY_BADGE: Record<AnnouncementSeverity, string> = {
   info: "border-sky-500/55 bg-sky-400/15 text-sky-700",
@@ -33,6 +40,19 @@ const TARGET_LABEL: Record<AnnouncementTarget, string> = {
   staff: "Staff only",
   superadmins: "Superadmins only",
 };
+
+function announcementErrorMessage(error: string): string {
+  if (error === "technical_language") {
+    return "Rewrite the notice in everyday salon language. Remove code, internal IDs, file names, and deployment details.";
+  }
+  if (error === "invalid_payload") {
+    return "Check the audience, both languages, delivery level, and required wording.";
+  }
+  if (error === "audit_failed") {
+    return "NailIQ could not record the approval. Nothing was emailed; please try again.";
+  }
+  return "NailIQ could not save this notice. Nothing was emailed; please try again.";
+}
 
 /**
  * Phase 1F — platform announcements admin (minimal).
@@ -146,8 +166,18 @@ function CreateAnnouncementForm({
   const [bodyEn, setBodyEn] = useState("");
   const [titleVi, setTitleVi] = useState("");
   const [bodyVi, setBodyVi] = useState("");
+  const [emailSubjectEn, setEmailSubjectEn] = useState("");
+  const [emailBodyEn, setEmailBodyEn] = useState("");
+  const [emailSubjectVi, setEmailSubjectVi] = useState("");
+  const [emailBodyVi, setEmailBodyVi] = useState("");
   const [severity, setSeverity] = useState<AnnouncementSeverity>("info");
-  const [target, setTarget] = useState<AnnouncementTarget>("all");
+  const [audienceRoles, setAudienceRoles] = useState<ReleaseAudienceRole[]>([
+    "owner",
+    "admin",
+  ]);
+  const [notificationMode, setNotificationMode] =
+    useState<ReleaseNotificationMode>("in_app");
+  const [emailRequested, setEmailRequested] = useState(false);
   const [publishNow, setPublishNow] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -161,7 +191,7 @@ function CreateAnnouncementForm({
     startAiTransition(async () => {
       const result = await draftReleaseUpdate(changeSummary);
       if (!result.ok) {
-        setError(result.error);
+        setError(announcementErrorMessage(result.error));
         return;
       }
       const next = result.draft;
@@ -169,8 +199,14 @@ function CreateAnnouncementForm({
       setBodyEn(next.localized.en.body);
       setTitleVi(next.localized.vi.title);
       setBodyVi(next.localized.vi.body);
+      setEmailSubjectEn(next.localized.en.emailSubject);
+      setEmailBodyEn(next.localized.en.emailBody);
+      setEmailSubjectVi(next.localized.vi.emailSubject);
+      setEmailBodyVi(next.localized.vi.emailBody);
       setSeverity(next.severity);
-      setTarget(next.target);
+      setAudienceRoles(next.audienceRoles);
+      setNotificationMode(next.notificationMode);
+      setEmailRequested(false);
       onAiDraftChange(next);
       setAiStatus(
         result.usedAi
@@ -192,8 +228,25 @@ function CreateAnnouncementForm({
       setError("English and Vietnamese title/body are all required.");
       return;
     }
+    if (audienceRoles.length === 0) {
+      setError("Select at least one affected role.");
+      return;
+    }
+    if (
+      emailRequested &&
+      !window.confirm(
+        "Email only the selected roles after this notice is published? Each account receives its saved language. Email already sent cannot be recalled.",
+      )
+    ) {
+      return;
+    }
     startTransition(async () => {
       const publishedAt = publishNow ? new Date().toISOString() : null;
+      const resolvedEmailSubjectEn = emailSubjectEn.trim() || titleEn.trim();
+      const resolvedEmailBodyEn = emailBodyEn.trim() || bodyEn.trim();
+      const resolvedEmailSubjectVi = emailSubjectVi.trim() || titleVi.trim();
+      const resolvedEmailBodyVi = emailBodyVi.trim() || bodyVi.trim();
+      const target = legacyTargetForAudience(audienceRoles);
       const result = await createAnnouncement({
         title: titleEn.trim(),
         body: bodyEn.trim(),
@@ -203,10 +256,17 @@ function CreateAnnouncementForm({
         bodyVi: bodyVi.trim(),
         severity,
         target,
+        audienceRoles,
+        notificationMode,
+        emailRequested,
+        emailSubjectEn: resolvedEmailSubjectEn,
+        emailBodyEn: resolvedEmailBodyEn,
+        emailSubjectVi: resolvedEmailSubjectVi,
+        emailBodyVi: resolvedEmailBodyVi,
         publishedAt,
       });
       if (!result.ok) {
-        setError(result.error);
+        setError(announcementErrorMessage(result.error));
         return;
       }
       // Optimistic row — caller will router.refresh() to pull canonical.
@@ -220,6 +280,15 @@ function CreateAnnouncementForm({
         },
         severity,
         target,
+        audienceRoles,
+        notificationMode,
+        email: {
+          requested: emailRequested,
+          localized: {
+            en: { subject: resolvedEmailSubjectEn, body: resolvedEmailBodyEn },
+            vi: { subject: resolvedEmailSubjectVi, body: resolvedEmailBodyVi },
+          },
+        },
         publishedAt,
         expiresAt: null,
         createdAt: new Date().toISOString(),
@@ -241,8 +310,8 @@ function CreateAnnouncementForm({
           </p>
           <p className="mt-1 text-xs leading-relaxed text-nq-muted">
             Describe what changed. AI prepares separate English and Vietnamese
-            versions. Each Owner/Admin will see the language saved on their
-            account. AI cannot publish or send anything.
+            versions. Choose exactly who is affected; each account receives
+            its saved language. AI cannot publish or send anything.
           </p>
         </div>
         <textarea
@@ -371,20 +440,115 @@ function CreateAnnouncementForm({
         </label>
 
         <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium text-nq-muted">Audience</span>
+          <span className="text-xs font-medium text-nq-muted">Delivery level</span>
           <select
-            value={target}
-            onChange={(e) => setTarget(e.target.value as AnnouncementTarget)}
+            value={notificationMode}
+            onChange={(event) => {
+              const next = event.target.value as ReleaseNotificationMode;
+              setNotificationMode(next);
+              if (next !== "important") setEmailRequested(false);
+            }}
             className="rounded-lg border border-nq-border/50 bg-nq-bg/85 px-3 py-2 text-sm text-nq-foreground"
           >
-            {ANNOUNCEMENT_TARGETS.map((t) => (
-              <option key={t} value={t}>
-                {TARGET_LABEL[t]}
+            {RELEASE_NOTIFICATION_MODES.map((mode) => (
+              <option key={mode} value={mode}>
+                {mode.replace("_", " ")}
               </option>
             ))}
           </select>
         </label>
       </div>
+
+      <fieldset className="rounded-xl border border-nq-border/40 bg-nq-bg/40 p-4">
+        <legend className="px-1 text-xs font-semibold text-nq-foreground">
+          Who is affected?
+        </legend>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {RELEASE_AUDIENCE_ROLES.map((role) => (
+            <label key={role} className="flex items-center gap-2 text-sm text-nq-muted">
+              <input
+                type="checkbox"
+                checked={audienceRoles.includes(role)}
+                onChange={(event) =>
+                  setAudienceRoles((current) =>
+                    event.target.checked
+                      ? [...current, role]
+                      : current.filter((item) => item !== role),
+                  )
+                }
+                className="size-4 accent-nq-primary"
+              />
+              {RELEASE_AUDIENCE_LABELS[role]}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <details className="rounded-xl border border-nq-border/40 bg-nq-bg/40 p-4">
+        <summary className="cursor-pointer text-sm font-semibold text-nq-foreground">
+          Email wording — plain language only
+        </summary>
+        <p className="mt-2 text-xs leading-relaxed text-nq-muted">
+          Explain what changed, why it helps, and what the person should do. Do
+          not include code, internal IDs, file names, or deployment details.
+        </p>
+        <div className="mt-3 grid gap-4 md:grid-cols-2">
+          {(["en", "vi"] as const).map((locale) => {
+            const english = locale === "en";
+            return (
+              <section key={locale} className="grid gap-2">
+                <p className="text-xs font-semibold uppercase text-nq-foreground">
+                  {english ? "English" : "Tiếng Việt"}
+                </p>
+                <input
+                  value={english ? emailSubjectEn : emailSubjectVi}
+                  onChange={(event) =>
+                    english
+                      ? setEmailSubjectEn(event.target.value)
+                      : setEmailSubjectVi(event.target.value)
+                  }
+                  maxLength={160}
+                  placeholder={english ? "Email subject" : "Tiêu đề email"}
+                  className="rounded-lg border border-nq-border/50 bg-nq-bg/85 px-3 py-2 text-sm text-nq-foreground"
+                />
+                <textarea
+                  value={english ? emailBodyEn : emailBodyVi}
+                  onChange={(event) =>
+                    english
+                      ? setEmailBodyEn(event.target.value)
+                      : setEmailBodyVi(event.target.value)
+                  }
+                  rows={7}
+                  maxLength={4_000}
+                  placeholder={
+                    english
+                      ? "Plain-language email"
+                      : "Email bằng ngôn ngữ dễ hiểu"
+                  }
+                  className="rounded-lg border border-nq-border/50 bg-nq-bg/85 px-3 py-2 text-sm text-nq-foreground"
+                />
+              </section>
+            );
+          })}
+        </div>
+      </details>
+
+      <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-nq-border/40 bg-nq-bg/40 p-4 text-xs text-nq-muted">
+        <input
+          type="checkbox"
+          checked={emailRequested}
+          disabled={notificationMode !== "important"}
+          onChange={(event) => setEmailRequested(event.target.checked)}
+          className="mt-0.5 size-4 accent-nq-primary"
+        />
+        <span>
+          <strong className="block text-nq-foreground">
+            Email affected accounts
+          </strong>
+          Available only for important, action-required notices. Each user is
+          deduplicated and receives English or Vietnamese from their saved account language.
+        </span>
+      </label>
 
       <label className="flex cursor-pointer items-center gap-2 text-xs text-nq-muted">
         <input
@@ -442,6 +606,15 @@ function AnnouncementRow({
   const isPublished = announcement.publishedAt !== null;
 
   function togglePublish() {
+    if (
+      !isPublished &&
+      announcement.email.requested &&
+      !window.confirm(
+        "Publish this notice and email only the affected roles? Each account receives its saved language. Email already sent cannot be recalled.",
+      )
+    ) {
+      return;
+    }
     setError(null);
     startPublishTransition(async () => {
       const result = await updateAnnouncementPublish({
@@ -449,7 +622,7 @@ function AnnouncementRow({
         publishedAt: isPublished ? null : new Date().toISOString(),
       });
       if (!result.ok) {
-        setError(result.error);
+        setError(announcementErrorMessage(result.error));
         return;
       }
       onChange({
@@ -495,8 +668,19 @@ function AnnouncementRow({
               {announcement.severity}
             </span>
             <span className="rounded-full border border-nq-border/45 bg-nq-bg/45 px-2 py-0.5 text-[10px] uppercase tracking-wide text-nq-muted">
-              {TARGET_LABEL[announcement.target]}
+              {announcement.audienceRoles.length > 0
+                ? announcement.audienceRoles
+                    .map((role) => RELEASE_AUDIENCE_LABELS[role])
+                    .join(", ")
+                : TARGET_LABEL[announcement.target]}
             </span>
+            {announcement.email.requested ? (
+              <span className="rounded-full border border-nq-primary/45 bg-nq-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-nq-primary">
+                {announcement.email.delivery
+                  ? `Email ${announcement.email.delivery.sent}/${announcement.email.delivery.total} sent · ${announcement.email.delivery.failed} failed`
+                  : "Email on publish"}
+              </span>
+            ) : null}
             {isPublished ? (
               <span className="rounded-full border border-nq-success/45 bg-nq-success/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-nq-success">
                 Published

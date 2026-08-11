@@ -40,6 +40,15 @@ describe("platform dashboard announcements", () => {
       },
       severity: "info",
       target: "owners",
+      audienceRoles: ["owner", "admin"],
+      notificationMode: "in_app",
+      email: {
+        requested: false,
+        localized: {
+          en: { subject: "English subject", body: "English email" },
+          vi: { subject: "Tiêu đề email", body: "Email tiếng Việt" },
+        },
+      },
       publishedAt: null,
       expiresAt: null,
       createdAt: "2026-08-09T00:00:00.000Z",
