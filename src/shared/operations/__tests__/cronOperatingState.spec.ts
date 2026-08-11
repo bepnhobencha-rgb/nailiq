@@ -43,9 +43,9 @@ function heartbeat(
 
 describe("cron operating state", () => {
   it("defines one freshness contract for every scheduled route", () => {
-    expect(CRON_ROUTE_CONTRACTS).toHaveLength(17);
+    expect(CRON_ROUTE_CONTRACTS).toHaveLength(18);
     expect(new Set(CRON_ROUTE_CONTRACTS.map((item) => item.workerName)).size).toBe(
-      17,
+      18,
     );
   });
 

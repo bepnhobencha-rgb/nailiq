@@ -20,6 +20,7 @@ export type CronWorkerName =
   | "spend_sync"
   | "square_email_consent"
   | "square_sync"
+  | "tenant_payment_pause"
   | "waitlist_advance"
   | "wix_sync";
 export type AiWorkerName = Extract<

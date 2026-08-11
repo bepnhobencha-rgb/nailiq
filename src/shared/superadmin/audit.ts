@@ -15,7 +15,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
  * blobs instead so the viewer can still surface it.
  */
 export type AuditLogInput = {
-  actorUserId: string;
+  actorUserId: string | null;
   actorRole: string;
   action: string;
   targetKind: string;

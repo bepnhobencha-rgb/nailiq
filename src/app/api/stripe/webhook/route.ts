@@ -10,6 +10,7 @@ import {
   isSubscriptionPlan,
   type SubscriptionPlan,
 } from "@/shared/lib/subscriptionPlans";
+import { graceDeadline, resumeTenant } from "@/shared/subscriptions/tenantPause";
 
 /**
  * Stripe webhook receiver.
@@ -65,6 +66,7 @@ type SalonPatch = {
   subscription_current_period_end?: string | null;
   stripe_customer_id?: string;
   stripe_subscription_id?: string | null;
+  payment_grace_ends_at?: string | null;
 };
 
 function normalizeStatus(s: string | null | undefined): SalonPatch["subscription_status"] {
@@ -119,6 +121,29 @@ async function applyPatch(
   patch: SalonPatch,
 ): Promise<void> {
   const supabase = createServiceRoleClient();
+  const { data: state } = await supabase
+    .from("salons")
+    .select("archived_at, tenant_pause_reason, payment_grace_ends_at" as never)
+    .eq("id", salonId)
+    .maybeSingle();
+  const current = state as unknown as {
+    archived_at?: string | null;
+    tenant_pause_reason?: string | null;
+    payment_grace_ends_at?: string | null;
+  } | null;
+
+  // The first past-due event starts a fixed seven-day grace period. Repeated
+  // Stripe retries must not extend it indefinitely.
+  if (
+    patch.subscription_status === "past_due" &&
+    !current?.archived_at &&
+    !current?.payment_grace_ends_at
+  ) {
+    patch.payment_grace_ends_at = graceDeadline(7);
+  }
+  if (patch.subscription_status === "active" || patch.subscription_status === "trialing") {
+    patch.payment_grace_ends_at = null;
+  }
   // Cast: subscription_* columns are not yet in the auto-generated DB
   // types until next regeneration.
   const { error } = await supabase
@@ -128,6 +153,20 @@ async function applyPatch(
   if (error) {
     console.error("[stripe webhook] update", error);
     throw error;
+  }
+
+  // Successful payment only auto-resumes a tenant paused specifically for
+  // non-payment. A manual Superadmin pause always remains manual.
+  if (
+    (patch.subscription_status === "active" || patch.subscription_status === "trialing") &&
+    current?.archived_at &&
+    current.tenant_pause_reason === "non_payment"
+  ) {
+    const resumed = await resumeTenant(supabase, salonId);
+    if (!resumed.ok) {
+      console.error("[stripe webhook] auto-resume", resumed.error);
+      throw resumed.error;
+    }
   }
 }
 

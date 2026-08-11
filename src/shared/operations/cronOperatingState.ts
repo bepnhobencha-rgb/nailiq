@@ -54,6 +54,7 @@ export const CRON_ROUTE_CONTRACTS: ReadonlyArray<{
   { workerName: "spend_sync", label: "Channel spend sync", schedule: "Daily", staleAfterMs: 30 * HOUR },
   { workerName: "square_email_consent", label: "Square email consent", schedule: "Daily", staleAfterMs: 30 * HOUR },
   { workerName: "square_sync", label: "Square sync", schedule: "Every 5 minutes", staleAfterMs: 15 * MINUTE },
+  { workerName: "tenant_payment_pause", label: "Tenant payment pause", schedule: "Hourly", staleAfterMs: 3 * HOUR },
   { workerName: "waitlist_advance", label: "Waitlist advance", schedule: "Every 5 minutes", staleAfterMs: 15 * MINUTE },
   { workerName: "wix_sync", label: "Wix sync", schedule: "Every minute", staleAfterMs: 5 * MINUTE },
 ];
