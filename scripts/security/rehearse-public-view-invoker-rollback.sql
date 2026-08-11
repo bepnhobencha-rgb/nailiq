@@ -36,7 +36,10 @@ REVOKE SELECT (
 
 REVOKE SELECT (id, salon_id, name, job_role, status, deleted_at)
   ON public.staff FROM anon;
-REVOKE SELECT (id, staff_id, salon_id, day_of_week, start_time, end_time, is_active)
+REVOKE SELECT (
+  id, staff_id, salon_id, day_of_week, start_time, end_time, is_active,
+  break_start_time, break_end_time
+)
   ON public.staff_shifts FROM anon;
 REVOKE SELECT (id, staff_id, salon_id, date)
   ON public.staff_unavailability FROM anon;

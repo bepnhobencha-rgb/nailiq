@@ -57,6 +57,8 @@ insert into public.staff_shifts (
   day_of_week,
   start_time,
   end_time,
+  break_start_time,
+  break_end_time,
   is_active
 )
 values (
@@ -66,6 +68,8 @@ values (
   'mon',
   '09:00',
   '17:00',
+  '12:00',
+  '12:30',
   true
 );
 
@@ -116,8 +120,10 @@ begin
     select count(*)
     from public.public_staff_shifts
     where id = '54000000-0000-0000-0000-000000000001'
+      and break_start_time = '12:00'::time
+      and break_end_time = '12:30'::time
   ) <> 1 then
-    raise exception 'anon cannot read the public staff shift';
+    raise exception 'anon cannot read the public staff shift and break';
   end if;
 
   if (

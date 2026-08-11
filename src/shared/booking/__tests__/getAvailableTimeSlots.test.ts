@@ -691,5 +691,81 @@ test("trailingBufferMinutes lets the SERVICE end at close; buffer may spill past
   }
 });
 
+// ─── Staff break intervals ──────────────────────────────────────────────────
+
+test("specific staff break blocks every overlapping slot", () => {
+  const slots = computeTimeSlots({
+    openingHoursRaw: HOURS_9_TO_19,
+    selectedDate: FUTURE_DATE,
+    staffId: "s1",
+    staffList: STAFF,
+    serviceDurationMinutes: 30,
+    occupancy: [],
+    nowMs: NOW_MS,
+    staffShiftWindows: new Map([
+      [
+        "s1",
+        {
+          startMin: 9 * 60,
+          endMin: 17 * 60,
+          breakStartMin: 12 * 60,
+          breakEndMin: 13 * 60,
+        },
+      ],
+    ]),
+  });
+
+  const byLabel = new Map(slots.map((slot) => [slot.label, slot.available]));
+  for (const label of ["11:45 AM", "12:00 PM", "12:15 PM", "12:30 PM", "12:45 PM"]) {
+    if (byLabel.get(label) !== false) {
+      throw new Error(`expected ${label} to be blocked by the staff break`);
+    }
+  }
+  if (byLabel.get("11:30 AM") !== true || byLabel.get("1:00 PM") !== true) {
+    throw new Error("slots touching but not overlapping the break must stay available");
+  }
+});
+
+test("any staff remains available when another capable staff is not on break", () => {
+  const twoStaff = [
+    ...STAFF,
+    { id: "s2", name: "Kim", job_role: "nail_tech" },
+  ] as const;
+  const slots = computeTimeSlots({
+    openingHoursRaw: HOURS_9_TO_19,
+    selectedDate: FUTURE_DATE,
+    staffId: BOOKING_ANY_STAFF_ID,
+    staffList: twoStaff,
+    serviceDurationMinutes: 30,
+    occupancy: [],
+    nowMs: NOW_MS,
+    staffShiftWindows: new Map([
+      [
+        "s1",
+        {
+          startMin: 9 * 60,
+          endMin: 17 * 60,
+          breakStartMin: 12 * 60,
+          breakEndMin: 13 * 60,
+        },
+      ],
+      [
+        "s2",
+        {
+          startMin: 9 * 60,
+          endMin: 17 * 60,
+          breakStartMin: null,
+          breakEndMin: null,
+        },
+      ],
+    ]),
+  });
+
+  const noon = slots.find((slot) => slot.label === "12:00 PM");
+  if (!noon?.available) {
+    throw new Error("Any Staff should stay available while one staff remains free");
+  }
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);

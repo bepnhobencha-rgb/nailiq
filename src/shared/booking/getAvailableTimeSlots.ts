@@ -188,7 +188,12 @@ export function computeTimeSlots(args: {
    * from midnight). Staff with no entry fall back to full salon hours.
    * Salons without any configured shifts skip this entirely (backward-compat).
    */
-  staffShiftWindows?: ReadonlyMap<string, { startMin: number; endMin: number }>;
+  staffShiftWindows?: ReadonlyMap<string, {
+    startMin: number;
+    endMin: number;
+    breakStartMin: number | null;
+    breakEndMin: number | null;
+  }>;
   /** Staff IDs blocked for the selected date (one-off unavailability). These
    *  staff are excluded from "any staff" selection and make specific-staff
    *  slots completely unavailable. */
@@ -277,9 +282,14 @@ export function computeTimeSlots(args: {
     if (!staffShiftWindows || staffShiftWindows.size === 0) return true;
     const win = staffShiftWindows.get(staffUuid);
     if (!win) return true; // no shift row for this staff → fall back to salon hours
-    return (
+    const withinShift = (
       slotStartMin >= win.startMin &&
       (allowBeyondStaffShiftEnd || slotEndMin <= win.endMin)
+    );
+    if (!withinShift) return false;
+    if (win.breakStartMin == null || win.breakEndMin == null) return true;
+    return !(
+      slotStartMin < win.breakEndMin && slotEndMin > win.breakStartMin
     );
   }
 
@@ -543,7 +553,12 @@ export async function getAvailableTimeSlots(
 
   // Fetch staff shifts + unavailability for this day (optional — tables may
   // not exist on older deploys or salon may have no rows, both are fine).
-  let staffShiftWindows: Map<string, { startMin: number; endMin: number }> | undefined;
+  let staffShiftWindows: Map<string, {
+    startMin: number;
+    endMin: number;
+    breakStartMin: number | null;
+    breakEndMin: number | null;
+  }> | undefined;
   let staffUnavailableIds: Set<string> | undefined;
 
   try {
@@ -552,7 +567,7 @@ export async function getAvailableTimeSlots(
     const [shiftRes, unavailRes] = await Promise.all([
       supabase
         .from("public_staff_shifts")
-        .select("staff_id, start_time, end_time")
+        .select("staff_id, start_time, end_time, break_start_time, break_end_time")
         .eq("salon_id", salonId)
         .eq("day_of_week", dayKey)
         .eq("is_active", true),
@@ -565,10 +580,18 @@ export async function getAvailableTimeSlots(
 
     if (!shiftRes.error && Array.isArray(shiftRes.data) && shiftRes.data.length > 0) {
       staffShiftWindows = new Map();
-      for (const row of shiftRes.data as { staff_id: string; start_time: string; end_time: string }[]) {
+      for (const row of shiftRes.data as {
+        staff_id: string;
+        start_time: string;
+        end_time: string;
+        break_start_time: string | null;
+        break_end_time: string | null;
+      }[]) {
         staffShiftWindows.set(row.staff_id, {
           startMin: hmToMinutes(row.start_time),
           endMin: hmToMinutes(row.end_time),
+          breakStartMin: row.break_start_time ? hmToMinutes(row.break_start_time) : null,
+          breakEndMin: row.break_end_time ? hmToMinutes(row.break_end_time) : null,
         });
       }
     }
