@@ -43,6 +43,8 @@ type BookingRow = {
     reminder_24h_enabled: boolean;
     reminder_3h_enabled: boolean;
     sms_reminders_enabled: boolean;
+    sms_outbound_enabled: boolean | null;
+    email_outbound_enabled: boolean | null;
     sms_a2p_registered: boolean | null;
     feature_flags: Record<string, unknown> | null;
   } | null;
@@ -98,7 +100,7 @@ export async function GET(req: Request) {
     reminder_24h_sent_at, reminder_3h_sent_at,
     group_id, is_group_organizer,
     services!bookings_service_id_fkey(name), staff(name),
-    salons(name, slug, timezone, vertical, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, sms_a2p_registered, feature_flags)`;
+    salons(name, slug, timezone, vertical, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, sms_outbound_enabled, email_outbound_enabled, sms_a2p_registered, feature_flags)`;
 
   // Fetch both email-eligible AND SMS-eligible bookings (no email filter here).
   const { data: need24h, error: err24h } = await supabase
@@ -171,7 +173,7 @@ export async function GET(req: Request) {
 
   async function processGroupReminder(booking: BookingRow, reminderType: "24h" | "3h") {
     const salon = booking.salons!;
-    if (!booking.client_email || !booking.group_id) return;
+    if (salon.email_outbound_enabled === false || !booking.client_email || !booking.group_id) return;
 
     const members = await fetchGroupMembers(booking.group_id);
     const { resolveVertical } = await import("@/shared/verticals/registry");
@@ -252,9 +254,9 @@ export async function GET(req: Request) {
       return;
     }
 
-    const wantsEmail = !!booking.client_email;
+    const wantsEmail = salon.email_outbound_enabled !== false && !!booking.client_email;
     const smsA2pRegistered = salon.sms_a2p_registered === true; // fail-safe: only an explicit true (A2P approved) permits US link-SMS; NULL/false → email-links mitigation
-    let wantsSms   = salon.sms_reminders_enabled && !!booking.client_phone;
+    let wantsSms   = salon.sms_outbound_enabled !== false && salon.sms_reminders_enabled && !!booking.client_phone;
     // A2P 10DLC guardrail: US numbers require A2P registration; skip SMS if not registered.
     if (wantsSms && isUsPhone(booking.client_phone) && !smsA2pRegistered) {
       wantsSms = false;
