@@ -47,6 +47,8 @@ import {
   filterStaffCapableForServices,
 } from "@/shared/booking/staffCapability";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
+import { dayKeyFromLocalDate } from "@/shared/booking/dayKeyFromDate";
+import { hmToMinutes } from "@/shared/booking/hmToMinutes";
 import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
@@ -3204,6 +3206,33 @@ export async function addDeskAppointment(
   );
   if (capableStaff.length === 0) return fail("no_staff_available");
 
+  const dayKey = dayKeyFromLocalDate(new Date(`${dateYmd}T12:00:00`));
+  const { data: shiftBreakRows } = await db
+    .from("staff_shifts")
+    .select("staff_id, break_start_time, break_end_time")
+    .eq("salon_id", ctx.salon.id)
+    .eq("day_of_week", dayKey)
+    .eq("is_active", true);
+  const breakWindows = new Map<
+    string,
+    { startMin: number; endMin: number }
+  >();
+  for (const row of shiftBreakRows ?? []) {
+    if (!row.break_start_time || !row.break_end_time) continue;
+    breakWindows.set(String(row.staff_id), {
+      startMin: hmToMinutes(String(row.break_start_time)),
+      endMin: hmToMinutes(String(row.break_end_time)),
+    });
+  }
+  const isOutsideStaffBreak = (staffUuid: string): boolean => {
+    const staffBreak = breakWindows.get(staffUuid);
+    if (!staffBreak) return true;
+    return !(
+      startMinutes < staffBreak.endMin &&
+      startMinutes + totalMin > staffBreak.startMin
+    );
+  };
+
   let resolvedStaffId: string;
   let staffName = "";
   if (isAnyStaff) {
@@ -3226,6 +3255,7 @@ export async function addDeskAppointment(
       .map((s) => s.id)
       .filter(
         (id) =>
+          isOutsideStaffBreak(id) &&
           !occupancy.some(
             (o) =>
               o.staffId === id &&
@@ -3245,6 +3275,7 @@ export async function addDeskAppointment(
   } else {
     const chosen = capableStaff.find((s) => s.id === rawStaffId);
     if (!chosen) return fail("invalid_staff");
+    if (!isOutsideStaffBreak(rawStaffId)) return fail("time_slot_taken");
     resolvedStaffId = rawStaffId;
     staffName = chosen.name;
   }

@@ -614,6 +614,36 @@ export async function submitPublicBooking(
   const slotStartMs = startLocal.getTime();
   const slotEndMs = endLocal.getTime();
 
+  const breakWindows = new Map<
+    string,
+    { startMin: number; endMin: number }
+  >();
+  const { data: shiftBreakRows } = await supabase
+    .from("public_staff_shifts")
+    .select("staff_id, break_start_time, break_end_time")
+    .eq("salon_id", salon.id)
+    .eq(
+      "day_of_week",
+      dayKeyFromLocalDate(new Date(`${bookingDateYmd}T12:00:00`)),
+    )
+    .eq("is_active", true);
+  for (const row of shiftBreakRows ?? []) {
+    if (!row.break_start_time || !row.break_end_time) continue;
+    breakWindows.set(String(row.staff_id), {
+      startMin: hmToMinutes(String(row.break_start_time)),
+      endMin: hmToMinutes(String(row.break_end_time)),
+    });
+  }
+
+  function isOutsideStaffBreak(staffUuid: string): boolean {
+    const staffBreak = breakWindows.get(staffUuid);
+    if (!staffBreak) return true;
+    return !(
+      startMinsOfDay < staffBreak.endMin &&
+      startMinsOfDay + totalBlockMin > staffBreak.startMin
+    );
+  }
+
   function isStaffFreeForRange(
     staffUuid: string,
     rangeStartMs: number,
@@ -637,7 +667,11 @@ export async function submitPublicBooking(
   if (requestedStaffId === BOOKING_ANY_STAFF_ID) {
     const freeIds = orderedStaff
       .map((r) => String(r.id))
-      .filter((id) => isStaffFreeForRange(id, slotStartMs, slotEndMs));
+      .filter(
+        (id) =>
+          isOutsideStaffBreak(id) &&
+          isStaffFreeForRange(id, slotStartMs, slotEndMs),
+      );
     if (freeIds.length === 0) throw new BookingConflictError();
     resolvedStaffId = pickBestStaffAmongFree(
       freeIds,
@@ -654,6 +688,10 @@ export async function submitPublicBooking(
       (r) => String(r.id) === requestedStaffId,
     );
     if (!allowed) throw new Error("invalid_staff");
+
+    if (!isOutsideStaffBreak(requestedStaffId)) {
+      throw new BookingConflictError();
+    }
 
     if (!isStaffFreeForRange(requestedStaffId, slotStartMs, slotEndMs)) {
       throw new BookingConflictError();

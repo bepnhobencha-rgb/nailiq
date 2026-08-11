@@ -48,25 +48,56 @@ function ShiftCell({
   onSave: (updated: StaffShiftRow) => void;
   onDelete: (id: string) => void;
 }) {
+  const { language } = useUserLanguage();
+  const vi = language === "vi";
   const [editing, setEditing] = useState(false);
   const [start, setStart] = useState(shift?.start_time ?? "09:00");
   const [end, setEnd] = useState(shift?.end_time ?? "17:00");
+  const [breakStart, setBreakStart] = useState(shift?.break_start_time ?? "");
+  const [breakEnd, setBreakEnd] = useState(shift?.break_end_time ?? "");
   const [pending, startTx] = useTransition();
   const [err, setErr] = useState<string | null>(null);
 
   function handleEdit() {
     setStart(shift?.start_time ?? "09:00");
     setEnd(shift?.end_time ?? "17:00");
+    setBreakStart(shift?.break_start_time ?? "");
+    setBreakEnd(shift?.break_end_time ?? "");
     setErr(null);
     setEditing(true);
   }
 
   function handleSave() {
     if (start >= end) { setErr("Start must be before end"); return; }
+    if ((breakStart && !breakEnd) || (!breakStart && breakEnd)) {
+      setErr("Enter both break times");
+      return;
+    }
+    if (breakStart && !(start < breakStart && breakStart < breakEnd && breakEnd < end)) {
+      setErr("Break must be inside the shift");
+      return;
+    }
     startTx(async () => {
-      const r = await upsertStaffShift(slug, staffId, dayKey, start, end);
+      const r = await upsertStaffShift(
+        slug,
+        staffId,
+        dayKey,
+        start,
+        end,
+        breakStart || null,
+        breakEnd || null,
+      );
       if (r.ok && r.id) {
-        onSave({ id: r.id, staff_id: staffId, day_of_week: dayKey, start_time: start, end_time: end, is_active: true });
+        onSave({
+          id: r.id,
+          staff_id: staffId,
+          day_of_week: dayKey,
+          start_time: start,
+          end_time: end,
+          break_start_time: breakStart || null,
+          break_end_time: breakEnd || null,
+          is_active: true,
+        });
         setEditing(false);
         setErr(null);
       } else {
@@ -95,6 +126,27 @@ function ShiftCell({
             className="w-full rounded border border-nq-border bg-nq-bg px-1.5 py-0.5 text-xs"
             disabled={pending}
           />
+          <span className="text-[10px] text-nq-muted-foreground">
+            {vi ? "Giờ nghỉ (tuỳ chọn)" : "Break (optional)"}
+          </span>
+          <div className="flex gap-1">
+            <input
+              type="time"
+              aria-label="Break start"
+              value={breakStart}
+              onChange={(e) => setBreakStart(e.target.value)}
+              className="min-w-0 flex-1 rounded border border-nq-border bg-nq-bg px-1 py-0.5 text-xs"
+              disabled={pending}
+            />
+            <input
+              type="time"
+              aria-label="Break end"
+              value={breakEnd}
+              onChange={(e) => setBreakEnd(e.target.value)}
+              className="min-w-0 flex-1 rounded border border-nq-border bg-nq-bg px-1 py-0.5 text-xs"
+              disabled={pending}
+            />
+          </div>
           <input
             type="time"
             value={end}
@@ -134,6 +186,11 @@ function ShiftCell({
           <span className="font-medium text-nq-foreground">{shift.start_time}</span>
           <span className="text-nq-muted-foreground">–</span>
           <span className="font-medium text-nq-foreground">{shift.end_time}</span>
+          {shift.break_start_time && shift.break_end_time ? (
+            <span className="text-[10px] text-nq-muted-foreground">
+              {vi ? "Nghỉ" : "Break"} {shift.break_start_time}–{shift.break_end_time}
+            </span>
+          ) : null}
           <span
             onClick={(e) => { e.stopPropagation(); handleDelete(); }}
             className="absolute -right-1 -top-1 hidden rounded-full bg-nq-error/80 px-1 text-[9px] text-white group-hover:inline"
