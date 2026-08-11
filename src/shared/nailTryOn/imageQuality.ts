@@ -1,13 +1,14 @@
 export const NAIL_TRYON_MAX_BYTES = 10 * 1024 * 1024;
 export const NAIL_TRYON_MAX_PIXELS = 20_000_000;
-export const NAIL_TRYON_MIN_WIDTH = 720;
-export const NAIL_TRYON_MIN_HEIGHT = 720;
+export const NAIL_TRYON_BLOCKING_MIN_DIMENSION = 480;
+export const NAIL_TRYON_RECOMMENDED_MIN_DIMENSION = 720;
 
 export type ClientQualityCode =
   | "pass"
   | "unsupported_format"
   | "file_too_large"
   | "resolution_too_low"
+  | "resolution_suboptimal"
   | "resolution_too_high"
   | "too_dark"
   | "too_bright"
@@ -24,18 +25,27 @@ export type ClientQualityInput = {
 
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
+export function isBlockingNailTryOnResolution(width: number, height: number) {
+  return width < NAIL_TRYON_BLOCKING_MIN_DIMENSION
+    || height < NAIL_TRYON_BLOCKING_MIN_DIMENSION;
+}
+
 /** Fast, inexpensive preflight only. Server-side decoding and hand/nail
  * recognition remain authoritative before any paid generation. */
 export function evaluateClientImageQuality(input: ClientQualityInput): ClientQualityCode {
   if (!ALLOWED_TYPES.has(input.mimeType)) return "unsupported_format";
   if (input.bytes > NAIL_TRYON_MAX_BYTES) return "file_too_large";
-  if (input.width < NAIL_TRYON_MIN_WIDTH || input.height < NAIL_TRYON_MIN_HEIGHT) {
+  if (isBlockingNailTryOnResolution(input.width, input.height)) {
     return "resolution_too_low";
   }
   if (input.width * input.height > NAIL_TRYON_MAX_PIXELS) return "resolution_too_high";
   if (input.meanLuma < 48) return "too_dark";
   if (input.meanLuma > 235) return "too_bright";
   if (input.edgeVariance < 85) return "blurred";
+  if (
+    input.width < NAIL_TRYON_RECOMMENDED_MIN_DIMENSION
+    || input.height < NAIL_TRYON_RECOMMENDED_MIN_DIMENSION
+  ) return "resolution_suboptimal";
   return "pass";
 }
 
