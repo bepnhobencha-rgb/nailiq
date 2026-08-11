@@ -14,7 +14,13 @@ describe("evaluateClientImageQuality", () => {
   it("passes a usable image", () => expect(evaluateClientImageQuality(good)).toBe("pass"));
   it("rejects invalid type before decoding", () => expect(evaluateClientImageQuality({ ...good, mimeType: "image/gif" })).toBe("unsupported_format"));
   it("rejects files over 10 MB", () => expect(evaluateClientImageQuality({ ...good, bytes: 10 * 1024 * 1024 + 1 })).toBe("file_too_large"));
-  it("rejects low resolution", () => expect(evaluateClientImageQuality({ ...good, width: 640 })).toBe("resolution_too_low"));
+  it("rejects only genuinely unusable low resolution", () => {
+    expect(evaluateClientImageQuality({ ...good, width: 479 })).toBe("resolution_too_low");
+    expect(evaluateClientImageQuality({ ...good, width: 480, height: 640 })).toBe("resolution_suboptimal");
+  });
+  it("passes the previous recommended boundary", () => {
+    expect(evaluateClientImageQuality({ ...good, width: 720, height: 720 })).toBe("pass");
+  });
   it("rejects excessive pixel counts", () => expect(evaluateClientImageQuality({ ...good, width: 5000, height: 5000 })).toBe("resolution_too_high"));
   it("returns actionable light and blur outcomes", () => {
     expect(evaluateClientImageQuality({ ...good, meanLuma: 30 })).toBe("too_dark");
