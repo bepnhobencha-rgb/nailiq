@@ -1141,7 +1141,11 @@ export async function deleteStaff(
   }
 
   // See decisions-log.md 2026-05-02: Staff delete detaches terminal bookings
-  const { error: detachErr } = await supabase
+  // This authorized delete spans private/profile data and protected booking
+  // history. Keep the privileged portion server-only and scope every write to
+  // the already-resolved salon and target staff member.
+  const admin = createServiceRoleClient();
+  const { error: detachErr } = await admin
     .from("bookings")
     .update({ staff_id: null })
     .eq("salon_id", r.salon.id)
@@ -1153,9 +1157,14 @@ export async function deleteStaff(
     return fail("server_error");
   }
 
-  const { error: prefErr } = await supabase
+  // client_profiles intentionally denies all direct authenticated API access;
+  // it is only exposed through scoped server actions. Use the server-only
+  // service role for this referential cleanup after owner/admin authorization
+  // and constrain it to the resolved salon as well as the target staff row.
+  const { error: prefErr } = await admin
     .from("client_profiles")
     .update({ preferred_staff_id: null })
+    .eq("salon_id", r.salon.id)
     .eq("preferred_staff_id", staffId);
 
   if (prefErr) {
@@ -1167,7 +1176,7 @@ export async function deleteStaff(
   // historical bookings keep a resolvable staff_id and SuperAdmin can
   // restore. All read paths filter `deleted_at IS NULL`. Cast: column
   // not yet in the auto-generated DB types.
-  const { error } = await supabase
+  const { error } = await admin
     .from("staff")
     .update({ deleted_at: new Date().toISOString() } as never)
     .eq("id", staffId)
