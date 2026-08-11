@@ -1,28 +1,21 @@
 import type { Metadata } from "next";
-import { Be_Vietnam_Pro, JetBrains_Mono } from "next/font/google";
+import "@fontsource/be-vietnam-pro/400.css";
+import "@fontsource/be-vietnam-pro/500.css";
+import "@fontsource/be-vietnam-pro/600.css";
+import "@fontsource/be-vietnam-pro/700.css";
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/500.css";
+import "@fontsource/jetbrains-mono/600.css";
+import "@fontsource/jetbrains-mono/700.css";
+import "@fontsource/inter/400.css";
+import "@fontsource/inter/500.css";
+import "@fontsource/inter/600.css";
+import "@fontsource/inter/700.css";
+import "@fontsource/playfair-display/700-italic.css";
 import { getSiteUrl } from "@/shared/seo/site";
 import { UserLanguageProvider } from "@/shared/lib/UserLanguageContext";
 import { resolveUserLanguage } from "@/shared/i18n/user/resolveUserLanguage";
 import "./globals.css";
-
-// Be Vietnam Pro: hand-tuned VN diacritics for body sans.
-const appSans = Be_Vietnam_Pro({
-  variable: "--font-app-sans",
-  subsets: ["latin", "vietnamese"],
-  weight: ["400", "500", "600", "700"],
-  display: "swap",
-});
-
-// JetBrains Mono (not Geist_Mono) for `font-mono` because Geist's mono
-// has no `vietnamese` subset — receptionist `font-mono` labels with VN
-// service names / status pills (e.g. "CHỜ", "ĐANG PHỤC VỤ") were falling
-// back to system mono and rendering with detached-looking diacritics.
-const appMono = JetBrains_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin", "vietnamese"],
-  weight: ["400", "500", "600", "700"],
-  display: "swap",
-});
 
 const siteUrl = getSiteUrl();
 
@@ -97,10 +90,7 @@ export default async function RootLayout({
   const initialLanguage = await resolveUserLanguage();
 
   return (
-    <html
-      lang={initialLanguage}
-      className={`${appSans.variable} ${appMono.variable} h-full antialiased`}
-    >
+    <html lang={initialLanguage} className="h-full antialiased">
       <body className="min-h-dvh min-w-0 flex flex-col overflow-x-hidden">
         <UserLanguageProvider initialLanguage={initialLanguage}>
           {children}

@@ -3,6 +3,12 @@
 /* Theme values mirror src/shared/theme/tokens.ts (colors, motion, radii).
    Brand palette (locked): bg #0B0C10, surface #111214, text #FFF, muted #A1A1AA, gold #D4AF37 (accent only; sparingly). */
 :root {
+  /* Network-independent font stacks keep CI and production builds reliable.
+     Preferred faces are used when installed; OS fonts provide the fallback. */
+  --font-app-sans: "Be Vietnam Pro", "Inter", system-ui, -apple-system, sans-serif;
+  --font-geist-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --font-landing-inter: "Inter", system-ui, -apple-system, sans-serif;
+  --font-landing-playfair: "Playfair Display", ui-serif, Georgia, serif;
   --background: #0b0c10;
   --foreground: #ffffff;
   --nq-border-subtle: rgba(212, 175, 55, 0.18);
