@@ -54,10 +54,10 @@ describe("reviews boundary", () => {
 
   it("updates blank-database parity tripwires", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("through 20260811070619");
-    expect(parity).toContain("policies: 155");
+    expect(parity).toContain("through 20260811183000");
+    expect(parity).toContain("policies: 156");
     expect(parity).toContain(
-      "const GRANTS = { anon: 57, authenticated: 64, service_role: 111 }",
+      "const GRANTS = { anon: 57, authenticated: 64, service_role: 112 }",
     );
   });
 });

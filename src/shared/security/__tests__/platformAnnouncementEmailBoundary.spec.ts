@@ -10,6 +10,7 @@ const delivery = read(
   "src/shared/superadmin/platformAnnouncementEmail.ts",
 );
 const action = read("src/shared/superadmin/announcementsActions.ts");
+const parity = read("scripts/check-schema-parity.ts");
 
 describe("role-localized platform email boundary", () => {
   it("keeps queue data service-role-only", () => {
@@ -37,5 +38,17 @@ describe("role-localized platform email boundary", () => {
     expect(delivery).toContain("const MAX_ATTEMPTS = 3");
     expect(delivery).toContain("nailiq-platform-notice-${row.announcement_id}-${row.user_id}");
     expect(delivery).not.toContain("listUsers");
+  });
+
+  it("keeps the production-shape tripwire current", () => {
+    expect(parity).toContain("through 20260811183000");
+    expect(parity).toContain('"platform_announcement_deliveries"');
+    expect(parity).toContain('"queue_platform_announcement_deliveries"');
+    expect(parity).toContain("tables: 107");
+    expect(parity).toContain("columns: 1453");
+    expect(parity).toContain("policies: 156");
+    expect(parity).toContain("functions: 117");
+    expect(parity).toContain("indexes: 353");
+    expect(parity).toContain("service_role: 112");
   });
 });
