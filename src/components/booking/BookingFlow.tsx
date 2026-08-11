@@ -401,6 +401,7 @@ export function BookingFlow({
             timeSlot={flow.timeSlot}
             slotsLoading={flow.slotsLoading}
             popularSlotLabels={flow.popularSlotLabels}
+            timePeriodsEnabled={salon.bookingTimePeriodsEnabled}
             timezoneAbbr={slotsTimezoneAbbr}
             stepDir={flow.stepDir}
             reducedMotion={Boolean(reducedMotion)}
