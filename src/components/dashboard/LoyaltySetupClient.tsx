@@ -5,6 +5,7 @@ import { StampCard } from "@/components/loyalty/StampCard";
 import { createOrUpdateLoyaltyProgram } from "@/shared/loyalty/loyaltyActions";
 import { createGiftCard } from "@/shared/loyalty/giftCardActions";
 import { GIFT_CARD_PURCHASE_ENABLED } from "@/shared/loyalty/giftCardConfig";
+import { formatPublicMonthlyPrice } from "@/shared/subscriptions/pricingCatalog";
 import type { LoyaltyProgram, GiftCard } from "@/shared/loyalty/types";
 
 const inputClass = "w-full rounded-lg bg-[#1c1c1e] border border-white/10 px-3 py-2 text-sm text-white placeholder-[#a1a1aa]/40 focus:outline-none focus:border-[#d4af37]/40";
@@ -34,7 +35,7 @@ export function LoyaltySetupClient({ slug, salonId, isPremium, program, giftCard
           <div className="text-4xl mb-4">⭐</div>
           <h2 className="text-lg font-semibold text-white mb-2">Studio Feature</h2>
           <p className="text-sm text-[#a1a1aa] mb-6">
-            Loyalty stamp cards and gift cards are available on the <strong className="text-white">Studio plan ($99/month)</strong>.
+            Loyalty stamp cards and gift cards are available on the <strong className="text-white">Studio plan ({formatPublicMonthlyPrice("premium")}/month)</strong>.
           </p>
           <a
             href={`/dashboard/${slug}/settings`}

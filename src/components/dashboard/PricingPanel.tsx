@@ -15,6 +15,10 @@ import {
   PLAN_LIMITS,
   type SubscriptionPlan,
 } from "@/shared/lib/subscriptionPlans";
+import {
+  PUBLIC_SUBSCRIPTION_PRICES,
+  formatPublicMonthlyPrice,
+} from "@/shared/subscriptions/pricingCatalog";
 
 /**
  * Owner-only pricing surface inside Settings.
@@ -36,12 +40,6 @@ export interface PricingPanelProps {
 }
 
 const PLAN_KEYS: SubscriptionPlan[] = ["free", "pro", "premium"];
-
-const PLAN_PRICE: Record<SubscriptionPlan, string> = {
-  free: "$0",
-  pro: "$39",
-  premium: "$99",
-};
 
 export function PricingPanel({
   slug,
@@ -107,7 +105,11 @@ export function PricingPanel({
         {PLAN_KEYS.map((plan) => {
           const limits = PLAN_LIMITS[plan];
           const isCurrent = plan === currentPlan;
-          const monthly = PLAN_PRICE[plan];
+          const monthly = formatPublicMonthlyPrice(plan);
+          const planName =
+            plan === "free"
+              ? messages.planNames.free
+              : PUBLIC_SUBSCRIPTION_PRICES[plan].marketingName;
           return (
             <li key={plan} data-testid={`pricing-plan-${plan}`}>
               <Card
@@ -120,7 +122,7 @@ export function PricingPanel({
               >
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="text-sm font-semibold text-nq-foreground">
-                    {messages.planNames[plan]}
+                    {planName}
                   </h3>
                   {isCurrent ? (
                     <Badge variant="vip" state="default" size="sm">
