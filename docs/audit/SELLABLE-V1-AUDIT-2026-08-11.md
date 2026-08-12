@@ -2,9 +2,10 @@
 
 ## Kết luận
 
-**Chưa đạt Sellable V1 100%.** Luồng booking cốt lõi và vận hành lễ tân đã có
-bằng chứng production trên tenant `nailiq-qa-2026-07-26`, nhưng đường tiền
-Square/deposit và delivery reminder thật chưa được chứng minh end-to-end.
+**Chưa đạt Sellable V1 100%.** Luồng booking cốt lõi, vận hành lễ tân và
+support/error monitoring đã có bằng chứng production trên Salon QA, nhưng đường
+tiền Square/deposit và positive reminder delivery vẫn chưa được chứng minh
+end-to-end.
 
 Quy ước:
 
@@ -26,14 +27,14 @@ Quy ước:
 | Group / party booking | ✅ | Production group booking 2–3 người đã thành công; race/duplicate đã được sửa | Không gửi reminder thật trong QA |
 | Resource / chair conflicts | ⚠️ | Resource/bed picker và conflict E2E tồn tại | Feature đang tắt trên Salon QA; chưa có bằng chứng production theo tenant |
 | Reschedule / cancel | ✅ | Luồng production đã được chạy; route/token và E2E tương ứng đạt | Không có blocker đã biết |
-| Confirmations / reminders | ⚠️ | UI/config/cron và suppression guard tồn tại; production retest sau commit `691c0e5a` xác nhận `sms_outbound_enabled = false` không gọi/log SMS | Chưa có delivery receipt end-to-end bằng kênh sandbox/được phép |
+| Confirmations / reminders | ⚠️ | UI/config/cron và suppression guard tồn tại. Production cron sau commit `4190ff1` xác nhận cả `sms_outbound_enabled = false` và `email_outbound_enabled = false` đều không ghi marker/notification; commit `4966c46` đã thêm provider message ID cho email | Positive delivery tới địa chỉ provider-test vẫn cần phê duyệt cụ thể vì phải bật production email outbound |
 | Deposit / no-show | ⚠️ | No-show thủ công production đạt; booking event được ghi; test QA không charge | Deposit/card-on-file/charge/skip/idempotency/refund chưa được chứng minh trên một provider kết nối |
 | Client database / history | ✅ | Directory, search, profile/history và tenant isolation có production/E2E evidence | Không có blocker đã biết cho Pilot 1 |
 | Square integration | ❌ | Code, schema và webhook tồn tại | Salon QA có `payment_provider = null`, không có `square_integrations`; chưa thể test tiền end-to-end |
 | Mobile booking UX | ✅ | Mobile E2E và Visual Regression đạt ở commit production `8943d6e` | Tiếp tục smoke trên thiết bị pilot thật trước go-live |
 | Owner / admin dashboard | ✅ | Dashboard, settings, services, staff và receptionist production đã dùng được | Không có blocker đã biết |
 | AI receptionist | 🗑️ | Voice/AI code có nhưng QA không bật; setup route chưa được chứng minh cho tenant | Loại khỏi cam kết Pilot 1; chỉ Beta sau khi đạt reliability riêng |
-| Support / error monitoring | ⚠️ | Health routes, Sentry hooks, error cron và audit log tồn tại | Cần diễn tập một lỗi booking có correlation/audit và quy trình owner escalation |
+| Support / error monitoring | ✅ | Production drill sau commit `4190ff1`: event `75b66879-0485-4d76-8363-93e059d4c988`, correlation `QA-SUPPORT-20260811-002`, được gắn đúng Salon QA; route tự resolve tenant phía server | Warning không gửi owner alert là hành vi đúng theo severity; không còn blocker V1 đã biết |
 
 ## P0 — blocker trước Pilot salon #1
 
@@ -42,8 +43,6 @@ Quy ước:
    tắt hoàn toàn deposit/card charge trong lời hứa Pilot 1 và dùng no-show thủ công.
 2. **Chứng minh reminder delivery có kiểm soát.** Dùng số/email QA được phép,
    không dùng dữ liệu khách thật; kiểm tra send, receipt, retry, opt-out và audit.
-3. **Diễn tập support/error.** Một lỗi có chủ đích phải xuất hiện trong monitoring,
-   có mã tra cứu, tenant đúng và hướng xử lý cho owner.
 
 ## P1 — cần xong trước mở rộng 5 pilot
 
@@ -77,8 +76,8 @@ Quy ước:
 
 1. **Quyết định thương mại:** Pilot 1 không thu deposit cho đến khi Square Sandbox
    đạt toàn bộ payment test; no-show thủ công đã sẵn sàng.
-2. **Đóng bốn bằng chứng không cần tiền:** onboarding trắng, break/day-off,
-   reminder sandbox và support drill.
+2. **Đóng bằng chứng reminder có kiểm soát:** chỉ dùng địa chỉ provider-test,
+   giữ SMS tắt và khôi phục email switch ngay sau kiểm tra.
 3. **Chạy một full journey cuối:** khách mobile đặt → owner thấy lịch → reminder
    sandbox → reschedule → no-show/cancel → client history/audit.
 4. Chỉ sau khi mọi P0 đạt mới đổi kết luận thành **Sellable V1** và mời Salon #1.
@@ -108,3 +107,15 @@ Quy ước:
   2026-08-13. Public booking và receptionist đều không cho chọn slot; database
   xác nhận 0 booking trong break, 0 booking ngày nghỉ và 0 booking từ hai lần thử
   `QA Desk Break` / `QA Desk Day Off`.
+- Reminder kill-switch production: scheduled cron run
+  `6c04c923-e929-4e2b-a2c2-92a9e6f5d01b` hoàn tất 200 sau khi booking QA
+  `33ee9a9a-393f-46cf-8567-f1a08a817083` được đưa vào cửa sổ 24h; cả hai marker
+  vẫn NULL và không có notification row khi SMS/email outbound đều false.
+- Support/error production drill: event
+  `75b66879-0485-4d76-8363-93e059d4c988`, correlation
+  `QA-SUPPORT-20260811-002`, tự gắn đúng salon
+  `3f75cf3d-a8d8-4725-ac62-be3884e1711a`; event warning không kích hoạt email
+  cảnh báo owner.
+- Production hiện phục vụ commit `4966c46b8a743f1a08675373a0b8e87ede0e28a9`
+  (PR #1231); CI và production deployment đều đạt. Email reminder thành công nay
+  ghi Resend message ID vào notification audit row để đối chiếu provider.
