@@ -18,6 +18,15 @@ export const ANNOUNCEMENT_TARGETS = [
 ] as const;
 export type AnnouncementTarget = (typeof ANNOUNCEMENT_TARGETS)[number];
 
+export const RELEASE_AUDIENCE_ROLES = [
+  "owner",
+  "admin",
+  "receptionist",
+  "senior",
+  "nail_tech",
+] as const;
+export type ReleaseAudienceRole = (typeof RELEASE_AUDIENCE_ROLES)[number];
+
 export type PlatformAnnouncement = {
   id: string;
   title: string;
@@ -28,6 +37,26 @@ export type PlatformAnnouncement = {
   };
   severity: AnnouncementSeverity;
   target: AnnouncementTarget;
+  /** Exact salon-account roles affected by newer notices. Empty means the
+   * legacy coarse `target` field controls visibility. */
+  audienceRoles: ReleaseAudienceRole[];
+  notificationMode: ReleaseNotificationMode;
+  email: {
+    requested: boolean;
+    localized: {
+      en: { subject: string; body: string };
+      vi: { subject: string; body: string };
+    };
+    delivery?: {
+      total: number;
+      queued: number;
+      sending: number;
+      sent: number;
+      failed: number;
+      skipped: number;
+      cancelled: number;
+    };
+  };
   /** ISO string; null when the row is still a draft. */
   publishedAt: string | null;
   /** ISO string; null when no expiry has been set. */
@@ -58,6 +87,13 @@ export type CreateAnnouncementInput = {
   bodyVi: string;
   severity: AnnouncementSeverity;
   target: AnnouncementTarget;
+  audienceRoles: ReleaseAudienceRole[];
+  notificationMode: ReleaseNotificationMode;
+  emailRequested: boolean;
+  emailSubjectEn: string;
+  emailBodyEn: string;
+  emailSubjectVi: string;
+  emailBodyVi: string;
   /** Set non-null to publish immediately; omit/null for draft. */
   publishedAt?: string | null;
   /** Optional ISO timestamp for the hide-after window. */
@@ -71,6 +107,7 @@ export type CreateAnnouncementResult =
       error:
         | "unauthorized"
         | "invalid_payload"
+        | "technical_language"
         | "audit_failed"
         | "server_error";
     };
@@ -126,6 +163,7 @@ export type ReleaseConciergeDraft = {
   };
   severity: AnnouncementSeverity;
   target: AnnouncementTarget;
+  audienceRoles: ReleaseAudienceRole[];
   notificationMode: ReleaseNotificationMode;
   reason: string;
 };
@@ -152,5 +190,23 @@ export function isAnnouncementTarget(
   return (
     typeof value === "string" &&
     (ANNOUNCEMENT_TARGETS as readonly string[]).includes(value)
+  );
+}
+
+export function isReleaseAudienceRole(
+  value: unknown,
+): value is ReleaseAudienceRole {
+  return (
+    typeof value === "string" &&
+    (RELEASE_AUDIENCE_ROLES as readonly string[]).includes(value)
+  );
+}
+
+export function isReleaseNotificationMode(
+  value: unknown,
+): value is ReleaseNotificationMode {
+  return (
+    typeof value === "string" &&
+    (RELEASE_NOTIFICATION_MODES as readonly string[]).includes(value)
   );
 }

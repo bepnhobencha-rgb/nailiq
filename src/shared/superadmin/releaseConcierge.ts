@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   ANNOUNCEMENT_SEVERITIES,
   ANNOUNCEMENT_TARGETS,
+  RELEASE_AUDIENCE_ROLES,
   RELEASE_NOTIFICATION_MODES,
   type ReleaseConciergeDraft,
 } from "@/shared/superadmin/announcementsTypes";
@@ -23,6 +24,7 @@ const releaseDraftSchema = z.object({
   }),
   severity: z.enum(ANNOUNCEMENT_SEVERITIES),
   target: z.enum(ANNOUNCEMENT_TARGETS),
+  audienceRoles: z.array(z.enum(RELEASE_AUDIENCE_ROLES)).min(1).max(5),
   notificationMode: z.enum(RELEASE_NOTIFICATION_MODES),
   reason: z.string().trim().min(1).max(300),
 });
@@ -61,24 +63,25 @@ export function parseReleaseConciergeDraft(
 export function fallbackReleaseConciergeDraft(
   changeSummary: string,
 ): ReleaseConciergeDraft {
-  const clean = changeSummary.replace(/\s+/g, " ").trim().slice(0, 700);
+  void changeSummary;
   return {
     localized: {
       en: {
         title: "A NailIQ improvement is ready",
-        body: `What's new: ${clean}\n\nWhat you need to do: No action is required unless the message above says otherwise.`,
+        body: "What's new: NailIQ has an improvement ready for review.\n\nWhy it helps: The change is intended to make salon work clearer or more reliable.\n\nWhat you need to do: Please replace this safe fallback with the exact operator-facing benefit before publishing.",
         emailSubject: "A NailIQ improvement for your salon",
-        emailBody: `Hello,\n\nNailIQ has an improvement for your salon.\n\n${clean}\n\nWhat you need to do: No action is required unless the message above says otherwise.\n\nNeed help? Call 778-868-0738 or email support@nailiq.ca.`,
+        emailBody: "Hello,\n\nNailIQ has an improvement ready for review.\n\nWhy it helps: The change is intended to make salon work clearer or more reliable.\n\nWhat you need to do: Please replace this safe fallback with the exact operator-facing benefit before publishing.\n\nNeed help? Call 778-868-0738 or email support@nailiq.ca.",
       },
       vi: {
         title: "NailIQ vừa có một cải tiến mới",
-        body: `Có gì mới: ${clean}\n\nBạn cần làm gì: Không cần thao tác, trừ khi nội dung trên có hướng dẫn khác.`,
+        body: "Có gì mới: NailIQ có một cải tiến đang chờ xem lại.\n\nLợi ích: Thay đổi này nhằm giúp công việc tại salon rõ ràng hoặc ổn định hơn.\n\nBạn cần làm gì: Vui lòng thay nội dung dự phòng này bằng lợi ích cụ thể, dễ hiểu trước khi đăng.",
         emailSubject: "NailIQ vừa có một cải tiến dành cho salon của bạn",
-        emailBody: `Xin chào,\n\nNailIQ vừa có một cải tiến dành cho salon của bạn.\n\n${clean}\n\nBạn cần làm gì: Không cần thao tác, trừ khi nội dung trên có hướng dẫn khác.\n\nCần hỗ trợ? Gọi 778-868-0738 hoặc email support@nailiq.ca.`,
+        emailBody: "Xin chào,\n\nNailIQ có một cải tiến đang chờ xem lại.\n\nLợi ích: Thay đổi này nhằm giúp công việc tại salon rõ ràng hoặc ổn định hơn.\n\nBạn cần làm gì: Vui lòng thay nội dung dự phòng này bằng lợi ích cụ thể, dễ hiểu trước khi đăng.\n\nCần hỗ trợ? Gọi 778-868-0738 hoặc email support@nailiq.ca.",
       },
     },
     severity: "info",
     target: "owners",
+    audienceRoles: ["owner", "admin"],
     notificationMode: "in_app",
     reason:
       "Safe fallback: separate English and Vietnamese owner drafts; no email is sent.",

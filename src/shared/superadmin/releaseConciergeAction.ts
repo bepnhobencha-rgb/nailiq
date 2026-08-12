@@ -72,12 +72,12 @@ Choose notificationMode using these anti-noise rules:
 - digest: useful non-urgent feature suitable for a weekly summary
 - important: security, billing, outage, data risk, or a workflow change that requires action
 
-Use severity info for silent/in_app/digest, warning for action-required changes, urgent only for an active security/outage/data-loss risk. Prefer target owners; use staff only for front-desk workflow changes, all only when every role is affected. Do not recommend email for silent or ordinary in_app updates.
+Use severity info for silent/in_app/digest, warning for action-required changes, urgent only for an active security/outage/data-loss risk. Select the exact salon account roles affected: owner for business or billing decisions, admin for management workflows, receptionist for front-desk workflows, senior for lead-staff workflows, and nail_tech only when technician work changes. Do not include unrelated roles. Keep the legacy target consistent: owners for owner/admin only, staff for staff-only roles, otherwise all. Do not recommend email for silent or ordinary in_app updates.
 
 Each language must stand on its own. Use plain salon language and never mention production, commits, pull requests, CI, deployment, or code. Each message must answer: What is new? Why does it help? What do I need to do? Include support phone 778-868-0738 and support@nailiq.ca in both email bodies. Do not combine two languages in one field.
 
 Return ONLY valid JSON with this exact shape:
-{"localized":{"en":{"title":"short English title","body":"plain English in-app copy; max 2000 chars","emailSubject":"plain English subject","emailBody":"plain English email; max 4000 chars"},"vi":{"title":"short Vietnamese title","body":"plain Vietnamese in-app copy; max 2000 chars","emailSubject":"plain Vietnamese subject","emailBody":"plain Vietnamese email; max 4000 chars"}},"severity":"info|warning|urgent","target":"all|owners|staff|superadmins","notificationMode":"silent|in_app|digest|important","reason":"one short operator-facing explanation of the routing decision"}
+{"localized":{"en":{"title":"short English title","body":"plain English in-app copy; max 2000 chars","emailSubject":"plain English subject","emailBody":"plain English email; max 4000 chars"},"vi":{"title":"short Vietnamese title","body":"plain Vietnamese in-app copy; max 2000 chars","emailSubject":"plain Vietnamese subject","emailBody":"plain Vietnamese email; max 4000 chars"}},"severity":"info|warning|urgent","target":"all|owners|staff|superadmins","audienceRoles":["owner","admin"],"notificationMode":"silent|in_app|digest|important","reason":"one short operator-facing explanation of the routing decision"}
 
 <change_data>${JSON.stringify(summary)}</change_data>`;
 
