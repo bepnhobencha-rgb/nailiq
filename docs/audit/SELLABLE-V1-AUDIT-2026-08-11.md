@@ -25,7 +25,7 @@ Quy ước:
 | Online booking | ✅ | Booking production QA đã hoàn tất; conflict/race có smoke và E2E | Không có blocker đã biết |
 | Any Staff / Specific Staff | ✅ | Cả hai lựa chọn đã chạy qua booking QA | Không có blocker đã biết |
 | Group / party booking | ✅ | Production group booking 2–3 người đã thành công; race/duplicate đã được sửa | Không gửi reminder thật trong QA |
-| Resource / chair conflicts | ⚠️ | Resource/bed picker và conflict E2E tồn tại | Feature đang tắt trên Salon QA; chưa có bằng chứng production theo tenant |
+| Resource / chair conflicts | ✅ | Salon QA production: explicit chair assignment và auto-assign đều ghi đúng `resource_id`; booking khác staff nhưng trùng chair/time bị chặn `slot_conflict`; outbound giữ tắt và dữ liệu test đã dọn | Salon không cần chair riêng có thể giữ feature tắt |
 | Reschedule / cancel | ✅ | Luồng production đã được chạy; route/token và E2E tương ứng đạt | Không có blocker đã biết |
 | Confirmations / reminders | ⚠️ | UI/config/cron và suppression guard tồn tại. Production cron sau commit `4190ff1` xác nhận cả `sms_outbound_enabled = false` và `email_outbound_enabled = false` đều không ghi marker/notification; commit `4966c46` đã thêm provider message ID cho email | Positive delivery tới địa chỉ provider-test vẫn cần phê duyệt cụ thể vì phải bật production email outbound |
 | Deposit / no-show | ⚠️ | No-show thủ công production đạt; booking event được ghi; test QA không charge | Deposit/card-on-file/charge/skip/idempotency/refund chưa được chứng minh trên một provider kết nối |
@@ -46,10 +46,9 @@ Quy ước:
 
 ## P1 — cần xong trước mở rộng 5 pilot
 
-1. Bật và test resource/chair cho đúng một salon thực sự cần resource riêng.
-2. Smoke mobile trên iPhone/Android thật của owner và một khách pilot.
-3. Kiểm tra reminder theo timezone Vancouver qua DST boundary.
-4. Hoàn thiện runbook restore/offboarding staff và recovery booking.
+1. Smoke mobile trên iPhone/Android thật của owner và một khách pilot.
+2. Kiểm tra reminder theo timezone Vancouver qua DST boundary.
+3. Hoàn thiện runbook restore/offboarding staff và recovery booking.
 
 ## P2 — sau Pilot 1
 
@@ -119,3 +118,11 @@ Quy ước:
 - Production hiện phục vụ commit `4966c46b8a743f1a08675373a0b8e87ede0e28a9`
   (PR #1231); CI và production deployment đều đạt. Email reminder thành công nay
   ghi Resend message ID vào notification audit row để đối chiếu provider.
+- Resource/chair production test lúc `2026-08-12T00:58:50Z`: chair
+  `27d66176-d118-4801-bc1a-4bdb14c07398`; explicit booking
+  `b5f3968d-b112-4380-99cd-fb06093f2386` và auto-assigned booking
+  `3b149908-eb9d-4666-94af-7786b850fafb` đều gắn đúng chair; lần đặt trùng
+  cùng chair/time qua staff khác trả `{success:false, code:"slot_conflict"}`.
+  Hai booking và chair tạm đã xóa; staff QA tạm được offboard inactive/deleted,
+  0 active booking; salon trở lại `resources_enabled=false`, grid `staff`, SMS/email
+  outbound vẫn false. Boundary tests resource/reminder đạt 8/8.
