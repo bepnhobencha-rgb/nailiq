@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { formatPublicMonthlyPrice } from "@/shared/subscriptions/pricingCatalog";
 
 export const metadata: Metadata = {
   title: "Terms of Service",
@@ -21,7 +22,9 @@ export default function TermsPage() {
         <h1 className="mt-8 text-3xl font-semibold tracking-tight md:text-4xl">
           Terms of Service
         </h1>
-        <p className="mt-2 text-sm text-nq-muted">Last updated: May 2026</p>
+        <p className="mt-2 text-sm text-nq-muted">
+          Last updated: August 12, 2026
+        </p>
 
         <div className="mt-10 space-y-8 text-base leading-relaxed text-nq-foreground/90">
           <section>
@@ -31,8 +34,10 @@ export default function TermsPage() {
             <p className="mt-3">
               NailIQ provides salon booking and operations software for nail
               salons, including a public booking page, a real-time
-              receptionist center, and salon management tools. The service is
-              priced at CAD $39 per month, plus applicable taxes.
+              receptionist center, and salon management tools. The Core
+              self-service plan starts at{" "}
+              {formatPublicMonthlyPrice("pro", { includeCurrency: true })} per
+              month, plus applicable taxes.
             </p>
           </section>
 

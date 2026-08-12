@@ -1,4 +1,8 @@
 import { ImageResponse } from "next/og";
+import {
+  PUBLIC_TRIAL_DAYS,
+  formatPublicMonthlyPrice,
+} from "@/shared/subscriptions/pricingCatalog";
 
 export const runtime = "edge";
 export const alt = "NailIQ — Booking + walk-in queue for nail salons";
@@ -76,7 +80,10 @@ export default function OpengraphImage() {
           }}
         >
           <div>nailiq.ca</div>
-          <div>From $39 CAD / month · 14-day free trial</div>
+          <div>
+            From {formatPublicMonthlyPrice("pro", { includeCurrency: true })} / month ·{" "}
+            {PUBLIC_TRIAL_DAYS}-day free trial
+          </div>
         </div>
       </div>
     ),
