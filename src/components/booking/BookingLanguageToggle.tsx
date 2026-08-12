@@ -3,14 +3,15 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/shared/lib/cn";
+import { bookingLanguagePath } from "@/shared/i18n/booking/languageUrl";
 
 /**
  * P0.1 — small EN/VI toggle rendered in the booking page header.
  *
  * Writes a long-lived cookie (`nq-booking-lang`) that the server
- * page consumes via `resolveBookingLanguage`. The booking route is
- * `force-dynamic`, so `router.refresh()` after the cookie flips
- * re-renders the page in the chosen language.
+ * page consumes via `resolveBookingLanguage`. The selected language is
+ * also written to `?lang=` because an explicit query parameter is the
+ * authoritative locale for shared booking links.
  *
  * Booking page is the only surface that uses this — the dashboard
  * has its own `useUserLanguage` story under a separate cookie. Two
@@ -32,7 +33,9 @@ export function BookingLanguageToggle({
     // eslint-disable-next-line react-hooks/immutability -- intentional: writing a cookie is a side-effect in a user event handler, not during render
     document.cookie = `nq-booking-lang=${lang}; Path=/; Max-Age=${60 * 60 * 24 * 365}; SameSite=Lax`;
     startTransition(() => {
-      router.refresh();
+      router.replace(bookingLanguagePath(window.location.href, lang), {
+        scroll: false,
+      });
     });
   };
 
