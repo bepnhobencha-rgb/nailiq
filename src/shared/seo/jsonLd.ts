@@ -1,11 +1,17 @@
 import { getSiteUrl } from "./site";
 import { resolveVertical } from "@/shared/verticals/registry";
+import {
+  PUBLIC_SUBSCRIPTION_PRICES,
+  decimalAmountFromCents,
+  formatPublicMonthlyPrice,
+} from "@/shared/subscriptions/pricingCatalog";
 
 const DESCRIPTION =
   "Done-for-you website, booking and salon operations setup for nail salons. Works alongside Square, Clover, Toast or another POS.";
 
 export function getLandingJsonLd() {
   const siteUrl = getSiteUrl();
+  const core = PUBLIC_SUBSCRIPTION_PRICES.pro;
 
   return {
     "@context": "https://schema.org",
@@ -60,31 +66,17 @@ export function getLandingJsonLd() {
         offers: [
           {
             "@type": "Offer",
-            name: "Founder Pilot Monthly",
-            price: "99",
-            priceCurrency: "CAD",
+            name: `NailIQ ${core.marketingName}`,
+            price: decimalAmountFromCents(core.monthlyAmountCents),
+            priceCurrency: core.currency,
             priceSpecification: {
               "@type": "UnitPriceSpecification",
-              price: "99",
-              priceCurrency: "CAD",
+              price: decimalAmountFromCents(core.monthlyAmountCents),
+              priceCurrency: core.currency,
               unitText: "MONTH",
             },
             description:
-              "Founder Pilot Monthly: $499 CAD setup plus $99 CAD/month. Minimum six-month commitment. Excludes applicable taxes and third-party fees.",
-          },
-          {
-            "@type": "Offer",
-            name: "Founder Pilot Annual",
-            price: "1399",
-            priceCurrency: "CAD",
-            priceSpecification: {
-              "@type": "UnitPriceSpecification",
-              price: "1399",
-              priceCurrency: "CAD",
-              unitText: "ANN",
-            },
-            description:
-              "Founder Pilot Annual: $1,399 CAD covering setup and 12 months. Excludes applicable taxes and third-party fees.",
+              `NailIQ ${core.marketingName}: ${formatPublicMonthlyPrice("pro", { includeCurrency: true })}/month. Excludes applicable taxes and optional setup services.`,
           },
         ],
         inLanguage: ["en", "vi"],

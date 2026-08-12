@@ -2,10 +2,16 @@
 
 import Link from "next/link";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import {
+  PUBLIC_SUBSCRIPTION_PRICES,
+  PUBLIC_TRIAL_DAYS,
+  formatPublicMonthlyPrice,
+} from "@/shared/subscriptions/pricingCatalog";
 
 export function LandingPricing() {
   const { language } = useUserLanguage();
   const vi = language === "vi";
+  const core = PUBLIC_SUBSCRIPTION_PRICES.pro;
 
   const coreFeatures = vi
     ? [
@@ -35,20 +41,28 @@ export function LandingPricing() {
           </h2>
           <p className="mx-auto mt-4 max-w-2xl text-base text-nq-muted md:text-lg">
             {vi
-              ? "14 ngày miễn phí, không cần thẻ tín dụng. Bạn có thể tự cài đặt hoặc nhờ NailIQ làm giúp."
-              : "14 days free with no credit card. Set it up yourself or have NailIQ do it for you."}
+              ? `${PUBLIC_TRIAL_DAYS} ngày miễn phí, không cần thẻ tín dụng. Bạn có thể tự cài đặt hoặc nhờ NailIQ làm giúp.`
+              : `${PUBLIC_TRIAL_DAYS} days free with no credit card. Set it up yourself or have NailIQ do it for you.`}
           </p>
         </div>
 
         <div className="mt-12 grid gap-6 md:grid-cols-2">
           <article className="flex flex-col rounded-3xl border-2 border-nq-primary/60 bg-nq-surface/60 p-7 shadow-[0_24px_70px_-35px_rgba(212,175,55,0.55)] md:p-9">
             <span className="w-fit rounded-full bg-nq-primary/15 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-nq-primary">
-              {vi ? "Dùng thử 14 ngày" : "14-day free trial"}
+              {vi
+                ? `Dùng thử ${PUBLIC_TRIAL_DAYS} ngày`
+                : `${PUBLIC_TRIAL_DAYS}-day free trial`}
             </span>
-            <h3 className="mt-5 text-xl font-semibold text-nq-foreground">NailIQ Core</h3>
+            <h3 className="mt-5 text-xl font-semibold text-nq-foreground">
+              NailIQ {core.marketingName}
+            </h3>
             <div className="mt-3 flex items-end gap-2">
-              <span className="text-5xl font-bold text-nq-foreground">$39</span>
-              <span className="pb-1 text-sm text-nq-muted">CAD / {vi ? "tháng" : "month"}</span>
+              <span className="text-5xl font-bold text-nq-foreground">
+                {formatPublicMonthlyPrice("pro")}
+              </span>
+              <span className="pb-1 text-sm text-nq-muted">
+                {core.currency} / {vi ? "tháng" : core.interval}
+              </span>
             </div>
             <p className="mt-2 text-sm text-nq-muted">
               {vi ? "Không phí setup nếu bạn tự cài đặt." : "No setup fee when you set it up yourself."}

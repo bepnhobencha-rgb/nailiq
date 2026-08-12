@@ -18,10 +18,8 @@ NailIQ is a salon booking and operations platform for nail salons, built in Vanc
 
 ## Pricing
 
-- Free tier: 1 staff, up to 50 bookings/month
-- Pro: $39 CAD/month — unlimited bookings and staff, receptionist center, AI upsell, auto review requests
-- Studio: $89 CAD/month — multiple locations, priority support
-- Enterprise: custom pricing
+- Current public self-service pricing and trial details: https://www.nailiq.ca/#pricing
+- Optional done-for-you setup is quoted to match the salon's actual scope
 
 ## Tech
 

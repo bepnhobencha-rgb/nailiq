@@ -3,6 +3,7 @@
  */
 import { PHONE_INPUT_PLACEHOLDER_NANP } from "@/shared/lib/phoneFormat";
 import { REGISTER_INVALID_PHONE_HINT_EN } from "@/shared/register/phone";
+import { formatPublicMonthlyPrice } from "@/shared/subscriptions/pricingCatalog";
 
 export type UserMessages = {
   brandName: string;
@@ -3007,7 +3008,7 @@ export const userEn: UserMessages = {
       trustNote:
         "No credit card required. Your salon data remains yours.",
       finalLegalNote:
-        "The self-service plan is $39 CAD per month after the trial, plus applicable taxes. Optional setup services and direct POS integrations are quoted separately.",
+        `The self-service plan is ${formatPublicMonthlyPrice("pro", { includeCurrency: true })} per month after the trial, plus applicable taxes. Optional setup services and direct POS integrations are quoted separately.`,
     },
     footer: {
       about: "About",

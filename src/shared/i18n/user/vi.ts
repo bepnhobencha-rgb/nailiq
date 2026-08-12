@@ -1,5 +1,6 @@
-import type { UserMessages } from "./en";
 import { PHONE_INPUT_PLACEHOLDER_NANP } from "@/shared/lib/phoneFormat";
+import { formatPublicMonthlyPrice } from "@/shared/subscriptions/pricingCatalog";
+import type { UserMessages } from "./en";
 
 export const userVi: UserMessages = {
   brandName: "NailIQ",
@@ -660,7 +661,7 @@ export const userVi: UserMessages = {
       trustNote:
         "Không cần thẻ tín dụng. Dữ liệu tiệm vẫn thuộc về bạn.",
       finalLegalNote:
-        "Gói tự cài đặt là $39 CAD mỗi tháng sau thời gian dùng thử, chưa gồm thuế. Dịch vụ setup và tích hợp POS trực tiếp được báo giá riêng.",
+        `Gói tự cài đặt là ${formatPublicMonthlyPrice("pro", { includeCurrency: true })} mỗi tháng sau thời gian dùng thử, chưa gồm thuế. Dịch vụ setup và tích hợp POS trực tiếp được báo giá riêng.`,
     },
     footer: {
       about: "Về chúng tôi",
