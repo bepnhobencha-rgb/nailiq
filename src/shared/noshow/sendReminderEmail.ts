@@ -280,7 +280,7 @@ function buildGroupEmailHtml(input: GroupReminderEmailInput): string {
  */
 export async function sendGroupReminderEmail(
   input: GroupReminderEmailInput,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; messageId?: string }> {
   const resend = getResendClient();
   if (!resend) return { ok: false, error: "resend_not_configured" };
 
@@ -295,7 +295,7 @@ export async function sendGroupReminderEmail(
     getResendFrom();
 
   try {
-    const { error } = await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from,
       to: input.organizerEmail,
       subject: `Reminder: Group appointment (party of ${input.members.length}) at ${input.salonName}`,
@@ -307,7 +307,7 @@ export async function sendGroupReminderEmail(
       console.error("[sendGroupReminderEmail] Resend error", error);
       return { ok: false, error: String(error) };
     }
-    return { ok: true };
+    return { ok: true, messageId: data?.id };
   } catch (e) {
     console.error("[sendGroupReminderEmail] Unexpected error", e);
     return { ok: false, error: String(e) };
@@ -322,7 +322,7 @@ export async function sendGroupReminderEmail(
  */
 export async function sendReminderEmail(
   input: ReminderEmailInput,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; messageId?: string }> {
   const resend = getResendClient();
   if (!resend) {
     console.warn("[sendReminderEmail] Resend not configured — skipping");
@@ -343,7 +343,7 @@ export async function sendReminderEmail(
     getResendFrom();
 
   try {
-    const { error } = await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from,
       to: input.clientEmail,
       subject: `Reminder: your ${input.serviceName} at ${input.salonName}`,
@@ -356,7 +356,7 @@ export async function sendReminderEmail(
       console.error("[sendReminderEmail] Resend error", error);
       return { ok: false, error: String(error) };
     }
-    return { ok: true };
+    return { ok: true, messageId: data?.id };
   } catch (e) {
     console.error("[sendReminderEmail] Unexpected error", e);
     return { ok: false, error: String(e) };
