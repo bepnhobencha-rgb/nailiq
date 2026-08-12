@@ -70,8 +70,8 @@ export function GuidedSetupHub({
         </div>
         <p className="mt-3 text-sm text-nq-muted">
           {vi
-            ? `${progress.completedCount}/${progress.totalCount} bước đã hoàn tất`
-            : `${progress.completedCount}/${progress.totalCount} steps complete`}
+            ? `${progress.completedCount}/${progress.requiredCount} bước bắt buộc đã đạt theo dữ liệu đã lưu`
+            : `${progress.completedCount}/${progress.requiredCount} required steps pass from saved data`}
         </p>
       </Card>
 
@@ -79,8 +79,8 @@ export function GuidedSetupHub({
         <Card variant="bordered" padding="lg" className="border-nq-primary/55">
           <p className="text-sm font-semibold text-nq-primary">
             {vi
-              ? `Bước ${progress.currentStepNumber} / ${progress.totalCount}`
-              : `Step ${progress.currentStepNumber} of ${progress.totalCount}`}
+              ? `Bước ${progress.currentStepNumber} / ${progress.totalStepCount}`
+              : `Step ${progress.currentStepNumber} of ${progress.totalStepCount}`}
           </p>
           <h2 className="mt-2 text-xl font-semibold text-nq-foreground">
             {vi ? next.titleVi : next.titleEn}
@@ -88,6 +88,24 @@ export function GuidedSetupHub({
           <p className="mt-2 text-base leading-6 text-nq-muted">
             {vi ? next.detailVi : next.detailEn}
           </p>
+          <div className="mt-4 space-y-3 rounded-2xl border border-nq-border/50 bg-nq-surface/40 p-4 text-sm leading-6">
+            <div>
+              <p className="font-semibold text-nq-foreground">
+                {vi ? "Vì sao cần bước này" : "Why this matters"}
+              </p>
+              <p className="mt-1 text-nq-muted">
+                {vi ? next.reasonVi : next.reasonEn}
+              </p>
+            </div>
+            <div>
+              <p className="font-semibold text-nq-foreground">
+                {vi ? "NailIQ kiểm tra gì" : "What NailIQ validates"}
+              </p>
+              <p className="mt-1 text-nq-muted">
+                {vi ? next.validationVi : next.validationEn}
+              </p>
+            </div>
+          </div>
           <Link
             href={next.href}
             className="mt-5 inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-full bg-nq-primary px-4 text-base font-semibold text-nq-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary focus-visible:ring-offset-2 focus-visible:ring-offset-nq-bg"
@@ -96,6 +114,11 @@ export function GuidedSetupHub({
             {vi ? "Tiếp tục thiết lập" : "Continue setup"}
             <ChevronRight className="h-5 w-5" aria-hidden />
           </Link>
+          <p className="mt-3 text-center text-xs leading-5 text-nq-muted">
+            {vi
+              ? "Tiến độ được tính lại từ dữ liệu salon đã lưu mỗi khi bạn quay lại — không dựa vào việc đã bấm nút."
+              : "Progress is recalculated from saved salon data whenever you return — never from button clicks."}
+          </p>
         </Card>
       ) : (
         <Card variant="bordered" padding="lg" className="border-nq-success/40">
@@ -148,39 +171,33 @@ export function GuidedSetupHub({
                   )}
                 </span>
                 <span className="min-w-0 flex-1 text-sm font-medium text-nq-foreground">
-                  {vi ? step.titleVi : step.titleEn}
+                  <span>{vi ? step.titleVi : step.titleEn}</span>
+                  {!step.required ? (
+                    <span className="mt-0.5 block text-xs font-normal text-nq-muted">
+                      {vi ? "Không bắt buộc — có thể làm sau" : "Optional — can be done later"}
+                    </span>
+                  ) : null}
                 </span>
-                {step.done ? (
-                  <ChevronRight
-                    className="h-4 w-4 shrink-0 text-nq-muted"
-                    aria-hidden
-                  />
-                ) : null}
+                <ChevronRight
+                  className="h-4 w-4 shrink-0 text-nq-muted"
+                  aria-hidden
+                />
               </>
             );
 
             return (
               <li key={step.id}>
-                {step.done ? (
-                  <Card
-                    as={Link}
-                    href={step.href}
-                    state="interactive"
-                    variant="bordered"
-                    padding="sm"
-                    className="flex min-h-11 items-center gap-3"
-                  >
-                    {content}
-                  </Card>
-                ) : (
-                  <Card
-                    variant="bordered"
-                    padding="sm"
-                    className="flex min-h-11 items-center gap-3 opacity-80"
-                  >
-                    {content}
-                  </Card>
-                )}
+                <Card
+                  as={Link}
+                  href={step.href}
+                  state="interactive"
+                  variant="bordered"
+                  padding="sm"
+                  data-testid={`guided-setup-step-${step.id}`}
+                  className="flex min-h-11 items-center gap-3"
+                >
+                  {content}
+                </Card>
               </li>
             );
           })}

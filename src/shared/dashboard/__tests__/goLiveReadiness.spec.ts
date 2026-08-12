@@ -22,6 +22,13 @@ const readyInput = {
   emailVerified: true,
   emailLinksEnabled: true,
   phoneOtpEnabled: true,
+  cancellationPolicy: {
+    en: "Cancel at least 24 hours before your appointment.",
+    vi: "Huỷ trước lịch hẹn ít nhất 24 giờ.",
+  },
+  defaultNotificationLocale: "en",
+  paymentProvider: null,
+  voiceAiEnabled: false,
   activeServices: [{ priceCents: 4500, durationMinutes: 45 }],
   activeStaffCount: 2,
 };
@@ -120,8 +127,37 @@ describe("evaluateGoLiveReadiness", () => {
     });
 
     expect(result.readyForManualReview).toBe(false);
-    expect(result.checks.find((check) => check.id === "schedule")).toMatchObject(
-      { state: "action", blocking: true },
-    );
+    expect(result.checks.find((check) => check.id === "identity")).toMatchObject({
+      state: "action",
+      blocking: true,
+    });
+    expect(result.checks.find((check) => check.id === "schedule")).toMatchObject({
+      state: "action",
+      blocking: true,
+    });
+  });
+
+  it("exposes data-backed guided checks without changing the canonical technical gate count", () => {
+    const result = evaluateGoLiveReadiness({
+      ...readyInput,
+      cancellationPolicy: null,
+      defaultNotificationLocale: "fr",
+      paymentProvider: null,
+      voiceAiEnabled: false,
+    });
+
+    expect(result.readyForManualReview).toBe(true);
+    expect(result.checks.find((check) => check.id === "booking-policy")).toMatchObject({
+      state: "action",
+      blocking: false,
+    });
+    expect(result.checks.find((check) => check.id === "notification-language")).toMatchObject({
+      state: "action",
+      blocking: false,
+    });
+    expect(result.checks.find((check) => check.id === "optional-integrations")).toMatchObject({
+      state: "review",
+      blocking: false,
+    });
   });
 });

@@ -64,7 +64,7 @@ export async function loadGoLiveReadiness(
     ctx.supabase
       .from("salons")
       .select(
-        "name, address, salon_phone, timezone, opening_hours, profile_complete, email, email_verified, email_links_enabled, phone_otp_enabled",
+        "name, address, salon_phone, timezone, opening_hours, profile_complete, email, email_verified, email_links_enabled, phone_otp_enabled, cancellation_policy, default_notification_locale, payment_provider, voice_ai_enabled",
       )
       .eq("id", ctx.salon.id)
       .maybeSingle(),
@@ -122,6 +122,10 @@ export async function loadGoLiveReadiness(
         email_verified?: unknown;
         email_links_enabled?: unknown;
         phone_otp_enabled?: unknown;
+        cancellation_policy?: unknown;
+        default_notification_locale?: unknown;
+        payment_provider?: unknown;
+        voice_ai_enabled?: unknown;
       }
     | null;
 
@@ -214,6 +218,10 @@ export async function loadGoLiveReadiness(
     emailVerified: row.email_verified === true,
     emailLinksEnabled: row.email_links_enabled !== false,
     phoneOtpEnabled: row.phone_otp_enabled === true,
+    cancellationPolicy: row.cancellation_policy,
+    defaultNotificationLocale: row.default_notification_locale,
+    paymentProvider: row.payment_provider,
+    voiceAiEnabled: row.voice_ai_enabled === true,
     activeServices,
     activeStaffCount: activeStaffIds.length,
   };

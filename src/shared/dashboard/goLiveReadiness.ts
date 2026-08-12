@@ -29,6 +29,10 @@ export type GoLiveReadinessInput = {
   emailVerified: boolean;
   emailLinksEnabled: boolean;
   phoneOtpEnabled: boolean;
+  cancellationPolicy?: unknown;
+  defaultNotificationLocale?: unknown;
+  paymentProvider?: unknown;
+  voiceAiEnabled?: boolean;
   activeServices: Array<{
     priceCents: number | null;
     durationMinutes: number | null;
@@ -55,6 +59,17 @@ function text(value: string | null): string {
   return value?.trim() ?? "";
 }
 
+function hasBilingualPolicy(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const policy = value as { en?: unknown; vi?: unknown };
+  return (
+    typeof policy.en === "string" &&
+    policy.en.trim().length > 0 &&
+    typeof policy.vi === "string" &&
+    policy.vi.trim().length > 0
+  );
+}
+
 export function evaluateGoLiveReadiness(
   input: GoLiveReadinessInput,
 ): GoLiveReadiness {
@@ -75,7 +90,14 @@ export function evaluateGoLiveReadiness(
         Number(service.priceCents) >= 0 &&
         Number.isFinite(service.durationMinutes) &&
         Number(service.durationMinutes) > 0,
-    );
+      );
+  const supportedNotificationLocale =
+    input.defaultNotificationLocale === "en" ||
+    input.defaultNotificationLocale === "vi";
+  const integrationSelected =
+    input.paymentProvider === "square" ||
+    input.paymentProvider === "stripe" ||
+    input.voiceAiEnabled === true;
   const attestations = input.humanAttestations ?? {
     hoursConfirmed: false,
     otpPolicyConfirmed: false,
@@ -88,20 +110,29 @@ export function evaluateGoLiveReadiness(
     {
       id: "identity",
       state:
-        text(input.name) && text(input.address) && text(input.salonPhone)
+        text(input.name) &&
+        text(input.address) &&
+        text(input.salonPhone) &&
+        isAllowedTimezone(input.timezone)
           ? "pass"
           : "action",
       blocking: true,
       titleEn: "Salon identity and contact",
       titleVi: "Thông tin và liên hệ của tiệm",
       detailEn:
-        text(input.name) && text(input.address) && text(input.salonPhone)
-          ? "Name, address, and public salon phone are present."
-          : "Add the salon name, full address, and public phone number.",
+        text(input.name) &&
+        text(input.address) &&
+        text(input.salonPhone) &&
+        isAllowedTimezone(input.timezone)
+          ? `Name, address, public phone, and ${String(input.timezone)} timezone are present.`
+          : "Add the salon name, full address, public phone number, and supported timezone.",
       detailVi:
-        text(input.name) && text(input.address) && text(input.salonPhone)
-          ? "Đã có tên, địa chỉ và số điện thoại công khai của tiệm."
-          : "Thêm tên, địa chỉ đầy đủ và số điện thoại công khai của tiệm.",
+        text(input.name) &&
+        text(input.address) &&
+        text(input.salonPhone) &&
+        isAllowedTimezone(input.timezone)
+          ? `Đã có tên, địa chỉ, số điện thoại công khai và múi giờ ${String(input.timezone)}.`
+          : "Thêm tên, địa chỉ đầy đủ, số điện thoại công khai và múi giờ được hỗ trợ.",
       href: `${setupBase}/address`,
     },
     {
@@ -140,26 +171,37 @@ export function evaluateGoLiveReadiness(
     },
     {
       id: "schedule",
-      state:
-        hours && hasOpenDay && isAllowedTimezone(input.timezone)
-          ? "pass"
-          : "action",
+      state: hours && hasOpenDay ? "pass" : "action",
       blocking: true,
-      titleEn: "Hours and timezone",
-      titleVi: "Giờ mở cửa và múi giờ",
+      titleEn: "Business hours and closed days",
+      titleVi: "Giờ mở cửa và ngày nghỉ",
       detailEn:
-        !hours || !hasOpenDay || !isAllowedTimezone(input.timezone)
-          ? "Save valid business hours with at least one open day and a supported timezone."
+        !hours || !hasOpenDay
+          ? "Save valid business hours with at least one open day."
           : hoursCustomized
             ? `Business hours are saved in ${String(input.timezone)}.`
             : `Valid default hours are saved in ${String(input.timezone)}; human confirmation is still required.`,
       detailVi:
-        !hours || !hasOpenDay || !isAllowedTimezone(input.timezone)
-          ? "Lưu giờ làm việc hợp lệ, ít nhất một ngày mở cửa và múi giờ được hỗ trợ."
+        !hours || !hasOpenDay
+          ? "Lưu giờ làm việc hợp lệ với ít nhất một ngày mở cửa."
           : hoursCustomized
             ? `Đã lưu giờ làm việc theo ${String(input.timezone)}.`
             : `Đã lưu giờ mặc định hợp lệ theo ${String(input.timezone)}; vẫn cần người thật xác nhận.`,
       href: `${setupBase}/hours`,
+    },
+    {
+      id: "booking-policy",
+      state: hasBilingualPolicy(input.cancellationPolicy) ? "pass" : "action",
+      blocking: false,
+      titleEn: "Booking, cancellation, and no-show policy",
+      titleVi: "Quy định đặt lịch, huỷ lịch và vắng mặt",
+      detailEn: hasBilingualPolicy(input.cancellationPolicy)
+        ? "Salon-specific policy text is saved in English and Vietnamese."
+        : "Review and save the salon's English and Vietnamese policy before go-live.",
+      detailVi: hasBilingualPolicy(input.cancellationPolicy)
+        ? "Đã lưu nội dung chính sách riêng của tiệm bằng tiếng Anh và tiếng Việt."
+        : "Xem lại và lưu chính sách của tiệm bằng tiếng Anh và tiếng Việt trước khi hoạt động.",
+      href: `/dashboard/${encodeURIComponent(input.slug)}/no-show-protection`,
     },
     {
       id: "public-booking",
@@ -193,6 +235,34 @@ export function evaluateGoLiveReadiness(
           ? "Email của tiệm đã xác minh và đường dẫn qua email đang bật."
           : "Xác minh email của tiệm và bật đường dẫn qua email trước khi phụ thuộc vào SMS.",
       href: `${settingsBase}#cat-notifications`,
+    },
+    {
+      id: "notification-language",
+      state: supportedNotificationLocale ? "pass" : "action",
+      blocking: false,
+      titleEn: "Default notification language",
+      titleVi: "Ngôn ngữ thông báo mặc định",
+      detailEn: supportedNotificationLocale
+        ? `${String(input.defaultNotificationLocale).toUpperCase()} is saved as the salon default.`
+        : "Choose English or Vietnamese as the salon's default notification language.",
+      detailVi: supportedNotificationLocale
+        ? `Đã lưu ${String(input.defaultNotificationLocale).toUpperCase()} làm ngôn ngữ mặc định của tiệm.`
+        : "Chọn tiếng Anh hoặc tiếng Việt làm ngôn ngữ thông báo mặc định của tiệm.",
+      href: `${settingsBase}#cat-notifications`,
+    },
+    {
+      id: "optional-integrations",
+      state: integrationSelected ? "pass" : "review",
+      blocking: false,
+      titleEn: "Payments and AI (optional)",
+      titleVi: "Thanh toán và AI (không bắt buộc)",
+      detailEn: integrationSelected
+        ? "A payment provider is selected or AI Voice is enabled; verify provider credentials on the integration page."
+        : "No payment or AI integration is required to finish core setup; add one later if needed.",
+      detailVi: integrationSelected
+        ? "Đã chọn nhà cung cấp thanh toán hoặc bật AI Voice; cần kiểm tra credential của nhà cung cấp tại trang tích hợp."
+        : "Không cần tích hợp thanh toán hoặc AI để hoàn tất thiết lập cốt lõi; có thể thêm sau.",
+      href: `${settingsBase}#cat-integrations`,
     },
     {
       id: "hours-confirmation",

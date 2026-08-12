@@ -1,87 +1,133 @@
 import { describe, expect, it } from "vitest";
-import type { GoLiveReadiness } from "@/shared/dashboard/goLiveReadiness";
+import type {
+  GoLiveReadiness,
+  GoLiveReadinessState,
+} from "@/shared/dashboard/goLiveReadiness";
 import { deriveGuidedSetupProgress } from "@/shared/dashboard/guidedSetup";
 
+const CHECK_IDS = [
+  "identity",
+  "schedule",
+  "hours-confirmation",
+  "staff",
+  "catalog",
+  "booking-policy",
+  "fallback-channel",
+  "notification-language",
+  "otp-policy",
+  "optional-integrations",
+  "public-booking",
+  "human-approval",
+  "owner-approval",
+] as const;
+
 function readiness(
-  states: Partial<Record<"identity" | "schedule" | "staff" | "catalog", "pass" | "action">>,
-  options?: { readyForManualReview?: boolean; approvedForGoLive?: boolean },
+  states: Partial<Record<(typeof CHECK_IDS)[number], GoLiveReadinessState>>,
+  options?: { approvedForGoLive?: boolean },
 ): GoLiveReadiness {
   return {
-    checks: (["identity", "schedule", "staff", "catalog"] as const).map(
-      (id) => ({
-        id,
-        state: states[id] ?? "action",
-        blocking: true,
-        titleEn: id,
-        titleVi: id,
-        detailEn: `${id} detail`,
-        detailVi: `${id} detail`,
-        href: `/custom/${id}`,
-      }),
-    ),
-    passedBlocking: Object.values(states).filter((state) => state === "pass")
-      .length,
-    totalBlocking: 4,
-    readyForManualReview: options?.readyForManualReview ?? false,
+    checks: CHECK_IDS.map((id) => ({
+      id,
+      state: states[id] ?? "action",
+      blocking: ["identity", "schedule", "staff", "catalog", "public-booking"].includes(id),
+      titleEn: id,
+      titleVi: id,
+      detailEn: `${id} detail`,
+      detailVi: `${id} detail`,
+      href: `/custom/${id}`,
+    })),
+    passedBlocking: 0,
+    totalBlocking: 5,
+    readyForManualReview: false,
     approvedForGoLive: options?.approvedForGoLive ?? false,
   };
 }
 
+const firstSixPass = {
+  identity: "pass",
+  schedule: "pass",
+  "hours-confirmation": "pass",
+  staff: "pass",
+  catalog: "pass",
+  "booking-policy": "pass",
+  "fallback-channel": "pass",
+  "notification-language": "pass",
+  "otp-policy": "pass",
+} as const;
+
 describe("deriveGuidedSetupProgress", () => {
-  it("returns only the first incomplete step as the next action", () => {
+  it("returns only the first incomplete required step as the next action", () => {
     const result = deriveGuidedSetupProgress(
       "qa-salon",
       readiness({ identity: "pass", schedule: "action" }),
     );
 
-    expect(result.percent).toBe(20);
-    expect(result.currentStepNumber).toBe(2);
+    expect(result).toMatchObject({
+      percent: 13,
+      completedCount: 1,
+      requiredCount: 8,
+      currentStepNumber: 2,
+      totalStepCount: 9,
+    });
     expect(result.nextStep).toMatchObject({
-      id: "schedule",
-      href: "/custom/schedule",
+      id: "business-hours",
+      href: "/dashboard/qa-salon/setup/hours",
     });
   });
 
-  it("moves to final review after technical setup passes", () => {
+  it("skips the optional integration step without counting it as completed", () => {
     const result = deriveGuidedSetupProgress(
       "qa salon",
-      readiness(
-        {
-          identity: "pass",
-          schedule: "pass",
-          staff: "pass",
-          catalog: "pass",
-        },
-        { readyForManualReview: true },
-      ),
+      readiness({
+        ...firstSixPass,
+        "optional-integrations": "review",
+        "public-booking": "action",
+      }),
     );
 
-    expect(result.percent).toBe(80);
+    expect(result).toMatchObject({
+      percent: 75,
+      completedCount: 6,
+      requiredCount: 8,
+      currentStepNumber: 8,
+    });
     expect(result.nextStep).toMatchObject({
-      id: "go-live",
+      id: "booking-preview",
       href: "/dashboard/qa%20salon/settings/readiness",
     });
   });
 
-  it("reports completion only after the current setup is approved", () => {
+  it("does not report completion when a required policy check is missing", () => {
     const result = deriveGuidedSetupProgress(
       "qa-salon",
       readiness(
+        Object.fromEntries(CHECK_IDS.map((id) => [id, "pass"])) as Record<
+          (typeof CHECK_IDS)[number],
+          "pass"
+        >,
+        { approvedForGoLive: true },
+      ),
+    );
+    const missingPolicy = deriveGuidedSetupProgress(
+      "qa-salon",
+      readiness(
         {
-          identity: "pass",
-          schedule: "pass",
-          staff: "pass",
-          catalog: "pass",
+          ...Object.fromEntries(CHECK_IDS.map((id) => [id, "pass"])),
+          "booking-policy": "action",
         },
-        { readyForManualReview: true, approvedForGoLive: true },
+        { approvedForGoLive: true },
       ),
     );
 
     expect(result).toMatchObject({
       complete: true,
       percent: 100,
-      completedCount: 5,
+      completedCount: 8,
       nextStep: null,
+    });
+    expect(missingPolicy).toMatchObject({
+      complete: false,
+      nextStep: { id: "booking-policies" },
     });
   });
 });

@@ -18,6 +18,8 @@ const material = {
   emailVerified: true,
   emailLinksEnabled: true,
   phoneOtpEnabled: true,
+  cancellationPolicy: { en: "Policy EN", vi: "Policy VI" },
+  defaultNotificationLocale: "en",
   services: [
     { id: "service-b", priceCents: 5000, durationMinutes: 60 },
     { id: "service-a", priceCents: 3000, durationMinutes: 30 },

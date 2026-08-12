@@ -15,6 +15,8 @@ type SnapshotMaterial = {
   emailVerified: boolean;
   emailLinksEnabled: boolean;
   phoneOtpEnabled: boolean;
+  cancellationPolicy?: unknown;
+  defaultNotificationLocale?: unknown;
   services: Array<{
     id: string;
     priceCents: number | null;
