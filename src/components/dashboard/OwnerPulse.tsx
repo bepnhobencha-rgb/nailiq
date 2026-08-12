@@ -46,6 +46,10 @@ const COPY = {
     allGood: "Mọi thứ đang ổn",
     allGoodSub: "Không có gì cần xử lý ngay bây giờ.",
     att: {
+      waitlist: (n: number, minutes: number | null) =>
+        minutes == null
+          ? `${n} khách đang chờ tiệm phản hồi`
+          : `${n} khách đang chờ — lâu nhất ${minutes} phút`,
       overdue: (n: number) => `${n} hẹn đang trễ giờ (quá giờ kết thúc)`,
       not_started: (n: number) => `${n} hẹn tới giờ mà chưa bắt đầu`,
       no_show_risk: (n: number) => `${n} hẹn có nguy cơ no-show hôm nay`,
@@ -94,6 +98,10 @@ const COPY = {
     allGood: "All good",
     allGoodSub: "Nothing needs you right now.",
     att: {
+      waitlist: (n: number, minutes: number | null) =>
+        minutes == null
+          ? `${n} guest(s) waiting for a response`
+          : `${n} guest(s) waiting — oldest ${minutes} min`,
       overdue: (n: number) => `${n} appointment(s) running overdue`,
       not_started: (n: number) => `${n} appointment(s) past start, not begun`,
       no_show_risk: (n: number) => `${n} no-show risk today`,
@@ -133,6 +141,7 @@ function salonHour(tz: string): number {
 }
 
 const ATT_TONE: Record<PulseAttentionKind, string> = {
+  waitlist: "border-nq-warning/50 bg-nq-warning/15 text-nq-warning",
   overdue: "border-nq-error/40 bg-nq-error/10 text-nq-error",
   not_started: "border-nq-warning/40 bg-nq-warning/10 text-nq-warning",
   no_show_risk: "border-nq-warning/40 bg-nq-warning/10 text-nq-warning",
@@ -386,13 +395,21 @@ export function OwnerPulse({
           data.attention.map((a) => (
             <Link
               key={a.kind}
-              href={`/dashboard/${encodeURIComponent(slug)}/center`}
+              href={
+                a.kind === "waitlist"
+                  ? `/dashboard/${encodeURIComponent(slug)}/center?view=day#waitlist`
+                  : `/dashboard/${encodeURIComponent(slug)}/center`
+              }
               className={cn(
                 "flex items-center justify-between gap-3 rounded-2xl border px-4 py-3.5 transition-opacity active:opacity-70",
                 ATT_TONE[a.kind],
               )}
             >
-              <span className="text-sm font-medium">{t.att[a.kind](a.count)}</span>
+              <span className="text-sm font-medium">
+                {a.kind === "waitlist"
+                  ? t.att.waitlist(a.count, a.oldestMinutes ?? null)
+                  : t.att[a.kind](a.count)}
+              </span>
               <span aria-hidden className="shrink-0 opacity-70">→</span>
             </Link>
           ))

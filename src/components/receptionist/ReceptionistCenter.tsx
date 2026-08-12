@@ -192,6 +192,7 @@ import {
   type BookingCustomerContext,
 } from "@/shared/dashboard/loadBookingCustomerContextAction";
 import { useReceptionistInterface } from "@/shared/dashboard/useReceptionistInterface";
+import { summarizeWaitlistAttention } from "@/shared/dashboard/waitlistAttention";
 
 const WAITLIST_REMINDER_DELAY_MS = 2 * 60 * 1000;
 
@@ -1269,18 +1270,18 @@ function ReceptionistCenterInner({
     [],
   );
 
-  // Open the queue panel when the sidebar "Hàng chờ" (clock) tab deep-links to
-  // #queue — on mount AND on every hashchange (so re-clicking while already on
-  // the page works). The hash is cleared after handling so the next click
-  // re-fires hashchange.
+  // Open the queue panel when navigation deep-links to #queue or #waitlist — on
+  // mount AND on every hashchange. The dedicated Waitlist link must scroll to
+  // the online leads, not stop at the walk-in queue above them.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const openFromHash = () => {
-      if (window.location.hash !== "#queue") return;
+      const hash = window.location.hash;
+      if (hash !== "#queue" && hash !== "#waitlist") return;
       setQueuePanelOpen(true);
       window.requestAnimationFrame(() => {
         document
-          .getElementById("queue")
+          .getElementById(hash === "#waitlist" ? "waitlist" : "queue")
           ?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
       window.history.replaceState(
@@ -2706,12 +2707,21 @@ function ReceptionistCenterInner({
   // of the Hàng chờ drawer, which is easy to overlook). `claimed` drives a
   // pulsing "N cần tạo lịch" badge — those customers grabbed a slot and need
   // a real appointment created.
+  const waitlistAttentionSummary = summarizeWaitlistAttention(
+    data.onlineWaitlist,
+    nowIso,
+  );
   const waitlistSummary =
     data.onlineWaitlist.length > 0
       ? {
-          total: data.onlineWaitlist.length,
-          claimed: data.onlineWaitlist.filter((w) => w.status === "claimed")
-            .length,
+          total: waitlistAttentionSummary.total,
+          claimed: waitlistAttentionSummary.claimed,
+          waiting: waitlistAttentionEnabled
+            ? waitlistAttentionSummary.waiting
+            : 0,
+          oldestWaitingMinutes: waitlistAttentionEnabled
+            ? waitlistAttentionSummary.oldestWaitingMinutes
+            : null,
         }
       : null;
 
@@ -2815,17 +2825,9 @@ function ReceptionistCenterInner({
   const unresolvedOnlineWaitlist = waitlistAttentionEnabled
     ? data.onlineWaitlist.filter((entry) => entry.status === "waiting")
     : [];
-  const oldestOnlineWaitlistMinutes = unresolvedOnlineWaitlist.reduce<
-    number | null
-  >((oldest, entry) => {
-    const createdMs = Date.parse(entry.createdAt);
-    const observedMs = Date.parse(nowIso);
-    if (!Number.isFinite(createdMs) || !Number.isFinite(observedMs)) {
-      return oldest;
-    }
-    const minutes = Math.max(0, Math.floor((observedMs - createdMs) / 60_000));
-    return oldest === null ? minutes : Math.max(oldest, minutes);
-  }, null);
+  const oldestOnlineWaitlistMinutes = waitlistAttentionEnabled
+    ? waitlistAttentionSummary.oldestWaitingMinutes
+    : null;
 
   const cockpitInputs: CockpitInputs = {
     onlineWaitlistCount: unresolvedOnlineWaitlist.length,
@@ -3322,6 +3324,8 @@ function ReceptionistCenterInner({
           <OnlineWaitlistPanel
             slug={slug}
             entries={data.onlineWaitlist}
+            attentionEnabled={waitlistAttentionEnabled}
+            observedAtIso={nowIso}
             onCreateBooking={createBookingFromClaim}
           />
         ) : null
@@ -4883,6 +4887,8 @@ function ReceptionistCenterInner({
               <OnlineWaitlistPanel
                 slug={slug}
                 entries={data.onlineWaitlist}
+                attentionEnabled={waitlistAttentionEnabled}
+                observedAtIso={nowIso}
                 onCreateBooking={createBookingFromClaim}
               />
             </div>

@@ -1624,6 +1624,8 @@ export type UserMessages = {
       invited: string;
       /** Status pill — still waiting. */
       statusWaiting: string;
+      /** Persistent elapsed time for an unresolved online lead. */
+      waitingMinutes: (minutes: number) => string;
       /** Status pill — customer grabbed the freed slot. */
       claimed: string;
       /** Primary action on a claimed row — open the prefilled desk form. */
@@ -4132,6 +4134,8 @@ export const userEn: UserMessages = {
       inviteAgain: "Invite again",
       invited: "Invited",
       statusWaiting: "Waiting",
+      waitingMinutes: (minutes) =>
+        minutes === 0 ? "Waiting now" : `Waiting ${minutes} min`,
       claimed: "✅ Claimed",
       createBooking: "Create booking",
       empty: "No one on the waitlist",

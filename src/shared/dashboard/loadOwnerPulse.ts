@@ -6,6 +6,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { waitlistAgeMinutes } from "@/shared/dashboard/waitlistAttention";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import {
   salonToday,
   salonDateOffset,
@@ -23,6 +25,7 @@ const NO_SHOW_RISK_THRESHOLD = 60; // score ≥ this = worth flagging
 const TOMORROW_LOW_BOOKINGS = 4; // < this on tomorrow = nudge
 
 export type PulseAttentionKind =
+  | "waitlist"
   | "overdue"
   | "not_started"
   | "no_show_risk"
@@ -31,6 +34,7 @@ export type PulseAttentionKind =
 export type PulseAttention = {
   kind: PulseAttentionKind;
   count: number;
+  oldestMinutes?: number | null;
 };
 
 export type PulseStaff = {
@@ -129,9 +133,37 @@ export async function loadOwnerPulse(
 
     const sb = ctx.supabase;
     const salonId = ctx.salon.id;
+    const waitlistAttentionEnabled = isReleaseFeatureEnabled(
+      ctx.salon as typeof ctx.salon & {
+        subscription_plan?: string | null;
+        plan_override?: string | null;
+        feature_flags?: unknown;
+      },
+      "waitlist_attention",
+    );
+    const waitlistPromise = waitlistAttentionEnabled
+      ? sb
+          .from("booking_waitlist_entries")
+          .select("created_at", { count: "exact" })
+          .eq("salon_id", salonId)
+          .eq("status", "waiting")
+          .gte("booking_date", todayYmd)
+          .order("created_at", { ascending: true })
+          .limit(1)
+      : Promise.resolve({
+          data: [] as Array<{ created_at: string | null }>,
+          count: 0,
+          error: null,
+        });
 
-    const [todayRes, tomorrowRes, benchRes, staffRes, resourcesRes] =
-      await Promise.all([
+    const [
+      todayRes,
+      tomorrowRes,
+      benchRes,
+      staffRes,
+      resourcesRes,
+      waitlistRes,
+    ] = await Promise.all([
       sb
         .from("bookings")
         .select(
@@ -167,6 +199,7 @@ export async function loadOwnerPulse(
         .eq("salon_id", salonId)
         .eq("status", "active")
         .is("deleted_at", null),
+      waitlistPromise,
     ]);
 
     const rows = (todayRes.data ?? []) as BookingLite[];
@@ -266,6 +299,19 @@ export async function loadOwnerPulse(
     const tomorrowCount = tomorrowRes.count ?? 0;
 
     const attention: PulseAttention[] = [];
+    if (waitlistAttentionEnabled && !waitlistRes.error) {
+      const waitlistCount = waitlistRes.count ?? 0;
+      if (waitlistCount > 0) {
+        const oldestRow = (waitlistRes.data?.[0] ?? null) as {
+          created_at?: string | null;
+        } | null;
+        attention.push({
+          kind: "waitlist",
+          count: waitlistCount,
+          oldestMinutes: waitlistAgeMinutes(oldestRow?.created_at, nowIso),
+        });
+      }
+    }
     if (overdue > 0) attention.push({ kind: "overdue", count: overdue });
     if (notStarted > 0)
       attention.push({ kind: "not_started", count: notStarted });
