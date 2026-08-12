@@ -43,6 +43,10 @@ export type AttentionWaitlistSummary = {
   total: number;
   /** Entries the customer already claimed → staff must create the booking. */
   claimed: number;
+  /** Unresolved online leads. Zero when the attention pilot is disabled. */
+  waiting?: number;
+  /** Age of the oldest unresolved lead, when its timestamp is trustworthy. */
+  oldestWaitingMinutes?: number | null;
 };
 
 export function AttentionChipBar({
@@ -95,7 +99,10 @@ export function AttentionChipBar({
     noShowsToday.length +
     (groupSummary?.active ?? 0) +
     (waitlistSummary?.total ?? 0);
-  const hasUrgent = hasOverdue || (waitlistSummary?.claimed ?? 0) > 0;
+  const hasUrgent =
+    hasOverdue ||
+    (waitlistSummary?.claimed ?? 0) > 0 ||
+    (waitlistSummary?.waiting ?? 0) > 0;
 
   // Close the dropdown on Escape for keyboard users.
   useEffect(() => {
@@ -183,7 +190,10 @@ export function AttentionChipBar({
               testId="attention-chip-waitlist"
               active={open === "waitlist"}
               tone="primary"
-              pulse={waitlistSummary!.claimed > 0}
+              pulse={
+                waitlistSummary!.claimed > 0 ||
+                (waitlistSummary!.waiting ?? 0) > 0
+              }
               onClick={() => toggle("waitlist")}
               icon="⏳"
               label={vi ? "Chờ chỗ" : "Waitlist"}
@@ -191,7 +201,13 @@ export function AttentionChipBar({
               subBadge={
                 waitlistSummary!.claimed > 0
                   ? `${waitlistSummary!.claimed} ${vi ? "cần tạo lịch" : "to book"}`
-                  : null
+                  : (waitlistSummary!.waiting ?? 0) > 0
+                    ? waitlistSummary!.oldestWaitingMinutes == null
+                      ? `${waitlistSummary!.waiting} ${vi ? "đang chờ" : "waiting"}`
+                      : vi
+                        ? `lâu nhất ${waitlistSummary!.oldestWaitingMinutes} phút`
+                        : `oldest ${waitlistSummary!.oldestWaitingMinutes} min`
+                    : null
               }
             />
           ) : null}

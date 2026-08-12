@@ -9,12 +9,17 @@ import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { getUserMessages } from "@/shared/i18n/user";
 import { inviteWaitlistEntry } from "@/shared/dashboard/receptionistActions";
 import type { ReceptionistCenterData } from "@/shared/dashboard/loadReceptionistCenterData";
+import { waitlistAgeMinutes } from "@/shared/dashboard/waitlistAttention";
 
 type WaitlistEntry = ReceptionistCenterData["onlineWaitlist"][number];
 
 export interface OnlineWaitlistPanelProps {
   slug: string;
   entries: WaitlistEntry[];
+  /** Pilot-only urgency copy. Kept off for salons without the release flag. */
+  attentionEnabled?: boolean;
+  /** Server-owned clock snapshot; avoids client/server time drift. */
+  observedAtIso?: string;
   /** Open the prefilled desk booking form for a claimed waitlist entry so
    *  staff confirm time/staff and create the real appointment. */
   onCreateBooking?: (entry: WaitlistEntry) => void;
@@ -39,6 +44,8 @@ function initialOf(name: string): string {
 export function OnlineWaitlistPanel({
   slug,
   entries,
+  attentionEnabled = false,
+  observedAtIso,
   onCreateBooking,
 }: OnlineWaitlistPanelProps) {
   const router = useRouter();
@@ -122,6 +129,10 @@ export function OnlineWaitlistPanel({
             const isClaimed = status === "claimed";
             const isPending = pendingId === entry.id;
             const name = displayCustomerName(entry.clientName, removedGuest);
+            const waitingMinutes =
+              attentionEnabled && status === "waiting" && observedAtIso
+                ? waitlistAgeMinutes(entry.createdAt, observedAtIso)
+                : null;
             const subline =
               entry.preferredSlotLabel && entry.preferredSlotLabel.trim()
                 ? `${entry.serviceName} · ${entry.bookingDate} · ${entry.preferredSlotLabel}`
@@ -174,6 +185,14 @@ export function OnlineWaitlistPanel({
                     <p className="mt-0.5 truncate text-xs text-nq-muted">
                       {subline}
                     </p>
+                    {waitingMinutes !== null ? (
+                      <p
+                        data-testid={`waitlist-age-${entry.id}`}
+                        className="mt-1 text-xs font-semibold tabular-nums text-nq-warning"
+                      >
+                        {t.waitingMinutes(waitingMinutes)}
+                      </p>
+                    ) : null}
                     {/* Staff need the phone to follow up on a claimed slot. */}
                     {isClaimed && entry.phone.trim() ? (
                       <p className="mt-0.5 truncate font-mono text-xs text-nq-muted">

@@ -1781,6 +1781,8 @@ export const userVi: UserMessages = {
       inviteAgain: "Mời lại",
       invited: "Đã mời",
       statusWaiting: "Đang chờ",
+      waitingMinutes: (minutes) =>
+        minutes === 0 ? "Vừa vào danh sách chờ" : `Đã chờ ${minutes} phút`,
       claimed: "✅ Đã giành chỗ",
       createBooking: "Tạo lịch",
       empty: "Chưa có khách chờ chỗ",
