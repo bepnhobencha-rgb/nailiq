@@ -1190,6 +1190,33 @@ export async function prepareTestSalonForGoLive(salonId: string) {
   }
 }
 
+/**
+ * Complete the saved-data requirements used by the Guided Admin Setup hub.
+ *
+ * The shared go-live helper intentionally covers only the original technical
+ * readiness gates. Guided Setup also treats the bilingual booking policy and
+ * notification language as required owner setup. Keep this as a separate
+ * helper so older readiness specs retain their narrower fixture contract.
+ */
+export async function prepareTestSalonForGuidedSetup(salonId: string) {
+  await prepareTestSalonForGoLive(salonId);
+
+  const { error } = await supabase
+    .from("salons")
+    .update({
+      cancellation_policy: {
+        en: "Please contact the salon before cancelling or rescheduling.",
+        vi: "Vui lòng liên hệ salon trước khi huỷ hoặc đổi lịch.",
+      },
+      default_notification_locale: "vi",
+    })
+    .eq("id", salonId);
+
+  if (error) {
+    throw new Error(`prepareTestSalonForGuidedSetup: ${error.message}`);
+  }
+}
+
 export async function changeFirstTestServicePrice(salonId: string) {
   const { data: service, error: readError } = await supabase
     .from("services")
