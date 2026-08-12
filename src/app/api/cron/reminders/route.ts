@@ -199,7 +199,7 @@ export async function GET(req: Request) {
       notificationType: reminderType === "24h" ? "reminder_24h" : "reminder_3h",
       channel: "email",
       clientPhone: booking.client_phone ? `+${booking.client_phone}` : null,
-      messageSid: null,
+      messageSid: result.messageId ?? null,
       bodyPreview: `Group reminder · party of ${members.length}`,
       ok: result.ok,
       errorMessage: result.error,
@@ -221,7 +221,7 @@ export async function GET(req: Request) {
       const { sendReminderEmail } = await import("@/shared/noshow/sendReminderEmail");
       const memberToken = await generateReminderToken(m.bookingId, booking.salon_id);
       if (!memberToken) continue;
-      await sendReminderEmail({
+      const memberResult = await sendReminderEmail({
         salonId: booking.salon_id,
         tokenId: memberToken.id,
         clientName: m.name,
@@ -233,6 +233,16 @@ export async function GET(req: Request) {
         salonSlug: salon.slug,
         timezone: (salon as { timezone?: string | null }).timezone ?? null,
         businessDescriptor: resolveVertical((salon as { vertical?: string | null }).vertical).aiDescriptor,
+      });
+      void logNotification({
+        bookingId: m.bookingId,
+        salonId: booking.salon_id,
+        notificationType: reminderType === "24h" ? "reminder_24h" : "reminder_3h",
+        channel: "email",
+        messageSid: memberResult.messageId ?? null,
+        bodyPreview: "Group member reminder",
+        ok: memberResult.ok,
+        errorMessage: memberResult.error,
       });
     }
 
@@ -294,6 +304,16 @@ export async function GET(req: Request) {
         businessDescriptor: resolveVertical(
           (salon as { vertical?: string | null }).vertical,
         ).aiDescriptor,
+      });
+      void logNotification({
+        bookingId: booking.id,
+        salonId: booking.salon_id,
+        notificationType: reminderType === "24h" ? "reminder_24h" : "reminder_3h",
+        channel: "email",
+        messageSid: result.messageId ?? null,
+        bodyPreview: `Reminder email · ${booking.services?.name ?? "appointment"}`,
+        ok: result.ok,
+        errorMessage: result.error,
       });
       if (result.ok) anySuccess = true;
       else errors++;
