@@ -1470,6 +1470,8 @@ export async function getDashboardWriteClient(slug: string): Promise<
         dashboard_preset: unknown | null;
         dashboard_density: unknown | null;
         currency_code: unknown | null;
+        /** Per-salon release overrides used by setup route gates. */
+        feature_flags?: unknown | null;
       };
       kind: "member" | "demo_cookie";
       /** `salon_members.role` for this user-salon pair. Demo-cookie path is `"owner"`. */

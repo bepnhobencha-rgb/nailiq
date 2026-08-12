@@ -83,6 +83,14 @@ export const SUPERADMIN_PER_SALON_FLAGS: ReadonlyArray<SuperAdminFlagDescriptor>
     phase: "live",
   },
   {
+    key: "guided_admin_setup_enabled",
+    group: "operations",
+    label: "Hướng dẫn thiết lập Admin",
+    description:
+      "Thử luồng onboarding chỉ hiển thị một bước tiếp theo, dựa trên kiểm tra Go-Live thật.",
+    phase: "live",
+  },
+  {
     key: "waitlist_attention_enabled",
     group: "operations",
     label: "Cảnh báo khách Waitlist",

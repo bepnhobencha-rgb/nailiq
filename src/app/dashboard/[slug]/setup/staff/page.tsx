@@ -141,7 +141,12 @@ export default async function SetupStaffPage({ params }: Props) {
   return (
     <ResponsiveShell>
       <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-4 sm:pt-6">
-        <SetupBackNav slug={slug} title={t.setupLabels.staffTitle} />
+        <SetupBackNav
+          slug={slug}
+          title={t.setupLabels.staffTitle}
+          backHref={`/dashboard/${encodeURIComponent(slug)}/setup`}
+          backLabel="← Setup"
+        />
         <StaffSetupPanel
           slug={slug}
           maxStaff={maxStaff}

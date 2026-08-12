@@ -4,6 +4,7 @@ import {
   type GoLiveReadiness,
 } from "@/shared/dashboard/goLiveReadiness";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import {
   deriveGoLiveAttestationState,
   GO_LIVE_ATTESTATION_KEYS,
@@ -27,6 +28,7 @@ export type LoadGoLiveReadinessResult =
       attestationState: GoLiveAttestationState;
       attestationEvents: GoLiveAttestationEvent[];
       latestAttestationEvents: GoLiveAttestationEvent[];
+      guidedSetupEnabled: boolean;
     }
   | { ok: false; reason: "unauthorized" | "unavailable" };
 
@@ -237,6 +239,10 @@ export async function loadGoLiveReadiness(
     attestationState,
     attestationEvents,
     latestAttestationEvents,
+    guidedSetupEnabled: isReleaseFeatureEnabled(
+      ctx.salon,
+      "guided_admin_setup",
+    ),
     readiness: evaluateGoLiveReadiness({
       ...readinessInput,
       humanAttestations: attestationState,

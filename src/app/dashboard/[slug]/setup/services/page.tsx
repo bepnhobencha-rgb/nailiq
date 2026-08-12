@@ -79,7 +79,12 @@ export default async function SetupServicesPage({ params }: Props) {
   return (
     <ResponsiveShell>
       <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-4 sm:pt-6">
-        <SetupBackNav slug={slug} title={t.setupLabels.servicesTitle} />
+        <SetupBackNav
+          slug={slug}
+          title={t.setupLabels.servicesTitle}
+          backHref={`/dashboard/${encodeURIComponent(slug)}/setup`}
+          backLabel="← Setup"
+        />
         <ServicesSetupPanel
           slug={slug}
           maxServices={maxServices}

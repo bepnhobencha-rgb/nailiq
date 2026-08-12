@@ -4,6 +4,8 @@ import { SalonOwnerDashboard } from "@/components/dashboard/SalonOwnerDashboard"
 import { createClient } from "@/shared/lib/supabase/server";
 import { loadSalonOwnerDashboard } from "@/shared/dashboard/salonOwnerActions";
 import { loadOwnerHomeDashboard } from "@/shared/dashboard/loadOwnerHomeDashboardAction";
+import { loadGoLiveReadiness } from "@/shared/dashboard/loadGoLiveReadiness";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -35,6 +37,17 @@ export default async function SalonDashboardPage({ params }: Props) {
 
   if (!initialResult.ok && initialResult.error === "unauthorized") {
     redirect("/register");
+  }
+
+  if (
+    initialResult.ok &&
+    !initialResult.demoMode &&
+    isReleaseFeatureEnabled(initialResult.salon, "guided_admin_setup")
+  ) {
+    const setupResult = await loadGoLiveReadiness(slug);
+    if (setupResult.ok && !setupResult.readiness.approvedForGoLive) {
+      redirect(`/dashboard/${encodeURIComponent(slug)}/setup`);
+    }
   }
 
   return (

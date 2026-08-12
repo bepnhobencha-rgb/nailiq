@@ -67,6 +67,7 @@ from `defaultOn` (Base → ON, Beta → OFF).
 | `admin_copilot` | Admin AI assistant (Coco) | `feature_flags.admin_copilot_enabled` |
 | `receptionist_shell_v2` | Calmer Front Desk shell (option B pilot) | `feature_flags.receptionist_shell_v2_enabled` |
 | `waitlist_attention` | Realtime Action Center + sound reminder for online waitlist | `feature_flags.waitlist_attention_enabled` |
+| `guided_admin_setup` | One-next-step onboarding driven by Go-Live Readiness | `feature_flags.guided_admin_setup_enabled` |
 | `nail_tryon` | Scan bàn tay + xem trước mẫu nail | `feature_flags.nail_tryon_enabled` |
 | `archived_booking_recovery` | Linked replacement for cancelled/no-show history | `feature_flags.archived_booking_recovery_enabled` |
 

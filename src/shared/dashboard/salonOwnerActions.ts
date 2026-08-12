@@ -338,6 +338,8 @@ export type LoadSalonDashboardResult =
         profile_complete: boolean;
         timezone: string;
         vertical: string | null;
+        /** Per-salon release overrides used by server-side dashboard gates. */
+        feature_flags: unknown | null;
       };
       setup: {
         services_count: number;
@@ -446,6 +448,7 @@ export async function loadSalonOwnerDashboard(
       profile_complete: !!salon.profile_complete,
       timezone: salon.timezone || "UTC",
       vertical: typeof salon.vertical === "string" ? salon.vertical : null,
+      feature_flags: salon.feature_flags ?? null,
     },
     setup: {
       services_count: servicesCount ?? 0,
