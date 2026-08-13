@@ -152,7 +152,9 @@ test.describe("Guided Admin Setup", () => {
         new RegExp(`/dashboard/${registration.salon.slug}/setup$`),
         { timeout: 30_000 },
       );
-      await expect(page.locator('[data-guided-setup-mode="true"]')).toBeVisible();
+      await expect(
+        page.locator('[data-guided-setup-mode="true"]'),
+      ).toBeVisible();
       await expect(page.getByTestId("guided-setup-next")).toContainText(
         /Salon information|Thông tin salon/i,
       );
@@ -201,6 +203,7 @@ test.describe("Guided Admin Setup", () => {
       new RegExp(`/dashboard/${RESUME_SLUG}/setup/address$`),
     );
     await expect(page.getByRole("link", { name: /setup/i })).toBeVisible();
+    await expect(page.getByTestId("guided-autosave-message")).toBeVisible();
 
     const saveButton = page.getByRole("button", { name: /^save$/i });
     await expect(saveButton).toBeDisabled();
@@ -213,8 +216,9 @@ test.describe("Guided Admin Setup", () => {
       .selectOption("America/Vancouver");
     await page.getByLabel(/salon phone/i).fill("+1 604 555 0198");
     await expect(saveButton).toBeEnabled();
-    await saveButton.click();
-    await expect(page.getByRole("button", { name: /saved/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /saved/i })).toBeVisible({
+      timeout: 15_000,
+    });
 
     await expect(page.getByTestId("guided-setup-return-card")).toBeVisible();
     await page.getByTestId("guided-setup-continue").click();
@@ -229,6 +233,27 @@ test.describe("Guided Admin Setup", () => {
       /Business hours|Giờ mở cửa/i,
     );
 
+    await page.getByTestId("guided-setup-next").click();
+    await expect(page).toHaveURL(
+      new RegExp(`/dashboard/${RESUME_SLUG}/setup/hours$`),
+    );
+    await expect(page.getByTestId("guided-autosave-message")).toBeVisible();
+    await page.getByTestId("hours-preset-standard").click();
+    await expect(page.getByRole("button", { name: /saved/i })).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByTestId("guided-setup-continue").click();
+    await expect(page).toHaveURL(
+      new RegExp(`/dashboard/${RESUME_SLUG}/setup$`),
+    );
+    await expect(page.getByRole("progressbar")).toHaveAttribute(
+      "aria-valuenow",
+      "50",
+    );
+    await expect(page.getByTestId("guided-setup-next")).toContainText(
+      /Team & access|Nhân viên/i,
+    );
+
     await page.context().clearCookies();
     await loginAs(page, resumeOwner);
     await expect(page).toHaveURL(
@@ -236,10 +261,10 @@ test.describe("Guided Admin Setup", () => {
     );
     await expect(page.getByRole("progressbar")).toHaveAttribute(
       "aria-valuenow",
-      "38",
+      "50",
     );
     await expect(page.getByTestId("guided-setup-next")).toContainText(
-      /Business hours|Giờ mở cửa/i,
+      /Team & access|Nhân viên/i,
     );
   });
 
@@ -284,6 +309,7 @@ test.describe("Guided Admin Setup", () => {
       page.getByRole("link", { name: /dashboard/i }),
     ).toHaveAttribute("href", `/dashboard/${LEGACY_SLUG}`);
     await expect(page.getByTestId("guided-setup-return-card")).toHaveCount(0);
+    await expect(page.getByTestId("guided-autosave-message")).toHaveCount(0);
 
     await page.goto(`/dashboard/${LEGACY_SLUG}/settings`);
     await expect(page.getByTestId("guided-setup-return-card")).toHaveCount(0);
@@ -342,7 +368,10 @@ test.describe("Guided Admin Setup", () => {
     ).toBeVisible();
     await page.locator('[data-testid^="staff-edit-"]').first().click();
     await page.getByTestId("staff-drawer-name").fill("Jenny QA");
-    await page.getByRole("button", { name: /^(save|lưu)$/i }).last().click();
+    await page
+      .getByRole("button", { name: /^(save|lưu)$/i })
+      .last()
+      .click();
     await expect(page.getByText("Jenny QA", { exact: true })).toBeVisible();
     await page.reload();
     await expect(page.getByText("Jenny QA", { exact: true })).toBeVisible();
@@ -356,7 +385,10 @@ test.describe("Guided Admin Setup", () => {
     ).toBeVisible();
     await page.locator('[data-testid^="service-edit-"]').first().click();
     await page.getByTestId("service-drawer-price").fill("46");
-    await page.getByRole("button", { name: /^(save|lưu)$/i }).last().click();
+    await page
+      .getByRole("button", { name: /^(save|lưu)$/i })
+      .last()
+      .click();
     await expect(page.getByText(/\$46(?:\.00)?/).first()).toBeVisible();
     await page.reload();
     await expect(page.getByText(/\$46(?:\.00)?/).first()).toBeVisible();
@@ -391,12 +423,17 @@ test.describe("Guided Admin Setup", () => {
     const notificationCard = page.getByTestId("staff-notifications-card");
     await notificationCard.getByTestId("staff-notif-locale-en").check();
     await notificationCard.getByRole("button").click();
-    await expect(notificationCard.getByTestId("staff-notif-toast")).toBeVisible();
+    await expect(
+      notificationCard.getByTestId("staff-notif-toast"),
+    ).toBeVisible();
     await page.reload();
     await expect(page.getByTestId("staff-notif-locale-en")).toBeChecked();
 
     await page.getByTestId("staff-notif-locale-vi").check();
-    await page.getByTestId("staff-notifications-card").getByRole("button").click();
+    await page
+      .getByTestId("staff-notifications-card")
+      .getByRole("button")
+      .click();
     await expect(page.getByTestId("staff-notif-toast")).toBeVisible();
     await page.reload();
     await expect(page.getByTestId("staff-notif-locale-vi")).toBeChecked();

@@ -83,6 +83,7 @@ export default async function SetupAddressPage({ params }: Props) {
           initialCurrency={initialCurrency}
           initialDescription={initialDescription}
           initialTimezone={initialTimezone}
+          autoSave={guidedSetupEnabled}
         />
         {guidedSetupEnabled ? <GuidedSetupReturnCard slug={slug} /> : null}
       </MobileStack>
