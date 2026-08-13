@@ -82,7 +82,10 @@ export function GuidedSetupHub({
               ? `Bước ${progress.currentStepNumber} / ${progress.totalStepCount}`
               : `Step ${progress.currentStepNumber} of ${progress.totalStepCount}`}
           </p>
-          <h2 className="mt-2 text-xl font-semibold text-nq-foreground">
+          <h2
+            className="mt-2 text-xl font-semibold text-nq-foreground"
+            data-testid="guided-setup-next-title"
+          >
             {vi ? next.titleVi : next.titleEn}
           </h2>
           <p className="mt-2 text-base leading-6 text-nq-muted">

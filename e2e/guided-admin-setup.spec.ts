@@ -155,7 +155,7 @@ test.describe("Guided Admin Setup", () => {
       await expect(
         page.locator('[data-guided-setup-mode="true"]'),
       ).toBeVisible();
-      await expect(page.getByTestId("guided-setup-next")).toContainText(
+      await expect(page.getByTestId("guided-setup-next-title")).toContainText(
         /Salon information|Thông tin salon/i,
       );
       const progressBefore = await page
@@ -167,7 +167,7 @@ test.describe("Guided Admin Setup", () => {
       await expect(page).toHaveURL(
         new RegExp(`/dashboard/${registration.salon.slug}/setup$`),
       );
-      await expect(page.getByTestId("guided-setup-next")).toContainText(
+      await expect(page.getByTestId("guided-setup-next-title")).toContainText(
         /Salon information|Thông tin salon/i,
       );
       await expect(page.getByRole("progressbar")).toHaveAttribute(
@@ -209,7 +209,9 @@ test.describe("Guided Admin Setup", () => {
     await expect(saveButton).toBeDisabled();
     await page.getByLabel(/street address/i).fill("123 QA Main Street");
     await page.getByLabel(/^city/i).fill("Vancouver");
-    await page.getByLabel(/province|state/i).fill("BC");
+    await page
+      .getByRole("textbox", { name: /^province\/state$/i })
+      .fill("BC");
     await page.getByLabel(/postal|zip/i).fill("V6B 1A1");
     await page
       .getByTestId("setup-timezone-select")
@@ -229,7 +231,7 @@ test.describe("Guided Admin Setup", () => {
       "aria-valuenow",
       "38",
     );
-    await expect(page.getByTestId("guided-setup-next")).toContainText(
+    await expect(page.getByTestId("guided-setup-next-title")).toContainText(
       /Business hours|Giờ mở cửa/i,
     );
 
@@ -250,7 +252,7 @@ test.describe("Guided Admin Setup", () => {
       "aria-valuenow",
       "50",
     );
-    await expect(page.getByTestId("guided-setup-next")).toContainText(
+    await expect(page.getByTestId("guided-setup-next-title")).toContainText(
       /Team & access|Nhân viên/i,
     );
 
@@ -263,7 +265,7 @@ test.describe("Guided Admin Setup", () => {
       "aria-valuenow",
       "50",
     );
-    await expect(page.getByTestId("guided-setup-next")).toContainText(
+    await expect(page.getByTestId("guided-setup-next-title")).toContainText(
       /Team & access|Nhân viên/i,
     );
   });
@@ -306,7 +308,7 @@ test.describe("Guided Admin Setup", () => {
     await loginAs(page, legacyOwner);
     await page.goto(`/dashboard/${LEGACY_SLUG}/setup/address`);
     await expect(
-      page.getByRole("link", { name: /dashboard/i }),
+      page.getByRole("link", { name: /^dashboard home$/i }),
     ).toHaveAttribute("href", `/dashboard/${LEGACY_SLUG}`);
     await expect(page.getByTestId("guided-setup-return-card")).toHaveCount(0);
     await expect(page.getByTestId("guided-autosave-message")).toHaveCount(0);
@@ -321,7 +323,11 @@ test.describe("Guided Admin Setup", () => {
     if (!surfacesAdmin) throw new Error("surfaces admin fixture missing");
 
     await loginAs(page, surfacesAdmin);
-    await page.goto(`/dashboard/${SURFACES_SLUG}/setup`);
+    await expect(page).toHaveURL(
+      new RegExp(`/dashboard/${SURFACES_SLUG}/setup$`),
+      { timeout: 30_000 },
+    );
+    await expect(page.locator('[data-guided-setup-mode="true"]')).toBeVisible();
 
     const destinations = [
       ["salon-profile", `/dashboard/${SURFACES_SLUG}/setup/address`],
