@@ -14,30 +14,73 @@ export async function GET(request: Request) {
   const authorizationError = requireCronAuthorization(request);
   if (authorizationError) return authorizationError;
   return runTrackedCron("nail_tryon_cleanup", async () => {
-  const db = createServiceRoleClient();
-  await db.rpc("queue_expired_nail_tryon_sessions" as never, { p_limit: 200 } as never);
-  const { data, error } = await db.from("nail_tryon_cleanup_queue" as never)
-    .select("id, tryon_session_id, object_path, attempts").is("processed_at", null)
-    .lte("available_at", new Date().toISOString()).order("id").limit(200);
-  if (error) return NextResponse.json({ error: "queue_failed" }, { status: 500 });
-
-  const rows = (data || []) as unknown as QueueRow[];
-  let deleted = 0;
-  for (const row of rows) {
-    const { error: removeError } = await db.storage.from("nail-tryon").remove([row.object_path]);
-    if (removeError) {
-      await db.from("nail_tryon_cleanup_queue" as never).update({ attempts: row.attempts + 1, last_error: removeError.message, available_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() } as never).eq("id", row.id);
-      continue;
+    const db = createServiceRoleClient();
+    const { data: queuedData, error: queueError } = await db.rpc(
+      "queue_expired_nail_tryon_sessions" as never,
+      { p_limit: 200 } as never,
+    );
+    if (queueError) {
+      return NextResponse.json({ error: "queue_failed" }, { status: 500 });
     }
-    await db.from("nail_tryon_cleanup_queue" as never).update({ processed_at: new Date().toISOString(), last_error: null } as never).eq("id", row.id);
-    deleted += 1;
-  }
-  const sessionIds = [...new Set(rows.map((row) => row.tryon_session_id))];
-  for (const sessionId of sessionIds) {
-    const { data: raw } = await db.from("nail_tryon_sessions" as never).select("salon_id").eq("id", sessionId).maybeSingle();
-    const session = raw as unknown as { salon_id: string } | null;
-    if (session) await recordNailTryOnEvent({ salonId: session.salon_id, sessionId, event: "expired_deleted" });
-  }
-    return NextResponse.json({ ok: true, queued: rows.length, deleted });
+    const queued = typeof queuedData === "number" ? queuedData : 0;
+    const { data, error } = await db.from("nail_tryon_cleanup_queue" as never)
+      .select("id, tryon_session_id, object_path, attempts").is("processed_at", null)
+      .lte("available_at", new Date().toISOString()).order("id").limit(200);
+    if (error) {
+      return NextResponse.json({ error: "queue_failed" }, { status: 500 });
+    }
+
+    const rows = (data || []) as unknown as QueueRow[];
+    let deleted = 0;
+    let pendingFailures = 0;
+    for (const row of rows) {
+      const { error: removeError } = await db.storage.from("nail-tryon")
+        .remove([row.object_path]);
+      if (removeError) {
+        pendingFailures += 1;
+        await db.from("nail_tryon_cleanup_queue" as never).update({
+          attempts: row.attempts + 1,
+          last_error: removeError.message,
+          available_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        } as never).eq("id", row.id);
+        continue;
+      }
+      await db.from("nail_tryon_cleanup_queue" as never).update({
+        processed_at: new Date().toISOString(),
+        last_error: null,
+      } as never).eq("id", row.id);
+      deleted += 1;
+    }
+
+    const sessionIds = [...new Set(rows.map((row) => row.tryon_session_id))];
+    let completedSessions = 0;
+    for (const sessionId of sessionIds) {
+      const { count, error: pendingError } = await db
+        .from("nail_tryon_cleanup_queue" as never)
+        .select("id", { count: "exact", head: true })
+        .eq("tryon_session_id", sessionId)
+        .is("processed_at", null);
+      if (pendingError || (count ?? 0) > 0) continue;
+
+      const { data: raw } = await db.from("nail_tryon_sessions" as never)
+        .select("salon_id").eq("id", sessionId).maybeSingle();
+      const session = raw as unknown as { salon_id: string } | null;
+      if (!session) continue;
+      await recordNailTryOnEvent({
+        salonId: session.salon_id,
+        sessionId,
+        event: "expired_deleted",
+      });
+      completedSessions += 1;
+    }
+
+    return NextResponse.json({
+      ok: true,
+      queued,
+      inspected: rows.length,
+      deleted,
+      pendingFailures,
+      completedSessions,
+    });
   });
 }
