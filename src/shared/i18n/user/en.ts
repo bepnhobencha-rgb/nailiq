@@ -1627,6 +1627,8 @@ export type UserMessages = {
       statusWaiting: string;
       /** Persistent elapsed time for an unresolved online lead. */
       waitingMinutes: (minutes: number) => string;
+      /** Staff opened the handling surface; the lead is still unresolved. */
+      acknowledged: string;
       /** Status pill — customer grabbed the freed slot. */
       claimed: string;
       /** Primary action on a claimed row — open the prefilled desk form. */
@@ -1636,6 +1638,7 @@ export type UserMessages = {
       /** Toasts. `{name}` is the customer's name. */
       invitedToast: (name: string) => string;
       suppressedToast: (name: string) => string;
+      deduplicatedToast: (name: string) => string;
       errorToast: string;
     };
     walkin: {
@@ -4137,12 +4140,15 @@ export const userEn: UserMessages = {
       statusWaiting: "Waiting",
       waitingMinutes: (minutes) =>
         minutes === 0 ? "Waiting now" : `Waiting ${minutes} min`,
+      acknowledged: "Seen by staff",
       claimed: "✅ Claimed",
       createBooking: "Create booking",
       empty: "No one on the waitlist",
       invitedToast: (name) => `Invited ${name} by SMS`,
       suppressedToast: (name) =>
         `Marked ${name} invited — SMS disabled in this environment`,
+      deduplicatedToast: (name) =>
+        `${name} was just invited — no duplicate was sent`,
       errorToast: "Could not send the invite. Please try again.",
     },
     walkin: {

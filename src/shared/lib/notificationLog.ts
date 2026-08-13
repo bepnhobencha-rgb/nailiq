@@ -25,6 +25,8 @@ export type NotificationChannel = "sms" | "email";
 export interface LogNotificationParams {
   bookingId: string | null;
   salonId: string;
+  /** Waitlist lead this delivery belongs to (booking_id is still null). */
+  waitlistEntryId?: string | null;
   notificationType: NotificationType;
   channel: NotificationChannel;
   clientPhone?: string | null;
@@ -45,6 +47,7 @@ export async function logNotification(
   const row = {
     booking_id: params.bookingId,
     salon_id: params.salonId,
+    waitlist_entry_id: params.waitlistEntryId ?? null,
     notification_type: params.notificationType,
     channel: params.channel,
     status: params.ok ? "sent" : "failed",
@@ -98,6 +101,7 @@ export async function claimNotificationOnce(
   const row = {
     booking_id: params.bookingId,
     salon_id: params.salonId,
+    waitlist_entry_id: params.waitlistEntryId ?? null,
     notification_type: params.notificationType,
     channel: params.channel,
     status: "sending",
