@@ -43,7 +43,7 @@ test.describe("Archived booking detail — read-only history", () => {
       start_time_utc: start.toISOString(),
       end_time_utc: new Date(start.getTime() + 45 * 60 * 1000).toISOString(),
       source: "appointment",
-      booking_channel: "staff",
+      booking_channel: "desk",
       price_cents: 4500,
     };
 
