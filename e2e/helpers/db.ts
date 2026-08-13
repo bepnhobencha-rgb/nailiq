@@ -270,6 +270,8 @@ export async function seedTestSalon(opts?: {
    * `true` to enable the Voice AI setup route.
    */
   voice_ai_enabled?: boolean;
+  /** Salon business vertical. Defaults to the database's `nail_salon`. */
+  vertical?: string;
 }) {
   const phone = opts?.phone ?? "15550001111";
   const slug = opts?.slug ?? "e2e-test-salon";
@@ -286,6 +288,7 @@ export async function seedTestSalon(opts?: {
       profile_complete: true,
       opening_hours: SEED_OPENING_HOURS,
       feature_flags: opts?.feature_flags ?? {},
+      ...(opts?.vertical === undefined ? {} : { vertical: opts.vertical }),
       // Only write the column when the caller opts in. Leaving it unset keeps
       // the DB default so `ai_voice` resolves to its Beta default (OFF) — the
       // route-gating OFF case must not depend on an explicit false here.

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { NailDesignCatalogManager } from "@/components/dashboard/NailDesignCatalogManager";
 import { requireReleaseFeatureEnabled } from "@/shared/features/requireReleaseFeature";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { isNailTryOnEligibleSalon } from "@/shared/nailTryOn/eligibility";
 
 type Props = { params: Promise<{ slug: string }> };
 type DesignRow = { id: string; name: string; description: string | null; preview_path: string; is_active: boolean; service_id: string | null };
@@ -11,7 +12,7 @@ type MappingRow = { design_id: string; service_id: string; mapping_type: "servic
 export default async function NailTryOnSetupPage({ params }: Props) {
   const { slug } = await params;
   const gate = await requireReleaseFeatureEnabled(slug, "nail_tryon");
-  if (!gate.ok) notFound();
+  if (!gate.ok || !isNailTryOnEligibleSalon(gate.salon)) notFound();
   const db = createServiceRoleClient();
   const [{ data }, { data: serviceRows }, { data: mappingRows }] = await Promise.all([
     db.from("nail_designs" as never)
