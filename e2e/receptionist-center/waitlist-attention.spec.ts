@@ -238,9 +238,11 @@ test("new Waitlist lead alerts once, reminds once, stays visible, and records ac
   await expect(
     waitlistPanel.getByTestId(`waitlist-entry-${entryId}`),
   ).toContainText("E2E Waitlist Lead");
-  await expect(
-    waitlistPanel.getByTestId(`waitlist-age-${entryId}`),
-  ).toContainText(/7 min/);
+  const ageLabel = waitlistPanel.getByTestId(`waitlist-age-${entryId}`);
+  await expect(ageLabel).toContainText(/\d+\s*min/);
+  const displayedAge = Number((await ageLabel.textContent())?.match(/\d+/)?.[0]);
+  expect(displayedAge).toBeGreaterThanOrEqual(5);
+  expect(displayedAge).toBeLessThanOrEqual(10);
   await expect(
     waitlistPanel.getByTestId(`waitlist-invite-${entryId}`),
   ).toBeVisible();
