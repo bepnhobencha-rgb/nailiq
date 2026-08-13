@@ -4,8 +4,10 @@ import path from "node:path";
 import {
   cleanupTestSalon,
   cleanupTestUser,
+  getNailTryOnDesignMappings,
   getNailTryOnCatalogState,
   seedNailTryOnDraftDesigns,
+  seedNailTryOnTestMenu,
   seedTestSalon,
   seedTestSalonMember,
 } from "./helpers/db";
@@ -105,6 +107,103 @@ test.describe("Nail Try-On camera fallback", () => {
           (design) => design.is_active,
         ),
       ).toBe(true);
+    } finally {
+      await cleanupTestUser(owner.userId);
+    }
+  });
+
+  test("requires a design name and description before owner upload", async ({
+    page,
+  }) => {
+    const { salonId } = await seedTestSalon({
+      slug: SLUG,
+      name: "E2E Nail Try-On Validation",
+      feature_flags: { nail_tryon_enabled: true },
+    });
+    const owner = await seedTestSalonMember(salonId, "owner");
+    try {
+      await loginAs(page, owner);
+      await page.goto(`/dashboard/${SLUG}/setup/nail-tryon`);
+
+      const name = page.locator('input[name="name"]');
+      const description = page.locator('input[name="description"]');
+      await expect(name).toHaveAttribute("required", "");
+      await expect(description).toHaveAttribute("required", "");
+      await page.getByRole("button", { name: "Add to draft & auto-map" }).click();
+      await expect(name).toBeFocused();
+      await expect
+        .poll(() => name.evaluate((input) => (input as HTMLInputElement).checkValidity()))
+        .toBe(false);
+      await expect
+        .poll(() => description.evaluate((input) => (input as HTMLInputElement).checkValidity()))
+        .toBe(false);
+      await expect(await getNailTryOnCatalogState(salonId)).toHaveLength(0);
+    } finally {
+      await cleanupTestUser(owner.userId);
+    }
+  });
+
+  test("saves main service and add-on mapping, then quotes live menu price and duration", async ({
+    page,
+  }) => {
+    const { salonId } = await seedTestSalon({
+      slug: SLUG,
+      name: "E2E Nail Try-On Smart Quote",
+      feature_flags: { nail_tryon_enabled: true },
+    });
+    const menu = await seedNailTryOnTestMenu(salonId);
+    const [designId] = await seedNailTryOnDraftDesigns(salonId, ["QA Cherry"]);
+    const owner = await seedTestSalonMember(salonId, "owner");
+    try {
+      await loginAs(page, owner);
+      await page.goto(`/dashboard/${SLUG}/setup/nail-tryon`);
+
+      const card = page.getByRole("article").filter({ hasText: "QA Cherry" });
+      await card.getByText("Review or edit").click();
+      await expect(card.getByLabel("QA Cherry Gel Manicure")).toBeChecked();
+      await expect(card.getByLabel("Default")).toBeChecked();
+      await card.getByLabel("Chrome Finish").check();
+      await card.getByRole("button", { name: "Confirm mapping" }).click();
+      await expect(page.getByRole("status")).toContainText(
+        "Smart Quote mapping saved for QA Cherry",
+      );
+
+      const mappings = await getNailTryOnDesignMappings(designId);
+      expect(mappings).toHaveLength(2);
+      expect(mappings).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          service_id: menu.service.id,
+          mapping_type: "service",
+          is_default: true,
+        }),
+        expect.objectContaining({
+          service_id: menu.addOn.id,
+          mapping_type: "addon",
+          is_default: false,
+        }),
+      ]));
+
+      await page.route("**/api/nail-tryon/booking-intent?*", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            designName: "QA Cherry",
+            serviceId: menu.service.id,
+            addonServiceId: menu.addOn.id,
+            serviceIds: [menu.service.id],
+            addonServiceIds: [menu.addOn.id],
+          }),
+        });
+      });
+      await page.goto(
+        `/${SLUG}?tryon=33333333-3333-4333-8333-333333333333&lang=en`,
+      );
+      const quote = page.getByTestId("tryon-booking-recommendation");
+      await expect(quote).toContainText("QA Cherry");
+      await expect(quote).toContainText("Gel Manicure + Chrome Finish");
+      await expect(quote).toContainText("60 min");
+      await expect(quote).toContainText("$55.00");
     } finally {
       await cleanupTestUser(owner.userId);
     }

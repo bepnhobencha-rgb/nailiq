@@ -435,6 +435,75 @@ export async function seedNailTryOnDraftDesigns(
   return designs.map((design) => design.id);
 }
 
+export async function seedNailTryOnTestMenu(salonId: string) {
+  const { data: service, error: serviceError } = await supabase
+    .from("services")
+    .select("id, name, price_cents, duration_minutes, buffer_minutes")
+    .eq("salon_id", salonId)
+    .eq("name", "Gel Manicure")
+    .eq("is_addon", false)
+    .is("deleted_at", null)
+    .single();
+  if (serviceError || !service?.id) {
+    throw new Error(
+      serviceError?.message ?? "seedNailTryOnTestMenu: main service missing",
+    );
+  }
+
+  const { data: addOn, error: addOnError } = await supabase
+    .from("services")
+    .insert({
+      salon_id: salonId,
+      name: "Chrome Finish",
+      price_cents: 1000,
+      duration_minutes: 15,
+      buffer_minutes: 5,
+      is_addon: true,
+      addon_timing: "sequential",
+    })
+    .select("id, name, price_cents, duration_minutes, buffer_minutes")
+    .single();
+  if (addOnError || !addOn?.id) {
+    throw new Error(
+      addOnError?.message ?? "seedNailTryOnTestMenu: add-on missing",
+    );
+  }
+
+  return {
+    service: {
+      id: service.id,
+      name: service.name,
+      priceCents: Number(service.price_cents),
+      durationMinutes: Number(service.duration_minutes),
+      bufferMinutes: Number(service.buffer_minutes),
+    },
+    addOn: {
+      id: addOn.id,
+      name: addOn.name,
+      priceCents: Number(addOn.price_cents),
+      durationMinutes: Number(addOn.duration_minutes),
+      bufferMinutes: Number(addOn.buffer_minutes),
+    },
+  };
+}
+
+export async function getNailTryOnDesignMappings(designId: string) {
+  const { data, error } = await supabase
+    .from("nail_design_service_mappings" as never)
+    .select("service_id, mapping_type, is_default, sort_order" as never)
+    .eq("design_id", designId)
+    .order("sort_order");
+  if (error) {
+    throw new Error(`getNailTryOnDesignMappings: ${error.message}`);
+  }
+  return (data ?? []) as unknown as Array<{
+    service_id: string;
+    mapping_type: "service" | "addon";
+    is_default: boolean;
+    sort_order: number;
+  }>;
+}
+
 export async function getNailTryOnCatalogState(salonId: string) {
   const { data, error } = await supabase
     .from("nail_designs" as never)

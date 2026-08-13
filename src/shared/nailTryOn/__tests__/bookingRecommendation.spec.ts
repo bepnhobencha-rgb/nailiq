@@ -74,6 +74,33 @@ describe("resolveNailTryOnBookingRecommendation", () => {
     expect(result.quote).toMatchObject({ durationMinutes: 60, priceCents: 10000 });
   });
 
+  it("shows menu duration without exposing internal cleanup buffers", () => {
+    const base = {
+      ...service("gel-manicure"),
+      durationMinutes: 45,
+      bufferMinutes: 10,
+      totalMinutes: 55,
+      priceCents: 4500,
+    };
+    const addOn = {
+      ...service("chrome-finish"),
+      durationMinutes: 15,
+      bufferMinutes: 5,
+      totalMinutes: 20,
+      priceCents: 1000,
+    };
+    const result = resolveNailTryOnBookingRecommendation(
+      { serviceId: base.id, addonServiceId: addOn.id },
+      [base],
+      [addOn],
+    );
+
+    expect(result.quote).toMatchObject({
+      durationMinutes: 60,
+      priceCents: 5500,
+    });
+  });
+
   it("falls back to the first valid service and exposes every eligible option", () => {
     const manicure = service("manicure");
     const gelX = service("gel-x");

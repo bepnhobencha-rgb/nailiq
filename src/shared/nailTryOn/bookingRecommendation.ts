@@ -41,7 +41,8 @@ export function resolveNailTryOnBookingRecommendation(
         serviceName: service.name,
         addOnName: addOn?.name ?? null,
         durationMinutes:
-          service.totalMinutes + (addOn && !addOn.addonConcurrent ? addOn.totalMinutes : 0),
+          service.durationMinutes
+          + (addOn && !addOn.addonConcurrent ? addOn.durationMinutes : 0),
         priceCents: servicePrice == null ? null : servicePrice + (addOnPrice ?? 0),
       }
     : null;
