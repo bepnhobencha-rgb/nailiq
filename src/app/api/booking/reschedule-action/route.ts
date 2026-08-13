@@ -1,11 +1,14 @@
 import { after } from "next/server";
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { parseTimeSlotOnDate } from "@/shared/booking/parseBookingTimeSlot";
+import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
 import { notifyWaitlistForSlot } from "@/shared/noshow/waitlistAutoFill";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
-import { salonYmdOfUtc } from "@/shared/lib/salonTime";
+import {
+  salonWallTimeToUtcIso,
+  salonYmdOfUtc,
+} from "@/shared/lib/salonTime";
 import { logBookingEvent } from "@/shared/dashboard/auditLog";
 
 type RescheduleBody = {
@@ -59,9 +62,21 @@ export async function POST(req: Request) {
   const svc = service as { duration_minutes: number; buffer_minutes: number | null } | null;
   if (!svc) return NextResponse.json({ ok: false, code: "service_not_found" }, { status: 404 });
 
+  const { data: salonRow } = await supabase
+    .from("salons" as never)
+    .select("timezone")
+    .eq("id", b.salon_id)
+    .maybeSingle();
+  const salonTimezone =
+    (salonRow as { timezone?: string | null } | null)?.timezone?.trim() ||
+    "America/Los_Angeles";
+
   let newStart: Date;
   try {
-    newStart = parseTimeSlotOnDate(slotLabel, date);
+    const startMinutes = parseTimeSlotToMinutes(slotLabel);
+    newStart = new Date(
+      salonWallTimeToUtcIso(date, startMinutes, salonTimezone),
+    );
   } catch {
     return NextResponse.json({ ok: false, code: "invalid_slot" }, { status: 400 });
   }
