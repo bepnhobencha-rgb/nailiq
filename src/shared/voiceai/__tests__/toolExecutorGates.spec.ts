@@ -506,3 +506,75 @@ describe("toolExecutor — phone suffix lookups need enough digits (#781)", () =
     });
   }
 });
+
+describe("toolExecutor — booking and customer lookups require phone ownership", () => {
+  for (const toolName of ["find_booking", "lookup_customer"]) {
+    it(`${toolName} returns no personal data without OTP proof`, async () => {
+      const body = await call(
+        toolName,
+        { customer_phone: OWNER_PHONE },
+        { salons: salonRow, phone_otp_sessions: null },
+      );
+      expect(body.error).toBe("otp_required");
+      expect(body.bookings).toBeUndefined();
+      expect(body.known).toBeUndefined();
+    });
+  }
+
+  it("cancel_booking phone lookup returns no booking details without OTP proof", async () => {
+    const body = await call(
+      "cancel_booking",
+      { customer_phone: OWNER_PHONE },
+      { salons: salonRow, phone_otp_sessions: null },
+    );
+    expect(body.error).toBe("otp_required");
+    expect(body.booking).toBeUndefined();
+    expect(body.bookings).toBeUndefined();
+  });
+
+  it("find_booking still works for the matching carrier-verified caller", async () => {
+    const body = await call(
+      "find_booking",
+      { customer_phone: OWNER_PHONE },
+      {
+        salons: salonRow,
+        bookings: [{
+          id: BOOKING_ID,
+          client_name: "Test Customer",
+          start_time_utc: new Date(Date.now() + 86_400_000).toISOString(),
+          end_time_utc: new Date(Date.now() + 90_000_000).toISOString(),
+          status: "confirmed",
+          services: { name: "Gel Manicure" },
+        }],
+      },
+      { callerVerifiedPhone: OWNER_PHONE },
+    );
+    expect(body.error).toBeUndefined();
+    expect(body.bookings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ booking_id: BOOKING_ID }),
+    ]));
+  });
+
+  it("cancel lookup still works for the matching carrier-verified caller", async () => {
+    const body = await call(
+      "cancel_booking",
+      { customer_phone: OWNER_PHONE },
+      {
+        salons: salonRow,
+        bookings: [{
+          id: BOOKING_ID,
+          group_id: null,
+          client_name: "Test Customer",
+          start_time_utc: new Date(Date.now() + 86_400_000).toISOString(),
+          status: "confirmed",
+          services: { name: "Gel Manicure" },
+          staff: { name: "Anna" },
+        }],
+      },
+      { callerVerifiedPhone: OWNER_PHONE },
+    );
+    expect(body.error).toBeUndefined();
+    expect(body.confirmation_required).toBe(true);
+    expect(body.booking).toEqual(expect.objectContaining({ booking_id: BOOKING_ID }));
+  });
+});

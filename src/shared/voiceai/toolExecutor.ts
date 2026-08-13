@@ -104,7 +104,7 @@ export async function executeVoiceTool(
     return handleConfirmBooking(supabase, salonSlug, toolArgs, sessionId, callerVerifiedPhone, trustedUserUtterance);
   }
   if (toolName === "find_booking") {
-    return handleFindBooking(supabase, salonSlug, toolArgs);
+    return handleFindBooking(supabase, salonSlug, toolArgs, callerVerifiedPhone);
   }
   if (toolName === "cancel_booking") {
     return handleCancelBooking(
@@ -129,7 +129,7 @@ export async function executeVoiceTool(
     return handleJoinWaitlist(supabase, salonSlug, toolArgs);
   }
   if (toolName === "lookup_customer") {
-    return handleLookupCustomer(supabase, salonSlug, toolArgs, sessionId);
+    return handleLookupCustomer(supabase, salonSlug, toolArgs, sessionId, callerVerifiedPhone);
   }
   if (toolName === "transfer_to_human") {
     return handleTransferToHuman(
@@ -1192,6 +1192,16 @@ async function handleCancelBooking(
   if (!bookingId && !groupIdArg && customerPhone) {
     const last9 = phoneSuffixOrNull(customerPhone);
     if (!last9) return NextResponse.json(PHONE_TOO_SHORT);
+
+    // Lookup mode is read-only but not public: it returns names, services,
+    // times and booking IDs. Verify ownership before exposing those details.
+    const lookupGate = await requirePhoneVerified(supabase, salon.id, customerPhone, {
+      otpSessionId: args.otp_session_id as string | undefined,
+      callerVerifiedPhone,
+    });
+    if (!lookupGate.ok) {
+      return NextResponse.json({ error: lookupGate.error, hint: lookupGate.hint });
+    }
     const now = new Date().toISOString();
 
     // Limit 20 — group bookings create one row per member (8-person group = 8 rows).
@@ -1465,6 +1475,7 @@ async function handleFindBooking(
   supabase: ReturnType<typeof createServiceRoleClient>,
   salonSlug: string,
   args: Record<string, unknown>,
+  callerVerifiedPhone: string | null,
 ) {
   const customerPhone = args.customer_phone as string | undefined;
   if (!customerPhone) {
@@ -1480,6 +1491,16 @@ async function handleFindBooking(
 
   const last9 = phoneSuffixOrNull(customerPhone);
   if (!last9) return NextResponse.json(PHONE_TOO_SHORT);
+
+  // A phone number is an identifier, not proof of identity. Upcoming booking
+  // details include a customer's name, service and time, so require the same
+  // OTP/carrier proof used by cancellation and rescheduling before returning
+  // any row. This matters especially on public web chat and inbound SMS.
+  const gate = await requirePhoneVerified(supabase, salon.id, customerPhone, {
+    otpSessionId: args.otp_session_id as string | undefined,
+    callerVerifiedPhone,
+  });
+  if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
 
   const now = new Date().toISOString();
 
@@ -2648,6 +2669,7 @@ async function handleLookupCustomer(
   salonSlug: string,
   args: Record<string, unknown>,
   sessionId: string | null,
+  callerVerifiedPhone: string | null,
 ) {
   const customerPhone = args.customer_phone as string | undefined;
   if (!customerPhone) {
@@ -2668,6 +2690,14 @@ async function handleLookupCustomer(
       hint:  "Phone number too short to look up. Continue the normal flow.",
     });
   }
+
+  // Personalisation can reveal whether a person is a customer and what they
+  // usually book. Require control of the number before doing that lookup.
+  const gate = await requirePhoneVerified(supabase, salon.id, customerPhone, {
+    otpSessionId: args.otp_session_id as string | undefined,
+    callerVerifiedPhone,
+  });
+  if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
 
   const NOT_KNOWN = {
     known: false,

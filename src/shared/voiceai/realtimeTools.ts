@@ -97,6 +97,10 @@ export const REALTIME_TOOLS = [
           type: "string",
           description: "Customer's phone number to look up their upcoming bookings.",
         },
+        otp_session_id: {
+          type: "string",
+          description: "The otp_session_id from verify_otp for this phone. Not needed when the trusted phone caller ID matches.",
+        },
       },
       required: ["customer_phone"],
     },
@@ -352,6 +356,10 @@ export const REALTIME_TOOLS = [
         customer_phone: {
           type: "string",
           description: "Customer's phone number, including country code if provided.",
+        },
+        otp_session_id: {
+          type: "string",
+          description: "The otp_session_id from verify_otp for this phone. Not needed when the trusted phone caller ID matches.",
         },
       },
       required: ["customer_phone"],
