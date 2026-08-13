@@ -1,7 +1,11 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, ImagePlus, Sparkles } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Eye, ImagePlus, Rocket, Sparkles } from "lucide-react";
+import {
+  assessNailTryOnCatalog,
+  MINIMUM_PUBLISHED_NAIL_DESIGNS,
+} from "@/shared/nailTryOn/catalogPublication";
 
 type MappingStatus = "ai_suggested" | "ready" | "needs_review";
 type Design = { id: string; name: string; description: string | null; active: boolean; previewUrl: string | null; serviceIds: string[]; addonServiceIds: string[]; defaultServiceId: string | null; confidence?: number; reason?: string; attributes?: string[]; status?: MappingStatus };
@@ -12,7 +16,26 @@ export function NailDesignCatalogManager({ slug, initialDesigns, serviceOptions,
   const [designs, setDesigns] = useState(initialDesigns);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
+  const publicationAssessment = assessNailTryOnCatalog(
+    designs.map(({ id, name, description }) => ({ id, name, description })),
+    designs.flatMap((design) => [
+      ...design.serviceIds.map((serviceId) => ({
+        designId: design.id,
+        mappingType: "service" as const,
+        isDefault: serviceId === design.defaultServiceId,
+      })),
+      ...design.addonServiceIds.map(() => ({
+        designId: design.id,
+        mappingType: "addon" as const,
+        isDefault: false,
+      })),
+    ]),
+  );
+  const publicationReady = publicationAssessment.ready;
+  const allPublished = designs.length > 0
+    && designs.every((design) => design.active);
 
   async function submit(formData: FormData) {
     setBusy(true); setMessage(null); formData.set("slug", slug);
@@ -23,10 +46,28 @@ export function NailDesignCatalogManager({ slug, initialDesigns, serviceOptions,
       setDesigns((current) => [...current, payload.design!]);
       formRef.current?.reset();
       setMessage(payload.design.status === "needs_review"
-        ? "Design published. AI needs you to review this uncertain match."
-        : "Design published and mapped to your salon menu by AI.");
+        ? "Added to draft. Review the uncertain service match before publishing."
+        : "Added to draft and mapped to your salon menu by AI.");
     } catch {
-      setMessage("Could not publish this design. Check the image and try again.");
+      setMessage("Could not add this design to the draft. Check the image and try again.");
+    } finally { setBusy(false); }
+  }
+
+  async function publishCatalog() {
+    if (!publicationReady) return;
+    setBusy(true); setMessage(null);
+    try {
+      const response = await fetch("/api/dashboard/nail-designs", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug, action: "publish_catalog" }),
+      });
+      const payload = await response.json() as { publishedCount?: number; error?: string };
+      if (!response.ok) throw new Error(payload.error || "publish_failed");
+      setDesigns((current) => current.map((design) => ({ ...design, active: true })));
+      setMessage(`${payload.publishedCount ?? designs.length} designs are now live in the customer catalog.`);
+    } catch {
+      setMessage("Could not publish the catalog. Review every requirement and try again.");
     } finally { setBusy(false); }
   }
 
@@ -80,19 +121,51 @@ export function NailDesignCatalogManager({ slug, initialDesigns, serviceOptions,
   return (
     <main className="mx-auto w-full max-w-5xl p-4 sm:p-8">
       <p className="text-sm font-medium text-nq-muted">Settings / Nail Try-On</p>
-      <div className="mt-2 flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-3xl font-semibold text-nq-foreground">AI design catalog</h1><p className="mt-2 max-w-2xl text-sm text-nq-muted">NailIQ analyzes each design against your real menu. You only review uncertain matches.</p></div><button type="button" disabled={busy || !designs.length} onClick={() => void autoMapCatalog()} className="flex min-h-11 items-center gap-2 rounded-full bg-nq-primary px-5 font-semibold text-white disabled:opacity-50"><Sparkles className="h-4 w-4" />{busy ? "AI is working…" : "Auto-map catalog"}</button></div>
+      <div className="mt-2 flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-3xl font-semibold text-nq-foreground">AI design catalog</h1><p className="mt-2 max-w-2xl text-sm text-nq-muted">Build privately, preview the customer experience, then publish when every design is ready.</p></div><button type="button" disabled={busy || !designs.length} onClick={() => void autoMapCatalog()} className="flex min-h-11 items-center gap-2 rounded-full bg-nq-primary px-5 font-semibold text-white disabled:opacity-50"><Sparkles className="h-4 w-4" />{busy ? "AI is working…" : "Auto-map catalog"}</button></div>
+      <section className="mt-6 rounded-2xl border border-nq-border bg-nq-card p-5" aria-label="Catalog publication readiness">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-nq-foreground">{allPublished ? "Catalog published" : "Draft catalog"}</p>
+            <p className="mt-1 text-sm text-nq-muted">{designs.length}/{MINIMUM_PUBLISHED_NAIL_DESIGNS} minimum designs · every design needs a description, main service and default service.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" disabled={!designs.length} onClick={() => setPreviewOpen((current) => !current)} className="flex min-h-11 items-center gap-2 rounded-full border border-nq-border px-4 font-semibold text-nq-foreground disabled:opacity-40"><Eye className="h-4 w-4" />{previewOpen ? "Close preview" : "Preview as customer"}</button>
+            <button type="button" disabled={busy || !publicationReady || allPublished} onClick={() => void publishCatalog()} className="flex min-h-11 items-center gap-2 rounded-full bg-nq-primary px-5 font-semibold text-white disabled:opacity-40"><Rocket className="h-4 w-4" />{allPublished ? "Published" : "Publish catalog"}</button>
+          </div>
+        </div>
+        {!publicationReady && !allPublished ? <p className="mt-3 text-sm text-amber-700" role="status">Finish the requirements above before publishing. Existing live designs stay live while you work.</p> : null}
+      </section>
+      {previewOpen ? <CustomerCatalogPreview designs={designs} /> : null}
       <form ref={formRef} action={(data) => void submit(data)} className="mt-8 grid gap-4 rounded-2xl border border-nq-border bg-nq-card p-5 sm:grid-cols-2">
         <label className="text-sm font-medium text-nq-foreground">Design name<input name="name" required maxLength={120} className="mt-2 min-h-11 w-full rounded-xl border border-nq-border bg-nq-surface px-3" /></label>
         <label className="text-sm font-medium text-nq-foreground">Reference image<input name="image" required type="file" accept="image/jpeg,image/png,image/webp" className="mt-2 block w-full text-sm" /></label>
-        <label className="text-sm font-medium text-nq-foreground sm:col-span-2">Short description<input name="description" maxLength={240} className="mt-2 min-h-11 w-full rounded-xl border border-nq-border bg-nq-surface px-3" /></label>
+        <label className="text-sm font-medium text-nq-foreground sm:col-span-2">Short description<input name="description" required maxLength={240} className="mt-2 min-h-11 w-full rounded-xl border border-nq-border bg-nq-surface px-3" /></label>
         <div className="rounded-xl border border-nq-border bg-nq-surface p-3 text-sm text-nq-muted sm:col-span-2"><Sparkles className="mr-2 inline h-4 w-4 text-nq-primary" />AI will inspect the image, select eligible services and add-ons, choose the default, and flag uncertain matches.</div>
-        <button disabled={busy} className="flex min-h-11 items-center justify-center gap-2 rounded-full bg-nq-primary px-5 font-semibold text-white disabled:opacity-60"><ImagePlus className="h-4 w-4" />{busy ? "AI is analyzing…" : "Publish & auto-map"}</button>
+        <button disabled={busy} className="flex min-h-11 items-center justify-center gap-2 rounded-full bg-nq-primary px-5 font-semibold text-white disabled:opacity-60"><ImagePlus className="h-4 w-4" />{busy ? "AI is analyzing…" : "Add to draft & auto-map"}</button>
         {message ? <p className="self-center text-sm text-nq-muted" role="status">{message}</p> : null}
       </form>
       <section className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {designs.map((design) => <DesignMappingCard key={`${design.id}:${design.serviceIds.join(",")}:${design.addonServiceIds.join(",")}:${design.status || ""}`} design={design} serviceOptions={serviceOptions} addOnOptions={addOnOptions} busy={busy} onSave={saveMapping} />)}
       </section>
     </main>
+  );
+}
+
+function CustomerCatalogPreview({ designs }: { designs: Design[] }) {
+  return (
+    <section className="mt-6 rounded-3xl border border-dashed border-nq-primary/50 bg-nq-surface p-5" aria-label="Customer catalog preview">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-nq-primary">Private owner preview</p>
+      <h2 className="mt-2 text-2xl font-semibold text-nq-foreground">Choose a look to try on</h2>
+      <p className="mt-1 text-sm text-nq-muted">Customers will see this catalog after you publish it.</p>
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {designs.map((design) => (
+          <article key={design.id} className="overflow-hidden rounded-2xl border border-nq-border bg-nq-card">
+            {design.previewUrl ? <img src={design.previewUrl} alt={design.name} className="aspect-square w-full object-cover" /> : <div className="aspect-square bg-nq-surface" />}
+            <div className="p-3"><p className="font-semibold text-nq-foreground">{design.name}</p><p className="mt-1 line-clamp-2 text-xs text-nq-muted">{design.description || "Description required"}</p></div>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
