@@ -22,6 +22,8 @@ import { SubscriptionDeadlineNotice } from "@/components/dashboard/SubscriptionD
 import { getPrivateOfferBySalonId } from "@/shared/sales/privateOffers";
 import { loadDashboardAnnouncements } from "@/shared/dashboard/platformAnnouncements";
 import { PlatformAnnouncementBanner } from "@/components/dashboard/PlatformAnnouncementBanner";
+import { loadGoLiveReadiness } from "@/shared/dashboard/loadGoLiveReadiness";
+import { deriveGuidedSetupProgress } from "@/shared/dashboard/guidedSetup";
 
 type Props = {
   children: ReactNode;
@@ -240,6 +242,13 @@ export default async function DashboardSlugLayout({
   // visible only when it's not platform-disabled AND enabled for this salon.
   const platformDisabled = await loadPlatformDisabledFeatures();
   const releaseFeatures = resolveFeatureVisibility(flagSalon, platformDisabled);
+  let guidedSetupIncomplete = false;
+  if (releaseFeatures.guided_admin_setup) {
+    const setupResult = await loadGoLiveReadiness(slug);
+    guidedSetupIncomplete =
+      setupResult.ok &&
+      !deriveGuidedSetupProgress(slug, setupResult.readiness).complete;
+  }
 
   return (
     <>
@@ -257,6 +266,7 @@ export default async function DashboardSlugLayout({
         releaseFeatures={releaseFeatures}
         userEmail={userEmail}
         salonId={ctx.salon.id}
+        setupMode={guidedSetupIncomplete}
       >
         <PlatformAnnouncementBanner
           announcements={platformAnnouncements}

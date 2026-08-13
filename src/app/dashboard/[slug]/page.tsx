@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { SalonOwnerDashboard } from "@/components/dashboard/SalonOwnerDashboard";
+import { GuidedAdminActionCenter } from "@/components/dashboard/GuidedAdminActionCenter";
 import { createClient } from "@/shared/lib/supabase/server";
 import { loadSalonOwnerDashboard } from "@/shared/dashboard/salonOwnerActions";
 import { loadOwnerHomeDashboard } from "@/shared/dashboard/loadOwnerHomeDashboardAction";
@@ -40,6 +41,7 @@ export default async function SalonDashboardPage({ params }: Props) {
     redirect("/register");
   }
 
+  let guidedSetupComplete = false;
   if (
     initialResult.ok &&
     !initialResult.demoMode &&
@@ -51,7 +53,18 @@ export default async function SalonDashboardPage({ params }: Props) {
       !deriveGuidedSetupProgress(slug, setupResult.readiness).complete
     ) {
       redirect(`/dashboard/${encodeURIComponent(slug)}/setup`);
+    } else if (setupResult.ok) {
+      guidedSetupComplete = true;
     }
+  }
+
+  if (guidedSetupComplete && initialResult.ok) {
+    return (
+      <GuidedAdminActionCenter
+        slug={slug}
+        salonName={(initialResult.salon.name ?? "").trim() || slug}
+      />
+    );
   }
 
   return (

@@ -42,6 +42,8 @@ type Props = {
   userEmail?: string | null;
   /** Salon DB id — passed to PresenceHeartbeat to tag the presence row. */
   salonId?: string | null;
+  /** Hide the normal admin navigation while a new owner completes Guided Setup. */
+  setupMode?: boolean;
 };
 
 /**
@@ -71,6 +73,7 @@ export function DashboardShell({
   releaseFeatures,
   userEmail,
   salonId,
+  setupMode = false,
 }: Props) {
   // Single hook instance owns the collapse state. We pass both the
   // value AND the toggle to DashboardSidebar so its toggle button
@@ -85,54 +88,63 @@ export function DashboardShell({
     <div
       className="min-h-dvh bg-nq-bg"
       style={{ ["--nq-sidebar-w" as string]: sidebarWidth }}
+      data-guided-setup-mode={setupMode ? "true" : "false"}
     >
       <PwaRegister />
-      {salonId && <PresenceHeartbeat salonId={salonId} />}
-      <DashboardSidebar
-        slug={slug}
-        role={role}
-        salonName={salonName}
-        walkinQueueCount={walkinQueueCount}
-        waitlistCount={waitlistCount}
-        overdueCount={overdueCount}
-        pendingApprovalsCount={pendingApprovalsCount}
-        salons={salons}
-        collapsed={collapsed}
-        onToggleCollapsed={toggle}
-        subscriptionPlan={subscriptionPlan}
-        releaseFeatures={releaseFeatures}
-        userEmail={userEmail}
-      />
+      {!setupMode && salonId ? <PresenceHeartbeat salonId={salonId} /> : null}
+      {!setupMode ? (
+        <DashboardSidebar
+          slug={slug}
+          role={role}
+          salonName={salonName}
+          walkinQueueCount={walkinQueueCount}
+          waitlistCount={waitlistCount}
+          overdueCount={overdueCount}
+          pendingApprovalsCount={pendingApprovalsCount}
+          salons={salons}
+          collapsed={collapsed}
+          onToggleCollapsed={toggle}
+          subscriptionPlan={subscriptionPlan}
+          releaseFeatures={releaseFeatures}
+          userEmail={userEmail}
+        />
+      ) : null}
       <main
         data-dashboard-main
         // Padding-left tracks the sidebar width via the CSS variable.
         // Adding a transition makes the grid slide rather than snap
         // when the user toggles collapse — same easing tokens the
         // receptionist motion uses.
-        className="min-h-dvh pb-16 transition-[padding-left] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)] xl:pb-0 xl:pl-[var(--nq-sidebar-w)]"
+        className={
+          setupMode
+            ? "min-h-dvh"
+            : "min-h-dvh pb-16 transition-[padding-left] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)] xl:pb-0 xl:pl-[var(--nq-sidebar-w)]"
+        }
       >
-        <DashboardTopBar slug={slug} />
+        {!setupMode ? <DashboardTopBar slug={slug} /> : null}
         {/* The view controls (refresh + fullscreen) live here, fixed top-right
             on every page. Fullscreen now targets the whole document so the
             sidebar/nav + portaled drawers all stay usable. */}
         <div id="nq-dashboard-content">
-          <DashboardViewControls />
+          {!setupMode ? <DashboardViewControls /> : null}
           {children}
         </div>
       </main>
-      <MobileBottomNav
-        slug={slug}
-        walkinQueueCount={walkinQueueCount}
-        waitlistCount={waitlistCount}
-        overdueCount={overdueCount}
-        pendingApprovalsCount={pendingApprovalsCount}
-        role={role}
-        releaseFeatures={releaseFeatures}
-      />
+      {!setupMode ? (
+        <MobileBottomNav
+          slug={slug}
+          walkinQueueCount={walkinQueueCount}
+          waitlistCount={waitlistCount}
+          overdueCount={overdueCount}
+          pendingApprovalsCount={pendingApprovalsCount}
+          role={role}
+          releaseFeatures={releaseFeatures}
+        />
+      ) : null}
       {/* Coco — in-admin AI assistant. Gated by the admin_copilot release
           feature; nail_tech is view-only so the operational copilot is hidden
           for them. The API route re-checks both (defence in depth). */}
-      {releaseFeatures?.admin_copilot && role !== "nail_tech" && (
+      {!setupMode && releaseFeatures?.admin_copilot && role !== "nail_tech" && (
         <AdminCopilot
           slug={slug}
           role={role}

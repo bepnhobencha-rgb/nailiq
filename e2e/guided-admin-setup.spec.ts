@@ -92,6 +92,9 @@ test.describe("Guided Admin Setup", () => {
     await expect(page).toHaveURL(
       new RegExp(`/dashboard/${RESUME_SLUG}/setup$`),
     );
+    await expect(
+      page.locator('[data-guided-setup-mode="true"]'),
+    ).toBeVisible();
     await expect(page.getByTestId("guided-setup-next")).toBeVisible();
     await expect(
       page.getByTestId("guided-setup-step-salon-profile"),
@@ -172,7 +175,10 @@ test.describe("Guided Admin Setup", () => {
 
     await page.goto(`/dashboard/${COMPLETE_SLUG}`);
     await expect(page).toHaveURL(new RegExp(`/dashboard/${COMPLETE_SLUG}/?$`));
-    await expect(page.getByTestId("guided-setup-next")).toHaveCount(0);
+    await expect(page.getByTestId("guided-admin-action-center")).toBeVisible();
+    await expect(
+      page.getByTestId("guided-action-open-front-desk"),
+    ).toHaveAttribute("href", `/dashboard/${COMPLETE_SLUG}/center`);
   });
 
   test("keeps the original dashboard navigation when Guided Setup is disabled", async ({
