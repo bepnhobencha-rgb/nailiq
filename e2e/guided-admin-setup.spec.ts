@@ -18,7 +18,7 @@ const SURFACES_SLUG = "e2e-guided-setup-surfaces";
 let resumeOwner: Awaited<ReturnType<typeof seedTestSalonMember>> | undefined;
 let completeOwner: Awaited<ReturnType<typeof seedTestSalonMember>> | undefined;
 let legacyOwner: Awaited<ReturnType<typeof seedTestSalonMember>> | undefined;
-let surfacesOwner: Awaited<ReturnType<typeof seedTestSalonMember>> | undefined;
+let surfacesAdmin: Awaited<ReturnType<typeof seedTestSalonMember>> | undefined;
 
 async function loginAs(
   page: Page,
@@ -85,7 +85,7 @@ test.describe("Guided Admin Setup", () => {
       feature_flags: { guided_admin_setup_enabled: true },
     });
     await prepareTestSalonForGuidedSetup(surfacesSalon.salonId);
-    surfacesOwner = await seedTestSalonMember(surfacesSalon.salonId, "owner");
+    surfacesAdmin = await seedTestSalonMember(surfacesSalon.salonId, "admin");
   });
 
   test.afterAll(async () => {
@@ -96,7 +96,7 @@ test.describe("Guided Admin Setup", () => {
     if (resumeOwner) await cleanupTestUser(resumeOwner.userId);
     if (completeOwner) await cleanupTestUser(completeOwner.userId);
     if (legacyOwner) await cleanupTestUser(legacyOwner.userId);
-    if (surfacesOwner) await cleanupTestUser(surfacesOwner.userId);
+    if (surfacesAdmin) await cleanupTestUser(surfacesAdmin.userId);
   });
 
   test("a newly registered trial owner enters one next step and resumes there after sign-in", async ({
@@ -318,9 +318,9 @@ test.describe("Guided Admin Setup", () => {
   test("opens every setup destination and keeps payments and AI optional", async ({
     page,
   }) => {
-    if (!surfacesOwner) throw new Error("surfaces owner fixture missing");
+    if (!surfacesAdmin) throw new Error("surfaces admin fixture missing");
 
-    await loginAs(page, surfacesOwner);
+    await loginAs(page, surfacesAdmin);
     await page.goto(`/dashboard/${SURFACES_SLUG}/setup`);
 
     const destinations = [
