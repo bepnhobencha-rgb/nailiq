@@ -77,6 +77,16 @@ test.beforeAll(async ({}, testInfo) => {
 
 test.afterEach(async () => {
   await supabaseAdmin
+    .from("booking_notifications")
+    .delete()
+    .eq("salon_id", fx.salonId)
+    .eq("notification_type", "waitlist_invite");
+  await supabaseAdmin
+    .from("booking_events")
+    .delete()
+    .eq("salon_id", fx.salonId)
+    .in("event_type", ["waitlist_acknowledged", "waitlist_invited"]);
+  await supabaseAdmin
     .from("booking_waitlist_entries")
     .delete()
     .eq("salon_id", fx.salonId);
@@ -263,7 +273,93 @@ test("new Waitlist lead alerts once, reminds once, stays visible, and records ac
     })
     .toBe(1);
 
-  // The suite leaves no QA Waitlist lead behind.
+  // Handle the lead through the real server action. CI/local E2E forces
+  // outbound SMS off, and the 555 number is fictional, so this exercises the
+  // notification/audit path without contacting or charging anyone.
+  const inviteButton = page.getByTestId(`waitlist-invite-${entryId}`);
+  await inviteButton.click();
+  await expect(page.getByTestId("waitlist-toast")).toBeVisible();
+
+  let claimToken = "";
+  await expect
+    .poll(async () => {
+      const { data } = await supabaseAdmin
+        .from("booking_waitlist_entries")
+        .select("status, claim_token")
+        .eq("id", entryId)
+        .eq("salon_id", fx.salonId)
+        .maybeSingle();
+      claimToken = String(data?.claim_token ?? "");
+      return data?.status ?? null;
+    })
+    .toBe("notified");
+  expect(claimToken).not.toBe("");
+
+  await expect
+    .poll(async () => {
+      const { data } = await supabaseAdmin
+        .from("booking_notifications")
+        .select("status, waitlist_entry_id, body_preview")
+        .eq("salon_id", fx.salonId)
+        .eq("waitlist_entry_id", entryId)
+        .eq("notification_type", "waitlist_invite");
+      return data ?? [];
+    })
+    .toHaveLength(1);
+  const { data: deliveryRows } = await supabaseAdmin
+    .from("booking_notifications")
+    .select("status, waitlist_entry_id, body_preview")
+    .eq("salon_id", fx.salonId)
+    .eq("waitlist_entry_id", entryId)
+    .eq("notification_type", "waitlist_invite");
+  expect(deliveryRows?.[0]).toMatchObject({
+    status: "sent",
+    waitlist_entry_id: entryId,
+  });
+  expect(String(deliveryRows?.[0]?.body_preview ?? "")).not.toContain(
+    claimToken,
+  );
+
+  await expect
+    .poll(async () => {
+      const { count } = await supabaseAdmin
+        .from("booking_events")
+        .select("*", { count: "exact", head: true })
+        .eq("salon_id", fx.salonId)
+        .eq("actor_user_id", owner.userId)
+        .eq("event_type", "waitlist_invited");
+      return count ?? 0;
+    })
+    .toBe(1);
+
+  // A rapid second click is a browser/action retry, not a second delivery.
+  await expect(inviteButton).toBeVisible();
+  await inviteButton.click();
+  await expect
+    .poll(async () => {
+      const { count } = await supabaseAdmin
+        .from("booking_notifications")
+        .select("*", { count: "exact", head: true })
+        .eq("salon_id", fx.salonId)
+        .eq("waitlist_entry_id", entryId)
+        .eq("notification_type", "waitlist_invite");
+      return count ?? 0;
+    })
+    .toBe(1);
+
+  // The suite leaves no QA Waitlist lead, delivery log, or audit row behind.
+  await supabaseAdmin
+    .from("booking_notifications")
+    .delete()
+    .eq("salon_id", fx.salonId)
+    .eq("waitlist_entry_id", entryId)
+    .eq("notification_type", "waitlist_invite");
+  await supabaseAdmin
+    .from("booking_events")
+    .delete()
+    .eq("salon_id", fx.salonId)
+    .eq("actor_user_id", owner.userId)
+    .in("event_type", ["waitlist_acknowledged", "waitlist_invited"]);
   const { error: cleanupError } = await supabaseAdmin
     .from("booking_waitlist_entries")
     .delete()
@@ -276,4 +372,20 @@ test("new Waitlist lead alerts once, reminds once, stays visible, and records ac
     .eq("id", entryId)
     .eq("salon_id", fx.salonId);
   expect(remaining ?? 0).toBe(0);
+  const [{ count: remainingDeliveries }, { count: remainingAudit }] =
+    await Promise.all([
+      supabaseAdmin
+        .from("booking_notifications")
+        .select("*", { count: "exact", head: true })
+        .eq("salon_id", fx.salonId)
+        .eq("waitlist_entry_id", entryId),
+      supabaseAdmin
+        .from("booking_events")
+        .select("*", { count: "exact", head: true })
+        .eq("salon_id", fx.salonId)
+        .eq("actor_user_id", owner.userId)
+        .in("event_type", ["waitlist_acknowledged", "waitlist_invited"]),
+    ]);
+  expect(remainingDeliveries ?? 0).toBe(0);
+  expect(remainingAudit ?? 0).toBe(0);
 });
