@@ -10,14 +10,17 @@ import type { PaymentProvider } from "./types";
  * This is what makes the "one-tap Face ID" capture possible (wallets save as a
  * reusable PaymentMethod, unlike Square).
  *
- * NOTE: this uses the PLATFORM Stripe account. Routing money to each salon's
- * connected account (Stripe Connect `on_behalf_of` / `transfer_data`) is Đợt 2;
- * until then the no-show flow stays test/sandbox only.
+ * Every request is scoped to the salon's Stripe Connect account. The resolver
+ * refuses to construct this provider until Connect onboarding is complete and
+ * charges are enabled, so customer money can never land in NailIQ's platform
+ * account by accident.
  */
 export class StripeProvider implements PaymentProvider {
   readonly kind = "stripe" as const;
   constructor(
     private readonly stripe: Stripe,
+    /** Salon-owned Stripe Connect account (acct_…). */
+    private readonly connectedAccountId: string,
     /** Salon account currency (lowercase ISO, e.g. 'cad'). Stripe charges in the
      *  account's currency — never hardcode. */
     private readonly currency: string = "usd",
@@ -41,26 +44,34 @@ export class StripeProvider implements PaymentProvider {
     let customerId: string | null = null;
     const email = input.customer.email?.trim();
     if (email) {
-      const existing = await this.stripe.customers.list({ email, limit: 1 });
+      const existing = await this.stripe.customers.list(
+        { email, limit: 1 },
+        { stripeAccount: this.connectedAccountId },
+      );
       customerId = existing.data[0]?.id ?? null;
     }
     if (!customerId) {
-      const created = await this.stripe.customers.create({
-        name: input.customer.name ?? undefined,
-        phone: input.customer.phone ?? undefined,
-        email: email || undefined,
-        metadata: { referenceId: input.customer.referenceId },
-      });
+      const created = await this.stripe.customers.create(
+        {
+          name: input.customer.name ?? undefined,
+          phone: input.customer.phone ?? undefined,
+          email: email || undefined,
+          metadata: { referenceId: input.customer.referenceId },
+        },
+        { stripeAccount: this.connectedAccountId },
+      );
       customerId = created.id;
     }
 
     const pm = await this.stripe.paymentMethods.attach(input.sourceToken, {
       customer: customerId,
-    });
+    }, { stripeAccount: this.connectedAccountId });
     // Make it the default for off-session invoices/charges.
-    await this.stripe.customers.update(customerId, {
-      invoice_settings: { default_payment_method: pm.id },
-    });
+    await this.stripe.customers.update(
+      customerId,
+      { invoice_settings: { default_payment_method: pm.id } },
+      { stripeAccount: this.connectedAccountId },
+    );
 
     return {
       customerId,
@@ -89,7 +100,10 @@ export class StripeProvider implements PaymentProvider {
         description: input.note,
         metadata: input.referenceId ? { referenceId: input.referenceId } : undefined,
       },
-      { idempotencyKey: input.idempotencyKey },
+      {
+        idempotencyKey: input.idempotencyKey,
+        stripeAccount: this.connectedAccountId,
+      },
     );
     return { paymentId: pi.id, status: pi.status };
   }
@@ -102,14 +116,21 @@ export class StripeProvider implements PaymentProvider {
   }) {
     const r = await this.stripe.refunds.create(
       { payment_intent: input.paymentId, amount: input.amountCents },
-      { idempotencyKey: input.idempotencyKey },
+      {
+        idempotencyKey: input.idempotencyKey,
+        stripeAccount: this.connectedAccountId,
+      },
     );
     return { refundId: r.id, status: r.status ?? "" };
   }
 
   async removeSavedCard(input: { cardId: string; customerId: string }) {
     // Detach the PaymentMethod — it can never be charged/re-attached after this.
-    await this.stripe.paymentMethods.detach(input.cardId);
+    await this.stripe.paymentMethods.detach(
+      input.cardId,
+      {},
+      { stripeAccount: this.connectedAccountId },
+    );
   }
 
   async findSavedCardByPhone(phone: string) {
@@ -121,14 +142,20 @@ export class StripeProvider implements PaymentProvider {
     let customerId: string | null = null;
     for (const query of queries) {
       try {
-        const res = await this.stripe.customers.search({ query, limit: 1 });
+        const res = await this.stripe.customers.search(
+          { query, limit: 1 },
+          { stripeAccount: this.connectedAccountId },
+        );
         if (res.data[0]?.id) { customerId = res.data[0].id; break; }
       } catch {
         /* search index not ready / bad query — try next */
       }
     }
     if (!customerId) return null;
-    const pms = await this.stripe.paymentMethods.list({ customer: customerId, type: "card", limit: 1 });
+    const pms = await this.stripe.paymentMethods.list(
+      { customer: customerId, type: "card", limit: 1 },
+      { stripeAccount: this.connectedAccountId },
+    );
     const pm = pms.data[0];
     if (!pm) return null;
     return { customerId, cardId: pm.id, last4: pm.card?.last4 ?? "", brand: pm.card?.brand ?? "" };
