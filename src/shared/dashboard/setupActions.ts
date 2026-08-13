@@ -1158,13 +1158,13 @@ export async function deleteStaff(
   }
 
   // client_profiles intentionally denies all direct authenticated API access;
-  // it is only exposed through scoped server actions. Use the server-only
-  // service role for this referential cleanup after owner/admin authorization
-  // and constrain it to the resolved salon as well as the target staff row.
+  // it is only exposed through scoped server actions. This global guest table
+  // has no salon_id column. The target UUID was already verified above against
+  // the resolved salon, so the exact preferred_staff_id match is the safe
+  // referential cleanup boundary.
   const { error: prefErr } = await admin
     .from("client_profiles")
     .update({ preferred_staff_id: null })
-    .eq("salon_id", r.salon.id)
     .eq("preferred_staff_id", staffId);
 
   if (prefErr) {

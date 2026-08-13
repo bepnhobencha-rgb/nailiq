@@ -18,6 +18,10 @@ const E2E_STAFF_DELETE_SLUG = `e2e-staff-delete-${_RUN_SUFFIX}`;
 const ANCHOR_NAME = "E2E_ST_ANCHOR";
 const NAME_BLOCK = "E2E_ST_BLOCK";
 const NAME_OK = "E2E_ST_OK";
+const PROFILE_PHONE = `1555${String(_RUN_SUFFIX)
+  .replace(/\D/g, "")
+  .slice(-7)
+  .padStart(7, "0")}`;
 
 type Fixture = {
   salonId: string;
@@ -163,6 +167,12 @@ async function resetEphemeralStaffAndBookings(salonId: string): Promise<void> {
     .eq("salon_id", salonId)
     .in("name", [NAME_BLOCK, NAME_OK]);
   if (sErr) throw new Error(sErr.message);
+
+  const { error: pErr } = await supabaseAdmin
+    .from("client_profiles")
+    .delete()
+    .eq("phone", PROFILE_PHONE);
+  if (pErr) throw new Error(pErr.message);
 }
 
 let fx: Fixture;
@@ -176,6 +186,10 @@ test.beforeEach(async () => {
 });
 
 test.afterAll(async () => {
+  await supabaseAdmin
+    .from("client_profiles")
+    .delete()
+    .eq("phone", PROFILE_PHONE);
   await cleanupTestSalon(E2E_STAFF_DELETE_SLUG);
 });
 
@@ -301,5 +315,56 @@ test.describe("Safe staff offboarding", () => {
       .single();
     expect(staffAfter?.status).toBe("inactive");
     expect(staffAfter?.deleted_at).toBeNull();
+  });
+
+  test("st-3: clears a customer's preference for the inactive staff member", async ({
+    page,
+  }) => {
+    const { data: departingStaff, error: staffErr } = await supabaseAdmin
+      .from("staff")
+      .insert({
+        salon_id: fx.salonId,
+        name: NAME_OK,
+        job_role: "nail_tech",
+      })
+      .select("id")
+      .single();
+
+    if (staffErr || !departingStaff?.id) {
+      throw new Error(staffErr?.message ?? "st-3: staff insert failed");
+    }
+
+    const departingId = departingStaff.id as string;
+    const { error: profileErr } = await supabaseAdmin
+      .from("client_profiles")
+      .insert({
+        phone: PROFILE_PHONE,
+        name: "E2E_ST_PREFERRED_GUEST",
+        preferred_staff_id: departingId,
+      });
+    if (profileErr) throw new Error(profileErr.message);
+
+    await gotoSetupStaff(page, fx.slug);
+    await staffDeleteBtn(page, departingId).click();
+    await expect(page.getByTestId("staff-offboarding-complete")).toBeEnabled();
+    await page.getByTestId("staff-offboarding-complete").click();
+
+    await expect
+      .poll(async () => {
+        const { data } = await supabaseAdmin
+          .from("client_profiles")
+          .select("preferred_staff_id")
+          .eq("phone", PROFILE_PHONE)
+          .single();
+        return data?.preferred_staff_id;
+      })
+      .toBeNull();
+
+    const { data: staffAfter } = await supabaseAdmin
+      .from("staff")
+      .select("status")
+      .eq("id", departingId)
+      .single();
+    expect(staffAfter?.status).toBe("inactive");
   });
 });

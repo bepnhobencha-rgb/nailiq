@@ -8,6 +8,10 @@ import { salonWallTimeToUtcIso } from "../src/shared/lib/salonTime";
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
 const SLUG = "e2e-archived-booking-detail";
 
+function canonicalIso(value: string | null | undefined): string | null {
+  return value ? new Date(value).toISOString() : null;
+}
+
 test.describe("Archived booking detail — read-only history", () => {
   let salonId: string;
 
@@ -245,7 +249,15 @@ test.describe("Booking mutation audit — reschedule and cancel", () => {
           )
           .eq("id", fixture.bookingId)
           .single();
-        return data;
+        return data
+          ? {
+              ...data,
+              start_time_utc: canonicalIso(data.start_time_utc),
+              rescheduled_from_time_utc: canonicalIso(
+                data.rescheduled_from_time_utc,
+              ),
+            }
+          : data;
       })
       .toMatchObject({
         start_time_utc: expectedNewStart,
@@ -268,7 +280,22 @@ test.describe("Booking mutation audit — reschedule and cancel", () => {
           .eq("booking_id", fixture.bookingId)
           .eq("event_type", "booking_rescheduled")
           .maybeSingle();
-        return data;
+        if (!data) return data;
+        const payload = data.payload as Record<string, unknown> | null;
+        return {
+          ...data,
+          payload: payload
+            ? {
+                ...payload,
+                previous_start_utc: canonicalIso(
+                  String(payload.previous_start_utc ?? ""),
+                ),
+                new_start_utc: canonicalIso(
+                  String(payload.new_start_utc ?? ""),
+                ),
+              }
+            : payload,
+        };
       })
       .toMatchObject({
         actor_role: "public_guest",

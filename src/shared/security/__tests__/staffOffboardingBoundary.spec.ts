@@ -38,6 +38,18 @@ describe("staff offboarding safety boundary", () => {
     expect(source).not.toMatch(/\.from\("bookings"\)[\s\S]{0,120}\.delete\(\)/);
   });
 
+  it("clears stale customer preferences using the verified staff UUID", () => {
+    const preferenceCleanup = source.slice(
+      source.indexOf('.from("client_profiles")'),
+      source.indexOf("if (preferenceErr)"),
+    );
+    expect(preferenceCleanup).toContain(
+      '.eq("preferred_staff_id", input.staffId)',
+    );
+    expect(preferenceCleanup).not.toContain('.eq("salon_id"');
+    expect(source).toContain('return fail("preference_cleanup_failed")');
+  });
+
   it("does not cancel appointments and records an attributed audit event", () => {
     expect(source).not.toContain('status: "cancelled"');
     expect(source).toContain('reason: "staff_offboarding"');

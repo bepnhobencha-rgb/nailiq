@@ -345,6 +345,27 @@ export async function completeStaffOffboarding(
     completed.push({ bookingId: booking.id, nextStaffId });
   }
 
+  // client_profiles is a global guest record keyed by phone and intentionally
+  // has no salon_id column. The target staff UUID has already been verified by
+  // loadPreviewData() to belong to this salon, so the exact UUID predicate is
+  // the tenant-safe referential cleanup. Do this before deactivation so a
+  // customer can never keep preferring an inactive team member.
+  const { error: preferenceErr } = await admin
+    .from("client_profiles")
+    .update({ preferred_staff_id: null })
+    .eq("preferred_staff_id", input.staffId);
+  if (preferenceErr) {
+    for (const done of completed.reverse()) {
+      await admin
+        .from("bookings")
+        .update({ staff_id: input.staffId })
+        .eq("id", done.bookingId)
+        .eq("salon_id", ctx.salon.id)
+        .eq("staff_id", done.nextStaffId);
+    }
+    return fail("preference_cleanup_failed");
+  }
+
   if (input.revokeAccess && preview.hasLogin) {
     const { data: target } = await admin
       .from("staff")
