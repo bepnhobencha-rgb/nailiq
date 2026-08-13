@@ -141,6 +141,61 @@ test.describe("Nail Try-On camera fallback", () => {
     await expect(page.getByRole("button", { name: "Retake" })).toBeVisible();
   });
 
+  test("keeps booking available when AI generation fails", async ({ page }) => {
+    const sessionId = "11111111-1111-4111-8111-111111111111";
+    const designId = "22222222-2222-4222-8222-222222222222";
+    await page.route("**/api/nail-tryon/upload", async (route) => {
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({ sessionId, quality: "pass" }),
+      });
+    });
+    await page.route("**/api/nail-tryon/catalog?*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          designs: [{
+            id: designId,
+            name: "QA Cherry",
+            description: "QA only",
+            version: 1,
+            previewUrl: null,
+          }],
+        }),
+      });
+    });
+    await page.route("**/api/nail-tryon/generate", async (route) => {
+      await route.fulfill({
+        status: 502,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "provider_unavailable", retryable: true }),
+      });
+    });
+
+    await page.goto(`/${SLUG}/try-on?lang=en`);
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Continue" }).click();
+
+    const fixture = path.resolve(
+      process.cwd(),
+      "e2e/visual/visual-regression.spec.ts-snapshots/booking-desktop-chromium-linux.png",
+    );
+    await page.getByLabel("Choose an existing photo").setInputFiles(fixture);
+    await page.getByRole("button", { name: "Use this photo" }).click();
+    await page.getByRole("button", { name: /QA Cherry/i }).click();
+
+    await expect(page.getByRole("alert")).toContainText(
+      "AI preview could not be created",
+    );
+    const fallback = page.getByRole("link", {
+      name: "Continue booking without a preview",
+    });
+    await expect(fallback).toBeVisible();
+    await expect(fallback).toHaveAttribute("href", `/${SLUG}?lang=en`);
+  });
+
   test("hides Try-On from a non-nail salon even when the rollout flag is on", async ({
     page,
   }) => {
