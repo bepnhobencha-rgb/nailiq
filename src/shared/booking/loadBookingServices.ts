@@ -71,6 +71,8 @@ export type BookingSalonMeta = {
   /** QA-first presentation flag. Groups the existing time slots into a short,
    *  customer-friendly period picker without changing availability logic. */
   bookingTimePeriodsEnabled: boolean;
+  /** Default-OFF pilot flag for the public chat's shared booking tools. */
+  bookingChatToolsEnabled: boolean;
   /** `salons.vertical` slug (nail_salon | head_spa | …). Drives schema.org
    *  type, staff-role label, and hero tagline fallback. Defaults to
    *  `"nail_salon"` for legacy rows. */
@@ -530,6 +532,9 @@ export async function loadBookingServicesForSalonSlug(
       bookingTimePeriodsEnabled:
         ((salon as { feature_flags?: Record<string, unknown> | null }).feature_flags
           ?.booking_time_periods_enabled) === true,
+      bookingChatToolsEnabled:
+        ((salon as { feature_flags?: Record<string, unknown> | null }).feature_flags
+          ?.booking_chat_tools_enabled) === true,
       // `salons.vertical` added by migration 20260604120000. Cast-tolerant:
       // a row on the prior schema returns undefined → "nail_salon".
       vertical:
