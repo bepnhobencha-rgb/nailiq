@@ -247,6 +247,28 @@ test.describe("Guided Admin Setup", () => {
       .getByRole("progressbar")
       .getAttribute("aria-valuenow");
 
+    await page.goto(`/dashboard/${SURFACES_SLUG}/setup/hours`);
+    await page.getByTestId("hours-preset-standard").click();
+    await page.getByTestId("hours-holiday-2026-12-25").click();
+    await page.getByRole("button", { name: /Save all|Lưu tất cả/i }).click();
+    await expect(page.getByText(/Hours saved|Đã lưu giờ/i)).toBeVisible();
+
+    await page.goto(`/dashboard/${SURFACES_SLUG}/setup/staff`);
+    await expect(page.locator('[data-testid^="staff-edit-"]').first()).toBeVisible();
+
+    await page.goto(`/dashboard/${SURFACES_SLUG}/setup/services`);
+    await expect(
+      page.locator('[data-testid^="service-edit-"]').first(),
+    ).toBeVisible();
+
+    await page.goto(`/dashboard/${SURFACES_SLUG}/no-show-protection`);
+    await expect(page.getByTestId("policy-en")).toHaveValue(
+      "Please contact the salon before cancelling or rescheduling.",
+    );
+    await expect(page.getByTestId("policy-vi")).toHaveValue(
+      "Vui lòng liên hệ salon trước khi huỷ hoặc đổi lịch.",
+    );
+
     for (const [, href] of destinations.slice(0, 8)) {
       await page.goto(href);
       await expect(page.getByTestId("guided-setup-return-card")).toBeVisible();
