@@ -259,6 +259,12 @@ test.describe("Guided Admin Setup", () => {
     await expect(
       page.locator('[data-testid^="staff-edit-"]').first(),
     ).toBeVisible();
+    await page.locator('[data-testid^="staff-edit-"]').first().click();
+    await page.getByTestId("staff-drawer-name").fill("Jenny QA");
+    await page.getByRole("button", { name: /^(save|lưu)$/i }).last().click();
+    await expect(page.getByText("Jenny QA", { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByText("Jenny QA", { exact: true })).toBeVisible();
 
     await page.goto(`/dashboard/${SURFACES_SLUG}/setup/services`);
     await expect(page.getByText("Gel Manicure", { exact: true })).toBeVisible();
@@ -267,6 +273,12 @@ test.describe("Guided Admin Setup", () => {
     await expect(
       page.locator('[data-testid^="service-edit-"]').first(),
     ).toBeVisible();
+    await page.locator('[data-testid^="service-edit-"]').first().click();
+    await page.getByTestId("service-drawer-price").fill("46");
+    await page.getByRole("button", { name: /^(save|lưu)$/i }).last().click();
+    await expect(page.getByText(/\$46(?:\.00)?/).first()).toBeVisible();
+    await page.reload();
+    await expect(page.getByText(/\$46(?:\.00)?/).first()).toBeVisible();
 
     await page.goto(`/dashboard/${SURFACES_SLUG}/no-show-protection`);
     await expect(page.getByTestId("policy-en")).toHaveValue(
