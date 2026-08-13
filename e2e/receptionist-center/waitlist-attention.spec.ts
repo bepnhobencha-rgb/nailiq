@@ -229,14 +229,21 @@ test("new Waitlist lead alerts once, reminds once, stays visible, and records ac
   ).toBe(6);
 
   await waitlistChip.click();
-  await expect(page.getByTestId("online-waitlist-panel")).toBeVisible();
-  await expect(page.getByTestId(`waitlist-entry-${entryId}`)).toContainText(
-    "E2E Waitlist Lead",
-  );
-  await expect(page.getByTestId(`waitlist-age-${entryId}`)).toContainText(
-    /7 min/,
-  );
-  await expect(page.getByTestId(`waitlist-invite-${entryId}`)).toBeVisible();
+  // The same Waitlist component is intentionally also available in the Queue
+  // drawer. Scope the journey to the Action Center dialog so the test proves
+  // the surface the alert opened instead of matching the dormant queue copy.
+  const waitlistDialog = page.getByRole("dialog");
+  const waitlistPanel = waitlistDialog.getByTestId("online-waitlist-panel");
+  await expect(waitlistPanel).toBeVisible();
+  await expect(
+    waitlistPanel.getByTestId(`waitlist-entry-${entryId}`),
+  ).toContainText("E2E Waitlist Lead");
+  await expect(
+    waitlistPanel.getByTestId(`waitlist-age-${entryId}`),
+  ).toContainText(/7 min/);
+  await expect(
+    waitlistPanel.getByTestId(`waitlist-invite-${entryId}`),
+  ).toBeVisible();
 
   // Opening the handling surface is an acknowledgement, not resolution.
   await expect
@@ -276,7 +283,7 @@ test("new Waitlist lead alerts once, reminds once, stays visible, and records ac
   // Handle the lead through the real server action. CI/local E2E forces
   // outbound SMS off, and the 555 number is fictional, so this exercises the
   // notification/audit path without contacting or charging anyone.
-  const inviteButton = page.getByTestId(`waitlist-invite-${entryId}`);
+  const inviteButton = waitlistPanel.getByTestId(`waitlist-invite-${entryId}`);
   await inviteButton.click();
   await expect(page.getByTestId("waitlist-toast")).toBeVisible();
 
