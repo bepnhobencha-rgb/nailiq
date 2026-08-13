@@ -1,10 +1,32 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import path from "node:path";
 
-import { cleanupTestSalon, seedTestSalon } from "./helpers/db";
+import {
+  cleanupTestSalon,
+  cleanupTestUser,
+  getNailTryOnCatalogState,
+  seedNailTryOnDraftDesigns,
+  seedTestSalon,
+  seedTestSalonMember,
+} from "./helpers/db";
 
 const SLUG = "e2e-nail-tryon-camera";
 const BASE = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
+
+async function loginAs(
+  page: Page,
+  account: { email: string; password: string },
+) {
+  await page.goto("/register");
+  await expect(page.getByTestId("social-auth-controls")).toHaveAttribute(
+    "data-hydrated",
+    "true",
+  );
+  await page.locator('input[inputmode="email"]').fill(account.email);
+  await page.locator('input[type="password"]').fill(account.password);
+  await page.getByRole("button", { name: /^sign in$/i }).click();
+  await page.waitForURL(/\/dashboard\//, { timeout: 30_000 });
+}
 
 test.describe("Nail Try-On camera fallback", () => {
   test.beforeEach(async () => {
@@ -34,6 +56,58 @@ test.describe("Nail Try-On camera fallback", () => {
     await expect(
       page.getByRole("heading", { name: "AI design catalog" }),
     ).toBeVisible();
+  });
+
+  test("keeps a four-design catalog private, then lets the owner preview and publish five", async ({
+    page,
+  }) => {
+    const { salonId } = await seedTestSalon({
+      slug: SLUG,
+      name: "E2E Nail Try-On Catalog",
+      feature_flags: { nail_tryon_enabled: true },
+    });
+    const owner = await seedTestSalonMember(salonId, "owner");
+    try {
+      await seedNailTryOnDraftDesigns(salonId, [
+        "QA Cherry",
+        "QA Pearl",
+        "QA Gold",
+        "QA Rose",
+      ]);
+      await loginAs(page, owner);
+      await page.goto(`/dashboard/${SLUG}/setup/nail-tryon`);
+
+      await expect(page.getByText("4/5 minimum designs")).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Publish catalog" }),
+      ).toBeDisabled();
+      await page.getByRole("button", { name: "Preview as customer" }).click();
+      await expect(
+        page.getByRole("region", { name: "Customer catalog preview" }),
+      ).toContainText("QA Cherry");
+      await expect(await getNailTryOnCatalogState(salonId)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "QA Cherry", is_active: false }),
+        ]),
+      );
+
+      await seedNailTryOnDraftDesigns(salonId, ["QA Silver"]);
+      await page.reload();
+      await expect(page.getByText("5/5 minimum designs")).toBeVisible();
+      const publish = page.getByRole("button", { name: "Publish catalog" });
+      await expect(publish).toBeEnabled();
+      await publish.click();
+      await expect(page.getByRole("status")).toContainText(
+        "5 designs are now live",
+      );
+      await expect(
+        (await getNailTryOnCatalogState(salonId)).every(
+          (design) => design.is_active,
+        ),
+      ).toBe(true);
+    } finally {
+      await cleanupTestUser(owner.userId);
+    }
   });
 
   test("keeps photo upload available when camera permission is denied", async ({

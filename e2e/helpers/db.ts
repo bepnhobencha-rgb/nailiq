@@ -373,6 +373,87 @@ export async function seedTestSalon(opts?: {
 }
 
 /**
+ * Seed private Nail Try-On catalog rows for authenticated setup E2E.
+ *
+ * The preview paths are deliberately synthetic: the setup page only needs a
+ * signed, private URL to render its owner-preview contract, while the test must
+ * never upload a customer photo or call an AI provider. Every row is scoped to
+ * the throwaway salon and is removed by `cleanupTestSalon` via cascades.
+ */
+export async function seedNailTryOnDraftDesigns(
+  salonId: string,
+  names: readonly string[],
+) {
+  const { data: service, error: serviceError } = await supabase
+    .from("services")
+    .select("id")
+    .eq("salon_id", salonId)
+    .eq("is_addon", false)
+    .is("deleted_at", null)
+    .limit(1)
+    .single();
+  if (serviceError || !service?.id) {
+    throw new Error(
+      serviceError?.message ?? "seedNailTryOnDraftDesigns: service missing",
+    );
+  }
+
+  const designs = names.map((name, index) => {
+    const id = randomUUID();
+    return {
+      id,
+      salon_id: salonId,
+      name,
+      description: `Private E2E description for ${name}`,
+      preview_path: `salon/${salonId}/design/${id}.jpg`,
+      is_active: false,
+      sort_order: index,
+    };
+  });
+  const { error: designError } = await supabase
+    .from("nail_designs" as never)
+    .insert(designs as never);
+  if (designError) {
+    throw new Error(`seedNailTryOnDraftDesigns: ${designError.message}`);
+  }
+
+  const mappings = designs.map((design) => ({
+    design_id: design.id,
+    salon_id: salonId,
+    service_id: service.id,
+    mapping_type: "service",
+    is_default: true,
+    sort_order: 0,
+  }));
+  const { error: mappingError } = await supabase
+    .from("nail_design_service_mappings" as never)
+    .insert(mappings as never);
+  if (mappingError) {
+    throw new Error(`seedNailTryOnDraftDesigns: ${mappingError.message}`);
+  }
+
+  return designs.map((design) => design.id);
+}
+
+export async function getNailTryOnCatalogState(salonId: string) {
+  const { data, error } = await supabase
+    .from("nail_designs" as never)
+    .select("id, name, description, is_active" as never)
+    .eq("salon_id", salonId)
+    .is("deleted_at", null)
+    .order("sort_order");
+  if (error) {
+    throw new Error(`getNailTryOnCatalogState: ${error.message}`);
+  }
+  return (data ?? []) as unknown as Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    is_active: boolean;
+  }>;
+}
+
+/**
  * Seed a minimal salon with no services and no staff — used by AI Prefill
  * wizard tests which need a 0-service starting state.
  */
