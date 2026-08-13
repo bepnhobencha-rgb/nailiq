@@ -10,10 +10,12 @@ import {
 const RESUME_SLUG = "e2e-guided-setup-resume";
 const COMPLETE_SLUG = "e2e-guided-setup-complete";
 const LEGACY_SLUG = "e2e-guided-setup-disabled";
+const SURFACES_SLUG = "e2e-guided-setup-surfaces";
 
 let resumeOwner: Awaited<ReturnType<typeof seedTestSalonMember>> | undefined;
 let completeOwner: Awaited<ReturnType<typeof seedTestSalonMember>> | undefined;
 let legacyOwner: Awaited<ReturnType<typeof seedTestSalonMember>> | undefined;
+let surfacesOwner: Awaited<ReturnType<typeof seedTestSalonMember>> | undefined;
 
 async function loginAs(
   page: Page,
@@ -72,15 +74,26 @@ test.describe("Guided Admin Setup", () => {
       phone: "15553334003",
     });
     legacyOwner = await seedTestSalonMember(legacySalon.salonId, "owner");
+
+    const surfacesSalon = await seedTestSalon({
+      slug: SURFACES_SLUG,
+      name: "Guided Setup Surfaces Test Salon",
+      phone: "15553334004",
+      feature_flags: { guided_admin_setup_enabled: true },
+    });
+    await prepareTestSalonForGuidedSetup(surfacesSalon.salonId);
+    surfacesOwner = await seedTestSalonMember(surfacesSalon.salonId, "owner");
   });
 
   test.afterAll(async () => {
     await cleanupTestSalon(RESUME_SLUG);
     await cleanupTestSalon(COMPLETE_SLUG);
     await cleanupTestSalon(LEGACY_SLUG);
+    await cleanupTestSalon(SURFACES_SLUG);
     if (resumeOwner) await cleanupTestUser(resumeOwner.userId);
     if (completeOwner) await cleanupTestUser(completeOwner.userId);
     if (legacyOwner) await cleanupTestUser(legacyOwner.userId);
+    if (surfacesOwner) await cleanupTestUser(surfacesOwner.userId);
   });
 
   test("saves real progress and resumes at the next required step after login", async ({
@@ -195,5 +208,57 @@ test.describe("Guided Admin Setup", () => {
 
     await page.goto(`/dashboard/${LEGACY_SLUG}/settings`);
     await expect(page.getByTestId("guided-setup-return-card")).toHaveCount(0);
+  });
+
+  test("opens every setup destination and keeps payments and AI optional", async ({
+    page,
+  }) => {
+    if (!surfacesOwner) throw new Error("surfaces owner fixture missing");
+
+    await loginAs(page, surfacesOwner);
+    await page.goto(`/dashboard/${SURFACES_SLUG}/setup`);
+
+    const destinations = [
+      ["salon-profile", `/dashboard/${SURFACES_SLUG}/setup/address`],
+      ["business-hours", `/dashboard/${SURFACES_SLUG}/setup/hours`],
+      ["team-access", `/dashboard/${SURFACES_SLUG}/setup/staff`],
+      ["service-menu", `/dashboard/${SURFACES_SLUG}/setup/services`],
+      ["booking-policies", `/dashboard/${SURFACES_SLUG}/no-show-protection`],
+      [
+        "communications",
+        `/dashboard/${SURFACES_SLUG}/settings?section=notifications`,
+      ],
+      [
+        "integrations",
+        `/dashboard/${SURFACES_SLUG}/settings?section=integrations`,
+      ],
+      ["booking-preview", `/dashboard/${SURFACES_SLUG}/settings/readiness`],
+      ["go-live", `/dashboard/${SURFACES_SLUG}/settings/readiness`],
+    ] as const;
+
+    for (const [stepId, href] of destinations) {
+      await expect(page.getByTestId(`guided-setup-step-${stepId}`)).toHaveAttribute(
+        "href",
+        href,
+      );
+    }
+
+    await expect(page.getByTestId("guided-setup-step-integrations")).toContainText(
+      /Optional|Không bắt buộc/i,
+    );
+    const progressBefore = await page.getByRole("progressbar").getAttribute(
+      "aria-valuenow",
+    );
+
+    for (const [, href] of destinations.slice(0, 8)) {
+      await page.goto(href);
+      await expect(page.getByTestId("guided-setup-return-card")).toBeVisible();
+    }
+
+    await page.goto(`/dashboard/${SURFACES_SLUG}/setup`);
+    await expect(page.getByRole("progressbar")).toHaveAttribute(
+      "aria-valuenow",
+      progressBefore ?? "",
+    );
   });
 });
