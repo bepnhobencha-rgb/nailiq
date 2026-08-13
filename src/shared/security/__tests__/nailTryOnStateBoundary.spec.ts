@@ -81,6 +81,9 @@ describe("nail-tryon state boundary", () => {
     }
     expect(telemetry).toContain('import "server-only"');
     expect(generate).toContain("verifySessionCredential");
+    expect(generate).toContain("checkNailTryOnGenerationRateLimit");
+    expect(generate).toContain('error: "rate_limit_unavailable"');
+    expect(generate).toContain('error: "generation_rate_limited"');
     expect(attach).toContain("verifySessionCredential");
     expect(intent).toContain("verifySessionCredential");
     expect(deletion).toContain("verifySessionCredential");

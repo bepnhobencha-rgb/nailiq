@@ -8,6 +8,7 @@ import { recordNailTryOnEvent } from "@/shared/nailTryOn/telemetry";
 import { safeProviderError } from "@/shared/nailTryOn/providerError";
 import { GENERATION_STALE_MS, isGenerationStale } from "@/shared/nailTryOn/generationLease";
 import { nailConfigurationSchema } from "@/shared/nailTryOn/configurator";
+import { checkNailTryOnGenerationRateLimit } from "@/shared/nailTryOn/generationRateLimit";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -52,6 +53,30 @@ export async function POST(request: Request) {
   const { data: rawDesign } = await db.from("nail_designs" as never).select("id, salon_id, name, preview_path, prompt_hint, version").eq("id", parsed.data.designId).eq("salon_id", session.salon_id).eq("is_active", true).is("deleted_at", null).maybeSingle();
   const design = rawDesign as unknown as DesignRow | null;
   if (!design) return NextResponse.json({ error: "design_not_found" }, { status: 404 });
+
+  const rateLimit = await checkNailTryOnGenerationRateLimit(
+    async (key, limit, windowSeconds) => {
+      const { data, error } = await db.rpc("rate_limit_hit", {
+        p_key: key,
+        p_limit: limit,
+        p_window_seconds: windowSeconds,
+      });
+      return { data, error };
+    },
+    { salonId: session.salon_id, sessionId: session.id },
+  );
+  if (rateLimit === "unavailable") {
+    return NextResponse.json(
+      { error: "rate_limit_unavailable", retryable: true },
+      { status: 503, headers: { "Retry-After": "60" } },
+    );
+  }
+  if (rateLimit === "limited") {
+    return NextResponse.json(
+      { error: "generation_rate_limited", retryable: true },
+      { status: 429, headers: { "Retry-After": "3600" } },
+    );
+  }
 
   const { data: claimed } = await db.from("nail_tryon_sessions" as never).update({ status: "generating", design_id: design.id, design_version: design.version, provider: "openai", provider_model: IMAGE_MODEL, error_code: null, updated_at: new Date().toISOString() } as never).eq("id", session.id).in("status", ["quality_passed", "failed"]).select("id").maybeSingle();
   if (!claimed) return NextResponse.json({ error: "generation_in_progress" }, { status: 409 });
