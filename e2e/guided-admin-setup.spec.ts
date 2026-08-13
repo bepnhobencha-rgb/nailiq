@@ -9,13 +9,11 @@ import {
 
 const RESUME_SLUG = "e2e-guided-setup-resume";
 const COMPLETE_SLUG = "e2e-guided-setup-complete";
+const LEGACY_SLUG = "e2e-guided-setup-disabled";
 
-let resumeOwner:
-  | Awaited<ReturnType<typeof seedTestSalonMember>>
-  | undefined;
-let completeOwner:
-  | Awaited<ReturnType<typeof seedTestSalonMember>>
-  | undefined;
+let resumeOwner: Awaited<ReturnType<typeof seedTestSalonMember>> | undefined;
+let completeOwner: Awaited<ReturnType<typeof seedTestSalonMember>> | undefined;
+let legacyOwner: Awaited<ReturnType<typeof seedTestSalonMember>> | undefined;
 
 async function loginAs(
   page: Page,
@@ -67,13 +65,22 @@ test.describe("Guided Admin Setup", () => {
     });
     await prepareTestSalonForGuidedSetup(completeSalon.salonId);
     completeOwner = await seedTestSalonMember(completeSalon.salonId, "owner");
+
+    const legacySalon = await seedTestSalon({
+      slug: LEGACY_SLUG,
+      name: "Guided Setup Disabled Test Salon",
+      phone: "15553334003",
+    });
+    legacyOwner = await seedTestSalonMember(legacySalon.salonId, "owner");
   });
 
   test.afterAll(async () => {
     await cleanupTestSalon(RESUME_SLUG);
     await cleanupTestSalon(COMPLETE_SLUG);
+    await cleanupTestSalon(LEGACY_SLUG);
     if (resumeOwner) await cleanupTestUser(resumeOwner.userId);
     if (completeOwner) await cleanupTestUser(completeOwner.userId);
+    if (legacyOwner) await cleanupTestUser(legacyOwner.userId);
   });
 
   test("saves real progress and resumes at the next required step after login", async ({
@@ -106,15 +113,16 @@ test.describe("Guided Admin Setup", () => {
     await page.getByLabel(/^city/i).fill("Vancouver");
     await page.getByLabel(/province|state/i).fill("BC");
     await page.getByLabel(/postal|zip/i).fill("V6B 1A1");
-    await page.getByTestId("setup-timezone-select").selectOption(
-      "America/Vancouver",
-    );
+    await page
+      .getByTestId("setup-timezone-select")
+      .selectOption("America/Vancouver");
     await page.getByLabel(/salon phone/i).fill("+1 604 555 0198");
     await expect(saveButton).toBeEnabled();
     await saveButton.click();
     await expect(page.getByRole("button", { name: /saved/i })).toBeVisible();
 
-    await page.getByRole("link", { name: /setup/i }).click();
+    await expect(page.getByTestId("guided-setup-return-card")).toBeVisible();
+    await page.getByTestId("guided-setup-continue").click();
     await expect(page).toHaveURL(
       new RegExp(`/dashboard/${RESUME_SLUG}/setup$`),
     );
@@ -147,6 +155,7 @@ test.describe("Guided Admin Setup", () => {
 
     await loginAs(page, completeOwner);
     await page.goto(`/dashboard/${COMPLETE_SLUG}/settings/readiness`);
+    await expect(page.getByTestId("guided-setup-return-card")).toBeVisible();
     await expect(page.getByTestId("go-live-readiness-summary")).toContainText(
       /5\/5/,
     );
@@ -162,9 +171,23 @@ test.describe("Guided Admin Setup", () => {
     ).toBeVisible();
 
     await page.goto(`/dashboard/${COMPLETE_SLUG}`);
-    await expect(page).toHaveURL(
-      new RegExp(`/dashboard/${COMPLETE_SLUG}/?$`),
-    );
+    await expect(page).toHaveURL(new RegExp(`/dashboard/${COMPLETE_SLUG}/?$`));
     await expect(page.getByTestId("guided-setup-next")).toHaveCount(0);
+  });
+
+  test("keeps the original dashboard navigation when Guided Setup is disabled", async ({
+    page,
+  }) => {
+    if (!legacyOwner) throw new Error("legacy owner fixture missing");
+
+    await loginAs(page, legacyOwner);
+    await page.goto(`/dashboard/${LEGACY_SLUG}/setup/address`);
+    await expect(
+      page.getByRole("link", { name: /dashboard/i }),
+    ).toHaveAttribute("href", `/dashboard/${LEGACY_SLUG}`);
+    await expect(page.getByTestId("guided-setup-return-card")).toHaveCount(0);
+
+    await page.goto(`/dashboard/${LEGACY_SLUG}/settings`);
+    await expect(page.getByTestId("guided-setup-return-card")).toHaveCount(0);
   });
 });

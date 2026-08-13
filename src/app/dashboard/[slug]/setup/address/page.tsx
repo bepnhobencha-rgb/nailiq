@@ -3,8 +3,10 @@ import { redirect } from "next/navigation";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
+import { GuidedSetupReturnCard } from "@/components/dashboard/GuidedSetupReturnCard";
 import { AddressSetupPanel } from "@/components/dashboard/AddressSetupPanel";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -50,13 +52,16 @@ export default async function SetupAddressPage({ params }: Props) {
   } | null;
   const initialCurrency = parseCurrency(extraData?.currency_code);
   const initialDescription =
-    typeof extraData?.description === "string"
-      ? extraData.description
-      : "";
+    typeof extraData?.description === "string" ? extraData.description : "";
   const initialTimezone =
-    typeof extraData?.timezone === "string" && extraData.timezone.trim().length > 0
+    typeof extraData?.timezone === "string" &&
+    extraData.timezone.trim().length > 0
       ? extraData.timezone
       : "";
+  const guidedSetupEnabled = isReleaseFeatureEnabled(
+    ctx.salon,
+    "guided_admin_setup",
+  );
 
   return (
     <ResponsiveShell>
@@ -64,8 +69,12 @@ export default async function SetupAddressPage({ params }: Props) {
         <SetupBackNav
           slug={slug}
           title="Địa chỉ tiệm · Salon address"
-          backHref={`/dashboard/${encodeURIComponent(slug)}/setup`}
-          backLabel="← Setup"
+          backHref={
+            guidedSetupEnabled
+              ? `/dashboard/${encodeURIComponent(slug)}/setup`
+              : undefined
+          }
+          backLabel={guidedSetupEnabled ? "← Setup" : undefined}
         />
         <AddressSetupPanel
           slug={slug}
@@ -75,6 +84,7 @@ export default async function SetupAddressPage({ params }: Props) {
           initialDescription={initialDescription}
           initialTimezone={initialTimezone}
         />
+        {guidedSetupEnabled ? <GuidedSetupReturnCard slug={slug} /> : null}
       </MobileStack>
     </ResponsiveShell>
   );

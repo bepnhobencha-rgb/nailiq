@@ -4,7 +4,9 @@ import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { loadNoShowDashboard } from "@/shared/noshow/noShowDashboardActions";
 import { NoShowProtectionHub } from "@/components/dashboard/NoShowProtectionHub";
 import { SquareSyncCard } from "@/components/dashboard/SquareSyncCard";
+import { GuidedSetupReturnCard } from "@/components/dashboard/GuidedSetupReturnCard";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -92,9 +94,14 @@ export default async function NoShowProtectionPage({ params }: Props) {
 
   const result = await loadNoShowDashboard(slug);
   if (!result.ok) redirect(`/dashboard/${slug}`);
+  const guidedSetupEnabled = isReleaseFeatureEnabled(
+    { feature_flags: row?.feature_flags },
+    "guided_admin_setup",
+  );
 
   return (
     <div className="space-y-6">
+    {guidedSetupEnabled ? <GuidedSetupReturnCard slug={slug} /> : null}
     <NoShowProtectionHub
       slug={slug}
       salonId={ctx.salon.id}
