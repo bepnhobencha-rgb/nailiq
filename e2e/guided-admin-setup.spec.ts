@@ -277,6 +277,13 @@ test.describe("Guided Admin Setup", () => {
     );
     await expect(page.getByTestId("noshow-whole-party-toggle")).toBeVisible();
     await expect(page.getByTestId("self-cancel-window-hours")).toBeVisible();
+    await expect(page.getByTestId("booking-policy-coverage")).toBeVisible();
+    await expect(page.getByTestId("booking-policy-group-status")).toContainText(
+      /optional|không bắt buộc/i,
+    );
+    await expect(
+      page.getByTestId("booking-policy-after-hours-status"),
+    ).toContainText(/Owner\/Admin|Owner|Admin/i);
 
     await page.goto(
       `/dashboard/${SURFACES_SLUG}/settings?section=notifications`,

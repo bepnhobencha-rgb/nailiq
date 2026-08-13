@@ -58,6 +58,8 @@ type Props = {
   connectDetailsSubmitted: boolean;
   paymentProvider: "square" | "stripe" | null;
   noshowProtectionEnabled: boolean;
+  /** Whether the optional public/desk group-booking release is enabled. */
+  groupBookingEnabled: boolean;
   /** Group organizer's card covers the whole party's no-show fee. */
   noshowGroupWholeParty: boolean;
   /** "Who is asked for a card" rules. */
@@ -599,6 +601,7 @@ export function NoShowProtectionHub({
   connectDetailsSubmitted,
   paymentProvider: initialProvider,
   noshowProtectionEnabled: initialNoshowEnabled,
+  groupBookingEnabled,
   noshowGroupWholeParty: initialWholeParty,
   noshowRequireNewCustomer: initialReqNew,
   noshowRequirePriorNoshow: initialReqPrior,
@@ -741,6 +744,33 @@ export function NoShowProtectionHub({
     <ResponsiveShell>
       <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] px-4 pb-8 pt-4 sm:pt-6">
         <SetupBackNav slug={slug} title="No-Show Protection" />
+
+        <section
+          data-testid="booking-policy-coverage"
+          className="mt-4 rounded-2xl border border-nq-primary/30 bg-nq-primary/5 p-4"
+        >
+          <h2 className="text-sm font-semibold text-nq-foreground">
+            {language === "vi"
+              ? "Phạm vi quy định đặt lịch"
+              : "Booking policy coverage"}
+          </h2>
+          <ul className="mt-3 space-y-2 text-xs leading-5 text-nq-muted">
+            <li data-testid="booking-policy-cancel-status">
+              ✓ {language === "vi" ? "Huỷ lịch và no-show: có chính sách song ngữ." : "Cancellation and no-show: bilingual policy is present."}
+            </li>
+            <li data-testid="booking-policy-group-status">
+              {groupBookingEnabled ? "✓" : "—"}{" "}
+              {language === "vi"
+                ? `Đặt nhóm: ${groupBookingEnabled ? "đã bật" : "chưa bật (không bắt buộc)"}.`
+                : `Group booking: ${groupBookingEnabled ? "enabled" : "not enabled (optional)"}.`}
+            </li>
+            <li data-testid="booking-policy-after-hours-status">
+              ✓ {language === "vi"
+                ? "Ngoài giờ: xét từng lịch, cần Owner/Admin duyệt và nhân viên đồng ý; tối đa 120 phút."
+                : "After-hours: decided per booking, requires Owner/Admin approval and staff consent; maximum 120 minutes."}
+            </li>
+          </ul>
+        </section>
 
         {/* Revenue recovered — the payoff of card-on-file protection. */}
         <div className="mt-4 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-4">

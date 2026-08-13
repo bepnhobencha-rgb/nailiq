@@ -98,6 +98,10 @@ export default async function NoShowProtectionPage({ params }: Props) {
     { feature_flags: row?.feature_flags },
     "guided_admin_setup",
   );
+  const groupBookingEnabled = isReleaseFeatureEnabled(
+    { feature_flags: row?.feature_flags },
+    "group_booking",
+  );
 
   return (
     <div className="space-y-6">
@@ -126,6 +130,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
       connectDetailsSubmitted={row?.stripe_connect_details_submitted ?? false}
       paymentProvider={row?.payment_provider ?? null}
       noshowProtectionEnabled={row?.noshow_protection_enabled ?? false}
+      groupBookingEnabled={groupBookingEnabled}
       noshowGroupWholeParty={row?.noshow_group_whole_party !== false}
       noshowDepositEscalationThreshold={row?.noshow_deposit_escalation_threshold ?? null}
       noshowRequireNewCustomer={row?.noshow_require_new_customer !== false}
