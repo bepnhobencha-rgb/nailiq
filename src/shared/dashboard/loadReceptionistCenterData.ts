@@ -569,6 +569,7 @@ export type ReceptionistCenterDataLoaderDeps = {
     basic_mode_forced?: unknown | null;
     opening_hours?: unknown | null;
     staff_notification_settings?: unknown | null;
+    default_notification_locale?: unknown | null;
     auto_no_show_minutes?: unknown | null;
   };
 };
@@ -662,6 +663,7 @@ export async function loadReceptionistCenterData(
     basic_mode_forced?: unknown;
     opening_hours?: unknown;
     staff_notification_settings?: unknown;
+    default_notification_locale?: unknown;
     auto_no_show_minutes?: unknown;
   };
   let salonData: SalonShape | null;
@@ -685,6 +687,8 @@ export async function loadReceptionistCenterData(
       opening_hours: deps.preFetchedSalon.opening_hours,
       staff_notification_settings:
         deps.preFetchedSalon.staff_notification_settings,
+      default_notification_locale:
+        deps.preFetchedSalon.default_notification_locale,
       auto_no_show_minutes: deps.preFetchedSalon.auto_no_show_minutes,
     };
   } else {
@@ -695,7 +699,7 @@ export async function loadReceptionistCenterData(
         // (20260512000000 / 20260511100000) — not in auto-generated
         // types yet, hence the `as never` cast on the SELECT string.
         // basic_mode_forced: auto-enable Basic Mode for receptionist if salon config requires it
-        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign, queue_display_mode, basic_mode_forced, opening_hours, staff_notification_settings, auto_no_show_minutes" as never,
+        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign, queue_display_mode, basic_mode_forced, opening_hours, staff_notification_settings, default_notification_locale, auto_no_show_minutes" as never,
       )
       .eq("id", ctx.salon.id)
       .maybeSingle();
@@ -741,6 +745,7 @@ export async function loadReceptionistCenterData(
     ...openingHoursForDay(salonData.opening_hours, dateYmd),
     staffNotificationSettings: parseStaffNotificationSettings(
       salonData.staff_notification_settings,
+      salonData.default_notification_locale === "vi" ? "vi" : "en",
     ),
     autoNoShowMinutes: (() => {
       const v = salonData.auto_no_show_minutes;

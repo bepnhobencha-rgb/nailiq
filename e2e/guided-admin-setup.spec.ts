@@ -254,9 +254,16 @@ test.describe("Guided Admin Setup", () => {
     await expect(page.getByText(/Hours saved|Đã lưu giờ/i)).toBeVisible();
 
     await page.goto(`/dashboard/${SURFACES_SLUG}/setup/staff`);
-    await expect(page.locator('[data-testid^="staff-edit-"]').first()).toBeVisible();
+    await expect(page.getByText("Jenny", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Nail tech|Thợ nail|Thợ phụ/i)).toBeVisible();
+    await expect(
+      page.locator('[data-testid^="staff-edit-"]').first(),
+    ).toBeVisible();
 
     await page.goto(`/dashboard/${SURFACES_SLUG}/setup/services`);
+    await expect(page.getByText("Gel Manicure", { exact: true })).toBeVisible();
+    await expect(page.getByText(/\$45(?:\.00)?/).first()).toBeVisible();
+    await expect(page.getByText(/45\s*min/i).first()).toBeVisible();
     await expect(
       page.locator('[data-testid^="service-edit-"]').first(),
     ).toBeVisible();
@@ -268,6 +275,18 @@ test.describe("Guided Admin Setup", () => {
     await expect(page.getByTestId("policy-vi")).toHaveValue(
       "Vui lòng liên hệ salon trước khi huỷ hoặc đổi lịch.",
     );
+    await expect(page.getByTestId("noshow-whole-party-toggle")).toBeVisible();
+    await expect(page.getByTestId("self-cancel-window-hours")).toBeVisible();
+
+    await page.goto(
+      `/dashboard/${SURFACES_SLUG}/settings?section=notifications`,
+    );
+    await expect(
+      page.getByTestId("settings-email-verified-badge"),
+    ).toBeVisible();
+    await expect(page.getByTestId("customer-channel-card")).toBeVisible();
+    await expect(page.getByTestId("staff-notifications-card")).toBeVisible();
+    await expect(page.getByTestId("staff-notif-locale-vi")).toBeChecked();
 
     for (const [, href] of destinations.slice(0, 8)) {
       await page.goto(href);
