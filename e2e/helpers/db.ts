@@ -1358,6 +1358,42 @@ export async function getRegisteredSalonForUser(userId: string) {
   };
 }
 
+/**
+ * Enable an opt-in feature on a throwaway E2E salon after registration.
+ *
+ * A newly registered salon does not exist when a SuperAdmin chooses the pilot,
+ * so the registration-to-guided-setup contract needs one safe test-only seam:
+ * create the salon through the real UI, then apply the same JSONB override the
+ * SuperAdmin panel writes. `assertNotProductionFromEnv()` at module load keeps
+ * this helper fenced to the local/CI database.
+ */
+export async function setTestSalonFeatureFlags(
+  salonId: string,
+  patch: Record<string, boolean>,
+) {
+  const { data: row, error: readError } = await supabase
+    .from("salons")
+    .select("feature_flags")
+    .eq("id", salonId)
+    .single();
+
+  if (readError) {
+    throw new Error(`setTestSalonFeatureFlags read: ${readError.message}`);
+  }
+
+  const current =
+    (row as { feature_flags?: Record<string, boolean> } | null)
+      ?.feature_flags ?? {};
+  const { error: updateError } = await supabase
+    .from("salons")
+    .update({ feature_flags: { ...current, ...patch } })
+    .eq("id", salonId);
+
+  if (updateError) {
+    throw new Error(`setTestSalonFeatureFlags update: ${updateError.message}`);
+  }
+}
+
 /** Remove a Supabase auth user (and any salon they own) from E2E test runs. */
 export async function cleanupTestUser(userId: string) {
   // Remove salon_members first to find any salon owned by this user.

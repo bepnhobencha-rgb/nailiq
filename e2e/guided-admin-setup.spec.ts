@@ -2,9 +2,12 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   cleanupTestSalon,
   cleanupTestUser,
+  getRegisteredSalonForUser,
   prepareTestSalonForGuidedSetup,
   seedTestSalon,
   seedTestSalonMember,
+  seedTestUser,
+  setTestSalonFeatureFlags,
 } from "./helpers/db";
 
 const RESUME_SLUG = "e2e-guided-setup-resume";
@@ -94,6 +97,84 @@ test.describe("Guided Admin Setup", () => {
     if (completeOwner) await cleanupTestUser(completeOwner.userId);
     if (legacyOwner) await cleanupTestUser(legacyOwner.userId);
     if (surfacesOwner) await cleanupTestUser(surfacesOwner.userId);
+  });
+
+  test("a newly registered trial owner enters one next step and resumes there after sign-in", async ({
+    page,
+  }) => {
+    const owner = await seedTestUser();
+    const salonName = `E2E Guided Registration ${owner.userId.slice(0, 8)}`;
+
+    try {
+      await page.goto("/register");
+      await expect(page.getByTestId("social-auth-controls")).toHaveAttribute(
+        "data-hydrated",
+        "true",
+      );
+      await page.locator('input[inputmode="email"]').fill(owner.email);
+      await page.locator('input[type="password"]').fill(owner.password);
+      await page.getByRole("button", { name: /^sign in$/i }).click();
+      await expect(page).toHaveURL(/\/register\/setup(?:\?|$)/, {
+        timeout: 15_000,
+      });
+
+      await page.locator("#register-setup-salon-name").fill(salonName);
+      await page
+        .getByRole("button", {
+          name: /create your booking page|tạo trang đặt lịch/i,
+        })
+        .click();
+      await expect(page).toHaveURL(/\/register\/success\?/, {
+        timeout: 30_000,
+      });
+
+      const registration = await getRegisteredSalonForUser(owner.userId);
+      const trialStart = Date.parse(registration.salon.trial_started_at ?? "");
+      const trialEnd = Date.parse(registration.salon.trial_ends_at ?? "");
+      expect(registration.salon.subscription_status).toBe("trialing");
+      expect(trialEnd - trialStart).toBe(14 * 24 * 60 * 60 * 1_000);
+      expect(registration.salon.stripe_customer_id).toBeNull();
+      expect(registration.salon.stripe_subscription_id).toBeNull();
+      expect(registration.salon.payment_provider).toBeNull();
+
+      // Emulate the audited SuperAdmin pilot toggle only after this throwaway
+      // salon exists. The feature remains default-OFF for every real salon.
+      await setTestSalonFeatureFlags(registration.salon.id, {
+        guided_admin_setup_enabled: true,
+      });
+
+      await page
+        .getByRole("button", {
+          name: /go to dashboard|vào bảng điều khiển/i,
+        })
+        .click();
+      await expect(page).toHaveURL(
+        new RegExp(`/dashboard/${registration.salon.slug}/setup$`),
+        { timeout: 30_000 },
+      );
+      await expect(page.locator('[data-guided-setup-mode="true"]')).toBeVisible();
+      await expect(page.getByTestId("guided-setup-next")).toContainText(
+        /Salon information|Thông tin salon/i,
+      );
+      const progressBefore = await page
+        .getByRole("progressbar")
+        .getAttribute("aria-valuenow");
+
+      await page.context().clearCookies();
+      await loginAs(page, owner);
+      await expect(page).toHaveURL(
+        new RegExp(`/dashboard/${registration.salon.slug}/setup$`),
+      );
+      await expect(page.getByTestId("guided-setup-next")).toContainText(
+        /Salon information|Thông tin salon/i,
+      );
+      await expect(page.getByRole("progressbar")).toHaveAttribute(
+        "aria-valuenow",
+        progressBefore ?? "",
+      );
+    } finally {
+      await cleanupTestUser(owner.userId);
+    }
   });
 
   test("saves real progress and resumes at the next required step after login", async ({
