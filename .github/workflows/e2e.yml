@@ -192,8 +192,10 @@ jobs:
               e2e/noshow-reschedule.spec.ts
               e2e/noshow-waitlist.spec.ts
               e2e/register.spec.ts
+              e2e/reschedule-waitlist-tz.spec.ts
               e2e/setup-ai-prefill.spec.ts
               e2e/superadmin
+              e2e/waitlist-advance-cron.spec.ts
           # Receptionist specs remain serial inside each browser job because
           # they share a fixture slug. The browser jobs themselves are safe to
           # parallelize: each runner owns a separate throwaway Supabase stack.

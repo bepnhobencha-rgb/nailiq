@@ -153,6 +153,48 @@ test.describe("No-Show — Waitlist Auto-Fill", () => {
     expect(Array.isArray(secondClaim) && secondClaim.length === 0).toBe(true);
   });
 
+  test("two concurrent claim attempts allow exactly one winner", async ({
+    page,
+  }) => {
+    await page.request.post("/api/booking/cancel-action", {
+      data: { token: cancelTokenId },
+    });
+
+    const lookup = createServiceRoleClient();
+    const { data } = await lookup
+      .from("booking_waitlist_entries" as never)
+      .select("claim_token")
+      .eq("salon_id", salonId)
+      .maybeSingle();
+    const claimToken = (data as unknown as { claim_token: string }).claim_token;
+
+    // Two independent clients hit the atomic RPC at the same time. Exactly
+    // one transaction may return the claimed row; the loser must see no row.
+    const claimantA = createServiceRoleClient();
+    const claimantB = createServiceRoleClient();
+    const [attemptA, attemptB] = await Promise.all([
+      claimantA.rpc("claim_waitlist_slot" as never, {
+        p_claim_token: claimToken,
+      }),
+      claimantB.rpc("claim_waitlist_slot" as never, {
+        p_claim_token: claimToken,
+      }),
+    ]);
+    expect(attemptA.error).toBeNull();
+    expect(attemptB.error).toBeNull();
+    const winners = [attemptA.data, attemptB.data].filter(
+      (rows) => Array.isArray(rows) && rows.length > 0,
+    );
+    expect(winners).toHaveLength(1);
+
+    const { data: claimed } = await lookup
+      .from("booking_waitlist_entries" as never)
+      .select("status")
+      .eq("salon_id", salonId)
+      .maybeSingle();
+    expect((claimed as unknown as { status: string }).status).toBe("claimed");
+  });
+
   test("invalid claim token shows slot unavailable page", async ({ page }) => {
     await page.goto("/booking/waitlist-claim?token=00000000-0000-0000-0000-000000000000");
     // The page renders both a heading and a detail paragraph that match the
