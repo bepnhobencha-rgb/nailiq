@@ -41,12 +41,11 @@ export function activityItemsForTab(
   return items.filter((item) => item.kind === tab);
 }
 
-export function canOpenActivityBooking(
-  item: ActivityItem,
-  archivedBookingFeatureEnabled = false,
-): boolean {
+export function canOpenActivityBooking(item: ActivityItem): boolean {
   if (!item.bookingId) return false;
-  return terminalActivityBookingStatus(item)
-    ? archivedBookingFeatureEnabled
-    : true;
+  // Terminal history is always read-only and visible to the already-gated
+  // owner/admin Activity page. The recovery flag controls only the optional
+  // create-a-linked-replacement CTA inside the drawer; it must never hide the
+  // source record itself.
+  return true;
 }

@@ -1,7 +1,6 @@
 "use server";
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
-import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 import { maskPhoneDigits } from "@/shared/lib/maskPhone";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 
@@ -42,7 +41,6 @@ export type LoadArchivedBookingDetailResult =
       error:
         | "unauthorized"
         | "forbidden"
-        | "feature_disabled"
         | "invalid_booking"
         | "not_found"
         | "server_error";
@@ -92,19 +90,13 @@ export async function loadArchivedBookingDetail(
 
   const { data: salonRow, error: salonError } = await ctx.supabase
     .from("salons")
-    .select(
-      "subscription_plan, plan_override, feature_flags, voice_ai_enabled, currency_code",
-    )
+    .select("currency_code")
     .eq("id", ctx.salon.id)
     .maybeSingle();
 
   if (salonError || !salonRow) {
     console.error("[loadArchivedBookingDetail] salon feature read", salonError);
     return { ok: false, error: "server_error" };
-  }
-
-  if (!(await isReleaseFeatureVisible(salonRow, "archived_booking_recovery"))) {
-    return { ok: false, error: "feature_disabled" };
   }
 
   const { data, error } = await ctx.supabase
