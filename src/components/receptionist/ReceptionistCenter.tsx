@@ -1761,13 +1761,31 @@ function ReceptionistCenterInner({
           }
         });
 
+      // Realtime is the fast path, but a front desk must not silently miss an
+      // online waitlist lead when a websocket event is dropped while the
+      // channel still appears healthy. Keep a bounded safety refresh only for
+      // salons that opted into Waitlist attention. This guarantees a fresh
+      // snapshot within the product's 60-second response objective without
+      // adding polling load to salons that do not use the feature.
+      const waitlistSafetyPoll = waitlistAttentionEnabled
+        ? window.setInterval(() => {
+            if (!cancelled) void reloadCurrentDay();
+          }, 15_000)
+        : null;
+
       if (cancelled) {
+        if (waitlistSafetyPoll != null) {
+          window.clearInterval(waitlistSafetyPoll);
+        }
         authSubscription.unsubscribe();
         void supabase.removeChannel(ch);
         return undefined;
       }
 
       return () => {
+        if (waitlistSafetyPoll != null) {
+          window.clearInterval(waitlistSafetyPoll);
+        }
         authSubscription.unsubscribe();
         void supabase.removeChannel(ch);
       };
