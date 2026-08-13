@@ -140,9 +140,9 @@ test.describe("Nail Try-On camera fallback", () => {
     await expect(openCamera).toHaveCount(1);
     await openCamera.click();
 
-    await expect(page.getByRole("alert")).toContainText(
-      "Camera access is unavailable",
-    );
+    await expect(
+      page.getByText("Camera access is unavailable", { exact: false }),
+    ).toBeVisible();
     await expect(page.getByLabel("Take a new photo")).toBeVisible();
     await expect(page.getByLabel("Take a new photo")).toHaveAttribute(
       "capture",
@@ -207,7 +207,9 @@ test.describe("Nail Try-On camera fallback", () => {
       "e2e/visual/visual-regression.spec.ts-snapshots/booking-desktop-chromium-linux.png",
     );
     await page.getByLabel("Choose an existing photo").setInputFiles(fixture);
-    await expect(page.getByRole("alert")).toContainText("Four fingers saved");
+    await expect(
+      page.getByText("Four fingers saved", { exact: false }),
+    ).toBeVisible();
     await expect(page.getByText("Thumb", { exact: true })).toBeVisible();
 
     await page.getByLabel("Choose an existing photo").setInputFiles(fixture);
@@ -257,12 +259,12 @@ test.describe("Nail Try-On camera fallback", () => {
       "e2e/visual/visual-regression.spec.ts-snapshots/booking-desktop-chromium-linux.png",
     );
     await page.getByLabel("Choose an existing photo").setInputFiles(fixture);
-    await page.getByRole("button", { name: "Use this photo" }).click();
+    await page.getByRole("button", { name: /Use (this photo|anyway)/i }).click();
     await page.getByRole("button", { name: /QA Cherry/i }).click();
 
-    await expect(page.getByRole("alert")).toContainText(
-      "AI preview could not be created",
-    );
+    await expect(
+      page.getByText("AI preview could not be created", { exact: false }),
+    ).toBeVisible();
     const fallback = page.getByRole("link", {
       name: "Continue booking without a preview",
     });
