@@ -232,7 +232,7 @@ test("new Waitlist lead alerts once, reminds once, stays visible, and records ac
   // The same Waitlist component is intentionally also available in the Queue
   // drawer. Scope the journey to the Action Center dialog so the test proves
   // the surface the alert opened instead of matching the dormant queue copy.
-  const waitlistDialog = page.getByRole("dialog");
+  const waitlistDialog = page.getByTestId("attention-chip-dialog");
   const waitlistPanel = waitlistDialog.getByTestId("online-waitlist-panel");
   await expect(waitlistPanel).toBeVisible();
   await expect(
