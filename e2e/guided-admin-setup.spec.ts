@@ -438,10 +438,12 @@ test.describe("Guided Admin Setup", () => {
     await expect(
       page.getByTestId("booking-policy-after-hours-status"),
     ).toContainText(/Owner\/Admin|Owner|Admin/i);
-    // This fixture is an Admin. It can review the salon policy, but financial
-    // no-show controls remain Owner-only by design.
+    // This fixture is an Admin. It can review and configure salon policy. The
+    // whole-party control is conditional on no-show protection being enabled;
+    // the late-cancellation window remains visible for policy review.
     await expect(page.getByTestId("noshow-whole-party-toggle")).toHaveCount(0);
-    await expect(page.getByTestId("self-cancel-window-hours")).toHaveCount(0);
+    await expect(page.getByTestId("self-cancel-fee-toggle")).toBeVisible();
+    await expect(page.getByTestId("self-cancel-window-hours")).toBeVisible();
 
     await page.goto(
       `/dashboard/${SURFACES_SLUG}/settings?section=notifications`,
