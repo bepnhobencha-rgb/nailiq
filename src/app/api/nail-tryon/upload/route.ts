@@ -14,6 +14,10 @@ import { decideServerQuality } from "@/shared/nailTryOn/qualityPolicy";
 import { parseNailTryOnCaptureMode } from "@/shared/nailTryOn/captureMode";
 import { isBlockingNailTryOnResolution } from "@/shared/nailTryOn/imageQuality";
 import { recordOpenAIUsageEvent } from "@/shared/ai/usageLedger";
+import {
+  checkNailTryOnUploadRateLimit,
+  nailTryOnClientLimiterId,
+} from "@/shared/nailTryOn/uploadRateLimit";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -37,10 +41,32 @@ export async function POST(request: Request) {
   if (!salon) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   const db = createServiceRoleClient();
-  const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const { count } = await db.from("nail_tryon_sessions" as never)
-    .select("id", { count: "exact", head: true }).eq("salon_id", salon.id).gte("created_at", since);
-  if ((count ?? 0) >= 20) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+  const rateLimit = await checkNailTryOnUploadRateLimit(
+    async (key, limit, windowSeconds) => {
+      const { data, error } = await db.rpc("rate_limit_hit", {
+        p_key: key,
+        p_limit: limit,
+        p_window_seconds: windowSeconds,
+      });
+      return { data, error };
+    },
+    {
+      salonId: salon.id,
+      clientId: nailTryOnClientLimiterId(request.headers),
+    },
+  );
+  if (rateLimit === "unavailable") {
+    return NextResponse.json(
+      { error: "rate_limit_unavailable" },
+      { status: 503, headers: { "Retry-After": "60" } },
+    );
+  }
+  if (rateLimit === "limited") {
+    return NextResponse.json(
+      { error: "rate_limited" },
+      { status: 429, headers: { "Retry-After": "3600" } },
+    );
+  }
 
   let normalized: Buffer;
   try {
