@@ -4,8 +4,10 @@ import path from "node:path";
 import {
   cleanupTestSalon,
   cleanupTestUser,
+  getNailTryOnAttachmentSnapshot,
   getNailTryOnDesignMappings,
   getNailTryOnCatalogState,
+  seedNailTryOnAttachmentFixture,
   seedNailTryOnDraftDesigns,
   seedNailTryOnTestMenu,
   seedTestSalon,
@@ -164,9 +166,11 @@ test.describe("Nail Try-On camera fallback", () => {
       await expect(card.getByLabel("Default")).toBeChecked();
       await card.getByLabel("Chrome Finish").check();
       await card.getByRole("button", { name: "Confirm mapping" }).click();
-      await expect(page.getByRole("status")).toContainText(
-        "Smart Quote mapping saved for QA Cherry",
-      );
+      await expect(
+        page.getByText("Smart Quote mapping saved for QA Cherry.", {
+          exact: true,
+        }),
+      ).toBeVisible();
 
       const mappings = await getNailTryOnDesignMappings(designId);
       expect(mappings).toHaveLength(2);
@@ -369,6 +373,117 @@ test.describe("Nail Try-On camera fallback", () => {
     });
     await expect(fallback).toBeVisible();
     await expect(fallback).toHaveAttribute("href", `/${SLUG}?lang=en`);
+  });
+
+  test("carries a successful look into the correct salon booking flow", async ({
+    page,
+  }) => {
+    const sessionId = "44444444-4444-4444-8444-444444444444";
+    const designId = "55555555-5555-4555-8555-555555555555";
+    await page.route("**/api/nail-tryon/upload", async (route) => {
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({ sessionId, quality: "pass" }),
+      });
+    });
+    await page.route("**/api/nail-tryon/catalog?*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          designs: [{
+            id: designId,
+            name: "QA Pearl",
+            description: "QA only",
+            version: 1,
+            previewUrl: null,
+          }],
+        }),
+      });
+    });
+    await page.route("**/api/nail-tryon/generate", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          status: "ready",
+          previewUrl:
+            "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
+        }),
+      });
+    });
+
+    await page.goto(`/${SLUG}/try-on?lang=en`);
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Continue" }).click();
+    const fixture = path.resolve(
+      process.cwd(),
+      "e2e/visual/visual-regression.spec.ts-snapshots/booking-desktop-chromium-linux.png",
+    );
+    await page.getByLabel("Choose an existing photo").setInputFiles(fixture);
+    await page.getByRole("button", { name: /Use (this photo|anyway)/i }).click();
+    await page.getByRole("button", { name: /QA Pearl/i }).click();
+
+    await expect(page.getByAltText("AI nail preview on your hand")).toBeVisible();
+    const bookThisLook = page.getByRole("link", { name: "Continue to booking" });
+    await expect(bookThisLook).toBeVisible();
+    await expect(bookThisLook).toHaveAttribute(
+      "href",
+      `/${SLUG}?tryon=${sessionId}&lang=en`,
+    );
+  });
+
+  test("attaches the selected look to a fresh same-salon QA booking", async ({
+    page,
+  }) => {
+    const { salonId } = await seedTestSalon({
+      slug: SLUG,
+      name: "E2E Nail Try-On Attachment",
+      feature_flags: { nail_tryon_enabled: true },
+    });
+    const menu = await seedNailTryOnTestMenu(salonId);
+    const [designId] = await seedNailTryOnDraftDesigns(salonId, ["QA Pearl"]);
+    const fixture = await seedNailTryOnAttachmentFixture({
+      salonId,
+      designId,
+      serviceId: menu.service.id,
+    });
+    await page.context().addCookies([{
+      name: "nailiq_tryon",
+      value: fixture.cookieValue,
+      url: BASE,
+    }]);
+
+    const response = await page.request.post(`${BASE}/api/nail-tryon/attach`, {
+      data: {
+        sessionId: fixture.sessionId,
+        bookingId: fixture.bookingId,
+      },
+    });
+    expect(response.status()).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+
+    const snapshot = await getNailTryOnAttachmentSnapshot({
+      bookingId: fixture.bookingId,
+      sessionId: fixture.sessionId,
+    });
+    expect(snapshot.look).toMatchObject({
+      booking_id: fixture.bookingId,
+      tryon_session_id: fixture.sessionId,
+      design_id: designId,
+      design_version: fixture.designVersion,
+      disclaimer_version: "nail-tryon-v1",
+      design_snapshot: {
+        name: "QA Pearl",
+        version: fixture.designVersion,
+      },
+    });
+    expect(snapshot.session.status).toBe("attached");
+    expect(snapshot.session.attached_at).toBeTruthy();
+    expect(Date.parse(snapshot.session.expires_at)).toBeGreaterThanOrEqual(
+      Date.parse(fixture.bookingEnd) + 30 * 24 * 60 * 60 * 1000 - 1_000,
+    );
   });
 
   test("hides Try-On from a non-nail salon even when the rollout flag is on", async ({

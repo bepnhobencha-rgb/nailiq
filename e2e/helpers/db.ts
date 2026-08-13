@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import type { Locator, Page } from "@playwright/test";
 
 import { assertNotProductionFromEnv } from "./guardProduction";
+import { createSessionCredential } from "../../src/shared/nailTryOn/sessionCredential";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -502,6 +503,119 @@ export async function getNailTryOnDesignMappings(designId: string) {
     is_default: boolean;
     sort_order: number;
   }>;
+}
+
+export async function seedNailTryOnAttachmentFixture(input: {
+  salonId: string;
+  designId: string;
+  serviceId: string;
+}) {
+  const sessionId = randomUUID();
+  const bookingId = randomUUID();
+  const credential = createSessionCredential(sessionId);
+  const start = new Date(Date.now() + 60 * 60 * 1000);
+  const end = new Date(start.getTime() + 45 * 60 * 1000);
+
+  const { data: design, error: designError } = await supabase
+    .from("nail_designs" as never)
+    .update({ is_active: true } as never)
+    .eq("id", input.designId)
+    .eq("salon_id", input.salonId)
+    .select("id, version" as never)
+    .single();
+  if (designError || !design) {
+    throw new Error(
+      designError?.message ?? "seedNailTryOnAttachmentFixture: design missing",
+    );
+  }
+  const version = Number((design as unknown as { version?: number }).version) || 1;
+
+  const { error: sessionError } = await supabase
+    .from("nail_tryon_sessions" as never)
+    .insert({
+      id: sessionId,
+      salon_id: input.salonId,
+      design_id: input.designId,
+      design_version: version,
+      anonymous_token_hash: credential.tokenHash,
+      source_image_path: `salon/${input.salonId}/session/${sessionId}/original.jpg`,
+      result_image_path: `salon/${input.salonId}/session/${sessionId}/result.png`,
+      status: "ready",
+      consent_at: new Date().toISOString(),
+      consent_version: "nail-tryon-v1",
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    } as never);
+  if (sessionError) {
+    throw new Error(`seedNailTryOnAttachmentFixture: ${sessionError.message}`);
+  }
+
+  const { error: bookingError } = await supabase.from("bookings").insert({
+    id: bookingId,
+    salon_id: input.salonId,
+    service_id: input.serviceId,
+    client_name: "QA Try-On Guest",
+    client_phone: "+16045550199",
+    start_time_utc: start.toISOString(),
+    end_time_utc: end.toISOString(),
+    status: "confirmed",
+    price_cents: 4500,
+    source: "appointment",
+    booking_channel: "online",
+  });
+  if (bookingError) {
+    throw new Error(`seedNailTryOnAttachmentFixture: ${bookingError.message}`);
+  }
+
+  return {
+    sessionId,
+    bookingId,
+    designVersion: version,
+    cookieValue: credential.cookieValue,
+    bookingEnd: end.toISOString(),
+  };
+}
+
+export async function getNailTryOnAttachmentSnapshot(input: {
+  bookingId: string;
+  sessionId: string;
+}) {
+  const [{ data: look, error: lookError }, { data: session, error: sessionError }] =
+    await Promise.all([
+      supabase
+        .from("booking_nail_looks" as never)
+        .select(
+          "booking_id, tryon_session_id, design_id, design_version, design_snapshot, disclaimer_version" as never,
+        )
+        .eq("booking_id", input.bookingId)
+        .single(),
+      supabase
+        .from("nail_tryon_sessions" as never)
+        .select("id, status, attached_at, expires_at" as never)
+        .eq("id", input.sessionId)
+        .single(),
+    ]);
+  if (lookError) {
+    throw new Error(`getNailTryOnAttachmentSnapshot: ${lookError.message}`);
+  }
+  if (sessionError) {
+    throw new Error(`getNailTryOnAttachmentSnapshot: ${sessionError.message}`);
+  }
+  return {
+    look: look as unknown as {
+      booking_id: string;
+      tryon_session_id: string;
+      design_id: string;
+      design_version: number;
+      design_snapshot: { name?: string; version?: number };
+      disclaimer_version: string;
+    },
+    session: session as unknown as {
+      id: string;
+      status: string;
+      attached_at: string | null;
+      expires_at: string;
+    },
+  };
 }
 
 export async function getNailTryOnCatalogState(salonId: string) {
