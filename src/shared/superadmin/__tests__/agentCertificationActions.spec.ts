@@ -56,6 +56,34 @@ describe("Agent Certification Matrix", () => {
     });
   });
 
+  it("publishes a complete operating contract for every certified agent type", () => {
+    const rows = buildAgentCertificationMatrix({
+      salons: [salon],
+      evidence: emptyEvidence,
+      failedAgents: new Set(),
+    });
+
+    for (const row of rows) {
+      expect(Object.keys(row.contract).sort()).toEqual([
+        "audit",
+        "cost",
+        "inputs",
+        "outputs",
+        "permission",
+        "retry",
+        "trigger",
+      ]);
+      expect(Object.values(row.contract).every((value) => value.trim().length > 0))
+        .toBe(true);
+    }
+    expect(rows.find((row) => row.agent === "voice_ai")?.contract)
+      .toMatchObject({
+        permission: expect.stringContaining("voice_ai_enabled"),
+        audit: expect.stringContaining("voice_ai_sessions"),
+        cost: expect.stringContaining("estimated_cost_usd"),
+      });
+  });
+
   it("marks Daily Report unconfigured when Unified Digest replaces it", () => {
     const rows = buildAgentCertificationMatrix({
       salons: [{
