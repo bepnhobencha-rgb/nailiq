@@ -101,7 +101,7 @@ export function deriveGuidedSetupProgress(
     {
       id: "business-hours",
       required: true,
-      checkIds: ["schedule", "hours-confirmation"],
+      checkIds: ["schedule"],
       titleEn: "Business hours and closed days",
       titleVi: "Giờ mở cửa và ngày nghỉ",
       reasonEn:
@@ -109,11 +109,11 @@ export function deriveGuidedSetupProgress(
       reasonVi:
         "Lịch trống phải khớp giờ làm thực tế của salon trước khi khách đặt hẹn.",
       validationEn:
-        "Passes after valid hours are saved and a human confirms the real schedule.",
+        "Passes after valid hours and closed days are saved. The final Go-Live review separately records the owner's human confirmation.",
       validationVi:
-        "Đạt sau khi lưu giờ hợp lệ và người thật xác nhận lịch hoạt động thực tế.",
-      completeEn: "Business hours are valid and human-confirmed.",
-      completeVi: "Giờ hoạt động hợp lệ và đã được người thật xác nhận.",
+        "Đạt sau khi lưu giờ hợp lệ và ngày nghỉ. Bước Go-Live cuối sẽ ghi nhận riêng xác nhận của chủ salon.",
+      completeEn: "Business hours and closed days are valid.",
+      completeVi: "Giờ hoạt động và ngày nghỉ đã hợp lệ.",
       href: `${setupBase}/hours`,
     },
     {
@@ -174,7 +174,7 @@ export function deriveGuidedSetupProgress(
     {
       id: "communications",
       required: true,
-      checkIds: ["fallback-channel", "notification-language", "otp-policy"],
+      checkIds: ["fallback-channel", "notification-language"],
       titleEn: "Language, notifications, and consent",
       titleVi: "Ngôn ngữ, thông báo và đồng ý nhận tin",
       reasonEn:
@@ -182,13 +182,13 @@ export function deriveGuidedSetupProgress(
       reasonVi:
         "Thông báo giao dịch cần kênh dự phòng đã xác minh, đúng ngôn ngữ và quy định đồng ý nhận tin được chủ salon duyệt.",
       validationEn:
-        "Passes when email fallback is verified, EN or VI is saved as default, and OTP/consent policy is human-confirmed.",
+        "Passes when email fallback is verified and EN or VI is saved as default. The final Go-Live review separately records the owner's OTP/consent decision.",
       validationVi:
-        "Đạt khi email dự phòng đã xác minh, EN hoặc VI được lưu mặc định và chính sách OTP/đồng ý nhận tin được người thật xác nhận.",
+        "Đạt khi email dự phòng đã xác minh và EN hoặc VI được lưu mặc định. Bước Go-Live cuối sẽ ghi nhận riêng quyết định OTP/đồng ý nhận tin của chủ salon.",
       completeEn:
-        "Communication fallback, language, and consent review are complete.",
+        "Communication fallback and default language are complete.",
       completeVi:
-        "Kênh dự phòng, ngôn ngữ và xác nhận đồng ý nhận tin đã hoàn tất.",
+        "Kênh dự phòng và ngôn ngữ mặc định đã hoàn tất.",
       href: `${settingsBase}?section=notifications`,
     },
     {
@@ -213,7 +213,7 @@ export function deriveGuidedSetupProgress(
     {
       id: "booking-preview",
       required: true,
-      checkIds: ["public-booking", "human-approval"],
+      checkIds: ["public-booking"],
       titleEn: "Preview and live rehearsal",
       titleVi: "Xem trước và chạy thử",
       reasonEn:
@@ -221,18 +221,23 @@ export function deriveGuidedSetupProgress(
       reasonVi:
         "Người thật phải xác nhận trang khách và luồng tiếp tân hoạt động cùng nhau trước khi ra mắt.",
       validationEn:
-        "Passes when the public booking gate is valid and the approved rehearsal is recorded.",
+        "Passes when the public booking gate is valid. The final Go-Live review separately records the approved rehearsal.",
       validationVi:
-        "Đạt khi điều kiện đặt lịch công khai hợp lệ và lần chạy thử được cho phép đã được ghi nhận.",
+        "Đạt khi điều kiện đặt lịch công khai hợp lệ. Bước Go-Live cuối sẽ ghi nhận riêng lần chạy thử được phê duyệt.",
       completeEn:
-        "Public booking is valid and the human rehearsal is recorded.",
-      completeVi: "Đặt lịch công khai hợp lệ và lần chạy thử đã được ghi nhận.",
+        "The public booking gate is valid and ready for rehearsal.",
+      completeVi: "Điều kiện đặt lịch công khai đã hợp lệ và sẵn sàng chạy thử.",
       href: `${setupBase}/preview`,
     },
     {
       id: "go-live",
       required: true,
-      checkIds: ["owner-approval"],
+      checkIds: [
+        "hours-confirmation",
+        "otp-policy",
+        "human-approval",
+        "owner-approval",
+      ],
       titleEn: "Go-Live Readiness",
       titleVi: "Sẵn sàng hoạt động",
       reasonEn:

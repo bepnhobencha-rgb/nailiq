@@ -97,6 +97,35 @@ describe("deriveGuidedSetupProgress", () => {
     });
   });
 
+  it("keeps human attestations in the final Go-Live step instead of trapping earlier setup steps", () => {
+    const result = deriveGuidedSetupProgress(
+      "qa-salon",
+      readiness({
+        identity: "pass",
+        schedule: "pass",
+        staff: "pass",
+        catalog: "pass",
+        "booking-policy": "pass",
+        "fallback-channel": "pass",
+        "notification-language": "pass",
+        "public-booking": "pass",
+        "hours-confirmation": "review",
+        "otp-policy": "review",
+        "human-approval": "review",
+        "owner-approval": "review",
+      }),
+    );
+
+    expect(result).toMatchObject({
+      percent: 88,
+      completedCount: 7,
+      requiredCount: 8,
+      currentStepNumber: 9,
+      nextStep: { id: "go-live" },
+      complete: false,
+    });
+  });
+
   it("does not report completion when a required policy check is missing", () => {
     const result = deriveGuidedSetupProgress(
       "qa-salon",

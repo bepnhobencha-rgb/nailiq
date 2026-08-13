@@ -276,6 +276,11 @@ test.describe("Guided Admin Setup", () => {
     if (!completeOwner) throw new Error("complete owner fixture missing");
 
     await loginAs(page, completeOwner);
+    await expect(page).toHaveURL(
+      new RegExp(`/dashboard/${COMPLETE_SLUG}/setup$`),
+      { timeout: 30_000 },
+    );
+    await expect(page.locator('[data-guided-setup-mode="true"]')).toBeVisible();
     await page.goto(`/dashboard/${COMPLETE_SLUG}/settings/readiness`);
     await expect(page.getByTestId("guided-setup-return-card")).toBeVisible();
     await expect(page.getByTestId("go-live-readiness-summary")).toContainText(

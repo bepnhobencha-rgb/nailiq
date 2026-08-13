@@ -1045,14 +1045,17 @@ export function NoShowProtectionHub({
                   </span>
                 </span>
               </label>
-              {selfCancelFee ? (
-                <div className="ml-6 mt-2 flex flex-col gap-2">
+              <div
+                className={`ml-6 mt-2 flex flex-col gap-2 ${selfCancelFee ? "" : "opacity-60"}`}
+                aria-disabled={!selfCancelFee}
+              >
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-nq-muted">Cửa sổ huỷ — huỷ trong vòng</span>
                     <input
                       type="number"
                       min={1}
                       max={168}
+                      disabled={!selfCancelFee}
                       value={selfCancelWindow}
                       onChange={(e) => setSelfCancelWindow(e.target.value)}
                       data-testid="self-cancel-window-hours"
@@ -1066,6 +1069,7 @@ export function NoShowProtectionHub({
                       type="number"
                       min={0}
                       max={100}
+                      disabled={!selfCancelFee}
                       value={selfCancelPct}
                       placeholder={`= ${noshowPct}`}
                       onChange={(e) => setSelfCancelPct(e.target.value)}
@@ -1076,8 +1080,7 @@ export function NoShowProtectionHub({
                       để trống = giống phí no-show ({noshowPct}%)
                     </span>
                   </div>
-                </div>
-              ) : null}
+              </div>
               <p className="ml-6 mt-2 text-xs text-nq-muted">
                 {selfCancelFee ? (
                   <>
@@ -1172,8 +1175,13 @@ export function NoShowProtectionHub({
               </button>
             </div>
 
-            {remindersEnabled && (
-              <div className="mt-4 space-y-3 border-t border-nq-border/30 pt-4">
+            <div className="mt-4 space-y-3 border-t border-nq-border/30 pt-4">
+                {!remindersEnabled ? (
+                  <p className="rounded-xl border border-nq-border/30 bg-nq-bg/40 p-3 text-xs text-nq-muted">
+                    Reminder delivery is paused. You can still review and save the schedule,
+                    deposit, cancellation, and consent settings before turning reminders on.
+                  </p>
+                ) : null}
                 <p className="text-xs font-medium uppercase tracking-widest text-nq-muted">Email</p>
                 <label className="flex cursor-pointer items-center gap-3">
                   <input
@@ -1363,8 +1371,7 @@ export function NoShowProtectionHub({
                   {isPending ? "Saving…" : "Save Settings"}
                 </button>
                 {saveMsg && <p className="text-xs text-emerald-400">{saveMsg}</p>}
-              </div>
-            )}
+            </div>
           </section>
         )}
 
