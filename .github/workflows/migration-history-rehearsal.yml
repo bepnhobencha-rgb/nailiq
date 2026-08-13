@@ -67,6 +67,20 @@ jobs:
             SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY}" \
             npx tsx -e "import('./e2e/helpers/guardProduction').then(g => { g.assertNotProductionFromEnv(); console.log('✓ guard: not production'); })"
 
+          # Prove the migration itself provisions the private bucket. This must
+          # run before reference-data.sql, whose idempotent seed is only a local
+          # fallback and must not hide a blank-project deployment gap.
+          bucket_count="$(psql "$DB_URL" -tAc "
+            select count(*)
+            from storage.buckets
+            where id = 'nail-tryon'
+              and name = 'nail-tryon'
+              and public = false
+              and file_size_limit = 10485760
+              and allowed_mime_types @> array['image/jpeg', 'image/png', 'image/webp']::text[]
+          ")"
+          test "$bucket_count" -eq 1
+
           DB_URL="${DB_URL}" npx tsx scripts/check-schema-parity.ts
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f supabase/bootstrap/reference-data.sql
@@ -179,8 +193,6 @@ jobs:
 
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.service_categories')" -eq 13
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.platform_flags')" -eq 5
-          bucket_count="$(psql "$DB_URL" -tAc "select count(*) from storage.buckets where id = 'nail-tryon' and public = false")"
-          test "$bucket_count" -eq 1
 
       - name: Stop throwaway Supabase
         if: always()

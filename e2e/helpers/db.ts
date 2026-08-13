@@ -26,6 +26,7 @@ if (!supabaseUrl?.trim() || !serviceKey?.trim() || !anonKey?.trim()) {
 assertNotProductionFromEnv();
 
 const supabase = createClient(supabaseUrl, serviceKey);
+const anonSupabase = createClient(supabaseUrl, anonKey);
 
 export async function invokeAiAgentPermission(input: {
   salonId: string;
@@ -572,6 +573,110 @@ export async function seedNailTryOnAttachmentFixture(input: {
     designVersion: version,
     cookieValue: credential.cookieValue,
     bookingEnd: end.toISOString(),
+    sourceImagePath: `salon/${input.salonId}/session/${sessionId}/original.jpg`,
+    resultImagePath: `salon/${input.salonId}/session/${sessionId}/result.png`,
+    previewImagePath: `salon/${input.salonId}/session/${sessionId}/preview.jpg`,
+  };
+}
+
+export async function getNailTryOnBucketSecuritySnapshot() {
+  const { data: bucket, error: bucketError } = await supabase.storage.getBucket(
+    "nail-tryon",
+  );
+  if (bucketError || !bucket) {
+    throw new Error(
+      bucketError?.message ?? "getNailTryOnBucketSecuritySnapshot: bucket missing",
+    );
+  }
+
+  const probePath = `e2e-anon-probe/${randomUUID()}.jpg`;
+  const { error: anonymousUploadError } = await anonSupabase.storage
+    .from("nail-tryon")
+    .upload(probePath, new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), {
+      contentType: "image/jpeg",
+      upsert: false,
+    });
+
+  // A future policy regression could make the probe succeed. Remove it with
+  // the service role so the throwaway check never leaves an object behind.
+  if (!anonymousUploadError) {
+    await supabase.storage.from("nail-tryon").remove([probePath]);
+  }
+
+  return {
+    bucket,
+    anonymousUploadDenied: Boolean(anonymousUploadError),
+  };
+}
+
+export async function seedNailTryOnStorageObjects(paths: string[]) {
+  for (const objectPath of paths) {
+    const { error } = await supabase.storage
+      .from("nail-tryon")
+      .upload(objectPath, new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), {
+        contentType: "image/jpeg",
+        upsert: false,
+      });
+    if (error) {
+      throw new Error(`seedNailTryOnStorageObjects: ${error.message}`);
+    }
+  }
+}
+
+export async function getNailTryOnDeletionSnapshot(input: {
+  sessionId: string;
+  objectPaths: string[];
+}) {
+  const [{ data: session, error: sessionError }, { data: queue, error: queueError }] =
+    await Promise.all([
+      supabase
+        .from("nail_tryon_sessions" as never)
+        .select("status, deleted_at, result_image_path" as never)
+        .eq("id", input.sessionId)
+        .single(),
+      supabase
+        .from("nail_tryon_cleanup_queue" as never)
+        .select("object_path, processed_at, last_error" as never)
+        .eq("tryon_session_id", input.sessionId)
+        .order("object_path"),
+    ]);
+  if (sessionError) {
+    throw new Error(`getNailTryOnDeletionSnapshot session: ${sessionError.message}`);
+  }
+  if (queueError) {
+    throw new Error(`getNailTryOnDeletionSnapshot queue: ${queueError.message}`);
+  }
+
+  const objectChecks = await Promise.all(
+    input.objectPaths.map(async (objectPath) => {
+      const separator = objectPath.lastIndexOf("/");
+      const folder = objectPath.slice(0, separator);
+      const fileName = objectPath.slice(separator + 1);
+      const { data, error } = await supabase.storage
+        .from("nail-tryon")
+        .list(folder, { search: fileName, limit: 100 });
+      if (error) {
+        throw new Error(`getNailTryOnDeletionSnapshot storage: ${error.message}`);
+      }
+      return {
+        objectPath,
+        absent: !(data ?? []).some((object) => object.name === fileName),
+      };
+    }),
+  );
+
+  return {
+    session: session as unknown as {
+      status: string;
+      deleted_at: string | null;
+      result_image_path: string | null;
+    },
+    queue: (queue ?? []) as unknown as Array<{
+      object_path: string;
+      processed_at: string | null;
+      last_error: string | null;
+    }>,
+    objectChecks,
   };
 }
 

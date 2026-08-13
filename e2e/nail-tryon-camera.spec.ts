@@ -2,13 +2,18 @@ import { expect, test, type Page } from "@playwright/test";
 import path from "node:path";
 
 import {
+  cleanupClientProfile,
   cleanupTestSalon,
   cleanupTestUser,
+  completeBookingEntryGate,
   getNailTryOnAttachmentSnapshot,
+  getNailTryOnBucketSecuritySnapshot,
+  getNailTryOnDeletionSnapshot,
   getNailTryOnDesignMappings,
   getNailTryOnCatalogState,
   seedNailTryOnAttachmentFixture,
   seedNailTryOnDraftDesigns,
+  seedNailTryOnStorageObjects,
   seedNailTryOnTestMenu,
   seedTestSalon,
   seedTestSalonMember,
@@ -148,6 +153,7 @@ test.describe("Nail Try-On camera fallback", () => {
   test("saves main service and add-on mapping, then quotes live menu price and duration", async ({
     page,
   }) => {
+    const quotePhone = "+16045550147";
     const { salonId } = await seedTestSalon({
       slug: SLUG,
       name: "E2E Nail Try-On Smart Quote",
@@ -203,12 +209,17 @@ test.describe("Nail Try-On camera fallback", () => {
       await page.goto(
         `/${SLUG}?tryon=33333333-3333-4333-8333-333333333333&lang=en`,
       );
+      await completeBookingEntryGate(page, {
+        phone: quotePhone,
+        name: "Try-On Quote Guest",
+      });
       const quote = page.getByTestId("tryon-booking-recommendation");
       await expect(quote).toContainText("QA Cherry");
       await expect(quote).toContainText("Gel Manicure + Chrome Finish");
       await expect(quote).toContainText("60 min");
       await expect(quote).toContainText("$55.00");
     } finally {
+      await cleanupClientProfile(quotePhone);
       await cleanupTestUser(owner.userId);
     }
   });
@@ -484,6 +495,76 @@ test.describe("Nail Try-On camera fallback", () => {
     expect(Date.parse(snapshot.session.expires_at)).toBeGreaterThanOrEqual(
       Date.parse(fixture.bookingEnd) + 30 * 24 * 60 * 60 * 1000 - 1_000,
     );
+  });
+
+  test("keeps the image bucket private and permanently deletes a customer session", async ({
+    page,
+  }) => {
+    const { salonId } = await seedTestSalon({
+      slug: SLUG,
+      name: "E2E Nail Try-On Deletion",
+      feature_flags: { nail_tryon_enabled: true },
+    });
+    const menu = await seedNailTryOnTestMenu(salonId);
+    const [designId] = await seedNailTryOnDraftDesigns(salonId, ["QA Delete"]);
+    const fixture = await seedNailTryOnAttachmentFixture({
+      salonId,
+      designId,
+      serviceId: menu.service.id,
+    });
+    const objectPaths = [
+      fixture.sourceImagePath,
+      fixture.resultImagePath,
+      fixture.previewImagePath,
+    ];
+    await seedNailTryOnStorageObjects(objectPaths);
+
+    const bucket = await getNailTryOnBucketSecuritySnapshot();
+    expect(bucket.bucket).toMatchObject({
+      id: "nail-tryon",
+      public: false,
+      file_size_limit: 10 * 1024 * 1024,
+    });
+    expect(bucket.bucket.allowed_mime_types).toEqual(
+      expect.arrayContaining(["image/jpeg", "image/png", "image/webp"]),
+    );
+    expect(bucket.anonymousUploadDenied).toBe(true);
+
+    await page.context().addCookies([{
+      name: "nailiq_tryon",
+      value: fixture.cookieValue,
+      url: BASE,
+    }]);
+    const response = await page.request.delete(`${BASE}/api/nail-tryon/session`, {
+      data: { sessionId: fixture.sessionId },
+    });
+    expect(response.status()).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      deletion: "complete",
+    });
+
+    const cookie = (await page.context().cookies()).find(
+      (item) => item.name === "nailiq_tryon",
+    );
+    expect(cookie).toBeUndefined();
+
+    const snapshot = await getNailTryOnDeletionSnapshot({
+      sessionId: fixture.sessionId,
+      objectPaths,
+    });
+    expect(snapshot.session).toMatchObject({
+      status: "deleted",
+      result_image_path: null,
+    });
+    expect(snapshot.session.deleted_at).toBeTruthy();
+    expect(snapshot.queue).toHaveLength(3);
+    expect(
+      snapshot.queue.every(
+        (row) => row.processed_at && row.last_error === null,
+      ),
+    ).toBe(true);
+    expect(snapshot.objectChecks.every((item) => item.absent)).toBe(true);
   });
 
   test("hides Try-On from a non-nail salon even when the rollout flag is on", async ({
