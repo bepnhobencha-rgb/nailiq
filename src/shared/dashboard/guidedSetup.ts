@@ -86,10 +86,14 @@ export function deriveGuidedSetupProgress(
       checkIds: ["identity"],
       titleEn: "Salon information and timezone",
       titleVi: "Thông tin salon và múi giờ",
-      reasonEn: "Accurate contact details and timezone keep every booking on the right local schedule.",
-      reasonVi: "Thông tin liên hệ và múi giờ chính xác giúp mọi lịch hẹn chạy đúng giờ địa phương.",
-      validationEn: "Passes when name, address, public phone, and a supported timezone are saved.",
-      validationVi: "Đạt khi đã lưu tên, địa chỉ, số điện thoại công khai và múi giờ được hỗ trợ.",
+      reasonEn:
+        "Accurate contact details and timezone keep every booking on the right local schedule.",
+      reasonVi:
+        "Thông tin liên hệ và múi giờ chính xác giúp mọi lịch hẹn chạy đúng giờ địa phương.",
+      validationEn:
+        "Passes when name, address, public phone, and a supported timezone are saved.",
+      validationVi:
+        "Đạt khi đã lưu tên, địa chỉ, số điện thoại công khai và múi giờ được hỗ trợ.",
       completeEn: "Salon identity, contact details, and timezone are valid.",
       completeVi: "Thông tin, liên hệ và múi giờ của salon đã hợp lệ.",
       href: `${setupBase}/address`,
@@ -100,10 +104,14 @@ export function deriveGuidedSetupProgress(
       checkIds: ["schedule", "hours-confirmation"],
       titleEn: "Business hours and closed days",
       titleVi: "Giờ mở cửa và ngày nghỉ",
-      reasonEn: "Availability must match the salon's real working schedule before customers can book.",
-      reasonVi: "Lịch trống phải khớp giờ làm thực tế của salon trước khi khách đặt hẹn.",
-      validationEn: "Passes after valid hours are saved and a human confirms the real schedule.",
-      validationVi: "Đạt sau khi lưu giờ hợp lệ và người thật xác nhận lịch hoạt động thực tế.",
+      reasonEn:
+        "Availability must match the salon's real working schedule before customers can book.",
+      reasonVi:
+        "Lịch trống phải khớp giờ làm thực tế của salon trước khi khách đặt hẹn.",
+      validationEn:
+        "Passes after valid hours are saved and a human confirms the real schedule.",
+      validationVi:
+        "Đạt sau khi lưu giờ hợp lệ và người thật xác nhận lịch hoạt động thực tế.",
       completeEn: "Business hours are valid and human-confirmed.",
       completeVi: "Giờ hoạt động hợp lệ và đã được người thật xác nhận.",
       href: `${setupBase}/hours`,
@@ -114,10 +122,14 @@ export function deriveGuidedSetupProgress(
       checkIds: ["staff"],
       titleEn: "Staff and access",
       titleVi: "Nhân viên và quyền truy cập",
-      reasonEn: "Bookable staff and clear roles prevent appointments or sensitive settings from reaching the wrong person.",
-      reasonVi: "Nhân viên nhận lịch và vai trò rõ ràng giúp lịch hẹn hoặc cài đặt nhạy cảm không đến sai người.",
-      validationEn: "Passes when at least one active bookable staff member exists; review dashboard access on the same page.",
-      validationVi: "Đạt khi có ít nhất một nhân viên đang hoạt động nhận lịch; kiểm tra quyền Dashboard trên cùng trang.",
+      reasonEn:
+        "Bookable staff and clear roles prevent appointments or sensitive settings from reaching the wrong person.",
+      reasonVi:
+        "Nhân viên nhận lịch và vai trò rõ ràng giúp lịch hẹn hoặc cài đặt nhạy cảm không đến sai người.",
+      validationEn:
+        "Passes when at least one active bookable staff member exists; review dashboard access on the same page.",
+      validationVi:
+        "Đạt khi có ít nhất một nhân viên đang hoạt động nhận lịch; kiểm tra quyền Dashboard trên cùng trang.",
       completeEn: "At least one active staff member can take bookings.",
       completeVi: "Có ít nhất một nhân viên đang hoạt động có thể nhận lịch.",
       href: `${setupBase}/staff`,
@@ -128,12 +140,17 @@ export function deriveGuidedSetupProgress(
       checkIds: ["catalog"],
       titleEn: "Services, prices, and duration",
       titleVi: "Dịch vụ, giá và thời lượng",
-      reasonEn: "Customers and staff need one reliable source for what can be booked and how long it takes.",
-      reasonVi: "Khách và nhân viên cần một nguồn chính xác về dịch vụ có thể đặt và thời lượng thực hiện.",
-      validationEn: "Passes when every active service has a valid price and duration.",
-      validationVi: "Đạt khi mọi dịch vụ đang hoạt động có giá và thời lượng hợp lệ.",
+      reasonEn:
+        "Customers and staff need one reliable source for what can be booked and how long it takes.",
+      reasonVi:
+        "Khách và nhân viên cần một nguồn chính xác về dịch vụ có thể đặt và thời lượng thực hiện.",
+      validationEn:
+        "Passes when every active service has a valid price and duration.",
+      validationVi:
+        "Đạt khi mọi dịch vụ đang hoạt động có giá và thời lượng hợp lệ.",
       completeEn: "The active service menu has valid prices and durations.",
-      completeVi: "Danh mục dịch vụ đang hoạt động có giá và thời lượng hợp lệ.",
+      completeVi:
+        "Danh mục dịch vụ đang hoạt động có giá và thời lượng hợp lệ.",
       href: `${setupBase}/services`,
     },
     {
@@ -142,10 +159,14 @@ export function deriveGuidedSetupProgress(
       checkIds: ["booking-policy"],
       titleEn: "Booking and cancellation rules",
       titleVi: "Quy định đặt và huỷ lịch",
-      reasonEn: "Clear cancellation, no-show, group, and after-hours rules reduce disputes and staff guesswork.",
-      reasonVi: "Quy định rõ về huỷ lịch, vắng mặt, nhóm và ngoài giờ giúp giảm khiếu nại và việc nhân viên phải đoán.",
-      validationEn: "Passes when salon-specific cancellation and no-show policy text is saved in English and Vietnamese; optional group or after-hours rules apply only when enabled.",
-      validationVi: "Đạt khi đã lưu chính sách huỷ lịch và vắng mặt riêng của salon bằng tiếng Anh và tiếng Việt; quy định nhóm hoặc ngoài giờ chỉ áp dụng khi được bật.",
+      reasonEn:
+        "Clear cancellation, no-show, group, and after-hours rules reduce disputes and staff guesswork.",
+      reasonVi:
+        "Quy định rõ về huỷ lịch, vắng mặt, nhóm và ngoài giờ giúp giảm khiếu nại và việc nhân viên phải đoán.",
+      validationEn:
+        "Passes when salon-specific cancellation and no-show policy text is saved in English and Vietnamese; optional group or after-hours rules apply only when enabled.",
+      validationVi:
+        "Đạt khi đã lưu chính sách huỷ lịch và vắng mặt riêng của salon bằng tiếng Anh và tiếng Việt; quy định nhóm hoặc ngoài giờ chỉ áp dụng khi được bật.",
       completeEn: "The bilingual salon policy is saved.",
       completeVi: "Chính sách song ngữ riêng của salon đã được lưu.",
       href: `${dashboardBase}/no-show-protection`,
@@ -156,12 +177,18 @@ export function deriveGuidedSetupProgress(
       checkIds: ["fallback-channel", "notification-language", "otp-policy"],
       titleEn: "Language, notifications, and consent",
       titleVi: "Ngôn ngữ, thông báo và đồng ý nhận tin",
-      reasonEn: "Transactional messages need a verified fallback, the right language, and owner-approved consent rules.",
-      reasonVi: "Thông báo giao dịch cần kênh dự phòng đã xác minh, đúng ngôn ngữ và quy định đồng ý nhận tin được chủ salon duyệt.",
-      validationEn: "Passes when email fallback is verified, EN or VI is saved as default, and OTP/consent policy is human-confirmed.",
-      validationVi: "Đạt khi email dự phòng đã xác minh, EN hoặc VI được lưu mặc định và chính sách OTP/đồng ý nhận tin được người thật xác nhận.",
-      completeEn: "Communication fallback, language, and consent review are complete.",
-      completeVi: "Kênh dự phòng, ngôn ngữ và xác nhận đồng ý nhận tin đã hoàn tất.",
+      reasonEn:
+        "Transactional messages need a verified fallback, the right language, and owner-approved consent rules.",
+      reasonVi:
+        "Thông báo giao dịch cần kênh dự phòng đã xác minh, đúng ngôn ngữ và quy định đồng ý nhận tin được chủ salon duyệt.",
+      validationEn:
+        "Passes when email fallback is verified, EN or VI is saved as default, and OTP/consent policy is human-confirmed.",
+      validationVi:
+        "Đạt khi email dự phòng đã xác minh, EN hoặc VI được lưu mặc định và chính sách OTP/đồng ý nhận tin được người thật xác nhận.",
+      completeEn:
+        "Communication fallback, language, and consent review are complete.",
+      completeVi:
+        "Kênh dự phòng, ngôn ngữ và xác nhận đồng ý nhận tin đã hoàn tất.",
       href: `${settingsBase}?section=notifications`,
     },
     {
@@ -170,12 +197,17 @@ export function deriveGuidedSetupProgress(
       checkIds: ["optional-integrations"],
       titleEn: "Payments and AI",
       titleVi: "Thanh toán và AI",
-      reasonEn: "Connect only the paid capabilities this salon has chosen to use.",
+      reasonEn:
+        "Connect only the paid capabilities this salon has chosen to use.",
       reasonVi: "Chỉ kết nối những chức năng trả phí mà salon đã chọn sử dụng.",
-      validationEn: "Optional. A selected Square or Stripe provider, or enabled AI Voice, is shown as selected and never blocks core setup; provider credentials still need their own verification.",
-      validationVi: "Không bắt buộc. Square hoặc Stripe đã chọn, hoặc AI Voice đã bật, sẽ hiện là đã chọn và không bao giờ chặn thiết lập cốt lõi; credential của nhà cung cấp vẫn cần được kiểm tra riêng.",
-      completeEn: "An optional payment provider is selected or AI Voice is enabled.",
-      completeVi: "Đã chọn nhà cung cấp thanh toán không bắt buộc hoặc bật AI Voice.",
+      validationEn:
+        "Optional. A selected Square or Stripe provider, or enabled AI Voice, is shown as selected and never blocks core setup; provider credentials still need their own verification.",
+      validationVi:
+        "Không bắt buộc. Square hoặc Stripe đã chọn, hoặc AI Voice đã bật, sẽ hiện là đã chọn và không bao giờ chặn thiết lập cốt lõi; credential của nhà cung cấp vẫn cần được kiểm tra riêng.",
+      completeEn:
+        "An optional payment provider is selected or AI Voice is enabled.",
+      completeVi:
+        "Đã chọn nhà cung cấp thanh toán không bắt buộc hoặc bật AI Voice.",
       href: `${settingsBase}?section=integrations`,
     },
     {
@@ -184,13 +216,18 @@ export function deriveGuidedSetupProgress(
       checkIds: ["public-booking", "human-approval"],
       titleEn: "Preview and live rehearsal",
       titleVi: "Xem trước và chạy thử",
-      reasonEn: "A real human must confirm the customer page and front-desk flow work together before launch.",
-      reasonVi: "Người thật phải xác nhận trang khách và luồng tiếp tân hoạt động cùng nhau trước khi ra mắt.",
-      validationEn: "Passes when the public booking gate is valid and the approved rehearsal is recorded.",
-      validationVi: "Đạt khi điều kiện đặt lịch công khai hợp lệ và lần chạy thử được cho phép đã được ghi nhận.",
-      completeEn: "Public booking is valid and the human rehearsal is recorded.",
+      reasonEn:
+        "A real human must confirm the customer page and front-desk flow work together before launch.",
+      reasonVi:
+        "Người thật phải xác nhận trang khách và luồng tiếp tân hoạt động cùng nhau trước khi ra mắt.",
+      validationEn:
+        "Passes when the public booking gate is valid and the approved rehearsal is recorded.",
+      validationVi:
+        "Đạt khi điều kiện đặt lịch công khai hợp lệ và lần chạy thử được cho phép đã được ghi nhận.",
+      completeEn:
+        "Public booking is valid and the human rehearsal is recorded.",
       completeVi: "Đặt lịch công khai hợp lệ và lần chạy thử đã được ghi nhận.",
-      href: `${settingsBase}/readiness`,
+      href: `${setupBase}/preview`,
     },
     {
       id: "go-live",
@@ -198,10 +235,14 @@ export function deriveGuidedSetupProgress(
       checkIds: ["owner-approval"],
       titleEn: "Go-Live Readiness",
       titleVi: "Sẵn sàng hoạt động",
-      reasonEn: "The owner makes the final decision against the exact configuration that was reviewed.",
-      reasonVi: "Chủ salon đưa ra quyết định cuối cùng dựa trên đúng cấu hình đã được kiểm tra.",
-      validationEn: "Passes only when every prerequisite is complete and the Owner approves the current readiness snapshot.",
-      validationVi: "Chỉ đạt khi mọi điều kiện tiên quyết hoàn tất và Owner phê duyệt đúng bản cấu hình readiness hiện tại.",
+      reasonEn:
+        "The owner makes the final decision against the exact configuration that was reviewed.",
+      reasonVi:
+        "Chủ salon đưa ra quyết định cuối cùng dựa trên đúng cấu hình đã được kiểm tra.",
+      validationEn:
+        "Passes only when every prerequisite is complete and the Owner approves the current readiness snapshot.",
+      validationVi:
+        "Chỉ đạt khi mọi điều kiện tiên quyết hoàn tất và Owner phê duyệt đúng bản cấu hình readiness hiện tại.",
       completeEn: "The Owner approved the current readiness configuration.",
       completeVi: "Owner đã phê duyệt cấu hình readiness hiện tại.",
       href: `${settingsBase}/readiness`,

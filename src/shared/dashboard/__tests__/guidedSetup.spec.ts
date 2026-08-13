@@ -93,7 +93,7 @@ describe("deriveGuidedSetupProgress", () => {
     });
     expect(result.nextStep).toMatchObject({
       id: "booking-preview",
-      href: "/dashboard/qa%20salon/settings/readiness",
+      href: "/dashboard/qa%20salon/setup/preview",
     });
   });
 

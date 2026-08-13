@@ -105,9 +105,7 @@ test.describe("Guided Admin Setup", () => {
     await expect(page).toHaveURL(
       new RegExp(`/dashboard/${RESUME_SLUG}/setup$`),
     );
-    await expect(
-      page.locator('[data-guided-setup-mode="true"]'),
-    ).toBeVisible();
+    await expect(page.locator('[data-guided-setup-mode="true"]')).toBeVisible();
     await expect(page.getByTestId("guided-setup-next")).toBeVisible();
     await expect(
       page.getByTestId("guided-setup-step-salon-profile"),
@@ -232,28 +230,36 @@ test.describe("Guided Admin Setup", () => {
         "integrations",
         `/dashboard/${SURFACES_SLUG}/settings?section=integrations`,
       ],
-      ["booking-preview", `/dashboard/${SURFACES_SLUG}/settings/readiness`],
+      ["booking-preview", `/dashboard/${SURFACES_SLUG}/setup/preview`],
       ["go-live", `/dashboard/${SURFACES_SLUG}/settings/readiness`],
     ] as const;
 
     for (const [stepId, href] of destinations) {
-      await expect(page.getByTestId(`guided-setup-step-${stepId}`)).toHaveAttribute(
-        "href",
-        href,
-      );
+      await expect(
+        page.getByTestId(`guided-setup-step-${stepId}`),
+      ).toHaveAttribute("href", href);
     }
 
-    await expect(page.getByTestId("guided-setup-step-integrations")).toContainText(
-      /Optional|Không bắt buộc/i,
-    );
-    const progressBefore = await page.getByRole("progressbar").getAttribute(
-      "aria-valuenow",
-    );
+    await expect(
+      page.getByTestId("guided-setup-step-integrations"),
+    ).toContainText(/Optional|Không bắt buộc/i);
+    const progressBefore = await page
+      .getByRole("progressbar")
+      .getAttribute("aria-valuenow");
 
     for (const [, href] of destinations.slice(0, 8)) {
       await page.goto(href);
       await expect(page.getByTestId("guided-setup-return-card")).toBeVisible();
     }
+
+    await page.goto(`/dashboard/${SURFACES_SLUG}/setup/preview`);
+    await expect(
+      page.getByTestId("guided-open-public-booking"),
+    ).toHaveAttribute("href", `/${SURFACES_SLUG}`);
+    await expect(page.getByTestId("guided-preview-continue")).toHaveAttribute(
+      "href",
+      `/dashboard/${SURFACES_SLUG}/settings/readiness`,
+    );
 
     await page.goto(`/dashboard/${SURFACES_SLUG}/setup`);
     await expect(page.getByRole("progressbar")).toHaveAttribute(
