@@ -9,6 +9,7 @@ import {
   seedTestUser,
   setTestSalonFeatureFlags,
 } from "./helpers/db";
+import { createServiceRoleClient } from "../src/shared/lib/supabase/serviceRole";
 
 const RESUME_SLUG = "e2e-guided-setup-resume";
 const COMPLETE_SLUG = "e2e-guided-setup-complete";
@@ -60,6 +61,18 @@ test.describe("Guided Admin Setup", () => {
       phone: "15553334001",
       feature_flags: { guided_admin_setup_enabled: true },
     });
+    // `seedTestSalon` intentionally creates a broadly usable fixture for the
+    // rest of the suite. Guided Setup needs a genuinely incomplete starting
+    // point so its percentage is certified from saved readiness data instead
+    // of button clicks. Staff + service are the only initial PASS steps (2/8).
+    const resumeDb = createServiceRoleClient();
+    const { error: resumeResetError } = await resumeDb
+      .from("salons")
+      .update({ profile_complete: false, opening_hours: null } as never)
+      .eq("id", resumeSalon.salonId);
+    if (resumeResetError) {
+      throw new Error(`guided resume fixture reset: ${resumeResetError.message}`);
+    }
     resumeOwner = await seedTestSalonMember(resumeSalon.salonId, "owner");
 
     const completeSalon = await seedTestSalon({
@@ -229,7 +242,7 @@ test.describe("Guided Admin Setup", () => {
     );
     await expect(page.getByRole("progressbar")).toHaveAttribute(
       "aria-valuenow",
-      "38",
+      "50",
     );
     await expect(page.getByTestId("guided-setup-next-title")).toContainText(
       /Business hours|Giờ mở cửa/i,
@@ -250,10 +263,10 @@ test.describe("Guided Admin Setup", () => {
     );
     await expect(page.getByRole("progressbar")).toHaveAttribute(
       "aria-valuenow",
-      "50",
+      "63",
     );
     await expect(page.getByTestId("guided-setup-next-title")).toContainText(
-      /Team & access|Nhân viên/i,
+      /Booking and cancellation rules|Quy định đặt và huỷ lịch/i,
     );
 
     await page.context().clearCookies();
@@ -263,10 +276,10 @@ test.describe("Guided Admin Setup", () => {
     );
     await expect(page.getByRole("progressbar")).toHaveAttribute(
       "aria-valuenow",
-      "50",
+      "63",
     );
     await expect(page.getByTestId("guided-setup-next-title")).toContainText(
-      /Team & access|Nhân viên/i,
+      /Booking and cancellation rules|Quy định đặt và huỷ lịch/i,
     );
   });
 
@@ -401,8 +414,15 @@ test.describe("Guided Admin Setup", () => {
       .last()
       .click();
     await expect(page.getByText(/\$46(?:\.00)?/).first()).toBeVisible();
-    await page.reload();
-    await expect(page.getByText(/\$46(?:\.00)?/).first()).toBeVisible();
+    await expect
+      .poll(
+        async () => {
+          await page.reload();
+          return page.getByText(/\$46(?:\.00)?/).count();
+        },
+        { timeout: 15_000 },
+      )
+      .toBeGreaterThan(0);
 
     await page.goto(`/dashboard/${SURFACES_SLUG}/no-show-protection`);
     await expect(page.getByTestId("policy-en")).toHaveValue(
@@ -411,8 +431,6 @@ test.describe("Guided Admin Setup", () => {
     await expect(page.getByTestId("policy-vi")).toHaveValue(
       "Vui lòng liên hệ salon trước khi huỷ hoặc đổi lịch.",
     );
-    await expect(page.getByTestId("noshow-whole-party-toggle")).toBeVisible();
-    await expect(page.getByTestId("self-cancel-window-hours")).toBeVisible();
     await expect(page.getByTestId("booking-policy-coverage")).toBeVisible();
     await expect(page.getByTestId("booking-policy-group-status")).toContainText(
       /optional|không bắt buộc/i,
@@ -420,6 +438,10 @@ test.describe("Guided Admin Setup", () => {
     await expect(
       page.getByTestId("booking-policy-after-hours-status"),
     ).toContainText(/Owner\/Admin|Owner|Admin/i);
+    // This fixture is an Admin. It can review the salon policy, but financial
+    // no-show controls remain Owner-only by design.
+    await expect(page.getByTestId("noshow-whole-party-toggle")).toHaveCount(0);
+    await expect(page.getByTestId("self-cancel-window-hours")).toHaveCount(0);
 
     await page.goto(
       `/dashboard/${SURFACES_SLUG}/settings?section=notifications`,
