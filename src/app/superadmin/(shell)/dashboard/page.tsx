@@ -98,8 +98,8 @@ export default async function SuperadminDashboardPage() {
           Control Tower
         </h1>
         <p className="text-sm text-nq-muted">
-          Foundation V1 — basic platform counters. Richer KPIs and live
-          operations land in Phase 2.
+          Current platform counters and entry points for operator review. Open
+          each tool to see its own evidence and readiness state.
         </p>
       </header>
 
@@ -123,24 +123,24 @@ export default async function SuperadminDashboardPage() {
       </section>
 
       <section className="rounded-2xl border border-nq-border bg-nq-surface p-6">
-        <h2 className="text-sm font-semibold text-nq-foreground">Roadmap</h2>
+        <h2 className="text-sm font-semibold text-nq-foreground">
+          Operator checklist
+        </h2>
         <ul className="mt-3 flex flex-col gap-2 text-sm text-nq-muted">
           <li>
-            <span className="font-medium text-nq-foreground">Phase 1D</span> —
-            real salon list + detail (read-only).
+            Review tenant exceptions and scoped controls from Salons.
           </li>
           <li>
-            <span className="font-medium text-nq-foreground">Phase 1E</span> —
-            impersonation (login-as-salon), audit-log viewer.
+            Investigate incidents and recent operator actions before changing a
+            platform flag.
           </li>
           <li>
-            <span className="font-medium text-nq-foreground">Phase 1F</span> —
-            platform feature flags + announcements admin, superadmin user
-            management.
+            Treat announcements as drafts until recipients, language, approval,
+            and delivery evidence are confirmed.
           </li>
           <li>
-            <span className="font-medium text-nq-foreground">Phase 2/3</span> —
-            operations, billing intelligence, AI ops, analytics depth.
+            Use AI Ops to inspect runtime proof and cost; an “Open tool” link is
+            not a certification result.
           </li>
         </ul>
       </section>

@@ -40,8 +40,8 @@ export default function AiIndexPage() {
             >
               <div className="flex items-center justify-between gap-3">
                 <h2 className="font-semibold text-nq-foreground">{tool.title}</h2>
-                <span className="rounded-full border border-nq-success/45 bg-nq-success/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-nq-success">
-                  Live
+                <span className="rounded-full border border-nq-border bg-nq-bg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-nq-muted">
+                  Open tool
                 </span>
               </div>
               <p className="mt-2 text-sm leading-6 text-nq-muted">

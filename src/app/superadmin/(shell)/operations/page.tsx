@@ -2,32 +2,30 @@ import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
-/**
- * Operations is a directory of production-ready operator tools.
- * Unimplemented roadmap routes stay out of the navigation so the
- * console never presents placeholders as working controls.
- */
+/** Operations is a directory of operator tools. Each tool owns its runtime
+ * readiness evidence; reaching this directory is not proof that a workflow is
+ * operational. */
 const items = [
   {
     href: "/superadmin/operations/feature-flags",
     title: "Platform feature flags",
     blurb:
       "Toggle global switches (demo OTP, Stripe billing, SMS, email, new-salon registration).",
-    phase: "Live",
+    phase: "Open tool",
   },
   {
     href: "/superadmin/operations/announcements",
     title: "Announcements",
     blurb:
       "Broadcast notices to owners / staff / superadmins. Drafts + scheduled publish.",
-    phase: "Live",
+    phase: "Open tool",
   },
   {
     href: "/superadmin/operations/system-health",
     title: "System health",
     blurb:
       "Self-hosted error monitor: grouped app errors with AI summary, suggested fix, and AI-drafted PRs.",
-    phase: "Live",
+    phase: "Open tool",
   },
 ];
 
@@ -54,7 +52,7 @@ export default function OperationsIndexPage() {
                 <h2 className="text-base font-semibold text-nq-foreground">
                   {item.title}
                 </h2>
-                <span className="rounded-full border border-nq-success/45 bg-nq-success/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-nq-success">
+                <span className="rounded-full border border-nq-border bg-nq-bg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-nq-muted">
                   {item.phase}
                 </span>
               </div>

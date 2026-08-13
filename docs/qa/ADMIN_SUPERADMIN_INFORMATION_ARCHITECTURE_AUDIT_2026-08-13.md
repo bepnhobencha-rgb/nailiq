@@ -55,6 +55,110 @@ The safe target is:
 | AI Ops | Verify agent reliability and cost | certification matrix, cost ledger | **KEEP**, evidence labels required |
 | Admin menu | Rare/high-risk administration | users, MFA/security, platform credentials | **MOVE** out of the everyday rail |
 
+## Current navigation and hub-card inventory
+
+This section inventories the entry points a user can actually see or open. It
+is intentionally separate from the route inventory: one route can appear in
+several menus, while some routes are never linked from the product at all.
+
+### Salon desktop rail (19 possible items)
+
+Role and release-feature checks are part of the current implementation. An
+item marked “conditional” is not proof that the underlying workflow is ready.
+
+| Current item | Current visibility | Destination | Decision |
+| --- | --- | --- | --- |
+| Home | Owner/Admin | Dashboard home | **KEEP** |
+| Pulse | Owner/Admin | `/pulse` | **MOVE** to Business after certification |
+| Front desk | `receptionist_center` | Center day view | **KEEP** |
+| Walk-ins | `receptionist_center` + `walkin_queue` | Center queue | **MERGE** into Today cockpit |
+| Online waitlist | `receptionist_center` | Center Waitlist | **MERGE** into Today cockpit; keep urgent badge |
+| Calendar | `receptionist_center` | Center week view | **MERGE** into Today cockpit |
+| Customers | All except nail tech | `/clients` | **KEEP** |
+| Staff | Owner/Admin | `/setup/staff` | **MOVE** to More → Salon setup |
+| Services | Owner/Admin | `/setup/services` | **MOVE** to More → Salon setup |
+| Reports | Owner/Admin + `advanced_reports` | `/insights` | **MOVE** to Business |
+| Reviews | Owner/Admin + `reviews` | `/reviews` | **MOVE** to Business |
+| Loyalty | Owner/Admin + `loyalty` | `/setup/loyalty` | **MOVE** to Business |
+| Photos | Owner/Admin/Senior + `photos` | `/photos` | **MOVE** to Brand / My Page |
+| Combos | `combos` | `/combos` | **MOVE** into Services |
+| Disputes | Owner/Admin | `/disputes` | **MOVE** to More → Payments |
+| AI Control Center | Owner/Admin + `ai_control_center` | `/ai` | **KEEP** as one canonical AI hub |
+| Activity | Owner/Admin | `/activity` | **MOVE** to More → System |
+| Marketing | Owner/Admin + `marketing` | `/marketing` | **MOVE** to Business |
+| Settings | All permitted dashboard roles | `/settings` | **KEEP** as More → Salon setup |
+
+Current Basic Mode reduces front-desk roles to Front desk, Walk-ins, Online
+waitlist, Calendar, Customers, and Settings. Owner/Admin bypass Basic Mode and
+therefore still see the management map. The approved Guided Setup prototype
+must hide that map only during first-run setup, behind its QA-only flag.
+
+### Salon mobile bottom navigation and More sheet
+
+| Surface | Current items | Decision |
+| --- | --- | --- |
+| Fixed five tabs | Home, Today, Customers, Business (Owner/Admin) or Waiting (desk role), More | **KEEP**; this already matches the five-job target |
+| More → Front desk | Walk-ins, Online waitlist, Calendar | **KEEP/MERGE** into live-operation group |
+| More → Salon setup | Staff, Services | **KEEP** for Owner/Admin only |
+| More → Growth | Reviews, Loyalty, Marketing when their flags are on | **MOVE** under Business; do not show empty group |
+| More → System | AI Control Center or Approvals, Activity, Settings | **KEEP**, with one AI destination and evidence-aware badges |
+
+The mobile surface is structurally cleaner than the desktop rail. The desktop
+prototype should converge on this hierarchy instead of inventing another menu.
+
+### Salon Settings overview cards (6 cards, up to 16 actions)
+
+| Card | Current actions | Decision |
+| --- | --- | --- |
+| Salon operations | Services, Staff, Business hours, Address | **KEEP**; these are Guided Setup steps 1–4 |
+| Booking & front desk | Open front desk, Booking rules | **KEEP**; policies become Guided Setup step 5 |
+| Customers & communication | Communication channels, Promotions | **KEEP**, but promotions move to Business |
+| Brand & booking page | Brand appearance, My Page | **KEEP** and certify preview/publish |
+| AI & automation | AI Manager, Manager briefing, optional AI Receptionist | **MOVE** to optional integrations; never block core go-live |
+| Growth & system | Go-live readiness, Integrations & reviews, Plan & advanced | **MERGE** readiness into the final Guided step; move plan/admin controls to More |
+
+### SuperAdmin navigation (10 registered items)
+
+| Item | Current state | Role reach | Decision |
+| --- | --- | --- | --- |
+| Dashboard | Visible | All platform roles | **FIX** into Control Tower; remove stale roadmap copy |
+| Salons | Visible | Founder/Ops/Support/Billing | **KEEP** |
+| Users | Visible | Founder/Ops/Support | **MOVE** to rare Admin menu |
+| Operations | Visible | Founder/Ops | **KEEP** |
+| Support | Visible | Founder/Ops/Support/Read-only | **MERGE** directly to Audit logs until a second tool exists |
+| Analytics | MVP-hidden placeholder | All platform roles | **HIDE** until implemented and certified |
+| AI Ops | Visible | Founder/AI admin | **KEEP** |
+| Billing | MVP-hidden placeholder | Founder/Billing | **HIDE** until implemented and certified |
+| Security | Visible | Founder/Ops | **MOVE** to rare Admin menu |
+| Settings | Visible | All platform roles | **FIX** role reach and safety; platform credentials must not be exposed to every role |
+
+Mobile currently fixes Dashboard, Salons, Operations, Support, and Settings as
+five tabs. That puts the highest-risk platform Settings surface in everyday
+navigation; the prototype should replace it with a neutral More/Admin entry and
+preserve role checks.
+
+### SuperAdmin hub cards (5 actions)
+
+| Hub | Card/action | Current label | Evidence status | Decision |
+| --- | --- | --- | --- | --- |
+| Operations | Platform feature flags | Live | **VERIFIED WORKING** | **KEEP**, derive state from audit/checks |
+| Operations | Announcements | Live | **UNKNOWN** | **FIX** label to “Open tool”; certify draft/approval before real send |
+| Operations | System health | Live | **UNKNOWN** | **FIX** label to “Open tool”; certify read-only incident journey |
+| AI Ops | AI Cost Ledger | Live | **UNKNOWN** | **FIX** label to “Open tool”; require provider reconciliation |
+| AI Ops | Agent Certification Matrix | Live | **UNKNOWN** | **FIX** label to “Open tool”; require runtime proof per agent |
+
+### Action-level coverage boundary
+
+All route entry points, desktop/mobile menu items, Settings overview actions,
+and SuperAdmin hub-card actions are inventoried above. Inline create/update/
+delete/send/charge/credential controls are not declared working merely because
+their page exists. Their authoritative status is the route row plus the
+corresponding workflow certification (booking, no-show/payment, outbound,
+Agent Matrix, authentication/security). Until that workflow evidence exists,
+the action remains **UNKNOWN** or **NEEDS SETUP**. This prevents a misleading
+“all buttons work” claim while preserving a complete map of where every action
+belongs.
+
 ## Salon Dashboard route inventory (34 routes)
 
 | Route | Primary job | Current status | Current evidence / gap | Decision |
@@ -162,4 +266,3 @@ No navigation move or hide should ship broadly from this audit alone. The implem
 5. compare support/task completion before and after;
 6. roll out gradually behind a feature flag;
 7. keep Hi-Lite Head Spa and Hi-Lite Studio unchanged until explicit approval.
-
