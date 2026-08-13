@@ -2,12 +2,18 @@ import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { loadPublicNailTryOnSalon } from "@/shared/nailTryOn/publicSalon";
-import { inspectHandPhoto, TRYON_COOKIE } from "@/shared/nailTryOn/server";
+import {
+  inspectHandPhotoWithUsage,
+  QUALITY_MODEL,
+  QUALITY_PROMPT_VERSION,
+  TRYON_COOKIE,
+} from "@/shared/nailTryOn/server";
 import { createSessionCredential } from "@/shared/nailTryOn/sessionCredential";
 import { recordNailTryOnEvent } from "@/shared/nailTryOn/telemetry";
 import { decideServerQuality } from "@/shared/nailTryOn/qualityPolicy";
 import { parseNailTryOnCaptureMode } from "@/shared/nailTryOn/captureMode";
 import { isBlockingNailTryOnResolution } from "@/shared/nailTryOn/imageQuality";
+import { recordOpenAIUsageEvent } from "@/shared/ai/usageLedger";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -70,6 +76,7 @@ export async function POST(request: Request) {
     status: "uploaded",
     consent_at: new Date().toISOString(),
     consent_version: consentVersion,
+    quality_prompt_version: QUALITY_PROMPT_VERSION,
     expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
   } as never);
   if (insertError) {
@@ -78,8 +85,25 @@ export async function POST(request: Request) {
   }
   await recordNailTryOnEvent({ salonId: salon.id, sessionId, event: "upload_received", properties: { bytes: normalized.byteLength } });
 
+  const qualityStartedAt = Date.now();
+  let qualityUsageRecorded = false;
   try {
-    const verdict = await inspectHandPhoto(normalized, captureMode);
+    const { verdict, usage } = await inspectHandPhotoWithUsage(
+      normalized,
+      captureMode,
+    );
+    await recordOpenAIUsageEvent({
+      context: {
+        salonId: salon.id,
+        correlationId: sessionId,
+        feature: "nail_tryon_quality",
+        model: QUALITY_MODEL,
+      },
+      status: "succeeded",
+      usage,
+      startedAt: qualityStartedAt,
+    });
+    qualityUsageRecorded = true;
     const decision = decideServerQuality(verdict);
     const passed = decision.passed;
     const qualityCode = decision.code;
@@ -87,7 +111,8 @@ export async function POST(request: Request) {
       status: passed ? "quality_passed" : "quality_rejected",
       quality_code: qualityCode,
       provider: "openai",
-      provider_model: process.env.NAIL_TRYON_QUALITY_MODEL || "gpt-5.6-luna",
+      provider_model: QUALITY_MODEL,
+      quality_prompt_version: QUALITY_PROMPT_VERSION,
       updated_at: new Date().toISOString(),
     } as never).eq("id", sessionId);
 
@@ -103,6 +128,19 @@ export async function POST(request: Request) {
     });
     return response;
   } catch {
+    if (!qualityUsageRecorded) {
+      await recordOpenAIUsageEvent({
+        context: {
+          salonId: salon.id,
+          correlationId: sessionId,
+          feature: "nail_tryon_quality",
+          model: QUALITY_MODEL,
+        },
+        status: "failed",
+        startedAt: qualityStartedAt,
+        errorCode: "quality_provider_error",
+      });
+    }
     return NextResponse.json({ error: "quality_unavailable", sessionId }, { status: 503 });
   }
 }

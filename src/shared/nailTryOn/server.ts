@@ -21,6 +21,8 @@ export const TRYON_COOKIE = "nailiq_tryon";
 export const QUALITY_MODEL = process.env.NAIL_TRYON_QUALITY_MODEL || "gpt-5.6-luna";
 export const IMAGE_MODEL = process.env.NAIL_TRYON_IMAGE_MODEL || "gpt-image-2-2026-04-21";
 export const MAPPING_MODEL = process.env.NAIL_TRYON_MAPPING_MODEL || QUALITY_MODEL;
+export const QUALITY_PROMPT_VERSION = "quality-v2-2026-08-10";
+export const GENERATION_PROMPT_VERSION = "generation-v1-2026-08-13";
 
 const qualitySchema = z.object({
   verdict: z.enum(["pass", "hand_not_found", "multiple_hands", "nails_occluded", "wrong_pose"]),
@@ -47,10 +49,10 @@ function openaiClient(timeout: number) {
   return new OpenAI({ timeout, maxRetries: 0 });
 }
 
-export async function inspectHandPhoto(
+export async function inspectHandPhotoWithUsage(
   bytes: Buffer,
   captureMode: NailTryOnCaptureMode = "single",
-): Promise<ServerQualityVerdict> {
+) {
   const response = await openaiClient(NAIL_TRYON_QUALITY_TIMEOUT_MS).responses.parse({
     model: QUALITY_MODEL,
     input: [{
@@ -63,7 +65,14 @@ export async function inspectHandPhoto(
     text: { format: zodTextFormat(qualitySchema, "nail_tryon_quality") },
   });
   if (!response.output_parsed) throw new Error("quality_response_invalid");
-  return response.output_parsed;
+  return { verdict: response.output_parsed, usage: response.usage };
+}
+
+export async function inspectHandPhoto(
+  bytes: Buffer,
+  captureMode: NailTryOnCaptureMode = "single",
+): Promise<ServerQualityVerdict> {
+  return (await inspectHandPhotoWithUsage(bytes, captureMode)).verdict;
 }
 
 export async function autoMapNailDesign(args: {
@@ -114,7 +123,7 @@ export async function autoMapNailDesign(args: {
   return heuristicAutoMapping(`${args.designName} ${args.description || ""}`, args.services);
 }
 
-export async function generateNailPreview(args: {
+export async function generateNailPreviewWithUsage(args: {
   hand: Buffer;
   design: Buffer;
   designMime?: string;
@@ -146,5 +155,14 @@ export async function generateNailPreview(args: {
   });
   const encoded = result.data?.[0]?.b64_json;
   if (!encoded) throw new Error("image_response_missing");
-  return Buffer.from(encoded, "base64");
+  return {
+    image: Buffer.from(encoded, "base64"),
+    usage: result.usage,
+  };
+}
+
+export async function generateNailPreview(
+  args: Parameters<typeof generateNailPreviewWithUsage>[0],
+): Promise<Buffer> {
+  return (await generateNailPreviewWithUsage(args)).image;
 }
