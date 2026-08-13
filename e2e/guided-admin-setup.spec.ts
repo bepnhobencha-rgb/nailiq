@@ -295,6 +295,19 @@ test.describe("Guided Admin Setup", () => {
     await expect(page.getByTestId("staff-notifications-card")).toBeVisible();
     await expect(page.getByTestId("staff-notif-locale-vi")).toBeChecked();
 
+    const notificationCard = page.getByTestId("staff-notifications-card");
+    await notificationCard.getByTestId("staff-notif-locale-en").check();
+    await notificationCard.getByRole("button").click();
+    await expect(notificationCard.getByTestId("staff-notif-toast")).toBeVisible();
+    await page.reload();
+    await expect(page.getByTestId("staff-notif-locale-en")).toBeChecked();
+
+    await page.getByTestId("staff-notif-locale-vi").check();
+    await page.getByTestId("staff-notifications-card").getByRole("button").click();
+    await expect(page.getByTestId("staff-notif-toast")).toBeVisible();
+    await page.reload();
+    await expect(page.getByTestId("staff-notif-locale-vi")).toBeChecked();
+
     for (const [, href] of destinations.slice(0, 8)) {
       await page.goto(href);
       await expect(page.getByTestId("guided-setup-return-card")).toBeVisible();
