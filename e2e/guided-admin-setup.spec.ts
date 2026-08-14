@@ -418,15 +418,13 @@ test.describe("Guided Admin Setup", () => {
       .last()
       .click();
     await expect(page.getByText(/\$46(?:\.00)?/).first()).toBeVisible();
-    await expect
-      .poll(
-        async () => {
-          await page.reload();
-          return page.getByText(/\$46(?:\.00)?/).count();
-        },
-        { timeout: 15_000 },
-      )
-      .toBeGreaterThan(0);
+    // Reload once, then let slower mobile WebKit finish rendering. Repeatedly
+    // reloading inside expect.poll starves the page before the persisted row
+    // can render, even though the server action has already completed.
+    await page.reload();
+    await expect(page.getByText(/\$46(?:\.00)?/).first()).toBeVisible({
+      timeout: 15_000,
+    });
 
     await page.goto(`/dashboard/${SURFACES_SLUG}/no-show-protection`);
     await expect(page.getByTestId("policy-en")).toHaveValue(
