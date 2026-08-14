@@ -24,10 +24,10 @@ import { execFileSync } from "node:child_process";
  */
 const PRODUCTION = {
   tables: 109,
-  columns: 1478,
+  columns: 1483,
   policies: 156,
   /**
-   * APP functions only — 121 after the rehearsed forward migrations.
+   * APP functions only — 124 after the rehearsed forward migrations.
    *
    * Counting every `public` function is a trap: many belong to EXTENSIONS
    * (pgcrypto, btree_gist, pg_trgm, uuid-ossp), which production happens to have
@@ -36,9 +36,9 @@ const PRODUCTION = {
    * The query below excludes anything a `pg_depend` extension edge points at,
    * so extension placement cannot distort this release-shape tripwire.
    */
-  functions: 121,
+  functions: 124,
   triggers: 40,
-  indexes: 359,
+  indexes: 361,
 } as const;
 
 /**
@@ -127,6 +127,9 @@ const CRITICAL_FUNCTIONS = [
   "queue_platform_announcement_deliveries",
   "claim_stripe_subscription_checkout",
   "finish_stripe_subscription_checkout",
+  "reconcile_stripe_subscription_checkout",
+  "mark_stripe_subscription_checkout_completed",
+  "close_stripe_subscription_checkout",
   "claim_stripe_webhook_event",
   "finish_stripe_webhook_event",
 ] as const;

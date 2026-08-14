@@ -6,8 +6,10 @@ const mocks = vi.hoisted(() => ({
   getStripeReturnOrigin: vi.fn(),
   claimCheckout: vi.fn(),
   finishCheckout: vi.fn(),
+  reconcileCheckout: vi.fn(),
+  reconcileProvider: vi.fn(),
   maybeSingle: vi.fn(),
-  persistCustomer: vi.fn(),
+  persistCustomerBinding: vi.fn(),
   customersCreate: vi.fn(),
   checkoutCreate: vi.fn(),
 }));
@@ -26,6 +28,16 @@ vi.mock("@/shared/subscriptions/stripeCheckoutLedger", () => ({
     mocks.claimCheckout(...args),
   finishStripeSubscriptionCheckout: (...args: unknown[]) =>
     mocks.finishCheckout(...args),
+  reconcileStripeSubscriptionCheckout: (...args: unknown[]) =>
+    mocks.reconcileCheckout(...args),
+}));
+vi.mock("@/shared/subscriptions/stripeCheckoutReconciliation", () => ({
+  reconcileExpiredStripeCheckout: (...args: unknown[]) =>
+    mocks.reconcileProvider(...args),
+}));
+vi.mock("@/shared/subscriptions/stripeCustomerBinding", () => ({
+  persistStripeCustomerBinding: (...args: unknown[]) =>
+    mocks.persistCustomerBinding(...args),
 }));
 vi.mock("@/shared/lib/supabase/serviceRole", () => ({
   createServiceRoleClient: () => ({
@@ -34,10 +46,6 @@ vi.mock("@/shared/lib/supabase/serviceRole", () => ({
       return {
         select: () => ({
           eq: () => ({ maybeSingle: mocks.maybeSingle }),
-        }),
-        update: (patch: unknown) => ({
-          eq: (column: string, value: unknown) =>
-            mocks.persistCustomer(patch, column, value),
         }),
       };
     },
@@ -77,8 +85,10 @@ describe("createCheckoutSession billing idempotency", () => {
     mocks.getStripeReturnOrigin.mockReset();
     mocks.claimCheckout.mockReset();
     mocks.finishCheckout.mockReset();
+    mocks.reconcileCheckout.mockReset();
+    mocks.reconcileProvider.mockReset();
     mocks.maybeSingle.mockReset();
-    mocks.persistCustomer.mockReset();
+    mocks.persistCustomerBinding.mockReset();
     mocks.customersCreate.mockReset();
     mocks.checkoutCreate.mockReset();
 
@@ -100,7 +110,7 @@ describe("createCheckoutSession billing idempotency", () => {
       },
       error: null,
     });
-    mocks.persistCustomer.mockResolvedValue({ error: null });
+    mocks.persistCustomerBinding.mockResolvedValue(undefined);
     mocks.customersCreate.mockResolvedValue({ id: "cus_created" });
     mocks.checkoutCreate.mockResolvedValue({
       id: "cs_test_once",
@@ -128,9 +138,19 @@ describe("createCheckoutSession billing idempotency", () => {
         customer: "cus_existing",
         client_reference_id: SALON_ID,
         line_items: [{ price: "price_core_test", quantity: 1 }],
-        metadata: { salon_id: SALON_ID, plan: "pro" },
+        metadata: expect.objectContaining({
+          salon_id: SALON_ID,
+          plan: "pro",
+          pricing_source: "stripe_catalog",
+          catalog_price_id: "price_core_test",
+        }),
         subscription_data: {
-          metadata: { salon_id: SALON_ID, plan: "pro" },
+          metadata: expect.objectContaining({
+            salon_id: SALON_ID,
+            plan: "pro",
+            pricing_source: "stripe_catalog",
+            catalog_price_id: "price_core_test",
+          }),
         },
       }),
       { idempotencyKey: `${CLAIM.idempotencyKey}:session` },
@@ -167,18 +187,16 @@ describe("createCheckoutSession billing idempotency", () => {
     "conflicting_plan",
     "conflicting_request",
     "active_subscription",
-  ] as const)(
-    "fails closed for a %s guard outcome",
-    async (outcome) => {
-      mocks.claimCheckout.mockResolvedValueOnce({ ...CLAIM, outcome });
+  ] as const)("fails closed for a %s guard outcome", async (outcome) => {
+    mocks.claimCheckout.mockResolvedValueOnce({ ...CLAIM, outcome });
 
-      await expect(
-        createCheckoutSession("tenant-one", "pro"),
-      ).resolves.toEqual({ ok: false, error: "server_error" });
-      expect(mocks.maybeSingle).not.toHaveBeenCalled();
-      expect(mocks.checkoutCreate).not.toHaveBeenCalled();
-    },
-  );
+    await expect(createCheckoutSession("tenant-one", "pro")).resolves.toEqual({
+      ok: false,
+      error: "server_error",
+    });
+    expect(mocks.maybeSingle).not.toHaveBeenCalled();
+    expect(mocks.checkoutCreate).not.toHaveBeenCalled();
+  });
 
   it("reuses an open same-plan session without another Stripe call", async () => {
     mocks.claimCheckout.mockResolvedValueOnce({
@@ -209,17 +227,17 @@ describe("createCheckoutSession billing idempotency", () => {
         expires_at: 1_787_012_800,
       };
     });
-    mocks.claimCheckout
-      .mockResolvedValueOnce(CLAIM)
-      .mockResolvedValueOnce({
-        ...CLAIM,
-        outcome: "pending",
-        idempotencyKey: CLAIM.idempotencyKey,
-        leaseToken: null,
-      });
+    mocks.claimCheckout.mockResolvedValueOnce(CLAIM).mockResolvedValueOnce({
+      ...CLAIM,
+      outcome: "pending",
+      idempotencyKey: CLAIM.idempotencyKey,
+      leaseToken: null,
+    });
 
     const first = createCheckoutSession("tenant-one", "pro");
-    await vi.waitFor(() => expect(mocks.checkoutCreate).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect(mocks.checkoutCreate).toHaveBeenCalledTimes(1),
+    );
     const second = await createCheckoutSession("tenant-one", "pro");
     expect(second).toEqual({ ok: false, error: "server_error" });
     expect(mocks.checkoutCreate).toHaveBeenCalledTimes(1);
@@ -229,12 +247,10 @@ describe("createCheckoutSession billing idempotency", () => {
   });
 
   it("retries an interrupted provider call with the same session key", async () => {
-    mocks.claimCheckout
-      .mockResolvedValueOnce(CLAIM)
-      .mockResolvedValueOnce({
-        ...CLAIM,
-        leaseToken: "44444444-4444-4444-8444-444444444444",
-      });
+    mocks.claimCheckout.mockResolvedValueOnce(CLAIM).mockResolvedValueOnce({
+      ...CLAIM,
+      leaseToken: "test-lease-token",
+    });
     mocks.checkoutCreate
       .mockRejectedValueOnce(new Error("simulated connection reset"))
       .mockResolvedValueOnce({
@@ -252,7 +268,9 @@ describe("createCheckoutSession billing idempotency", () => {
       url: "https://checkout.stripe.test/cs_recovered",
     });
 
-    const requestOptions = mocks.checkoutCreate.mock.calls.map((call) => call[1]);
+    const requestOptions = mocks.checkoutCreate.mock.calls.map(
+      (call) => call[1],
+    );
     expect(requestOptions).toEqual([
       { idempotencyKey: `${CLAIM.idempotencyKey}:session` },
       { idempotencyKey: `${CLAIM.idempotencyKey}:session` },
@@ -277,21 +295,24 @@ describe("createCheckoutSession billing idempotency", () => {
       error: null,
     });
 
-    await expect(createCheckoutSession("tenant-one", "pro")).resolves.toMatchObject({
+    await expect(
+      createCheckoutSession("tenant-one", "pro"),
+    ).resolves.toMatchObject({
       ok: true,
     });
     expect(mocks.customersCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ metadata: { salon_id: SALON_ID, salon_slug: "tenant-one" } }),
+      expect.objectContaining({
+        metadata: { salon_id: SALON_ID, salon_slug: "tenant-one" },
+      }),
       { idempotencyKey: `${CLAIM.idempotencyKey}:customer` },
     );
-    expect(mocks.persistCustomer).toHaveBeenCalledWith(
-      { stripe_customer_id: "cus_created" },
-      "id",
-      SALON_ID,
-    );
-    expect(mocks.customersCreate.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.checkoutCreate.mock.invocationCallOrder[0],
-    );
+    expect(mocks.persistCustomerBinding).toHaveBeenCalledWith({
+      salonId: SALON_ID,
+      stripeCustomerId: "cus_created",
+    });
+    expect(
+      mocks.persistCustomerBinding.mock.invocationCallOrder[0],
+    ).toBeLessThan(mocks.checkoutCreate.mock.invocationCallOrder[0]);
   });
 
   it("does not create Checkout when the customer mirror cannot be persisted", async () => {
@@ -305,9 +326,9 @@ describe("createCheckoutSession billing idempotency", () => {
       },
       error: null,
     });
-    mocks.persistCustomer.mockResolvedValueOnce({
-      error: { message: "simulated write failure" },
-    });
+    mocks.persistCustomerBinding.mockRejectedValueOnce(
+      new Error("simulated write failure"),
+    );
 
     await expect(createCheckoutSession("tenant-one", "pro")).resolves.toEqual({
       ok: false,

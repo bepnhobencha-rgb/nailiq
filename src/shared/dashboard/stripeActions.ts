@@ -2,17 +2,18 @@
 
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
 import { isOwner } from "@/shared/lib/salonMemberRole";
-import {
-  getStripeClient,
-  getStripeReturnOrigin,
-} from "@/shared/lib/stripe";
+import { getStripeClient, getStripeReturnOrigin } from "@/shared/lib/stripe";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import {
   claimStripeSubscriptionCheckout,
   finishStripeSubscriptionCheckout,
+  reconcileStripeSubscriptionCheckout,
+  type StripeCheckoutClaim,
 } from "@/shared/subscriptions/stripeCheckoutLedger";
+import { reconcileExpiredStripeCheckout } from "@/shared/subscriptions/stripeCheckoutReconciliation";
 import { stripeCheckoutRequestFingerprint } from "@/shared/subscriptions/stripeCheckoutFingerprint";
+import { persistStripeCustomerBinding } from "@/shared/subscriptions/stripeCustomerBinding";
 
 /**
  * Stripe-backed mutations for the salon Pricing panel.
@@ -98,7 +99,7 @@ export async function createCheckoutSession(
     cancelUrl: `${origin}/dashboard/${slugEnc}/settings`,
   });
   const claimNow = new Date();
-  let claim;
+  let claim: StripeCheckoutClaim;
   try {
     claim = await claimStripeSubscriptionCheckout({
       salonId: resolved.salon.id,
@@ -114,25 +115,33 @@ export async function createCheckoutSession(
   if (claim.outcome === "reuse" && claim.checkoutUrl) {
     return { ok: true, url: claim.checkoutUrl };
   }
-  if (
-    claim.outcome !== "acquired" ||
-    !claim.idempotencyKey ||
-    !claim.leaseToken
-  ) {
+  if (claim.outcome !== "acquired" && claim.outcome !== "reconcile") {
     // An existing subscription, another plan, or an in-flight request must
     // never fall through to a second Stripe Checkout creation.
     return { ok: false, error: "server_error" };
   }
 
   const releaseClaimForRetry = async (errorCode: string) => {
+    if (!claim.leaseToken) return;
     try {
-      await finishStripeSubscriptionCheckout({
-        salonId: resolved.salon.id,
-        leaseToken: claim.leaseToken!,
-        outcome: "retryable_failure",
-        errorCode,
-        now: new Date(),
-      });
+      if (claim.outcome === "reconcile") {
+        await reconcileStripeSubscriptionCheckout({
+          salonId: resolved.salon.id,
+          leaseToken: claim.leaseToken,
+          outcome: "retryable_failure",
+          now: new Date(),
+        });
+        return;
+      }
+      if (claim.outcome === "acquired") {
+        await finishStripeSubscriptionCheckout({
+          salonId: resolved.salon.id,
+          leaseToken: claim.leaseToken,
+          outcome: "retryable_failure",
+          errorCode,
+          now: new Date(),
+        });
+      }
     } catch {
       // Fail closed. The short database lease will expire, and the next call
       // will retry with the same provider idempotency key.
@@ -170,6 +179,41 @@ export async function createCheckoutSession(
     return { ok: false, error: "server_error" };
   }
 
+  if (claim.outcome === "reconcile") {
+    try {
+      const reconciled = await reconcileExpiredStripeCheckout({
+        stripe,
+        salonId: r.id,
+        expectedCustomerId: r.stripe_customer_id?.trim() ?? "",
+        claim,
+        now: new Date(),
+      });
+      if (reconciled.outcome === "reuse") {
+        return { ok: true, url: reconciled.url };
+      }
+      if (reconciled.outcome !== "closed") {
+        return { ok: false, error: "server_error" };
+      }
+      claim = await claimStripeSubscriptionCheckout({
+        salonId: resolved.salon.id,
+        plan,
+        requestFingerprint,
+        now: new Date(),
+      });
+    } catch {
+      console.error("[createCheckoutSession] provider reconciliation failed");
+      return { ok: false, error: "server_error" };
+    }
+  }
+
+  if (
+    claim.outcome !== "acquired" ||
+    !claim.idempotencyKey ||
+    !claim.leaseToken
+  ) {
+    return { ok: false, error: "server_error" };
+  }
+
   let customerId = r.stripe_customer_id?.trim() ?? "";
   if (!customerId) {
     try {
@@ -184,11 +228,12 @@ export async function createCheckoutSession(
       customerId = customer.id;
       // Persist before creating Checkout. A retry uses the same Stripe key and
       // receives this same customer if the first response was interrupted.
-      const { error: updErr } = await supabase
-        .from("salons")
-        .update({ stripe_customer_id: customerId })
-        .eq("id", r.id);
-      if (updErr) {
+      try {
+        await persistStripeCustomerBinding({
+          salonId: r.id,
+          stripeCustomerId: customerId,
+        });
+      } catch (updErr) {
         console.error("[createCheckoutSession] persist customer", updErr);
         await releaseClaimForRetry("customer_persist_failed");
         return { ok: false, error: "server_error" };
@@ -213,9 +258,19 @@ export async function createCheckoutSession(
         // mapping somehow drifted.
         client_reference_id: r.id,
         subscription_data: {
-          metadata: { salon_id: r.id, plan },
+          metadata: {
+            salon_id: r.id,
+            plan,
+            pricing_source: "stripe_catalog",
+            catalog_price_id: priceId,
+          },
         },
-        metadata: { salon_id: r.id, plan },
+        metadata: {
+          salon_id: r.id,
+          plan,
+          pricing_source: "stripe_catalog",
+          catalog_price_id: priceId,
+        },
       },
       { idempotencyKey: `${claim.idempotencyKey}:session` },
     );

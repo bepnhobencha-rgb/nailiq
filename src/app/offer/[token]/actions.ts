@@ -5,55 +5,55 @@ import { redirect, unstable_rethrow } from "next/navigation";
 
 import { getStripeClient, getStripeReturnOrigin } from "@/shared/lib/stripe";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { getPrivateOffer } from "@/shared/sales/privateOffers";
+import {
+  getPrivateOffer,
+  privateOfferIdentity,
+  resolvePrivateOfferBillingTerm,
+} from "@/shared/sales/privateOffers";
+import { reconcileExpiredStripeCheckout } from "@/shared/subscriptions/stripeCheckoutReconciliation";
 import { stripeCheckoutRequestFingerprint } from "@/shared/subscriptions/stripeCheckoutFingerprint";
 import {
   claimStripeSubscriptionCheckout,
   finishStripeSubscriptionCheckout,
+  type StripeCheckoutClaim,
 } from "@/shared/subscriptions/stripeCheckoutLedger";
-
-type BillingSchedule = "monthly" | "quarterly" | "semiannual" | "annual";
-
-function resolveBillingSchedule(
-  offer: NonNullable<ReturnType<typeof getPrivateOffer>>,
-  value: FormDataEntryValue | null,
-): { schedule: BillingSchedule; amount: number; interval: "month" | "year"; intervalCount?: number } | null {
-  if (value === "monthly") {
-    return { schedule: "monthly", amount: offer.monthlyAmountCents, interval: "month" };
-  }
-  if (value === "quarterly" && offer.quarterlyAmountCents) {
-    return { schedule: "quarterly", amount: offer.quarterlyAmountCents, interval: "month", intervalCount: 3 };
-  }
-  if (value === "semiannual" && offer.semiannualAmountCents) {
-    return { schedule: "semiannual", amount: offer.semiannualAmountCents, interval: "month", intervalCount: 6 };
-  }
-  if (value === "annual") {
-    return { schedule: "annual", amount: offer.annualAmountCents, interval: "year" };
-  }
-  return null;
-}
+import { persistStripeCustomerBinding } from "@/shared/subscriptions/stripeCustomerBinding";
 
 function fail(token: string, code: string): never {
-  redirect(`/offer/${encodeURIComponent(token)}?error=${encodeURIComponent(code)}`);
+  redirect(
+    `/offer/${encodeURIComponent(token)}?error=${encodeURIComponent(code)}`,
+  );
 }
 
-export async function startPrivateOfferCheckout(token: string, formData: FormData): Promise<never> {
+export async function startPrivateOfferCheckout(
+  token: string,
+  formData: FormData,
+): Promise<never> {
   const offer = getPrivateOffer(token);
   if (!offer) redirect("/");
 
   const signerName = String(formData.get("signerName") ?? "").trim();
   const signerTitle = String(formData.get("signerTitle") ?? "").trim();
-  const businessLegalName = String(formData.get("businessLegalName") ?? "").trim();
-  const signerEmail = String(formData.get("signerEmail") ?? "").trim().toLowerCase();
+  const businessLegalName = String(
+    formData.get("businessLegalName") ?? "",
+  ).trim();
+  const signerEmail = String(formData.get("signerEmail") ?? "")
+    .trim()
+    .toLowerCase();
   const accepted = formData.get("agreementAccepted") === "yes";
   const authorityAccepted = formData.get("authorityAccepted") === "yes";
   const renewalAccepted = formData.get("renewalAccepted") === "yes";
-  const billing = resolveBillingSchedule(offer, formData.get("billingSchedule"));
+  const billing = resolvePrivateOfferBillingTerm(
+    offer,
+    String(formData.get("billingSchedule") ?? ""),
+  );
 
   if (signerName.length < 2 || signerName.length > 120) fail(token, "signer");
   if (signerTitle.length < 2 || signerTitle.length > 100) fail(token, "title");
-  if (businessLegalName.length < 2 || businessLegalName.length > 160) fail(token, "business");
-  if (!accepted || !authorityAccepted || !renewalAccepted) fail(token, "agreement");
+  if (businessLegalName.length < 2 || businessLegalName.length > 160)
+    fail(token, "business");
+  if (!accepted || !authorityAccepted || !renewalAccepted)
+    fail(token, "agreement");
   if (!billing) fail(token, "billing");
 
   const stripe = getStripeClient();
@@ -93,20 +93,20 @@ export async function startPrivateOfferCheckout(token: string, formData: FormDat
   const origin = getStripeReturnOrigin();
   const successUrl = `${origin}/offer/${offer.accessKey}/success?session_id={CHECKOUT_SESSION_ID}`;
   const cancelUrl = `${origin}/offer/${offer.accessKey}?checkout=cancelled`;
-  const setupFeeAmountCents =
-    billing.schedule === "monthly" ? offer.monthlySetupAmountCents : 0;
+  const setupFeeAmountCents = billing.setupFeeAmountCents;
+  const offerIdentity = privateOfferIdentity(offer);
   const requestFingerprint = stripeCheckoutRequestFingerprint({
     kind: "private_offer_subscription",
     salonId: offer.salonId,
     salonSlug: offer.salonSlug,
     plan: offer.plan,
-    amountCents: billing.amount,
-    currency: "usd",
+    amountCents: billing.amountCents,
+    currency: billing.currency,
     interval: billing.interval,
-    intervalCount: billing.intervalCount ?? 1,
+    intervalCount: billing.intervalCount,
     setupFeeAmountCents,
     billingSchedule: billing.schedule,
-    offerIdentity: offer.accessKey,
+    offerIdentity,
     agreementVersion: offer.agreementVersion,
     customerName: salon.name ?? offer.salonName,
     signerName,
@@ -118,7 +118,7 @@ export async function startPrivateOfferCheckout(token: string, formData: FormDat
     cancelUrl,
   });
 
-  let claim;
+  let claim: StripeCheckoutClaim;
   try {
     claim = await claimStripeSubscriptionCheckout({
       salonId: offer.salonId,
@@ -134,6 +134,37 @@ export async function startPrivateOfferCheckout(token: string, formData: FormDat
   if (claim.outcome === "active_subscription") fail(token, "already-active");
   if (claim.outcome === "reuse" && claim.checkoutUrl) {
     redirect(claim.checkoutUrl);
+  }
+  if (claim.outcome === "reconcile") {
+    let reconciled;
+    try {
+      reconciled = await reconcileExpiredStripeCheckout({
+        stripe,
+        salonId: offer.salonId,
+        expectedCustomerId: salon.stripe_customer_id?.trim() ?? "",
+        claim,
+        now: new Date(),
+      });
+    } catch (reconcileError) {
+      console.error(
+        "[private offer] provider reconciliation failed",
+        reconcileError,
+      );
+      fail(token, "stripe");
+    }
+    if (reconciled.outcome === "reuse") redirect(reconciled.url);
+    if (reconciled.outcome === "blocked") fail(token, "already-active");
+    if (reconciled.outcome !== "closed") fail(token, "stripe");
+    try {
+      claim = await claimStripeSubscriptionCheckout({
+        salonId: offer.salonId,
+        plan: offer.plan,
+        requestFingerprint,
+        now: new Date(),
+      });
+    } catch {
+      fail(token, "stripe");
+    }
   }
   if (
     claim.outcome !== "acquired" ||
@@ -172,11 +203,10 @@ export async function startPrivateOfferCheckout(token: string, formData: FormDat
         { idempotencyKey: `${claim.idempotencyKey}:customer` },
       );
       customerId = customer.id;
-      const { error: updateError } = await db
-        .from("salons")
-        .update({ stripe_customer_id: customerId })
-        .eq("id", offer.salonId);
-      if (updateError) throw updateError;
+      await persistStripeCustomerBinding({
+        salonId: offer.salonId,
+        stripeCustomerId: customerId,
+      });
     }
 
     // The reservation timestamp is stable across a network retry, keeping the
@@ -186,7 +216,8 @@ export async function startPrivateOfferCheckout(token: string, formData: FormDat
       salon_id: offer.salonId,
       salon_slug: offer.salonSlug,
       plan: offer.plan,
-      private_offer_key: offer.accessKey,
+      pricing_source: "private_offer",
+      private_offer_identity: offerIdentity,
       agreement_version: offer.agreementVersion,
       agreement_accepted_at: acceptedAt,
       authorized_signer: signerName,
@@ -198,31 +229,52 @@ export async function startPrivateOfferCheckout(token: string, formData: FormDat
       acceptance_ip: acceptanceIp,
       initial_term_months: "12",
       billing_schedule: billing.schedule,
+      recurring_amount_cents: String(billing.amountCents),
+      billing_currency: billing.currency,
+      billing_interval: billing.interval,
+      billing_interval_count: String(billing.intervalCount),
       setup_fee_cents: String(setupFeeAmountCents),
     };
     const recurringLineItem = {
       quantity: 1,
       price_data: {
-        currency: "usd",
-        unit_amount: billing.amount,
+        currency: billing.currency,
+        unit_amount: billing.amountCents,
         recurring: {
           interval: billing.interval,
-          ...(billing.intervalCount ? { interval_count: billing.intervalCount } : {}),
+          interval_count: billing.intervalCount,
         },
-        product_data: { name: `NailIQ Managed Salon — ${offer.salonName}` },
+        product_data: {
+          name: `NailIQ Managed Salon — ${offer.salonName}`,
+          metadata: {
+            pricing_source: "private_offer",
+            salon_id: offer.salonId,
+            plan: offer.plan,
+            private_offer_identity: offerIdentity,
+            billing_schedule: billing.schedule,
+          },
+        },
       },
     };
     const setupLineItem = {
-        quantity: 1,
-        price_data: {
-          currency: "usd",
-          unit_amount: offer.monthlySetupAmountCents,
-          product_data: { name: `NailIQ one-time setup — ${offer.salonName}` },
+      quantity: 1,
+      price_data: {
+        currency: billing.currency,
+        unit_amount: billing.setupFeeAmountCents,
+        product_data: {
+          name: `NailIQ one-time setup — ${offer.salonName}`,
+          metadata: {
+            pricing_source: "private_offer_setup",
+            salon_id: offer.salonId,
+            private_offer_identity: offerIdentity,
+          },
         },
-      };
-    const lineItems = billing.schedule === "monthly"
-      ? [recurringLineItem, setupLineItem]
-      : [recurringLineItem];
+      },
+    };
+    const lineItems =
+      billing.setupFeeAmountCents > 0
+        ? [recurringLineItem, setupLineItem]
+        : [recurringLineItem];
     const session = await stripe.checkout.sessions.create(
       {
         mode: "subscription",

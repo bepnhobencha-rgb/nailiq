@@ -7,11 +7,14 @@ const mocks = vi.hoisted(() => ({
   getStripeClient: vi.fn(),
   getStripeReturnOrigin: vi.fn(),
   getPrivateOffer: vi.fn(),
+  privateOfferIdentity: vi.fn(),
+  resolveBillingTerm: vi.fn(),
   fingerprint: vi.fn(),
   claimCheckout: vi.fn(),
   finishCheckout: vi.fn(),
+  reconcileProvider: vi.fn(),
   salonMaybeSingle: vi.fn(),
-  salonUpdate: vi.fn(),
+  persistCustomerBinding: vi.fn(),
   membersIn: vi.fn(),
   getUserById: vi.fn(),
   customersCreate: vi.fn(),
@@ -32,6 +35,10 @@ vi.mock("@/shared/lib/stripe", () => ({
 }));
 vi.mock("@/shared/sales/privateOffers", () => ({
   getPrivateOffer: (...args: unknown[]) => mocks.getPrivateOffer(...args),
+  privateOfferIdentity: (...args: unknown[]) =>
+    mocks.privateOfferIdentity(...args),
+  resolvePrivateOfferBillingTerm: (...args: unknown[]) =>
+    mocks.resolveBillingTerm(...args),
 }));
 vi.mock("@/shared/subscriptions/stripeCheckoutFingerprint", () => ({
   stripeCheckoutRequestFingerprint: (...args: unknown[]) =>
@@ -43,6 +50,14 @@ vi.mock("@/shared/subscriptions/stripeCheckoutLedger", () => ({
   finishStripeSubscriptionCheckout: (...args: unknown[]) =>
     mocks.finishCheckout(...args),
 }));
+vi.mock("@/shared/subscriptions/stripeCheckoutReconciliation", () => ({
+  reconcileExpiredStripeCheckout: (...args: unknown[]) =>
+    mocks.reconcileProvider(...args),
+}));
+vi.mock("@/shared/subscriptions/stripeCustomerBinding", () => ({
+  persistStripeCustomerBinding: (...args: unknown[]) =>
+    mocks.persistCustomerBinding(...args),
+}));
 vi.mock("@/shared/lib/supabase/serviceRole", () => ({
   createServiceRoleClient: () => ({
     auth: { admin: { getUserById: mocks.getUserById } },
@@ -51,10 +66,6 @@ vi.mock("@/shared/lib/supabase/serviceRole", () => ({
         return {
           select: () => ({
             eq: () => ({ maybeSingle: mocks.salonMaybeSingle }),
-          }),
-          update: (value: unknown) => ({
-            eq: (column: string, id: unknown) =>
-              mocks.salonUpdate(value, column, id),
           }),
         };
       }
@@ -129,6 +140,17 @@ describe("private-offer subscription Checkout idempotency", () => {
     );
     mocks.getStripeReturnOrigin.mockReturnValue("https://example.test");
     mocks.getPrivateOffer.mockReturnValue(OFFER);
+    mocks.privateOfferIdentity.mockReturnValue(
+      `founder:${SALON_ID}:${OFFER.agreementVersion}`,
+    );
+    mocks.resolveBillingTerm.mockReturnValue({
+      schedule: "monthly",
+      amountCents: 14_900,
+      currency: "usd",
+      interval: "month",
+      intervalCount: 1,
+      setupFeeAmountCents: 29_900,
+    });
     mocks.fingerprint.mockReturnValue("a".repeat(64));
     mocks.claimCheckout.mockResolvedValue(CLAIM);
     mocks.finishCheckout.mockResolvedValue(true);
@@ -142,7 +164,7 @@ describe("private-offer subscription Checkout idempotency", () => {
       },
       error: null,
     });
-    mocks.salonUpdate.mockResolvedValue({ error: null });
+    mocks.persistCustomerBinding.mockResolvedValue(undefined);
     mocks.membersIn.mockResolvedValue({
       data: [{ user_id: "owner-1", role: "owner" }],
       error: null,
@@ -177,7 +199,7 @@ describe("private-offer subscription Checkout idempotency", () => {
         interval: "month",
         intervalCount: 1,
         setupFeeAmountCents: 29_900,
-        offerIdentity: OFFER.accessKey,
+        offerIdentity: `founder:${SALON_ID}:${OFFER.agreementVersion}`,
       }),
     );
     expect(mocks.claimCheckout).toHaveBeenCalledWith(
@@ -194,8 +216,29 @@ describe("private-offer subscription Checkout idempotency", () => {
         metadata: expect.objectContaining({
           salon_id: SALON_ID,
           plan: "pro",
+          pricing_source: "private_offer",
+          private_offer_identity: `founder:${SALON_ID}:${OFFER.agreementVersion}`,
+          recurring_amount_cents: "14900",
+          billing_currency: "usd",
+          billing_interval: "month",
+          billing_interval_count: "1",
           agreement_accepted_at: CLAIM.requestedAt,
         }),
+        line_items: expect.arrayContaining([
+          expect.objectContaining({
+            price_data: expect.objectContaining({
+              currency: "usd",
+              unit_amount: 14_900,
+              recurring: { interval: "month", interval_count: 1 },
+              product_data: expect.objectContaining({
+                metadata: expect.objectContaining({
+                  pricing_source: "private_offer",
+                  private_offer_identity: `founder:${SALON_ID}:${OFFER.agreementVersion}`,
+                }),
+              }),
+            }),
+          }),
+        ]),
       }),
       { idempotencyKey: `${CLAIM.idempotencyKey}:session` },
     );
@@ -222,16 +265,16 @@ describe("private-offer subscription Checkout idempotency", () => {
         expires_at: 4_089_830_400,
       };
     });
-    mocks.claimCheckout
-      .mockResolvedValueOnce(CLAIM)
-      .mockResolvedValueOnce({
-        ...CLAIM,
-        outcome: "pending",
-        leaseToken: null,
-      });
+    mocks.claimCheckout.mockResolvedValueOnce(CLAIM).mockResolvedValueOnce({
+      ...CLAIM,
+      outcome: "pending",
+      leaseToken: null,
+    });
 
     const first = startPrivateOfferCheckout(OFFER.accessKey, formData());
-    await vi.waitFor(() => expect(mocks.checkoutCreate).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect(mocks.checkoutCreate).toHaveBeenCalledTimes(1),
+    );
     await expect(
       startPrivateOfferCheckout(OFFER.accessKey, formData()),
     ).rejects.toThrow(`redirect:/offer/${OFFER.accessKey}?error=stripe`);
@@ -266,13 +309,62 @@ describe("private-offer subscription Checkout idempotency", () => {
       }),
       { idempotencyKey: `${CLAIM.idempotencyKey}:customer` },
     );
-    expect(mocks.salonUpdate).toHaveBeenCalledWith(
-      { stripe_customer_id: "cus_created" },
-      "id",
-      SALON_ID,
+    expect(mocks.persistCustomerBinding).toHaveBeenCalledWith({
+      salonId: SALON_ID,
+      stripeCustomerId: "cus_created",
+    });
+    expect(
+      mocks.persistCustomerBinding.mock.invocationCallOrder[0],
+    ).toBeLessThan(mocks.checkoutCreate.mock.invocationCallOrder[0]);
+  });
+
+  it("blocks private-offer recreation when provider reconciliation finds a subscription", async () => {
+    mocks.claimCheckout.mockResolvedValueOnce({
+      ...CLAIM,
+      outcome: "reconcile",
+      checkoutSessionId: "cs_private_expired_locally",
+    });
+    mocks.reconcileProvider.mockResolvedValue({ outcome: "blocked" });
+
+    await expect(
+      startPrivateOfferCheckout(OFFER.accessKey, formData()),
+    ).rejects.toThrow(
+      `redirect:/offer/${OFFER.accessKey}?error=already-active`,
     );
-    expect(mocks.salonUpdate.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.checkoutCreate.mock.invocationCallOrder[0],
+
+    expect(mocks.reconcileProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        salonId: SALON_ID,
+        expectedCustomerId: "cus_existing",
+      }),
+    );
+    expect(mocks.checkoutCreate).not.toHaveBeenCalled();
+  });
+
+  it("starts one new generation only after provider confirms Checkout expiry", async () => {
+    mocks.claimCheckout
+      .mockResolvedValueOnce({
+        ...CLAIM,
+        outcome: "reconcile",
+        checkoutSessionId: "cs_private_expired",
+      })
+      .mockResolvedValueOnce({
+        ...CLAIM,
+        idempotencyKey: `nailiq:subscription-checkout:${SALON_ID}:pro:2`,
+      });
+    mocks.reconcileProvider.mockResolvedValue({ outcome: "closed" });
+
+    await expect(
+      startPrivateOfferCheckout(OFFER.accessKey, formData()),
+    ).rejects.toThrow("redirect:https://checkout.stripe.test/cs_private_once");
+
+    expect(mocks.claimCheckout).toHaveBeenCalledTimes(2);
+    expect(mocks.checkoutCreate).toHaveBeenCalledTimes(1);
+    expect(mocks.checkoutCreate).toHaveBeenCalledWith(
+      expect.any(Object),
+      {
+        idempotencyKey: `nailiq:subscription-checkout:${SALON_ID}:pro:2:session`,
+      },
     );
   });
 });

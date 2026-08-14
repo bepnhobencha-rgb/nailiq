@@ -16,6 +16,18 @@ export type PrivateOffer = {
   agreementVersion: string;
 };
 
+export type PrivateOfferBillingSchedule =
+  "monthly" | "quarterly" | "semiannual" | "annual";
+
+export type PrivateOfferBillingTerm = {
+  schedule: PrivateOfferBillingSchedule;
+  amountCents: number;
+  currency: "usd";
+  interval: "month" | "year";
+  intervalCount: number;
+  setupFeeAmountCents: number;
+};
+
 const AGREEMENT_VERSION = "hilite-founder-offer-2026-07-29-ca-b2b-v3";
 
 const PRIVATE_OFFERS: readonly PrivateOffer[] = [
@@ -48,11 +60,76 @@ const PRIVATE_OFFERS: readonly PrivateOffer[] = [
 export function getPrivateOffer(token: string): PrivateOffer | null {
   const normalized = token.trim().toLowerCase();
   if (!normalized) return null;
-  return PRIVATE_OFFERS.find((offer) => offer.accessKey && offer.accessKey === normalized) ?? null;
+  return (
+    PRIVATE_OFFERS.find(
+      (offer) => offer.accessKey && offer.accessKey === normalized,
+    ) ?? null
+  );
 }
 
 export function getPrivateOfferBySalonId(salonId: string): PrivateOffer | null {
-  return PRIVATE_OFFERS.find((offer) => offer.accessKey && offer.salonId === salonId) ?? null;
+  // Webhook reconciliation must remain possible if the capability URL token is
+  // rotated or disabled after Checkout. Pricing truth is the server catalogue,
+  // not continued availability of the offer link.
+  return PRIVATE_OFFERS.find((offer) => offer.salonId === salonId) ?? null;
+}
+
+/**
+ * Stable, non-secret identity copied to Stripe subscription metadata.
+ *
+ * The access token remains a capability URL and must not be copied to Stripe
+ * Product metadata. This identity is safe to persist and is re-derived from
+ * the trusted server-side offer catalogue by the webhook.
+ */
+export function privateOfferIdentity(offer: PrivateOffer): string {
+  return `founder:${offer.salonId}:${offer.agreementVersion}`;
+}
+
+export function resolvePrivateOfferBillingTerm(
+  offer: PrivateOffer,
+  schedule: string | null | undefined,
+): PrivateOfferBillingTerm | null {
+  if (schedule === "monthly") {
+    return {
+      schedule,
+      amountCents: offer.monthlyAmountCents,
+      currency: "usd",
+      interval: "month",
+      intervalCount: 1,
+      setupFeeAmountCents: offer.monthlySetupAmountCents,
+    };
+  }
+  if (schedule === "quarterly" && offer.quarterlyAmountCents) {
+    return {
+      schedule,
+      amountCents: offer.quarterlyAmountCents,
+      currency: "usd",
+      interval: "month",
+      intervalCount: 3,
+      setupFeeAmountCents: 0,
+    };
+  }
+  if (schedule === "semiannual" && offer.semiannualAmountCents) {
+    return {
+      schedule,
+      amountCents: offer.semiannualAmountCents,
+      currency: "usd",
+      interval: "month",
+      intervalCount: 6,
+      setupFeeAmountCents: 0,
+    };
+  }
+  if (schedule === "annual") {
+    return {
+      schedule,
+      amountCents: offer.annualAmountCents,
+      currency: "usd",
+      interval: "year",
+      intervalCount: 1,
+      setupFeeAmountCents: 0,
+    };
+  }
+  return null;
 }
 
 export function formatUsd(cents: number): string {

@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
+const read = (path: string) =>
+  readFileSync(resolve(process.cwd(), path), "utf8");
 
 describe("Stripe subscription and webhook idempotency boundary", () => {
   const migration = read(
@@ -25,14 +26,20 @@ describe("Stripe subscription and webhook idempotency boundary", () => {
     expect(migration).toMatch(
       /revoke all on table public\.stripe_webhook_events[\s\S]*from public, anon, authenticated/,
     );
-    expect(migration).not.toMatch(/\b(raw_payload|payload|customer_email|card_number)\b/i);
+    expect(migration).not.toMatch(
+      /\b(raw_payload|payload|customer_email|card_number)\b/i,
+    );
     expect(migration).toContain("stripe_webhook_event_error_code_check");
-    expect(migration).toContain("stripe_subscription_checkout_error_code_check");
+    expect(migration).toContain(
+      "stripe_subscription_checkout_error_code_check",
+    );
   });
 
   it("enforces one active or pending Checkout per salon and plan", () => {
     expect(migration).toContain("salon_id uuid primary key");
-    expect(migration).toContain("plan text not null check (plan in ('pro', 'premium'))");
+    expect(migration).toContain(
+      "plan text not null check (plan in ('pro', 'premium'))",
+    );
     expect(migration).toContain("idempotency_key text not null unique");
     expect(migration).toContain("request_fingerprint text not null");
     expect(migration).toContain("for update;");
@@ -55,10 +62,10 @@ describe("Stripe subscription and webhook idempotency boundary", () => {
     expect(checkout).toContain('outcome: "retryable_failure"');
     expect(privateOffer).toContain("claimStripeSubscriptionCheckout({");
     expect(privateOffer).toContain("stripeCheckoutRequestFingerprint({");
-    expect(privateOffer).toContain("amountCents: billing.amount");
-    expect(privateOffer).toContain('currency: "usd"');
+    expect(privateOffer).toContain("amountCents: billing.amountCents");
+    expect(privateOffer).toContain("currency: billing.currency");
     expect(privateOffer).toContain("interval: billing.interval");
-    expect(privateOffer).toContain("offerIdentity: offer.accessKey");
+    expect(privateOffer).toContain("offerIdentity,");
     expect(privateOffer).toContain("`${claim.idempotencyKey}:customer`");
     expect(privateOffer).toContain("`${claim.idempotencyKey}:session`");
   });
@@ -79,12 +86,15 @@ describe("Stripe subscription and webhook idempotency boundary", () => {
     for (const signature of [
       "claim_stripe_subscription_checkout(uuid, text, text, timestamptz)",
       "finish_stripe_subscription_checkout(\n  uuid, uuid, text, text, text, timestamptz, text, timestamptz\n)",
+      "reconcile_stripe_subscription_checkout(\n  uuid, uuid, text, text, text, text, text, timestamptz, timestamptz\n)",
+      "mark_stripe_subscription_checkout_completed(\n  uuid, text, text, text, text, timestamptz\n)",
+      "close_stripe_subscription_checkout(\n  uuid, text, text, timestamptz\n)",
       "claim_stripe_webhook_event(text, text, timestamptz)",
       "finish_stripe_webhook_event(text, uuid, text, text, timestamptz)",
     ]) {
       expect(migration).toContain(`revoke all on function public.${signature}`);
     }
-    expect(migration.match(/\bto service_role;/g)).toHaveLength(6);
+    expect(migration.match(/\bto service_role;/g)).toHaveLength(9);
   });
 
   it("preserves the owner-only server gate and never deletes business data", () => {
@@ -92,9 +102,9 @@ describe("Stripe subscription and webhook idempotency boundary", () => {
     expect(checkout.indexOf("if (!isOwner(resolved.role))")).toBeLessThan(
       checkout.indexOf("claimStripeSubscriptionCheckout({"),
     );
-    expect(privateOffer.indexOf("authorizedEmails.includes(signerEmail)")).toBeLessThan(
-      privateOffer.indexOf("claimStripeSubscriptionCheckout({"),
-    );
+    expect(
+      privateOffer.indexOf("authorizedEmails.includes(signerEmail)"),
+    ).toBeLessThan(privateOffer.indexOf("claimStripeSubscriptionCheckout({"));
     expect(migration).not.toMatch(/\bdelete\s+from\b/i);
     expect(webhook).not.toMatch(/\bdelete\s*\(/i);
   });
@@ -108,6 +118,33 @@ describe("Stripe subscription and webhook idempotency boundary", () => {
     expect(webhook).toContain('"price_mapping_unknown"');
     expect(webhook).toContain('"provider_binding_incomplete"');
     expect(webhook).toContain('"salon_binding_not_found"');
-    expect(webhook).not.toContain('isSubscriptionPlan(meta.plan) ? meta.plan : "free"');
+    expect(webhook).toContain('"subscription_status_unsupported"');
+    expect(webhook).toContain('"private_offer_terms_invalid"');
+    expect(webhook).toContain("markStripeSubscriptionCheckoutCompleted");
+    expect(webhook).not.toContain(
+      'isSubscriptionPlan(meta.plan) ? meta.plan : "free"',
+    );
+  });
+
+  it("fails migration safely before adding unique provider bindings", () => {
+    expect(migration).toContain(
+      "duplicate Stripe customer bindings block unique index creation",
+    );
+    expect(migration).toContain(
+      "duplicate Stripe subscription bindings block unique index creation",
+    );
+    expect(migration).toContain("salons_stripe_customer_id_uq");
+    expect(migration).toContain("where stripe_customer_id is not null");
+    expect(migration).toContain("salons_stripe_subscription_id_uq");
+    expect(migration).toContain("where stripe_subscription_id is not null");
+  });
+
+  it("requires provider reconciliation before rotating an expired Checkout", () => {
+    expect(migration).toContain("state = 'reconciling'");
+    expect(migration).toContain("'reconcile'::text");
+    expect(migration).toContain("state = 'completed'");
+    expect(migration).toContain("provider_status = 'subscription_terminal'");
+    expect(migration).toContain("payment_succeeded");
+    expect(migration).toContain("when provider_status = 'payment_succeeded'");
   });
 });

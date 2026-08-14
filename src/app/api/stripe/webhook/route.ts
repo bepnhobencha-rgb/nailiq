@@ -1,16 +1,25 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type Stripe from "stripe";
 
-import {
-  getStripeClient,
-  getStripeWebhookSecret,
-} from "@/shared/lib/stripe";
+import { getStripeClient, getStripeWebhookSecret } from "@/shared/lib/stripe";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import {
   isSubscriptionPlan,
   type SubscriptionPlan,
 } from "@/shared/lib/subscriptionPlans";
-import { graceDeadline, resumeTenant } from "@/shared/subscriptions/tenantPause";
+import {
+  getPrivateOfferBySalonId,
+  privateOfferIdentity,
+  resolvePrivateOfferBillingTerm,
+} from "@/shared/sales/privateOffers";
+import {
+  closeStripeSubscriptionCheckout,
+  markStripeSubscriptionCheckoutCompleted,
+} from "@/shared/subscriptions/stripeCheckoutLedger";
+import {
+  graceDeadline,
+  resumeTenant,
+} from "@/shared/subscriptions/tenantPause";
 import {
   claimStripeWebhookEvent,
   finishStripeWebhookEvent,
@@ -26,7 +35,8 @@ import {
  *
  * Handled events (others 200-OK without action — Stripe retries on
  * non-2xx, and silent acks keep dashboards quiet):
- *   - checkout.session.completed       → first-time activation
+ *   - checkout.session.completed       → synchronous first-time activation
+ *   - checkout.session.async_payment_* → delayed-payment completion/failure
  *   - customer.subscription.updated    → plan changes / renewal
  *   - customer.subscription.deleted    → cancellation
  *
@@ -51,10 +61,13 @@ function planForPriceId(
 }
 
 type StripeWebhookFailureCode =
+  | "checkout_binding_conflict"
   | "plan_metadata_invalid"
+  | "private_offer_terms_invalid"
   | "price_mapping_unknown"
   | "provider_binding_incomplete"
-  | "salon_binding_not_found";
+  | "salon_binding_not_found"
+  | "subscription_status_unsupported";
 
 class StripeWebhookFailure extends Error {
   constructor(readonly safeCode: StripeWebhookFailureCode) {
@@ -76,18 +89,16 @@ function periodEndIso(sub: Stripe.Subscription): string | null {
 
 type SalonPatch = {
   subscription_plan?: SubscriptionPlan;
-  subscription_status?:
-    | "active"
-    | "trialing"
-    | "past_due"
-    | "canceled";
+  subscription_status?: "active" | "trialing" | "past_due" | "canceled";
   subscription_current_period_end?: string | null;
   stripe_customer_id?: string;
   stripe_subscription_id?: string | null;
   payment_grace_ends_at?: string | null;
 };
 
-function normalizeStatus(s: string | null | undefined): SalonPatch["subscription_status"] {
+function normalizeStatus(
+  s: string | null | undefined,
+): SalonPatch["subscription_status"] {
   switch (s) {
     case "active":
       return "active";
@@ -96,13 +107,131 @@ function normalizeStatus(s: string | null | undefined): SalonPatch["subscription
     case "past_due":
     case "incomplete":
     case "unpaid":
+    case "paused":
       return "past_due";
     case "canceled":
     case "incomplete_expired":
       return "canceled";
     default:
-      return "active";
+      throw new StripeWebhookFailure("subscription_status_unsupported");
   }
+}
+
+function metadataValue(
+  metadata: Stripe.Metadata | null | undefined,
+  key: string,
+): string {
+  const value = metadata?.[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * Resolve a paid plan from provider data and trusted server-side pricing.
+ *
+ * New private offers carry a non-secret offer identity plus every recurring
+ * term in Subscription metadata. Legacy offers are accepted only when the
+ * actual recurring Price proves every trusted term, or (for a Checkout event
+ * that does not include a Price) when the original capability key still
+ * matches. Missing modern metadata always fails closed.
+ */
+function planForBilling(
+  metadata: Stripe.Metadata | null | undefined,
+  salonId: string,
+  price?: Stripe.Price | null,
+): Exclude<SubscriptionPlan, "free"> {
+  const meta = metadata ?? {};
+  const planMeta = metadataValue(meta, "plan");
+  const source = metadataValue(meta, "pricing_source");
+  const privateOfferKey = metadataValue(meta, "private_offer_key");
+  const privateIdentity = metadataValue(meta, "private_offer_identity");
+  const isPrivateOffer =
+    source === "private_offer" || Boolean(privateOfferKey || privateIdentity);
+
+  if (isPrivateOffer) {
+    const offer = getPrivateOfferBySalonId(salonId);
+    const schedule = metadataValue(meta, "billing_schedule");
+    const term = offer ? resolvePrivateOfferBillingTerm(offer, schedule) : null;
+    const priceMatches = Boolean(
+      term &&
+        price &&
+        price.unit_amount === term.amountCents &&
+        price.currency === term.currency &&
+        price.recurring?.interval === term.interval &&
+        price.recurring?.interval_count === term.intervalCount,
+    );
+    const modernMetadataMatches = Boolean(
+      offer &&
+        term &&
+        source === "private_offer" &&
+        privateIdentity === privateOfferIdentity(offer) &&
+        metadataValue(meta, "recurring_amount_cents") ===
+          String(term.amountCents) &&
+        metadataValue(meta, "billing_currency") === term.currency &&
+        metadataValue(meta, "billing_interval") === term.interval &&
+        metadataValue(meta, "billing_interval_count") ===
+          String(term.intervalCount),
+    );
+    const legacyProofMatches = Boolean(
+      offer &&
+        term &&
+        !source &&
+        !privateIdentity &&
+        privateOfferKey &&
+        (priceMatches ||
+          (offer.accessKey && privateOfferKey === offer.accessKey)),
+    );
+    if (
+      !offer ||
+      !term ||
+      planMeta !== offer.plan ||
+      (!modernMetadataMatches && !legacyProofMatches) ||
+      (modernMetadataMatches && price && !priceMatches)
+    ) {
+      throw new StripeWebhookFailure("private_offer_terms_invalid");
+    }
+    return offer.plan;
+  }
+
+  const catalogPriceId = price?.id ?? metadataValue(meta, "catalog_price_id");
+  const catalogPlan = planForPriceId(catalogPriceId);
+  if (catalogPlan) {
+    if (
+      (source && source !== "stripe_catalog") ||
+      (planMeta && planMeta !== catalogPlan)
+    ) {
+      throw new StripeWebhookFailure("plan_metadata_invalid");
+    }
+    return catalogPlan;
+  }
+
+  // Compatibility for Checkout Sessions created before catalog_price_id was
+  // copied into metadata. Subscription updates still require the real Price id.
+  if (
+    !price &&
+    isSubscriptionPlan(planMeta) &&
+    planMeta !== "free" &&
+    !source
+  ) {
+    return planMeta;
+  }
+  if (!price && planMeta && !source) {
+    throw new StripeWebhookFailure("plan_metadata_invalid");
+  }
+  throw new StripeWebhookFailure("price_mapping_unknown");
+}
+
+function checkoutObjectId(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (value && typeof value === "object" && "id" in value) {
+    const id = (value as { id?: unknown }).id;
+    if (typeof id === "string" && id.trim()) return id.trim();
+  }
+  return null;
+}
+
+function isCardOnlyCheckout(session: Stripe.Checkout.Session): boolean {
+  const methods = session.payment_method_types ?? [];
+  return methods.length === 1 && methods[0] === "card";
 }
 
 async function findSalonId(args: {
@@ -179,10 +308,7 @@ async function findSalonId(args: {
   return null;
 }
 
-async function applyPatch(
-  salonId: string,
-  patch: SalonPatch,
-): Promise<void> {
+async function applyPatch(salonId: string, patch: SalonPatch): Promise<void> {
   const supabase = createServiceRoleClient();
   const { data: state, error: stateError } = await supabase
     .from("salons")
@@ -205,7 +331,10 @@ async function applyPatch(
   ) {
     patch.payment_grace_ends_at = graceDeadline(7);
   }
-  if (patch.subscription_status === "active" || patch.subscription_status === "trialing") {
+  if (
+    patch.subscription_status === "active" ||
+    patch.subscription_status === "trialing"
+  ) {
     patch.payment_grace_ends_at = null;
   }
   // Cast: subscription_* columns are not yet in the auto-generated DB
@@ -222,7 +351,8 @@ async function applyPatch(
   // Successful payment only auto-resumes a tenant paused specifically for
   // non-payment. A manual Superadmin pause always remains manual.
   if (
-    (patch.subscription_status === "active" || patch.subscription_status === "trialing") &&
+    (patch.subscription_status === "active" ||
+      patch.subscription_status === "trialing") &&
     current?.archived_at &&
     current.tenant_pause_reason === "non_payment"
   ) {
@@ -238,7 +368,10 @@ export async function POST(request: NextRequest) {
   const stripe = getStripeClient();
   if (!stripe) {
     // Dev-only path; missing key in prod throws inside getStripeClient.
-    return NextResponse.json({ ok: false, error: "no_client" }, { status: 503 });
+    return NextResponse.json(
+      { ok: false, error: "no_client" },
+      { status: 503 },
+    );
   }
   const webhookSigningKey = getStripeWebhookSecret();
   if (!webhookSigningKey) {
@@ -314,29 +447,26 @@ export async function POST(request: NextRequest) {
   let ledgerOutcome: "processed" | "failed" = "processed";
   let ledgerErrorCode: string | null = null;
   try {
-    if (event.type === "checkout.session.completed") {
+    if (
+      event.type === "checkout.session.completed" ||
+      event.type === "checkout.session.async_payment_succeeded" ||
+      event.type === "checkout.session.async_payment_failed"
+    ) {
       const session = event.data.object as Stripe.Checkout.Session;
-      const customerId =
-        typeof session.customer === "string"
-          ? session.customer
-          : (session.customer?.id ?? null);
-      const subscriptionId =
-        typeof session.subscription === "string"
-          ? session.subscription
-          : (session.subscription?.id ?? null);
+      const customerId = checkoutObjectId(session.customer);
+      const subscriptionId = checkoutObjectId(session.subscription);
       const meta = session.metadata ?? {};
       if (!customerId || !subscriptionId) {
         throw new StripeWebhookFailure("provider_binding_incomplete");
       }
-      if (!isSubscriptionPlan(meta.plan) || meta.plan === "free") {
-        throw new StripeWebhookFailure("plan_metadata_invalid");
+      const salonIdHint =
+        metadataValue(meta, "salon_id") || session.client_reference_id || "";
+      if (!salonIdHint) {
+        throw new StripeWebhookFailure("provider_binding_incomplete");
       }
-      const planMeta = meta.plan;
+      const resolvedPlan = planForBilling(meta, salonIdHint);
       const salonId = await findSalonId({
-        salonIdMeta:
-          typeof meta.salon_id === "string"
-            ? meta.salon_id
-            : (session.client_reference_id ?? null),
+        salonIdMeta: salonIdHint,
         customerId,
         subscriptionId,
       });
@@ -347,13 +477,42 @@ export async function POST(request: NextRequest) {
         );
         throw new StripeWebhookFailure("salon_binding_not_found");
       }
-      const patch: SalonPatch = {
-        subscription_plan: planMeta,
-        subscription_status: "active",
-      };
-      if (customerId) patch.stripe_customer_id = customerId;
-      if (subscriptionId) patch.stripe_subscription_id = subscriptionId;
-      await applyPatch(salonId, patch);
+
+      const asyncSucceeded =
+        event.type === "checkout.session.async_payment_succeeded";
+      const asyncFailed =
+        event.type === "checkout.session.async_payment_failed";
+      const synchronousSuccess =
+        event.type === "checkout.session.completed" &&
+        (session.payment_status === "paid" || isCardOnlyCheckout(session));
+      const providerStatus = asyncFailed
+        ? "payment_failed"
+        : asyncSucceeded || synchronousSuccess
+          ? "payment_succeeded"
+          : "payment_pending";
+      const completion = await markStripeSubscriptionCheckoutCompleted({
+        salonId,
+        checkoutSessionId: session.id,
+        stripeCustomerId: customerId,
+        stripeSubscriptionId: subscriptionId,
+        providerStatus,
+        now: new Date(),
+      });
+      // `missing` preserves safe compatibility for Checkouts created before the
+      // durable attempt ledger existed. A mismatched/invalid known attempt is a
+      // tenant-binding violation and must remain retryable for investigation.
+      if (completion === "conflict" || completion === "invalid") {
+        throw new StripeWebhookFailure("checkout_binding_conflict");
+      }
+
+      if (asyncSucceeded || synchronousSuccess) {
+        await applyPatch(salonId, {
+          subscription_plan: resolvedPlan,
+          subscription_status: "active",
+          stripe_customer_id: customerId,
+          stripe_subscription_id: subscriptionId,
+        });
+      }
       return NextResponse.json({ ok: true });
     }
 
@@ -389,14 +548,16 @@ export async function POST(request: NextRequest) {
       if (!customerId) {
         throw new StripeWebhookFailure("provider_binding_incomplete");
       }
-      const priceId = sub.items.data[0]?.price?.id ?? null;
-      const resolvedPlan = planForPriceId(priceId);
-      if (!resolvedPlan) {
-        throw new StripeWebhookFailure("price_mapping_unknown");
-      }
       const meta = sub.metadata ?? {};
+      const price = sub.items.data[0]?.price ?? null;
+      const salonIdHint = metadataValue(meta, "salon_id");
+      if (!salonIdHint) {
+        throw new StripeWebhookFailure("provider_binding_incomplete");
+      }
+      const resolvedPlan = planForBilling(meta, salonIdHint, price);
+      const normalizedStatus = normalizeStatus(sub.status);
       const salonId = await findSalonId({
-        salonIdMeta: typeof meta.salon_id === "string" ? meta.salon_id : null,
+        salonIdMeta: salonIdHint,
         customerId,
         subscriptionId: sub.id,
       });
@@ -407,14 +568,22 @@ export async function POST(request: NextRequest) {
         );
         throw new StripeWebhookFailure("salon_binding_not_found");
       }
+      const terminal = normalizedStatus === "canceled";
       const patch: SalonPatch = {
-        subscription_plan: resolvedPlan,
-        subscription_status: normalizeStatus(sub.status),
+        subscription_plan: terminal ? "free" : resolvedPlan,
+        subscription_status: normalizedStatus,
         subscription_current_period_end: periodEndIso(sub),
-        stripe_subscription_id: sub.id,
+        stripe_subscription_id: terminal ? null : sub.id,
       };
       if (customerId) patch.stripe_customer_id = customerId;
       await applyPatch(salonId, patch);
+      if (terminal) {
+        await closeStripeSubscriptionCheckout({
+          salonId,
+          stripeSubscriptionId: sub.id,
+          now: new Date(),
+        });
+      }
       return NextResponse.json({ ok: true });
     }
 
@@ -428,8 +597,9 @@ export async function POST(request: NextRequest) {
         throw new StripeWebhookFailure("provider_binding_incomplete");
       }
       const meta = sub.metadata ?? {};
+      const salonIdHint = metadataValue(meta, "salon_id");
       const salonId = await findSalonId({
-        salonIdMeta: typeof meta.salon_id === "string" ? meta.salon_id : null,
+        salonIdMeta: salonIdHint || null,
         customerId,
         subscriptionId: sub.id,
       });
@@ -445,6 +615,11 @@ export async function POST(request: NextRequest) {
         subscription_status: "canceled",
         stripe_subscription_id: null,
         subscription_current_period_end: periodEndIso(sub),
+      });
+      await closeStripeSubscriptionCheckout({
+        salonId,
+        stripeSubscriptionId: sub.id,
+        now: new Date(),
       });
       return NextResponse.json({ ok: true });
     }
@@ -510,11 +685,8 @@ export async function POST(request: NextRequest) {
 
         // Resolve evidence due date (unix seconds → ISO string).
         const dueBySecs =
-          (
-            dispute.evidence_details as
-              | { due_by?: number | null }
-              | undefined
-          )?.due_by ?? null;
+          (dispute.evidence_details as { due_by?: number | null } | undefined)
+            ?.due_by ?? null;
         const evidenceDueAt =
           typeof dueBySecs === "number" && dueBySecs > 0
             ? new Date(dueBySecs * 1000).toISOString()

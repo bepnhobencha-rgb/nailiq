@@ -9,7 +9,10 @@ vi.mock("@/shared/lib/supabase/serviceRole", () => ({
 
 import {
   claimStripeSubscriptionCheckout,
+  closeStripeSubscriptionCheckout,
   finishStripeSubscriptionCheckout,
+  markStripeSubscriptionCheckoutCompleted,
+  reconcileStripeSubscriptionCheckout,
 } from "@/shared/subscriptions/stripeCheckoutLedger";
 import {
   claimStripeWebhookEvent,
@@ -112,9 +115,77 @@ describe("Stripe billing database ledgers", () => {
     );
   });
 
+  it("reconciles provider truth under the exact reconciliation lease", async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: true, error: null });
+
+    await expect(
+      reconcileStripeSubscriptionCheckout({
+        salonId: "salon-1",
+        leaseToken: "lease-1",
+        outcome: "completed",
+        stripeCustomerId: "cus_one",
+        stripeSubscriptionId: "sub_one",
+        providerStatus: "payment_succeeded",
+        now: NOW,
+      }),
+    ).resolves.toBe(true);
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "reconcile_stripe_subscription_checkout",
+      expect.objectContaining({
+        p_salon_id: "salon-1",
+        p_lease_token: "lease-1",
+        p_outcome: "completed",
+        p_stripe_subscription_id: "sub_one",
+      }),
+    );
+  });
+
+  it("links webhook completion to the durable Checkout attempt", async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: "duplicate", error: null });
+
+    await expect(
+      markStripeSubscriptionCheckoutCompleted({
+        salonId: "salon-1",
+        checkoutSessionId: "cs_one",
+        stripeCustomerId: "cus_one",
+        stripeSubscriptionId: "sub_one",
+        providerStatus: "payment_succeeded",
+        now: NOW,
+      }),
+    ).resolves.toBe("duplicate");
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "mark_stripe_subscription_checkout_completed",
+      expect.objectContaining({
+        p_checkout_session_id: "cs_one",
+        p_provider_status: "payment_succeeded",
+      }),
+    );
+  });
+
+  it("closes the attempt only for its bound terminal subscription", async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: true, error: null });
+
+    await expect(
+      closeStripeSubscriptionCheckout({
+        salonId: "salon-1",
+        stripeSubscriptionId: "sub_one",
+        now: NOW,
+      }),
+    ).resolves.toBe(true);
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "close_stripe_subscription_checkout",
+      expect.objectContaining({
+        p_stripe_subscription_id: "sub_one",
+        p_provider_status: "subscription_terminal",
+      }),
+    );
+  });
+
   it("claims a Stripe event by provider event id and attempt", async () => {
     mocks.rpc.mockResolvedValueOnce({
-      data: [{ outcome: "acquired", lease_token: "event-lease", attempt_count: 2 }],
+      data: [
+        { outcome: "acquired", lease_token: "event-lease", attempt_count: 2 },
+      ],
       error: null,
     });
 

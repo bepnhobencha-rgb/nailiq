@@ -69,6 +69,10 @@ jobs:
 
           DB_URL="${DB_URL}" npx tsx scripts/check-schema-parity.ts
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-stripe-billing-idempotency.sql
+          DB_URL="$DB_URL" \
+            bash scripts/security/rehearse-stripe-billing-idempotency-race.sh
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f supabase/bootstrap/reference-data.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/check-public-page-management-rls.sql
