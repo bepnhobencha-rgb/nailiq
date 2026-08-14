@@ -153,6 +153,14 @@ describe("scheduling integrity P1 boundary", () => {
       "notificationCapabilityRef.current = crypto.randomUUID()",
     );
 
+    const e2eSeed = read("e2e/helpers/db.ts");
+    expect(e2eSeed).toContain('"set_staff_service_capabilities" as never');
+    const capabilitySeed = e2eSeed.slice(
+      e2eSeed.indexOf("// Use the same atomic capability transition"),
+      e2eSeed.indexOf("return { salonId:"),
+    );
+    expect(capabilitySeed).not.toContain('.from("staff_services").insert');
+
     const slotPreview = read("src/app/api/booking/reschedule-slots/route.ts");
     expect(slotPreview).toContain("salonDayRangeUtc");
     expect(slotPreview).toContain("public_staff_shifts");
