@@ -281,7 +281,7 @@ export async function submitPublicBooking(
   const { data: salonData, error: salonErr } = await supabase
     .from("public_salon_profiles" as never)
     .select(
-      "id, profile_complete, opening_hours, subscription_plan, plan_override, feature_flags, phone_otp_enabled, booking_lead_minutes, timezone, tax_lines, vertical, health_ack_required",
+      "id, profile_complete, opening_hours, subscription_plan, plan_override, feature_flags, phone_otp_enabled, booking_lead_minutes, timezone, tax_lines, vertical, health_ack_required, staff_capability_mode",
     )
     .eq("slug", shopSlug)
     .single();
@@ -300,6 +300,7 @@ export async function submitPublicBooking(
     tax_lines?: unknown;
     vertical?: string | null;
     health_ack_required?: boolean | null;
+    staff_capability_mode?: "legacy_all" | "whitelist" | null;
   };
 
   bookingScope.setTag("salon.id", String(salon.id));
@@ -570,15 +571,17 @@ export async function submitPublicBooking(
   }));
   if (allStaff.length === 0) throw new Error("no_staff_available");
 
-  const { data: capRows } = await supabase
+  const { data: capRows, error: capErr } = await supabase
     .from("staff_services")
     .select("staff_id, service_id")
     .in("staff_id", allStaff.map((s) => s.id));
+  if (capErr) throw new Error("staff_capability_load_failed");
   const capability = buildCapabilityMap(
     (capRows ?? []).map((r) => ({
       staff_id: String(r.staff_id),
       service_id: String(r.service_id),
     })),
+    salon.staff_capability_mode,
   );
   const requiredServiceIds = [
     String(service.id),

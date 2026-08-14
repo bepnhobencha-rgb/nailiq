@@ -14,6 +14,9 @@ const rollback = read(
 );
 const individual = read("src/shared/booking/submitPublicBooking.ts");
 const group = read("src/shared/booking/submitGroupBooking.ts");
+const schedulingIntegrityMigration = read(
+  "supabase/migrations/20260814050000_close_scheduling_integrity_p1.sql",
+);
 
 describe("public booking profile finalization boundary", () => {
   it("binds profile writes to a recent booking and matching OTP identity", () => {
@@ -53,15 +56,20 @@ describe("public booking profile finalization boundary", () => {
     expect(rollback).toContain("\\ir check-public-booking-profile-finalization.sql");
   });
 
-  it("routes both individual and group OTP completion through the RPC", () => {
+  it("routes individual and atomic group OTP completion through the finalizer", () => {
     expect(individual).toContain('"finalize_public_booking_profile"');
-    expect(group).toContain('"finalize_public_booking_profile"');
+    expect(schedulingIntegrityMigration).toContain(
+      "public.finalize_public_booking_profile",
+    );
+    expect(schedulingIntegrityMigration).toContain("p_otp_session_id uuid");
+    expect(schedulingIntegrityMigration).toContain("FOR UPDATE");
+    expect(group).toContain("p_otp_session_id: otpToConsume");
     expect(individual).not.toContain('.from("client_profiles")');
     expect(
       individual.match(/\/api\/booking-otp\/consume-session/g),
     ).toHaveLength(1);
-    expect(
-      group.match(/\/api\/booking-otp\/consume-session/g),
-    ).toHaveLength(1);
+    // Group booking consumes/finalizes in the same SQL transaction as every
+    // member; a post-commit HTTP consume would reopen the reuse race.
+    expect(group.match(/\/api\/booking-otp\/consume-session/g)).toBeNull();
   });
 });

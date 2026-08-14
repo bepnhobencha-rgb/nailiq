@@ -39,8 +39,9 @@ import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
  *   - `bookings_no_overlap` GIST EXCLUDE constraint as DB-level
  *     guard against true races; the RPC translates 23P01 → the
  *     `slot_conflict` error code
- *   - `idempotency_key` UNIQUE index for double-submit protection;
- *     the RPC translates 23505 → `duplicate_submission`
+ *   - the durable `(salon_id, request_id)` request ledger for exact replay;
+ *     a changed payload under the same key fails with
+ *     `idempotency_conflict`
  *
  * Out of scope (Phase 2+ tracked in CLAUDE.md):
  *   - Splitting a group into individuals post-confirm
@@ -68,21 +69,25 @@ export type GroupBookingMember = {
   time: string;
   /** Phase 6.1 — wave this member belongs to (1 for normal bookings). */
   waveNumber?: number;
-  /** Add-on service IDs selected for this member. Stored via
-   *  `add_booking_addons` RPC after the booking row is created.
-   *  Sequential add-ons extend the end_time; concurrent add-ons
-   *  add price but +0 time. Prices/durations are re-derived
-   *  server-side from the DB. */
+  /** Add-on service IDs selected for this member. The group insert RPC
+   *  validates, de-duplicates and itemizes them in the same transaction as
+   *  every booking row. Sequential add-ons extend the end time; concurrent
+   *  add-ons add price but +0 time. Prices/durations are re-derived
+   *  server-side from the database. */
   addonServiceIds?: string[];
 };
 
 export type GroupBookingParams = {
   shopSlug: string;
   members: GroupBookingMember[];
-  /** Client-generated UUID (crypto.randomUUID()). Submitting the same
-   * key a second time hits the UNIQUE constraint and returns
-   * `duplicate_submission` rather than creating a second group. */
+  /** Client-generated UUID (crypto.randomUUID()). Every member in this one
+   * request carries the same key. An exact retry returns the original atomic
+   * result; reusing the key with a changed payload fails closed. */
   idempotencyKey: string;
+  /** Short-lived, request-scoped proof used only to authorize the matching
+   * owner-notification handoff after this atomic write. The database stores
+   * SHA-256 only and binds it to this request's canonical organizer booking. */
+  notificationCapability?: string | null;
   /** Task #09-11 honeypot. Optional; matches the public booking
    *  contract. UI plumbing in `BookingGroupFlow.tsx` is TODO —
    *  accepting the field now means a future hidden input there can
@@ -121,7 +126,13 @@ export type GroupBookingParams = {
 };
 
 export type GroupBookingResult =
-  | { ok: true; groupId: string; bookingIds: string[] }
+  | {
+      ok: true;
+      groupId: string;
+      bookingIds: string[];
+      /** True when the durable ledger returned an already-committed party. */
+      idempotentReplay?: boolean;
+    }
   | {
       ok: false;
       reason: "slot_conflict";
@@ -174,6 +185,9 @@ export type GroupBookingResult =
         | "invalid_email"
         | "invalid_time"
         | "invalid_date"
+        | "invalid_addons"
+        | "too_many_addons"
+        | "idempotency_conflict"
         // Task #04-C FIX 12 — staff was deleted / inactivated
         // between the user picking an arrangement and submitting.
         // Recoverable by re-running the scheduler.
@@ -224,6 +238,8 @@ export type TrustedGroupBookingExecution = {
 };
 
 const HHMM_RE = /^(\d{1,2}):(\d{2})$/;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function parseHmToMinutes(hm: string): number | null {
   const m = HHMM_RE.exec(hm.trim());
@@ -296,8 +312,13 @@ export async function submitGroupBooking(
   }
   if (
     typeof params.idempotencyKey !== "string" ||
-    params.idempotencyKey.trim().length === 0
+    !UUID_RE.test(params.idempotencyKey.trim())
   ) {
+    return fail("invalid_input");
+  }
+  const requestId = params.idempotencyKey.trim();
+  const notificationCapability = (params.notificationCapability ?? "").trim();
+  if (notificationCapability && !UUID_RE.test(notificationCapability)) {
     return fail("invalid_input");
   }
   // P1 #20 (QA re-sweep 2026-05-12) — granular per-field reasons.
@@ -339,6 +360,20 @@ export async function submitGroupBooking(
     if (!/^\d{4}-\d{2}-\d{2}$/.test(m.date ?? "")) {
       return fail("invalid_date", memberNumber);
     }
+    if (!Array.isArray(m.addonServiceIds ?? [])) {
+      return fail("invalid_addons", memberNumber);
+    }
+    const uniqueAddonIds = new Set(m.addonServiceIds ?? []);
+    if (
+      Array.from(uniqueAddonIds).some(
+        (id) => typeof id !== "string" || id.trim().length === 0,
+      )
+    ) {
+      return fail("invalid_addons", memberNumber);
+    }
+    if (uniqueAddonIds.size > 8) {
+      return fail("too_many_addons", memberNumber);
+    }
   }
 
   const supabase = createPublicClient();
@@ -351,7 +386,7 @@ export async function submitGroupBooking(
   const { data: salonRaw, error: salonErr } = await supabase
     .from("public_salon_profiles" as never)
     .select(
-      "id, profile_complete, opening_hours, timezone, booking_closed_dates, subscription_plan, plan_override, feature_flags, phone_otp_enabled",
+      "id, profile_complete, opening_hours, timezone, booking_closed_dates, subscription_plan, plan_override, feature_flags, phone_otp_enabled, staff_capability_mode",
     )
     .eq("slug", params.shopSlug)
     .maybeSingle();
@@ -367,6 +402,7 @@ export async function submitGroupBooking(
     plan_override?: string | null;
     feature_flags?: Record<string, unknown> | null;
     phone_otp_enabled?: boolean | null;
+    staff_capability_mode?: "legacy_all" | "whitelist" | null;
   };
   if (!salonRow.profile_complete) return fail("salon_paused");
 
@@ -376,25 +412,38 @@ export async function submitGroupBooking(
     return fail("feature_not_enabled");
   }
 
-  // Plan-tier monthly cap. Group size is the count of new bookings
-  // we'd insert, so pass it so a 7-person group can't sneak past a
-  // limit that has 6 slots left.
-  try {
-    await assertBookingLimitAvailable(
-      supabase,
-      {
-        id: String(salonRow.id),
-        subscription_plan: salonRow.subscription_plan,
-        plan_override: salonRow.plan_override,
-        feature_flags: salonRow.feature_flags,
-      },
-      params.members.length,
-    );
-  } catch (e) {
-    if (e instanceof Error && e.message === "monthly_booking_limit_reached") {
-      return fail("monthly_booking_limit_reached");
+  // A completed request is a retry, not new plan usage. Let it reach the
+  // fingerprint-enforcing writer even when the first successful transaction
+  // consumed the salon's remaining monthly capacity. The boolean helper
+  // exposes no booking/customer data; changed payloads still fail at the
+  // durable ledger.
+  const { data: completedRequest, error: completedRequestError } =
+    await supabase.rpc("group_booking_request_completed" as never, {
+      p_salon_id: String(salonRow.id),
+      p_request_id: requestId,
+    } as never);
+  if (completedRequestError) return fail("server_error");
+  if (completedRequest !== true) {
+    // Plan-tier monthly cap. Group size is the count of new bookings we'd
+    // insert, so pass it so a 7-person group can't sneak past a limit that has
+    // 6 slots left.
+    try {
+      await assertBookingLimitAvailable(
+        supabase,
+        {
+          id: String(salonRow.id),
+          subscription_plan: salonRow.subscription_plan,
+          plan_override: salonRow.plan_override,
+          feature_flags: salonRow.feature_flags,
+        },
+        params.members.length,
+      );
+    } catch (e) {
+      if (e instanceof Error && e.message === "monthly_booking_limit_reached") {
+        return fail("monthly_booking_limit_reached");
+      }
+      throw e;
     }
-    throw e;
   }
 
   // Task #04-C (post #04-B cleanup) — `salons.timezone` is NOT NULL
@@ -513,6 +562,13 @@ export async function submitGroupBooking(
         memberIndex: i,
       };
     }
+    if (
+      Array.from(new Set(m.addonServiceIds ?? [])).some(
+        (addonId) => !addonById.has(addonId),
+      )
+    ) {
+      return fail("invalid_addons", i + 1);
+    }
   }
 
   // 4. Staff ---------------------------------------------------------
@@ -544,37 +600,34 @@ export async function submitGroupBooking(
     }
   }
 
-  // Write-time capability proof. The scheduler already filters staff, but a
-  // crafted payload must not assign a service/add-on to someone who cannot do
-  // it. As elsewhere in NailIQ, zero capability rows means legacy "all staff
-  // can do all services"; once any rows exist, every requested item must match.
-  if (trustedExecution) {
-    const { data: capabilityRows, error: capabilityError } = await supabase
-      .from("staff_services")
-      .select("staff_id, service_id")
-      .in("staff_id", staffIds)
-      .in("service_id", allFetchIds);
-    if (capabilityError) return fail("server_error");
-    if ((capabilityRows ?? []).length > 0) {
-      const capabilityKeys = new Set(
-        (capabilityRows ?? []).map(
-          (row) => `${String(row.staff_id)}:${String(row.service_id)}`,
-        ),
-      );
-      for (let i = 0; i < params.members.length; i++) {
-        const member = params.members[i];
-        const requiredIds = [
-          member.serviceId,
-          ...(member.addonServiceIds ?? []),
-        ];
-        if (
-          requiredIds.some(
-            (serviceId) =>
-              !capabilityKeys.has(`${member.staffId}:${serviceId}`),
-          )
-        ) {
-          return fail("staff_unavailable", i + 1);
-        }
+  // Write-time capability proof for every caller, including the anonymous
+  // wizard. Durable whitelist mode remains fail-closed even after its final
+  // staff_services row is deleted.
+  const { data: capabilityRows, error: capabilityError } = await supabase
+    .from("staff_services")
+    .select("staff_id, service_id")
+    .in("staff_id", staffIds)
+    .in("service_id", allFetchIds);
+  if (capabilityError) return fail("server_error");
+  if (salonRow.staff_capability_mode === "whitelist") {
+    const capabilityKeys = new Set(
+      (capabilityRows ?? []).map(
+        (row) => `${String(row.staff_id)}:${String(row.service_id)}`,
+      ),
+    );
+    for (let i = 0; i < params.members.length; i++) {
+      const member = params.members[i];
+      const requiredIds = [
+        member.serviceId,
+        ...Array.from(new Set(member.addonServiceIds ?? [])),
+      ];
+      if (
+        requiredIds.some(
+          (requestedServiceId) =>
+            !capabilityKeys.has(`${member.staffId}:${requestedServiceId}`),
+        )
+      ) {
+        return fail("staff_unavailable", i + 1);
       }
     }
   }
@@ -600,8 +653,7 @@ export async function submitGroupBooking(
   for (const m of params.members) {
     const svc = serviceById.get(m.serviceId)!;
 
-    // Add-on resolution: sum sequential block minutes + prices.
-    // Invalid / non-is_addon IDs are silently skipped (don't hard-fail).
+    // Canonicalize first, then account for each add-on exactly once.
     let addonPriceCentsSum = 0;
     let hasAddonPrice = false;
     let firstAddonId: string | null = null;
@@ -611,9 +663,9 @@ export async function submitGroupBooking(
       bufferMinutes: number;
       concurrent: boolean;
     }[] = [];
-    for (const aid of m.addonServiceIds ?? []) {
+    for (const aid of Array.from(new Set(m.addonServiceIds ?? []))) {
       const addon = addonById.get(aid);
-      if (!addon) continue; // not is_addon for this salon — skip
+      if (!addon) return fail("invalid_addons");
       if (firstAddonId === null) firstAddonId = aid;
       addonIds.push(aid);
       addonTimingSegments.push({
@@ -636,12 +688,7 @@ export async function submitGroupBooking(
     const startMs = Date.parse(startUtcIso);
     const endMs = startMs + timing.blockMinutes * 60_000;
 
-    // Preserve null price semantics (same as loadGroupSmartSchedule).
     const basePriceCents = svc.priceCents;
-    const effectivePriceCents: number | null =
-      basePriceCents != null || hasAddonPrice
-        ? (basePriceCents ?? 0) + addonPriceCentsSum
-        : null;
 
     resolved.push({
       member: m,
@@ -650,7 +697,9 @@ export async function submitGroupBooking(
       startMs,
       endMs,
       serviceCompletionMin: timing.serviceCompletionMinutes,
-      priceCents: effectivePriceCents,
+      // Main and add-on snapshots stay separate. The database computes the
+      // request total once from these canonical components.
+      priceCents: basePriceCents,
       addonPriceCents: hasAddonPrice ? addonPriceCentsSum : null,
       addonIds,
       firstAddonId,
@@ -762,12 +811,22 @@ export async function submitGroupBooking(
   const occByStaff = new Map<string, ConflictCheckBooking[]>();
   for (const ymd of distinctDays) {
     const { startUtc, endUtc } = salonDayRangeUtc(ymd, timezone);
-    const { data: rows } = await supabase
+    const { data: rows, error: occupancyError } = await supabase
       .from("bookings")
       .select("id, staff_id, start_time_utc, end_time_utc, status, client_name")
       .eq("salon_id", salonRow.id)
       .gte("start_time_utc", startUtc)
       .lt("start_time_utc", endUtc);
+    if (occupancyError) {
+      Sentry.captureException(occupancyError, {
+        tags: {
+          "booking.flow": "group",
+          "booking.read": "occupancy",
+        },
+        extra: { salonId: salonRow.id, dateYmd: ymd },
+      });
+      return fail("server_error");
+    }
     for (const row of rows ?? []) {
       const sid = row.staff_id == null ? "" : String(row.staff_id);
       if (!sid) continue;
@@ -810,11 +869,10 @@ export async function submitGroupBooking(
   }
 
   // 8. Atomic RPC insert ---------------------------------------------
-  // RPC owns the transaction boundary. Single-key idempotency: the
-  // same `idempotencyKey` is stamped on every member so a re-submit
-  // of the exact same payload hits the partial UNIQUE on member 1
-  // and the function returns `duplicate_submission`.
-  const idem = params.idempotencyKey;
+  // RPC owns the transaction boundary. Request-scoped idempotency: the same
+  // `idempotencyKey` is stamped on every member. The durable ledger returns
+  // the original result for an exact retry and rejects a changed payload.
+  const idem = requestId;
   const payload = resolved.map((r, i) => {
     const phoneOk = validateGuestPhone(r.member.phone);
     const phoneDigits = phoneOk.ok ? phoneOk.digits : r.member.phone;
@@ -848,21 +906,32 @@ export async function submitGroupBooking(
       seat_together: params.seatTogether === true,
       staff_requested_by_client: true,
       idempotency_key: idem,
+      // One independently random capability is shared by every member in the
+      // same request. The writer rejects mixed values and stores only its hash
+      // on the service-role-only durable request ledger.
+      notification_capability: notificationCapability || null,
       // Language the organizer was browsing in — persisted on every member row
       // so each guest's transactional SMS matches it. Read by the RPC as a
       // jsonb key; absent/null → column stays null and the SMS sender falls
       // back to customer_preferences.
       client_locale: params.language ?? null,
+      booking_channel: params.bookingChannel ?? "online",
+      // One voucher belongs to the organizer/request. The private RPC validates
+      // and redeems it atomically with every member and itemized add-on.
+      voucher_id:
+        i === 0 ? (params.voucherRedemption?.voucher_id ?? null) : null,
       // Ignored by the public RPC. The private desk RPC consumes this value to
       // stamp the matching booking row after the atomic group insert.
       after_hours_minutes: controlledAfterHoursMinutes[i],
     };
   });
 
-  // OTP gate (sabotage shield) — the organizer's phone must carry a valid,
-  // unconsumed phone_otp_sessions row (same artifact the individual flow uses).
-  // Validated up front; consumed only AFTER the group commits, so a partial
-  // failure doesn't burn the session. Anon RLS hides consumed/expired rows.
+  // OTP gate (sabotage shield) — a new request needs a valid, unconsumed
+  // phone_otp_sessions row. A completed durable request may reuse its consumed
+  // proof only to reach the fingerprint check and retrieve the original result;
+  // changed data still fails closed. The SQL wrapper locks and consumes a fresh
+  // proof in the same transaction, so any booking/finalization failure rolls
+  // the consumption back as well.
   let otpToConsume: string | null = null;
   if (salonRow.phone_otp_enabled === true) {
     const leadValidation = validateGuestPhone(params.members[0]?.phone ?? "");
@@ -871,11 +940,12 @@ export async function submitGroupBooking(
     if (!sessionId) return fail("otp_required");
     if (!leadDigits) return fail("otp_invalid");
     const { data: otpValid, error: otpValidationError } = await supabase.rpc(
-      "validate_phone_otp_session" as never,
+      "validate_group_booking_otp_session" as never,
       {
         p_session_id: sessionId,
         p_salon_id: String(salonRow.id),
         p_phone: leadDigits,
+        p_request_id: requestId,
       } as never,
     );
     if (otpValidationError || otpValid !== true) {
@@ -898,9 +968,13 @@ export async function submitGroupBooking(
       return fail("server_error");
     }
   } else {
-    const publicWrite = await supabase.rpc("insert_group_bookings", {
-      p_bookings: payload,
-    });
+    const publicWrite = await supabase.rpc(
+      "insert_group_bookings" as never,
+      {
+        p_bookings: payload,
+        p_otp_session_id: otpToConsume,
+      } as never,
+    );
     rpcData = publicWrite.data;
     rpcErr = publicWrite.error;
   }
@@ -935,6 +1009,7 @@ export async function submitGroupBooking(
     code?: string;
     group_id?: string;
     booking_ids?: string[];
+    idempotent_replay?: boolean;
   } | null;
   if (!result || typeof result !== "object") return fail("server_error");
   if (result.success === false) {
@@ -950,7 +1025,14 @@ export async function submitGroupBooking(
       };
     }
     if (code === "duplicate_submission") return fail("duplicate_submission");
+    if (code === "idempotency_conflict") return fail("idempotency_conflict");
     if (code === "invalid_group_size") return fail("invalid_group_size");
+    if (code === "invalid_addons") return fail("invalid_addons");
+    if (code === "too_many_addons") return fail("too_many_addons");
+    if (code === "invalid_notification_capability") return fail("invalid_input");
+    if (code === "otp_required") return fail("otp_required");
+    if (code === "otp_invalid") return fail("otp_invalid");
+    if (code === "staff_incapable") return fail("staff_unavailable");
     if (code === "outside_hours" || code === "invalid_booking_time") {
       return fail("invalid_time");
     }
@@ -981,17 +1063,8 @@ export async function submitGroupBooking(
   // their own phone (party members) must NOT get a profile keyed to the
   // organizer's number. Keeping it here would also double-count visits.
 
-  // Task #04-D FIX 02 — atomic-rollback observability. The RPC
-  // is wrapped in a single PL/pgSQL transaction so the only ways
-  // we should see a length mismatch here are:
-  //   (a) the RPC was redeployed with a different contract and
-  //       the client didn't get the version bump, or
-  //   (b) a future RPC author breaks atomicity (e.g. catches a
-  //       per-row exception inside the loop).
-  // Both are silent-data-loss bugs from the customer's POV —
-  // they see "booking confirmed for 4" but only 3 rows exist.
-  // Sentry capture surfaces the drift; we still return ok so the
-  // confirmation page renders for the rows that did land.
+  // A successful group result is all-or-nothing. Never render confirmation for
+  // a partial/contract-drift response.
   if (result.booking_ids.length !== params.members.length) {
     Sentry.captureMessage("group_booking_partial_rollback", {
       level: "error",
@@ -1007,13 +1080,11 @@ export async function submitGroupBooking(
         slug: params.shopSlug,
       },
     });
+    return fail("server_error");
   }
 
-  // Persist itemized add-ons per member — best-effort, exactly like
-  // submitPublicBooking. Prices/durations re-derived server-side
-  // inside the SECURITY DEFINER RPC; failure only loses the
-  // itemized breakdown, not the booking itself.
   const bookingIdList = result.booking_ids.map((s) => String(s));
+  const idempotentReplay = result.idempotent_replay === true;
   // NOTE: no-show card flagging for the GROUP lead is done server-side in
   // createDeskGroup (desk path); this function also runs in the browser
   // (online group wizard) so it must NOT import the server-only gate here.
@@ -1033,7 +1104,9 @@ export async function submitGroupBooking(
     organizerBookingId: bookingIdList[0] ?? null,
     bookingChannel: params.bookingChannel ?? "online",
     otpSessionId: otpToConsume,
-    ownerNotify: bookingIdList[0]
+    // The durable ledger returns the original rows on an exact retry. Keep the
+    // idempotent field stamps, but do not fan out a second owner notification.
+    ownerNotify: bookingIdList[0] && !idempotentReplay
       ? {
           salonId: String(salonRow.id),
           bookingId: bookingIdList[0],
@@ -1045,77 +1118,23 @@ export async function submitGroupBooking(
     console.error("[submitGroupBooking] channel/verification stamp failed", e),
   );
 
-  // Finalize the organizer's durable phone trust and consume the OTP in the
-  // same transaction. Group bookings previously burned the session without
-  // ever setting client_profiles.phone_verified_at.
-  if (otpToConsume && bookingIdList[0]) {
-    const { data: finalized, error: finalizeError } = await supabase.rpc(
-      "finalize_public_booking_profile" as never,
-      {
-        p_booking_id: bookingIdList[0],
-        p_otp_session_id: otpToConsume,
-        p_marketing_consent: false,
-      } as never,
-    );
-    const finalizeResult = finalized as {
-      success?: boolean;
-      code?: string;
-    } | null;
-    if (finalizeError || finalizeResult?.success !== true) {
-      Sentry.captureMessage("group_booking_profile_finalize_failed", {
-        level: "error",
-        tags: {
-          "booking.rpc": "finalize_public_booking_profile",
-          "booking.flow": "group",
-        },
-        extra: {
-          code: finalizeResult?.code ?? null,
-          message: finalizeError?.message ?? null,
-          organizerBookingId: bookingIdList[0],
-        },
-      });
-
-      // Preserve single-use OTP if code deploys before the migration.
-      const consumeAppUrl =
-        typeof window !== "undefined"
-          ? ""
-          : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() ||
-            "https://nailiq.ca";
-      void fetch(`${consumeAppUrl}/api/booking-otp/consume-session`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: otpToConsume }),
-      });
-    }
-  }
-
-  await Promise.all(
-    params.members.map(async (m, i) => {
-      const addonIds = (m.addonServiceIds ?? []).filter((aid) =>
-        addonById.has(aid),
-      );
-      if (addonIds.length === 0) return;
-      const bookingId = bookingIdList[i];
-      if (!bookingId) return;
-      try {
-        await supabase.rpc("add_booking_addons", {
-          p_booking_id: bookingId,
-          p_service_ids: addonIds,
-        });
-      } catch (e) {
-        console.error(
-          "[submitGroupBooking] add_booking_addons failed for member",
-          i,
-          e,
-        );
-      }
-    }),
-  );
+  // The public DB wrapper now locks, consumes and stamps the organizer OTP in
+  // the same transaction as all group members. There is intentionally no
+  // post-commit consume/finalize fallback here: a success means the evidence
+  // is durable, while any finalize failure rolls the whole write back.
 
   // Group confirmation SMS to the primary contact (all members share the
   // organizer's phone). One summary message for the whole party — the group
   // path previously sent NO confirmation at all, unlike individual bookings.
   try {
+    if (idempotentReplay) {
+      return {
+        ok: true,
+        groupId: result.group_id,
+        bookingIds: bookingIdList,
+        idempotentReplay: true,
+      };
+    }
     const organizer = params.members[0];
     const organizerPhoneOk = validateGuestPhone(organizer?.phone ?? "");
     const earliest = resolved.reduce(
@@ -1150,49 +1169,10 @@ export async function submitGroupBooking(
     console.error("[submitGroupBooking] group sms-confirm dispatch failed", e);
   }
 
-  // Fire-and-forget: redeem the party voucher against the lead booking. The
-  // voucher is tied to the organizer's phone (only member 0 has a real number)
-  // and applies to the whole-party total, so it redeems once against the lead
-  // row — mirrors submitPublicBooking's redeem side-effect.
-  if (params.voucherRedemption?.voucher_id && bookingIdList[0]) {
-    const organizerPhoneOk = validateGuestPhone(params.members[0]?.phone ?? "");
-    if (organizerPhoneOk.ok) {
-      const groupTotalCents = resolved.reduce(
-        (sum, r) => sum + (r.priceCents ?? 0) + (r.addonPriceCents ?? 0),
-        0,
-      );
-      void (async () => {
-        try {
-          const appUrl =
-            typeof window !== "undefined"
-              ? ""
-              : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() ||
-                "https://nailiq.ca";
-          await fetch(`${appUrl}/api/vouchers/redeem`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              voucher_id: params.voucherRedemption!.voucher_id,
-              salon_id: String(salonRow.id),
-              client_phone: organizerPhoneOk.digits,
-              booking_id: bookingIdList[0],
-              original_price_cents: groupTotalCents,
-              discount_cents: params.voucherRedemption!.discount_cents,
-            }),
-          });
-        } catch (e) {
-          console.error(
-            "[submitGroupBooking] voucher redeem dispatch failed",
-            e,
-          );
-        }
-      })();
-    }
-  }
-
   return {
     ok: true,
     groupId: result.group_id,
     bookingIds: bookingIdList,
+    idempotentReplay: false,
   };
 }

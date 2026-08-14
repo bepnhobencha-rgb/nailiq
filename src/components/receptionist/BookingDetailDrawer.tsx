@@ -14,6 +14,7 @@ import {
 } from "@/shared/lib/salonMemberRole";
 import { type Currency } from "@/shared/lib/currencyFormat";
 import type { BookingStatus, SalonDashboardBooking } from "@/shared/types";
+import type { StaffCapabilityMode } from "@/shared/booking/staffCapability";
 
 import { EditBookingForm, type EditBookingFormBooking } from "./EditBookingForm";
 import { DepositLinkModal } from "./DepositLinkModal";
@@ -596,8 +597,9 @@ export interface BookingDetailDrawerProps {
       duration_minutes: number;
       buffer_minutes: number;
     }[];
-    /** Per-staff service whitelist for the salon. `null` = no rows → all-capable fallback. */
+    /** Per-staff service rows; interpret empty/null using staffCapabilityMode. */
     capabilityRows: { staff_id: string; service_id: string }[] | null;
+    staffCapabilityMode: StaffCapabilityMode;
     dayYmd: string;
     timezone: string;
     rcMessages: UserMessages["receptionist"];
@@ -1401,6 +1403,7 @@ export function BookingDetailDrawer({
                     staff={deskEdit.staff}
                     services={deskEdit.services}
                     capabilityRows={deskEdit.capabilityRows}
+                    staffCapabilityMode={deskEdit.staffCapabilityMode}
                     dayYmd={deskEdit.dayYmd}
                     timezone={deskEdit.timezone}
                     rcMessages={deskEdit.rcMessages}

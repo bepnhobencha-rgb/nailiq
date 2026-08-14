@@ -8,6 +8,7 @@ import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 import { normalizeBrandColor } from "@/shared/lib/brandColor";
+import type { StaffCapabilityMode } from "@/shared/booking/staffCapability";
 import {
   formatServicePrice,
   parseCurrency,
@@ -103,6 +104,9 @@ export type BookingSalonMeta = {
   emailLinksEnabled: boolean | null;
   /** True when `salons.resources_enabled` is on — beds/chairs must be assigned. */
   resourcesEnabled: boolean;
+  /** Durable capability semantics. `whitelist` stays fail-closed even after
+   * the final staff/service assignment is intentionally removed. */
+  staffCapabilityMode: StaffCapabilityMode;
   /** Tax lines configured for this salon. Shown as a breakdown in the confirm
    *  step. Empty array = no tax. Computed client-side for display; re-computed
    *  server-side on submit and stamped on the booking row. */
@@ -118,7 +122,8 @@ export type BookingLoadData = {
   /** Active combo bundles for this salon. Empty when none defined. */
   combos: BookingComboItem[];
   staff: BookingStaffItem[];
-  /** Per-staff service whitelist. `null` = salon has no rows → all-capable fallback. */
+  /** Per-staff service whitelist rows. Interpret an empty value together with
+   * `salon.staffCapabilityMode`; only legacy salons use the all-capable fallback. */
   capabilityRows: { staff_id: string; service_id: string }[] | null;
   salon: BookingSalonMeta;
   /** Active beds/chairs/stations for resource-mode salons. Empty otherwise. */
@@ -355,6 +360,11 @@ export async function loadBookingServicesForSalonSlug(
 
     if (capErr) {
       console.error("loadBookingServices staff_services error:", capErr);
+      Sentry.captureException(capErr, {
+        tags: { surface: "public_booking_load", operation: "staff_capability" },
+        extra: { salonId },
+      });
+      return null;
     } else if ((capRows?.length ?? 0) > 0) {
       capabilityRows = (capRows ?? []).map((r) => ({
         staff_id: String(r.staff_id),
@@ -603,6 +613,11 @@ export async function loadBookingServicesForSalonSlug(
         return typeof v === "boolean" ? v : null;
       })(),
       resourcesEnabled: salonResourcesEnabled,
+      staffCapabilityMode:
+        (salon as { staff_capability_mode?: unknown }).staff_capability_mode ===
+        "whitelist"
+          ? "whitelist"
+          : "legacy_all",
       taxLines: (() => {
         const raw = (salon as { tax_lines?: unknown }).tax_lines;
         if (!Array.isArray(raw)) return [];

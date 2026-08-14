@@ -22,29 +22,53 @@ export type SetupTimezoneOption = {
 };
 
 export const SETUP_TIMEZONE_OPTIONS = [
-  { value: "America/Vancouver", labelEn: "BC", labelVi: "BC" },
-  { value: "America/Whitehorse", labelEn: "Yukon", labelVi: "Yukon" },
-  { value: "America/Edmonton", labelEn: "Alberta", labelVi: "Alberta" },
+  {
+    value: "America/Vancouver",
+    labelEn: "Vancouver — Pacific time (UTC−7 year-round)",
+    labelVi: "Vancouver — giờ Thái Bình Dương (UTC−7 quanh năm)",
+  },
+  {
+    value: "America/Dawson_Creek",
+    labelEn: "Dawson Creek / Fort St. John — no DST",
+    labelVi: "Dawson Creek / Fort St. John — không đổi giờ mùa hè",
+  },
+  {
+    value: "America/Creston",
+    labelEn: "Creston — no DST",
+    labelVi: "Creston — không đổi giờ mùa hè",
+  },
+  { value: "America/Whitehorse", labelEn: "Whitehorse — Yukon", labelVi: "Whitehorse — Yukon" },
+  { value: "America/Edmonton", labelEn: "Edmonton — Mountain time", labelVi: "Edmonton — giờ Miền Núi" },
   {
     value: "America/Winnipeg",
-    labelEn: "Manitoba",
-    labelVi: "Manitoba",
+    labelEn: "Winnipeg — Central time",
+    labelVi: "Winnipeg — giờ Miền Trung",
   },
   {
     value: "America/Regina",
-    labelEn: "Saskatchewan",
-    labelVi: "Saskatchewan",
+    labelEn: "Regina — no DST",
+    labelVi: "Regina — không đổi giờ mùa hè",
   },
   {
     value: "America/Toronto",
-    labelEn: "Ontario, Quebec",
-    labelVi: "Ontario, Quebec",
+    labelEn: "Toronto — Eastern time",
+    labelVi: "Toronto — giờ Miền Đông",
   },
-  { value: "America/Halifax", labelEn: "Atlantic", labelVi: "Atlantic" },
+  {
+    value: "America/Atikokan",
+    labelEn: "Atikokan — Eastern, no DST",
+    labelVi: "Atikokan — giờ Miền Đông, không đổi giờ mùa hè",
+  },
+  { value: "America/Halifax", labelEn: "Halifax — Atlantic time", labelVi: "Halifax — giờ Đại Tây Dương" },
+  {
+    value: "America/Blanc-Sablon",
+    labelEn: "Blanc-Sablon — Atlantic, no DST",
+    labelVi: "Blanc-Sablon — giờ Đại Tây Dương, không đổi giờ mùa hè",
+  },
   {
     value: "America/St_Johns",
-    labelEn: "Newfoundland",
-    labelVi: "Newfoundland",
+    labelEn: "St. John’s — Newfoundland time",
+    labelVi: "St. John’s — giờ Newfoundland",
   },
   { value: "America/New_York", labelEn: "US East", labelVi: "Mỹ — Đông" },
   { value: "America/Chicago", labelEn: "US Central", labelVi: "Mỹ — Trung" },

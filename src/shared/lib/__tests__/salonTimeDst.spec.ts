@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatInSalonTz,
   salonDayRangeUtc,
+  salonWallTimeToUtcCandidates,
   salonWallTimeToUtcIso,
   utcIsoToSalonMinutesFromMidnight,
 } from "@/shared/lib/salonTime";
@@ -43,7 +44,7 @@ describe("salon time — Canadian timezone and DST boundaries", () => {
     },
   );
 
-  it("returns 23-hour and 25-hour Vancouver calendar days at DST transitions", () => {
+  it("keeps Vancouver at permanent UTC-07 after its final 2026 spring-forward", () => {
     const spring = salonDayRangeUtc("2026-03-08", "America/Vancouver");
     const fall = salonDayRangeUtc("2026-11-01", "America/Vancouver");
 
@@ -51,8 +52,11 @@ describe("salon time — Canadian timezone and DST boundaries", () => {
       23 * 60 * 60 * 1000,
     );
     expect(Date.parse(fall.endUtc) - Date.parse(fall.startUtc)).toBe(
-      25 * 60 * 60 * 1000,
+      24 * 60 * 60 * 1000,
     );
+    expect(
+      salonWallTimeToUtcIso("2027-01-15", 9 * 60, "America/Vancouver"),
+    ).toBe("2027-01-15T16:00:00.000Z");
   });
 
   it("fails closed for a spring-forward wall time that does not exist", () => {
@@ -60,23 +64,34 @@ describe("salon time — Canadian timezone and DST boundaries", () => {
       salonWallTimeToUtcIso(
         "2026-03-08",
         2 * 60 + 30,
-        "America/Vancouver",
+        "America/Toronto",
       ),
     ).toThrow(/does not exist/i);
   });
 
   it("chooses the first occurrence of a repeated fall-back wall time", () => {
+    expect(
+      salonWallTimeToUtcCandidates(
+        "2026-11-01",
+        1 * 60 + 30,
+        "America/Toronto",
+      ),
+    ).toEqual([
+      "2026-11-01T05:30:00.000Z",
+      "2026-11-01T06:30:00.000Z",
+    ]);
+
     const firstOccurrence = salonWallTimeToUtcIso(
       "2026-11-01",
       1 * 60 + 30,
-      "America/Vancouver",
+      "America/Toronto",
     );
 
-    expect(firstOccurrence).toBe("2026-11-01T08:30:00.000Z");
+    expect(firstOccurrence).toBe("2026-11-01T05:30:00.000Z");
     expect(
       formatInSalonTz(
         firstOccurrence,
-        "America/Vancouver",
+        "America/Toronto",
         "datetime",
       ),
     ).toBe("Sun, Nov 1 · 1:30 AM");

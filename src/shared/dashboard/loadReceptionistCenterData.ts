@@ -87,6 +87,8 @@ export interface ReceptionistCenterData {
      * releases the slot, charges, or affects guest history.
      */
     autoNoShowMinutes: number | null;
+    /** Durable service capability semantics for all receptionist pickers. */
+    staffCapabilityMode: "legacy_all" | "whitelist";
   };
   staff: Array<{
     id: string;
@@ -333,7 +335,7 @@ export interface ReceptionistCenterData {
      * booking; 1-120 is the customer-facing overrun beyond salon close. */
     after_hours_minutes: number | null;
   }>;
-  /** Per-staff service whitelist for this salon. `null` = no rows → all-capable fallback. */
+  /** Per-staff service rows; interpret empty/null using salon.staffCapabilityMode. */
   capabilityRows: { staff_id: string; service_id: string }[] | null;
   /**
    * Today's no-show bookings (status `no_show`), surfaced in the "needs
@@ -570,6 +572,7 @@ export type ReceptionistCenterDataLoaderDeps = {
     opening_hours?: unknown | null;
     staff_notification_settings?: unknown | null;
     auto_no_show_minutes?: unknown | null;
+    staff_capability_mode?: unknown | null;
   };
 };
 
@@ -663,6 +666,7 @@ export async function loadReceptionistCenterData(
     opening_hours?: unknown;
     staff_notification_settings?: unknown;
     auto_no_show_minutes?: unknown;
+    staff_capability_mode?: unknown;
   };
   let salonData: SalonShape | null;
   if (deps?.preFetchedSalon) {
@@ -686,6 +690,7 @@ export async function loadReceptionistCenterData(
       staff_notification_settings:
         deps.preFetchedSalon.staff_notification_settings,
       auto_no_show_minutes: deps.preFetchedSalon.auto_no_show_minutes,
+      staff_capability_mode: deps.preFetchedSalon.staff_capability_mode,
     };
   } else {
     const salonResult = await supabase
@@ -695,7 +700,7 @@ export async function loadReceptionistCenterData(
         // (20260512000000 / 20260511100000) — not in auto-generated
         // types yet, hence the `as never` cast on the SELECT string.
         // basic_mode_forced: auto-enable Basic Mode for receptionist if salon config requires it
-        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign, queue_display_mode, basic_mode_forced, opening_hours, staff_notification_settings, auto_no_show_minutes" as never,
+        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign, queue_display_mode, basic_mode_forced, opening_hours, staff_notification_settings, auto_no_show_minutes, staff_capability_mode" as never,
       )
       .eq("id", ctx.salon.id)
       .maybeSingle();
@@ -748,6 +753,10 @@ export async function loadReceptionistCenterData(
       const n = Math.round(Number(v));
       return Number.isFinite(n) && n > 0 ? n : null;
     })(),
+    staffCapabilityMode:
+      salonData.staff_capability_mode === "whitelist"
+        ? ("whitelist" as const)
+        : ("legacy_all" as const),
   };
 
   const rawDashboardModules = parseDashboardModules(
@@ -1568,6 +1577,7 @@ export async function loadReceptionistCenterData(
       .in("staff_id", staffIds);
     if (capErr) {
       console.error("[loadReceptionistCenterData] staff_services", capErr);
+      return { ok: false, error: "server_error" };
     } else if ((capRows?.length ?? 0) > 0) {
       capabilityRows = (
         (capRows ?? []) as unknown as Array<{

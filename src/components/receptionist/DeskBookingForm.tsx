@@ -39,6 +39,10 @@ import {
   type ClientSearchHit,
 } from "@/shared/dashboard/searchClientsAction";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
+import {
+  buildCapabilityMap,
+  filterStaffCapableForServices,
+} from "@/shared/booking/staffCapability";
 import { addonLabel } from "@/shared/booking/serviceLabels";
 import { salonToday, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
 import { ymdToLocalNoon } from "@/shared/lib/localDateYmd";
@@ -473,23 +477,22 @@ export default function DeskBookingForm({
     [serviceId, addonIds],
   );
 
-  // Staff capable of EVERY chosen service (capabilityRows null = all-capable).
+  // Staff capable of EVERY chosen service. Empty rows only mean all-capable in
+  // the durable legacy mode; an empty configured whitelist means nobody.
   const capableStaff = useMemo(() => {
     if (!data) return [];
-    if (!serviceId || !data.capabilityRows) return data.staff;
-    const cap = new Map<string, Set<string>>();
-    for (const r of data.capabilityRows) {
-      let bucket = cap.get(r.staff_id);
-      if (!bucket) {
-        bucket = new Set();
-        cap.set(r.staff_id, bucket);
-      }
-      bucket.add(r.service_id);
-    }
-    return data.staff.filter((s) => {
-      const bucket = cap.get(s.id);
-      return !!bucket && requiredServiceIds.every((id) => bucket.has(id));
-    });
+    if (!serviceId) return data.staff;
+    const capability = buildCapabilityMap(
+      data.capabilityRows ?? [],
+      data.salon.staffCapabilityMode,
+    );
+    return [
+      ...filterStaffCapableForServices(
+        data.staff,
+        capability,
+        requiredServiceIds,
+      ),
+    ];
   }, [data, serviceId, requiredServiceIds]);
 
   // If the picked (specific) staff can't do the chosen service+add-ons, clear it.

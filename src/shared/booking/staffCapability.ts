@@ -10,16 +10,16 @@
  * here: FK-enforced (deleting a service CASCADEs its capability rows),
  * soft-delete-aware via filtered SELECTs, and RLS-friendly.
  *
- * Backward-compat semantic: a salon with zero `staff_services` rows is
- * treated as "every staff can do every service" — kept so legacy salons
- * that haven't migrated through the StaffSetupPanel still book through
- * the front door. Once the panel writes any row for the salon, the
- * whitelist takes over.
+ * Backward-compat semantic is now durable: `salons.staff_capability_mode`
+ * remains `legacy_all` until a capability has ever been configured. Once it
+ * becomes `whitelist`, deleting the final row intentionally leaves an empty
+ * map (nobody is capable) instead of silently reopening every service.
  */
 
 /**
- * staff_id → Set<service_id>. `null` means: zero rows for this salon, so
- * every staff is capable of every service (backward-compatible fallback).
+ * staff_id → Set<service_id>. `null` means the salon is explicitly in durable
+ * `legacy_all` mode, so every staff is capable of every service. In whitelist
+ * mode, zero rows becomes an empty Map and stays fail-closed.
  */
 export type StaffCapabilityMap = Map<string, Set<string>> | null;
 
@@ -28,10 +28,15 @@ export type StaffCapabilityRow = {
   service_id: string;
 };
 
+export type StaffCapabilityMode = "legacy_all" | "whitelist";
+
 export function buildCapabilityMap(
   rows: ReadonlyArray<StaffCapabilityRow> | null,
+  mode?: StaffCapabilityMode | string | null,
 ): StaffCapabilityMap {
-  if (!rows || rows.length === 0) return null;
+  if (!rows || rows.length === 0) {
+    return mode === "whitelist" ? new Map() : null;
+  }
   const map = new Map<string, Set<string>>();
   for (const r of rows) {
     let bucket = map.get(r.staff_id);

@@ -87,6 +87,7 @@ export default async function SetupStaffPage({ params }: Props) {
       .in("staff_id", staffIds);
     if (capErr) {
       console.error("[setup/staff] staff_services", capErr);
+      redirect("/register");
     } else {
       capabilityRows = (capRows ?? []).map((r) => ({
         staff_id: String(r.staff_id),
@@ -95,9 +96,9 @@ export default async function SetupStaffPage({ params }: Props) {
     }
   }
 
-  /** initialServiceIdsByStaff[staffId] is the *current* whitelist for that
-   *  staff. The panel applies the "salon has zero rows → all-checked" UI
-   *  default when it sees `capabilityRows` is empty across the salon. */
+  /** initialServiceIdsByStaff[staffId] is the current durable whitelist for
+   *  that staff. Whether an empty set means legacy-all or intentionally none
+   *  comes from salons.staff_capability_mode, never from row count. */
   const initialServiceIdsByStaff: Record<string, string[]> = {};
   for (const row of capabilityRows) {
     (initialServiceIdsByStaff[row.staff_id] ??= []).push(row.service_id);
@@ -105,18 +106,25 @@ export default async function SetupStaffPage({ params }: Props) {
 
   // Same plan-limit plumbing as the services page — UX gate only; the
   // server still re-enforces via `canAddStaff`.
-  const { data: planRow } = await ctx.supabase
+  const { data: planRow, error: planErr } = await ctx.supabase
     .from("salons")
     .select(
-      "subscription_plan, plan_override, feature_flags" as never,
+      "subscription_plan, plan_override, feature_flags, staff_capability_mode" as never,
     )
     .eq("id", ctx.salon.id)
     .maybeSingle();
+  if (planErr || !planRow) {
+    console.error("[setup/staff] salon configuration", planErr);
+    redirect("/register");
+  }
   const planForLimits = (planRow ?? {}) as {
     subscription_plan?: string | null;
     plan_override?: string | null;
     feature_flags?: Record<string, unknown> | null;
+    staff_capability_mode?: string | null;
   };
+  const salonCapabilityConfigured =
+    planForLimits.staff_capability_mode === "whitelist";
   const planLimits = getEffectivePlanLimits(planForLimits);
   const maxStaff = Number.isFinite(planLimits.maxStaff)
     ? planLimits.maxStaff
@@ -157,7 +165,7 @@ export default async function SetupStaffPage({ params }: Props) {
           }))}
           services={services}
           initialServiceIdsByStaff={initialServiceIdsByStaff}
-          salonHasCapabilityRows={capabilityRows.length > 0}
+          salonCapabilityConfigured={salonCapabilityConfigured}
           accessByStaff={accessByStaff}
           currentUserRole={ctx.role}
         />

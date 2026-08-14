@@ -19,6 +19,7 @@ export const PUBLIC_BOOKING_SALON_SELECT = [
   "group_together_threshold_minutes", "reference_image_enabled",
   "health_ack_required", "email_links_enabled", "resources_enabled",
   "tax_lines", "privacy_url", "terms_url", "default_language", "logo_url",
+  "staff_capability_mode",
 ].join(", ");
 
 export async function getSalonBySlug(

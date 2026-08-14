@@ -20,9 +20,9 @@ BEGIN
     AND p.prosecdef
     AND has_function_privilege('anon', p.oid, 'EXECUTE');
 
-  IF v_actual_count <> 10 THEN
+  IF v_actual_count <> 12 THEN
     RAISE EXCEPTION
-      'anonymous SECURITY DEFINER allowlist drift: expected 10, found %',
+      'anonymous SECURITY DEFINER allowlist drift: expected 12, found %',
       v_actual_count;
   END IF;
 
@@ -95,15 +95,27 @@ BEGIN
           ]::text[]
         ),
         (
-          'public.insert_group_bookings(jsonb)',
+          'public.group_booking_request_completed(uuid,uuid)',
+          's',
+          'RETURNS boolean',
+          ARRAY[
+            'r.salon_id = p_salon_id',
+            'r.request_id = p_request_id',
+            'r.state = ''completed'''
+          ]::text[]
+        ),
+        (
+          'public.insert_group_bookings(jsonb,uuid)',
           'v',
           'RETURNS jsonb',
           ARRAY[
-            'v_group_size < 2 OR v_group_size > 20',
+            'v_size < 2 OR v_size > 20',
             '''invalid_service''',
             '''invalid_staff''',
             '''public-group-booking:salon:''',
-            'jsonb_build_object(''price_cents'', v_price)'
+            'p_otp_session_id',
+            'FOR UPDATE',
+            'public.finalize_public_booking_profile'
           ]::text[]
         ),
         (
@@ -133,6 +145,17 @@ BEGIN
             's.salon_id = p_salon_id',
             's.consumed_at IS NULL',
             's.expires_at > now()'
+          ]::text[]
+        ),
+        (
+          'public.validate_group_booking_otp_session(uuid,uuid,text,uuid)',
+          's',
+          'RETURNS boolean',
+          ARRAY[
+            's.id = p_session_id',
+            's.salon_id = p_salon_id',
+            'r.request_id = p_request_id',
+            'r.state = ''completed'''
           ]::text[]
         )
     ) AS expected(signature, volatility, result_fragment, guard_fragments)
@@ -167,6 +190,7 @@ BEGIN
          SELECT 1
          FROM unnest((SELECT proconfig FROM pg_proc WHERE oid = v_oid)) setting
          WHERE setting LIKE 'search_path=public%'
+            OR setting = 'search_path=""'
        )
        OR v_public_execute
        OR NOT has_function_privilege('anon', v_oid, 'EXECUTE')

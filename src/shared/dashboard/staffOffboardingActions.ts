@@ -147,15 +147,21 @@ async function loadPreviewData(
   }
 
   const allStaffIds = staff.map((row) => row.id);
-  const { data: capabilityRows, error: capabilityErr } = allStaffIds.length
-    ? await admin
-        .from("staff_services")
-        .select("staff_id, service_id")
-        .in("staff_id", allStaffIds)
-    : { data: [], error: null };
-  if (capabilityErr) return { error: "server_error" };
+  const [capabilityRes, capabilityModeRes] = await Promise.all([
+    allStaffIds.length
+      ? admin
+          .from("staff_services")
+          .select("staff_id, service_id")
+          .in("staff_id", allStaffIds)
+      : Promise.resolve({ data: [], error: null }),
+    admin.rpc("salon_has_staff_services", { p_salon_id: salonId }),
+  ]);
+  if (capabilityRes.error || capabilityModeRes.error) {
+    return { error: "server_error" };
+  }
   const capability = buildCapabilityMap(
-    (capabilityRows ?? []) as Array<{ staff_id: string; service_id: string }>,
+    (capabilityRes.data ?? []) as Array<{ staff_id: string; service_id: string }>,
+    capabilityModeRes.data === true ? "whitelist" : "legacy_all",
   );
 
   let existingBookings: ConflictCheckBooking[] = [];

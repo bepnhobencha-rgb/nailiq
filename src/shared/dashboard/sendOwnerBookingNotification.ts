@@ -466,13 +466,28 @@ export async function sendOwnerBookingNotification(
     }
 
     // Booking details + service/staff names.
-    const { data: bRow } = await admin
+    const { data: bRow, error: bookingReadError } = await admin
       .from("bookings")
       .select(
         "client_name, client_phone, service_id, staff_id, start_time_utc, end_time_utc, status, source, booking_channel, price_cents, addon_price_cents, client_profile_id",
       )
       .eq("id", bookingId)
+      .eq("salon_id", salonId)
       .maybeSingle();
+    if (bookingReadError || !bRow) {
+      console.warn(
+        "[ownerNotify] tenant-scoped booking unavailable",
+        bookingReadError?.message ?? "not_found",
+      );
+      await logNotify(admin, {
+        salonId,
+        bookingId,
+        event,
+        status: "skipped",
+        error: bookingReadError ? "booking_read_failed" : "booking_not_in_salon",
+      });
+      return;
+    }
     const b = bRow as {
       client_name?: string | null;
       client_phone?: string | null;
@@ -515,19 +530,40 @@ export async function sendOwnerBookingNotification(
             .from("services")
             .select("name, duration_minutes, price_cents")
             .eq("id", b.service_id)
+            .eq("salon_id", salonId)
             .maybeSingle()
-        : Promise.resolve({ data: null }),
+        : Promise.resolve({ data: null, error: null }),
       b.staff_id
-        ? admin.from("staff").select("name").eq("id", b.staff_id).maybeSingle()
-        : Promise.resolve({ data: null }),
+        ? admin
+            .from("staff")
+            .select("name")
+            .eq("id", b.staff_id)
+            .eq("salon_id", salonId)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
       b.client_profile_id
         ? admin
             .from("client_profiles")
             .select("visit_count, no_show_count, is_vip")
             .eq("id", b.client_profile_id)
             .maybeSingle()
-        : Promise.resolve({ data: null }),
+        : Promise.resolve({ data: null, error: null }),
     ]);
+    if (svcRes.error || staffRes.error || profRes.error) {
+      console.warn("[ownerNotify] booking detail lookup failed closed", {
+        serviceError: svcRes.error?.message,
+        staffError: staffRes.error?.message,
+        profileError: profRes.error?.message,
+      });
+      await logNotify(admin, {
+        salonId,
+        bookingId,
+        event,
+        status: "skipped",
+        error: "booking_detail_read_failed",
+      });
+      return;
+    }
     const svc = svcRes.data as {
       name?: string;
       duration_minutes?: number | null;

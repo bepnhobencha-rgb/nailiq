@@ -20,25 +20,39 @@ function dayLengthHours(dateYmd: string, timezone: string): number {
 }
 
 describe("Canadian setup timezone mappings", () => {
-  it("uses canonical IANA zones instead of assigning Yukon or Saskatchewan to a neighbour", () => {
+  it("uses city/zone choices and does not overclaim province-wide rules", () => {
     expect(option("America/Vancouver")).toMatchObject({
-      labelEn: "BC",
-      labelVi: "BC",
+      labelEn: "Vancouver — Pacific time (UTC−7 year-round)",
+      labelVi: "Vancouver — giờ Thái Bình Dương (UTC−7 quanh năm)",
     });
     expect(option("America/Whitehorse")).toMatchObject({
-      labelEn: "Yukon",
-      labelVi: "Yukon",
+      labelEn: "Whitehorse — Yukon",
+      labelVi: "Whitehorse — Yukon",
     });
     expect(option("America/Winnipeg")).toMatchObject({
-      labelEn: "Manitoba",
-      labelVi: "Manitoba",
+      labelEn: "Winnipeg — Central time",
+      labelVi: "Winnipeg — giờ Miền Trung",
     });
     expect(option("America/Regina")).toMatchObject({
-      labelEn: "Saskatchewan",
-      labelVi: "Saskatchewan",
+      labelEn: "Regina — no DST",
+      labelVi: "Regina — không đổi giờ mùa hè",
     });
     expect(isAllowedTimezone("America/Whitehorse")).toBe(true);
     expect(isAllowedTimezone("America/Regina")).toBe(true);
+  });
+
+  it("offers Canadian regional exceptions explicitly", () => {
+    for (const zone of [
+      "America/Dawson_Creek",
+      "America/Creston",
+      "America/Atikokan",
+      "America/Blanc-Sablon",
+    ]) {
+      expect(isAllowedTimezone(zone)).toBe(true);
+      expect(dayLengthHours("2026-03-08", zone)).toBe(24);
+      expect(dayLengthHours("2026-11-01", zone)).toBe(24);
+      expect(defaultPhoneCountry(zone).iso).toBe("CA");
+    }
   });
 
   it("keeps Yukon and Saskatchewan on their no-DST 2026 offsets", () => {
@@ -61,11 +75,13 @@ describe("Canadian setup timezone mappings", () => {
     ).toBe("2026-07-15T15:00:00.000Z");
   });
 
-  it("still applies DST in neighbouring Vancouver and Winnipeg zones", () => {
+  it("keeps Vancouver permanent while Toronto and Winnipeg retain seasonal changes", () => {
     expect(dayLengthHours("2026-03-08", "America/Vancouver")).toBe(23);
-    expect(dayLengthHours("2026-11-01", "America/Vancouver")).toBe(25);
+    expect(dayLengthHours("2026-11-01", "America/Vancouver")).toBe(24);
     expect(dayLengthHours("2026-03-08", "America/Winnipeg")).toBe(23);
     expect(dayLengthHours("2026-11-01", "America/Winnipeg")).toBe(25);
+    expect(dayLengthHours("2026-03-08", "America/Toronto")).toBe(23);
+    expect(dayLengthHours("2026-11-01", "America/Toronto")).toBe(25);
   });
 
   it("keeps the public phone country default Canadian for both new zones", () => {

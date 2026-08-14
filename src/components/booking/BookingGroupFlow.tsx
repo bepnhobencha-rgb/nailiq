@@ -395,17 +395,13 @@ export function BookingGroupFlow({
   /** True when Party Link creation failed (non-blocking — booking is still confirmed). */
   const [partyLinkFailed, setPartyLinkFailed] = useState(false);
 
-  // FIX 09 (Task #04-A) — idempotency key MUST be stable across
-  // retries within the same browser session, otherwise a network
-  // drop + retry path produces two distinct keys and the server
-  // can no longer dedupe (`insert_group_bookings` UNIQUE on
-  // `(salon_id, idempotency_key, staff_id, start_time_utc)`).
-  // `useRef` initialised on first render gives us a per-mount key
-  // that survives `runScheduler` re-runs, race-loss retries, and
-  // any other in-flight retry path. Refreshing the page (full
-  // remount) generates a new key, which is correct — that's a new
-  // group attempt.
+  // One request key is stable across an exact network retry, but must rotate
+  // when the customer changes the party payload. The durable database ledger
+  // intentionally rejects one key reused with different data; keeping a
+  // companion fingerprint lets the UI distinguish a retry from a new attempt.
   const idempotencyKeyRef = useRef<string>(crypto.randomUUID());
+  const notificationCapabilityRef = useRef<string>(crypto.randomUUID());
+  const idempotencyPayloadRef = useRef<string | null>(null);
 
   // FIX 07 (Task #04-A) — double-tap guard. The `submitting`
   // state flag drives UI disabled, but mobile double-taps can
@@ -448,8 +444,12 @@ export function BookingGroupFlow({
 
   // ── Derived ────────────────────────────────────────────────────
   const capability = useMemo(
-    () => buildCapabilityMap(capabilityRows ?? null),
-    [capabilityRows],
+    () =>
+      buildCapabilityMap(
+        capabilityRows ?? null,
+        salon.staffCapabilityMode,
+      ),
+    [capabilityRows, salon.staffCapabilityMode],
   );
 
   // Add-on lookup map for fast per-member price/time computation.
@@ -1074,6 +1074,28 @@ export function BookingGroupFlow({
           };
         });
 
+      const voucherRedemption = appliedVoucher
+        ? {
+            voucher_id: appliedVoucher.voucher_id,
+            discount_cents: appliedVoucher.discount_cents,
+          }
+        : null;
+      const requestFingerprint = JSON.stringify({
+        members: payload,
+        seatTogether,
+        language,
+        bookingChannel: "online",
+        voucherRedemption,
+      });
+      if (
+        idempotencyPayloadRef.current !== null &&
+        idempotencyPayloadRef.current !== requestFingerprint
+      ) {
+        idempotencyKeyRef.current = crypto.randomUUID();
+        notificationCapabilityRef.current = crypto.randomUUID();
+      }
+      idempotencyPayloadRef.current = requestFingerprint;
+
       const res: GroupBookingResult = await submitGroupBooking({
         shopSlug,
         members: payload,
@@ -1090,17 +1112,15 @@ export function BookingGroupFlow({
         otpSessionId: otpOverride ?? otpSessionId,
         // Public group wizard → 'online' in the channel breakdown.
         bookingChannel: "online",
-        // FIX 09 — stable key across retries. A network drop +
-        // retry sends the same key; server's UNIQUE on
-        // `(salon_id, idempotency_key, …)` returns
-        // `duplicate_submission` instead of creating a second
-        // group.
+        // Exact retries keep the key and return the durable original result;
+        // an intentional payload change above starts a fresh request key.
         idempotencyKey: idempotencyKeyRef.current,
+        // Independent, stable across an exact network retry, and rotated with
+        // the request key whenever the customer changes the party payload.
+        notificationCapability: notificationCapabilityRef.current,
         // Whole-party voucher (re-opt-in 10% etc.), redeemed against the lead
         // booking server-side.
-        voucherRedemption: appliedVoucher
-          ? { voucher_id: appliedVoucher.voucher_id, discount_cents: appliedVoucher.discount_cents }
-          : undefined,
+        voucherRedemption: voucherRedemption ?? undefined,
       });
       if (res.ok) {
         setSuccessResult({ groupId: res.groupId, bookingIds: res.bookingIds });

@@ -132,7 +132,8 @@ describe("group scheduling write boundary", () => {
     expect(submit).toContain("salonWallTimeToUtcIso");
     expect(submit).toContain("checkBookingConflict");
     expect(submit).toContain("checkGroupWithinOpeningHours");
-    expect(submit).toContain('supabase.rpc("insert_group_bookings"');
+    expect(submit).toContain('"insert_group_bookings" as never');
+    expect(submit).toContain("p_otp_session_id: otpToConsume");
     expect(submit).toContain("trustedExecution.insertGroupBookings(payload)");
   });
 });

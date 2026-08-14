@@ -16,7 +16,7 @@
  *    hour (02:00–02:59) **do not exist** in salon local time. These
  *    inputs fail closed instead of silently moving a booking to 03:00.
  *
- * 2. **Fall-back** (e.g. `America/Vancouver` 2026-11-01):
+ * 2. **Fall-back** (e.g. `America/Toronto` 2026-11-01):
  *    local clocks repeat 02:00 → 01:00. The wall-time `01:30`
  *    happens twice. Both candidates round-trip, and the resolver chooses the
  *    earlier UTC instant — the PDT (pre-fall-back) occurrence — to keep the
@@ -26,6 +26,12 @@
  *    UTC ms (see `submitGroupBooking.ts:354`,
  *    `submitPublicBooking.ts`), so a 60-min service starting at the first
  *    01:30 on a fall-back day ends at the second 01:30 when rendered locally.
+ *
+ * `America/Vancouver` needs an explicit compatibility rule after B.C.'s final
+ * spring-forward on 2026-03-08. Older Node/ICU releases still contain the
+ * superseded November 2026 fall-back. Core scheduling therefore applies the
+ * enacted permanent UTC-07 offset itself, while eastern B.C. exceptions keep
+ * their own IANA zones.
  *
  * Dedicated Vitest coverage locks the Canada/DST boundaries. Booking
  * durations still use elapsed UTC milliseconds; only wall-time selection
@@ -41,6 +47,34 @@ function parseUtcMs(utcIso: string): number {
 }
 
 type CalendarYmdParts = { year: number; month: number; day: number };
+
+const VANCOUVER_PERMANENT_PACIFIC_FROM_UTC_MS = Date.parse(
+  "2026-03-08T10:00:00.000Z",
+);
+const VANCOUVER_PERMANENT_PACIFIC_OFFSET_MS = -7 * 60 * 60 * 1000;
+
+function compatibilityFixedOffsetMs(
+  utcMs: number,
+  timezone: string,
+): number | null {
+  if (
+    timezone === "America/Vancouver" &&
+    utcMs >= VANCOUVER_PERMANENT_PACIFIC_FROM_UTC_MS
+  ) {
+    return VANCOUVER_PERMANENT_PACIFIC_OFFSET_MS;
+  }
+  return null;
+}
+
+function displayInstant(
+  utcMs: number,
+  timezone: string,
+): { date: Date; timezone: string } {
+  const fixedOffset = compatibilityFixedOffsetMs(utcMs, timezone);
+  return fixedOffset === null
+    ? { date: new Date(utcMs), timezone }
+    : { date: new Date(utcMs + fixedOffset), timezone: "UTC" };
+}
 
 function utcDateFromCalendarParts(parts: CalendarYmdParts): Date {
   const date = new Date(0);
@@ -86,6 +120,11 @@ function resolveNowMs(nowIso?: string): number {
 }
 
 function ymdInTimeZone(ms: number, timeZone: string): string {
+  const fixedOffset = compatibilityFixedOffsetMs(ms, timeZone);
+  if (fixedOffset !== null) {
+    const shifted = new Date(ms + fixedOffset);
+    return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
+  }
   const dtf = new Intl.DateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
@@ -156,11 +195,14 @@ export function formatInSalonTz(
   // value still throws via parseUtcMs below — that's a genuine data bug worth
   // surfacing, not the benign placeholder case.
   if (utcIso == null || utcIso.trim() === "") return "";
-  const d = new Date(parseUtcMs(utcIso));
+  const instant = parseUtcMs(utcIso);
+  const display = displayInstant(instant, timezone);
+  const d = display.date;
+  const displayTimezone = display.timezone;
 
   if (format === "time") {
     return new Intl.DateTimeFormat("en-US", {
-      timeZone: timezone,
+      timeZone: displayTimezone,
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
@@ -169,7 +211,7 @@ export function formatInSalonTz(
 
   if (format === "shortTime") {
     const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone: timezone,
+      timeZone: displayTimezone,
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
@@ -184,7 +226,7 @@ export function formatInSalonTz(
   }
 
   const dateStr = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
+    timeZone: displayTimezone,
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -195,7 +237,7 @@ export function formatInSalonTz(
   }
 
   const timeStr = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
+    timeZone: displayTimezone,
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
@@ -248,6 +290,11 @@ export function salonDayRangeUtc(
 }
 
 function salonMinutesFromMidnightAt(utcMs: number, timezone: string): number {
+  const fixedOffset = compatibilityFixedOffsetMs(utcMs, timezone);
+  if (fixedOffset !== null) {
+    const shifted = new Date(utcMs + fixedOffset);
+    return shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
+  }
   const d = new Date(utcMs);
   const dtf = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,
@@ -277,6 +324,18 @@ const wallOffsetCandidates = new Map<string, readonly number[]>();
 const MAX_WALL_OFFSET_CACHE_ENTRIES = 2_048;
 
 function salonWallPartsAt(utcMs: number, timezone: string): SalonWallParts {
+  const fixedOffset = compatibilityFixedOffsetMs(utcMs, timezone);
+  if (fixedOffset !== null) {
+    const shifted = new Date(utcMs + fixedOffset);
+    return {
+      year: shifted.getUTCFullYear(),
+      month: shifted.getUTCMonth() + 1,
+      day: shifted.getUTCDate(),
+      hour: shifted.getUTCHours(),
+      minute: shifted.getUTCMinutes(),
+      second: shifted.getUTCSeconds(),
+    };
+  }
   let formatter = wallPartsFormatters.get(timezone);
   if (!formatter) {
     formatter = new Intl.DateTimeFormat("en-CA", {
@@ -355,11 +414,11 @@ export function utcIsoToSalonMinutesFromMidnight(utcIso: string, timezone: strin
  * UTC ISO for a wall-clock time on a salon calendar day (DST-safe round trip).
  * `minutesFromMidnight` is e.g. `8 * 60 + 30` for 08:30.
  */
-export function salonWallTimeToUtcIso(
+export function salonWallTimeToUtcCandidates(
   dateYmd: string,
   minutesFromMidnight: number,
   timezone: string,
-): string {
+): string[] {
   const date = parseCalendarYmd(dateYmd);
   if (
     !Number.isInteger(minutesFromMidnight) ||
@@ -399,12 +458,27 @@ export function salonWallTimeToUtcIso(
     })
     .sort((a, b) => a - b);
 
+  return matches.map((candidateMs) => new Date(candidateMs).toISOString());
+}
+
+export function salonWallTimeToUtcIso(
+  dateYmd: string,
+  minutesFromMidnight: number,
+  timezone: string,
+): string {
+  const matches = salonWallTimeToUtcCandidates(
+    dateYmd,
+    minutesFromMidnight,
+    timezone,
+  );
   if (matches.length === 0) {
+    const hour = Math.floor(minutesFromMidnight / 60);
+    const minute = minutesFromMidnight % 60;
     throw new Error(
       `salonTime: ${dateYmd} ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} does not exist in ${timezone}`,
     );
   }
-  return new Date(matches[0]).toISOString();
+  return matches[0];
 }
 
 /**
@@ -430,6 +504,7 @@ export function salonTimezoneAbbreviation(
 ): string {
   try {
     const ms = atIso !== undefined ? parseUtcMs(atIso) : Date.now();
+    if (compatibilityFixedOffsetMs(ms, timezone) !== null) return "PT";
     const parts = new Intl.DateTimeFormat("en-US", {
       timeZone: timezone,
       timeZoneName: "short",

@@ -153,8 +153,8 @@ export function useBookingFlowState(
   initialOtpSessionId: string | null = null,
 ) {
   const capability = useMemo(
-    () => buildCapabilityMap(capabilityRows),
-    [capabilityRows],
+    () => buildCapabilityMap(capabilityRows, salon.staffCapabilityMode),
+    [capabilityRows, salon.staffCapabilityMode],
   );
   const shopLabel = useMemo(
     () => formatSalonDisplayName({ name: salon.name, slug: shopSlug }),
