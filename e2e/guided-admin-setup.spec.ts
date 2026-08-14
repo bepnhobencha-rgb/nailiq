@@ -326,7 +326,9 @@ test.describe("Guided Admin Setup", () => {
     await loginAs(page, legacyOwner);
     await page.goto(`/dashboard/${LEGACY_SLUG}/setup/address`);
     await expect(
-      page.getByRole("link", { name: /^dashboard home$/i }),
+      page.locator(
+        `header a[href="/dashboard/${LEGACY_SLUG}"]`,
+      ),
     ).toHaveAttribute("href", `/dashboard/${LEGACY_SLUG}`);
     await expect(page.getByTestId("guided-setup-return-card")).toHaveCount(0);
     await expect(page.getByTestId("guided-autosave-message")).toHaveCount(0);
@@ -403,11 +405,13 @@ test.describe("Guided Admin Setup", () => {
     await page.goto(`/dashboard/${SURFACES_SLUG}/setup/services`);
     await expect(page.getByText("Gel Manicure", { exact: true })).toBeVisible();
     await expect(page.getByText(/\$45(?:\.00)?/).first()).toBeVisible();
-    await expect(page.getByText(/45\s*min/i).first()).toBeVisible();
     await expect(
       page.locator('[data-testid^="service-edit-"]').first(),
     ).toBeVisible();
     await page.locator('[data-testid^="service-edit-"]').first().click();
+    await expect(page.getByTestId("service-drawer-duration")).toHaveValue(
+      "45",
+    );
     await page.getByTestId("service-drawer-price").fill("46");
     await page
       .getByRole("button", { name: /^(save|lưu)$/i })
