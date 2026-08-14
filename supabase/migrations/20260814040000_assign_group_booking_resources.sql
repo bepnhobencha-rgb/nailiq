@@ -6,17 +6,20 @@
 --
 -- Keep the fix in the one private transaction used by both normal public group
 -- booking and the Owner/Admin controlled-after-hours path. Non-resource salons
--- retain the legacy NULL resource_id behavior.
+-- retain the legacy NULL resource_id behavior. Because this function is the
+-- privileged shared boundary, validate the complete payload before taking any
+-- advisory lock or writing a row; a mixed/stale service-role payload must not
+-- cross tenant boundaries.
 
 CREATE OR REPLACE FUNCTION public.insert_group_bookings_unlimited(p_bookings jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path TO 'public'
+SET search_path TO ''
 AS $function$
 DECLARE
-  v_group_id uuid := gen_random_uuid();
-  v_group_size smallint := jsonb_array_length(p_bookings);
+  v_group_id uuid;
+  v_group_size smallint;
   v_booking jsonb;
   v_inserted uuid[] := ARRAY[]::uuid[];
   v_new_id uuid;
@@ -25,27 +28,161 @@ DECLARE
   v_profile_id uuid;
   v_idx integer := 0;
   v_salon_id uuid;
+  v_row_salon_id uuid;
+  v_staff_id uuid;
+  v_service_id uuid;
+  v_idempotency_key uuid;
   v_resources_enabled boolean := false;
+  v_has_capability_whitelist boolean := false;
   v_has_active_resource boolean := false;
   v_lock_id uuid;
   v_resource_id uuid;
   v_start timestamptz;
   v_end timestamptz;
 BEGIN
-  IF v_group_size IS NULL OR v_group_size < 2 OR v_group_size > 20 THEN
+  IF p_bookings IS NULL OR jsonb_typeof(p_bookings) <> 'array' THEN
     RETURN jsonb_build_object('success', false, 'code', 'invalid_group_size');
   END IF;
 
-  BEGIN
-    v_salon_id := (p_bookings->0->>'salon_id')::uuid;
-  EXCEPTION WHEN invalid_text_representation THEN
-    RETURN jsonb_build_object('success', false, 'code', 'invalid_booking_data');
-  END;
+  v_group_size := jsonb_array_length(p_bookings);
+  IF v_group_size < 2 OR v_group_size > 20 THEN
+    RETURN jsonb_build_object('success', false, 'code', 'invalid_group_size');
+  END IF;
 
-  SELECT coalesce(s.resources_enabled, false)
-  INTO v_resources_enabled
-  FROM public.salons s
-  WHERE s.id = v_salon_id;
+  -- Parse and validate every member before the first advisory lock. The public
+  -- wrapper performs equivalent checks, but the controlled after-hours path
+  -- and direct service-role calls also converge here, so this boundary cannot
+  -- trust the first member's tenant or defer casts until the insert loop.
+  FOR v_booking IN SELECT value FROM jsonb_array_elements(p_bookings)
+  LOOP
+    IF jsonb_typeof(v_booking) <> 'object' THEN
+      RETURN jsonb_build_object('success', false, 'code', 'invalid_booking_data');
+    END IF;
+
+    BEGIN
+      v_row_salon_id := nullif(v_booking->>'salon_id', '')::uuid;
+      v_staff_id := nullif(v_booking->>'staff_id', '')::uuid;
+      v_service_id := nullif(v_booking->>'service_id', '')::uuid;
+      v_start := nullif(v_booking->>'start_time_utc', '')::timestamptz;
+      v_end := nullif(v_booking->>'end_time_utc', '')::timestamptz;
+      v_idempotency_key := nullif(v_booking->>'idempotency_key', '')::uuid;
+
+      -- Validate every later insert cast now so malformed member N cannot take
+      -- locks or begin inserting members 1..N-1 first.
+      IF v_booking ? 'price_cents'
+         AND v_booking->>'price_cents' IS NOT NULL THEN
+        PERFORM (v_booking->>'price_cents')::integer;
+      END IF;
+      PERFORM coalesce(
+        (v_booking->>'staff_requested_by_client')::boolean,
+        false
+      );
+      PERFORM coalesce((v_booking->>'wave_number')::smallint, 1);
+      PERFORM coalesce((v_booking->>'seat_together')::boolean, false);
+    EXCEPTION
+      WHEN invalid_text_representation
+        OR invalid_datetime_format
+        OR datetime_field_overflow
+        OR numeric_value_out_of_range THEN
+        RETURN jsonb_build_object('success', false, 'code', 'invalid_booking_data');
+    END;
+
+    IF v_row_salon_id IS NULL THEN
+      RETURN jsonb_build_object('success', false, 'code', 'invalid_salon');
+    END IF;
+
+    IF v_salon_id IS NULL THEN
+      v_salon_id := v_row_salon_id;
+
+      SELECT coalesce(s.resources_enabled, false)
+      INTO v_resources_enabled
+      FROM public.salons s
+      WHERE s.id = v_salon_id;
+
+      IF NOT FOUND THEN
+        RETURN jsonb_build_object('success', false, 'code', 'invalid_salon');
+      END IF;
+
+      SELECT EXISTS (
+        SELECT 1
+        FROM public.staff_services configured
+        JOIN public.staff configured_staff
+          ON configured_staff.id = configured.staff_id
+         AND configured_staff.salon_id = v_salon_id
+         AND configured_staff.deleted_at IS NULL
+         AND configured_staff.status = 'active'
+        JOIN public.services configured_service
+          ON configured_service.id = configured.service_id
+         AND configured_service.salon_id = v_salon_id
+         AND configured_service.deleted_at IS NULL
+      )
+      INTO v_has_capability_whitelist;
+    ELSIF v_row_salon_id <> v_salon_id THEN
+      RETURN jsonb_build_object('success', false, 'code', 'invalid_salon');
+    END IF;
+
+    IF v_service_id IS NULL OR NOT EXISTS (
+      SELECT 1
+      FROM public.services sv
+      WHERE sv.id = v_service_id
+        AND sv.salon_id = v_salon_id
+        AND sv.deleted_at IS NULL
+        AND NOT sv.is_addon
+        AND greatest(coalesce(sv.duration_minutes, 0), 0) >= 1
+    ) THEN
+      RETURN jsonb_build_object('success', false, 'code', 'invalid_service');
+    END IF;
+
+    IF v_staff_id IS NULL OR NOT EXISTS (
+      SELECT 1
+      FROM public.staff st
+      WHERE st.id = v_staff_id
+        AND st.salon_id = v_salon_id
+        AND st.deleted_at IS NULL
+        AND st.status = 'active'
+    ) THEN
+      RETURN jsonb_build_object('success', false, 'code', 'invalid_staff');
+    END IF;
+
+    -- staff_services is a whitelist once a salon has any live capability row;
+    -- a legacy salon with zero rows remains all-capable. Both sides of the
+    -- requested pair were validated above, and the configured-row probe joins
+    -- back through live same-tenant staff/services so stale soft-deleted rows
+    -- cannot accidentally switch the legacy fallback off.
+    IF v_has_capability_whitelist AND NOT EXISTS (
+      SELECT 1
+      FROM public.staff_services requested
+      WHERE requested.staff_id = v_staff_id
+        AND requested.service_id = v_service_id
+    ) THEN
+      RETURN jsonb_build_object('success', false, 'code', 'invalid_staff');
+    END IF;
+
+    IF v_start IS NULL OR v_end IS NULL OR v_end <= v_start
+       OR v_end - v_start > interval '12 hours'
+       OR v_start < now() - interval '15 minutes'
+       OR v_start > now() + interval '1 year' THEN
+      RETURN jsonb_build_object('success', false, 'code', 'invalid_booking_time');
+    END IF;
+
+    IF length(trim(coalesce(v_booking->>'client_name', ''))) NOT BETWEEN 1 AND 120 THEN
+      RETURN jsonb_build_object('success', false, 'code', 'invalid_client_name');
+    END IF;
+
+    -- A real group intentionally shares one UUID across every member. The
+    -- unique index combines it with staff/start, so validate shape/presence
+    -- here without incorrectly requiring per-member uniqueness.
+    IF v_idempotency_key IS NULL THEN
+      RETURN jsonb_build_object('success', false, 'code', 'invalid_booking_data');
+    END IF;
+  END LOOP;
+
+  -- Add-on IDs are deliberately not consumed or persisted by this private row
+  -- inserter. The public group boundary validates each ID as a live same-salon
+  -- add-on before forwarding, and add_booking_addons later re-derives the
+  -- booking salon and catalog data. Therefore success here proves the booking
+  -- rows only; it must not be cited as itemized add-on persistence evidence.
+  v_group_id := gen_random_uuid();
 
   -- Match create_public_booking's lock namespace and ordering: every staff
   -- lock is acquired before any resource lock. Sorting all group locks avoids
@@ -198,10 +335,26 @@ GRANT EXECUTE ON FUNCTION public.insert_group_bookings_unlimited(jsonb)
   TO service_role;
 
 COMMENT ON FUNCTION public.insert_group_bookings_unlimited(jsonb) IS
-  'Private atomic group inserter. Resource-mode salons auto-assign and lock one active resource per booking; non-resource salons preserve NULL resource_id.';
+  'Private atomic group inserter. Preflights one tenant and valid members before locking; resource-mode salons auto-assign one active resource per booking; non-resource salons preserve NULL resource_id.';
 
 DO $proof$
+DECLARE
+  v_is_definer boolean;
+  v_config text[];
 BEGIN
+  SELECT p.prosecdef, p.proconfig
+  INTO v_is_definer, v_config
+  FROM pg_catalog.pg_proc p
+  JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND p.proname = 'insert_group_bookings_unlimited'
+    AND pg_catalog.pg_get_function_identity_arguments(p.oid) = 'p_bookings jsonb';
+
+  IF v_is_definer IS DISTINCT FROM true
+     OR NOT ('search_path=""' = ANY(coalesce(v_config, ARRAY[]::text[]))) THEN
+    RAISE EXCEPTION 'insert_group_bookings_unlimited security configuration drift';
+  END IF;
+
   IF has_function_privilege(
     'anon',
     'public.insert_group_bookings_unlimited(jsonb)',

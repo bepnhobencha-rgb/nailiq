@@ -3,7 +3,8 @@ import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-const repoFile = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
+const repoFile = (path: string) =>
+  readFileSync(resolve(process.cwd(), path), "utf8");
 
 describe("group scheduling write boundary", () => {
   const migration = repoFile(
@@ -41,6 +42,66 @@ describe("group scheduling write boundary", () => {
     expect(migration).toContain("WHEN exclusion_violation THEN");
     expect(migration).not.toMatch(
       /IF v_resource_id IS NULL THEN\s+RETURN jsonb_build_object/,
+    );
+  });
+
+  it("preflights every tenant reference, time and idempotency key before locking", () => {
+    const preflightStart = migration.indexOf(
+      "FOR v_booking IN SELECT value FROM jsonb_array_elements(p_bookings)",
+    );
+    const firstLock = migration.indexOf("FOR v_lock_id IN");
+
+    expect(preflightStart).toBeGreaterThan(-1);
+    expect(firstLock).toBeGreaterThan(preflightStart);
+    expect(migration).toContain("ELSIF v_row_salon_id <> v_salon_id THEN");
+    expect(migration).toContain("sv.salon_id = v_salon_id");
+    expect(migration).toContain("st.salon_id = v_salon_id");
+    expect(migration).toContain("sv.deleted_at IS NULL");
+    expect(migration).toContain("st.deleted_at IS NULL");
+    expect(migration).toContain("st.status = 'active'");
+    expect(migration).toContain("FROM public.staff_services configured");
+    expect(migration).toContain("configured_staff.salon_id = v_salon_id");
+    expect(migration).toContain("configured_service.salon_id = v_salon_id");
+    expect(migration).toContain("FROM public.staff_services requested");
+    expect(migration).toContain("requested.staff_id = v_staff_id");
+    expect(migration).toContain("requested.service_id = v_service_id");
+    expect(migration).toContain("v_end <= v_start");
+    expect(migration).toContain("v_idempotency_key IS NULL");
+    expect(migration).toContain(
+      "A real group intentionally shares one UUID across every member",
+    );
+    expect(migration).not.toContain("v_seen_idempotency_keys");
+  });
+
+  it("hardens the private SECURITY DEFINER search path and proves its ACL", () => {
+    expect(migration).toMatch(/SECURITY DEFINER\s+SET search_path TO ''/i);
+    expect(migration).toContain("'search_path=\"\"'");
+    expect(migration).toContain("p.prosecdef");
+    expect(migration).toContain(
+      "REVOKE ALL ON FUNCTION public.insert_group_bookings_unlimited(jsonb)",
+    );
+    expect(migration).toContain("FROM PUBLIC, anon, authenticated");
+    expect(migration).toContain("TO service_role");
+  });
+
+  it("keeps add-on tenant validation at the public/catalog boundaries without overclaiming private persistence", () => {
+    const publicBoundary = repoFile(
+      "supabase/migrations/20260810082707_enforce_group_booking_opening_hours.sql",
+    );
+    const baseline = repoFile(
+      "supabase/migrations/20260723000000_folded_production_schema_baseline.sql",
+    );
+
+    expect(publicBoundary).toContain("s.id = v_addon_id");
+    expect(publicBoundary).toContain("s.salon_id = v_salon_id");
+    expect(publicBoundary).toContain("s.deleted_at IS NULL");
+    expect(publicBoundary).toContain("s.is_addon");
+    expect(baseline).toContain(
+      "CREATE FUNCTION public.add_booking_addons(p_booking_id uuid, p_service_ids uuid[])",
+    );
+    expect(baseline).toContain("WHERE s.salon_id = v_salon_id");
+    expect(migration).toContain(
+      "Add-on IDs are deliberately not consumed or persisted by this private row",
     );
   });
 

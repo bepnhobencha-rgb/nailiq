@@ -25,6 +25,7 @@ const db = createClient(supabaseUrl, serviceKey);
 const publicDb = createClient(supabaseUrl, anonKey);
 const TIMEZONE = "America/Vancouver";
 const SLUG = "e2e-group-resource-integrity";
+const FOREIGN_SLUG = "e2e-group-resource-integrity-foreign";
 const BLOCK_MINUTES = 55;
 let phoneBatch = 0;
 
@@ -41,12 +42,34 @@ function dayOfWeek(dateYmd: string): number {
 }
 
 function nextOpenDateYmd(minimumDaysAhead = 3): string {
-  for (let offset = minimumDaysAhead; offset < minimumDaysAhead + 7; offset += 1) {
+  for (
+    let offset = minimumDaysAhead;
+    offset < minimumDaysAhead + 7;
+    offset += 1
+  ) {
     const candidate = salonDateOffset(TIMEZONE, offset);
     if (dayOfWeek(candidate) !== 0) return candidate;
   }
   throw new Error("resource integrity fixture could not find an open day");
 }
+
+type GroupPayloadMember = {
+  salon_id: string;
+  staff_id: string;
+  service_id: string;
+  client_name: string;
+  client_phone: string;
+  client_email: null;
+  client_notes: null;
+  start_time_utc: string;
+  end_time_utc: string;
+  addon_service_ids: string[];
+  wave_number: number;
+  seat_together: boolean;
+  staff_requested_by_client: boolean;
+  idempotency_key: string;
+  client_locale: string;
+};
 
 function payloadFor(input: {
   salonId: string;
@@ -54,8 +77,9 @@ function payloadFor(input: {
   staffIds: string[];
   startIso: string;
   marker: string;
-}) {
+}): GroupPayloadMember[] {
   const batch = phoneBatch++;
+  const idempotencyKey = randomUUID();
   const endIso = new Date(
     Date.parse(input.startIso) + BLOCK_MINUTES * 60_000,
   ).toISOString();
@@ -74,9 +98,30 @@ function payloadFor(input: {
     wave_number: 1,
     seat_together: true,
     staff_requested_by_client: true,
-    idempotency_key: randomUUID(),
+    // Match submitGroupBooking: one group-level UUID is stamped on every row.
+    idempotency_key: idempotencyKey,
     client_locale: "en",
   }));
+}
+
+type GroupPayload = GroupPayloadMember[];
+
+async function invokePrivateGroupBoundary(p_bookings: GroupPayload) {
+  const { data, error } = await db.rpc(
+    "insert_group_bookings_unlimited" as never,
+    { p_bookings } as never,
+  );
+  expect(error).toBeNull();
+  return data as RpcResult;
+}
+
+async function expectNoRowsForMarker(marker: string) {
+  const { count, error } = await db
+    .from("bookings")
+    .select("id", { count: "exact", head: true })
+    .like("client_name", `${marker}%`);
+  expect(error).toBeNull();
+  expect(count).toBe(0);
 }
 
 test.describe.serial("Group booking resource integrity", () => {
@@ -84,6 +129,9 @@ test.describe.serial("Group booking resource integrity", () => {
   let serviceId = "";
   let staffIds: string[] = [];
   let resourceIds: string[] = [];
+  let foreignSalonId = "";
+  let foreignServiceId = "";
+  let foreignStaffId = "";
   let ownerUserId = "";
   const dateYmd = nextOpenDateYmd();
 
@@ -107,6 +155,14 @@ test.describe.serial("Group booking resource integrity", () => {
       );
     }
     staffIds = [...seeded.staffIds, String(fourthStaff.id)];
+
+    const foreign = await seedGroupTestSalon(FOREIGN_SLUG);
+    foreignSalonId = foreign.salonId;
+    foreignServiceId = foreign.serviceIds[0] ?? "";
+    foreignStaffId = foreign.staffIds[0] ?? "";
+    if (!foreignServiceId || !foreignStaffId) {
+      throw new Error("foreign tenant fixture is incomplete");
+    }
 
     const { error: capabilityError } = await db.from("staff_services").insert({
       staff_id: fourthStaff.id,
@@ -151,7 +207,10 @@ test.describe.serial("Group booking resource integrity", () => {
   });
 
   test.beforeEach(async () => {
-    await db.from("bookings").delete().eq("salon_id", salonId);
+    await db
+      .from("bookings")
+      .delete()
+      .in("salon_id", [salonId, foreignSalonId]);
     const { error } = await db
       .from("salons")
       .update({ resources_enabled: true })
@@ -165,7 +224,144 @@ test.describe.serial("Group booking resource integrity", () => {
       await db.from("salon_resources").delete().eq("salon_id", salonId);
     }
     await cleanupTestSalon(SLUG);
+    await cleanupTestSalon(FOREIGN_SLUG);
     if (ownerUserId) await cleanupTestUser(ownerUserId);
+  });
+
+  test("rejects a mixed-salon payload before any group row is written", async () => {
+    const startIso = salonWallTimeToUtcIso(dateYmd, 9 * 60, TIMEZONE);
+    const marker = `MixedTenant-${randomUUID()}`;
+    const local = payloadFor({
+      salonId,
+      serviceId,
+      staffIds: staffIds.slice(0, 1),
+      startIso,
+      marker,
+    });
+    const foreign = payloadFor({
+      salonId: foreignSalonId,
+      serviceId: foreignServiceId,
+      staffIds: [foreignStaffId],
+      startIso,
+      marker,
+    });
+
+    await expect(
+      invokePrivateGroupBoundary([local[0], foreign[0]]),
+    ).resolves.toMatchObject({ success: false, code: "invalid_salon" });
+    await expectNoRowsForMarker(marker);
+  });
+
+  test("rejects a foreign-tenant staff reference before writing", async () => {
+    const startIso = salonWallTimeToUtcIso(dateYmd, 9 * 60, TIMEZONE);
+    const marker = `ForeignStaff-${randomUUID()}`;
+    const payload = payloadFor({
+      salonId,
+      serviceId,
+      staffIds: staffIds.slice(0, 2),
+      startIso,
+      marker,
+    });
+    payload[1] = { ...payload[1], staff_id: foreignStaffId };
+
+    await expect(invokePrivateGroupBoundary(payload)).resolves.toMatchObject({
+      success: false,
+      code: "invalid_staff",
+    });
+    await expectNoRowsForMarker(marker);
+  });
+
+  test("rejects a foreign-tenant service reference before writing", async () => {
+    const startIso = salonWallTimeToUtcIso(dateYmd, 9 * 60, TIMEZONE);
+    const marker = `ForeignService-${randomUUID()}`;
+    const payload = payloadFor({
+      salonId,
+      serviceId,
+      staffIds: staffIds.slice(0, 2),
+      startIso,
+      marker,
+    });
+    payload[1] = { ...payload[1], service_id: foreignServiceId };
+
+    await expect(invokePrivateGroupBoundary(payload)).resolves.toMatchObject({
+      success: false,
+      code: "invalid_service",
+    });
+    await expectNoRowsForMarker(marker);
+  });
+
+  test("rejects an active staff-service pair missing from a configured capability whitelist", async () => {
+    const startIso = salonWallTimeToUtcIso(dateYmd, 9 * 60, TIMEZONE);
+    const marker = `MissingCapability-${randomUUID()}`;
+    const restrictedStaffId = staffIds[1];
+    if (!restrictedStaffId) throw new Error("capability fixture is incomplete");
+
+    const { error: removeError } = await db
+      .from("staff_services")
+      .delete()
+      .eq("staff_id", restrictedStaffId)
+      .eq("service_id", serviceId);
+    if (removeError) throw new Error(removeError.message);
+
+    try {
+      const payload = payloadFor({
+        salonId,
+        serviceId,
+        staffIds: [staffIds[0] ?? "", restrictedStaffId],
+        startIso,
+        marker,
+      });
+
+      await expect(invokePrivateGroupBoundary(payload)).resolves.toMatchObject({
+        success: false,
+        code: "invalid_staff",
+      });
+      await expectNoRowsForMarker(marker);
+    } finally {
+      const { error: restoreError } = await db.from("staff_services").insert({
+        staff_id: restrictedStaffId,
+        service_id: serviceId,
+      });
+      if (restoreError) throw new Error(restoreError.message);
+    }
+  });
+
+  test("rejects invalid member time before writing", async () => {
+    const startIso = salonWallTimeToUtcIso(dateYmd, 9 * 60, TIMEZONE);
+    const marker = `InvalidTime-${randomUUID()}`;
+    const payload = payloadFor({
+      salonId,
+      serviceId,
+      staffIds: staffIds.slice(0, 2),
+      startIso,
+      marker,
+    });
+    payload[1] = { ...payload[1], end_time_utc: startIso };
+
+    await expect(invokePrivateGroupBoundary(payload)).resolves.toMatchObject({
+      success: false,
+      code: "invalid_booking_time",
+    });
+    await expectNoRowsForMarker(marker);
+  });
+
+  test("rejects a malformed idempotency key before writing", async () => {
+    const startIso = salonWallTimeToUtcIso(dateYmd, 9 * 60, TIMEZONE);
+    const malformedMarker = `MalformedIdempotency-${randomUUID()}`;
+    const malformed = payloadFor({
+      salonId,
+      serviceId,
+      staffIds: staffIds.slice(0, 2),
+      startIso,
+      marker: malformedMarker,
+    });
+    malformed[1] = { ...malformed[1], idempotency_key: "not-a-uuid" };
+
+    await expect(invokePrivateGroupBoundary(malformed)).resolves.toMatchObject({
+      success: false,
+      code: "invalid_booking_data",
+    });
+    await expectNoRowsForMarker(malformedMarker);
   });
 
   test("rejects an oversized party atomically when chairs run out", async () => {
@@ -222,7 +418,9 @@ test.describe.serial("Group booking resource integrity", () => {
     expect(left.error).toBeNull();
     expect(right.error).toBeNull();
     const outcomes = [left.data as RpcResult, right.data as RpcResult];
-    expect(outcomes.filter((outcome) => outcome.success === true)).toHaveLength(1);
+    expect(outcomes.filter((outcome) => outcome.success === true)).toHaveLength(
+      1,
+    );
     expect(
       outcomes.filter(
         (outcome) =>
