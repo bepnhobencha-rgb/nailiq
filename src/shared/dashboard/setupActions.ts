@@ -1157,11 +1157,10 @@ export async function deleteStaff(
     return fail("server_error");
   }
 
-  // client_profiles intentionally denies all direct authenticated API access;
-  // it is only exposed through scoped server actions. This global guest table
-  // has no salon_id column. The target UUID was already verified above against
-  // the resolved salon, so the exact preferred_staff_id match is the safe
-  // referential cleanup boundary.
+  // client_profiles intentionally denies direct authenticated API access and
+  // is a global phone-keyed table with no salon_id column. The target UUID was
+  // already proven above to belong to the resolved salon, so the exact
+  // preferred_staff_id match is the correctly scoped referential cleanup.
   const { error: prefErr } = await admin
     .from("client_profiles")
     .update({ preferred_staff_id: null })

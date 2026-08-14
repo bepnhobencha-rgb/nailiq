@@ -33,6 +33,8 @@ export async function deliverStaffActionNotification(
     event: StaffNotifyEvent;
     channels: { sms?: boolean; email?: boolean };
     localeOverride?: SupportedLocale;
+    previousStaffName?: string | null;
+    customerRequestedPreviousStaff?: boolean;
   },
 ): Promise<{ smsSent: boolean; emailSent: boolean; locale: SupportedLocale }> {
   if (input.event === "no_show") {
@@ -112,6 +114,9 @@ export async function deliverStaffActionNotification(
     whenLabel,
     salonPhone: salon.phone,
     staffName,
+    previousStaffName: input.previousStaffName,
+    customerRequestedPreviousStaff:
+      input.customerRequestedPreviousStaff === true,
   };
 
   let smsSent = false;
