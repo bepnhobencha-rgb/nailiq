@@ -52,15 +52,12 @@ declare
   );
   v_flag_enabled boolean := false;
   v_redaction_actor_role text;
-  -- This trigger is SECURITY DEFINER.  A postgres-owned CI or maintenance
-  -- connection which has SET ROLE to an application role must not inherit the
-  -- direct-owner bypass merely because session_user is still postgres.
+  -- This trigger is SECURITY DEFINER.  Reserve the direct-owner bypass for
+  -- sessions outside a PostgREST/JWT request; a postgres-owned CI connection
+  -- which SET ROLE to an application role supplies the matching request role.
   v_privileged_owner_session boolean := (
     session_user in ('postgres', 'supabase_admin')
-    and coalesce(
-      nullif(current_setting('role', true), ''),
-      'none'
-    ) in ('none', 'postgres', 'supabase_admin')
+    and v_request_role = ''
   );
 begin
   if tg_op = 'UPDATE'

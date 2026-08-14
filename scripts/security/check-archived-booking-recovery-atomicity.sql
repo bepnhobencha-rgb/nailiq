@@ -845,7 +845,7 @@ begin
 
   if v_terminal_guard not like '%v_request_role = ''service_role''%'
      or v_terminal_guard not like '%v_privileged_owner_session%'
-     or v_terminal_guard not like '%current_setting(''role'', true)%' then
+     or v_terminal_guard not like '%v_request_role = ''''%' then
     raise exception 'privacy trigger exception lacks privileged caller guard';
   end if;
 end

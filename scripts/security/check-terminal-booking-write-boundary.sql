@@ -699,6 +699,14 @@ $recovery_child_for_delete$;
 
 reset role;
 
+-- Leave the synthetic PostgREST request before exercising the deliberate
+-- direct-owner retention exception.  The exception is unavailable whenever a
+-- JWT request role is present, even if the underlying connection owner is
+-- postgres.
+select set_config('request.jwt.claim.role', '', true);
+select set_config('request.jwt.claims', '', true);
+select set_config('request.jwt.claim.sub', '', true);
+
 do $postgres_retention_boundary$
 begin
   begin

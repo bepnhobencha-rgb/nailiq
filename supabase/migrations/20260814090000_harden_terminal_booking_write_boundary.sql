@@ -24,16 +24,13 @@ declare
     current_setting('nailiq.terminal_fee_mutation_booking_id', true),
     ''
   );
-  -- SECURITY DEFINER makes current_user the function owner.  session_user by
-  -- itself is also insufficient because a postgres-owned connection may have
-  -- SET ROLE to a PostgREST role.  Preserve the maintenance exemption only
-  -- for a direct owner session which has not assumed an application role.
+  -- SECURITY DEFINER makes current_user the function owner.  Preserve the
+  -- maintenance exemption only for a direct owner session outside a
+  -- PostgREST/JWT request.  A postgres-owned CI connection which SET ROLE to an
+  -- application role must set the matching request role and is not exempt.
   v_privileged_owner_session boolean := (
     session_user in ('postgres', 'supabase_admin')
-    and coalesce(
-      nullif(current_setting('role', true), ''),
-      'none'
-    ) in ('none', 'postgres', 'supabase_admin')
+    and v_request_role = ''
   );
 begin
   if tg_op = 'DELETE' then
