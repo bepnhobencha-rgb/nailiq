@@ -100,10 +100,10 @@ where id in (
 update public.salons set auto_no_show_minutes = 30
  where id = 'a2000000-0000-0000-0000-000000000001';
 
--- Use the actual PostgREST session_user/current_role shape.  SET ROLE from a
--- postgres session alone would accidentally exercise the deliberate postgres
--- maintenance exemption in the trigger.
-set session authorization authenticator;
+-- Exercise the real PostgREST application roles.  The trigger's maintenance
+-- exemption must not survive SET ROLE even when CI owns the connection as
+-- postgres; this is portable to hosted/local Supabase roles which cannot SET
+-- SESSION AUTHORIZATION.
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -432,7 +432,6 @@ end
 $service_transition_boundary$;
 
 reset role;
-reset session authorization;
 
 create function public.test_reject_terminal_transition_audit()
 returns trigger
@@ -450,7 +449,6 @@ create trigger test_reject_terminal_transition_audit_trigger
 before insert on public.booking_events
 for each row execute function public.test_reject_terminal_transition_audit();
 
-set session authorization authenticator;
 set local role service_role;
 select set_config('request.jwt.claim.role', 'service_role', true);
 
@@ -532,11 +530,9 @@ end
 $transition_audit_rollback$;
 
 reset role;
-reset session authorization;
 drop trigger test_reject_terminal_transition_audit_trigger on public.booking_events;
 drop function public.test_reject_terminal_transition_audit();
 
-set session authorization authenticator;
 set local role service_role;
 select set_config('request.jwt.claim.role', 'service_role', true);
 
@@ -629,7 +625,6 @@ end
 $fee_boundary$;
 
 reset role;
-reset session authorization;
 
 create function public.test_reject_terminal_fee_audit()
 returns trigger
@@ -647,7 +642,6 @@ create trigger test_reject_terminal_fee_audit_trigger
 before insert on public.booking_events
 for each row execute function public.test_reject_terminal_fee_audit();
 
-set session authorization authenticator;
 set local role service_role;
 select set_config('request.jwt.claim.role', 'service_role', true);
 
@@ -677,12 +671,10 @@ end
 $fee_audit_rollback$;
 
 reset role;
-reset session authorization;
 drop trigger test_reject_terminal_fee_audit_trigger on public.booking_events;
 drop function public.test_reject_terminal_fee_audit();
 
 -- Create a canonical recovery child so the source hard-delete FK can be proven.
-set session authorization authenticator;
 set local role service_role;
 select set_config('request.jwt.claim.role', 'service_role', true);
 do $recovery_child_for_delete$
@@ -706,7 +698,6 @@ end
 $recovery_child_for_delete$;
 
 reset role;
-reset session authorization;
 
 do $postgres_retention_boundary$
 begin

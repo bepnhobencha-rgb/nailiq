@@ -52,6 +52,16 @@ declare
   );
   v_flag_enabled boolean := false;
   v_redaction_actor_role text;
+  -- This trigger is SECURITY DEFINER.  A postgres-owned CI or maintenance
+  -- connection which has SET ROLE to an application role must not inherit the
+  -- direct-owner bypass merely because session_user is still postgres.
+  v_privileged_owner_session boolean := (
+    session_user in ('postgres', 'supabase_admin')
+    and coalesce(
+      nullif(current_setting('role', true), ''),
+      'none'
+    ) in ('none', 'postgres', 'supabase_admin')
+  );
 begin
   if tg_op = 'UPDATE'
      and old.status in ('cancelled', 'no_show')
@@ -65,7 +75,7 @@ begin
        and sa.role in ('founder', 'ops_admin');
     if not (
          v_request_role = 'service_role'
-         or session_user in ('postgres', 'supabase_admin')
+         or v_privileged_owner_session
        ) or not found
        or coalesce(current_setting(
          'nailiq.privacy_redaction_request_id', true
@@ -210,7 +220,7 @@ begin
       using errcode = '42501';
   end if;
   if v_request_role <> 'service_role'
-     and session_user not in ('postgres', 'supabase_admin')
+     and not v_privileged_owner_session
      and (
        v_authenticated_user_id is null
        or v_authenticated_user_id <> new.recovered_by_user_id

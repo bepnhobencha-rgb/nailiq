@@ -24,6 +24,17 @@ declare
     current_setting('nailiq.terminal_fee_mutation_booking_id', true),
     ''
   );
+  -- SECURITY DEFINER makes current_user the function owner.  session_user by
+  -- itself is also insufficient because a postgres-owned connection may have
+  -- SET ROLE to a PostgREST role.  Preserve the maintenance exemption only
+  -- for a direct owner session which has not assumed an application role.
+  v_privileged_owner_session boolean := (
+    session_user in ('postgres', 'supabase_admin')
+    and coalesce(
+      nullif(current_setting('role', true), ''),
+      'none'
+    ) in ('none', 'postgres', 'supabase_admin')
+  );
 begin
   if tg_op = 'DELETE' then
     if old.status not in ('cancelled', 'no_show') then
@@ -33,7 +44,7 @@ begin
     -- database retention run may still delete as postgres/supabase_admin; the
     -- self-referential recovery FK continues to RESTRICT source deletion while
     -- a canonical child exists.
-    if session_user in ('postgres', 'supabase_admin') then
+    if v_privileged_owner_session then
       return old;
     end if;
     raise exception 'terminal booking hard delete requires a privileged retention workflow'
@@ -44,7 +55,7 @@ begin
     -- Direct SQL maintenance remains possible for postgres/supabase_admin. A
     -- PostgREST service token is not enough: production import/sync code must
     -- use an explicit transition/import workflow instead of forging history.
-    if session_user in ('postgres', 'supabase_admin') then
+    if v_privileged_owner_session then
       return new;
     end if;
     raise exception 'direct terminal booking insert is not allowed'
@@ -58,7 +69,7 @@ begin
   if old.status not in ('cancelled', 'no_show')
      and new.status in ('cancelled', 'no_show') then
     if v_request_role <> 'service_role'
-       and session_user not in ('postgres', 'supabase_admin') then
+       and not v_privileged_owner_session then
       raise exception 'terminal booking transition requires a trusted workflow'
         using errcode = '42501';
     end if;
@@ -88,7 +99,7 @@ begin
     -- transaction reach the existing, stricter redaction exception.
     if current_setting('nailiq.privacy_redaction_booking_id', true) = old.id::text then
       if v_request_role <> 'service_role'
-         and session_user not in ('postgres', 'supabase_admin') then
+         and not v_privileged_owner_session then
         raise exception 'terminal privacy redaction requires service role'
           using errcode = '42501';
       end if;
@@ -97,7 +108,7 @@ begin
 
     if v_fee_booking_id = old.id::text then
       if v_request_role <> 'service_role'
-         and session_user not in ('postgres', 'supabase_admin') then
+         and not v_privileged_owner_session then
         raise exception 'terminal fee mutation requires service role'
           using errcode = '42501';
       end if;
@@ -185,7 +196,7 @@ declare
   v_event_id uuid;
 begin
   if v_request_role <> 'service_role'
-     and session_user not in ('postgres', 'supabase_admin') then
+     and current_user not in ('postgres', 'supabase_admin') then
     raise exception 'terminal transition requires service role'
       using errcode = '42501';
   end if;
@@ -312,7 +323,7 @@ declare
   v_id uuid;
 begin
   if v_request_role <> 'service_role'
-     and session_user not in ('postgres', 'supabase_admin') then
+     and current_user not in ('postgres', 'supabase_admin') then
     raise exception 'terminal group transition requires service role'
       using errcode = '42501';
   end if;
@@ -411,7 +422,7 @@ declare
   v_request_fingerprint text;
 begin
   if v_request_role <> 'service_role'
-     and session_user not in ('postgres', 'supabase_admin') then
+     and current_user not in ('postgres', 'supabase_admin') then
     raise exception 'terminal fee mutation requires service role'
       using errcode = '42501';
   end if;
@@ -806,7 +817,7 @@ declare
   v_event_id uuid;
 begin
   if v_request_role <> 'service_role'
-     and session_user not in ('postgres', 'supabase_admin') then
+     and current_user not in ('postgres', 'supabase_admin') then
     raise exception 'Square terminal transition requires service role'
       using errcode = '42501';
   end if;
@@ -896,7 +907,7 @@ declare
   v_id uuid;
 begin
   if v_request_role <> 'service_role'
-     and session_user not in ('postgres', 'supabase_admin') then
+     and current_user not in ('postgres', 'supabase_admin') then
     raise exception 'system group cancellation requires service role'
       using errcode = '42501';
   end if;
