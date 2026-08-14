@@ -117,7 +117,7 @@ select set_config(
 );
 select set_config('request.jwt.claim.role', 'authenticated', true);
 
-do $authenticated_boundary$
+do $authenticated_terminal_insert$
 begin
   begin
     insert into public.bookings (
@@ -134,14 +134,22 @@ begin
     raise exception 'authenticated direct terminal insert unexpectedly succeeded';
   exception when insufficient_privilege then null;
   end;
+end
+$authenticated_terminal_insert$;
 
+do $authenticated_terminal_transition$
+begin
   begin
     update public.bookings set status = 'cancelled'
      where id = 'a5000000-0000-0000-0000-000000000001';
     raise exception 'authenticated direct terminal transition unexpectedly succeeded';
   exception when insufficient_privilege then null;
   end;
+end
+$authenticated_terminal_transition$;
 
+do $authenticated_terminal_multicolumn_transition$
+begin
   begin
     update public.bookings
        set status = 'cancelled', client_name = 'Forged Rewrite'
@@ -149,14 +157,22 @@ begin
     raise exception 'authenticated multi-column terminal transition unexpectedly succeeded';
   exception when insufficient_privilege then null;
   end;
+end
+$authenticated_terminal_multicolumn_transition$;
 
+do $authenticated_terminal_rewrite$
+begin
   begin
     update public.bookings set client_name = 'Terminal Rewrite'
      where id = 'a5000000-0000-0000-0000-000000000003';
     raise exception 'authenticated terminal rewrite unexpectedly succeeded';
   exception when check_violation then null;
   end;
+end
+$authenticated_terminal_rewrite$;
 
+do $authenticated_privacy_scope_forgery$
+begin
   -- A caller-set custom GUC is not an authorization capability.  The final
   -- terminal boundary independently requires service_role even when the
   -- booking-scoped privacy marker matches.
@@ -172,7 +188,11 @@ begin
   exception when insufficient_privilege then null;
   end;
   perform set_config('nailiq.privacy_redaction_booking_id', '', true);
+end
+$authenticated_privacy_scope_forgery$;
 
+do $authenticated_terminal_delete$
+begin
   delete from public.bookings
    where id = 'a5000000-0000-0000-0000-000000000003';
   if not exists (
@@ -181,7 +201,11 @@ begin
   ) then
     raise exception 'authenticated hard delete removed terminal history';
   end if;
+end
+$authenticated_terminal_delete$;
 
+do $authenticated_transition_rpc_acl$
+begin
   begin
     perform public.transition_booking_to_terminal(
       'a5000000-0000-0000-0000-000000000002',
@@ -193,7 +217,11 @@ begin
     raise exception 'authenticated role executed service-only transition RPC';
   exception when insufficient_privilege then null;
   end;
+end
+$authenticated_transition_rpc_acl$;
 
+do $authenticated_square_rpc_acl$
+begin
   begin
     perform public.transition_square_booking_to_terminal(
       'a5000000-0000-0000-0000-000000000015',
@@ -205,7 +233,7 @@ begin
   exception when insufficient_privilege then null;
   end;
 end
-$authenticated_boundary$;
+$authenticated_square_rpc_acl$;
 
 reset role;
 set local role service_role;
