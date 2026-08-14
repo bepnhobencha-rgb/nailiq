@@ -2,8 +2,11 @@ import { expect, test } from "@playwright/test";
 
 import { cleanupTestSalon, seedTestSalon } from "./helpers/db";
 import { createServiceRoleClient } from "../src/shared/lib/supabase/serviceRole";
-import { ownerRescheduleTimeLabels } from "../src/shared/dashboard/ownerBookingNotificationCopy";
-import { salonWallTimeToUtcIso } from "../src/shared/lib/salonTime";
+import { buildOwnerRescheduleTimePayload } from "../src/shared/dashboard/ownerBookingNotificationCopy";
+import {
+  salonDateOffset,
+  salonWallTimeToUtcIso,
+} from "../src/shared/lib/salonTime";
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
 const SLUG = "e2e-archived-booking-detail";
@@ -123,14 +126,17 @@ test.describe("Archived booking detail — read-only history", () => {
 });
 
 const MUTATION_SLUG = "e2e-booking-mutation-audit";
+const MUTATION_TIMEZONE = "America/Vancouver";
 
-function nextOpenUtcDate(daysOut: number): Date {
-  const date = new Date(Date.now() + daysOut * 24 * 60 * 60 * 1000);
-  date.setUTCHours(14, 0, 0, 0);
-  while (date.getUTCDay() === 0) {
-    date.setUTCDate(date.getUTCDate() + 1);
+function nextOpenSalonDateYmd(daysOut: number): string {
+  for (let offset = daysOut; offset < daysOut + 7; offset += 1) {
+    const dateYmd = salonDateOffset(MUTATION_TIMEZONE, offset);
+    const [year, month, day] = dateYmd.split("-").map(Number);
+    if (new Date(Date.UTC(year, month - 1, day)).getUTCDay() !== 0) {
+      return dateYmd;
+    }
   }
-  return date;
+  throw new Error("mutation audit fixture could not find an open salon day");
 }
 
 test.describe("Booking mutation audit — reschedule and cancel", () => {
@@ -166,7 +172,10 @@ test.describe("Booking mutation audit — reschedule and cancel", () => {
     if (!serviceId || !staffId) {
       throw new Error("mutation audit fixture is missing service/staff");
     }
-    await db.from("salons").update({ timezone: "UTC" }).eq("id", salonId);
+    await db
+      .from("salons")
+      .update({ timezone: MUTATION_TIMEZONE })
+      .eq("id", salonId);
   });
 
   test.afterEach(async () => {
@@ -175,7 +184,12 @@ test.describe("Booking mutation audit — reschedule and cancel", () => {
 
   async function seedBookingWithToken(clientName: string) {
     const db = createServiceRoleClient();
-    const start = nextOpenUtcDate(3);
+    const startIso = salonWallTimeToUtcIso(
+      nextOpenSalonDateYmd(3),
+      10 * 60,
+      MUTATION_TIMEZONE,
+    );
+    const startMs = Date.parse(startIso);
     const { data: booking, error: bookingError } = await db
       .from("bookings")
       .insert({
@@ -184,8 +198,8 @@ test.describe("Booking mutation audit — reschedule and cancel", () => {
         staff_id: staffId,
         client_name: clientName,
         client_phone: "16045551891",
-        start_time_utc: start.toISOString(),
-        end_time_utc: new Date(start.getTime() + 55 * 60 * 1000).toISOString(),
+        start_time_utc: startIso,
+        end_time_utc: new Date(startMs + 55 * 60 * 1000).toISOString(),
         status: "confirmed",
         source: "appointment",
         booking_channel: "online",
@@ -212,7 +226,7 @@ test.describe("Booking mutation audit — reschedule and cancel", () => {
     return {
       bookingId: String(booking.id),
       tokenId,
-      originalStart: start.toISOString(),
+      originalStart: startIso,
     };
   }
 
@@ -220,12 +234,11 @@ test.describe("Booking mutation audit — reschedule and cancel", () => {
     page,
   }) => {
     const fixture = await seedBookingWithToken("Mutation Reschedule Guest");
-    const target = nextOpenUtcDate(6);
-    const targetYmd = target.toISOString().slice(0, 10);
+    const targetYmd = nextOpenSalonDateYmd(6);
     const expectedNewStart = salonWallTimeToUtcIso(
       targetYmd,
       14 * 60,
-      "UTC",
+      MUTATION_TIMEZONE,
     );
 
     const response = await page.request.post("/api/booking/reschedule-action", {
@@ -307,16 +320,22 @@ test.describe("Booking mutation audit — reschedule and cancel", () => {
         },
       });
 
-    const labels = ownerRescheduleTimeLabels({
-      previousStartUtc: fixture.originalStart,
-      nextStartUtc: expectedNewStart,
-      timezone: "UTC",
+    const notificationPayload = buildOwnerRescheduleTimePayload({
+      previousStartUtc: String(updated?.rescheduled_from_time_utc ?? ""),
+      nextStartUtc: String(updated?.start_time_utc ?? ""),
+      timezone: MUTATION_TIMEZONE,
       durationMin: 55,
     });
-    expect(labels.before).not.toContain(labels.afterDate);
-    expect(labels.before).not.toContain(labels.afterTime);
-    expect(labels.afterDate).toBeTruthy();
-    expect(labels.afterTime).toContain("2:00 PM");
+    expect(notificationPayload).toMatchObject({
+      event: "reschedule",
+      timezone: MUTATION_TIMEZONE,
+      previousStartUtc: fixture.originalStart,
+      nextStartUtc: expectedNewStart,
+      before: expect.stringContaining("10:00 AM"),
+      afterTime: "2:00 PM · 55 min",
+    });
+    expect(notificationPayload.textLines[0]).toContain("Before / Trước khi đổi");
+    expect(notificationPayload.textLines[1]).toContain("After / Sau khi đổi");
   });
 
   test("customer cancel persists actor, timestamp and reason without a charge", async ({

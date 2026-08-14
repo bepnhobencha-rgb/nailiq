@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { compareBookingStartInstants } from "@/shared/dashboard/bookingStartComparison";
 import {
+  buildOwnerRescheduleTimePayload,
   ownerNotificationActorLabel,
   ownerNotificationChangesLabel,
   ownerRescheduleTimeLabels,
@@ -43,6 +44,29 @@ describe("booking reschedule notification boundaries", () => {
       before: "Sun, Aug 9 3:30 PM",
       afterDate: "Sun, Aug 9",
       afterTime: "4:30 PM · 85 min",
+    });
+  });
+
+  it("captures exact old/new UTC values with Canadian DST-localized copy", () => {
+    expect(
+      buildOwnerRescheduleTimePayload({
+        previousStartUtc: "2026-03-08T09:30:00Z",
+        nextStartUtc: "2026-03-08T17:00:00Z",
+        timezone: "America/Vancouver",
+        durationMin: 55,
+      }),
+    ).toEqual({
+      event: "reschedule",
+      timezone: "America/Vancouver",
+      previousStartUtc: "2026-03-08T09:30:00.000Z",
+      nextStartUtc: "2026-03-08T17:00:00.000Z",
+      before: "Sun, Mar 8 1:30 AM",
+      afterDate: "Sun, Mar 8",
+      afterTime: "10:00 AM · 55 min",
+      textLines: [
+        "Before / Trước khi đổi: Sun, Mar 8 1:30 AM",
+        "After / Sau khi đổi: Sun, Mar 8 10:00 AM · 55 min",
+      ],
     });
   });
 

@@ -83,7 +83,7 @@ const TIMEZONE_TO_ISO: Readonly<Record<string, string>> = {
   "America/Anchorage": "US", "America/Adak": "US", "Pacific/Honolulu": "US",
   "America/Toronto": "CA", "America/Vancouver": "CA", "America/Edmonton": "CA",
   "America/Winnipeg": "CA", "America/Halifax": "CA", "America/St_Johns": "CA",
-  "America/Regina": "CA", "America/Moncton": "CA",
+  "America/Regina": "CA", "America/Whitehorse": "CA", "America/Moncton": "CA",
   "America/Mexico_City": "MX", "America/Tijuana": "MX", "America/Monterrey": "MX",
   "America/Cancun": "MX", "America/Merida": "MX", "America/Chihuahua": "MX",
   // ── Central / South America ───────────────────────────────

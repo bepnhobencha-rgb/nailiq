@@ -476,7 +476,7 @@ export function AddressSetupPanel({
 
       {/* Task #04-B — required timezone dropdown. Sits below Country
           because the salon's IANA zone is conceptually a refinement
-          of "which region am I in?". Locked to the 10-option list
+          of "which region am I in?". Locked to the canonical list
           in `timezoneOptions.ts`; any free-form value would corrupt
           downstream salonTime math. */}
       <label className={labelClass}>

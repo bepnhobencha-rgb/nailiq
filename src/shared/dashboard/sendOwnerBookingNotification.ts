@@ -11,7 +11,7 @@ import { compareBookingStartInstants } from "@/shared/dashboard/bookingStartComp
 import {
   ownerNotificationActorLabel,
   ownerNotificationChangesLabel,
-  ownerRescheduleTimeLabels,
+  buildOwnerRescheduleTimePayload,
   type OwnerNotificationActor,
   type OwnerNotificationChangeField,
 } from "@/shared/dashboard/ownerBookingNotificationCopy";
@@ -658,7 +658,7 @@ export async function sendOwnerBookingNotification(
 
     const rescheduleTime =
       event === "reschedule" && input.previousStartUtc && b.start_time_utc
-        ? ownerRescheduleTimeLabels({
+        ? buildOwnerRescheduleTimePayload({
             previousStartUtc: input.previousStartUtc,
             nextStartUtc: b.start_time_utc,
             timezone: tz,
@@ -737,10 +737,7 @@ export async function sendOwnerBookingNotification(
         ? [`Original booking source / Nguồn đặt ban đầu: ${channelStr}`]
         : []),
       ...(rescheduleTime
-        ? [
-            `Before / Trước khi đổi: ${rescheduleTime.before}`,
-            `After / Sau khi đổi: ${rescheduleTime.afterDate} ${rescheduleTime.afterTime}`,
-          ]
+        ? rescheduleTime.textLines
         : [`Time / Giờ: ${fmt(b.start_time_utc)}`]),
       "",
       `Open dashboard: ${dashboardUrl}`,

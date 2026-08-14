@@ -1,29 +1,8 @@
-import { hmToMinutes } from "@/shared/booking/hmToMinutes";
 import {
-  parseOpeningHours,
-  type DayKey,
-} from "@/shared/dashboard/openingHoursDefaults";
+  resolveBookingDayWindow,
+} from "@/shared/booking/bookingWithinOpeningHours";
 
 export const MAX_AFTER_HOURS_EXTENSION_MINUTES = 120;
-
-const DAY_KEYS: readonly DayKey[] = [
-  "sun",
-  "mon",
-  "tue",
-  "wed",
-  "thu",
-  "fri",
-  "sat",
-];
-
-function dayKeyFromYmd(dateYmd: string): DayKey | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateYmd);
-  if (!match) return null;
-  const date = new Date(
-    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])),
-  );
-  return Number.isNaN(date.getTime()) ? null : (DAY_KEYS[date.getUTCDay()] ?? null);
-}
 
 export type ControlledAfterHoursResult =
   | {
@@ -63,24 +42,16 @@ export function evaluateControlledAfterHours(args: {
     startMinutes,
     serviceCompletionMinutes,
   } = args;
-  const week = parseOpeningHours(openingHoursRaw);
-  const dayKey = dayKeyFromYmd(dateYmd);
-  if (!week || !dayKey) return { ok: false, reason: "invalid_hours" };
-  if (
-    Array.isArray(bookingClosedDatesRaw) &&
-    bookingClosedDatesRaw.some((value) => String(value) === dateYmd)
-  ) {
-    return { ok: false, reason: "closed_day" };
-  }
-  const cfg = week[dayKey];
-  if (!cfg || cfg.closed) return { ok: false, reason: "closed_day" };
-
-  const openMinutes = hmToMinutes(cfg.open);
-  const closeMinutes = hmToMinutes(cfg.close);
+  const window = resolveBookingDayWindow({
+    openingHoursRaw,
+    bookingClosedDatesRaw,
+    dateYmd,
+  });
+  if (!window.ok) return window;
+  const { openMinutes, closeMinutes } = window;
   const start = Math.round(Number(startMinutes));
   const completion = Math.round(Number(serviceCompletionMinutes));
   if (
-    closeMinutes <= openMinutes ||
     !Number.isFinite(start) ||
     !Number.isFinite(completion) ||
     completion < 1

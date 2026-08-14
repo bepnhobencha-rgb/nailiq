@@ -1,7 +1,7 @@
 /**
  * Canonical timezone list for the salon-setup address panel.
  *
- * Locked to 10 IANA names that cover the Canadian provinces +
+ * Locked to canonical IANA names that cover the Canadian provinces +
  * continental US — the primary beta markets. New entries are an
  * intentional product decision, not a free-form text field, because
  * salon time math (`salonTime.ts`, `loadGroupSmartSchedule.ts`,
@@ -21,13 +21,19 @@ export type SetupTimezoneOption = {
   labelVi: string;
 };
 
-export const SETUP_TIMEZONE_OPTIONS: ReadonlyArray<SetupTimezoneOption> = [
-  { value: "America/Vancouver", labelEn: "BC, Yukon", labelVi: "BC, Yukon" },
+export const SETUP_TIMEZONE_OPTIONS = [
+  { value: "America/Vancouver", labelEn: "BC", labelVi: "BC" },
+  { value: "America/Whitehorse", labelEn: "Yukon", labelVi: "Yukon" },
   { value: "America/Edmonton", labelEn: "Alberta", labelVi: "Alberta" },
   {
     value: "America/Winnipeg",
-    labelEn: "Manitoba, Saskatchewan",
-    labelVi: "Manitoba, Saskatchewan",
+    labelEn: "Manitoba",
+    labelVi: "Manitoba",
+  },
+  {
+    value: "America/Regina",
+    labelEn: "Saskatchewan",
+    labelVi: "Saskatchewan",
   },
   {
     value: "America/Toronto",
@@ -48,7 +54,7 @@ export const SETUP_TIMEZONE_OPTIONS: ReadonlyArray<SetupTimezoneOption> = [
     labelEn: "US Pacific",
     labelVi: "Mỹ — Tây",
   },
-] as const;
+] as const satisfies ReadonlyArray<SetupTimezoneOption>;
 
 /** Fallback baseline. Used by the DB column DEFAULT and by the UI
  *  when an unknown legacy value is detected (so the dropdown still

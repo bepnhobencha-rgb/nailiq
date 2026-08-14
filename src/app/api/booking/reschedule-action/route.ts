@@ -62,14 +62,21 @@ export async function POST(req: Request) {
   const svc = service as { duration_minutes: number; buffer_minutes: number | null } | null;
   if (!svc) return NextResponse.json({ ok: false, code: "service_not_found" }, { status: 404 });
 
-  const { data: salonRow } = await supabase
+  const { data: salonRow, error: salonError } = await supabase
     .from("salons" as never)
     .select("timezone")
     .eq("id", b.salon_id)
     .maybeSingle();
-  const salonTimezone =
-    (salonRow as { timezone?: string | null } | null)?.timezone?.trim() ||
-    "America/Los_Angeles";
+  const salonTimezone = (
+    salonRow as { timezone?: string | null } | null
+  )?.timezone?.trim();
+  if (salonError || !salonTimezone) {
+    console.error("[reschedule-action] salon timezone unavailable", salonError);
+    return NextResponse.json(
+      { ok: false, code: "server_error" },
+      { status: 500 },
+    );
+  }
 
   let newStart: Date;
   try {
