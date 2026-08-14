@@ -39,7 +39,7 @@ Rules:
 
 ## 🛠️ Tech Stack
 
-- **Framework**: Next.js 16.2 (App Router) + React 19.2
+- **Framework**: Next.js 16.3 (App Router) + React 19.2
 - **Language**: TypeScript 5 (strict)
 - **Styling**: Tailwind CSS v4 (CSS-first config via `@theme` — no `tailwind.config.js`)
 - **Animations**: Framer Motion 12 + canvas-confetti
