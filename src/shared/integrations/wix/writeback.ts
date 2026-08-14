@@ -14,7 +14,12 @@ async function resolve(salonId: string, bookingId: string): Promise<{ siteId: st
   const db = looseServiceClient();
   const { data: integ } = await db.from("wix_integrations").select("site_id").eq("salon_id", salonId).eq("enabled", true).maybeSingle();
   if (!integ?.site_id) return null;
-  const { data: bk } = await db.from("bookings").select("wix_booking_id").eq("id", bookingId).maybeSingle();
+  const { data: bk } = await db
+    .from("bookings")
+    .select("wix_booking_id")
+    .eq("id", bookingId)
+    .eq("salon_id", salonId)
+    .maybeSingle();
   if (!bk?.wix_booking_id) return null;
   return { siteId: integ.site_id as string, wixId: bk.wix_booking_id as string };
 }
@@ -76,6 +81,7 @@ export async function pushWixCreate(salonId: string, bookingId: string): Promise
       .from("bookings")
       .select("id, service_id, staff_id, start_time_utc, end_time_utc, client_name, client_phone, client_email, wix_booking_id")
       .eq("id", bookingId)
+      .eq("salon_id", salonId)
       .maybeSingle();
     const bk = rawBk as {
       id: string;
@@ -106,6 +112,7 @@ export async function pushWixCreate(salonId: string, bookingId: string): Promise
       .from("services")
       .select("name, wix_service_id, wix_schedule_id")
       .eq("id", bk.service_id ?? "")
+      .eq("salon_id", salonId)
       .maybeSingle();
     const svc = rawSvc as { name?: string | null; wix_service_id?: string | null; wix_schedule_id?: string | null } | null;
     if (!svc?.wix_service_id || !svc?.wix_schedule_id) {
@@ -121,6 +128,7 @@ export async function pushWixCreate(salonId: string, bookingId: string): Promise
         .from("staff")
         .select("wix_resource_id")
         .eq("id", bk.staff_id)
+        .eq("salon_id", salonId)
         .maybeSingle();
       wixResourceId = (rawStf as { wix_resource_id?: string | null } | null)?.wix_resource_id ?? null;
     }
@@ -186,7 +194,9 @@ export async function pushWixCreate(salonId: string, bookingId: string): Promise
     await db
       .from("bookings")
       .update({ wix_booking_id: wixBookingId } as never)
-      .eq("id", bookingId);
+      .eq("id", bookingId)
+      .eq("salon_id", salonId)
+      .in("status", ["pending", "confirmed"]);
 
     // 9. Confirm on Wix. Create Booking yields status CREATED (pending), which Wix parks in
     //    the "Booking Requests" inbox — NOT on the main calendar. A salon-originated booking is

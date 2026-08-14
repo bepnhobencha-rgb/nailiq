@@ -20,6 +20,7 @@ vi.mock("@/shared/integrations/square/looseDb", () => ({
             return {
               data: {
                 salon_id: "11111111-1111-4111-8111-111111111111",
+                status: "confirmed",
                 price_cents: 5_000,
                 no_show_risk_score: 20,
                 noshow_card_id: null,

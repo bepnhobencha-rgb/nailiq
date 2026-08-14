@@ -25,63 +25,64 @@ export async function GET(req: NextRequest) {
   const authorizationError = requireCronAuthorization(req);
   if (authorizationError) return authorizationError;
   return runTrackedCron("noshow_charge_retry", async () => {
+    const supabase = createServiceRoleClient();
+    const windowStart = new Date(
+      Date.now() - RETRY_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    // ~1/day pacing safety net (in case the cron fires more than once a day).
+    const pacingCutoff = new Date(
+      Date.now() - 20 * 60 * 60 * 1000,
+    ).toISOString();
 
-  const supabase = createServiceRoleClient();
-  const windowStart = new Date(
-    Date.now() - RETRY_WINDOW_DAYS * 24 * 60 * 60 * 1000,
-  ).toISOString();
-  // ~1/day pacing safety net (in case the cron fires more than once a day).
-  const pacingCutoff = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString();
-
-  const { data, error } = await supabase
-    .from("bookings")
-    .select("id, noshow_charge_attempts, noshow_last_charge_attempt_at")
-    .eq("noshow_charge_status", "failed")
-    .eq("status", "no_show")
-    .not("noshow_card_id", "is", null)
-    .lt("noshow_charge_attempts", MAX_ATTEMPTS)
-    .gte("start_time_utc", windowStart)
-    .limit(200);
-
-  if (error) {
-    console.error("[noshow-charge-retry] query failed", error);
-    return NextResponse.json({ error: "query_failed" }, { status: 500 });
-  }
-
-  const due = ((data ?? []) as Array<{
-    id: string;
-    noshow_charge_attempts: number | null;
-    noshow_last_charge_attempt_at: string | null;
-  }>).filter(
-    (r) =>
-      !r.noshow_last_charge_attempt_at ||
-      r.noshow_last_charge_attempt_at < pacingCutoff,
-  );
-
-  let retried = 0;
-  let charged = 0;
-  for (const r of due) {
-    const attempt = (r.noshow_charge_attempts ?? 0) + 1;
-    retried += 1;
-    try {
-      const res = await chargeNoShowFee(r.id, {
-        idempotencySuffix: `retry-${attempt}`,
-      });
-      if (res.charged) charged += 1;
-    } catch (e) {
-      console.error("[noshow-charge-retry] charge threw", r.id, e);
-    }
-    // Always record the attempt (success flips status to 'charged' inside
-    // chargeNoShowFee; a failure leaves 'failed' and the bumped count caps it).
-    await supabase
+    const { data, error } = await supabase
       .from("bookings")
-      .update({
-        noshow_charge_attempts: attempt,
-        noshow_last_charge_attempt_at: new Date().toISOString(),
-      } as never)
-      .eq("id", r.id);
-  }
+      .select("id, noshow_charge_attempts, noshow_last_charge_attempt_at")
+      .eq("noshow_charge_status", "failed")
+      .eq("status", "no_show")
+      .not("noshow_card_id", "is", null)
+      .lt("noshow_charge_attempts", MAX_ATTEMPTS)
+      .gte("start_time_utc", windowStart)
+      .limit(200);
 
-    return NextResponse.json({ ok: true, retried, charged, processedAt: new Date().toISOString() });
+    if (error) {
+      console.error("[noshow-charge-retry] query failed", error);
+      return NextResponse.json({ error: "query_failed" }, { status: 500 });
+    }
+
+    const due = (
+      (data ?? []) as Array<{
+        id: string;
+        noshow_charge_attempts: number | null;
+        noshow_last_charge_attempt_at: string | null;
+      }>
+    ).filter(
+      (r) =>
+        !r.noshow_last_charge_attempt_at ||
+        r.noshow_last_charge_attempt_at < pacingCutoff,
+    );
+
+    let retried = 0;
+    let charged = 0;
+    for (const r of due) {
+      const attempt = (r.noshow_charge_attempts ?? 0) + 1;
+      retried += 1;
+      try {
+        const res = await chargeNoShowFee(r.id, {
+          idempotencySuffix: `retry-${attempt}`,
+        });
+        if (res.charged) charged += 1;
+      } catch (e) {
+        console.error("[noshow-charge-retry] charge threw", r.id, e);
+      }
+      // chargeNoShowFee records the attempt count + pacing timestamp through the
+      // audited terminal-fee RPC in the same transaction as its DB outcome.
+    }
+
+    return NextResponse.json({
+      ok: true,
+      retried,
+      charged,
+      processedAt: new Date().toISOString(),
+    });
   });
 }

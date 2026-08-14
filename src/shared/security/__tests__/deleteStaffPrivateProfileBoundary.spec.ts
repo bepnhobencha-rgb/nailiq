@@ -13,7 +13,12 @@ describe("deleteStaff private client-profile cleanup", () => {
     );
 
     expect(deleteStaff).toContain("const admin = createServiceRoleClient()");
-    expect(deleteStaff).toContain('admin\n    .from("bookings")');
+    expect(deleteStaff).not.toMatch(
+      /\.from\("bookings"\)[\s\S]*?\.update\(\{ staff_id: null \}\)/,
+    );
+    expect(deleteStaff).toContain(
+      "cancelled/no-show rows are immutable tombstones",
+    );
     expect(deleteStaff).toContain('.from("client_profiles")');
     expect(deleteStaff).toContain('admin\n    .from("staff")');
     expect(deleteStaff).toContain('.eq("id", staffId)');

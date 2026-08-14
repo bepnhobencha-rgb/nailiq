@@ -8,6 +8,7 @@ on:
       - "scripts/build-folded-migration-history.mjs"
       - "scripts/check-schema-parity.ts"
       - "scripts/verify-schema-dump.ts"
+      - "scripts/security/check-terminal-booking-write-boundary.sql"
       - "scripts/security/check-archived-booking-recovery-atomicity.sql"
       - "supabase/bootstrap/**"
       - "supabase/migration-history/**"
@@ -177,6 +178,8 @@ jobs:
             -f scripts/security/rehearse-cron-run-history.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-source-owned-exception-resolution.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-terminal-booking-write-boundary.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/check-archived-booking-recovery-atomicity.sql
 

@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
 
 import { createClient } from "@supabase/supabase-js";
 import type { Locator, Page } from "@playwright/test";
@@ -75,8 +76,8 @@ export async function getAiAgentPermissionSnapshot(slug: string) {
 
   return {
     featureFlags:
-      ((salon as { feature_flags?: Record<string, boolean> }).feature_flags ??
-        {}),
+      (salon as { feature_flags?: Record<string, boolean> }).feature_flags ??
+      {},
     audit: (audit ?? []) as Array<{
       actor_user_id: string | null;
       actor_role: string;
@@ -162,6 +163,57 @@ export async function getGroupBookingStamps(slug: string): Promise<
   return (data ?? []) as Awaited<ReturnType<typeof getGroupBookingStamps>>;
 }
 
+export async function cleanupTerminalTestBookings(
+  salonId: string,
+): Promise<void> {
+  // Terminal bookings are deliberately not deletable through a PostgREST
+  // service token.  The E2E stack is a throwaway local Postgres instance and
+  // exposes its owner URL as DB_URL, so remove only this UUID-scoped fixture's
+  // recovery children and tombstones before the normal service-role cleanup.
+  // Never fall back to an arbitrary database URL: a missing/non-loopback URL is
+  // a loud test-harness error, not permission to weaken the product boundary.
+  const { count: terminalCount, error: terminalCountError } = await supabase
+    .from("bookings")
+    .select("id", { count: "exact", head: true })
+    .eq("salon_id", salonId)
+    .in("status", ["cancelled", "no_show"]);
+  if (terminalCountError) throw terminalCountError;
+  if ((terminalCount ?? 0) > 0) {
+    const dbUrl = process.env.DB_URL?.trim();
+    if (!dbUrl) {
+      throw new Error(
+        "cleanupTestSalon: DB_URL is required to remove local terminal fixtures",
+      );
+    }
+    const parsed = new URL(dbUrl);
+    const loopbackHosts = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
+    if (
+      !loopbackHosts.has(parsed.hostname) ||
+      parsed.pathname !== "/postgres"
+    ) {
+      throw new Error(
+        "cleanupTestSalon: terminal fixture cleanup requires local throwaway Postgres",
+      );
+    }
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        salonId,
+      )
+    ) {
+      throw new Error("cleanupTestSalon: invalid salon UUID");
+    }
+    const scopedSql = [
+      `delete from public.bookings where salon_id = '${salonId}'::uuid and recovered_from_booking_id is not null`,
+      `delete from public.bookings where salon_id = '${salonId}'::uuid and status in ('cancelled', 'no_show')`,
+    ].join("; ");
+    execFileSync(
+      "psql",
+      [dbUrl, "-v", "ON_ERROR_STOP=1", "-q", "-c", scopedSql],
+      { stdio: "pipe" },
+    );
+  }
+}
+
 export async function cleanupTestSalon(slug: string) {
   const { data: salon } = await supabase
     .from("salons")
@@ -172,6 +224,8 @@ export async function cleanupTestSalon(slug: string) {
   if (!salon?.id) return;
 
   const salonId = salon.id as string;
+
+  await cleanupTerminalTestBookings(salonId);
 
   await supabase.from("bookings").delete().eq("salon_id", salonId);
   await supabase
@@ -1342,6 +1396,7 @@ export async function cleanupTestUser(userId: string) {
 
   for (const row of memberRows ?? []) {
     const salonId = (row as { salon_id: string }).salon_id;
+    await cleanupTerminalTestBookings(salonId);
     await supabase.from("bookings").delete().eq("salon_id", salonId);
     await supabase.from("services").delete().eq("salon_id", salonId);
     await supabase.from("staff").delete().eq("salon_id", salonId);

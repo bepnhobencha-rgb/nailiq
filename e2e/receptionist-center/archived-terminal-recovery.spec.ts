@@ -179,14 +179,17 @@ async function seedTerminalBooking(input: {
       client_notes: `immutable ${input.status} source`,
       start_time_utc: input.start.toISOString(),
       end_time_utc: new Date(input.start.getTime() + 45 * 60_000).toISOString(),
-      status: input.status,
+      // Seed an active row, then enter the terminal state through the same
+      // tenant/actor-scoped RPC used by the product. Direct service-role
+      // terminal inserts are intentionally rejected by the database boundary.
+      status: "confirmed",
       source: "appointment",
       booking_channel: "desk",
       price_cents: 4500,
       ...(input.noShowFeeCents
         ? {
             noshow_fee_cents: input.noShowFeeCents,
-            noshow_charge_status: "waived",
+            noshow_charge_status: "saved",
           }
         : {}),
     })
@@ -195,7 +198,50 @@ async function seedTerminalBooking(input: {
   if (error || !data?.id) {
     throw new Error(error?.message ?? `failed to seed ${input.status}`);
   }
-  return String(data.id);
+  const bookingId = String(data.id);
+  const { data: transition, error: transitionError } = await supabaseAdmin.rpc(
+    "transition_booking_to_terminal" as never,
+    {
+      p_booking_id: bookingId,
+      p_salon_id: fx.salonId,
+      p_actor_user_id: fx.admin.userId,
+      p_actor_role: "admin",
+      p_reason: input.status === "no_show" ? "desk_no_show" : "desk_cancel",
+    } as never,
+  );
+  const transitionResult = (
+    Array.isArray(transition) ? transition[0] : transition
+  ) as { success?: boolean; code?: string } | null;
+  if (transitionError || !transitionResult?.success) {
+    throw new Error(
+      transitionError?.message ??
+        `failed to transition ${input.status}: ${transitionResult?.code ?? "unknown"}`,
+    );
+  }
+  if (input.noShowFeeCents) {
+    const { data: fee, error: feeError } = await supabaseAdmin.rpc(
+      "record_terminal_booking_fee_mutation" as never,
+      {
+        p_booking_id: bookingId,
+        p_salon_id: fx.salonId,
+        p_operation: "waive",
+        p_request_id: randomUUID(),
+        p_actor_user_id: fx.admin.userId,
+        p_actor_role: "admin",
+      } as never,
+    );
+    const feeResult = (Array.isArray(fee) ? fee[0] : fee) as {
+      success?: boolean;
+      code?: string;
+    } | null;
+    if (feeError || !feeResult?.success) {
+      throw new Error(
+        feeError?.message ??
+          `failed to seed fee outcome: ${feeResult?.code ?? "unknown"}`,
+      );
+    }
+  }
+  return bookingId;
 }
 
 async function childCount(): Promise<number> {
@@ -358,24 +404,19 @@ test.describe.serial("Authenticated archived booking terminal recovery", () => {
       .eq("id", fx.noShowId);
     expect(archiveHideError?.code).toBe("23514");
 
-    // Attendance is immutable, but the eventual no-show fee decision remains
-    // operationally writable and visible in archived detail.
+    // Attendance and fee outcomes are both default-deny direct writes. Fee
+    // decisions remain possible only through the audited fee RPC.
     const { error: feeOutcomeError } = await supabaseAdmin
       .from("bookings")
       .update({ noshow_charge_status: "saved" } as never)
       .eq("id", fx.noShowId);
-    expect(feeOutcomeError).toBeNull();
+    expect(feeOutcomeError?.code).toBe("23514");
     const { data: feeOutcome } = await supabaseAdmin
       .from("bookings")
       .select("noshow_charge_status")
       .eq("id", fx.noShowId)
       .single();
-    expect(feeOutcome?.noshow_charge_status).toBe("saved");
-    const { error: restoreFeeOutcomeError } = await supabaseAdmin
-      .from("bookings")
-      .update({ noshow_charge_status: "waived" } as never)
-      .eq("id", fx.noShowId);
-    expect(restoreFeeOutcomeError).toBeNull();
+    expect(feeOutcome?.noshow_charge_status).toBe("waived");
 
     expect(await loadSourceSnapshot(fx.cancelledId)).toEqual(cancelledSnapshot);
     expect(await loadSourceSnapshot(fx.noShowId)).toEqual(noShowSnapshot);

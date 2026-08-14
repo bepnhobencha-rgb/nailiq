@@ -7,55 +7,39 @@ begin;
 
 insert into auth.users (
   id,
-  instance_id,
-  aud,
-  role,
   email,
   encrypted_password,
   email_confirmed_at,
   raw_app_meta_data,
   raw_user_meta_data,
-  created_at,
-  updated_at
+  created_at
 )
 values
   (
     '91000000-0000-0000-0000-000000000001',
-    '00000000-0000-0000-0000-000000000000',
-    'authenticated',
-    'authenticated',
     'archive-owner@nailiq.invalid',
     '',
     now(),
     '{"provider":"email","providers":["email"]}',
     '{}',
-    now(),
     now()
   ),
   (
     '91000000-0000-0000-0000-000000000002',
-    '00000000-0000-0000-0000-000000000000',
-    'authenticated',
-    'authenticated',
     'privacy-ops@nailiq.invalid',
     '',
     now(),
     '{"provider":"email","providers":["email"]}',
     '{}',
-    now(),
     now()
   ),
   (
     '91000000-0000-0000-0000-000000000003',
-    '00000000-0000-0000-0000-000000000000',
-    'authenticated',
-    'authenticated',
     'archive-outsider@nailiq.invalid',
     '',
     now(),
     '{"provider":"email","providers":["email"]}',
     '{}',
-    now(),
     now()
   );
 
@@ -112,10 +96,15 @@ values (
 );
 
 insert into public.superadmins (user_id, role)
-values (
-  '91000000-0000-0000-0000-000000000002',
-  'ops_admin'
-);
+values
+  (
+    '91000000-0000-0000-0000-000000000001',
+    'founder'
+  ),
+  (
+    '91000000-0000-0000-0000-000000000002',
+    'ops_admin'
+  );
 
 insert into public.services (
   id,
@@ -155,7 +144,23 @@ insert into public.bookings (
   end_time_utc,
   status,
   source,
-  price_cents
+  price_cents,
+  staff_request_note,
+  client_locale,
+  noshow_card_id,
+  noshow_customer_id,
+  noshow_card_last4,
+  noshow_card_brand,
+  noshow_consent_meta,
+  sms_consent_meta,
+  deposit_link_url,
+  noshow_fee_link_url,
+  stripe_payment_intent_id,
+  square_payment_link_id,
+  square_deposit_order_id,
+  square_payment_id,
+  noshow_payment_id,
+  noshow_fee_order_id
 )
 values
   (
@@ -171,7 +176,9 @@ values
     date_trunc('day', clock_timestamp()) + interval '3 days 12 hours 30 minutes',
     'cancelled',
     'appointment',
-    4500
+    4500,
+    null, null, null, null, null, null, null, null,
+    null, null, null, null, null, null, null, null
   ),
   (
     '95000000-0000-0000-0000-000000000002',
@@ -186,7 +193,9 @@ values
     clock_timestamp() - interval '90 minutes',
     'no_show',
     'appointment',
-    4500
+    4500,
+    null, null, null, null, null, null, null, null,
+    null, null, null, null, null, null, null, null
   ),
   (
     '95000000-0000-0000-0000-000000000003',
@@ -201,21 +210,51 @@ values
     clock_timestamp() - interval '3 hours 30 minutes',
     'cancelled',
     'appointment',
-    6700
+    6700,
+    'ask for Alice',
+    'en',
+    'card-private-token',
+    'customer-private-token',
+    '4242',
+    'VISA',
+    '{"ip":"192.0.2.1"}'::jsonb,
+    '{"ip":"192.0.2.1"}'::jsonb,
+    'https://example.invalid/private-deposit-link',
+    'https://example.invalid/private-fee-link',
+    'pi_private',
+    'plink_private',
+    'deposit-order-private',
+    'deposit-payment-private',
+    'noshow-payment-private',
+    'noshow-order-private'
   );
 
-update public.bookings
-set staff_request_note = 'ask for Alice',
-    client_locale = 'en',
-    noshow_card_id = 'card-private-token',
-    noshow_customer_id = 'customer-private-token',
-    noshow_card_last4 = '4242',
-    noshow_card_brand = 'VISA',
-    noshow_consent_meta = '{"ip":"192.0.2.1"}'::jsonb,
-    sms_consent_meta = '{"ip":"192.0.2.1"}'::jsonb,
-    deposit_link_url = 'https://example.invalid/private-deposit-link',
-    noshow_fee_link_url = 'https://example.invalid/private-fee-link'
-where id = '95000000-0000-0000-0000-000000000003';
+-- A separately retained recovery child makes the privacy scope assertion
+-- observable: redacting the source must report (but must not silently mutate)
+-- the related workflow record.
+insert into public.bookings (
+  id, salon_id, service_id, staff_id, client_name, client_phone,
+  start_time_utc, end_time_utc, status, source, price_cents,
+  recovered_from_booking_id, recovery_kind, recovered_by_user_id,
+  recovery_request_fingerprint, idempotency_key
+) values (
+  '95000000-0000-0000-0000-000000000004',
+  '92000000-0000-0000-0000-000000000001',
+  '93000000-0000-0000-0000-000000000001',
+  '94000000-0000-0000-0000-000000000001',
+  'Related Recovery Child',
+  '+16045550915',
+  date_trunc('day', clock_timestamp()) + interval '10 days 12 hours',
+  date_trunc('day', clock_timestamp()) + interval '10 days 12 hours 30 minutes',
+  'confirmed',
+  'appointment',
+  6700,
+  '95000000-0000-0000-0000-000000000003',
+  'cancelled_rebook',
+  '91000000-0000-0000-0000-000000000001',
+  repeat('f', 64),
+  '96000000-0000-0000-0000-000000000003'
+);
 
 create function public.test_reject_booking_recovery_audit()
 returns trigger
@@ -247,6 +286,7 @@ begin
       'cancelled_rebook',
       '91000000-0000-0000-0000-000000000001',
       '96000000-0000-0000-0000-000000000001',
+      repeat('a', 64),
       '92000000-0000-0000-0000-000000000001',
       '93000000-0000-0000-0000-000000000001',
       '94000000-0000-0000-0000-000000000001',
@@ -258,6 +298,11 @@ begin
       4500,
       null,
       'recovered-appointment@nailiq.invalid',
+      null,
+      '{}'::uuid[],
+      'en',
+      false,
+      null,
       null
     );
     raise exception 'appointment recovery unexpectedly bypassed audit failure: %',
@@ -279,6 +324,7 @@ begin
       '95000000-0000-0000-0000-000000000002',
       '91000000-0000-0000-0000-000000000001',
       '96000000-0000-0000-0000-000000000002',
+      repeat('b', 64),
       '92000000-0000-0000-0000-000000000001',
       '93000000-0000-0000-0000-000000000001',
       'Recovered Walk-in',
@@ -328,6 +374,7 @@ begin
     'cancelled_rebook',
     '91000000-0000-0000-0000-000000000001',
     '96000000-0000-0000-0000-000000000001',
+    repeat('a', 64),
     '92000000-0000-0000-0000-000000000001',
     '93000000-0000-0000-0000-000000000001',
     '94000000-0000-0000-0000-000000000001',
@@ -339,6 +386,11 @@ begin
     4500,
     null,
     'recovered-appointment@nailiq.invalid',
+    null,
+    '{}'::uuid[],
+    'en',
+    false,
+    null,
     null
   );
   if coalesce(v_appointment ->> 'success', 'false') <> 'true' then
@@ -350,6 +402,7 @@ begin
     '95000000-0000-0000-0000-000000000002',
     '91000000-0000-0000-0000-000000000001',
     '96000000-0000-0000-0000-000000000002',
+    repeat('b', 64),
     '92000000-0000-0000-0000-000000000001',
     '93000000-0000-0000-0000-000000000001',
     'Recovered Walk-in',
@@ -376,20 +429,30 @@ begin
     raise exception 'recovery actor/link audit rows were not committed';
   end if;
 
+  -- A committed exact retry is canonical even if mutable prerequisites have
+  -- since changed.  No new child or side effect is created.
+  update public.salons
+  set feature_flags = coalesce(feature_flags, '{}'::jsonb)
+    || '{"archived_booking_recovery_enabled":false}'::jsonb
+  where id = '92000000-0000-0000-0000-000000000001';
+  update public.services set deleted_at = clock_timestamp()
+  where id = '93000000-0000-0000-0000-000000000001';
+
   v_retry := public.create_recovered_walkin(
     '95000000-0000-0000-0000-000000000002',
     '91000000-0000-0000-0000-000000000001',
     '96000000-0000-0000-0000-000000000002',
+    repeat('b', 64),
     '92000000-0000-0000-0000-000000000001',
     '93000000-0000-0000-0000-000000000001',
-    'Ignored Replay Payload',
-    '+16045550999',
+    'Recovered Walk-in',
+    '+16045550916',
     null,
     false,
-    null,
-    null,
+    'walk_in',
+    'medium',
     '[]'::jsonb,
-    null
+    1
   );
   if coalesce(v_retry ->> 'success', 'false') <> 'true'
      or coalesce(v_retry ->> 'replayed', 'false') <> 'true'
@@ -408,7 +471,28 @@ begin
   v_duplicate := public.create_recovered_walkin(
     '95000000-0000-0000-0000-000000000002',
     '91000000-0000-0000-0000-000000000001',
+    '96000000-0000-0000-0000-000000000002',
+    repeat('c', 64),
+    '92000000-0000-0000-0000-000000000001',
+    '93000000-0000-0000-0000-000000000001',
+    'Duplicate Walk-in',
+    '+16045550916',
+    null,
+    false,
+    null,
+    null,
+    '[]'::jsonb,
+    null
+  );
+  if v_duplicate ->> 'code' <> 'idempotency_mismatch' then
+    raise exception 'changed payload reused the request id: %', v_duplicate;
+  end if;
+
+  v_duplicate := public.create_recovered_walkin(
+    '95000000-0000-0000-0000-000000000002',
+    '91000000-0000-0000-0000-000000000001',
     '96000000-0000-0000-0000-000000000099',
+    repeat('d', 64),
     '92000000-0000-0000-0000-000000000001',
     '93000000-0000-0000-0000-000000000001',
     'Duplicate Walk-in',
@@ -421,13 +505,14 @@ begin
     null
   );
   if v_duplicate ->> 'code' <> 'already_recovered' then
-    raise exception 'different recovery retry was not rejected: %', v_duplicate;
+    raise exception 'different recovery request was not rejected: %', v_duplicate;
   end if;
 
   v_cross_tenant := public.create_recovered_walkin(
     '95000000-0000-0000-0000-000000000002',
     '91000000-0000-0000-0000-000000000001',
     '96000000-0000-0000-0000-000000000098',
+    repeat('e', 64),
     '92000000-0000-0000-0000-000000000002',
     '93000000-0000-0000-0000-000000000001',
     'Cross Tenant Walk-in',
@@ -446,6 +531,8 @@ end
 $recovery_success_proof$;
 
 do $terminal_update_proof$
+declare
+  v_fee_result jsonb;
 begin
   begin
     update public.bookings
@@ -456,11 +543,37 @@ begin
     when check_violation then null;
   end;
 
-  update public.bookings
-  set noshow_charge_status = 'waived'
-  where id = '95000000-0000-0000-0000-000000000002';
-  if not found then
-    raise exception 'valid no-show fee outcome update failed';
+  begin
+    update public.bookings
+    set noshow_charge_status = 'waived'
+    where id = '95000000-0000-0000-0000-000000000002';
+    raise exception 'direct service-role fee mutation unexpectedly succeeded';
+  exception
+    when check_violation then null;
+  end;
+
+  v_fee_result := public.record_terminal_booking_fee_mutation(
+    '95000000-0000-0000-0000-000000000002',
+    '92000000-0000-0000-0000-000000000001',
+    'waive',
+    '98000000-0000-0000-0000-000000000001',
+    '91000000-0000-0000-0000-000000000001',
+    'owner'
+  );
+  if coalesce(v_fee_result ->> 'success', 'false') <> 'true'
+     or v_fee_result ->> 'charge_status' <> 'waived' then
+    raise exception 'audited fee waiver failed: %', v_fee_result;
+  end if;
+  if not exists (
+    select 1 from public.booking_events
+    where booking_id = '95000000-0000-0000-0000-000000000002'
+      and event_type = 'terminal_booking_fee_mutation_recorded'
+      and actor_user_id = '91000000-0000-0000-0000-000000000001'
+      and actor_role = 'owner'
+      and payload ->> 'requestId' = '98000000-0000-0000-0000-000000000001'
+      and payload ->> 'requestFingerprint' ~ '^[0-9a-f]{64}$'
+  ) then
+    raise exception 'audited fee waiver event missing';
   end if;
 end
 $terminal_update_proof$;
@@ -531,7 +644,8 @@ begin
     raise exception 'privacy redaction unexpectedly bypassed audit failure: %',
       v_result;
   exception
-    when sqlstate 'P9102' then null;
+    when others then
+      if sqlstate <> 'P9102' then raise; end if;
   end;
 
   select to_jsonb(b)
@@ -581,6 +695,12 @@ begin
       and client_notes is null
       and noshow_card_id is null
       and deposit_link_url is null
+      and stripe_payment_intent_id is null
+      and square_payment_link_id is null
+      and square_deposit_order_id is null
+      and square_payment_id is null
+      and noshow_payment_id is null
+      and noshow_fee_order_id is null
       and status = 'cancelled'
       and salon_id = '92000000-0000-0000-0000-000000000001'
       and service_id = '93000000-0000-0000-0000-000000000001'
@@ -601,6 +721,8 @@ begin
       and after_jsonb ->> 'requestId' =
         '97000000-0000-0000-0000-000000000001'
       and before_jsonb ? 'personalDataPresent'
+      and after_jsonb ->> 'scope' = 'single_terminal_booking'
+      and after_jsonb ? 'relatedRecordsRequireSeparateWorkflow'
       and before_jsonb::text not like '%Privacy Customer%'
       and before_jsonb::text not like '%16045550914%'
   ) then
@@ -618,6 +740,13 @@ begin
      or coalesce(v_retry ->> 'replayed', 'false') <> 'true' then
     raise exception 'privacy retry was not idempotent: %', v_retry;
   end if;
+  if coalesce(
+       (v_retry ->> 'related_records_require_separate_workflow')::boolean,
+       false
+     ) is distinct from true then
+    raise exception 'privacy replay did not return the canonical scope result: %',
+      v_retry;
+  end if;
 
   v_mismatch := public.redact_terminal_booking_for_privacy(
     '95000000-0000-0000-0000-000000000003',
@@ -629,6 +758,29 @@ begin
   if v_mismatch ->> 'code' <> 'idempotency_mismatch' then
     raise exception 'privacy reason changed across an exact request retry: %',
       v_mismatch;
+  end if;
+
+  v_mismatch := public.redact_terminal_booking_for_privacy(
+    '95000000-0000-0000-0000-000000000003',
+    '92000000-0000-0000-0000-000000000001',
+    '91000000-0000-0000-0000-000000000001',
+    '97000000-0000-0000-0000-000000000001',
+    'verified_erasure_request'
+  );
+  if v_mismatch ->> 'code' <> 'idempotency_mismatch' then
+    raise exception 'privacy actor changed across an exact request retry: %',
+      v_mismatch;
+  end if;
+
+  v_mismatch := public.redact_terminal_booking_for_privacy(
+    '95000000-0000-0000-0000-000000000003',
+    '92000000-0000-0000-0000-000000000002',
+    '91000000-0000-0000-0000-000000000002',
+    '97000000-0000-0000-0000-000000000001',
+    'verified_erasure_request'
+  );
+  if v_mismatch ->> 'code' <> 'invalid_terminal_booking' then
+    raise exception 'privacy replay crossed the salon boundary: %', v_mismatch;
   end if;
 end
 $privacy_success_proof$;
@@ -643,18 +795,26 @@ declare
 begin
   if has_function_privilege(
     'anon',
-    'public.create_recovered_walkin(uuid,uuid,uuid,uuid,uuid,text,text,text,boolean,text,text,jsonb,integer)',
+    'public.create_recovered_walkin(uuid,uuid,uuid,text,uuid,uuid,text,text,text,boolean,text,text,jsonb,integer)',
     'EXECUTE'
   ) or has_function_privilege(
     'authenticated',
-    'public.create_recovered_walkin(uuid,uuid,uuid,uuid,uuid,text,text,text,boolean,text,text,jsonb,integer)',
+    'public.create_recovered_walkin(uuid,uuid,uuid,text,uuid,uuid,text,text,text,boolean,text,text,jsonb,integer)',
     'EXECUTE'
   ) or not has_function_privilege(
+    'service_role',
+    'public.create_recovered_walkin(uuid,uuid,uuid,text,uuid,uuid,text,text,text,boolean,text,text,jsonb,integer)',
+    'EXECUTE'
+  ) then
+    raise exception 'recovered walk-in RPC role boundary mismatch';
+  end if;
+
+  if has_function_privilege(
     'service_role',
     'public.create_recovered_walkin(uuid,uuid,uuid,uuid,uuid,text,text,text,boolean,text,text,jsonb,integer)',
     'EXECUTE'
   ) then
-    raise exception 'recovered walk-in RPC role boundary mismatch';
+    raise exception 'legacy partial-intent recovered walk-in RPC remains executable';
   end if;
 
   if has_function_privilege(

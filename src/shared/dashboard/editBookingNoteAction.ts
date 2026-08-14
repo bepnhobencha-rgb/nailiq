@@ -9,7 +9,8 @@ const NOTE_MAX = 2000;
 /**
  * Edit a booking's note (`bookings.client_notes`) inline from the drawer — the
  * fastest path for the desk to add/fix an appointment note. Booking-scoped (no
- * identity/profile involved), front-desk roles only, any status. Empty → null.
+ * identity/profile involved), front-desk roles only, and never mutates a
+ * cancelled/no-show tombstone. Empty → null.
  */
 export async function updateBookingNote(
   slug: string,
@@ -29,17 +30,22 @@ export async function updateBookingNote(
   // Booking must be in the caller's salon (tenant isolation).
   const { data: bk } = await sb
     .from("bookings")
-    .select("id")
+    .select("id, status")
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .maybeSingle();
   if (!(bk as { id?: string } | null)?.id) return { ok: false, error: "invalid_booking" };
+  const status = String((bk as { status?: string | null }).status ?? "");
+  if (status === "cancelled" || status === "no_show") {
+    return { ok: false, error: "immutable_terminal_state" };
+  }
 
   const { error } = await sb
     .from("bookings")
     .update({ client_notes: value } as never)
     .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id);
+    .eq("salon_id", ctx.salon.id)
+    .in("status", ["pending", "confirmed", "in_progress", "completed", "waiting"]);
   if (error) return { ok: false, error: error.message };
 
   return { ok: true, note: value };

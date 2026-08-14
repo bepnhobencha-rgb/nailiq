@@ -10,7 +10,11 @@
  */
 import { test, expect, type Page } from "@playwright/test";
 
-import { cleanupTestSalon } from "../helpers/db";
+import {
+  cleanupTestSalon,
+  cleanupTestUser,
+  seedTestSalonMember,
+} from "../helpers/db";
 import {
   cleanReceptionistData,
   gotoReceptionistCenter,
@@ -25,6 +29,20 @@ import {
 } from "./helpers";
 
 let fx: ReceptionistCenterFixture;
+let owner: Awaited<ReturnType<typeof seedTestSalonMember>>;
+
+async function loginAsOwner(page: Page): Promise<void> {
+  await page.goto("/register");
+  await expect(page.getByTestId("social-auth-controls")).toHaveAttribute(
+    "data-hydrated",
+    "true",
+    { timeout: 30_000 },
+  );
+  await page.locator('input[inputmode="email"]').fill(owner.email);
+  await page.locator('input[type="password"]').fill(owner.password);
+  await page.getByRole("button", { name: /^sign in$/i }).click();
+  await page.waitForURL(/\/dashboard\//, { timeout: 30_000 });
+}
 
 /** ISO for a booking that started `min` minutes before real now (+ a 45m span). */
 function lateStart(min: number): { startIso: string; endIso: string } {
@@ -56,7 +74,10 @@ function skipIfLatenessCrossesUtcDay(min: number): void {
 }
 
 /** Seed a confirmed booking `min` minutes late on the free staff column. */
-async function seedLate(min: number, status: "confirmed" | "completed" = "confirmed") {
+async function seedLate(
+  min: number,
+  status: "confirmed" | "completed" = "confirmed",
+) {
   const { startIso, endIso } = lateStart(min);
   const name = testClientNameMarker();
   const id = await seedDeskBooking(fx.salonId, {
@@ -91,7 +112,8 @@ async function readChargeStatus(bookingId: string): Promise<string | null> {
     .select("noshow_charge_status")
     .eq("id", bookingId)
     .maybeSingle();
-  const v = (data as { noshow_charge_status?: string | null } | null)?.noshow_charge_status;
+  const v = (data as { noshow_charge_status?: string | null } | null)
+    ?.noshow_charge_status;
   return v ?? null;
 }
 
@@ -122,7 +144,10 @@ async function readNoShowCandidate(bookingId: string): Promise<{
  * visibility window as a product regression.  The bounded poll still fails on
  * a genuinely missing booking and keeps the assertion tied to the exact row.
  */
-async function expectServerRenderedItem(page: Page, testId: string): Promise<void> {
+async function expectServerRenderedItem(
+  page: Page,
+  testId: string,
+): Promise<void> {
   await expect
     .poll(
       async () => {
@@ -142,6 +167,7 @@ async function expectServerRenderedItem(page: Page, testId: string): Promise<voi
 
 test.beforeAll(async ({}, testInfo) => {
   fx = await seedReceptionistCenterFixture(rcSlug(testInfo.project.name));
+  owner = await seedTestSalonMember(fx.salonId, "owner");
 });
 
 test.beforeEach(async () => {
@@ -150,17 +176,22 @@ test.beforeEach(async () => {
 
 test.afterAll(async ({}, testInfo) => {
   await cleanupTestSalon(rcSlug(testInfo.project.name));
+  await cleanupTestUser(owner.userId);
 });
 
 test.describe("DRC lateness escalation", () => {
-  test("due tier (≤10m late): ring only, no clock icon, Start button shown", async ({ page }) => {
+  test("due tier (≤10m late): ring only, no clock icon, Start button shown", async ({
+    page,
+  }) => {
     skipIfLatenessCrossesUtcDay(3);
     const id = await seedLate(3);
     await gotoReceptionistCenter(page, fx.slug);
 
     await expectServerRenderedItem(page, `booking-block-lateness-${id}`);
     // due stays calm — no clock marker in the icon stack.
-    await expect(page.getByTestId(`booking-block-icon-late-${id}`)).toHaveCount(0);
+    await expect(page.getByTestId(`booking-block-icon-late-${id}`)).toHaveCount(
+      0,
+    );
     // owner (demo cookie) can change status → inline Start is offered.
     await expect(page.getByTestId(`booking-block-start-${id}`)).toBeAttached();
   });
@@ -171,7 +202,9 @@ test.describe("DRC lateness escalation", () => {
     await gotoReceptionistCenter(page, fx.slug);
 
     await expectServerRenderedItem(page, `booking-block-lateness-${id}`);
-    await expect(page.getByTestId(`booking-block-icon-late-${id}`)).toBeAttached();
+    await expect(
+      page.getByTestId(`booking-block-icon-late-${id}`),
+    ).toBeAttached();
   });
 
   test("critical tier (≥20m): ring + clock icon", async ({ page }) => {
@@ -180,7 +213,9 @@ test.describe("DRC lateness escalation", () => {
     await gotoReceptionistCenter(page, fx.slug);
 
     await expectServerRenderedItem(page, `booking-block-lateness-${id}`);
-    await expect(page.getByTestId(`booking-block-icon-late-${id}`)).toBeAttached();
+    await expect(
+      page.getByTestId(`booking-block-icon-late-${id}`),
+    ).toBeAttached();
   });
 
   test("scheduler flags a review candidate without changing attendance status", async ({
@@ -193,7 +228,8 @@ test.describe("DRC lateness escalation", () => {
       .from("salons")
       .update({ auto_no_show_minutes: 15 } as never)
       .eq("id", fx.salonId);
-    if (settingError) throw new Error(`enable candidate review: ${settingError.message}`);
+    if (settingError)
+      throw new Error(`enable candidate review: ${settingError.message}`);
 
     try {
       const { error: runError } = await supabaseAdmin.rpc(
@@ -202,10 +238,13 @@ test.describe("DRC lateness escalation", () => {
       if (runError) throw new Error(`auto_mark_no_shows: ${runError.message}`);
 
       await expect
-        .poll(async () => {
-          const row = await readNoShowCandidate(id);
-          return row.status === "confirmed" && row.candidateAt !== null;
-        }, { timeout: 15_000 })
+        .poll(
+          async () => {
+            const row = await readNoShowCandidate(id);
+            return row.status === "confirmed" && row.candidateAt !== null;
+          },
+          { timeout: 15_000 },
+        )
         .toBe(true);
       const first = await readNoShowCandidate(id);
       expect(first.candidateAt).not.toBeNull();
@@ -214,7 +253,8 @@ test.describe("DRC lateness escalation", () => {
       const { error: rerunError } = await supabaseAdmin.rpc(
         "auto_mark_no_shows" as never,
       );
-      if (rerunError) throw new Error(`auto_mark_no_shows rerun: ${rerunError.message}`);
+      if (rerunError)
+        throw new Error(`auto_mark_no_shows rerun: ${rerunError.message}`);
       await expect(readNoShowCandidate(id)).resolves.toEqual(first);
 
       await gotoReceptionistCenter(page, fx.slug);
@@ -228,21 +268,28 @@ test.describe("DRC lateness escalation", () => {
         .from("salons")
         .update({ auto_no_show_minutes: null } as never)
         .eq("id", fx.salonId);
-      if (restoreError) throw new Error(`restore candidate review: ${restoreError.message}`);
+      if (restoreError)
+        throw new Error(`restore candidate review: ${restoreError.message}`);
     }
   });
 
-  test("completed booking past start shows NO lateness escalation", async ({ page }) => {
+  test("completed booking past start shows NO lateness escalation", async ({
+    page,
+  }) => {
     skipIfLatenessCrossesUtcDay(13);
     const id = await seedLate(13, "completed");
     await gotoReceptionistCenter(page, fx.slug);
 
     await expectServerRenderedItem(page, `booking-block-${id}`);
-    await expect(page.getByTestId(`booking-block-lateness-${id}`)).toHaveCount(0);
+    await expect(page.getByTestId(`booking-block-lateness-${id}`)).toHaveCount(
+      0,
+    );
     await expect(page.getByTestId(`booking-block-start-${id}`)).toHaveCount(0);
   });
 
-  test("inline Start flips confirmed → in_progress and clears the escalation", async ({ page }) => {
+  test("inline Start flips confirmed → in_progress and clears the escalation", async ({
+    page,
+  }) => {
     skipIfLatenessCrossesUtcDay(13);
     const id = await seedLate(13);
     await gotoReceptionistCenter(page, fx.slug);
@@ -252,10 +299,14 @@ test.describe("DRC lateness escalation", () => {
     await startBtn.evaluate((el: HTMLElement) => el.click());
 
     await expect
-      .poll(async () => (await getBookingRow(fx.salonId, id))?.status, { timeout: 15_000 })
+      .poll(async () => (await getBookingRow(fx.salonId, id))?.status, {
+        timeout: 15_000,
+      })
       .toBe("in_progress");
     // Escalation ring is gone once the service has started.
-    await expect(page.getByTestId(`booking-block-lateness-${id}`)).toHaveCount(0);
+    await expect(page.getByTestId(`booking-block-lateness-${id}`)).toHaveCount(
+      0,
+    );
   });
 });
 
@@ -265,9 +316,7 @@ test.describe("DRC no-show tombstone + fee decision", () => {
     // 30 minutes from real "now" crosses into yesterday during the first half
     // hour after midnight, while the receptionist page correctly loads today;
     // the seeded no-show then cannot appear no matter how often the page reloads.
-    const dayStartMs = Date.parse(
-      isoAtUtcYmdHourMinute(fx.ymdUtc, 0, 0),
-    );
+    const dayStartMs = Date.parse(isoAtUtcYmdHourMinute(fx.ymdUtc, 0, 0));
     const dayEndMs = dayStartMs + 24 * 60 * 60_000;
     const startMs = Math.min(
       dayEndMs - 45 * 60_000,
@@ -286,11 +335,25 @@ test.describe("DRC no-show tombstone + fee decision", () => {
       clientPhone: "6045550111",
     });
     if (opts.withCard) await attachCard(id);
-    const { error } = await supabaseAdmin
-      .from("bookings")
-      .update({ status: "no_show" } as never)
-      .eq("id", id);
-    if (error) throw new Error(`seedNoShow: ${error.message}`);
+    const { data, error } = await supabaseAdmin.rpc(
+      "transition_booking_to_terminal" as never,
+      {
+        p_booking_id: id,
+        p_salon_id: fx.salonId,
+        p_actor_user_id: owner.userId,
+        p_actor_role: "owner",
+        p_reason: "desk_no_show",
+      } as never,
+    );
+    const transition = (Array.isArray(data) ? data[0] : data) as {
+      success?: boolean;
+      code?: string;
+    } | null;
+    if (error || !transition?.success) {
+      throw new Error(
+        `seedNoShow: ${error?.message ?? transition?.code ?? "unknown"}`,
+      );
+    }
 
     // Do not navigate until the status write is observable. CI's local
     // PostgREST pool can briefly return before a follow-up server-rendered
@@ -309,6 +372,7 @@ test.describe("DRC no-show tombstone + fee decision", () => {
     page,
   }) => {
     const id = await seedNoShow({ withCard: false });
+    await loginAsOwner(page);
     await gotoReceptionistCenter(page, fx.slug);
 
     await expectServerRenderedItem(page, `noshow-tombstone-${id}`);
@@ -319,8 +383,11 @@ test.describe("DRC no-show tombstone + fee decision", () => {
     ).toHaveCount(0);
   });
 
-  test("tombstone Waive sets the fee to 'waived' (no charge)", async ({ page }) => {
+  test("tombstone Waive sets the fee to 'waived' (no charge)", async ({
+    page,
+  }) => {
     const id = await seedNoShow({ withCard: true });
+    await loginAsOwner(page);
     await gotoReceptionistCenter(page, fx.slug);
 
     await expectServerRenderedItem(page, `noshow-tombstone-${id}`);
@@ -342,13 +409,18 @@ test.describe("DRC no-show tombstone + fee decision", () => {
       .toBe("waived");
   });
 
-  test("marking no-show with a card on file opens the Charge/Waive modal (not an instant mark)", async ({ page }) => {
+  test("marking no-show with a card on file opens the Charge/Waive modal (not an instant mark)", async ({
+    page,
+  }) => {
     skipIfLatenessCrossesUtcDay(13);
     const id = await seedLate(13);
     await attachCard(id);
+    await loginAsOwner(page);
     await gotoReceptionistCenter(page, fx.slug);
 
-    await page.getByTestId(`booking-block-${id}`).evaluate((el: HTMLElement) => el.click());
+    await page
+      .getByTestId(`booking-block-${id}`)
+      .evaluate((el: HTMLElement) => el.click());
     await expect(page.getByTestId("booking-detail-drawer")).toBeVisible();
 
     // Drawer "No-show" action → fee modal intercepts before marking.
@@ -370,8 +442,12 @@ test.describe("DRC no-show tombstone + fee decision", () => {
       .getByRole("button", { name: /^waive fee$/i })
       .evaluate((el: HTMLElement) => el.click());
     await expect
-      .poll(async () => (await getBookingRow(fx.salonId, id))?.status, { timeout: 15_000 })
+      .poll(async () => (await getBookingRow(fx.salonId, id))?.status, {
+        timeout: 15_000,
+      })
       .toBe("no_show");
-    await expect.poll(() => readChargeStatus(id), { timeout: 15_000 }).toBe("waived");
+    await expect
+      .poll(() => readChargeStatus(id), { timeout: 15_000 })
+      .toBe("waived");
   });
 });
