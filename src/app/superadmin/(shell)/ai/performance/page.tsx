@@ -1,6 +1,7 @@
 import { Badge, type BadgeVariant } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { KPIWidget } from "@/components/ui/KPIWidget";
+import { AgentCertificationContractDetails } from "@/components/superadmin/AgentCertificationContractDetails";
 import {
   loadAgentCertificationMatrix,
   type CertificationStatus,
@@ -10,14 +11,14 @@ export const dynamic = "force-dynamic";
 
 const statusLabel: Record<CertificationStatus, string> = {
   certified: "Certified",
-  waiting_data: "Waiting for data",
+  not_enough_evidence: "Not enough evidence",
   not_configured: "Not configured",
   failed: "Failed",
 };
 
 const statusVariant: Record<CertificationStatus, BadgeVariant> = {
   certified: "success",
-  waiting_data: "warning",
+  not_enough_evidence: "warning",
   not_configured: "neutral",
   failed: "danger",
 };
@@ -43,11 +44,11 @@ export default async function AiPerformancePage() {
         Agent Certification Matrix
       </h1>
       <p className="mt-2 max-w-4xl text-sm leading-6 text-nq-muted">
-        Read-only production evidence plus the operating contract for every
-        salon agent. Certification means that a real, privacy-safe runtime
-        artifact exists in the last 30 days. Expand “View contract” to inspect
-        trigger, permission, inputs, outputs, audit trail, retry behavior and
-        cost tracking. This page never runs an agent or sends communication.
+        Read-only evidence for each salon and AI surface. Certified means a
+        per-agent evidence predicate passed inside that agent&apos;s cadence-aware
+        freshness limit. Not enough evidence is not a failure; it means the
+        required runtime proof is missing or stale. This page never runs an agent
+        or sends customer communication.
       </p>
 
       {!result.ok ? (
@@ -61,7 +62,7 @@ export default async function AiPerformancePage() {
         <>
           <section className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <KPIWidget label="Certified" value={result.data.counts.certified} />
-            <KPIWidget label="Waiting for data" value={result.data.counts.waiting_data} status="warning" />
+            <KPIWidget label="Not enough evidence" value={result.data.counts.not_enough_evidence} status="warning" />
             <KPIWidget label="Not configured" value={result.data.counts.not_configured} />
             <KPIWidget label="Failed" value={result.data.counts.failed} status={result.data.counts.failed > 0 ? "danger" : "default"} />
           </section>
@@ -97,15 +98,18 @@ export default async function AiPerformancePage() {
                   </div>
                   <Card padding="none" className="mt-3 overflow-hidden">
                     <div className="overflow-x-auto">
-                      <table className="w-full min-w-[1120px] text-left text-sm">
+                      <table className="w-full min-w-[980px] text-left text-sm">
+                        <caption className="sr-only">
+                          Agent certification status and operating contracts for {salon.name}
+                        </caption>
                         <thead className="bg-nq-surface/70 text-xs uppercase tracking-wide text-nq-muted">
                           <tr>
                             <th className="px-4 py-3 font-semibold">Agent</th>
                             <th className="px-4 py-3 font-semibold">Status</th>
-                            <th className="px-4 py-3 font-semibold">Runtime proof</th>
+                            <th className="px-4 py-3 font-semibold">Cadence</th>
+                            <th className="px-4 py-3 font-semibold">Fresh / eligible</th>
                             <th className="px-4 py-3 font-semibold">Latest</th>
-                            <th className="px-4 py-3 font-semibold">Operating contract</th>
-                            <th className="px-4 py-3 font-semibold">Explanation</th>
+                            <th className="px-4 py-3 font-semibold">Evidence and contract</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -115,33 +119,16 @@ export default async function AiPerformancePage() {
                               <td className="px-4 py-3">
                                 <Badge variant={statusVariant[row.status]} dot>{statusLabel[row.status]}</Badge>
                               </td>
-                              <td className="px-4 py-3 tabular-nums text-nq-foreground">{row.evidenceCount}</td>
+                              <td className="px-4 py-3 text-nq-muted">{row.cadence}</td>
+                              <td className="px-4 py-3 tabular-nums text-nq-foreground">{row.freshEvidenceCount} / {row.evidenceCount}</td>
                               <td className="px-4 py-3 whitespace-nowrap text-nq-muted">{formatEvidenceDate(row.lastEvidenceAt)}</td>
-                              <td className="w-[430px] px-4 py-3">
-                                <details className="group rounded-xl border border-nq-border/40 bg-nq-surface/30 px-3">
-                                  <summary className="flex min-h-11 cursor-pointer items-center font-medium text-nq-foreground">
-                                    View contract
-                                  </summary>
-                                  <dl className="grid gap-3 border-t border-nq-border/30 py-3 text-xs leading-5 sm:grid-cols-2">
-                                    {[
-                                      ["Trigger", row.contract.trigger],
-                                      ["Cadence", row.cadence],
-                                      ["Permission", row.contract.permission],
-                                      ["Inputs", row.contract.inputs],
-                                      ["Outputs", row.contract.outputs],
-                                      ["Audit", row.contract.audit],
-                                      ["Retry", row.contract.retry],
-                                      ["Cost", row.contract.cost],
-                                    ].map(([label, value]) => (
-                                      <div key={label}>
-                                        <dt className="font-semibold text-nq-foreground">{label}</dt>
-                                        <dd className="text-nq-muted">{value}</dd>
-                                      </div>
-                                    ))}
-                                  </dl>
-                                </details>
+                              <td className="max-w-xl px-4 py-3 text-xs leading-5 text-nq-muted">
+                                <p>{row.reason}</p>
+                                <AgentCertificationContractDetails
+                                  agentLabel={row.agentLabel}
+                                  contract={row.contract}
+                                />
                               </td>
-                              <td className="max-w-md px-4 py-3 text-xs leading-5 text-nq-muted">{row.reason}</td>
                             </tr>
                           ))}
                         </tbody>
