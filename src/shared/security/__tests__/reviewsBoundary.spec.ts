@@ -54,7 +54,7 @@ describe("reviews boundary", () => {
 
   it("updates blank-database parity tripwires", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("through 20260811183000");
+    expect(parity).toContain("through 20260813090000");
     expect(parity).toContain("policies: 156");
     expect(parity).toContain(
       "const GRANTS = { anon: 57, authenticated: 64, service_role: 112 }",
