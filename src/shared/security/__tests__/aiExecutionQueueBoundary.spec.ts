@@ -46,21 +46,11 @@ describe("AI execution queue boundary", () => {
   });
 
   it("persists approval, queue, and audit atomically", () => {
-    expect(atomicDecision).toContain(
-      "for update",
-    );
-    expect(atomicDecision).toContain(
-      "update public.approval_requests",
-    );
-    expect(atomicDecision).toContain(
-      "insert into public.ai_execution_jobs",
-    );
-    expect(atomicDecision).toContain(
-      "insert into public.ai_actions_log",
-    );
-    expect(approval).toContain(
-      '"decide_ai_approval_request" as never',
-    );
+    expect(atomicDecision).toContain("for update");
+    expect(atomicDecision).toContain("update public.approval_requests");
+    expect(atomicDecision).toContain("insert into public.ai_execution_jobs");
+    expect(atomicDecision).toContain("insert into public.ai_actions_log");
+    expect(approval).toContain('"decide_ai_approval_request" as never');
     expect(queue).not.toContain("enqueueApprovedAction");
   });
 
@@ -78,10 +68,10 @@ describe("AI execution queue boundary", () => {
   it("updates the blank-database schema tripwire", () => {
     const parity = read("scripts/check-schema-parity.ts");
     expect(parity).toContain("tables: 107");
-    expect(parity).toContain("columns: 1453");
+    expect(parity).toContain("columns: 1454");
     expect(parity).toContain("policies: 156");
     expect(parity).toContain("indexes: 353");
-    expect(parity).toContain("functions: 117");
+    expect(parity).toContain("functions: 128");
     expect(parity).toContain('"ai_execution_jobs"');
     expect(parity).toContain('"decide_ai_approval_request"');
     expect(parity).toContain(

@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
 
-import { cleanupTestSalon, seedTestSalon } from "./helpers/db";
+import {
+  cleanupTestSalon,
+  cleanupTestUser,
+  seedTestSalon,
+  seedTestSalonMember,
+} from "./helpers/db";
 import { createServiceRoleClient } from "../src/shared/lib/supabase/serviceRole";
 import { ownerRescheduleTimeLabels } from "../src/shared/dashboard/ownerBookingNotificationCopy";
 import { salonWallTimeToUtcIso } from "../src/shared/lib/salonTime";
@@ -14,6 +19,7 @@ function canonicalIso(value: string | null | undefined): string | null {
 
 test.describe("Archived booking detail — read-only history", () => {
   let salonId: string;
+  let adminUserId: string;
 
   test.beforeAll(async () => {
     const seeded = await seedTestSalon({
@@ -23,6 +29,8 @@ test.describe("Archived booking detail — read-only history", () => {
       feature_flags: { archived_booking_recovery_enabled: false },
     });
     salonId = seeded.salonId;
+    const admin = await seedTestSalonMember(salonId, "admin");
+    adminUserId = admin.userId;
 
     const db = createServiceRoleClient();
     const [{ data: service }, { data: staff }] = await Promise.all([
@@ -32,12 +40,7 @@ test.describe("Archived booking detail — read-only history", () => {
         .eq("salon_id", salonId)
         .limit(1)
         .single(),
-      db
-        .from("staff")
-        .select("id")
-        .eq("salon_id", salonId)
-        .limit(1)
-        .single(),
+      db.from("staff").select("id").eq("salon_id", salonId).limit(1).single(),
     ]);
 
     const start = new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -53,33 +56,80 @@ test.describe("Archived booking detail — read-only history", () => {
       price_cents: 4500,
     };
 
-    const { error } = await db.from("bookings").insert([
-      {
-        ...shared,
-        client_name: "Archived Cancelled Guest",
-        client_phone: "16045551881",
-        status: "cancelled",
-      },
-      {
-        ...shared,
-        client_name: "Archived No Show Guest",
-        client_phone: "16045551882",
-        status: "no_show",
-        noshow_fee_cents: 1700,
-        noshow_charge_status: "waived",
-      },
-    ]);
+    const { data: seededBookings, error } = await db
+      .from("bookings")
+      .insert([
+        {
+          ...shared,
+          client_name: "Archived Cancelled Guest",
+          client_phone: "16045551881",
+          status: "confirmed",
+        },
+        {
+          ...shared,
+          client_name: "Archived No Show Guest",
+          client_phone: "16045551882",
+          status: "confirmed",
+          noshow_fee_cents: 1700,
+          noshow_charge_status: "saved",
+        },
+      ])
+      .select("id, client_name");
     if (error) throw new Error(error.message);
+    for (const booking of seededBookings ?? []) {
+      const noShow = booking.client_name === "Archived No Show Guest";
+      const { data: transition, error: transitionError } = await db.rpc(
+        "transition_booking_to_terminal" as never,
+        {
+          p_booking_id: booking.id,
+          p_salon_id: salonId,
+          p_actor_user_id: adminUserId,
+          p_actor_role: "admin",
+          p_reason: noShow ? "desk_no_show" : "desk_cancel",
+        } as never,
+      );
+      const result = (
+        Array.isArray(transition) ? transition[0] : transition
+      ) as { success?: boolean; code?: string } | null;
+      if (transitionError || !result?.success) {
+        throw new Error(
+          transitionError?.message ?? result?.code ?? "terminal seed failed",
+        );
+      }
+      if (noShow) {
+        const { data: fee, error: feeError } = await db.rpc(
+          "record_terminal_booking_fee_mutation" as never,
+          {
+            p_booking_id: booking.id,
+            p_salon_id: salonId,
+            p_operation: "waive",
+            p_request_id: crypto.randomUUID(),
+            p_actor_user_id: adminUserId,
+            p_actor_role: "admin",
+          } as never,
+        );
+        const feeResult = (Array.isArray(fee) ? fee[0] : fee) as {
+          success?: boolean;
+          code?: string;
+        } | null;
+        if (feeError || !feeResult?.success) {
+          throw new Error(
+            feeError?.message ?? feeResult?.code ?? "fee seed failed",
+          );
+        }
+      }
+    }
   });
 
   test.afterAll(async () => {
     await cleanupTestSalon(SLUG);
+    await cleanupTestUser(adminUserId);
   });
 
   test.beforeEach(async ({ page }) => {
-    await page.context().addCookies([
-      { name: "nailiq-demo-slug", value: SLUG, url: BASE_URL },
-    ]);
+    await page
+      .context()
+      .addCookies([{ name: "nailiq-demo-slug", value: SLUG, url: BASE_URL }]);
     await page.goto(`/dashboard/${SLUG}/activity`);
     await expect(
       page.getByRole("heading", { name: "Nhật ký hoạt động" }),
@@ -154,12 +204,7 @@ test.describe("Booking mutation audit — reschedule and cancel", () => {
         .eq("salon_id", salonId)
         .limit(1)
         .single(),
-      db
-        .from("staff")
-        .select("id")
-        .eq("salon_id", salonId)
-        .limit(1)
-        .single(),
+      db.from("staff").select("id").eq("salon_id", salonId).limit(1).single(),
     ]);
     serviceId = String(service?.id ?? "");
     staffId = String(staff?.id ?? "");
@@ -222,11 +267,7 @@ test.describe("Booking mutation audit — reschedule and cancel", () => {
     const fixture = await seedBookingWithToken("Mutation Reschedule Guest");
     const target = nextOpenUtcDate(6);
     const targetYmd = target.toISOString().slice(0, 10);
-    const expectedNewStart = salonWallTimeToUtcIso(
-      targetYmd,
-      14 * 60,
-      "UTC",
-    );
+    const expectedNewStart = salonWallTimeToUtcIso(targetYmd, 14 * 60, "UTC");
 
     const response = await page.request.post("/api/booking/reschedule-action", {
       data: {

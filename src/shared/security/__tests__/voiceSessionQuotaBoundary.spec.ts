@@ -20,7 +20,10 @@ const twilioVoice = fs.readFileSync(
   "utf8",
 );
 const migration = fs.readFileSync(
-  path.join(root, "supabase/migrations/20260801132953_release_voice_session_reservation.sql"),
+  path.join(
+    root,
+    "supabase/migrations/20260801132953_release_voice_session_reservation.sql",
+  ),
   "utf8",
 );
 const parity = fs.readFileSync(
@@ -46,7 +49,7 @@ describe("Voice session quota and renewal boundary", () => {
     expect(migration).toMatch(
       /revoke all on function public\.release_voice_session_reservation\(uuid\)[\s\S]*from public, anon, authenticated/i,
     );
-    expect(parity).toContain("functions: 117");
+    expect(parity).toContain("functions: 128");
     expect(parity).toContain('"release_voice_session_reservation"');
   });
 
@@ -65,9 +68,14 @@ describe("Voice session quota and renewal boundary", () => {
   });
 
   it("meters phone calls atomically and releases orphaned reservations", () => {
-    const reserve = phoneConfig.indexOf('"increment_voice_session_if_under_limit"');
+    const reserve = phoneConfig.indexOf(
+      '"increment_voice_session_if_under_limit"',
+    );
     const insert = phoneConfig.indexOf('.from("voice_ai_sessions")', reserve);
-    const release = phoneConfig.indexOf('"release_voice_session_reservation"', insert);
+    const release = phoneConfig.indexOf(
+      '"release_voice_session_reservation"',
+      insert,
+    );
     expect(reserve).toBeGreaterThan(-1);
     expect(insert).toBeGreaterThan(reserve);
     expect(release).toBeGreaterThan(insert);

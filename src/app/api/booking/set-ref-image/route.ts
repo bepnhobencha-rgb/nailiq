@@ -25,7 +25,8 @@ export async function POST(req: Request) {
   const { error } = await db
     .from("bookings")
     .update({ reference_image_path: refPath } as never)
-    .eq("id", bookingId);
+    .eq("id", bookingId)
+    .in("status", ["pending", "confirmed"]);
 
   if (error) {
     console.error("[set-ref-image] update error", error.message);

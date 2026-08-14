@@ -12,7 +12,10 @@
  */
 import "server-only";
 import { looseServiceClient, type Row } from "./looseDb";
-import { parseCardGateRules, cardRequiredFull } from "@/shared/noshow/cardGateRules";
+import {
+  parseCardGateRules,
+  cardRequiredFull,
+} from "@/shared/noshow/cardGateRules";
 import { resolvePaymentProvider } from "@/shared/integrations/payments";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import {
@@ -29,13 +32,75 @@ const num = (v: unknown): number => (v == null ? 0 : Number(v));
 
 type Db = ReturnType<typeof looseServiceClient>;
 
+export type TerminalFeeAuditActor = {
+  userId: string;
+  role: "owner" | "admin" | "senior" | "receptionist";
+};
+
+type TerminalFeeOperation =
+  | "charge_succeeded"
+  | "charge_reconciled"
+  | "charge_failed"
+  | "refund_succeeded"
+  | "waive"
+  | "card_removed"
+  | "payment_link_created"
+  | "payment_link_paid";
+
+export async function recordTerminalBookingFeeMutation(input: {
+  bookingId: string;
+  salonId: string;
+  operation: TerminalFeeOperation;
+  requestId?: string;
+  actor?: TerminalFeeAuditActor;
+  paymentId?: string | null;
+  feeCents?: number | null;
+  error?: string | null;
+  linkUrl?: string | null;
+  orderId?: string | null;
+}): Promise<{ ok: boolean; code?: string; chargeStatus?: string }> {
+  const db = createServiceRoleClient();
+  const { data, error } = await db.rpc(
+    "record_terminal_booking_fee_mutation" as never,
+    {
+      p_booking_id: input.bookingId,
+      p_salon_id: input.salonId,
+      p_operation: input.operation,
+      p_request_id: input.requestId ?? crypto.randomUUID(),
+      p_actor_user_id: input.actor?.userId ?? null,
+      p_actor_role: input.actor?.role ?? "system",
+      p_payment_id: input.paymentId ?? null,
+      p_fee_cents: input.feeCents ?? null,
+      p_error: input.error ?? null,
+      p_link_url: input.linkUrl ?? null,
+      p_order_id: input.orderId ?? null,
+    } as never,
+  );
+  if (error) {
+    console.error("[recordTerminalBookingFeeMutation]", input.operation, error);
+    return { ok: false, code: "database_error" };
+  }
+  const result = (Array.isArray(data) ? data[0] : data) as {
+    success?: boolean;
+    code?: string;
+    charge_status?: string;
+  } | null;
+  return {
+    ok: result?.success === true,
+    code: result?.code,
+    chargeStatus: result?.charge_status,
+  };
+}
+
 /** No-show policy is provider-agnostic now: it lives on `salons`, not on the
  *  Square integration. "Connected" (is a provider hooked up) is checked
  *  separately via resolvePaymentProvider, so a Stripe salon works too. */
 async function loadPolicy(db: Db, salonId: string) {
   const { data } = await db
     .from("salons")
-    .select("noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold, noshow_group_whole_party, noshow_deposit_escalation_threshold, noshow_require_new_customer, noshow_require_prior_noshow, noshow_min_noshow_count, noshow_require_high_risk")
+    .select(
+      "noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold, noshow_group_whole_party, noshow_deposit_escalation_threshold, noshow_require_new_customer, noshow_require_prior_noshow, noshow_min_noshow_count, noshow_require_high_risk",
+    )
     .eq("id", salonId)
     .maybeSingle();
   const r = (data as Row) ?? {};
@@ -79,7 +144,8 @@ async function noShowBaseCents(
   const { data } = await db
     .from("bookings")
     .select("price_cents, status")
-    .eq("group_id", groupId);
+    .eq("group_id", groupId)
+    .eq("salon_id", str(booking.salon_id));
   // Exclude cancelled members in JS (the loose Db query type has no .neq()).
   const rows = ((data as Row[] | null) ?? []).filter(
     (r) => str(r.status) !== "cancelled",
@@ -106,31 +172,49 @@ async function depositsEnabled(db: Db, salonId: string): Promise<boolean> {
     .select("deposit_enabled")
     .eq("salon_id", salonId)
     .maybeSingle();
-  return (data as { deposit_enabled?: boolean } | null)?.deposit_enabled === true;
+  return (
+    (data as { deposit_enabled?: boolean } | null)?.deposit_enabled === true
+  );
 }
 
-async function supersedeDepositWithCard(db: Db, bookingId: string): Promise<void> {
+async function supersedeDepositWithCard(
+  db: Db,
+  bookingId: string,
+): Promise<void> {
   await db
     .from("bookings")
-    .update({ deposit_required: false, deposit_status: "not_required" } as never)
+    .update({
+      deposit_required: false,
+      deposit_status: "not_required",
+    } as never)
     .eq("id", bookingId)
+    .in("status", ["pending", "confirmed"])
     .eq("deposit_status", "required");
 }
 
 /** Whether this booking should be asked to leave a card (risk-gated). The
  *  public booking page calls this to decide whether to render the card step. */
-export async function noShowCardDecision(
-  bookingId: string,
-): Promise<{ required: boolean; feeCents: number; reason: string; partySize?: number }> {
+export async function noShowCardDecision(bookingId: string): Promise<{
+  required: boolean;
+  feeCents: number;
+  reason: string;
+  partySize?: number;
+}> {
   const db = looseServiceClient();
   const { data } = await db
     .from("bookings")
-    .select("salon_id, price_cents, no_show_risk_score, noshow_card_id, noshow_card_required, client_phone, group_id")
+    .select(
+      "salon_id, status, price_cents, no_show_risk_score, noshow_card_id, noshow_card_required, client_phone, group_id",
+    )
     .eq("id", bookingId)
     .maybeSingle();
   const b = data as Row | null;
   if (!b) return { required: false, feeCents: 0, reason: "booking not found" };
-  if (b.noshow_card_id) return { required: false, feeCents: 0, reason: "card already saved" };
+  if (!["pending", "confirmed"].includes(str(b.status))) {
+    return { required: false, feeCents: 0, reason: "booking is not active" };
+  }
+  if (b.noshow_card_id)
+    return { required: false, feeCents: 0, reason: "card already saved" };
 
   const policy = await loadPolicy(db, str(b.salon_id));
   if (!policy.enabled) {
@@ -139,7 +223,11 @@ export async function noShowCardDecision(
   // Connection check is provider-agnostic: a usable Square OR Stripe provider.
   const provider = await resolvePaymentProvider(str(b.salon_id));
   if (!provider) {
-    return { required: false, feeCents: 0, reason: "no payment provider connected" };
+    return {
+      required: false,
+      feeCents: 0,
+      reason: "no payment provider connected",
+    };
   }
 
   // Gate: a NEW customer (no prior non-cancelled booking at this salon) always
@@ -147,7 +235,10 @@ export async function noShowCardDecision(
   // Loyal returning clients with a clean history are never asked (low friction).
   const risk = num(b.no_show_risk_score);
   const { isNew, hadNoShow, noShowCount } = await priorBookingStats(
-    db, str(b.salon_id), str(b.client_phone), bookingId,
+    db,
+    str(b.salon_id),
+    str(b.client_phone),
+    bookingId,
   );
   // Auto-escalation: a customer with ≥ threshold prior no-shows must pay an
   // UPFRONT deposit (handled by evaluateBookingNoShow), so we do NOT ask them
@@ -195,13 +286,22 @@ export async function noShowCardDecision(
   }
 
   // Whole-party protection: for a group lead, the fee covers the entire party.
-  const { baseCents, partySize } = await noShowBaseCents(db, b, policy.wholeParty);
+  const { baseCents, partySize } = await noShowBaseCents(
+    db,
+    b,
+    policy.wholeParty,
+  );
   const feeCents = Math.round((baseCents * policy.percent) / 100);
-  if (feeCents <= 0) return { required: false, feeCents: 0, reason: "fee is zero" };
+  if (feeCents <= 0)
+    return { required: false, feeCents: 0, reason: "fee is zero" };
   return {
     required: true,
     feeCents,
-    reason: isNew ? "new customer" : hadNoShow ? "prior no-show" : `risk ${risk} ≥ ${policy.threshold}`,
+    reason: isNew
+      ? "new customer"
+      : hadNoShow
+        ? "prior no-show"
+        : `risk ${risk} ≥ ${policy.threshold}`,
     partySize,
   };
 }
@@ -216,7 +316,8 @@ async function priorBookingStats(
   excludeBookingId: string,
 ): Promise<{ isNew: boolean; hadNoShow: boolean; noShowCount: number }> {
   const phone = clientPhone.trim();
-  if (phone.length < 8) return { isNew: true, hadNoShow: false, noShowCount: 0 };
+  if (phone.length < 8)
+    return { isNew: true, hadNoShow: false, noShowCount: 0 };
   const { data } = await db
     .from("bookings")
     .select("status")
@@ -248,18 +349,24 @@ export async function saveNoShowCardForBooking(
   const db = looseServiceClient();
   const { data } = await db
     .from("bookings")
-    .select("id, salon_id, client_name, client_phone, client_email, price_cents, noshow_card_id")
+    .select(
+      "id, salon_id, status, client_name, client_phone, client_email, price_cents, noshow_card_id",
+    )
     .eq("id", bookingId)
     .maybeSingle();
   const b = data as Row | null;
   if (!b) return { ok: false, reason: "booking not found" };
+  if (!["pending", "confirmed"].includes(str(b.status))) {
+    return { ok: false, reason: "booking is not active" };
+  }
   if (b.noshow_card_id) return { ok: true, reason: "already saved" }; // idempotent
 
   const decision = await noShowCardDecision(bookingId);
   if (!decision.required) return { ok: false, reason: decision.reason };
 
   const provider = await resolvePaymentProvider(str(b.salon_id));
-  if (!provider) return { ok: false, reason: "payment provider not configured" };
+  if (!provider)
+    return { ok: false, reason: "payment provider not configured" };
   const saved = await provider.saveCardOnFile({
     customer: {
       name: str(b.client_name) || null,
@@ -280,7 +387,10 @@ export async function saveNoShowCardForBooking(
     .eq("id", str(b.salon_id))
     .maybeSingle();
   const sr = salonRow as Row | null;
-  const currency = String(sr?.currency_code || "USD").trim().toUpperCase() || "USD";
+  const currency =
+    String(sr?.currency_code || "USD")
+      .trim()
+      .toUpperCase() || "USD";
   const feeStr = `${(decision.feeCents / 100).toFixed(2)} ${currency}`;
   // When the organizer's card covers a whole party, say so explicitly in the
   // consent — the fee is for the group, not one person (chargeback evidence).
@@ -304,7 +414,7 @@ export async function saveNoShowCardForBooking(
     capturedAt: new Date().toISOString(),
   };
 
-  await db
+  const { data: persisted, error: persistError } = await db
     .from("bookings")
     .update({
       noshow_card_id: saved.cardId,
@@ -316,7 +426,17 @@ export async function saveNoShowCardForBooking(
       noshow_consent_at: new Date().toISOString(),
       noshow_consent_meta: consentMeta,
     } as never)
-    .eq("id", bookingId);
+    .eq("id", bookingId)
+    .in("status", ["pending", "confirmed"])
+    .select("id")
+    .maybeSingle();
+  if (persistError) {
+    console.error("[saveNoShowCardForBooking] recording failed", persistError);
+    return { ok: false, reason: "card recording failed" };
+  }
+  if (!persisted) {
+    return { ok: false, reason: "booking is not active" };
+  }
 
   await supersedeDepositWithCard(db, bookingId);
 
@@ -339,11 +459,14 @@ export async function reuseNoShowCardForBooking(
   const db = looseServiceClient();
   const { data } = await db
     .from("bookings")
-    .select("id, salon_id, client_phone, noshow_card_id")
+    .select("id, salon_id, status, client_phone, noshow_card_id")
     .eq("id", bookingId)
     .maybeSingle();
   const b = data as Row | null;
   if (!b) return { ok: false, reason: "booking not found" };
+  if (!["pending", "confirmed"].includes(str(b.status))) {
+    return { ok: false, reason: "booking is not active" };
+  }
   if (b.noshow_card_id) return { ok: true, reason: "already saved" }; // idempotent
 
   const decision = await noShowCardDecision(bookingId);
@@ -357,13 +480,18 @@ export async function reuseNoShowCardForBooking(
     .select("phone, salon_id, expires_at, consumed_at")
     .eq("id", otpSessionId)
     .maybeSingle();
-  const sess = sessRow as
-    | { phone: string; salon_id: string; expires_at: string; consumed_at: string | null }
-    | null;
+  const sess = sessRow as {
+    phone: string;
+    salon_id: string;
+    expires_at: string;
+    consumed_at: string | null;
+  } | null;
   if (!sess) return { ok: false, reason: "otp invalid" };
-  if (sess.salon_id !== str(b.salon_id)) return { ok: false, reason: "otp salon mismatch" };
+  if (sess.salon_id !== str(b.salon_id))
+    return { ok: false, reason: "otp salon mismatch" };
   if (sess.consumed_at) return { ok: false, reason: "otp consumed" };
-  if (Date.parse(sess.expires_at) < Date.now()) return { ok: false, reason: "otp expired" };
+  if (Date.parse(sess.expires_at) < Date.now())
+    return { ok: false, reason: "otp expired" };
   const sessionPhone = (sess.phone || "").replace(/\D/g, "");
   const bookingPhone = str(b.client_phone).replace(/\D/g, "");
   if (!sessionPhone || sessionPhone !== bookingPhone) {
@@ -372,7 +500,8 @@ export async function reuseNoShowCardForBooking(
 
   // Provider-agnostic: re-derive the saved card from the OTP-verified phone.
   const provider = await resolvePaymentProvider(str(b.salon_id));
-  if (!provider) return { ok: false, reason: "payment provider not configured" };
+  if (!provider)
+    return { ok: false, reason: "payment provider not configured" };
   const card = await provider.findSavedCardByPhone(sessionPhone);
   if (!card || !card.cardId) return { ok: false, reason: "no saved card" };
   const customerId = card.customerId;
@@ -383,7 +512,10 @@ export async function reuseNoShowCardForBooking(
     .select("currency_code")
     .eq("id", str(b.salon_id))
     .maybeSingle();
-  const currency = String((salonRow as Row | null)?.currency_code || "USD").trim().toUpperCase() || "USD";
+  const currency =
+    String((salonRow as Row | null)?.currency_code || "USD")
+      .trim()
+      .toUpperCase() || "USD";
   const feeStr = `${(decision.feeCents / 100).toFixed(2)} ${currency}`;
   const consentMeta = {
     policyText: `Cardholder authorized this salon to charge a no-show fee of ${feeStr} to their card on file (${card.brand} ending ${card.last4}) only if they do not show up for this appointment. No charge is made at booking. The cardholder may remove the card at any time.`,
@@ -395,7 +527,7 @@ export async function reuseNoShowCardForBooking(
     capturedAt: new Date().toISOString(),
   };
 
-  await db
+  const { data: persisted, error: persistError } = await db
     .from("bookings")
     .update({
       noshow_card_id: card.cardId,
@@ -407,7 +539,17 @@ export async function reuseNoShowCardForBooking(
       noshow_consent_at: new Date().toISOString(),
       noshow_consent_meta: consentMeta,
     } as never)
-    .eq("id", bookingId);
+    .eq("id", bookingId)
+    .in("status", ["pending", "confirmed"])
+    .select("id")
+    .maybeSingle();
+  if (persistError) {
+    console.error("[reuseNoShowCardForBooking] recording failed", persistError);
+    return { ok: false, reason: "card recording failed" };
+  }
+  if (!persisted) {
+    return { ok: false, reason: "booking is not active" };
+  }
 
   await supersedeDepositWithCard(db, bookingId);
 
@@ -444,16 +586,27 @@ export async function autoAttachReturningCard(
     const db = looseServiceClient();
     const { data } = await db
       .from("bookings")
-      .select("id, salon_id, price_cents, client_phone, noshow_card_id, group_id, deposit_required, deposit_status")
+      .select(
+        "id, salon_id, status, price_cents, client_phone, noshow_card_id, group_id, deposit_required, deposit_status",
+      )
       .eq("id", bookingId)
       .maybeSingle();
     const b = data as Row | null;
     if (!b) return { attached: false, reason: "booking not found" };
+    if (!["pending", "confirmed"].includes(str(b.status))) {
+      return { attached: false, reason: "booking is not active" };
+    }
     if (b.noshow_card_id) {
-      await db
+      const { data: existingCard, error: existingCardError } = await db
         .from("bookings")
         .update({ noshow_card_required: false } as never)
-        .eq("id", bookingId);
+        .eq("id", bookingId)
+        .in("status", ["pending", "confirmed"])
+        .select("id")
+        .maybeSingle();
+      if (existingCardError || !existingCard) {
+        return { attached: false, reason: "booking is not active" };
+      }
       return { attached: true, reason: "already saved" };
     }
     const depositStatus = str(b.deposit_status);
@@ -468,15 +621,18 @@ export async function autoAttachReturningCard(
     if (phone.length < 8) return { attached: false, reason: "no usable phone" };
 
     const policy = await loadPolicy(db, str(b.salon_id));
-    if (!policy.enabled) return { attached: false, reason: "no-show protection off" };
+    if (!policy.enabled)
+      return { attached: false, reason: "no-show protection off" };
 
     const provider = await resolvePaymentProvider(str(b.salon_id));
-    if (!provider) return { attached: false, reason: "no payment provider connected" };
+    if (!provider)
+      return { attached: false, reason: "no payment provider connected" };
 
     // Only CARRY FORWARD a card the customer already authorized — never enroll a
     // new card here. No saved card → leave it to the new-customer capture flow.
     const card = await provider.findSavedCardByPhone(phone);
-    if (!card || !card.cardId) return { attached: false, reason: "no saved card on file" };
+    if (!card || !card.cardId)
+      return { attached: false, reason: "no saved card on file" };
 
     // Whole-party: a returning organizer's carried-forward card also covers the
     // group total (keeps it consistent with the new-card path).
@@ -491,7 +647,9 @@ export async function autoAttachReturningCard(
       .maybeSingle();
     const sr = salonRow as Row | null;
     const currency =
-      String(sr?.currency_code || "USD").trim().toUpperCase() || "USD";
+      String(sr?.currency_code || "USD")
+        .trim()
+        .toUpperCase() || "USD";
     const feeStr = `${(feeCents / 100).toFixed(2)} ${currency}`;
     const { policyEvidence } = await import("@/shared/lib/cancellationPolicy");
     const consentMeta = {
@@ -509,7 +667,7 @@ export async function autoAttachReturningCard(
       ),
     };
 
-    await db
+    const { data: persisted, error: persistError } = await db
       .from("bookings")
       .update({
         noshow_card_id: card.cardId,
@@ -522,7 +680,17 @@ export async function autoAttachReturningCard(
         noshow_consent_meta: consentMeta,
         noshow_card_required: false,
       } as never)
-      .eq("id", bookingId);
+      .eq("id", bookingId)
+      .in("status", ["pending", "confirmed"])
+      .select("id")
+      .maybeSingle();
+    if (persistError) {
+      console.error("[autoAttachReturningCard] recording failed", persistError);
+      return { attached: false, reason: "card recording failed" };
+    }
+    if (!persisted) {
+      return { attached: false, reason: "booking is not active" };
+    }
 
     await supersedeDepositWithCard(db, bookingId);
 
@@ -551,16 +719,24 @@ export async function chargeNoShowFee(
      *  persisted back onto noshow_fee_cents so a later refund returns exactly
      *  what was taken. */
     amountCentsOverride?: number;
+    /** Attributed desk actor. Automated/customer/voice workflows omit this and
+     * are recorded as system; the database still scopes the booking/salon. */
+    auditActor?: TerminalFeeAuditActor;
   },
 ): Promise<{ charged: boolean; reason: string; paymentId?: string }> {
   const db = looseServiceClient();
   const { data } = await db
     .from("bookings")
-    .select("id, salon_id, noshow_card_id, noshow_customer_id, noshow_fee_cents, noshow_charge_status, noshow_charge_attempts, noshow_consent_at")
+    .select(
+      "id, salon_id, status, noshow_card_id, noshow_customer_id, noshow_fee_cents, noshow_charge_status, noshow_charge_attempts, noshow_consent_at",
+    )
     .eq("id", bookingId)
     .maybeSingle();
   const b = data as Row | null;
   if (!b) return { charged: false, reason: "booking not found" };
+  if (!["cancelled", "no_show"].includes(str(b.status))) {
+    return { charged: false, reason: "booking is not terminal" };
+  }
   if (!b.noshow_card_id) return { charged: false, reason: "no card on file" };
   if (b.noshow_charge_status === "charged") {
     return { charged: false, reason: "already charged" }; // idempotent
@@ -576,7 +752,8 @@ export async function chargeNoShowFee(
   if (feeCents <= 0) return { charged: false, reason: "fee is zero" };
 
   const provider = await resolvePaymentProvider(str(b.salon_id));
-  if (!provider) return { charged: false, reason: "payment provider not configured" };
+  if (!provider)
+    return { charged: false, reason: "payment provider not configured" };
 
   // ── Double-charge guard (opt-in; Square only) ────────────────────────────
   // The daily retry cron rotates the Square idempotency key per attempt (so a
@@ -588,7 +765,10 @@ export async function chargeNoShowFee(
   // charge, so this can only PREVENT a duplicate, never cause one. Gated OFF by
   // default: merging is a no-op until verified against a Square sandbox and the
   // env flag is set.
-  if (process.env.NOSHOW_RECONCILE_BEFORE_CHARGE === "1" && provider.kind === "square") {
+  if (
+    process.env.NOSHOW_RECONCILE_BEFORE_CHARGE === "1" &&
+    provider.kind === "square"
+  ) {
     try {
       const cfg = await getSquareConfig(db, str(b.salon_id));
       // Fee is charged within ~7 days of the appointment (+ up to 3 daily
@@ -600,25 +780,41 @@ export async function chargeNoShowFee(
         since,
       );
       if (existing) {
-        await db
-          .from("bookings")
-          .update({
-            noshow_charge_status: "charged",
-            noshow_payment_id: existing.id,
-            noshow_charge_attempts: num(b.noshow_charge_attempts) + 1,
-            noshow_charge_error: null,
-            noshow_fee_cents: feeCents,
-          } as never)
-          .eq("id", bookingId);
-        console.warn("[chargeNoShowFee] reconciled existing Square payment — skipped re-charge", {
+        const recorded = await recordTerminalBookingFeeMutation({
           bookingId,
+          salonId: str(b.salon_id),
+          operation: "charge_reconciled",
+          actor: opts?.auditActor,
           paymentId: existing.id,
+          feeCents,
         });
-        return { charged: false, reason: "already_charged_reconciled", paymentId: existing.id };
+        if (!recorded.ok) {
+          return {
+            charged: false,
+            reason: "existing_charge_recording_failed",
+            paymentId: existing.id,
+          };
+        }
+        console.warn(
+          "[chargeNoShowFee] reconciled existing Square payment — skipped re-charge",
+          {
+            bookingId,
+            paymentId: existing.id,
+          },
+        );
+        return {
+          charged: false,
+          reason: "already_charged_reconciled",
+          paymentId: existing.id,
+        };
       }
     } catch (e) {
       // Reconcile is best-effort; never let it block a legitimate charge.
-      console.error("[chargeNoShowFee] reconcile guard failed — proceeding to charge", { bookingId }, e);
+      console.error(
+        "[chargeNoShowFee] reconcile guard failed — proceeding to charge",
+        { bookingId },
+        e,
+      );
     }
   }
 
@@ -632,29 +828,38 @@ export async function chargeNoShowFee(
       referenceId: noShowPaymentReferenceId(bookingId),
     });
     const charged = isSuccessfulNoShowChargeStatus(pay.status);
-    await db
-      .from("bookings")
-      .update({
-        noshow_charge_status: charged ? "charged" : "failed",
-        noshow_payment_id: pay.paymentId,
-        noshow_charge_attempts: num(b.noshow_charge_attempts) + 1,
-        noshow_charge_error: charged ? null : pay.status,
-        // Persist the actual amount taken so a later refund returns exactly it.
-        ...(charged ? { noshow_fee_cents: feeCents } : {}),
-      } as never)
-      .eq("id", bookingId);
+    const recorded = await recordTerminalBookingFeeMutation({
+      bookingId,
+      salonId: str(b.salon_id),
+      operation: charged ? "charge_succeeded" : "charge_failed",
+      actor: opts?.auditActor,
+      paymentId: pay.paymentId,
+      feeCents: charged ? feeCents : null,
+      error: charged ? null : pay.status,
+    });
+    if (!recorded.ok) {
+      return {
+        charged: false,
+        reason: charged
+          ? "charge_recording_failed"
+          : "failure_recording_failed",
+        paymentId: pay.paymentId,
+      };
+    }
     return { charged, reason: pay.status, paymentId: pay.paymentId };
   } catch (e) {
     const errMsg = e instanceof Error ? e.message : "charge failed";
-    await db
-      .from("bookings")
-      .update({
-        noshow_charge_status: "failed",
-        noshow_charge_attempts: num(b.noshow_charge_attempts) + 1,
-        noshow_charge_error: errMsg,
-      } as never)
-      .eq("id", bookingId);
-    return { charged: false, reason: errMsg };
+    const recorded = await recordTerminalBookingFeeMutation({
+      bookingId,
+      salonId: str(b.salon_id),
+      operation: "charge_failed",
+      actor: opts?.auditActor,
+      error: errMsg,
+    });
+    return {
+      charged: false,
+      reason: recorded.ok ? errMsg : "failure_recording_failed",
+    };
   }
 }
 
@@ -670,7 +875,9 @@ export async function refundNoShowFee(
   const db = looseServiceClient();
   const { data } = await db
     .from("bookings")
-    .select("id, salon_id, noshow_payment_id, noshow_fee_cents, noshow_charge_status")
+    .select(
+      "id, salon_id, noshow_payment_id, noshow_fee_cents, noshow_charge_status",
+    )
     .eq("id", bookingId)
     .maybeSingle();
   const b = data as Row | null;
@@ -683,7 +890,8 @@ export async function refundNoShowFee(
     return { refunded: false, reason: "missing payment id / amount" };
 
   const provider = await resolvePaymentProvider(str(b.salon_id));
-  if (!provider) return { refunded: false, reason: "payment provider not configured" };
+  if (!provider)
+    return { refunded: false, reason: "payment provider not configured" };
   try {
     await provider.refund({
       paymentId,
@@ -691,10 +899,14 @@ export async function refundNoShowFee(
       reason: opts?.reason ?? "Late cancellation fee refunded",
       idempotencyKey: `refund:${bookingId}`,
     });
-    await db
-      .from("bookings")
-      .update({ noshow_charge_status: "refunded" } as never)
-      .eq("id", bookingId);
+    const recorded = await recordTerminalBookingFeeMutation({
+      bookingId,
+      salonId: str(b.salon_id),
+      operation: "refund_succeeded",
+    });
+    if (!recorded.ok) {
+      return { refunded: false, reason: "refund_recording_failed" };
+    }
     return { refunded: true, reason: "refunded" };
   } catch (e) {
     const errMsg = e instanceof Error ? e.message : "refund failed";
@@ -767,9 +979,12 @@ export async function refundRefilledLateCancels(): Promise<{
  * is stored on the booking; reconcileNoShowFeeLinks flips the fee to 'charged'
  * once the customer pays. Square-only (payment links are a Square feature).
  */
-export async function createNoShowFeeLink(
-  bookingId: string,
-): Promise<{ ok: boolean; url?: string; amountCents?: number; reason?: string }> {
+export async function createNoShowFeeLink(bookingId: string): Promise<{
+  ok: boolean;
+  url?: string;
+  amountCents?: number;
+  reason?: string;
+}> {
   const db = looseServiceClient();
   const { data } = await db
     .from("bookings")
@@ -798,13 +1013,14 @@ export async function createNoShowFeeLink(
     idempotencyKey: `nsf:${bookingId}`,
     note: "No-show fee",
   });
-  await db
-    .from("bookings")
-    .update({
-      noshow_fee_link_url: link.url,
-      noshow_fee_order_id: link.orderId,
-    } as never)
-    .eq("id", bookingId);
+  const recorded = await recordTerminalBookingFeeMutation({
+    bookingId,
+    salonId: str(b.salon_id),
+    operation: "payment_link_created",
+    linkUrl: link.url,
+    orderId: link.orderId,
+  });
+  if (!recorded.ok) return { ok: false, reason: "fee link recording failed" };
   return { ok: true, url: link.url, amountCents: feeCents };
 }
 
@@ -836,21 +1052,24 @@ export async function reconcileNoShowFeeLinks(
         order.state === "COMPLETED" ||
         order.paidCents >= num(r.noshow_fee_cents)
       ) {
-        await db
-          .from("bookings")
-          .update({
-            noshow_charge_status: "charged",
-            noshow_payment_id: order.tenderPaymentId,
-          } as never)
-          .eq("id", str(r.id));
-        paid++;
+        const recorded = await recordTerminalBookingFeeMutation({
+          bookingId: str(r.id),
+          salonId,
+          operation: "payment_link_paid",
+          paymentId: order.tenderPaymentId,
+        });
+        if (recorded.ok) paid++;
       }
     } catch (e) {
       // Best-effort — retry next run (behaviour unchanged). Log so a PERSISTENT
       // failure — a customer who PAID the fee link but whose noshow_charge_status
       // is stuck unresolved because its order never resolves — is diagnosable
       // instead of silently swallowed.
-      console.error("[reconcileNoShowFeeLinks] order lookup/flip failed", { bookingId: str(r.id), orderId }, e);
+      console.error(
+        "[reconcileNoShowFeeLinks] order lookup/flip failed",
+        { bookingId: str(r.id), orderId },
+        e,
+      );
     }
   }
   return { checked: rows.length, paid };

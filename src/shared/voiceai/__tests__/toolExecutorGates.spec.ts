@@ -70,14 +70,33 @@ function mockDb(fixtures: Record<string, Row[] | Row | null>) {
       limit: () => chain,
       single: async () => ({ data: one, error: null }),
       maybeSingle: async () => ({ data: one, error: null }),
-      then: (resolve: (v: unknown) => unknown) => resolve({ data: list, error: null }),
+      then: (resolve: (v: unknown) => unknown) =>
+        resolve({ data: list, error: null }),
     };
     return chain;
   };
-  return { from: (table: string) => make(table) } as never;
+  return {
+    from: (table: string) => make(table),
+    rpc: async (name: string) => {
+      if (name === "cancel_booking_group_as_system") {
+        return { data: { success: true, code: "ok" }, error: null };
+      }
+      if (name === "cancel_booking_by_id") {
+        return { data: [{ ok: true, code: "ok" }], error: null };
+      }
+      return {
+        data: null,
+        error: { message: `Unexpected RPC in test: ${name}` },
+      };
+    },
+  } as never;
 }
 
-const salonRow = { id: SALON_ID, timezone: "America/Los_Angeles", name: "Test Salon" };
+const salonRow = {
+  id: SALON_ID,
+  timezone: "America/Los_Angeles",
+  name: "Test Salon",
+};
 
 /** Every mutating tool, with the minimum args needed to reach its gate. */
 const MUTATING_TOOLS: {
@@ -224,8 +243,20 @@ describe("toolExecutor — a whole party is never cancelled without proof", () =
     salons: salonRow,
     phone_otp_sessions: null,
     bookings: [
-      { id: "b1", status: "confirmed", client_phone: OWNER_PHONE, is_group_organizer: true, group_id: GROUP_ID },
-      { id: "b2", status: "confirmed", client_phone: null, is_group_organizer: false, group_id: GROUP_ID },
+      {
+        id: "b1",
+        status: "confirmed",
+        client_phone: OWNER_PHONE,
+        is_group_organizer: true,
+        group_id: GROUP_ID,
+      },
+      {
+        id: "b2",
+        status: "confirmed",
+        client_phone: null,
+        is_group_organizer: false,
+        group_id: GROUP_ID,
+      },
     ],
   };
 
@@ -234,7 +265,11 @@ describe("toolExecutor — a whole party is never cancelled without proof", () =
   // was dead code: the phone lookup returned on all of its paths and sat in
   // front of it, so no argument combination ever arrived here.
   it("cancelling a whole party without proof is refused", async () => {
-    const body = await call("cancel_booking", { group_id: GROUP_ID }, partyFixtures);
+    const body = await call(
+      "cancel_booking",
+      { group_id: GROUP_ID },
+      partyFixtures,
+    );
     expect(body.error).toBe("otp_required");
     expect(body.success).toBeUndefined();
     expect(body.cancelled_count).toBeUndefined();
@@ -253,24 +288,50 @@ describe("toolExecutor — a whole party is never cancelled without proof", () =
   });
 
   it("a party with no phone anywhere is refused rather than cancelled unverified", async () => {
-    const body = await call("cancel_booking", { group_id: GROUP_ID }, {
-      ...partyFixtures,
-      bookings: [
-        { id: "b1", status: "confirmed", client_phone: null, is_group_organizer: true, group_id: GROUP_ID },
-        { id: "b2", status: "confirmed", client_phone: "", is_group_organizer: false, group_id: GROUP_ID },
-      ],
-    });
+    const body = await call(
+      "cancel_booking",
+      { group_id: GROUP_ID },
+      {
+        ...partyFixtures,
+        bookings: [
+          {
+            id: "b1",
+            status: "confirmed",
+            client_phone: null,
+            is_group_organizer: true,
+            group_id: GROUP_ID,
+          },
+          {
+            id: "b2",
+            status: "confirmed",
+            client_phone: "",
+            is_group_organizer: false,
+            group_id: GROUP_ID,
+          },
+        ],
+      },
+    );
     expect(body.error).toBe("group_not_verifiable");
     expect(body.cancelled_count).toBeUndefined();
   });
 
   it("a party already fully cancelled is a 404, not a no-op success", async () => {
-    const body = await call("cancel_booking", { group_id: GROUP_ID }, {
-      ...partyFixtures,
-      bookings: [
-        { id: "b1", status: "cancelled", client_phone: OWNER_PHONE, is_group_organizer: true, group_id: GROUP_ID },
-      ],
-    });
+    const body = await call(
+      "cancel_booking",
+      { group_id: GROUP_ID },
+      {
+        ...partyFixtures,
+        bookings: [
+          {
+            id: "b1",
+            status: "cancelled",
+            client_phone: OWNER_PHONE,
+            is_group_organizer: true,
+            group_id: GROUP_ID,
+          },
+        ],
+      },
+    );
     expect(body.error).toBe("group_not_found_or_already_cancelled");
   });
 });
@@ -285,39 +346,83 @@ describe("toolExecutor — a verified caller CAN cancel the party", () => {
   };
 
   it("a valid OTP session for the organizer cancels every active row", async () => {
-    const body = await call("cancel_booking", { group_id: GROUP_ID, otp_session_id: "sess-1" }, {
-      salons: salonRow,
-      phone_otp_sessions: verifiedSession,
-      bookings: [
-        { id: "b1", status: "confirmed", client_phone: OWNER_PHONE, is_group_organizer: true, group_id: GROUP_ID },
-        { id: "b2", status: "confirmed", client_phone: null, is_group_organizer: false, group_id: GROUP_ID },
-      ],
-    });
+    const body = await call(
+      "cancel_booking",
+      { group_id: GROUP_ID, otp_session_id: "sess-1" },
+      {
+        salons: salonRow,
+        phone_otp_sessions: verifiedSession,
+        bookings: [
+          {
+            id: "b1",
+            status: "confirmed",
+            client_phone: OWNER_PHONE,
+            is_group_organizer: true,
+            group_id: GROUP_ID,
+          },
+          {
+            id: "b2",
+            status: "confirmed",
+            client_phone: null,
+            is_group_organizer: false,
+            group_id: GROUP_ID,
+          },
+        ],
+      },
+    );
     expect(body.success).toBe(true);
     expect(body.cancelled_count).toBe(2);
   });
 
   it("carrier-verified caller-ID for the organizer also works, without a code", async () => {
-    const body = await call("cancel_booking", { group_id: GROUP_ID }, {
-      salons: salonRow,
-      phone_otp_sessions: null,
-      bookings: [
-        { id: "b1", status: "confirmed", client_phone: OWNER_PHONE, is_group_organizer: true, group_id: GROUP_ID },
-      ],
-    }, { callerVerifiedPhone: OWNER_PHONE });
+    const body = await call(
+      "cancel_booking",
+      { group_id: GROUP_ID },
+      {
+        salons: salonRow,
+        phone_otp_sessions: null,
+        bookings: [
+          {
+            id: "b1",
+            status: "confirmed",
+            client_phone: OWNER_PHONE,
+            is_group_organizer: true,
+            group_id: GROUP_ID,
+          },
+        ],
+      },
+      { callerVerifiedPhone: OWNER_PHONE },
+    );
     expect(body.success).toBe(true);
     expect(body.cancelled_count).toBe(1);
   });
 
   it("already-cancelled rows are not re-cancelled or counted", async () => {
-    const body = await call("cancel_booking", { group_id: GROUP_ID }, {
-      salons: salonRow,
-      phone_otp_sessions: null,
-      bookings: [
-        { id: "b1", status: "confirmed", client_phone: OWNER_PHONE, is_group_organizer: true, group_id: GROUP_ID },
-        { id: "b2", status: "cancelled",  client_phone: null, is_group_organizer: false, group_id: GROUP_ID },
-      ],
-    }, { callerVerifiedPhone: OWNER_PHONE });
+    const body = await call(
+      "cancel_booking",
+      { group_id: GROUP_ID },
+      {
+        salons: salonRow,
+        phone_otp_sessions: null,
+        bookings: [
+          {
+            id: "b1",
+            status: "confirmed",
+            client_phone: OWNER_PHONE,
+            is_group_organizer: true,
+            group_id: GROUP_ID,
+          },
+          {
+            id: "b2",
+            status: "cancelled",
+            client_phone: null,
+            is_group_organizer: false,
+            group_id: GROUP_ID,
+          },
+        ],
+      },
+      { callerVerifiedPhone: OWNER_PHONE },
+    );
     expect(body.success).toBe(true);
     expect(body.cancelled_count).toBe(1);
   });
@@ -330,13 +435,23 @@ describe("toolExecutor — cancel_booking routes on the right identifier", () =>
   });
 
   it("group_id alone is a valid identifier (it used to bounce as 'missing')", async () => {
-    const body = await call("cancel_booking", { group_id: GROUP_ID }, {
-      salons: salonRow,
-      phone_otp_sessions: null,
-      bookings: [
-        { id: "b1", status: "confirmed", client_phone: OWNER_PHONE, is_group_organizer: true, group_id: GROUP_ID },
-      ],
-    });
+    const body = await call(
+      "cancel_booking",
+      { group_id: GROUP_ID },
+      {
+        salons: salonRow,
+        phone_otp_sessions: null,
+        bookings: [
+          {
+            id: "b1",
+            status: "confirmed",
+            client_phone: OWNER_PHONE,
+            is_group_organizer: true,
+            group_id: GROUP_ID,
+          },
+        ],
+      },
+    );
     // Reaches the gate instead of bouncing off the argument check.
     expect(body.error).not.toBe("missing_booking_id_or_phone");
     expect(body.error).toBe("otp_required");
@@ -496,12 +611,20 @@ describe("toolExecutor — phone suffix lookups need enough digits (#781)", () =
   // match every booking whose number ends in it.
   for (const toolName of ["find_booking", "cancel_booking"]) {
     it(`${toolName} refuses a 1-digit phone`, async () => {
-      const body = await call(toolName, { customer_phone: "5" }, { salons: salonRow });
+      const body = await call(
+        toolName,
+        { customer_phone: "5" },
+        { salons: salonRow },
+      );
       expect(body.error).toBe("phone_too_short");
     });
 
     it(`${toolName} refuses a 6-digit phone (below the 7-digit floor)`, async () => {
-      const body = await call(toolName, { customer_phone: "123456" }, { salons: salonRow });
+      const body = await call(
+        toolName,
+        { customer_phone: "123456" },
+        { salons: salonRow },
+      );
       expect(body.error).toBe("phone_too_short");
     });
   }
@@ -538,21 +661,25 @@ describe("toolExecutor — booking and customer lookups require phone ownership"
       { customer_phone: OWNER_PHONE },
       {
         salons: salonRow,
-        bookings: [{
-          id: BOOKING_ID,
-          client_name: "Test Customer",
-          start_time_utc: new Date(Date.now() + 86_400_000).toISOString(),
-          end_time_utc: new Date(Date.now() + 90_000_000).toISOString(),
-          status: "confirmed",
-          services: { name: "Gel Manicure" },
-        }],
+        bookings: [
+          {
+            id: BOOKING_ID,
+            client_name: "Test Customer",
+            start_time_utc: new Date(Date.now() + 86_400_000).toISOString(),
+            end_time_utc: new Date(Date.now() + 90_000_000).toISOString(),
+            status: "confirmed",
+            services: { name: "Gel Manicure" },
+          },
+        ],
       },
       { callerVerifiedPhone: OWNER_PHONE },
     );
     expect(body.error).toBeUndefined();
-    expect(body.bookings).toEqual(expect.arrayContaining([
-      expect.objectContaining({ booking_id: BOOKING_ID }),
-    ]));
+    expect(body.bookings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ booking_id: BOOKING_ID }),
+      ]),
+    );
   });
 
   it("cancel lookup still works for the matching carrier-verified caller", async () => {
@@ -561,20 +688,24 @@ describe("toolExecutor — booking and customer lookups require phone ownership"
       { customer_phone: OWNER_PHONE },
       {
         salons: salonRow,
-        bookings: [{
-          id: BOOKING_ID,
-          group_id: null,
-          client_name: "Test Customer",
-          start_time_utc: new Date(Date.now() + 86_400_000).toISOString(),
-          status: "confirmed",
-          services: { name: "Gel Manicure" },
-          staff: { name: "Anna" },
-        }],
+        bookings: [
+          {
+            id: BOOKING_ID,
+            group_id: null,
+            client_name: "Test Customer",
+            start_time_utc: new Date(Date.now() + 86_400_000).toISOString(),
+            status: "confirmed",
+            services: { name: "Gel Manicure" },
+            staff: { name: "Anna" },
+          },
+        ],
       },
       { callerVerifiedPhone: OWNER_PHONE },
     );
     expect(body.error).toBeUndefined();
     expect(body.confirmation_required).toBe(true);
-    expect(body.booking).toEqual(expect.objectContaining({ booking_id: BOOKING_ID }));
+    expect(body.booking).toEqual(
+      expect.objectContaining({ booking_id: BOOKING_ID }),
+    );
   });
 });

@@ -1,16 +1,26 @@
 import crypto from "crypto";
 import { NextResponse, after } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { compareSpokenTimeToSlot, parseSpokenTime } from "@/shared/voiceai/spokenTime";
+import {
+  compareSpokenTimeToSlot,
+  parseSpokenTime,
+} from "@/shared/voiceai/spokenTime";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { logBookingEvent } from "@/shared/dashboard/auditLog";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { computeTimeSlots } from "@/shared/booking/getAvailableTimeSlots";
-import { parseOpeningHours, type DayKey, type OpeningHoursWeek } from "@/shared/dashboard/openingHoursDefaults";
+import {
+  parseOpeningHours,
+  type DayKey,
+  type OpeningHoursWeek,
+} from "@/shared/dashboard/openingHoursDefaults";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { computeBookingTiming } from "@/shared/booking/bookingTiming";
 import { checkGroupWithinOpeningHours } from "@/shared/booking/groupBookingHoursPolicy";
-import { salonDayRangeUtc, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
+import {
+  salonDayRangeUtc,
+  salonWallTimeToUtcIso,
+} from "@/shared/lib/salonTime";
 import {
   tryAlignedArrangement,
   buildArrangement,
@@ -87,7 +97,9 @@ export async function executeVoiceTool(
   const trustedPhoneCallSid = opts?.trustedPhoneCallSid ?? null;
   const trustedCalledPhone = opts?.trustedCalledPhone ?? null;
   const requestedLanguage = (opts?.trustedLanguage ?? "") as SupportedLanguage;
-  const trustedLanguage: SupportedLanguage = SUPPORTED_LANGUAGES.includes(requestedLanguage)
+  const trustedLanguage: SupportedLanguage = SUPPORTED_LANGUAGES.includes(
+    requestedLanguage,
+  )
     ? requestedLanguage
     : "en";
 
@@ -101,10 +113,22 @@ export async function executeVoiceTool(
     return handleVerifyOtp(salonSlug, toolArgs, baseUrl);
   }
   if (toolName === "confirm_booking") {
-    return handleConfirmBooking(supabase, salonSlug, toolArgs, sessionId, callerVerifiedPhone, trustedUserUtterance);
+    return handleConfirmBooking(
+      supabase,
+      salonSlug,
+      toolArgs,
+      sessionId,
+      callerVerifiedPhone,
+      trustedUserUtterance,
+    );
   }
   if (toolName === "find_booking") {
-    return handleFindBooking(supabase, salonSlug, toolArgs, callerVerifiedPhone);
+    return handleFindBooking(
+      supabase,
+      salonSlug,
+      toolArgs,
+      callerVerifiedPhone,
+    );
   }
   if (toolName === "cancel_booking") {
     return handleCancelBooking(
@@ -117,19 +141,38 @@ export async function executeVoiceTool(
     );
   }
   if (toolName === "reschedule_booking") {
-    return handleRescheduleBooking(supabase, salonSlug, toolArgs, sessionId, callerVerifiedPhone);
+    return handleRescheduleBooking(
+      supabase,
+      salonSlug,
+      toolArgs,
+      sessionId,
+      callerVerifiedPhone,
+    );
   }
   if (toolName === "get_group_available_slots") {
     return handleGetGroupAvailableSlots(supabase, salonSlug, toolArgs);
   }
   if (toolName === "confirm_group_booking") {
-    return handleConfirmGroupBooking(supabase, salonSlug, toolArgs, sessionId, baseUrl, callerVerifiedPhone);
+    return handleConfirmGroupBooking(
+      supabase,
+      salonSlug,
+      toolArgs,
+      sessionId,
+      baseUrl,
+      callerVerifiedPhone,
+    );
   }
   if (toolName === "join_waitlist") {
     return handleJoinWaitlist(supabase, salonSlug, toolArgs);
   }
   if (toolName === "lookup_customer") {
-    return handleLookupCustomer(supabase, salonSlug, toolArgs, sessionId, callerVerifiedPhone);
+    return handleLookupCustomer(
+      supabase,
+      salonSlug,
+      toolArgs,
+      sessionId,
+      callerVerifiedPhone,
+    );
   }
   if (toolName === "transfer_to_human") {
     return handleTransferToHuman(
@@ -154,7 +197,10 @@ export async function executeVoiceTool(
   if (toolName === "end_call") {
     return NextResponse.json({ ok: true });
   }
-  return NextResponse.json({ error: "unknown_tool", toolName }, { status: 400 });
+  return NextResponse.json(
+    { error: "unknown_tool", toolName },
+    { status: 400 },
+  );
 }
 
 const TRANSFER_REASON_MAX_CHARS = 500;
@@ -181,11 +227,17 @@ async function handleTransferToHuman(
     });
   }
 
-  const reason = (args.reason as string | undefined)?.trim().slice(0, TRANSFER_REASON_MAX_CHARS);
-  const customerName = (args.customer_name as string | undefined)?.trim().slice(0, 120) ?? "";
+  const reason = (args.reason as string | undefined)
+    ?.trim()
+    .slice(0, TRANSFER_REASON_MAX_CHARS);
+  const customerName =
+    (args.customer_name as string | undefined)?.trim().slice(0, 120) ?? "";
   const urgency = args.urgency === "urgent" ? "urgent" : "normal";
   if (!reason) {
-    return NextResponse.json({ success: false, error: "missing_reason" }, { status: 400 });
+    return NextResponse.json(
+      { success: false, error: "missing_reason" },
+      { status: 400 },
+    );
   }
 
   const { data: salon } = await supabase
@@ -199,7 +251,10 @@ async function handleTransferToHuman(
     voice_ai_transfer_phone?: string | null;
   } | null;
   if (!row?.id) {
-    return NextResponse.json({ success: false, error: "salon_not_found" }, { status: 404 });
+    return NextResponse.json(
+      { success: false, error: "salon_not_found" },
+      { status: 404 },
+    );
   }
   const destinationPhone = row.voice_ai_transfer_phone?.trim();
   if (!destinationPhone) {
@@ -244,11 +299,14 @@ async function handleTransferToHuman(
   });
   if (logError) {
     console.error("[transfer_to_human] could not persist handoff", logError);
-    return NextResponse.json({
-      success: false,
-      error: "transfer_log_failed",
-      hint: "Apologise and use leave_message_for_owner instead.",
-    }, { status: 503 });
+    return NextResponse.json(
+      {
+        success: false,
+        error: "transfer_log_failed",
+        hint: "Apologise and use leave_message_for_owner instead.",
+      },
+      { status: 503 },
+    );
   }
 
   try {
@@ -282,8 +340,7 @@ async function handleTransferToHuman(
       success: false,
       error: transfer.error,
       message_saved: true,
-      hint:
-        "Apologise that the live transfer is unavailable. Tell the caller the salon has their message and will follow up. Do not retry.",
+      hint: "Apologise that the live transfer is unavailable. Tell the caller the salon has their message and will follow up. Do not retry.",
     });
   }
 
@@ -302,34 +359,48 @@ async function handleRequestOtp(
   baseUrl: string,
 ): Promise<NextResponse> {
   const phone = (args.customer_phone as string | undefined)?.trim();
-  if (!phone) return NextResponse.json({ error: "missing_customer_phone" }, { status: 400 });
+  if (!phone)
+    return NextResponse.json(
+      { error: "missing_customer_phone" },
+      { status: 400 },
+    );
   try {
     const r = await fetch(`${internalOrigin(baseUrl)}/api/booking-otp/send`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ shopSlug: salonSlug, phone }),
     });
-    const data = (await r.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    const data = (await r.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+    };
     if (r.ok && data.ok) {
       return NextResponse.json({
         ok: true,
-        message: "A 6-digit code was texted to the customer. Ask them to read it back, then call verify_otp.",
+        message:
+          "A 6-digit code was texted to the customer. Ask them to read it back, then call verify_otp.",
         // The customer's phone buzzes the moment this returns. If the agent stays
         // silent they get an unexplained code out of nowhere — one tester said so
         // in as many words: "I didn't hear you ask anything and suddenly I have
         // this number." Handing over the sentence guarantees it gets said.
-        say_this: "I've just texted a 6-digit code to your phone. Could you read it back to me?",
+        say_this:
+          "I've just texted a 6-digit code to your phone. Could you read it back to me?",
       });
     }
     return NextResponse.json({
       ok: false,
       error: data.error ?? "otp_send_failed",
-      hint: data.error === "rate_limited"
-        ? "Too many codes were requested; wait a moment before trying again."
-        : "Couldn't send the code; try again shortly.",
+      hint:
+        data.error === "rate_limited"
+          ? "Too many codes were requested; wait a moment before trying again."
+          : "Couldn't send the code; try again shortly.",
     });
   } catch {
-    return NextResponse.json({ ok: false, error: "otp_send_failed", hint: "Temporary problem sending the code." });
+    return NextResponse.json({
+      ok: false,
+      error: "otp_send_failed",
+      hint: "Temporary problem sending the code.",
+    });
   }
 }
 
@@ -342,19 +413,28 @@ async function handleVerifyOtp(
 ): Promise<NextResponse> {
   const phone = (args.customer_phone as string | undefined)?.trim();
   const code = (args.code as string | undefined)?.trim();
-  if (!phone || !code) return NextResponse.json({ error: "missing_phone_or_code" }, { status: 400 });
+  if (!phone || !code)
+    return NextResponse.json(
+      { error: "missing_phone_or_code" },
+      { status: 400 },
+    );
   try {
     const r = await fetch(`${internalOrigin(baseUrl)}/api/booking-otp/verify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ shopSlug: salonSlug, phone, code }),
     });
-    const data = (await r.json().catch(() => ({}))) as { ok?: boolean; sessionId?: string; error?: string };
+    const data = (await r.json().catch(() => ({}))) as {
+      ok?: boolean;
+      sessionId?: string;
+      error?: string;
+    };
     if (r.ok && data.ok && data.sessionId) {
       return NextResponse.json({
         ok: true,
         otp_session_id: data.sessionId,
-        message: "Phone verified. Pass otp_session_id to confirm/cancel/reschedule for this phone.",
+        message:
+          "Phone verified. Pass otp_session_id to confirm/cancel/reschedule for this phone.",
       });
     }
     return NextResponse.json({
@@ -363,7 +443,11 @@ async function handleVerifyOtp(
       hint: "The code was wrong or expired. Offer to resend it with request_otp.",
     });
   } catch {
-    return NextResponse.json({ ok: false, error: "otp_invalid", hint: "Temporary problem verifying the code." });
+    return NextResponse.json({
+      ok: false,
+      error: "otp_invalid",
+      hint: "Temporary problem verifying the code.",
+    });
   }
 }
 
@@ -413,16 +497,25 @@ export async function logVoiceToolCall(
       .select("tool_log")
       .eq("id", sessionId)
       .maybeSingle();
-    const existing = Array.isArray((data as { tool_log?: unknown } | null)?.tool_log)
-      ? ((data as { tool_log: unknown[] }).tool_log)
+    const existing = Array.isArray(
+      (data as { tool_log?: unknown } | null)?.tool_log,
+    )
+      ? (data as { tool_log: unknown[] }).tool_log
       : [];
-    const entry = { at: new Date().toISOString(), type: "tool_call", tool: toolName, ok: httpStatus < 400 };
+    const entry = {
+      at: new Date().toISOString(),
+      type: "tool_call",
+      tool: toolName,
+      ok: httpStatus < 400,
+    };
     // Keep the last 200 entries so the row never grows unbounded.
     await supabase
       .from("voice_ai_sessions")
       .update({ tool_log: [...existing.slice(-199), entry] } as never)
       .eq("id", sessionId);
-  } catch { /* best-effort — logging must never break a live call */ }
+  } catch {
+    /* best-effort — logging must never break a live call */
+  }
 }
 
 async function handleGetAvailableSlots(
@@ -431,11 +524,14 @@ async function handleGetAvailableSlots(
   args: Record<string, unknown>,
 ) {
   const serviceId = args.service_id as string | undefined;
-  const dateYmd   = args.date       as string | undefined;
-  const staffId   = (args.staff_id  as string | undefined) ?? BOOKING_ANY_STAFF_ID;
+  const dateYmd = args.date as string | undefined;
+  const staffId = (args.staff_id as string | undefined) ?? BOOKING_ANY_STAFF_ID;
 
   if (!serviceId || !dateYmd) {
-    return NextResponse.json({ error: "missing_required_args: service_id, date" }, { status: 400 });
+    return NextResponse.json(
+      { error: "missing_required_args: service_id, date" },
+      { status: 400 },
+    );
   }
 
   // Load salon + service + staff (timezone required for correct slot filtering)
@@ -444,7 +540,8 @@ async function handleGetAvailableSlots(
     .select("id, timezone, opening_hours, booking_closed_dates")
     .eq("slug", salonSlug)
     .single();
-  if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
+  if (!salon)
+    return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
 
   const { data: service } = await supabase
     .from("services")
@@ -452,7 +549,8 @@ async function handleGetAvailableSlots(
     .eq("id", serviceId)
     .eq("salon_id", salon.id)
     .single();
-  if (!service) return NextResponse.json({ error: "service_not_found" }, { status: 404 });
+  if (!service)
+    return NextResponse.json({ error: "service_not_found" }, { status: 404 });
 
   const { data: staffRows } = await supabase
     .from("staff")
@@ -463,8 +561,16 @@ async function handleGetAvailableSlots(
 
   // Parse the requested date
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateYmd);
-  if (!m) return NextResponse.json({ error: "invalid_date_format" }, { status: 400 });
-  const selectedDate = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
+  if (!m)
+    return NextResponse.json({ error: "invalid_date_format" }, { status: 400 });
+  const selectedDate = new Date(
+    Number(m[1]),
+    Number(m[2]) - 1,
+    Number(m[3]),
+    12,
+    0,
+    0,
+  );
 
   // ── Timezone-aware slot computation ──────────────────────────────────────────
   //
@@ -491,10 +597,13 @@ async function handleGetAvailableSlots(
   // 10:00 AM local (17:00 UTC real) shifted to 10:00 UTC fake. Overlap checks
   // and the past-time guard all produce correct results.
   // ─────────────────────────────────────────────────────────────────────────────
-  const timezone = (salon as { timezone?: string }).timezone ?? "America/Los_Angeles";
+  const timezone =
+    (salon as { timezone?: string }).timezone ?? "America/Los_Angeles";
 
   // Salon's local midnight expressed in UTC (DST-safe via binary-search Intl)
-  const salonMidnightUtcMs = Date.parse(salonWallTimeToUtcIso(dateYmd, 0, timezone));
+  const salonMidnightUtcMs = Date.parse(
+    salonWallTimeToUtcIso(dateYmd, 0, timezone),
+  );
   // UTC midnight of the same calendar date (what setHours(0,0,0,0) gives on the server)
   const utcMidnightMs = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
   // How many ms ahead salon midnight is vs UTC midnight (+7h for UTC-7, −7h for UTC+7)
@@ -503,48 +612,64 @@ async function handleGetAvailableSlots(
   // Occupancy query: cover the full salon local day (midnight → midnight+24 h)
   // to capture bookings that spill into the next UTC day (e.g. 6 PM PDT = 01:00 UTC+1).
   const dayStart = new Date(salonMidnightUtcMs);
-  const dayEnd   = new Date(salonMidnightUtcMs + 24 * 60 * 60 * 1000 - 1);
+  const dayEnd = new Date(salonMidnightUtcMs + 24 * 60 * 60 * 1000 - 1);
 
-  const { data: occData } = await supabase.rpc("public_booking_occupancy_for_range", {
-    p_salon_id: salon.id,
-    p_start:    dayStart.toISOString(),
-    p_end:      dayEnd.toISOString(),
-  });
+  const { data: occData } = await supabase.rpc(
+    "public_booking_occupancy_for_range",
+    {
+      p_salon_id: salon.id,
+      p_start: dayStart.toISOString(),
+      p_end: dayEnd.toISOString(),
+    },
+  );
 
   // Check opening hours are parseable
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const salonAny = salon as any;
   const week = parseOpeningHours(salonAny.opening_hours);
-  if (!week) return NextResponse.json({ slots: [], reason: "invalid_hours_config" });
+  if (!week)
+    return NextResponse.json({ slots: [], reason: "invalid_hours_config" });
 
   const staffList = (staffRows ?? []).map((s) => ({
-    id:       s.id,
-    name:     s.name,
+    id: s.id,
+    name: s.name,
     job_role: s.job_role,
   }));
 
   // Shift occupancy timestamps into fake-UTC frame so conflict detection is correct.
-  type OccRow = { staff_id: string; start_time_utc: string; end_time_utc: string };
+  type OccRow = {
+    staff_id: string;
+    start_time_utc: string;
+    end_time_utc: string;
+  };
   const adjustedOccupancy: OccRow[] = (occData ?? []).map((row: OccRow) => ({
-    staff_id:       row.staff_id,
-    start_time_utc: new Date(Date.parse(row.start_time_utc) - tzOffsetMs).toISOString(),
-    end_time_utc:   new Date(Date.parse(row.end_time_utc)   - tzOffsetMs).toISOString(),
+    staff_id: row.staff_id,
+    start_time_utc: new Date(
+      Date.parse(row.start_time_utc) - tzOffsetMs,
+    ).toISOString(),
+    end_time_utc: new Date(
+      Date.parse(row.end_time_utc) - tzOffsetMs,
+    ).toISOString(),
   }));
 
   const slots = computeTimeSlots({
-    openingHoursRaw:        salonAny.opening_hours,
+    openingHoursRaw: salonAny.opening_hours,
     selectedDate,
-    staffId:                staffId === "any" ? BOOKING_ANY_STAFF_ID : staffId,
+    staffId: staffId === "any" ? BOOKING_ANY_STAFF_ID : staffId,
     staffList,
     serviceDurationMinutes: service.duration_minutes,
-    occupancy:              adjustedOccupancy,
+    occupancy: adjustedOccupancy,
     // Shift nowMs into the same fake-UTC frame so the past-time filter
     // correctly hides slots that are already past in the salon's local timezone.
-    nowMs:                  Date.now() - tzOffsetMs,
+    nowMs: Date.now() - tzOffsetMs,
   });
 
   const available = slots.filter((s) => s.available).map((s) => s.label);
-  return NextResponse.json({ slots: available, date: dateYmd, count: available.length });
+  return NextResponse.json({
+    slots: available,
+    date: dateYmd,
+    count: available.length,
+  });
 }
 
 /**
@@ -574,15 +699,25 @@ async function handleConfirmBooking(
    *  that put a different time in `time_slot` than the caller actually said. */
   trustedUserUtterance: string | null,
 ) {
-  const serviceId     = args.service_id     as string | undefined;
-  const date          = args.date           as string | undefined;  // YYYY-MM-DD
-  const timeSlot      = args.time_slot      as string | undefined;  // e.g. "2:00 PM"
-  const staffId       = args.staff_id       as string | undefined;  // UUID or "any"
-  const customerName  = args.customer_name  as string | undefined;
+  const serviceId = args.service_id as string | undefined;
+  const date = args.date as string | undefined; // YYYY-MM-DD
+  const timeSlot = args.time_slot as string | undefined; // e.g. "2:00 PM"
+  const staffId = args.staff_id as string | undefined; // UUID or "any"
+  const customerName = args.customer_name as string | undefined;
   const customerPhone = args.customer_phone as string | undefined;
 
-  if (!serviceId || !date || !timeSlot || !staffId || !customerName || !customerPhone) {
-    return NextResponse.json({ error: "missing_required_booking_fields" }, { status: 400 });
+  if (
+    !serviceId ||
+    !date ||
+    !timeSlot ||
+    !staffId ||
+    !customerName ||
+    !customerPhone
+  ) {
+    return NextResponse.json(
+      { error: "missing_required_booking_fields" },
+      { status: 400 },
+    );
   }
 
   // Time-confirmation guard. If the caller's last utterance names a clear time
@@ -616,7 +751,8 @@ async function handleConfirmBooking(
     .select("id, timezone, opening_hours, booking_closed_dates")
     .eq("slug", salonSlug)
     .single();
-  if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
+  if (!salon)
+    return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
 
   // Identity gate — creating a booking requires proof the customer controls this
   // phone (caller-ID on the phone channel, else OTP). Stops fake/spam bookings.
@@ -624,7 +760,8 @@ async function handleConfirmBooking(
     otpSessionId: args.otp_session_id as string | undefined,
     callerVerifiedPhone,
   });
-  if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error, hint: gate.hint });
 
   // ── 2. Load service → duration for end-time calc ────────────────────────────
   const { data: service } = await supabase
@@ -633,7 +770,8 @@ async function handleConfirmBooking(
     .eq("id", serviceId)
     .eq("salon_id", salon.id)
     .single();
-  if (!service) return NextResponse.json({ error: "service_not_found" }, { status: 404 });
+  if (!service)
+    return NextResponse.json({ error: "service_not_found" }, { status: 404 });
 
   // ── 3. Resolve staff ────────────────────────────────────────────────────────
   // "any" → pick the first active staff who has NO conflicting booking at the
@@ -644,27 +782,38 @@ async function handleConfirmBooking(
   if (staffId !== "any" && staffId !== BOOKING_ANY_STAFF_ID) {
     resolvedStaffId = staffId;
     const { data: staffRow } = await supabase
-      .from("staff").select("id, name").eq("id", staffId).single();
+      .from("staff")
+      .select("id, name")
+      .eq("id", staffId)
+      .single();
     resolvedStaffName = staffRow?.name ?? null;
   }
   // "any" resolution deferred to after time conversion so we can check occupancy.
 
   // ── 4. Convert date (YYYY-MM-DD) + timeSlot ("2:00 PM") → UTC timestamps ────
   //  Uses salonWallTimeToUtcIso from salonTime.ts (DST-safe Intl binary search)
-  const timezone = (salon as { timezone?: string }).timezone ?? "America/Los_Angeles";
+  const timezone =
+    (salon as { timezone?: string }).timezone ?? "America/Los_Angeles";
   const slotMins = parseSlotLabelToMinutes(timeSlot);
   if (slotMins === null) {
-    return NextResponse.json({ error: "invalid_time_slot_format", received: timeSlot }, { status: 400 });
+    return NextResponse.json(
+      { error: "invalid_time_slot_format", received: timeSlot },
+      { status: 400 },
+    );
   }
-  const endMins = slotMins + (service as { duration_minutes: number }).duration_minutes;
+  const endMins =
+    slotMins + (service as { duration_minutes: number }).duration_minutes;
 
   let startUtcIso: string;
   let endUtcIso: string;
   try {
     startUtcIso = salonWallTimeToUtcIso(date, slotMins, timezone);
-    endUtcIso   = salonWallTimeToUtcIso(date, endMins,  timezone);
+    endUtcIso = salonWallTimeToUtcIso(date, endMins, timezone);
   } catch (e) {
-    return NextResponse.json({ error: "time_conversion_failed", detail: String(e) }, { status: 400 });
+    return NextResponse.json(
+      { error: "time_conversion_failed", detail: String(e) },
+      { status: 400 },
+    );
   }
 
   // ── 4b. Resolve "any" staff → first active staff FREE at this specific slot ──
@@ -678,7 +827,7 @@ async function handleConfirmBooking(
       .order("created_at", { ascending: true });
 
     // Find first staff who has no overlapping active booking at this time
-    for (const s of (allStaff ?? [])) {
+    for (const s of allStaff ?? []) {
       const { data: conflicts } = await supabase
         .from("bookings")
         .select("id")
@@ -688,13 +837,16 @@ async function handleConfirmBooking(
         .gt("end_time_utc", startUtcIso)
         .limit(1);
       if (!conflicts || conflicts.length === 0) {
-        resolvedStaffId   = s.id;
+        resolvedStaffId = s.id;
         resolvedStaffName = s.name;
         break;
       }
     }
     if (!resolvedStaffId) {
-      return NextResponse.json({ error: "no_staff_available" }, { status: 409 });
+      return NextResponse.json(
+        { error: "no_staff_available" },
+        { status: 409 },
+      );
     }
   }
 
@@ -703,27 +855,40 @@ async function handleConfirmBooking(
   //    (p_salon_id uuid, p_service_id uuid, p_staff_id uuid, p_client_name text,
   //     p_client_phone text, p_start_time_utc timestamptz, p_end_time_utc timestamptz,
   //     p_status text, p_price_cents int, p_client_notes text, ...)
-  const { data: rpcData, error: rpcErr } = await supabase.rpc("create_public_booking", {
-    p_salon_id:      salon.id,
-    p_service_id:    serviceId,
-    p_staff_id:      resolvedStaffId,
-    p_client_name:   customerName,
-    p_client_phone:  toCanonicalPhone(customerPhone) ?? customerPhone,
-    p_start_time_utc: startUtcIso,
-    p_end_time_utc:   endUtcIso,
-    p_status:         "confirmed",
-    p_price_cents:    (service as { price_cents: number | null }).price_cents ?? null,
-    p_client_notes:   "Voice booking",
-  });
+  const { data: rpcData, error: rpcErr } = await supabase.rpc(
+    "create_public_booking",
+    {
+      p_salon_id: salon.id,
+      p_service_id: serviceId,
+      p_staff_id: resolvedStaffId,
+      p_client_name: customerName,
+      p_client_phone: toCanonicalPhone(customerPhone) ?? customerPhone,
+      p_start_time_utc: startUtcIso,
+      p_end_time_utc: endUtcIso,
+      p_status: "confirmed",
+      p_price_cents:
+        (service as { price_cents: number | null }).price_cents ?? null,
+      p_client_notes: "Voice booking",
+    },
+  );
 
   if (rpcErr) {
     console.error("[voice/confirm_booking] RPC error:", rpcErr);
     const errObj = rpcErr as { code?: string; message?: string };
     // P0002 = no_data_found (slot conflict)
     if (errObj.code === "P0002" || errObj.code === "23P01") {
-      return NextResponse.json({ error: "slot_conflict", message: "Time slot is no longer available." }, { status: 409 });
+      return NextResponse.json(
+        {
+          error: "slot_conflict",
+          message: "Time slot is no longer available.",
+        },
+        { status: 409 },
+      );
     }
-    return NextResponse.json({ error: "booking_failed", detail: errObj.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "booking_failed", detail: errObj.message },
+      { status: 500 },
+    );
   }
 
   // RPC returns jsonb: { success, booking_id, ... } or { success: false, code: ... }
@@ -731,7 +896,10 @@ async function handleConfirmBooking(
   const result = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as any;
   if (!result?.success) {
     const code = result?.code ?? "unknown";
-    return NextResponse.json({ error: "booking_failed", code }, { status: 409 });
+    return NextResponse.json(
+      { error: "booking_failed", code },
+      { status: 409 },
+    );
   }
 
   const bookingId = result.booking_id ?? null;
@@ -743,7 +911,9 @@ async function handleConfirmBooking(
         .from("bookings")
         .update({ source: "voice", booking_channel: "voice" } as never)
         .eq("id", bookingId);
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
     // Owner/admin "new booking" alert (opt-in, fire-and-forget).
     after(() =>
       sendOwnerBookingNotification({
@@ -768,11 +938,12 @@ async function handleConfirmBooking(
     // function alive) without blocking the response.
     after(async () => {
       try {
-        const { handleBookingProtection } = await import(
-          "@/shared/noshow/handleBookingProtection"
-        );
+        const { handleBookingProtection } =
+          await import("@/shared/noshow/handleBookingProtection");
         await handleBookingProtection(bookingId, String(salon.id), "voice");
-      } catch { /* best-effort */ }
+      } catch {
+        /* best-effort */
+      }
     });
   }
 
@@ -790,7 +961,9 @@ async function handleConfirmBooking(
           ...(upsellAccepted ? { upsell_accepted: true } : {}),
         })
         .eq("id", sessionId);
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
   }
 
   // ── 8. Send SMS confirmation in the BACKGROUND (after the response) ──────────
@@ -800,25 +973,32 @@ async function handleConfirmBooking(
   //  spoken immediately and the agent verifies delivery conversationally ("did
   //  you get the text?", see the closing rule). SMS failure never fails a booking.
   if (bookingId) {
-    const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+    const appUrl =
+      (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
     after(async () => {
       try {
         const smsRes = await fetch(`${appUrl}/api/booking/sms-confirm`, {
-          method:  "POST",
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             bookingId,
-            salonId:      String(salon.id),
-            clientPhone:  customerPhone,
-            clientName:   customerName,
-            serviceName:  (service as { name: string }).name,
-            staffName:    resolvedStaffName ?? undefined,
+            salonId: String(salon.id),
+            clientPhone: customerPhone,
+            clientName: customerName,
+            serviceName: (service as { name: string }).name,
+            staffName: resolvedStaffName ?? undefined,
             startTimeUtc: startUtcIso,
           }),
         });
-        const smsJson = await smsRes.json().catch(() => ({})) as { ok?: boolean; error?: string };
+        const smsJson = (await smsRes.json().catch(() => ({}))) as {
+          ok?: boolean;
+          error?: string;
+        };
         if (!(smsRes.ok && smsJson.ok === true)) {
-          console.warn("[voice/confirm_booking] confirmation SMS not sent:", smsJson.error ?? `http_${smsRes.status}`);
+          console.warn(
+            "[voice/confirm_booking] confirmation SMS not sent:",
+            smsJson.error ?? `http_${smsRes.status}`,
+          );
         }
       } catch (e: unknown) {
         console.error("[voice/confirm_booking] sms-confirm dispatch failed", e);
@@ -841,16 +1021,16 @@ async function handleConfirmBooking(
     " I'm texting your confirmation now — you should get it in a moment.";
 
   return NextResponse.json({
-    success:      true,
+    success: true,
     bookingId,
-    serviceName:  (service as { name: string }).name,
+    serviceName: (service as { name: string }).name,
     date,
     timeSlot,
-    staffName:    resolvedStaffName ?? null,
+    staffName: resolvedStaffName ?? null,
     customerName,
     customerPhone,
-    smsSent:      "sending",
-    say_this:     sayThis,
+    smsSent: "sending",
+    say_this: sayThis,
   });
 }
 
@@ -884,7 +1064,9 @@ type VoiceCancelBooking = {
   self_cancel_fee_locked_cents?: number | null;
 };
 
-function voiceSalonLatePolicy(salon: VoiceCancelSalon): LateCancellationSalonPolicy {
+function voiceSalonLatePolicy(
+  salon: VoiceCancelSalon,
+): LateCancellationSalonPolicy {
   return {
     selfCancelFeeEnabled: salon.self_cancel_fee_enabled ?? false,
     selfCancelWindowHours: salon.self_cancel_window_hours ?? 24,
@@ -1039,17 +1221,19 @@ async function handleCancelBooking(
   callerVerifiedPhone: string | null,
   trustedUserUtterance: string | null,
 ) {
-  const bookingId     = args.booking_id     as string | undefined;
+  const bookingId = args.booking_id as string | undefined;
   const customerPhone = args.customer_phone as string | undefined;
-  const reason        = (args.reason as string | undefined) ?? "customer_request";
-  const groupIdArg    = args.group_id     as string | undefined;
+  const reason = (args.reason as string | undefined) ?? "customer_request";
+  const groupIdArg = args.group_id as string | undefined;
 
   // At least one identifier is required. group_id counts: it is how the model
   // asks for a whole-party cancel after the phone lookup hands it one.
   if (!bookingId && !customerPhone && !groupIdArg) {
     return NextResponse.json(
-      { error: "missing_booking_id_or_phone",
-        hint: "Provide booking_id (if known), group_id (to cancel a whole party), or customer_phone to look up the booking." },
+      {
+        error: "missing_booking_id_or_phone",
+        hint: "Provide booking_id (if known), group_id (to cancel a whole party), or customer_phone to look up the booking.",
+      },
       { status: 400 },
     );
   }
@@ -1057,10 +1241,13 @@ async function handleCancelBooking(
   // Load salon → needed for both paths
   const { data: salon } = await supabase
     .from("salons")
-    .select("id, timezone, currency_code, self_cancel_fee_enabled, self_cancel_window_hours, self_cancel_fee_percent, noshow_fee_percent")
+    .select(
+      "id, timezone, currency_code, self_cancel_fee_enabled, self_cancel_window_hours, self_cancel_fee_percent, noshow_fee_percent",
+    )
     .eq("slug", salonSlug)
     .single();
-  if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
+  if (!salon)
+    return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
 
   const cancelSalon = salon as VoiceCancelSalon;
   const tz = cancelSalon.timezone ?? "America/Los_Angeles";
@@ -1084,7 +1271,9 @@ async function handleCancelBooking(
     // already cancelled (e.g. the organizer dropped out first).
     const { data: groupRows, error: grpErr } = await supabase
       .from("bookings")
-      .select("id, status, client_phone, is_group_organizer, start_time_utc, noshow_card_id, noshow_consent_at, noshow_fee_cents, noshow_charge_status, self_cancel_fee_locked_at, self_cancel_fee_locked_cents")
+      .select(
+        "id, status, client_phone, is_group_organizer, start_time_utc, noshow_card_id, noshow_consent_at, noshow_fee_cents, noshow_charge_status, self_cancel_fee_locked_at, self_cancel_fee_locked_cents",
+      )
       .eq("salon_id", salon.id)
       .eq("group_id", groupIdArg);
 
@@ -1097,7 +1286,10 @@ async function handleCancelBooking(
     const active = party.filter((r) => r.status !== "cancelled");
 
     if (grpErr || active.length === 0) {
-      return NextResponse.json({ error: "group_not_found_or_already_cancelled" }, { status: 404 });
+      return NextResponse.json(
+        { error: "group_not_found_or_already_cancelled" },
+        { status: 404 },
+      );
     }
 
     // Identity gate (ported from #781 — it landed in route.ts, which this module
@@ -1111,11 +1303,13 @@ async function handleCancelBooking(
     // row" fallback would hand requirePhoneVerified an empty string and break
     // legitimate cancels (107 of 231 production group rows have no usable phone).
     const usablePhone = (p: string | null): boolean =>
-      typeof p === "string" && p.replace(/\D/g, "").length >= PHONE_SUFFIX_MIN_DIGITS;
+      typeof p === "string" &&
+      p.replace(/\D/g, "").length >= PHONE_SUFFIX_MIN_DIGITS;
     const ownerPhone =
-      party.find((r) => r.is_group_organizer && usablePhone(r.client_phone))?.client_phone
-      ?? party.find((r) => usablePhone(r.client_phone))?.client_phone
-      ?? null;
+      party.find((r) => r.is_group_organizer && usablePhone(r.client_phone))
+        ?.client_phone ??
+      party.find((r) => usablePhone(r.client_phone))?.client_phone ??
+      null;
 
     if (!ownerPhone) {
       return NextResponse.json({
@@ -1128,13 +1322,15 @@ async function handleCancelBooking(
       otpSessionId: args.otp_session_id as string | undefined,
       callerVerifiedPhone,
     });
-    if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
+    if (!gate.ok)
+      return NextResponse.json({ error: gate.error, hint: gate.hint });
 
-    const chargeableLateMembers = active.filter((row) =>
-      evaluateLateCancellationPolicy({
-        booking: voiceBookingLatePolicy(row),
-        salon: latePolicy,
-      }).willCharge,
+    const chargeableLateMembers = active.filter(
+      (row) =>
+        evaluateLateCancellationPolicy({
+          booking: voiceBookingLatePolicy(row),
+          salon: latePolicy,
+        }).willCharge,
     );
     if (chargeableLateMembers.length > 0) {
       return NextResponse.json({
@@ -1142,31 +1338,46 @@ async function handleCancelBooking(
         fee_confirmation_required: true,
         chargeable_count: chargeableLateMembers.length,
         currency,
-        hint:
-          "This group cancellation includes card charges. Do not cancel it by voice; ask the customer to contact the salon so staff can review the whole party and choose charge or waive.",
+        hint: "This group cancellation includes card charges. Do not cancel it by voice; ask the customer to contact the salon so staff can review the whole party and choose charge or waive.",
       });
     }
 
     const ids = active.map((r) => r.id);
-    const { error: cancelErr } = await supabase
-      .from("bookings")
-      .update({ status: "cancelled" })
-      .in("id", ids);
+    const { data: cancelData, error: cancelErr } = await supabase.rpc(
+      "cancel_booking_group_as_system" as never,
+      { p_group_id: groupIdArg, p_salon_id: salon.id } as never,
+    );
 
     if (cancelErr) {
-      return NextResponse.json({ error: "cancel_failed", detail: cancelErr.message }, { status: 500 });
+      return NextResponse.json(
+        { error: "cancel_failed", detail: cancelErr.message },
+        { status: 500 },
+      );
+    }
+    const cancelResult = (
+      Array.isArray(cancelData) ? cancelData[0] : cancelData
+    ) as { success?: boolean; code?: string } | null;
+    if (!cancelResult?.success) {
+      return NextResponse.json(
+        {
+          error: "cancel_failed",
+          detail: cancelResult?.code ?? "invalid_state",
+        },
+        { status: 409 },
+      );
     }
 
     // Audit log — one entry per booking in the group
-    ids.forEach((id) =>
-      void logBookingEvent({
-        bookingId: id,
-        salonId: String(salon.id),
-        actorUserId: null,
-        actorRole: "system",
-        eventType: "booking_cancelled",
-        payload: { reason: "voice_ai_group_cancel", group_id: groupIdArg },
-      }),
+    ids.forEach(
+      (id) =>
+        void logBookingEvent({
+          bookingId: id,
+          salonId: String(salon.id),
+          actorUserId: null,
+          actorRole: "system",
+          eventType: "booking_cancelled",
+          payload: { reason: "voice_ai_group_cancel", group_id: groupIdArg },
+        }),
     );
 
     // Owner/admin "cancelled" alert — one email for the group (first booking).
@@ -1181,9 +1392,9 @@ async function handleCancelBooking(
     }
 
     return NextResponse.json({
-      success:        true,
+      success: true,
       cancelled_count: ids.length,
-      group_id:        groupIdArg,
+      group_id: groupIdArg,
       message: `Đã huỷ thành công ${ids.length} lịch trong nhóm.`,
     });
   }
@@ -1195,12 +1406,20 @@ async function handleCancelBooking(
 
     // Lookup mode is read-only but not public: it returns names, services,
     // times and booking IDs. Verify ownership before exposing those details.
-    const lookupGate = await requirePhoneVerified(supabase, salon.id, customerPhone, {
-      otpSessionId: args.otp_session_id as string | undefined,
-      callerVerifiedPhone,
-    });
+    const lookupGate = await requirePhoneVerified(
+      supabase,
+      salon.id,
+      customerPhone,
+      {
+        otpSessionId: args.otp_session_id as string | undefined,
+        callerVerifiedPhone,
+      },
+    );
     if (!lookupGate.ok) {
-      return NextResponse.json({ error: lookupGate.error, hint: lookupGate.hint });
+      return NextResponse.json({
+        error: lookupGate.error,
+        hint: lookupGate.hint,
+      });
     }
     const now = new Date().toISOString();
 
@@ -1209,7 +1428,9 @@ async function handleCancelBooking(
     // Include staff join so AI can read individual member slots for partial cancellation.
     const { data: phoneRows } = await supabase
       .from("bookings")
-      .select("id, group_id, client_name, start_time_utc, status, noshow_card_id, noshow_consent_at, noshow_fee_cents, noshow_charge_status, self_cancel_fee_locked_at, self_cancel_fee_locked_cents, services!bookings_service_id_fkey(name), staff!bookings_staff_id_fkey(name)")
+      .select(
+        "id, group_id, client_name, start_time_utc, status, noshow_card_id, noshow_consent_at, noshow_fee_cents, noshow_charge_status, self_cancel_fee_locked_at, self_cancel_fee_locked_cents, services!bookings_service_id_fkey(name), staff!bookings_staff_id_fkey(name)",
+      )
       .eq("salon_id", salon.id)
       .ilike("client_phone", `%${last9}`)
       .gte("start_time_utc", now)
@@ -1218,35 +1439,48 @@ async function handleCancelBooking(
       .limit(20);
 
     if (!phoneRows || phoneRows.length === 0) {
-      return NextResponse.json({
-        error:   "booking_not_found",
-        message: "Không tìm thấy lịch hẹn nào sắp tới cho số điện thoại này.",
-      }, { status: 404 });
+      return NextResponse.json(
+        {
+          error: "booking_not_found",
+          message: "Không tìm thấy lịch hẹn nào sắp tới cho số điện thoại này.",
+        },
+        { status: 404 },
+      );
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const formatRow = (r: Record<string, any>) => {
-      const svcRaw  = r.services as { name?: string } | { name?: string }[] | null;
-      const svcName = (Array.isArray(svcRaw) ? svcRaw[0]?.name : svcRaw?.name) ?? "Unknown";
+      const svcRaw = r.services as
+        { name?: string } | { name?: string }[] | null;
+      const svcName =
+        (Array.isArray(svcRaw) ? svcRaw[0]?.name : svcRaw?.name) ?? "Unknown";
       // Staff join returns a single object (many-to-one FK)
-      const staffRaw  = r.staff as { name?: string } | null;
+      const staffRaw = r.staff as { name?: string } | null;
       const staffName = staffRaw?.name ?? null;
-      const localTime = new Date(r.start_time_utc as string).toLocaleString("en-US", {
-        timeZone: tz, weekday: "short", month: "short", day: "numeric",
-        hour: "numeric", minute: "2-digit", hour12: true,
-      });
+      const localTime = new Date(r.start_time_utc as string).toLocaleString(
+        "en-US",
+        {
+          timeZone: tz,
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+          hour12: true,
+        },
+      );
       const fee = evaluateLateCancellationPolicy({
         booking: voiceBookingLatePolicy(r as VoiceCancelBooking),
         salon: latePolicy,
       });
       return {
-        booking_id:   r.id as string,
-        group_id:     (r.group_id as string | null) ?? null,
+        booking_id: r.id as string,
+        group_id: (r.group_id as string | null) ?? null,
         service_name: svcName,
-        staff_name:   staffName,
-        date_time:    localTime,
-        status:       r.status as string,
-        client_name:  r.client_name as string,
+        staff_name: staffName,
+        date_time: localTime,
+        status: r.status as string,
+        client_name: r.client_name as string,
         late_cancel_fee: fee.willCharge
           ? {
               confirmation_required: true,
@@ -1262,7 +1496,8 @@ async function handleCancelBooking(
 
     // Detect group bookings: all rows sharing the same non-null group_id
     const firstGroupId = rows[0]?.group_id ?? null;
-    const allSameGroup = firstGroupId !== null && rows.every((r) => r.group_id === firstGroupId);
+    const allSameGroup =
+      firstGroupId !== null && rows.every((r) => r.group_id === firstGroupId);
 
     if (allSameGroup) {
       // Group booking — let the customer choose full or partial cancellation.
@@ -1270,10 +1505,10 @@ async function handleCancelBooking(
       // AI can read individual member slots for partial cancellation.
       return NextResponse.json({
         confirmation_required: true,
-        is_group_booking:      true,
-        group_id:              firstGroupId,
-        group_size:            rows.length,
-        bookings:              rows,
+        is_group_booking: true,
+        group_id: firstGroupId,
+        group_size: rows.length,
+        bookings: rows,
         hint:
           `GROUP BOOKING of ${rows.length} people. ` +
           `STEP 1 — Ask: "Bạn muốn huỷ cả nhóm ${rows.length} người, hay chỉ một số người?" ` +
@@ -1288,8 +1523,8 @@ async function handleCancelBooking(
       // Multiple independent bookings — AI must ask which to cancel
       return NextResponse.json({
         confirmation_required: true,
-        multiple_bookings:     true,
-        bookings:              rows,
+        multiple_bookings: true,
+        bookings: rows,
         hint: "Multiple upcoming bookings found. Read them back to the customer, ask which one to cancel, then call cancel_booking(booking_id) with their choice.",
       });
     }
@@ -1297,7 +1532,7 @@ async function handleCancelBooking(
     // Exactly one individual booking — return for verbal confirmation before cancelling
     return NextResponse.json({
       confirmation_required: true,
-      booking:               rows[0]!,
+      booking: rows[0]!,
       hint: "Read this booking back to the customer and ask them to confirm cancellation. Then call cancel_booking(booking_id) with the booking_id above to execute.",
     });
   }
@@ -1305,16 +1540,22 @@ async function handleCancelBooking(
   // ── Path C: booking_id provided → cancel that one booking ───────────────────
   const { data: booking } = await supabase
     .from("bookings")
-    .select("id, salon_id, status, client_name, client_phone, group_id, start_time_utc, noshow_card_id, noshow_consent_at, noshow_fee_cents, noshow_charge_status, self_cancel_fee_locked_at, self_cancel_fee_locked_cents, services!bookings_service_id_fkey(name)")
+    .select(
+      "id, salon_id, status, client_name, client_phone, group_id, start_time_utc, noshow_card_id, noshow_consent_at, noshow_fee_cents, noshow_charge_status, self_cancel_fee_locked_at, self_cancel_fee_locked_cents, services!bookings_service_id_fkey(name)",
+    )
     .eq("id", bookingId!)
     .eq("salon_id", salon.id)
     .single();
 
-  if (!booking) return NextResponse.json({ error: "booking_not_found" }, { status: 404 });
+  if (!booking)
+    return NextResponse.json({ error: "booking_not_found" }, { status: 404 });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const bk = booking as any as {
-    id: string; status: string; client_name: string; client_phone: string;
+    id: string;
+    status: string;
+    client_name: string;
+    client_phone: string;
     start_time_utc: string;
     noshow_card_id: string | null;
     noshow_consent_at: string | null;
@@ -1339,7 +1580,8 @@ async function handleCancelBooking(
     otpSessionId: args.otp_session_id as string | undefined,
     callerVerifiedPhone,
   });
-  if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error, hint: gate.hint });
 
   const feePolicy = evaluateLateCancellationPolicy({
     booking: voiceBookingLatePolicy(bk),
@@ -1359,8 +1601,7 @@ async function handleCancelBooking(
       currency,
       late_fee_confirmation_token: confirmationToken,
       policy_locked_by_reschedule: feePolicy.policyLockedByReschedule,
-      hint:
-        "Tell the customer the exact late-cancellation fee and ask for a clear yes. Only then call cancel_booking again with late_fee_acknowledged=true.",
+      hint: "Tell the customer the exact late-cancellation fee and ask for a clear yes. Only then call cancel_booking again with late_fee_acknowledged=true.",
     });
   }
   if (
@@ -1379,25 +1620,42 @@ async function handleCancelBooking(
       fee_confirmation_required: true,
       amount_cents: feePolicy.feeCents,
       currency,
-      hint:
-        "The server did not receive a trusted, explicit yes from the customer. Do not cancel or charge; ask again or transfer to salon staff.",
+      hint: "The server did not receive a trusted, explicit yes from the customer. Do not cancel or charge; ask again or transfer to salon staff.",
     });
   }
 
   const localTime = new Date(bk.start_time_utc).toLocaleString("en-US", {
-    timeZone: tz, weekday: "short", month: "short", day: "numeric",
-    hour: "numeric", minute: "2-digit", hour12: true,
+    timeZone: tz,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
   });
 
-  // UPDATE status → cancelled
-  const { error: updateErr } = await supabase
-    .from("bookings")
-    .update({ status: "cancelled" })
-    .eq("id", bookingId!);
+  // The service-only RPC enters the terminal state through the database
+  // boundary; direct service-role PATCHes are intentionally rejected.
+  const { data: updateData, error: updateErr } = await supabase.rpc(
+    "cancel_booking_by_id" as never,
+    { p_booking_id: bookingId!, p_salon_id: salon.id } as never,
+  );
 
   if (updateErr) {
     console.error("[voice/cancel_booking] update error:", updateErr);
-    return NextResponse.json({ error: "cancel_failed", detail: updateErr.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "cancel_failed", detail: updateErr.message },
+      { status: 500 },
+    );
+  }
+  const updateRows = Array.isArray(updateData) ? updateData : [];
+  const updateResult = updateRows[0] as
+    { ok?: boolean; code?: string } | undefined;
+  if (!updateResult?.ok) {
+    return NextResponse.json(
+      { error: "cancel_failed", detail: updateResult?.code ?? "invalid_state" },
+      { status: 409 },
+    );
   }
 
   let feeCharged = false;
@@ -1446,15 +1704,17 @@ async function handleCancelBooking(
         .from("voice_ai_sessions")
         .update({ status: "completed" })
         .eq("id", sessionId);
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
   }
 
   return NextResponse.json({
-    success:     true,
+    success: true,
     bookingId,
     serviceName,
-    dateTime:    localTime,
-    clientName:  bk.client_name,
+    dateTime: localTime,
+    clientName: bk.client_name,
     reason,
     feeCharged,
     feeCents: feePolicy.willCharge ? feePolicy.feeCents : 0,
@@ -1479,7 +1739,10 @@ async function handleFindBooking(
 ) {
   const customerPhone = args.customer_phone as string | undefined;
   if (!customerPhone) {
-    return NextResponse.json({ error: "missing_customer_phone" }, { status: 400 });
+    return NextResponse.json(
+      { error: "missing_customer_phone" },
+      { status: 400 },
+    );
   }
 
   const { data: salon } = await supabase
@@ -1487,7 +1750,8 @@ async function handleFindBooking(
     .select("id, timezone")
     .eq("slug", salonSlug)
     .single();
-  if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
+  if (!salon)
+    return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
 
   const last9 = phoneSuffixOrNull(customerPhone);
   if (!last9) return NextResponse.json(PHONE_TOO_SHORT);
@@ -1500,14 +1764,17 @@ async function handleFindBooking(
     otpSessionId: args.otp_session_id as string | undefined,
     callerVerifiedPhone,
   });
-  if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error, hint: gate.hint });
 
   const now = new Date().toISOString();
 
   // Single query: phone suffix match on upcoming non-cancelled bookings
   const { data: phoneRows } = await supabase
     .from("bookings")
-    .select("id, start_time_utc, end_time_utc, status, client_name, services!bookings_service_id_fkey(name)")
+    .select(
+      "id, start_time_utc, end_time_utc, status, client_name, services!bookings_service_id_fkey(name)",
+    )
     .eq("salon_id", salon.id)
     .ilike("client_phone", `%${last9}`)
     .gte("start_time_utc", now)
@@ -1518,7 +1785,7 @@ async function handleFindBooking(
   if (!phoneRows || phoneRows.length === 0) {
     return NextResponse.json({
       bookings: [],
-      message:  "Không tìm thấy lịch hẹn nào sắp tới cho số điện thoại này.",
+      message: "Không tìm thấy lịch hẹn nào sắp tới cho số điện thoại này.",
     });
   }
 
@@ -1526,18 +1793,26 @@ async function handleFindBooking(
   const formatted = phoneRows.map((b) => {
     const start = new Date(b.start_time_utc as string);
     const localStr = start.toLocaleString("en-US", {
-      timeZone: tz, weekday: "short", month: "short", day: "numeric",
-      hour: "numeric", minute: "2-digit", hour12: true,
+      timeZone: tz,
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const svcRaw = (b as any).services as { name?: string } | { name?: string }[] | null;
-    const svcName = (Array.isArray(svcRaw) ? svcRaw[0]?.name : svcRaw?.name) ?? "Unknown service";
+    const svcRaw = (b as any).services as
+      { name?: string } | { name?: string }[] | null;
+    const svcName =
+      (Array.isArray(svcRaw) ? svcRaw[0]?.name : svcRaw?.name) ??
+      "Unknown service";
     return {
-      booking_id:   b.id,
+      booking_id: b.id,
       service_name: svcName,
-      date_time:    localStr,
-      status:       b.status,
-      client_name:  b.client_name,
+      date_time: localStr,
+      status: b.status,
+      client_name: b.client_name,
     };
   });
 
@@ -1554,34 +1829,50 @@ async function handleRescheduleBooking(
   sessionId: string | null,
   callerVerifiedPhone: string | null,
 ) {
-  const bookingId  = args.booking_id    as string | undefined;
-  const newDate    = args.new_date      as string | undefined;  // YYYY-MM-DD
-  const newSlot    = args.new_time_slot as string | undefined;  // "3:00 PM"
-  const staffArg   = args.staff_id      as string | undefined;
+  const bookingId = args.booking_id as string | undefined;
+  const newDate = args.new_date as string | undefined; // YYYY-MM-DD
+  const newSlot = args.new_time_slot as string | undefined; // "3:00 PM"
+  const staffArg = args.staff_id as string | undefined;
 
   if (!bookingId || !newDate || !newSlot || !staffArg) {
-    return NextResponse.json({ error: "missing_required_fields" }, { status: 400 });
+    return NextResponse.json(
+      { error: "missing_required_fields" },
+      { status: 400 },
+    );
   }
 
   // Load salon
   const { data: salon } = await supabase
     .from("salons")
-    .select("id, timezone, self_cancel_fee_enabled, self_cancel_window_hours, self_cancel_fee_percent, noshow_fee_percent")
+    .select(
+      "id, timezone, self_cancel_fee_enabled, self_cancel_window_hours, self_cancel_fee_percent, noshow_fee_percent",
+    )
     .eq("slug", salonSlug)
     .single();
-  if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
+  if (!salon)
+    return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
 
   // Load existing booking — verify it belongs to this salon
   const { data: booking } = await supabase
     .from("bookings")
-    .select("id, salon_id, service_id, staff_id, start_time_utc, end_time_utc, status, client_name, client_phone, noshow_fee_cents, self_cancel_fee_locked_at, self_cancel_fee_locked_cents")
+    .select(
+      "id, salon_id, service_id, staff_id, start_time_utc, end_time_utc, status, client_name, client_phone, noshow_fee_cents, self_cancel_fee_locked_at, self_cancel_fee_locked_cents",
+    )
     .eq("id", bookingId)
     .eq("salon_id", salon.id)
     .single();
 
-  if (!booking) return NextResponse.json({ error: "booking_not_found" }, { status: 404 });
-  if ((booking as { status: string }).status === "cancelled") {
-    return NextResponse.json({ error: "booking_already_cancelled" }, { status: 409 });
+  if (!booking)
+    return NextResponse.json({ error: "booking_not_found" }, { status: 404 });
+  const bookingStatus = (booking as { status: string }).status;
+  if (bookingStatus === "cancelled") {
+    return NextResponse.json(
+      { error: "booking_already_cancelled" },
+      { status: 409 },
+    );
+  }
+  if (bookingStatus === "no_show") {
+    return NextResponse.json({ error: "booking_terminal_state" }, { status: 409 });
   }
 
   // Identity gate — verify against the phone that OWNS this booking.
@@ -1589,9 +1880,13 @@ async function handleRescheduleBooking(
     supabase,
     salon.id,
     (booking as { client_phone: string }).client_phone,
-    { otpSessionId: args.otp_session_id as string | undefined, callerVerifiedPhone },
+    {
+      otpSessionId: args.otp_session_id as string | undefined,
+      callerVerifiedPhone,
+    },
   );
-  if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error, hint: gate.hint });
 
   // Load service for duration
   const { data: service } = await supabase
@@ -1599,20 +1894,29 @@ async function handleRescheduleBooking(
     .select("id, name, duration_minutes")
     .eq("id", (booking as { service_id: string }).service_id)
     .single();
-  if (!service) return NextResponse.json({ error: "service_not_found" }, { status: 404 });
+  if (!service)
+    return NextResponse.json({ error: "service_not_found" }, { status: 404 });
 
   // Resolve staff: keep same if "any" or "same", else use provided ID
   const currentStaffId = (booking as { staff_id: string | null }).staff_id;
   let resolvedStaffId = currentStaffId;
-  if (staffArg !== "any" && staffArg !== "same" && staffArg !== BOOKING_ANY_STAFF_ID) {
+  if (
+    staffArg !== "any" &&
+    staffArg !== "same" &&
+    staffArg !== BOOKING_ANY_STAFF_ID
+  ) {
     resolvedStaffId = staffArg;
   }
 
   // Convert new date + time slot → UTC (DST-safe)
-  const timezone = (salon as { timezone?: string }).timezone ?? "America/Los_Angeles";
+  const timezone =
+    (salon as { timezone?: string }).timezone ?? "America/Los_Angeles";
   const slotMins = parseSlotLabelToMinutes(newSlot);
   if (slotMins === null) {
-    return NextResponse.json({ error: "invalid_time_slot_format", received: newSlot }, { status: 400 });
+    return NextResponse.json(
+      { error: "invalid_time_slot_format", received: newSlot },
+      { status: 400 },
+    );
   }
   const svc = service as { duration_minutes: number; name: string };
   const endMins = slotMins + svc.duration_minutes;
@@ -1621,9 +1925,12 @@ async function handleRescheduleBooking(
   let newEndUtc: string;
   try {
     newStartUtc = salonWallTimeToUtcIso(newDate, slotMins, timezone);
-    newEndUtc   = salonWallTimeToUtcIso(newDate, endMins,  timezone);
+    newEndUtc = salonWallTimeToUtcIso(newDate, endMins, timezone);
   } catch (e) {
-    return NextResponse.json({ error: "time_conversion_failed", detail: String(e) }, { status: 400 });
+    return NextResponse.json(
+      { error: "time_conversion_failed", detail: String(e) },
+      { status: 400 },
+    );
   }
 
   // Conflict check — exclude THIS booking from the check
@@ -1640,10 +1947,13 @@ async function handleRescheduleBooking(
     .limit(1);
 
   if (conflicts && conflicts.length > 0) {
-    return NextResponse.json({
-      error:   "slot_conflict",
-      message: "Khung giờ mới không còn trống. Vui lòng chọn giờ khác.",
-    }, { status: 409 });
+    return NextResponse.json(
+      {
+        error: "slot_conflict",
+        message: "Khung giờ mới không còn trống. Vui lòng chọn giờ khác.",
+      },
+      { status: 409 },
+    );
   }
 
   // UPDATE booking — preserve ID, history, deposits
@@ -1662,22 +1972,32 @@ async function handleRescheduleBooking(
     salon: voiceSalonLatePolicy(rescheduleSalon),
     reason: "voice_reschedule",
   });
-  const { error: updateErr } = await supabase
+  const { data: updatedBooking, error: updateErr } = await supabase
     .from("bookings")
     .update({
-      start_time_utc:            newStartUtc,
-      end_time_utc:              newEndUtc,
+      start_time_utc: newStartUtc,
+      end_time_utc: newEndUtc,
       ...(resolvedStaffId ? { staff_id: resolvedStaffId } : {}),
       rescheduled_from_time_utc: oldStart,
-      rescheduled_at:            new Date().toISOString(),
-      rescheduled_by:            "voice",
+      rescheduled_at: new Date().toISOString(),
+      rescheduled_by: "voice",
       ...(lateCancelLockPatch ?? {}),
     })
-    .eq("id", bookingId);
+    .eq("id", bookingId)
+    .eq("salon_id", salon.id)
+    .in("status", ["pending", "confirmed"])
+    .select("id")
+    .maybeSingle();
 
   if (updateErr) {
     console.error("[voice/reschedule_booking] update error:", updateErr);
-    return NextResponse.json({ error: "reschedule_failed", detail: updateErr.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "reschedule_failed", detail: updateErr.message },
+      { status: 500 },
+    );
+  }
+  if (!updatedBooking?.id) {
+    return NextResponse.json({ error: "booking_terminal_state" }, { status: 409 });
   }
 
   void logBookingEvent({
@@ -1718,20 +2038,22 @@ async function handleRescheduleBooking(
         .from("voice_ai_sessions")
         .update({ booking_id: bookingId })
         .eq("id", sessionId);
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
   }
 
   return NextResponse.json({
-    success:     true,
+    success: true,
     bookingId,
     serviceName: svc.name,
     newDate,
     newTimeSlot: newSlot,
-    clientName:  (booking as { client_name: string }).client_name,
+    clientName: (booking as { client_name: string }).client_name,
     lateCancelPolicyLocked: Boolean(
       lateCancelLockPatch || rescheduleBooking.self_cancel_fee_locked_at,
     ),
-    message:     "Lịch hẹn đã được dời thành công. Booking ID giữ nguyên.",
+    message: "Lịch hẹn đã được dời thành công. Booking ID giữ nguyên.",
   });
 }
 
@@ -1747,21 +2069,27 @@ async function handleJoinWaitlist(
   salonSlug: string,
   args: Record<string, unknown>,
 ) {
-  const serviceId     = args.service_id     as string | undefined;
-  const date          = args.date           as string | undefined; // YYYY-MM-DD
-  const customerName  = args.customer_name  as string | undefined;
+  const serviceId = args.service_id as string | undefined;
+  const date = args.date as string | undefined; // YYYY-MM-DD
+  const customerName = args.customer_name as string | undefined;
   const customerPhone = args.customer_phone as string | undefined;
-  const staffId       = (args.staff_id      as string | undefined) ?? BOOKING_ANY_STAFF_ID;
+  const staffId = (args.staff_id as string | undefined) ?? BOOKING_ANY_STAFF_ID;
   const preferredTime = (args.preferred_time as string | undefined) ?? "";
 
   if (!serviceId || !date || !customerName || !customerPhone) {
     return NextResponse.json(
-      { error: "missing_required_args: service_id, date, customer_name, customer_phone" },
+      {
+        error:
+          "missing_required_args: service_id, date, customer_name, customer_phone",
+      },
       { status: 400 },
     );
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return NextResponse.json({ error: "invalid_date: expected YYYY-MM-DD" }, { status: 400 });
+    return NextResponse.json(
+      { error: "invalid_date: expected YYYY-MM-DD" },
+      { status: 400 },
+    );
   }
 
   const phoneOk = validateGuestPhone(customerPhone);
@@ -1779,7 +2107,8 @@ async function handleJoinWaitlist(
     .select("id")
     .eq("slug", salonSlug)
     .single();
-  if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
+  if (!salon)
+    return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
 
   const { data: service } = await supabase
     .from("services")
@@ -1787,7 +2116,8 @@ async function handleJoinWaitlist(
     .eq("id", serviceId)
     .eq("salon_id", salon.id)
     .single();
-  if (!service) return NextResponse.json({ error: "service_not_found" }, { status: 404 });
+  if (!service)
+    return NextResponse.json({ error: "service_not_found" }, { status: 404 });
 
   const staffUuid =
     staffId === BOOKING_ANY_STAFF_ID || staffId === "any" || !staffId.trim()
@@ -1797,23 +2127,26 @@ async function handleJoinWaitlist(
   const { data: rpcRows, error: rpcErr } = await supabase.rpc(
     "create_public_waitlist_entry",
     {
-      p_salon_id:             salon.id,
-      p_service_id:           serviceId,
-      p_staff_id:             staffUuid,
-      p_booking_date:         date,
+      p_salon_id: salon.id,
+      p_service_id: serviceId,
+      p_staff_id: staffUuid,
+      p_booking_date: date,
       p_preferred_slot_label: preferredTime,
-      p_client_name:          nameTrimmed,
-      p_client_phone:         phoneOk.digits,
+      p_client_name: nameTrimmed,
+      p_client_phone: phoneOk.digits,
       // Same semantic reason the online flow uses when the wanted slot is full,
       // so the waitlist loader/UI treats voice entries identically.
-      p_source:               "slot_unavailable",
-      p_client_email:         null,
+      p_source: "slot_unavailable",
+      p_client_email: null,
     },
   );
 
   if (rpcErr) {
     console.error("[voice/join_waitlist] RPC error:", rpcErr);
-    return NextResponse.json({ error: "waitlist_failed", detail: rpcErr.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "waitlist_failed", detail: rpcErr.message },
+      { status: 500 },
+    );
   }
 
   const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
@@ -1826,7 +2159,7 @@ async function handleJoinWaitlist(
   }
 
   return NextResponse.json({
-    success:     true,
+    success: true,
     waitlistId,
     serviceName: (service as { name: string }).name,
     date,
@@ -1857,17 +2190,25 @@ function parseHm24(hm: string): number | null {
 function utcMsToSalonHm24(ms: number, timezone: string): string {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,
-    hour:     "2-digit",
-    minute:   "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
     hourCycle: "h23",
   }).formatToParts(new Date(ms));
-  const hh = parts.find((p) => p.type === "hour")?.value   ?? "00";
+  const hh = parts.find((p) => p.type === "hour")?.value ?? "00";
   const mm = parts.find((p) => p.type === "minute")?.value ?? "00";
   return `${hh}:${mm}`;
 }
 
 /** Return the weekday key ("mon"…"sun") for a YYYY-MM-DD date. */
-const DAY_KEYS_BY_IDX: readonly DayKey[] = ["sun","mon","tue","wed","thu","fri","sat"];
+const DAY_KEYS_BY_IDX: readonly DayKey[] = [
+  "sun",
+  "mon",
+  "tue",
+  "wed",
+  "thu",
+  "fri",
+  "sat",
+];
 function dayKeyForYmd(ymd: string): DayKey | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
   if (!m) return null;
@@ -1878,26 +2219,26 @@ function dayKeyForYmd(ymd: string): DayKey | null {
 // ─── Shared context loader ───────────────────────────────────────
 
 type ServiceInfo = {
-  id:        string;
-  name:      string;
-  totalMin:  number;   // duration + buffer
-  bufferMin: number;   // per-service buffer ("Chuẩn bị") — drives inter-wave gap
+  id: string;
+  name: string;
+  totalMin: number; // duration + buffer
+  bufferMin: number; // per-service buffer ("Chuẩn bị") — drives inter-wave gap
   serviceCompletionMin: number;
   priceCents: number | null;
 };
 
 type GroupCtx = {
-  salonId:         string;
-  timezone:        string;
-  openingWeek:     OpeningHoursWeek;
+  salonId: string;
+  timezone: string;
+  openingWeek: OpeningHoursWeek;
   bookingClosedDates: unknown;
-  dayHours:        { open: string; close: string; closed: boolean };
+  dayHours: { open: string; close: string; closed: boolean };
   resolvedMembers: ResolvedMember[];
-  staffList:       StaffRow[];
-  staffById:       Map<string, StaffRow>;
-  capability:      StaffCapabilityMap;
-  existing:        ExistingBooking[];
-  serviceById:     Map<string, ServiceInfo>;
+  staffList: StaffRow[];
+  staffById: Map<string, StaffRow>;
+  capability: StaffCapabilityMap;
+  existing: ExistingBooking[];
+  serviceById: Map<string, ServiceInfo>;
 };
 
 /**
@@ -1924,16 +2265,18 @@ async function loadGroupCtx(
     opening_hours?: unknown;
     booking_closed_dates?: unknown;
   };
-  const timezone = (typeof salon.timezone === "string" && salon.timezone.trim())
-    ? salon.timezone.trim()
-    : "America/Vancouver";
+  const timezone =
+    typeof salon.timezone === "string" && salon.timezone.trim()
+      ? salon.timezone.trim()
+      : "America/Vancouver";
 
   // 2. Opening hours
   const openingWeek = parseOpeningHours(salon.opening_hours);
   if (!openingWeek) return { error: "invalid_opening_hours", status: 400 };
   const dayKey = dayKeyForYmd(dateYmd);
   const dayHours = dayKey ? openingWeek[dayKey] : null;
-  if (!dayHours || dayHours.closed) return { error: "salon_closed_on_this_day", status: 409 };
+  if (!dayHours || dayHours.closed)
+    return { error: "salon_closed_on_this_day", status: 409 };
   if (
     Array.isArray(salon.booking_closed_dates) &&
     salon.booking_closed_dates.some((value) => String(value) === dateYmd)
@@ -1944,8 +2287,17 @@ async function loadGroupCtx(
   // 3. Expand service_assignments → flat service-id list (validates counts)
   const expandedServiceIds: string[] = [];
   for (const { service_id, count } of serviceAssignments) {
-    if (!service_id || typeof count !== "number" || count < 1 || !Number.isInteger(count)) {
-      return { error: "invalid_service_assignment: service_id required and count must be integer ≥ 1", status: 400 };
+    if (
+      !service_id ||
+      typeof count !== "number" ||
+      count < 1 ||
+      !Number.isInteger(count)
+    ) {
+      return {
+        error:
+          "invalid_service_assignment: service_id required and count must be integer ≥ 1",
+        status: 400,
+      };
     }
     for (let i = 0; i < count; i++) expandedServiceIds.push(service_id);
   }
@@ -1970,32 +2322,35 @@ async function loadGroupCtx(
       bufferMinutes: r.buffer_minutes,
     });
     serviceById.set(String(r.id), {
-      id:         String(r.id),
-      name:       String(r.name ?? ""),
-      totalMin:   timing.blockMinutes,
-      bufferMin:  Number(r.buffer_minutes) || 0,
+      id: String(r.id),
+      name: String(r.name ?? ""),
+      totalMin: timing.blockMinutes,
+      bufferMin: Number(r.buffer_minutes) || 0,
       serviceCompletionMin: timing.serviceCompletionMinutes,
       priceCents: r.price_cents != null ? Number(r.price_cents) : null,
     });
   }
   for (const id of uniqueIds) {
-    if (!serviceById.has(id)) return { error: `service_not_found: ${id}`, status: 404 };
+    if (!serviceById.has(id))
+      return { error: `service_not_found: ${id}`, status: 404 };
   }
 
   // 5. Build resolvedMembers (no preferred staff in voice group flow)
-  const resolvedMembers: ResolvedMember[] = expandedServiceIds.map((svcId, i) => {
-    const svc = serviceById.get(svcId)!;
-    return {
-      index:           i,
-      name:            `Guest ${i + 1}`,
-      serviceId:       svcId,
-      serviceName:     svc.name,
-      totalMinutes:    svc.totalMin,
-      bufferMinutes:   svc.bufferMin,
-      priceCents:      svc.priceCents,
-      preferredStaffId: null,
-    };
-  });
+  const resolvedMembers: ResolvedMember[] = expandedServiceIds.map(
+    (svcId, i) => {
+      const svc = serviceById.get(svcId)!;
+      return {
+        index: i,
+        name: `Guest ${i + 1}`,
+        serviceId: svcId,
+        serviceName: svc.name,
+        totalMinutes: svc.totalMin,
+        bufferMinutes: svc.bufferMin,
+        priceCents: svc.priceCents,
+        preferredStaffId: null,
+      };
+    },
+  );
 
   // 6. Staff
   const { data: staffRows } = await supabase
@@ -2005,7 +2360,7 @@ async function loadGroupCtx(
     .eq("status", "active")
     .is("deleted_at", null);
   const staffList: StaffRow[] = (staffRows ?? []).map((s) => ({
-    id:   String(s.id),
+    id: String(s.id),
     name: String(s.name ?? ""),
   }));
   // Phase 6: a group LARGER than the staff count is no longer rejected here —
@@ -2021,33 +2376,46 @@ async function loadGroupCtx(
   const { data: capRows } = await supabase
     .from("staff_services")
     .select("staff_id, service_id")
-    .in("staff_id", staffList.map((s) => s.id));
+    .in(
+      "staff_id",
+      staffList.map((s) => s.id),
+    );
   const capability: StaffCapabilityMap =
     capRows && capRows.length > 0
-      ? buildCapabilityMap(capRows.map((r) => ({ staff_id: String(r.staff_id), service_id: String(r.service_id) })))
+      ? buildCapabilityMap(
+          capRows.map((r) => ({
+            staff_id: String(r.staff_id),
+            service_id: String(r.service_id),
+          })),
+        )
       : null; // null = all staff can do all services (backward-compat)
 
   // 8. Existing bookings for the day
   const { startUtc, endUtc } = salonDayRangeUtc(dateYmd, timezone);
-  const { data: occRows } = await supabase.rpc("public_booking_occupancy_for_range", {
-    p_salon_id: salon.id,
-    p_start:    startUtc,
-    p_end:      endUtc,
-  });
-  const existing: ExistingBooking[] = ((occRows ?? []) as Array<{
-    staff_id: string;
-    start_time_utc: string;
-    end_time_utc: string;
-  }>).flatMap((row) => {
+  const { data: occRows } = await supabase.rpc(
+    "public_booking_occupancy_for_range",
+    {
+      p_salon_id: salon.id,
+      p_start: startUtc,
+      p_end: endUtc,
+    },
+  );
+  const existing: ExistingBooking[] = (
+    (occRows ?? []) as Array<{
+      staff_id: string;
+      start_time_utc: string;
+      end_time_utc: string;
+    }>
+  ).flatMap((row) => {
     if (!row.staff_id) return [];
     const startMs = Date.parse(row.start_time_utc);
-    const endMs   = Date.parse(row.end_time_utc);
+    const endMs = Date.parse(row.end_time_utc);
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return [];
     return [{ staffId: String(row.staff_id), startMs, endMs }];
   });
 
   return {
-    salonId:         String(salon.id),
+    salonId: String(salon.id),
     timezone,
     openingWeek,
     bookingClosedDates: salon.booking_closed_dates,
@@ -2074,33 +2442,55 @@ async function handleGetGroupAvailableSlots(
   args: Record<string, unknown>,
 ) {
   // 1. Parse args
-  const serviceAssignments = args.service_assignments as { service_id: string; count: number }[] | undefined;
-  const dateYmd   = args.date        as string | undefined;
-  const mode      = ((args.mode as string | undefined) ?? "sync_start") as GroupSyncMode;
+  const serviceAssignments = args.service_assignments as
+    { service_id: string; count: number }[] | undefined;
+  const dateYmd = args.date as string | undefined;
+  const mode = ((args.mode as string | undefined) ??
+    "sync_start") as GroupSyncMode;
   const targetRaw = args.target_time as string | undefined;
 
   if (!Array.isArray(serviceAssignments) || serviceAssignments.length === 0) {
-    return NextResponse.json({ error: "missing_service_assignments" }, { status: 400 });
+    return NextResponse.json(
+      { error: "missing_service_assignments" },
+      { status: 400 },
+    );
   }
   if (!dateYmd || !/^\d{4}-\d{2}-\d{2}$/.test(dateYmd)) {
-    return NextResponse.json({ error: "invalid_date: expected YYYY-MM-DD" }, { status: 400 });
+    return NextResponse.json(
+      { error: "invalid_date: expected YYYY-MM-DD" },
+      { status: 400 },
+    );
   }
   if (!targetRaw) {
-    return NextResponse.json({ error: "missing_target_time: expected HH:MM (24h)" }, { status: 400 });
+    return NextResponse.json(
+      { error: "missing_target_time: expected HH:MM (24h)" },
+      { status: 400 },
+    );
   }
   const targetMin = parseHm24(targetRaw);
   if (targetMin === null) {
-    return NextResponse.json({ error: "invalid_target_time: expected HH:MM format like 14:00" }, { status: 400 });
+    return NextResponse.json(
+      { error: "invalid_target_time: expected HH:MM format like 14:00" },
+      { status: 400 },
+    );
   }
 
   // 2. Load scheduling context
-  const ctxOrErr = await loadGroupCtx(supabase, salonSlug, serviceAssignments, dateYmd);
+  const ctxOrErr = await loadGroupCtx(
+    supabase,
+    salonSlug,
+    serviceAssignments,
+    dateYmd,
+  );
   if ("error" in ctxOrErr) {
-    return NextResponse.json({ error: ctxOrErr.error }, { status: ctxOrErr.status });
+    return NextResponse.json(
+      { error: ctxOrErr.error },
+      { status: ctxOrErr.status },
+    );
   }
   const ctx = ctxOrErr;
 
-  const openMin  = parseHm24(ctx.dayHours.open)  ?? 0;
+  const openMin = parseHm24(ctx.dayHours.open) ?? 0;
   const closeMin = parseHm24(ctx.dayHours.close) ?? 0;
 
   // 3. Find arrangements
@@ -2108,33 +2498,54 @@ async function handleGetGroupAvailableSlots(
 
   if (mode === "sync_finish") {
     // Use the finish-aligned search from core
-    const finishMs  = Date.parse(salonWallTimeToUtcIso(dateYmd, targetMin, ctx.timezone));
-    const dayOpenMs = Date.parse(salonWallTimeToUtcIso(dateYmd, openMin,   ctx.timezone));
-    const dayCloseMs = Date.parse(salonWallTimeToUtcIso(dateYmd, closeMin, ctx.timezone));
+    const finishMs = Date.parse(
+      salonWallTimeToUtcIso(dateYmd, targetMin, ctx.timezone),
+    );
+    const dayOpenMs = Date.parse(
+      salonWallTimeToUtcIso(dateYmd, openMin, ctx.timezone),
+    );
+    const dayCloseMs = Date.parse(
+      salonWallTimeToUtcIso(dateYmd, closeMin, ctx.timezone),
+    );
     arrangements = findFinishArrangementsInWindow({
-      targetFinishMs:  finishMs,
+      targetFinishMs: finishMs,
       dayOpenMs,
       dayCloseMs,
-      date:            dateYmd,
-      timezone:        ctx.timezone,
+      date: dateYmd,
+      timezone: ctx.timezone,
       resolvedMembers: ctx.resolvedMembers,
-      staffList:       ctx.staffList,
-      staffById:       ctx.staffById,
-      capability:      ctx.capability,
-      existing:        ctx.existing,
+      staffList: ctx.staffList,
+      staffById: ctx.staffById,
+      capability: ctx.capability,
+      existing: ctx.existing,
     });
   } else {
     // sync_start: scan ±90 min around target_time, collect up to 3 distinct arrangements
     const SEARCH_RADIUS_MIN = 90;
     const winStart = Math.max(openMin, targetMin - SEARCH_RADIUS_MIN);
-    const winEnd   = Math.min(closeMin, targetMin + SEARCH_RADIUS_MIN);
-    const maxMemberMin = ctx.resolvedMembers.reduce((acc, m) => Math.max(acc, m.totalMinutes), 0);
+    const winEnd = Math.min(closeMin, targetMin + SEARCH_RADIUS_MIN);
+    const maxMemberMin = ctx.resolvedMembers.reduce(
+      (acc, m) => Math.max(acc, m.totalMinutes),
+      0,
+    );
 
-    for (let mm = winStart; mm <= winEnd && arrangements.length < 3; mm += SLOT_STEP_MIN) {
-      const anchorMs  = Date.parse(salonWallTimeToUtcIso(dateYmd, mm, ctx.timezone));
-      const dayCloseMs = Date.parse(salonWallTimeToUtcIso(dateYmd, closeMin, ctx.timezone));
+    for (
+      let mm = winStart;
+      mm <= winEnd && arrangements.length < 3;
+      mm += SLOT_STEP_MIN
+    ) {
+      const anchorMs = Date.parse(
+        salonWallTimeToUtcIso(dateYmd, mm, ctx.timezone),
+      );
+      const dayCloseMs = Date.parse(
+        salonWallTimeToUtcIso(dateYmd, closeMin, ctx.timezone),
+      );
       // Skip anchors where the longest service would go past closing
-      if (Number.isFinite(dayCloseMs) && anchorMs + maxMemberMin * 60_000 > dayCloseMs) continue;
+      if (
+        Number.isFinite(dayCloseMs) &&
+        anchorMs + maxMemberMin * 60_000 > dayCloseMs
+      )
+        continue;
       const result = tryAlignedArrangement(
         anchorMs,
         ctx.resolvedMembers,
@@ -2145,7 +2556,13 @@ async function handleGetGroupAvailableSlots(
         false, // voice doesn't enforce preferred staff
       );
       if (!result) continue;
-      const arr = buildArrangement("best", result, ctx.resolvedMembers, ctx.staffById, ctx.timezone);
+      const arr = buildArrangement(
+        "best",
+        result,
+        ctx.resolvedMembers,
+        ctx.staffById,
+        ctx.timezone,
+      );
       // Deduplicate by group start time
       if (!arrangements.some((a) => a.groupStartMs === arr.groupStartMs)) {
         arrangements.push(arr);
@@ -2158,37 +2575,53 @@ async function handleGetGroupAvailableSlots(
   // than the salon can serve at once. Offer a multi-wave split starting at the
   // requested time instead of returning "no availability".
   if (arrangements.length === 0 && mode === "sync_start") {
-    const anchorMs   = Date.parse(salonWallTimeToUtcIso(dateYmd, targetMin, ctx.timezone));
-    const dayCloseMs = Date.parse(salonWallTimeToUtcIso(dateYmd, closeMin,  ctx.timezone));
+    const anchorMs = Date.parse(
+      salonWallTimeToUtcIso(dateYmd, targetMin, ctx.timezone),
+    );
+    const dayCloseMs = Date.parse(
+      salonWallTimeToUtcIso(dateYmd, closeMin, ctx.timezone),
+    );
     // Discovery path: forward-scan from the requested time so a group whose
     // requested slot is full is still offered the earliest later wave window
     // today, instead of "no availability" while the afternoon sits open.
     const waveRaw = findEarliestWaveArrangement(
-      anchorMs, ctx.resolvedMembers, ctx.staffList, ctx.staffById,
-      ctx.capability, ctx.existing, dayCloseMs,
+      anchorMs,
+      ctx.resolvedMembers,
+      ctx.staffList,
+      ctx.staffById,
+      ctx.capability,
+      ctx.existing,
+      dayCloseMs,
     );
     if (waveRaw && waveRaw.assignments.length === ctx.resolvedMembers.length) {
-      const waveArr = buildWaveArrangement(waveRaw, ctx.resolvedMembers, ctx.staffById, ctx.timezone);
+      const waveArr = buildWaveArrangement(
+        waveRaw,
+        ctx.resolvedMembers,
+        ctx.staffById,
+        ctx.timezone,
+      );
       if (waveArr.isWaveBooking) {
         return NextResponse.json({
-          arrangements: [{
-            index:        0,
-            isWaveBooking: true,
-            waveCount:    waveArr.waveCount,
-            startDisplay: waveArr.groupStartDisplay,
-            endDisplay:   waveArr.groupEndDisplay,
-            startTime:    utcMsToSalonHm24(waveArr.groupStartMs, ctx.timezone), // pass back as `time`
-            waves:        waveArr.waves.map((w) => ({
-              waveNumber:   w.waveNumber,
-              startTime:    utcMsToSalonHm24(w.startMs, ctx.timezone),
-              startDisplay: w.startDisplay,
-              endDisplay:   w.endDisplay,
-              memberCount:  w.memberCount,
-            })),
-            summary:      waveArr.summary,
-          }],
-          count:        1,
-          date:         dateYmd,
+          arrangements: [
+            {
+              index: 0,
+              isWaveBooking: true,
+              waveCount: waveArr.waveCount,
+              startDisplay: waveArr.groupStartDisplay,
+              endDisplay: waveArr.groupEndDisplay,
+              startTime: utcMsToSalonHm24(waveArr.groupStartMs, ctx.timezone), // pass back as `time`
+              waves: waveArr.waves.map((w) => ({
+                waveNumber: w.waveNumber,
+                startTime: utcMsToSalonHm24(w.startMs, ctx.timezone),
+                startDisplay: w.startDisplay,
+                endDisplay: w.endDisplay,
+                memberCount: w.memberCount,
+              })),
+              summary: waveArr.summary,
+            },
+          ],
+          count: 1,
+          date: dateYmd,
           mode,
           totalMembers: ctx.resolvedMembers.length,
           isWaveOption: true,
@@ -2205,9 +2638,9 @@ async function handleGetGroupAvailableSlots(
   // ── sync_finish large group: waves not supported this phase ────────────────
   if (arrangements.length === 0 && mode === "sync_finish") {
     return NextResponse.json({
-      slots:        [],
-      count:        0,
-      date:         dateYmd,
+      slots: [],
+      count: 0,
+      date: dateYmd,
       mode,
       totalMembers: ctx.resolvedMembers.length,
       message:
@@ -2217,12 +2650,13 @@ async function handleGetGroupAvailableSlots(
 
   if (arrangements.length === 0) {
     return NextResponse.json({
-      slots:        [],
-      count:        0,
-      date:         dateYmd,
+      slots: [],
+      count: 0,
+      date: dateYmd,
       mode,
       totalMembers: ctx.resolvedMembers.length,
-      message:      "No group slots available at the requested time. Please try a different time or date.",
+      message:
+        "No group slots available at the requested time. Please try a different time or date.",
     });
   }
 
@@ -2231,16 +2665,16 @@ async function handleGetGroupAvailableSlots(
   const voiceArrangements = arrangements.map((arr, i) => {
     // The AI will say "Option 1: everyone arrives at 10:00 AM, done by 11:30 AM"
     const startTime = utcMsToSalonHm24(arr.groupStartMs, ctx.timezone);
-    const endTime   = utcMsToSalonHm24(arr.groupEndMs,   ctx.timezone);
+    const endTime = utcMsToSalonHm24(arr.groupEndMs, ctx.timezone);
     const summary =
       mode === "sync_finish"
         ? `${totalMembers} people finish together at ${arr.groupEndDisplay}. Services start as early as ${arr.groupStartDisplay}.`
         : `${totalMembers} people arrive and start together at ${arr.groupStartDisplay}, done by ${arr.groupEndDisplay}.`;
     return {
-      index:            i,
-      startDisplay:     arr.groupStartDisplay,
-      endDisplay:       arr.groupEndDisplay,
-      startTime,  // HH:MM 24h — pass back in confirm_group_booking
+      index: i,
+      startDisplay: arr.groupStartDisplay,
+      endDisplay: arr.groupEndDisplay,
+      startTime, // HH:MM 24h — pass back in confirm_group_booking
       endTime,
       summary,
     };
@@ -2248,11 +2682,11 @@ async function handleGetGroupAvailableSlots(
 
   return NextResponse.json({
     arrangements: voiceArrangements,
-    count:        voiceArrangements.length,
-    date:         dateYmd,
+    count: voiceArrangements.length,
+    date: dateYmd,
     mode,
     totalMembers,
-    hint:         "Present at most 2 options to the customer. Say the time clearly. When confirmed, call confirm_group_booking.",
+    hint: "Present at most 2 options to the customer. Say the time clearly. When confirmed, call confirm_group_booking.",
   });
 }
 
@@ -2271,44 +2705,78 @@ async function handleConfirmGroupBooking(
   callerVerifiedPhone: string | null,
 ) {
   // 1. Parse args
-  const serviceAssignments = args.service_assignments as { service_id: string; count: number }[] | undefined;
-  const dateYmd         = args.date           as string | undefined;
-  const chosenTime      = args.time           as string | undefined;   // HH:MM 24h
-  const mode            = ((args.mode as string | undefined) ?? "sync_start") as GroupSyncMode;
-  const organizerName   = args.organizer_name  as string | undefined;
-  const organizerPhone  = args.organizer_phone as string | undefined;
+  const serviceAssignments = args.service_assignments as
+    { service_id: string; count: number }[] | undefined;
+  const dateYmd = args.date as string | undefined;
+  const chosenTime = args.time as string | undefined; // HH:MM 24h
+  const mode = ((args.mode as string | undefined) ??
+    "sync_start") as GroupSyncMode;
+  const organizerName = args.organizer_name as string | undefined;
+  const organizerPhone = args.organizer_phone as string | undefined;
 
   if (!Array.isArray(serviceAssignments) || serviceAssignments.length === 0) {
-    return NextResponse.json({ error: "missing_service_assignments" }, { status: 400 });
+    return NextResponse.json(
+      { error: "missing_service_assignments" },
+      { status: 400 },
+    );
   }
   if (!dateYmd || !/^\d{4}-\d{2}-\d{2}$/.test(dateYmd)) {
     return NextResponse.json({ error: "invalid_date" }, { status: 400 });
   }
   if (!chosenTime) {
-    return NextResponse.json({ error: "missing_time: pass the chosen HH:MM from get_group_available_slots" }, { status: 400 });
+    return NextResponse.json(
+      {
+        error:
+          "missing_time: pass the chosen HH:MM from get_group_available_slots",
+      },
+      { status: 400 },
+    );
   }
   const chosenMin = parseHm24(chosenTime);
   if (chosenMin === null) {
-    return NextResponse.json({ error: "invalid_time: expected HH:MM (24h)" }, { status: 400 });
+    return NextResponse.json(
+      { error: "invalid_time: expected HH:MM (24h)" },
+      { status: 400 },
+    );
   }
   if (!organizerName?.trim()) {
-    return NextResponse.json({ error: "missing_organizer_name" }, { status: 400 });
+    return NextResponse.json(
+      { error: "missing_organizer_name" },
+      { status: 400 },
+    );
   }
   if (!organizerPhone?.trim()) {
-    return NextResponse.json({ error: "missing_organizer_phone" }, { status: 400 });
+    return NextResponse.json(
+      { error: "missing_organizer_phone" },
+      { status: 400 },
+    );
   }
 
   // 2. Validate phone
   const phoneResult = validateGuestPhone(organizerPhone.trim());
   if (!phoneResult.ok) {
-    return NextResponse.json({ error: "invalid_organizer_phone", detail: "Phone number format not recognised." }, { status: 400 });
+    return NextResponse.json(
+      {
+        error: "invalid_organizer_phone",
+        detail: "Phone number format not recognised.",
+      },
+      { status: 400 },
+    );
   }
   const phoneDigits = phoneResult.digits;
 
   // 3. Load scheduling context (same as get_group_available_slots)
-  const ctxOrErr = await loadGroupCtx(supabase, salonSlug, serviceAssignments, dateYmd);
+  const ctxOrErr = await loadGroupCtx(
+    supabase,
+    salonSlug,
+    serviceAssignments,
+    dateYmd,
+  );
   if ("error" in ctxOrErr) {
-    return NextResponse.json({ error: ctxOrErr.error }, { status: ctxOrErr.status });
+    return NextResponse.json(
+      { error: ctxOrErr.error },
+      { status: ctxOrErr.status },
+    );
   }
   const ctx = ctxOrErr;
 
@@ -2318,15 +2786,22 @@ async function handleConfirmGroupBooking(
     otpSessionId: args.otp_session_id as string | undefined,
     callerVerifiedPhone,
   });
-  if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error, hint: gate.hint });
 
   // 4. Re-run scheduler at the chosen anchor to get concrete staff assignments
   //    (Ensures we pick up any bookings created since get_group_available_slots was called)
-  const anchorMs   = Date.parse(salonWallTimeToUtcIso(dateYmd, chosenMin, ctx.timezone));
-  const openMin    = parseHm24(ctx.dayHours.open)  ?? 0;
-  const closeMin   = parseHm24(ctx.dayHours.close) ?? 0;
-  const dayOpenMs  = Date.parse(salonWallTimeToUtcIso(dateYmd, openMin,  ctx.timezone));
-  const dayCloseMs = Date.parse(salonWallTimeToUtcIso(dateYmd, closeMin, ctx.timezone));
+  const anchorMs = Date.parse(
+    salonWallTimeToUtcIso(dateYmd, chosenMin, ctx.timezone),
+  );
+  const openMin = parseHm24(ctx.dayHours.open) ?? 0;
+  const closeMin = parseHm24(ctx.dayHours.close) ?? 0;
+  const dayOpenMs = Date.parse(
+    salonWallTimeToUtcIso(dateYmd, openMin, ctx.timezone),
+  );
+  const dayCloseMs = Date.parse(
+    salonWallTimeToUtcIso(dateYmd, closeMin, ctx.timezone),
+  );
 
   let finalArrangement: GroupArrangement | null = null;
   // Unified assignment list — each carries waveNumber (1 for normal bookings,
@@ -2338,30 +2813,34 @@ async function handleConfirmGroupBooking(
     // supported for sync_finish this phase (get_group_available_slots already
     // returns the "use arrive together" message for large finish-together groups).
     const finishResults = findFinishArrangementsInWindow({
-      targetFinishMs:  anchorMs,
+      targetFinishMs: anchorMs,
       dayOpenMs,
       dayCloseMs,
-      date:            dateYmd,
-      timezone:        ctx.timezone,
+      date: dateYmd,
+      timezone: ctx.timezone,
       resolvedMembers: ctx.resolvedMembers,
-      staffList:       ctx.staffList,
-      staffById:       ctx.staffById,
-      capability:      ctx.capability,
-      existing:        ctx.existing,
+      staffList: ctx.staffList,
+      staffById: ctx.staffById,
+      capability: ctx.capability,
+      existing: ctx.existing,
     });
     if (finishResults.length === 0) {
-      return NextResponse.json({
-        ok:     false,
-        reason: "slot_no_longer_available",
-        message: "The requested group time is no longer available. Please call get_group_available_slots again to find the next available slot.",
-      }, { status: 409 });
+      return NextResponse.json(
+        {
+          ok: false,
+          reason: "slot_no_longer_available",
+          message:
+            "The requested group time is no longer available. Please call get_group_available_slots again to find the next available slot.",
+        },
+        { status: 409 },
+      );
     }
     finalArrangement = finishResults[0]!;
     finalAssignments = finalArrangement.assignments.map((a) => ({
-      memberIdx:  a.memberIndex,
-      staffId:    a.staffId,
-      startMs:    Date.parse(a.startUtcIso),
-      endMs:      Date.parse(a.endUtcIso),
+      memberIdx: a.memberIndex,
+      staffId: a.staffId,
+      startMs: Date.parse(a.startUtcIso),
+      endMs: Date.parse(a.endUtcIso),
       waveNumber: 1,
     }));
   } else {
@@ -2376,23 +2855,49 @@ async function handleConfirmGroupBooking(
       false,
     );
     if (aligned) {
-      finalArrangement = buildArrangement("best", aligned, ctx.resolvedMembers, ctx.staffById, ctx.timezone);
-      finalAssignments = aligned.assignments.map((a) => ({ ...a, waveNumber: 1 }));
+      finalArrangement = buildArrangement(
+        "best",
+        aligned,
+        ctx.resolvedMembers,
+        ctx.staffById,
+        ctx.timezone,
+      );
+      finalAssignments = aligned.assignments.map((a) => ({
+        ...a,
+        waveNumber: 1,
+      }));
     } else {
       // Wave fallback (Phase 6): the group can't all start at once → split into waves.
       const waveRaw = tryWaveArrangement(
-        anchorMs, ctx.resolvedMembers, ctx.staffList, ctx.staffById,
-        ctx.capability, ctx.existing, dayCloseMs,
+        anchorMs,
+        ctx.resolvedMembers,
+        ctx.staffList,
+        ctx.staffById,
+        ctx.capability,
+        ctx.existing,
+        dayCloseMs,
       );
-      if (waveRaw && waveRaw.assignments.length === ctx.resolvedMembers.length) {
-        finalArrangement = buildWaveArrangement(waveRaw, ctx.resolvedMembers, ctx.staffById, ctx.timezone);
+      if (
+        waveRaw &&
+        waveRaw.assignments.length === ctx.resolvedMembers.length
+      ) {
+        finalArrangement = buildWaveArrangement(
+          waveRaw,
+          ctx.resolvedMembers,
+          ctx.staffById,
+          ctx.timezone,
+        );
         finalAssignments = waveRaw.assignments;
       } else {
-        return NextResponse.json({
-          ok:     false,
-          reason: "slot_no_longer_available",
-          message: "The requested group time is no longer available. Please call get_group_available_slots again to find the next available slot.",
-        }, { status: 409 });
+        return NextResponse.json(
+          {
+            ok: false,
+            reason: "slot_no_longer_available",
+            message:
+              "The requested group time is no longer available. Please call get_group_available_slots again to find the next available slot.",
+          },
+          { status: 409 },
+        );
       }
     }
   }
@@ -2406,8 +2911,9 @@ async function handleConfirmGroupBooking(
     bookingClosedDatesRaw: ctx.bookingClosedDates,
     members: finalAssignments.map((assignment) => {
       const member =
-        ctx.resolvedMembers.find((candidate) => candidate.index === assignment.memberIdx) ??
-        ctx.resolvedMembers[assignment.memberIdx]!;
+        ctx.resolvedMembers.find(
+          (candidate) => candidate.index === assignment.memberIdx,
+        ) ?? ctx.resolvedMembers[assignment.memberIdx]!;
       const service = ctx.serviceById.get(member.serviceId)!;
       return {
         dateYmd,
@@ -2438,64 +2944,94 @@ async function handleConfirmGroupBooking(
     .slice()
     .sort((a, b) => a.waveNumber - b.waveNumber || a.memberIdx - b.memberIdx);
   const insertPayload = orderedAssignments.map((a, idx) => {
-    const member = ctx.resolvedMembers.find((m) => m.index === a.memberIdx) ?? ctx.resolvedMembers[idx]!;
-    const svc    = ctx.serviceById.get(member.serviceId)!;
+    const member =
+      ctx.resolvedMembers.find((m) => m.index === a.memberIdx) ??
+      ctx.resolvedMembers[idx]!;
+    const svc = ctx.serviceById.get(member.serviceId)!;
     return {
-      salon_id:                  ctx.salonId,
-      staff_id:                  a.staffId,
-      service_id:                member.serviceId,
-      client_name:               `Guest ${idx + 1}`,
-      client_phone:              phoneDigits,
-      client_email:              null,
-      client_notes:              "Voice group booking",
-      start_time_utc:            new Date(a.startMs).toISOString(),
-      end_time_utc:              new Date(a.endMs).toISOString(),
-      price_cents:               svc.priceCents,
-      addon_service_ids:         [],
-      wave_number:               a.waveNumber,
+      salon_id: ctx.salonId,
+      staff_id: a.staffId,
+      service_id: member.serviceId,
+      client_name: `Guest ${idx + 1}`,
+      client_phone: phoneDigits,
+      client_email: null,
+      client_notes: "Voice group booking",
+      start_time_utc: new Date(a.startMs).toISOString(),
+      end_time_utc: new Date(a.endMs).toISOString(),
+      price_cents: svc.priceCents,
+      addon_service_ids: [],
+      wave_number: a.waveNumber,
       staff_requested_by_client: false,
-      idempotency_key:           idempotencyKey,
+      idempotency_key: idempotencyKey,
     };
   });
 
   // 6. Atomic insert via RPC
-  const { data: rpcData, error: rpcErr } = await supabase.rpc("insert_group_bookings", {
-    p_bookings: insertPayload,
-  });
+  const { data: rpcData, error: rpcErr } = await supabase.rpc(
+    "insert_group_bookings",
+    {
+      p_bookings: insertPayload,
+    },
+  );
 
   if (rpcErr) {
     console.error("[voice/confirm_group_booking] RPC error:", rpcErr);
     const e = rpcErr as { code?: string; message?: string };
     if (e.code === "23P01") {
-      return NextResponse.json({
-        ok:     false,
-        reason: "slot_conflict",
-        message: "A booking conflict occurred. Please call get_group_available_slots again to find fresh availability.",
-      }, { status: 409 });
+      return NextResponse.json(
+        {
+          ok: false,
+          reason: "slot_conflict",
+          message:
+            "A booking conflict occurred. Please call get_group_available_slots again to find fresh availability.",
+        },
+        { status: 409 },
+      );
     }
     if (e.code === "23505") {
-      return NextResponse.json({ ok: false, reason: "duplicate_submission" }, { status: 409 });
+      return NextResponse.json(
+        { ok: false, reason: "duplicate_submission" },
+        { status: 409 },
+      );
     }
-    return NextResponse.json({ error: "group_booking_failed", detail: e.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "group_booking_failed", detail: e.message },
+      { status: 500 },
+    );
   }
 
-  const result = rpcData as { success?: boolean; code?: string; group_id?: string; booking_ids?: string[] } | null;
+  const result = rpcData as {
+    success?: boolean;
+    code?: string;
+    group_id?: string;
+    booking_ids?: string[];
+  } | null;
   if (!result?.success) {
     const code = result?.code ?? "unknown";
     if (code === "slot_conflict") {
-      return NextResponse.json({
-        ok:     false,
-        reason: "slot_conflict",
-        message: "A booking conflict occurred. Please call get_group_available_slots again.",
-      }, { status: 409 });
+      return NextResponse.json(
+        {
+          ok: false,
+          reason: "slot_conflict",
+          message:
+            "A booking conflict occurred. Please call get_group_available_slots again.",
+        },
+        { status: 409 },
+      );
     }
     if (code === "duplicate_submission") {
-      return NextResponse.json({ ok: false, reason: "duplicate_submission" }, { status: 409 });
+      return NextResponse.json(
+        { ok: false, reason: "duplicate_submission" },
+        { status: 409 },
+      );
     }
-    return NextResponse.json({ error: "group_booking_failed", code }, { status: 500 });
+    return NextResponse.json(
+      { error: "group_booking_failed", code },
+      { status: 500 },
+    );
   }
 
-  const groupId    = result.group_id!;
+  const groupId = result.group_id!;
   const bookingIds = (result.booking_ids ?? []).map(String);
 
   // 7. Stamp source = "voice" on all created bookings (best-effort)
@@ -2505,25 +3041,29 @@ async function handleConfirmGroupBooking(
         .from("bookings")
         .update({ source: "voice", booking_channel: "voice" } as never)
         .in("id", bookingIds);
-    } catch { /* best-effort */ }
-    bookingIds.forEach((id) =>
-      void logBookingEvent({
-        bookingId: id,
-        salonId: ctx.salonId,
-        actorUserId: null,
-        actorRole: "system",
-        eventType: "booking_created",
-        payload: { source: "voice_group", memberCount: bookingIds.length },
-      }),
+    } catch {
+      /* best-effort */
+    }
+    bookingIds.forEach(
+      (id) =>
+        void logBookingEvent({
+          bookingId: id,
+          salonId: ctx.salonId,
+          actorUserId: null,
+          actorRole: "system",
+          eventType: "booking_created",
+          payload: { source: "voice_group", memberCount: bookingIds.length },
+        }),
     );
     // Unified no-show protection gate — runs AI agent when opted-in, falls
     // back to hard rules otherwise.  Flag the lead (only it carries a phone).
     try {
-      const { handleBookingProtection } = await import(
-        "@/shared/noshow/handleBookingProtection"
-      );
+      const { handleBookingProtection } =
+        await import("@/shared/noshow/handleBookingProtection");
       await handleBookingProtection(bookingIds[0], ctx.salonId, "voice");
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
     // Owner/admin "new booking" alert — one email for the group (first booking).
     if (bookingIds[0]) {
       after(() =>
@@ -2539,21 +3079,25 @@ async function handleConfirmGroupBooking(
   // 8. Create Party Link (best-effort — failure doesn't break the booking)
   let partyLinkUrl: string | null = null;
   try {
-    const groupStartUtcIso = new Date(finalArrangement.groupStartMs).toISOString();
+    const groupStartUtcIso = new Date(
+      finalArrangement.groupStartMs,
+    ).toISOString();
     const linkResult = await createPartyLink({
       groupId,
-      salonId:         ctx.salonId,
+      salonId: ctx.salonId,
       bookingIds,
       mode,
       groupStartUtcIso,
       baseUrl,
-      organizerName:   organizerName!.trim(),
-      organizerPhone:  phoneDigits,
+      organizerName: organizerName!.trim(),
+      organizerPhone: phoneDigits,
     });
     if (linkResult.ok) partyLinkUrl = linkResult.url;
   } catch {
     // Party Link creation failing must not break the group booking confirmation.
-    console.warn("[voice/confirm_group_booking] Party Link creation failed (non-fatal).");
+    console.warn(
+      "[voice/confirm_group_booking] Party Link creation failed (non-fatal).",
+    );
   }
 
   // 9. Link to voice_ai_session (best-effort)
@@ -2563,7 +3107,9 @@ async function handleConfirmGroupBooking(
         .from("voice_ai_sessions")
         .update({ status: "completed" })
         .eq("id", sessionId);
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
   }
 
   // 10. Send ONE confirmation SMS to the ORGANIZER — AWAITED so we report the
@@ -2577,57 +3123,70 @@ async function handleConfirmGroupBooking(
   const firstBookingId = bookingIds[0] ?? null;
   if (firstBookingId) {
     try {
-      const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+      const appUrl =
+        (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
       const smsRes = await fetch(`${appUrl}/api/booking/sms-confirm`, {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          bookingId:    firstBookingId,
-          salonId:      ctx.salonId,
-          clientPhone:  phoneDigits,
-          clientName:   organizerName!.trim(),
-          serviceName:  `Group of ${totalMembers}`,
+          bookingId: firstBookingId,
+          salonId: ctx.salonId,
+          clientPhone: phoneDigits,
+          clientName: organizerName!.trim(),
+          serviceName: `Group of ${totalMembers}`,
           startTimeUtc: new Date(finalArrangement.groupStartMs).toISOString(),
         }),
       });
-      const smsJson = await smsRes.json().catch(() => ({})) as { ok?: boolean; error?: string };
+      const smsJson = (await smsRes.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+      };
       smsSent = smsRes.ok && smsJson.ok === true;
       if (!smsSent) {
-        console.warn("[voice/confirm_group_booking] confirmation SMS not sent:", smsJson.error ?? `http_${smsRes.status}`);
+        console.warn(
+          "[voice/confirm_group_booking] confirmation SMS not sent:",
+          smsJson.error ?? `http_${smsRes.status}`,
+        );
       }
     } catch (e: unknown) {
-      console.error("[voice/confirm_group_booking] sms-confirm dispatch failed", e);
+      console.error(
+        "[voice/confirm_group_booking] sms-confirm dispatch failed",
+        e,
+      );
       smsSent = false;
     }
   }
 
   return NextResponse.json({
-    ok:                true,
+    ok: true,
     groupId,
     bookingIds,
     partyLinkUrl,
     smsSent,
     // Phase 6 wave info — true + waveCount>1 when the large group was split.
-    isWaveBooking:     finalArrangement.isWaveBooking,
-    waveCount:         finalArrangement.waveCount,
-    waves:             finalArrangement.waves.map((w) => ({
-      waveNumber:   w.waveNumber,
+    isWaveBooking: finalArrangement.isWaveBooking,
+    waveCount: finalArrangement.waveCount,
+    waves: finalArrangement.waves.map((w) => ({
+      waveNumber: w.waveNumber,
       startDisplay: w.startDisplay,
-      endDisplay:   w.endDisplay,
-      memberCount:  w.memberCount,
+      endDisplay: w.endDisplay,
+      memberCount: w.memberCount,
     })),
     groupStartDisplay: finalArrangement.groupStartDisplay,
-    groupEndDisplay:   finalArrangement.groupEndDisplay,
-    groupStartTime:    utcMsToSalonHm24(finalArrangement.groupStartMs, ctx.timezone),
-    groupEndTime:      utcMsToSalonHm24(finalArrangement.groupEndMs,   ctx.timezone),
-    date:              dateYmd,
+    groupEndDisplay: finalArrangement.groupEndDisplay,
+    groupStartTime: utcMsToSalonHm24(
+      finalArrangement.groupStartMs,
+      ctx.timezone,
+    ),
+    groupEndTime: utcMsToSalonHm24(finalArrangement.groupEndMs, ctx.timezone),
+    date: dateYmd,
     totalMembers,
-    organizerName:     organizerName!.trim(),
-    message:           finalArrangement.isWaveBooking
+    organizerName: organizerName!.trim(),
+    message: finalArrangement.isWaveBooking
       ? `Group booking confirmed for ${totalMembers} people across ${finalArrangement.waveCount} waves. Party link is ready to share.`
-      : (partyLinkUrl
-          ? `Group booking confirmed for ${totalMembers} people. Party link is ready to share.`
-          : `Group booking confirmed for ${totalMembers} people.`),
+      : partyLinkUrl
+        ? `Group booking confirmed for ${totalMembers} people. Party link is ready to share.`
+        : `Group booking confirmed for ${totalMembers} people.`,
     hint: finalArrangement.isWaveBooking
       ? "WAVE booking confirmed. Tell the organizer their group is split into waves (say each wave's start time and guest count from `waves`). Do NOT read individual staff assignments. Mention the party link will be shared."
       : "Do NOT read individual staff assignments aloud. Tell the customer the group start time, end time, and that the party link will be shared with the group organizer.",
@@ -2673,7 +3232,10 @@ async function handleLookupCustomer(
 ) {
   const customerPhone = args.customer_phone as string | undefined;
   if (!customerPhone) {
-    return NextResponse.json({ error: "missing_customer_phone" }, { status: 400 });
+    return NextResponse.json(
+      { error: "missing_customer_phone" },
+      { status: 400 },
+    );
   }
 
   const { data: salon } = await supabase
@@ -2681,13 +3243,14 @@ async function handleLookupCustomer(
     .select("id, timezone")
     .eq("slug", salonSlug)
     .single();
-  if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
+  if (!salon)
+    return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
 
   const last9 = phoneSuffixOrNull(customerPhone);
   if (!last9) {
     return NextResponse.json({
       known: false,
-      hint:  "Phone number too short to look up. Continue the normal flow.",
+      hint: "Phone number too short to look up. Continue the normal flow.",
     });
   }
 
@@ -2697,16 +3260,19 @@ async function handleLookupCustomer(
     otpSessionId: args.otp_session_id as string | undefined,
     callerVerifiedPhone,
   });
-  if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
+  if (!gate.ok)
+    return NextResponse.json({ error: gate.error, hint: gate.hint });
 
   const NOT_KNOWN = {
     known: false,
-    hint:  "New customer — ask for their name and continue the normal booking flow. Do not mention that you looked them up.",
+    hint: "New customer — ask for their name and continue the normal booking flow. Do not mention that you looked them up.",
   };
 
   const { data: profiles } = await supabase
     .from("client_profiles")
-    .select("id, name, phone, visit_count, last_service_date, preferred_staff_id")
+    .select(
+      "id, name, phone, visit_count, last_service_date, preferred_staff_id",
+    )
     .ilike("phone", `%${last9}`)
     .is("deleted_at", null)
     .limit(1);
@@ -2728,21 +3294,30 @@ async function handleLookupCustomer(
     try {
       await supabase
         .from("voice_ai_sessions")
-        .update({ client_phone: customerPhone.replace(/\D/g, ""), client_name: profile.name ?? null })
+        .update({
+          client_phone: customerPhone.replace(/\D/g, ""),
+          client_name: profile.name ?? null,
+        })
         .eq("id", sessionId);
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
   }
 
   const [prefsRes, patternRes] = await Promise.all([
     supabase
       .from("customer_preferences")
-      .select("allergies, favorite_colors, favorite_styles, preferred_language, consent_ai_personalization")
+      .select(
+        "allergies, favorite_colors, favorite_styles, preferred_language, consent_ai_personalization",
+      )
       .eq("salon_id", salon.id)
       .eq("client_profile_id", profile.id)
       .maybeSingle(),
     supabase
       .from("customer_booking_patterns")
-      .select("usual_service_ids, usual_staff_id, recurring_weekday, recurring_hour, pattern_confidence")
+      .select(
+        "usual_service_ids, usual_staff_id, recurring_weekday, recurring_hour, pattern_confidence",
+      )
       .eq("salon_id", salon.id)
       .eq("client_profile_id", profile.id)
       .maybeSingle(),
@@ -2759,9 +3334,9 @@ async function handleLookupCustomer(
   // Explicit opt-out of AI personalization → greet by name, nothing else.
   if (prefs?.consent_ai_personalization === false) {
     return NextResponse.json({
-      known:         true,
+      known: true,
       customer_name: profile.name,
-      hint:          "Greet by name only. This customer opted out of AI personalization — do NOT reference history or preferences.",
+      hint: "Greet by name only. This customer opted out of AI personalization — do NOT reference history or preferences.",
     });
   }
 
@@ -2803,14 +3378,14 @@ async function handleLookupCustomer(
   }
 
   return NextResponse.json({
-    known:           true,
-    customer_name:   profile.name,
-    visit_count:     localBookings,
-    is_regular:      localBookings >= 3,
-    last_visit:      profile.last_service_date ?? null,
-    usual_services:  usualServices,
-    usual_staff:     usualStaff,
-    allergies:       prefs?.allergies ?? [],
+    known: true,
+    customer_name: profile.name,
+    visit_count: localBookings,
+    is_regular: localBookings >= 3,
+    last_visit: profile.last_service_date ?? null,
+    usual_services: usualServices,
+    usual_staff: usualStaff,
+    allergies: prefs?.allergies ?? [],
     favorite_colors: prefs?.favorite_colors ?? [],
     favorite_styles: prefs?.favorite_styles ?? [],
     preferred_language: prefs?.preferred_language ?? null,
@@ -2844,12 +3419,14 @@ async function handleLeaveMessageForOwner(
   args: Record<string, unknown>,
   sessionId: string | null,
 ) {
-  const rawMessage    = (args.message        as string | undefined)?.trim();
-  const customerName  = (args.customer_name  as string | undefined)?.trim() ?? "";
-  const customerPhone = (args.customer_phone as string | undefined)?.trim() ?? "";
-  const urgency       = args.urgency === "urgent" ? "urgent" : "normal";
+  const rawMessage = (args.message as string | undefined)?.trim();
+  const customerName = (args.customer_name as string | undefined)?.trim() ?? "";
+  const customerPhone =
+    (args.customer_phone as string | undefined)?.trim() ?? "";
+  const urgency = args.urgency === "urgent" ? "urgent" : "normal";
 
-  if (!rawMessage) return NextResponse.json({ error: "missing_message" }, { status: 400 });
+  if (!rawMessage)
+    return NextResponse.json({ error: "missing_message" }, { status: 400 });
   const message = rawMessage.slice(0, ESCALATION_MAX_CHARS);
 
   const { data: salon } = await supabase
@@ -2857,7 +3434,8 @@ async function handleLeaveMessageForOwner(
     .select("id, name")
     .eq("slug", salonSlug)
     .single();
-  if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
+  if (!salon)
+    return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
 
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const { count: recentCount } = await supabase
@@ -2874,43 +3452,47 @@ async function handleLeaveMessageForOwner(
     return NextResponse.json({
       success: false,
       throttled: true,
-      hint:
-        "The salon has received a lot of messages in the past hour. Apologise, and ask the customer to call the salon directly or try again later. Do NOT retry this tool.",
+      hint: "The salon has received a lot of messages in the past hour. Apologise, and ask the customer to call the salon directly or try again later. Do NOT retry this tool.",
     });
   }
 
   let logged = false;
   try {
     const { error } = await supabase.from("ai_actions_log").insert({
-      salon_id:    salon.id,
-      agent:       "receptionist",
+      salon_id: salon.id,
+      agent: "receptionist",
       action_type: "customer_message_escalation",
       payload: {
-        customer_name:    customerName || null,
-        customer_phone:   customerPhone || null,
+        customer_name: customerName || null,
+        customer_phone: customerPhone || null,
         message,
         urgency,
         voice_session_id: sessionId,
       },
     });
     logged = !error;
-  } catch { /* fall through to the alert */ }
+  } catch {
+    /* fall through to the alert */
+  }
 
   if (!logged) {
-    return NextResponse.json({
-      success: false,
-      error: "message_not_saved",
-      hint:
-        "Apologise that the message could not be saved. Do not say it was sent or passed to the owner. " +
-        "Ask the customer to call the salon directly or try again later.",
-    }, { status: 500 });
+    return NextResponse.json(
+      {
+        success: false,
+        error: "message_not_saved",
+        hint:
+          "Apologise that the message could not be saved. Do not say it was sent or passed to the owner. " +
+          "Ask the customer to call the salon directly or try again later.",
+      },
+      { status: 500 },
+    );
   }
 
   try {
     const { sendOwnerAlert } = await import("@/shared/ai/sendOwnerAlert");
     const flag = urgency === "urgent" ? "🔴 KHẨN — " : "";
     await sendOwnerAlert(String(salon.id), {
-      subject:  `${flag}Lời nhắn từ khách qua AI Tiếp tân${customerName ? ` — ${customerName}` : ""}`,
+      subject: `${flag}Lời nhắn từ khách qua AI Tiếp tân${customerName ? ` — ${customerName}` : ""}`,
       bodyText:
         `Khách: ${customerName || "(không rõ tên)"}\n` +
         `SĐT: ${customerPhone || "(chưa cung cấp)"}\n` +

@@ -19,15 +19,15 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260811183000. Refresh these with each schema-changing forward
+ * through 20260814091000. Refresh these with each schema-changing forward
  * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
   tables: 107,
-  columns: 1453,
+  columns: 1454,
   policies: 156,
   /**
-   * APP functions only — 117 after the rehearsed forward migrations.
+   * APP functions only — 128 after the rehearsed forward migrations.
    *
    * Counting every `public` function is a trap: many belong to EXTENSIONS
    * (pgcrypto, btree_gist, pg_trgm, uuid-ossp), which production happens to have
@@ -36,8 +36,8 @@ const PRODUCTION = {
    * The query below excludes anything a `pg_depend` extension edge points at,
    * so extension placement cannot distort this release-shape tripwire.
    */
-  functions: 117,
-  triggers: 40,
+  functions: 128,
+  triggers: 41,
   indexes: 353,
 } as const;
 
@@ -119,6 +119,15 @@ const CRITICAL_FUNCTIONS = [
   "release_voice_session_reservation",
   "claim_ai_execution_slot",
   "create_recovered_booking",
+  "create_recovered_walkin",
+  "cancel_booking_by_id",
+  "cancel_booking_group_as_system",
+  "enforce_terminal_booking_write_boundary",
+  "record_terminal_booking_fee_mutation",
+  "transition_booking_group_to_terminal",
+  "transition_booking_to_terminal",
+  "transition_square_booking_to_terminal",
+  "redact_terminal_booking_for_privacy",
   "validate_archived_booking_recovery",
   "protect_archived_booking_recovery_flag",
   "insert_controlled_after_hours_group_bookings",

@@ -12,9 +12,7 @@ describe("AI execution worker boundary", () => {
     "supabase/migrations/20260727203000_add_ai_execution_leases.sql",
   );
   const route = read("src/app/api/cron/ai-execution/route.ts");
-  const authorization = read(
-    "src/shared/security/cronAuthorization.ts",
-  );
+  const authorization = read("src/shared/security/cronAuthorization.ts");
   const schedule = read("vercel.json");
   const parity = read("scripts/check-schema-parity.ts");
 
@@ -68,9 +66,9 @@ describe("AI execution worker boundary", () => {
   });
 
   it("makes every lease RPC a blank-database critical object", () => {
-    expect(parity).toContain("through 20260811183000");
-    expect(parity).toContain("columns: 1453");
-    expect(parity).toContain("functions: 117");
+    expect(parity).toContain("through 20260814091000");
+    expect(parity).toContain("columns: 1454");
+    expect(parity).toContain("functions: 128");
     expect(parity).toContain("indexes: 353");
     expect(parity).toContain('"claim_ai_execution_jobs"');
     expect(parity).toContain('"finish_ai_execution_job"');

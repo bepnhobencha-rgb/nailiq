@@ -1,5 +1,6 @@
 "use server";
 
+import { createHash } from "node:crypto";
 import { after } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -121,6 +122,56 @@ function ctxActorUserId(ctx: { userId: string | null }): string | null {
 
 type OkBooking = { ok: true; bookingId: string };
 
+type TerminalTransitionReason =
+  "walkin_removed" | "desk_cancel" | "wix_decline" | "desk_no_show";
+
+type TerminalTransitionBooking = {
+  id: string;
+  service_id?: string | null;
+  client_phone?: string | null;
+  client_name?: string | null;
+  client_email?: string | null;
+};
+
+async function transitionBookingToTerminal(
+  ctx: NonNullable<Awaited<ReturnType<typeof getDashboardWriteClient>>>,
+  bookingId: string,
+  reason: TerminalTransitionReason,
+): Promise<
+  | { ok: true; booking: TerminalTransitionBooking }
+  | { ok: false; error: string }
+> {
+  // A demo cookie has no attributable user. Terminal history is intentionally
+  // stricter than ordinary demo writes: never create an unaudited tombstone.
+  if (ctx.kind !== "member" || !ctx.userId) return fail("unauthorized");
+  const db = createServiceRoleClient();
+  const { data, error } = await db.rpc(
+    "transition_booking_to_terminal" as never,
+    {
+      p_booking_id: bookingId,
+      p_salon_id: ctx.salon.id,
+      p_actor_user_id: ctx.userId,
+      p_actor_role: ctx.role,
+      p_reason: reason,
+    } as never,
+  );
+  if (error) {
+    console.error("[transitionBookingToTerminal]", reason, error);
+    return fail("server_error");
+  }
+  const result = (Array.isArray(data) ? data[0] : data) as {
+    success?: boolean;
+    code?: string;
+    booking?: TerminalTransitionBooking;
+  } | null;
+  if (!result?.success || !result.booking?.id) {
+    return fail(
+      result?.code === "invalid_state" ? "invalid_state" : "server_error",
+    );
+  }
+  return { ok: true, booking: result.booking };
+}
+
 type ArchivedBookingRecoveryKind = "cancelled_rebook" | "no_show_walkin";
 
 type ArchivedBookingRecoveryInput = {
@@ -133,6 +184,7 @@ type ArchivedBookingRecoveryInput = {
 
 type ValidatedArchivedBookingRecovery = ArchivedBookingRecoveryInput & {
   recoveredByUserId: string;
+  requestFingerprint: string;
 };
 
 type ExistingArchivedBookingRecovery = {
@@ -140,7 +192,17 @@ type ExistingArchivedBookingRecovery = {
   idempotencyKey: string | null;
   kind: ArchivedBookingRecoveryKind | null;
   recoveredByUserId: string | null;
+  requestFingerprint: string | null;
 };
+
+function archivedRecoveryFingerprint(
+  kind: ArchivedBookingRecoveryKind,
+  durableIntent: Record<string, unknown>,
+): string {
+  return createHash("sha256")
+    .update(JSON.stringify({ version: 1, kind, ...durableIntent }))
+    .digest("hex");
+}
 
 async function loadExistingArchivedBookingRecovery(
   salonId: string,
@@ -151,7 +213,9 @@ async function loadExistingArchivedBookingRecovery(
   const db = createServiceRoleClient();
   const { data, error } = await db
     .from("bookings")
-    .select("id, idempotency_key, recovery_kind, recovered_by_user_id" as never)
+    .select(
+      "id, idempotency_key, recovery_kind, recovered_by_user_id, recovery_request_fingerprint" as never,
+    )
     .eq("salon_id", salonId)
     .eq("recovered_from_booking_id" as never, sourceBookingId)
     .limit(1)
@@ -177,6 +241,10 @@ async function loadExistingArchivedBookingRecovery(
         typeof row.recovered_by_user_id === "string"
           ? row.recovered_by_user_id
           : null,
+      requestFingerprint:
+        typeof row.recovery_request_fingerprint === "string"
+          ? row.recovery_request_fingerprint
+          : null,
     },
   };
 }
@@ -188,26 +256,9 @@ function isSameArchivedBookingRecovery(
   return (
     existing.idempotencyKey === recovery.requestId &&
     existing.kind === recovery.kind &&
-    existing.recoveredByUserId === recovery.recoveredByUserId
+    existing.recoveredByUserId === recovery.recoveredByUserId &&
+    existing.requestFingerprint === recovery.requestFingerprint
   );
-}
-
-async function terminalBookingMustRemainImmutable(
-  salonId: string,
-  bookingId: string,
-): Promise<{ ok: true; immutable: boolean } | { ok: false }> {
-  if (await archivedBookingRecoveryEnabled(salonId)) {
-    return { ok: true, immutable: true };
-  }
-  const existing = await loadExistingArchivedBookingRecovery(
-    salonId,
-    bookingId,
-  );
-  if (!existing.ok) return { ok: false };
-  // Feature rollback may restore the legacy behavior only for untouched
-  // terminal rows. Once a linked child exists, reopening the source would
-  // create two active records and is therefore permanently forbidden.
-  return { ok: true, immutable: existing.existing !== null };
 }
 
 async function archivedBookingRecoveryEnabled(
@@ -232,6 +283,7 @@ async function validateArchivedBookingRecovery(
   ctx: Awaited<ReturnType<typeof getDashboardWriteClient>>,
   input: ArchivedBookingRecoveryInput | undefined,
   expectedKind: ArchivedBookingRecoveryKind,
+  requestFingerprint: string | null,
 ): Promise<
   | {
       ok: true;
@@ -242,6 +294,9 @@ async function validateArchivedBookingRecovery(
 > {
   if (!input) {
     return { ok: true, recovery: null, existingBookingId: null };
+  }
+  if (!requestFingerprint || !/^[0-9a-f]{64}$/.test(requestFingerprint)) {
+    return fail("invalid_recovery");
   }
   if (
     !ctx ||
@@ -289,15 +344,24 @@ async function validateArchivedBookingRecovery(
     kind: expectedKind,
     requestId,
     recoveredByUserId: ctx.userId,
+    requestFingerprint,
   };
   if (existingResult.existing) {
-    return isSameArchivedBookingRecovery(existingResult.existing, recovery)
-      ? {
-          ok: true,
-          recovery,
-          existingBookingId: existingResult.existing.id,
-        }
-      : fail("already_recovered");
+    if (isSameArchivedBookingRecovery(existingResult.existing, recovery)) {
+      return {
+        ok: true,
+        recovery,
+        // The first transaction already persisted the full durable child and
+        // its audit/events. Return that canonical result before mutable plan,
+        // service, feature-flag or Wix prerequisites are re-evaluated.
+        existingBookingId: existingResult.existing.id,
+      };
+    }
+    return fail(
+      existingResult.existing.idempotencyKey === recovery.requestId
+        ? "idempotency_mismatch"
+        : "already_recovered",
+    );
   }
 
   // A completed request is acknowledged above even if an operator has since
@@ -371,17 +435,6 @@ export async function addWalkinToQueue(
     return fail("salon_mismatch");
   }
 
-  const recoveryResult = await validateArchivedBookingRecovery(
-    ctx,
-    input.recovery,
-    "no_show_walkin",
-  );
-  if (!recoveryResult.ok) return recoveryResult;
-  const recovery = recoveryResult.recovery;
-  if (recoveryResult.existingBookingId) {
-    return { ok: true, bookingId: recoveryResult.existingBookingId };
-  }
-
   const clientName = String(input.clientName ?? "").trim();
   if (!clientName) return fail("invalid_name");
   if (clientName.length > BOOKING_GUEST_NAME_MAX) return fail("invalid_name");
@@ -407,6 +460,61 @@ export async function addWalkinToQueue(
     const t = String(input.staffRequestNote).trim();
     if (t.length > STAFF_NOTE_MAX_LEN) return fail("note_too_long");
     note = t;
+  }
+
+  const walkinSource: QueueSource | null = isQueueSource(input.walkinSource)
+    ? input.walkinSource
+    : null;
+  const walkinPriority: QueuePriority | null = isQueuePriority(
+    input.walkinPriority,
+  )
+    ? input.walkinPriority
+    : null;
+  const tagsIn = Array.isArray(input.walkinRequestTags)
+    ? input.walkinRequestTags
+    : [];
+  const walkinRequestTags: string[] = [];
+  for (const raw of tagsIn) {
+    const t = normalizeRequestTag(raw);
+    if (t !== null) walkinRequestTags.push(t);
+    if (walkinRequestTags.length >= QUEUE_REQUEST_TAGS_MAX_COUNT) break;
+  }
+  const partyRaw =
+    typeof input.partySize === "number" ? Math.round(input.partySize) : null;
+  const partySize: number | null =
+    partyRaw !== null &&
+    Number.isFinite(partyRaw) &&
+    partyRaw >= 1 &&
+    partyRaw <= 50
+      ? partyRaw
+      : null;
+  const staffRequestedByClient =
+    input.staffRequestedByClient === true || note !== null;
+
+  const recoveryFingerprint = input.recovery
+    ? archivedRecoveryFingerprint("no_show_walkin", {
+        salonId: ctx.salon.id,
+        serviceId,
+        clientName,
+        clientPhone: clientPhoneClean,
+        staffRequestNote: note,
+        staffRequestedByClient,
+        walkinSource,
+        walkinPriority,
+        walkinRequestTags: [...walkinRequestTags].sort(),
+        partySize,
+      })
+    : null;
+  const recoveryResult = await validateArchivedBookingRecovery(
+    ctx,
+    input.recovery,
+    "no_show_walkin",
+    recoveryFingerprint,
+  );
+  if (!recoveryResult.ok) return recoveryResult;
+  const recovery = recoveryResult.recovery;
+  if (recoveryResult.existingBookingId) {
+    return { ok: true, bookingId: recoveryResult.existingBookingId };
   }
 
   const supabase = ctx.supabase;
@@ -456,101 +564,93 @@ export async function addWalkinToQueue(
   const price =
     svc.price_cents != null ? Math.round(Number(svc.price_cents)) : null;
 
-  const walkinSource: QueueSource | null = isQueueSource(input.walkinSource)
-    ? input.walkinSource
-    : null;
-  const walkinPriority: QueuePriority | null = isQueuePriority(
-    input.walkinPriority,
-  )
-    ? input.walkinPriority
-    : null;
-
-  const tagsIn = Array.isArray(input.walkinRequestTags)
-    ? input.walkinRequestTags
-    : [];
-  const walkinRequestTags: string[] = [];
-  for (const raw of tagsIn) {
-    const t = normalizeRequestTag(raw);
-    if (t !== null) walkinRequestTags.push(t);
-    if (walkinRequestTags.length >= QUEUE_REQUEST_TAGS_MAX_COUNT) break;
-  }
-
-  const partyRaw =
-    typeof input.partySize === "number" ? Math.round(input.partySize) : null;
-  const partySize: number | null =
-    partyRaw !== null &&
-    Number.isFinite(partyRaw) &&
-    partyRaw >= 1 &&
-    partyRaw <= 50
-      ? partyRaw
-      : null;
-
-  // Effective staff-requested signal: explicit checkbox OR a
-  // non-empty note both count. Walk-ins predating the explicit
-  // checkbox kept the same behavior — the note alone implies a
-  // request — so this OR keeps that contract intact.
-  const staffRequestedByClient =
-    input.staffRequestedByClient === true || note !== null;
-
-  // `walkin_*` / `party_size` / `staff_requested_by_client` columns
-  // are not yet in the auto-generated Supabase types; cast the patch
-  // object so .insert() accepts the new columns. Will become a plain
-  // typed call after the next regeneration.
-  const insertPatch = {
-    salon_id: ctx.salon.id,
-    service_id: serviceId,
-    client_name: clientName,
-    client_phone: clientPhoneClean,
-    client_notes: null,
-    staff_id: null,
-    start_time_utc: null,
-    end_time_utc: null,
-    status: "waiting",
-    source: "walkin",
-    booking_channel: "walkin",
-    joined_queue_at: joinedAt,
-    staff_request_note: note,
-    staff_requested_by_client: staffRequestedByClient,
-    price_cents: Number.isFinite(price ?? NaN) ? price : null,
-    walkin_source: walkinSource,
-    walkin_priority: walkinPriority,
-    walkin_request_tags: walkinRequestTags,
-    party_size: partySize,
-    ...(recovery
-      ? {
-          recovered_from_booking_id: recovery.sourceBookingId,
-          recovery_kind: recovery.kind,
-          recovered_by_user_id: recovery.recoveredByUserId,
-          idempotency_key: recovery.requestId,
-        }
-      : {}),
-  } as never;
-
-  const { data: inserted, error: insErr } = await supabase
-    .from("bookings")
-    .insert(insertPatch)
-    .select("id")
-    .maybeSingle();
-
-  if (insErr) {
-    if ((insErr as { code?: string }).code === "23505" && recovery) {
-      const raced = await loadExistingArchivedBookingRecovery(
-        ctx.salon.id,
-        recovery.sourceBookingId,
-      );
-      if (
-        raced.ok &&
-        raced.existing &&
-        isSameArchivedBookingRecovery(raced.existing, recovery)
-      ) {
-        return { ok: true, bookingId: raced.existing.id };
-      }
-      return fail("already_recovered");
+  let bid = "";
+  if (recovery) {
+    // The linked child and its actor/link audit must share one database
+    // transaction. Never acknowledge a recovery via the best-effort logger.
+    const recoveryDb = createServiceRoleClient();
+    const { data: recoveryData, error: recoveryError } = await recoveryDb.rpc(
+      "create_recovered_walkin" as never,
+      {
+        p_source_booking_id: recovery.sourceBookingId,
+        p_recovered_by_user_id: recovery.recoveredByUserId,
+        p_idempotency_key: recovery.requestId,
+        p_request_fingerprint: recovery.requestFingerprint,
+        p_salon_id: ctx.salon.id,
+        p_service_id: serviceId,
+        p_client_name: clientName,
+        p_client_phone: clientPhoneClean,
+        p_staff_request_note: note,
+        p_staff_requested_by_client: staffRequestedByClient,
+        p_walkin_source: walkinSource,
+        p_walkin_priority: walkinPriority,
+        p_walkin_request_tags: walkinRequestTags,
+        p_party_size: partySize,
+      } as never,
+    );
+    if (recoveryError) {
+      console.error("[addWalkinToQueue] recovery rpc", recoveryError);
+      return fail("server_error");
     }
-    console.error("[addWalkinToQueue] insert", insErr);
-    return fail("server_error");
+    const recoveryResult = (
+      Array.isArray(recoveryData) ? recoveryData[0] : recoveryData
+    ) as {
+      success?: boolean;
+      booking_id?: string;
+      code?: string;
+      replayed?: boolean;
+    } | null;
+    if (!recoveryResult?.success || !recoveryResult.booking_id) {
+      if (recoveryResult?.code === "already_recovered")
+        return fail("already_recovered");
+      if (recoveryResult?.code === "idempotency_mismatch")
+        return fail("idempotency_mismatch");
+      if (recoveryResult?.code === "invalid_recovery_source")
+        return fail("invalid_recovery_source");
+      return fail("server_error");
+    }
+    bid = recoveryResult.booking_id;
+    if (recoveryResult.replayed === true) {
+      return { ok: true, bookingId: bid };
+    }
+  } else {
+    // `walkin_*` / `party_size` / `staff_requested_by_client` columns are not
+    // yet in the generated types; ordinary queue inserts keep their existing
+    // authenticated/RLS path.
+    const insertPatch = {
+      salon_id: ctx.salon.id,
+      service_id: serviceId,
+      client_name: clientName,
+      client_phone: clientPhoneClean,
+      client_notes: null,
+      staff_id: null,
+      start_time_utc: null,
+      end_time_utc: null,
+      status: "waiting",
+      source: "walkin",
+      booking_channel: "walkin",
+      joined_queue_at: joinedAt,
+      staff_request_note: note,
+      staff_requested_by_client: staffRequestedByClient,
+      price_cents: Number.isFinite(price ?? NaN) ? price : null,
+      walkin_source: walkinSource,
+      walkin_priority: walkinPriority,
+      walkin_request_tags: walkinRequestTags,
+      party_size: partySize,
+    } as never;
+
+    const { data: inserted, error: insErr } = await supabase
+      .from("bookings")
+      .insert(insertPatch)
+      .select("id")
+      .maybeSingle();
+
+    if (insErr) {
+      console.error("[addWalkinToQueue] insert", insErr);
+      return fail("server_error");
+    }
+    bid = inserted && "id" in inserted ? String(inserted.id) : "";
   }
-  const bid = inserted && "id" in inserted ? String(inserted.id) : "";
   if (!bid) return fail("server_error");
 
   // Owner/admin "new booking" alert (opt-in, fire-and-forget).
@@ -564,52 +664,27 @@ export async function addWalkinToQueue(
     );
   }
 
-  void logBookingEvent({
-    bookingId: bid,
-    salonId: ctx.salon.id,
-    actorUserId: ctxActorUserId(ctx),
-    actorRole: ctxActorRole(ctx),
-    eventType: "walkin_added",
-    payload: {
-      serviceId,
-      walkinSource,
-      walkinPriority,
-      partySize,
-      ...(recovery
-        ? {
-            recoveredFromBookingId: recovery.sourceBookingId,
-            recoveryKind: recovery.kind,
-          }
-        : {}),
-    },
-  });
-
-  if (recovery) {
+  if (!recovery) {
     void logBookingEvent({
       bookingId: bid,
       salonId: ctx.salon.id,
       actorUserId: ctxActorUserId(ctx),
       actorRole: ctxActorRole(ctx),
-      eventType: "booking_recovered",
-      payload: {
-        sourceBookingId: recovery.sourceBookingId,
-        recoveryKind: recovery.kind,
-      },
+      eventType: "walkin_added",
+      payload: { serviceId, walkinSource, walkinPriority, partySize },
+    });
+
+    // Operational metric: explicit "queue_joined" alongside the
+    // domain-shaped "walkin_added". Recovery commits both inside its RPC.
+    void logBookingEvent({
+      bookingId: bid,
+      salonId: ctx.salon.id,
+      actorUserId: ctxActorUserId(ctx),
+      actorRole: ctxActorRole(ctx),
+      eventType: "queue_joined",
+      payload: { serviceId },
     });
   }
-
-  // Operational metric: explicit "queue_joined" alongside the
-  // domain-shaped "walkin_added". The two are intentionally
-  // duplicative — analytics queries the metric event independent of
-  // the booking-mutation event family.
-  void logBookingEvent({
-    bookingId: bid,
-    salonId: ctx.salon.id,
-    actorUserId: ctxActorUserId(ctx),
-    actorRole: ctxActorRole(ctx),
-    eventType: "queue_joined",
-    payload: { serviceId },
-  });
 
   // Wix write-back: push new walk-in to Wix calendar. after() runs it post-response so the
   // serverless function stays alive until the Wix call finishes (a bare `void` can be frozen
@@ -859,26 +934,12 @@ export async function cancelWaitingWalkin(
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
 
-  const supabase = ctx.supabase;
-
-  const { data: updated, error: upErr } = await supabase
-    .from("bookings")
-    .update({ status: "cancelled" })
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .eq("source", "walkin")
-    .eq("status", "waiting")
-    .select("id")
-    .maybeSingle();
-
-  if (upErr) {
-    console.error("[cancelWaitingWalkin]", upErr);
-    return fail("server_error");
-  }
-
-  if (!updated?.id) {
-    return fail("invalid_state");
-  }
+  const transitioned = await transitionBookingToTerminal(
+    ctx,
+    bookingId,
+    "walkin_removed",
+  );
+  if (!transitioned.ok) return transitioned;
 
   void logBookingEvent({
     bookingId,
@@ -1046,25 +1107,12 @@ export async function cancelDeskBooking(
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
 
-  const supabase = ctx.supabase;
-
-  const { data: updated, error: upErr } = await supabase
-    .from("bookings")
-    .update({ status: "cancelled" })
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .in("status", ["pending", "confirmed", "in_progress"])
-    .select("id, service_id")
-    .maybeSingle();
-
-  if (upErr) {
-    console.error("[cancelDeskBooking]", upErr);
-    return fail("server_error");
-  }
-
-  if (!updated?.id) {
-    return fail("invalid_state");
-  }
+  const transitioned = await transitionBookingToTerminal(
+    ctx,
+    bookingId,
+    "desk_cancel",
+  );
+  if (!transitioned.ok) return transitioned;
 
   // Owner/admin "cancelled" alert (opt-in, fire-and-forget).
   after(() =>
@@ -1084,10 +1132,9 @@ export async function cancelDeskBooking(
     payload: { reason: "desk_cancel" },
   });
 
-  // Enqueue the customer cancel notification with a 20s grace window. A durable
-  // queue (not a client timer): survives the tab closing, the cron delivers it,
-  // and undoCancelBooking flips it to 'cancelled' if the desk reverses within
-  // the window. Service-role insert (RLS denies anon/auth on this table).
+  // Enqueue the customer cancel notification through the durable queue rather
+  // than a client timer, so delivery survives the tab closing. Service-role
+  // insert is required because RLS denies anon/auth on this table.
   const notifySms = input.notify?.sms === true;
   const notifyEmail = input.notify?.email === true;
   if (notifySms || notifyEmail) {
@@ -1113,7 +1160,7 @@ export async function cancelDeskBooking(
   // link. Mirrors the same pattern used in markNoShowBooking. Best-effort;
   // never fail the cancel on a notify hiccup.
   try {
-    const svcId = (updated as { service_id?: string | null }).service_id;
+    const svcId = transitioned.booking.service_id;
     const svc = createServiceRoleClient();
     const { data: wl } = await svc.rpc("notify_waitlist_for_no_show", {
       p_booking_id: bookingId,
@@ -1651,24 +1698,36 @@ export async function cancelDeskGroup(
   const groupId = String(input.groupId ?? "").trim();
   if (!groupId || !isUuidLike(groupId)) return fail("invalid_group");
 
-  const supabase = ctx.supabase;
-
-  // Atomic bulk cancel scoped to salon + group + still-active rows. Returns the
-  // ids actually flipped so audit + Wix write-back only fire for real changes.
-  const { data: cancelled, error: upErr } = await supabase
-    .from("bookings")
-    .update({ status: "cancelled" })
-    .eq("salon_id", ctx.salon.id)
-    .eq("group_id", groupId)
-    .in("status", ["pending", "confirmed", "in_progress"])
-    .select("id");
-
-  if (upErr) {
-    console.error("[cancelDeskGroup]", upErr);
+  if (ctx.kind !== "member" || !ctx.userId) return fail("unauthorized");
+  const transitionDb = createServiceRoleClient();
+  const { data: transitionData, error: transitionError } =
+    await transitionDb.rpc(
+      "transition_booking_group_to_terminal" as never,
+      {
+        p_group_id: groupId,
+        p_salon_id: ctx.salon.id,
+        p_actor_user_id: ctx.userId,
+        p_actor_role: ctx.role,
+        p_reason: "desk_group_cancel",
+      } as never,
+    );
+  if (transitionError) {
+    console.error("[cancelDeskGroup]", transitionError);
     return fail("server_error");
   }
-
-  const ids = (cancelled ?? []).map((r) => String(r.id));
+  const transitionResult = (
+    Array.isArray(transitionData) ? transitionData[0] : transitionData
+  ) as { success?: boolean; code?: string; booking_ids?: string[] } | null;
+  if (!transitionResult?.success) {
+    return fail(
+      transitionResult?.code === "invalid_state"
+        ? "invalid_state"
+        : "server_error",
+    );
+  }
+  const ids = Array.isArray(transitionResult.booking_ids)
+    ? transitionResult.booking_ids.map(String)
+    : [];
   if (ids.length === 0) return fail("invalid_state");
 
   for (const bookingId of ids) {
@@ -1794,20 +1853,12 @@ export async function declineWixBooking(
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
 
-  const { data: updated, error: upErr } = await ctx.supabase
-    .from("bookings")
-    .update({ status: "cancelled" })
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .eq("status", "pending")
-    .not("wix_booking_id", "is", null)
-    .select("id")
-    .maybeSingle();
-  if (upErr) {
-    console.error("[declineWixBooking]", upErr);
-    return fail("server_error");
-  }
-  if (!updated?.id) return fail("invalid_state");
+  const transitioned = await transitionBookingToTerminal(
+    ctx,
+    bookingId,
+    "wix_decline",
+  );
+  if (!transitioned.ok) return transitioned;
 
   void logBookingEvent({
     bookingId,
@@ -1858,21 +1909,22 @@ export async function markNoShowBooking(
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
 
-  const { data: updated, error: upErr } = await ctx.supabase
-    .from("bookings")
-    .update({ status: "no_show", no_show_candidate_at: null } as never)
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .in("status", ["confirmed", "in_progress"])
-    .select(
-      "id, client_phone, client_name, client_email, service_id, services!bookings_service_id_fkey(name)",
-    )
-    .maybeSingle();
-  if (upErr) {
-    console.error("[markNoShowBooking]", upErr);
-    return fail("server_error");
-  }
-  if (!updated?.id) return fail("invalid_state");
+  const transitioned = await transitionBookingToTerminal(
+    ctx,
+    bookingId,
+    "desk_no_show",
+  );
+  if (!transitioned.ok) return transitioned;
+  const updated = transitioned.booking;
+
+  const { data: serviceRow } = updated.service_id
+    ? await ctx.supabase
+        .from("services")
+        .select("name")
+        .eq("id", updated.service_id)
+        .eq("salon_id", ctx.salon.id)
+        .maybeSingle()
+    : { data: null };
 
   // Owner/admin "no-show" alert (opt-in, fire-and-forget).
   after(() =>
@@ -1927,7 +1979,12 @@ export async function markNoShowBooking(
     try {
       const { chargeNoShowFee } =
         await import("@/shared/integrations/square/noshow");
-      const result = await chargeNoShowFee(bookingId);
+      const result = await chargeNoShowFee(bookingId, {
+        auditActor: {
+          userId: ctx.userId!,
+          role: ctx.role as "owner" | "admin" | "senior" | "receptionist",
+        },
+      });
       chargeResult = {
         attempted: true,
         charged: result.charged,
@@ -1944,14 +2001,18 @@ export async function markNoShowBooking(
   } else if (input.chargeFee === false) {
     // Waive — stamp 'waived' when a card is on file and nothing's been charged
     // yet, so the tombstone reads as a deliberate skip (not an unbilled debt).
-    const { error: waiveErr } = await ctx.supabase
-      .from("bookings")
-      .update({ noshow_charge_status: "waived" } as never)
-      .eq("id", bookingId)
-      .eq("salon_id", ctx.salon.id)
-      .not("noshow_card_id", "is", null)
-      .neq("noshow_charge_status", "charged");
-    if (waiveErr) console.error("[markNoShowBooking] waive", waiveErr);
+    const { recordTerminalBookingFeeMutation } =
+      await import("@/shared/integrations/square/noshow");
+    const waived = await recordTerminalBookingFeeMutation({
+      bookingId,
+      salonId: ctx.salon.id,
+      operation: "waive",
+      actor: {
+        userId: ctx.userId!,
+        role: ctx.role as "owner" | "admin" | "senior" | "receptionist",
+      },
+    });
+    if (!waived.ok) console.error("[markNoShowBooking] waive", waived.code);
   }
 
   // Win-back — a friendly "we missed you, rebook" email (retention over
@@ -1964,8 +2025,7 @@ export async function markNoShowBooking(
       (updated as { client_name?: string | null }).client_name ?? "",
     );
     const svcName = String(
-      (updated as { services?: { name?: string | null } | null }).services
-        ?.name ?? "",
+      (serviceRow as { name?: string | null } | null)?.name ?? "",
     );
     after(async () => {
       try {
@@ -2017,12 +2077,7 @@ export async function markNoShowBooking(
   return { ok: true, ...(chargeResult ? { charge: chargeResult } : {}) };
 }
 
-/**
- * Undo a no-show — the customer was just running late after all. Reverts
- * `no_show` → `confirmed` and decrements the client's no_show_count (so a
- * wrongly-marked guest isn't penalised). Same
- * front-desk roles as marking.
- */
+/** Legacy action retained so stale clients fail closed with a stable error. */
 export async function undoNoShowBooking(
   slug: string,
   input: { salonId: string; bookingId: string },
@@ -2030,60 +2085,12 @@ export async function undoNoShowBooking(
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
   if (!canMarkNoShow(ctx.role)) return fail("unauthorized");
+  if (ctx.kind !== "member" || !ctx.userId) return fail("unauthorized");
   if (ctx.salon.id !== String(input.salonId).trim())
     return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
-  // Rollout-safe enforcement: once archived recovery is enabled, no_show is a
-  // terminal audit fact. A late guest gets a new linked walk-in instead.
-  const immutable = await terminalBookingMustRemainImmutable(
-    ctx.salon.id,
-    bookingId,
-  );
-  if (!immutable.ok) return fail("server_error");
-  if (immutable.immutable) {
-    return fail("immutable_terminal_state");
-  }
-
-  const { data: updated, error: upErr } = await ctx.supabase
-    .from("bookings")
-    .update({ status: "confirmed", no_show_candidate_at: null } as never)
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .eq("status", "no_show")
-    .select("id, client_phone")
-    .maybeSingle();
-  if (upErr) {
-    // The slot may have been re-taken (waitlist claim / walk-in) while it was
-    // freed — reverting to confirmed collides with bookings_no_overlap (23P01).
-    // Surface a clear "slot taken" instead of a generic retry message.
-    if ((upErr as { code?: string }).code === "23P01") {
-      return fail("slot_conflict");
-    }
-    console.error("[undoNoShowBooking]", upErr);
-    return fail("server_error");
-  }
-  if (!updated?.id) return fail("invalid_state");
-
-  if (updated.client_phone) {
-    // SECURITY DEFINER fn, revoked from anon/authenticated → call via service role
-    // after the auth checks above.
-    const svc = createServiceRoleClient();
-    const { error: unbumpErr } = await svc.rpc("unbump_client_no_show", {
-      p_phone: updated.client_phone,
-    });
-    if (unbumpErr) console.error("[undoNoShowBooking] unbump", unbumpErr);
-  }
-
-  void logBookingEvent({
-    bookingId,
-    salonId: ctx.salon.id,
-    actorUserId: ctxActorUserId(ctx),
-    actorRole: ctxActorRole(ctx),
-    eventType: "booking_status_changed",
-    payload: { to: "confirmed", reason: "undo_no_show" },
-  });
-  return { ok: true };
+  return fail("immutable_terminal_state");
 }
 
 /**
@@ -2102,6 +2109,7 @@ export async function chargeNoShowFeeManual(
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
   if (!canMarkNoShow(ctx.role)) return fail("unauthorized");
+  if (ctx.kind !== "member" || !ctx.userId) return fail("unauthorized");
   if (ctx.salon.id !== String(input.salonId).trim())
     return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
@@ -2112,7 +2120,7 @@ export async function chargeNoShowFeeManual(
   // check is what scopes the action to the authenticated desk.
   const { data: row } = await ctx.supabase
     .from("bookings")
-    .select("id, status, noshow_charge_status")
+    .select("id, status, noshow_charge_status, noshow_charge_attempts")
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .maybeSingle();
@@ -2123,16 +2131,30 @@ export async function chargeNoShowFeeManual(
   try {
     const { chargeNoShowFee } =
       await import("@/shared/integrations/square/noshow");
-    // A RETRY of a previously-failed charge needs a fresh idempotency suffix,
-    // else Square replays the original decline instead of re-attempting (the
-    // card may since have funds). First-time charges keep the stable key.
-    const isRetry =
-      (row as { noshow_charge_status?: string }).noshow_charge_status ===
-      "failed";
-    const res = await chargeNoShowFee(
-      bookingId,
-      isRetry ? { idempotencySuffix: crypto.randomUUID() } : undefined,
+    // A RETRY of a previously-failed charge needs a fresh suffix relative to
+    // the last recorded decline, else Square replays that decline. The suffix
+    // remains stable until the corresponding database outcome commits.
+    const feeState = row as {
+      noshow_charge_status?: string;
+      noshow_charge_attempts?: number | null;
+    };
+    const isRetry = feeState.noshow_charge_status === "failed";
+    // Derive the provider idempotency suffix from the last COMMITTED database
+    // attempt. If the provider charged but the audited DB write failed, the
+    // attempt counter is unchanged and the next click reuses the same provider
+    // key instead of risking a second charge. A recorded decline increments the
+    // counter, so the next deliberate retry receives a fresh key.
+    const retryAttempt = Math.max(
+      1,
+      Math.floor(Number(feeState.noshow_charge_attempts) || 0) + 1,
     );
+    const res = await chargeNoShowFee(bookingId, {
+      ...(isRetry ? { idempotencySuffix: `retry-${retryAttempt}` } : {}),
+      auditActor: {
+        userId: ctx.userId,
+        role: ctx.role as "owner" | "admin" | "senior" | "receptionist",
+      },
+    });
     void logBookingEvent({
       bookingId,
       salonId: ctx.salon.id,
@@ -2165,25 +2187,28 @@ export async function waiveNoShowFee(
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
   if (!canMarkNoShow(ctx.role)) return fail("unauthorized");
+  if (ctx.kind !== "member" || !ctx.userId) return fail("unauthorized");
   if (ctx.salon.id !== String(input.salonId).trim())
     return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
 
-  const { data: updated, error: upErr } = await ctx.supabase
-    .from("bookings")
-    .update({ noshow_charge_status: "waived" } as never)
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .eq("status", "no_show")
-    .neq("noshow_charge_status", "charged")
-    .select("id")
-    .maybeSingle();
-  if (upErr) {
-    console.error("[waiveNoShowFee]", upErr);
-    return fail("server_error");
+  const { recordTerminalBookingFeeMutation } =
+    await import("@/shared/integrations/square/noshow");
+  const result = await recordTerminalBookingFeeMutation({
+    bookingId,
+    salonId: ctx.salon.id,
+    operation: "waive",
+    actor: {
+      userId: ctx.userId,
+      role: ctx.role as "owner" | "admin" | "senior" | "receptionist",
+    },
+  });
+  if (!result.ok) {
+    return fail(
+      result.code === "invalid_state" ? "invalid_state" : "server_error",
+    );
   }
-  if (!updated?.id) return fail("invalid_state");
 
   void logBookingEvent({
     bookingId,
@@ -2199,8 +2224,9 @@ export async function waiveNoShowFee(
 /**
  * Set the ACTUAL final price on a booking — for variable-priced ('from'/'range')
  * services where the amount is only known when the work is done. Owner/senior only;
- * audit-logged. Allowed on any non-cancelled booking so the desk can record the
- * real total at checkout. Stores integer cents on bookings.price_cents.
+ * audit-logged. Allowed on active/completed bookings so the desk can record the
+ * real total at checkout. Cancelled/no-show history remains immutable. Stores
+ * integer cents on bookings.price_cents.
  */
 export async function setBookingFinalPrice(
   slug: string,
@@ -2228,7 +2254,7 @@ export async function setBookingFinalPrice(
     .update({ price_cents: priceCents })
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
-    .not("status", "eq", "cancelled")
+    .in("status", ["pending", "confirmed", "in_progress", "completed"])
     .select("id")
     .maybeSingle();
   if (upErr) {
@@ -2255,10 +2281,8 @@ export type {
 } from "./editBookingCore";
 
 /**
- * Immediate undo for the 8-second cancel toast.
- * Skips the "must be in future" and conflict checks — the undo window is so
- * short (≤ 8 s) that the slot cannot realistically be taken by someone else,
- * and in_progress bookings that were cancelled already have a past start_time.
+ * Legacy action retained for stale clients. Cancelled rows are terminal audit
+ * facts, so every authenticated, otherwise-valid request fails closed.
  */
 export async function undoCancelBooking(
   slug: string,
@@ -2271,68 +2295,12 @@ export async function undoCancelBooking(
     return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
-  // The confirmation dialog is the correction boundary. After cancellation,
-  // preserve the original row and create a linked replacement if needed.
-  const immutable = await terminalBookingMustRemainImmutable(
-    ctx.salon.id,
-    bookingId,
-  );
-  if (!immutable.ok) return fail("server_error");
-  if (immutable.immutable) {
-    return fail("immutable_terminal_state");
-  }
-
-  const { data: updated, error: upErr } = await ctx.supabase
-    .from("bookings")
-    .update({ status: "confirmed" })
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .eq("status", "cancelled")
-    .select("id")
-    .maybeSingle();
-
-  if (upErr) {
-    console.error("[undoCancelBooking]", upErr);
-    return fail("server_error");
-  }
-  if (!updated?.id) return fail("invalid_state");
-
-  // The booking is restored → cancel any still-pending cancel notification so
-  // the customer is never texted about a cancel that was undone.
-  {
-    const sr = createServiceRoleClient();
-    const { error: cancelErr } = await sr
-      .from("scheduled_notifications")
-      .update({ status: "cancelled" } as never)
-      .eq("booking_id", bookingId)
-      .eq("event", "cancel")
-      .eq("status", "pending");
-    if (cancelErr)
-      console.error(
-        "[undoCancelBooking] cancel pending notify failed",
-        cancelErr,
-      );
-  }
-
-  void logBookingEvent({
-    bookingId,
-    salonId: ctx.salon.id,
-    actorUserId: ctxActorUserId(ctx),
-    actorRole: ctxActorRole(ctx),
-    eventType: "booking_restored",
-    payload: { reason: "undo_cancel" },
-  });
-
-  return { ok: true };
+  return fail("immutable_terminal_state");
 }
 
 /**
- * Restore a cancelled booking back to "confirmed".
- * Guards:
- *   - Front-desk roles only: owner / admin / senior / receptionist (canUndoCancel)
- *   - Booking must be cancelled (not already active)
- *   - start_time_utc must still be in the future (≥ now + 1 min)
- *   - No active booking conflict for the same staff at that time
+ * Legacy restore action retained for stale clients. Cancelled rows are
+ * terminal audit facts; a correction creates a new linked booking.
  */
 export async function restoreCancelledBooking(
   slug: string,
@@ -2345,74 +2313,7 @@ export async function restoreCancelledBooking(
     return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
-  const immutable = await terminalBookingMustRemainImmutable(
-    ctx.salon.id,
-    bookingId,
-  );
-  if (!immutable.ok) return fail("server_error");
-  if (immutable.immutable) {
-    return fail("immutable_terminal_state");
-  }
-
-  const supabase = ctx.supabase;
-
-  // Load the cancelled booking
-  const { data: booking } = await supabase
-    .from("bookings")
-    .select("id, status, staff_id, start_time_utc, end_time_utc, salon_id")
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .eq("status", "cancelled")
-    .maybeSingle();
-
-  if (!booking) return fail("invalid_state");
-
-  // Must be in the future
-  const nowMs = Date.now();
-  const startMs = new Date(booking.start_time_utc).getTime();
-  if (startMs < nowMs + 60_000) return fail("booking_in_past");
-
-  // Check no active conflict for this staff at this time
-  if (booking.staff_id) {
-    const { data: conflicts } = await supabase
-      .from("bookings")
-      .select("id")
-      .eq("staff_id", booking.staff_id)
-      .not("status", "in", '("cancelled","waiting")')
-      .lt("start_time_utc", booking.end_time_utc)
-      .gt("end_time_utc", booking.start_time_utc)
-      .neq("id", bookingId)
-      .limit(1);
-
-    if (conflicts && conflicts.length > 0) return fail("slot_conflict");
-  }
-
-  // Restore to confirmed
-  const { data: updated, error: upErr } = await supabase
-    .from("bookings")
-    .update({ status: "confirmed" })
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .eq("status", "cancelled")
-    .select("id")
-    .maybeSingle();
-
-  if (upErr) {
-    console.error("[restoreCancelledBooking]", upErr);
-    return fail("server_error");
-  }
-  if (!updated?.id) return fail("invalid_state");
-
-  void logBookingEvent({
-    bookingId,
-    salonId: ctx.salon.id,
-    actorUserId: ctxActorUserId(ctx),
-    actorRole: ctxActorRole(ctx),
-    eventType: "booking_restored",
-    payload: { reason: "desk_restore" },
-  });
-
-  return { ok: true };
+  return fail("immutable_terminal_state");
 }
 
 /** Desk / grid: reschedule/adjust slots for pending | confirmed only (see `performEditBooking`). */
@@ -2822,17 +2723,6 @@ export async function addDeskAppointment(
     return fail("salon_mismatch");
   if (!canCreateDeskBooking(ctx.role)) return fail("unauthorized");
 
-  const recoveryResult = await validateArchivedBookingRecovery(
-    ctx,
-    input.recovery,
-    "cancelled_rebook",
-  );
-  if (!recoveryResult.ok) return recoveryResult;
-  const recovery = recoveryResult.recovery;
-  if (recoveryResult.existingBookingId) {
-    return { ok: true, bookingId: recoveryResult.existingBookingId };
-  }
-
   const clientName = String(input.clientName ?? "").trim();
   if (!clientName || clientName.length > BOOKING_GUEST_NAME_MAX)
     return fail("invalid_name");
@@ -2878,6 +2768,37 @@ export async function addDeskAppointment(
       )
     : [];
   if (addonIds.includes(serviceId)) return fail("invalid_addon");
+
+  const recoveryFingerprint = input.recovery
+    ? archivedRecoveryFingerprint("cancelled_rebook", {
+        salonId: ctx.salon.id,
+        serviceId,
+        addonServiceIds: [...addonIds].sort(),
+        requestedStaffId: rawStaffId,
+        bookingDateYmd: dateYmd,
+        timeSlot: String(input.timeSlot ?? "").trim(),
+        clientName,
+        clientPhone: canonicalPhone,
+        clientEmail,
+        clientNotes,
+        language: input.language ?? null,
+        staffRequestedByClient: input.staffRequestedByClient === true,
+        resourceId: input.resourceId ?? null,
+      })
+    : null;
+  const recoveryResult = await validateArchivedBookingRecovery(
+    ctx,
+    input.recovery,
+    "cancelled_rebook",
+    recoveryFingerprint,
+  );
+  if (!recoveryResult.ok) return recoveryResult;
+  const recovery = recoveryResult.recovery;
+  if (recoveryResult.existingBookingId) {
+    // An exact recovery replay is a read-only canonical lookup.  Do not rerun
+    // booking protection, AI, cost, or any other mutable post-create work.
+    return { ok: true, bookingId: recoveryResult.existingBookingId };
+  }
 
   const db = createServiceRoleClient();
 
@@ -3156,6 +3077,12 @@ export async function addDeskAppointment(
     // the optional object.
     return fail("invalid_after_hours_override");
   }
+  // The controlled after-hours insert is intentionally a separate privileged
+  // path. Until it can share the recovery RPC transaction, a terminal recovery
+  // must use an in-hours slot so child + audit atomicity is never weakened.
+  if (recovery && afterHoursMinutes != null) {
+    return fail("after_hours_not_allowed");
+  }
   const endUtcIso = new Date(
     Date.parse(startUtcIso) + totalMin * 60_000,
   ).toISOString();
@@ -3213,10 +3140,7 @@ export async function addDeskAppointment(
     .eq("salon_id", ctx.salon.id)
     .eq("day_of_week", dayKey)
     .eq("is_active", true);
-  const breakWindows = new Map<
-    string,
-    { startMin: number; endMin: number }
-  >();
+  const breakWindows = new Map<string, { startMin: number; endMin: number }>();
   for (const row of shiftBreakRows ?? []) {
     if (!row.break_start_time || !row.break_end_time) continue;
     breakWindows.set(String(row.staff_id), {
@@ -3324,14 +3248,6 @@ export async function addDeskAppointment(
         after_hours_minutes: afterHoursMinutes,
         after_hours_approved_by: ctx.userId,
         after_hours_staff_consent: true,
-        ...(recovery
-          ? {
-              recovered_from_booking_id: recovery.sourceBookingId,
-              recovery_kind: recovery.kind,
-              recovered_by_user_id: recovery.recoveredByUserId,
-              idempotency_key: recovery.requestId,
-            }
-          : {}),
       } as never)
       .select("id")
       .single();
@@ -3367,6 +3283,7 @@ export async function addDeskAppointment(
           p_recovery_kind: recovery.kind,
           p_recovered_by_user_id: recovery.recoveredByUserId,
           p_idempotency_key: recovery.requestId,
+          p_request_fingerprint: recovery.requestFingerprint,
           p_salon_id: ctx.salon.id,
           p_service_id: serviceId,
           p_staff_id: resolvedStaffId,
@@ -3379,6 +3296,12 @@ export async function addDeskAppointment(
           p_client_notes: clientNotes,
           p_client_email: clientEmail,
           p_resource_id: resolvedResourceId,
+          p_addon_service_ids: addonIds,
+          p_client_locale: input.language ?? null,
+          p_staff_requested_by_client: input.staffRequestedByClient === true,
+          p_promo_id: deskPromoId,
+          p_original_price_cents:
+            deskPromoId && basePriceCents != null ? basePriceCents : null,
         }
       : {
           p_salon_id: ctx.salon.id,
@@ -3413,6 +3336,7 @@ export async function addDeskAppointment(
     if (!result?.success || !result.booking_id) {
       const rCode = result?.code;
       if (rCode === "already_recovered") return fail("already_recovered");
+      if (rCode === "idempotency_mismatch") return fail("idempotency_mismatch");
       if (rCode === "invalid_recovery_source")
         return fail("invalid_recovery_source");
       if (rCode === "slot_conflict") return fail("time_slot_taken");
@@ -3421,12 +3345,15 @@ export async function addDeskAppointment(
     }
     bookingId = result.booking_id;
     if (recovery && result.replayed === true) {
+      // The database found the canonical child under the same fingerprint.
+      // Return it without replaying mutable post-create side effects.
       return { ok: true, bookingId };
     }
   }
 
   // Stamp promo discount when an active campaign applies (server-authoritative)
   if (
+    !recovery &&
     deskPromoId &&
     basePriceCents &&
     deskPriceCents != null &&
@@ -3447,7 +3374,7 @@ export async function addDeskAppointment(
 
   // Persist the full add-on list (durations/prices re-derived server-side by the
   // RPC). Best-effort — the appointment already exists with the correct block.
-  if (addonIds.length > 0) {
+  if (!recovery && addonIds.length > 0) {
     try {
       // Authenticated members deliberately cannot execute this cross-tenant
       // SECURITY DEFINER capability directly. This server action has already
@@ -3473,20 +3400,22 @@ export async function addDeskAppointment(
   // booking_channel = 'desk' marks this as a front-desk-entered appointment so
   // reports can separate it from online / Square / Wix. The ❤️ staff-request
   // flag is stamped in the same round-trip when the receptionist ticks it.
-  try {
-    const channelUpdate: Record<string, unknown> = {
-      walkin_source: "phone",
-      booking_channel: "desk",
-    };
-    if (input.staffRequestedByClient === true) {
-      channelUpdate.staff_requested_by_client = true;
+  if (!recovery) {
+    try {
+      const channelUpdate: Record<string, unknown> = {
+        walkin_source: "phone",
+        booking_channel: "desk",
+      };
+      if (input.staffRequestedByClient === true) {
+        channelUpdate.staff_requested_by_client = true;
+      }
+      await db
+        .from("bookings")
+        .update(channelUpdate as never)
+        .eq("id", bookingId);
+    } catch {
+      /* best-effort */
     }
-    await db
-      .from("bookings")
-      .update(channelUpdate as never)
-      .eq("id", bookingId);
-  } catch {
-    /* best-effort */
   }
 
   // The admin initiating a recovery is already looking at the result. Suppress
@@ -3501,48 +3430,30 @@ export async function addDeskAppointment(
     );
   }
 
-  void logBookingEvent({
-    bookingId,
-    salonId: ctx.salon.id,
-    actorUserId: ctxActorUserId(ctx),
-    actorRole: ctxActorRole(ctx),
-    eventType:
-      afterHoursMinutes != null
-        ? "booking_after_hours_created"
-        : "booking_created",
-    payload: {
-      source: "desk_phone",
-      staffId: resolvedStaffId,
-      serviceId,
-      addonServiceIds: addonIds,
-      anyStaff: isAnyStaff,
-      staffRequestedByClient: input.staffRequestedByClient === true,
-      ...(afterHoursMinutes != null
-        ? {
-            afterHoursMinutes,
-            staffConsentConfirmed: true,
-            approvedBy: ctx.userId,
-          }
-        : {}),
-      ...(recovery
-        ? {
-            recoveredFromBookingId: recovery.sourceBookingId,
-            recoveryKind: recovery.kind,
-          }
-        : {}),
-    },
-  });
-
-  if (recovery) {
+  if (!recovery) {
     void logBookingEvent({
       bookingId,
       salonId: ctx.salon.id,
       actorUserId: ctxActorUserId(ctx),
       actorRole: ctxActorRole(ctx),
-      eventType: "booking_recovered",
+      eventType:
+        afterHoursMinutes != null
+          ? "booking_after_hours_created"
+          : "booking_created",
       payload: {
-        sourceBookingId: recovery.sourceBookingId,
-        recoveryKind: recovery.kind,
+        source: "desk_phone",
+        staffId: resolvedStaffId,
+        serviceId,
+        addonServiceIds: addonIds,
+        anyStaff: isAnyStaff,
+        staffRequestedByClient: input.staffRequestedByClient === true,
+        ...(afterHoursMinutes != null
+          ? {
+              afterHoursMinutes,
+              staffConsentConfirmed: true,
+              approvedBy: ctx.userId,
+            }
+          : {}),
       },
     });
   }

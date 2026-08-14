@@ -39,11 +39,14 @@ export async function overrideNoShowPolicy(
   // the log records what the AI/rule had before this human override.
   const { data: bk } = await ctx.supabase
     .from("bookings")
-    .select("id, noshow_card_required")
+    .select("id, status, noshow_card_required")
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .maybeSingle();
   if (!bk?.id) return { ok: false, error: "invalid_booking" };
+  if (!["pending", "confirmed"].includes(String(bk.status ?? ""))) {
+    return { ok: false, error: "invalid_booking" };
+  }
 
   const cardRequired = decision === "card";
   const priorRequired =
@@ -54,7 +57,8 @@ export async function overrideNoShowPolicy(
       .from("bookings")
       .update({ noshow_card_required: cardRequired })
       .eq("id", bookingId)
-      .eq("salon_id", ctx.salon.id);
+      .eq("salon_id", ctx.salon.id)
+      .in("status", ["pending", "confirmed"]);
 
     // Service-role insert — ai_policy_decisions is RLS service-only.
     const svc = createServiceRoleClient();

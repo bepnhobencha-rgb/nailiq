@@ -12,6 +12,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 type Row = Record<string, unknown>;
 type Result = { data: Row | null; error: { message: string } | null };
 type ListResult = { data: Row[] | null; error: { message: string } | null };
+type RpcResult = { data: unknown; error: { message: string } | null };
 
 interface LooseQuery extends PromiseLike<ListResult> {
   select(cols?: string): LooseQuery;
@@ -33,6 +34,7 @@ interface LooseQuery extends PromiseLike<ListResult> {
 
 interface LooseDb {
   from(table: string): LooseQuery;
+  rpc(fn: string, args?: Row): Promise<RpcResult>;
 }
 
 export function looseServiceClient(): LooseDb {

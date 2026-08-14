@@ -37,23 +37,29 @@ export async function renameBookingClient(
   // Booking must be in the caller's salon (tenant isolation).
   const { data: bk } = await sb
     .from("bookings")
-    .select("id, client_profile_id, client_phone")
+    .select("id, status, client_profile_id, client_phone")
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .maybeSingle();
   if (!(bk as { id?: string } | null)?.id) return { ok: false, error: "invalid_booking" };
+  const status = String((bk as { status?: string | null }).status ?? "");
+  if (status === "cancelled" || status === "no_show") {
+    return { ok: false, error: "immutable_terminal_state" };
+  }
 
   const profileId = (bk as { client_profile_id?: string | null }).client_profile_id ?? null;
   const phone = String((bk as { client_phone?: string | null }).client_phone ?? "").trim();
 
   // Salon-scoped write only. NEVER the shared client_profiles row.
   if (profileId) {
-    // All of THIS salon's bookings for that customer (past + future).
+    // All mutable bookings in THIS salon for that customer (past + future).
+    // Cancelled/no-show rows retain the name captured in their audit tombstone.
     const { error: be } = await sb
       .from("bookings")
       .update({ client_name: name } as never)
       .eq("client_profile_id", profileId)
-      .eq("salon_id", ctx.salon.id);
+      .eq("salon_id", ctx.salon.id)
+      .in("status", ["pending", "confirmed", "in_progress", "completed", "waiting"]);
     if (be) return { ok: false, error: be.message };
     // Per-salon display-name override so profile-360 / typeahead / autofill
     // (which read the shared profile) show the corrected name WITHIN this salon,
@@ -77,7 +83,8 @@ export async function renameBookingClient(
       .from("bookings")
       .update({ client_name: name } as never)
       .eq("id", bookingId)
-      .eq("salon_id", ctx.salon.id);
+      .eq("salon_id", ctx.salon.id)
+      .in("status", ["pending", "confirmed", "in_progress", "completed", "waiting"]);
     if (be) return { ok: false, error: be.message };
   }
 

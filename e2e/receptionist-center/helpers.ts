@@ -53,6 +53,8 @@ export function testClientNameMarker(): string {
 
 /** Deletes walk-ins and desk rows created by tests (`client_name` prefix `Te2eGuest`). */
 export async function cleanReceptionistData(salonId: string): Promise<void> {
+  const { cleanupTerminalTestBookings } = await import("../helpers/db");
+  await cleanupTerminalTestBookings(salonId);
   const { error } = await supabaseAdmin
     .from("bookings")
     .delete()
@@ -133,13 +135,22 @@ async function insertBookingRow(
   const serviceId = (payload as { service_id?: string }).service_id;
   const probe = await Promise.all([
     salonId
-      ? supabaseAdmin.from("salons").select("*", { count: "exact", head: true }).eq("id", salonId)
+      ? supabaseAdmin
+          .from("salons")
+          .select("*", { count: "exact", head: true })
+          .eq("id", salonId)
       : Promise.resolve({ count: -1 } as { count: number | null }),
     staffId
-      ? supabaseAdmin.from("staff").select("*", { count: "exact", head: true }).eq("id", staffId)
+      ? supabaseAdmin
+          .from("staff")
+          .select("*", { count: "exact", head: true })
+          .eq("id", staffId)
       : Promise.resolve({ count: -1 } as { count: number | null }),
     serviceId
-      ? supabaseAdmin.from("services").select("*", { count: "exact", head: true }).eq("id", serviceId)
+      ? supabaseAdmin
+          .from("services")
+          .select("*", { count: "exact", head: true })
+          .eq("id", serviceId)
       : Promise.resolve({ count: -1 } as { count: number | null }),
   ]);
   throw new Error(
@@ -163,7 +174,9 @@ async function fetchServicePrice(
 }
 
 /** Full salon + catalog + baseline desk bookings (non-marker names). */
-export async function seedReceptionistCenterFixture(slugOverride?: string): Promise<ReceptionistCenterFixture> {
+export async function seedReceptionistCenterFixture(
+  slugOverride?: string,
+): Promise<ReceptionistCenterFixture> {
   const slug = slugOverride ?? RECEPTIONIST_E2E_SLUG;
   const { cleanupTestSalon } = await import("../helpers/db");
   await cleanupTestSalon(slug);
@@ -210,17 +223,44 @@ export async function seedReceptionistCenterFixture(slugOverride?: string): Prom
     .single();
 
   if (salonErr || !salon?.id) {
-    throw new Error(salonErr?.message ?? "seedReceptionistCenterFixture: salon insert failed");
+    throw new Error(
+      salonErr?.message ?? "seedReceptionistCenterFixture: salon insert failed",
+    );
   }
 
   const salonId = salon.id as string;
 
   const serviceSpecs = [
-    { name: "E2E Gel Manicure", duration_minutes: 45, buffer_minutes: 10, price_cents: 4500 },
-    { name: "E2E Polish Change", duration_minutes: 30, buffer_minutes: 10, price_cents: 2500 },
-    { name: "E2E Deluxe Pedicure", duration_minutes: 60, buffer_minutes: 15, price_cents: 6500 },
-    { name: "E2E Acrylic Full Set", duration_minutes: 90, buffer_minutes: 15, price_cents: 8500 },
-    { name: "E2E Quick Trim", duration_minutes: 20, buffer_minutes: 5, price_cents: 1500 },
+    {
+      name: "E2E Gel Manicure",
+      duration_minutes: 45,
+      buffer_minutes: 10,
+      price_cents: 4500,
+    },
+    {
+      name: "E2E Polish Change",
+      duration_minutes: 30,
+      buffer_minutes: 10,
+      price_cents: 2500,
+    },
+    {
+      name: "E2E Deluxe Pedicure",
+      duration_minutes: 60,
+      buffer_minutes: 15,
+      price_cents: 6500,
+    },
+    {
+      name: "E2E Acrylic Full Set",
+      duration_minutes: 90,
+      buffer_minutes: 15,
+      price_cents: 8500,
+    },
+    {
+      name: "E2E Quick Trim",
+      duration_minutes: 20,
+      buffer_minutes: 5,
+      price_cents: 1500,
+    },
     {
       name: "E2E Long Overflow Service",
       duration_minutes: 240,
@@ -244,7 +284,10 @@ export async function seedReceptionistCenterFixture(slugOverride?: string): Prom
 
   if (svcErr || !svcRows?.length) {
     await supabaseAdmin.from("salons").delete().eq("id", salonId);
-    throw new Error(svcErr?.message ?? "seedReceptionistCenterFixture: services insert failed");
+    throw new Error(
+      svcErr?.message ??
+        "seedReceptionistCenterFixture: services insert failed",
+    );
   }
 
   const serviceIds = svcRows.map((r) => r.id as string);
@@ -259,13 +302,21 @@ export async function seedReceptionistCenterFixture(slugOverride?: string): Prom
 
   const { data: staffRows, error: staffErr } = await supabaseAdmin
     .from("staff")
-    .insert(staffSpecs.map((s) => ({ salon_id: salonId, name: s.name, job_role: s.job_role })))
+    .insert(
+      staffSpecs.map((s) => ({
+        salon_id: salonId,
+        name: s.name,
+        job_role: s.job_role,
+      })),
+    )
     .select("id");
 
   if (staffErr || !staffRows?.length) {
     await supabaseAdmin.from("services").delete().eq("salon_id", salonId);
     await supabaseAdmin.from("salons").delete().eq("id", salonId);
-    throw new Error(staffErr?.message ?? "seedReceptionistCenterFixture: staff insert failed");
+    throw new Error(
+      staffErr?.message ?? "seedReceptionistCenterFixture: staff insert failed",
+    );
   }
 
   const staffIds = staffRows.map((r) => r.id as string);
@@ -318,7 +369,10 @@ export async function seedReceptionistCenterFixture(slugOverride?: string): Prom
       staff_request_note: null,
       price_cents: price,
     };
-    return await insertBookingRow(payload, `seed baseline booking (${args.clientName})`);
+    return await insertBookingRow(
+      payload,
+      `seed baseline booking (${args.clientName})`,
+    );
   };
 
   await insertBooking({
@@ -359,7 +413,9 @@ export async function seedReceptionistCenterFixture(slugOverride?: string): Prom
   });
 
   if (!displayApptBookingId) {
-    throw new Error("seedReceptionistCenterFixture: could not resolve display appt id");
+    throw new Error(
+      "seedReceptionistCenterFixture: could not resolve display appt id",
+    );
   }
 
   return {
@@ -556,9 +612,12 @@ export async function gotoReceptionistCenter(
   const queryString = query.toString();
   const centerUrl = `/dashboard/${encodedSlug}/center${queryString ? `?${queryString}` : ""}`;
   const waitForCenterOrRedirect = page
-    .waitForURL(new RegExp(`\\/dashboard\\/${encodedSlug}\\/center(?:\\?.*)?\\/?$`), {
-      timeout: 45_000,
-    })
+    .waitForURL(
+      new RegExp(`\\/dashboard\\/${encodedSlug}\\/center(?:\\?.*)?\\/?$`),
+      {
+        timeout: 45_000,
+      },
+    )
     .catch(() => {});
 
   try {
@@ -566,7 +625,10 @@ export async function gotoReceptionistCenter(
     // middleware rewrite from `?date=` back to the canonical path). `goto` throws
     // "interrupted by another navigation" before the final URL settles; we treat
     // that as a retry signal and continue waiting for stable center-route state.
-    await page.goto(centerUrl, { waitUntil: "domcontentloaded", timeout: 45_000 });
+    await page.goto(centerUrl, {
+      waitUntil: "domcontentloaded",
+      timeout: 45_000,
+    });
   } catch (error) {
     const message = (error as Error | undefined)?.message ?? "";
     if (!message.includes("interrupted by another navigation")) {
@@ -603,7 +665,9 @@ export async function gotoReceptionistCenter(
     timeout: 45_000,
   });
   if (opts?.expectWalkinQueue !== false) {
-    await page.getByTestId("walkin-add-form").waitFor({ state: "visible", timeout: 45_000 });
+    await page
+      .getByTestId("walkin-add-form")
+      .waitFor({ state: "visible", timeout: 45_000 });
   }
   // Gate interactions on the post-commit signal without changing the rendered
   // React tree. A former client-only DOM marker inserted a new child while
@@ -646,7 +710,9 @@ export async function fillReactInput(
     } else {
       el.value = val;
     }
-    el.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true }));
+    el.dispatchEvent(
+      new InputEvent("input", { bubbles: true, cancelable: true }),
+    );
   }, value);
 }
 
@@ -667,7 +733,10 @@ export async function fillWalkinGuestContact(
  * Playwright viewport — synthetic .click() retries indefinitely when the element is
  * "outside of the viewport", causing 1.5m timeouts on CI (observed for cases 1/2/3/11/12/13).
  */
-export async function clickWalkinService(page: Page, serviceId: string): Promise<void> {
+export async function clickWalkinService(
+  page: Page,
+  serviceId: string,
+): Promise<void> {
   const loc = page.locator(`#walkin-service-${serviceId}`);
   await loc.waitFor({ state: "attached", timeout: 15_000 });
   await loc.evaluate((el: HTMLElement) => {
@@ -700,7 +769,10 @@ export async function clickWalkinSubmit(page: Page): Promise<void> {
  * Receptionist sidebar "Assign" for a walk-in queue row. Prefer over `locator.click()`: Playwright synthetic clicks
  * can miss the React `onClick` when the sidebar stacks under fixed chrome — observed in dual-browser parallel assign runs.
  */
-export async function clickWalkinQueueAssign(page: Page, bookingId: string): Promise<void> {
+export async function clickWalkinQueueAssign(
+  page: Page,
+  bookingId: string,
+): Promise<void> {
   const loc = page.getByTestId(`queue-assign-${bookingId}`);
   await loc.waitFor({ state: "attached", timeout: 15_000 });
   await loc.scrollIntoViewIfNeeded();
@@ -787,7 +859,10 @@ export async function moveMouseToAssignSlotAtUtc(
   await page.waitForTimeout(100);
 }
 
-export async function gotoOwnerDashboard(page: Page, slug: string): Promise<void> {
+export async function gotoOwnerDashboard(
+  page: Page,
+  slug: string,
+): Promise<void> {
   const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
 
   await page.context().addCookies([
@@ -817,7 +892,9 @@ export async function gotoOwnerDashboard(page: Page, slug: string): Promise<void
   });
 
   await page.goto(`/dashboard/${encodeURIComponent(slug)}`);
-  await page.getByRole("heading", { name: /e2e receptionist center salon/i }).waitFor({
-    timeout: 30_000,
-  });
+  await page
+    .getByRole("heading", { name: /e2e receptionist center salon/i })
+    .waitFor({
+      timeout: 30_000,
+    });
 }

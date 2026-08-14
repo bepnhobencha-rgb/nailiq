@@ -23,15 +23,39 @@ export const dynamic = "force-dynamic";
 
 // Bilingual command words. Single-word replies are how customers actually answer.
 const CONFIRM_WORDS = new Set([
-  "yes", "y", "yeah", "yep", "ya", "ok", "okay", "k", "confirm", "confirmed",
-  "c", "có", "co", "xacnhan", "dongy",
+  "yes",
+  "y",
+  "yeah",
+  "yep",
+  "ya",
+  "ok",
+  "okay",
+  "k",
+  "confirm",
+  "confirmed",
+  "c",
+  "có",
+  "co",
+  "xacnhan",
+  "dongy",
 ]);
 const CANCEL_WORDS = new Set([
-  "cancel", "cancelled", "no", "n", "huy", "hủy", "huỷ", "khong", "không",
+  "cancel",
+  "cancelled",
+  "no",
+  "n",
+  "huy",
+  "hủy",
+  "huỷ",
+  "khong",
+  "không",
 ]);
 
 function classify(body: string): "confirm" | "cancel" | "unknown" {
-  const norm = body.trim().toLowerCase().replace(/[.!,?]/g, "");
+  const norm = body
+    .trim()
+    .toLowerCase()
+    .replace(/[.!,?]/g, "");
   if (CONFIRM_WORDS.has(norm)) return "confirm";
   if (CANCEL_WORDS.has(norm)) return "cancel";
   // Tolerate "yes please" / "cancel it" — judge on the first word only.
@@ -42,8 +66,16 @@ function classify(body: string): "confirm" | "cancel" | "unknown" {
 }
 
 function xmlEscape(s: string): string {
-  return s.replace(/[<>&'"]/g, (c) =>
-    ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" })[c] ?? c,
+  return s.replace(
+    /[<>&'"]/g,
+    (c) =>
+      ({
+        "<": "&lt;",
+        ">": "&gt;",
+        "&": "&amp;",
+        "'": "&apos;",
+        '"': "&quot;",
+      })[c] ?? c,
   );
 }
 
@@ -59,7 +91,8 @@ export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   const params = Object.fromEntries(new URLSearchParams(rawBody).entries());
 
-  const { createServiceRoleClient } = await import("@/shared/lib/supabase/serviceRole");
+  const { createServiceRoleClient } =
+    await import("@/shared/lib/supabase/serviceRole");
   const supabase = createServiceRoleClient();
   const authToken = await getTwilioAuthToken(supabase);
   if (!authToken) {
@@ -90,7 +123,9 @@ export async function POST(req: NextRequest) {
   const nowIso = new Date().toISOString();
   const baseQuery = db
     .from("bookings")
-    .select("id, salon_id, service_id, start_time_utc, status, reminder_24h_sent_at, reminder_3h_sent_at, sms_confirmation_sent_at")
+    .select(
+      "id, salon_id, service_id, start_time_utc, status, reminder_24h_sent_at, reminder_3h_sent_at, sms_confirmation_sent_at",
+    )
     .eq("client_phone", phone)
     .in("status", ["pending", "confirmed"])
     .gte("start_time_utc", nowIso)
@@ -99,8 +134,14 @@ export async function POST(req: NextRequest) {
 
   const { data: bkRows } = await baseQuery;
   const rows = (bkRows ?? []) as Array<{
-    id: string; salon_id: string; service_id: string; start_time_utc: string; status: string;
-    reminder_24h_sent_at: string | null; reminder_3h_sent_at: string | null; sms_confirmation_sent_at: string | null;
+    id: string;
+    salon_id: string;
+    service_id: string;
+    start_time_utc: string;
+    status: string;
+    reminder_24h_sent_at: string | null;
+    reminder_3h_sent_at: string | null;
+    sms_confirmation_sent_at: string | null;
   }>;
 
   // Prefer the booking that received a REMINDER; else the soonest.
@@ -115,7 +156,9 @@ export async function POST(req: NextRequest) {
   //
   // Keeping the live behavior. Whether a reply should prefer the most recently
   // texted booking is a product question, not a side effect of a write fix.
-  const bkWithSms = rows.find((r) => r.reminder_24h_sent_at || r.reminder_3h_sent_at);
+  const bkWithSms = rows.find(
+    (r) => r.reminder_24h_sent_at || r.reminder_3h_sent_at,
+  );
   const bkRow = bkWithSms ?? rows[0] ?? null;
 
   if (!bkRow) {
@@ -143,7 +186,10 @@ export async function POST(req: NextRequest) {
   if (action === "confirm") {
     await db
       .from("bookings")
-      .update({ status: "confirmed", confirmed_at: new Date().toISOString() } as never)
+      .update({
+        status: "confirmed",
+        confirmed_at: new Date().toISOString(),
+      } as never)
       .eq("id", booking.id)
       .eq("status", "pending");
     void logNotification({
@@ -156,14 +202,19 @@ export async function POST(req: NextRequest) {
       bodyPreview: params.Body ?? null,
       ok: true,
     });
-    return twiml(`✅ Confirmed! See you at ${salonName}. Reply CANCEL if your plans change.`);
+    return twiml(
+      `✅ Confirmed! See you at ${salonName}. Reply CANCEL if your plans change.`,
+    );
   }
 
   // action === "cancel" — frees the slot + promotes the waitlist atomically.
   const { data: res } = await db.rpc("cancel_booking_by_id" as never, {
     p_booking_id: booking.id,
+    p_salon_id: booking.salon_id,
   });
-  const ok = (Array.isArray(res) ? (res[0] as { ok?: boolean } | undefined) : undefined)?.ok === true;
+  const ok =
+    (Array.isArray(res) ? (res[0] as { ok?: boolean } | undefined) : undefined)
+      ?.ok === true;
   void logNotification({
     bookingId: booking.id,
     salonId: booking.salon_id,
@@ -190,7 +241,8 @@ export async function POST(req: NextRequest) {
     // for evening NA SMS-cancellations.
     const bookingDateYmd = salonYmdOfUtc(booking.start_time_utc, salonTz);
     after(async () => {
-      const { notifyWaitlistForSlot } = await import("@/shared/noshow/waitlistAutoFill");
+      const { notifyWaitlistForSlot } =
+        await import("@/shared/noshow/waitlistAutoFill");
       const { data: svc } = await db
         .from("services")
         .select("name")
@@ -206,5 +258,7 @@ export async function POST(req: NextRequest) {
       });
     });
   }
-  return twiml(`Your appointment at ${salonName} is cancelled. Book again anytime — thank you!`);
+  return twiml(
+    `Your appointment at ${salonName} is cancelled. Book again anytime — thank you!`,
+  );
 }

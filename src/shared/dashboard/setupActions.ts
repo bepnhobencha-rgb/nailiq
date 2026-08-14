@@ -1140,23 +1140,13 @@ export async function deleteStaff(
     return fail("staff_has_bookings");
   }
 
-  // See decisions-log.md 2026-05-02: Staff delete detaches terminal bookings
-  // This authorized delete spans private/profile data and protected booking
-  // history. Keep the privileged portion server-only and scope every write to
-  // the already-resolved salon and target staff member.
+  // Staff removal is a soft delete. Historical bookings deliberately keep the
+  // staff attribution that was true when the appointment happened (or was
+  // cancelled). In particular, cancelled/no-show rows are immutable tombstones;
+  // trying to detach them here would make offboarding fail whenever that staff
+  // member has archived history. Only the mutable customer preference is cleared
+  // below.
   const admin = createServiceRoleClient();
-  const { error: detachErr } = await admin
-    .from("bookings")
-    .update({ staff_id: null })
-    .eq("salon_id", r.salon.id)
-    .eq("staff_id", staffId)
-    .in("status", ["cancelled", "completed"]);
-
-  if (detachErr) {
-    console.error("[deleteStaff] detach terminal bookings", detachErr);
-    return fail("server_error");
-  }
-
   // client_profiles intentionally denies direct authenticated API access and
   // is a global phone-keyed table with no salon_id column. The target UUID was
   // already proven above to belong to the resolved salon, so the exact
