@@ -497,6 +497,8 @@ export const bookingVi: BookingMessages = {
     typingIndicator: "Đang xử lý…",
     errorFallback: "Xin lỗi, không kết nối được. Vui lòng thử lại.",
     disclaimer: "Trợ lý AI — để đặt lịch, dùng form bên trên.",
+    transactionalDisclaimer:
+      "AI có thể kiểm tra giờ trống và hỗ trợ đặt lịch. Chỉ xác nhận sau khi bạn xem lại và đồng ý rõ ràng.",
   },
   /** Phone step — the new hero step 1 of the booking flow. */
   phoneStepHeading: "Đặt lịch thật nhanh",

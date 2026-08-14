@@ -19,15 +19,17 @@ const intentionalDefiners = [
   "create_public_waitlist_entry",
   "finalize_public_booking_profile",
   "get_booking_client_snapshot",
+  "group_booking_request_completed",
   "insert_group_bookings",
   "public_booking_occupancy_for_range",
   "public_resolve_domain",
   "validate_phone_otp_session",
+  "validate_group_booking_otp_session",
 ] as const;
 
 describe("intentional anonymous SECURITY DEFINER boundary", () => {
   it("keeps the production allowlist exact and documented", () => {
-    expect(proof).toContain("IF v_actual_count <> 10");
+    expect(proof).toContain("IF v_actual_count <> 12");
 
     for (const functionName of intentionalDefiners) {
       expect(proof).toContain(`public.${functionName}`);
@@ -58,7 +60,10 @@ describe("intentional anonymous SECURITY DEFINER boundary", () => {
       "invalid_service_for_salon",
       "v_booking.otp_session_id = s.id",
       "b.created_at >= now() - interval ''10 minutes''",
-      "v_group_size < 2 OR v_group_size > 20",
+      "v_size < 2 OR v_size > 20",
+      "p_otp_session_id",
+      "FOR UPDATE",
+      "public.finalize_public_booking_profile",
       "RETURNS TABLE(staff_id uuid",
       "d.domain = lower(p_host)",
       "s.expires_at > now()",

@@ -549,9 +549,15 @@ function ReceptionistCenterInner({
           data.capabilityRows?.map((row) => ({
             staffId: row.staff_id,
             serviceId: row.service_id,
-          })) ?? null,
+          })) ??
+          (data.salon.staffCapabilityMode === "whitelist" ? [] : null),
       }),
-    [data.staff, data.services, data.capabilityRows],
+    [
+      data.staff,
+      data.services,
+      data.capabilityRows,
+      data.salon.staffCapabilityMode,
+    ],
   );
 
   // Wall-clock of the last successful server sync (initial SSR load, then
@@ -5041,6 +5047,7 @@ function ReceptionistCenterInner({
                   buffer_minutes: s.buffer_minutes,
                 })),
                 capabilityRows: data.capabilityRows,
+                staffCapabilityMode: data.salon.staffCapabilityMode,
                 dayYmd: data.selectedDate,
                 timezone,
                 rcMessages,

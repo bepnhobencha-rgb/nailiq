@@ -609,9 +609,16 @@ export async function addService(
      new service starts attached to all existing staff so a fresh service
      doesn't silently become "no one can perform it." Salons still in the
      all-capable fallback (zero rows) stay there. */
-  const { data: hasCap } = await supabase.rpc("salon_has_staff_services", {
-    p_salon_id: r.salon.id,
-  });
+  const { data: hasCap, error: capabilityModeErr } = await supabase.rpc(
+    "salon_has_staff_services",
+    {
+      p_salon_id: r.salon.id,
+    },
+  );
+  if (capabilityModeErr) {
+    console.error("[addService] capability mode", capabilityModeErr);
+    return fail("server_error");
+  }
   if (hasCap === true) {
     const { data: staffRows, error: staffErr } = await supabase
       .from("staff")
@@ -885,7 +892,6 @@ export async function addStaff(
   input: {
     name: string;
     role: StaffJobRole;
-    serviceIds?: string[];
     /** Defaults to "active" (shows in public booking). Pass "inactive" for a
      *  team member who manages but does not take bookings (e.g. a pure admin). */
     status?: StaffStatus;
@@ -937,15 +943,24 @@ export async function addStaff(
   // is already in whitelist mode. If the salon is still in the all-capable
   // fallback (zero rows), adding rows for only the new staff would break
   // every existing staff member — so we leave 0 rows and keep the fallback.
-  const { data: hasCap } = await supabase.rpc("salon_has_staff_services", {
-    p_salon_id: r.salon.id,
-  });
+  const { data: hasCap, error: capabilityModeErr } = await supabase.rpc(
+    "salon_has_staff_services",
+    { p_salon_id: r.salon.id },
+  );
+  if (capabilityModeErr) {
+    console.error("[addStaff] capability mode", capabilityModeErr);
+    return fail("server_error");
+  }
   if (hasCap === true) {
-    const { data: svcRows } = await supabase
+    const { data: svcRows, error: svcErr } = await supabase
       .from("services")
       .select("id")
       .eq("salon_id", r.salon.id)
       .is("deleted_at" as never, null);
+    if (svcErr) {
+      console.error("[addStaff] service load for autoattach", svcErr);
+      return fail("server_error");
+    }
     const allSvcIds = (svcRows ?? []).map((s) => String(s.id));
     if (allSvcIds.length > 0) {
       const { error: capErr } = await supabase
@@ -1066,24 +1081,21 @@ export async function updateStaff(
 
   if (touchServices) {
     const serviceIds = sanitizeServiceIds(data.serviceIds);
-    const { error: delErr } = await supabase
-      .from("staff_services")
-      .delete()
-      .eq("staff_id", staffId);
-    if (delErr) {
-      console.error("[updateStaff] staff_services delete", delErr);
+    /* One RPC owns the legacy-all → whitelist transition and row replacement.
+       It seeds every existing staff/service pair before narrowing this member,
+       so the first capability edit cannot disable colleagues.  Transactional
+       execution also prevents readers from observing mode/row partial state. */
+    const { data: capabilitySaved, error: capabilityErr } = await supabase.rpc(
+      "set_staff_service_capabilities" as never,
+      {
+        p_salon_id: r.salon.id,
+        p_staff_id: staffId,
+        p_service_ids: serviceIds,
+      } as never,
+    );
+    if (capabilityErr || capabilitySaved !== true) {
+      console.error("[updateStaff] staff capability transaction", capabilityErr);
       return fail("server_error");
-    }
-    if (serviceIds.length > 0) {
-      const { error: insErr } = await supabase
-        .from("staff_services")
-        .insert(
-          serviceIds.map((sid) => ({ staff_id: staffId, service_id: sid })),
-        );
-      if (insErr) {
-        console.error("[updateStaff] staff_services insert", insErr);
-        return fail("server_error");
-      }
     }
   }
 
@@ -1157,14 +1169,13 @@ export async function deleteStaff(
     return fail("server_error");
   }
 
-  // client_profiles intentionally denies all direct authenticated API access;
-  // it is only exposed through scoped server actions. Use the server-only
-  // service role for this referential cleanup after owner/admin authorization
-  // and constrain it to the resolved salon as well as the target staff row.
+  // client_profiles intentionally denies direct authenticated API access and
+  // is a global phone-keyed table with no salon_id column. The target UUID was
+  // already proven above to belong to the resolved salon, so the exact
+  // preferred_staff_id match is the correctly scoped referential cleanup.
   const { error: prefErr } = await admin
     .from("client_profiles")
     .update({ preferred_staff_id: null })
-    .eq("salon_id", r.salon.id)
     .eq("preferred_staff_id", staffId);
 
   if (prefErr) {

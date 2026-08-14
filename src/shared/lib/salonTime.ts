@@ -3,48 +3,39 @@
  *
  * ## DST handling (Task #04-D FIX 05)
  *
- * `Intl.DateTimeFormat` resolves wall-clock time → UTC offset for the
- * given IANA zone *at the rendered instant*, so DST shifts are
- * already baked into every conversion below. There is no extra
- * `isDst()` branch anywhere in this file — the binary search in
- * `salonWallTimeToUtcIso` walks the candidate millisecond range and
- * trusts `Intl` to report the correct local time at each probe.
+ * `Intl.DateTimeFormat` resolves UTC instants into wall-clock parts for the
+ * given IANA zone, so DST shifts are baked into every conversion below. There
+ * is no extra `isDst()` branch: `salonWallTimeToUtcIso` samples the nearby UTC
+ * offsets and accepts only candidates that round-trip to the requested wall
+ * time.
  *
- * Edge cases the search handles correctly today:
+ * Edge cases handled by the wall-time resolver:
  *
  * 1. **Spring-forward** (e.g. `America/Vancouver` 2026-03-08):
  *    local clocks jump 02:00 → 03:00. Wall-times in the skipped
- *    hour (02:00–02:59) **do not exist** in salon local time. The
- *    binary search converges on the first millisecond at-or-after
- *    03:00 PST — i.e., asking for `minutesFromMidnight = 150`
- *    (02:30) returns an ISO that formats as 03:00 PDT. This is
- *    acceptable for our use because: (a) salons aren't open at
- *    02:30 anyway, (b) the slot generator only ever asks for
- *    minutes inside `opening_hours`, which never spans 02:00–03:00
- *    on a DST night for any real tenant.
+ *    hour (02:00–02:59) **do not exist** in salon local time. These
+ *    inputs fail closed instead of silently moving a booking to 03:00.
  *
- * 2. **Fall-back** (e.g. `America/Vancouver` 2026-11-01):
+ * 2. **Fall-back** (e.g. `America/Toronto` 2026-11-01):
  *    local clocks repeat 02:00 → 01:00. The wall-time `01:30`
- *    happens twice. The search converges on the **first** instant
- *    where local time ≥ 01:30 — that's the PDT (pre-fall-back)
- *    occurrence. Same justification: salons are closed at 01:30,
- *    so this ambiguity never reaches a booking.
+ *    happens twice. Both candidates round-trip, and the resolver chooses the
+ *    earlier UTC instant — the PDT (pre-fall-back) occurrence — to keep the
+ *    choice deterministic.
  *
  * 3. **Booking across a DST boundary**: durations are computed in
  *    UTC ms (see `submitGroupBooking.ts:354`,
- *    `submitPublicBooking.ts`), so a 60-min service starting at
- *    01:30 PST on a fall-back day correctly ends at 02:30 PST
- *    (which is 01:30 PST a second time when rendered locally —
- *    again, never seen because salons are closed).
+ *    `submitPublicBooking.ts`), so a 60-min service starting at the first
+ *    01:30 on a fall-back day ends at the second 01:30 when rendered locally.
  *
- * **Why no unit tests yet:** the repo has no JS unit-test runner
- * (Playwright e2e only — see `CLAUDE.md` "Testing" section).
- * Adding one is out-of-scope for FIX 05; the cases above are
- * covered indirectly by the e2e flow which seeds bookings near
- * salon-open hours and never trips on the 02:00 boundary. A
- * follow-up task is spawned to add vitest + a dedicated
- * `salonTime.test.ts` that asserts the three scenarios above
- * against a fixed `America/Vancouver` calendar.
+ * `America/Vancouver` needs an explicit compatibility rule after B.C.'s final
+ * spring-forward on 2026-03-08. Older Node/ICU releases still contain the
+ * superseded November 2026 fall-back. Core scheduling therefore applies the
+ * enacted permanent UTC-07 offset itself, while eastern B.C. exceptions keep
+ * their own IANA zones.
+ *
+ * Dedicated Vitest coverage locks the Canada/DST boundaries. Booking
+ * durations still use elapsed UTC milliseconds; only wall-time selection
+ * needs ambiguity/non-existence handling here.
  */
 
 function parseUtcMs(utcIso: string): number {
@@ -53,6 +44,64 @@ function parseUtcMs(utcIso: string): number {
     throw new Error(`salonTime: invalid ISO string ${utcIso}`);
   }
   return ms;
+}
+
+type CalendarYmdParts = { year: number; month: number; day: number };
+
+const VANCOUVER_PERMANENT_PACIFIC_FROM_UTC_MS = Date.parse(
+  "2026-03-08T10:00:00.000Z",
+);
+const VANCOUVER_PERMANENT_PACIFIC_OFFSET_MS = -7 * 60 * 60 * 1000;
+
+function compatibilityFixedOffsetMs(
+  utcMs: number,
+  timezone: string,
+): number | null {
+  if (
+    timezone === "America/Vancouver" &&
+    utcMs >= VANCOUVER_PERMANENT_PACIFIC_FROM_UTC_MS
+  ) {
+    return VANCOUVER_PERMANENT_PACIFIC_OFFSET_MS;
+  }
+  return null;
+}
+
+function displayInstant(
+  utcMs: number,
+  timezone: string,
+): { date: Date; timezone: string } {
+  const fixedOffset = compatibilityFixedOffsetMs(utcMs, timezone);
+  return fixedOffset === null
+    ? { date: new Date(utcMs), timezone }
+    : { date: new Date(utcMs + fixedOffset), timezone: "UTC" };
+}
+
+function utcDateFromCalendarParts(parts: CalendarYmdParts): Date {
+  const date = new Date(0);
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCFullYear(parts.year, parts.month - 1, parts.day);
+  return date;
+}
+
+function parseCalendarYmd(ymd: string): CalendarYmdParts {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!match) {
+    throw new Error(`salonTime: invalid calendar date ${ymd}`);
+  }
+  const parts = {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+  };
+  const date = utcDateFromCalendarParts(parts);
+  if (
+    date.getUTCFullYear() !== parts.year ||
+    date.getUTCMonth() !== parts.month - 1 ||
+    date.getUTCDate() !== parts.day
+  ) {
+    throw new Error(`salonTime: invalid calendar date ${ymd}`);
+  }
+  return parts;
 }
 
 /**
@@ -71,6 +120,11 @@ function resolveNowMs(nowIso?: string): number {
 }
 
 function ymdInTimeZone(ms: number, timeZone: string): string {
+  const fixedOffset = compatibilityFixedOffsetMs(ms, timeZone);
+  if (fixedOffset !== null) {
+    const shifted = new Date(ms + fixedOffset);
+    return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
+  }
   const dtf = new Intl.DateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
@@ -84,8 +138,8 @@ function ymdInTimeZone(ms: number, timeZone: string): string {
 }
 
 function addCalendarDaysToYmd(ymd: string, days: number): string {
-  const [y, m, d] = ymd.split("-").map(Number);
-  const x = new Date(Date.UTC(y, m - 1, d + days));
+  const parts = parseCalendarYmd(ymd);
+  const x = utcDateFromCalendarParts({ ...parts, day: parts.day + days });
   const yy = x.getUTCFullYear();
   const mm = String(x.getUTCMonth() + 1).padStart(2, "0");
   const dd = String(x.getUTCDate()).padStart(2, "0");
@@ -94,9 +148,13 @@ function addCalendarDaysToYmd(ymd: string, days: number): string {
 
 /** First UTC instant where the calendar date in `timeZone` equals `ymd` (local midnight). */
 function firstInstantOfSalonCalendarDayUtc(ymd: string, timeZone: string): number {
-  const [y, m, d] = ymd.split("-").map(Number);
-  let lo = Date.UTC(y, m - 1, d - 1, 12, 0, 0);
-  let hi = Date.UTC(y, m - 1, d + 1, 12, 0, 0);
+  const parts = parseCalendarYmd(ymd);
+  const priorNoon = utcDateFromCalendarParts({ ...parts, day: parts.day - 1 });
+  priorNoon.setUTCHours(12, 0, 0, 0);
+  const followingNoon = utcDateFromCalendarParts({ ...parts, day: parts.day + 1 });
+  followingNoon.setUTCHours(12, 0, 0, 0);
+  let lo = priorNoon.getTime();
+  let hi = followingNoon.getTime();
   while (ymdInTimeZone(lo, timeZone) > ymd) lo -= 24 * 60 * 60 * 1000;
   while (ymdInTimeZone(hi, timeZone) < ymd) hi += 24 * 60 * 60 * 1000;
 
@@ -137,11 +195,14 @@ export function formatInSalonTz(
   // value still throws via parseUtcMs below — that's a genuine data bug worth
   // surfacing, not the benign placeholder case.
   if (utcIso == null || utcIso.trim() === "") return "";
-  const d = new Date(parseUtcMs(utcIso));
+  const instant = parseUtcMs(utcIso);
+  const display = displayInstant(instant, timezone);
+  const d = display.date;
+  const displayTimezone = display.timezone;
 
   if (format === "time") {
     return new Intl.DateTimeFormat("en-US", {
-      timeZone: timezone,
+      timeZone: displayTimezone,
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
@@ -150,7 +211,7 @@ export function formatInSalonTz(
 
   if (format === "shortTime") {
     const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone: timezone,
+      timeZone: displayTimezone,
       hour: "numeric",
       minute: "2-digit",
       hour12: true,
@@ -165,7 +226,7 @@ export function formatInSalonTz(
   }
 
   const dateStr = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
+    timeZone: displayTimezone,
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -176,7 +237,7 @@ export function formatInSalonTz(
   }
 
   const timeStr = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
+    timeZone: displayTimezone,
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
@@ -229,6 +290,11 @@ export function salonDayRangeUtc(
 }
 
 function salonMinutesFromMidnightAt(utcMs: number, timezone: string): number {
+  const fixedOffset = compatibilityFixedOffsetMs(utcMs, timezone);
+  if (fixedOffset !== null) {
+    const shifted = new Date(utcMs + fixedOffset);
+    return shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
+  }
   const d = new Date(utcMs);
   const dtf = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,
@@ -247,6 +313,96 @@ function salonMinutesFromMidnightAt(utcMs: number, timezone: string): number {
   return h * 60 + m;
 }
 
+type SalonWallParts = CalendarYmdParts & {
+  hour: number;
+  minute: number;
+  second: number;
+};
+
+const wallPartsFormatters = new Map<string, Intl.DateTimeFormat>();
+const wallOffsetCandidates = new Map<string, readonly number[]>();
+const MAX_WALL_OFFSET_CACHE_ENTRIES = 2_048;
+
+function salonWallPartsAt(utcMs: number, timezone: string): SalonWallParts {
+  const fixedOffset = compatibilityFixedOffsetMs(utcMs, timezone);
+  if (fixedOffset !== null) {
+    const shifted = new Date(utcMs + fixedOffset);
+    return {
+      year: shifted.getUTCFullYear(),
+      month: shifted.getUTCMonth() + 1,
+      day: shifted.getUTCDate(),
+      hour: shifted.getUTCHours(),
+      minute: shifted.getUTCMinutes(),
+      second: shifted.getUTCSeconds(),
+    };
+  }
+  let formatter = wallPartsFormatters.get(timezone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    });
+    wallPartsFormatters.set(timezone, formatter);
+  }
+  const values = Object.fromEntries(
+    formatter.formatToParts(new Date(utcMs)).map((part) => [part.type, part.value]),
+  ) as Record<string, string>;
+  const result = {
+    year: Number(values.year),
+    month: Number(values.month),
+    day: Number(values.day),
+    hour: Number(values.hour),
+    minute: Number(values.minute),
+    second: Number(values.second),
+  };
+  if (Object.values(result).some((value) => !Number.isFinite(value))) {
+    throw new Error(`salonTime: could not resolve wall time in ${timezone}`);
+  }
+  return result;
+}
+
+function timezoneOffsetMsAt(utcMs: number, timezone: string): number {
+  const wholeSecondUtcMs = Math.floor(utcMs / 1000) * 1000;
+  const wall = salonWallPartsAt(wholeSecondUtcMs, timezone);
+  const wallAsUtc = utcDateFromCalendarParts(wall);
+  wallAsUtc.setUTCHours(wall.hour, wall.minute, wall.second, 0);
+  return wallAsUtc.getTime() - wholeSecondUtcMs;
+}
+
+function timezoneOffsetsNearWallDate(
+  dateYmd: string,
+  naiveWallUtcMs: number,
+  timezone: string,
+): readonly number[] {
+  const cacheKey = `${timezone}|${dateYmd}`;
+  const cached = wallOffsetCandidates.get(cacheKey);
+  if (cached) return cached;
+
+  const offsets = new Set<number>();
+  const sampleRadiusMs = 48 * 60 * 60 * 1000;
+  const sampleStepMs = 6 * 60 * 60 * 1000;
+  for (
+    let sampleMs = naiveWallUtcMs - sampleRadiusMs;
+    sampleMs <= naiveWallUtcMs + sampleRadiusMs;
+    sampleMs += sampleStepMs
+  ) {
+    offsets.add(timezoneOffsetMsAt(sampleMs, timezone));
+  }
+  const result = Array.from(offsets);
+  if (wallOffsetCandidates.size >= MAX_WALL_OFFSET_CACHE_ENTRIES) {
+    const oldest = wallOffsetCandidates.keys().next().value;
+    if (oldest !== undefined) wallOffsetCandidates.delete(oldest);
+  }
+  wallOffsetCandidates.set(cacheKey, result);
+  return result;
+}
+
 /**
  * Minutes from local midnight in `timezone` for a UTC instant.
  */
@@ -255,29 +411,74 @@ export function utcIsoToSalonMinutesFromMidnight(utcIso: string, timezone: strin
 }
 
 /**
- * UTC ISO for a wall-clock time on a salon calendar day (DST-safe via search).
+ * UTC ISO for a wall-clock time on a salon calendar day (DST-safe round trip).
  * `minutesFromMidnight` is e.g. `8 * 60 + 30` for 08:30.
  */
+export function salonWallTimeToUtcCandidates(
+  dateYmd: string,
+  minutesFromMidnight: number,
+  timezone: string,
+): string[] {
+  const date = parseCalendarYmd(dateYmd);
+  if (
+    !Number.isInteger(minutesFromMidnight) ||
+    minutesFromMidnight < 0 ||
+    minutesFromMidnight >= 24 * 60
+  ) {
+    throw new Error(`salonTime: invalid minutes from midnight ${minutesFromMidnight}`);
+  }
+
+  const hour = Math.floor(minutesFromMidnight / 60);
+  const minute = minutesFromMidnight % 60;
+  const naiveWallDate = utcDateFromCalendarParts(date);
+  naiveWallDate.setUTCHours(hour, minute, 0, 0);
+  const naiveWallUtcMs = naiveWallDate.getTime();
+
+  // A UTC offset can change inside the requested salon day. Sample both sides
+  // of the wall date, then validate every resulting candidate by rendering it
+  // back through Intl. A repeated wall time yields two candidates; sorting
+  // chooses the first occurrence. A skipped wall time yields none and fails
+  // closed instead of silently moving the appointment.
+  const matches = timezoneOffsetsNearWallDate(
+    dateYmd,
+    naiveWallUtcMs,
+    timezone,
+  )
+    .map((offsetMs) => naiveWallUtcMs - offsetMs)
+    .filter((candidateMs) => {
+      const wall = salonWallPartsAt(candidateMs, timezone);
+      return (
+        wall.year === date.year &&
+        wall.month === date.month &&
+        wall.day === date.day &&
+        wall.hour === hour &&
+        wall.minute === minute &&
+        wall.second === 0
+      );
+    })
+    .sort((a, b) => a - b);
+
+  return matches.map((candidateMs) => new Date(candidateMs).toISOString());
+}
+
 export function salonWallTimeToUtcIso(
   dateYmd: string,
   minutesFromMidnight: number,
   timezone: string,
 ): string {
-  const dayStart = firstInstantOfSalonCalendarDayUtc(dateYmd, timezone);
-  const nextStart = firstInstantOfSalonCalendarDayUtc(addCalendarDaysToYmd(dateYmd, 1), timezone);
-  let lo = dayStart;
-  let hi = nextStart - 1;
-  while (lo < hi) {
-    const mid = Math.floor((lo + hi) / 2);
-    const ymd = ymdInTimeZone(mid, timezone);
-    const mins = salonMinutesFromMidnightAt(mid, timezone);
-    if (ymd < dateYmd || (ymd === dateYmd && mins < minutesFromMidnight)) {
-      lo = mid + 1;
-    } else {
-      hi = mid;
-    }
+  const matches = salonWallTimeToUtcCandidates(
+    dateYmd,
+    minutesFromMidnight,
+    timezone,
+  );
+  if (matches.length === 0) {
+    const hour = Math.floor(minutesFromMidnight / 60);
+    const minute = minutesFromMidnight % 60;
+    throw new Error(
+      `salonTime: ${dateYmd} ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} does not exist in ${timezone}`,
+    );
   }
-  return new Date(lo).toISOString();
+  return matches[0];
 }
 
 /**
@@ -303,6 +504,7 @@ export function salonTimezoneAbbreviation(
 ): string {
   try {
     const ms = atIso !== undefined ? parseUtcMs(atIso) : Date.now();
+    if (compatibilityFixedOffsetMs(ms, timezone) !== null) return "PT";
     const parts = new Intl.DateTimeFormat("en-US", {
       timeZone: timezone,
       timeZoneName: "short",

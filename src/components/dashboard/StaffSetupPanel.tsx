@@ -248,7 +248,7 @@ export function StaffSetupPanel({
   initialRows,
   services,
   initialServiceIdsByStaff,
-  salonHasCapabilityRows,
+  salonCapabilityConfigured,
   maxStaff,
   accessByStaff,
   currentUserRole,
@@ -262,9 +262,9 @@ export function StaffSetupPanel({
   accessByStaff: Record<string, StaffAccessInfo | null>;
   /** Caller's own salon_members role — gates who can grant `admin`. */
   currentUserRole: string;
-  /** When false, the salon is in the all-capable fallback; checkboxes are pre-checked
-   *  so the first save does not accidentally narrow capability. */
-  salonHasCapabilityRows: boolean;
+  /** When false, the salon is in the durable legacy-all mode; checkboxes are
+   *  pre-checked so the first save does not accidentally narrow capability. */
+  salonCapabilityConfigured: boolean;
   /** Server-resolved cap (from `getEffectivePlanLimits`). `Infinity`
    *  for unlimited plans / feature-flag overrides. Server still
    *  re-validates on every `addStaff` call. */
@@ -278,6 +278,12 @@ export function StaffSetupPanel({
   const router = useRouter();
 
   const [rows, setRows] = useState(initialRows);
+  const [capabilityConfigured, setCapabilityConfigured] = useState(
+    salonCapabilityConfigured,
+  );
+  const [serviceIdsByStaff, setServiceIdsByStaff] = useState(
+    initialServiceIdsByStaff,
+  );
   const [toast, setToast] = useState<SetupToastPayload | null>(null);
   const [search, setSearch] = useState("");
 
@@ -298,6 +304,12 @@ export function StaffSetupPanel({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- server list after refresh
     setRows(initialRows);
   }, [initialRows]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- server capability state after refresh
+    setCapabilityConfigured(salonCapabilityConfigured);
+    setServiceIdsByStaff(initialServiceIdsByStaff);
+  }, [initialServiceIdsByStaff, salonCapabilityConfigured]);
 
   const refresh = useCallback(() => router.refresh(), [router]);
 
@@ -415,18 +427,30 @@ export function StaffSetupPanel({
         services={services}
         initialServiceIds={
           drawerStaff
-            ? salonHasCapabilityRows
-              ? (initialServiceIdsByStaff[drawerStaff.id] ?? [])
+            ? capabilityConfigured
+              ? (serviceIdsByStaff[drawerStaff.id] ?? [])
               : services.map((s) => s.id)
             : []
         }
-        salonHasCapabilityRows={salonHasCapabilityRows}
+        salonCapabilityConfigured={capabilityConfigured}
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        onSaved={(updated) => {
+        onSaved={(updated, savedServiceIds, savedCapabilityConfigured) => {
           setRows((prev) =>
             prev.map((r) => (r.id === updated.id ? updated : r)),
           );
+          setServiceIdsByStaff((current) => ({
+            ...(!capabilityConfigured && savedCapabilityConfigured
+              ? Object.fromEntries(
+                  rows.map((row) => [
+                    row.id,
+                    services.map((service) => service.id),
+                  ]),
+                )
+              : current),
+            [updated.id]: savedServiceIds,
+          }));
+          setCapabilityConfigured(savedCapabilityConfigured);
           setDrawerOpen(false);
           setToast({ variant: "success", message: tLabels.staffSaved });
         }}

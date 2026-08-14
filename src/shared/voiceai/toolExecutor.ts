@@ -10,7 +10,13 @@ import { parseOpeningHours, type DayKey, type OpeningHoursWeek } from "@/shared/
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { computeBookingTiming } from "@/shared/booking/bookingTiming";
 import { checkGroupWithinOpeningHours } from "@/shared/booking/groupBookingHoursPolicy";
-import { salonDayRangeUtc, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
+import {
+  formatInSalonTz,
+  salonDayRangeUtc,
+  salonWallTimeToUtcIso,
+  salonYmdOfUtc,
+  utcIsoToSalonMinutesFromMidnight,
+} from "@/shared/lib/salonTime";
 import {
   tryAlignedArrangement,
   buildArrangement,
@@ -104,7 +110,7 @@ export async function executeVoiceTool(
     return handleConfirmBooking(supabase, salonSlug, toolArgs, sessionId, callerVerifiedPhone, trustedUserUtterance);
   }
   if (toolName === "find_booking") {
-    return handleFindBooking(supabase, salonSlug, toolArgs);
+    return handleFindBooking(supabase, salonSlug, toolArgs, callerVerifiedPhone);
   }
   if (toolName === "cancel_booking") {
     return handleCancelBooking(
@@ -129,7 +135,7 @@ export async function executeVoiceTool(
     return handleJoinWaitlist(supabase, salonSlug, toolArgs);
   }
   if (toolName === "lookup_customer") {
-    return handleLookupCustomer(supabase, salonSlug, toolArgs, sessionId);
+    return handleLookupCustomer(supabase, salonSlug, toolArgs, sessionId, callerVerifiedPhone);
   }
   if (toolName === "transfer_to_human") {
     return handleTransferToHuman(
@@ -1192,6 +1198,16 @@ async function handleCancelBooking(
   if (!bookingId && !groupIdArg && customerPhone) {
     const last9 = phoneSuffixOrNull(customerPhone);
     if (!last9) return NextResponse.json(PHONE_TOO_SHORT);
+
+    // Lookup mode is read-only but not public: it returns names, services,
+    // times and booking IDs. Verify ownership before exposing those details.
+    const lookupGate = await requirePhoneVerified(supabase, salon.id, customerPhone, {
+      otpSessionId: args.otp_session_id as string | undefined,
+      callerVerifiedPhone,
+    });
+    if (!lookupGate.ok) {
+      return NextResponse.json({ error: lookupGate.error, hint: lookupGate.hint });
+    }
     const now = new Date().toISOString();
 
     // Limit 20 — group bookings create one row per member (8-person group = 8 rows).
@@ -1221,10 +1237,11 @@ async function handleCancelBooking(
       // Staff join returns a single object (many-to-one FK)
       const staffRaw  = r.staff as { name?: string } | null;
       const staffName = staffRaw?.name ?? null;
-      const localTime = new Date(r.start_time_utc as string).toLocaleString("en-US", {
-        timeZone: tz, weekday: "short", month: "short", day: "numeric",
-        hour: "numeric", minute: "2-digit", hour12: true,
-      });
+      const localTime = formatInSalonTz(
+        String(r.start_time_utc),
+        tz,
+        "datetime",
+      );
       const fee = evaluateLateCancellationPolicy({
         booking: voiceBookingLatePolicy(r as VoiceCancelBooking),
         salon: latePolicy,
@@ -1374,10 +1391,7 @@ async function handleCancelBooking(
     });
   }
 
-  const localTime = new Date(bk.start_time_utc).toLocaleString("en-US", {
-    timeZone: tz, weekday: "short", month: "short", day: "numeric",
-    hour: "numeric", minute: "2-digit", hour12: true,
-  });
+  const localTime = formatInSalonTz(bk.start_time_utc, tz, "datetime");
 
   // UPDATE status → cancelled
   const { error: updateErr } = await supabase
@@ -1465,6 +1479,7 @@ async function handleFindBooking(
   supabase: ReturnType<typeof createServiceRoleClient>,
   salonSlug: string,
   args: Record<string, unknown>,
+  callerVerifiedPhone: string | null,
 ) {
   const customerPhone = args.customer_phone as string | undefined;
   if (!customerPhone) {
@@ -1480,6 +1495,16 @@ async function handleFindBooking(
 
   const last9 = phoneSuffixOrNull(customerPhone);
   if (!last9) return NextResponse.json(PHONE_TOO_SHORT);
+
+  // A phone number is an identifier, not proof of identity. Upcoming booking
+  // details include a customer's name, service and time, so require the same
+  // OTP/carrier proof used by cancellation and rescheduling before returning
+  // any row. This matters especially on public web chat and inbound SMS.
+  const gate = await requirePhoneVerified(supabase, salon.id, customerPhone, {
+    otpSessionId: args.otp_session_id as string | undefined,
+    callerVerifiedPhone,
+  });
+  if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
 
   const now = new Date().toISOString();
 
@@ -1503,11 +1528,11 @@ async function handleFindBooking(
 
   const tz = (salon as { timezone?: string }).timezone ?? "America/Los_Angeles";
   const formatted = phoneRows.map((b) => {
-    const start = new Date(b.start_time_utc as string);
-    const localStr = start.toLocaleString("en-US", {
-      timeZone: tz, weekday: "short", month: "short", day: "numeric",
-      hour: "numeric", minute: "2-digit", hour12: true,
-    });
+    const localStr = formatInSalonTz(
+      String(b.start_time_utc),
+      tz,
+      "datetime",
+    );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const svcRaw = (b as any).services as { name?: string } | { name?: string }[] | null;
     const svcName = (Array.isArray(svcRaw) ? svcRaw[0]?.name : svcRaw?.name) ?? "Unknown service";
@@ -1834,15 +1859,11 @@ function parseHm24(hm: string): number | null {
 
 /** UTC ms → salon-local "HH:MM" (24h) string. */
 function utcMsToSalonHm24(ms: number, timezone: string): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    hour:     "2-digit",
-    minute:   "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(ms));
-  const hh = parts.find((p) => p.type === "hour")?.value   ?? "00";
-  const mm = parts.find((p) => p.type === "minute")?.value ?? "00";
-  return `${hh}:${mm}`;
+  const minutes = utcIsoToSalonMinutesFromMidnight(
+    new Date(ms).toISOString(),
+    timezone,
+  );
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }
 
 /** Return the weekday key ("mon"…"sun") for a YYYY-MM-DD date. */
@@ -1879,6 +1900,27 @@ type GroupCtx = {
   serviceById:     Map<string, ServiceInfo>;
 };
 
+function stableVoiceGroupRequestId(input: {
+  salonId: string;
+  dateYmd: string;
+  chosenMinutes: number;
+  organizerPhone: string;
+}): string {
+  // This identifies the customer's logical confirmation attempt, not its
+  // mutable payload. Service counts/mode are deliberately excluded so a retry
+  // that changes them reaches the same durable ledger and fails closed instead
+  // of creating a second group under a different key.
+  const canonical = JSON.stringify({
+    namespace: "voice-group-confirmation-v1",
+    salonId: input.salonId,
+    dateYmd: input.dateYmd,
+    chosenTime: `${String(Math.floor(input.chosenMinutes / 60)).padStart(2, "0")}:${String(input.chosenMinutes % 60).padStart(2, "0")}`,
+    organizerPhone: input.organizerPhone,
+  });
+  const hash = crypto.createHash("sha256").update(canonical).digest("hex");
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20, 32)}`;
+}
+
 /**
  * Loads and validates everything a group scheduler call needs:
  * salon, services, staff, capability map, and existing occupancy for `dateYmd`.
@@ -1891,17 +1933,28 @@ async function loadGroupCtx(
   dateYmd: string,
 ): Promise<GroupCtx | { error: string; status: number }> {
   // 1. Salon
-  const { data: salonRaw } = await supabase
+  const salonQuery = await supabase
     .from("salons")
-    .select("id, timezone, opening_hours, booking_closed_dates")
+    .select("id, timezone, opening_hours, booking_closed_dates, staff_capability_mode")
     .eq("slug", salonSlug)
     .single();
+  if (salonQuery.error) {
+    return {
+      error:
+        salonQuery.error.code === "PGRST116"
+          ? "salon_not_found"
+          : "salon_configuration_unavailable",
+      status: salonQuery.error.code === "PGRST116" ? 404 : 503,
+    };
+  }
+  const salonRaw = salonQuery.data;
   if (!salonRaw) return { error: "salon_not_found", status: 404 };
   const salon = salonRaw as unknown as {
     id: string;
     timezone?: string;
     opening_hours?: unknown;
     booking_closed_dates?: unknown;
+    staff_capability_mode?: "legacy_all" | "whitelist" | null;
   };
   const timezone = (typeof salon.timezone === "string" && salon.timezone.trim())
     ? salon.timezone.trim()
@@ -1935,12 +1988,13 @@ async function loadGroupCtx(
 
   // 4. Load services
   const uniqueIds = [...new Set(expandedServiceIds)];
-  const { data: svcRows } = await supabase
+  const { data: svcRows, error: servicesError } = await supabase
     .from("services")
     .select("id, name, duration_minutes, buffer_minutes, price_cents")
     .in("id", uniqueIds)
     .eq("salon_id", salon.id)
     .is("deleted_at", null);
+  if (servicesError) return { error: "service_catalog_unavailable", status: 503 };
 
   const serviceById = new Map<string, ServiceInfo>();
   for (const r of svcRows ?? []) {
@@ -1977,12 +2031,13 @@ async function loadGroupCtx(
   });
 
   // 6. Staff
-  const { data: staffRows } = await supabase
+  const { data: staffRows, error: staffError } = await supabase
     .from("staff")
     .select("id, name")
     .eq("salon_id", salon.id)
     .eq("status", "active")
     .is("deleted_at", null);
+  if (staffError) return { error: "staff_roster_unavailable", status: 503 };
   const staffList: StaffRow[] = (staffRows ?? []).map((s) => ({
     id:   String(s.id),
     name: String(s.name ?? ""),
@@ -1997,22 +2052,27 @@ async function loadGroupCtx(
   for (const s of staffList) staffById.set(s.id, s);
 
   // 7. Staff capability
-  const { data: capRows } = await supabase
+  const { data: capRows, error: capError } = await supabase
     .from("staff_services")
     .select("staff_id, service_id")
     .in("staff_id", staffList.map((s) => s.id));
-  const capability: StaffCapabilityMap =
-    capRows && capRows.length > 0
-      ? buildCapabilityMap(capRows.map((r) => ({ staff_id: String(r.staff_id), service_id: String(r.service_id) })))
-      : null; // null = all staff can do all services (backward-compat)
+  if (capError) return { error: "staff_capability_unavailable", status: 503 };
+  const capability: StaffCapabilityMap = buildCapabilityMap(
+    (capRows ?? []).map((r) => ({
+      staff_id: String(r.staff_id),
+      service_id: String(r.service_id),
+    })),
+    salon.staff_capability_mode,
+  );
 
   // 8. Existing bookings for the day
   const { startUtc, endUtc } = salonDayRangeUtc(dateYmd, timezone);
-  const { data: occRows } = await supabase.rpc("public_booking_occupancy_for_range", {
+  const { data: occRows, error: occupancyError } = await supabase.rpc("public_booking_occupancy_for_range", {
     p_salon_id: salon.id,
     p_start:    startUtc,
     p_end:      endUtc,
   });
+  if (occupancyError) return { error: "booking_occupancy_unavailable", status: 503 };
   const existing: ExistingBooking[] = ((occRows ?? []) as Array<{
     staff_id: string;
     start_time_utc: string;
@@ -2299,6 +2359,132 @@ async function handleConfirmGroupBooking(
   });
   if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
 
+  const idempotencyKey = stableVoiceGroupRequestId({
+    salonId: ctx.salonId,
+    dateYmd,
+    chosenMinutes: chosenMin,
+    organizerPhone: phoneDigits,
+  });
+
+  // A retry can arrive after the first transaction committed but before Voice
+  // received its response. Consult the request ledger before re-running
+  // availability, because the original bookings would otherwise conflict with
+  // their own retry.
+  const { data: priorRequest, error: priorRequestError } = await supabase
+    .from("group_booking_requests" as never)
+    .select("state, result")
+    .eq("salon_id", ctx.salonId)
+    .eq("request_id", idempotencyKey)
+    .maybeSingle();
+  if (priorRequestError) {
+    console.error("[voice/confirm_group_booking] request ledger unavailable", priorRequestError);
+    return NextResponse.json(
+      { error: "group_request_ledger_unavailable" },
+      { status: 503 },
+    );
+  }
+  const prior = priorRequest as {
+    state?: string;
+    result?: { success?: boolean; group_id?: string; booking_ids?: string[] } | null;
+  } | null;
+  if (prior?.state === "completed" && prior.result?.success === true) {
+    const replayBookingIds = (prior.result.booking_ids ?? []).map(String);
+    if (replayBookingIds.length === 0) {
+      return NextResponse.json(
+        { error: "group_request_replay_unavailable" },
+        { status: 503 },
+      );
+    }
+    const { data: replayRows, error: replayError } = await supabase
+      .from("bookings")
+      .select("id, service_id, client_phone, start_time_utc, end_time_utc, wave_number")
+      .eq("salon_id", ctx.salonId)
+      .in("id", replayBookingIds);
+    if (replayError || (replayRows ?? []).length !== replayBookingIds.length) {
+      return NextResponse.json(
+        { error: "group_request_replay_unavailable" },
+        { status: 503 },
+      );
+    }
+    const expectedServiceCounts = new Map<string, number>();
+    for (const assignment of serviceAssignments) {
+      expectedServiceCounts.set(
+        assignment.service_id,
+        (expectedServiceCounts.get(assignment.service_id) ?? 0) +
+          assignment.count,
+      );
+    }
+    const actualServiceCounts = new Map<string, number>();
+    for (const row of replayRows ?? []) {
+      const serviceId = String(row.service_id);
+      actualServiceCounts.set(
+        serviceId,
+        (actualServiceCounts.get(serviceId) ?? 0) + 1,
+      );
+    }
+    const sameServices =
+      expectedServiceCounts.size === actualServiceCounts.size &&
+      Array.from(expectedServiceCounts).every(
+        ([serviceId, count]) => actualServiceCounts.get(serviceId) === count,
+      );
+    const replayStarts = (replayRows ?? []).map((row) =>
+      Date.parse(String(row.start_time_utc)),
+    );
+    const replayEnds = (replayRows ?? []).map((row) =>
+      Date.parse(String(row.end_time_utc)),
+    );
+    const groupStartMs = Math.min(...replayStarts);
+    const groupEndMs = Math.max(...replayEnds);
+    const expectedTime = `${String(Math.floor(chosenMin / 60)).padStart(2, "0")}:${String(chosenMin % 60).padStart(2, "0")}`;
+    const anchorMatches =
+      (mode === "sync_finish"
+        ? utcMsToSalonHm24(groupEndMs, ctx.timezone)
+        : utcMsToSalonHm24(groupStartMs, ctx.timezone)) === expectedTime;
+    const allOnRequestedDate = (replayRows ?? []).every(
+      (row) => salonYmdOfUtc(String(row.start_time_utc), ctx.timezone) === dateYmd,
+    );
+    const phoneMatches = (replayRows ?? []).some(
+      (row) => String(row.client_phone ?? "").replace(/\D/g, "") === phoneDigits,
+    );
+    if (
+      !sameServices ||
+      !anchorMatches ||
+      !allOnRequestedDate ||
+      !phoneMatches
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          reason: "idempotency_conflict",
+          hint:
+            "This confirmation key was already used with different group details. Start a fresh confirmation instead of retrying it.",
+        },
+        { status: 409 },
+      );
+    }
+    const waveCount = Math.max(
+      1,
+      ...(replayRows ?? []).map((row) => Number(row.wave_number) || 1),
+    );
+    return NextResponse.json({
+      ok: true,
+      groupId: prior.result.group_id,
+      bookingIds: replayBookingIds,
+      partyLinkUrl: null,
+      smsSent: false,
+      idempotentReplay: true,
+      isWaveBooking: waveCount > 1,
+      waveCount,
+      groupStartTime: utcMsToSalonHm24(groupStartMs, ctx.timezone),
+      groupEndTime: utcMsToSalonHm24(groupEndMs, ctx.timezone),
+      date: dateYmd,
+      totalMembers: replayBookingIds.length,
+      organizerName: organizerName.trim(),
+      message: `Group booking already confirmed for ${replayBookingIds.length} people.`,
+      hint: "This was an idempotent retry. Do not create another booking.",
+    });
+  }
+
   // 4. Re-run scheduler at the chosen anchor to get concrete staff assignments
   //    (Ensures we pick up any bookings created since get_group_available_slots was called)
   const anchorMs   = Date.parse(salonWallTimeToUtcIso(dateYmd, chosenMin, ctx.timezone));
@@ -2412,7 +2598,6 @@ async function handleConfirmGroupBooking(
   // 5. Build the insert_group_bookings payload
   //    Part A: use Guest N placeholders — real names come from Party Link claiming.
   //    Guest numbering follows wave order so wave 1 = Guest 1…k, wave 2 = Guest k+1…
-  const idempotencyKey = crypto.randomUUID();
   const orderedAssignments = finalAssignments
     .slice()
     .sort((a, b) => a.waveNumber - b.waveNumber || a.memberIdx - b.memberIdx);
@@ -2434,6 +2619,7 @@ async function handleConfirmGroupBooking(
       wave_number:               a.waveNumber,
       staff_requested_by_client: false,
       idempotency_key:           idempotencyKey,
+      booking_channel:           "voice",
     };
   });
 
@@ -2458,7 +2644,13 @@ async function handleConfirmGroupBooking(
     return NextResponse.json({ error: "group_booking_failed", detail: e.message }, { status: 500 });
   }
 
-  const result = rpcData as { success?: boolean; code?: string; group_id?: string; booking_ids?: string[] } | null;
+  const result = rpcData as {
+    success?: boolean;
+    code?: string;
+    group_id?: string;
+    booking_ids?: string[];
+    idempotent_replay?: boolean;
+  } | null;
   if (!result?.success) {
     const code = result?.code ?? "unknown";
     if (code === "slot_conflict") {
@@ -2471,11 +2663,23 @@ async function handleConfirmGroupBooking(
     if (code === "duplicate_submission") {
       return NextResponse.json({ ok: false, reason: "duplicate_submission" }, { status: 409 });
     }
+    if (code === "idempotency_conflict") {
+      return NextResponse.json(
+        {
+          ok: false,
+          reason: "idempotency_conflict",
+          hint:
+            "This confirmation key was already used with different group details. Start a fresh confirmation instead of retrying it.",
+        },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ error: "group_booking_failed", code }, { status: 500 });
   }
 
   const groupId    = result.group_id!;
   const bookingIds = (result.booking_ids ?? []).map(String);
+  const idempotentReplay = result.idempotent_replay === true;
 
   // 7. Stamp source = "voice" on all created bookings (best-effort)
   if (bookingIds.length > 0) {
@@ -2485,33 +2689,35 @@ async function handleConfirmGroupBooking(
         .update({ source: "voice", booking_channel: "voice" } as never)
         .in("id", bookingIds);
     } catch { /* best-effort */ }
-    bookingIds.forEach((id) =>
-      void logBookingEvent({
-        bookingId: id,
-        salonId: ctx.salonId,
-        actorUserId: null,
-        actorRole: "system",
-        eventType: "booking_created",
-        payload: { source: "voice_group", memberCount: bookingIds.length },
-      }),
-    );
-    // Unified no-show protection gate — runs AI agent when opted-in, falls
-    // back to hard rules otherwise.  Flag the lead (only it carries a phone).
-    try {
-      const { handleBookingProtection } = await import(
-        "@/shared/noshow/handleBookingProtection"
-      );
-      await handleBookingProtection(bookingIds[0], ctx.salonId, "voice");
-    } catch { /* best-effort */ }
-    // Owner/admin "new booking" alert — one email for the group (first booking).
-    if (bookingIds[0]) {
-      after(() =>
-        sendOwnerBookingNotification({
+    if (!idempotentReplay) {
+      bookingIds.forEach((id) =>
+        void logBookingEvent({
+          bookingId: id,
           salonId: ctx.salonId,
-          bookingId: bookingIds[0],
-          event: "new",
+          actorUserId: null,
+          actorRole: "system",
+          eventType: "booking_created",
+          payload: { source: "voice_group", memberCount: bookingIds.length },
         }),
       );
+      // Unified no-show protection gate — runs AI agent when opted-in, falls
+      // back to hard rules otherwise. Flag the lead (only it carries a phone).
+      try {
+        const { handleBookingProtection } = await import(
+          "@/shared/noshow/handleBookingProtection"
+        );
+        await handleBookingProtection(bookingIds[0], ctx.salonId, "voice");
+      } catch { /* best-effort */ }
+      // Owner/admin "new booking" alert — one email for the group (first booking).
+      if (bookingIds[0]) {
+        after(() =>
+          sendOwnerBookingNotification({
+            salonId: ctx.salonId,
+            bookingId: bookingIds[0],
+            event: "new",
+          }),
+        );
+      }
     }
   }
 
@@ -2554,7 +2760,7 @@ async function handleConfirmGroupBooking(
   const totalMembers = ctx.resolvedMembers.length;
   let smsSent = false;
   const firstBookingId = bookingIds[0] ?? null;
-  if (firstBookingId) {
+  if (firstBookingId && !idempotentReplay) {
     try {
       const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
       const smsRes = await fetch(`${appUrl}/api/booking/sms-confirm`, {
@@ -2582,6 +2788,7 @@ async function handleConfirmGroupBooking(
 
   return NextResponse.json({
     ok:                true,
+    idempotentReplay,
     groupId,
     bookingIds,
     partyLinkUrl,
@@ -2648,6 +2855,7 @@ async function handleLookupCustomer(
   salonSlug: string,
   args: Record<string, unknown>,
   sessionId: string | null,
+  callerVerifiedPhone: string | null,
 ) {
   const customerPhone = args.customer_phone as string | undefined;
   if (!customerPhone) {
@@ -2668,6 +2876,14 @@ async function handleLookupCustomer(
       hint:  "Phone number too short to look up. Continue the normal flow.",
     });
   }
+
+  // Personalisation can reveal whether a person is a customer and what they
+  // usually book. Require control of the number before doing that lookup.
+  const gate = await requirePhoneVerified(supabase, salon.id, customerPhone, {
+    otpSessionId: args.otp_session_id as string | undefined,
+    callerVerifiedPhone,
+  });
+  if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
 
   const NOT_KNOWN = {
     known: false,

@@ -357,8 +357,12 @@ export default function DeskGroupForm({
   }, [slug]);
 
   const capability = useMemo(
-    () => buildCapabilityMap(data?.capabilityRows ?? null),
-    [data?.capabilityRows],
+    () =>
+      buildCapabilityMap(
+        data?.capabilityRows ?? null,
+        data?.salon.staffCapabilityMode,
+      ),
+    [data?.capabilityRows, data?.salon.staffCapabilityMode],
   );
 
   // Per-salon party-size ceiling, matching the online flow exactly.

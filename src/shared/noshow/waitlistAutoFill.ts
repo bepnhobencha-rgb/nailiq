@@ -109,18 +109,16 @@ export async function notifyWaitlistForSlot(params: {
   serviceId: string;
   serviceName: string;
   bookingDateYmd: string;
+  /** Exact DB promotion correlation. Reschedule must always provide this so
+   * concurrent freed slots cannot select one another's customer. */
+  promotionRequestId?: string;
 }): Promise<{ notified: boolean; entryId?: string }> {
   const supabase = createServiceRoleClient();
 
-  // Find the entry that was just marked 'notified' (claim_token IS NOT NULL).
-  // Scope by booking_date too: a busy salon can hold several concurrently
-  // 'notified' entries for the same service across different dates (freed slots
-  // from cancel / reschedule / no-show / group late-decline paths all flip an
-  // entry to 'notified'). Without the date filter this fetched the OLDEST such
-  // entry — re-SMSing an already-notified customer with the WRONG date while the
-  // person the caller actually just promoted got nothing. Order newest-first so
-  // we grab the entry the DB just flipped, not a stale one still in its window.
-  const { data: entry } = await supabase
+  // Reschedule provides the unique request correlation written in the same DB
+  // transaction as the promotion. Other legacy callers retain the scoped
+  // newest-row fallback until their RPCs expose an exact identity as well.
+  let entryQuery = supabase
     .from("booking_waitlist_entries" as never)
     .select(
       "id, client_name, client_email, client_phone, claim_token, offered_staff_id, offered_start_utc",
@@ -129,10 +127,11 @@ export async function notifyWaitlistForSlot(params: {
     .eq("service_id", params.serviceId)
     .eq("booking_date", params.bookingDateYmd)
     .eq("status", "notified")
-    .not("claim_token", "is", null)
-    .order("notified_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .not("claim_token", "is", null);
+  entryQuery = params.promotionRequestId
+    ? entryQuery.eq("promotion_request_id" as never, params.promotionRequestId)
+    : entryQuery.order("notified_at", { ascending: false }).limit(1);
+  const { data: entry } = await entryQuery.maybeSingle();
 
   if (!entry) return { notified: false };
 

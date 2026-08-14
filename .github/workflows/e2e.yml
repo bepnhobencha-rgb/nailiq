@@ -176,6 +176,7 @@ jobs:
               e2e/accessibility
               e2e/ai-agent-activation.spec.ts
               e2e/ai-control-freshness.spec.ts
+              e2e/archived-booking-detail.spec.ts
               e2e/booking-conflict.spec.ts
               e2e/booking-errors.spec.ts
               e2e/booking-otp.spec.ts

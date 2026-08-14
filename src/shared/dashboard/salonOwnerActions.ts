@@ -57,7 +57,7 @@ import { ACTIVE_GRID_STATUSES } from "@/shared/types";
  *  at the time of writing; the column itself exists. Here we read
  *  the value through `as { … }` casts at the call site instead. */
 const SALON_DASHBOARD_SELECT =
-  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, subscription_plan, plan_override, feature_flags, voice_ai_enabled, basic_mode_forced, walkin_auto_assign, queue_display_mode, staff_notification_settings, auto_no_show_minutes, vertical";
+  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, subscription_plan, plan_override, feature_flags, voice_ai_enabled, basic_mode_forced, walkin_auto_assign, queue_display_mode, staff_notification_settings, auto_no_show_minutes, staff_capability_mode, vertical";
 
 type SalonRow = {
   id: string;
@@ -98,6 +98,7 @@ type SalonRow = {
   queue_display_mode?: string | null;
   staff_notification_settings?: unknown;
   auto_no_show_minutes?: number | null;
+  staff_capability_mode?: "legacy_all" | "whitelist" | null;
   /** Business vertical slug (e.g. "nail_salon", "head_spa"). */
   vertical?: string | null;
 };

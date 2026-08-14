@@ -37,7 +37,7 @@ GRANT EXECUTE ON FUNCTION public.create_public_waitlist_entry(
 ) TO PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_booking_client_snapshot(uuid, text, uuid)
   TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.insert_group_bookings(jsonb)
+GRANT EXECUTE ON FUNCTION public.insert_group_bookings(jsonb, uuid)
   TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.public_booking_occupancy_for_range(
   uuid,
@@ -66,7 +66,7 @@ BEGIN
         ('public.create_public_booking(uuid,uuid,uuid,text,text,timestamp with time zone,timestamp with time zone,text,integer,text,uuid,integer,text,uuid)', false),
         ('public.create_public_waitlist_entry(uuid,uuid,uuid,date,text,text,text,text,text)', true),
         ('public.get_booking_client_snapshot(uuid,text,uuid)', false),
-        ('public.insert_group_bookings(jsonb)', false),
+        ('public.insert_group_bookings(jsonb,uuid)', false),
         ('public.public_booking_occupancy_for_range(uuid,timestamp with time zone,timestamp with time zone)', true),
         ('public.public_resolve_domain(text)', false),
         ('public.salon_has_staff_services(uuid)', true),

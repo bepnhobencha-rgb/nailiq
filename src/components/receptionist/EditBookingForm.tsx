@@ -18,6 +18,7 @@ import type { ReceptionistMessages } from "@/shared/i18n/user";
 import {
   buildCapabilityMap,
   filterStaffCapableForService,
+  type StaffCapabilityMode,
 } from "@/shared/booking/staffCapability";
 import {
   formatInSalonTz,
@@ -96,8 +97,9 @@ export interface EditBookingFormProps {
     duration_minutes: number;
     buffer_minutes: number;
   }[];
-  /** Per-staff service whitelist for the salon. `null` = no rows → all-capable fallback. */
+  /** Per-staff service rows; interpret empty/null using staffCapabilityMode. */
   capabilityRows: { staff_id: string; service_id: string }[] | null;
+  staffCapabilityMode: StaffCapabilityMode;
   /** Booking's original salon-local day (YYYY-MM-DD). Kept for back-compat; the
    *  form now derives the initial day from the booking start so the day picker
    *  can move off it. */
@@ -128,6 +130,7 @@ export function EditBookingForm({
   staff,
   services,
   capabilityRows,
+  staffCapabilityMode,
   // `dayYmd` stays in the props interface for caller back-compat but is no longer
   // read here — the initial day is derived from the booking's start instant
   // (salon-tz), the canonical source, so the day picker can move off it.
@@ -207,8 +210,8 @@ export function EditBookingForm({
   );
 
   const capability = useMemo(
-    () => buildCapabilityMap(capabilityRows),
-    [capabilityRows],
+    () => buildCapabilityMap(capabilityRows, staffCapabilityMode),
+    [capabilityRows, staffCapabilityMode],
   );
 
   /** Staff who can perform the currently-selected service.

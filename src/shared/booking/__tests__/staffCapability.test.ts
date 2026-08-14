@@ -29,6 +29,17 @@ function assertEqual(actual: unknown, expected: unknown, msg?: string) {
 test("empty rows → null map (all-capable fallback)", () => {
   assertEqual(buildCapabilityMap([]), null);
   assertEqual(buildCapabilityMap(null), null);
+  assertEqual(buildCapabilityMap([], "legacy_all"), null);
+});
+
+test("durable whitelist stays fail-closed after its final row is deleted", () => {
+  const cap = buildCapabilityMap([], "whitelist");
+  assertEqual(cap instanceof Map, true);
+  assertEqual(isStaffCapableForService(cap, "s1", "svc1"), false);
+  assertEqual(
+    filterStaffCapableForService([{ id: "s1" }], cap, "svc1"),
+    [],
+  );
 });
 
 test("isStaffCapableForService returns true for null map", () => {

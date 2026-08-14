@@ -46,7 +46,7 @@ describe("public salon slug suggestion boundary", () => {
     expect(migration).toContain("privilege_type = 'EXECUTE'");
     expect(proof).toContain("public.public_salon_profiles");
     expect(proof).toContain("grantee = 0");
-    expect(parity).toContain("functions: 117");
+    expect(parity).toContain("functions: 122");
     expect(parity).toContain('"suggest_salon_slugs_by_similarity"');
   });
 

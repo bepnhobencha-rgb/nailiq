@@ -19,15 +19,15 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260811183000. Refresh these with each schema-changing forward
+ * through 20260814050000. Refresh these with each schema-changing forward
  * migration — they are a tripwire, not a spec.
  */
 const PRODUCTION = {
-  tables: 107,
-  columns: 1453,
+  tables: 108,
+  columns: 1465,
   policies: 156,
   /**
-   * APP functions only — 117 after the rehearsed forward migrations.
+   * APP functions only — 122 after the rehearsed forward migrations.
    *
    * Counting every `public` function is a trap: many belong to EXTENSIONS
    * (pgcrypto, btree_gist, pg_trgm, uuid-ossp), which production happens to have
@@ -36,9 +36,9 @@ const PRODUCTION = {
    * The query below excludes anything a `pg_depend` extension edge points at,
    * so extension placement cannot distort this release-shape tripwire.
    */
-  functions: 117,
-  triggers: 40,
-  indexes: 353,
+  functions: 122,
+  triggers: 41,
+  indexes: 355,
 } as const;
 
 /**
@@ -78,6 +78,7 @@ const CRITICAL_TABLES = [
   "ai_execution_limits",
   "platform_release_reviews",
   "platform_announcement_deliveries",
+  "group_booking_requests",
 ] as const;
 
 /** Booking cannot work without these; a missing RPC fails at runtime, not at apply time. */
@@ -123,6 +124,11 @@ const CRITICAL_FUNCTIONS = [
   "protect_archived_booking_recovery_flag",
   "insert_controlled_after_hours_group_bookings",
   "queue_platform_announcement_deliveries",
+  "enforce_staff_capability_write",
+  "set_staff_service_capabilities",
+  "salon_local_timestamp",
+  "group_booking_request_completed",
+  "validate_group_booking_otp_session",
 ] as const;
 
 const dbUrl = process.env.DB_URL;
@@ -167,8 +173,8 @@ function main() {
 
   let failed = false;
 
-  console.log("\n── Schema parity (local vs production) ──\n");
-  console.log("  object      local   prod   ");
+  console.log("\n── Schema parity (local vs expected release shape) ──\n");
+  console.log("  object      local   expected");
   for (const key of Object.keys(PRODUCTION) as Array<keyof typeof PRODUCTION>) {
     const got = actual[key];
     const want = PRODUCTION[key];
@@ -212,7 +218,7 @@ function main() {
   // The first dump here was taken with --no-privileges and produced 0 grants.
   // Everything above still went green. That is why this check exists.
   console.log("\n── Grant matrix ──\n");
-  const GRANTS = { anon: 57, authenticated: 64, service_role: 112 } as const;
+  const GRANTS = { anon: 57, authenticated: 64, service_role: 113 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
@@ -257,8 +263,8 @@ function main() {
 
   console.log(
     failed
-      ? "\n✗ The baseline did not reproduce production's schema. Do not trust a green suite on this.\n"
-      : "\n✓ Local schema matches production's shape.\n",
+      ? "\n✗ The baseline did not reproduce the expected release shape. Do not trust a green suite on this.\n"
+      : "\n✓ Local schema matches the expected release shape.\n",
   );
   process.exit(failed ? 1 : 0);
 }

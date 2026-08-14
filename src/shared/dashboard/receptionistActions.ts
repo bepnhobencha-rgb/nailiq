@@ -668,6 +668,7 @@ export async function assignWalkinToSlot(
       status,
       source,
       service_id,
+      addon_service_id,
       services!bookings_service_id_fkey ( duration_minutes, buffer_minutes )
     `,
     )
@@ -687,19 +688,36 @@ export async function assignWalkinToSlot(
     return fail("invalid_state");
   }
 
-  /* Capability gate. Empty staff_services for this salon → all-capable
-     fallback (skip the per-pair check). */
-  const { data: hasCap } = await supabase.rpc("salon_has_staff_services", {
-    p_salon_id: ctx.salon.id,
-  });
+  /* Capability gate uses the durable salon mode. Query failures are
+     fail-closed; a configured empty whitelist must never become all-capable. */
+  const { data: hasCap, error: capabilityModeErr } = await supabase.rpc(
+    "salon_has_staff_services",
+    { p_salon_id: ctx.salon.id },
+  );
+  if (capabilityModeErr) {
+    console.error("[assignWalkinToSlot] capability mode", capabilityModeErr);
+    return fail("server_error");
+  }
   if (hasCap === true) {
-    const { data: capRow } = await supabase
+    const requiredServiceIds = [
+      String(booking.service_id),
+      ...(booking.addon_service_id ? [String(booking.addon_service_id)] : []),
+    ];
+    const { data: capRows, error: capErr } = await supabase
       .from("staff_services")
-      .select("staff_id")
+      .select("service_id")
       .eq("staff_id", staffId)
-      .eq("service_id", String(booking.service_id))
-      .maybeSingle();
-    if (!capRow?.staff_id) return fail("staff_cannot_perform_service");
+      .in("service_id", requiredServiceIds);
+    if (capErr) {
+      console.error("[assignWalkinToSlot] staff capability", capErr);
+      return fail("server_error");
+    }
+    const capableServiceIds = new Set(
+      (capRows ?? []).map((row) => String(row.service_id)),
+    );
+    if (requiredServiceIds.some((id) => !capableServiceIds.has(id))) {
+      return fail("staff_cannot_perform_service");
+    }
   }
 
   type SvcDur = {
@@ -1542,7 +1560,11 @@ export async function createDeskGroup(
     result.ok && Array.isArray(result.bookingIds) ? result.bookingIds[0] : null;
   if (leadId) await handleBookingProtection(leadId, ctx.salon.id, "group");
 
-  if (result.ok && Array.isArray(result.bookingIds)) {
+  if (
+    result.ok &&
+    !result.idempotentReplay &&
+    Array.isArray(result.bookingIds)
+  ) {
     result.bookingIds.forEach(
       (id) =>
         void logBookingEvent({
@@ -3175,29 +3197,37 @@ export async function addDeskAppointment(
   // we mirror the public slot grid and never oversell via an inactive staff row.
   // The booking must be doable for the main service AND every add-on.
   const requiredServiceIds = [serviceId, ...addonIds];
-  const { data: staffRows } = await db
+  const { data: staffRows, error: staffErr } = await db
     .from("staff")
     .select("id, name, salon_id, status")
     .eq("salon_id", ctx.salon.id)
     .eq("status", "active")
     .is("deleted_at" as never, null)
     .order("name", { ascending: true });
+  if (staffErr) return fail("server_error");
   const activeStaff = (staffRows ?? []).map((r) => ({
     id: String((r as { id: string }).id),
     name: String((r as { name?: string }).name ?? ""),
   }));
-  const { data: capRows } = await db
-    .from("staff_services")
-    .select("staff_id, service_id")
-    .in(
-      "staff_id",
-      activeStaff.map((s) => s.id),
-    );
+  const [capabilityRes, capabilityModeRes] = await Promise.all([
+    db
+      .from("staff_services")
+      .select("staff_id, service_id")
+      .in(
+        "staff_id",
+        activeStaff.map((s) => s.id),
+      ),
+    db.rpc("salon_has_staff_services", { p_salon_id: ctx.salon.id }),
+  ]);
+  if (capabilityRes.error || capabilityModeRes.error) {
+    return fail("server_error");
+  }
   const capability = buildCapabilityMap(
-    (capRows ?? []).map((r) => ({
+    (capabilityRes.data ?? []).map((r) => ({
       staff_id: String((r as { staff_id: string }).staff_id),
       service_id: String((r as { service_id: string }).service_id),
     })),
+    capabilityModeRes.data === true ? "whitelist" : "legacy_all",
   );
   const capableStaff = filterStaffCapableForServices(
     activeStaff,

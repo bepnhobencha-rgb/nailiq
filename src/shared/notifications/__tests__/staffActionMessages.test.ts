@@ -68,6 +68,23 @@ test("staff_change keeps time and names the replacement without saying reschedul
   assert(vi.includes("Anna"), "vi names replacement");
 });
 
+test("requested staff change explains the unavailable request and replacement", () => {
+  const requested = {
+    ...vars,
+    previousStaffName: "Bella",
+    customerRequestedPreviousStaff: true,
+  };
+  const en = buildStaffActionSms("staff_change", "en", requested)!;
+  assert(en.includes("Bella is no longer available"), "names unavailable requested provider");
+  assert(en.includes("We arranged Anna"), "names replacement");
+  assert(en.includes("time remains"), "keeps original time");
+
+  const vi = buildStaffActionSms("staff_change", "vi", requested)!;
+  assert(vi.includes("Bella không còn phục vụ"), "vi names unavailable provider");
+  assert(vi.includes("đã sắp xếp Anna"), "vi names replacement");
+  assert(vi.includes("thời gian vẫn giữ nguyên"), "vi keeps original time");
+});
+
 test("empty name → no leading greeting", () => {
   const m = buildStaffActionSms("cancel", "en", { ...vars, customerName: "" })!;
   assert(m.startsWith("your "), "starts with 'your'");

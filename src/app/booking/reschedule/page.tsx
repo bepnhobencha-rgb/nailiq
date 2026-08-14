@@ -3,14 +3,18 @@
 import { useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 
-type Slot = string; // e.g. "9:00 AM"
+type Slot = {
+  label: string;
+  displayLabel: string;
+  startUtc?: string;
+};
 
 type State =
   | { phase: "date" }
   | { phase: "slots"; date: string; slots: Slot[] | null; loading: boolean }
   | { phase: "confirm"; date: string; slot: Slot }
   | { phase: "submitting" }
-  | { phase: "done"; serviceName: string; newStartUtc: string }
+  | { phase: "done"; serviceName: string; newStartUtc: string; timezone: string }
   | { phase: "error"; code: string };
 
 function todayYmd(): string {
@@ -18,10 +22,10 @@ function todayYmd(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function formatTime(isoUtc: string): string {
+function formatTime(isoUtc: string, timezone: string): string {
   try {
     return new Date(isoUtc).toLocaleString("en-US", {
-      timeZone: "America/Los_Angeles",
+      timeZone: timezone,
       weekday: "long",
       month: "long",
       day: "numeric",
@@ -47,12 +51,23 @@ export default function RescheduleBookingPage() {
         const res = await fetch(
           `/api/booking/reschedule-slots?token=${encodeURIComponent(token)}&date=${date}`,
         );
-        const json = (await res.json()) as { slots?: string[]; error?: string };
+        const json = (await res.json()) as {
+          slots?: string[];
+          slotOptions?: Slot[];
+          timezone?: string;
+          error?: string;
+        };
         if (!res.ok || json.error) {
           setState({ phase: "error", code: json.error ?? "load_failed" });
           return;
         }
-        setState({ phase: "slots", date, slots: json.slots ?? [], loading: false });
+        const slots =
+          json.slotOptions ??
+          (json.slots ?? []).map((label) => ({
+            label,
+            displayLabel: label,
+          }));
+        setState({ phase: "slots", date, slots, loading: false });
       } catch {
         setState({ phase: "error", code: "network_error" });
       }
@@ -66,16 +81,26 @@ export default function RescheduleBookingPage() {
       const res = await fetch("/api/booking/reschedule-action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, date, slotLabel: slot }),
+        body: JSON.stringify({
+          token,
+          date,
+          slotLabel: slot.label,
+          startUtc: slot.startUtc,
+        }),
       });
       const json = (await res.json()) as {
-        ok?: boolean; code?: string; serviceName?: string; newStartUtc?: string;
+        ok?: boolean;
+        code?: string;
+        serviceName?: string;
+        newStartUtc?: string;
+        timezone?: string;
       };
       if (json.ok) {
         setState({
           phase: "done",
           serviceName: json.serviceName ?? "your appointment",
           newStartUtc: json.newStartUtc ?? "",
+          timezone: json.timezone ?? "UTC",
         });
       } else {
         setState({ phase: "error", code: json.code ?? "unknown" });
@@ -101,7 +126,9 @@ export default function RescheduleBookingPage() {
             <span className="font-medium text-nq-text">{state.serviceName}</span>
           </p>
           {state.newStartUtc && (
-            <p className="mt-1 text-sm text-nq-muted">{formatTime(state.newStartUtc)}</p>
+            <p className="mt-1 text-sm text-nq-muted">
+              {formatTime(state.newStartUtc, state.timezone)}
+            </p>
           )}
           <p className="mt-6 text-sm text-nq-muted">You can close this page.</p>
         </div>
@@ -162,11 +189,11 @@ export default function RescheduleBookingPage() {
               <div className="grid grid-cols-3 gap-2">
                 {(state.slots ?? []).map((slot) => (
                   <button
-                    key={slot}
+                    key={slot.startUtc ?? slot.label}
                     onClick={() => handleSubmit(state.date, slot)}
                     className="rounded-lg border border-nq-border/40 bg-nq-surface py-2 text-sm text-nq-text transition hover:border-nq-gold/50 hover:text-nq-gold"
                   >
-                    {slot}
+                    {slot.displayLabel}
                   </button>
                 ))}
               </div>
@@ -183,6 +210,11 @@ function ErrorView({ code }: { code: string }) {
     missing_token: "This reschedule link is invalid.",
     token_invalid: "This link has already been used or has expired.",
     slot_conflict: "That time slot is no longer available. Please pick another.",
+    resource_conflict: "That time no longer has an available station. Please pick another.",
+    staff_unavailable: "Your selected technician is not available at that time.",
+    staff_break: "That time overlaps the technician's break. Please pick another.",
+    outside_shift: "That time is outside the technician's shift.",
+    outside_hours: "That time is outside the salon's booking hours.",
     booking_not_reschedulable: "This appointment can no longer be rescheduled.",
     load_failed: "Could not load available times. Please try again.",
     network_error: "Connection error. Please check your internet and try again.",

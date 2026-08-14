@@ -26,6 +26,31 @@ assertNotProductionFromEnv();
 
 const supabase = createClient(supabaseUrl, serviceKey);
 
+/**
+ * Configure one throwaway staff member through the same atomic transition used
+ * by Owner/Admin setup. Test code must not bypass the durable capability mode
+ * by writing the first staff_services row directly.
+ */
+export async function setTestStaffCapabilities(
+  salonId: string,
+  staffId: string,
+  serviceIds: string[],
+) {
+  const { data, error } = await supabase.rpc(
+    "set_staff_service_capabilities" as never,
+    {
+      p_salon_id: salonId,
+      p_staff_id: staffId,
+      p_service_ids: serviceIds,
+    } as never,
+  );
+  if (error || data !== true) {
+    throw new Error(
+      error?.message ?? "setTestStaffCapabilities: capability RPC returned false",
+    );
+  }
+}
+
 export async function invokeAiAgentPermission(input: {
   salonId: string;
   actorUserId: string;
@@ -340,9 +365,10 @@ export async function seedTestSalon(opts?: {
     throw new Error(staffErr.message);
   }
 
-  // PR #7 staff_services: empty whitelist == all-capable fallback, but
-  // seeding the cross-product makes the assign capability gate behave the
-  // same on test salons as on real salons that have completed setup.
+  // Use the same atomic capability transition as production setup. Directly
+  // inserting the first staff_services row is intentionally rejected: it
+  // would turn legacy-all into a partial whitelist before the rest of the
+  // salon has been preserved.
   const serviceIds = (svcRows ?? [])
     .map((r: { id?: string }) => r.id)
     .filter((id): id is string => Boolean(id));
@@ -350,19 +376,17 @@ export async function seedTestSalon(opts?: {
     .map((r: { id?: string }) => r.id)
     .filter((id): id is string => Boolean(id));
 
-  const capabilityRows = staffIds.flatMap((staff_id) =>
-    serviceIds.map((service_id) => ({ staff_id, service_id })),
-  );
-
-  if (capabilityRows.length > 0) {
-    const { error: capErr } = await supabase
-      .from("staff_services")
-      .insert(capabilityRows);
-    if (capErr) {
-      await supabase.from("staff").delete().eq("salon_id", salon.id);
-      await supabase.from("services").delete().eq("salon_id", salon.id);
-      await supabase.from("salons").delete().eq("id", salon.id);
-      throw new Error(capErr.message);
+  if (staffIds.length > 0 && serviceIds.length > 0) {
+    for (const staffId of staffIds) {
+      try {
+        await setTestStaffCapabilities(String(salon.id), staffId, serviceIds);
+      } catch (error) {
+        await supabase.from("staff_services").delete().in("staff_id", staffIds);
+        await supabase.from("staff").delete().eq("salon_id", salon.id);
+        await supabase.from("services").delete().eq("salon_id", salon.id);
+        await supabase.from("salons").delete().eq("id", salon.id);
+        throw error;
+      }
     }
   }
 

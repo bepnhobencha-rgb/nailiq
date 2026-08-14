@@ -221,23 +221,13 @@ export async function performEditBooking(
     return { ok: false, error: "server_error" };
   }
 
-  /* Capability gate. Empty staff_services for this salon → all-capable
-     fallback (skip the per-pair check). */
-  const { data: hasCap } = await supabase.rpc("salon_has_staff_services", {
-    p_salon_id: salonId,
-  });
-  if (hasCap === true) {
-    const { data: capRow } = await supabase
-      .from("staff_services")
-      .select("staff_id")
-      .eq("staff_id", newStaffId)
-      .eq("service_id", newServiceId)
-      .maybeSingle();
-    if (
-      !(capRow as unknown as { staff_id?: unknown } | null)?.staff_id
-    ) {
-      return { ok: false, error: "staff_cannot_perform_service" };
-    }
+  const { data: hasCap, error: capabilityModeErr } = await supabase.rpc(
+    "salon_has_staff_services",
+    { p_salon_id: salonId },
+  );
+  if (capabilityModeErr) {
+    console.error("[performEditBooking] capability mode", capabilityModeErr);
+    return { ok: false, error: "server_error" };
   }
 
   const duration = Math.round(Number(svcData.duration_minutes ?? 0));
@@ -309,6 +299,33 @@ export async function performEditBooking(
         ? Math.round(Number(addonSvcData.price_cents))
         : null;
     addonPriceCents = Number.isFinite(aPrice ?? NaN) ? aPrice : null;
+  }
+
+  /* A configured whitelist is authoritative even when it has zero rows.
+     Validate the complete service bundle and fail closed on read errors so a
+     temporary database/RLS failure can never broaden staff permissions. */
+  if (hasCap === true) {
+    const requiredServiceIds = [
+      newServiceId,
+      ...(effectiveAddonId ? [effectiveAddonId] : []),
+    ];
+    const { data: capRows, error: capErr } = await supabase
+      .from("staff_services")
+      .select("service_id")
+      .eq("staff_id", newStaffId)
+      .in("service_id", requiredServiceIds);
+    if (capErr) {
+      console.error("[performEditBooking] staff capability", capErr);
+      return { ok: false, error: "server_error" };
+    }
+    const capableServiceIds = new Set(
+      ((capRows ?? []) as unknown as Array<{ service_id: unknown }>).map(
+        (row) => String(row.service_id),
+      ),
+    );
+    if (requiredServiceIds.some((id) => !capableServiceIds.has(id))) {
+      return { ok: false, error: "staff_cannot_perform_service" };
+    }
   }
 
   const bookingTiming = computeBookingTiming(

@@ -319,7 +319,11 @@ async function PublicBookingRouteBody({
 
         {/* P1.4 — AI chat widget; only renders when ANTHROPIC_API_KEY is set */}
         {process.env.ANTHROPIC_API_KEY ? (
-          <BookingChatWidget salonId={load.salon.id} t={t} />
+          <BookingChatWidget
+            salonId={load.salon.id}
+            t={t}
+            bookingToolsEnabled={load.salon.bookingChatToolsEnabled}
+          />
         ) : null}
 
         {/* TEMPORARILY HIDDEN per request — gift-card purchase link on the

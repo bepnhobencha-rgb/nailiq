@@ -153,6 +153,15 @@ export const SUPERADMIN_PER_SALON_FLAGS: ReadonlyArray<SuperAdminFlagDescriptor>
     phase: "phase_3",
   },
   {
+    key: "booking_chat_tools_enabled",
+    group: "intelligence",
+    label: "AI Tiếp tân đặt lịch (pilot)",
+    description:
+      "Cho AI chat trên trang booking kiểm tra giờ trống và tạo/đổi/huỷ lịch qua cùng booking engine; luôn giữ OTP và xác nhận rõ ràng.",
+    phase: "live",
+    danger: true,
+  },
+  {
     key: "staff_request_tracking",
     group: "intelligence",
     label: "Theo dõi yêu cầu thợ ❤️",

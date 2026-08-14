@@ -427,7 +427,7 @@ export async function loadGroupSmartSchedule(
   // 1. Salon ---------------------------------------------------------
   const { data: salonRaw, error: salonErr } = await supabase
     .from("public_salon_profiles" as never)
-    .select("id, profile_complete, opening_hours, timezone, booking_closed_dates, booking_lead_minutes")
+    .select("id, profile_complete, opening_hours, timezone, booking_closed_dates, booking_lead_minutes, staff_capability_mode")
     .eq("slug", params.shopSlug)
     .maybeSingle();
   if (salonErr || !salonRaw) return { ok: false, reason: "salon_not_found" };
@@ -438,6 +438,7 @@ export async function loadGroupSmartSchedule(
     timezone?: unknown;
     booking_closed_dates?: unknown;
     booking_lead_minutes?: unknown;
+    staff_capability_mode?: "legacy_all" | "whitelist" | null;
   };
   // Minimum same-day advance notice (mirrors the individual slot grid). Used
   // below to floor arrangement start times so we never suggest a past slot
@@ -664,18 +665,21 @@ export async function loadGroupSmartSchedule(
 
   // 7. Staff capability ---------------------------------------------
   let capabilityRows: { staff_id: string; service_id: string }[] = [];
-  const { data: capRows } = await supabase
+  const { data: capRows, error: capErr } = await supabase
     .from("staff_services")
     .select("staff_id, service_id")
     .in("staff_id", staffList.map((s) => s.id));
+  if (capErr) return { ok: false, reason: "server_error" };
   if (capRows && capRows.length > 0) {
     capabilityRows = (capRows ?? []).map((r) => ({
       staff_id: String(r.staff_id),
       service_id: String(r.service_id),
     }));
   }
-  const capability: StaffCapabilityMap =
-    capabilityRows.length > 0 ? buildCapabilityMap(capabilityRows) : null;
+  const capability: StaffCapabilityMap = buildCapabilityMap(
+    capabilityRows,
+    salonRow.staff_capability_mode,
+  );
 
   // 8. Existing bookings for the date -------------------------------
   const { startUtc, endUtc } = salonDayRangeUtc(params.date, timezone);

@@ -103,7 +103,7 @@ export async function loadGroupDayTimeline(
   // 1. Salon ---------------------------------------------------------
   const { data: salonRaw, error: salonErr } = await supabase
     .from("public_salon_profiles" as never)
-    .select("id, profile_complete, opening_hours, timezone, booking_closed_dates, booking_lead_minutes")
+    .select("id, profile_complete, opening_hours, timezone, booking_closed_dates, booking_lead_minutes, staff_capability_mode")
     .eq("slug", params.shopSlug)
     .maybeSingle();
   if (salonErr || !salonRaw) return { ok: false, reason: "salon_not_found" };
@@ -114,6 +114,7 @@ export async function loadGroupDayTimeline(
     timezone?: unknown;
     booking_closed_dates?: unknown;
     booking_lead_minutes?: unknown;
+    staff_capability_mode?: "legacy_all" | "whitelist" | null;
   };
   if (!salonRow.profile_complete) return { ok: false, reason: "salon_paused" };
 
@@ -225,16 +226,19 @@ export async function loadGroupDayTimeline(
   const staffById = new Map<string, StaffRow>();
   for (const s of staffList) staffById.set(s.id, s);
 
-  const { data: capRows } = await supabase
+  const { data: capRows, error: capErr } = await supabase
     .from("staff_services")
     .select("staff_id, service_id")
     .in("staff_id", staffList.map((s) => s.id));
+  if (capErr) return { ok: false, reason: "server_error" };
   const capabilityRows = (capRows ?? []).map((r) => ({
     staff_id: String(r.staff_id),
     service_id: String(r.service_id),
   }));
-  const capability: StaffCapabilityMap =
-    capabilityRows.length > 0 ? buildCapabilityMap(capabilityRows) : null;
+  const capability: StaffCapabilityMap = buildCapabilityMap(
+    capabilityRows,
+    salonRow.staff_capability_mode,
+  );
 
   // A member can reference a preferred staff that doesn't exist / isn't
   // capable for their service (stale selection). Drop it silently so the

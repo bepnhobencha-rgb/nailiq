@@ -122,12 +122,16 @@ export type StaffDrawerProps = {
   services: SetupStaffServiceOption[];
   /** Services currently assigned to this staff member */
   initialServiceIds: string[];
-  /** When false, all-capable fallback: pre-check all services */
-  salonHasCapabilityRows: boolean;
+  /** When false, durable legacy-all mode: pre-check all services. */
+  salonCapabilityConfigured: boolean;
   isOpen: boolean;
   onClose: () => void;
-  /** Called after a successful update with the updated row */
-  onSaved: (updated: SetupStaffRow) => void;
+  /** Called after a successful update with the row and effective capability. */
+  onSaved: (
+    updated: SetupStaffRow,
+    serviceIds: string[],
+    capabilityConfigured: boolean,
+  ) => void;
   /** Called after a successful add — parent calls router.refresh() */
   onAdded: () => void;
   /** Delete button calls this then closes; parent handles undo-delete flow */
@@ -143,7 +147,7 @@ export function StaffDrawer({
   staff,
   services,
   initialServiceIds,
-  salonHasCapabilityRows,
+  salonCapabilityConfigured,
   isOpen,
   onClose,
   onSaved,
@@ -160,9 +164,10 @@ export function StaffDrawer({
 
   const isEditMode = staff !== null;
 
-  // Effective initial service IDs: when no capability rows exist yet (all-capable
-  // fallback), pre-check every service so the first save does not narrow capability.
-  const effectiveInitialServiceIds = salonHasCapabilityRows
+  // Effective initial service IDs: legacy-all mode pre-checks every service so
+  // the first save does not narrow capability. An empty configured whitelist
+  // intentionally stays empty.
+  const effectiveInitialServiceIds = salonCapabilityConfigured
     ? initialServiceIds
     : services.map((s) => s.id);
 
@@ -181,7 +186,7 @@ export function StaffDrawer({
   // Reset all local state whenever the target staff changes (drawer opens for
   // a different member, or switches between add / edit mode).
   useEffect(() => {
-    const nextServiceIds = salonHasCapabilityRows
+    const nextServiceIds = salonCapabilityConfigured
       ? initialServiceIds
       : services.map((s) => s.id);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset when drawer target changes
@@ -193,7 +198,7 @@ export function StaffDrawer({
     setSaveStatus("idle");
     setFieldError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [staff, initialServiceIds.join("|"), salonHasCapabilityRows]);
+  }, [staff, initialServiceIds.join("|"), salonCapabilityConfigured]);
 
   // ── dirty-patch (edit mode) ───────────────────────────────────────────────
 
@@ -277,12 +282,16 @@ export function StaffDrawer({
       setSaveStatus("saved");
       setToast({ variant: "success", message: tLabels.staffSaved });
       statusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
-      onSaved({
-        ...staff,
-        ...(patch.name !== undefined ? { name: patch.name } : {}),
-        ...(patch.job_role !== undefined ? { job_role: patch.job_role } : {}),
-        ...(patch.status !== undefined ? { status: patch.status } : {}),
-      });
+      onSaved(
+        {
+          ...staff,
+          ...(patch.name !== undefined ? { name: patch.name } : {}),
+          ...(patch.job_role !== undefined ? { job_role: patch.job_role } : {}),
+          ...(patch.status !== undefined ? { status: patch.status } : {}),
+        },
+        serviceIds,
+        salonCapabilityConfigured || patch.serviceIds !== undefined,
+      );
     } else {
       // Add mode: create a new staff member.
       let res: Awaited<ReturnType<typeof addStaff>>;
@@ -325,6 +334,8 @@ export function StaffDrawer({
     onSaved,
     patch,
     role,
+    salonCapabilityConfigured,
+    serviceIds,
     setupErrors.staffHasUpcoming,
     setupErrors.staffLimitReached,
     slug,
@@ -528,8 +539,11 @@ export function StaffDrawer({
             </label>
           ) : null}
 
-          {/* Services capability */}
-          {services.length === 0 ? (
+          {/* Capability is edited only for an existing staff row. New team
+              members are created by AddTeamMemberSheet and inherit the safe
+              salon default; showing checkboxes here would imply restrictions
+              that the add action does not persist atomically. */}
+          {!isEditMode ? null : services.length === 0 ? (
             <p className="text-sm text-nq-muted" role="note">
               {setupStaffCopy.noServicesAvailable}
             </p>

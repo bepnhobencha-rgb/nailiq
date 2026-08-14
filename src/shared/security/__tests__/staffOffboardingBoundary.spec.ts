@@ -26,16 +26,53 @@ describe("staff offboarding safety boundary", () => {
 
   it("only reassigns pending/confirmed visits and preserves their time, price, and service", () => {
     expect(source).toContain('const REASSIGNABLE = ["pending", "confirmed"]');
-    expect(source).toContain('.update({ staff_id: nextStaffId })');
+    expect(source).toContain("staff_id: nextStaffId");
     expect(source).not.toContain(".update({ price_cents:");
     expect(source).not.toContain(".update({ start_time_utc:");
     expect(source).not.toContain(".update({ service_id:");
+  });
+
+  it("does not mislabel a replacement as customer-requested and requires a contact plan", () => {
+    expect(source).toContain('return fail("requested_staff_contact_required")');
+    expect(source).toContain("staff_requested_by_client: false");
+    expect(source).toContain("staff_request_note: null");
+    expect(source).toContain("customer_requested_previous_staff");
+  });
+
+  it("clears explicit and salon-scoped inferred preferences without assigning a new favorite", () => {
+    expect(source).toContain('.from("client_profiles")');
+    expect(source).toContain('.update({ preferred_staff_id: null })');
+    expect(source).toContain('.from("customer_booking_patterns")');
+    expect(source).toContain('.update({ usual_staff_id: null })');
+    expect(source).not.toContain("preferred_staff_id: done.nextStaffId");
+    expect(source).not.toContain("usual_staff_id: done.nextStaffId");
   });
 
   it("deactivates the profile without deleting staff or detaching completed history", () => {
     expect(source).toContain('.update({ status: "inactive" })');
     expect(source).not.toMatch(/\.from\("staff"\)[\s\S]{0,120}\.delete\(\)/);
     expect(source).not.toMatch(/\.from\("bookings"\)[\s\S]{0,120}\.delete\(\)/);
+  });
+
+  it("compensates access changes when a later offboarding step fails", () => {
+    expect(source).toContain("async function restoreRevokedAccess()");
+    expect(source).toContain('onConflict: "salon_id,user_id"');
+    expect(source).toContain("revokedAccess.staffUnlinked = true");
+    expect(source.match(/await restoreRevokedAccess\(\)/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(source).toContain("await rollbackAssignments()");
+  });
+
+  it("clears stale customer preferences using the verified staff UUID", () => {
+    const preferenceCleanup = source.slice(
+      source.indexOf('.from("client_profiles")'),
+      source.indexOf("if (profilePreferenceErr)"),
+    );
+    expect(preferenceCleanup).toContain(
+      '.eq("preferred_staff_id", input.staffId)',
+    );
+    expect(preferenceCleanup).not.toContain('.eq("salon_id"');
+    expect(source).toContain('return fail("preference_cleanup_failed")');
+    expect(source.match(/\.update\(\{ preferred_staff_id: null \}\)/g)).toHaveLength(1);
   });
 
   it("does not cancel appointments and records an attributed audit event", () => {

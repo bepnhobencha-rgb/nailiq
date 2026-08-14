@@ -4,6 +4,7 @@ import {
   cleanupTestSalon,
   cleanupTestUser,
   seedTestUser,
+  setTestStaffCapabilities,
 } from "../helpers/db";
 import { waitForReceptionistHydration } from "../helpers/receptionistHydration";
 import {
@@ -94,13 +95,9 @@ async function seedFixture(slug: string): Promise<Fixture> {
     throw new Error(staffError?.message ?? "closing fixture staff failed");
   }
 
-  const { error: capabilityError } = await supabaseAdmin
-    .from("staff_services")
-    .insert({
-      staff_id: staff.id,
-      service_id: service.id,
-    });
-  if (capabilityError) throw new Error(capabilityError.message);
+  await setTestStaffCapabilities(salonId, String(staff.id), [
+    String(service.id),
+  ]);
 
   return { salonId, slug, serviceName, staffName, dateYmd };
 }

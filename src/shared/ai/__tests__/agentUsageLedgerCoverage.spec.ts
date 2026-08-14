@@ -6,6 +6,7 @@ const COVERAGE: ReadonlyArray<{
   file: string;
   features: readonly string[];
   tracker?: "trackAnthropicMessage" | "trackAnthropicStream";
+  trackers?: readonly ("trackAnthropicMessage" | "trackAnthropicStream")[];
 }> = [
   { file: "src/shared/ai/agentDailyReport.ts", features: ["daily_report"] },
   { file: "src/shared/ai/agentDigest.ts", features: ["digest"] },
@@ -55,7 +56,7 @@ const COVERAGE: ReadonlyArray<{
   {
     file: "src/app/api/chat/booking/route.ts",
     features: ["booking_chat"],
-    tracker: "trackAnthropicStream",
+    trackers: ["trackAnthropicMessage", "trackAnthropicStream"],
   },
 ];
 
@@ -100,10 +101,13 @@ describe("AI Agent cost-ledger boundary", () => {
     it(`tracks every Anthropic call in ${entry.file}`, () => {
       const source = readFileSync(join(process.cwd(), entry.file), "utf8");
       const rawCalls = source.match(/\.messages\.create\s*\(/g)?.length ?? 0;
-      const tracker = entry.tracker ?? "trackAnthropicMessage";
-      const trackedCalls = source.match(
-        new RegExp(`${tracker}\\s*\\(`, "g"),
-      )?.length ?? 0;
+      const trackers = entry.trackers ?? [entry.tracker ?? "trackAnthropicMessage"];
+      const trackedCalls = trackers.reduce(
+        (count, tracker) => count + (source.match(
+          new RegExp(`${tracker}\\s*\\(`, "g"),
+        )?.length ?? 0),
+        0,
+      );
 
       expect(rawCalls).toBeGreaterThan(0);
       expect(trackedCalls).toBe(rawCalls);

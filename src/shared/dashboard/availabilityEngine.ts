@@ -18,6 +18,10 @@
  */
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import {
+  buildCapabilityMap,
+  filterStaffCapableForService,
+} from "@/shared/booking/staffCapability";
 
 const HORIZON_HOURS = 4;
 const OVERLOAD_QUEUE_AHEAD = 3;
@@ -147,32 +151,44 @@ export async function getStaffAvailability(
   }
   let staffRows = staffRes.data ?? [];
 
-  // Filter by skill/capability when a service is selected. Staff with
-  // an empty `staff_services` mapping fall back to "can do anything"
-  // (consistent with the existing assign flow's permissive default).
+  // Filter by the salon's durable capability mode. Legacy salons remain
+  // all-capable until an owner configures capabilities; once configured, an
+  // empty whitelist intentionally means nobody is eligible. Any read failure
+  // blocks assignment rather than silently broadening permissions.
   if (cleanService && staffRows.length) {
-    const capRes = (await supabase
-      .from("staff_services")
-      .select("staff_id, service_id")
-      .in(
-        "staff_id",
-        staffRows.map((s) => s.id),
-      )
-      .eq("service_id", cleanService)) as {
+    const [capResRaw, capabilityModeRes] = await Promise.all([
+      supabase
+        .from("staff_services")
+        .select("staff_id, service_id")
+        .in(
+          "staff_id",
+          staffRows.map((s) => s.id),
+        )
+        .eq("service_id", cleanService),
+      supabase.rpc("salon_has_staff_services", { p_salon_id: salonId }),
+    ]);
+    const capRes = capResRaw as {
       data: StaffServiceRow[] | null;
       error: unknown;
     };
-    if (capRes.error) {
-      console.error("[availabilityEngine] staff_services", capRes.error);
-      // Soft-fail: surface all active staff rather than block the form.
-    } else if ((capRes.data?.length ?? 0) > 0) {
-      // Only constrain when at least one mapping exists for this
-      // service. If no mapping rows came back at all, treat the whole
-      // salon as capable (tiny salons often skip the mapping step).
-      const allowed = new Set(capRes.data!.map((r) => r.staff_id));
-      const constrained = staffRows.filter((s) => allowed.has(s.id));
-      if (constrained.length > 0) staffRows = constrained;
+    if (capRes.error || capabilityModeRes.error) {
+      console.error(
+        "[availabilityEngine] staff capability",
+        capRes.error ?? capabilityModeRes.error,
+      );
+      return { ok: false, error: "server_error" };
     }
+    const capability = buildCapabilityMap(
+      capRes.data ?? [],
+      capabilityModeRes.data === true ? "whitelist" : "legacy_all",
+    );
+    staffRows = [
+      ...filterStaffCapableForService(
+        staffRows,
+        capability,
+        cleanService,
+      ),
+    ];
   }
 
   if (staffRows.length === 0) {

@@ -11,6 +11,10 @@ export type BookingHoursCheck =
       reason: "closed_day" | "invalid_hours" | "outside_hours";
     };
 
+export type BookingDayWindowCheck =
+  | { ok: true; openMinutes: number; closeMinutes: number }
+  | { ok: false; reason: "closed_day" | "invalid_hours" };
+
 const DAY_KEYS: readonly DayKey[] = [
   "sun",
   "mon",
@@ -39,6 +43,38 @@ function dayKeyFromYmd(dateYmd: string): DayKey | null {
 }
 
 /**
+ * Resolve the one canonical salon-day window used by normal and controlled
+ * after-hours booking policies. Weekly closures and one-off closed dates are
+ * evaluated here so public, group and privileged desk paths cannot drift.
+ */
+export function resolveBookingDayWindow(args: {
+  openingHoursRaw: unknown;
+  bookingClosedDatesRaw?: unknown;
+  dateYmd: string;
+}): BookingDayWindowCheck {
+  const week = parseOpeningHours(args.openingHoursRaw);
+  const dayKey = dayKeyFromYmd(args.dateYmd);
+  if (!week || !dayKey) return { ok: false, reason: "invalid_hours" };
+
+  if (
+    Array.isArray(args.bookingClosedDatesRaw) &&
+    args.bookingClosedDatesRaw.some((value) => String(value) === args.dateYmd)
+  ) {
+    return { ok: false, reason: "closed_day" };
+  }
+
+  const cfg = week[dayKey];
+  if (!cfg || cfg.closed) return { ok: false, reason: "closed_day" };
+
+  const openMinutes = hmToMinutes(cfg.open);
+  const closeMinutes = hmToMinutes(cfg.close);
+  if (closeMinutes <= openMinutes) {
+    return { ok: false, reason: "invalid_hours" };
+  }
+  return { ok: true, openMinutes, closeMinutes };
+}
+
+/**
  * Validate the customer-facing service span against salon opening hours.
  *
  * `serviceCompletionMinutes` deliberately excludes only the final cleanup
@@ -60,25 +96,13 @@ export function checkBookingWithinOpeningHours(args: {
     serviceCompletionMinutes,
   } = args;
 
-  const week = parseOpeningHours(openingHoursRaw);
-  const dayKey = dayKeyFromYmd(dateYmd);
-  if (!week || !dayKey) return { ok: false, reason: "invalid_hours" };
-
-  if (
-    Array.isArray(bookingClosedDatesRaw) &&
-    bookingClosedDatesRaw.some((value) => String(value) === dateYmd)
-  ) {
-    return { ok: false, reason: "closed_day" };
-  }
-
-  const cfg = week[dayKey];
-  if (!cfg || cfg.closed) return { ok: false, reason: "closed_day" };
-
-  const openMinutes = hmToMinutes(cfg.open);
-  const closeMinutes = hmToMinutes(cfg.close);
-  if (closeMinutes <= openMinutes) {
-    return { ok: false, reason: "invalid_hours" };
-  }
+  const window = resolveBookingDayWindow({
+    openingHoursRaw,
+    bookingClosedDatesRaw,
+    dateYmd,
+  });
+  if (!window.ok) return window;
+  const { openMinutes, closeMinutes } = window;
 
   const start = Math.round(Number(startMinutes));
   const completion = Math.round(Number(serviceCompletionMinutes));
