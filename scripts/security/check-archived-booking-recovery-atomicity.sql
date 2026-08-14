@@ -489,6 +489,8 @@ set local role service_role;
 do $privacy_failure_proof$
 declare
   v_result jsonb;
+  v_before jsonb;
+  v_after jsonb;
 begin
   v_result := public.redact_terminal_booking_for_privacy(
     '95000000-0000-0000-0000-000000000003',
@@ -513,6 +515,11 @@ begin
     raise exception 'null privacy reason code was not rejected: %', v_result;
   end if;
 
+  select to_jsonb(b)
+    into strict v_before
+    from public.bookings b
+   where b.id = '95000000-0000-0000-0000-000000000003';
+
   begin
     v_result := public.redact_terminal_booking_for_privacy(
       '95000000-0000-0000-0000-000000000003',
@@ -527,15 +534,15 @@ begin
     when sqlstate 'P9102' then null;
   end;
 
-  if not exists (
-    select 1 from public.bookings
-    where id = '95000000-0000-0000-0000-000000000003'
-      and client_name = 'Privacy Customer'
-      and client_phone = '+16045550914'
-      and status = 'cancelled'
-      and price_cents = 6700
-  ) then
-    raise exception 'privacy fields changed despite failed audit insert';
+  select to_jsonb(b)
+    into strict v_after
+    from public.bookings b
+   where b.id = '95000000-0000-0000-0000-000000000003';
+
+  if v_after is distinct from v_before then
+    raise exception 'booking row changed despite failed privacy audit insert; before=%, after=%',
+      v_before,
+      v_after;
   end if;
 end
 $privacy_failure_proof$;
