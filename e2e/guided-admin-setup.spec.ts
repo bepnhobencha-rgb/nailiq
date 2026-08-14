@@ -417,10 +417,15 @@ test.describe("Guided Admin Setup", () => {
       .getByRole("button", { name: /^(save|lưu)$/i })
       .last()
       .click();
+    // The price preview inside the drawer updates immediately while the server
+    // action is still running. Wait for onSaved to close the drawer before
+    // reading the list or reloading; otherwise mobile WebKit can abort the
+    // in-flight persistence request even though the optimistic $46 is visible.
+    await expect(page.getByTestId("service-drawer-price")).toBeHidden({
+      timeout: 15_000,
+    });
     await expect(page.getByText(/\$46(?:\.00)?/).first()).toBeVisible();
-    // Reload once, then let slower mobile WebKit finish rendering. Repeatedly
-    // reloading inside expect.poll starves the page before the persisted row
-    // can render, even though the server action has already completed.
+    // Reload once after confirmed save, then verify the persisted server value.
     await page.reload();
     await expect(page.getByText(/\$46(?:\.00)?/).first()).toBeVisible({
       timeout: 15_000,
