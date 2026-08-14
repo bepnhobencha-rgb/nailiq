@@ -111,7 +111,7 @@ jobs:
           export NEXT_PUBLIC_SUPABASE_ANON_KEY="${ANON_KEY}"
           export SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY}"
 
-          npx tsx -e "import('./e2e/helpers/guardProduction').then(g => { g.assertNotProductionFromEnv(); console.log('✓ guard: not production'); })"
+          npx tsx scripts/assert-not-production.ts
           bash scripts/apply-baseline.sh "${DB_URL}"
           npx tsx scripts/check-schema-parity.ts
           npx tsx scripts/seed-e2e.ts
@@ -376,7 +376,7 @@ jobs:
           echo "→ target: ${API_URL}"
           NEXT_PUBLIC_SUPABASE_URL="${API_URL}" \
           SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY}" \
-            npx tsx -e "import('./e2e/helpers/guardProduction').then(g => { g.assertNotProductionFromEnv(); console.log('✓ guard: not production'); })"
+            npx tsx scripts/assert-not-production.ts
 
           # One script, used by CI and by anyone verifying locally, so the two
           # cannot drift. It applies the prelude (roles, auth shims, extensions)
@@ -627,7 +627,7 @@ jobs:
           echo "::add-mask::${SERVICE_ROLE_KEY}"
           echo "::add-mask::${ANON_KEY}"
           NEXT_PUBLIC_SUPABASE_URL="${API_URL}" SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY}" \
-            npx tsx -e "import('./e2e/helpers/guardProduction').then(g => { g.assertNotProductionFromEnv(); console.log('✓ guard: not production'); })"
+            npx tsx scripts/assert-not-production.ts
           # Keep Visual on the same reviewed baseline path as Smoke/E2E. The
           # helper safely omits production-only default-privilege statements
           # and loads the lookup rows required by the fixture seeder.
