@@ -802,7 +802,9 @@ test.describe.serial("Group booking resource integrity", () => {
         actionJson.ok,
         `reschedule failed: ${JSON.stringify(actionJson)}`,
       ).toBe(true);
-      expect(actionJson.newStartUtc).toBe(selectedSecondOccurrence);
+      expect(Date.parse(String(actionJson.newStartUtc))).toBe(
+        Date.parse(selectedSecondOccurrence),
+      );
 
       const { data: moved, error: movedError } = await db
         .from("bookings")
@@ -810,7 +812,9 @@ test.describe.serial("Group booking resource integrity", () => {
         .eq("id", booking.id)
         .single();
       expect(movedError).toBeNull();
-      expect(moved?.start_time_utc).toBe(selectedSecondOccurrence);
+      expect(Date.parse(String(moved?.start_time_utc))).toBe(
+        Date.parse(selectedSecondOccurrence),
+      );
       expect(
         Date.parse(String(moved?.end_time_utc)) -
           Date.parse(String(moved?.start_time_utc)),
