@@ -14,6 +14,7 @@ import {
   cleanupTestSalon,
   cleanupTestUser,
   seedTestSalonMember,
+  setTestStaffCapabilities,
 } from "../helpers/db";
 import { seedGroupTestSalon } from "./helpers";
 
@@ -224,15 +225,17 @@ test.describe.serial("Group booking resource integrity", () => {
       throw new Error("foreign tenant fixture is incomplete");
     }
 
-    const { error: capabilityError } = await db.from("staff_services").insert({
-      staff_id: fourthStaff.id,
-      service_id: serviceId,
-    });
-    if (capabilityError) throw new Error(capabilityError.message);
-    const { error: addonCapabilityError } = await db
-      .from("staff_services")
-      .insert(staffIds.map((staffId) => ({ staff_id: staffId, service_id: addonServiceId })));
-    if (addonCapabilityError) throw new Error(addonCapabilityError.message);
+    const fullCapability = Array.from(
+      new Set([...seeded.serviceIds, addonServiceId]),
+    );
+    await setTestStaffCapabilities(
+      salonId,
+      String(fourthStaff.id),
+      fullCapability,
+    );
+    for (const staffId of seeded.staffIds) {
+      await setTestStaffCapabilities(salonId, staffId, fullCapability);
+    }
 
     const { error: salonError } = await db
       .from("salons")

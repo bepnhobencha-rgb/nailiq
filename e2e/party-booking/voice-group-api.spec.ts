@@ -19,6 +19,7 @@ import {
   seedPartyTestSalon,
   type PartyTestSalon,
 } from "./helpers";
+import { setTestStaffCapabilities } from "../helpers/db";
 import { nextOpenDateYmd } from "../group-booking/helpers";
 
 const supabase = createClient(
@@ -384,10 +385,9 @@ test("8-person voice group booking creates Guest 1 through Guest 8", async ({
   expect(staffErr, "seeding extra staff should succeed").toBeFalsy();
 
   const newStaffIds = (newStaff ?? []).map((s) => String(s.id));
-  const capRows = newStaffIds.flatMap((staff_id) =>
-    serviceIds.map((service_id) => ({ staff_id, service_id })),
-  );
-  if (capRows.length) await supabase.from("staff_services").insert(capRows);
+  for (const staffId of newStaffIds) {
+    await setTestStaffCapabilities(salonId, staffId, serviceIds);
+  }
 
   const dateYmd = nextOpenDateYmd(9);
   const res = await request.post(`${baseURL}/api/voice/tool`, {

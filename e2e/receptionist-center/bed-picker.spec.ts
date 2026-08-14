@@ -14,7 +14,10 @@
 import { expect, test } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
-import { cleanupTestSalon } from "../helpers/db";
+import {
+  cleanupTestSalon,
+  setTestStaffCapabilities,
+} from "../helpers/db";
 import {
   fillReactInput,
   gotoReceptionistCenter,
@@ -150,7 +153,7 @@ async function seedBedPickerFixture(slug: string): Promise<BedPickerFixture> {
   const staffId = staffRow.id as string;
 
   // Staff-service capability
-  await db.from("staff_services").insert({ staff_id: staffId, service_id: serviceId });
+  await setTestStaffCapabilities(salonId, staffId, [serviceId]);
 
   // 3b. Bot staff — holds the conflict booking so Alex stays free at 11:00 AM.
   //     (Using the SAME staff for the conflict booking would mark Alex busy at 11:00,

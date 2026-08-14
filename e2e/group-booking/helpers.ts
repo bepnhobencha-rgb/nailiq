@@ -11,7 +11,12 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Page } from "@playwright/test";
 
-import { completeBookingEntryGate, completeGateOtp, seedTestSalon } from "../helpers/db";
+import {
+  completeBookingEntryGate,
+  completeGateOtp,
+  seedTestSalon,
+  setTestStaffCapabilities,
+} from "../helpers/db";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -108,29 +113,8 @@ export async function seedGroupTestSalon(
   const staffIds = (allStaff ?? []).map((s) => String(s.id));
   const serviceIds = (allSvc ?? []).map((s) => String(s.id));
 
-  // staff_services has UNIQUE(staff_id, service_id); insert only the
-  // pairs we just added so we don't double-insert the Jenny x Gel row.
-  const existingPairs = new Set<string>();
-  const { data: capRows } = await supabase
-    .from("staff_services")
-    .select("staff_id, service_id")
-    .in("staff_id", staffIds);
-  for (const r of capRows ?? []) {
-    existingPairs.add(`${String(r.staff_id)}|${String(r.service_id)}`);
-  }
-  const missingPairs = [];
-  for (const staff_id of staffIds) {
-    for (const service_id of serviceIds) {
-      if (!existingPairs.has(`${staff_id}|${service_id}`)) {
-        missingPairs.push({ staff_id, service_id });
-      }
-    }
-  }
-  if (missingPairs.length > 0) {
-    const { error: capErr } = await supabase
-      .from("staff_services")
-      .insert(missingPairs);
-    if (capErr) throw new Error(`seedGroupTestSalon capability: ${capErr.message}`);
+  for (const staffId of staffIds) {
+    await setTestStaffCapabilities(salonId, staffId, serviceIds);
   }
 
   return { slug, salonId, staffIds, serviceIds };

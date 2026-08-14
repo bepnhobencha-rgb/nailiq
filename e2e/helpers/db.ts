@@ -26,6 +26,31 @@ assertNotProductionFromEnv();
 
 const supabase = createClient(supabaseUrl, serviceKey);
 
+/**
+ * Configure one throwaway staff member through the same atomic transition used
+ * by Owner/Admin setup. Test code must not bypass the durable capability mode
+ * by writing the first staff_services row directly.
+ */
+export async function setTestStaffCapabilities(
+  salonId: string,
+  staffId: string,
+  serviceIds: string[],
+) {
+  const { data, error } = await supabase.rpc(
+    "set_staff_service_capabilities" as never,
+    {
+      p_salon_id: salonId,
+      p_staff_id: staffId,
+      p_service_ids: serviceIds,
+    } as never,
+  );
+  if (error || data !== true) {
+    throw new Error(
+      error?.message ?? "setTestStaffCapabilities: capability RPC returned false",
+    );
+  }
+}
+
 export async function invokeAiAgentPermission(input: {
   salonId: string;
   actorUserId: string;
@@ -353,22 +378,14 @@ export async function seedTestSalon(opts?: {
 
   if (staffIds.length > 0 && serviceIds.length > 0) {
     for (const staffId of staffIds) {
-      const { data: capabilitySaved, error: capErr } = await supabase.rpc(
-        "set_staff_service_capabilities" as never,
-        {
-          p_salon_id: salon.id,
-          p_staff_id: staffId,
-          p_service_ids: serviceIds,
-        } as never,
-      );
-      if (capErr || capabilitySaved !== true) {
+      try {
+        await setTestStaffCapabilities(String(salon.id), staffId, serviceIds);
+      } catch (error) {
         await supabase.from("staff_services").delete().in("staff_id", staffIds);
         await supabase.from("staff").delete().eq("salon_id", salon.id);
         await supabase.from("services").delete().eq("salon_id", salon.id);
         await supabase.from("salons").delete().eq("id", salon.id);
-        throw new Error(
-          capErr?.message ?? "seedTestSalon: capability RPC returned false",
-        );
+        throw error;
       }
     }
   }
