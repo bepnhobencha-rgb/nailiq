@@ -658,7 +658,13 @@ test.describe.serial("Group booking resource integrity", () => {
       expect(rowsError).toBeNull();
       expect(rows).toHaveLength(2);
       for (const row of rows ?? []) {
-        expect(row.start_time_utc).toBe(startIso);
+        // PostgREST may serialize the same timestamptz instant with either a
+        // `Z` suffix or an explicit `+00:00` offset. Compare instants rather
+        // than representation so this assertion still detects a real fold
+        // selection error without depending on wire formatting.
+        expect(Date.parse(String(row.start_time_utc))).toBe(
+          Date.parse(startIso),
+        );
         expect(
           Date.parse(String(row.end_time_utc)) -
             Date.parse(String(row.start_time_utc)),
