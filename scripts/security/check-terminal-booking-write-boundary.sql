@@ -204,36 +204,25 @@ begin
 end
 $authenticated_terminal_delete$;
 
-do $authenticated_transition_rpc_acl$
+do $authenticated_terminal_rpc_acl$
 begin
-  begin
-    perform public.transition_booking_to_terminal(
-      'a5000000-0000-0000-0000-000000000002',
-      'a2000000-0000-0000-0000-000000000001',
-      'a1000000-0000-0000-0000-000000000001',
-      'owner',
-      'desk_cancel'
-    );
-    raise exception 'authenticated role executed service-only transition RPC';
-  exception when insufficient_privilege then null;
-  end;
+  -- Supabase's PostgreSQL image can terminate the backend when a DO block
+  -- catches an EXECUTE-ACL error after SET ROLE.  Prove the same effective ACL
+  -- from the actual authenticated current_user without invoking a forbidden
+  -- function; authorized service-role execution is exercised below.
+  if has_function_privilege(
+    current_user,
+    'public.transition_booking_to_terminal(uuid,uuid,uuid,text,text)',
+    'EXECUTE'
+  ) or has_function_privilege(
+    current_user,
+    'public.transition_square_booking_to_terminal(uuid,uuid,text,text)',
+    'EXECUTE'
+  ) then
+    raise exception 'authenticated role retained a service-only terminal RPC';
+  end if;
 end
-$authenticated_transition_rpc_acl$;
-
-do $authenticated_square_rpc_acl$
-begin
-  begin
-    perform public.transition_square_booking_to_terminal(
-      'a5000000-0000-0000-0000-000000000015',
-      'a2000000-0000-0000-0000-000000000001',
-      'square-cancel-test',
-      'cancelled'
-    );
-    raise exception 'authenticated role executed Square terminal transition RPC';
-  exception when insufficient_privilege then null;
-  end;
-end
-$authenticated_square_rpc_acl$;
+$authenticated_terminal_rpc_acl$;
 
 reset role;
 set local role service_role;
