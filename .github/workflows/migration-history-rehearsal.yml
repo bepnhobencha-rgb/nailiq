@@ -8,6 +8,7 @@ on:
       - "scripts/build-folded-migration-history.mjs"
       - "scripts/check-schema-parity.ts"
       - "scripts/verify-schema-dump.ts"
+      - "scripts/security/check-archived-booking-recovery-atomicity.sql"
       - "supabase/bootstrap/**"
       - "supabase/migration-history/**"
       - "supabase/migrations/**"
@@ -176,6 +177,8 @@ jobs:
             -f scripts/security/rehearse-cron-run-history.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-source-owned-exception-resolution.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-archived-booking-recovery-atomicity.sql
 
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.service_categories')" -eq 13
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.platform_flags')" -eq 5

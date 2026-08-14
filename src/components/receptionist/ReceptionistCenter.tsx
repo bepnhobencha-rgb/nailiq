@@ -94,13 +94,10 @@ import {
   assignWalkinToSlot,
   cancelDeskBooking,
   cancelDeskGroup,
-  restoreCancelledBooking,
   approveWixBooking,
   declineWixBooking,
   markNoShowBooking,
-  undoNoShowBooking,
   setBookingFinalPrice,
-  undoCancelBooking,
   cancelWaitingWalkin,
   undoWalkinAssignment,
   chargeNoShowFeeManual,
@@ -150,7 +147,6 @@ import {
   canCreateDeskBooking,
   canMarkNoShow,
   canEditBooking,
-  canUndoCancel,
   type SalonMemberRole,
 } from "@/shared/lib/salonMemberRole";
 import {
@@ -417,8 +413,6 @@ type UndoToastState = {
   headline: string;
   detailLine: string;
   secondsRemaining: number;
-  /** "assign" = undo walkin assignment; "cancel" = undo booking cancel */
-  type: "assign" | "cancel";
 };
 
 function ReceptionistGateError({
@@ -1423,8 +1417,8 @@ function ReceptionistCenterInner({
   const isViewingToday = data.selectedDate === salonToday(timezone, nowIso || undefined);
 
   // "Needs attention" strip (today only): bookings that are past their start but
-  // still un-started (overdue → 1-tap no-show / arrived) + today's no-shows
-  // (1-tap undo for a late guest). Both reuse handleMarkNoShow / handleUndoNoShow.
+  // still un-started (overdue → 1-tap no-show / arrived) plus today's immutable
+  // no-show records, where only the fee outcome can still change.
   const attentionNowMs = Date.parse(nowIso);
   const attentionOverdue =
     isViewingToday && canMarkNoShow(viewerRole)
@@ -1463,12 +1457,10 @@ function ReceptionistCenterInner({
    * check and the bookings query in parallel — cutting ~2 round-trips per
    * week/month navigation event.
    */
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- data.salon.id and timezone are stable refs (come from the same immutable salon row)
   const calendarHint = useMemo<BookingsRangeHint>(
     () => ({ salonId: data.salon.id, timezone }),
     // Re-memoize only when the salon id or timezone actually changes
     // (should never happen mid-session, but guards against future hot-reload).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [data.salon.id, timezone],
   );
   const modules = data.dashboardModules;
@@ -1603,7 +1595,6 @@ function ReceptionistCenterInner({
       headline,
       detailLine,
       secondsRemaining: 5,
-      type: "assign",
     });
     await reloadCurrentDay();
     router.refresh();
@@ -1626,25 +1617,6 @@ function ReceptionistCenterInner({
     await reloadCurrentDay();
     router.refresh();
   };
-
-  const undoCancel = async () => {
-    if (!undoState) return;
-    // undoCancelBooking restores the booking AND flips the queued cancel
-    // notification to 'cancelled' server-side, so the customer is never texted.
-    const res = await undoCancelBooking(slug, {
-      salonId: data.salon.id,
-      bookingId: undoState.bookingId,
-    });
-    if (!res.ok) {
-      setShakeMessage(mutationMessage(messages.receptionist, res.error));
-    }
-    setUndoState(null);
-    await reloadCurrentDay();
-    router.refresh();
-  };
-
-  const onUndoToastUndo =
-    undoState?.type === "cancel" ? undoCancel : undoAssign;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2472,24 +2444,6 @@ function ReceptionistCenterInner({
         await reloadCurrentDay();
         router.refresh();
 
-        // Undo toast (8s). Skipped after a refund — a returned deposit isn't
-        // re-collected by restoring, so undo would leave booking + no deposit.
-        // Undo also cancels the queued cancel notification server-side.
-        if (!refundDeposit && !archivedBookingRecoveryEnabled) {
-          const u = messages.receptionist.undo;
-          const startLabel = b.start_time_utc
-            ? formatInSalonTz(b.start_time_utc, timezone, "time")
-            : "";
-          const svcName =
-            b.service_name?.trim() || messages.receptionist.drawer.none;
-          setUndoState({
-            bookingId: id,
-            headline: `${u.cancelledPrefix} ${displayCustomerName(b.client_name, messages.receptionist.removedGuest)}`,
-            detailLine: [startLabel, svcName].filter(Boolean).join(" · "),
-            secondsRemaining: 8,
-            type: "cancel",
-          });
-        }
       }
     } finally {
       setDrawerBusy(false);
@@ -3093,27 +3047,7 @@ function ReceptionistCenterInner({
     router.refresh();
   };
 
-  // Tombstone handlers — undo / charge / waive from the grid ribbon popover.
-  const handleTombstoneUndo = async (bookingId: string) => {
-    if (!bookingId) return;
-    setDrawerBusy(true);
-    try {
-      const r = await undoNoShowBooking(slug, {
-        salonId: data.salon.id,
-        bookingId,
-      });
-      if (!r.ok) {
-        setShakeMessage(mutationMessage(messages.receptionist, r.error));
-      } else {
-        closeBookingDrawer();
-        await reloadCurrentDay();
-        router.refresh();
-      }
-    } finally {
-      setDrawerBusy(false);
-    }
-  };
-
+  // Tombstone handlers — charge / waive update only the no-show fee outcome.
   const handleTombstoneCharge = async (bookingId: string) => {
     setDrawerBusy(true);
     try {
@@ -3186,74 +3120,6 @@ function ReceptionistCenterInner({
           label: rcMessages.drawer.cancelBooking,
           busy: drawerBusy,
           onPress: () => void onDrawerCancelBooking(),
-        }
-      : undefined;
-
-  const onDrawerRestoreBooking = async () => {
-    const id = drawerBookingId;
-    if (!id) return;
-    const b = data.bookingsForDay.find((x) => x.id === id);
-    if (!b || b.status !== "cancelled") return;
-    const d = messages.receptionist.drawer;
-    if (!window.confirm(d.restoreConfirm(b.client_name))) return;
-
-    setDrawerBusy(true);
-    try {
-      const r = await restoreCancelledBooking(slug, {
-        salonId: data.salon.id,
-        bookingId: id,
-      });
-      if (!r.ok) {
-        const msg =
-          r.error === "slot_conflict"
-            ? d.restoreConflict
-            : r.error === "booking_in_past"
-              ? d.restorePast
-              : mutationMessage(messages.receptionist, r.error);
-        setShakeMessage(msg);
-      } else {
-        closeBookingDrawer();
-        await reloadCurrentDay();
-        router.refresh();
-      }
-    } finally {
-      setDrawerBusy(false);
-    }
-  };
-
-  // Undo a no-show (the guest was just running late). Reverts to confirmed +
-  // decrements their no-show history so they aren't wrongly penalised. Shared by
-  // the drawer action and the "needs attention" strip.
-  const handleUndoNoShow = async (id: string) => {
-    if (!id) return;
-    setDrawerBusy(true);
-    try {
-      const r = await undoNoShowBooking(slug, {
-        salonId: data.salon.id,
-        bookingId: id,
-      });
-      if (!r.ok) {
-        setShakeMessage(mutationMessage(messages.receptionist, r.error));
-      } else {
-        closeBookingDrawer();
-        await reloadCurrentDay();
-        router.refresh();
-      }
-    } finally {
-      setDrawerBusy(false);
-    }
-  };
-
-  const drawerRestoreAction =
-    openDrawerBooking &&
-    !archivedBookingRecoveryEnabled &&
-    canUndoCancel(viewerRole) &&
-    openDrawerBooking.status === "cancelled" &&
-    new Date(openDrawerBooking.start_time_utc).getTime() > drawerNowMs + 60_000
-      ? {
-          label: rcMessages.drawer.restoreBooking,
-          busy: drawerBusy,
-          onPress: () => void onDrawerRestoreBooking(),
         }
       : undefined;
 
@@ -3336,11 +3202,6 @@ function ReceptionistCenterInner({
       displayName={displayCustomerName}
       onOpenBooking={(id) => openBookingDrawer(id)}
       onMarkNoShow={(id) => void triggerMarkNoShow(id)}
-      onUndoNoShow={
-        archivedBookingRecoveryEnabled
-          ? undefined
-          : (id) => void handleUndoNoShow(id)
-      }
       embedded={embedded}
     />
   );
@@ -4550,11 +4411,6 @@ function ReceptionistCenterInner({
                       ? (id) => void handleStartBooking(id)
                       : undefined
                   }
-                  onTombstoneUndo={
-                    archivedBookingRecoveryEnabled
-                      ? undefined
-                      : (id) => void handleTombstoneUndo(id)
-                  }
                   onTombstoneCharge={(id) => void handleTombstoneCharge(id)}
                   onTombstoneWaive={(id) => void handleTombstoneWaive(id)}
                   assigning={assignedSlot}
@@ -4698,11 +4554,6 @@ function ReceptionistCenterInner({
                     : undefined
                 }
                 language={language === "vi" ? "vi" : "en"}
-                onTombstoneUndo={
-                  archivedBookingRecoveryEnabled
-                    ? undefined
-                    : (id) => void handleTombstoneUndo(id)
-                }
                 onTombstoneCharge={(id) => void handleTombstoneCharge(id)}
                 onTombstoneWaive={(id) => void handleTombstoneWaive(id)}
               />
@@ -4929,7 +4780,7 @@ function ReceptionistCenterInner({
         secondsRemaining={undoState?.secondsRemaining ?? 0}
         showCountdown
         labelUndo={rcMessages.undo.undo}
-        onUndo={() => void onUndoToastUndo()}
+        onUndo={() => void undoAssign()}
         onDismiss={() => setUndoState(null)}
       />
 
@@ -4989,7 +4840,6 @@ function ReceptionistCenterInner({
         offlineEditDisabledHint={rcMessages.connection.offlineEditDisabled}
         primaryAction={drawerPrimaryAction}
         cancelAction={drawerCancelAction}
-        restoreAction={drawerRestoreAction}
         declineAction={drawerDeclineAction}
         noShowAction={drawerNoShowAction}
         finalPriceAction={drawerFinalPriceAction}

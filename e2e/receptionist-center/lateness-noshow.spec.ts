@@ -305,14 +305,18 @@ test.describe("DRC no-show tombstone + fee decision", () => {
     return id;
   }
 
-  test("no-show renders a tombstone with an Undo action", async ({ page }) => {
+  test("no-show renders a read-only tombstone without an Undo action", async ({
+    page,
+  }) => {
     const id = await seedNoShow({ withCard: false });
     await gotoReceptionistCenter(page, fx.slug);
 
     await expectServerRenderedItem(page, `noshow-tombstone-${id}`);
     const tomb = page.getByTestId(`noshow-tombstone-${id}`);
     await tomb.evaluate((el: HTMLElement) => el.click());
-    await expect(page.getByRole("button", { name: /undo no-show/i })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /undo no-show/i }),
+    ).toHaveCount(0);
   });
 
   test("tombstone Waive sets the fee to 'waived' (no charge)", async ({ page }) => {

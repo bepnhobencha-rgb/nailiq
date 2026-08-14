@@ -192,24 +192,6 @@ function isSameArchivedBookingRecovery(
   );
 }
 
-async function terminalBookingMustRemainImmutable(
-  salonId: string,
-  bookingId: string,
-): Promise<{ ok: true; immutable: boolean } | { ok: false }> {
-  if (await archivedBookingRecoveryEnabled(salonId)) {
-    return { ok: true, immutable: true };
-  }
-  const existing = await loadExistingArchivedBookingRecovery(
-    salonId,
-    bookingId,
-  );
-  if (!existing.ok) return { ok: false };
-  // Feature rollback may restore the legacy behavior only for untouched
-  // terminal rows. Once a linked child exists, reopening the source would
-  // create two active records and is therefore permanently forbidden.
-  return { ok: true, immutable: existing.existing !== null };
-}
-
 async function archivedBookingRecoveryEnabled(
   salonId: string,
 ): Promise<boolean> {
@@ -295,7 +277,10 @@ async function validateArchivedBookingRecovery(
       ? {
           ok: true,
           recovery,
-          existingBookingId: existingResult.existing.id,
+          // Exact retries still pass through the service-only DB RPC. The RPC
+          // verifies (or repairs) the durable booking_recovered audit before
+          // acknowledging the existing child.
+          existingBookingId: null,
         }
       : fail("already_recovered");
   }
@@ -492,65 +477,90 @@ export async function addWalkinToQueue(
   const staffRequestedByClient =
     input.staffRequestedByClient === true || note !== null;
 
-  // `walkin_*` / `party_size` / `staff_requested_by_client` columns
-  // are not yet in the auto-generated Supabase types; cast the patch
-  // object so .insert() accepts the new columns. Will become a plain
-  // typed call after the next regeneration.
-  const insertPatch = {
-    salon_id: ctx.salon.id,
-    service_id: serviceId,
-    client_name: clientName,
-    client_phone: clientPhoneClean,
-    client_notes: null,
-    staff_id: null,
-    start_time_utc: null,
-    end_time_utc: null,
-    status: "waiting",
-    source: "walkin",
-    booking_channel: "walkin",
-    joined_queue_at: joinedAt,
-    staff_request_note: note,
-    staff_requested_by_client: staffRequestedByClient,
-    price_cents: Number.isFinite(price ?? NaN) ? price : null,
-    walkin_source: walkinSource,
-    walkin_priority: walkinPriority,
-    walkin_request_tags: walkinRequestTags,
-    party_size: partySize,
-    ...(recovery
-      ? {
-          recovered_from_booking_id: recovery.sourceBookingId,
-          recovery_kind: recovery.kind,
-          recovered_by_user_id: recovery.recoveredByUserId,
-          idempotency_key: recovery.requestId,
-        }
-      : {}),
-  } as never;
-
-  const { data: inserted, error: insErr } = await supabase
-    .from("bookings")
-    .insert(insertPatch)
-    .select("id")
-    .maybeSingle();
-
-  if (insErr) {
-    if ((insErr as { code?: string }).code === "23505" && recovery) {
-      const raced = await loadExistingArchivedBookingRecovery(
-        ctx.salon.id,
-        recovery.sourceBookingId,
-      );
-      if (
-        raced.ok &&
-        raced.existing &&
-        isSameArchivedBookingRecovery(raced.existing, recovery)
-      ) {
-        return { ok: true, bookingId: raced.existing.id };
-      }
-      return fail("already_recovered");
+  let bid = "";
+  if (recovery) {
+    // The linked child and its actor/link audit must share one database
+    // transaction. Never acknowledge a recovery via the best-effort logger.
+    const recoveryDb = createServiceRoleClient();
+    const { data: recoveryData, error: recoveryError } = await recoveryDb.rpc(
+      "create_recovered_walkin" as never,
+      {
+        p_source_booking_id: recovery.sourceBookingId,
+        p_recovered_by_user_id: recovery.recoveredByUserId,
+        p_idempotency_key: recovery.requestId,
+        p_salon_id: ctx.salon.id,
+        p_service_id: serviceId,
+        p_client_name: clientName,
+        p_client_phone: clientPhoneClean,
+        p_staff_request_note: note,
+        p_staff_requested_by_client: staffRequestedByClient,
+        p_walkin_source: walkinSource,
+        p_walkin_priority: walkinPriority,
+        p_walkin_request_tags: walkinRequestTags,
+        p_party_size: partySize,
+      } as never,
+    );
+    if (recoveryError) {
+      console.error("[addWalkinToQueue] recovery rpc", recoveryError);
+      return fail("server_error");
     }
-    console.error("[addWalkinToQueue] insert", insErr);
-    return fail("server_error");
+    const recoveryResult = (
+      Array.isArray(recoveryData) ? recoveryData[0] : recoveryData
+    ) as {
+      success?: boolean;
+      booking_id?: string;
+      code?: string;
+      replayed?: boolean;
+    } | null;
+    if (!recoveryResult?.success || !recoveryResult.booking_id) {
+      if (recoveryResult?.code === "already_recovered")
+        return fail("already_recovered");
+      if (recoveryResult?.code === "invalid_recovery_source")
+        return fail("invalid_recovery_source");
+      return fail("server_error");
+    }
+    bid = recoveryResult.booking_id;
+    if (recoveryResult.replayed === true) {
+      return { ok: true, bookingId: bid };
+    }
+  } else {
+    // `walkin_*` / `party_size` / `staff_requested_by_client` columns are not
+    // yet in the generated types; ordinary queue inserts keep their existing
+    // authenticated/RLS path.
+    const insertPatch = {
+      salon_id: ctx.salon.id,
+      service_id: serviceId,
+      client_name: clientName,
+      client_phone: clientPhoneClean,
+      client_notes: null,
+      staff_id: null,
+      start_time_utc: null,
+      end_time_utc: null,
+      status: "waiting",
+      source: "walkin",
+      booking_channel: "walkin",
+      joined_queue_at: joinedAt,
+      staff_request_note: note,
+      staff_requested_by_client: staffRequestedByClient,
+      price_cents: Number.isFinite(price ?? NaN) ? price : null,
+      walkin_source: walkinSource,
+      walkin_priority: walkinPriority,
+      walkin_request_tags: walkinRequestTags,
+      party_size: partySize,
+    } as never;
+
+    const { data: inserted, error: insErr } = await supabase
+      .from("bookings")
+      .insert(insertPatch)
+      .select("id")
+      .maybeSingle();
+
+    if (insErr) {
+      console.error("[addWalkinToQueue] insert", insErr);
+      return fail("server_error");
+    }
+    bid = inserted && "id" in inserted ? String(inserted.id) : "";
   }
-  const bid = inserted && "id" in inserted ? String(inserted.id) : "";
   if (!bid) return fail("server_error");
 
   // Owner/admin "new booking" alert (opt-in, fire-and-forget).
@@ -583,20 +593,6 @@ export async function addWalkinToQueue(
         : {}),
     },
   });
-
-  if (recovery) {
-    void logBookingEvent({
-      bookingId: bid,
-      salonId: ctx.salon.id,
-      actorUserId: ctxActorUserId(ctx),
-      actorRole: ctxActorRole(ctx),
-      eventType: "booking_recovered",
-      payload: {
-        sourceBookingId: recovery.sourceBookingId,
-        recoveryKind: recovery.kind,
-      },
-    });
-  }
 
   // Operational metric: explicit "queue_joined" alongside the
   // domain-shaped "walkin_added". The two are intentionally
@@ -1084,10 +1080,9 @@ export async function cancelDeskBooking(
     payload: { reason: "desk_cancel" },
   });
 
-  // Enqueue the customer cancel notification with a 20s grace window. A durable
-  // queue (not a client timer): survives the tab closing, the cron delivers it,
-  // and undoCancelBooking flips it to 'cancelled' if the desk reverses within
-  // the window. Service-role insert (RLS denies anon/auth on this table).
+  // Enqueue the customer cancel notification through the durable queue rather
+  // than a client timer, so delivery survives the tab closing. Service-role
+  // insert is required because RLS denies anon/auth on this table.
   const notifySms = input.notify?.sms === true;
   const notifyEmail = input.notify?.email === true;
   if (notifySms || notifyEmail) {
@@ -2017,12 +2012,7 @@ export async function markNoShowBooking(
   return { ok: true, ...(chargeResult ? { charge: chargeResult } : {}) };
 }
 
-/**
- * Undo a no-show — the customer was just running late after all. Reverts
- * `no_show` → `confirmed` and decrements the client's no_show_count (so a
- * wrongly-marked guest isn't penalised). Same
- * front-desk roles as marking.
- */
+/** Legacy action retained so stale clients fail closed with a stable error. */
 export async function undoNoShowBooking(
   slug: string,
   input: { salonId: string; bookingId: string },
@@ -2034,56 +2024,7 @@ export async function undoNoShowBooking(
     return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
-  // Rollout-safe enforcement: once archived recovery is enabled, no_show is a
-  // terminal audit fact. A late guest gets a new linked walk-in instead.
-  const immutable = await terminalBookingMustRemainImmutable(
-    ctx.salon.id,
-    bookingId,
-  );
-  if (!immutable.ok) return fail("server_error");
-  if (immutable.immutable) {
-    return fail("immutable_terminal_state");
-  }
-
-  const { data: updated, error: upErr } = await ctx.supabase
-    .from("bookings")
-    .update({ status: "confirmed", no_show_candidate_at: null } as never)
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .eq("status", "no_show")
-    .select("id, client_phone")
-    .maybeSingle();
-  if (upErr) {
-    // The slot may have been re-taken (waitlist claim / walk-in) while it was
-    // freed — reverting to confirmed collides with bookings_no_overlap (23P01).
-    // Surface a clear "slot taken" instead of a generic retry message.
-    if ((upErr as { code?: string }).code === "23P01") {
-      return fail("slot_conflict");
-    }
-    console.error("[undoNoShowBooking]", upErr);
-    return fail("server_error");
-  }
-  if (!updated?.id) return fail("invalid_state");
-
-  if (updated.client_phone) {
-    // SECURITY DEFINER fn, revoked from anon/authenticated → call via service role
-    // after the auth checks above.
-    const svc = createServiceRoleClient();
-    const { error: unbumpErr } = await svc.rpc("unbump_client_no_show", {
-      p_phone: updated.client_phone,
-    });
-    if (unbumpErr) console.error("[undoNoShowBooking] unbump", unbumpErr);
-  }
-
-  void logBookingEvent({
-    bookingId,
-    salonId: ctx.salon.id,
-    actorUserId: ctxActorUserId(ctx),
-    actorRole: ctxActorRole(ctx),
-    eventType: "booking_status_changed",
-    payload: { to: "confirmed", reason: "undo_no_show" },
-  });
-  return { ok: true };
+  return fail("immutable_terminal_state");
 }
 
 /**
@@ -2255,10 +2196,8 @@ export type {
 } from "./editBookingCore";
 
 /**
- * Immediate undo for the 8-second cancel toast.
- * Skips the "must be in future" and conflict checks — the undo window is so
- * short (≤ 8 s) that the slot cannot realistically be taken by someone else,
- * and in_progress bookings that were cancelled already have a past start_time.
+ * Legacy action retained for stale clients. Cancelled rows are terminal audit
+ * facts, so every authenticated, otherwise-valid request fails closed.
  */
 export async function undoCancelBooking(
   slug: string,
@@ -2271,68 +2210,12 @@ export async function undoCancelBooking(
     return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
-  // The confirmation dialog is the correction boundary. After cancellation,
-  // preserve the original row and create a linked replacement if needed.
-  const immutable = await terminalBookingMustRemainImmutable(
-    ctx.salon.id,
-    bookingId,
-  );
-  if (!immutable.ok) return fail("server_error");
-  if (immutable.immutable) {
-    return fail("immutable_terminal_state");
-  }
-
-  const { data: updated, error: upErr } = await ctx.supabase
-    .from("bookings")
-    .update({ status: "confirmed" })
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .eq("status", "cancelled")
-    .select("id")
-    .maybeSingle();
-
-  if (upErr) {
-    console.error("[undoCancelBooking]", upErr);
-    return fail("server_error");
-  }
-  if (!updated?.id) return fail("invalid_state");
-
-  // The booking is restored → cancel any still-pending cancel notification so
-  // the customer is never texted about a cancel that was undone.
-  {
-    const sr = createServiceRoleClient();
-    const { error: cancelErr } = await sr
-      .from("scheduled_notifications")
-      .update({ status: "cancelled" } as never)
-      .eq("booking_id", bookingId)
-      .eq("event", "cancel")
-      .eq("status", "pending");
-    if (cancelErr)
-      console.error(
-        "[undoCancelBooking] cancel pending notify failed",
-        cancelErr,
-      );
-  }
-
-  void logBookingEvent({
-    bookingId,
-    salonId: ctx.salon.id,
-    actorUserId: ctxActorUserId(ctx),
-    actorRole: ctxActorRole(ctx),
-    eventType: "booking_restored",
-    payload: { reason: "undo_cancel" },
-  });
-
-  return { ok: true };
+  return fail("immutable_terminal_state");
 }
 
 /**
- * Restore a cancelled booking back to "confirmed".
- * Guards:
- *   - Front-desk roles only: owner / admin / senior / receptionist (canUndoCancel)
- *   - Booking must be cancelled (not already active)
- *   - start_time_utc must still be in the future (≥ now + 1 min)
- *   - No active booking conflict for the same staff at that time
+ * Legacy restore action retained for stale clients. Cancelled rows are
+ * terminal audit facts; a correction creates a new linked booking.
  */
 export async function restoreCancelledBooking(
   slug: string,
@@ -2345,74 +2228,7 @@ export async function restoreCancelledBooking(
     return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
-  const immutable = await terminalBookingMustRemainImmutable(
-    ctx.salon.id,
-    bookingId,
-  );
-  if (!immutable.ok) return fail("server_error");
-  if (immutable.immutable) {
-    return fail("immutable_terminal_state");
-  }
-
-  const supabase = ctx.supabase;
-
-  // Load the cancelled booking
-  const { data: booking } = await supabase
-    .from("bookings")
-    .select("id, status, staff_id, start_time_utc, end_time_utc, salon_id")
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .eq("status", "cancelled")
-    .maybeSingle();
-
-  if (!booking) return fail("invalid_state");
-
-  // Must be in the future
-  const nowMs = Date.now();
-  const startMs = new Date(booking.start_time_utc).getTime();
-  if (startMs < nowMs + 60_000) return fail("booking_in_past");
-
-  // Check no active conflict for this staff at this time
-  if (booking.staff_id) {
-    const { data: conflicts } = await supabase
-      .from("bookings")
-      .select("id")
-      .eq("staff_id", booking.staff_id)
-      .not("status", "in", '("cancelled","waiting")')
-      .lt("start_time_utc", booking.end_time_utc)
-      .gt("end_time_utc", booking.start_time_utc)
-      .neq("id", bookingId)
-      .limit(1);
-
-    if (conflicts && conflicts.length > 0) return fail("slot_conflict");
-  }
-
-  // Restore to confirmed
-  const { data: updated, error: upErr } = await supabase
-    .from("bookings")
-    .update({ status: "confirmed" })
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .eq("status", "cancelled")
-    .select("id")
-    .maybeSingle();
-
-  if (upErr) {
-    console.error("[restoreCancelledBooking]", upErr);
-    return fail("server_error");
-  }
-  if (!updated?.id) return fail("invalid_state");
-
-  void logBookingEvent({
-    bookingId,
-    salonId: ctx.salon.id,
-    actorUserId: ctxActorUserId(ctx),
-    actorRole: ctxActorRole(ctx),
-    eventType: "booking_restored",
-    payload: { reason: "desk_restore" },
-  });
-
-  return { ok: true };
+  return fail("immutable_terminal_state");
 }
 
 /** Desk / grid: reschedule/adjust slots for pending | confirmed only (see `performEditBooking`). */
@@ -3156,6 +2972,12 @@ export async function addDeskAppointment(
     // the optional object.
     return fail("invalid_after_hours_override");
   }
+  // The controlled after-hours insert is intentionally a separate privileged
+  // path. Until it can share the recovery RPC transaction, a terminal recovery
+  // must use an in-hours slot so child + audit atomicity is never weakened.
+  if (recovery && afterHoursMinutes != null) {
+    return fail("after_hours_not_allowed");
+  }
   const endUtcIso = new Date(
     Date.parse(startUtcIso) + totalMin * 60_000,
   ).toISOString();
@@ -3532,20 +3354,6 @@ export async function addDeskAppointment(
         : {}),
     },
   });
-
-  if (recovery) {
-    void logBookingEvent({
-      bookingId,
-      salonId: ctx.salon.id,
-      actorUserId: ctxActorUserId(ctx),
-      actorRole: ctxActorRole(ctx),
-      eventType: "booking_recovered",
-      payload: {
-        sourceBookingId: recovery.sourceBookingId,
-        recoveryKind: recovery.kind,
-      },
-    });
-  }
 
   // Unified no-show protection gate: a desk/phone booking skips the online card
   // capture, so flag "needs card" the same way every other path does. Flag

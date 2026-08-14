@@ -6,10 +6,9 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
  * gate **reads**, not writes (no auth.uid() context exists for some
  * writers, e.g. demo cookie or public guest paths).
  *
- * Fire-and-forget by design: callers never await an error, never
- * surface failures to the user, and a logging hiccup must not roll
- * back the underlying mutation. We log the error to the server console
- * for ops triage but always resolve `void`.
+ * Best-effort by design: most callers do not await this, while flows that need
+ * audit-read-after-write evidence may await completion. A logging hiccup never
+ * rolls back the underlying mutation; it is logged for ops and resolves void.
  */
 
 export type BookingEventType =
@@ -61,9 +60,9 @@ export type LogBookingEventInput = {
 };
 
 /**
- * Best-effort write to `booking_events`. Returns void unconditionally.
- * Callers should invoke without `await` when latency matters; otherwise
- * `await` is safe — the promise never rejects.
+ * Best-effort write to `booking_events`. Returns void unconditionally and never
+ * provides durability proof. Mutations that require audit-or-rollback must use
+ * a database transaction/RPC instead of this helper.
  */
 export async function logBookingEvent(input: LogBookingEventInput): Promise<void> {
   try {

@@ -9,6 +9,13 @@ const migration = readFileSync(
   ),
   "utf8",
 );
+const terminalMigration = readFileSync(
+  resolve(
+    process.cwd(),
+    "supabase/migrations/20260813090000_enforce_terminal_booking_immutability.sql",
+  ),
+  "utf8",
+);
 const actions = readFileSync(
   resolve(process.cwd(), "src/shared/dashboard/receptionistActions.ts"),
   "utf8",
@@ -66,11 +73,68 @@ describe("archived booking recovery database boundary", () => {
     );
     expect(migration).toContain("sm.role in ('owner', 'admin')");
     expect(migration).toContain("v_authenticated_user_id <> new.recovered_by_user_id");
-    expect(migration).toContain("child.recovered_from_booking_id = old.id");
-    expect(migration).toContain("if v_has_recovery or (");
     expect(migration).toContain(
       "not available for Wix-connected salons",
     );
+  });
+
+  it("locks every operational terminal UPDATE independent of flags, actors, or linked children", () => {
+    const terminalBlock = terminalMigration.match(
+      /-- Terminal source identity and schedule[\s\S]*?raise exception 'terminal booking identity and schedule are immutable'[\s\S]*?end if;/i,
+    )?.[0];
+
+    expect(terminalBlock).toBeTruthy();
+    expect(terminalBlock).toContain("old.status in ('cancelled', 'no_show')");
+    expect(terminalBlock).toContain("new.status is distinct from old.status");
+    expect(terminalBlock).toContain("new.deleted_at is distinct from old.deleted_at");
+    expect(terminalBlock).not.toContain("archived_booking_recovery_enabled");
+    expect(terminalBlock).not.toContain("feature_archived_booking_recovery");
+    expect(terminalBlock).not.toContain("recovered_from_booking_id");
+    expect(terminalBlock).not.toContain("v_request_role");
+    expect(terminalMigration).toMatch(
+      /before insert or update of[\s\S]*status,[\s\S]*deleted_at,[\s\S]*idempotency_key/i,
+    );
+    const triggerColumns = terminalMigration.match(
+      /before insert or update of[\s\S]*?on public\.bookings/i,
+    )?.[0];
+    expect(triggerColumns).not.toContain("noshow_charge_status");
+    expect(triggerColumns).not.toContain("noshow_fee_cents");
+    expect(terminalMigration).toMatch(
+      /revoke all on function public\.validate_archived_booking_recovery\(\)[\s\S]*from public, anon, authenticated/i,
+    );
+  });
+
+  it("states the privileged hard-delete limit instead of overclaiming perpetual retention", () => {
+    const triggerDefinition = terminalMigration.match(
+      /create trigger validate_archived_booking_recovery_trigger[\s\S]*?execute function public\.validate_archived_booking_recovery\(\);/i,
+    )?.[0];
+    expect(triggerDefinition).toBeTruthy();
+    expect(triggerDefinition).toContain("before insert or update of");
+    expect(triggerDefinition).not.toMatch(/\bbefore\b[\s\S]*\bdelete\b/i);
+    expect(terminalMigration).toContain(
+      "This trigger deliberately does not claim to intercept DELETE",
+    );
+    expect(terminalMigration).toMatch(
+      /separately-authorized account[\s\S]*erasure and retention workflows/,
+    );
+  });
+
+  it("keeps stale terminal-mutation server actions as unconditional rejection shims", () => {
+    for (const [name, nextName] of [
+      ["undoNoShowBooking", "chargeNoShowFeeManual"],
+      ["undoCancelBooking", "restoreCancelledBooking"],
+      ["restoreCancelledBooking", "editBooking"],
+    ] as const) {
+      const section = actions.match(
+        new RegExp(
+          `export async function ${name}\\([\\s\\S]*?(?=export async function ${nextName}\\()`,
+        ),
+      )?.[0];
+
+      expect(section, `${name} action body`).toBeTruthy();
+      expect(section).toContain('return fail("immutable_terminal_state")');
+      expect(section).not.toContain('.update({ status: "confirmed"');
+    }
   });
 
   it("validates the creation shape once but permits the replacement's normal lifecycle", () => {
@@ -115,24 +179,46 @@ describe("archived booking recovery database boundary", () => {
     );
   });
 
-  it("creates a cancelled replacement atomically through a private RPC", () => {
-    expect(migration).toContain("create or replace function public.create_recovered_booking(");
-    expect(migration).toContain("pg_catalog.pg_advisory_xact_lock");
-    expect(migration).toContain("v_source_status <> 'cancelled'");
-    expect(migration).toContain("v_source_salon_id <> p_salon_id");
-    expect(migration).toContain("'code', 'already_recovered'");
-    expect(migration).toContain("'replayed', true");
-    expect(migration).toContain("v_result := public.create_public_booking(");
-    expect(migration).toContain("null::uuid");
-    expect(migration).toContain("null::integer");
-    expect(migration).toContain("raise exception 'recovered booking stamp failed'");
+  it("commits cancelled and no-show recovery children with actor audit in one private RPC transaction", () => {
+    expect(terminalMigration).toContain(
+      "create or replace function public.create_recovered_booking(",
+    );
+    expect(terminalMigration).toContain(
+      "create or replace function public.create_recovered_walkin(",
+    );
+    expect(terminalMigration).toContain("pg_catalog.pg_advisory_xact_lock");
+    expect(terminalMigration).toContain("v_source_status <> 'cancelled'");
+    expect(terminalMigration).toContain("v_source_status <> 'no_show'");
+    expect(terminalMigration).toContain("v_source_salon_id <> p_salon_id");
+    expect(terminalMigration).toContain("'code', 'already_recovered'");
+    expect(terminalMigration).toContain("'replayed', true");
+    expect(terminalMigration).toContain(
+      "v_result := public.create_public_booking(",
+    );
+    expect(terminalMigration).toContain(
+      "insert into public.booking_events (",
+    );
+    expect(terminalMigration).toContain("'booking_recovered'");
+    expect(terminalMigration).toContain(
+      "returning id into v_audit_id",
+    );
+    expect(terminalMigration).toContain(
+      "raise exception 'recovered booking audit insert failed'",
+    );
+    expect(terminalMigration).toContain(
+      "raise exception 'recovered walk-in audit insert failed'",
+    );
+    expect(actions).toContain('"create_recovered_walkin" as never');
+    expect(actions).not.toContain('eventType: "booking_recovered"');
+    expect(actions).toContain('return fail("after_hours_not_allowed")');
   });
 
   it("treats the exact same request as a successful replay and keeps no-show recovery waiting", () => {
     expect(actions).toContain("isSameArchivedBookingRecovery");
     expect(actions).toContain(
-      "return { ok: true, bookingId: recoveryResult.existingBookingId }",
+      "Exact retries still pass through the service-only DB RPC",
     );
+    expect(actions).toContain("recoveryResult.replayed === true");
     expect(actions).toMatch(
       /if \(input\.recovery \|\| !autoAssign\)[\s\S]*return created;/,
     );
@@ -149,12 +235,48 @@ describe("archived booking recovery database boundary", () => {
     expect(actions).toContain("if (!recovery) after(() => pushWixCreate");
   });
 
-  it("allows only service_role to execute the recovery RPC", () => {
-    expect(migration).toMatch(
+  it("allows only service_role to execute both recovery RPCs", () => {
+    expect(terminalMigration).toMatch(
       /revoke all on function public\.create_recovered_booking\([\s\S]*?\) from public, anon, authenticated/i,
     );
-    expect(migration).toMatch(
+    expect(terminalMigration).toMatch(
       /grant execute on function public\.create_recovered_booking\([\s\S]*?\) to service_role/i,
+    );
+    expect(terminalMigration).toMatch(
+      /revoke all on function public\.create_recovered_walkin\([\s\S]*?\) from public, anon, authenticated/i,
+    );
+    expect(terminalMigration).toMatch(
+      /grant execute on function public\.create_recovered_walkin\([\s\S]*?\) to service_role/i,
+    );
+  });
+
+  it("provides an audited, redaction-only privacy exception without changing terminal facts", () => {
+    expect(terminalMigration).toContain(
+      "create or replace function public.redact_terminal_booking_for_privacy(",
+    );
+    expect(terminalMigration).toContain(
+      "sa.role in ('founder', 'ops_admin')",
+    );
+    expect(terminalMigration).toContain("v_request_role = 'service_role'");
+    expect(terminalMigration).toContain(
+      "session_user in ('postgres', 'supabase_admin')",
+    );
+    expect(terminalMigration).toContain("verified_erasure_request");
+    expect(terminalMigration).not.toContain("trim(p_reason)");
+    expect(terminalMigration).toContain(
+      "privacy redaction may only remove direct customer identifiers",
+    );
+    expect(terminalMigration).toContain("client_name = '[removed]'");
+    expect(terminalMigration).toContain("terminal_booking_privacy_redacted");
+    expect(terminalMigration).toContain("terminalHistoryRetained");
+    expect(terminalMigration).toContain(
+      "returning id into v_audit_id",
+    );
+    expect(terminalMigration).toMatch(
+      /revoke all on function public\.redact_terminal_booking_for_privacy\([\s\S]*?\) from public, anon, authenticated/i,
+    );
+    expect(terminalMigration).toMatch(
+      /grant execute on function public\.redact_terminal_booking_for_privacy\([\s\S]*?\) to service_role/i,
     );
   });
 });
