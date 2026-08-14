@@ -11,6 +11,10 @@ import {
   type SubscriptionPlan,
 } from "@/shared/lib/subscriptionPlans";
 import { graceDeadline, resumeTenant } from "@/shared/subscriptions/tenantPause";
+import {
+  claimStripeWebhookEvent,
+  finishStripeWebhookEvent,
+} from "@/shared/subscriptions/stripeWebhookLedger";
 
 /**
  * Stripe webhook receiver.
@@ -27,9 +31,8 @@ import { graceDeadline, resumeTenant } from "@/shared/subscriptions/tenantPause"
  *   - customer.subscription.deleted    → cancellation
  *
  * Plan dispatch reads `STRIPE_PRICE_PRO` / `STRIPE_PRICE_PREMIUM`
- * env vars to map a price id to one of our plan keys. Unknown price
- * ids fall through to "free" defensively — the row state always
- * matches Stripe truth at the time of the event.
+ * env vars to map a price id to one paid plan. Missing/unknown plan
+ * truth fails closed and remains retryable; it never downgrades a salon.
  */
 
 export const dynamic = "force-dynamic";
@@ -38,11 +41,26 @@ export const revalidate = 0;
 // verification. Edge runtime would need a different verifyAsync path.
 export const runtime = "nodejs";
 
-function planForPriceId(priceId: string | null | undefined): SubscriptionPlan {
-  if (!priceId) return "free";
+function planForPriceId(
+  priceId: string | null | undefined,
+): Exclude<SubscriptionPlan, "free"> | null {
+  if (!priceId) return null;
   if (priceId === process.env.STRIPE_PRICE_PRO) return "pro";
   if (priceId === process.env.STRIPE_PRICE_PREMIUM) return "premium";
-  return "free";
+  return null;
+}
+
+type StripeWebhookFailureCode =
+  | "plan_metadata_invalid"
+  | "price_mapping_unknown"
+  | "provider_binding_incomplete"
+  | "salon_binding_not_found";
+
+class StripeWebhookFailure extends Error {
+  constructor(readonly safeCode: StripeWebhookFailureCode) {
+    super(safeCode);
+    this.name = "StripeWebhookFailure";
+  }
 }
 
 function periodEndIso(sub: Stripe.Subscription): string | null {
@@ -93,25 +111,70 @@ async function findSalonId(args: {
   subscriptionId?: string | null;
 }): Promise<string | null> {
   const { salonIdMeta, customerId, subscriptionId } = args;
-  if (salonIdMeta && salonIdMeta.trim().length > 0) {
-    return salonIdMeta.trim();
-  }
   const supabase = createServiceRoleClient();
-  if (subscriptionId) {
-    const { data } = await supabase
+
+  type StripeBindingRow = {
+    id: string;
+    stripe_customer_id: string | null;
+    stripe_subscription_id: string | null;
+  };
+  const lookup = async (
+    column: "id" | "stripe_customer_id" | "stripe_subscription_id",
+    value: string,
+  ): Promise<StripeBindingRow | null> => {
+    const { data, error } = await supabase
       .from("salons")
-      .select("id")
-      .eq("stripe_subscription_id", subscriptionId)
+      .select("id,stripe_customer_id,stripe_subscription_id")
+      .eq(column, value)
       .maybeSingle();
-    if (data?.id) return String(data.id);
+    if (error) throw new Error("stripe_salon_binding_lookup_failed");
+    return (data ?? null) as StripeBindingRow | null;
+  };
+
+  const assertBinding = (
+    row: StripeBindingRow,
+    requireExistingMatch: boolean,
+  ): void => {
+    const customerMatches = Boolean(
+      customerId && row.stripe_customer_id === customerId,
+    );
+    const subscriptionMatches = Boolean(
+      subscriptionId && row.stripe_subscription_id === subscriptionId,
+    );
+    if (
+      (customerId &&
+        row.stripe_customer_id &&
+        row.stripe_customer_id !== customerId) ||
+      (subscriptionId &&
+        row.stripe_subscription_id &&
+        row.stripe_subscription_id !== subscriptionId) ||
+      (requireExistingMatch && !customerMatches && !subscriptionMatches)
+    ) {
+      throw new Error("stripe_salon_binding_mismatch");
+    }
+  };
+
+  if (salonIdMeta && salonIdMeta.trim().length > 0) {
+    const row = await lookup("id", salonIdMeta.trim());
+    if (!row) return null;
+    // Metadata is a routing hint, never proof of tenant ownership. Require the
+    // signed event's customer or subscription to match a persisted salon id.
+    assertBinding(row, true);
+    return row.id;
+  }
+  if (subscriptionId) {
+    const row = await lookup("stripe_subscription_id", subscriptionId);
+    if (row) {
+      assertBinding(row, false);
+      return row.id;
+    }
   }
   if (customerId) {
-    const { data } = await supabase
-      .from("salons")
-      .select("id")
-      .eq("stripe_customer_id", customerId)
-      .maybeSingle();
-    if (data?.id) return String(data.id);
+    const row = await lookup("stripe_customer_id", customerId);
+    if (row) {
+      assertBinding(row, false);
+      return row.id;
+    }
   }
   return null;
 }
@@ -121,11 +184,12 @@ async function applyPatch(
   patch: SalonPatch,
 ): Promise<void> {
   const supabase = createServiceRoleClient();
-  const { data: state } = await supabase
+  const { data: state, error: stateError } = await supabase
     .from("salons")
     .select("archived_at, tenant_pause_reason, payment_grace_ends_at" as never)
     .eq("id", salonId)
     .maybeSingle();
+  if (stateError) throw new Error("stripe_salon_state_lookup_failed");
   const current = state as unknown as {
     archived_at?: string | null;
     tenant_pause_reason?: string | null;
@@ -209,6 +273,46 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  let eventClaim;
+  try {
+    eventClaim = await claimStripeWebhookEvent({
+      eventId: event.id,
+      eventType: event.type,
+      now: new Date(),
+    });
+  } catch {
+    console.error("[stripe webhook] event claim failed");
+    return NextResponse.json(
+      { ok: false, error: "event_claim_failed" },
+      { status: 503 },
+    );
+  }
+
+  if (eventClaim.outcome === "duplicate") {
+    return NextResponse.json({
+      ok: true,
+      duplicate: true,
+      state: eventClaim.outcome,
+    });
+  }
+  if (eventClaim.outcome === "in_progress") {
+    // Do not acknowledge a concurrent delivery until the lease owner commits.
+    // If that worker dies, Stripe must retain a retry opportunity.
+    return NextResponse.json(
+      { ok: false, error: "event_in_progress" },
+      { status: 503 },
+    );
+  }
+  if (eventClaim.outcome !== "acquired" || !eventClaim.leaseToken) {
+    console.error("[stripe webhook] event claim rejected", eventClaim.outcome);
+    return NextResponse.json(
+      { ok: false, error: "event_claim_rejected" },
+      { status: 503 },
+    );
+  }
+
+  let ledgerOutcome: "processed" | "failed" = "processed";
+  let ledgerErrorCode: string | null = null;
   try {
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
@@ -221,7 +325,13 @@ export async function POST(request: NextRequest) {
           ? session.subscription
           : (session.subscription?.id ?? null);
       const meta = session.metadata ?? {};
-      const planMeta = isSubscriptionPlan(meta.plan) ? meta.plan : "free";
+      if (!customerId || !subscriptionId) {
+        throw new StripeWebhookFailure("provider_binding_incomplete");
+      }
+      if (!isSubscriptionPlan(meta.plan) || meta.plan === "free") {
+        throw new StripeWebhookFailure("plan_metadata_invalid");
+      }
+      const planMeta = meta.plan;
       const salonId = await findSalonId({
         salonIdMeta:
           typeof meta.salon_id === "string"
@@ -235,7 +345,7 @@ export async function POST(request: NextRequest) {
           "[stripe webhook] checkout.completed: salon not found",
           session.id,
         );
-        return NextResponse.json({ ok: true });
+        throw new StripeWebhookFailure("salon_binding_not_found");
       }
       const patch: SalonPatch = {
         subscription_plan: planMeta,
@@ -254,7 +364,7 @@ export async function POST(request: NextRequest) {
       const pi = event.data.object as Stripe.PaymentIntent;
       if (pi.metadata?.kind === "booking_deposit") {
         const db = createServiceRoleClient();
-        await db
+        const { error } = await db
           .from("bookings" as never)
           .update({
             deposit_status: "paid",
@@ -265,6 +375,7 @@ export async function POST(request: NextRequest) {
           } as never)
           .eq("stripe_payment_intent_id", pi.id)
           .neq("deposit_status", "paid");
+        if (error) throw new Error("stripe_deposit_backstop_failed");
       }
       return NextResponse.json({ ok: true });
     }
@@ -275,6 +386,14 @@ export async function POST(request: NextRequest) {
         typeof sub.customer === "string"
           ? sub.customer
           : (sub.customer?.id ?? null);
+      if (!customerId) {
+        throw new StripeWebhookFailure("provider_binding_incomplete");
+      }
+      const priceId = sub.items.data[0]?.price?.id ?? null;
+      const resolvedPlan = planForPriceId(priceId);
+      if (!resolvedPlan) {
+        throw new StripeWebhookFailure("price_mapping_unknown");
+      }
       const meta = sub.metadata ?? {};
       const salonId = await findSalonId({
         salonIdMeta: typeof meta.salon_id === "string" ? meta.salon_id : null,
@@ -286,11 +405,10 @@ export async function POST(request: NextRequest) {
           "[stripe webhook] subscription.updated: salon not found",
           sub.id,
         );
-        return NextResponse.json({ ok: true });
+        throw new StripeWebhookFailure("salon_binding_not_found");
       }
-      const priceId = sub.items.data[0]?.price?.id ?? null;
       const patch: SalonPatch = {
-        subscription_plan: planForPriceId(priceId),
+        subscription_plan: resolvedPlan,
         subscription_status: normalizeStatus(sub.status),
         subscription_current_period_end: periodEndIso(sub),
         stripe_subscription_id: sub.id,
@@ -306,6 +424,9 @@ export async function POST(request: NextRequest) {
         typeof sub.customer === "string"
           ? sub.customer
           : (sub.customer?.id ?? null);
+      if (!customerId) {
+        throw new StripeWebhookFailure("provider_binding_incomplete");
+      }
       const meta = sub.metadata ?? {};
       const salonId = await findSalonId({
         salonIdMeta: typeof meta.salon_id === "string" ? meta.salon_id : null,
@@ -317,7 +438,7 @@ export async function POST(request: NextRequest) {
           "[stripe webhook] subscription.deleted: salon not found",
           sub.id,
         );
-        return NextResponse.json({ ok: true });
+        throw new StripeWebhookFailure("salon_binding_not_found");
       }
       await applyPatch(salonId, {
         subscription_plan: "free",
@@ -333,7 +454,7 @@ export async function POST(request: NextRequest) {
     // charge.dispute.updated  — evidence submitted / status changed
     // charge.dispute.closed   — dispute resolved (won/lost/charge_refunded)
     //
-    // Never throws — disputes are non-critical telemetry; webhook always 200s.
+    // Dispute writes are retried through the event ledger on database failure.
     if (
       event.type === "charge.dispute.created" ||
       event.type === "charge.dispute.updated" ||
@@ -364,20 +485,22 @@ export async function POST(request: NextRequest) {
 
         let bookingRow: BookingLookup = null;
         if (paymentIntent) {
-          const { data } = await db
+          const { data, error } = await db
             .from("bookings" as never)
             .select("id, salon_id, client_phone")
             .eq("stripe_payment_intent_id" as never, paymentIntent)
             .maybeSingle();
+          if (error) throw new Error("stripe_dispute_booking_lookup_failed");
           bookingRow = data as BookingLookup;
         }
         if (!bookingRow && chargeId) {
           // Fall back: some bookings store the charge id in payment_ref-like columns
-          const { data } = await db
+          const { data, error } = await db
             .from("bookings" as never)
             .select("id, salon_id, client_phone")
             .eq("stripe_payment_intent_id" as never, chargeId)
             .maybeSingle();
+          if (error) throw new Error("stripe_dispute_booking_lookup_failed");
           bookingRow = data as BookingLookup;
         }
 
@@ -397,7 +520,7 @@ export async function POST(request: NextRequest) {
             ? new Date(dueBySecs * 1000).toISOString()
             : null;
 
-        await db
+        const { error: disputeError } = await db
           .from("payment_disputes" as never)
           .upsert(
             {
@@ -417,22 +540,39 @@ export async function POST(request: NextRequest) {
             } as never,
             { onConflict: "provider_dispute_id" },
           );
+        if (disputeError) throw new Error("stripe_dispute_write_failed");
 
         return NextResponse.json({ ok: true });
       } catch (err) {
         console.error("[stripe webhook] dispute upsert error", err);
-        // Never 5xx from a dispute event — Stripe would retry indefinitely.
-        return NextResponse.json({ ok: true, _error: "dispute_write_failed" });
+        throw new Error("stripe_dispute_write_failed");
       }
     }
 
     // Unhandled events ack so Stripe stops retrying.
     return NextResponse.json({ ok: true, ignored: event.type });
   } catch (e) {
+    ledgerOutcome = "failed";
+    ledgerErrorCode =
+      e instanceof StripeWebhookFailure ? e.safeCode : "handler_failed";
     console.error("[stripe webhook] handler error", e);
     return NextResponse.json(
       { ok: false, error: "server_error" },
       { status: 500 },
     );
+  } finally {
+    const finalized = await finishStripeWebhookEvent({
+      eventId: event.id,
+      leaseToken: eventClaim.leaseToken,
+      outcome: ledgerOutcome,
+      errorCode: ledgerErrorCode,
+      now: new Date(),
+    });
+    if (!finalized) {
+      // A stale lease must never acknowledge success. Stripe will retry, and
+      // the durable event claim will decide whether work is still needed.
+      console.error("[stripe webhook] stale event lease", event.id);
+      throw new Error("stripe_webhook_stale_lease");
+    }
   }
 }

@@ -6,6 +6,11 @@ import { redirect, unstable_rethrow } from "next/navigation";
 import { getStripeClient, getStripeReturnOrigin } from "@/shared/lib/stripe";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getPrivateOffer } from "@/shared/sales/privateOffers";
+import { stripeCheckoutRequestFingerprint } from "@/shared/subscriptions/stripeCheckoutFingerprint";
+import {
+  claimStripeSubscriptionCheckout,
+  finishStripeSubscriptionCheckout,
+} from "@/shared/subscriptions/stripeCheckoutLedger";
 
 type BillingSchedule = "monthly" | "quarterly" | "semiannual" | "annual";
 
@@ -79,22 +84,104 @@ export async function startPrivateOfferCheckout(token: string, formData: FormDat
     .filter((email): email is string => Boolean(email));
   if (!authorizedEmails.includes(signerEmail)) fail(token, "email");
 
+  const requestHeaders = await headers();
+  const acceptanceIp = (
+    requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    requestHeaders.get("x-real-ip") ??
+    "unknown"
+  ).slice(0, 100);
+  const origin = getStripeReturnOrigin();
+  const successUrl = `${origin}/offer/${offer.accessKey}/success?session_id={CHECKOUT_SESSION_ID}`;
+  const cancelUrl = `${origin}/offer/${offer.accessKey}?checkout=cancelled`;
+  const setupFeeAmountCents =
+    billing.schedule === "monthly" ? offer.monthlySetupAmountCents : 0;
+  const requestFingerprint = stripeCheckoutRequestFingerprint({
+    kind: "private_offer_subscription",
+    salonId: offer.salonId,
+    salonSlug: offer.salonSlug,
+    plan: offer.plan,
+    amountCents: billing.amount,
+    currency: "usd",
+    interval: billing.interval,
+    intervalCount: billing.intervalCount ?? 1,
+    setupFeeAmountCents,
+    billingSchedule: billing.schedule,
+    offerIdentity: offer.accessKey,
+    agreementVersion: offer.agreementVersion,
+    customerName: salon.name ?? offer.salonName,
+    signerName,
+    signerTitle,
+    signerEmail,
+    businessLegalName,
+    acceptanceIp,
+    successUrl,
+    cancelUrl,
+  });
+
+  let claim;
+  try {
+    claim = await claimStripeSubscriptionCheckout({
+      salonId: offer.salonId,
+      plan: offer.plan,
+      requestFingerprint,
+      now: new Date(),
+    });
+  } catch (claimError) {
+    console.error("[private offer] checkout claim failed", claimError);
+    fail(token, "stripe");
+  }
+
+  if (claim.outcome === "active_subscription") fail(token, "already-active");
+  if (claim.outcome === "reuse" && claim.checkoutUrl) {
+    redirect(claim.checkoutUrl);
+  }
+  if (
+    claim.outcome !== "acquired" ||
+    !claim.idempotencyKey ||
+    !claim.leaseToken ||
+    !claim.requestedAt
+  ) {
+    fail(token, "stripe");
+  }
+
+  const releaseClaimForRetry = async (errorCode: string) => {
+    try {
+      await finishStripeSubscriptionCheckout({
+        salonId: offer.salonId,
+        leaseToken: claim.leaseToken!,
+        outcome: "retryable_failure",
+        errorCode,
+        now: new Date(),
+      });
+    } catch {
+      // The short lease expires safely; a later identical request keeps the
+      // same Stripe key and a changed request remains blocked by its digest.
+      console.error("[private offer] checkout claim release failed");
+    }
+  };
+
   try {
     let customerId = salon.stripe_customer_id?.trim() ?? "";
     if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: signerEmail,
-        name: salon.name ?? offer.salonName,
-        metadata: { salon_id: offer.salonId, salon_slug: offer.salonSlug },
-      }, { idempotencyKey: `private-offer-customer-${offer.salonId}` });
+      const customer = await stripe.customers.create(
+        {
+          email: signerEmail,
+          name: salon.name ?? offer.salonName,
+          metadata: { salon_id: offer.salonId, salon_slug: offer.salonSlug },
+        },
+        { idempotencyKey: `${claim.idempotencyKey}:customer` },
+      );
       customerId = customer.id;
-      const { error: updateError } = await db.from("salons").update({ stripe_customer_id: customerId }).eq("id", offer.salonId);
+      const { error: updateError } = await db
+        .from("salons")
+        .update({ stripe_customer_id: customerId })
+        .eq("id", offer.salonId);
       if (updateError) throw updateError;
     }
 
-    const acceptedAt = new Date().toISOString();
-    const requestHeaders = await headers();
-    const acceptanceIp = (requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() ?? requestHeaders.get("x-real-ip") ?? "unknown").slice(0, 100);
+    // The reservation timestamp is stable across a network retry, keeping the
+    // legal metadata and Stripe request parameters byte-for-byte consistent.
+    const acceptedAt = claim.requestedAt;
     const metadata = {
       salon_id: offer.salonId,
       salon_slug: offer.salonSlug,
@@ -111,9 +198,8 @@ export async function startPrivateOfferCheckout(token: string, formData: FormDat
       acceptance_ip: acceptanceIp,
       initial_term_months: "12",
       billing_schedule: billing.schedule,
-      setup_fee_cents: billing.schedule === "monthly" ? String(offer.monthlySetupAmountCents) : "0",
+      setup_fee_cents: String(setupFeeAmountCents),
     };
-    const origin = getStripeReturnOrigin();
     const recurringLineItem = {
       quantity: 1,
       price_data: {
@@ -137,22 +223,47 @@ export async function startPrivateOfferCheckout(token: string, formData: FormDat
     const lineItems = billing.schedule === "monthly"
       ? [recurringLineItem, setupLineItem]
       : [recurringLineItem];
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      customer: customerId,
-      billing_address_collection: "required",
-      client_reference_id: offer.salonId,
-      line_items: lineItems,
-      metadata,
-      subscription_data: { metadata },
-      success_url: `${origin}/offer/${offer.accessKey}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/offer/${offer.accessKey}?checkout=cancelled`,
-    }, { idempotencyKey: `private-offer-checkout-${offer.salonId}-${billing.schedule}-${acceptedAt.slice(0, 16)}` });
-    if (!session.url) fail(token, "stripe");
+    const session = await stripe.checkout.sessions.create(
+      {
+        mode: "subscription",
+        customer: customerId,
+        billing_address_collection: "required",
+        client_reference_id: offer.salonId,
+        line_items: lineItems,
+        metadata,
+        subscription_data: { metadata },
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+      },
+      { idempotencyKey: `${claim.idempotencyKey}:session` },
+    );
+    if (!session.url) throw new Error("private_offer_checkout_url_missing");
+
+    const expiresAt =
+      typeof session.expires_at === "number" &&
+      Number.isFinite(session.expires_at) &&
+      session.expires_at > 0
+        ? new Date(session.expires_at * 1000).toISOString()
+        : claim.expiresAt;
+    if (!expiresAt || new Date(expiresAt).getTime() <= Date.now()) {
+      throw new Error("private_offer_checkout_expiry_invalid");
+    }
+
+    const finished = await finishStripeSubscriptionCheckout({
+      salonId: offer.salonId,
+      leaseToken: claim.leaseToken,
+      outcome: "open",
+      checkoutSessionId: session.id,
+      checkoutUrl: session.url,
+      expiresAt,
+      now: new Date(),
+    });
+    if (!finished) throw new Error("private_offer_checkout_stale_claim");
     redirect(session.url);
   } catch (checkoutError) {
     unstable_rethrow(checkoutError);
     console.error("[private offer] checkout creation failed", checkoutError);
+    await releaseClaimForRetry("checkout_create_failed");
     fail(token, "stripe");
   }
 }

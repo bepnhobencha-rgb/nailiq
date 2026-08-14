@@ -27,7 +27,8 @@ describe("Hi-Lite private-offer enforcement boundary", () => {
     expect(action).toContain('billing.schedule === "monthly"');
     expect(action).toContain("unit_amount: offer.monthlySetupAmountCents");
     expect(action).toContain("NailIQ one-time setup");
-    expect(action).toContain('setup_fee_cents: billing.schedule === "monthly"');
+    expect(action).toContain('billing.schedule === "monthly"');
+    expect(action).toContain("setup_fee_cents: String(setupFeeAmountCents)");
     expect(page).toContain("{monthly}/month + {monthlySetup} setup once");
     expect(page).toContain("Setup is waived for every other available schedule");
   });
@@ -53,6 +54,15 @@ describe("Hi-Lite private-offer enforcement boundary", () => {
     expect(action).toContain('intervalCount: 3');
     expect(action).toContain('value === "semiannual" && offer.semiannualAmountCents');
     expect(action).toContain('intervalCount: 6');
+    expect(action).toContain("claimStripeSubscriptionCheckout({");
+    expect(action).toContain("stripeCheckoutRequestFingerprint({");
+    expect(action).toContain("amountCents: billing.amount");
+    expect(action).toContain('currency: "usd"');
+    expect(action).toContain("interval: billing.interval");
+    expect(action).toContain("offerIdentity: offer.accessKey");
+    expect(action.indexOf("authorizedEmails.includes(signerEmail)")).toBeLessThan(
+      action.indexOf("claimStripeSubscriptionCheckout({"),
+    );
   });
 
   it("shows 3- and 6-month no-discount schedules only when configured", () => {
