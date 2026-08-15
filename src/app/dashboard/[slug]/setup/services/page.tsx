@@ -147,7 +147,9 @@ export default async function SetupServicesPage({ params }: Props) {
             };
           })}
         />
-        {guidedSetupEnabled ? <GuidedSetupReturnCard slug={slug} /> : null}
+        {guidedSetupEnabled ? (
+          <GuidedSetupReturnCard slug={slug} currentStep="service-menu" />
+        ) : null}
       </MobileStack>
     </ResponsiveShell>
   );

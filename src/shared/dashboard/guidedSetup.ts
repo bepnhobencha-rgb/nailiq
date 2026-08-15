@@ -40,6 +40,39 @@ export type GuidedSetupProgress = {
   complete: boolean;
 };
 
+export type GuidedSetupStage = "disabled" | "incomplete" | "complete";
+
+/**
+ * Keep the shell focused throughout setup and on the first post-setup Action
+ * Center. Nested operational routes restore the normal navigation, so no
+ * capability is removed and the prototype remains reversible.
+ */
+export function shouldUseGuidedFocusMode(
+  stage: GuidedSetupStage,
+  activeSegment: string | null,
+): boolean {
+  return (
+    stage === "incomplete" ||
+    (stage === "complete" && activeSegment === null)
+  );
+}
+
+/**
+ * The hub exposes exactly one forward action. Every other row remains visible
+ * but inert, including the optional integration step (explicitly skipped for
+ * now). Direct authenticated route deep-links still work, so a saved/resume
+ * URL remains stable without inventing a second route guard.
+ */
+export function canOpenGuidedStep(
+  steps: GuidedSetupStep[],
+  stepIndex: number,
+  nextStep: GuidedSetupStep | null,
+): boolean {
+  const step = steps[stepIndex];
+  if (!step) return false;
+  return nextStep?.id === step.id;
+}
+
 function findCheck(
   readiness: GoLiveReadiness,
   id: string,
@@ -127,9 +160,9 @@ export function deriveGuidedSetupProgress(
       reasonVi:
         "Nhân viên nhận lịch và vai trò rõ ràng giúp lịch hẹn hoặc cài đặt nhạy cảm không đến sai người.",
       validationEn:
-        "Passes when at least one active bookable staff member exists; review dashboard access on the same page.",
+        "Passes when active staff have supported job roles and every linked login has active salon access.",
       validationVi:
-        "Đạt khi có ít nhất một nhân viên đang hoạt động nhận lịch; kiểm tra quyền Dashboard trên cùng trang.",
+        "Đạt khi nhân viên đang hoạt động có vai trò công việc được hỗ trợ và mọi tài khoản đã liên kết có quyền salon còn hiệu lực.",
       completeEn: "At least one active staff member can take bookings.",
       completeVi: "Có ít nhất một nhân viên đang hoạt động có thể nhận lịch.",
       href: `${setupBase}/staff`,
@@ -145,9 +178,9 @@ export function deriveGuidedSetupProgress(
       reasonVi:
         "Khách và nhân viên cần một nguồn chính xác về dịch vụ có thể đặt và thời lượng thực hiện.",
       validationEn:
-        "Passes when every active service has a valid price and duration.",
+        "Passes when every active service has a valid price, duration, and at least one active staff assignment.",
       validationVi:
-        "Đạt khi mọi dịch vụ đang hoạt động có giá và thời lượng hợp lệ.",
+        "Đạt khi mọi dịch vụ đang hoạt động có giá, thời lượng và ít nhất một nhân viên đang hoạt động được phân công.",
       completeEn: "The active service menu has valid prices and durations.",
       completeVi:
         "Danh mục dịch vụ đang hoạt động có giá và thời lượng hợp lệ.",
@@ -213,7 +246,7 @@ export function deriveGuidedSetupProgress(
     {
       id: "booking-preview",
       required: true,
-      checkIds: ["public-booking"],
+      checkIds: ["public-booking", "human-approval"],
       titleEn: "Preview and live rehearsal",
       titleVi: "Xem trước và chạy thử",
       reasonEn:
@@ -221,12 +254,13 @@ export function deriveGuidedSetupProgress(
       reasonVi:
         "Người thật phải xác nhận trang khách và luồng tiếp tân hoạt động cùng nhau trước khi ra mắt.",
       validationEn:
-        "Passes when the public booking gate is valid. The final Go-Live review separately records the approved rehearsal.",
+        "Passes only when the public booking gate is valid and an authorized human records the rehearsal in Go-Live Readiness.",
       validationVi:
-        "Đạt khi điều kiện đặt lịch công khai hợp lệ. Bước Go-Live cuối sẽ ghi nhận riêng lần chạy thử được phê duyệt.",
+        "Chỉ đạt khi điều kiện đặt lịch công khai hợp lệ và người có quyền ghi nhận lần chạy thử trong Go-Live Readiness.",
       completeEn:
-        "The public booking gate is valid and ready for rehearsal.",
-      completeVi: "Điều kiện đặt lịch công khai đã hợp lệ và sẵn sàng chạy thử.",
+        "The public booking gate and authorized rehearsal both pass.",
+      completeVi:
+        "Điều kiện đặt lịch công khai và lần chạy thử được phê duyệt đều đạt.",
       href: `${setupBase}/preview`,
     },
     {
@@ -235,7 +269,6 @@ export function deriveGuidedSetupProgress(
       checkIds: [
         "hours-confirmation",
         "otp-policy",
-        "human-approval",
         "owner-approval",
       ],
       titleEn: "Go-Live Readiness",

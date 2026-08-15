@@ -283,7 +283,7 @@ test.describe("Guided Admin Setup", () => {
     );
   });
 
-  test("opens the dashboard only after the owner approves the current readiness snapshot", async ({
+  test("keeps the QA pilot blocked without side-effect-free preview proof", async ({
     page,
   }) => {
     if (!completeOwner) throw new Error("complete owner fixture missing");
@@ -297,25 +297,18 @@ test.describe("Guided Admin Setup", () => {
     await page.goto(`/dashboard/${COMPLETE_SLUG}/settings/readiness`);
     await expect(page.getByTestId("guided-setup-return-card")).toBeVisible();
     await expect(page.getByTestId("go-live-readiness-summary")).toContainText(
-      /5\/5/,
+      /8\/8/,
     );
     await recordGoLiveAttestations(page);
 
     await page.goto(`/dashboard/${COMPLETE_SLUG}/setup`);
     await expect(page.getByRole("progressbar")).toHaveAttribute(
       "aria-valuenow",
-      "100",
+      "88",
     );
     await expect(
-      page.getByRole("heading", { name: /Setup complete|Thiết lập hoàn tất/i }),
-    ).toBeVisible();
-
-    await page.goto(`/dashboard/${COMPLETE_SLUG}`);
-    await expect(page).toHaveURL(new RegExp(`/dashboard/${COMPLETE_SLUG}/?$`));
-    await expect(page.getByTestId("guided-admin-action-center")).toBeVisible();
-    await expect(
-      page.getByTestId("guided-action-open-front-desk"),
-    ).toHaveAttribute("href", `/dashboard/${COMPLETE_SLUG}/center`);
+      page.getByTestId("guided-setup-next-title"),
+    ).toContainText(/Preview and live rehearsal|Xem trước và chạy thử/i);
   });
 
   test("keeps the original dashboard navigation when Guided Setup is disabled", async ({
@@ -367,15 +360,25 @@ test.describe("Guided Admin Setup", () => {
       ["go-live", `/dashboard/${SURFACES_SLUG}/settings/readiness`],
     ] as const;
 
-    for (const [stepId, href] of destinations) {
+    for (const [stepId] of destinations) {
       await expect(
         page.getByTestId(`guided-setup-step-${stepId}`),
-      ).toHaveAttribute("href", href);
+      ).toBeVisible();
+    }
+    await expect(
+      page.getByTestId("guided-setup-step-booking-preview"),
+    ).toHaveAttribute("href", `/dashboard/${SURFACES_SLUG}/setup/preview`);
+    for (const [stepId] of destinations.filter(
+      ([candidate]) => candidate !== "booking-preview",
+    )) {
+      await expect(
+        page.getByTestId(`guided-setup-step-${stepId}`),
+      ).toHaveAttribute("aria-disabled", "true");
     }
 
     await expect(
       page.getByTestId("guided-setup-step-integrations"),
-    ).toContainText(/Optional|Không bắt buộc/i);
+    ).toContainText(/Skipped for now|Đã bỏ qua/i);
     const progressBefore = await page
       .getByRole("progressbar")
       .getAttribute("aria-valuenow");
@@ -486,13 +489,11 @@ test.describe("Guided Admin Setup", () => {
     }
 
     await page.goto(`/dashboard/${SURFACES_SLUG}/setup/preview`);
-    await expect(
-      page.getByTestId("guided-open-public-booking"),
-    ).toHaveAttribute("href", `/${SURFACES_SLUG}`);
-    await expect(page.getByTestId("guided-preview-continue")).toHaveAttribute(
-      "href",
-      `/dashboard/${SURFACES_SLUG}/settings/readiness`,
+    await expect(page.getByTestId("guided-booking-preview")).toContainText(
+      /Read-only setup summary|Bản tóm tắt chỉ đọc/i,
     );
+    await expect(page.getByTestId("guided-open-public-booking")).toHaveCount(0);
+    await expect(page.getByTestId("guided-preview-continue")).toHaveCount(0);
 
     await page.goto(`/dashboard/${SURFACES_SLUG}/setup`);
     await expect(page.getByRole("progressbar")).toHaveAttribute(

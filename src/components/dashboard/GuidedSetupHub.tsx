@@ -4,7 +4,10 @@ import Link from "next/link";
 import { Check, ChevronRight } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import type { GoLiveReadiness } from "@/shared/dashboard/goLiveReadiness";
-import { deriveGuidedSetupProgress } from "@/shared/dashboard/guidedSetup";
+import {
+  canOpenGuidedStep,
+  deriveGuidedSetupProgress,
+} from "@/shared/dashboard/guidedSetup";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 export function GuidedSetupHub({
@@ -158,6 +161,11 @@ export function GuidedSetupHub({
         </h2>
         <ol className="mt-3 flex flex-col gap-2">
           {progress.steps.map((step, index) => {
+            const canOpen = canOpenGuidedStep(
+              progress.steps,
+              index,
+              progress.nextStep,
+            );
             const content = (
               <>
                 <span
@@ -177,30 +185,58 @@ export function GuidedSetupHub({
                   <span>{vi ? step.titleVi : step.titleEn}</span>
                   {!step.required ? (
                     <span className="mt-0.5 block text-xs font-normal text-nq-muted">
-                      {vi ? "Không bắt buộc — có thể làm sau" : "Optional — can be done later"}
+                      {step.done
+                        ? vi
+                          ? "Không bắt buộc — đã chọn cấu hình"
+                          : "Optional — configuration selected"
+                        : vi
+                          ? "Đã bỏ qua lúc này — có thể làm sau"
+                          : "Skipped for now — can be done later"}
+                    </span>
+                  ) : null}
+                  {!canOpen && step.required && !step.done ? (
+                    <span className="mt-0.5 block text-xs font-normal text-nq-muted">
+                      {vi
+                        ? "Hoàn tất bước bắt buộc hiện tại trước"
+                        : "Finish the current required step first"}
                     </span>
                   ) : null}
                 </span>
-                <ChevronRight
-                  className="h-4 w-4 shrink-0 text-nq-muted"
-                  aria-hidden
-                />
+                {canOpen ? (
+                  <ChevronRight
+                    className="h-4 w-4 shrink-0 text-nq-muted"
+                    aria-hidden
+                  />
+                ) : null}
               </>
             );
 
             return (
               <li key={step.id}>
-                <Card
-                  as={Link}
-                  href={step.href}
-                  state="interactive"
-                  variant="bordered"
-                  padding="sm"
-                  data-testid={`guided-setup-step-${step.id}`}
-                  className="flex min-h-11 items-center gap-3"
-                >
-                  {content}
-                </Card>
+                {canOpen ? (
+                  <Card
+                    as={Link}
+                    href={step.href}
+                    state="interactive"
+                    variant="bordered"
+                    padding="sm"
+                    data-testid={`guided-setup-step-${step.id}`}
+                    className="flex min-h-11 items-center gap-3"
+                  >
+                    {content}
+                  </Card>
+                ) : (
+                  <Card
+                    variant="bordered"
+                    padding="sm"
+                    aria-disabled="true"
+                    data-testid={`guided-setup-step-${step.id}`}
+                    data-guided-setup-locked="true"
+                    className="flex min-h-11 items-center gap-3 opacity-70"
+                  >
+                    {content}
+                  </Card>
+                )}
               </li>
             );
           })}

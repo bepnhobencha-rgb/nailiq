@@ -105,7 +105,9 @@ export default async function NoShowProtectionPage({ params }: Props) {
 
   return (
     <div className="space-y-6">
-    {guidedSetupEnabled ? <GuidedSetupReturnCard slug={slug} /> : null}
+    {guidedSetupEnabled ? (
+      <GuidedSetupReturnCard slug={slug} currentStep="booking-policies" />
+    ) : null}
     <NoShowProtectionHub
       slug={slug}
       salonId={ctx.salon.id}

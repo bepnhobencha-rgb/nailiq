@@ -78,6 +78,8 @@ export default async function SetupAddressPage({ params }: Props) {
         />
         <AddressSetupPanel
           slug={slug}
+          initialSalonName={ctx.salon.name ?? ""}
+          showSalonName={guidedSetupEnabled}
           initialAddress={ctx.salon.address ?? ""}
           initialSalonPhone={ctx.salon.salon_phone ?? ""}
           initialCurrency={initialCurrency}
@@ -85,7 +87,9 @@ export default async function SetupAddressPage({ params }: Props) {
           initialTimezone={initialTimezone}
           autoSave={guidedSetupEnabled}
         />
-        {guidedSetupEnabled ? <GuidedSetupReturnCard slug={slug} /> : null}
+        {guidedSetupEnabled ? (
+          <GuidedSetupReturnCard slug={slug} currentStep="salon-profile" />
+        ) : null}
       </MobileStack>
     </ResponsiveShell>
   );

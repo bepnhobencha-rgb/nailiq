@@ -29,6 +29,8 @@ const readyInput = {
   defaultNotificationLocale: "en",
   paymentProvider: null,
   voiceAiEnabled: false,
+  staffAccessValid: true,
+  serviceCoverageValid: true,
   activeServices: [{ priceCents: 4500, durationMinutes: 45 }],
   activeStaffCount: 2,
 };
@@ -137,6 +139,35 @@ describe("evaluateGoLiveReadiness", () => {
     });
   });
 
+  it("accepts a valid seven-days-open salon and rejects invalid times or dates", () => {
+    const sevenDaysOpen = parseOpeningHours(DEFAULT_OPENING_HOURS_JSON)!;
+    for (const day of Object.values(sevenDaysOpen)) day.closed = false;
+
+    expect(
+      evaluateGoLiveReadiness({
+        ...readyInput,
+        openingHours: sevenDaysOpen,
+        bookingClosedDates: [],
+      }).checks.find((check) => check.id === "schedule"),
+    ).toMatchObject({ state: "pass" });
+
+    sevenDaysOpen.mon.open = "18:00";
+    sevenDaysOpen.mon.close = "09:00";
+    expect(
+      evaluateGoLiveReadiness({
+        ...readyInput,
+        openingHours: sevenDaysOpen,
+      }).checks.find((check) => check.id === "schedule"),
+    ).toMatchObject({ state: "action" });
+
+    expect(
+      evaluateGoLiveReadiness({
+        ...readyInput,
+        bookingClosedDates: ["2026-02-30"],
+      }).checks.find((check) => check.id === "schedule"),
+    ).toMatchObject({ state: "action" });
+  });
+
   it("exposes data-backed guided checks without changing the canonical technical gate count", () => {
     const result = evaluateGoLiveReadiness({
       ...readyInput,
@@ -159,5 +190,110 @@ describe("evaluateGoLiveReadiness", () => {
       state: "review",
       blocking: false,
     });
+  });
+
+  it("makes every Guided Setup data requirement block QA-pilot approval", () => {
+    const missing = evaluateGoLiveReadiness({
+      ...readyInput,
+      guidedSetupEnabled: true,
+      cancellationPolicy: null,
+      email: null,
+      emailVerified: false,
+      emailLinksEnabled: false,
+      defaultNotificationLocale: "fr",
+      humanAttestations: {
+        hoursConfirmed: true,
+        otpPolicyConfirmed: true,
+        liveRehearsalCompleted: true,
+        ownerApproved: true,
+        ownerApprovalStale: false,
+      },
+    });
+
+    expect(missing.readyForManualReview).toBe(false);
+    expect(missing.approvedForGoLive).toBe(false);
+    expect(
+      missing.checks
+        .filter((check) => check.blocking && check.state !== "pass")
+        .map((check) => check.id),
+    ).toEqual(
+      expect.arrayContaining([
+        "booking-policy",
+        "fallback-channel",
+        "notification-language",
+      ]),
+    );
+
+    const complete = evaluateGoLiveReadiness({
+      ...readyInput,
+      guidedSetupEnabled: true,
+      humanAttestations: {
+        hoursConfirmed: true,
+        otpPolicyConfirmed: true,
+        liveRehearsalCompleted: true,
+        ownerApproved: true,
+        ownerApprovalStale: false,
+      },
+    });
+
+    expect(complete.totalBlocking).toBe(8);
+    expect(complete.passedBlocking).toBe(8);
+    expect(complete.readyForManualReview).toBe(true);
+    expect(complete.approvedForGoLive).toBe(false);
+  });
+
+  it("fails the Guided Setup pilot closed on access, capability, and group-rule gaps", () => {
+    const result = evaluateGoLiveReadiness({
+      ...readyInput,
+      guidedSetupEnabled: true,
+      staffAccessValid: false,
+      serviceCoverageValid: false,
+      groupBookingEnabled: true,
+      groupTogetherThresholdMinutes: 121,
+      noShowGroupWholeParty: null,
+    });
+
+    expect(result.approvedForGoLive).toBe(false);
+    expect(result.checks.find((check) => check.id === "staff")).toMatchObject({
+      state: "action",
+      blocking: true,
+    });
+    expect(result.checks.find((check) => check.id === "catalog")).toMatchObject({
+      state: "action",
+      blocking: true,
+    });
+    expect(
+      result.checks.find((check) => check.id === "booking-policy"),
+    ).toMatchObject({ state: "action", blocking: true });
+  });
+
+  it("never approves the QA pilot from a rehearsal attestation without safe preview proof", () => {
+    const result = evaluateGoLiveReadiness({
+      ...readyInput,
+      guidedSetupEnabled: true,
+      humanAttestations: {
+        hoursConfirmed: true,
+        otpPolicyConfirmed: true,
+        liveRehearsalCompleted: true,
+        ownerApproved: true,
+        ownerApprovalStale: false,
+      },
+    });
+
+    expect(result.approvedForGoLive).toBe(false);
+    expect(
+      result.checks.find((check) => check.id === "human-approval"),
+    ).toMatchObject({ state: "review" });
+  });
+
+  it("does not treat selecting an optional provider as runtime proof", () => {
+    const result = evaluateGoLiveReadiness({
+      ...readyInput,
+      paymentProvider: "stripe",
+    });
+
+    expect(
+      result.checks.find((check) => check.id === "optional-integrations"),
+    ).toMatchObject({ state: "review", blocking: false });
   });
 });

@@ -54,7 +54,9 @@ export default async function SetupHoursPage({ params }: Props) {
           initialClosedDatesRaw={ctx.salon.booking_closed_dates}
           autoSave={guidedSetupEnabled}
         />
-        {guidedSetupEnabled ? <GuidedSetupReturnCard slug={slug} /> : null}
+        {guidedSetupEnabled ? (
+          <GuidedSetupReturnCard slug={slug} currentStep="business-hours" />
+        ) : null}
       </MobileStack>
     </ResponsiveShell>
   );

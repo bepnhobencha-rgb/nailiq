@@ -1,6 +1,7 @@
 "use client";
 
 import { type ReactNode } from "react";
+import { useSelectedLayoutSegment } from "next/navigation";
 import {
   DashboardSidebar,
   type ReleaseFeatureMap,
@@ -14,6 +15,10 @@ import { PresenceHeartbeat } from "@/components/layout/PresenceHeartbeat";
 import { useSidebarCollapsed } from "@/shared/lib/useSidebarCollapsed";
 import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
 import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
+import {
+  shouldUseGuidedFocusMode,
+  type GuidedSetupStage,
+} from "@/shared/dashboard/guidedSetup";
 
 type Props = {
   slug: string;
@@ -42,8 +47,8 @@ type Props = {
   userEmail?: string | null;
   /** Salon DB id — passed to PresenceHeartbeat to tag the presence row. */
   salonId?: string | null;
-  /** Hide the normal admin navigation while a new owner completes Guided Setup. */
-  setupMode?: boolean;
+  /** Focus the shell for Guided Setup and its first post-setup Action Center. */
+  guidedSetupStage?: GuidedSetupStage;
 };
 
 /**
@@ -73,7 +78,7 @@ export function DashboardShell({
   releaseFeatures,
   userEmail,
   salonId,
-  setupMode = false,
+  guidedSetupStage = "disabled",
 }: Props) {
   // Single hook instance owns the collapse state. We pass both the
   // value AND the toggle to DashboardSidebar so its toggle button
@@ -83,16 +88,22 @@ export function DashboardShell({
   // CSS variable never updated and the aside width stayed stuck.
   const { collapsed, toggle } = useSidebarCollapsed();
   const sidebarWidth = collapsed ? "4rem" : "15rem";
+  const activeSegment = useSelectedLayoutSegment();
+  const guidedFocusMode = shouldUseGuidedFocusMode(
+    guidedSetupStage,
+    activeSegment,
+  );
 
   return (
     <div
       className="min-h-dvh bg-nq-bg"
       style={{ ["--nq-sidebar-w" as string]: sidebarWidth }}
-      data-guided-setup-mode={setupMode ? "true" : "false"}
+      data-guided-setup-mode={guidedFocusMode ? "true" : "false"}
+      data-guided-setup-stage={guidedSetupStage}
     >
       <PwaRegister />
-      {!setupMode && salonId ? <PresenceHeartbeat salonId={salonId} /> : null}
-      {!setupMode ? (
+      {!guidedFocusMode && salonId ? <PresenceHeartbeat salonId={salonId} /> : null}
+      {!guidedFocusMode ? (
         <DashboardSidebar
           slug={slug}
           role={role}
@@ -116,21 +127,21 @@ export function DashboardShell({
         // when the user toggles collapse — same easing tokens the
         // receptionist motion uses.
         className={
-          setupMode
+          guidedFocusMode
             ? "min-h-dvh"
             : "min-h-dvh pb-16 transition-[padding-left] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)] xl:pb-0 xl:pl-[var(--nq-sidebar-w)]"
         }
       >
-        {!setupMode ? <DashboardTopBar slug={slug} /> : null}
+        {!guidedFocusMode ? <DashboardTopBar slug={slug} /> : null}
         {/* The view controls (refresh + fullscreen) live here, fixed top-right
             on every page. Fullscreen now targets the whole document so the
             sidebar/nav + portaled drawers all stay usable. */}
         <div id="nq-dashboard-content">
-          {!setupMode ? <DashboardViewControls /> : null}
+          {!guidedFocusMode ? <DashboardViewControls /> : null}
           {children}
         </div>
       </main>
-      {!setupMode ? (
+      {!guidedFocusMode ? (
         <MobileBottomNav
           slug={slug}
           walkinQueueCount={walkinQueueCount}
@@ -144,7 +155,7 @@ export function DashboardShell({
       {/* Coco — in-admin AI assistant. Gated by the admin_copilot release
           feature; nail_tech is view-only so the operational copilot is hidden
           for them. The API route re-checks both (defence in depth). */}
-      {!setupMode && releaseFeatures?.admin_copilot && role !== "nail_tech" && (
+      {!guidedFocusMode && releaseFeatures?.admin_copilot && role !== "nail_tech" && (
         <AdminCopilot
           slug={slug}
           role={role}

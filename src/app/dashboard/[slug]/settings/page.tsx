@@ -19,7 +19,10 @@ import { resolveVertical } from "@/shared/verticals/registry";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 
-type Props = { params: Promise<{ slug: string }> };
+type Props = {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ section?: string | string[] }>;
+};
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
@@ -30,8 +33,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default async function SalonSettingsPage({ params }: Props) {
+export default async function SalonSettingsPage({ params, searchParams }: Props) {
   const { slug } = await params;
+  const requestedSection = (await searchParams).section;
+  const guidedStep =
+    requestedSection === "integrations" ? "integrations" : "communications";
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) {
     redirect("/register");
@@ -207,7 +213,9 @@ export default async function SalonSettingsPage({ params }: Props) {
 
   return (
     <div className="space-y-5">
-      {guidedSetupEnabled ? <GuidedSetupReturnCard slug={slug} /> : null}
+      {guidedSetupEnabled ? (
+        <GuidedSetupReturnCard slug={slug} currentStep={guidedStep} />
+      ) : null}
       <SalonSettingsHub
       slug={slug}
       dashboardModules={dashboardModules}

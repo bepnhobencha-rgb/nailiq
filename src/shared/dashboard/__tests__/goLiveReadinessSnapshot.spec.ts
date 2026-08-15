@@ -59,6 +59,45 @@ describe("go-live readiness snapshot", () => {
     );
   });
 
+  it("starts a new approval snapshot when the Guided Setup pilot is enabled", () => {
+    expect(
+      createGoLiveReadinessSnapshotHash({
+        ...material,
+        guidedSetupEnabled: true,
+      }),
+    ).not.toBe(createGoLiveReadinessSnapshotHash(material));
+  });
+
+  it("binds owner approval to closed dates, staff access, and service capabilities", () => {
+    const guided = {
+      ...material,
+      guidedSetupEnabled: true as const,
+      bookingClosedDates: ["2026-12-25"],
+      staffAccessSignature: [
+        {
+          staffId: "staff-a",
+          jobRole: "owner",
+          userId: null,
+          membershipRole: null,
+          accessActive: null,
+        },
+      ],
+      serviceCapabilitySignature: [
+        { staffId: "staff-a", serviceId: "service-a" },
+      ],
+    };
+
+    expect(
+      createGoLiveReadinessSnapshotHash({
+        ...guided,
+        serviceCapabilitySignature: [
+          ...guided.serviceCapabilitySignature,
+          { staffId: "staff-b", serviceId: "service-b" },
+        ],
+      }),
+    ).not.toBe(createGoLiveReadinessSnapshotHash(guided));
+  });
+
   it("invalidates owner approval when a prerequisite event changes", () => {
     const event = {
       id: "hours-event-1",

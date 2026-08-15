@@ -10,6 +10,7 @@ type SnapshotMaterial = {
   salonPhone: string | null;
   timezone: unknown;
   openingHours: unknown;
+  bookingClosedDates?: string[];
   profileComplete: boolean;
   email: string | null;
   emailVerified: boolean;
@@ -17,6 +18,22 @@ type SnapshotMaterial = {
   phoneOtpEnabled: boolean;
   cancellationPolicy?: unknown;
   defaultNotificationLocale?: unknown;
+  /** Omitted for legacy salons so their existing approval hash is unchanged. */
+  guidedSetupEnabled?: true;
+  staffAccessSignature?: Array<{
+    staffId: string;
+    jobRole: string | null;
+    userId: string | null;
+    membershipRole: string | null;
+    accessActive: boolean | null;
+  }>;
+  serviceCapabilitySignature?: Array<{
+    staffId: string;
+    serviceId: string;
+  }>;
+  groupBookingEnabled?: boolean;
+  groupTogetherThresholdMinutes?: number | null;
+  noShowGroupWholeParty?: boolean | null;
   services: Array<{
     id: string;
     priceCents: number | null;
@@ -46,6 +63,27 @@ export function createGoLiveReadinessSnapshotHash(
     address: material.address?.trim() || null,
     salonPhone: material.salonPhone?.trim() || null,
     email: material.email?.trim().toLowerCase() || null,
+    ...(material.bookingClosedDates
+      ? { bookingClosedDates: [...material.bookingClosedDates].sort() }
+      : {}),
+    ...(material.staffAccessSignature
+      ? {
+          staffAccessSignature: [...material.staffAccessSignature].sort((a, b) =>
+            a.staffId.localeCompare(b.staffId),
+          ),
+        }
+      : {}),
+    ...(material.serviceCapabilitySignature
+      ? {
+          serviceCapabilitySignature: [
+            ...material.serviceCapabilitySignature,
+          ].sort((a, b) =>
+            `${a.serviceId}:${a.staffId}`.localeCompare(
+              `${b.serviceId}:${b.staffId}`,
+            ),
+          ),
+        }
+      : {}),
     services: [...material.services].sort((a, b) => a.id.localeCompare(b.id)),
     activeStaffIds: [...material.activeStaffIds].sort(),
   };

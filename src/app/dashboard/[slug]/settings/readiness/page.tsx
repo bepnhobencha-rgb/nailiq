@@ -25,7 +25,7 @@ export default async function GoLiveReadinessPage({ params }: Props) {
     <ResponsiveShell>
       <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 sm:pt-6">
         {result.ok && result.guidedSetupEnabled ? (
-          <GuidedSetupReturnCard slug={slug} />
+          <GuidedSetupReturnCard slug={slug} currentStep="go-live" />
         ) : null}
         <GoLiveReadinessPageContent
           slug={slug}

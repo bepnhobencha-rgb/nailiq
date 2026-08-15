@@ -178,7 +178,9 @@ export default async function SetupStaffPage({ params }: Props) {
           accessByStaff={accessByStaff}
           currentUserRole={ctx.role}
         />
-        {guidedSetupEnabled ? <GuidedSetupReturnCard slug={slug} /> : null}
+        {guidedSetupEnabled ? (
+          <GuidedSetupReturnCard slug={slug} currentStep="team-access" />
+        ) : null}
       </MobileStack>
     </ResponsiveShell>
   );

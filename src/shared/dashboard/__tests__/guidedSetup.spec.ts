@@ -3,7 +3,11 @@ import type {
   GoLiveReadiness,
   GoLiveReadinessState,
 } from "@/shared/dashboard/goLiveReadiness";
-import { deriveGuidedSetupProgress } from "@/shared/dashboard/guidedSetup";
+import {
+  canOpenGuidedStep,
+  deriveGuidedSetupProgress,
+  shouldUseGuidedFocusMode,
+} from "@/shared/dashboard/guidedSetup";
 
 const CHECK_IDS = [
   "identity",
@@ -97,7 +101,7 @@ describe("deriveGuidedSetupProgress", () => {
     });
   });
 
-  it("keeps human attestations in the final Go-Live step instead of trapping earlier setup steps", () => {
+  it("keeps preview incomplete until an authorized rehearsal is recorded", () => {
     const result = deriveGuidedSetupProgress(
       "qa-salon",
       readiness({
@@ -117,12 +121,38 @@ describe("deriveGuidedSetupProgress", () => {
     );
 
     expect(result).toMatchObject({
-      percent: 88,
-      completedCount: 7,
+      percent: 75,
+      completedCount: 6,
       requiredCount: 8,
+      currentStepNumber: 8,
+      nextStep: { id: "booking-preview" },
+      complete: false,
+    });
+  });
+
+  it("moves to final Go-Live only after the saved public gate and rehearsal pass", () => {
+    const result = deriveGuidedSetupProgress(
+      "qa-salon",
+      readiness({
+        identity: "pass",
+        schedule: "pass",
+        staff: "pass",
+        catalog: "pass",
+        "booking-policy": "pass",
+        "fallback-channel": "pass",
+        "notification-language": "pass",
+        "public-booking": "pass",
+        "human-approval": "pass",
+        "hours-confirmation": "review",
+        "otp-policy": "review",
+        "owner-approval": "review",
+      }),
+    );
+
+    expect(result).toMatchObject({
+      percent: 88,
       currentStepNumber: 9,
       nextStep: { id: "go-live" },
-      complete: false,
     });
   });
 
@@ -158,5 +188,45 @@ describe("deriveGuidedSetupProgress", () => {
       complete: false,
       nextStep: { id: "booking-policies" },
     });
+  });
+});
+
+describe("shouldUseGuidedFocusMode", () => {
+  it("focuses every incomplete setup route and only the completed root Action Center", () => {
+    expect(shouldUseGuidedFocusMode("disabled", null)).toBe(false);
+    expect(shouldUseGuidedFocusMode("incomplete", null)).toBe(true);
+    expect(shouldUseGuidedFocusMode("incomplete", "services")).toBe(true);
+    expect(shouldUseGuidedFocusMode("complete", null)).toBe(true);
+    expect(shouldUseGuidedFocusMode("complete", "center")).toBe(false);
+    expect(shouldUseGuidedFocusMode("complete", "settings")).toBe(false);
+  });
+});
+
+describe("canOpenGuidedStep", () => {
+  it("keeps exactly one forward action", () => {
+    const progress = deriveGuidedSetupProgress(
+      "qa-salon",
+      readiness({ identity: "pass", schedule: "action" }),
+    );
+
+    expect(canOpenGuidedStep(progress.steps, 0, progress.nextStep)).toBe(false);
+    expect(canOpenGuidedStep(progress.steps, 1, progress.nextStep)).toBe(true);
+    expect(canOpenGuidedStep(progress.steps, 2, progress.nextStep)).toBe(false);
+    expect(canOpenGuidedStep(progress.steps, 6, progress.nextStep)).toBe(false);
+  });
+
+  it("explicitly skips the optional integration row while the next required action stays open", () => {
+    const progress = deriveGuidedSetupProgress(
+      "qa-salon",
+      readiness({
+        ...firstSixPass,
+        "optional-integrations": "review",
+        "public-booking": "action",
+      }),
+    );
+
+    expect(canOpenGuidedStep(progress.steps, 6, progress.nextStep)).toBe(false);
+    expect(canOpenGuidedStep(progress.steps, 7, progress.nextStep)).toBe(true);
+    expect(canOpenGuidedStep(progress.steps, 8, progress.nextStep)).toBe(false);
   });
 });

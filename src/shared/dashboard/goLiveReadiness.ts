@@ -3,6 +3,7 @@ import {
   parseOpeningHours,
 } from "@/shared/dashboard/openingHoursDefaults";
 import { isAllowedTimezone } from "@/shared/dashboard/timezoneOptions";
+import { isValidBookingClosedDate } from "@/shared/booking/parseBookingClosedDates";
 
 export type GoLiveReadinessState = "pass" | "action" | "review";
 
@@ -24,6 +25,7 @@ export type GoLiveReadinessInput = {
   salonPhone: string | null;
   timezone: unknown;
   openingHours: unknown;
+  bookingClosedDates?: unknown;
   profileComplete: boolean;
   email: string | null;
   emailVerified: boolean;
@@ -33,6 +35,17 @@ export type GoLiveReadinessInput = {
   defaultNotificationLocale?: unknown;
   paymentProvider?: unknown;
   voiceAiEnabled?: boolean;
+  /**
+   * The QA-only Guided Setup pilot makes its policy and communication steps
+   * technical prerequisites. Legacy salons keep the canonical readiness
+   * contract until their per-salon pilot flag is explicitly enabled.
+   */
+  guidedSetupEnabled?: boolean;
+  staffAccessValid?: boolean;
+  serviceCoverageValid?: boolean;
+  groupBookingEnabled?: boolean;
+  groupTogetherThresholdMinutes?: unknown;
+  noShowGroupWholeParty?: unknown;
   activeServices: Array<{
     priceCents: number | null;
     durationMinutes: number | null;
@@ -75,12 +88,20 @@ export function evaluateGoLiveReadiness(
 ): GoLiveReadiness {
   const setupBase = `/dashboard/${encodeURIComponent(input.slug)}/setup`;
   const settingsBase = `/dashboard/${encodeURIComponent(input.slug)}/settings`;
+  const guidedRequired = input.guidedSetupEnabled === true;
   const hours = parseOpeningHours(input.openingHours);
-  const hasOpenDay =
+  const openDays = hours
+    ? Object.values(hours).filter((day) => !day.closed)
+    : [];
+  const closedDatesValid =
+    input.bookingClosedDates == null ||
+    (Array.isArray(input.bookingClosedDates) &&
+      input.bookingClosedDates.every(isValidBookingClosedDate));
+  const scheduleValid =
     hours !== null &&
-    Object.values(hours).some(
-      (day) => !day.closed && day.open.trim() !== day.close.trim(),
-    );
+    openDays.length > 0 &&
+    openDays.every((day) => day.open.trim() < day.close.trim()) &&
+    closedDatesValid;
   const hoursCustomized = isOpeningHoursCustomized(input.openingHours);
   const servicesValid =
     input.activeServices.length > 0 &&
@@ -91,6 +112,9 @@ export function evaluateGoLiveReadiness(
         Number.isFinite(service.durationMinutes) &&
         Number(service.durationMinutes) > 0,
       );
+  const catalogValid =
+    servicesValid &&
+    (!guidedRequired || input.serviceCoverageValid === true);
   const supportedNotificationLocale =
     input.defaultNotificationLocale === "en" ||
     input.defaultNotificationLocale === "vi";
@@ -98,6 +122,16 @@ export function evaluateGoLiveReadiness(
     input.paymentProvider === "square" ||
     input.paymentProvider === "stripe" ||
     input.voiceAiEnabled === true;
+  const staffAccessValid = input.staffAccessValid === true;
+  const groupThreshold = Number(input.groupTogetherThresholdMinutes);
+  const groupPolicyValid =
+    input.groupBookingEnabled !== true ||
+    (Number.isFinite(groupThreshold) &&
+      groupThreshold >= 0 &&
+      groupThreshold <= 120 &&
+      typeof input.noShowGroupWholeParty === "boolean");
+  const bookingPolicyValid =
+    hasBilingualPolicy(input.cancellationPolicy) && groupPolicyValid;
   const attestations = input.humanAttestations ?? {
     hoursConfirmed: false,
     otpPolicyConfirmed: false,
@@ -105,6 +139,8 @@ export function evaluateGoLiveReadiness(
     ownerApproved: false,
     ownerApprovalStale: false,
   };
+  const rehearsalVerified =
+    attestations.liveRehearsalCompleted && !guidedRequired;
 
   const checks: GoLiveReadinessCheck[] = [
     {
@@ -137,53 +173,64 @@ export function evaluateGoLiveReadiness(
     },
     {
       id: "catalog",
-      state: servicesValid ? "pass" : "action",
+      state: catalogValid ? "pass" : "action",
       blocking: true,
       titleEn: "Bookable service catalog",
       titleVi: "Danh mục dịch vụ có thể đặt",
-      detailEn: servicesValid
-        ? `${input.activeServices.length} active service${input.activeServices.length === 1 ? "" : "s"} with valid price and duration.`
-        : input.activeServices.length === 0
+      detailEn: !servicesValid
+        ? input.activeServices.length === 0
           ? "Add at least one active service."
-          : "Every active service needs a valid price and duration.",
-      detailVi: servicesValid
-        ? `${input.activeServices.length} dịch vụ đang hoạt động có giá và thời lượng hợp lệ.`
-        : input.activeServices.length === 0
+          : "Every active service needs a valid price and duration."
+        : guidedRequired && input.serviceCoverageValid !== true
+          ? "Assign every active service to at least one active staff member."
+          : `${input.activeServices.length} active service${input.activeServices.length === 1 ? "" : "s"} with valid price, duration, and staff coverage.`,
+      detailVi: !servicesValid
+        ? input.activeServices.length === 0
           ? "Thêm ít nhất một dịch vụ đang hoạt động."
-          : "Mỗi dịch vụ đang hoạt động cần có giá và thời lượng hợp lệ.",
+          : "Mỗi dịch vụ đang hoạt động cần có giá và thời lượng hợp lệ."
+        : guidedRequired && input.serviceCoverageValid !== true
+          ? "Gán mỗi dịch vụ đang hoạt động cho ít nhất một nhân viên đang hoạt động."
+          : `${input.activeServices.length} dịch vụ đang hoạt động có giá, thời lượng và nhân viên thực hiện hợp lệ.`,
       href: `${setupBase}/services`,
     },
     {
       id: "staff",
-      state: input.activeStaffCount > 0 ? "pass" : "action",
+      state:
+        input.activeStaffCount > 0 && (!guidedRequired || staffAccessValid)
+          ? "pass"
+          : "action",
       blocking: true,
       titleEn: "Bookable staff",
       titleVi: "Nhân viên nhận lịch",
       detailEn:
-        input.activeStaffCount > 0
-          ? `${input.activeStaffCount} active staff member${input.activeStaffCount === 1 ? "" : "s"}.`
-          : "Add at least one active staff member.",
+        input.activeStaffCount === 0
+          ? "Add at least one active staff member."
+          : guidedRequired && !staffAccessValid
+            ? "Review every active staff job role. Linked staff logins require separate authorization evidence before this check can pass."
+            : `${input.activeStaffCount} active staff member${input.activeStaffCount === 1 ? "" : "s"} with valid access configuration.`,
       detailVi:
-        input.activeStaffCount > 0
-          ? `${input.activeStaffCount} nhân viên đang hoạt động.`
-          : "Thêm ít nhất một nhân viên đang hoạt động.",
+        input.activeStaffCount === 0
+          ? "Thêm ít nhất một nhân viên đang hoạt động."
+          : guidedRequired && !staffAccessValid
+            ? "Kiểm tra vai trò công việc của mọi nhân viên đang hoạt động. Tài khoản nhân viên đã liên kết cần bằng chứng quyền riêng trước khi mục này đạt."
+            : `${input.activeStaffCount} nhân viên đang hoạt động có cấu hình quyền hợp lệ.`,
       href: `${setupBase}/staff`,
     },
     {
       id: "schedule",
-      state: hours && hasOpenDay ? "pass" : "action",
+      state: scheduleValid ? "pass" : "action",
       blocking: true,
       titleEn: "Business hours and closed days",
       titleVi: "Giờ mở cửa và ngày nghỉ",
       detailEn:
-        !hours || !hasOpenDay
-          ? "Save valid business hours with at least one open day."
+        !scheduleValid
+          ? "Save a complete seven-day schedule with at least one open day, opening before closing, and only real calendar dates for any special closures."
           : hoursCustomized
             ? `Business hours are saved in ${String(input.timezone)}.`
             : `Valid default hours are saved in ${String(input.timezone)}; human confirmation is still required.`,
       detailVi:
-        !hours || !hasOpenDay
-          ? "Lưu giờ làm việc hợp lệ với ít nhất một ngày mở cửa."
+        !scheduleValid
+          ? "Lưu lịch đủ bảy ngày với ít nhất một ngày mở cửa, giờ mở trước giờ đóng và chỉ dùng ngày lịch hợp lệ cho mọi ngày nghỉ đặc biệt."
           : hoursCustomized
             ? `Đã lưu giờ làm việc theo ${String(input.timezone)}.`
             : `Đã lưu giờ mặc định hợp lệ theo ${String(input.timezone)}; vẫn cần người thật xác nhận.`,
@@ -191,16 +238,20 @@ export function evaluateGoLiveReadiness(
     },
     {
       id: "booking-policy",
-      state: hasBilingualPolicy(input.cancellationPolicy) ? "pass" : "action",
-      blocking: false,
+      state: bookingPolicyValid ? "pass" : "action",
+      blocking: guidedRequired,
       titleEn: "Booking, cancellation, and no-show policy",
       titleVi: "Quy định đặt lịch, huỷ lịch và vắng mặt",
-      detailEn: hasBilingualPolicy(input.cancellationPolicy)
-        ? "Salon-specific policy text is saved in English and Vietnamese."
-        : "Review and save the salon's English and Vietnamese policy before go-live.",
-      detailVi: hasBilingualPolicy(input.cancellationPolicy)
-        ? "Đã lưu nội dung chính sách riêng của tiệm bằng tiếng Anh và tiếng Việt."
-        : "Xem lại và lưu chính sách của tiệm bằng tiếng Anh và tiếng Việt trước khi hoạt động.",
+      detailEn: !hasBilingualPolicy(input.cancellationPolicy)
+        ? "Review and save the salon's English and Vietnamese policy before go-live."
+        : !groupPolicyValid
+          ? "Group booking is enabled, but its together-window or whole-party no-show rule is missing or invalid."
+          : "Bilingual salon policy and every enabled group rule are saved. After-hours bookings remain locked to per-booking Owner/Admin approval plus staff consent.",
+      detailVi: !hasBilingualPolicy(input.cancellationPolicy)
+        ? "Xem lại và lưu chính sách của tiệm bằng tiếng Anh và tiếng Việt trước khi hoạt động."
+        : !groupPolicyValid
+          ? "Đặt lịch nhóm đang bật nhưng khung giờ đi cùng nhau hoặc quy định vắng mặt cả nhóm còn thiếu hay không hợp lệ."
+          : "Đã lưu chính sách song ngữ và mọi quy định nhóm đang bật. Lịch ngoài giờ vẫn yêu cầu Owner/Admin phê duyệt từng lịch và nhân viên đồng ý.",
       href: `/dashboard/${encodeURIComponent(input.slug)}/no-show-protection`,
     },
     {
@@ -223,7 +274,7 @@ export function evaluateGoLiveReadiness(
         input.emailLinksEnabled && text(input.email) && input.emailVerified
           ? "pass"
           : "review",
-      blocking: false,
+      blocking: guidedRequired,
       titleEn: "Customer email fallback",
       titleVi: "Kênh email dự phòng cho khách",
       detailEn:
@@ -239,7 +290,7 @@ export function evaluateGoLiveReadiness(
     {
       id: "notification-language",
       state: supportedNotificationLocale ? "pass" : "action",
-      blocking: false,
+      blocking: guidedRequired,
       titleEn: "Default notification language",
       titleVi: "Ngôn ngữ thông báo mặc định",
       detailEn: supportedNotificationLocale
@@ -252,15 +303,18 @@ export function evaluateGoLiveReadiness(
     },
     {
       id: "optional-integrations",
-      state: integrationSelected ? "pass" : "review",
+      // Selecting a provider is intent, not runtime credential proof. Keep
+      // this optional check in review until a future provider-specific probe
+      // can supply trustworthy evidence.
+      state: "review",
       blocking: false,
       titleEn: "Payments and AI (optional)",
       titleVi: "Thanh toán và AI (không bắt buộc)",
       detailEn: integrationSelected
-        ? "A payment provider is selected or AI Voice is enabled; verify provider credentials on the integration page."
+        ? "Selected, but provider credentials and runtime delivery are not yet verified. This optional item does not block core setup."
         : "No payment or AI integration is required to finish core setup; add one later if needed.",
       detailVi: integrationSelected
-        ? "Đã chọn nhà cung cấp thanh toán hoặc bật AI Voice; cần kiểm tra credential của nhà cung cấp tại trang tích hợp."
+        ? "Đã chọn nhưng credential và hoạt động runtime của nhà cung cấp chưa được xác minh. Mục không bắt buộc này không chặn thiết lập cốt lõi."
         : "Không cần tích hợp thanh toán hoặc AI để hoàn tất thiết lập cốt lõi; có thể thêm sau.",
       href: `${settingsBase}#cat-integrations`,
     },
@@ -294,14 +348,18 @@ export function evaluateGoLiveReadiness(
     },
     {
       id: "human-approval",
-      state: attestations.liveRehearsalCompleted ? "pass" : "review",
+      state: rehearsalVerified ? "pass" : "review",
       blocking: false,
       titleEn: "Owner-approved live rehearsal",
       titleVi: "Chạy thử có chủ tiệm phê duyệt",
       detailEn:
-        "A human must test owner and receptionist login, create one approved test booking, verify it at the desk, and record go-live approval.",
+        guidedRequired
+          ? "Blocked: this prototype has no authenticated, side-effect-free booking preview. Do not use the live booking form for rehearsal."
+          : "A human must test owner and receptionist login, complete the authorized rehearsal, verify it at the desk, and record go-live approval.",
       detailVi:
-        "Cần người thật kiểm tra đăng nhập Owner và Receptionist, tạo một lịch thử được cho phép, xác minh tại quầy và ghi nhận phê duyệt go-live.",
+        guidedRequired
+          ? "Đang chặn: prototype chưa có chế độ xem trước booking được xác thực và không tạo side effect. Không dùng form booking thật để chạy thử."
+          : "Cần người thật kiểm tra đăng nhập Owner và Receptionist, hoàn tất lần chạy thử được cho phép, xác minh tại quầy và ghi nhận phê duyệt go-live.",
     },
     {
       id: "owner-approval",
@@ -334,7 +392,7 @@ export function evaluateGoLiveReadiness(
       passedBlocking === blocking.length &&
       attestations.hoursConfirmed &&
       attestations.otpPolicyConfirmed &&
-      attestations.liveRehearsalCompleted &&
+      rehearsalVerified &&
       attestations.ownerApproved,
   };
 }
