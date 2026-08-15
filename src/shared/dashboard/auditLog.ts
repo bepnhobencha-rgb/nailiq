@@ -32,7 +32,9 @@ export type BookingEventType =
   | "soft_hold_set"
   | "soft_hold_expired"
   | "rush_hour_started"
-  | "rush_hour_ended";
+  | "rush_hour_ended"
+  | "waitlist_acknowledged"
+  | "waitlist_invited";
 
 export type ActorRole =
   | "owner"

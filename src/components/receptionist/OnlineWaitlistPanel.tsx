@@ -7,7 +7,10 @@ import { cn } from "@/shared/lib/cn";
 import { displayCustomerName } from "@/shared/lib/customerDisplayName";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { getUserMessages } from "@/shared/i18n/user";
-import { inviteWaitlistEntry } from "@/shared/dashboard/receptionistActions";
+import {
+  acknowledgeWaitlistEntries,
+  inviteWaitlistEntry,
+} from "@/shared/dashboard/receptionistActions";
 import type { ReceptionistCenterData } from "@/shared/dashboard/loadReceptionistCenterData";
 import { waitlistAgeMinutes } from "@/shared/dashboard/waitlistAttention";
 
@@ -66,6 +69,20 @@ export function OnlineWaitlistPanel({
     };
   }, []);
 
+  // Mounting this panel means staff intentionally opened the handling surface.
+  // Persist the first acknowledgement without removing or resolving the lead;
+  // the realtime subscription / refresh brings back the durable timestamp.
+  useEffect(() => {
+    if (!attentionEnabled) return;
+    const ids = entries
+      .filter((entry) => entry.status === "waiting" && !entry.acknowledgedAt)
+      .map((entry) => entry.id);
+    if (ids.length === 0) return;
+    void acknowledgeWaitlistEntries(slug, ids).then((result) => {
+      if (result.ok && result.acknowledged > 0) router.refresh();
+    });
+  }, [attentionEnabled, entries, router, slug]);
+
   function flashToast(next: NonNullable<ToastState>) {
     setToast(next);
     if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
@@ -81,7 +98,9 @@ export function OnlineWaitlistPanel({
       if (res.ok) {
         // Optimistically flip the pill, then re-run the loader for the truth.
         setStatusById((prev) => ({ ...prev, [entry.id]: "notified" }));
-        if (res.suppressed) {
+        if (res.deduplicated) {
+          flashToast({ kind: "info", text: t.deduplicatedToast(name) });
+        } else if (res.suppressed) {
           flashToast({ kind: "info", text: t.suppressedToast(name) });
         } else {
           flashToast({ kind: "success", text: t.invitedToast(name) });
@@ -191,6 +210,13 @@ export function OnlineWaitlistPanel({
                         className="mt-1 text-xs font-semibold tabular-nums text-nq-warning"
                       >
                         {t.waitingMinutes(waitingMinutes)}
+                      </p>
+                    ) : null}
+                    {attentionEnabled &&
+                    status === "waiting" &&
+                    entry.acknowledgedAt ? (
+                      <p className="mt-1 text-xs font-medium text-nq-muted">
+                        {t.acknowledged}
                       </p>
                     ) : null}
                     {/* Staff need the phone to follow up on a claimed slot. */}

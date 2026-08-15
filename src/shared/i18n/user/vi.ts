@@ -1784,12 +1784,15 @@ export const userVi: UserMessages = {
       statusWaiting: "Đang chờ",
       waitingMinutes: (minutes) =>
         minutes === 0 ? "Vừa vào danh sách chờ" : `Đã chờ ${minutes} phút`,
+      acknowledged: "Nhân viên đã xem",
       claimed: "✅ Đã giành chỗ",
       createBooking: "Tạo lịch",
       empty: "Chưa có khách chờ chỗ",
       invitedToast: (name) => `Đã gửi SMS mời ${name}`,
       suppressedToast: (name) =>
         `Đã đánh dấu mời ${name} — SMS tắt ở môi trường này`,
+      deduplicatedToast: (name) =>
+        `${name} vừa được mời — hệ thống không gửi trùng`,
       errorToast: "Không gửi được lời mời. Vui lòng thử lại.",
     },
     walkin: {

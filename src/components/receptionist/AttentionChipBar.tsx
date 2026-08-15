@@ -227,6 +227,7 @@ export function AttentionChipBar({
           <div
             role="dialog"
             aria-modal="false"
+            data-testid="attention-chip-dialog"
             className={cn(
               "absolute top-full z-30 mt-1.5",
               embedded

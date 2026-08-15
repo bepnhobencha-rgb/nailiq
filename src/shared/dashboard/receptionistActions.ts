@@ -3696,6 +3696,67 @@ export async function addDeskAppointment(
  *  waitlistAutoFill). Falls back to the production host. */
 const WAITLIST_SITE_URL =
   (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+const WAITLIST_INVITE_DEDUPE_MS = 30_000;
+
+/**
+ * Persist the first time staff open unresolved Waitlist leads.
+ *
+ * This is deliberately acknowledgement, not resolution: rows stay `waiting`
+ * and remain prominent until staff invite them. Tenant and role checks match
+ * the invite action; input is capped to keep the mutation bounded.
+ */
+export async function acknowledgeWaitlistEntries(
+  slug: string,
+  entryIds: string[],
+): Promise<{ ok: true; acknowledged: number } | { ok: false; error: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx || !canCancelBooking(ctx.role)) {
+    return { ok: false, error: "forbidden" };
+  }
+
+  const ids = Array.from(
+    new Set(entryIds.map((id) => String(id ?? "").trim()).filter(isUuidLike)),
+  ).slice(0, 50);
+  if (ids.length === 0) return { ok: true, acknowledged: 0 };
+
+  const acknowledgedAt = new Date().toISOString();
+  const svc = createServiceRoleClient();
+  const { data, error } = await svc
+    .from("booking_waitlist_entries")
+    .update({
+      acknowledged_at: acknowledgedAt,
+      acknowledged_by_user_id: ctxActorUserId(ctx),
+    } as never)
+    .eq("salon_id", ctx.salon.id)
+    .eq("status", "waiting")
+    .is("acknowledged_at", null)
+    .in("id", ids)
+    .select("id");
+
+  if (error) {
+    console.error("[acknowledgeWaitlistEntries]", error);
+    return { ok: false, error: "server_error" };
+  }
+
+  const acknowledgedIds = ((data ?? []) as Array<{ id: string }>).map(
+    (row) => row.id,
+  );
+  if (acknowledgedIds.length > 0) {
+    void logBookingEvent({
+      bookingId: null,
+      salonId: ctx.salon.id,
+      actorUserId: ctxActorUserId(ctx),
+      actorRole: ctxActorRole(ctx),
+      eventType: "waitlist_acknowledged",
+      payload: {
+        count: acknowledgedIds.length,
+        entryIds: acknowledgedIds,
+      },
+    });
+  }
+
+  return { ok: true, acknowledged: acknowledgedIds.length };
+}
 
 /**
  * Receptionist "Invite now" — text a waitlisted online customer the claim link
@@ -3705,15 +3766,20 @@ const WAITLIST_SITE_URL =
  * 20-minute claim link via Twilio.
  *
  * Auth mirrors `cancelDeskBooking`: front-desk roles only
- * (owner/admin/senior/receptionist). Idempotent — re-inviting a `notified`
- * entry just re-sends with the same token. The SMS body is Vietnamese by
- * design (most salons are VN-facing) and ASCII-only so Twilio sends a single
- * GSM-7 segment.
+ * (owner/admin/senior/receptionist). Rapid retries are deduplicated for 30
+ * seconds; a deliberate later re-invite reuses the same claim token. The SMS
+ * body is Vietnamese by design (most salons are VN-facing) and ASCII-only so
+ * Twilio sends a single GSM-7 segment.
  */
 export async function inviteWaitlistEntry(
   slug: string,
   entryId: string,
-): Promise<{ ok: boolean; suppressed?: boolean; error?: string }> {
+): Promise<{
+  ok: boolean;
+  suppressed?: boolean;
+  deduplicated?: boolean;
+  error?: string;
+}> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "forbidden" };
   // Same front-desk gate as cancelDeskBooking (owner/admin/senior/receptionist).
@@ -3751,6 +3817,32 @@ export async function inviteWaitlistEntry(
     offered_start_utc: string | null;
   } | null;
   if (!row?.id) return { ok: false, error: "not_found" };
+
+  // A browser retry or impatient double-tap must not send a second invite.
+  // Deliberate re-invites remain available after this short safety window.
+  // The notification lookup also covers the rare case where delivery landed
+  // but the final waitlist status update failed.
+  const dedupeSince = new Date(
+    Date.now() - WAITLIST_INVITE_DEDUPE_MS,
+  ).toISOString();
+  const { data: recentDelivery, error: dedupeError } = await svc
+    .from("booking_notifications" as never)
+    .select("id")
+    .eq("salon_id", ctx.salon.id)
+    .eq("waitlist_entry_id", id)
+    .eq("notification_type", "waitlist_invite")
+    .in("status", ["sending", "sent", "delivered"])
+    .gte("created_at", dedupeSince)
+    .limit(1)
+    .maybeSingle();
+  if (dedupeError) {
+    // Backward-compatible during preview before the additive migration lands.
+    if ((dedupeError as { code?: string }).code !== "42703") {
+      console.error("[inviteWaitlistEntry] dedupe", dedupeError);
+    }
+  } else if ((recentDelivery as { id?: string } | null)?.id) {
+    return { ok: true, deduplicated: true };
+  }
 
   const phone = String(row.client_phone ?? "").trim();
   const inviteEmail = String(row.client_email ?? "").trim();
@@ -3851,9 +3943,12 @@ export async function inviteWaitlistEntry(
       };
 
   // Parallel email channel — same claim link, resilient to US SMS link filtering.
-  let emailOk = false;
+  let emailResult: { ok: boolean; error?: string } = {
+    ok: false,
+    error: "no_email",
+  };
   if (inviteEmail) {
-    const er = await sendCustomerLinkEmail({
+    emailResult = await sendCustomerLinkEmail({
       email: inviteEmail,
       clientName: row.client_name,
       salonName,
@@ -3873,28 +3968,44 @@ export async function inviteWaitlistEntry(
       // joined the waitlist, so treat the claim link as transactional.
       respectOptOut: false,
     });
-    emailOk = er.ok;
   }
 
   // Log to booking_notifications (booking_id is null — the entry isn't a
   // booking yet). Best-effort; never fail the invite on a logging hiccup.
   try {
-    await logNotification({
-      bookingId: null,
-      salonId: ctx.salon.id,
-      notificationType: "waitlist_invite",
-      channel: "sms",
-      clientPhone: phone,
-      messageSid: smsResult.messageSid ?? null,
-      bodyPreview: body,
-      ok: smsResult.ok,
-      errorMessage: smsResult.ok ? null : (smsResult.error ?? null),
-    });
+    if (phone) {
+      await logNotification({
+        bookingId: null,
+        salonId: ctx.salon.id,
+        waitlistEntryId: id,
+        notificationType: "waitlist_invite",
+        channel: "sms",
+        clientPhone: phone,
+        messageSid: smsResult.messageSid ?? null,
+        // Do not persist the bearer-like claim token in logs.
+        bodyPreview: `${salonName}: waitlist invite · ${serviceName} · ${bookingDate}`,
+        ok: smsResult.ok,
+        errorMessage: smsResult.ok ? null : (smsResult.error ?? null),
+      });
+    }
+    if (inviteEmail) {
+      await logNotification({
+        bookingId: null,
+        salonId: ctx.salon.id,
+        waitlistEntryId: id,
+        notificationType: "waitlist_invite",
+        channel: "email",
+        // Do not persist the bearer-like claim token in logs.
+        bodyPreview: `${salonName}: waitlist invite · ${serviceName} · ${bookingDate}`,
+        ok: emailResult.ok,
+        errorMessage: emailResult.ok ? null : (emailResult.error ?? null),
+      });
+    }
   } catch (e) {
     console.error("[inviteWaitlistEntry] logNotification", e);
   }
 
-  if (!smsResult.ok && !emailOk) {
+  if (!smsResult.ok && !emailResult.ok) {
     // Neither channel landed — nothing recorded, the row stays 'waiting'.
     return { ok: false, error: smsResult.error ?? "sms_failed" };
   }
@@ -3912,6 +4023,20 @@ export async function inviteWaitlistEntry(
     console.error("[inviteWaitlistEntry] update", upErr);
     return { ok: false, error: "server_error" };
   }
+
+  void logBookingEvent({
+    bookingId: null,
+    salonId: ctx.salon.id,
+    actorUserId: ctxActorUserId(ctx),
+    actorRole: ctxActorRole(ctx),
+    eventType: "waitlist_invited",
+    payload: {
+      entryId: id,
+      smsOk: smsResult.ok,
+      emailOk: emailResult.ok,
+      suppressed: smsResult.suppressed === true,
+    },
+  });
 
   return { ok: true, suppressed: smsResult.suppressed };
 }

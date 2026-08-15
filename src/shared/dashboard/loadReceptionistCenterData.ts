@@ -181,6 +181,8 @@ export interface ReceptionistCenterData {
      *  slot was freed; null otherwise. Lets "Tạo lịch" prefill the freed tech so
      *  the manual path matches what auto-book would have done. */
     offeredStaffId: string | null;
+    /** First staff acknowledgement; the request remains visible until handled. */
+    acknowledgedAt: string | null;
     createdAt: string;
   }>;
   /**
@@ -1239,6 +1241,7 @@ export async function loadReceptionistCenterData(
         status: string | null;
         claimed_at: string | null;
         offered_staff_id: string | null;
+        acknowledged_at: string | null;
         created_at: string | null;
       };
       const pushWlRow = (r: WlRow) => {
@@ -1259,11 +1262,14 @@ export async function loadReceptionistCenterData(
           status: String(r.status ?? "waiting"),
           claimedAt: r.claimed_at ? String(r.claimed_at) : null,
           offeredStaffId: r.offered_staff_id ? String(r.offered_staff_id) : null,
+          acknowledgedAt: r.acknowledged_at
+            ? String(r.acknowledged_at)
+            : null,
           createdAt: String(r.created_at ?? ""),
         });
       };
       const WL_SELECT =
-        "id, service_id, booking_date, preferred_slot_label, client_name, client_phone, status, claimed_at, offered_staff_id, created_at";
+        "id, service_id, booking_date, preferred_slot_label, client_name, client_phone, status, claimed_at, offered_staff_id, acknowledged_at, created_at";
       try {
         const svc = createServiceRoleClient();
         // Actionable (waiting / notified) — from selected day onward, FIFO.

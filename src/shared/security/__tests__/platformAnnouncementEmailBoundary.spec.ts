@@ -41,14 +41,14 @@ describe("role-localized platform email boundary", () => {
   });
 
   it("keeps the production-shape tripwire current", () => {
-    expect(parity).toContain("through 20260811183000");
+    expect(parity).toContain("through 20260813090000");
     expect(parity).toContain('"platform_announcement_deliveries"');
     expect(parity).toContain('"queue_platform_announcement_deliveries"');
     expect(parity).toContain("tables: 107");
-    expect(parity).toContain("columns: 1453");
+    expect(parity).toContain("columns: 1456");
     expect(parity).toContain("policies: 156");
     expect(parity).toContain("functions: 117");
-    expect(parity).toContain("indexes: 353");
+    expect(parity).toContain("indexes: 354");
     expect(parity).toContain("service_role: 112");
   });
 });
