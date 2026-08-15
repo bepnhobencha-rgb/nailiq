@@ -34,6 +34,7 @@ export default async function GoLiveReadinessPage({ params }: Props) {
           role={result.ok ? result.role : null}
           attestationState={result.ok ? result.attestationState : null}
           attestationEvents={result.ok ? result.attestationEvents : []}
+          guidedSetupEnabled={result.ok ? result.guidedSetupEnabled : false}
         />
       </MobileStack>
     </ResponsiveShell>

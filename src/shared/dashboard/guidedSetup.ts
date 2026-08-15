@@ -18,6 +18,7 @@ export type GuidedSetupStep = {
   id: GuidedSetupStepId;
   required: boolean;
   done: boolean;
+  selected: boolean;
   titleEn: string;
   titleVi: string;
   reasonEn: string;
@@ -107,7 +108,7 @@ export function deriveGuidedSetupProgress(
   const settingsBase = `${dashboardBase}/settings`;
 
   const definitions: Array<
-    Omit<GuidedSetupStep, "done" | "detailEn" | "detailVi"> & {
+    Omit<GuidedSetupStep, "done" | "selected" | "detailEn" | "detailVi"> & {
       checkIds: string[];
       completeEn: string;
       completeVi: string;
@@ -290,9 +291,13 @@ export function deriveGuidedSetupProgress(
   const steps: GuidedSetupStep[] = definitions.map(
     ({ checkIds, completeEn, completeVi, ...definition }) => {
       const done = checksPass(readiness, checkIds);
+      const selected = checkIds.some(
+        (id) => findCheck(readiness, id)?.selected === true,
+      );
       return {
         ...definition,
         done,
+        selected,
         detailEn: done
           ? completeEn
           : firstIncompleteDetail(

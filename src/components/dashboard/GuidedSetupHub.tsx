@@ -5,7 +5,6 @@ import { Check, ChevronRight } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import type { GoLiveReadiness } from "@/shared/dashboard/goLiveReadiness";
 import {
-  canOpenGuidedStep,
   deriveGuidedSetupProgress,
 } from "@/shared/dashboard/guidedSetup";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -62,6 +61,7 @@ export function GuidedSetupHub({
         <div
           className="mt-3 h-2 overflow-hidden rounded-full bg-nq-bg"
           role="progressbar"
+          aria-label={vi ? "Tiến độ thiết lập" : "Setup progress"}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={progress.percent}
@@ -161,11 +161,7 @@ export function GuidedSetupHub({
         </h2>
         <ol className="mt-3 flex flex-col gap-2">
           {progress.steps.map((step, index) => {
-            const canOpen = canOpenGuidedStep(
-              progress.steps,
-              index,
-              progress.nextStep,
-            );
+            const isCurrent = progress.nextStep?.id === step.id;
             const content = (
               <>
                 <span
@@ -185,16 +181,16 @@ export function GuidedSetupHub({
                   <span>{vi ? step.titleVi : step.titleEn}</span>
                   {!step.required ? (
                     <span className="mt-0.5 block text-xs font-normal text-nq-muted">
-                      {step.done
+                      {step.selected
                         ? vi
-                          ? "Không bắt buộc — đã chọn cấu hình"
-                          : "Optional — configuration selected"
+                          ? "Đã chọn — cần xác minh tích hợp"
+                          : "Selected — integration verification required"
                         : vi
                           ? "Đã bỏ qua lúc này — có thể làm sau"
                           : "Skipped for now — can be done later"}
                     </span>
                   ) : null}
-                  {!canOpen && step.required && !step.done ? (
+                  {!isCurrent && step.required && !step.done ? (
                     <span className="mt-0.5 block text-xs font-normal text-nq-muted">
                       {vi
                         ? "Hoàn tất bước bắt buộc hiện tại trước"
@@ -202,41 +198,22 @@ export function GuidedSetupHub({
                     </span>
                   ) : null}
                 </span>
-                {canOpen ? (
-                  <ChevronRight
-                    className="h-4 w-4 shrink-0 text-nq-muted"
-                    aria-hidden
-                  />
-                ) : null}
               </>
             );
 
             return (
               <li key={step.id}>
-                {canOpen ? (
-                  <Card
-                    as={Link}
-                    href={step.href}
-                    state="interactive"
-                    variant="bordered"
-                    padding="sm"
-                    data-testid={`guided-setup-step-${step.id}`}
-                    className="flex min-h-11 items-center gap-3"
-                  >
-                    {content}
-                  </Card>
-                ) : (
-                  <Card
-                    variant="bordered"
-                    padding="sm"
-                    aria-disabled="true"
-                    data-testid={`guided-setup-step-${step.id}`}
-                    data-guided-setup-locked="true"
-                    className="flex min-h-11 items-center gap-3 opacity-70"
-                  >
-                    {content}
-                  </Card>
-                )}
+                <Card
+                  variant="bordered"
+                  padding="sm"
+                  aria-disabled="true"
+                  aria-current={isCurrent ? "step" : undefined}
+                  data-testid={`guided-setup-step-${step.id}`}
+                  data-guided-setup-locked="true"
+                  className="flex min-h-11 items-center gap-3 opacity-70"
+                >
+                  {content}
+                </Card>
               </li>
             );
           })}

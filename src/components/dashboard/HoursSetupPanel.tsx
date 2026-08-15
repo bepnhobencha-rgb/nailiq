@@ -14,7 +14,10 @@ import {
   type DayKey,
   type OpeningHoursWeek,
 } from "@/shared/dashboard/openingHoursDefaults";
-import { normalizeBookingClosedDateList } from "@/shared/booking/parseBookingClosedDates";
+import {
+  normalizeBookingClosedDateList,
+} from "@/shared/booking/parseBookingClosedDates";
+import { hoursEditorIsValid } from "@/shared/dashboard/hoursSetupValidation";
 import { updateOpeningHours } from "@/shared/dashboard/setupActions";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -127,21 +130,9 @@ function closedDatesInitialText(raw: unknown): string {
   const lines = raw
     .map((x) => (typeof x === "string" ? x.trim() : ""))
     .filter(Boolean);
-  return normalizeBookingClosedDateList(lines).join("\n");
-}
-
-function hoursEditorIsValid(
-  week: OpeningHoursWeek,
-  closedDatesText: string,
-): boolean {
-  for (const day of Object.values(week)) {
-    if (!day.closed && day.open >= day.close) return false;
-  }
-  return closedDatesText
-    .split(/\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .every((line) => /^\d{4}-\d{2}-\d{2}$/.test(line));
+  // Preserve invalid stored values in the editor. Normalizing here could hide
+  // an impossible date, leave the form looking valid, and later report Saved.
+  return lines.join("\n");
 }
 
 /** HTML time value "HH:MM" → storage "HH:MM" normalized */

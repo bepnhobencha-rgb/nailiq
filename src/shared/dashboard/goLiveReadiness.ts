@@ -4,6 +4,7 @@ import {
 } from "@/shared/dashboard/openingHoursDefaults";
 import { isAllowedTimezone } from "@/shared/dashboard/timezoneOptions";
 import { isValidBookingClosedDate } from "@/shared/booking/parseBookingClosedDates";
+import { isValidPhone } from "@/shared/dashboard/addressSetupValidation";
 
 export type GoLiveReadinessState = "pass" | "action" | "review";
 
@@ -16,6 +17,8 @@ export type GoLiveReadinessCheck = {
   detailEn: string;
   detailVi: string;
   href?: string;
+  /** Selection intent is not readiness proof; used for truthful optional UI. */
+  selected?: boolean;
 };
 
 export type GoLiveReadinessInput = {
@@ -126,7 +129,8 @@ export function evaluateGoLiveReadiness(
   const groupThreshold = Number(input.groupTogetherThresholdMinutes);
   const groupPolicyValid =
     input.groupBookingEnabled !== true ||
-    (Number.isFinite(groupThreshold) &&
+    (typeof input.groupTogetherThresholdMinutes === "number" &&
+      Number.isFinite(groupThreshold) &&
       groupThreshold >= 0 &&
       groupThreshold <= 120 &&
       typeof input.noShowGroupWholeParty === "boolean");
@@ -148,7 +152,7 @@ export function evaluateGoLiveReadiness(
       state:
         text(input.name) &&
         text(input.address) &&
-        text(input.salonPhone) &&
+        isValidPhone(text(input.salonPhone)) &&
         isAllowedTimezone(input.timezone)
           ? "pass"
           : "action",
@@ -158,14 +162,14 @@ export function evaluateGoLiveReadiness(
       detailEn:
         text(input.name) &&
         text(input.address) &&
-        text(input.salonPhone) &&
+        isValidPhone(text(input.salonPhone)) &&
         isAllowedTimezone(input.timezone)
           ? `Name, address, public phone, and ${String(input.timezone)} timezone are present.`
           : "Add the salon name, full address, public phone number, and supported timezone.",
       detailVi:
         text(input.name) &&
         text(input.address) &&
-        text(input.salonPhone) &&
+        isValidPhone(text(input.salonPhone)) &&
         isAllowedTimezone(input.timezone)
           ? `Đã có tên, địa chỉ, số điện thoại công khai và múi giờ ${String(input.timezone)}.`
           : "Thêm tên, địa chỉ đầy đủ, số điện thoại công khai và múi giờ được hỗ trợ.",
@@ -308,6 +312,7 @@ export function evaluateGoLiveReadiness(
       // can supply trustworthy evidence.
       state: "review",
       blocking: false,
+      selected: integrationSelected,
       titleEn: "Payments and AI (optional)",
       titleVi: "Thanh toán và AI (không bắt buộc)",
       detailEn: integrationSelected

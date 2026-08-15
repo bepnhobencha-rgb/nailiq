@@ -5,6 +5,7 @@ import type {
 } from "@/shared/dashboard/goLiveAttestations";
 
 type SnapshotMaterial = {
+  slug: string;
   name: string | null;
   address: string | null;
   salonPhone: string | null;
@@ -18,6 +19,14 @@ type SnapshotMaterial = {
   phoneOtpEnabled: boolean;
   cancellationPolicy?: unknown;
   defaultNotificationLocale?: unknown;
+  paymentProvider: unknown;
+  voiceAiEnabled: boolean;
+  activeServices: Array<{
+    id: string;
+    priceCents: number | null;
+    durationMinutes: number | null;
+  }>;
+  activeStaffCount: number;
   /** Omitted for legacy salons so their existing approval hash is unchanged. */
   guidedSetupEnabled?: true;
   staffAccessSignature?: Array<{

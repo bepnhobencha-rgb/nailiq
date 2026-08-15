@@ -101,6 +101,20 @@ describe("deriveGuidedSetupProgress", () => {
     });
   });
 
+  it("keeps selected-but-unverified integration intent distinct from skipped", () => {
+    const input = readiness({ ...firstSixPass });
+    const integrationCheck = input.checks.find(
+      (check) => check.id === "optional-integrations",
+    );
+    if (!integrationCheck) throw new Error("integration check missing");
+    integrationCheck.selected = true;
+
+    const result = deriveGuidedSetupProgress("qa-salon", input);
+    expect(
+      result.steps.find((step) => step.id === "integrations"),
+    ).toMatchObject({ done: false, selected: true, required: false });
+  });
+
   it("keeps preview incomplete until an authorized rehearsal is recorded", () => {
     const result = deriveGuidedSetupProgress(
       "qa-salon",

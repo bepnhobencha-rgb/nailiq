@@ -73,6 +73,7 @@ export async function loadGoLiveReadiness(
       .from("services")
       .select("id, price_cents, duration_minutes")
       .eq("salon_id", ctx.salon.id)
+      .eq("is_addon" as never, false)
       .is("deleted_at" as never, null),
     ctx.supabase
       .from("staff")
@@ -308,6 +309,10 @@ export async function loadGoLiveReadiness(
     activeStaffCount: activeStaffIds.length,
   };
   const technicalSnapshotHash = createGoLiveReadinessSnapshotHash({
+    // Preserve the exact pre-pilot material for flag-OFF salons. These runtime
+    // keys were part of the historical spread and existing owner approvals
+    // must not become stale merely because Guided Setup code is present.
+    slug: readinessInput.slug,
     name: readinessInput.name,
     address: readinessInput.address,
     salonPhone: readinessInput.salonPhone,
@@ -327,6 +332,10 @@ export async function loadGoLiveReadiness(
     phoneOtpEnabled: readinessInput.phoneOtpEnabled,
     cancellationPolicy: readinessInput.cancellationPolicy,
     defaultNotificationLocale: readinessInput.defaultNotificationLocale,
+    paymentProvider: readinessInput.paymentProvider,
+    voiceAiEnabled: readinessInput.voiceAiEnabled,
+    activeServices: readinessInput.activeServices,
+    activeStaffCount: readinessInput.activeStaffCount,
     // Turning the QA pilot on starts a new approval contract. Omit the false
     // value so existing, flag-off salons retain their exact historical hash.
     ...(guidedSetupEnabled ? { guidedSetupEnabled: true as const } : {}),

@@ -36,12 +36,10 @@ async function loginAs(
   await page.waitForURL(/\/dashboard\//, { timeout: 30_000 });
 }
 
-async function recordGoLiveAttestations(page: Page) {
+async function recordSafeGuidedAttestations(page: Page) {
   const steps = [
     ["hours_confirmed", "Owner confirmed the saved business hours."],
     ["otp_policy_confirmed", "Owner confirmed the consent policy."],
-    ["live_rehearsal_completed", "Owner completed the approved rehearsal."],
-    ["owner_approved", "Owner approved this exact setup for go-live."],
   ] as const;
 
   for (const [key, note] of steps) {
@@ -51,6 +49,11 @@ async function recordGoLiveAttestations(page: Page) {
       /Đang hiệu lực|Active/i,
     );
   }
+  await expect(page.getByTestId("guided-preview-attestation-blocked")).toBeVisible();
+  await expect(
+    page.getByTestId("go-live-submit-live_rehearsal_completed"),
+  ).toHaveCount(0);
+  await expect(page.getByTestId("go-live-submit-owner_approved")).toHaveCount(0);
 }
 
 test.describe("Guided Admin Setup", () => {
@@ -299,12 +302,12 @@ test.describe("Guided Admin Setup", () => {
     await expect(page.getByTestId("go-live-readiness-summary")).toContainText(
       /8\/8/,
     );
-    await recordGoLiveAttestations(page);
+    await recordSafeGuidedAttestations(page);
 
     await page.goto(`/dashboard/${COMPLETE_SLUG}/setup`);
     await expect(page.getByRole("progressbar")).toHaveAttribute(
       "aria-valuenow",
-      "88",
+      "75",
     );
     await expect(
       page.getByTestId("guided-setup-next-title"),
@@ -365,12 +368,14 @@ test.describe("Guided Admin Setup", () => {
         page.getByTestId(`guided-setup-step-${stepId}`),
       ).toBeVisible();
     }
+    await expect(page.getByTestId("guided-setup-next")).toHaveAttribute(
+      "href",
+      `/dashboard/${SURFACES_SLUG}/setup/preview`,
+    );
     await expect(
       page.getByTestId("guided-setup-step-booking-preview"),
-    ).toHaveAttribute("href", `/dashboard/${SURFACES_SLUG}/setup/preview`);
-    for (const [stepId] of destinations.filter(
-      ([candidate]) => candidate !== "booking-preview",
-    )) {
+    ).toHaveAttribute("aria-current", "step");
+    for (const [stepId] of destinations) {
       await expect(
         page.getByTestId(`guided-setup-step-${stepId}`),
       ).toHaveAttribute("aria-disabled", "true");

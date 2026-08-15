@@ -7,6 +7,7 @@ import {
   type GoLiveAttestationEvent,
   type GoLiveAttestationKey,
   type GoLiveAttestationState,
+  isGuidedPilotAttestationBlocked,
 } from "@/shared/dashboard/goLiveAttestations";
 import { recordGoLiveAttestation } from "@/shared/dashboard/goLiveAttestationAction";
 import type { GoLiveReadiness } from "@/shared/dashboard/goLiveReadiness";
@@ -79,12 +80,14 @@ export function GoLiveAttestationControls({
   readiness,
   state,
   events,
+  guidedSetupEnabled,
 }: {
   slug: string;
   role: "owner" | "admin";
   readiness: GoLiveReadiness;
   state: GoLiveAttestationState;
   events: GoLiveAttestationEvent[];
+  guidedSetupEnabled: boolean;
 }) {
   const router = useRouter();
   const { language } = useUserLanguage();
@@ -147,6 +150,9 @@ export function GoLiveAttestationControls({
           prerequisites_incomplete: vi
             ? "Cần hoàn tất ba xác nhận con người trước."
             : "Complete all three human confirmations first.",
+          guided_preview_unavailable: vi
+            ? "Prototype QA chưa có preview an toàn nên không thể ghi nhận bước này."
+            : "The QA prototype has no safe preview, so this confirmation cannot be recorded.",
           unavailable: vi
             ? "Không thể lưu xác nhận. Chưa có thay đổi nào được ghi nhận."
             : "Could not save the confirmation. Nothing was recorded.",
@@ -193,7 +199,26 @@ export function GoLiveAttestationControls({
       ) : null}
 
       <div className="mt-3 space-y-3">
-        {confirmations.map((confirmation) => {
+        {guidedSetupEnabled ? (
+          <p
+            role="status"
+            data-testid="guided-preview-attestation-blocked"
+            className="rounded-2xl border border-nq-primary/40 bg-nq-primary/5 p-4 text-sm leading-6 text-nq-foreground"
+          >
+            {vi
+              ? "Chạy thử và phê duyệt cuối đang bị khóa cho prototype QA đến khi có preview được xác thực và không tạo side effect."
+              : "Rehearsal and final approval are locked for the QA prototype until an authenticated, side-effect-free preview exists."}
+          </p>
+        ) : null}
+        {confirmations
+          .filter(
+            (confirmation) =>
+              !isGuidedPilotAttestationBlocked(
+                guidedSetupEnabled,
+                confirmation.key,
+              ),
+          )
+          .map((confirmation) => {
           const active = isActive(confirmation.key, state);
           const ownerOnly =
             confirmation.key === "owner_approved" && role !== "owner";
@@ -297,7 +322,7 @@ export function GoLiveAttestationControls({
               )}
             </article>
           );
-        })}
+          })}
       </div>
 
       <div className="mt-6">

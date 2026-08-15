@@ -139,6 +139,18 @@ describe("evaluateGoLiveReadiness", () => {
     });
   });
 
+  it("rejects malformed stored salon phone values", () => {
+    const result = evaluateGoLiveReadiness({
+      ...readyInput,
+      salonPhone: "not-a-phone",
+    });
+
+    expect(result.checks.find((check) => check.id === "identity")).toMatchObject({
+      state: "action",
+      blocking: true,
+    });
+  });
+
   it("accepts a valid seven-days-open salon and rejects invalid times or dates", () => {
     const sevenDaysOpen = parseOpeningHours(DEFAULT_OPENING_HOURS_JSON)!;
     for (const day of Object.values(sevenDaysOpen)) day.closed = false;
@@ -267,6 +279,20 @@ describe("evaluateGoLiveReadiness", () => {
     ).toMatchObject({ state: "action", blocking: true });
   });
 
+  it("requires an explicit numeric group threshold when group booking is enabled", () => {
+    const result = evaluateGoLiveReadiness({
+      ...readyInput,
+      guidedSetupEnabled: true,
+      groupBookingEnabled: true,
+      groupTogetherThresholdMinutes: null,
+      noShowGroupWholeParty: false,
+    });
+
+    expect(
+      result.checks.find((check) => check.id === "booking-policy"),
+    ).toMatchObject({ state: "action", blocking: true });
+  });
+
   it("never approves the QA pilot from a rehearsal attestation without safe preview proof", () => {
     const result = evaluateGoLiveReadiness({
       ...readyInput,
@@ -294,6 +320,6 @@ describe("evaluateGoLiveReadiness", () => {
 
     expect(
       result.checks.find((check) => check.id === "optional-integrations"),
-    ).toMatchObject({ state: "review", blocking: false });
+    ).toMatchObject({ state: "review", blocking: false, selected: true });
   });
 });
