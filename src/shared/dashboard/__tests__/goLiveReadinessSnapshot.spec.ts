@@ -19,10 +19,6 @@ const material = {
   emailVerified: true,
   emailLinksEnabled: true,
   phoneOtpEnabled: true,
-  cancellationPolicy: { en: "Policy EN", vi: "Policy VI" },
-  defaultNotificationLocale: "en",
-  paymentProvider: null,
-  voiceAiEnabled: false,
   activeServices: [
     { id: "service-b", priceCents: 5000, durationMinutes: 60 },
     { id: "service-a", priceCents: 3000, durationMinutes: 30 },
@@ -38,7 +34,7 @@ const material = {
 describe("go-live readiness snapshot", () => {
   it("preserves the historical flag-off readiness hash vector", () => {
     expect(createGoLiveReadinessSnapshotHash(material)).toBe(
-      "12cccad006a8ca9ed0731b4ae8c47d33d6c9a0964db9b7fa238f2a7d9d3e4043",
+      "bfccaf0654758cc64290fa0384aa7ce63c8ea70c64c5e1c7a5175ff8750fee1f",
     );
   });
 

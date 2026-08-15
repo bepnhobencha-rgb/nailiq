@@ -130,7 +130,7 @@ describe("evaluateGoLiveReadiness", () => {
 
     expect(result.readyForManualReview).toBe(false);
     expect(result.checks.find((check) => check.id === "identity")).toMatchObject({
-      state: "action",
+      state: "pass",
       blocking: true,
     });
     expect(result.checks.find((check) => check.id === "schedule")).toMatchObject({
@@ -142,6 +142,7 @@ describe("evaluateGoLiveReadiness", () => {
   it("rejects malformed stored salon phone values", () => {
     const result = evaluateGoLiveReadiness({
       ...readyInput,
+      guidedSetupEnabled: true,
       salonPhone: "not-a-phone",
     });
 
@@ -158,6 +159,7 @@ describe("evaluateGoLiveReadiness", () => {
     expect(
       evaluateGoLiveReadiness({
         ...readyInput,
+        guidedSetupEnabled: true,
         openingHours: sevenDaysOpen,
         bookingClosedDates: [],
       }).checks.find((check) => check.id === "schedule"),
@@ -168,6 +170,7 @@ describe("evaluateGoLiveReadiness", () => {
     expect(
       evaluateGoLiveReadiness({
         ...readyInput,
+        guidedSetupEnabled: true,
         openingHours: sevenDaysOpen,
       }).checks.find((check) => check.id === "schedule"),
     ).toMatchObject({ state: "action" });
@@ -175,9 +178,32 @@ describe("evaluateGoLiveReadiness", () => {
     expect(
       evaluateGoLiveReadiness({
         ...readyInput,
+        guidedSetupEnabled: true,
         bookingClosedDates: ["2026-02-30"],
       }).checks.find((check) => check.id === "schedule"),
     ).toMatchObject({ state: "action" });
+  });
+
+  it("preserves pre-pilot phone and schedule semantics when the flag is off", () => {
+    const legacyHours = parseOpeningHours(DEFAULT_OPENING_HOURS_JSON)!;
+    legacyHours.mon.open = "18:00";
+    legacyHours.mon.close = "09:00";
+
+    const result = evaluateGoLiveReadiness({
+      ...readyInput,
+      salonPhone: "legacy-phone-value",
+      openingHours: legacyHours,
+      bookingClosedDates: ["2026-02-30"],
+    });
+
+    expect(result.checks.find((check) => check.id === "identity")).toMatchObject({
+      state: "pass",
+      blocking: true,
+    });
+    expect(result.checks.find((check) => check.id === "schedule")).toMatchObject({
+      state: "pass",
+      blocking: true,
+    });
   });
 
   it("exposes data-backed guided checks without changing the canonical technical gate count", () => {

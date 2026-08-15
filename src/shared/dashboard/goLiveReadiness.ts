@@ -93,6 +93,11 @@ export function evaluateGoLiveReadiness(
   const settingsBase = `/dashboard/${encodeURIComponent(input.slug)}/settings`;
   const guidedRequired = input.guidedSetupEnabled === true;
   const hours = parseOpeningHours(input.openingHours);
+  const legacyHasOpenDay =
+    hours !== null &&
+    Object.values(hours).some(
+      (day) => !day.closed && day.open.trim() !== day.close.trim(),
+    );
   const openDays = hours
     ? Object.values(hours).filter((day) => !day.closed)
     : [];
@@ -100,11 +105,18 @@ export function evaluateGoLiveReadiness(
     input.bookingClosedDates == null ||
     (Array.isArray(input.bookingClosedDates) &&
       input.bookingClosedDates.every(isValidBookingClosedDate));
-  const scheduleValid =
+  const guidedScheduleValid =
     hours !== null &&
     openDays.length > 0 &&
     openDays.every((day) => day.open.trim() < day.close.trim()) &&
     closedDatesValid;
+  const legacyScheduleValid =
+    hours !== null &&
+    legacyHasOpenDay &&
+    isAllowedTimezone(input.timezone);
+  const scheduleValid = guidedRequired
+    ? guidedScheduleValid
+    : legacyScheduleValid;
   const hoursCustomized = isOpeningHoursCustomized(input.openingHours);
   const servicesValid =
     input.activeServices.length > 0 &&
@@ -145,34 +157,35 @@ export function evaluateGoLiveReadiness(
   };
   const rehearsalVerified =
     attestations.liveRehearsalCompleted && !guidedRequired;
+  const identityValid =
+    Boolean(text(input.name)) &&
+    Boolean(text(input.address)) &&
+    (guidedRequired
+      ? isValidPhone(text(input.salonPhone)) &&
+        isAllowedTimezone(input.timezone)
+      : Boolean(text(input.salonPhone)));
 
   const checks: GoLiveReadinessCheck[] = [
     {
       id: "identity",
-      state:
-        text(input.name) &&
-        text(input.address) &&
-        isValidPhone(text(input.salonPhone)) &&
-        isAllowedTimezone(input.timezone)
-          ? "pass"
-          : "action",
+      state: identityValid ? "pass" : "action",
       blocking: true,
       titleEn: "Salon identity and contact",
       titleVi: "Thông tin và liên hệ của tiệm",
-      detailEn:
-        text(input.name) &&
-        text(input.address) &&
-        isValidPhone(text(input.salonPhone)) &&
-        isAllowedTimezone(input.timezone)
+      detailEn: identityValid
+        ? guidedRequired
           ? `Name, address, public phone, and ${String(input.timezone)} timezone are present.`
-          : "Add the salon name, full address, public phone number, and supported timezone.",
-      detailVi:
-        text(input.name) &&
-        text(input.address) &&
-        isValidPhone(text(input.salonPhone)) &&
-        isAllowedTimezone(input.timezone)
+          : "Name, address, and public salon phone are present."
+        : guidedRequired
+          ? "Add the salon name, full address, public phone number, and supported timezone."
+          : "Add the salon name, full address, and public phone number.",
+      detailVi: identityValid
+        ? guidedRequired
           ? `Đã có tên, địa chỉ, số điện thoại công khai và múi giờ ${String(input.timezone)}.`
-          : "Thêm tên, địa chỉ đầy đủ, số điện thoại công khai và múi giờ được hỗ trợ.",
+          : "Đã có tên, địa chỉ và số điện thoại công khai của tiệm."
+        : guidedRequired
+          ? "Thêm tên, địa chỉ đầy đủ, số điện thoại công khai và múi giờ được hỗ trợ."
+          : "Thêm tên, địa chỉ đầy đủ và số điện thoại công khai của tiệm.",
       href: `${setupBase}/address`,
     },
     {
@@ -187,14 +200,18 @@ export function evaluateGoLiveReadiness(
           : "Every active service needs a valid price and duration."
         : guidedRequired && input.serviceCoverageValid !== true
           ? "Assign every active service to at least one active staff member."
-          : `${input.activeServices.length} active service${input.activeServices.length === 1 ? "" : "s"} with valid price, duration, and staff coverage.`,
+          : guidedRequired
+            ? `${input.activeServices.length} active service${input.activeServices.length === 1 ? "" : "s"} with valid price, duration, and staff coverage.`
+            : `${input.activeServices.length} active service${input.activeServices.length === 1 ? "" : "s"} with valid price and duration.`,
       detailVi: !servicesValid
         ? input.activeServices.length === 0
           ? "Thêm ít nhất một dịch vụ đang hoạt động."
           : "Mỗi dịch vụ đang hoạt động cần có giá và thời lượng hợp lệ."
         : guidedRequired && input.serviceCoverageValid !== true
           ? "Gán mỗi dịch vụ đang hoạt động cho ít nhất một nhân viên đang hoạt động."
-          : `${input.activeServices.length} dịch vụ đang hoạt động có giá, thời lượng và nhân viên thực hiện hợp lệ.`,
+          : guidedRequired
+            ? `${input.activeServices.length} dịch vụ đang hoạt động có giá, thời lượng và nhân viên thực hiện hợp lệ.`
+            : `${input.activeServices.length} dịch vụ đang hoạt động có giá và thời lượng hợp lệ.`,
       href: `${setupBase}/services`,
     },
     {
@@ -211,13 +228,17 @@ export function evaluateGoLiveReadiness(
           ? "Add at least one active staff member."
           : guidedRequired && !staffAccessValid
             ? "Review every active staff job role. Linked staff logins require separate authorization evidence before this check can pass."
-            : `${input.activeStaffCount} active staff member${input.activeStaffCount === 1 ? "" : "s"} with valid access configuration.`,
+            : guidedRequired
+              ? `${input.activeStaffCount} active staff member${input.activeStaffCount === 1 ? "" : "s"} with valid access configuration.`
+              : `${input.activeStaffCount} active staff member${input.activeStaffCount === 1 ? "" : "s"}.`,
       detailVi:
         input.activeStaffCount === 0
           ? "Thêm ít nhất một nhân viên đang hoạt động."
           : guidedRequired && !staffAccessValid
             ? "Kiểm tra vai trò công việc của mọi nhân viên đang hoạt động. Tài khoản nhân viên đã liên kết cần bằng chứng quyền riêng trước khi mục này đạt."
-            : `${input.activeStaffCount} nhân viên đang hoạt động có cấu hình quyền hợp lệ.`,
+            : guidedRequired
+              ? `${input.activeStaffCount} nhân viên đang hoạt động có cấu hình quyền hợp lệ.`
+              : `${input.activeStaffCount} nhân viên đang hoạt động.`,
       href: `${setupBase}/staff`,
     },
     {
@@ -228,13 +249,17 @@ export function evaluateGoLiveReadiness(
       titleVi: "Giờ mở cửa và ngày nghỉ",
       detailEn:
         !scheduleValid
-          ? "Save a complete seven-day schedule with at least one open day, opening before closing, and only real calendar dates for any special closures."
+          ? guidedRequired
+            ? "Save a complete seven-day schedule with at least one open day, opening before closing, and only real calendar dates for any special closures."
+            : "Save valid business hours with at least one open day and a supported timezone."
           : hoursCustomized
             ? `Business hours are saved in ${String(input.timezone)}.`
             : `Valid default hours are saved in ${String(input.timezone)}; human confirmation is still required.`,
       detailVi:
         !scheduleValid
-          ? "Lưu lịch đủ bảy ngày với ít nhất một ngày mở cửa, giờ mở trước giờ đóng và chỉ dùng ngày lịch hợp lệ cho mọi ngày nghỉ đặc biệt."
+          ? guidedRequired
+            ? "Lưu lịch đủ bảy ngày với ít nhất một ngày mở cửa, giờ mở trước giờ đóng và chỉ dùng ngày lịch hợp lệ cho mọi ngày nghỉ đặc biệt."
+            : "Lưu giờ làm việc hợp lệ, ít nhất một ngày mở cửa và múi giờ được hỗ trợ."
           : hoursCustomized
             ? `Đã lưu giờ làm việc theo ${String(input.timezone)}.`
             : `Đã lưu giờ mặc định hợp lệ theo ${String(input.timezone)}; vẫn cần người thật xác nhận.`,

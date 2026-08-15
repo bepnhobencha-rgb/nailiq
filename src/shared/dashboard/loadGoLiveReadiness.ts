@@ -2,6 +2,7 @@ import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import {
   evaluateGoLiveReadiness,
   type GoLiveReadiness,
+  type GoLiveReadinessInput,
 } from "@/shared/dashboard/goLiveReadiness";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
@@ -284,7 +285,7 @@ export async function loadGoLiveReadiness(
     ),
   );
 
-  const readinessInput = {
+  const readinessInput: GoLiveReadinessInput = {
     slug,
     name: typeof row.name === "string" ? row.name : null,
     address: typeof row.address === "string" ? row.address : null,
@@ -292,25 +293,29 @@ export async function loadGoLiveReadiness(
       typeof row.salon_phone === "string" ? row.salon_phone : null,
     timezone: row.timezone,
     openingHours: row.opening_hours,
-    bookingClosedDates: row.booking_closed_dates,
     profileComplete: row.profile_complete === true,
     email: typeof row.email === "string" ? row.email : null,
     emailVerified: row.email_verified === true,
     emailLinksEnabled: row.email_links_enabled !== false,
     phoneOtpEnabled: row.phone_otp_enabled === true,
-    cancellationPolicy: row.cancellation_policy,
-    defaultNotificationLocale: row.default_notification_locale,
-    paymentProvider: row.payment_provider,
-    voiceAiEnabled: row.voice_ai_enabled === true,
-    guidedSetupEnabled,
-    staffAccessValid,
-    serviceCoverageValid,
-    groupBookingEnabled: isReleaseFeatureEnabled(
-      { feature_flags: row.feature_flags },
-      "group_booking",
-    ),
-    groupTogetherThresholdMinutes: row.group_together_threshold_minutes,
-    noShowGroupWholeParty: row.noshow_group_whole_party,
+    ...(guidedSetupEnabled
+      ? {
+          bookingClosedDates: row.booking_closed_dates,
+          cancellationPolicy: row.cancellation_policy,
+          defaultNotificationLocale: row.default_notification_locale,
+          paymentProvider: row.payment_provider,
+          voiceAiEnabled: row.voice_ai_enabled === true,
+          guidedSetupEnabled: true,
+          staffAccessValid,
+          serviceCoverageValid,
+          groupBookingEnabled: isReleaseFeatureEnabled(
+            { feature_flags: row.feature_flags },
+            "group_booking",
+          ),
+          groupTogetherThresholdMinutes: row.group_together_threshold_minutes,
+          noShowGroupWholeParty: row.noshow_group_whole_party,
+        }
+      : {}),
     activeServices,
     activeStaffCount: activeStaffIds.length,
   };
@@ -329,6 +334,10 @@ export async function loadGoLiveReadiness(
           bookingClosedDates: normalizeBookingClosedDateList(
             readinessInput.bookingClosedDates,
           ),
+          cancellationPolicy: readinessInput.cancellationPolicy,
+          defaultNotificationLocale: readinessInput.defaultNotificationLocale,
+          paymentProvider: readinessInput.paymentProvider,
+          voiceAiEnabled: readinessInput.voiceAiEnabled,
         }
       : {}),
     profileComplete: readinessInput.profileComplete,
@@ -336,12 +345,8 @@ export async function loadGoLiveReadiness(
     emailVerified: readinessInput.emailVerified,
     emailLinksEnabled: readinessInput.emailLinksEnabled,
     phoneOtpEnabled: readinessInput.phoneOtpEnabled,
-    cancellationPolicy: readinessInput.cancellationPolicy,
-    defaultNotificationLocale: readinessInput.defaultNotificationLocale,
-    paymentProvider: readinessInput.paymentProvider,
-    voiceAiEnabled: readinessInput.voiceAiEnabled,
-    activeServices: readinessInput.activeServices,
-    activeStaffCount: readinessInput.activeStaffCount,
+    activeServices,
+    activeStaffCount: activeStaffIds.length,
     // Turning the QA pilot on starts a new approval contract. Omit the false
     // value so existing, flag-off salons retain their exact historical hash.
     ...(guidedSetupEnabled ? { guidedSetupEnabled: true as const } : {}),

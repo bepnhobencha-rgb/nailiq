@@ -19,8 +19,8 @@ type SnapshotMaterial = {
   phoneOtpEnabled: boolean;
   cancellationPolicy?: unknown;
   defaultNotificationLocale?: unknown;
-  paymentProvider: unknown;
-  voiceAiEnabled: boolean;
+  paymentProvider?: unknown;
+  voiceAiEnabled?: boolean;
   activeServices: Array<{
     id: string;
     priceCents: number | null;
