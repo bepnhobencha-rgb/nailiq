@@ -165,7 +165,7 @@ export function evaluateGoLiveReadiness(
         isAllowedTimezone(input.timezone)
       : Boolean(text(input.salonPhone)));
 
-  const checks: GoLiveReadinessCheck[] = [
+  const allChecks: GoLiveReadinessCheck[] = [
     {
       id: "identity",
       state: identityValid ? "pass" : "action",
@@ -409,6 +409,14 @@ export function evaluateGoLiveReadiness(
           : "Chỉ Owner được phê duyệt sau khi hoàn tất mọi cổng kỹ thuật và xác nhận con người.",
     },
   ];
+  const guidedOnlyCheckIds = new Set([
+    "booking-policy",
+    "notification-language",
+    "optional-integrations",
+  ]);
+  const checks = guidedRequired
+    ? allChecks
+    : allChecks.filter((check) => !guidedOnlyCheckIds.has(check.id));
 
   const blocking = checks.filter((check) => check.blocking);
   const passedBlocking = blocking.filter((check) => check.state === "pass").length;

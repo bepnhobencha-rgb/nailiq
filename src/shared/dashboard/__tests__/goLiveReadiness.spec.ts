@@ -206,27 +206,28 @@ describe("evaluateGoLiveReadiness", () => {
     });
   });
 
-  it("exposes data-backed guided checks without changing the canonical technical gate count", () => {
-    const result = evaluateGoLiveReadiness({
-      ...readyInput,
-      cancellationPolicy: null,
-      defaultNotificationLocale: "fr",
-      paymentProvider: null,
-      voiceAiEnabled: false,
-    });
+  it("preserves the exact pre-pilot check output when the flag is off", () => {
+    const result = evaluateGoLiveReadiness(readyInput);
 
-    expect(result.readyForManualReview).toBe(true);
-    expect(result.checks.find((check) => check.id === "booking-policy")).toMatchObject({
-      state: "action",
-      blocking: false,
-    });
-    expect(result.checks.find((check) => check.id === "notification-language")).toMatchObject({
-      state: "action",
-      blocking: false,
-    });
-    expect(result.checks.find((check) => check.id === "optional-integrations")).toMatchObject({
-      state: "review",
-      blocking: false,
+    expect(
+      result.checks.map(({ id, state, blocking }) => ({ id, state, blocking })),
+    ).toEqual([
+      { id: "identity", state: "pass", blocking: true },
+      { id: "catalog", state: "pass", blocking: true },
+      { id: "staff", state: "pass", blocking: true },
+      { id: "schedule", state: "pass", blocking: true },
+      { id: "public-booking", state: "pass", blocking: true },
+      { id: "fallback-channel", state: "pass", blocking: false },
+      { id: "hours-confirmation", state: "review", blocking: false },
+      { id: "otp-policy", state: "review", blocking: false },
+      { id: "human-approval", state: "review", blocking: false },
+      { id: "owner-approval", state: "review", blocking: false },
+    ]);
+    expect(result).toMatchObject({
+      passedBlocking: 5,
+      totalBlocking: 5,
+      readyForManualReview: true,
+      approvedForGoLive: false,
     });
   });
 
@@ -341,6 +342,7 @@ describe("evaluateGoLiveReadiness", () => {
   it("does not treat selecting an optional provider as runtime proof", () => {
     const result = evaluateGoLiveReadiness({
       ...readyInput,
+      guidedSetupEnabled: true,
       paymentProvider: "stripe",
     });
 
