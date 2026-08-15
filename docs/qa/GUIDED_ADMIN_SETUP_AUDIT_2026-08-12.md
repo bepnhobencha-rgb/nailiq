@@ -59,11 +59,20 @@ clean worktree, so every route-level journey remains **NEEDS SETUP** for runtime
 | Back / Continue inside every setup screen | **VERIFIED WORKING** | Canonical Guided destinations expose explicit Back and Continue; Continue returns to data-derived orchestration | **KEEP** |
 | Hide unrelated first-run menus | **VERIFIED WORKING** | Incomplete setup and the first completed root Action Center use focused shell mode; nested operational routes restore normal navigation | **HIDE** only inside the QA-flagged experience |
 
+## Explicit rollout exposure inventory
+
+| Exposure | Status | Evidence / risk | Decision |
+| --- | --- | --- | --- |
+| Step 5 live financial/provider actions | **BROKEN** for guided use | The reused no-show surface still exposes charge, payment-link, waive, provider and protection-toggle actions. Guided Setup does not provide a read-only policy-only boundary | **HIDE** or **MOVE** behind a separately approved safe Step 5 surface before runtime QA |
+| Direct future-route access | **NEEDS SETUP** | The overview is inert, but authenticated users can still enter later canonical routes directly; this prototype has no server route-sequence guard | **FIX** only with approved route/action criteria |
+| Vietnamese coverage | **NEEDS SETUP** | Core orchestrator copy is bilingual, but reused settings/policy/provider surfaces still contain incomplete Vietnamese copy | **FIX** before bilingual acceptance |
+| Trial and announcement actions | **NEEDS SETUP** | Existing shell/page trial prompts and announcement actions may add interactive choices beyond the intended single next setup action | **MOVE** or **HIDE** inside the QA-focused shell after product review |
+
 ## Safety conclusions
 
 1. The feature remains default-off and stored in the existing salon feature flags.
 2. No new progress table, migration, booking, message, call, campaign, or payment action is introduced.
 3. Completion is not inferred from clicks. Required steps must pass current data/readiness checks; the QA pilot remains below 100% even if a rehearsal attestation was recorded because no safe preview proof exists.
 4. Local gates pass: focused tests, full unit suite, typecheck, lint and production build. Authenticated browser E2E was not run because this clean worktree has no disposable Supabase test credentials.
-5. Rollout blockers include the side-effect-free preview boundary, linked staff authorization proof, platform kill-switch composition, registration authorization, complete snapshot binding, settings/policy authorization enforcement, the Continue-versus-pending-autosave race, SMS consent defaults and seeded-data review semantics.
+5. Rollout blockers include the side-effect-free preview boundary, Step 5 live financial/provider actions, direct future-route access, incomplete Vietnamese coverage, trial/announcement extra actions, linked staff authorization proof, platform kill-switch composition, registration authorization, complete snapshot binding, settings/policy authorization enforcement, the Continue-versus-pending-autosave race, SMS consent defaults and seeded-data review semantics.
 6. The feature must remain default-off. Actual salon IDs/flags for Hi-Lite Head Spa and Hi-Lite Studio were not read or changed in this local-only audit, so tenant-specific negative proof remains unavailable.

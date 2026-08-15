@@ -25,6 +25,7 @@ import { PlatformAnnouncementBanner } from "@/components/dashboard/PlatformAnnou
 import { loadGoLiveReadiness } from "@/shared/dashboard/loadGoLiveReadiness";
 import {
   deriveGuidedSetupProgress,
+  resolveGuidedSetupStage,
   type GuidedSetupStage,
 } from "@/shared/dashboard/guidedSetup";
 
@@ -248,14 +249,12 @@ export default async function DashboardSlugLayout({
   let guidedSetupStage: GuidedSetupStage = "disabled";
   if (releaseFeatures.guided_admin_setup) {
     const setupResult = await loadGoLiveReadiness(slug);
-    if (setupResult.ok) {
-      guidedSetupStage = deriveGuidedSetupProgress(
-        slug,
-        setupResult.readiness,
-      ).complete
-        ? "complete"
-        : "incomplete";
-    }
+    guidedSetupStage = resolveGuidedSetupStage(
+      true,
+      setupResult.ok
+        ? deriveGuidedSetupProgress(slug, setupResult.readiness).complete
+        : null,
+    );
   }
 
   return (

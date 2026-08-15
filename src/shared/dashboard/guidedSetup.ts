@@ -42,6 +42,28 @@ export type GuidedSetupProgress = {
 };
 
 export type GuidedSetupStage = "disabled" | "incomplete" | "complete";
+export type GuidedDashboardRootDisposition =
+  | "legacy"
+  | "setup"
+  | "action-center";
+
+/** Null means readiness could not be loaded and must fail closed. */
+export function resolveGuidedSetupStage(
+  guidedSetupEnabled: boolean,
+  setupComplete: boolean | null,
+): GuidedSetupStage {
+  if (!guidedSetupEnabled) return "disabled";
+  return setupComplete === true ? "complete" : "incomplete";
+}
+
+/** Never expose the legacy dashboard when a flagged salon lacks readiness. */
+export function resolveGuidedDashboardRoot(
+  guidedSetupEnabled: boolean,
+  setupComplete: boolean | null,
+): GuidedDashboardRootDisposition {
+  if (!guidedSetupEnabled) return "legacy";
+  return setupComplete === true ? "action-center" : "setup";
+}
 
 /**
  * Keep the shell focused throughout setup and on the first post-setup Action

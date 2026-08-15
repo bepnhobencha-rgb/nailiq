@@ -6,7 +6,10 @@ import { createClient } from "@/shared/lib/supabase/server";
 import { loadSalonOwnerDashboard } from "@/shared/dashboard/salonOwnerActions";
 import { loadOwnerHomeDashboard } from "@/shared/dashboard/loadOwnerHomeDashboardAction";
 import { loadGoLiveReadiness } from "@/shared/dashboard/loadGoLiveReadiness";
-import { deriveGuidedSetupProgress } from "@/shared/dashboard/guidedSetup";
+import {
+  deriveGuidedSetupProgress,
+  resolveGuidedDashboardRoot,
+} from "@/shared/dashboard/guidedSetup";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -41,24 +44,29 @@ export default async function SalonDashboardPage({ params }: Props) {
     redirect("/register");
   }
 
-  let guidedSetupComplete = false;
+  let guidedSetupComplete: boolean | null = null;
+  let guidedSetupEnabled = false;
   if (
     initialResult.ok &&
     !initialResult.demoMode &&
     isReleaseFeatureEnabled(initialResult.salon, "guided_admin_setup")
   ) {
+    guidedSetupEnabled = true;
     const setupResult = await loadGoLiveReadiness(slug);
-    if (
-      setupResult.ok &&
-      !deriveGuidedSetupProgress(slug, setupResult.readiness).complete
-    ) {
-      redirect(`/dashboard/${encodeURIComponent(slug)}/setup`);
-    } else if (setupResult.ok) {
-      guidedSetupComplete = true;
-    }
+    guidedSetupComplete = setupResult.ok
+      ? deriveGuidedSetupProgress(slug, setupResult.readiness).complete
+      : null;
   }
 
-  if (guidedSetupComplete && initialResult.ok) {
+  const guidedRoot = resolveGuidedDashboardRoot(
+    guidedSetupEnabled,
+    guidedSetupComplete,
+  );
+  if (guidedRoot === "setup") {
+    redirect(`/dashboard/${encodeURIComponent(slug)}/setup`);
+  }
+
+  if (guidedRoot === "action-center" && initialResult.ok) {
     return (
       <GuidedAdminActionCenter
         slug={slug}

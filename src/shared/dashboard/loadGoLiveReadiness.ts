@@ -18,6 +18,7 @@ import {
   createGoLiveReadinessSnapshotHash,
 } from "@/shared/dashboard/goLiveReadinessSnapshot";
 import { normalizeBookingClosedDateList } from "@/shared/booking/parseBookingClosedDates";
+import { selectReadinessServices } from "@/shared/dashboard/readinessServiceSelection";
 
 export type LoadGoLiveReadinessResult =
   | {
@@ -71,9 +72,8 @@ export async function loadGoLiveReadiness(
       .maybeSingle(),
     ctx.supabase
       .from("services")
-      .select("id, price_cents, duration_minutes")
+      .select("id, price_cents, duration_minutes, is_addon")
       .eq("salon_id", ctx.salon.id)
-      .eq("is_addon" as never, false)
       .is("deleted_at" as never, null),
     ctx.supabase
       .from("staff")
@@ -146,11 +146,12 @@ export async function loadGoLiveReadiness(
     typeof row.name === "string" && row.name.trim()
       ? row.name.trim()
       : ctx.salon.name || slug;
-  const activeServices = (servicesResult.data ?? []).map((service) => {
+  const serviceCandidates = (servicesResult.data ?? []).map((service) => {
     const value = service as {
       id?: unknown;
       price_cents?: unknown;
       duration_minutes?: unknown;
+      is_addon?: unknown;
     };
     return {
       id: typeof value.id === "string" ? value.id : "",
@@ -160,8 +161,13 @@ export async function loadGoLiveReadiness(
         typeof value.duration_minutes === "number"
           ? value.duration_minutes
           : null,
+      isAddon: value.is_addon === true,
     };
   });
+  const activeServices = selectReadinessServices(
+    serviceCandidates,
+    guidedSetupEnabled,
+  );
   const allowedJobRoles = new Set(["owner", "senior", "nail_tech"]);
   const activeStaff = (staffResult.data ?? []).flatMap((staff) => {
     const value = staff as {

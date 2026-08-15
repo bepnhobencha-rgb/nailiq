@@ -7,6 +7,8 @@ import {
   canOpenGuidedStep,
   deriveGuidedSetupProgress,
   shouldUseGuidedFocusMode,
+  resolveGuidedDashboardRoot,
+  resolveGuidedSetupStage,
 } from "@/shared/dashboard/guidedSetup";
 
 const CHECK_IDS = [
@@ -60,6 +62,13 @@ const firstSixPass = {
 } as const;
 
 describe("deriveGuidedSetupProgress", () => {
+  it("fails a flagged salon closed when readiness is unavailable", () => {
+    expect(resolveGuidedSetupStage(true, null)).toBe("incomplete");
+    expect(resolveGuidedDashboardRoot(true, null)).toBe("setup");
+    expect(resolveGuidedSetupStage(false, null)).toBe("disabled");
+    expect(resolveGuidedDashboardRoot(false, null)).toBe("legacy");
+  });
+
   it("returns only the first incomplete required step as the next action", () => {
     const result = deriveGuidedSetupProgress(
       "qa-salon",
