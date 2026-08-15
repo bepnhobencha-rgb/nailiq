@@ -43,20 +43,30 @@ function formatDateYmd(ymd: string): string {
   }
 }
 
+/** Customer-device YYYY-MM-DD — last-resort fallback only, used when the
+ *  salon-local date can't be resolved (e.g. invalid token). The date picker
+ *  must still render in that case: submitting surfaces the real error
+ *  (invalid/expired link) through the existing reschedule-slots error path. */
+function deviceTodayYmd(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export default function RescheduleBookingPage() {
   const searchParams = useSearchParams();
   const token = searchParams?.get("token") ?? "";
   const [state, setState] = useState<State>({ phase: "date" });
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [minDate, setMinDate] = useState<string | null>(null);
-  const [metaError, setMetaError] = useState(false);
 
   // Resolve the salon's own "today" + timezone before showing the date
   // picker — the picker used to default to the CUSTOMER'S DEVICE date, which
   // silently disagreed with the salon's calendar day whenever the two clocks
   // straddled a day boundary. Everything the customer picks is validated
   // against salon-local time server-side either way; this only fixes what's
-  // shown as the default/min.
+  // shown as the default/min. If resolution fails (e.g. invalid token), fall
+  // back to the device date rather than blocking the picker — the existing
+  // "Show Available Times" flow already surfaces the real error correctly.
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
@@ -65,14 +75,15 @@ export default function RescheduleBookingPage() {
         const res = await fetch(`/api/booking/reschedule-slots?token=${encodeURIComponent(token)}`);
         const json = (await res.json()) as { todayYmd?: string; error?: string };
         if (cancelled) return;
-        if (!res.ok || json.error || !json.todayYmd) {
-          setMetaError(true);
-          return;
-        }
-        setSelectedDate(json.todayYmd);
-        setMinDate(json.todayYmd);
+        const ymd = res.ok && !json.error && json.todayYmd ? json.todayYmd : deviceTodayYmd();
+        setSelectedDate(ymd);
+        setMinDate(ymd);
       } catch {
-        if (!cancelled) setMetaError(true);
+        if (!cancelled) {
+          const ymd = deviceTodayYmd();
+          setSelectedDate(ymd);
+          setMinDate(ymd);
+        }
       }
     })();
     return () => {
@@ -126,8 +137,6 @@ export default function RescheduleBookingPage() {
   }
 
   if (!token) return <Shell><ErrorView code="missing_token" /></Shell>;
-
-  if (metaError) return <Shell><ErrorView code="load_failed" /></Shell>;
 
   if (state.phase === "done") {
     return (
