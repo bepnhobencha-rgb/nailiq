@@ -21,9 +21,24 @@ export function parseTimeSlotToMinutes(timeSlot: string): number {
 }
 
 /**
- * Parses booking UI labels like "9:00 AM" into a Date on the given YYYY-MM-DD (local).
+ * Parses booking UI labels like "9:00 AM" into a `Date` on the given YYYY-MM-DD.
+ *
+ * BROWSER-ONLY — DO NOT CALL FROM THE SERVER. This resolves the wall-clock
+ * time using the CALLER'S RUNTIME timezone (`new Date("YYYY-MM-DDTHH:mm:00")`
+ * has no offset suffix, so it is parsed in whatever timezone the JS engine
+ * itself is running in). In a browser that's the customer's real local
+ * timezone, which is what makes this safe for client-only, in-memory use
+ * (e.g. an upsell-candidate suggestion that is never persisted). On a server
+ * runtime (Vercel/Node is always UTC) the exact same call would silently
+ * misinterpret the wall-clock time as UTC, producing a value off by the
+ * salon's UTC offset — this caused a real production incident.
+ *
+ * Server code that needs to turn a salon-local wall-clock time into a UTC
+ * instant (e.g. anything that gets persisted) must use
+ * `salonWallTimeToUtcIso(dateYmd, minutesFromMidnight, timezone)` from
+ * `@/shared/lib/salonTime` instead.
  */
-export function parseTimeSlotOnDate(timeSlot: string, dateYmd: string): Date {
+export function parseTimeSlotOnDateInBrowserTz(timeSlot: string, dateYmd: string): Date {
   const trimmed = timeSlot.trim();
   const match = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(trimmed);
   if (!match) {
