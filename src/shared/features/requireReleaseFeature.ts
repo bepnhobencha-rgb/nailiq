@@ -17,14 +17,13 @@ import "server-only";
 
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import {
-  isReleaseFeatureEnabled,
-  type ReleaseFeatureKey,
-} from "@/shared/features/featureRegistry";
+import { type ReleaseFeatureKey } from "@/shared/features/featureRegistry";
+import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 
 /** The salon flag inputs the resolver needs (a subset of the row). */
 export type ReleaseFeatureSalonRow = {
   id: string;
+  vertical: string | null;
   subscription_plan: string | null;
   plan_override: string | null;
   feature_flags: unknown;
@@ -33,7 +32,10 @@ export type ReleaseFeatureSalonRow = {
 
 export type RequireReleaseFeatureResult =
   | { ok: true; salon: ReleaseFeatureSalonRow }
-  | { ok: false; error: "unauthorized" | "salon_not_found" | "feature_not_enabled" };
+  | {
+      ok: false;
+      error: "unauthorized" | "salon_not_found" | "feature_not_enabled";
+    };
 
 /**
  * Authorize the caller against `slug` AND require `featureKey` to be enabled.
@@ -56,7 +58,7 @@ export async function requireReleaseFeatureEnabled(
   const { data: row } = await supabase
     .from("salons")
     .select(
-      "id, subscription_plan, plan_override, feature_flags, voice_ai_enabled",
+      "id, vertical, subscription_plan, plan_override, feature_flags, voice_ai_enabled",
     )
     .eq("id", resolved.salon.id)
     .maybeSingle();
@@ -65,7 +67,7 @@ export async function requireReleaseFeatureEnabled(
 
   const salon = row as ReleaseFeatureSalonRow;
 
-  if (!isReleaseFeatureEnabled(salon, featureKey)) {
+  if (!(await isReleaseFeatureVisible(salon, featureKey))) {
     return { ok: false, error: "feature_not_enabled" };
   }
 

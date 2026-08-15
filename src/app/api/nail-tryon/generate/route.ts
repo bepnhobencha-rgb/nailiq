@@ -1,13 +1,20 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { recordOpenAIUsageEvent } from "@/shared/ai/usageLedger";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { generateNailPreview, IMAGE_MODEL, TRYON_COOKIE } from "@/shared/nailTryOn/server";
+import {
+  generateNailPreviewWithUsage,
+  GENERATION_PROMPT_VERSION,
+  IMAGE_MODEL,
+  TRYON_COOKIE,
+} from "@/shared/nailTryOn/server";
 import { verifySessionCredential } from "@/shared/nailTryOn/sessionCredential";
 import { recordNailTryOnEvent } from "@/shared/nailTryOn/telemetry";
 import { safeProviderError } from "@/shared/nailTryOn/providerError";
 import { GENERATION_STALE_MS, isGenerationStale } from "@/shared/nailTryOn/generationLease";
 import { nailConfigurationSchema } from "@/shared/nailTryOn/configurator";
+import { checkNailTryOnGenerationRateLimit } from "@/shared/nailTryOn/generationRateLimit";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -53,17 +60,56 @@ export async function POST(request: Request) {
   const design = rawDesign as unknown as DesignRow | null;
   if (!design) return NextResponse.json({ error: "design_not_found" }, { status: 404 });
 
-  const { data: claimed } = await db.from("nail_tryon_sessions" as never).update({ status: "generating", design_id: design.id, design_version: design.version, provider: "openai", provider_model: IMAGE_MODEL, error_code: null, updated_at: new Date().toISOString() } as never).eq("id", session.id).in("status", ["quality_passed", "failed"]).select("id").maybeSingle();
+  const rateLimit = await checkNailTryOnGenerationRateLimit(
+    async (key, limit, windowSeconds) => {
+      const { data, error } = await db.rpc("rate_limit_hit", {
+        p_key: key,
+        p_limit: limit,
+        p_window_seconds: windowSeconds,
+      });
+      return { data, error };
+    },
+    { salonId: session.salon_id, sessionId: session.id },
+  );
+  if (rateLimit === "unavailable") {
+    return NextResponse.json(
+      { error: "rate_limit_unavailable", retryable: true },
+      { status: 503, headers: { "Retry-After": "60" } },
+    );
+  }
+  if (rateLimit === "limited") {
+    return NextResponse.json(
+      { error: "generation_rate_limited", retryable: true },
+      { status: 429, headers: { "Retry-After": "3600" } },
+    );
+  }
+
+  const { data: claimed } = await db.from("nail_tryon_sessions" as never).update({ status: "generating", design_id: design.id, design_version: design.version, provider: "openai", provider_model: IMAGE_MODEL, generation_prompt_version: GENERATION_PROMPT_VERSION, error_code: null, updated_at: new Date().toISOString() } as never).eq("id", session.id).in("status", ["quality_passed", "failed"]).select("id").maybeSingle();
   if (!claimed) return NextResponse.json({ error: "generation_in_progress" }, { status: 409 });
   await recordNailTryOnEvent({ salonId: session.salon_id, sessionId: session.id, event: "generation_started", properties: { designVersion: design.version, nailLength: parsed.data.configuration.length, nailShape: parsed.data.configuration.shape, nailColor: parsed.data.configuration.color, nailFinish: parsed.data.configuration.finish, nailArtStyle: parsed.data.configuration.artStyle } });
   const outputPath = `salon/${session.salon_id}/session/${session.id}/preview.jpg`;
+  let generationStartedAt: number | null = null;
+  let generationUsageRecorded = false;
   try {
     const [{ data: hand }, { data: reference }] = await Promise.all([
       db.storage.from("nail-tryon").download(session.source_image_path),
       db.storage.from("nail-tryon").download(design.preview_path),
     ]);
     if (!hand || !reference) throw new Error("input_download_failed");
-    const preview = await generateNailPreview({ hand: Buffer.from(await hand.arrayBuffer()), design: Buffer.from(await reference.arrayBuffer()), designMime: reference.type, designName: design.name, promptHint: design.prompt_hint, configuration: parsed.data.configuration });
+    generationStartedAt = Date.now();
+    const { image: preview, usage } = await generateNailPreviewWithUsage({ hand: Buffer.from(await hand.arrayBuffer()), design: Buffer.from(await reference.arrayBuffer()), designMime: reference.type, designName: design.name, promptHint: design.prompt_hint, configuration: parsed.data.configuration });
+    await recordOpenAIUsageEvent({
+      context: {
+        salonId: session.salon_id,
+        correlationId: session.id,
+        feature: "nail_tryon_generation",
+        model: IMAGE_MODEL,
+      },
+      status: "succeeded",
+      usage,
+      startedAt: generationStartedAt,
+    });
+    generationUsageRecorded = true;
     const { error: uploadError } = await db.storage.from("nail-tryon").upload(outputPath, preview, { contentType: "image/jpeg", upsert: false });
     if (uploadError) throw uploadError;
     const { data: completed, error: completionError } = await db
@@ -85,6 +131,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ status: "ready", previewUrl: signed?.signedUrl });
   } catch (error) {
     const safeError = safeProviderError(error);
+    if (generationStartedAt !== null && !generationUsageRecorded) {
+      await recordOpenAIUsageEvent({
+        context: {
+          salonId: session.salon_id,
+          correlationId: session.id,
+          feature: "nail_tryon_generation",
+          model: IMAGE_MODEL,
+        },
+        status: "failed",
+        startedAt: generationStartedAt,
+        errorCode: safeError.code,
+      });
+    }
     console.error("[nail-tryon] generation failed", {
       sessionId: session.id,
       model: IMAGE_MODEL,

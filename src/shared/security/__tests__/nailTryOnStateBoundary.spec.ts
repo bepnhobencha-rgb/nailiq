@@ -14,6 +14,9 @@ const proof = read(
 const rollback = read(
   "scripts/security/rehearse-nail-tryon-state-rollback.sql",
 );
+const observabilityMigration = read(
+  "supabase/migrations/20260813190641_add_tryon_usage_correlation_and_prompt_versions.sql",
+);
 
 const tables = [
   "nail_tryon_cleanup_queue",
@@ -81,6 +84,9 @@ describe("nail-tryon state boundary", () => {
     }
     expect(telemetry).toContain('import "server-only"');
     expect(generate).toContain("verifySessionCredential");
+    expect(generate).toContain("checkNailTryOnGenerationRateLimit");
+    expect(generate).toContain('error: "rate_limit_unavailable"');
+    expect(generate).toContain('error: "generation_rate_limited"');
     expect(attach).toContain("verifySessionCredential");
     expect(intent).toContain("verifySessionCredential");
     expect(deletion).toContain("verifySessionCredential");
@@ -101,5 +107,13 @@ describe("nail-tryon state boundary", () => {
     expect(parity).toContain(
       "const GRANTS = { anon: 57, authenticated: 64, service_role: 112 }",
     );
+  });
+
+  it("correlates model cost and prompt versions without widening grants", () => {
+    expect(observabilityMigration).toContain("correlation_id text");
+    expect(observabilityMigration).toContain("quality_prompt_version text");
+    expect(observabilityMigration).toContain("generation_prompt_version text");
+    expect(observabilityMigration).not.toMatch(/grant\s+/i);
+    expect(observabilityMigration).not.toMatch(/disable row level security/i);
   });
 });

@@ -1,7 +1,8 @@
 import "server-only";
 
-import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
+import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { isNailTryOnEligibleSalon } from "@/shared/nailTryOn/eligibility";
 
 export type PublicNailTryOnSalon = {
   id: string;
@@ -21,6 +22,7 @@ type SalonFlagRow = {
   plan_override: string | null;
   feature_flags: unknown;
   voice_ai_enabled: boolean | null;
+  vertical: string | null;
 };
 
 export async function loadPublicNailTryOnSalon(
@@ -32,13 +34,19 @@ export async function loadPublicNailTryOnSalon(
   const { data } = await createServiceRoleClient()
     .from("salons")
     .select(
-      "id, slug, name, brand_color, theme_mode, subscription_plan, plan_override, feature_flags, voice_ai_enabled",
+      "id, slug, name, brand_color, theme_mode, subscription_plan, plan_override, feature_flags, voice_ai_enabled, vertical",
     )
     .eq("slug", normalized)
     .maybeSingle();
 
   const row = data as SalonFlagRow | null;
-  if (!row || !isReleaseFeatureEnabled(row, "nail_tryon")) return null;
+  if (
+    !row ||
+    !isNailTryOnEligibleSalon(row) ||
+    !(await isReleaseFeatureVisible(row, "nail_tryon"))
+  ) {
+    return null;
+  }
 
   return {
     id: row.id,

@@ -35,6 +35,39 @@ const ANTHROPIC_PRICES: Readonly<Record<string, AnthropicPrice>> = {
   },
 };
 
+type OpenAITextPrice = {
+  inputPerMillion: number;
+  cachedInputPerMillion: number;
+  outputPerMillion: number;
+};
+
+// Pricing snapshot: 2026-08-13, USD per 1M tokens.
+// Source: https://openai.com/api/pricing/ and the pinned model catalog.
+const OPENAI_TEXT_PRICES: Readonly<Record<string, OpenAITextPrice>> = {
+  "gpt-5.6-sol": {
+    inputPerMillion: 5,
+    cachedInputPerMillion: 0.5,
+    outputPerMillion: 30,
+  },
+  "gpt-5.6-terra": {
+    inputPerMillion: 2.5,
+    cachedInputPerMillion: 0.25,
+    outputPerMillion: 15,
+  },
+  "gpt-5.6-luna": {
+    inputPerMillion: 1,
+    cachedInputPerMillion: 0.1,
+    outputPerMillion: 6,
+  },
+};
+
+const GPT_IMAGE_2_PRICE = {
+  imageInputPerMillion: 8,
+  textInputPerMillion: 5,
+  imageOutputPerMillion: 30,
+  textOutputPerMillion: 10,
+} as const;
+
 function nonNegativeInteger(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value)
     ? Math.max(0, Math.trunc(value))
@@ -47,6 +80,87 @@ export type NormalizedAnthropicUsage = {
   cacheReadInputTokens: number;
   cacheCreationInputTokens: number;
 };
+
+export type NormalizedOpenAIUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  inputTextTokens: number;
+  inputImageTokens: number;
+  outputTextTokens: number;
+  outputImageTokens: number;
+  hasModalityBreakdown: boolean;
+};
+
+export function normalizeOpenAIUsage(value: unknown): NormalizedOpenAIUsage {
+  const usage = value && typeof value === "object"
+    ? value as {
+        input_tokens?: unknown;
+        output_tokens?: unknown;
+        input_tokens_details?: unknown;
+        output_tokens_details?: unknown;
+      }
+    : {};
+  const inputDetails = usage.input_tokens_details
+    && typeof usage.input_tokens_details === "object"
+    ? usage.input_tokens_details as {
+        cached_tokens?: unknown;
+        text_tokens?: unknown;
+        image_tokens?: unknown;
+      }
+    : {};
+  const outputDetails = usage.output_tokens_details
+    && typeof usage.output_tokens_details === "object"
+    ? usage.output_tokens_details as {
+        text_tokens?: unknown;
+        image_tokens?: unknown;
+      }
+    : {};
+  const hasModalityBreakdown =
+    typeof inputDetails.text_tokens === "number"
+    && typeof inputDetails.image_tokens === "number";
+
+  return {
+    inputTokens: nonNegativeInteger(usage.input_tokens),
+    outputTokens: nonNegativeInteger(usage.output_tokens),
+    cachedInputTokens: nonNegativeInteger(inputDetails.cached_tokens),
+    inputTextTokens: nonNegativeInteger(inputDetails.text_tokens),
+    inputImageTokens: nonNegativeInteger(inputDetails.image_tokens),
+    outputTextTokens: nonNegativeInteger(outputDetails.text_tokens),
+    outputImageTokens: nonNegativeInteger(outputDetails.image_tokens),
+    hasModalityBreakdown,
+  };
+}
+
+export function estimateOpenAICostUsd(
+  model: string,
+  usage: NormalizedOpenAIUsage,
+): number | null {
+  const normalizedModel = model.replace(/-\d{4}-\d{2}-\d{2}$/, "");
+  if (normalizedModel === "gpt-image-2") {
+    if (!usage.hasModalityBreakdown) return null;
+    const detailedOutput = usage.outputImageTokens + usage.outputTextTokens;
+    const outputImageTokens = detailedOutput > 0
+      ? usage.outputImageTokens
+      : usage.outputTokens;
+    const cost =
+      usage.inputImageTokens * GPT_IMAGE_2_PRICE.imageInputPerMillion
+      + usage.inputTextTokens * GPT_IMAGE_2_PRICE.textInputPerMillion
+      + outputImageTokens * GPT_IMAGE_2_PRICE.imageOutputPerMillion
+      + usage.outputTextTokens * GPT_IMAGE_2_PRICE.textOutputPerMillion;
+    return Number((cost / 1_000_000).toFixed(6));
+  }
+
+  const price = OPENAI_TEXT_PRICES[normalizedModel];
+  if (!price) return null;
+  const cached = Math.min(usage.inputTokens, usage.cachedInputTokens);
+  const uncached = usage.inputTokens - cached;
+  const cost =
+    uncached * price.inputPerMillion
+    + cached * price.cachedInputPerMillion
+    + usage.outputTokens * price.outputPerMillion;
+  return Number((cost / 1_000_000).toFixed(6));
+}
 
 export function normalizeAnthropicUsage(
   usage: AnthropicUsage,
@@ -99,6 +213,38 @@ async function writeUsageEvent(row: Record<string, unknown>): Promise<void> {
   } catch (error) {
     console.warn("[ai-usage] telemetry unavailable", safeErrorCode(error));
   }
+}
+
+export async function recordOpenAIUsageEvent(input: {
+  context: {
+    salonId: string | null;
+    correlationId?: string | null;
+    feature: string;
+    model: string;
+  };
+  status: "succeeded" | "failed";
+  usage?: unknown;
+  startedAt: number;
+  errorCode?: string | null;
+}): Promise<void> {
+  const usage = normalizeOpenAIUsage(input.usage);
+  await writeUsageEvent({
+    salon_id: input.context.salonId,
+    correlation_id: input.context.correlationId ?? null,
+    provider: "openai",
+    feature: input.context.feature,
+    model: input.context.model,
+    status: input.status,
+    input_tokens: usage.inputTokens,
+    output_tokens: usage.outputTokens,
+    cache_read_input_tokens: usage.cachedInputTokens,
+    cache_creation_input_tokens: 0,
+    estimated_cost_usd: input.status === "succeeded"
+      ? estimateOpenAICostUsd(input.context.model, usage)
+      : null,
+    latency_ms: Math.max(0, Date.now() - input.startedAt),
+    error_code: input.errorCode ?? null,
+  });
 }
 
 async function writeAnthropicUsageEvent(input: {

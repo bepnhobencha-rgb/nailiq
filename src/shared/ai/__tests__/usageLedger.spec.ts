@@ -12,7 +12,10 @@ vi.mock("@/shared/lib/supabase/serviceRole", () => ({
 }));
 import {
   estimateAnthropicCostUsd,
+  estimateOpenAICostUsd,
   normalizeAnthropicUsage,
+  normalizeOpenAIUsage,
+  recordOpenAIUsageEvent,
   trackAnthropicFetch,
   trackAnthropicStream,
 } from "@/shared/ai/usageLedger";
@@ -54,6 +57,74 @@ describe("AI usage ledger", () => {
         cacheCreationInputTokens: 0,
       }),
     ).toBeNull();
+  });
+
+  it("estimates pinned GPT Image 2 cost from its modality breakdown", () => {
+    const usage = normalizeOpenAIUsage({
+      input_tokens: 1_100,
+      output_tokens: 500,
+      input_tokens_details: { image_tokens: 1_000, text_tokens: 100 },
+      output_tokens_details: { image_tokens: 500, text_tokens: 0 },
+    });
+
+    expect(
+      estimateOpenAICostUsd("gpt-image-2-2026-04-21", usage),
+    ).toBe(0.0235);
+  });
+
+  it("estimates Luna usage with cached input at the pinned price", () => {
+    const usage = normalizeOpenAIUsage({
+      input_tokens: 1_000,
+      output_tokens: 100,
+      input_tokens_details: { cached_tokens: 200 },
+    });
+
+    expect(estimateOpenAICostUsd("gpt-5.6-luna", usage)).toBe(0.00142);
+  });
+
+  it("does not guess image cost without a modality breakdown", () => {
+    expect(
+      estimateOpenAICostUsd(
+        "gpt-image-2",
+        normalizeOpenAIUsage({ input_tokens: 100, output_tokens: 200 }),
+      ),
+    ).toBeNull();
+  });
+
+  it("records OpenAI usage with a PII-free session correlation key", async () => {
+    mocks.insert.mockResolvedValueOnce({ error: null });
+
+    await recordOpenAIUsageEvent({
+      context: {
+        salonId: "00000000-0000-4000-8000-000000000003",
+        correlationId: "00000000-0000-4000-8000-000000000004",
+        feature: "nail_tryon_generation",
+        model: "gpt-image-2-2026-04-21",
+      },
+      status: "succeeded",
+      usage: {
+        input_tokens: 1_100,
+        output_tokens: 500,
+        input_tokens_details: { image_tokens: 1_000, text_tokens: 100 },
+        output_tokens_details: { image_tokens: 500, text_tokens: 0 },
+      },
+      startedAt: Date.now(),
+    });
+
+    expect(mocks.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        salon_id: "00000000-0000-4000-8000-000000000003",
+        correlation_id: "00000000-0000-4000-8000-000000000004",
+        provider: "openai",
+        feature: "nail_tryon_generation",
+        model: "gpt-image-2-2026-04-21",
+        status: "succeeded",
+        input_tokens: 1_100,
+        output_tokens: 500,
+        estimated_cost_usd: 0.0235,
+        error_code: null,
+      }),
+    );
   });
 
   it("records cumulative usage after a streaming response completes", async () => {

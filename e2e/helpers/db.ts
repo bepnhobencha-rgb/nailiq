@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import type { Locator, Page } from "@playwright/test";
 
 import { assertNotProductionFromEnv } from "./guardProduction";
+import { createSessionCredential } from "../../src/shared/nailTryOn/sessionCredential";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -25,6 +26,7 @@ if (!supabaseUrl?.trim() || !serviceKey?.trim() || !anonKey?.trim()) {
 assertNotProductionFromEnv();
 
 const supabase = createClient(supabaseUrl, serviceKey);
+const anonSupabase = createClient(supabaseUrl, anonKey);
 
 export async function invokeAiAgentPermission(input: {
   salonId: string;
@@ -270,6 +272,8 @@ export async function seedTestSalon(opts?: {
    * `true` to enable the Voice AI setup route.
    */
   voice_ai_enabled?: boolean;
+  /** Salon business vertical. Defaults to the database's `nail_salon`. */
+  vertical?: string;
 }) {
   const phone = opts?.phone ?? "15550001111";
   const slug = opts?.slug ?? "e2e-test-salon";
@@ -286,6 +290,7 @@ export async function seedTestSalon(opts?: {
       profile_complete: true,
       opening_hours: SEED_OPENING_HOURS,
       feature_flags: opts?.feature_flags ?? {},
+      ...(opts?.vertical === undefined ? {} : { vertical: opts.vertical }),
       // Only write the column when the caller opts in. Leaving it unset keeps
       // the DB default so `ai_voice` resolves to its Beta default (OFF) — the
       // route-gating OFF case must not depend on an explicit false here.
@@ -367,6 +372,373 @@ export async function seedTestSalon(opts?: {
   }
 
   return { salonId: salon.id as string, slug, phone };
+}
+
+/**
+ * Seed private Nail Try-On catalog rows for authenticated setup E2E.
+ *
+ * The preview paths are deliberately synthetic: the setup page only needs a
+ * signed, private URL to render its owner-preview contract, while the test must
+ * never upload a customer photo or call an AI provider. Every row is scoped to
+ * the throwaway salon and is removed by `cleanupTestSalon` via cascades.
+ */
+export async function seedNailTryOnDraftDesigns(
+  salonId: string,
+  names: readonly string[],
+) {
+  const { data: service, error: serviceError } = await supabase
+    .from("services")
+    .select("id")
+    .eq("salon_id", salonId)
+    .eq("is_addon", false)
+    .is("deleted_at", null)
+    .limit(1)
+    .single();
+  if (serviceError || !service?.id) {
+    throw new Error(
+      serviceError?.message ?? "seedNailTryOnDraftDesigns: service missing",
+    );
+  }
+
+  const designs = names.map((name, index) => {
+    const id = randomUUID();
+    return {
+      id,
+      salon_id: salonId,
+      name,
+      description: `Private E2E description for ${name}`,
+      preview_path: `salon/${salonId}/design/${id}.jpg`,
+      is_active: false,
+      sort_order: index,
+    };
+  });
+  const { error: designError } = await supabase
+    .from("nail_designs" as never)
+    .insert(designs as never);
+  if (designError) {
+    throw new Error(`seedNailTryOnDraftDesigns: ${designError.message}`);
+  }
+
+  const mappings = designs.map((design) => ({
+    design_id: design.id,
+    salon_id: salonId,
+    service_id: service.id,
+    mapping_type: "service",
+    is_default: true,
+    sort_order: 0,
+  }));
+  const { error: mappingError } = await supabase
+    .from("nail_design_service_mappings" as never)
+    .insert(mappings as never);
+  if (mappingError) {
+    throw new Error(`seedNailTryOnDraftDesigns: ${mappingError.message}`);
+  }
+
+  return designs.map((design) => design.id);
+}
+
+export async function seedNailTryOnTestMenu(salonId: string) {
+  const { data: service, error: serviceError } = await supabase
+    .from("services")
+    .select("id, name, price_cents, duration_minutes, buffer_minutes")
+    .eq("salon_id", salonId)
+    .eq("name", "Gel Manicure")
+    .eq("is_addon", false)
+    .is("deleted_at", null)
+    .single();
+  if (serviceError || !service?.id) {
+    throw new Error(
+      serviceError?.message ?? "seedNailTryOnTestMenu: main service missing",
+    );
+  }
+
+  const { data: addOn, error: addOnError } = await supabase
+    .from("services")
+    .insert({
+      salon_id: salonId,
+      name: "Chrome Finish",
+      price_cents: 1000,
+      duration_minutes: 15,
+      buffer_minutes: 5,
+      is_addon: true,
+      addon_timing: "sequential",
+    })
+    .select("id, name, price_cents, duration_minutes, buffer_minutes")
+    .single();
+  if (addOnError || !addOn?.id) {
+    throw new Error(
+      addOnError?.message ?? "seedNailTryOnTestMenu: add-on missing",
+    );
+  }
+
+  return {
+    service: {
+      id: service.id,
+      name: service.name,
+      priceCents: Number(service.price_cents),
+      durationMinutes: Number(service.duration_minutes),
+      bufferMinutes: Number(service.buffer_minutes),
+    },
+    addOn: {
+      id: addOn.id,
+      name: addOn.name,
+      priceCents: Number(addOn.price_cents),
+      durationMinutes: Number(addOn.duration_minutes),
+      bufferMinutes: Number(addOn.buffer_minutes),
+    },
+  };
+}
+
+export async function getNailTryOnDesignMappings(designId: string) {
+  const { data, error } = await supabase
+    .from("nail_design_service_mappings" as never)
+    .select("service_id, mapping_type, is_default, sort_order" as never)
+    .eq("design_id", designId)
+    .order("sort_order");
+  if (error) {
+    throw new Error(`getNailTryOnDesignMappings: ${error.message}`);
+  }
+  return (data ?? []) as unknown as Array<{
+    service_id: string;
+    mapping_type: "service" | "addon";
+    is_default: boolean;
+    sort_order: number;
+  }>;
+}
+
+export async function seedNailTryOnAttachmentFixture(input: {
+  salonId: string;
+  designId: string;
+  serviceId: string;
+}) {
+  const sessionId = randomUUID();
+  const bookingId = randomUUID();
+  const credential = createSessionCredential(sessionId);
+  const start = new Date(Date.now() + 60 * 60 * 1000);
+  const end = new Date(start.getTime() + 45 * 60 * 1000);
+
+  const { data: design, error: designError } = await supabase
+    .from("nail_designs" as never)
+    .update({ is_active: true } as never)
+    .eq("id", input.designId)
+    .eq("salon_id", input.salonId)
+    .select("id, version" as never)
+    .single();
+  if (designError || !design) {
+    throw new Error(
+      designError?.message ?? "seedNailTryOnAttachmentFixture: design missing",
+    );
+  }
+  const version = Number((design as unknown as { version?: number }).version) || 1;
+
+  const { error: sessionError } = await supabase
+    .from("nail_tryon_sessions" as never)
+    .insert({
+      id: sessionId,
+      salon_id: input.salonId,
+      design_id: input.designId,
+      design_version: version,
+      anonymous_token_hash: credential.tokenHash,
+      source_image_path: `salon/${input.salonId}/session/${sessionId}/original.jpg`,
+      result_image_path: `salon/${input.salonId}/session/${sessionId}/result.png`,
+      status: "ready",
+      consent_at: new Date().toISOString(),
+      consent_version: "nail-tryon-v1",
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    } as never);
+  if (sessionError) {
+    throw new Error(`seedNailTryOnAttachmentFixture: ${sessionError.message}`);
+  }
+
+  const { error: bookingError } = await supabase.from("bookings").insert({
+    id: bookingId,
+    salon_id: input.salonId,
+    service_id: input.serviceId,
+    client_name: "QA Try-On Guest",
+    client_phone: "+16045550199",
+    start_time_utc: start.toISOString(),
+    end_time_utc: end.toISOString(),
+    status: "confirmed",
+    price_cents: 4500,
+    source: "appointment",
+    booking_channel: "online",
+  });
+  if (bookingError) {
+    throw new Error(`seedNailTryOnAttachmentFixture: ${bookingError.message}`);
+  }
+
+  return {
+    sessionId,
+    bookingId,
+    designVersion: version,
+    cookieValue: credential.cookieValue,
+    bookingEnd: end.toISOString(),
+    sourceImagePath: `salon/${input.salonId}/session/${sessionId}/original.jpg`,
+    resultImagePath: `salon/${input.salonId}/session/${sessionId}/result.png`,
+    previewImagePath: `salon/${input.salonId}/session/${sessionId}/preview.jpg`,
+  };
+}
+
+export async function getNailTryOnBucketSecuritySnapshot() {
+  const { data: bucket, error: bucketError } = await supabase.storage.getBucket(
+    "nail-tryon",
+  );
+  if (bucketError || !bucket) {
+    throw new Error(
+      bucketError?.message ?? "getNailTryOnBucketSecuritySnapshot: bucket missing",
+    );
+  }
+
+  const probePath = `e2e-anon-probe/${randomUUID()}.jpg`;
+  const { error: anonymousUploadError } = await anonSupabase.storage
+    .from("nail-tryon")
+    .upload(probePath, new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), {
+      contentType: "image/jpeg",
+      upsert: false,
+    });
+
+  // A future policy regression could make the probe succeed. Remove it with
+  // the service role so the throwaway check never leaves an object behind.
+  if (!anonymousUploadError) {
+    await supabase.storage.from("nail-tryon").remove([probePath]);
+  }
+
+  return {
+    bucket,
+    anonymousUploadDenied: Boolean(anonymousUploadError),
+  };
+}
+
+export async function seedNailTryOnStorageObjects(paths: string[]) {
+  for (const objectPath of paths) {
+    const { error } = await supabase.storage
+      .from("nail-tryon")
+      .upload(objectPath, new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), {
+        contentType: "image/jpeg",
+        upsert: false,
+      });
+    if (error) {
+      throw new Error(`seedNailTryOnStorageObjects: ${error.message}`);
+    }
+  }
+}
+
+export async function getNailTryOnDeletionSnapshot(input: {
+  sessionId: string;
+  objectPaths: string[];
+}) {
+  const [{ data: session, error: sessionError }, { data: queue, error: queueError }] =
+    await Promise.all([
+      supabase
+        .from("nail_tryon_sessions" as never)
+        .select("status, deleted_at, result_image_path" as never)
+        .eq("id", input.sessionId)
+        .single(),
+      supabase
+        .from("nail_tryon_cleanup_queue" as never)
+        .select("object_path, processed_at, last_error" as never)
+        .eq("tryon_session_id", input.sessionId)
+        .order("object_path"),
+    ]);
+  if (sessionError) {
+    throw new Error(`getNailTryOnDeletionSnapshot session: ${sessionError.message}`);
+  }
+  if (queueError) {
+    throw new Error(`getNailTryOnDeletionSnapshot queue: ${queueError.message}`);
+  }
+
+  const objectChecks = await Promise.all(
+    input.objectPaths.map(async (objectPath) => {
+      const separator = objectPath.lastIndexOf("/");
+      const folder = objectPath.slice(0, separator);
+      const fileName = objectPath.slice(separator + 1);
+      const { data, error } = await supabase.storage
+        .from("nail-tryon")
+        .list(folder, { search: fileName, limit: 100 });
+      if (error) {
+        throw new Error(`getNailTryOnDeletionSnapshot storage: ${error.message}`);
+      }
+      return {
+        objectPath,
+        absent: !(data ?? []).some((object) => object.name === fileName),
+      };
+    }),
+  );
+
+  return {
+    session: session as unknown as {
+      status: string;
+      deleted_at: string | null;
+      result_image_path: string | null;
+    },
+    queue: (queue ?? []) as unknown as Array<{
+      object_path: string;
+      processed_at: string | null;
+      last_error: string | null;
+    }>,
+    objectChecks,
+  };
+}
+
+export async function getNailTryOnAttachmentSnapshot(input: {
+  bookingId: string;
+  sessionId: string;
+}) {
+  const [{ data: look, error: lookError }, { data: session, error: sessionError }] =
+    await Promise.all([
+      supabase
+        .from("booking_nail_looks" as never)
+        .select(
+          "booking_id, tryon_session_id, design_id, design_version, design_snapshot, disclaimer_version" as never,
+        )
+        .eq("booking_id", input.bookingId)
+        .single(),
+      supabase
+        .from("nail_tryon_sessions" as never)
+        .select("id, status, attached_at, expires_at" as never)
+        .eq("id", input.sessionId)
+        .single(),
+    ]);
+  if (lookError) {
+    throw new Error(`getNailTryOnAttachmentSnapshot: ${lookError.message}`);
+  }
+  if (sessionError) {
+    throw new Error(`getNailTryOnAttachmentSnapshot: ${sessionError.message}`);
+  }
+  return {
+    look: look as unknown as {
+      booking_id: string;
+      tryon_session_id: string;
+      design_id: string;
+      design_version: number;
+      design_snapshot: { name?: string; version?: number };
+      disclaimer_version: string;
+    },
+    session: session as unknown as {
+      id: string;
+      status: string;
+      attached_at: string | null;
+      expires_at: string;
+    },
+  };
+}
+
+export async function getNailTryOnCatalogState(salonId: string) {
+  const { data, error } = await supabase
+    .from("nail_designs" as never)
+    .select("id, name, description, is_active" as never)
+    .eq("salon_id", salonId)
+    .is("deleted_at", null)
+    .order("sort_order");
+  if (error) {
+    throw new Error(`getNailTryOnCatalogState: ${error.message}`);
+  }
+  return (data ?? []) as unknown as Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    is_active: boolean;
+  }>;
 }
 
 /**
