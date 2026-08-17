@@ -26,6 +26,9 @@ export type BookingSalonMeta = {
   opening_hours: unknown | null;
   /** JSONB array of YYYY-MM-DD (holidays / exceptions). */
   booking_closed_dates: unknown | null;
+  /** Bilingual closure banner shown on the public booking page (e.g.
+   *  "closed for renovation"). `null` when unset — no banner rendered. */
+  closureNotice: { en: string; vi: string } | null;
   /** Flowchart: salon must be “live” (Phase 2 checklist complete). */
   acceptingBookings: boolean;
   /** Public contact for “manage booking” (call to reschedule). DB: `salons.salon_phone` only — never `salons.phone` (owner). */
@@ -452,6 +455,15 @@ export async function loadBookingServicesForSalonSlug(
       booking_closed_dates:
         (salon as { booking_closed_dates?: unknown }).booking_closed_dates ??
         null,
+      closureNotice: (() => {
+        const raw = (salon as { closure_notice?: unknown }).closure_notice;
+        if (!raw || typeof raw !== "object") return null;
+        const en = (raw as { en?: unknown }).en;
+        const vi = (raw as { vi?: unknown }).vi;
+        return typeof en === "string" && typeof vi === "string" && en.trim() && vi.trim()
+          ? { en: en.trim(), vi: vi.trim() }
+          : null;
+      })(),
       acceptingBookings: !!(salon as { profile_complete?: unknown })
         .profile_complete,
       /** Only `salon_phone`; do not fall back to `phone` (owner / private). */

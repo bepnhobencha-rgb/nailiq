@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 
 type Slot = string; // e.g. "9:00 AM"
@@ -12,11 +12,6 @@ type State =
   | { phase: "submitting" }
   | { phase: "done"; serviceName: string; newStartUtc: string }
   | { phase: "error"; code: string };
-
-function todayYmd(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 function formatTime(isoUtc: string): string {
   try {
@@ -34,11 +29,67 @@ function formatTime(isoUtc: string): string {
   }
 }
 
+/** Salon-local YYYY-MM-DD → "Monday, August 16" — device-timezone-independent. */
+function formatDateYmd(ymd: string): string {
+  try {
+    return new Date(`${ymd}T12:00:00Z`).toLocaleDateString("en-US", {
+      timeZone: "UTC",
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    });
+  } catch {
+    return ymd;
+  }
+}
+
+/** Customer-device YYYY-MM-DD — last-resort fallback only, used when the
+ *  salon-local date can't be resolved (e.g. invalid token). The date picker
+ *  must still render in that case: submitting surfaces the real error
+ *  (invalid/expired link) through the existing reschedule-slots error path. */
+function deviceTodayYmd(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export default function RescheduleBookingPage() {
   const searchParams = useSearchParams();
   const token = searchParams?.get("token") ?? "";
   const [state, setState] = useState<State>({ phase: "date" });
-  const [selectedDate, setSelectedDate] = useState(todayYmd());
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [minDate, setMinDate] = useState<string | null>(null);
+
+  // Resolve the salon's own "today" + timezone before showing the date
+  // picker — the picker used to default to the CUSTOMER'S DEVICE date, which
+  // silently disagreed with the salon's calendar day whenever the two clocks
+  // straddled a day boundary. Everything the customer picks is validated
+  // against salon-local time server-side either way; this only fixes what's
+  // shown as the default/min. If resolution fails (e.g. invalid token), fall
+  // back to the device date rather than blocking the picker — the existing
+  // "Show Available Times" flow already surfaces the real error correctly.
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/booking/reschedule-slots?token=${encodeURIComponent(token)}`);
+        const json = (await res.json()) as { todayYmd?: string; error?: string };
+        if (cancelled) return;
+        const ymd = res.ok && !json.error && json.todayYmd ? json.todayYmd : deviceTodayYmd();
+        setSelectedDate(ymd);
+        setMinDate(ymd);
+      } catch {
+        if (!cancelled) {
+          const ymd = deviceTodayYmd();
+          setSelectedDate(ymd);
+          setMinDate(ymd);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   const loadSlots = useCallback(
     async (date: string) => {
@@ -123,6 +174,16 @@ export default function RescheduleBookingPage() {
     );
   }
 
+  if (selectedDate === null) {
+    return (
+      <Shell>
+        <div className="text-center">
+          <p className="text-nq-muted">Loading…</p>
+        </div>
+      </Shell>
+    );
+  }
+
   return (
     <Shell>
       <h1 className="text-xl font-semibold text-white">Reschedule Appointment</h1>
@@ -134,7 +195,7 @@ export default function RescheduleBookingPage() {
         </label>
         <input
           type="date"
-          min={todayYmd()}
+          min={minDate ?? undefined}
           value={selectedDate}
           onChange={(e) => setSelectedDate(e.target.value)}
           className="mt-2 w-full rounded-xl border border-nq-border/40 bg-nq-bg px-4 py-3 text-nq-text focus:border-nq-gold/50 focus:outline-none"
@@ -150,27 +211,23 @@ export default function RescheduleBookingPage() {
       {/* Slot grid */}
       {state.phase === "slots" && (
         <div className="mt-6">
-          {state.loading ? (
-            <p className="text-center text-sm text-nq-muted">Loading slots…</p>
-          ) : state.slots && state.slots.length === 0 ? (
+          <p className="mb-3 text-xs font-medium uppercase tracking-widest text-nq-gold">
+            {state.loading ? "Loading times…" : `Available Times — ${formatDateYmd(state.date)}`}
+          </p>
+          {state.loading ? null : state.slots && state.slots.length === 0 ? (
             <p className="text-center text-sm text-nq-muted">No available times on this date. Please pick another day.</p>
           ) : (
-            <>
-              <p className="mb-3 text-xs font-medium uppercase tracking-widest text-nq-gold">
-                Available Times
-              </p>
-              <div className="grid grid-cols-3 gap-2">
-                {(state.slots ?? []).map((slot) => (
-                  <button
-                    key={slot}
-                    onClick={() => handleSubmit(state.date, slot)}
-                    className="rounded-lg border border-nq-border/40 bg-nq-surface py-2 text-sm text-nq-text transition hover:border-nq-gold/50 hover:text-nq-gold"
-                  >
-                    {slot}
-                  </button>
-                ))}
-              </div>
-            </>
+            <div className="grid grid-cols-3 gap-2">
+              {(state.slots ?? []).map((slot) => (
+                <button
+                  key={slot}
+                  onClick={() => handleSubmit(state.date, slot)}
+                  className="rounded-lg border border-nq-border/40 bg-nq-surface py-2 text-sm text-nq-text transition hover:border-nq-gold/50 hover:text-nq-gold"
+                >
+                  {slot}
+                </button>
+              ))}
+            </div>
           )}
         </div>
       )}
@@ -186,6 +243,9 @@ function ErrorView({ code }: { code: string }) {
     booking_not_reschedulable: "This appointment can no longer be rescheduled.",
     load_failed: "Could not load available times. Please try again.",
     network_error: "Connection error. Please check your internet and try again.",
+    salon_closed_day: "The salon is closed on this date. Please pick another day.",
+    outside_opening_hours: "That time is outside business hours. Please pick another time.",
+    salon_hours_invalid: "This salon's hours aren't set up correctly. Please contact the salon directly.",
   };
   return (
     <div className="text-center">

@@ -37,6 +37,7 @@ export default async function SetupHoursPage({ params }: Props) {
           slug={slug}
           initialRaw={rawHours}
           initialClosedDatesRaw={ctx.salon.booking_closed_dates}
+          initialClosureNoticeRaw={ctx.salon.closure_notice}
         />
       </MobileStack>
     </ResponsiveShell>
