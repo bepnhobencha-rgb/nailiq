@@ -1341,6 +1341,11 @@ export const userVi: UserMessages = {
     hoursCustomize: "Chỉnh riêng",
     hoursResetToDefault: "về mặc định",
     hoursOverrideLabel: "Giờ tùy chỉnh",
+    closureNoticeTitle: "Thông báo đóng cửa (tuỳ chọn)",
+    closureNoticeHint:
+      "Hiện thành banner trên trang đặt lịch công khai — ví dụ \"Đóng cửa sửa chữa Thứ 2 17/8 và Thứ 3 18/8, mở lại bình thường Thứ 4 19/8.\" Điền đủ 2 ngôn ngữ để hiện banner, xoá cả 2 để ẩn. Banner tự động biến mất khi các ngày nghỉ ở trên đã qua.",
+    closureNoticeEnLabel: "Nội dung (Tiếng Anh)",
+    closureNoticeViLabel: "Nội dung (Tiếng Việt)",
     addressTitle: "Địa chỉ tiệm",
     streetAddress: "Địa chỉ",
     city: "Thành phố",

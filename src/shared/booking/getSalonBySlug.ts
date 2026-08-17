@@ -11,7 +11,7 @@ import {
 // configuration.
 export const PUBLIC_BOOKING_SALON_SELECT = [
   "id", "slug", "name", "address", "salon_phone", "opening_hours",
-  "profile_complete", "booking_closed_dates", "timezone",
+  "profile_complete", "booking_closed_dates", "closure_notice", "timezone",
   "subscription_plan", "plan_override", "feature_flags", "brand_color",
   "theme_mode", "currency_code", "description", "phone_otp_enabled",
   "voice_ai_enabled", "vertical", "public_sections_enabled", "booking_images",
