@@ -12,6 +12,8 @@ import {
   resolveBookingLanguage,
 } from "@/shared/i18n/booking";
 import { EmbedFrameBridge } from "./EmbedFrameBridge";
+import { SalonClosureBanner } from "@/components/booking/SalonClosureBanner";
+import { hasUpcomingClosure } from "@/shared/booking/upcomingClosureNotice";
 
 /**
  * Embeddable booking flow — the SAME flow as `/[slug]` but stripped to just the
@@ -84,6 +86,10 @@ export default async function EmbedBookingPage({
     >
       <EmbedFrameBridge />
       <div className="mx-auto w-full max-w-[680px] px-4 py-6 sm:px-6 sm:py-7">
+        {load.salon.closureNotice &&
+        hasUpcomingClosure(load.salon.booking_closed_dates, load.salon.timezone) ? (
+          <SalonClosureBanner notice={load.salon.closureNotice} />
+        ) : null}
         <BookingFlowErrorBoundary shopSlug={normalizedSlug} salon={load.salon}>
           <BookingTypeSwitcher
             t={t}
