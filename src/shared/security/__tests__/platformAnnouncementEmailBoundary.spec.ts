@@ -45,7 +45,7 @@ describe("role-localized platform email boundary", () => {
     expect(parity).toContain('"platform_announcement_deliveries"');
     expect(parity).toContain('"queue_platform_announcement_deliveries"');
     expect(parity).toContain("tables: 107");
-    expect(parity).toContain("columns: 1453");
+    expect(parity).toContain("columns: 1455");
     expect(parity).toContain("policies: 156");
     expect(parity).toContain("functions: 117");
     expect(parity).toContain("indexes: 353");

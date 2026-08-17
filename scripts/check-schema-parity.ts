@@ -24,7 +24,10 @@ import { execFileSync } from "node:child_process";
  */
 const PRODUCTION = {
   tables: 107,
-  columns: 1453,
+  // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
+  // added to both salons (base table) and public_salon_profiles (view) —
+  // both count as columns in information_schema.
+  columns: 1455,
   policies: 156,
   /**
    * APP functions only — 117 after the rehearsed forward migrations.

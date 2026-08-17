@@ -1,12 +1,16 @@
 import { after } from "next/server";
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { parseTimeSlotOnDate } from "@/shared/booking/parseBookingTimeSlot";
+import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
 import { notifyWaitlistForSlot } from "@/shared/noshow/waitlistAutoFill";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
-import { salonYmdOfUtc } from "@/shared/lib/salonTime";
+import { salonYmdOfUtc, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
 import { logBookingEvent } from "@/shared/dashboard/auditLog";
+import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
+import { dayKeyFromLocalDate } from "@/shared/booking/dayKeyFromDate";
+import { hmToMinutes } from "@/shared/booking/hmToMinutes";
+import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 
 type RescheduleBody = {
   token: string;
@@ -50,25 +54,69 @@ export async function POST(req: Request) {
   const b = booking as { salon_id: string; service_id: string; start_time_utc: string } | null;
   if (!b) return NextResponse.json({ ok: false, code: "booking_not_found" }, { status: 404 });
 
-  const { data: service } = await supabase
-    .from("services" as never)
-    .select("duration_minutes, buffer_minutes")
-    .eq("id", b.service_id)
-    .maybeSingle();
+  const [{ data: service }, { data: salon }] = await Promise.all([
+    supabase
+      .from("services" as never)
+      .select("duration_minutes, buffer_minutes")
+      .eq("id", b.service_id)
+      .maybeSingle(),
+    supabase
+      .from("salons" as never)
+      .select("timezone, opening_hours, booking_closed_dates")
+      .eq("id", b.salon_id)
+      .maybeSingle(),
+  ]);
 
   const svc = service as { duration_minutes: number; buffer_minutes: number | null } | null;
   if (!svc) return NextResponse.json({ ok: false, code: "service_not_found" }, { status: 404 });
 
-  let newStart: Date;
+  const salonRow = salon as {
+    timezone: string | null;
+    opening_hours: unknown;
+    booking_closed_dates: unknown;
+  } | null;
+  const timezone = salonRow?.timezone?.trim() || "America/Los_Angeles";
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return NextResponse.json({ ok: false, code: "invalid_slot" }, { status: 400 });
+  }
+  let startMinutes: number;
   try {
-    newStart = parseTimeSlotOnDate(slotLabel, date);
+    startMinutes = parseTimeSlotToMinutes(slotLabel);
   } catch {
     return NextResponse.json({ ok: false, code: "invalid_slot" }, { status: 400 });
   }
 
-  const durationMs =
-    serviceBlockMinutes(svc.duration_minutes, svc.buffer_minutes) * 60_000;
-  const newEnd = new Date(newStart.getTime() + durationMs);
+  const totalBlockMinutes = serviceBlockMinutes(svc.duration_minutes, svc.buffer_minutes);
+
+  // Wall-clock-minutes guard, mirroring submitPublicBooking.ts — the picker
+  // (reschedule-slots) already filters to open hours, but this write path
+  // must not trust the client's raw date+slotLabel without re-checking.
+  const closedYmdSet = parseBookingClosedDateSet(salonRow?.booking_closed_dates);
+  if (closedYmdSet.has(date)) {
+    return NextResponse.json({ ok: false, code: "salon_closed_day" }, { status: 400 });
+  }
+  const week = parseOpeningHours(salonRow?.opening_hours);
+  if (!week) {
+    return NextResponse.json({ ok: false, code: "salon_hours_invalid" }, { status: 400 });
+  }
+  const dayCfg = week[dayKeyFromLocalDate(new Date(`${date}T12:00:00`))];
+  if (!dayCfg || dayCfg.closed) {
+    return NextResponse.json({ ok: false, code: "salon_closed_day" }, { status: 400 });
+  }
+  const openM = hmToMinutes(dayCfg.open);
+  const closeM = hmToMinutes(dayCfg.close);
+  const endMinutes = startMinutes + totalBlockMinutes;
+  if (closeM <= openM || startMinutes < openM || endMinutes > closeM) {
+    return NextResponse.json({ ok: false, code: "outside_opening_hours" }, { status: 400 });
+  }
+
+  // Convert the salon-local wall-clock slot to the correct UTC instant.
+  // Previously `new Date(\`${date}T${hh}:${mm}:00\`)` — the Vercel runtime is
+  // always UTC, so that parsed the wall-clock time AS IF it were UTC,
+  // silently shifting every non-UTC salon's reschedules by its UTC offset.
+  const newStart = new Date(salonWallTimeToUtcIso(date, startMinutes, timezone));
+  const newEnd = new Date(newStart.getTime() + totalBlockMinutes * 60_000);
 
   const { data, error } = await supabase.rpc("reschedule_booking_as_customer" as never, {
     p_token_id:      token,

@@ -2,14 +2,19 @@ import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { computeTimeSlots } from "@/shared/booking/getAvailableTimeSlots";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
-import { salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
+import { salonWallTimeToUtcIso, salonYmdOfUtc } from "@/shared/lib/salonTime";
 
 type QueryParams = {
   token?: string;
-  date?: string; // YYYY-MM-DD
+  date?: string; // YYYY-MM-DD, optional — omit to resolve salon-local "today" only
 };
 
-/** Returns available time slots for a booking (identified by reminder token) on a given date. */
+/**
+ * Returns available time slots for a booking (identified by reminder token) on a given date.
+ * `date` may be omitted: the page uses this to resolve the salon's own "today"
+ * (and timezone) before it has any date selected, instead of trusting the
+ * customer's device clock/timezone for the initial date-picker default.
+ */
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const params: QueryParams = {
@@ -17,13 +22,16 @@ export async function GET(req: Request) {
     date: url.searchParams.get("date") ?? undefined,
   };
 
-  if (!params.token || !params.date) {
+  if (!params.token) {
     return NextResponse.json({ error: "missing_params" }, { status: 400 });
   }
 
-  const dateYmd = params.date;
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateYmd);
-  if (!m) return NextResponse.json({ error: "invalid_date_format" }, { status: 400 });
+  let dateYmd: string | null = null;
+  if (params.date) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(params.date);
+    if (!m) return NextResponse.json({ error: "invalid_date_format" }, { status: 400 });
+    dateYmd = params.date;
+  }
 
   const supabase = createServiceRoleClient();
 
@@ -85,8 +93,20 @@ export async function GET(req: Request) {
   // ────────────────────────────────────────────────────────────────────────────
   const timezone = salonRow.timezone ?? "America/Vancouver";
 
+  // No date requested yet — the reschedule page uses this to resolve the
+  // salon's own "today" before it has picked a date, instead of trusting the
+  // customer's device clock/timezone.
+  if (!dateYmd) {
+    return NextResponse.json({
+      timezone,
+      todayYmd: salonYmdOfUtc(new Date().toISOString(), timezone),
+      slots: [],
+    });
+  }
+
+  const [dy, dm, dd] = dateYmd.split("-").map(Number);
   const salonMidnightUtcMs = Date.parse(salonWallTimeToUtcIso(dateYmd, 0, timezone));
-  const utcMidnightMs = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const utcMidnightMs = Date.UTC(dy, dm - 1, dd);
   const tzOffsetMs = salonMidnightUtcMs - utcMidnightMs;
 
   // Occupancy query: cover the full salon local day (midnight → midnight+24 h)
