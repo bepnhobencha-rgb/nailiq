@@ -135,6 +135,16 @@ function closedDatesInitialText(raw: unknown): string {
   return lines.join("\n");
 }
 
+function closureNoticeInitial(raw: unknown): { en: string; vi: string } {
+  if (!raw || typeof raw !== "object") return { en: "", vi: "" };
+  const en = (raw as { en?: unknown }).en;
+  const vi = (raw as { vi?: unknown }).vi;
+  return {
+    en: typeof en === "string" ? en : "",
+    vi: typeof vi === "string" ? vi : "",
+  };
+}
+
 /** HTML time value "HH:MM" → storage "HH:MM" normalized */
 function hmFromDateInput(v: string): string {
   if (!v) return "09:00";
@@ -201,11 +211,13 @@ export function HoursSetupPanel({
   slug,
   initialRaw,
   initialClosedDatesRaw,
+  initialClosureNoticeRaw,
   autoSave = false,
 }: {
   slug: string;
   initialRaw: unknown;
   initialClosedDatesRaw: unknown;
+  initialClosureNoticeRaw: unknown;
   /** Guided Setup only: persist a valid edit after the owner pauses. */
   autoSave?: boolean;
 }) {
@@ -234,6 +246,13 @@ export function HoursSetupPanel({
 
   const [closedDatesText, setClosedDatesText] = useState(() =>
     closedDatesInitialText(initialClosedDatesRaw),
+  );
+
+  const [closureNoticeEn, setClosureNoticeEn] = useState(
+    () => closureNoticeInitial(initialClosureNoticeRaw).en,
+  );
+  const [closureNoticeVi, setClosureNoticeVi] = useState(
+    () => closureNoticeInitial(initialClosureNoticeRaw).vi,
   );
 
   const [saveStatus, setSaveStatus] = useState<SaveButtonStatus>("idle");
@@ -281,6 +300,9 @@ export function HoursSetupPanel({
     setOverriddenDays(deriveOverriddenDays(w, m));
     const nextClosedDatesText = closedDatesInitialText(initialClosedDatesRaw);
     setClosedDatesText(nextClosedDatesText);
+    const notice = closureNoticeInitial(initialClosureNoticeRaw);
+    setClosureNoticeEn(notice.en);
+    setClosureNoticeVi(notice.vi);
     const nextSignature = JSON.stringify({
       hours: w,
       closedDates: normalizeBookingClosedDateList(
@@ -293,7 +315,7 @@ export function HoursSetupPanel({
     lastSavedSignatureRef.current = nextSignature;
     lastAutoSaveAttemptRef.current = nextSignature;
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [initialClosedDatesRaw, initialRaw]);
+  }, [initialClosedDatesRaw, initialClosureNoticeRaw, initialRaw]);
 
   const preview = useMemo(() => compactOpeningHoursLabel(hours), [hours]);
   const currentSignature = useMemo(
@@ -412,7 +434,10 @@ export function HoursSetupPanel({
           .map((l) => l.trim())
           .filter(Boolean),
       );
-      const res = await updateOpeningHours(slug, hours, closedYmd);
+      const res = await updateOpeningHours(slug, hours, closedYmd, {
+        en: closureNoticeEn.trim(),
+        vi: closureNoticeVi.trim(),
+      });
       if (!res.ok) {
         setSaveStatus("error");
         setError(openingHoursFailMessage(res.error));
@@ -434,6 +459,8 @@ export function HoursSetupPanel({
       canSaveHours,
       clearStatusTimer,
       closedDatesText,
+      closureNoticeEn,
+      closureNoticeVi,
       currentSignature,
       hours,
       labels.hoursSaved,
@@ -765,6 +792,34 @@ export function HoursSetupPanel({
             ));
           })()}
         </div>
+      </section>
+
+      {/* Closure notice — bilingual banner shown on the public booking page */}
+      <section className="rounded-2xl border border-nq-border/40 bg-nq-surface/40 p-4">
+        <p className="text-sm font-medium text-nq-foreground">
+          {labels.closureNoticeTitle}
+        </p>
+        <p className="mt-1 text-xs leading-snug text-nq-muted">
+          {labels.closureNoticeHint}
+        </p>
+        <label className="mt-3 block text-sm font-medium text-nq-muted">
+          {labels.closureNoticeEnLabel}
+          <textarea
+            className="mt-1.5 min-h-[72px] w-full resize-y rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2 text-sm text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
+            value={closureNoticeEn}
+            disabled={saveStatus === "saving"}
+            onChange={(e) => setClosureNoticeEn(e.target.value)}
+          />
+        </label>
+        <label className="mt-3 block text-sm font-medium text-nq-muted">
+          {labels.closureNoticeViLabel}
+          <textarea
+            className="mt-1.5 min-h-[72px] w-full resize-y rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2 text-sm text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
+            value={closureNoticeVi}
+            disabled={saveStatus === "saving"}
+            onChange={(e) => setClosureNoticeVi(e.target.value)}
+          />
+        </label>
       </section>
 
       {/* Preview */}

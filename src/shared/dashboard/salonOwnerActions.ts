@@ -57,7 +57,7 @@ import { ACTIVE_GRID_STATUSES } from "@/shared/types";
  *  at the time of writing; the column itself exists. Here we read
  *  the value through `as { … }` casts at the call site instead. */
 const SALON_DASHBOARD_SELECT =
-  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, subscription_plan, plan_override, feature_flags, voice_ai_enabled, basic_mode_forced, walkin_auto_assign, queue_display_mode, staff_notification_settings, default_notification_locale, auto_no_show_minutes, vertical";
+  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete, booking_closed_dates, closure_notice, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, subscription_plan, plan_override, feature_flags, voice_ai_enabled, basic_mode_forced, walkin_auto_assign, queue_display_mode, staff_notification_settings, default_notification_locale, auto_no_show_minutes, vertical";
 
 type SalonRow = {
   id: string;
@@ -70,6 +70,8 @@ type SalonRow = {
   opening_hours: unknown | null;
   profile_complete: boolean;
   booking_closed_dates: unknown | null;
+  /** Bilingual `{en, vi}` closure banner shown on the public booking page. NULL = none. */
+  closure_notice: unknown | null;
   /** IANA timezone string (e.g. "America/Los_Angeles"). Required by
    *  NOT NULL constraint per migration `20260512600000_timezone_required`. */
   timezone: string;
@@ -160,6 +162,8 @@ async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
     profile_complete: !!row.profile_complete,
     booking_closed_dates:
       (row as { booking_closed_dates?: unknown }).booking_closed_dates ?? null,
+    closure_notice:
+      (row as { closure_notice?: unknown }).closure_notice ?? null,
   };
 }
 
@@ -291,6 +295,8 @@ async function getSalonIfMember(
       opening_hours: row.opening_hours ?? null,
       booking_closed_dates:
         (row as { booking_closed_dates?: unknown }).booking_closed_dates ?? null,
+      closure_notice:
+        (row as { closure_notice?: unknown }).closure_notice ?? null,
       email:
         row.email === undefined || row.email === null
           ? null
