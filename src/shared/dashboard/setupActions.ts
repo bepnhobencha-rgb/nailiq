@@ -1195,6 +1195,7 @@ export async function updateOpeningHours(
   slug: string,
   openingHours: OpeningHoursWeek,
   closedDatesYmd: string[] = [],
+  closureNotice: { en: string; vi: string } | null = null,
 ): Promise<Ok | Fail> {
   const slugTrimmed = typeof slug === "string" ? slug.trim() : "";
   if (!slugTrimmed) {
@@ -1237,6 +1238,14 @@ export async function updateOpeningHours(
     : [];
   const closedJson = normalizeBookingClosedDateList(datesForClosed);
 
+  // Both languages must be filled or the notice is dropped entirely — a
+  // banner in only one language would silently exclude half the audience.
+  const closureNoticeJson = (() => {
+    const en = typeof closureNotice?.en === "string" ? closureNotice.en.trim() : "";
+    const vi = typeof closureNotice?.vi === "string" ? closureNotice.vi.trim() : "";
+    return en && vi ? { en, vi } : null;
+  })();
+
   let openingHoursParsed: Record<string, unknown>;
   try {
     openingHoursParsed = JSON.parse(serialized) as Record<string, unknown>;
@@ -1250,6 +1259,7 @@ export async function updateOpeningHours(
     const patchFull = {
       opening_hours: openingHoursParsed,
       booking_closed_dates: closedJson,
+      closure_notice: closureNoticeJson,
     };
 
     let { data: updatedRow, error } = await supabase
@@ -1455,6 +1465,8 @@ export async function getDashboardWriteClient(slug: string): Promise<
         opening_hours: unknown | null;
         profile_complete: boolean;
         booking_closed_dates: unknown | null;
+        /** Bilingual `{en, vi}` closure banner shown on the public booking page. NULL = none. */
+        closure_notice: unknown | null;
         /** IANA timezone (e.g. "America/Los_Angeles"). Sourced from
          *  `resolveSalonForDashboard`'s expanded SELECT so callers
          *  on `/dashboard/[slug]/center` no longer need a second

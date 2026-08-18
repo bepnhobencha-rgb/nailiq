@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
+import { salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
 
 export const dynamic = "force-dynamic";
 
@@ -315,20 +316,14 @@ async function findNextAvailableSlot(
       preferredWeekday === null || preferredWeekday === undefined || dayOfWeek === preferredWeekday;
 
     if (dayMatches) {
-      // Build candidate slot at preferred hour in salon timezone
+      // Build candidate slot at preferred hour in salon timezone.
+      // salonWallTimeToUtcIso binary-searches the DST transition, unlike a
+      // hand-rolled toLocaleString/offsetMs round-trip.
       const localDateStr = cursor.toLocaleDateString("en-CA", { timeZone: tz }); // YYYY-MM-DD
-      const candidateLocal = new Date(
-        `${localDateStr}T${String(preferredHour).padStart(2, "0")}:00:00`,
-      );
-
-      // Convert to UTC by computing the offset
-      const salonDateStr = candidateLocal.toLocaleString("en-US", { timeZone: tz });
-      const salonDate = new Date(salonDateStr);
-      const offsetMs = salonDate.getTime() - candidateLocal.getTime();
-      const candidateUtc = new Date(candidateLocal.getTime() - offsetMs);
+      const startUtc = salonWallTimeToUtcIso(localDateStr, preferredHour * 60, tz);
+      const candidateUtc = new Date(startUtc);
 
       if (candidateUtc > now) {
-        const startUtc = candidateUtc.toISOString();
         const endUtc = new Date(candidateUtc.getTime() + durationMinutes * 60_000).toISOString();
 
         // Check occupancy for this slot

@@ -1123,6 +1123,11 @@ export type UserMessages = {
     hoursResetToDefault: string;
     /** Section label for a day that has been individually customised. */
     hoursOverrideLabel: string;
+    /** Closure banner shown on the public booking page (e.g. "closed for renovation"). */
+    closureNoticeTitle: string;
+    closureNoticeHint: string;
+    closureNoticeEnLabel: string;
+    closureNoticeViLabel: string;
     addressTitle: string;
     streetAddress: string;
     city: string;
@@ -3684,6 +3689,11 @@ export const userEn: UserMessages = {
     hoursCustomize: "Customize",
     hoursResetToDefault: "reset",
     hoursOverrideLabel: "Custom hours",
+    closureNoticeTitle: "Closure notice (optional)",
+    closureNoticeHint:
+      "Shown as a banner on your public booking page — e.g. \"Closed for renovation Mon Aug 17 & Tue Aug 18, reopening Wed Aug 19.\" Fill in both languages to show it, or clear both to hide it. It disappears automatically once every date above has passed.",
+    closureNoticeEnLabel: "Message (English)",
+    closureNoticeViLabel: "Message (Vietnamese)",
     addressTitle: "Salon address",
     streetAddress: "Street address",
     city: "City",

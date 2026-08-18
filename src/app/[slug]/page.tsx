@@ -26,6 +26,8 @@ import { BookingChatWidget } from "@/components/booking/BookingChatWidget";
 import { getSalonLocalBusinessJsonLd } from "@/shared/seo/jsonLd";
 import { resolveVertical } from "@/shared/verticals/registry";
 import { loadPublicNailTryOnSalon } from "@/shared/nailTryOn/publicSalon";
+import { SalonClosureBanner } from "@/components/booking/SalonClosureBanner";
+import { hasUpcomingClosure } from "@/shared/booking/upcomingClosureNotice";
 
 /** Avoid stale static segments for salons created after deploy. */
 export const dynamic = "force-dynamic";
@@ -231,6 +233,13 @@ async function PublicBookingRouteBody({
             <BookingLanguageToggle currentLang={lang} />
           </div>
         </div>
+
+        {load.salon.closureNotice &&
+        hasUpcomingClosure(load.salon.booking_closed_dates, load.salon.timezone) ? (
+          <div className="relative z-10 mx-auto w-full max-w-[1200px] px-4 pt-6 sm:px-6 lg:px-8">
+            <SalonClosureBanner notice={load.salon.closureNotice} />
+          </div>
+        ) : null}
 
         {pageSections.length > 0 ? (
           <SalonPageSections

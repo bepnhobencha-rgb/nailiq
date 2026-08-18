@@ -41,7 +41,7 @@ import { generateBookingCalendarIcs } from "@/components/booking/bookingCalendar
 import { formatSalonDisplayName } from "@/shared/lib/salonDisplay";
 import { fireBookingConfetti } from "@/components/booking/bookingConfetti";
 import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
-import { parseTimeSlotOnDate } from "@/shared/booking/parseBookingTimeSlot";
+import { parseTimeSlotOnDateInBrowserTz } from "@/shared/booking/parseBookingTimeSlot";
 import { localDayBoundsFromLocalDate } from "@/shared/booking/localDayBounds";
 import { fetchBookingOccupancyForRange } from "@/shared/booking/fetchBookingOccupancy";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
@@ -907,7 +907,7 @@ export function useBookingFlowState(
 
       let startLocal: Date;
       try {
-        startLocal = parseTimeSlotOnDate(timeSlot, ymd);
+        startLocal = parseTimeSlotOnDateInBrowserTz(timeSlot, ymd);
       } catch {
         setUpsellCandidates([]);
         setUpsellGapMinutes(0);
