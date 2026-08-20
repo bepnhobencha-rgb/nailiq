@@ -16,7 +16,6 @@ export default function robots(): MetadataRoute.Robots {
         "/login",
         "/superadmin",
         "/choose-salon",
-        "/debug-sentry",
       ],
     },
     sitemap: `${base}/sitemap.xml`,

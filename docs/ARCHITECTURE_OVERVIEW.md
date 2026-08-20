@@ -29,7 +29,7 @@ NailIQ là **SaaS đặt lịch + OS lễ tân đa tenant** cho tiệm nail (th�
 - **DB/Auth/Storage/Realtime:** Supabase (Postgres 17.6, project prod `fshmobzyjhmtvndobwsy`). `@supabase/ssr`.
 - **Styling:** Tailwind v4 (CSS-first `@theme` trong `globals.css`, KHÔNG có `tailwind.config.js`). Token mirror ở `src/shared/theme/tokens.ts`.
 - **Animation:** Framer Motion 12 + canvas-confetti.
-- **Payments:** Stripe (LIVE keys). **Email:** Resend. **SMS/OTP:** Twilio (Verify + Messages). **Error:** Sentry (3 runtime). **AI:** Anthropic (Claude Haiku/Sonnet) + OpenAI (Realtime voice). **Test:** Playwright.
+- **Payments:** Stripe (LIVE keys). **Email:** Resend. **SMS/OTP:** Twilio (Verify + Messages). **Error:** NailIQ-owned `error_logs` monitor. **AI:** Anthropic (Claude Haiku/Sonnet) + OpenAI (Realtime voice). **Test:** Playwright.
 - **Mutation = Server Actions** (`src/shared/{booking,dashboard,register,superadmin,...}`) **+ một số `/api` route** (webhook, cron, voice, OTP, upload — những thứ cần HTTP endpoint thật). CLAUDE.md nói "no REST API routes" — **đã lỗi thời**, hiện có ~40 nhóm route dưới `src/app/api/`.
 - **3 Supabase client** (`src/shared/lib/supabase/`): `client.ts` (browser, anon), `server.ts` (SSR, cookie → RLS theo user), `serviceRole.ts` (**bypass RLS, server-only**).
 - **Quy ước:** kebab-case file route, PascalCase component, camelCase function; `@/` alias; conventional commits scoped (`feat(booking):`…); 1 PR/logical change, mở **draft** để Huy merge.
@@ -137,7 +137,7 @@ Tất cả qua **`getDashboardWriteClient(slug)`** → `resolveSalonForDashboard
 **Hai trục auth độc lập** (PERMISSION_MATRIX §8): salon-facing vs superadmin.
 
 - **Salon login:** Google OAuth + email magic link + email/password là đường LIVE (`/register`). **Phone OTP đã retire trên prod 2026-05-13** (Twilio chưa duyệt) — code còn nguyên nhưng `isPhoneOtpDisabledInProd()` chặn, chỉ chạy dev/E2E.
-- **`proxy.ts`** (Next 16, đừng đổi tên thành `middleware.ts`): rate-limit (booking/auth) → refresh session (`getUser` + copy cookie sang redirect response) → Sentry tags → demo cookie → **route gate** (chưa auth `/dashboard/*` → `/register`; `/superadmin/*` → `/superadmin/login`). **Proxy chỉ bounce chưa-auth; role/membership check thật nằm ở server component + action.**
+- **`proxy.ts`** (Next 16, đừng đổi tên thành `middleware.ts`): rate-limit (booking/auth) → refresh session (`getUser` + copy cookie sang redirect response) → demo cookie → **route gate** (chưa auth `/dashboard/*` → `/register`; `/superadmin/*` → `/superadmin/login`). **Proxy chỉ bounce chưa-auth; role/membership check thật nằm ở server component + action.**
 - **Onboarding:** `/register` → (OAuth/email) `/auth/callback` → user chưa có membership → `/register/setup` → `completeSalonRegistration` tạo salon + tối đa 10 dịch vụ mặc định (cap Free) + 1 staff + `salon_members(owner)` + stamp `setup_wizard_completed_at`. Có **dual path**: sessionStorage (`registerSessionKeys.ts`) + server-side fallback (`register_completion_tokens` table, TTL 1h, `loadRegisterFlowState`). Completion token nay thread qua URL `?ct=`.
 - **RBAC:** owner = full config; senior = full desk ops, không config salon-wide; nail_tech = read-mostly. `normalizeSalonMemberRole` default NULL → **owner** (most-permissive). Superadmin role resolve qua `getSuperAdminRole(userId)` (service-role, cache 5 phút, fail-safe → không phải superadmin).
 
@@ -230,7 +230,7 @@ no-show/deposit/verification = cột trên salons+bookings + `booking_reminder_t
 `src/shared/config/constants.ts` chỉ chứa tunable toàn-app (không per-tenant). Branding per-salon **đọc từ row `salons`** (name/description/address/phone/brand_color/currency/timezone/opening_hours) → thread vào CSS custom property + JSON-LD ở `src/app/[slug]/page.tsx:147`. Đổi brand/contact/giờ **không cần sửa code**.
 
 ### 8.6 Observability
-Sentry 3 runtime: `sentry.client.config.ts` (root, sample prod 0.2), `src/sentry.server.config.ts` (0.25), `src/sentry.edge.config.ts` (0.2). Server/edge có `tracePropagationTargets` loại `api.openai.com` (header trace làm hỏng `/v1/realtime`). `src/instrumentation.ts` dispatch theo `NEXT_RUNTIME`. `setPublicBookingSalonTags` tag lỗi theo tenant. `/api/health` = liveness thuần (không DB).
+NailIQ Error Monitor is internal: browser failures post to `/api/errors`; Node request failures enter through `src/instrumentation.ts`; `errorLog.ts` redacts identifiers, deduplicates fingerprints, and stores rows in `error_logs`; `triageError.ts` creates operator summaries and alerts. `/api/health` = liveness thuần (không DB).
 
 ---
 

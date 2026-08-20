@@ -1,6 +1,6 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { Users } from "lucide-react";
 
 /**
@@ -1519,7 +1519,7 @@ function ReceptionistCenterInner({
       setShakeMessage(
         loadErrorCopy(messages.receptionist, "server_error"),
       );
-      Sentry.captureException(error, {
+      ErrorReporter.captureException(error, {
         tags: {
           "nailiq.surface": "receptionist_center",
           "nailiq.event": "reload_current_day_failed",
@@ -1739,7 +1739,7 @@ function ReceptionistCenterInner({
             // the desk. Captured as a warning event (not exception)
             // since the polling fallback / banner already keeps the
             // user productive.
-            Sentry.captureEvent({
+            ErrorReporter.captureEvent({
               message: `realtime subscription ${status.toLowerCase()}`,
               level: status === "CLOSED" ? "warning" : "info",
               tags: {
@@ -1774,7 +1774,7 @@ function ReceptionistCenterInner({
     })().catch((error) => {
       if (!cancelled) {
         setConnectionState("offline");
-        Sentry.captureException(error, {
+        ErrorReporter.captureException(error, {
           tags: {
             "nailiq.surface": "receptionist_center",
             "nailiq.event": "realtime_setup_failed",

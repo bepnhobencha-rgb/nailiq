@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
@@ -137,7 +137,7 @@ type RpcErrorShape = {
   hint?: string;
 };
 
-/** Reports Postgres RPC / PostgREST failures so Sentry sees them even when the UI swallows the thrown Error client-side. */
+/** Reports Postgres RPC / PostgREST failures so NailIQ Error Monitor sees them even when the UI swallows the thrown Error client-side. */
 function captureCreatePublicBookingFailure(params: {
   reason: string;
   rpcError?: RpcErrorShape | null;
@@ -148,7 +148,7 @@ function captureCreatePublicBookingFailure(params: {
     `create_public_booking (${params.reason})`;
   const err = new Error(base);
   err.name = "CreatePublicBookingRpcError";
-  Sentry.captureException(err, {
+  ErrorReporter.captureException(err, {
     tags: {
       "booking.rpc": "create_public_booking",
       "booking.rpc.failure": params.reason,
@@ -220,7 +220,7 @@ export async function submitPublicBooking(
     return Array.from(new Set(arr.map((s) => String(s)).filter(Boolean)));
   })();
 
-  const bookingScope = Sentry.getCurrentScope();
+  const bookingScope = ErrorReporter.getCurrentScope();
   bookingScope.setTag("booking.flow", "submit_public_booking");
   bookingScope.setTag("salon.slug", shopSlug);
 
@@ -229,10 +229,10 @@ export async function submitPublicBooking(
   // a real user never fills it. Naive form-stuffer bots populate
   // every `<input>` and trip this branch. Return a fake-but-shape-
   // valid BookingResult so the UI shows a normal success page;
-  // no DB row is written. Sentry tags the hit so we can monitor
+  // no DB row is written. NailIQ Error Monitor tags the hit so we can monitor
   // abuse without blocking on it.
   if ((params.clientWebsite ?? "").trim().length > 0) {
-    Sentry.captureMessage("booking honeypot tripped", {
+    ErrorReporter.captureMessage("booking honeypot tripped", {
       level: "info",
       tags: {
         "booking.flow": "submit_public_booking",
@@ -907,7 +907,7 @@ export async function submitPublicBooking(
           `profile_finalize_${result?.code ?? "failed"}`,
       );
       err.name = "PublicBookingProfileFinalizeError";
-      Sentry.captureException(err, {
+      ErrorReporter.captureException(err, {
         tags: {
           "booking.rpc": "finalize_public_booking_profile",
           "booking.rpc.failure": "profile_finalize_best_effort",

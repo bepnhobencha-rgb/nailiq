@@ -56,7 +56,7 @@ export type RateLimitId = (typeof RATE_LIMIT_IDS)[keyof typeof RATE_LIMIT_IDS];
  * Fail-open is intentional: an outage in the WAF lookup should never
  * block the booking flow. The matching firewall rule itself is the
  * primary defence; this hook is the secondary signal for code paths
- * that want to react (e.g. log a Sentry breadcrumb, swap copy).
+ * that want to react (e.g. log a NailIQ Error Monitor breadcrumb, swap copy).
  */
 export async function isRateLimited(
   id: RateLimitId,

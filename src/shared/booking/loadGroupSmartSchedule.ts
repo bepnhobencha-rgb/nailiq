@@ -1,6 +1,6 @@
 "use server";
 
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 
 /**
  * AI Arrival-First scheduler for the group booking flow.
@@ -557,7 +557,7 @@ export async function loadGroupSmartSchedule(
     // legitimately run 0-buffer for express services — but the
     // rate of capture lets ops nudge tenants that look misconfigured.
     if (buf === 0) {
-      Sentry.captureMessage("service_zero_buffer", {
+      ErrorReporter.captureMessage("service_zero_buffer", {
         level: "warning",
         tags: {
           surface: "group_smart_schedule",

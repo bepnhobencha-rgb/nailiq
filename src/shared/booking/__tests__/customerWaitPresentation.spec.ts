@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   customerBookingKindFromSource,
+  formatCustomerAppointmentDateTime,
   formatCustomerWaitReadyClock,
   resolveCustomerWaitSurface,
 } from "../customerWaitPresentation";
@@ -61,6 +62,61 @@ describe("formatCustomerWaitReadyClock", () => {
         delete process.env.TZ;
       } else {
         process.env.TZ = previousTimezone;
+      }
+    }
+  });
+});
+
+describe("formatCustomerAppointmentDateTime", () => {
+  it("formats an Anaheim appointment deterministically in English", () => {
+    expect(
+      formatCustomerAppointmentDateTime(
+        "2026-08-20T01:10:00.000Z",
+        "America/Los_Angeles",
+        "en",
+      ),
+    ).toBe("Wed, Aug 19, 2026 · 6:10 PM");
+  });
+
+  it("formats the same salon-local instant deterministically in Vietnamese", () => {
+    expect(
+      formatCustomerAppointmentDateTime(
+        "2026-08-20T01:10:00.000Z",
+        "America/Los_Angeles",
+        "vi",
+      ),
+    ).toBe("T4, 19/08/2026 · 18:10");
+  });
+
+  it("does not use localized formatter output that can drift across ICU versions", () => {
+    const originalFormat = Intl.DateTimeFormat.prototype.formatToParts;
+    const nativeFormatGetter = Object.getOwnPropertyDescriptor(
+      Intl.DateTimeFormat.prototype,
+      "format",
+    );
+    Object.defineProperty(Intl.DateTimeFormat.prototype, "format", {
+      configurable: true,
+      get() {
+        return () => "runtime-specific text that must not be rendered";
+      },
+    });
+
+    try {
+      expect(
+        formatCustomerAppointmentDateTime(
+          "2026-08-20T01:10:00.000Z",
+          "America/Los_Angeles",
+          "en",
+        ),
+      ).toBe("Wed, Aug 19, 2026 · 6:10 PM");
+      expect(Intl.DateTimeFormat.prototype.formatToParts).toBe(originalFormat);
+    } finally {
+      if (nativeFormatGetter) {
+        Object.defineProperty(
+          Intl.DateTimeFormat.prototype,
+          "format",
+          nativeFormatGetter,
+        );
       }
     }
   });

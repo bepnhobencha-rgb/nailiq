@@ -1,6 +1,6 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { useEffect, useRef, useState } from "react";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { NoShowCardCaptureStripe } from "./NoShowCardCaptureStripe";
@@ -307,7 +307,7 @@ function SquareCardCapture({ bookingId, currencyFormat, t, savedCard, otpSession
         sellerKeyedIn: false,
       });
       if (result.status !== "OK" || !result.token) {
-        Sentry.captureMessage("square_card_tokenization_failed", {
+        ErrorReporter.captureMessage("square_card_tokenization_failed", {
           level: "warning",
           tags: {
             surface: "booking_save_card",
@@ -339,7 +339,7 @@ function SquareCardCapture({ bookingId, currencyFormat, t, savedCard, otpSession
         setErrorMsg(t.noShowCardError ?? "Could not save the card.");
       }
     } catch (cause) {
-      Sentry.captureException(
+      ErrorReporter.captureException(
         cause instanceof Error ? cause : new Error("square_card_tokenization_threw"),
         {
           tags: {

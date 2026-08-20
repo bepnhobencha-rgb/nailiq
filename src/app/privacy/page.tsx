@@ -123,7 +123,9 @@ export default function PrivacyPage() {
               third parties for marketing. The only third parties involved
               are infrastructure providers strictly required to run the
               service (Supabase for storage, Twilio for SMS, Vercel for
-              hosting, Sentry for error monitoring).
+              hosting, Resend for email, and the configured AI providers for
+              explicitly enabled AI features). Runtime errors are stored by
+              NailIQ&apos;s internal monitor after identifiers are redacted.
             </p>
           </section>
 

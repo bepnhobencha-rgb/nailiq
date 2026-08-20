@@ -1,6 +1,6 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
@@ -380,7 +380,7 @@ export function ServiceDrawer({
       try {
         res = await updateService(slug, service.id, patch);
       } catch (err) {
-        Sentry.captureMessage("[ServiceDrawer] updateService threw", {
+        ErrorReporter.captureMessage("[ServiceDrawer] updateService threw", {
           level: "error",
           tags: { "salon.action": "update_service", "salon.slug": slug },
           extra: { serviceId: service.id, patch, error: String(err) },
@@ -453,7 +453,7 @@ export function ServiceDrawer({
             priceType === "range" ? centsFromDollarsString(priceMax) : null,
         });
       } catch (err) {
-        Sentry.captureMessage("[ServiceDrawer] addService threw", {
+        ErrorReporter.captureMessage("[ServiceDrawer] addService threw", {
           level: "error",
           tags: { "salon.action": "add_service", "salon.slug": slug },
           extra: { name: name.trim(), error: String(err) },

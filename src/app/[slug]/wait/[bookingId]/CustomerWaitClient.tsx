@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { refreshCustomerWaitState } from "@/shared/booking/loadCustomerWaitStateAction";
 import type { CustomerWaitState } from "@/shared/booking/loadCustomerWaitState";
 import {
+  formatCustomerAppointmentDateTime,
   formatCustomerWaitReadyClock,
   resolveCustomerWaitSurface,
 } from "@/shared/booking/customerWaitPresentation";
@@ -138,16 +139,11 @@ function AppointmentScreen({
   language: "en" | "vi";
 }) {
   const appointmentTime = state.booking.startTimeUtc
-    ? new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-CA", {
-        timeZone: state.salon.timezone,
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-        timeZoneName: "short",
-      }).format(new Date(state.booking.startTimeUtc))
+    ? formatCustomerAppointmentDateTime(
+        state.booking.startTimeUtc,
+        state.salon.timezone,
+        language,
+      )
     : "—";
 
   return (

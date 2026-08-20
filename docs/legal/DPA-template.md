@@ -27,7 +27,7 @@ It supplements the NailIQ Terms of Service.
 ## 3. Sub-processors
 NailIQ uses: **Supabase** (database/storage, US/CA region), **Vercel** (hosting,
 US), **Twilio** (SMS), **Resend** (email), **Square/Stripe** (payments),
-**Sentry** (error monitoring), **Anthropic** (AI features, where enabled). NailIQ
+**Anthropic** (AI features, where enabled). NailIQ
 will give notice of new sub-processors and remains responsible for their
 compliance.
 

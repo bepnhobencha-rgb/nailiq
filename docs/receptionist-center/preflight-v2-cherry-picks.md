@@ -171,7 +171,7 @@ KHÔNG build (kể cả "easy" hoặc "5 phút"):
 - Square/Clover payment integration trực tiếp trong drawer
 - Marketing automation (rotating SMS fill empty slots)
 - AI Voice Receptionist pill / status indicator
-- Sentry "system protection" badge
+- NailIQ Error Monitor "system protection" badge
 - Reassign staff trong drawer (trừ cancel + re-add)
 - Move time trong drawer (trừ cancel + re-add)
 

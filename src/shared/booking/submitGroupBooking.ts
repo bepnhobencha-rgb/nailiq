@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import {
   ConflictCheckBooking,
   checkBookingConflict,
@@ -243,9 +243,9 @@ function fail(
   memberNumber: number | null = null,
 ): GroupBookingResult {
   // Structured failures never throw, so without this they're invisible to
-  // error_logs/Sentry — inherits the booking.flow/salon.slug tags set on the
+  // error_logs/NailIQ Error Monitor — inherits the booking.flow/salon.slug tags set on the
   // scope at the top of submitGroupBooking.
-  Sentry.captureMessage(`group booking rejected: ${reason}`, {
+  ErrorReporter.captureMessage(`group booking rejected: ${reason}`, {
     level: "warning",
     tags: { "booking.fail_reason": reason },
     extra: { memberNumber },
@@ -257,7 +257,7 @@ export async function submitGroupBooking(
   params: GroupBookingParams,
   trustedExecution?: TrustedGroupBookingExecution,
 ): Promise<GroupBookingResult> {
-  const scope = Sentry.getCurrentScope();
+  const scope = ErrorReporter.getCurrentScope();
   scope.setTag("booking.flow", "submit_group_booking");
   scope.setTag("salon.slug", params.shopSlug);
 
@@ -267,7 +267,7 @@ export async function submitGroupBooking(
   // UI — accepting the field positions the server side to short-
   // circuit silently as soon as the UI plumbing lands.
   if ((params.clientWebsite ?? "").trim().length > 0) {
-    Sentry.captureMessage("group booking honeypot tripped", {
+    ErrorReporter.captureMessage("group booking honeypot tripped", {
       level: "info",
       tags: {
         "booking.flow": "submit_group_booking",
@@ -408,7 +408,7 @@ export async function submitGroupBooking(
       ? salonRow.timezone.trim()
       : null;
   if (timezone === null) {
-    Sentry.captureMessage("submitGroupBooking timezone missing on salon row", {
+    ErrorReporter.captureMessage("submitGroupBooking timezone missing on salon row", {
       level: "error",
       extra: { salon_id: salonRow.id, slug: params.shopSlug },
     });
@@ -892,7 +892,7 @@ export async function submitGroupBooking(
       rpcData = privateWrite.data;
       rpcErr = privateWrite.error;
     } catch (error) {
-      Sentry.captureException(error, {
+      ErrorReporter.captureException(error, {
         tags: { "booking.rpc": "insert_controlled_after_hours_group_bookings" },
       });
       return fail("server_error");
@@ -906,7 +906,7 @@ export async function submitGroupBooking(
   }
 
   if (rpcErr) {
-    Sentry.captureException(rpcErr, {
+    ErrorReporter.captureException(rpcErr, {
       tags: {
         "booking.rpc": "insert_group_bookings",
         "booking.flow": "group",
@@ -954,7 +954,7 @@ export async function submitGroupBooking(
     if (code === "outside_hours" || code === "invalid_booking_time") {
       return fail("invalid_time");
     }
-    Sentry.captureMessage("insert_group_bookings unknown error code", {
+    ErrorReporter.captureMessage("insert_group_bookings unknown error code", {
       level: "error",
       extra: { code },
     });
@@ -990,10 +990,10 @@ export async function submitGroupBooking(
   //       per-row exception inside the loop).
   // Both are silent-data-loss bugs from the customer's POV —
   // they see "booking confirmed for 4" but only 3 rows exist.
-  // Sentry capture surfaces the drift; we still return ok so the
+  // NailIQ Error Monitor capture surfaces the drift; we still return ok so the
   // confirmation page renders for the rows that did land.
   if (result.booking_ids.length !== params.members.length) {
-    Sentry.captureMessage("group_booking_partial_rollback", {
+    ErrorReporter.captureMessage("group_booking_partial_rollback", {
       level: "error",
       tags: {
         "booking.rpc": "insert_group_bookings",
@@ -1062,7 +1062,7 @@ export async function submitGroupBooking(
       code?: string;
     } | null;
     if (finalizeError || finalizeResult?.success !== true) {
-      Sentry.captureMessage("group_booking_profile_finalize_failed", {
+      ErrorReporter.captureMessage("group_booking_profile_finalize_failed", {
         level: "error",
         tags: {
           "booking.rpc": "finalize_public_booking_profile",

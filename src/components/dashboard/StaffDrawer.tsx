@@ -1,6 +1,6 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
@@ -250,7 +250,7 @@ export function StaffDrawer({
           serviceIds: patch.serviceIds,
         });
       } catch (err) {
-        Sentry.captureMessage("[StaffDrawer] updateStaff threw", {
+        ErrorReporter.captureMessage("[StaffDrawer] updateStaff threw", {
           level: "error",
           tags: { "salon.action": "update_staff", "salon.slug": slug },
           extra: { staffId: staff.id, patch, error: String(err) },
@@ -292,7 +292,7 @@ export function StaffDrawer({
           role,
         });
       } catch (err) {
-        Sentry.captureMessage("[StaffDrawer] addStaff threw", {
+        ErrorReporter.captureMessage("[StaffDrawer] addStaff threw", {
           level: "error",
           tags: { "salon.action": "add_staff", "salon.slug": slug },
           extra: { name: name.trim(), error: String(err) },

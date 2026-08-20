@@ -1,6 +1,6 @@
 "use server";
 
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { cookies } from "next/headers";
 import { createClient } from "@/shared/lib/supabase/server";
@@ -398,7 +398,7 @@ function captureOpeningHoursSupabaseFailure(
     err.message?.trim() || "updateOpeningHours Supabase error",
   );
   wrapped.name = "UpdateOpeningHoursSupabaseError";
-  Sentry.captureException(wrapped, {
+  ErrorReporter.captureException(wrapped, {
     tags: {
       "salon.action": "update_opening_hours",
       "supabase.code": err.code ?? "unknown",
@@ -415,7 +415,7 @@ function captureOpeningHoursSupabaseFailure(
 }
 
 function captureOpeningHoursUnexpected(err: unknown, meta: { slug: string }) {
-  Sentry.captureException(err, {
+  ErrorReporter.captureException(err, {
     tags: {
       "salon.action": "update_opening_hours",
       "salon.slug": meta.slug,
@@ -1307,7 +1307,7 @@ export async function updateOpeningHours(
         slug: slugTrimmed,
         kind: r.kind,
       });
-      Sentry.captureMessage("updateOpeningHours: zero rows updated", {
+      ErrorReporter.captureMessage("updateOpeningHours: zero rows updated", {
         level: "warning",
         tags: {
           "salon.action": "update_opening_hours",
@@ -1578,7 +1578,7 @@ export async function updateVoiceAiSettings(
     .eq("id", ctx.salon.id);
 
   if (error) {
-    Sentry.captureException(error, { tags: { action: "updateVoiceAiSettings", "salon.slug": slug } });
+    ErrorReporter.captureException(error, { tags: { action: "updateVoiceAiSettings", "salon.slug": slug } });
     return { error: error.message };
   }
 

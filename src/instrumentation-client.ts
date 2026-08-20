@@ -1,12 +1,6 @@
-/**
- * App Router client instrumentation — `Sentry.init` lives in root `sentry.client.config.ts`.
- */
-import * as Sentry from "@sentry/nextjs";
 import { classifyClientErrorDisposition } from "@/shared/observability/clientErrorDisposition";
 
-export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
-
-// Self-hosted client error capture → /api/errors (in addition to Sentry).
+// Client error capture → NailIQ's own /api/errors endpoint.
 // Uses sendBeacon so the report survives even if the page is navigating away.
 function reportClientError(message: string, stack: string | null, level: "error" | "warning") {
   try {

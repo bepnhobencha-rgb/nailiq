@@ -1,6 +1,6 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import {
   forwardRef,
   useEffect,
@@ -159,7 +159,7 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
             sellerKeyedIn: false,
           });
           if (res.status !== "OK" || !res.token) {
-            Sentry.captureMessage("square_card_tokenization_failed", {
+            ErrorReporter.captureMessage("square_card_tokenization_failed", {
               level: "warning",
               tags: {
                 surface: "booking_confirm",
@@ -176,7 +176,7 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
           setError(null);
           return { token: res.token };
         } catch (cause) {
-          Sentry.captureException(
+          ErrorReporter.captureException(
             cause instanceof Error ? cause : new Error("square_card_tokenization_threw"),
             {
               tags: {

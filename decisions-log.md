@@ -309,7 +309,7 @@ Features defer cùng group:
 11. Marketing automation — rotating SMS tới khách cũ để fill empty slot
 12. Drag-to-reschedule + resize block trên timeline
 13. "AI System Status" indicators (pulsing pills, AI on/off badges)
-14. Sentry "24/7 protection" badge user-facing
+14. NailIQ Error Monitor "24/7 protection" badge user-facing
 
 **Rationale**:
 
@@ -319,7 +319,7 @@ Strategic — tại sao defer cùng group:
 - Target user (salon owner Việt 35-55 từ paper + Zalo) pay $29/mo vì giá + workflow fit, KHÔNG vì AI/luxury vibe
 - Feature 1-9 không có data foundation: 0 historical bookings ngày 1 → AI suggest = random; client_profiles không có VIP flag, habit aggregation
 - Feature 10 (payment) = PCI scope + 6 tuần dev minimum, Square/Clover đã solve standalone
-- Feature 14 (Sentry badge) = lừa user vì Sentry là dev monitoring không phải user-facing security
+- Feature 14 (NailIQ Error Monitor badge) = lừa user vì NailIQ Error Monitor là dev monitoring không phải user-facing security
 
 Tactical — tại sao KHÔNG mock UI:
 - Mock UI cho feature không tồn tại = lừa user trong onboarding trial
@@ -385,7 +385,7 @@ Khi nhận feedback push features trong list này, response template:
 
 **Revisit when**:
 - Setup CI/CD pipeline (sẽ block deploy nếu lint fail)
-- Hoặc khi React 19 perf issue thực sự đo được qua Sentry / real user metrics
+- Hoặc khi React 19 perf issue thực sự đo được qua NailIQ Error Monitor / real user metrics
 - Hoặc post-launch tech debt sprint sau khi có 5+ paying customers
 
 **Cost to reverse**: Medium (~1 ngày fix toàn bộ + test regress booking flow)

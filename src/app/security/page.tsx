@@ -86,8 +86,9 @@ export default function SecurityPage() {
                   auth event.
                 </li>
                 <li>
-                  <strong>Error monitoring:</strong> Sentry — stack traces are
-                  captured without user PII in the payload.
+                  <strong>Error monitoring:</strong> NailIQ&apos;s internal
+                  monitor stores redacted stack traces in the NailIQ database;
+                  customer identifiers and bearer values are removed first.
                 </li>
               </ul>
             </section>

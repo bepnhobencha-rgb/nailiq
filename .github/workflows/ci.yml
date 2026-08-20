@@ -40,8 +40,6 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy
           SUPABASE_SERVICE_ROLE_KEY: dummy
-          NEXT_PUBLIC_SENTRY_DSN: ""
-          SENTRY_AUTH_TOKEN: ""
 
   security:
     name: Security Audit
@@ -67,7 +65,7 @@ jobs:
 
       - name: Check for committed secrets
         run: |
-          if grep -rE "(SUPABASE_SERVICE_ROLE_KEY|SENTRY_AUTH_TOKEN).*=.*[a-zA-Z0-9]{10,}" \
+          if grep -rE "(SUPABASE_SERVICE_ROLE_KEY).*=.*[a-zA-Z0-9]{10,}" \
             --include="*.ts" --include="*.tsx" --include="*.js" --include="*.json" \
             --exclude-dir=node_modules --exclude-dir=.next .; then
             echo "❌ Possible secrets found in committed code!"

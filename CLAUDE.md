@@ -44,7 +44,7 @@ Rules:
 - **Styling**: Tailwind CSS v4 (CSS-first config via `@theme` — no `tailwind.config.js`)
 - **Animations**: Framer Motion 12 + canvas-confetti
 - **Database & Auth**: Supabase (`@supabase/ssr` 0.10, `@supabase/supabase-js`)
-- **Error Monitoring**: Sentry (`@sentry/nextjs` 10) — separate configs for browser, Node, edge
+- **Error Monitoring**: NailIQ-owned `error_logs` monitor with client/server capture, privacy redaction, AI triage, and operator email alerts
 - **Testing**: Playwright 1.59 (E2E)
 - **Package Manager**: npm
 - **Hosting**: Vercel
@@ -62,9 +62,8 @@ src/
 │   │   ├── center/            # Receptionist center: realtime booking grid + queue
 │   │   ├── setup/             # Multi-step wizard: address, hours, services, staff
 │   │   └── settings/          # Salon settings (pause bookings, etc.)
-│   ├── debug-sentry/          # Manual Sentry error trigger
 │   ├── layout.tsx, globals.css
-│   └── proxy.ts               # Auth + Sentry tagging (also at src/proxy.ts)
+│   └── proxy.ts               # Auth + rate limiting (also at src/proxy.ts)
 ├── components/
 │   ├── booking/               # Public booking UI
 │   ├── receptionist/          # Center grid, drawer, queue, undo toast
@@ -80,9 +79,8 @@ src/
 │   ├── i18n/                  # Vi/En copy
 │   ├── seo/                   # JSON-LD, metadata helpers
 │   └── types/
-├── instrumentation.ts         # Routes Sentry init by NEXT_RUNTIME (node|edge)
-├── proxy.ts                   # Supabase session refresh, demo cookie, Sentry tags
-└── sentry.{server,edge}.config.ts
+├── instrumentation.ts         # Installs NailIQ's Node error reporter
+└── proxy.ts                   # Supabase session refresh + demo cookie
 
 e2e/                           # Playwright (~22 spec files)
 ├── helpers/db.ts              # seedTestSalon / cleanupTestSalon (uses service-role client)
@@ -95,7 +93,6 @@ supabase/migrations/           # Versioned SQL migrations
 scripts/auto-push.js           # File-watching auto-commit/push (see below)
 docs/                          # Design notes, receptionist mockups
 .github/workflows/             # CI
-sentry.client.config.ts        # Browser Sentry init (root, not under src/)
 ```
 
 ## 🔑 Coding Conventions
@@ -110,7 +107,7 @@ sentry.client.config.ts        # Browser Sentry init (root, not under src/)
 5. **Tailwind v4** — CSS-first config (`@theme` blocks in `globals.css`). Do not create `tailwind.config.js`.
 6. **Imports**: `@/` alias is configured. Group: external → internal → types.
 7. **Files**: `kebab-case.tsx` for routes/files; `PascalCase` for components; `camelCase` for functions.
-8. **Sentry tagging**: proxy sets `salon.slug` and `surface` tags — keep these on any new request-handling code path that needs traceability.
+8. **Error context**: pass only non-sensitive context to the internal reporter; never store booking tokens, customer contact details, or raw URLs.
 
 ## 🗄️ Supabase Tables
 
@@ -137,7 +134,6 @@ These modules are load-bearing and easy to break — read before editing:
 ## 🔒 Security Rules
 
 - NEVER expose `SUPABASE_SERVICE_ROLE_KEY` to client. It only goes through `serviceRole.ts` in server-only code paths.
-- NEVER expose `SENTRY_AUTH_TOKEN` to client.
 - NEVER commit `.env*` files. The `.claude/hooks/protect-secrets.sh` PreToolUse hook blocks any Bash command referencing `.env`, plus Read of `.env|.pem|.key|id_rsa|credentials`.
 - All mutating server actions MUST verify the caller is a member of the target salon (lookup via `salon_members`) — RLS is a backstop, not the only check.
 - Customer-facing inputs (booking name, etc.) are sanitized — see commit `0181cf2` for the allowlist approach.
@@ -254,7 +250,7 @@ Tests hit a real Supabase (test DB) via the service-role client. `e2e/helpers/db
 ## 🌐 External Services
 
 - **Supabase**: DB + Auth. Keys in `.env.local`.
-- **Sentry**: three runtime configs (browser at `sentry.client.config.ts`, server/edge at `src/sentry.*.config.ts`). Sampling: 1.0 dev, 0.2–0.25 prod. `src/instrumentation.ts` dispatches by `NEXT_RUNTIME`.
+- **NailIQ Error Monitor**: `errorReporter.ts` captures explicit client/server errors; `instrumentation.ts` captures request failures; `errorLog.ts` redacts and writes deduplicated rows to `error_logs`; `triageError.ts` creates operator summaries and alerts.
 - **Vercel**: auto-deploy from `main`.
 
 ## 🚫 Never Do
@@ -280,7 +276,7 @@ Tests hit a real Supabase (test DB) via the service-role client. `e2e/helpers/db
 - `package.json` — dependencies (read-only context).
 - `next.config.ts` — currently shows as deleted in git status; verify before assuming config.
 - `playwright.config.ts` — Playwright config.
-- `sentry.client.config.ts`, `src/sentry.{server,edge}.config.ts` — Sentry configs.
+- `src/shared/observability/` — internal error capture, redaction, deduplication, triage, and alerting.
 - `.env.local` — secrets. **Do not read.** Hook will block it.
 
 ## 🤝 PM Workflow

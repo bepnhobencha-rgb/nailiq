@@ -1,6 +1,6 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -505,7 +505,7 @@ export function ServicesSetupPanel({
       try {
         res = await updateService(slug, serviceId, patch);
       } catch (err) {
-        Sentry.captureMessage(
+        ErrorReporter.captureMessage(
           "[ServicesSetupPanel] updateService threw",
           {
             level: "error",
@@ -612,7 +612,7 @@ export function ServicesSetupPanel({
         try {
           res = await deleteService(slug, serviceId);
         } catch (err) {
-          Sentry.captureMessage(
+          ErrorReporter.captureMessage(
             "[ServicesSetupPanel] deleteService threw",
             {
               level: "error",

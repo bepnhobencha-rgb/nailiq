@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import {
+  redactObservabilityContext,
+  redactSensitiveText,
+} from "@/shared/observability/privacy";
 
 /**
  * Self-hosted error capture (no third-party). Fire-and-forget, service-role,
@@ -7,8 +11,8 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
  * Recurrences of the same error are deduped server-side (see `log_error` RPC):
  * the same fingerprint while still `open` bumps a counter instead of inserting.
  *
- * Pairs with Sentry today (dual-write); once the in-house view + alerts are
- * trusted, Sentry can be removed.
+ * This is NailIQ's only runtime error store. Customer identifiers and bearer
+ * values are redacted before fingerprinting or persistence.
  */
 
 export type ErrorLevel = "fatal" | "error" | "warning";
@@ -70,11 +74,13 @@ function isTestNoise(input: LogErrorInput): boolean {
 export async function logError(input: LogErrorInput): Promise<void> {
   try {
     if (isTestNoise(input)) return;
-    const message = String(input.message ?? "").trim().slice(0, 2000);
+    const message = redactSensitiveText(input.message).trim().slice(0, 2000);
     if (!message) return;
     const level: ErrorLevel = input.level ?? "error";
     const surface = (input.surface ?? "").toString().slice(0, 60) || null;
-    const route = input.route ? String(input.route).slice(0, 300) : null;
+    const route = input.route
+      ? redactSensitiveText(input.route).slice(0, 300)
+      : null;
     const fp = fingerprint(level, surface ?? "", route ?? "", message);
 
     const db = createServiceRoleClient();
@@ -86,8 +92,10 @@ export async function logError(input: LogErrorInput): Promise<void> {
       p_route: route,
       p_salon_id: input.salonId ?? null,
       p_user_id: input.userId ?? null,
-      p_stack: input.stack ? String(input.stack).slice(0, 8000) : null,
-      p_context: (input.context ?? {}) as never,
+      p_stack: input.stack
+        ? redactSensitiveText(input.stack).slice(0, 8000)
+        : null,
+      p_context: redactObservabilityContext(input.context) as never,
     });
   } catch (e) {
     // Never propagate — this is the reporter, not the feature.

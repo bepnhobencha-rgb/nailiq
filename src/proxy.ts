@@ -15,11 +15,10 @@
  *   - `request.cookies.set(name, value)` and
  *     `response.cookies.set({ ...cookie, secure })` are current
  *     `next/server` APIs (no deprecation in Next 16). ✓
- *   - Sentry `salon.slug` / `surface` tags + demo-cookie pin both
- *     preserved. ✓
+ *   - Internal error reporting + demo-cookie pin are preserved. ✓
  *   - No deprecation warnings emitted by `npm run build`.
  */
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { NAILQ_DEMO_SLUG_COOKIE } from "@/shared/lib/demoDashboardCookie";
@@ -55,7 +54,6 @@ const RESERVED_TOP_LEVEL_SEGMENTS = new Set<string>([
   "register",
   "choose-salon",
   "contact",
-  "debug-sentry",
   "opengraph-image",
   "privacy",
   "robots.txt",
@@ -119,8 +117,8 @@ export async function proxy(request: NextRequest) {
     if (slug) {
       const url = request.nextUrl.clone();
       url.pathname = `/${slug}`;
-      Sentry.getCurrentScope().setTag("salon.slug", slug);
-      Sentry.getCurrentScope().setTag("surface", "custom-domain");
+      ErrorReporter.getCurrentScope().setTag("salon.slug", slug);
+      ErrorReporter.getCurrentScope().setTag("surface", "custom-domain");
       return NextResponse.rewrite(url);
     }
   }
@@ -156,7 +154,7 @@ export async function proxy(request: NextRequest) {
     isPublicBookingSlugPath(pathnameEarly) &&
     (await checkBookingRateLimit(request))
   ) {
-    Sentry.captureMessage("rate-limit hit: booking-submit", {
+    ErrorReporter.captureMessage("rate-limit hit: booking-submit", {
       level: "info",
       tags: { "rate.limit": "booking-submit" },
     });
@@ -173,7 +171,7 @@ export async function proxy(request: NextRequest) {
     isPublicBookingSlugPath(pathnameEarly) &&
     (await checkBookingPageRateLimit(request))
   ) {
-    Sentry.captureMessage("rate-limit hit: booking-page-load", {
+    ErrorReporter.captureMessage("rate-limit hit: booking-page-load", {
       level: "info",
       tags: { "rate.limit": "booking-page-load" },
     });
@@ -191,7 +189,7 @@ export async function proxy(request: NextRequest) {
     (pathnameEarly === "/register" || pathnameEarly === "/login") &&
     (await checkAuthRateLimit(request))
   ) {
-    Sentry.captureMessage("rate-limit hit: auth-attempt", {
+    ErrorReporter.captureMessage("rate-limit hit: auth-attempt", {
       level: "info",
       tags: { "rate.limit": "auth-attempt", "auth.path": pathnameEarly },
     });
@@ -254,8 +252,8 @@ export async function proxy(request: NextRequest) {
   let isDemoAccess = false;
   if (dashSlugMatch) {
     const pathSlug = decodeURIComponent(dashSlugMatch[1]);
-    Sentry.getCurrentScope().setTag("salon.slug", pathSlug);
-    Sentry.getCurrentScope().setTag("surface", "dashboard");
+    ErrorReporter.getCurrentScope().setTag("salon.slug", pathSlug);
+    ErrorReporter.getCurrentScope().setTag("surface", "dashboard");
     if (isDemoOtpRuntime()) {
       const demoSlug = request.cookies.get(NAILQ_DEMO_SLUG_COOKIE)?.value;
       isDemoAccess = isDemoSlugPinBypassed()
