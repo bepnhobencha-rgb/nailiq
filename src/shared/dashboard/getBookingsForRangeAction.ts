@@ -1,6 +1,6 @@
 "use server";
 
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -189,7 +189,7 @@ export async function getBookingsForRangeAction(
   endYmd: string,
   hint?: BookingsRangeHint,
 ): Promise<GetBookingsForRangeResult> {
-  return Sentry.startSpan(
+  return ErrorReporter.startSpan(
     {
       name: "getBookingsForRangeAction",
       op: "server_action",

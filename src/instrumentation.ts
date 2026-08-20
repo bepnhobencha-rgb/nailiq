@@ -1,17 +1,16 @@
-import * as Sentry from "@sentry/nextjs";
+import { installInternalErrorHandler } from "@/shared/observability/errorReporter";
 
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    await import("./sentry.server.config");
-  }
-
-  if (process.env.NEXT_RUNTIME === "edge") {
-    await import("./sentry.edge.config");
+    const { logError } = await import("./shared/observability/errorLog");
+    installInternalErrorHandler((error) => {
+      void logError(error);
+    });
   }
 }
 
-// Capture server request errors to BOTH Sentry and our self-hosted error_logs.
-export const onRequestError: typeof Sentry.captureRequestError = (err, request, context) => {
+// Capture server request failures in NailIQ's own error_logs store.
+export function onRequestError(err: unknown, request: unknown, context: unknown) {
   // Self-hosted (Node runtime only — the service-role client isn't edge-safe).
   if (process.env.NEXT_RUNTIME === "nodejs") {
     void import("./shared/observability/errorLog")
@@ -34,5 +33,4 @@ export const onRequestError: typeof Sentry.captureRequestError = (err, request, 
         /* reporter must never throw */
       });
   }
-  return Sentry.captureRequestError(err, request, context);
-};
+}

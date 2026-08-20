@@ -2,7 +2,7 @@
 // Sends bilingual confirmation SMS and tracks delivery status on the booking row.
 // Checks customer_preferences for preferred language; defaults to Vietnamese.
 
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { buildSmsConsentMeta } from "@/shared/booking/smsConsentRecord";
@@ -140,7 +140,7 @@ export async function POST(req: Request) {
         groupId,
         error: consentError.message,
       });
-      Sentry.captureException(new Error(`sms_consent write failed: ${consentError.message}`), {
+      ErrorReporter.captureException(new Error(`sms_consent write failed: ${consentError.message}`), {
         tags: { area: "sms_consent" },
         extra: { bookingId, groupId, salonId },
       });

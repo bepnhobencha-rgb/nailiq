@@ -1,31 +1,43 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
-import type { ReactNode } from "react";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
+import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Button } from "@/components/ui/Button";
 import type { BookingSalonMeta } from "@/shared/booking/loadBookingServices";
 
-export function BookingFlowErrorBoundary(props: {
+type Props = {
   shopSlug: string;
   salon: BookingSalonMeta;
   children: ReactNode;
-}) {
-  const { shopSlug, salon, children } = props;
+};
 
-  return (
-    <Sentry.ErrorBoundary
-      beforeCapture={(scope) => {
-        scope.setTag("booking.flow", "public_ui");
-        scope.setTag("salon.id", salon.id);
-        scope.setTag("salon.slug", shopSlug);
-        scope.setContext("salon", {
-          id: salon.id,
-          slug: shopSlug,
-          name: salon.name ?? "",
-        });
-      }}
-      fallback={({ resetError }) => (
-        <div
+type State = { error: Error | null };
+
+export class BookingFlowErrorBoundary extends Component<Props, State> {
+  state: State = { error: null };
+
+  static getDerivedStateFromError(error: Error): State {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    ErrorReporter.captureException(error, {
+      tags: {
+        "booking.flow": "public_ui",
+        "salon.id": this.props.salon.id,
+        "salon.slug": this.props.shopSlug,
+      },
+      extra: { componentStack: info.componentStack },
+    });
+  }
+
+  private resetError = () => this.setState({ error: null });
+
+  render() {
+    if (!this.state.error) return this.props.children;
+
+    return (
+      <div
           className="glass mt-8 w-full rounded-2xl border border-nq-border/50 p-6 text-center"
           role="alert"
         >
@@ -41,14 +53,11 @@ export function BookingFlowErrorBoundary(props: {
             variant="secondary"
             size="md"
             className="mx-auto mt-5"
-            onClick={resetError}
+            onClick={this.resetError}
           >
             Try again
           </Button>
-        </div>
-      )}
-    >
-      {children}
-    </Sentry.ErrorBoundary>
-  );
+      </div>
+    );
+  }
 }

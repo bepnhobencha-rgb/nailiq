@@ -1,7 +1,7 @@
 "use server";
 
 import { headers } from "next/headers";
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { isRateLimited, RATE_LIMIT_IDS } from "@/shared/lib/rateLimit";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
@@ -145,7 +145,7 @@ export async function submitContactInquiry(input: {
   try {
     resend = getResendClient();
   } catch (e) {
-    Sentry.captureException(e, { tags: { surface: "contact" } });
+    ErrorReporter.captureException(e, { tags: { surface: "contact" } });
     return { ok: false, reason: "server_error" };
   }
 
@@ -225,14 +225,14 @@ export async function submitContactInquiry(input: {
       html,
     });
     if (res.error) {
-      Sentry.captureMessage("[contact] Resend send error", {
+      ErrorReporter.captureMessage("[contact] Resend send error", {
         level: "error",
         extra: { message: res.error.message },
       });
       return { ok: false, reason: "server_error" };
     }
   } catch (e) {
-    Sentry.captureException(e, {
+    ErrorReporter.captureException(e, {
       tags: { surface: "contact" },
     });
     return { ok: false, reason: "server_error" };

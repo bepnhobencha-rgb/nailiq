@@ -1,6 +1,6 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/Button";
@@ -13,7 +13,7 @@ import { Card } from "@/components/ui/Card";
  * (no hook equivalent). We keep this minimal and isolated so the rest
  * of the app stays on function components per CLAUDE.md conventions.
  *
- * On error: report to Sentry with `nailiq.surface = "receptionist_center"`
+ * On error: report to NailIQ Error Monitor with `nailiq.surface = "receptionist_center"`
  * tag (matches the proxy's existing tagging convention) and render a
  * friendly retry card. Retry simply forces a remount by bumping a key.
  *
@@ -30,7 +30,7 @@ export interface ReceptionistErrorBoundaryProps {
   children: ReactNode;
   /** Localized fallback copy. Parent must supply — error UI is i18n-aware. */
   labels: ReceptionistErrorBoundaryLabels;
-  /** Optional context for Sentry tags (e.g. salon slug). */
+  /** Optional context for NailIQ Error Monitor tags (e.g. salon slug). */
   salonSlug?: string;
 }
 
@@ -86,7 +86,7 @@ export class ReceptionistErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    // Don't log session-expiry redirects to Sentry — they're expected behaviour,
+    // Don't log session-expiry redirects to NailIQ Error Monitor — they're expected behaviour,
     // not bugs. The 420+ occurrences in error_logs were all session expirations.
     if (
       error.message?.includes("unexpected response") ||
@@ -108,14 +108,14 @@ export class ReceptionistErrorBoundary extends Component<
           /* storage blocked in some webviews — reload anyway */
         }
         window.location.reload();
-        return; // expected deploy skew, not a bug — don't report to Sentry
+        return; // expected deploy skew, not a bug — don't report to NailIQ Error Monitor
       }
       // Already reloaded moments ago and STILL failing → stop looping and show
       // the manual retry card so staff aren't stuck in a reload cycle.
       this.setState({ isStaleDeploy: false });
       return;
     }
-    Sentry.captureException(error, {
+    ErrorReporter.captureException(error, {
       tags: {
         "nailiq.surface": "receptionist_center",
         "nailiq.event": "error_boundary",

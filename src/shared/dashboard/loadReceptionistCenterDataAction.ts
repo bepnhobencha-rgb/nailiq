@@ -1,6 +1,6 @@
 "use server";
 
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import {
   loadReceptionistCenterData,
   type LoadReceptionistCenterResult,
@@ -8,7 +8,7 @@ import {
 
 /**
  * Next.js server action wrapper for Receptionist Center data (session + RLS via `getDashboardWriteClient`).
- * Wrapped in a Sentry span so the desk reload path shows up in
+ * Wrapped in a NailIQ Error Monitor span so the desk reload path shows up in
  * Performance with child queries (salons, staff, services, walk-ins,
  * bookings) inheriting the trace.
  */
@@ -16,7 +16,7 @@ export async function loadReceptionistCenterDataAction(
   slug: string,
   dateYmd: string,
 ): Promise<LoadReceptionistCenterResult> {
-  return Sentry.startSpan(
+  return ErrorReporter.startSpan(
     {
       name: "loadReceptionistCenterDataAction",
       op: "server_action",

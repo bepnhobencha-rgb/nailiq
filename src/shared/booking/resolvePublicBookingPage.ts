@@ -13,7 +13,6 @@ import {
   validatePublicBookingSlug,
 } from "@/shared/booking/normalizePublicBookingSlug";
 import { createPublicClient } from "@/shared/lib/supabase/publicClient";
-import { setPublicBookingSalonTags } from "@/shared/observability/salonSentry";
 
 /**
  * Paths that must not resolve as salon slugs.
@@ -37,7 +36,6 @@ export const RESERVED_BOOKING_SLUGS = new Set([
   "choose-salon",
   "contact",
   "dashboard",
-  "debug-sentry",
   "login",
   "privacy",
   "register",
@@ -61,7 +59,7 @@ export type ResolvedPublicBookingPage =
    * Distinct from `not_found`, and the distinction is load-bearing now that an
    * unknown slug answers with a real 404. `loadBookingServicesForSalonSlug`
    * returns `null` both when a salon is genuinely absent AND when the query
-   * errors (it logs to Sentry and returns null). Collapsing those two into
+   * errors (it logs to NailIQ Error Monitor and returns null). Collapsing those two into
    * `not_found` meant a Supabase outage would serve 404 for every real,
    * paying salon — and Google de-indexes a 404. A failed lookup must surface
    * as a 5xx: "come back later", not "this never existed".
@@ -98,7 +96,7 @@ export const resolvePublicBookingPage = cache(
     //
     // Asked separately, and on purpose. loadBookingServicesForSalonSlug()
     // returns null for "no such salon" AND for "the query blew up" — it logs
-    // the error to Sentry and returns null either way. That conflation was
+    // the error to NailIQ Error Monitor and returns null either way. That conflation was
     // survivable while an unknown slug rendered a 200; it is not survivable now
     // that it renders a hard 404, because a Supabase blip would then hand
     // Google a 404 for tech-nails and hilite-anaheim and get them de-indexed.
@@ -158,12 +156,6 @@ export const resolvePublicBookingPage = cache(
         to: `/${load.canonicalSlug}`,
       };
     }
-
-    setPublicBookingSalonTags({
-      salonId: load.salon.id,
-      salonSlug: load.canonicalSlug,
-      salonName: load.salon.name,
-    });
 
     // 8. return OK
     return {

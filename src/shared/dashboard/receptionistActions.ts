@@ -1,7 +1,7 @@
 "use server";
 
 import { after } from "next/server";
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import {
@@ -738,7 +738,7 @@ export async function assignWalkinToSlot(
     existingBookings: (existing ?? []) as ConflictCheckBooking[],
   });
   if (conflict !== null) {
-    Sentry.captureEvent({
+    ErrorReporter.captureEvent({
       message: "booking conflict detected (assign walk-in)",
       level: "warning",
       tags: {
@@ -789,7 +789,7 @@ export async function assignWalkinToSlot(
   if (upErr) {
     // 23P01 = exclusion_violation (bookings_no_overlap GiST EXCLUDE).
     if (upErr.code === "23P01") {
-      Sentry.captureEvent({
+      ErrorReporter.captureEvent({
         message: "DB-level slot conflict on assign (GiST EXCLUDE)",
         level: "warning",
         tags: {
@@ -802,7 +802,7 @@ export async function assignWalkinToSlot(
       return fail("slot_conflict");
     }
     console.error("[assignWalkinToSlot] update", upErr);
-    Sentry.captureException(upErr, {
+    ErrorReporter.captureException(upErr, {
       tags: {
         "nailiq.event": "booking_action_error",
         "nailiq.surface": "assign_walkin",
@@ -3985,7 +3985,7 @@ export async function deskClaimPartySlotAction(
   });
 
   if (error) {
-    Sentry.captureException(error, { extra: { slug, claimId } });
+    ErrorReporter.captureException(error, { extra: { slug, claimId } });
     return { ok: false, error: "server_error" };
   }
 

@@ -23,7 +23,7 @@ import { isUsPhone } from "@/shared/lib/phoneRegion";
  *   - A review row already exists for this booking
  *
  * Returns nothing — the caller doesn't await this and doesn't surface
- * the result to the operator. Errors are logged to console + Sentry.
+ * the result to the operator. Errors are logged to console + ErrorReporter.
  */
 export async function sendReviewRequest(bookingId: string): Promise<void> {
   try {

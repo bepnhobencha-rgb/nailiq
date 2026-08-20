@@ -43,8 +43,6 @@ jobs:
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
       BASE_URL: http://localhost:3000
       PLAYWRIGHT_BASE_URL: http://localhost:3000
-      NEXT_PUBLIC_SENTRY_DSN: ""
-      SENTRY_AUTH_TOKEN: ""
       NEXT_PUBLIC_DEMO_OTP: "true"
       DEMO_OTP: "true"
       NAILIQ_TEST_BYPASS_SLUG_PIN: "1"
@@ -228,8 +226,6 @@ jobs:
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
       BASE_URL: http://localhost:3000
       PLAYWRIGHT_BASE_URL: http://localhost:3000
-      NEXT_PUBLIC_SENTRY_DSN: ""
-      SENTRY_AUTH_TOKEN: ""
       NEXT_PUBLIC_DEMO_OTP: "true"
       DEMO_OTP: "true"
       # Allows demo cookie with non-"demo-salon" slugs so E2E fixtures can
@@ -551,8 +547,6 @@ jobs:
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
       BASE_URL: http://localhost:3000
       PLAYWRIGHT_BASE_URL: http://localhost:3000
-      NEXT_PUBLIC_SENTRY_DSN: ""
-      SENTRY_AUTH_TOKEN: ""
       NEXT_PUBLIC_DEMO_OTP: "true"
       DEMO_OTP: "true"
       NAILIQ_TEST_BYPASS_SLUG_PIN: "1"

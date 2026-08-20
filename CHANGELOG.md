@@ -384,7 +384,7 @@ All notable changes to NailIQ (project and documentation) are recorded here.
 
 ## 2026-05-06 (Next.js 16 — middleware → proxy)
 
-- **`src/middleware.ts` → `src/proxy.ts`:** Renamed per [Middleware to Proxy](https://nextjs.org/docs/messages/middleware-to-proxy). Export **`proxy`** (was **`middleware`**); **`export const config.matcher`** unchanged. Supabase session refresh + `/dashboard/*` gate + demo-cookie / Sentry tags unchanged. Stops **`The middleware file convention is deprecated. Please use proxy instead.`** on dev and E2E.
+- **`src/middleware.ts` → `src/proxy.ts`:** Renamed per [Middleware to Proxy](https://nextjs.org/docs/messages/middleware-to-proxy). Export **`proxy`** (was **`middleware`**); **`export const config.matcher`** unchanged. Supabase session refresh + `/dashboard/*` gate + demo-cookie / NailIQ Error Monitor tags unchanged. Stops **`The middleware file convention is deprecated. Please use proxy instead.`** on dev and E2E.
 
 ## 2026-05-06 (E2E — status pill cleanup)
 

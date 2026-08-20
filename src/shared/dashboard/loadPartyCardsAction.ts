@@ -13,7 +13,7 @@
  *   - estimatedRevenueCents is null unless ALL slots have a price_cents value.
  */
 
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import {
@@ -60,7 +60,7 @@ export async function loadPartyCardsAction(
           "Party Card panel will be empty. Set SUPABASE_SERVICE_ROLE_KEY.",
       );
     }
-    Sentry.captureException(err, { extra: { salonId } });
+    ErrorReporter.captureException(err, { extra: { salonId } });
     return { ok: true, cards: [] }; // Graceful: success with empty list
   }
 
@@ -74,7 +74,7 @@ export async function loadPartyCardsAction(
     .eq("salon_id", salonId);
 
   if (linkErr) {
-    Sentry.captureException(linkErr, { extra: { salonId } });
+    ErrorReporter.captureException(linkErr, { extra: { salonId } });
     return { ok: false, error: "server_error" };
   }
   if (!partyLinks || partyLinks.length === 0) {
@@ -112,7 +112,7 @@ export async function loadPartyCardsAction(
     .in("party_link_id", partyLinkIds);
 
   if (claimsErr) {
-    Sentry.captureException(claimsErr, { extra: { salonId } });
+    ErrorReporter.captureException(claimsErr, { extra: { salonId } });
     return { ok: false, error: "server_error" };
   }
   if (!claims || claims.length === 0) {

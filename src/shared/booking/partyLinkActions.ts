@@ -19,7 +19,7 @@
  */
 
 import crypto from "crypto";
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
@@ -162,7 +162,7 @@ export async function createPartyLink(params: {
           "  Set SUPABASE_SERVICE_ROLE_KEY in .env.local for end-to-end local testing.",
       );
     }
-    Sentry.captureException(err, { extra: { groupId } });
+    ErrorReporter.captureException(err, { extra: { groupId } });
     return { ok: false, reason: "server_error" };
   }
 
@@ -175,7 +175,7 @@ export async function createPartyLink(params: {
     .eq("salon_id", salonId);
 
   if (verifyErr || !rows || rows.length !== bookingIds.length) {
-    Sentry.captureMessage("createPartyLink: booking validation failed", {
+    ErrorReporter.captureMessage("createPartyLink: booking validation failed", {
       level: "warning",
       extra: { groupId, salonId, bookingIds, verifyErr },
     });
@@ -226,7 +226,7 @@ export async function createPartyLink(params: {
           return { ok: true, token: existing.token, url: `${baseUrl}/party/${existing.token}${langQuery}` };
         }
       }
-      Sentry.captureException(insertErr, { extra: { groupId, attempt } });
+      ErrorReporter.captureException(insertErr, { extra: { groupId, attempt } });
       return { ok: false, reason: "server_error" };
     }
 
@@ -263,7 +263,7 @@ export async function createPartyLink(params: {
 
   const { error: claimErr } = await db.from("party_link_claims").insert(claimRows);
   if (claimErr) {
-    Sentry.captureException(claimErr, { extra: { groupId, linkId } });
+    ErrorReporter.captureException(claimErr, { extra: { groupId, linkId } });
     // Non-fatal: the link is created; claims can be lazy-created later.
     // But return ok so the user gets the URL.
   }
@@ -292,7 +292,7 @@ export async function loadPartyLinkPage(
           "  Set SUPABASE_SERVICE_ROLE_KEY in .env.local for end-to-end local testing.",
       );
     }
-    Sentry.captureException(err);
+    ErrorReporter.captureException(err);
     return null;
   }
 
@@ -477,7 +477,7 @@ export async function claimPartySlot(params: {
   });
 
   if (error) {
-    Sentry.captureException(error, { extra: { token, claimId } });
+    ErrorReporter.captureException(error, { extra: { token, claimId } });
     return { ok: false, reason: "server_error" };
   }
 
@@ -538,7 +538,7 @@ export async function editPartyClaimDetails(params: {
   });
 
   if (error) {
-    Sentry.captureException(error, { extra: { token, claimId } });
+    ErrorReporter.captureException(error, { extra: { token, claimId } });
     return { ok: false, reason: "server_error" };
   }
 
@@ -588,7 +588,7 @@ export async function submitPartyChangeRequest(params: {
   try {
     db = createServiceRoleClient();
   } catch (err) {
-    Sentry.captureException(err);
+    ErrorReporter.captureException(err);
     return { ok: false, reason: "server_error" };
   }
 
@@ -626,7 +626,7 @@ export async function submitPartyChangeRequest(params: {
     .single();
 
   if (insertErr || !inserted) {
-    Sentry.captureException(insertErr ?? new Error("submitPartyChangeRequest: no id returned"), {
+    ErrorReporter.captureException(insertErr ?? new Error("submitPartyChangeRequest: no id returned"), {
       extra: { token, claimId, bookingId, requestType },
     });
     return { ok: false, reason: "server_error" };

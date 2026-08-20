@@ -1,5 +1,5 @@
 import { after } from "next/server";
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import type { SalonDashboardBooking } from "@/shared/types";
@@ -397,7 +397,7 @@ export async function performEditBooking(
       conflict.client_name != null && String(conflict.client_name).trim() !== ""
         ? String(conflict.client_name).trim()
         : "";
-    Sentry.captureEvent({
+    ErrorReporter.captureEvent({
       message: "booking conflict detected (edit)",
       level: "warning",
       tags: {
@@ -476,7 +476,7 @@ export async function performEditBooking(
   if (upErr) {
     // 23P01 = exclusion_violation (bookings_no_overlap GiST EXCLUDE).
     if (upErr.code === "23P01") {
-      Sentry.captureEvent({
+      ErrorReporter.captureEvent({
         message: "DB-level slot conflict on edit (GiST EXCLUDE)",
         level: "warning",
         tags: {
@@ -489,7 +489,7 @@ export async function performEditBooking(
       return { ok: false, error: "slot_conflict" };
     }
     console.error("[performEditBooking] update", upErr);
-    Sentry.captureException(upErr, {
+    ErrorReporter.captureException(upErr, {
       tags: {
         "nailiq.event": "booking_action_error",
         "nailiq.surface": "edit_booking",

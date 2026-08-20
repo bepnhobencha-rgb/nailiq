@@ -122,4 +122,4 @@ Manual, read-only. **Do not submit real leads / OTP / bookings on production.**
 - [ ] `/register` (returning-owner path) still renders "sign in or sign up" and Google + email inputs.
 - [ ] `/dashboard/<slug>` while logged out still redirects to `/login`.
 - [ ] Public salon booking page still renders for a known slug.
-- [ ] No new Sentry runtime errors on `/` in the 30 min after go-live.
+- [ ] No new NailIQ Error Monitor runtime errors on `/` in the 30 min after go-live.

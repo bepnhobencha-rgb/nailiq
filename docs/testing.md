@@ -141,9 +141,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 # OpenAI (required for Voice AI / Lily)
 OPENAI_API_KEY=sk-...
 
-# Sentry (optional in local dev — leave empty to disable)
-NEXT_PUBLIC_SENTRY_DSN=
-SENTRY_AUTH_TOKEN=
+# NailIQ Error Monitor (optional in local dev — leave empty to disable)
 
 # Demo / testing mode — NEVER true in production
 NEXT_PUBLIC_DEMO_OTP=false

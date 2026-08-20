@@ -18,7 +18,7 @@ import {
  * friendly upgrade prompt. Soft-fails (treats counting error as "OK
  * to proceed") so a transient query glitch doesn't lock out paying
  * tenants — the worst case is one over-cap booking, not a fleet-wide
- * outage. A Sentry breadcrumb is left on the soft-fail path.
+ * outage. A NailIQ Error Monitor breadcrumb is left on the soft-fail path.
  */
 export async function assertBookingLimitAvailable(
   supabase: SupabaseClient,
@@ -46,7 +46,7 @@ export async function assertBookingLimitAvailable(
 
   if (error) {
     // Don't block bookings if we can't read the count — surface to
-    // Sentry but let the booking through.
+    // NailIQ Error Monitor but let the booking through.
     console.error("[assertBookingLimit] count query failed", error);
     return;
   }

@@ -132,7 +132,7 @@ Identified 2026-05-02 in failure mode review. Pre-launch BLOCKERS shipped in com
 - ✅ Client profiles panel — shipped 2026-05-09 (#69)
 - ✅ Week-view calendar — shipped 2026-05-09 (#68)
 - ✅ Audit event log + owner viewer — shipped 2026-05-09 (#65)
-- ✅ Sentry observability + health endpoint + error boundary — shipped 2026-05-09 (#66)
+- ✅ NailIQ Error Monitor observability + health endpoint + error boundary — shipped 2026-05-09 (#66)
 - ✅ Google OAuth wiring (UI + callback handler) — shipped 2026-05-09; Supabase URL config fix pending
 - ❌ Public marketing site (week 4)
 
@@ -147,7 +147,7 @@ None.
 | # | Title | Cluster |
 |---|---|---|
 | #65 | feat(audit): booking event log + owner-only viewer (#038) | Insight |
-| #66 | feat(observability): Sentry events + spans + health + error boundary (#039) | Infra |
+| #66 | feat(observability): NailIQ Error Monitor events + spans + health + error boundary (#039) | Infra |
 | #67 | chore(proxy): Next 16 convention audit (#040) | Infra (clears P3 middleware deprecation) |
 | #68 | feat(receptionist): week view calendar (#041) | Insight |
 | #69 | feat(dashboard): client profiles panel + page (#042) | Insight |

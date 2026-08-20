@@ -23,7 +23,7 @@ export function getResendClient(): Resend | null {
     if (process.env.NODE_ENV === "production") {
       // In production, missing key is a configuration bug — the email
       // flow has explicit deployment expectations. Log + throw so it
-      // surfaces in Sentry rather than silently no-opping.
+      // surfaces in NailIQ Error Monitor rather than silently no-opping.
       throw new Error("RESEND_API_KEY missing in production");
     }
     console.warn(

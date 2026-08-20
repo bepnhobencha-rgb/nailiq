@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import type { BookingComboItem, BookingServiceItem } from "@/shared/booking/catalog";
 import { getSalonBySlug } from "@/shared/booking/getSalonBySlug";
 import { resolveVertical } from "@/shared/verticals/registry";
@@ -147,7 +147,7 @@ export async function loadBookingServicesForSalonSlug(
 
   if (salonErr) {
     console.error("[PUBLIC_BOOKING] loadBookingServices salon error:", salonErr);
-    Sentry.captureException(salonErr, {
+    ErrorReporter.captureException(salonErr, {
       tags: {
         "salon.slug": normalizedSlug,
         surface: "public_booking_load",

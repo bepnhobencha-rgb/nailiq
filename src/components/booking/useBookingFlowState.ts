@@ -62,7 +62,7 @@ import {
 } from "@/shared/nailTryOn/bookingRecommendation";
 
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 
 export type ReturningCustomer = {
@@ -1200,7 +1200,7 @@ export function useBookingFlowState(
         setError(t.bookingErrors.invalidNameChars);
         setStep("info");
       } else {
-        Sentry.captureException(err instanceof Error ? err : new Error(String(err)), {
+        ErrorReporter.captureException(err instanceof Error ? err : new Error(String(err)), {
           tags: { "salon.slug": shopSlug, "booking.flow": "voice_submit_direct" },
         });
         setError(t.submitError);
@@ -1731,7 +1731,7 @@ export function useBookingFlowState(
         setStep("otp");
         setError(t.bookingErrors.otpRequired);
       } else {
-        Sentry.captureException(
+        ErrorReporter.captureException(
           err instanceof Error ? err : new Error(String(err)),
           {
             tags: {

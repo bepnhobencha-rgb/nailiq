@@ -47,7 +47,7 @@ Money path verified safe: server-side amounts, secrets service-role-only, role-g
 ## 5. Monitoring after go-live
 
 - **Self-hosted error monitor** (already live): captures → AI triage (Haiku cron) → AI-draft fix PRs on `ai-fix/*` (never auto-merged). Watch the dashboard for spikes after launch.
-- **Sentry**: surface tag `surface=dashboard|booking|custom-domain|superadmin`.
+- **NailIQ Error Monitor**: surface tag `surface=dashboard|booking|custom-domain|superadmin`.
 - **Supabase advisors**: re-run `get_advisors(security)` after any new migration — the anon-grant-on-new-RPC trap recurs (it bit us twice). Code-review every new `SECURITY DEFINER` migration for the `REVOKE ... FROM anon` tail.
 
 ## 6. Rollback

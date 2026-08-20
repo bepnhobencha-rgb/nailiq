@@ -1,5 +1,4 @@
 import type { NextConfig } from "next";
-import { withSentryConfig } from "@sentry/nextjs";
 
 // `upgrade-insecure-requests` must only be sent over HTTPS. Playwright WebKit
 // (unlike Chromium) does not respect the spec exception for localhost and will
@@ -103,7 +102,7 @@ const nextConfig: NextConfig = {
       // script/frame/connect + pci-connect for tokenization + its font hosts
       // (per https://developer.squareup.com/docs/web-payments/content-security-policy).
       // Both production + sandbox domains so any salon environment works.
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.vercel-scripts.com https://*.sentry.io https://js.stripe.com https://web.squarecdn.com https://sandbox.web.squarecdn.com",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.vercel-scripts.com https://js.stripe.com https://web.squarecdn.com https://sandbox.web.squarecdn.com",
       // Square's Web Payments SDK injects an EXTERNAL stylesheet (card-wrapper.css)
       // from web.squarecdn.com into the parent doc — 'unsafe-inline' alone blocks
       // it and card.attach() throws "unexpected error" (card box never renders).
@@ -112,7 +111,7 @@ const nextConfig: NextConfig = {
       "img-src 'self' data: blob: https:",
       "font-src 'self' data: https://square-fonts-production-f.squarecdn.com https://d1g145x70srn7h.cloudfront.net",
       [
-        "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.sentry.io https://api.stripe.com https://api.openai.com wss://api.openai.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com",
+        "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.stripe.com https://api.openai.com wss://api.openai.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com",
         // Whatever Supabase THIS build is configured against — see the note above.
         // A no-op in production; the difference between working and silently
         // broken when the stack is local.
@@ -184,14 +183,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withSentryConfig(nextConfig, {
-  org: process.env.SENTRY_ORG,
-  project: process.env.SENTRY_PROJECT,
-
-  silent: !process.env.CI,
-
-  // Optional: uncomment and set `SENTRY_AUTH_TOKEN` in CI for readable stacks.
-  // authToken: process.env.SENTRY_AUTH_TOKEN,
-
-  // widenClientFileUpload: true,
-});
+export default nextConfig;

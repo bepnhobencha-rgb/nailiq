@@ -1,6 +1,6 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
+import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { useEffect } from "react";
 
 export default function GlobalError({
@@ -9,24 +9,7 @@ export default function GlobalError({
   error: Error & { digest?: string };
 }) {
   useEffect(() => {
-    Sentry.captureException(error);
-    // Self-hosted capture (in addition to Sentry).
-    try {
-      void fetch("/api/errors", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        keepalive: true,
-        body: JSON.stringify({
-          message: error?.message ?? "Global render error",
-          stack: error?.stack ?? null,
-          level: "fatal",
-          route: typeof location !== "undefined" ? location.pathname : null,
-          context: { digest: error?.digest ?? null },
-        }),
-      });
-    } catch {
-      /* never throw from the error screen */
-    }
+    ErrorReporter.captureException(error);
   }, [error]);
 
   return (

@@ -104,7 +104,7 @@ describe("public salon page — HTTP status for unknown slugs", () => {
   it("does not turn a failed lookup into a 404", () => {
     // The dangerous half of this change. loadBookingServicesForSalonSlug()
     // returns null both for "no such salon" and for "the query errored" — it
-    // logs to Sentry and returns null either way. Collapsing those into a 404
+    // logs to NailIQ Error Monitor and returns null either way. Collapsing those into a 404
     // was harmless while unknown slugs answered 200; once they answer a real
     // 404, a Supabase blip would hand Google a 404 for tech-nails and
     // hilite-anaheim, and a 404 is how a page leaves the index.

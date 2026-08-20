@@ -471,11 +471,10 @@ Supabase
   ├── Postgres + RLS
   └── Realtime (receptionist center live updates)
 
-Sentry
-  ├── Browser:   sentry.client.config.ts
-  ├── Server:    src/sentry.server.config.ts
-  └── Edge:      src/sentry.edge.config.ts
-      Tags: salon.slug + surface (set in proxy.ts)
+NailIQ Error Monitor
+  ├── Browser:   /api/errors
+  ├── Server:    src/instrumentation.ts
+  └── Storage:   Supabase error_logs (redacted + deduplicated)
 
 Vercel
   ├── Auto-deploy from main
