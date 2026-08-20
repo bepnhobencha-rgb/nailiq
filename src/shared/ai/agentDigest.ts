@@ -184,6 +184,8 @@ function buildContext(
         const worstDay = str(p0.worstDow);
         return `Huỷ Lịch: ${total} huỷ · tỷ lệ ${rate}%${spike ? " ⚠️ tăng bất thường" : ""}${worstDay ? ` · nhiều nhất: ${worstDay}` : ""}`;
       })(),
+      social_content:
+        `Social Content: đã soạn ${count} caption nháp và gửi cho chủ tiệm để tự duyệt/đăng; AI không đăng lên mạng xã hội`,
     };
     agentLines.push(label[a.agent] ?? `${a.agent}: ${count} hành động`);
   }
@@ -237,6 +239,9 @@ Rules:
 - 3-4 short paragraphs max
 - Lead with the day's performance in 1 sentence
 - Then what you (the AI Manager) DID today — be specific about names/services where available
+- Booking statuses, revenue, cancellations, and no-shows are observations from the salon database. Never claim that you created, completed, cancelled, or marked those records unless VIỆC AI ĐÃ LÀM HÔM NAY explicitly says so
+- "sent_social_draft" means a caption DRAFT was sent privately to the salon owner for review/copying. Never say it was posted, published, or uploaded to social media
+- If mentioning a no-show, say "hệ thống ghi nhận" or "nhân viên đã đánh dấu". Never say "tôi đã ghi nhận/đánh dấu" unless an explicit AI action says so
 - Then any alerts (only if severity is warning/critical — skip info)
 - Close with tomorrow's outlook in 1 sentence
 - NO bullet lists — flowing prose only
@@ -290,16 +295,59 @@ export function shouldUseAiDigest(input: {
   );
 }
 
-function deterministicDigestBody(
+export type DigestGroundingFacts = {
+  hasSocialDraft: boolean;
+  noShowCount: number;
+};
+
+/**
+ * Deterministic truth gate for LLM-written owner emails. Prompt instructions
+ * improve wording, while this guard prevents the two observed false claims
+ * from reaching an owner even if a model ignores those instructions.
+ */
+export function isDigestGrounded(
+  body: string,
+  facts: DigestGroundingFacts,
+): boolean {
+  const normalized = body.replace(/\s+/g, " ");
+
+  if (facts.hasSocialDraft) {
+    // Remove explicit denials before looking for a positive publication claim.
+    const publicationClaimsOnly = normalized.replace(
+      /(?:chưa|không)\s+(?:đăng|xuất bản).{0,50}(?:bài|nội dung|mạng xã hội|facebook|instagram)/giu,
+      "",
+    );
+    const claimsSocialPublication =
+      /(?:đã\s+)?(?:đăng|xuất bản).{0,50}(?:bài|nội dung|mạng xã hội|facebook|instagram)|(?:published|posted).{0,50}(?:social|facebook|instagram|content|post)/iu;
+    if (claimsSocialPublication.test(publicationClaimsOnly)) return false;
+  }
+
+  if (facts.noShowCount > 0) {
+    const selfAttributedNoShow =
+      /(?:\btôi\b|\bi\b).{0,80}(?:ghi nhận|đánh dấu|recorded|marked).{0,50}(?:no[- ]?show|không đến)|(?:no[- ]?show|không đến).{0,80}(?:\btôi\b|\bi\b).{0,50}(?:ghi nhận|đánh dấu|recorded|marked)/iu;
+    if (selfAttributedNoShow.test(normalized)) return false;
+  }
+
+  return true;
+}
+
+export function deterministicDigestBody(
   salonName: string,
   stats: BookingStats,
   unclosedCount: number,
+  facts: DigestGroundingFacts,
 ): string {
   const revenue = (stats.revenueCents / 100).toFixed(0);
+  const noShow = stats.noShow > 0
+    ? ` Hệ thống ghi nhận ${stats.noShow} khách không đến; trạng thái này do nhân viên hoặc dữ liệu vận hành xác nhận.`
+    : "";
+  const social = facts.hasSocialDraft
+    ? " Tôi đã soạn caption nháp và gửi riêng cho chủ tiệm để duyệt hoặc tự đăng; NailIQ chưa đăng nội dung lên mạng xã hội."
+    : "";
   const closeout = unclosedCount > 0
     ? ` Còn ${unclosedCount} lịch hẹn cần chốt sổ.`
     : "";
-  return `${salonName}: Hôm nay đã hoàn thành ${stats.completed}/${stats.total} lịch hẹn, doanh thu ghi nhận $${revenue}. Ngày mai hiện có ${stats.tomorrowCount} lịch.${closeout}`;
+  return `${salonName}: Hôm nay đã hoàn thành ${stats.completed}/${stats.total} lịch hẹn, doanh thu ghi nhận $${revenue}.${noShow}${social} Ngày mai hiện có ${stats.tomorrowCount} lịch.${closeout}`;
 }
 
 // ─── Email send (bypasses sendOwnerAlert suppression) ─────────────────────────
@@ -554,6 +602,16 @@ export async function runDigest(salonId: string): Promise<void> {
       .map((r) => r.summary.slice(0, 100) + (r.summary.length > 100 ? "…" : ""));
 
     const context = buildContext(salonName, stats, agentActions, alerts, todayYmd, outcomeLines, instructions, pendingApprovalSummaries, unclosed.count);
+    const groundingFacts: DigestGroundingFacts = {
+      hasSocialDraft: agentActions.some(
+        (summary) =>
+          summary.agent === "social_content" &&
+          summary.actions.some(
+            (action) => action.action_type === "sent_social_draft",
+          ),
+      ),
+      noShowCount: stats.noShow,
+    };
     let body: string | null;
     if (ruleFirstOptimizationEnabled(s.feature_flags)) {
       const material = shouldUseAiDigest({
@@ -573,12 +631,30 @@ export async function runDigest(salonId: string): Promise<void> {
         : false;
       body = claimed
         ? (await draftDigest(context, salonId, salonName, "vi")) ??
-          deterministicDigestBody(salonName, stats, unclosed.count)
-        : deterministicDigestBody(salonName, stats, unclosed.count);
+          deterministicDigestBody(
+            salonName,
+            stats,
+            unclosed.count,
+            groundingFacts,
+          )
+        : deterministicDigestBody(
+            salonName,
+            stats,
+            unclosed.count,
+            groundingFacts,
+          );
     } else {
       body = await draftDigest(context, salonId, salonName, "vi");
     }
     if (!body) return;
+    if (!isDigestGrounded(body, groundingFacts)) {
+      body = deterministicDigestBody(
+        salonName,
+        stats,
+        unclosed.count,
+        groundingFacts,
+      );
+    }
 
     // Pass normal-urgency approvals so the digest email renders one-tap buttons
     const digestApprovals = pendingApprovals
