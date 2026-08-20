@@ -35,7 +35,11 @@ vi.mock("@/shared/lib/supabase/serviceRole", () => ({
   }),
 }));
 
-import { sendDigestEmail } from "@/shared/ai/agentDigest";
+import {
+  deterministicDigestBody,
+  isDigestGrounded,
+  sendDigestEmail,
+} from "@/shared/ai/agentDigest";
 
 describe("daily digest delivery truth", () => {
   beforeEach(() => {
@@ -48,6 +52,60 @@ describe("daily digest delivery truth", () => {
     mocks.getResendClient.mockReturnValue({
       emails: { send: mocks.send },
     });
+  });
+
+  it("rejects claims that a social draft was published", () => {
+    expect(
+      isDigestGrounded(
+        "Tôi cũng đã xuất bản một nội dung trên mạng xã hội cho tiệm.",
+        { hasSocialDraft: true, noShowCount: 0 },
+      ),
+    ).toBe(false);
+
+    expect(
+      isDigestGrounded(
+        "Tôi đã soạn caption nháp và gửi riêng cho chủ tiệm để duyệt hoặc tự đăng.",
+        { hasSocialDraft: true, noShowCount: 0 },
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects self-attribution of a no-show status", () => {
+    expect(
+      isDigestGrounded(
+        "Có 1 khách no-show hôm nay — tôi đã ghi nhận lại để theo dõi.",
+        { hasSocialDraft: false, noShowCount: 1 },
+      ),
+    ).toBe(false);
+
+    expect(
+      isDigestGrounded(
+        "Hệ thống ghi nhận 1 khách no-show do nhân viên đã đánh dấu.",
+        { hasSocialDraft: false, noShowCount: 1 },
+      ),
+    ).toBe(true);
+  });
+
+  it("uses explicit truthful wording in the deterministic fallback", () => {
+    const body = deterministicDigestBody(
+      "Hi-Lite Head Spa",
+      {
+        total: 4,
+        completed: 2,
+        noShow: 1,
+        cancelled: 0,
+        revenueCents: 21_000,
+        newClients: 0,
+        tomorrowCount: 6,
+      },
+      0,
+      { hasSocialDraft: true, noShowCount: 1 },
+    );
+
+    expect(body).toContain("Hệ thống ghi nhận 1 khách không đến");
+    expect(body).toContain("caption nháp");
+    expect(body).toContain("chưa đăng nội dung lên mạng xã hội");
+    expect(isDigestGrounded(body, { hasSocialDraft: true, noShowCount: 1 })).toBe(true);
   });
 
   it("uses a stable provider idempotency key and returns acknowledged delivery", async () => {
@@ -125,4 +183,3 @@ describe("daily digest delivery truth", () => {
     expect(mocks.send).not.toHaveBeenCalled();
   });
 });
-
