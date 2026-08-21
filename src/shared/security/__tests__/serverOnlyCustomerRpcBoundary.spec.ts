@@ -74,8 +74,12 @@ describe("server-only customer RPC boundary", () => {
     }
 
     const combined = sources.join("\n");
-    for (const rpc of serverOnlyRpcs) {
+    for (const rpc of serverOnlyRpcs.filter(
+      (name) => name !== "cancel_booking_as_customer" && name !== "reschedule_booking_as_customer",
+    )) {
       expect(combined).toContain(`"${rpc}"`);
     }
+    expect(combined).toContain('"cancel_booking_as_customer_with_transition_email"');
+    expect(combined).toContain('"reschedule_booking_as_customer_with_transition_email"');
   });
 });

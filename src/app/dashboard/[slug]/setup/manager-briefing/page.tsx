@@ -3,6 +3,7 @@ import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { ManagerBriefingChat } from "@/components/ai/ManagerBriefingChat";
 import type { SalonIntelligenceProfile } from "@/shared/ai/types";
+import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ export default async function ManagerBriefingPage({ params }: PageProps) {
   if (!ctx) redirect("/register");
   if (!isOwnerOrAdmin(ctx.role)) redirect(`/dashboard/${slug}/setup`);
 
-  const { data: row } = await ctx.supabase
+  const { data: row } = await createServiceRoleClient()
     .from("salons")
     .select("ai_profile")
     .eq("id", ctx.salon.id)

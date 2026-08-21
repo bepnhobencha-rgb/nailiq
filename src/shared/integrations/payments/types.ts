@@ -51,6 +51,8 @@ export interface PaymentProvider {
      *  buyer verification in the tokenization request. Stripe ignores this
      *  field because it verifies via the SetupIntent. */
     verificationToken?: string;
+    /** Stable per durable card-save operation. Provider retries must reuse it. */
+    idempotencyKey: string;
   }): Promise<SavedCard>;
 
   /** Charge a previously-saved card. `idempotencyKey` MUST be stable per logical
@@ -62,6 +64,9 @@ export interface PaymentProvider {
     idempotencyKey: string;
     note?: string;
     referenceId?: string;
+    /** DB-bound connected account for Stripe Connect. Square ignores this
+     * field because its provider instance is already tenant-configured. */
+    providerAccountId?: string;
   }): Promise<ChargeResult>;
 
   /** Refund a payment (full or partial). */
@@ -70,12 +75,17 @@ export interface PaymentProvider {
     amountCents: number;
     reason: string;
     idempotencyKey: string;
+    /** DB-bound connected account for Stripe Connect refunds. */
+    providerAccountId?: string;
   }): Promise<RefundResult>;
 
   /** Remove a saved card so it can never be charged again. Square disables the
    *  card; Stripe detaches the payment method. Required by the card networks'
    *  stored-credential rules (the cardholder must be able to cancel). */
-  removeSavedCard(input: { cardId: string; customerId: string }): Promise<void>;
+  removeSavedCard(input: { cardId: string; customerId: string }): Promise<{
+    /** Exact provider object affected by the accepted removal. */
+    providerReference: string;
+  }>;
 
   /** Find a returning customer's most recent saved card by their (OTP-verified)
    *  phone — for one-tap reuse. READ ONLY. Returns null when none. Square: search

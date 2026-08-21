@@ -28,6 +28,8 @@ type Props = {
   emailEnabled: boolean;
   /** Shown when the proxy bounced an unconfirmed-email session here. */
   showConfirmEmailNotice?: boolean;
+  /** Shown after a recovery capability commits and is consumed. */
+  showPasswordResetNotice?: boolean;
   /** Safe callback error rendered as an actionable login banner. */
   authError?: "pkce_restart" | "session" | null;
 };
@@ -37,6 +39,7 @@ export function LoginPageClient({
   smsEnabled,
   emailEnabled,
   showConfirmEmailNotice = false,
+  showPasswordResetNotice = false,
   authError = null,
 }: Props) {
   const router = useRouter();
@@ -78,6 +81,16 @@ export function LoginPageClient({
       {authError === "pkce_restart"
         ? t.login.pkceRestart
         : t.login.sessionError}
+    </div>
+  ) : null;
+
+  const passwordResetBanner = showPasswordResetNotice ? (
+    <div
+      role="status"
+      data-testid="salon-owner-password-reset-banner"
+      className="mb-4 rounded-lg border border-nq-success/40 bg-nq-success/15 px-4 py-3 text-sm text-nq-success"
+    >
+      {t.auth.resetPasswordSuccess}
     </div>
   ) : null;
 
@@ -133,7 +146,9 @@ export function LoginPageClient({
       <RegisterStepShell
         title={t.login.signinDisabledTitle}
         subtext={t.login.signinDisabledBody}
-      />
+      >
+        {passwordResetBanner}
+      </RegisterStepShell>
     );
   }
 
@@ -147,6 +162,7 @@ export function LoginPageClient({
       >
         {confirmEmailBanner}
         {authErrorBanner}
+        {passwordResetBanner}
         <SocialAuthButtons mode="login" layout="open" enablePassword={true} />
         <p className="mt-6 text-center text-sm text-nq-muted">
           {t.login.noSalonPrefix}
@@ -179,6 +195,7 @@ export function LoginPageClient({
 
       {confirmEmailBanner}
       {authErrorBanner}
+      {passwordResetBanner}
 
       <p className="mb-2 text-sm text-nq-muted sm:mb-4">
         {t.login.promptEnterPhone}

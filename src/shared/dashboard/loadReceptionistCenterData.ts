@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
+import { loadSalonMemberOperationalProfile } from "@/shared/dashboard/salonOwnerAdminSettings";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import { salonDayRangeUtc, salonYmdOfUtc } from "@/shared/lib/salonTime";
 import {
@@ -569,6 +570,7 @@ export type ReceptionistCenterDataLoaderDeps = {
     basic_mode_forced?: unknown | null;
     opening_hours?: unknown | null;
     staff_notification_settings?: unknown | null;
+    default_notification_locale?: unknown | null;
     auto_no_show_minutes?: unknown | null;
   };
 };
@@ -662,6 +664,7 @@ export async function loadReceptionistCenterData(
     basic_mode_forced?: unknown;
     opening_hours?: unknown;
     staff_notification_settings?: unknown;
+    default_notification_locale?: unknown;
     auto_no_show_minutes?: unknown;
   };
   let salonData: SalonShape | null;
@@ -685,26 +688,38 @@ export async function loadReceptionistCenterData(
       opening_hours: deps.preFetchedSalon.opening_hours,
       staff_notification_settings:
         deps.preFetchedSalon.staff_notification_settings,
+      default_notification_locale:
+        deps.preFetchedSalon.default_notification_locale,
       auto_no_show_minutes: deps.preFetchedSalon.auto_no_show_minutes,
     };
   } else {
-    const salonResult = await supabase
-      .from("salons")
-      .select(
-        // currency_code + walkin_auto_assign added by recent migrations
-        // (20260512000000 / 20260511100000) — not in auto-generated
-        // types yet, hence the `as never` cast on the SELECT string.
-        // basic_mode_forced: auto-enable Basic Mode for receptionist if salon config requires it
-        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign, queue_display_mode, basic_mode_forced, opening_hours, staff_notification_settings, auto_no_show_minutes" as never,
-      )
-      .eq("id", ctx.salon.id)
-      .maybeSingle();
-
-    if (salonResult.error) {
-      console.error("[loadReceptionistCenterData] salons", salonResult.error);
-      return { ok: false, error: "server_error" };
+    if (ctx.kind === "demo_cookie") {
+      const salonResult = await supabase
+        .from("salons")
+        .select(
+          "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign, queue_display_mode, basic_mode_forced, opening_hours, staff_notification_settings, default_notification_locale, auto_no_show_minutes" as never,
+        )
+        .eq("id", ctx.salon.id)
+        .maybeSingle();
+      if (salonResult.error) {
+        console.error("[loadReceptionistCenterData] demo salon", salonResult.error);
+        return { ok: false, error: "server_error" };
+      }
+      salonData = salonResult.data as SalonShape | null;
+    } else {
+      const salonResult = await loadSalonMemberOperationalProfile(
+        supabase,
+        ctx.salon.id,
+      );
+      if (!salonResult.ok) {
+        console.error(
+          "[loadReceptionistCenterData] operational profile",
+          salonResult.code,
+        );
+        return { ok: false, error: "server_error" };
+      }
+      salonData = salonResult.salon as SalonShape;
     }
-    salonData = salonResult.data as SalonShape | null;
   }
 
   if (!salonData?.id || typeof salonData.timezone !== "string" || salonData.timezone.trim() === "") {
@@ -741,6 +756,7 @@ export async function loadReceptionistCenterData(
     ...openingHoursForDay(salonData.opening_hours, dateYmd),
     staffNotificationSettings: parseStaffNotificationSettings(
       salonData.staff_notification_settings,
+      salonData.default_notification_locale === "vi" ? "vi" : "en",
     ),
     autoNoShowMinutes: (() => {
       const v = salonData.auto_no_show_minutes;

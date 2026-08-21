@@ -17,7 +17,7 @@
  */
 import { cache } from "react";
 
-import { createClient } from "@/shared/lib/supabase/server";
+import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 
 export type ServiceCategorySummary = {
   /** Stable identifier persisted on `services.category`. */
@@ -35,50 +35,99 @@ export type ServiceCategorySummary = {
  *  / null category. Matches the seeded "other" row (sort_order 99). */
 export const FALLBACK_CATEGORY_SLUG = "other";
 
+const CATEGORY_SLUG_RE = /^[a-z][a-z0-9_]{1,39}$/;
+const CATEGORY_NAME_MAX_LENGTH = 80;
+
+type ServiceCategoryQueryResult = {
+  data: unknown[] | null;
+  error: unknown;
+};
+
+type ServiceCategoryQuery = PromiseLike<ServiceCategoryQueryResult> & {
+  is(column: string, value: null): ServiceCategoryQuery;
+  order(
+    column: string,
+    options: { ascending: boolean; nullsFirst?: boolean },
+  ): ServiceCategoryQuery;
+};
+
+export type ServiceCategoryReadClient = {
+  from(table: "service_categories"): {
+    select(columns: string): ServiceCategoryQuery;
+  };
+};
+
+function categoryLoadFailure(code: string, cause?: unknown): Error {
+  return new Error(code, cause === undefined ? undefined : { cause });
+}
+
+/**
+ * Strict, stateless public read used by the cached Server Component loader and
+ * executable tests. Category rows are platform taxonomy; tenant isolation is
+ * applied by the separate salon-scoped service query before grouping.
+ */
+export async function loadServiceCategoriesFromClient(
+  client: ServiceCategoryReadClient,
+): Promise<ServiceCategorySummary[]> {
+  const { data, error } = await client
+    .from("service_categories")
+    .select("slug, name_en, name_vi, sort_order")
+    .is("deleted_at", null)
+    .order("sort_order", { ascending: true, nullsFirst: false })
+    .order("slug", { ascending: true });
+
+  if (error) {
+    throw categoryLoadFailure("service_categories_unavailable", error);
+  }
+  if (!Array.isArray(data) || data.length === 0) {
+    throw categoryLoadFailure("service_categories_empty");
+  }
+
+  const seenSlug = new Set<string>();
+  const out: ServiceCategorySummary[] = [];
+  for (const value of data) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw categoryLoadFailure("service_category_invalid");
+    }
+    const row = value as Record<string, unknown>;
+    const slug = typeof row.slug === "string" ? row.slug.trim() : "";
+    const nameEn = typeof row.name_en === "string" ? row.name_en.trim() : "";
+    const nameVi = typeof row.name_vi === "string" ? row.name_vi.trim() : "";
+    const sortOrder =
+      row.sort_order == null
+        ? Number.MAX_SAFE_INTEGER
+        : typeof row.sort_order === "number" &&
+            Number.isSafeInteger(row.sort_order)
+          ? row.sort_order
+          : null;
+    if (
+      !CATEGORY_SLUG_RE.test(slug) ||
+      !nameEn ||
+      nameEn.length > CATEGORY_NAME_MAX_LENGTH ||
+      !nameVi ||
+      nameVi.length > CATEGORY_NAME_MAX_LENGTH ||
+      sortOrder == null ||
+      seenSlug.has(slug)
+    ) {
+      throw categoryLoadFailure("service_category_invalid");
+    }
+    seenSlug.add(slug);
+    out.push({ slug, nameEn, nameVi, sortOrder });
+  }
+
+  return out.sort((a, b) => {
+    const position = a.sortOrder - b.sortOrder;
+    if (position !== 0) return position;
+    return a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0;
+  });
+}
+
 export const loadServiceCategories = cache(
   async (): Promise<ServiceCategorySummary[]> => {
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("service_categories")
-      .select("slug, name_en, name_vi, sort_order")
-      .is("deleted_at" as never, null)
-      .order("sort_order", { ascending: true })
-      .order("slug", { ascending: true });
-
-    if (error) {
-      console.error("[loadServiceCategories]", error);
-      return [];
-    }
-
-    // QA bug (2026-05-12): two "Other" accordions appeared on the
-    // booking page even though prod only has one row. The duplicate
-    // was traced to the display layer, but a paranoid loader-level
-    // dedupe is cheap insurance against any future seed/migration
-    // accidentally re-inserting a colliding slug. First-wins keeps
-    // the lowest sort_order entry (we already ordered by sort_order
-    // ASC, slug ASC).
-    const seenSlug = new Set<string>();
-    const out: ServiceCategorySummary[] = [];
-    for (const row of data ?? []) {
-      const r = row as unknown as {
-        slug: string;
-        name_en?: string | null;
-        name_vi?: string | null;
-        sort_order?: number | null;
-      };
-      const slug = String(r.slug ?? "").trim();
-      if (!slug || seenSlug.has(slug)) continue;
-      seenSlug.add(slug);
-      out.push({
-        slug,
-        nameEn: String(r.name_en ?? slug).trim(),
-        nameVi: String(r.name_vi ?? r.name_en ?? slug).trim(),
-        sortOrder: Number.isFinite(Number(r.sort_order))
-          ? Number(r.sort_order)
-          : 0,
-      });
-    }
-    return out;
+    const client = createPublicClient();
+    return loadServiceCategoriesFromClient(
+      client as unknown as ServiceCategoryReadClient,
+    );
   },
 );
 

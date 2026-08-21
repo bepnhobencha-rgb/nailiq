@@ -90,20 +90,7 @@ export async function loadArchivedBookingDetail(
   if (!ctx) return { ok: false, error: "unauthorized" };
   if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
-  const { data: salonRow, error: salonError } = await ctx.supabase
-    .from("salons")
-    .select(
-      "subscription_plan, plan_override, feature_flags, voice_ai_enabled, currency_code",
-    )
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
-
-  if (salonError || !salonRow) {
-    console.error("[loadArchivedBookingDetail] salon feature read", salonError);
-    return { ok: false, error: "server_error" };
-  }
-
-  if (!(await isReleaseFeatureVisible(salonRow, "archived_booking_recovery"))) {
+  if (!(await isReleaseFeatureVisible(ctx.salon, "archived_booking_recovery"))) {
     return { ok: false, error: "feature_disabled" };
   }
 
@@ -169,7 +156,6 @@ export async function loadArchivedBookingDetail(
       createdAt: nullableString(data.created_at),
       priceCents: nullableCents(data.price_cents),
       currencyCode:
-        nullableString(salonRow.currency_code) ??
         nullableString(ctx.salon.currency_code) ??
         "CAD",
       source: nullableString(data.source),

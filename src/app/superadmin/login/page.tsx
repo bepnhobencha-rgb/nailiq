@@ -27,7 +27,7 @@ export const metadata: Metadata = {
 export default async function SuperadminLoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ reset?: string }>;
+  searchParams: Promise<{ reset?: string; notice?: string }>;
 }) {
   const supabase = await createClient();
   const {
@@ -43,6 +43,8 @@ export default async function SuperadminLoginPage({
 
   const params = await searchParams;
   const justReset = params.reset === "ok";
+  const reauthenticationRequired =
+    params.notice === "reauthentication_required";
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-8 px-5 py-16 md:px-8">
@@ -78,11 +80,24 @@ export default async function SuperadminLoginPage({
             />
           </svg>
           <div className="flex flex-col gap-0.5">
-            <p className="text-sm font-semibold">Password updated</p>
+            <p className="text-sm font-semibold">
+              Password updated / Mật khẩu đã được cập nhật
+            </p>
             <p className="text-sm opacity-90">
-              Sign in with your new password.
+              Sign in with your new password. / Đăng nhập bằng mật khẩu mới.
             </p>
           </div>
+        </div>
+      ) : null}
+
+      {reauthenticationRequired ? (
+        <div
+          className="rounded-md border border-nq-warning/40 bg-nq-warning/10 px-4 py-3 text-sm text-nq-foreground"
+          role="status"
+          data-testid="superadmin-reauthentication-notice"
+        >
+          Your secure session ended or could not be verified. Sign in again to
+          continue.
         </div>
       ) : null}
 

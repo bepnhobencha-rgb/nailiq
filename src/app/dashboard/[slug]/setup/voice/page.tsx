@@ -9,6 +9,7 @@ import {
   normalizeAllowedLanguages,
   normalizeSupportedLanguage,
 } from "@/shared/voiceai/config";
+import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export default async function VoiceSetupPage({ params }: PageProps) {
   if (!ctx) redirect("/register");
   if (!isOwnerOrAdmin(ctx.role)) redirect(`/dashboard/${slug}/setup`);
 
-  const { data: row } = await ctx.supabase
+  const { data: row } = await createServiceRoleClient()
     .from("salons")
     .select(
       "voice_ai_enabled, voice_ai_persona_name, voice_ai_persona_voice, voice_ai_reasoning_effort, voice_ai_upsell_enabled, " +

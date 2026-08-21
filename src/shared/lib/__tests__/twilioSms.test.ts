@@ -150,8 +150,8 @@ async function testSuppressedSidUnique() {
   const prev = process.env.DISABLE_OUTBOUND_SMS;
   process.env.DISABLE_OUTBOUND_SMS = "1";
   try {
-    const a = await sendSmsReminder("+16045551234", "hi");
-    const b = await sendSmsReminder("+16045551234", "hi");
+    const a = await sendSmsReminder("+16045551234", "hi", { salonId: "11111111-1111-4111-8111-111111111111" });
+    const b = await sendSmsReminder("+16045551234", "hi", { salonId: "11111111-1111-4111-8111-111111111111" });
     test("suppressed send is reported ok + suppressed", () => {
       assertEqual(a.ok, true);
       assertEqual(a.suppressed, true);

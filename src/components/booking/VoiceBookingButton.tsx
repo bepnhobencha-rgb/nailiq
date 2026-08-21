@@ -3,6 +3,7 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
+import type { WebVoiceBookingHandoff } from "@/shared/booking/webVoiceBookingHandoff";
 
 const VoiceBookingModal = dynamic(
   () => import("./VoiceBookingModal").then((m) => ({ default: m.VoiceBookingModal })),
@@ -13,9 +14,15 @@ type Props = {
   t: BookingMessages;
   shopSlug: string;
   language?: "en" | "vi";
+  onBookingHandoff: (handoff: WebVoiceBookingHandoff) => void;
 };
 
-export function VoiceBookingButton({ t, shopSlug, language = "en" }: Props) {
+export function VoiceBookingButton({
+  t,
+  shopSlug,
+  language = "en",
+  onBookingHandoff,
+}: Props) {
   const [open, setOpen]       = useState(false);
   const [loading, setLoading] = useState(false);
   const v = t.voice;
@@ -66,6 +73,7 @@ export function VoiceBookingButton({ t, shopSlug, language = "en" }: Props) {
           t={t}
           shopSlug={shopSlug}
           language={language}
+          onBookingHandoff={onBookingHandoff}
           onClose={handleClose}
         />
       )}

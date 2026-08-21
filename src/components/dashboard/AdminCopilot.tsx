@@ -15,6 +15,11 @@ import {
   Check,
 } from "lucide-react";
 import { addDeskAppointment } from "@/shared/dashboard/receptionistActions";
+import {
+  deskBookingIntentKey,
+  deskBookingRequestForIntent,
+  type DeskBookingRequestState,
+} from "@/shared/dashboard/deskBookingIdempotency";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { cn } from "@/shared/lib/cn";
 
@@ -303,6 +308,9 @@ export function AdminCopilot({
 
   // Track which message's proposal is being booked (spinner on that card only).
   const [bookingIdx, setBookingIdx] = useState<number | null>(null);
+  const proposalRequestRefs = useRef(
+    new Map<number, DeskBookingRequestState>(),
+  );
 
   // Confirm-to-book: the user tapped Confirm on a proposal card. The real
   // create + all validation (conflict, past-time, capability, buffer, plan
@@ -312,7 +320,22 @@ export function AdminCopilot({
       if (bookingIdx !== null) return;
       setBookingIdx(idx);
       try {
+        const intentKey = deskBookingIntentKey({
+          salonId: p.salonId,
+          serviceId: p.serviceId,
+          staffId: p.staffId,
+          bookingDateYmd: p.bookingDateYmd,
+          timeSlot: p.timeSlot,
+          clientName: p.clientName,
+          clientPhone: p.clientPhone,
+        });
+        const requestState = deskBookingRequestForIntent(
+          proposalRequestRefs.current.get(idx) ?? null,
+          intentKey,
+        );
+        proposalRequestRefs.current.set(idx, requestState);
         const r = await addDeskAppointment(slug, {
+          requestId: requestState.requestId,
           salonId: p.salonId,
           serviceId: p.serviceId,
           staffId: p.staffId,
@@ -323,6 +346,7 @@ export function AdminCopilot({
           language: lang,
         });
         if (r.ok) {
+          proposalRequestRefs.current.delete(idx);
           setMessages((m) => {
             const copy = [...m];
             if (copy[idx]) copy[idx] = { ...copy[idx], proposalDone: "booked" };
@@ -351,6 +375,7 @@ export function AdminCopilot({
   );
 
   const dismissProposal = useCallback((idx: number) => {
+    proposalRequestRefs.current.delete(idx);
     setMessages((m) => {
       const copy = [...m];
       if (copy[idx]) copy[idx] = { ...copy[idx], proposalDone: "cancelled" };
@@ -394,7 +419,7 @@ export function AdminCopilot({
                 <p className="text-[11px] text-nq-muted leading-tight truncate">{COPY.subtitle[lang]}</p>
               </div>
               {messages.length > 0 && (
-                <button onClick={() => setMessages([])} title={COPY.clear[lang]} className="p-1.5 rounded-md hover:bg-nq-border/40 text-nq-muted transition-colors">
+                <button onClick={() => { proposalRequestRefs.current.clear(); setMessages([]); }} title={COPY.clear[lang]} className="p-1.5 rounded-md hover:bg-nq-border/40 text-nq-muted transition-colors">
                   <RotateCcw className="w-4 h-4" />
                 </button>
               )}

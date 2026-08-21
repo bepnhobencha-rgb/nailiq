@@ -151,12 +151,13 @@ Rules: 1-2 sentences, friendly + personal, mention the salon by name, if a servi
 const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
 
 async function sendWinbackSms(
+  salonId: string,
   phone: string,
   message: string,
   bookingUrl: string,
 ): Promise<boolean> {
   const body = `${message}\n${bookingUrl}`;
-  const r = await sendSmsReminder(phone, body, { lang: "en" });
+  const r = await sendSmsReminder(phone, body, { salonId, lang: "en" });
   return r.ok;
 }
 
@@ -283,7 +284,7 @@ export async function runWinback(salonId: string, cap = 3): Promise<void> {
       // Send to customer first; only log if successful.
       let ok = false;
       if (ch.sms) {
-        ok = await sendWinbackSms(c.phone, message, bookingUrl);
+        ok = await sendWinbackSms(salonId, c.phone, message, bookingUrl);
       }
       if (ch.email && c.email) {
         const emailOk = await sendWinbackEmail(c.email, c.name, salonName, message, bookingUrl, salonReplyEmail);

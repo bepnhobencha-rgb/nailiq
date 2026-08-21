@@ -2,6 +2,7 @@
 
 import { createClient } from "@/shared/lib/supabase/server";
 import { headers } from "next/headers";
+import { requireActiveAuthSession } from "@/shared/auth/requireActiveAuthSession";
 
 export type PresenceRow = {
   userId: string;
@@ -47,8 +48,9 @@ export async function upsertPresence(params: {
   userAgent?: string;
 }): Promise<{ ok: boolean }> {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { ok: false };
+  const session = await requireActiveAuthSession(supabase);
+  if (!session.ok) return { ok: false };
+  const user = session.user;
 
   const hdrs = await headers();
   const forwarded = hdrs.get("x-forwarded-for");
@@ -90,8 +92,9 @@ export async function loadSalonSessions(slug: string): Promise<{
   error?: string;
 }> {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: "unauthorized" };
+  const session = await requireActiveAuthSession(supabase);
+  if (!session.ok) return { ok: false, error: "unauthorized" };
+  const user = session.user;
 
   // Verify caller is owner/admin of this salon.
   const { data: salon } = await supabase

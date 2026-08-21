@@ -1,5 +1,56 @@
 # NailIQ Sellable V1 Audit — 2026-08-11
 
+## Đối chiếu hiện hành — 2026-08-20
+
+Phần còn lại của tài liệu này là snapshot lịch sử ngày 2026-08-11. Khi trạng
+thái khác nhau, bảng dưới đây là kết luận hiện hành. Chưa thể tính trung thực
+`x/313`: repository không có một inventory 313 mục với ID và trạng thái làm
+nguồn chân lý; không được suy ra phần trăm từ số test hoặc số dòng trong bảng.
+
+Đối chiếu trực tiếp artifact `NAILIQ_Master_QA_Checklist_10_10.docx` xác nhận
+nguồn hiện có gồm **231 bullet duy nhất**, không có 313 item ID hay trạng thái
+checkbox ẩn. Ledger chuẩn hóa 231 ID tại thời điểm cập nhật này: 22
+PASS_PRODUCTION, 16 PASS_CI, 36 PASS_LOCAL, 22 FAIL, 97 NOT_PROVEN, 33
+BETA_NOT_PROVEN và 5 NOT_APPLICABLE. PASS_LOCAL/CI không được cộng thành bằng
+chứng production.
+
+| Phạm vi | Trạng thái hiện hành | Bằng chứng / giới hạn |
+|---|---:|---|
+| Booking cá nhân: giá, promo, voucher, thuế, add-on, quote/reconfirm | ✅ PASS local | Giá do server tính; fingerprint, replay và transaction được rehearsal trên PostgreSQL sạch. Chưa có PR/CI/deploy/runtime production cho candidate hiện tại. |
+| Any Staff: web, Phone Voice, lễ tân | ✅ PASS local | Stable request identity; retry sau response-loss trả cùng booking; lifecycle và capability fail-closed. Chưa có runtime production proof. |
+| Web Voice booking | ✅ PASS local | Voice chỉ handoff vào Confirm chuẩn; không tạo booking trước OTP/consent/policy/quote và nút xác nhận. Chưa có browser E2E trên candidate đã deploy. |
+| SMS/email xác nhận | ✅ PASS local | Durable claim trước provider; `sent`/`delivered` cần provider receipt; retry trạng thái mơ hồ trả 503 và không gửi lại. Không có provider-send thật trong vòng kiểm định này. |
+| Email huỷ / đổi lịch cho khách | ✅ PASS local / ⚠️ runtime NOT PROVEN | Public, staff/desk và Voice dùng cùng outbox versioned, claim trước Resend, receipt bắt buộc và occurrence riêng cho A→B→A hoặc cancel→undo→cancel. Fresh-DB behavior/concurrency/rollback và app tests PASS; chưa deploy hoặc gửi provider-test thật. |
+| Branding email salon | ✅ PASS local / ⚠️ inbox NOT PROVEN | Logo chỉ chấp nhận đúng configured Supabase Storage `salon-imports`; tên salon escaped luôn hiển thị khi ảnh bị chặn; EN/VI xuyên suốt confirmation/group/reminder/cancel/reschedule/staff-action. 8 files/62 tests + typecheck/lint/diff PASS; chưa có Resend inbox/image-proxy acceptance. |
+| Link quản lý booking / waitlist / thẻ | ✅ PASS local / ⚠️ runtime NOT PROVEN | Capability tách riêng status/confirm/reschedule/cancel/card/group/waitlist; GET chỉ inspect, mutation dùng same-origin POST + stable request ID; raw booking ID bearer đã bị loại. App acceptance 11 files/99 tests và fresh-DB behavior/concurrency/rollback/ACL/parity PASS; chưa có browser/provider QA trên candidate deploy. |
+| Quick Rebook API cũ | ✅ HIDDEN / fail-closed | Route orphan trả `410 Gone`; flow rebook chính vẫn đi qua OTP và submit chuẩn. |
+| Guided Admin Setup | ⚠️ NOT PROVEN end-to-end | Source/security/local gates đã tăng cường, nhưng current combined SHA chưa có disposable authenticated browser E2E, CI, deploy hoặc production proof. |
+| Group / party booking pricing | ✅ PASS local core / ⚠️ release NOT PROVEN | Public, desk và Phone Voice dùng server-authoritative quote/create nguyên tử cho member, add-on, promotion, voucher, email incentive và tax; fingerprint, exact replay, lost-response và concurrency đã PASS local. Legacy public RPC đã bị revoke trong candidate. Email receipt tổng hợp authoritative đã PASS local với durable claim/receipt truth, nhưng browser E2E, provider acceptance, CI/deploy và production runtime vẫn chưa được chứng minh; giữ BETA/OFF trước rollout. |
+| Public AI text receptionist abuse boundary | ✅ PASS local / ⚠️ rollout NOT PROVEN | Beta/default-OFF với tenant + platform gate; same-origin JSON/body/prompt caps; operational tenant fence; durable SHA-256 IP/salon quotas fail-closed trước Anthropic; 63/63 focused tests. Không nêu giá/live slot khi thiếu authoritative proof, stream lỗi không bị xem là success. Chưa có PR/CI/deploy/runtime và quota chưa được hiệu chỉnh từ traffic production. |
+| Global rate limiting / Vercel WAF | ❌ FAIL production | Read-only Vercel CLI ngày 2026-08-20 trả `active=null`, `rules=[]`, không draft và Attack Mode tắt. Candidate local đã bổ sung DB limiter fail-closed cho lookup khách, contact và card-provider endpoints, nhưng booking-page-load/auth WAF hooks vẫn là no-op khi không có rule. Không tạo/publish rule trong audit này. |
+| Deposit / no-show payment | ❌ FAIL local contract / ⚠️ provider NOT PROVEN | Audit phát hiện deposit intent chưa gắn duy nhất với booking intent, no-show retry đổi provider idempotency sau outcome mơ hồ, refund dùng key ngẫu nhiên và partial refund chưa có durable contract. Đang bổ sung operation ledger/claim-complete-reconcile; không charge/refund thật trong kiểm định. |
+| Reminder positive delivery | ⚠️ NOT PROVEN | Kill-switch/suppression có bằng chứng; delivery provider dương tính chưa được chạy trong candidate này. |
+| Hi-Lite Head Spa / Hi-Lite Studio production smoke | ✅ PASS read-only current production / ⚠️ candidate NOT DEPLOYED | Ngày 2026-08-20, `/api/version` và `/api/health` trả SHA `9b4edbcf`; `/hilite-anaheim` và `/hilite-studio` trả HTTP 200. Không ghi dữ liệu/bật flag. Đây không phải browser/dashboard proof và không chứng minh local candidate. |
+
+Candidate local tại thời điểm đối chiếu: branch
+`audit/guided-p0-batch-20260819`, trước khi push/PR/deploy. Full local gates:
+typecheck PASS; 330 test files PASS + 1 skipped, 1899 tests PASS + 1 skipped
+and 7 explicit TODO acceptance cases;
+lint 0 errors (49 warnings hiện hữu); i18n 0 errors (13 warnings hiện hữu);
+production build PASS 60/60 static pages; migration history 360 unique, production
+prefix 267/267 exact, không duplicate/name mismatch/production-only; PostgreSQL 17
+fresh apply, ACL, atomic Group transaction, rollback, voucher-last-use, slot-race
+và idempotency concurrency rehearsals PASS. Hợp đồng DB retry xác nhận thông báo
+cũng đã PASS local trên PostgreSQL sạch, gồm behavior, concurrent claim/lease và
+rollback, nhưng chưa có worker/scheduler hay provider adoption. Migration Group tự
+fail trước mọi thay đổi nếu còn salon active bật `group_booking_enabled`;
+production preflight chưa chạy. Không có provider, production customer data,
+charge/refund hoặc outbound thật trong vòng này.
+
+PR #1235 không phải bằng chứng cho candidate hiện tại: PR đang Draft/BEHIND và
+head cũ; Guided E2E đỏ vì expectation cũ 50% trong khi readiness theo dữ liệu là
+38%. Candidate local đã sửa expectation nhưng chưa được push và chưa có CI.
+
 ## Kết luận
 
 **Chưa đạt Sellable V1 100%.** Luồng booking cốt lõi, vận hành lễ tân và
@@ -46,9 +97,13 @@ Quy ước:
 
 ## P1 — cần xong trước mở rộng 5 pilot
 
-1. Smoke mobile trên iPhone/Android thật của owner và một khách pilot.
-2. Kiểm tra reminder theo timezone Vancouver qua DST boundary.
-3. Hoàn thiện runbook restore/offboarding staff và recovery booking.
+1. Thêm email xác nhận Group lấy duy nhất authoritative aggregate snapshot đã
+   lưu, với durable claim/provider receipt; không tổng hợp tiền từ client.
+2. Chạy Group browser E2E trên tenant QA sau migration preflight, gồm quote →
+   confirm → exact replay và xác nhận không có booking/voucher/add-on thừa.
+3. Smoke mobile trên iPhone/Android thật của owner và một khách pilot.
+4. Kiểm tra reminder theo timezone Vancouver qua DST boundary.
+5. Hoàn thiện runbook restore/offboarding staff và recovery booking.
 
 ## P2 — sau Pilot 1
 

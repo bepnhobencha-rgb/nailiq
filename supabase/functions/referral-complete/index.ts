@@ -6,6 +6,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { rejectUnauthorizedInternalRequest } from "../_shared/internalAuth.ts";
 import { supabaseSecretKey } from "../_shared/supabaseApiKeys.ts";
+import { requireSmsConsentClear } from "../_shared/smsConsentSuppression.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = supabaseSecretKey();
@@ -205,26 +206,32 @@ Deno.serve(async (req: Request) => {
 
     // Fire-and-forget — don't fail the whole request if SMS fails
     try {
-      await sendTwilioSms(
-        twilio_account_sid,
-        twilio_auth_token,
-        twilio_phone_number,
-        referral.referrer_phone,
-        referrerMsg,
-      );
+      const consent = await requireSmsConsentClear(supabase, referral.salon_id, referral.referrer_phone);
+      if (consent.allowed) {
+        await sendTwilioSms(
+          twilio_account_sid,
+          twilio_auth_token,
+          twilio_phone_number,
+          referral.referrer_phone,
+          referrerMsg,
+        );
+      }
     } catch (err) {
       console.error("[referral-complete] referrer SMS failed:", err);
     }
 
     if (referral.referee_phone) {
       try {
-        await sendTwilioSms(
-          twilio_account_sid,
-          twilio_auth_token,
-          twilio_phone_number,
-          referral.referee_phone,
-          refereeMsg,
-        );
+        const consent = await requireSmsConsentClear(supabase, referral.salon_id, referral.referee_phone);
+        if (consent.allowed) {
+          await sendTwilioSms(
+            twilio_account_sid,
+            twilio_auth_token,
+            twilio_phone_number,
+            referral.referee_phone,
+            refereeMsg,
+          );
+        }
       } catch (err) {
         console.error("[referral-complete] referee SMS failed:", err);
       }

@@ -93,19 +93,7 @@ export default async function ReceptionistCenterPage({
   // PR2: resolve Beta release flags that gate in-board surfaces (party-card
   // strip → group_booking, TV preset → tv_mode). Server-resolved so the client
   // component receives plain booleans.
-  const { data: flagRow } = await ctx.supabase
-    .from("salons")
-    .select(
-      "subscription_plan, plan_override, feature_flags, voice_ai_enabled" as never,
-    )
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
-  const flagSalon = (flagRow ?? {}) as {
-    subscription_plan?: string | null;
-    plan_override?: string | null;
-    feature_flags?: unknown;
-    voice_ai_enabled?: boolean | null;
-  };
+  const flagSalon = ctx.salon;
   const groupBookingEnabled = isReleaseFeatureEnabled(flagSalon, "group_booking");
   const tvModeEnabled = isReleaseFeatureEnabled(flagSalon, "tv_mode");
   const featureFlags = flagSalon.feature_flags as Record<string, unknown> | null | undefined;

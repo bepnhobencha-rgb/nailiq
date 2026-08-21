@@ -215,23 +215,35 @@ export async function runCopilotTool(args: {
   }
 
   if (name === "find_appointment") {
-    // Strip characters that would break the PostgREST `or` filter syntax.
-    const q = String(input.query || "").trim().replace(/[^\p{L}\p{N}\s+@.-]/gu, "");
+    const q = String(input.query || "").trim().slice(0, 120);
     if (!q) return { content: JSON.stringify({ error: "Missing search query." }) };
-    const like = `%${q}%`;
+    // `%` and `_` are LIKE wildcards even when the value is passed through a
+    // typed filter. Escape them so a caller cannot turn a lookup into a broad
+    // tenant-wide enumeration; backslash is PostgreSQL LIKE's escape marker.
+    const like = `%${q.replace(/[\\%_]/g, "\\$&")}%`;
 
-    const { data, error } = await db
-      .from("bookings")
-      .select(
-        "id, client_name, client_phone, start_time_utc, status, staff_id, services!bookings_service_id_fkey ( name )",
-      )
-      .eq("salon_id", salonId)
-      .or(`client_name.ilike.${like},client_phone.ilike.${like}`)
-      .order("start_time_utc", { ascending: false })
-      .limit(6);
+    // Keep caller text out of PostgREST's raw `.or()` grammar. Each `ilike`
+    // value is encoded as a typed query parameter by supabase-js, then the two
+    // bounded result sets are merged by booking id in application code.
+    const appointmentColumns =
+      "id, client_name, client_phone, start_time_utc, status, staff_id, services!bookings_service_id_fkey ( name )";
+    const lookup = (column: "client_name" | "client_phone") =>
+      db
+        .from("bookings")
+        .select(appointmentColumns)
+        .eq("salon_id", salonId)
+        .ilike(column, like)
+        .order("start_time_utc", { ascending: false })
+        .limit(6);
+    const [nameResult, phoneResult] = await Promise.all([
+      lookup("client_name"),
+      lookup("client_phone"),
+    ]);
 
-    if (error) return { content: JSON.stringify({ error: "Lookup failed." }) };
-    const rows = (data ?? []) as unknown as Array<{
+    if (nameResult.error || phoneResult.error) {
+      return { content: JSON.stringify({ error: "Lookup failed." }) };
+    }
+    type AppointmentRow = {
       id: string;
       client_name: string;
       client_phone: string | null;
@@ -239,7 +251,21 @@ export async function runCopilotTool(args: {
       status: string;
       staff_id: string | null;
       services: { name: string } | { name: string }[] | null;
-    }>;
+    };
+    const merged = new Map<string, AppointmentRow>();
+    for (const raw of [...(nameResult.data ?? []), ...(phoneResult.data ?? [])]) {
+      const row = raw as unknown as AppointmentRow;
+      if (typeof row.id === "string" && !merged.has(row.id)) {
+        merged.set(row.id, row);
+      }
+    }
+    const rows = [...merged.values()]
+      .sort(
+        (a, b) =>
+          Date.parse(b.start_time_utc ?? "") -
+          Date.parse(a.start_time_utc ?? ""),
+      )
+      .slice(0, 6);
     if (rows.length === 0) return { content: JSON.stringify({ found: false, message: `No appointments found for "${q}".` }) };
 
     // Resolve staff names in one round-trip (FK join name not assumed).

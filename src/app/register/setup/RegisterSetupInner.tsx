@@ -154,6 +154,10 @@ export default function RegisterSetupInner({
         );
 
         if (!result.ok) {
+          if (result.error === "ambiguous_membership") {
+            router.replace("/choose-salon");
+            return;
+          }
           if (result.error === "unauthorized") {
             router.replace("/register");
             return;

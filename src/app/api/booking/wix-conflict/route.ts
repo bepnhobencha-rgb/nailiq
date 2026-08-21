@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 import { checkWixSlotConflict } from "@/shared/integrations/wix/client";
 import { looseServiceClient } from "@/shared/integrations/wix/looseDb";
+import { consumePublicRequestRateLimit } from "@/shared/security/publicServerActionRateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,17 @@ function isIsoDate(s: string): boolean {
 
 export async function POST(req: Request) {
   try {
+    const ipRate = await consumePublicRequestRateLimit({
+      request: req,
+      scope: "booking-wix-conflict",
+      ipLimits: [[20, 60], [100, 3_600]],
+    });
+    if (ipRate !== "allowed") {
+      return NextResponse.json(
+        { conflict: false, error: ipRate === "limited" ? "rate_limited" : "temporarily_unavailable" },
+        { status: ipRate === "limited" ? 429 : 503 },
+      );
+    }
     const body = await req.json().catch(() => null);
     if (!body) return NextResponse.json({ conflict: false });
 
@@ -42,6 +54,20 @@ export async function POST(req: Request) {
       typeof endTimeUtc !== "string" || !isIsoDate(endTimeUtc)
     ) {
       return NextResponse.json({ conflict: false });
+    }
+
+    const salonRate = await consumePublicRequestRateLimit({
+      request: req,
+      scope: "booking-wix-conflict-salon",
+      identity: [salonId, staffId],
+      ipLimits: [],
+      identityLimits: [[60, 300], [300, 3_600]],
+    });
+    if (salonRate !== "allowed") {
+      return NextResponse.json(
+        { conflict: false, error: salonRate === "limited" ? "rate_limited" : "temporarily_unavailable" },
+        { status: salonRate === "limited" ? 429 : 503 },
+      );
     }
 
     const db = looseServiceClient();

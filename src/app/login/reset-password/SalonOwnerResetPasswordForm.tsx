@@ -35,13 +35,16 @@ export function SalonOwnerResetPasswordForm() {
   };
 
   const passwordStrength = getPasswordStrength(password);
-  const isPasswordAcceptable = passwordStrength === "medium" || passwordStrength === "strong";
+  const isPasswordAcceptable = password.length >= 8 && password.length <= 72;
 
   const ERROR_COPY: Record<ErrorCode, string> = {
     weak_password: t.passwordTooShort,
     mismatch: t.resetPasswordMismatch,
     no_session: t.resetPasswordInvalidLink,
-    no_salon_member: "This account is not associated with a salon.",
+    no_salon_member:
+      language === "vi"
+        ? "Tài khoản này không còn thuộc salon nào."
+        : "This account is no longer associated with a salon.",
     server_error: t.resetPasswordServerError,
   };
 
@@ -52,7 +55,7 @@ export function SalonOwnerResetPasswordForm() {
       setError("mismatch");
       return;
     }
-    if (password.length < 6) {
+    if (password.length < 8 || password.length > 72) {
       setError("weak_password");
       return;
     }
@@ -84,6 +87,7 @@ export function SalonOwnerResetPasswordForm() {
           autoComplete="new-password"
           required
           minLength={8}
+          maxLength={72}
           value={password}
           onChange={(ev) => {
             setPassword(ev.target.value);
@@ -139,6 +143,7 @@ export function SalonOwnerResetPasswordForm() {
           autoComplete="new-password"
           required
           minLength={8}
+          maxLength={72}
           value={confirm}
           onChange={(ev) => {
             setConfirm(ev.target.value);

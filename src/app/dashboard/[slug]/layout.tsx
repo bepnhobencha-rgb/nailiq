@@ -12,9 +12,7 @@ import { salonDayRangeUtc, salonToday } from "@/shared/lib/salonTime";
 import { parseSubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import { trialDaysRemaining } from "@/shared/lib/trial";
 import { resolveUserLanguage } from "@/shared/i18n/user/resolveUserLanguage";
-import {
-  resolveFeatureVisibility,
-} from "@/shared/features/featureRegistry";
+import { resolveFeatureVisibility } from "@/shared/features/featureRegistry";
 import { loadPlatformDisabledFeatures } from "@/shared/features/platformFeatureFlags";
 import { getPendingApprovals } from "@/shared/ai/approvalRequests";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -22,6 +20,13 @@ import { SubscriptionDeadlineNotice } from "@/components/dashboard/SubscriptionD
 import { getPrivateOfferBySalonId } from "@/shared/sales/privateOffers";
 import { loadDashboardAnnouncements } from "@/shared/dashboard/platformAnnouncements";
 import { PlatformAnnouncementBanner } from "@/components/dashboard/PlatformAnnouncementBanner";
+import { GuidedFocusVisibility } from "@/components/dashboard/GuidedFocusVisibility";
+import { loadGoLiveReadiness } from "@/shared/dashboard/loadGoLiveReadiness";
+import {
+  deriveGuidedSetupProgress,
+  resolveGuidedSetupStage,
+  type GuidedSetupStage,
+} from "@/shared/dashboard/guidedSetup";
 
 type Props = {
   children: ReactNode;
@@ -72,10 +77,7 @@ export async function generateViewport(): Promise<Viewport> {
  * client-side roundtrip. Skipped for non-owners (the switcher is
  * owner-only — see `loadOwnerSalons` doc).
  */
-export default async function DashboardSlugLayout({
-  children,
-  params,
-}: Props) {
+export default async function DashboardSlugLayout({ children, params }: Props) {
   const { slug } = await params;
 
   // Force-expire any stale impersonation BEFORE we resolve the
@@ -109,10 +111,7 @@ export default async function DashboardSlugLayout({
     data: { setup_wizard_completed_at?: string | null } | null;
     error: unknown;
   };
-  if (
-    wizardGate.data &&
-    wizardGate.data.setup_wizard_completed_at == null
-  ) {
+  if (wizardGate.data && wizardGate.data.setup_wizard_completed_at == null) {
     redirect("/register/setup");
   }
 
@@ -128,11 +127,14 @@ export default async function DashboardSlugLayout({
       .select("stripe_subscription_id, subscription_status")
       .eq("id", ctx.salon.id)
       .maybeSingle();
-    const subscriptionId = (billingRow as { stripe_subscription_id?: string | null } | null)
-      ?.stripe_subscription_id?.trim();
-    const status = (billingRow as { subscription_status?: string | null } | null)
-      ?.subscription_status;
-    const paid = Boolean(subscriptionId) && (status === "active" || status === "trialing");
+    const subscriptionId = (
+      billingRow as { stripe_subscription_id?: string | null } | null
+    )?.stripe_subscription_id?.trim();
+    const status = (
+      billingRow as { subscription_status?: string | null } | null
+    )?.subscription_status;
+    const paid =
+      Boolean(subscriptionId) && (status === "active" || status === "trialing");
     if (!paid) {
       return (
         <SubscriptionDeadlineNotice
@@ -146,11 +148,12 @@ export default async function DashboardSlugLayout({
   const salonName = (ctx.salon.name ?? "").trim() || slug;
 
   // Get authenticated user email from Supabase auth
-  const { data: { user } } = await ctx.supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await ctx.supabase.auth.getUser();
   const userEmail = user?.email ?? null;
 
-  const salons =
-    ctx.role === "owner" ? await loadOwnerSalons(slug) : [];
+  const salons = ctx.role === "owner" ? await loadOwnerSalons(slug) : [];
 
   // Live-board badge counters for the sidebar Walk-in Queue row.
   // Two queries (waiting + overdue) are issued in parallel; we tolerate
@@ -163,60 +166,76 @@ export default async function DashboardSlugLayout({
     ctx.salon.timezone,
   );
 
-  const [waitingRes, waitlistRes, overdueRes, pendingApprovals] = await Promise.all([
-    ctx.supabase
-      .from("bookings")
-      .select("id", { count: "exact", head: true })
-      .eq("salon_id", ctx.salon.id)
-      .eq("status", "waiting")
-      .gte("joined_queue_at", todayStartUtc),
-    // Online waitlist is a separate customer state from an in-salon walk-in.
-    // Keep its badge separate so receptionists never mistake "waiting online"
-    // for "physically waiting in the salon".
-    (async () => {
-      try {
-        // The waitlist table is intentionally RLS-locked. This executes only
-        // after membership has been verified above and returns a count, never
-        // customer details, to the client shell.
-        return await createServiceRoleClient()
-          .from("booking_waitlist_entries")
-          .select("id", { count: "exact", head: true })
-          .eq("salon_id", ctx.salon.id)
-          .in("status", ["waiting", "notified"]);
-      } catch {
-        return { count: 0 };
-      }
-    })(),
-    // Bounded to today, like the waiting query above. Without a lower bound an
-    // in_progress row nobody ever closed out stays overdue forever: one
-    // abandoned booking from 10 days ago held the badge permanently red, which
-    // trains staff to ignore it — the opposite of what an alert is for. The
-    // stale rows themselves are swept by /api/cron/close-stale-in-progress.
-    ctx.supabase
-      .from("bookings")
-      .select("id", { count: "exact", head: true })
-      .eq("salon_id", ctx.salon.id)
-      .eq("status", "in_progress")
-      .gte("start_time_utc", todayStartUtc)
-      .lt("end_time_utc", new Date().toISOString()),
-    // Only fetch pending approvals for owners/admins who can act on them
-    (ctx.role === "owner" || ctx.role === "admin")
-      ? getPendingApprovals(ctx.salon.id)
-      : Promise.resolve([]),
-  ]);
+  const [waitingRes, waitlistRes, overdueRes, pendingApprovals] =
+    await Promise.all([
+      ctx.supabase
+        .from("bookings")
+        .select("id", { count: "exact", head: true })
+        .eq("salon_id", ctx.salon.id)
+        .eq("status", "waiting")
+        .gte("joined_queue_at", todayStartUtc),
+      // Online waitlist is a separate customer state from an in-salon walk-in.
+      // Keep its badge separate so receptionists never mistake "waiting online"
+      // for "physically waiting in the salon".
+      (async () => {
+        try {
+          // The waitlist table is intentionally RLS-locked. This executes only
+          // after membership has been verified above and returns a count, never
+          // customer details, to the client shell.
+          return await createServiceRoleClient()
+            .from("booking_waitlist_entries")
+            .select("id", { count: "exact", head: true })
+            .eq("salon_id", ctx.salon.id)
+            .in("status", ["waiting", "notified"]);
+        } catch {
+          return { count: 0 };
+        }
+      })(),
+      // Bounded to today, like the waiting query above. Without a lower bound an
+      // in_progress row nobody ever closed out stays overdue forever: one
+      // abandoned booking from 10 days ago held the badge permanently red, which
+      // trains staff to ignore it — the opposite of what an alert is for. The
+      // stale rows themselves are swept by /api/cron/close-stale-in-progress.
+      ctx.supabase
+        .from("bookings")
+        .select("id", { count: "exact", head: true })
+        .eq("salon_id", ctx.salon.id)
+        .eq("status", "in_progress")
+        .gte("start_time_utc", todayStartUtc)
+        .lt("end_time_utc", new Date().toISOString()),
+      // Only fetch pending approvals for owners/admins who can act on them
+      ctx.role === "owner" || ctx.role === "admin"
+        ? getPendingApprovals(ctx.salon.id)
+        : Promise.resolve([]),
+    ]);
   const walkinQueueCount = waitingRes.count ?? 0;
   const waitlistCount = waitlistRes.count ?? 0;
   const overdueCount = overdueRes.count ?? 0;
   const pendingApprovalsCount = pendingApprovals.length;
 
-  const { data: planRow } = await ctx.supabase
-    .from("salons")
-    .select(
-      "subscription_plan, subscription_status, trial_ends_at, plan_override, feature_flags, voice_ai_enabled" as never,
-    )
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
-  const flagSalon = (planRow ?? {}) as {
+  // Plan/feature inputs are part of the member-safe operational profile.
+  // Billing state is not: only owner/admin may receive it, through a guarded
+  // service-role read used solely for the trial banner.
+  const { data: billingPlanRow } =
+    ctx.role === "owner" || ctx.role === "admin"
+      ? await createServiceRoleClient()
+          .from("salons")
+          .select("subscription_status, trial_ends_at" as never)
+          .eq("id", ctx.salon.id)
+          .maybeSingle()
+      : { data: null };
+  const billingPlan = (billingPlanRow ?? {}) as {
+    subscription_status?: string | null;
+    trial_ends_at?: string | null;
+  };
+  const flagSalon = {
+    subscription_plan: ctx.salon.subscription_plan,
+    plan_override: ctx.salon.plan_override,
+    feature_flags: ctx.salon.feature_flags,
+    voice_ai_enabled: ctx.salon.voice_ai_enabled,
+    subscription_status: billingPlan.subscription_status,
+    trial_ends_at: billingPlan.trial_ends_at,
+  } as {
     subscription_plan?: string | null;
     subscription_status?: string | null;
     trial_ends_at?: string | null;
@@ -231,8 +250,7 @@ export default async function DashboardSlugLayout({
     loadDashboardAnnouncements(ctx.role),
   ]);
   const isTrial =
-    flagSalon.subscription_status === "trialing" &&
-    daysLeftInTrial != null;
+    flagSalon.subscription_status === "trialing" && daysLeftInTrial != null;
 
   // Resolve release-feature visibility server-side so the client sidebar/shell
   // receive plain booleans (never the raw salon row). Now covers EVERY key
@@ -240,6 +258,16 @@ export default async function DashboardSlugLayout({
   // visible only when it's not platform-disabled AND enabled for this salon.
   const platformDisabled = await loadPlatformDisabledFeatures();
   const releaseFeatures = resolveFeatureVisibility(flagSalon, platformDisabled);
+  let guidedSetupStage: GuidedSetupStage = "disabled";
+  if (releaseFeatures.guided_admin_setup) {
+    const setupResult = await loadGoLiveReadiness(slug);
+    guidedSetupStage = resolveGuidedSetupStage(
+      true,
+      setupResult.ok
+        ? deriveGuidedSetupProgress(slug, setupResult.readiness).complete
+        : null,
+    );
+  }
 
   return (
     <>
@@ -257,37 +285,61 @@ export default async function DashboardSlugLayout({
         releaseFeatures={releaseFeatures}
         userEmail={userEmail}
         salonId={ctx.salon.id}
+        guidedSetupStage={guidedSetupStage}
       >
-        <PlatformAnnouncementBanner
-          announcements={platformAnnouncements}
-          language={userLanguage}
-        />
-        {isTrial ? (
-          <div
-            className={`mx-4 mt-3 flex items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 text-sm sm:mx-6 sm:mt-4 sm:py-3 ${
-              daysLeftInTrial === 0
-                ? "border-nq-error/40 bg-nq-error/10 text-nq-foreground"
-                : "border-nq-primary/35 bg-nq-primary/10 text-nq-foreground"
-            }`}
-            role="status"
-          >
-            <p className="min-w-0 leading-snug">
-              {daysLeftInTrial === 0
-                ? userLanguage === "vi"
-                  ? "Thời gian dùng thử 14 ngày đã kết thúc. Chọn gói để tiếp tục dùng các tính năng trả phí."
-                  : "Your 14-day trial has ended. Choose a plan to keep using paid features."
-                : userLanguage === "vi"
-                  ? <><span className="sm:hidden">Còn {daysLeftInTrial} ngày dùng thử</span><span className="hidden sm:inline">Bạn còn {daysLeftInTrial} ngày dùng thử miễn phí. Chưa có khoản phí nào được tính.</span></>
-                  : <><span className="sm:hidden">{daysLeftInTrial} trial day{daysLeftInTrial === 1 ? "" : "s"} left</span><span className="hidden sm:inline">{daysLeftInTrial} day{daysLeftInTrial === 1 ? "" : "s"} left in your free trial. No credit card has been charged.</span></>}
-            </p>
-            <Link
-              href={`/dashboard/${encodeURIComponent(slug)}/settings#cat-plan`}
-              className="shrink-0 text-xs font-semibold text-nq-primary-soft underline-offset-4 hover:underline sm:text-sm"
+        <GuidedFocusVisibility stage={guidedSetupStage}>
+          <PlatformAnnouncementBanner
+            announcements={platformAnnouncements}
+            language={userLanguage}
+          />
+          {isTrial ? (
+            <div
+              className={`mx-4 mt-3 flex items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 text-sm sm:mx-6 sm:mt-4 sm:py-3 ${
+                daysLeftInTrial === 0
+                  ? "border-nq-error/40 bg-nq-error/10 text-nq-foreground"
+                  : "border-nq-primary/35 bg-nq-primary/10 text-nq-foreground"
+              }`}
+              role="status"
             >
-              {userLanguage === "vi" ? "Xem các gói" : "View plans"}
-            </Link>
-          </div>
-        ) : null}
+              <p className="min-w-0 leading-snug">
+                {daysLeftInTrial === 0 ? (
+                  userLanguage === "vi" ? (
+                    "Thời gian dùng thử 14 ngày đã kết thúc. Chọn gói để tiếp tục dùng các tính năng trả phí."
+                  ) : (
+                    "Your 14-day trial has ended. Choose a plan to keep using paid features."
+                  )
+                ) : userLanguage === "vi" ? (
+                  <>
+                    <span className="sm:hidden">
+                      Còn {daysLeftInTrial} ngày dùng thử
+                    </span>
+                    <span className="hidden sm:inline">
+                      Bạn còn {daysLeftInTrial} ngày dùng thử miễn phí. Chưa có
+                      khoản phí nào được tính.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="sm:hidden">
+                      {daysLeftInTrial} trial day
+                      {daysLeftInTrial === 1 ? "" : "s"} left
+                    </span>
+                    <span className="hidden sm:inline">
+                      {daysLeftInTrial} day{daysLeftInTrial === 1 ? "" : "s"}{" "}
+                      left in your free trial. No credit card has been charged.
+                    </span>
+                  </>
+                )}
+              </p>
+              <Link
+                href={`/dashboard/${encodeURIComponent(slug)}/settings#cat-plan`}
+                className="shrink-0 text-xs font-semibold text-nq-primary-soft underline-offset-4 hover:underline sm:text-sm"
+              >
+                {userLanguage === "vi" ? "Xem các gói" : "View plans"}
+              </Link>
+            </div>
+          ) : null}
+        </GuidedFocusVisibility>
         {children}
       </DashboardShell>
     </>

@@ -145,6 +145,27 @@ BEGIN
 END
 $prelude$;
 
+-- `current_auth_session_is_active()` is the one public contract that must
+-- correlate a JWT session_id with GoTrue's server-owned session row. A bare
+-- Postgres history rehearsal has no GoTrue process, so provide only the two
+-- identity columns plus timestamps used by fixtures. The guard never replaces
+-- the real auth.sessions table on a Supabase stack.
+DO $prelude$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'auth' AND c.relname = 'sessions'
+  ) THEN
+    CREATE TABLE auth.sessions (
+      id          uuid PRIMARY KEY,
+      user_id     uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+      created_at  timestamptz DEFAULT now(),
+      updated_at  timestamptz DEFAULT now()
+    );
+  END IF;
+END
+$prelude$;
+
 -- ── Extensions ──────────────────────────────────────────────────────────────
 -- gen_random_uuid(), the trigram search on client names, and the GIST exclusion
 -- constraint on bookings all come from these. btree_gist in particular carries

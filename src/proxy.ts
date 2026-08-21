@@ -40,6 +40,7 @@ import {
   isPlatformHost,
   resolveCustomDomainSlug,
 } from "@/shared/lib/customDomainResolver";
+import { consumeEdgeDurableRateLimits } from "@/shared/security/edgeDurableRateLimit";
 
 /** Public booking slug path: `/<slug>` only (single segment, kebab case).
  *  Excludes `/dashboard`, `/register`, `/login`, `/api`, `/auth`,
@@ -81,6 +82,97 @@ function rateLimitedResponse(message: string): NextResponse {
   });
 }
 
+function limiterUnavailableResponse(): NextResponse {
+  return new NextResponse("Temporarily unavailable. Please try again shortly.", {
+    status: 503,
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Retry-After": "30",
+    },
+  });
+}
+
+function proxyClientIp(request: NextRequest): string {
+  return (
+    request.headers.get("x-forwarded-for")?.split(",", 1)[0]?.trim() ||
+    request.headers.get("x-real-ip")?.trim() ||
+    "unknown"
+  );
+}
+
+async function consumeProxyLimit(
+  request: NextRequest,
+  scope: "booking-page" | "auth" | "public-api",
+) {
+  return consumeEdgeDurableRateLimits({
+    scope,
+    material: [proxyClientIp(request)],
+    buckets:
+      scope === "booking-page"
+        ? [
+            { name: "minute", limit: 180, windowSeconds: 60 },
+            { name: "hour", limit: 1_200, windowSeconds: 3_600 },
+          ]
+        : scope === "auth"
+          ? [
+            { name: "five-minute", limit: 20, windowSeconds: 300 },
+            { name: "hour", limit: 60, windowSeconds: 3_600 },
+          ]
+          : [
+              { name: "minute", limit: 120, windowSeconds: 60 },
+              { name: "hour", limit: 1_200, windowSeconds: 3_600 },
+            ],
+  });
+}
+
+function isEmbedBookingPath(pathname: string): boolean {
+  return /^\/embed\/[a-z0-9][a-z0-9-]{0,63}\/?$/.test(pathname);
+}
+
+function isPublicAuthAttempt(request: NextRequest): boolean {
+  const pathname = request.nextUrl.pathname;
+  if (request.method === "POST") {
+    return isRouteOrUnderAny(pathname, ["/login", "/register", "/superadmin/login"])
+      || pathname === "/superadmin/forgot-password";
+  }
+  return (
+    request.method === "GET" &&
+    (pathname === "/auth/callback" || pathname === "/auth/recovery") &&
+    request.nextUrl.searchParams.has("code")
+  );
+}
+
+/** Public browser APIs that either read customer-specific data, mutate public
+ * booking state, write telemetry, or can trigger non-trivial DB/provider work.
+ * Provider webhooks and authenticated dashboard/internal APIs are deliberately
+ * excluded: they have signature/session/secret boundaries and need distinct
+ * account-aware throttles rather than a shared source-IP quota. */
+const PUBLIC_API_RATE_LIMIT_PREFIXES = [
+  "/api/ai/approve",
+  "/api/booking-otp",
+  "/api/booking/",
+  "/api/chat/booking",
+  "/api/customer/",
+  "/api/errors",
+  "/api/gift-card/purchase",
+  "/api/nail-tryon/",
+  "/api/public/salon-suggestions",
+  "/api/quick-rebook",
+  "/api/referrals/",
+  "/api/trends/click",
+  "/api/unsubscribe",
+  "/api/upsell",
+  "/api/vouchers/",
+  "/api/voice/",
+  "/api/waitlist/",
+] as const;
+
+function isPublicApiBoundary(pathname: string): boolean {
+  return PUBLIC_API_RATE_LIMIT_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(prefix),
+  );
+}
+
 /** Copy cookies from the Supabase session response (refresh via getUser/setAll) onto another response. */
 function applyCookiesFrom(
   target: NextResponse,
@@ -115,6 +207,11 @@ export async function proxy(request: NextRequest) {
   ) {
     const slug = await resolveCustomDomainSlug(hostHeader);
     if (slug) {
+      const durableLimit = await consumeProxyLimit(request, "booking-page");
+      if (durableLimit === "limited") {
+        return rateLimitedResponse("Too many requests. Please try again in a minute.");
+      }
+      if (durableLimit === "unavailable") return limiterUnavailableResponse();
       const url = request.nextUrl.clone();
       url.pathname = `/${slug}`;
       ErrorReporter.getCurrentScope().setTag("salon.slug", slug);
@@ -133,6 +230,10 @@ export async function proxy(request: NextRequest) {
   ) {
     return NextResponse.next();
   }
+
+  const publicBookingPageLoad =
+    methodEarly === "GET" &&
+    (isPublicBookingSlugPath(pathnameEarly) || isEmbedBookingPath(pathnameEarly));
 
   // Task #09-10 — rate-limit checks at the proxy layer.
   //
@@ -166,11 +267,7 @@ export async function proxy(request: NextRequest) {
   // Booking page load — GET on `/<slug>`. Anti-scrape on the public
   // booking surface; the dashboard rule should be loose (e.g.
   // 60/min/IP) so real users with multiple tabs aren't blocked.
-  if (
-    methodEarly === "GET" &&
-    isPublicBookingSlugPath(pathnameEarly) &&
-    (await checkBookingPageRateLimit(request))
-  ) {
+  if (publicBookingPageLoad && (await checkBookingPageRateLimit(request))) {
     ErrorReporter.captureMessage("rate-limit hit: booking-page-load", {
       level: "info",
       tags: { "rate.limit": "booking-page-load" },
@@ -178,6 +275,13 @@ export async function proxy(request: NextRequest) {
     return rateLimitedResponse(
       "Too many requests. Please try again in a minute.",
     );
+  }
+  if (publicBookingPageLoad) {
+    const durableLimit = await consumeProxyLimit(request, "booking-page");
+    if (durableLimit === "limited") {
+      return rateLimitedResponse("Too many requests. Please try again in a minute.");
+    }
+    if (durableLimit === "unavailable") return limiterUnavailableResponse();
   }
 
   // Auth attempts — POST to `/register` or `/login`. After Task #06
@@ -196,6 +300,28 @@ export async function proxy(request: NextRequest) {
     return rateLimitedResponse(
       "Too many sign-in attempts. Please try again in a minute.",
     );
+  }
+  if (isPublicAuthAttempt(request)) {
+    const durableLimit = await consumeProxyLimit(request, "auth");
+    if (durableLimit === "limited") {
+      return rateLimitedResponse(
+        "Too many sign-in attempts. Please try again in a minute.",
+      );
+    }
+    if (durableLimit === "unavailable") return limiterUnavailableResponse();
+  }
+
+  // Coarse durable abuse ceiling for every explicitly public API boundary.
+  // Costly/PII/provider routes also keep their tighter identity/salon/session
+  // buckets in the route itself. This first layer protects body parsing and
+  // prevents a newly-added public route in a listed namespace from silently
+  // reaching privileged work without any durable enforcement.
+  if (isPublicApiBoundary(pathnameEarly)) {
+    const durableLimit = await consumeProxyLimit(request, "public-api");
+    if (durableLimit === "limited") {
+      return rateLimitedResponse("Too many requests. Please try again in a minute.");
+    }
+    if (durableLimit === "unavailable") return limiterUnavailableResponse();
   }
 
   let supabaseResponse = NextResponse.next({ request });

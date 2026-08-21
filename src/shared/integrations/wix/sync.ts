@@ -12,6 +12,7 @@ import { pushWixConfirm } from "./writeback";
 import { categorizeService } from "./categorize";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
+import { parseWixBookingWindow } from "./bookingWindow";
 
 // --- pure helpers ---
 function canonPhone(p: unknown): string | null {
@@ -32,9 +33,6 @@ const staffNum = (name: string): number | null => {
   const m = String(name || "").match(/#\s*(\d+)/);
   return m ? Number(m[1]) : null;
 };
-const minutesBetween = (a: string, b: string) =>
-  Math.max(15, Math.round((new Date(b).getTime() - new Date(a).getTime()) / 60000));
-
 // Wix anonymises techs as "Staff Member #N" and never exposes real names via API. We deliberately
 // DO NOT fabricate names (customer notes proved too noisy — they name whoever the customer *wanted*,
 // not who was assigned). Use a neutral "Thợ #N" label; the owner renames once in Settings. Identity
@@ -179,14 +177,18 @@ export async function processWixBookingEvent(salonId: string, b: WixBooking, aut
 /** Internal: process one booking using a pre-built resolver context (reused across the batch loop). */
 async function _processOne(ctx: ResolverContext, b: WixBooking): Promise<BookingEventResult & { autoConfirmed: boolean }> {
   const now = Date.now();
-  const start = b.startDate ?? b.bookedEntity?.slot?.startDate;
-  if (!start) return { action: "skipped", autoConfirmed: false };
-
-  const end = b.endDate ?? b.bookedEntity?.slot?.endDate ?? new Date(new Date(start).getTime() + 45 * 60000).toISOString();
+  const window = parseWixBookingWindow({
+    startDate: b.startDate,
+    slotStartDate: b.bookedEntity?.slot?.startDate,
+    endDate: b.endDate,
+    slotEndDate: b.bookedEntity?.slot?.endDate,
+  });
+  if (!window) return { action: "skipped", autoConfirmed: false };
+  const { startUtc: start, endUtc: end, durationMinutes } = window;
   const svc = await resolveService(
     ctx,
     b.bookedEntity?.title ?? "Service",
-    minutesBetween(start, end),
+    durationMinutes,
     b.bookedEntity?.slot?.serviceId,
     b.bookedEntity?.slot?.scheduleId,
   );

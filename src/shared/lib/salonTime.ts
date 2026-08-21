@@ -3,48 +3,28 @@
  *
  * ## DST handling (Task #04-D FIX 05)
  *
- * `Intl.DateTimeFormat` resolves wall-clock time → UTC offset for the
- * given IANA zone *at the rendered instant*, so DST shifts are
- * already baked into every conversion below. There is no extra
- * `isDst()` branch anywhere in this file — the binary search in
- * `salonWallTimeToUtcIso` walks the candidate millisecond range and
- * trusts `Intl` to report the correct local time at each probe.
+ * `Intl.DateTimeFormat` resolves UTC instants in the requested IANA zone, so
+ * DST shifts are baked into every conversion below. Wall-clock → UTC is the
+ * one direction that is not always one-to-one: a spring-forward minute may
+ * not exist and a fall-back minute may occur twice. `resolveSalonWallTime`
+ * enumerates the exact salon day once and reports those states explicitly.
  *
- * Edge cases the search handles correctly today:
+ * Edge cases handled explicitly:
  *
  * 1. **Spring-forward** (e.g. `America/Vancouver` 2026-03-08):
  *    local clocks jump 02:00 → 03:00. Wall-times in the skipped
- *    hour (02:00–02:59) **do not exist** in salon local time. The
- *    binary search converges on the first millisecond at-or-after
- *    03:00 PST — i.e., asking for `minutesFromMidnight = 150`
- *    (02:30) returns an ISO that formats as 03:00 PDT. This is
- *    acceptable for our use because: (a) salons aren't open at
- *    02:30 anyway, (b) the slot generator only ever asks for
- *    minutes inside `opening_hours`, which never spans 02:00–03:00
- *    on a DST night for any real tenant.
+ *    hour (02:00–02:59) **do not exist** in salon local time. The resolver
+ *    returns `nonexistent`; the conversion helper throws instead of silently
+ *    moving a booking to 03:00.
  *
  * 2. **Fall-back** (e.g. `America/Vancouver` 2026-11-01):
  *    local clocks repeat 02:00 → 01:00. The wall-time `01:30`
- *    happens twice. The search converges on the **first** instant
- *    where local time ≥ 01:30 — that's the PDT (pre-fall-back)
- *    occurrence. Same justification: salons are closed at 01:30,
- *    so this ambiguity never reaches a booking.
+ *    happens twice. The resolver returns both UTC instants. Callers can choose
+ *    `earlier`, `later`, or `reject`; the compatibility default is `earlier`.
  *
- * 3. **Booking across a DST boundary**: durations are computed in
- *    UTC ms (see `submitGroupBooking.ts:354`,
- *    `submitPublicBooking.ts`), so a 60-min service starting at
- *    01:30 PST on a fall-back day correctly ends at 02:30 PST
- *    (which is 01:30 PST a second time when rendered locally —
- *    again, never seen because salons are closed).
- *
- * **Why no unit tests yet:** the repo has no JS unit-test runner
- * (Playwright e2e only — see `CLAUDE.md` "Testing" section).
- * Adding one is out-of-scope for FIX 05; the cases above are
- * covered indirectly by the e2e flow which seeds bookings near
- * salon-open hours and never trips on the 02:00 boundary. A
- * follow-up task is spawned to add vitest + a dedicated
- * `salonTime.test.ts` that asserts the three scenarios above
- * against a fixed `America/Vancouver` calendar.
+ * 3. **Booking across a DST boundary**: service durations remain absolute UTC
+ *    durations. Calendar-day queries use exact salon midnights, yielding 23-
+ *    and 25-hour half-open ranges where appropriate.
  */
 
 function parseUtcMs(utcIso: string): number {
@@ -228,6 +208,74 @@ export function salonDayRangeUtc(
   };
 }
 
+export type SalonWallTimeResolution =
+  | { kind: "exact"; candidatesUtc: [string] }
+  | { kind: "ambiguous"; candidatesUtc: [string, string] }
+  | { kind: "nonexistent"; candidatesUtc: [] };
+
+export type SalonWallTimeDisambiguation = "earlier" | "later" | "reject";
+
+const WALL_TIME_DAY_CACHE_LIMIT = 32;
+const wallTimeDayCache = new Map<string, Map<number, number[]>>();
+
+function salonWallMinuteIndex(dateYmd: string, timezone: string): Map<number, number[]> {
+  const key = `${timezone}\u0000${dateYmd}`;
+  const cached = wallTimeDayCache.get(key);
+  if (cached) {
+    // Refresh insertion order so the bounded map behaves as a tiny LRU.
+    wallTimeDayCache.delete(key);
+    wallTimeDayCache.set(key, cached);
+    return cached;
+  }
+
+  const startMs = firstInstantOfSalonCalendarDayUtc(dateYmd, timezone);
+  const endMs = firstInstantOfSalonCalendarDayUtc(
+    addCalendarDaysToYmd(dateYmd, 1),
+    timezone,
+  );
+  const index = new Map<number, number[]>();
+  for (let instant = startMs; instant < endMs; instant += 60_000) {
+    const minute = salonMinutesFromMidnightAt(instant, timezone);
+    const candidates = index.get(minute);
+    if (candidates) candidates.push(instant);
+    else index.set(minute, [instant]);
+  }
+
+  wallTimeDayCache.set(key, index);
+  while (wallTimeDayCache.size > WALL_TIME_DAY_CACHE_LIMIT) {
+    const oldest = wallTimeDayCache.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    wallTimeDayCache.delete(oldest);
+  }
+  return index;
+}
+
+/**
+ * Resolve an exact salon wall-clock minute without normalizing DST gaps.
+ *
+ * A normal minute has one candidate, a fall-back minute has two, and a
+ * spring-forward gap has none. Results are sorted chronologically.
+ */
+export function resolveSalonWallTime(
+  dateYmd: string,
+  minutesFromMidnight: number,
+  timezone: string,
+): SalonWallTimeResolution {
+  if (!Number.isInteger(minutesFromMidnight) || minutesFromMidnight < 0 || minutesFromMidnight >= 1440) {
+    throw new Error("salonTime: minutesFromMidnight must be an integer from 0 to 1439");
+  }
+  const candidates = salonWallMinuteIndex(dateYmd, timezone).get(minutesFromMidnight) ?? [];
+  const candidatesUtc = candidates.map((instant) => new Date(instant).toISOString());
+  if (candidatesUtc.length === 0) return { kind: "nonexistent", candidatesUtc: [] };
+  if (candidatesUtc.length === 1) {
+    return { kind: "exact", candidatesUtc: [candidatesUtc[0]] };
+  }
+  if (candidatesUtc.length === 2) {
+    return { kind: "ambiguous", candidatesUtc: [candidatesUtc[0], candidatesUtc[1]] };
+  }
+  throw new Error(`salonTime: unsupported wall-time multiplicity in ${timezone}`);
+}
+
 function salonMinutesFromMidnightAt(utcMs: number, timezone: string): number {
   const d = new Date(utcMs);
   const dtf = new Intl.DateTimeFormat("en-US", {
@@ -262,22 +310,21 @@ export function salonWallTimeToUtcIso(
   dateYmd: string,
   minutesFromMidnight: number,
   timezone: string,
+  disambiguation: SalonWallTimeDisambiguation = "earlier",
 ): string {
-  const dayStart = firstInstantOfSalonCalendarDayUtc(dateYmd, timezone);
-  const nextStart = firstInstantOfSalonCalendarDayUtc(addCalendarDaysToYmd(dateYmd, 1), timezone);
-  let lo = dayStart;
-  let hi = nextStart - 1;
-  while (lo < hi) {
-    const mid = Math.floor((lo + hi) / 2);
-    const ymd = ymdInTimeZone(mid, timezone);
-    const mins = salonMinutesFromMidnightAt(mid, timezone);
-    if (ymd < dateYmd || (ymd === dateYmd && mins < minutesFromMidnight)) {
-      lo = mid + 1;
-    } else {
-      hi = mid;
-    }
+  const resolution = resolveSalonWallTime(dateYmd, minutesFromMidnight, timezone);
+  if (resolution.kind === "nonexistent") {
+    throw new Error(`salonTime: nonexistent wall time ${dateYmd} ${minutesFromMidnight} in ${timezone}`);
   }
-  return new Date(lo).toISOString();
+  if (resolution.kind === "ambiguous") {
+    if (disambiguation === "reject") {
+      throw new Error(`salonTime: ambiguous wall time ${dateYmd} ${minutesFromMidnight} in ${timezone}`);
+    }
+    return disambiguation === "later"
+      ? resolution.candidatesUtc[1]
+      : resolution.candidatesUtc[0];
+  }
+  return resolution.candidatesUtc[0];
 }
 
 /**

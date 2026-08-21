@@ -26,8 +26,14 @@ describe("Square Connect credential boundary", () => {
     expect(action).toContain(
       "parsed.data.applicationId !== STUDIO_APPLICATION_ID",
     );
-    expect(action).toContain("merchant_id.eq.${validated.merchantId}");
-    expect(action).toContain("location_id.eq.${validated.locationId}");
+    expect(action).toContain('.eq("merchant_id", validated.merchantId)');
+    expect(action).toContain('.eq("location_id", validated.locationId)');
+    expect(action).not.toContain(
+      "merchant_id.eq.${validated.merchantId}",
+    );
+    expect(action).not.toContain(
+      "location_id.eq.${validated.locationId}",
+    );
     expect(action).toContain('error: "account_conflict"');
     expect(action).toContain('error: "payment_provider_conflict"');
     expect(action).toContain('error: "saved_card_conflict"');

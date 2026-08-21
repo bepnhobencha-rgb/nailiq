@@ -14,6 +14,7 @@ import {
   buildStaffActionEmailSubject,
 } from "./staffActionMessages";
 import type { StaffNotifyEvent } from "@/shared/dashboard/staffNotificationSettings";
+import { buildEmailBrandHeader } from "@/shared/booking/emailBranding";
 
 /**
  * Deliver a staff-action customer notification (create/reschedule/cancel) on
@@ -66,7 +67,7 @@ export async function deliverStaffActionNotification(
 
   const { data: salonRow } = await supabase
     .from("salons")
-    .select("name, phone, timezone, default_notification_locale, email_outbound_enabled")
+    .select("name, phone, timezone, default_notification_locale, email_outbound_enabled, logo_url")
     .eq("id", input.salonId)
     .maybeSingle();
   const salon = (salonRow ?? {}) as {
@@ -75,6 +76,7 @@ export async function deliverStaffActionNotification(
     timezone?: string | null;
     default_notification_locale?: string | null;
     email_outbound_enabled?: boolean | null;
+    logo_url?: string | null;
   };
   const emailOutboundEnabled = salon.email_outbound_enabled !== false;
 
@@ -121,12 +123,15 @@ export async function deliverStaffActionNotification(
     const body = buildStaffActionSms(input.event, locale, vars);
     if (body) {
       try {
-        const r = await sendSmsReminder(row.client_phone, body, { lang: locale === "en" ? "en" : "vi" });
+        const r = await sendSmsReminder(row.client_phone, body, {
+          salonId: input.salonId,
+          lang: locale === "en" ? "en" : "vi",
+        });
         smsSent = r.ok;
         void logNotification({
           bookingId: input.bookingId,
           salonId: input.salonId,
-          notificationType: "booking_confirmation",
+          notificationType: "staff_action",
           channel: "sms",
           clientPhone: row.client_phone,
           messageSid: r.messageSid,
@@ -152,9 +157,22 @@ export async function deliverStaffActionNotification(
       if (!suppressed) {
         const esc = (s: string) =>
           s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-        const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#faf9f7;">
+        const subtitle = locale === "vi"
+          ? input.event === "reschedule"
+            ? "Lịch hẹn đã được dời"
+            : input.event === "cancel"
+              ? "Lịch hẹn đã huỷ"
+              : "Lịch hẹn đã xác nhận"
+          : input.event === "reschedule"
+            ? "Appointment Rescheduled"
+            : input.event === "cancel"
+              ? "Appointment Cancelled"
+              : "Appointment Confirmed";
+        const html = `<!DOCTYPE html><html lang="${locale}"><body style="margin:0;padding:0;background:#faf9f7;">
   <div style="max-width:480px;margin:0 auto;padding:28px 22px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#2a2a2a;">
-    <p style="margin:0 0 8px;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#888;">${esc(vars.salonName)}</p>
+    <div style="padding:16px;background:#0B0C10;text-align:center;border-radius:8px;margin:0 0 18px;">
+      ${buildEmailBrandHeader({ salonName: vars.salonName, logoUrl: salon.logo_url, subtitle })}
+    </div>
     <h1 style="margin:0 0 18px;font-size:18px;font-weight:600;color:#1a1a1a;">${esc(subject)}</h1>
     <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#333;">${esc(body)}</p>
   </div>
@@ -173,7 +191,7 @@ ${complianceFooterHtml({ email: to, salonName: vars.salonName, lang: locale })}
           void logNotification({
             bookingId: input.bookingId,
             salonId: input.salonId,
-            notificationType: "booking_confirmation",
+            notificationType: "staff_action",
             channel: "email",
             clientPhone: to,
             messageSid: res.data?.id,

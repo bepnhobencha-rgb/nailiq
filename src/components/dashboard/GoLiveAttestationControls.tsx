@@ -79,12 +79,14 @@ export function GoLiveAttestationControls({
   readiness,
   state,
   events,
+  guidedSetupEnabled,
 }: {
   slug: string;
   role: "owner" | "admin";
   readiness: GoLiveReadiness;
   state: GoLiveAttestationState;
   events: GoLiveAttestationEvent[];
+  guidedSetupEnabled: boolean;
 }) {
   const router = useRouter();
   const { language } = useUserLanguage();
@@ -104,7 +106,8 @@ export function GoLiveAttestationControls({
   function canAttest(key: GoLiveAttestationKey): boolean {
     if (key === "owner_approved")
       return role === "owner" && technicalReady && prerequisitesReady;
-    if (key === "live_rehearsal_completed") return technicalReady;
+    if (key === "live_rehearsal_completed")
+      return technicalReady && !guidedSetupEnabled;
     if (key === "hours_confirmed") {
       return (
         readiness.checks.find((check) => check.id === "schedule")?.state ===
@@ -112,6 +115,30 @@ export function GoLiveAttestationControls({
       );
     }
     return true;
+  }
+
+  function titleFor(confirmation: ConfirmationDefinition): string {
+    if (
+      guidedSetupEnabled &&
+      confirmation.key === "live_rehearsal_completed"
+    ) {
+      return vi
+        ? "Đã kiểm tra preview booking an toàn"
+        : "Safe booking preview reviewed";
+    }
+    return vi ? confirmation.titleVi : confirmation.titleEn;
+  }
+
+  function promptFor(confirmation: ConfirmationDefinition): string {
+    if (
+      guidedSetupEnabled &&
+      confirmation.key === "live_rehearsal_completed"
+    ) {
+      return vi
+        ? "Chọn dịch vụ, nhân viên, ngày và giờ trong Safe Preview rồi ghi nhận tại đó. Trang này chỉ cho phép thu hồi bằng chứng đã ghi."
+        : "Choose a service, staff, date, and time in Safe Preview, then record the evidence there. This page only revokes an existing record.";
+    }
+    return vi ? confirmation.promptVi : confirmation.promptEn;
   }
 
   function submit(key: GoLiveAttestationKey, active: boolean) {
@@ -147,6 +174,9 @@ export function GoLiveAttestationControls({
           prerequisites_incomplete: vi
             ? "Cần hoàn tất ba xác nhận con người trước."
             : "Complete all three human confirmations first.",
+          guided_preview_unavailable: vi
+            ? "Prototype QA chưa có preview an toàn nên không thể ghi nhận bước này."
+            : "The QA prototype has no safe preview, so this confirmation cannot be recorded.",
           unavailable: vi
             ? "Không thể lưu xác nhận. Chưa có thay đổi nào được ghi nhận."
             : "Could not save the confirmation. Nothing was recorded.",
@@ -193,6 +223,17 @@ export function GoLiveAttestationControls({
       ) : null}
 
       <div className="mt-3 space-y-3">
+        {guidedSetupEnabled ? (
+          <p
+            role="status"
+            data-testid="guided-preview-attestation-blocked"
+            className="rounded-2xl border border-nq-primary/40 bg-nq-primary/5 p-4 text-sm leading-6 text-nq-foreground"
+          >
+            {vi
+              ? "Guided Setup dùng preview được xác thực và chỉ đọc. Preview không thể tạo booking, thanh toán, OTP hoặc thông báo; xác nhận bên dưới được gắn với snapshot cấu hình hiện tại."
+              : "Guided Setup uses an authenticated read-only preview. It cannot create bookings, payments, OTP, or notifications; confirmations below are bound to the current configuration snapshot."}
+          </p>
+        ) : null}
         {confirmations.map((confirmation) => {
           const active = isActive(confirmation.key, state);
           const ownerOnly =
@@ -210,7 +251,7 @@ export function GoLiveAttestationControls({
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-semibold text-nq-foreground">
-                  {vi ? confirmation.titleVi : confirmation.titleEn}
+                  {titleFor(confirmation)}
                 </h3>
                 <span
                   className={
@@ -233,7 +274,7 @@ export function GoLiveAttestationControls({
                 </span>
               </div>
               <p className="mt-1 text-sm leading-6 text-nq-muted">
-                {vi ? confirmation.promptVi : confirmation.promptEn}
+                {promptFor(confirmation)}
               </p>
 
               {ownerOnly ? (
@@ -297,7 +338,7 @@ export function GoLiveAttestationControls({
               )}
             </article>
           );
-        })}
+          })}
       </div>
 
       <div className="mt-6">

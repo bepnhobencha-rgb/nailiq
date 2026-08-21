@@ -19,10 +19,13 @@ import {
   createPaymentLink,
   getOrder,
   getSquareConfig,
-  findSuccessfulPaymentByReference,
 } from "@/shared/integrations/square/client";
-import { isSuccessfulNoShowChargeStatus } from "./noshowChargeStatus";
 import { noShowPaymentReferenceId } from "./noshowPaymentReference";
+import {
+  runAuthoritativeBookingPaymentOperation,
+  runAuthoritativeLateCancelRefund,
+} from "@/shared/payments/executeBookingPaymentOperation";
+import { stableBookingPaymentRequestId } from "@/shared/payments/paymentRequestId";
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
@@ -32,12 +35,13 @@ type Db = ReturnType<typeof looseServiceClient>;
 /** No-show policy is provider-agnostic now: it lives on `salons`, not on the
  *  Square integration. "Connected" (is a provider hooked up) is checked
  *  separately via resolvePaymentProvider, so a Stripe salon works too. */
-async function loadPolicy(db: Db, salonId: string) {
-  const { data } = await db
+async function loadPolicy(db: Db, salonId: string, strict = false) {
+  const { data, error } = await db
     .from("salons")
     .select("noshow_protection_enabled, noshow_fee_percent, noshow_risk_threshold, noshow_group_whole_party, noshow_deposit_escalation_threshold, noshow_require_new_customer, noshow_require_prior_noshow, noshow_min_noshow_count, noshow_require_high_risk")
     .eq("id", salonId)
     .maybeSingle();
+  if (strict && (error || !data)) throw new Error("noshow_policy_unavailable");
   const r = (data as Row) ?? {};
   return {
     enabled: Boolean(r.noshow_protection_enabled),
@@ -72,14 +76,17 @@ async function noShowBaseCents(
   db: Db,
   booking: Row,
   wholeParty: boolean,
+  strict = false,
 ): Promise<{ baseCents: number; partySize: number }> {
   const own = num(booking.price_cents);
   const groupId = str(booking.group_id);
   if (!wholeParty || !groupId) return { baseCents: own, partySize: 1 };
-  const { data } = await db
+  const { data, error } = await db
     .from("bookings")
     .select("price_cents, status")
+    .eq("salon_id", str(booking.salon_id))
     .eq("group_id", groupId);
+  if (strict && error) throw new Error("noshow_group_pricing_unavailable");
   // Exclude cancelled members in JS (the loose Db query type has no .neq()).
   const rows = ((data as Row[] | null) ?? []).filter(
     (r) => str(r.status) !== "cancelled",
@@ -100,12 +107,13 @@ async function noShowBaseCents(
 /** Whether the salon has opted into Square deposits (square_integrations flag).
  *  Used to guard auto-escalation: only forfeit the card tier for a deposit when
  *  a deposit can actually be created. */
-async function depositsEnabled(db: Db, salonId: string): Promise<boolean> {
-  const { data } = await db
+async function depositsEnabled(db: Db, salonId: string, strict = false): Promise<boolean> {
+  const { data, error } = await db
     .from("square_integrations")
     .select("deposit_enabled")
     .eq("salon_id", salonId)
     .maybeSingle();
+  if (strict && error) throw new Error("noshow_deposit_policy_unavailable");
   return (data as { deposit_enabled?: boolean } | null)?.deposit_enabled === true;
 }
 
@@ -121,23 +129,25 @@ async function supersedeDepositWithCard(db: Db, bookingId: string): Promise<void
  *  public booking page calls this to decide whether to render the card step. */
 export async function noShowCardDecision(
   bookingId: string,
+  options?: { strict?: boolean },
 ): Promise<{ required: boolean; feeCents: number; reason: string; partySize?: number }> {
   const db = looseServiceClient();
-  const { data } = await db
+  const { data, error } = await db
     .from("bookings")
     .select("salon_id, price_cents, no_show_risk_score, noshow_card_id, noshow_card_required, client_phone, group_id")
     .eq("id", bookingId)
     .maybeSingle();
+  if (options?.strict && (error || !data)) throw new Error("noshow_booking_unavailable");
   const b = data as Row | null;
   if (!b) return { required: false, feeCents: 0, reason: "booking not found" };
   if (b.noshow_card_id) return { required: false, feeCents: 0, reason: "card already saved" };
 
-  const policy = await loadPolicy(db, str(b.salon_id));
+  const policy = await loadPolicy(db, str(b.salon_id), options?.strict === true);
   if (!policy.enabled) {
     return { required: false, feeCents: 0, reason: "no-show protection off" };
   }
   // Connection check is provider-agnostic: a usable Square OR Stripe provider.
-  const provider = await resolvePaymentProvider(str(b.salon_id));
+  const provider = await resolvePaymentProvider(str(b.salon_id), { strict: options?.strict === true });
   if (!provider) {
     return { required: false, feeCents: 0, reason: "no payment provider connected" };
   }
@@ -147,7 +157,7 @@ export async function noShowCardDecision(
   // Loyal returning clients with a clean history are never asked (low friction).
   const risk = num(b.no_show_risk_score);
   const { isNew, hadNoShow, noShowCount } = await priorBookingStats(
-    db, str(b.salon_id), str(b.client_phone), bookingId,
+    db, str(b.salon_id), str(b.client_phone), bookingId, options?.strict === true,
   );
   // Auto-escalation: a customer with ≥ threshold prior no-shows must pay an
   // UPFRONT deposit (handled by evaluateBookingNoShow), so we do NOT ask them
@@ -157,7 +167,7 @@ export async function noShowCardDecision(
   if (
     policy.escalationThreshold != null &&
     noShowCount >= policy.escalationThreshold &&
-    (await depositsEnabled(db, str(b.salon_id)))
+    (await depositsEnabled(db, str(b.salon_id), options?.strict === true))
   ) {
     return { required: false, feeCents: 0, reason: "escalated to deposit" };
   }
@@ -169,6 +179,7 @@ export async function noShowCardDecision(
       db,
       b,
       policy.wholeParty,
+      options?.strict === true,
     );
     const feeCents = Math.round((baseCents * policy.percent) / 100);
     if (feeCents <= 0) {
@@ -195,7 +206,9 @@ export async function noShowCardDecision(
   }
 
   // Whole-party protection: for a group lead, the fee covers the entire party.
-  const { baseCents, partySize } = await noShowBaseCents(db, b, policy.wholeParty);
+  const { baseCents, partySize } = await noShowBaseCents(
+    db, b, policy.wholeParty, options?.strict === true,
+  );
   const feeCents = Math.round((baseCents * policy.percent) / 100);
   if (feeCents <= 0) return { required: false, feeCents: 0, reason: "fee is zero" };
   return {
@@ -214,10 +227,11 @@ async function priorBookingStats(
   salonId: string,
   clientPhone: string,
   excludeBookingId: string,
+  strict = false,
 ): Promise<{ isNew: boolean; hadNoShow: boolean; noShowCount: number }> {
   const phone = clientPhone.trim();
   if (phone.length < 8) return { isNew: true, hadNoShow: false, noShowCount: 0 };
-  const { data } = await db
+  const { data, error } = await db
     .from("bookings")
     .select("status")
     .eq("salon_id", salonId)
@@ -225,6 +239,7 @@ async function priorBookingStats(
     .not("id", "eq", excludeBookingId)
     .not("status", "eq", "cancelled")
     .limit(50);
+  if (strict && error) throw new Error("noshow_history_unavailable");
   const rows = (data ?? []) as Row[];
   const noShowCount = rows.filter((r) => str(r.status) === "no_show").length;
   return {
@@ -269,6 +284,9 @@ export async function saveNoShowCardForBooking(
     },
     sourceToken: sourceId,
     verificationToken,
+    // Legacy server-only callers retain stable provider dedupe while public
+    // card capture migrates to the durable card_manage operation contract.
+    idempotencyKey: `legacy-card-save:${bookingId}`,
   });
 
   // Server-authored consent evidence: the exact terms the customer agreed to,
@@ -538,168 +556,119 @@ export async function autoAttachReturningCard(
 export async function chargeNoShowFee(
   bookingId: string,
   opts?: {
-    /** Appended to the idempotency key. The first charge uses the stable key
-     *  (double-charge-safe on a network retry). A deliberate RETRY of a failed
-     *  charge must pass a fresh suffix, else Square dedups the key and just
-     *  replays the original decline instead of re-attempting. */
-    idempotencySuffix?: string;
     /** Payment note/descriptor. Defaults to "No-show fee"; the late-cancel path
      *  passes "Late cancellation fee" so the customer's statement is accurate. */
     note?: string;
-    /** Override the charged amount (cents). The late-cancel path uses this when
-     *  the salon set a separate self_cancel_fee_percent. The charged amount is
-     *  persisted back onto noshow_fee_cents so a later refund returns exactly
-     *  what was taken. */
     amountCentsOverride?: number;
+    /** Late cancellation is a separate DB-owned cancel occurrence. It must
+     * never be recorded as a no-show or share that lifetime charge identity. */
+    operationKind?: "noshow_charge" | "late_cancel_charge";
+    /** Required immutable version from the committed cancel receipt. Never
+     * infer a late-cancel occurrence from a later mutable booking row. */
+    occurrenceVersion?: number;
   },
-): Promise<{ charged: boolean; reason: string; paymentId?: string }> {
-  const db = looseServiceClient();
-  const { data } = await db
+): Promise<{
+  charged: boolean;
+  status: "succeeded" | "pending_provider" | "unknown" | "definite_failure" | "not_applicable";
+  reason: string;
+  paymentId?: string;
+}> {
+  const db = createServiceRoleClient();
+  const { data, error } = await db
     .from("bookings")
-    .select("id, salon_id, noshow_card_id, noshow_customer_id, noshow_fee_cents, noshow_charge_status, noshow_charge_attempts, noshow_consent_at")
+    .select("id, salon_id")
     .eq("id", bookingId)
     .maybeSingle();
-  const b = data as Row | null;
-  if (!b) return { charged: false, reason: "booking not found" };
-  if (!b.noshow_card_id) return { charged: false, reason: "no card on file" };
-  if (b.noshow_charge_status === "charged") {
-    return { charged: false, reason: "already charged" }; // idempotent
+  const booking = data as {
+    id?: string;
+    salon_id?: string;
+  } | null;
+  if (error || !booking?.id || !booking.salon_id) {
+    return { charged: false, status: "not_applicable", reason: "payment_context_unavailable" };
   }
-  // Legal guard: never charge a saved card without recorded consent.
-  if (!b.noshow_consent_at) {
-    return { charged: false, reason: "no consent on file" };
+  const operationKind = opts?.operationKind ?? "noshow_charge";
+  const occurrence = operationKind === "late_cancel_charge"
+    ? Number.isSafeInteger(opts?.occurrenceVersion) && Number(opts?.occurrenceVersion) > 0
+      ? String(opts?.occurrenceVersion)
+      : null
+    : "lifetime";
+  if (!occurrence) {
+    return { charged: false, status: "not_applicable", reason: "late_cancel_occurrence_required" };
   }
-  const feeCents =
-    opts?.amountCentsOverride != null && opts.amountCentsOverride > 0
-      ? Math.round(opts.amountCentsOverride)
-      : num(b.noshow_fee_cents);
-  if (feeCents <= 0) return { charged: false, reason: "fee is zero" };
-
-  const provider = await resolvePaymentProvider(str(b.salon_id));
-  if (!provider) return { charged: false, reason: "payment provider not configured" };
-
-  // ── Double-charge guard (opt-in; Square only) ────────────────────────────
-  // The daily retry cron rotates the Square idempotency key per attempt (so a
-  // decline can be re-attempted), which means Square's own dedupe can't stop a
-  // re-charge. If a prior attempt CHARGED but its DB write failed (status stuck
-  // 'failed'), the retry would charge again. When enabled, reconcile against
-  // Square first: adopt an existing successful payment for this booking instead
-  // of charging. Fail-safe — any lookup error (or no match) falls through to the
-  // charge, so this can only PREVENT a duplicate, never cause one. Gated OFF by
-  // default: merging is a no-op until verified against a Square sandbox and the
-  // env flag is set.
-  if (process.env.NOSHOW_RECONCILE_BEFORE_CHARGE === "1" && provider.kind === "square") {
-    try {
-      const cfg = await getSquareConfig(db, str(b.salon_id));
-      // Fee is charged within ~7 days of the appointment (+ up to 3 daily
-      // retries); 14 days comfortably covers any prior successful charge.
-      const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-      const existing = await findSuccessfulPaymentByReference(
-        cfg,
-        noShowPaymentReferenceId(bookingId),
-        since,
-      );
-      if (existing) {
-        await db
-          .from("bookings")
-          .update({
-            noshow_charge_status: "charged",
-            noshow_payment_id: existing.id,
-            noshow_charge_attempts: num(b.noshow_charge_attempts) + 1,
-            noshow_charge_error: null,
-            noshow_fee_cents: feeCents,
-          } as never)
-          .eq("id", bookingId);
-        console.warn("[chargeNoShowFee] reconciled existing Square payment — skipped re-charge", {
-          bookingId,
-          paymentId: existing.id,
-        });
-        return { charged: false, reason: "already_charged_reconciled", paymentId: existing.id };
+  const outcome = await runAuthoritativeBookingPaymentOperation({
+    db: db as never,
+    salonId: booking.salon_id,
+    bookingId,
+    requestId: stableBookingPaymentRequestId(bookingId, operationKind, occurrence),
+    operationKind,
+    amountCents: opts?.amountCentsOverride ?? null,
+    note: opts?.note ?? (operationKind === "late_cancel_charge"
+      ? "Late cancellation fee"
+      : "No-show fee"),
+    referenceId: noShowPaymentReferenceId(bookingId),
+  });
+  return outcome.ok
+    ? {
+      charged: true,
+        status: "succeeded",
+        reason: "succeeded",
+        paymentId: outcome.providerReceipt,
       }
-    } catch (e) {
-      // Reconcile is best-effort; never let it block a legitimate charge.
-      console.error("[chargeNoShowFee] reconcile guard failed — proceeding to charge", { bookingId }, e);
-    }
-  }
-
-  try {
-    const pay = await provider.chargeSavedCard({
-      cardId: str(b.noshow_card_id),
-      customerId: str(b.noshow_customer_id),
-      amountCents: feeCents,
-      idempotencyKey: `noshow:${bookingId}${opts?.idempotencySuffix ? `:${opts.idempotencySuffix}` : ""}`,
-      note: opts?.note ?? "No-show fee",
-      referenceId: noShowPaymentReferenceId(bookingId),
-    });
-    const charged = isSuccessfulNoShowChargeStatus(pay.status);
-    await db
-      .from("bookings")
-      .update({
-        noshow_charge_status: charged ? "charged" : "failed",
-        noshow_payment_id: pay.paymentId,
-        noshow_charge_attempts: num(b.noshow_charge_attempts) + 1,
-        noshow_charge_error: charged ? null : pay.status,
-        // Persist the actual amount taken so a later refund returns exactly it.
-        ...(charged ? { noshow_fee_cents: feeCents } : {}),
-      } as never)
-      .eq("id", bookingId);
-    return { charged, reason: pay.status, paymentId: pay.paymentId };
-  } catch (e) {
-    const errMsg = e instanceof Error ? e.message : "charge failed";
-    await db
-      .from("bookings")
-      .update({
-        noshow_charge_status: "failed",
-        noshow_charge_attempts: num(b.noshow_charge_attempts) + 1,
-        noshow_charge_error: errMsg,
-      } as never)
-      .eq("id", bookingId);
-    return { charged: false, reason: errMsg };
-  }
+    : {
+      charged: false,
+        status: outcome.status === "pending_provider"
+          ? "pending_provider"
+          : outcome.status === "unknown"
+            ? "unknown"
+            : outcome.status === "definite_failure"
+              ? "definite_failure"
+              : "not_applicable",
+        reason: outcome.reason,
+      };
 }
 
 /**
- * Refund a charged no-show / late-cancel fee. Provider-agnostic (Square/Stripe).
- * Idempotent via a stable key + a status guard: only refunds when currently
- * 'charged', then stamps 'refunded'. Safe to call repeatedly.
+ * Refund a charged no-show fee through the authoritative ledger. The shared
+ * executor performs load_booking_payment_operation_material →
+ * claim_booking_payment_operation → complete_booking_payment_operation.
+ * Late-cancel refunds deliberately use the parent-bound Fair Cancel path below.
  */
 export async function refundNoShowFee(
   bookingId: string,
-  opts?: { reason?: string },
+  opts?: { reason?: string; amountCents?: number; requestId?: string },
 ): Promise<{ refunded: boolean; reason: string }> {
-  const db = looseServiceClient();
-  const { data } = await db
+  const db = createServiceRoleClient();
+  const { data, error } = await db
     .from("bookings")
-    .select("id, salon_id, noshow_payment_id, noshow_fee_cents, noshow_charge_status")
+    .select("id, salon_id, noshow_fee_cents, noshow_refunded_cents")
     .eq("id", bookingId)
     .maybeSingle();
   const b = data as Row | null;
-  if (!b) return { refunded: false, reason: "booking not found" };
-  if (b.noshow_charge_status !== "charged")
-    return { refunded: false, reason: "not in charged state" }; // idempotent
-  const paymentId = str(b.noshow_payment_id);
-  const amount = num(b.noshow_fee_cents);
-  if (!paymentId || amount <= 0)
-    return { refunded: false, reason: "missing payment id / amount" };
-
-  const provider = await resolvePaymentProvider(str(b.salon_id));
-  if (!provider) return { refunded: false, reason: "payment provider not configured" };
-  try {
-    await provider.refund({
-      paymentId,
-      amountCents: amount,
-      reason: opts?.reason ?? "Late cancellation fee refunded",
-      idempotencyKey: `refund:${bookingId}`,
-    });
-    await db
-      .from("bookings")
-      .update({ noshow_charge_status: "refunded" } as never)
-      .eq("id", bookingId);
-    return { refunded: true, reason: "refunded" };
-  } catch (e) {
-    const errMsg = e instanceof Error ? e.message : "refund failed";
-    return { refunded: false, reason: errMsg };
+  if (error || !b || !str(b.salon_id)) {
+    return { refunded: false, reason: "payment_context_unavailable" };
   }
+  const remaining = Math.max(0, num(b.noshow_fee_cents) - num(b.noshow_refunded_cents));
+  const amount = opts?.amountCents ?? remaining;
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    return { refunded: false, reason: "no_refundable_amount" };
+  }
+  const requestId = opts?.requestId ?? stableBookingPaymentRequestId(
+    bookingId,
+    "noshow_refund",
+    `refund:${amount}`,
+  );
+  const outcome = await runAuthoritativeBookingPaymentOperation({
+    db: db as never,
+    salonId: str(b.salon_id),
+    bookingId,
+    requestId,
+    operationKind: "noshow_refund",
+    amountCents: amount,
+    reason: opts?.reason ?? "No-show fee refund",
+  });
+  return outcome.ok
+    ? { refunded: true, reason: "succeeded" }
+    : { refunded: false, reason: outcome.reason };
 }
 
 /**
@@ -717,6 +686,8 @@ export async function refundRefilledLateCancels(): Promise<{
   checked: number;
   refunded: number;
 }> {
+  // Dedicated contract: load_late_cancel_refund_material →
+  // claim_late_cancel_refund → dispatchClaimedBookingPaymentOperation.
   const db = looseServiceClient();
   const nowIso = new Date().toISOString();
   const { data } = await db
@@ -740,7 +711,7 @@ export async function refundRefilledLateCancels(): Promise<{
   for (const c of candidates) {
     if (!c.staff_id || !c.start_time_utc) continue;
     // Is the exact freed slot now held by another active booking?
-    const { data: refill } = await db
+    const { data: refill, error: refillError } = await db
       .from("bookings")
       .select("id")
       .eq("salon_id", c.salon_id)
@@ -748,13 +719,36 @@ export async function refundRefilledLateCancels(): Promise<{
       .eq("start_time_utc", c.start_time_utc)
       .in("status", ["pending", "confirmed"])
       .limit(3);
+    if (refillError) continue;
     const refillRows = (refill as Array<{ id: string }> | null) ?? [];
     const isRefilled = refillRows.some((r) => r.id !== c.id);
     if (isRefilled) {
-      const res = await refundNoShowFee(c.id, {
+      const { data: parent, error: parentError } = await db
+        .from("booking_payment_operations")
+        .select("id, amount_cents")
+        .eq("salon_id", c.salon_id)
+        .eq("booking_id", c.id)
+        .eq("operation_kind", "late_cancel_charge")
+        .eq("status", "succeeded")
+        .order("completed_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const parentRow = parent as { id?: string; amount_cents?: number } | null;
+      if (parentError || !parentRow?.id || !Number.isSafeInteger(parentRow.amount_cents)) {
+        continue;
+      }
+      const result = await runAuthoritativeLateCancelRefund({
+        db: db as never,
+        parentOperationId: parentRow.id,
+        requestId: stableBookingPaymentRequestId(
+          c.id,
+          "late_cancel_refund",
+          parentRow.id,
+        ),
+        amountCents: Number(parentRow.amount_cents),
         reason: "Late cancellation fee refunded — slot rebooked",
       });
-      if (res.refunded) refunded += 1;
+      if (result.ok) refunded += 1;
     }
   }
   return { checked: candidates.length, refunded };

@@ -128,7 +128,8 @@ export async function gatherPolicyContext(bookingId: string): Promise<PolicyCont
     // Group booking: fetch all members so the agent sees the whole-party fee base.
     // Mirrors the noShowBaseCents() logic in square/noshow.ts (PR #586).
     groupId
-      ? db.from("bookings").select("price_cents, status").eq("group_id", groupId)
+      ? db.from("bookings").select("price_cents, status")
+        .eq("salon_id", salonId).eq("group_id", groupId)
       : Promise.resolve({ data: [] }),
   ]);
 

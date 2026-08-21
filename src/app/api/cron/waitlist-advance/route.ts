@@ -2,14 +2,11 @@
  * Expires stale waitlist claim links and notifies the next person in line.
  * Called every 5 minutes by Vercel Cron.
  *
- * The DB RPC `advance_waitlist_notifications` atomically:
- *   1. Flips 'notified' entries whose claim window expired → 'expired'
- *   2. Flags the next 'waiting' entry → 'notified' (new claim_token)
- *   3. Returns each promoted row so we can send the outbound notification.
+ * The canonical DB transition expires stale claim capabilities, advances FIFO,
+ * and returns the exact next action-scoped offer for durable delivery.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { notifyWaitlistForSlot } from "@/shared/noshow/waitlistAutoFill";
+import { advanceAndDeliverWaitlistOffers } from "@/shared/noshow/promoteAndDeliverWaitlistOffer";
 import { refundRefilledLateCancels } from "@/shared/integrations/square/noshow";
 import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
 import { runTrackedCron } from "@/shared/security/cronRunHistory";
@@ -25,44 +22,10 @@ export async function GET(req: NextRequest) {
   if (authorizationError) return authorizationError;
   return runTrackedCron("waitlist_advance", async () => {
 
-  const supabase = createServiceRoleClient();
-
-  const { data, error } = await supabase.rpc("advance_waitlist_notifications", {
-    p_window_minutes: CLAIM_WINDOW_MINUTES,
-  });
-
-  if (error) {
-    console.error("[waitlist-advance] RPC failed", error);
+  const advancedResult = await advanceAndDeliverWaitlistOffers(CLAIM_WINDOW_MINUTES);
+  if (!advancedResult.ok) {
+    console.error("[waitlist-advance] canonical advancement failed", advancedResult.code);
     return NextResponse.json({ error: "rpc_failed" }, { status: 500 });
-  }
-
-  const rows = (data ?? []) as Array<{
-    salon_id: string;
-    service_id: string;
-    booking_date: string;
-    salon_name: string;
-    service_name: string;
-  }>;
-
-  let advanced = 0;
-
-  for (const row of rows) {
-    try {
-      await notifyWaitlistForSlot({
-        salonId: row.salon_id,
-        salonName: row.salon_name,
-        serviceId: row.service_id,
-        serviceName: row.service_name,
-        bookingDateYmd: String(row.booking_date).slice(0, 10),
-      });
-      advanced += 1;
-    } catch (e) {
-      console.error(
-        "[waitlist-advance] notify failed for slot",
-        { salon_id: row.salon_id, service_id: row.service_id, booking_date: row.booking_date },
-        e,
-      );
-    }
   }
 
   // Fair Cancel: refund late-cancel fees whose freed slot has since been
@@ -75,6 +38,6 @@ export async function GET(req: NextRequest) {
     console.error("[waitlist-advance] late-cancel refund pass failed", e);
   }
 
-    return NextResponse.json({ ok: true, advanced, refunded });
+    return NextResponse.json({ ok: true, advanced: advancedResult.advanced, refunded });
   });
 }

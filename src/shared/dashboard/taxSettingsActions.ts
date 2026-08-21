@@ -25,6 +25,13 @@ export async function loadTaxSettings(slug: string): Promise<{
 }> {
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) return { ok: false, taxLines: [], preset: null, locationLabel: null };
+  // Tax configuration is part of the management-only settings surface. This
+  // exported Server Action must enforce the same role boundary itself because
+  // a hidden/redirected page does not prevent a lower-role client from
+  // invoking the action directly.
+  if (!isOwnerOrAdmin(resolved.role)) {
+    return { ok: false, taxLines: [], preset: null, locationLabel: null };
+  }
 
   const supabase = createServiceRoleClient();
   const salonId = String(resolved.salon.id);

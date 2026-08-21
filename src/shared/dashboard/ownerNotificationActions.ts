@@ -8,6 +8,7 @@ import {
 } from "@/shared/dashboard/ownerNotificationSettings";
 import { sendOwnerNotificationTest } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
+import { loadSalonOwnerAdminSettingsForDashboardContext } from "@/shared/dashboard/salonOwnerAdminSettings";
 
 export async function getOwnerNotificationSettings(
   slug: string,
@@ -18,13 +19,9 @@ export async function getOwnerNotificationSettings(
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
   if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
-  const { data } = await ctx.supabase
-    .from("salons")
-    .select("owner_notification_settings" as never)
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
-  const raw = (data as { owner_notification_settings?: unknown } | null)
-    ?.owner_notification_settings;
+  const loaded = await loadSalonOwnerAdminSettingsForDashboardContext(ctx);
+  if (!loaded.ok) return { ok: false, error: "server_error" };
+  const raw = loaded.settings.owner_notification_settings;
   return { ok: true, settings: parseOwnerNotificationSettings(raw) };
 }
 

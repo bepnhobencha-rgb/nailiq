@@ -4,6 +4,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/server";
+import { loadSalonMemberOperationalProfile } from "@/shared/dashboard/salonOwnerAdminSettings";
 import { hasFeature } from "@/lib/feature-gating";
 import PhotoCaptureForm from "./_components/PhotoCaptureForm";
 
@@ -52,20 +53,23 @@ export default async function StaffPhotoPage({ params }: Props) {
     redirect("/login");
   }
 
-  // Fetch salon to check feature gate
-  const { data: salon } = await supabase
-    .from("salons")
-    .select("subscription_plan, plan_override, feature_flags, name, slug")
-    .eq("id", booking.salon_id)
-    .maybeSingle();
+  const operational = await loadSalonMemberOperationalProfile(
+    supabase,
+    String(booking.salon_id),
+  );
+  const salon = operational.ok
+    ? (operational.salon as {
+        subscription_plan?: string | null;
+        plan_override?: string | null;
+        feature_flags?: unknown;
+        name?: string | null;
+        slug?: string | null;
+      })
+    : null;
 
   const canUsePhotoConfirmation = salon
     ? hasFeature(
-        {
-          subscription_plan: salon.subscription_plan,
-          plan_override: salon.plan_override,
-          feature_flags: salon.feature_flags,
-        },
+        salon as Parameters<typeof hasFeature>[0],
         "photo_confirmation",
       )
     : false;

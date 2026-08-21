@@ -76,14 +76,7 @@ export default async function ReferralsPage({ params }: PageProps) {
   if (!ctx) redirect("/register");
   if (!isOwnerOrAdmin(ctx.role)) redirect(`/dashboard/${encodeURIComponent(slug)}`);
 
-  // Check plan gate
-  const { data: planRow } = await ctx.supabase
-    .from("salons")
-    .select("subscription_plan, plan_override, feature_flags")
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
-
-  const salonFields = (planRow ?? {}) as Pick<
+  const salonFields = ctx.salon as Pick<
     SalonRow,
     "subscription_plan" | "plan_override" | "feature_flags"
   >;

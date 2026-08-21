@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
+import { calendarBookingTargetId } from "@/shared/dashboard/calendarBookingRows";
 import {
   getBookingsForRangeAction,
   type CalendarBooking,
@@ -378,10 +379,10 @@ function DayColumnContent({
 
       {visible.map((b) => (
         <button
-          key={b.id}
+          key={b.calendar_entry_id}
           type="button"
           aria-label={openBookingAria.replace("{client}", displayCustomerName(b.client_name, removedGuest))}
-          onClick={onBookingClick ? () => onBookingClick(b.id) : undefined}
+          onClick={onBookingClick ? () => onBookingClick(calendarBookingTargetId(b)) : undefined}
           className={cn(
             "w-full rounded-md border border-nq-border/50 bg-nq-surface/60 px-1.5 py-1 text-left text-[11px] text-nq-foreground",
             onBookingClick

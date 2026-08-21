@@ -9,11 +9,13 @@ import { completeSuperadminPasswordReset } from "@/shared/superadmin/superadminA
 type ErrorCode = "weak_password" | "mismatch" | "no_session" | "no_role" | "server_error";
 
 const ERROR_COPY: Record<ErrorCode, string> = {
-  weak_password: "Password must be at least 6 characters.",
-  mismatch: "Passwords don't match.",
-  no_session: "Reset link is no longer valid. Request a new one.",
-  no_role: "This account is not a SuperAdmin.",
-  server_error: "Something went wrong. Try again.",
+  weak_password: "Password must be 8–72 characters. / Mật khẩu phải có 8–72 ký tự.",
+  mismatch: "Passwords don't match. / Mật khẩu không khớp.",
+  no_session:
+    "Reset link is no longer valid. Request a new one. / Link đặt lại không còn hiệu lực. Vui lòng yêu cầu link mới.",
+  no_role:
+    "This account is not an active SuperAdmin. / Tài khoản này không phải SuperAdmin đang hoạt động.",
+  server_error: "Something went wrong. Try again. / Có lỗi xảy ra. Vui lòng thử lại.",
 };
 
 export function SuperadminResetPasswordForm() {
@@ -30,7 +32,7 @@ export function SuperadminResetPasswordForm() {
       setError("mismatch");
       return;
     }
-    if (password.length < 6) {
+    if (password.length < 8 || password.length > 72) {
       setError("weak_password");
       return;
     }
@@ -55,13 +57,14 @@ export function SuperadminResetPasswordForm() {
     >
       <label className="flex flex-col gap-2">
         <span className="text-sm font-medium text-nq-foreground">
-          New password
+          New password / Mật khẩu mới
         </span>
         <Input
           type="password"
           autoComplete="new-password"
           required
-          minLength={6}
+          minLength={8}
+          maxLength={72}
           value={password}
           onChange={(ev) => {
             setPassword(ev.target.value);
@@ -75,13 +78,14 @@ export function SuperadminResetPasswordForm() {
 
       <label className="flex flex-col gap-2">
         <span className="text-sm font-medium text-nq-foreground">
-          Confirm password
+          Confirm password / Xác nhận mật khẩu
         </span>
         <Input
           type="password"
           autoComplete="new-password"
           required
-          minLength={6}
+          minLength={8}
+          maxLength={72}
           value={confirm}
           onChange={(ev) => {
             setConfirm(ev.target.value);
@@ -99,7 +103,7 @@ export function SuperadminResetPasswordForm() {
         fullWidth
         loading={pending}
       >
-        Set new password
+        Set new password / Đặt mật khẩu mới
       </Button>
 
       {error ? (

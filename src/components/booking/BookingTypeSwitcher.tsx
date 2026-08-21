@@ -22,10 +22,12 @@ import type {
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { BookingFlow } from "@/components/booking/BookingFlow";
 import { BookingGroupFlow } from "@/components/booking/BookingGroupFlow";
+import { BookingSequenceFlow } from "@/components/booking/BookingSequenceFlow";
 import { VoiceBookingButton } from "@/components/booking/VoiceBookingButton";
 import { cn } from "@/shared/lib/cn";
 import { GROUP_MAX_SIZE } from "@/shared/config/constants";
 import { MAX_WAVES } from "@/shared/booking/groupSchedulerCore";
+import type { WebVoiceBookingHandoff } from "@/shared/booking/webVoiceBookingHandoff";
 
 /**
  * Dynamic capacity: the effective group-size cap is whichever is
@@ -338,6 +340,7 @@ export function BookingTypeSwitcher({
   language = "en",
   voiceAiEnabled = false,
   groupBookingEnabled = true,
+  multiServiceSequenceEnabled = false,
 }: {
   t: BookingMessages;
   shopSlug: string;
@@ -354,6 +357,8 @@ export function BookingTypeSwitcher({
    *  toggle is not shown and only the individual flow renders. Defaults to
    *  `true` so callers that don't resolve the flag are unaffected. */
   groupBookingEnabled?: boolean;
+  /** Effective platform + tenant + QA readiness gate; default OFF. */
+  multiServiceSequenceEnabled?: boolean;
 }) {
   const bookingEntryHydrated = useSyncExternalStore(
     noopSubscribe,
@@ -366,9 +371,18 @@ export function BookingTypeSwitcher({
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const initialMode: "individual" | "group" =
-    searchParams.get("mode") === "group" ? "group" : "individual";
-  const [mode, setMode] = useState<"individual" | "group">(initialMode);
+  type BookingMode = "individual" | "sequence" | "group";
+  const requestedMode = searchParams.get("mode");
+  const groupModeInitiallyAvailable =
+    groupBookingEnabled &&
+    Math.min(staff.length * MAX_WAVES, GROUP_MAX_SIZE) >= MIN_GROUP_SIZE;
+  const initialMode: BookingMode =
+    requestedMode === "sequence" && multiServiceSequenceEnabled
+      ? "sequence"
+      : requestedMode === "group" && groupModeInitiallyAvailable
+        ? "group"
+        : "individual";
+  const [mode, setMode] = useState<BookingMode>(initialMode);
 
   // Reflect mode changes back into the URL so language-toggle reloads
   // pick the same mode up via `searchParams.get("mode")`. Uses
@@ -376,7 +390,7 @@ export function BookingTypeSwitcher({
   // doesn't want a back-button trail for "individual → group").
   useEffect(() => {
     const current = new URLSearchParams(searchParams.toString());
-    if (mode === "group") current.set("mode", "group");
+    if (mode === "group" || mode === "sequence") current.set("mode", mode);
     else current.delete("mode");
     const qs = current.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
@@ -398,6 +412,7 @@ export function BookingTypeSwitcher({
   // Group is available only when the salon has the capacity AND the
   // `group_booking` release flag is enabled (PR2 — Beta, default OFF).
   const groupEnabled = groupBookingEnabled && maxGroupSize >= MIN_GROUP_SIZE;
+  const sequenceEnabled = multiServiceSequenceEnabled;
 
   // ── Phone-first gate ───────────────────────────────────────────
   // Ask the customer's phone once, up front, and recognise returning
@@ -477,6 +492,20 @@ export function BookingTypeSwitcher({
   // safe to display). Before OTP / for new customers: fall back to what they typed.
   const entryNameResolved =
     (entryCustomer?.name ?? "").trim() || committedName.trim();
+  const [webVoiceHandoff, setWebVoiceHandoff] =
+    useState<WebVoiceBookingHandoff | null>(null);
+  const handleWebVoiceBookingHandoff = useCallback((handoff: WebVoiceBookingHandoff) => {
+    // Voice can prefill identity and intent, but cannot grant SMS consent or
+    // phone verification. Keeping the normal gate closed here is deliberate.
+    setMode("individual");
+    handleEntryPhoneChange(handoff.clientPhone);
+    setEntryName(handoff.clientName);
+    setCommittedName(handoff.clientName);
+    setWebVoiceHandoff(handoff);
+  }, [handleEntryPhoneChange]);
+  const handleWebVoiceHandoffConsumed = useCallback(() => {
+    setWebVoiceHandoff(null);
+  }, []);
 
   useEffect(() => {
     // Phone changed. The gate OTP itself is re-armed by the derived check
@@ -774,13 +803,20 @@ export function BookingTypeSwitcher({
     initialSmsConsent: entrySmsConsent,
     initialMarketingConsent: entryMarketingConsent,
     initialOtpSessionId: gateOtpSessionId,
+    webVoiceHandoff,
+    onWebVoiceHandoffConsumed: handleWebVoiceHandoffConsumed,
   } as const;
 
-  if (!groupEnabled) {
+  if (!groupEnabled && !sequenceEnabled) {
     return (
       <div className="space-y-4">
         {voiceAiEnabled && (
-          <VoiceBookingButton t={t} shopSlug={shopSlug} language={language} />
+          <VoiceBookingButton
+            t={t}
+            shopSlug={shopSlug}
+            language={language}
+            onBookingHandoff={handleWebVoiceBookingHandoff}
+          />
         )}
         {phoneGate}
         {flowReady ? (
@@ -796,7 +832,12 @@ export function BookingTypeSwitcher({
   return (
     <div className="mt-6 space-y-4" data-testid="booking-type-switcher-root">
       {voiceAiEnabled && (
-        <VoiceBookingButton t={t} shopSlug={shopSlug} language={language} />
+        <VoiceBookingButton
+          t={t}
+          shopSlug={shopSlug}
+          language={language}
+          onBookingHandoff={handleWebVoiceBookingHandoff}
+        />
       )}
       {/* Phone-first: ask once, recognise, then choose. The choice +
           flow only appear AFTER a phone is entered — so the gate is the
@@ -818,7 +859,11 @@ export function BookingTypeSwitcher({
         data-testid="booking-type-switcher"
         className="mt-2 flex w-full max-w-md rounded-full border border-[var(--booking-border)] bg-[var(--booking-bg-input)] p-1 text-sm font-semibold"
       >
-        {(["individual", "group"] as const).map((m) => {
+        {([
+          "individual",
+          ...(sequenceEnabled ? (["sequence"] as const) : []),
+          ...(groupEnabled ? (["group"] as const) : []),
+        ] as BookingMode[]).map((m) => {
           const active = mode === m;
           return (
             <button
@@ -835,7 +880,11 @@ export function BookingTypeSwitcher({
                   : "text-[var(--booking-text)] hover:bg-[var(--booking-bg-card)]",
               )}
             >
-              {m === "individual" ? groupCopy.individual : groupCopy.group}
+              {m === "individual"
+                ? groupCopy.individual
+                : m === "sequence"
+                  ? language === "vi" ? "Nhiều dịch vụ" : "Multi-service"
+                  : groupCopy.group}
             </button>
           );
         })}
@@ -845,6 +894,22 @@ export function BookingTypeSwitcher({
         <BookingFlow
           key={`ind-${entryPhone}-${entryNameResolved}`}
           {...individualFlowProps}
+        />
+      ) : mode === "sequence" ? (
+        <BookingSequenceFlow
+          services={services}
+          addOns={addOns}
+          staff={staff}
+          capabilityRows={capabilityRows}
+          salon={salon}
+          language={language}
+          customer={{
+            name: entryNameResolved,
+            phone: entryPhone,
+            email: entryCustomer?.email || gateOtpEmail || null,
+          }}
+          otpSessionId={gateOtpSessionId}
+          initialSmsConsent={entrySmsConsent}
         />
       ) : (
         <BookingGroupFlow

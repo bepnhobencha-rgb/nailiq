@@ -11,6 +11,9 @@ export function parseTimeSlotToMinutes(timeSlot: string): number {
   }
   let hour = Number.parseInt(match[1], 10);
   const minute = Number.parseInt(match[2], 10);
+  if (hour < 1 || hour > 12 || minute < 0 || minute > 59) {
+    throw new Error("invalid_time_slot");
+  }
   const meridiem = match[3].toUpperCase();
   if (meridiem === "PM" && hour !== 12) {
     hour += 12;
@@ -46,6 +49,9 @@ export function parseTimeSlotOnDateInBrowserTz(timeSlot: string, dateYmd: string
   }
   let hour = Number.parseInt(match[1], 10);
   const minute = Number.parseInt(match[2], 10);
+  if (hour < 1 || hour > 12 || minute < 0 || minute > 59) {
+    throw new Error("invalid_time_slot");
+  }
   const meridiem = match[3].toUpperCase();
   if (meridiem === "PM" && hour !== 12) {
     hour += 12;

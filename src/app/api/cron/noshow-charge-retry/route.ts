@@ -64,9 +64,9 @@ export async function GET(req: NextRequest) {
     const attempt = (r.noshow_charge_attempts ?? 0) + 1;
     retried += 1;
     try {
-      const res = await chargeNoShowFee(r.id, {
-        idempotencySuffix: `retry-${attempt}`,
-      });
+      // Ordinary replay never rotates the provider key. Unknown/pending rows
+      // remain reconciliation-required until the ledger worker claims them.
+      const res = await chargeNoShowFee(r.id);
       if (res.charged) charged += 1;
     } catch (e) {
       console.error("[noshow-charge-retry] charge threw", r.id, e);

@@ -31,18 +31,8 @@ export default async function SalonReviewsPage({ params }: PageProps) {
   // (plan-tier gating still shows the friendly upsell below).
   if (await isFeaturePlatformDisabled("reviews")) notFound();
 
-  const { data: planRow } = await ctx.supabase
-    .from("salons")
-    .select("subscription_plan, plan_override, feature_flags" as never)
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
-  const planFields = (planRow ?? {}) as {
-    subscription_plan?: string | null;
-    plan_override?: string | null;
-    feature_flags?: Record<string, unknown> | null;
-  };
   const hasAutoReviewRequest =
-    getEffectivePlanLimits(planFields).hasAutoReviewRequest;
+    getEffectivePlanLimits(ctx.salon).hasAutoReviewRequest;
 
   if (!hasAutoReviewRequest) {
     return (

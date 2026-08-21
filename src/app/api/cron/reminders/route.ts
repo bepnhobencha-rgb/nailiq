@@ -6,6 +6,10 @@ import { resolveVertical } from "@/shared/verticals/registry";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { logNotification } from "@/shared/lib/notificationLog";
 import { reminderLang, buildReminderSmsBody } from "@/shared/reminders/reminderSmsBody";
+import {
+  formatReminderTimeLabel,
+  reminderDueWindows,
+} from "@/shared/reminders/reminderSchedule";
 import { isUsPhone } from "@/shared/lib/phoneRegion";
 import { sendGroupReminderEmail, type GroupMember } from "@/shared/noshow/sendReminderEmail";
 import { isAiAgentPermissionEnabled } from "@/shared/ai/agentPermissionFence";
@@ -47,16 +51,29 @@ type BookingRow = {
     email_outbound_enabled: boolean | null;
     sms_a2p_registered: boolean | null;
     feature_flags: Record<string, unknown> | null;
+    logo_url: string | null;
   } | null;
 };
 
+async function mintReminderCapabilities(bookingId: string, salonId: string, startTimeUtc: string) {
+  const startMs = Date.parse(startTimeUtc);
+  if (!Number.isFinite(startMs)) return null;
+  const expiresAt = new Date(startMs + 2 * 60 * 60 * 1000).toISOString();
+  const [confirmToken, rescheduleToken, cancelToken] = await Promise.all([
+    generateReminderToken(bookingId, salonId, { action: "confirm", expiresAt }),
+    generateReminderToken(bookingId, salonId, { action: "reschedule", expiresAt }),
+    generateReminderToken(bookingId, salonId, { action: "cancel", expiresAt }),
+  ]);
+  return confirmToken && rescheduleToken && cancelToken
+    ? { confirmToken: confirmToken.id, rescheduleToken: rescheduleToken.id, cancelToken: cancelToken.id }
+    : null;
+}
+
 function smsTimeLabel(booking: BookingRow): string {
-  return new Date(booking.start_time_utc).toLocaleString("en-US", {
-    timeZone: booking.salons?.timezone ?? "America/Los_Angeles",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
+  return formatReminderTimeLabel(
+    booking.start_time_utc,
+    booking.salons?.timezone ?? "America/Los_Angeles",
+  );
 }
 
 /** `aiLead`, when provided, replaces the fixed "Reminder: …" opening (the AI
@@ -89,18 +106,18 @@ export async function GET(req: Request) {
 
   const supabase = createServiceRoleClient();
   const now = new Date();
-
-  const window24hStart = new Date(now.getTime() + 23.75 * 60 * 60 * 1000).toISOString();
-  const window24hEnd   = new Date(now.getTime() + 24.25 * 60 * 60 * 1000).toISOString();
-  const window3hStart  = new Date(now.getTime() +  2.75 * 60 * 60 * 1000).toISOString();
-  const window3hEnd    = new Date(now.getTime() +  3.25 * 60 * 60 * 1000).toISOString();
+  const dueWindows = reminderDueWindows(now);
+  const window24hStart = dueWindows.reminder24h.startUtc;
+  const window24hEnd = dueWindows.reminder24h.endUtc;
+  const window3hStart = dueWindows.reminder3h.startUtc;
+  const window3hEnd = dueWindows.reminder3h.endUtc;
 
   const baseSelect = `id, salon_id, client_name, client_email, client_phone, start_time_utc,
     no_show_risk_score, client_locale, status,
     reminder_24h_sent_at, reminder_3h_sent_at,
     group_id, is_group_organizer,
     services!bookings_service_id_fkey(name), staff(name),
-    salons(name, slug, timezone, vertical, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, sms_outbound_enabled, email_outbound_enabled, sms_a2p_registered, feature_flags)`;
+    salons(name, slug, timezone, vertical, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, sms_outbound_enabled, email_outbound_enabled, sms_a2p_registered, feature_flags, logo_url)`;
 
   // Fetch both email-eligible AND SMS-eligible bookings (no email filter here).
   const { data: need24h, error: err24h } = await supabase
@@ -136,7 +153,7 @@ export async function GET(req: Request) {
   async function fetchGroupMembers(groupId: string): Promise<GroupMember[]> {
     const { data, error } = await supabase
       .from("bookings" as never)
-      .select("id, client_name, client_email, status, start_time_utc, services!bookings_service_id_fkey(name), staff(name)")
+      .select("id, client_name, client_email, client_locale, status, start_time_utc, services!bookings_service_id_fkey(name), staff(name)")
       .eq("group_id", groupId)
       .in("status", ["pending", "confirmed"])
       .order("start_time_utc");
@@ -145,6 +162,7 @@ export async function GET(req: Request) {
       id: string;
       client_name: string;
       client_email: string | null;
+      client_locale: string | null;
       status: string;
       start_time_utc: string;
       services: { name: string } | null;
@@ -157,6 +175,7 @@ export async function GET(req: Request) {
       status: m.status,
       email: m.client_email,
       bookingId: m.id,
+      locale: m.client_locale?.toLowerCase().startsWith("vi") ? "vi" : "en",
     }));
   }
 
@@ -178,18 +197,24 @@ export async function GET(req: Request) {
     const members = await fetchGroupMembers(booking.group_id);
     const { resolveVertical } = await import("@/shared/verticals/registry");
 
-    const token = await generateReminderToken(booking.id, booking.salon_id);
-    if (!token) { errors++; return; }
+    const capabilities = await mintReminderCapabilities(
+      booking.id,
+      booking.salon_id,
+      booking.start_time_utc,
+    );
+    if (!capabilities) { errors++; return; }
 
     const result = await sendGroupReminderEmail({
-      tokenId: token.id,
+      ...capabilities,
       organizerName: booking.client_name,
       organizerEmail: booking.client_email,
+      locale: booking.client_locale?.toLowerCase().startsWith("vi") ? "vi" : "en",
       salonName: salon.name,
       salonSlug: salon.slug,
       reminderType,
       timezone: (salon as { timezone?: string | null }).timezone ?? null,
       businessDescriptor: resolveVertical((salon as { vertical?: string | null }).vertical).aiDescriptor,
+      salonLogoUrl: salon.logo_url,
       members,
     });
 
@@ -219,13 +244,18 @@ export async function GET(req: Request) {
       if (!m.bookingId) continue;
       if (await import("@/shared/lib/emailCompliance").then((mod) => mod.isEmailSuppressed(m.email!))) continue;
       const { sendReminderEmail } = await import("@/shared/noshow/sendReminderEmail");
-      const memberToken = await generateReminderToken(m.bookingId, booking.salon_id);
-      if (!memberToken) continue;
+      const memberCapabilities = await mintReminderCapabilities(
+        m.bookingId,
+        booking.salon_id,
+        m.startTimeUtc,
+      );
+      if (!memberCapabilities) continue;
       const memberResult = await sendReminderEmail({
         salonId: booking.salon_id,
-        tokenId: memberToken.id,
+        ...memberCapabilities,
         clientName: m.name,
         clientEmail: m.email,
+        locale: m.locale,
         serviceName: m.serviceName,
         staffName: m.staffName,
         startTimeUtc: m.startTimeUtc,
@@ -233,6 +263,7 @@ export async function GET(req: Request) {
         salonSlug: salon.slug,
         timezone: (salon as { timezone?: string | null }).timezone ?? null,
         businessDescriptor: resolveVertical((salon as { vertical?: string | null }).vertical).aiDescriptor,
+        salonLogoUrl: salon.logo_url,
       });
       void logNotification({
         bookingId: m.bookingId,
@@ -283,8 +314,12 @@ export async function GET(req: Request) {
 
     if (!wantsEmail && !wantsSms) return;
 
-    const token = await generateReminderToken(booking.id, booking.salon_id);
-    if (!token) { errors++; return; }
+    const capabilities = await mintReminderCapabilities(
+      booking.id,
+      booking.salon_id,
+      booking.start_time_utc,
+    );
+    if (!capabilities) { errors++; return; }
 
     let anySuccess = false;
 
@@ -292,9 +327,10 @@ export async function GET(req: Request) {
     if (wantsEmail) {
       const result = await sendReminderEmail({
         salonId:      booking.salon_id,
-        tokenId:      token.id,
+        ...capabilities,
         clientName:   booking.client_name,
         clientEmail:  booking.client_email!,
+        locale: booking.client_locale?.toLowerCase().startsWith("vi") ? "vi" : "en",
         serviceName:  booking.services?.name ?? "appointment",
         staffName:    booking.staff?.name ?? "",
         startTimeUtc: booking.start_time_utc,
@@ -304,6 +340,7 @@ export async function GET(req: Request) {
         businessDescriptor: resolveVertical(
           (salon as { vertical?: string | null }).vertical,
         ).aiDescriptor,
+        salonLogoUrl: salon.logo_url,
       });
       void logNotification({
         bookingId: booking.id,
@@ -321,8 +358,8 @@ export async function GET(req: Request) {
 
     // SMS channel
     if (wantsSms) {
-      const confirmUrl = `${SITE_URL}/booking/confirm?token=${token.id}`;
-      const rescheduleUrl = `${SITE_URL}/booking/reschedule?token=${token.id}`;
+      const confirmUrl = `${SITE_URL}/booking/confirm?token=${capabilities.confirmToken}`;
+      const rescheduleUrl = `${SITE_URL}/booking/reschedule?token=${capabilities.rescheduleToken}`;
       const toE164 = `+${booking.client_phone}`;
 
       // Smart reminder: AI personalises the lead line (tone adapts to no-show
@@ -360,7 +397,10 @@ export async function GET(req: Request) {
 
       const body   = buildSmsBody(booking, reminderType, confirmUrl, rescheduleUrl, aiLead);
       const statusCallbackUrl = `${SITE_URL}/api/twilio/status`;
-      const result = await sendSmsReminder(toE164, body, { statusCallbackUrl });
+      const result = await sendSmsReminder(toE164, body, {
+        salonId: booking.salon_id,
+        statusCallbackUrl,
+      });
       if (result.ok) anySuccess = true;
       else errors++;
       void logNotification({

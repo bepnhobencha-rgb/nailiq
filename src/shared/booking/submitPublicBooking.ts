@@ -11,6 +11,7 @@ import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
 import { hmToMinutes } from "@/shared/booking/hmToMinutes";
 import { dayKeyFromLocalDate } from "@/shared/booking/dayKeyFromDate";
 import { salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
+import { resolvePublicBookingSalonDay } from "@/shared/booking/publicBookingSalonDay";
 import { pickBestStaffAmongFree } from "@/shared/booking/pickBestStaffAmongFree";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import {
@@ -22,17 +23,23 @@ import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 import { runPublicBookingSideEffects } from "@/shared/booking/publicBookingSideEffects";
-import { saveNoShowCardAction, reuseNoShowCardAction } from "@/shared/noshow/saveNoShowCardAction";
-import { computeTax } from "@/shared/tax/computeTax";
-import type { TaxLine } from "@/shared/tax/taxTypes";
+import { reuseNoShowCardAction } from "@/shared/noshow/saveNoShowCardAction";
 import { healthAckRequired } from "@/shared/lib/healthAck";
+import {
+  parsePublicBookingPricingQuote,
+  requestPublicBookingQuote,
+  type PublicBookingPricingQuote,
+} from "@/shared/booking/publicBookingPricing";
+import { resolveAnyStaffForPublicBooking } from "@/shared/booking/publicBookingAnyStaff";
+import type { PaidPublicDeposit } from "@/shared/payments/publicDepositTypes";
+import { runBoundedPublicBookingRpc } from "@/shared/booking/publicBookingRpcBoundary";
 
 export type BookingParams = {
   shopSlug: string;
   serviceId: string;
   /** Same localized labels produced by `getAvailableTimeSlots` (e.g. `"9:00 AM"`). */
   timeSlot: string;
-  /** Local calendar day `YYYY-MM-DD` for the appointment (guest timezone). */
+  /** Salon-local calendar day `YYYY-MM-DD` for the appointment. */
   bookingDateYmd: string;
   /** `"any"` or the salon staff UUID. */
   staffId: string;
@@ -56,8 +63,6 @@ export type BookingParams = {
    *  with a fake-success when it's non-empty so no row is written
    *  and the bot doesn't learn it was detected. */
   clientWebsite?: string;
-  /** Voucher to redeem after booking is confirmed (fire-and-forget). */
-  voucherRedemption?: { voucher_id: string; discount_cents: number } | null;
   /** Reference inspiration image path in Supabase Storage (fire-and-forget). */
   referenceImagePath?: string | null;
   /** Smart verification method used for this booking (from verify-decision flow). */
@@ -74,6 +79,9 @@ export type BookingParams = {
   /** Booking-surface language. Forwarded to the confirmation SMS so it's
    *  sent in the language the customer chose (defaults to vi server-side). */
   language?: "en" | "vi";
+  /** Server-finalized pre-booking deposit operation. The trusted bind boundary
+   * verifies it against the canonical create identity before success returns. */
+  paidDeposit?: PaidPublicDeposit | null;
   /** Option A no-show card gate: Web Payments SDK card token captured IN the
    *  confirm step. When present, the card is saved server-side right after the
    *  booking is created and BEFORE any confirmation (SMS/email) — if the save
@@ -101,10 +109,19 @@ export type BookingParams = {
    *  assert this; server-side callers (desk, voice) leave it unset so no consent
    *  record is fabricated for a customer who never saw a checkbox. */
   smsConsent?: boolean;
-  /** Active promotion to apply after booking is confirmed (fire-and-forget server action). */
-  promoRedemption?: { promoId: string; discountCents: number } | null;
   /** Email capture: $2 off incentive for first-time email submission. */
   emailCaptureDiscount?: boolean;
+  /** Stable per-submit key. Replays return the original booking and never
+   *  redeem a voucher/email incentive twice. */
+  idempotencyKey?: string;
+  /** Voucher code is resolved by the quote route; the browser never supplies
+   * a monetary voucher value. */
+  voucherCode?: string | null;
+  /** Exact server quote explicitly confirmed by the customer. */
+  expectedPricingQuote?: PublicBookingPricingQuote | null;
+  /** Internal retry marker: the same logical submit may replay a committed row
+   * whose assigned staff now appears occupied by that very row. */
+  idempotencyReplay?: boolean;
 };
 
 export type BookingResult = {
@@ -121,12 +138,28 @@ export type BookingResult = {
   addonPriceCents: number | null;
   /** All add-ons booked into this row (itemized for the success/done view). */
   addons: { serviceId: string; name: string; priceCents: number | null }[];
+  servicePriceCents: number;
+  subtotalCents: number;
+  taxCents: number;
+  totalCents: number;
+  currency: PublicBookingPricingQuote["currency"];
+  discountLines: PublicBookingPricingQuote["discountLines"];
+  pricing: PublicBookingPricingQuote;
+  /** Action-scoped post-booking card proof. Null until trusted mint succeeds. */
+  cardManagementToken: string | null;
 };
 
 export class BookingConflictError extends Error {
   constructor() {
     super("time_slot_taken");
     this.name = "BookingConflictError";
+  }
+}
+
+export class BookingPricingChangedError extends Error {
+  constructor(public readonly quote: PublicBookingPricingQuote) {
+    super("pricing_changed");
+    this.name = "BookingPricingChangedError";
   }
 }
 
@@ -166,34 +199,16 @@ function captureCreatePublicBookingFailure(params: {
   });
 }
 
-function localDateYmd(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function localDayBoundsFromYmd(dateYmd: string): { start: Date; end: Date } | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateYmd.trim());
-  if (!m) return null;
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  const start = new Date(y, mo - 1, d, 0, 0, 0, 0);
-  const end = new Date(y, mo - 1, d, 23, 59, 59, 999);
-  if (Number.isNaN(start.getTime())) return null;
-  return { start, end };
-}
-
 type OccInterval = {
   staffId: string;
   startMs: number;
   endMs: number;
 };
 
-export async function submitPublicBooking(
+async function executePublicBooking(
   params: BookingParams,
-): Promise<BookingResult> {
+  mode: "quote" | "submit",
+): Promise<BookingResult | PublicBookingPricingQuote> {
   const {
     shopSlug,
     serviceId,
@@ -231,7 +246,7 @@ export async function submitPublicBooking(
   // valid BookingResult so the UI shows a normal success page;
   // no DB row is written. NailIQ Error Monitor tags the hit so we can monitor
   // abuse without blocking on it.
-  if ((params.clientWebsite ?? "").trim().length > 0) {
+  if (mode === "submit" && (params.clientWebsite ?? "").trim().length > 0) {
     ErrorReporter.captureMessage("booking honeypot tripped", {
       level: "info",
       tags: {
@@ -252,6 +267,24 @@ export async function submitPublicBooking(
       addonServiceName: null,
       addonPriceCents: null,
       addons: [],
+      servicePriceCents: 0,
+      subtotalCents: 0,
+      taxCents: 0,
+      totalCents: 0,
+      currency: "CAD",
+      discountLines: [],
+      pricing: {
+        pricingFingerprint: "0".repeat(64), salonId: "", serviceId: "",
+        resolvedStaffId: "", resolvedStaffName: "", startTimeUtc: nowIso,
+        endTimeUtc: nowIso, comboId: null, voucherId: null, voucherCode: null,
+        currency: "CAD", serviceOriginalCents: 0, serviceNetCents: 0,
+        serviceFinalCents: 0, addonPreVoucherCents: 0, addonCents: 0,
+        promoId: null, promoName: null, promoDiscountCents: 0,
+        emailDiscountCents: 0, voucherDiscountCents: 0,
+        preVoucherSubtotalCents: 0, subtotalCents: 0, taxCents: 0,
+        totalCents: 0, taxBreakdown: [], addonLines: [], discountLines: [],
+      },
+      cardManagementToken: null,
     };
   }
 
@@ -315,6 +348,7 @@ export async function submitPublicBooking(
   // runs with the anon key, so a hand-crafted request must not slip through
   // required-but-unticked (the tick is legal evidence, not just UX).
   if (
+    mode === "submit" &&
     healthAckRequired(
       (salon as { health_ack_required?: boolean | null }).health_ack_required,
       (salon as { vertical?: string | null }).vertical,
@@ -333,7 +367,7 @@ export async function submitPublicBooking(
   // The OTP session id actually used downstream (reuse + consume). Resolved from
   // the client-passed id OR a valid session for the phone (see fallback below).
   let resolvedOtpSessionId = "";
-  if (salonPhoneOtpEnabled) {
+  if (mode === "submit" && salonPhoneOtpEnabled) {
     const passedId = (params.otpSessionId ?? "").trim();
     if (!passedId) throw new Error("otp_required");
     const { data: otpValid, error: otpValidationError } = await supabase.rpc(
@@ -362,12 +396,14 @@ export async function submitPublicBooking(
     plan_override?: string | null;
     feature_flags?: Record<string, unknown> | null;
   };
-  await assertBookingLimitAvailable(supabase, {
-    id: String(salon.id),
-    subscription_plan: planFields.subscription_plan,
-    plan_override: planFields.plan_override,
-    feature_flags: planFields.feature_flags,
-  });
+  if (mode === "submit") {
+    await assertBookingLimitAvailable(supabase, {
+      id: String(salon.id),
+      subscription_plan: planFields.subscription_plan,
+      plan_override: planFields.plan_override,
+      feature_flags: planFields.feature_flags,
+    });
+  }
 
   const closedYmdSet = parseBookingClosedDateSet(
     (salon as { booking_closed_dates?: unknown }).booking_closed_dates,
@@ -388,14 +424,6 @@ export async function submitPublicBooking(
 
   if (serviceErr || !service) throw new Error("service_not_found");
 
-  const dayBounds = localDayBoundsFromYmd(bookingDateYmd);
-  if (!dayBounds) throw new Error("invalid_booking_date");
-
-  const todayYmd = localDateYmd(new Date());
-  if (bookingDateYmd < todayYmd) {
-    throw new Error("cannot_book_past");
-  }
-
   // Resolve the chosen slot in the SALON's timezone (not the customer's device
   // tz), so a slot labelled "2:00 PM" is always 2 PM at the salon. `startLocal`
   // holds the resulting absolute instant — every downstream .getTime()/
@@ -403,6 +431,9 @@ export async function submitPublicBooking(
   const salonTz =
     String((salon as { timezone?: unknown }).timezone ?? "").trim() ||
     "America/Los_Angeles";
+  const dayBounds = resolvePublicBookingSalonDay(bookingDateYmd, salonTz);
+  if (!dayBounds) throw new Error("invalid_booking_date");
+  if (dayBounds.isPast) throw new Error("cannot_book_past");
   let startLocal: Date;
   let startMinsOfDay: number;
   try {
@@ -540,17 +571,6 @@ export async function submitPublicBooking(
     }
   }
 
-  const priceSnapshot = combo
-    ? combo.priceCents
-    : service.price_cents != null
-      ? Number(service.price_cents)
-      : null;
-  // Booking row stores the SUM of all add-on prices (null when none priced).
-  const addonPriceSnapshot =
-    addonRows.length > 0
-      ? addonRows.reduce((sum, a) => sum + (a.price_cents ?? 0), 0)
-      : null;
-
   const { data: staffRows, error: staffListErr } = await supabase
     .from("public_staff_profiles")
     .select("id, name")
@@ -595,8 +615,8 @@ export async function submitPublicBooking(
     "public_booking_occupancy_for_range",
     {
       p_salon_id: salon.id,
-      p_start: dayBounds.start.toISOString(),
-      p_end: dayBounds.end.toISOString(),
+      p_start: dayBounds.startUtc,
+      p_end: dayBounds.endUtc,
     },
   );
 
@@ -661,8 +681,8 @@ export async function submitPublicBooking(
   let resolvedStaffId: string | null = null;
   let resolvedStaffName = "";
 
-  const dayStartMs = dayBounds.start.getTime();
-  const dayEndMs = dayBounds.end.getTime();
+  const dayStartMs = Date.parse(dayBounds.startUtc);
+  const dayEndMs = Date.parse(dayBounds.endUtc);
 
   if (requestedStaffId === BOOKING_ANY_STAFF_ID) {
     const freeIds = orderedStaff
@@ -672,15 +692,22 @@ export async function submitPublicBooking(
           isOutsideStaffBreak(id) &&
           isStaffFreeForRange(id, slotStartMs, slotEndMs),
       );
-    if (freeIds.length === 0) throw new BookingConflictError();
-    resolvedStaffId = pickBestStaffAmongFree(
-      freeIds,
-      orderedStaff.map((r) => ({ id: String(r.id), name: String(r.name ?? "") })),
-      occupancy,
-      dayStartMs,
-      dayEndMs,
-      slotStartMs,
-    );
+    const quotedStaffId = params.expectedPricingQuote?.resolvedStaffId;
+    resolvedStaffId = resolveAnyStaffForPublicBooking({
+      mode,
+      idempotencyReplay: params.idempotencyReplay === true,
+      quotedStaffId,
+      freeStaffIds: freeIds,
+      pickFreeStaff: (candidateIds) => pickBestStaffAmongFree(
+        [...candidateIds],
+        orderedStaff.map((r) => ({ id: String(r.id), name: String(r.name ?? "") })),
+        occupancy,
+        dayStartMs,
+        dayEndMs,
+        slotStartMs,
+      ),
+    });
+    if (!resolvedStaffId) throw new BookingConflictError();
     const chosen = orderedStaff.find((r) => String(r.id) === resolvedStaffId);
     resolvedStaffName = String(chosen?.name ?? "");
   } else {
@@ -689,11 +716,11 @@ export async function submitPublicBooking(
     );
     if (!allowed) throw new Error("invalid_staff");
 
-    if (!isOutsideStaffBreak(requestedStaffId)) {
+    if (!isOutsideStaffBreak(requestedStaffId) && !params.idempotencyReplay) {
       throw new BookingConflictError();
     }
 
-    if (!isStaffFreeForRange(requestedStaffId, slotStartMs, slotEndMs)) {
+    if (!isStaffFreeForRange(requestedStaffId, slotStartMs, slotEndMs) && !params.idempotencyReplay) {
       throw new BookingConflictError();
     }
 
@@ -706,7 +733,7 @@ export async function submitPublicBooking(
   // Queries the server-side API route which uses WIX_API_KEY to call Wix Extended Bookings
   // and detect overlapping active bookings created on Wix since the last 2-min cron poll.
   // Fail-open: if the API call fails or times out, booking proceeds normally.
-  if (resolvedStaffId) {
+  if (mode === "submit" && resolvedStaffId && !params.idempotencyReplay) {
     try {
       const wixCheckRes = await fetch("/api/booking/wix-conflict", {
         method: "POST",
@@ -744,15 +771,34 @@ export async function submitPublicBooking(
     start_time_utc: startLocal.toISOString(),
     end_time_utc: endLocal.toISOString(),
     status: "confirmed" as const,
-    price_cents: priceSnapshot,
     addon_service_id:
       addonRow ? addonRow.id : null,
-    addon_price_cents: addonRow ? addonPriceSnapshot : null,
   };
 
-  const { data: rpcData, error: rpcErr } = await supabase.rpc(
-    "create_public_booking",
-    {
+  if (!resolvedStaffId) throw new Error("no_staff_available");
+  if (mode === "quote") {
+    return requestPublicBookingQuote({
+      salonId: String(salon.id),
+      serviceId: String(service.id),
+      resolvedStaffId,
+      resolvedStaffName,
+      startTimeUtc: insertPayload.start_time_utc,
+      endTimeUtc: insertPayload.end_time_utc,
+      addonServiceIds: addonRows.map((addon) => addon.id),
+      comboId: combo?.comboId ?? null,
+      voucherCode: params.voucherCode?.trim() || null,
+      clientPhone: phoneOk.digits,
+      clientEmail: emailToStore,
+      applyEmailDiscount:
+        params.emailCaptureDiscount === true && emailToStore !== null,
+    });
+  }
+
+  const expectedQuote = params.expectedPricingQuote;
+  if (!expectedQuote) throw new Error("booking_quote_required");
+
+  const createIdempotencyKey = params.idempotencyKey?.trim() || crypto.randomUUID();
+  const createRpcArgs = {
       p_salon_id: insertPayload.salon_id,
       p_service_id: insertPayload.service_id,
       p_staff_id: insertPayload.staff_id,
@@ -761,22 +807,99 @@ export async function submitPublicBooking(
       p_start_time_utc: insertPayload.start_time_utc,
       p_end_time_utc: insertPayload.end_time_utc,
       p_status: insertPayload.status,
-      p_price_cents: insertPayload.price_cents,
       p_client_notes: insertPayload.client_notes,
-      p_addon_service_id: insertPayload.addon_service_id,
-      p_addon_price_cents: insertPayload.addon_price_cents,
+      p_addon_service_ids: addonRows.map((addon) => addon.id),
       p_client_email: insertPayload.client_email,
-    },
-  );
+      p_resource_id: null,
+      p_combo_id: combo?.comboId ?? null,
+      p_voucher_id: expectedQuote.voucherId,
+      p_apply_email_discount:
+        params.emailCaptureDiscount === true && emailToStore !== null,
+      p_idempotency_key: createIdempotencyKey,
+      p_expected_pricing_fingerprint: expectedQuote.pricingFingerprint,
+  };
+  let rpcData: unknown = null;
+  let rpcErr: RpcErrorShape | null = null;
+  if (params.paidDeposit) {
+    // `create_public_booking_with_deposit_payment` is service-role-only. This
+    // same-origin server boundary invokes it so booking creation and deposit
+    // binding commit atomically; the browser never receives service authority.
+    const response = await fetch("/api/booking/deposit-create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        salonId: createRpcArgs.p_salon_id,
+        serviceId: createRpcArgs.p_service_id,
+        staffId: createRpcArgs.p_staff_id,
+        clientName: createRpcArgs.p_client_name,
+        clientPhone: createRpcArgs.p_client_phone,
+        startTimeUtc: createRpcArgs.p_start_time_utc,
+        endTimeUtc: createRpcArgs.p_end_time_utc,
+        clientNotes: createRpcArgs.p_client_notes,
+        addonServiceIds: createRpcArgs.p_addon_service_ids,
+        clientEmail: createRpcArgs.p_client_email,
+        resourceId: createRpcArgs.p_resource_id,
+        comboId: createRpcArgs.p_combo_id,
+        voucherId: createRpcArgs.p_voucher_id,
+        applyEmailDiscount: createRpcArgs.p_apply_email_discount,
+        idempotencyKey: createRpcArgs.p_idempotency_key,
+        pricingFingerprint: createRpcArgs.p_expected_pricing_fingerprint,
+        paymentOperationId: params.paidDeposit.operationId,
+        paymentRequestId: params.paidDeposit.paymentRequestId,
+        paymentMaterialFingerprint: params.paidDeposit.materialFingerprint,
+      }),
+    }).catch(() => null);
+    if (!response) {
+      rpcErr = { message: "paid booking boundary unavailable" };
+    } else {
+      rpcData = await response.json().catch(() => null);
+      if (rpcData == null) rpcErr = { message: "paid booking response invalid" };
+    }
+  } else {
+    const attempt = await runBoundedPublicBookingRpc({
+      requestId: createIdempotencyKey,
+      invoke: (_requestId, signal) =>
+        supabase.rpc("create_public_booking", createRpcArgs).abortSignal(signal),
+    });
+    if (attempt.kind === "outcome_unknown") {
+      captureCreatePublicBookingFailure({ reason: "supabase_rpc_timeout_unknown" });
+      throw new Error("booking_commit_unknown");
+    }
+    rpcData = attempt.value.data;
+    rpcErr = attempt.value.error;
+  }
 
   let bookingId = "";
+  let authoritativePricing: PublicBookingPricingQuote | null = null;
 
   if (!rpcErr && rpcData != null) {
-    const raw = Array.isArray(rpcData) ? rpcData[0] : rpcData;
-    if (raw && typeof raw === "object") {
-      const o = raw as Record<string, unknown>;
+    const rawEnvelope = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+    if (rawEnvelope && typeof rawEnvelope === "object") {
+      const envelope = rawEnvelope as Record<string, unknown>;
+      const nestedBooking =
+        envelope.booking && typeof envelope.booking === "object"
+          ? envelope.booking as Record<string, unknown>
+          : null;
+      // The paid-deposit RPC wraps the canonical booking receipt so booking
+      // creation and payment binding commit in one transaction. Parse that
+      // nested receipt with the exact same strict pricing contract.
+      const o =
+        params.paidDeposit &&
+        (envelope.success === true || envelope.code === "booking_create_failed") &&
+        nestedBooking
+          ? nestedBooking
+          : envelope;
       if (o.success === false) {
         const code = typeof o.code === "string" ? o.code : "";
+        if (code === "pricing_changed") {
+          const changedQuote = parsePublicBookingPricingQuote(o.quote, {
+            resolvedStaffId,
+            resolvedStaffName,
+            voucherCode: params.voucherCode,
+          });
+          if (!changedQuote) throw new Error("booking_pricing_invalid");
+          throw new BookingPricingChangedError(changedQuote);
+        }
         if (code === "slot_conflict" || code === "duplicate_booking") {
           throw new BookingConflictError();
         }
@@ -785,7 +908,7 @@ export async function submitPublicBooking(
         }
         captureCreatePublicBookingFailure({
           reason: code ? `json_error_${code}` : "json_success_false",
-          rpcJsonBody: raw,
+          rpcJsonBody: rawEnvelope,
         });
         throw new Error(code ? `booking_rpc_${code}` : "booking_rpc_failed");
       }
@@ -794,14 +917,30 @@ export async function submitPublicBooking(
         typeof o.booking_id === "string" &&
         o.booking_id.length > 0
       ) {
-        bookingId = o.booking_id;
-      } else if (
-        !("success" in o) &&
-        typeof (o as { id?: unknown }).id === "string" &&
-        (o as { id: string }).id.length > 0
-      ) {
-        /* Older create_public_booking returning (id, status); remove once migration is universal. */
-        bookingId = (o as { id: string }).id;
+        bookingId =
+          typeof envelope.booking_id === "string" && envelope.booking_id.length > 0
+            ? envelope.booking_id
+            : o.booking_id;
+        authoritativePricing = parsePublicBookingPricingQuote(o, {
+          resolvedStaffId,
+          resolvedStaffName,
+          voucherCode: params.voucherCode,
+        });
+        if (!authoritativePricing) {
+          captureCreatePublicBookingFailure({
+            reason: "invalid_authoritative_pricing_snapshot",
+            rpcJsonBody: rawEnvelope,
+          });
+          throw new Error("booking_pricing_invalid");
+        }
+      } else if (params.paidDeposit && envelope.success === false) {
+        const paymentCode =
+          typeof envelope.code === "string" ? envelope.code : "payment_binding_failed";
+        captureCreatePublicBookingFailure({
+          reason: `deposit_${paymentCode}`,
+          rpcJsonBody: rawEnvelope,
+        });
+        throw new Error("deposit_binding_pending");
       }
     }
   }
@@ -835,7 +974,7 @@ export async function submitPublicBooking(
     );
   }
 
-  if (!bookingId) {
+  if (!bookingId || !authoritativePricing) {
     if (rpcErr) {
       if (rpcErr.code === "23505") throw new BookingConflictError();
       if (rpcErr.code === "23P01") throw new BookingConflictError(); // overlap / exclusion
@@ -856,21 +995,53 @@ export async function submitPublicBooking(
     throw new Error("booking_rpc_empty");
   }
 
-  // Option A no-show card gate: a required-card booking captured the card IN the
-  // confirm step. Save it NOW — before any confirmation goes out. On failure we
-  // do NOT throw / cancel: a card glitch (Square lookup miss, network, declined
-  // verification) must never cost a real customer their slot. The action keeps
-  // the booking + flags `noshow_card_required` so the desk collects a card later
-  // (the "⚠️ needs card" badge). Booking proceeds; protection is desk-recoverable.
-  if (params.noShowCardSourceId && bookingId) {
-    const saved = await saveNoShowCardAction({
-      bookingId,
-      sourceId: params.noShowCardSourceId,
-      consent: params.noShowConsent === true,
-      verificationToken: params.noShowCardVerificationToken ?? undefined,
+  let cardManagementToken: string | null = null;
+  let cardCapabilityResolved = false;
+  try {
+    const response = await fetch("/api/booking/card-capability", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        salonId: String(salon.id),
+        bookingId,
+        idempotencyKey: createIdempotencyKey,
+        pricingFingerprint: authoritativePricing.pricingFingerprint,
+      }),
     });
-    if (!saved.ok) {
-      console.error("[submitPublicBooking] card save failed — booking kept + flagged:", saved.reason, bookingId);
+    const value = await response.json().catch(() => null) as { ok?: boolean; token?: string | null } | null;
+    if (response.ok && value?.ok === true && typeof value.token === "string") {
+      cardManagementToken = value.token;
+    }
+    if (response.ok && value?.ok === true) cardCapabilityResolved = true;
+  } catch {
+    cardManagementToken = null;
+  }
+  if (!cardCapabilityResolved) throw new Error("card_management_pending");
+
+  // Option A no-show card gate: a required-card booking captured the card IN the
+  // confirm step. Save it NOW — before any confirmation goes out. If the
+  // provider/receipt path remains unresolved after the booking commit, surface
+  // recoverable `card_management_pending`; the next explicit Confirm reuses
+  // the exact create/card keys and can never create a second appointment.
+  if (params.noShowCardSourceId && bookingId) {
+    if (cardManagementToken && params.noShowConsent === true) {
+      const response = await fetch("/api/booking/square-save-card", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: cardManagementToken,
+          requestId: createIdempotencyKey,
+          provider: "square",
+          sourceId: params.noShowCardSourceId,
+          verificationToken: params.noShowCardVerificationToken ?? undefined,
+          consent: true,
+        }),
+      }).catch(() => null);
+      const value = response
+        ? await response.json().catch(() => null) as { ok?: boolean } | null
+        : null;
+      if (response?.ok && value?.ok === true) cardManagementToken = null;
+      else throw new Error("card_management_pending");
     }
   } else if (params.noShowReuseSavedCard && bookingId) {
     // Returning OTP-verified customer reused their existing card on file. Same
@@ -883,6 +1054,7 @@ export async function submitPublicBooking(
     if (!reused.ok) {
       console.error("[submitPublicBooking] card reuse failed — booking kept + flagged:", reused.reason, bookingId);
     }
+    if (reused.ok) cardManagementToken = null;
   }
 
   // Finalize identity evidence only after the card/reuse step, which needs the
@@ -942,37 +1114,7 @@ export async function submitPublicBooking(
   // throws and its catch swallows the failure — every online booking silently
   // produced no owner alert. Same trap as the confirmation email before it.
 
-  const totalPriceCents =
-    (priceSnapshot ?? 0) + (addonPriceSnapshot ?? 0);
-
-  const salonTaxLines: TaxLine[] = (() => {
-    const raw = (salon as { tax_lines?: unknown }).tax_lines;
-    if (!Array.isArray(raw)) return [];
-    return (raw as unknown[])
-      .filter((item): item is Record<string, unknown> => item !== null && typeof item === "object")
-      .map((item) => ({
-        name: typeof item.name === "string" ? item.name : "",
-        rate: typeof item.rate === "number" ? item.rate : 0,
-        enabled: item.enabled !== false,
-      }))
-      .filter((l) => l.name.length > 0);
-  })();
-  const taxResult = computeTax(totalPriceCents, salonTaxLines);
-
-  // Persist the itemized add-on list (the booking row already holds the summed
-  // price + extended end time). Best-effort: a failure here only loses the
-  // itemized breakdown, not the booking or its total. Prices are re-derived
-  // server-side inside the SECURITY DEFINER RPC.
-  if (addonRows.length > 0 && bookingId) {
-    try {
-      await supabase.rpc("add_booking_addons", {
-        p_booking_id: bookingId,
-        p_service_ids: addonRows.map((a) => a.id),
-      });
-    } catch (e) {
-      console.error("[submitPublicBooking] add_booking_addons failed", e);
-    }
-  }
+  const totalPriceCents = authoritativePricing.subtotalCents;
 
   // staff_requested_by_client (the ❤️ chip) is stamped SERVER-SIDE in
   // runPublicBookingSideEffects below — same reason as booking_channel: a browser
@@ -1010,7 +1152,6 @@ export async function submitPublicBooking(
         {
           p_salon_id: String(salon.id),
           p_phone: phoneOk.digits,
-          p_booking_id: bookingId,
         } as never,
       );
       const cp = (Array.isArray(depositRows) ? depositRows[0] : null) as {
@@ -1029,7 +1170,7 @@ export async function submitPublicBooking(
           noShowCount: cp?.no_show_count ?? 0,
           isVip: cp?.is_vip ?? false,
           hasEmail: !!emailToStore,
-          svcPriceCents: priceSnapshot ?? 0,
+          svcPriceCents: authoritativePricing.subtotalCents,
         },
         email: emailToStore
           ? {
@@ -1037,13 +1178,31 @@ export async function submitPublicBooking(
               shopSlug,
               clientName: nameTrimmed,
               clientEmail: emailToStore,
+              clientLocale: params.language ?? "en",
               serviceName: service.name as string,
               addonServiceName: addonRow?.name ?? null,
               staffName: resolvedStaffName,
               startTimeUtc: startLocal.toISOString(),
-              totalPriceCents: taxResult.totalCents > 0 ? taxResult.totalCents : null,
-              subtotalCents: totalPriceCents > 0 ? totalPriceCents : null,
-              taxBreakdown: taxResult.breakdown.length > 0 ? taxResult.breakdown : undefined,
+              currencyCode: authoritativePricing.currency,
+              servicePriceCents: authoritativePricing.serviceOriginalCents,
+              addonLines: authoritativePricing.addonLines.map((line) => ({
+                name: line.name,
+                priceCents: line.priceCents,
+              })),
+              discountLines: authoritativePricing.discountLines.map((line) => ({
+                label: line.label,
+                amountCents: line.amountCents,
+              })),
+              // Zero is an authoritative free receipt, not missing pricing.
+              totalPriceCents: authoritativePricing.totalCents,
+              subtotalCents: authoritativePricing.subtotalCents,
+              taxBreakdown: authoritativePricing.taxBreakdown.length > 0
+                ? authoritativePricing.taxBreakdown.map((line) => ({
+                    name: line.name,
+                    rate: line.rate,
+                    amountCents: line.amountCents,
+                  }))
+                : undefined,
             }
           : undefined,
         ownerNotify: {
@@ -1064,8 +1223,8 @@ export async function submitPublicBooking(
                 : params.verificationMethod || undefined,
           otpSessionId: resolvedOtpSessionId || undefined,
           healthAck: params.healthAck === true,
-          subtotalCents: totalPriceCents > 0 ? totalPriceCents : undefined,
-          taxAmountCents: taxResult.taxAmountCents > 0 ? taxResult.taxAmountCents : undefined,
+          subtotalCents: authoritativePricing.subtotalCents,
+          taxAmountCents: authoritativePricing.taxCents,
         },
         referral: params.referralCode
           ? {
@@ -1080,59 +1239,6 @@ export async function submitPublicBooking(
       console.error("[submitPublicBooking] side-effects dispatch failed", e);
     }
   })();
-
-  // Fire-and-forget: apply promotion price discount
-  if (params.promoRedemption?.promoId && bookingId && params.promoRedemption.discountCents > 0) {
-    void (async () => {
-      try {
-        const { applyPromoToBooking } = await import("@/shared/promotions/applyPromoToBooking");
-        await applyPromoToBooking(
-          bookingId,
-          String(salon.id),
-          params.serviceId,
-          params.promoRedemption!.promoId,
-          params.promoRedemption!.discountCents,
-        );
-      } catch (e) {
-        console.error("[submitPublicBooking] promo apply failed", e);
-      }
-    })();
-  }
-
-  // Fire-and-forget: $2 email capture discount
-  if (params.emailCaptureDiscount && params.clientEmail && bookingId) {
-    void (async () => {
-      try {
-        const { applyEmailCaptureDiscount } = await import("@/shared/promotions/applyEmailCaptureDiscount");
-        await applyEmailCaptureDiscount(bookingId, String(salon.id), params.clientPhone);
-      } catch (e) {
-        console.error("[submitPublicBooking] email capture discount failed", e);
-      }
-    })();
-  }
-
-  // Fire-and-forget: redeem voucher
-  if (params.voucherRedemption?.voucher_id && bookingId) {
-    void (async () => {
-      try {
-        const appUrl = typeof window !== "undefined" ? "" : ((process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca");
-        await fetch(`${appUrl}/api/vouchers/redeem`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            voucher_id: params.voucherRedemption!.voucher_id,
-            salon_id: String(salon.id),
-            client_phone: phoneOk.digits,
-            booking_id: bookingId,
-            original_price_cents: totalPriceCents + (params.voucherRedemption!.discount_cents ?? 0),
-            discount_cents: params.voucherRedemption!.discount_cents,
-          }),
-        });
-      } catch (e) {
-        console.error("[submitPublicBooking] voucher redeem dispatch failed", e);
-      }
-    })();
-  }
 
   // Awaited SMS confirmation — tracks sent_at / failed_at on the booking row
   try {
@@ -1170,20 +1276,6 @@ export async function submitPublicBooking(
   // silently no-op'd under RLS, so it never persisted — front desk saw online
   // OTP-verified bookings as "unverified").
 
-  // Fire-and-forget: tag booking with combo ID for analytics.
-  // `.then()` is what makes a PostgrestBuilder issue its request — a bare
-  // `void supabase.from(...)` builds the query and drops it (service_combo_id
-  // was never written). This runs in the browser, so it stays non-blocking.
-  if (comboOverride?.comboId && bookingId) {
-    void supabase
-      .from("bookings")
-      .update({ service_combo_id: comboOverride.comboId } as never)
-      .eq("id", bookingId)
-      .then(({ error }) => {
-        if (error) console.error("[submitPublicBooking] service_combo_id write failed", error);
-      });
-  }
-
   // Fire-and-forget: store reference image path on booking
   if (params.referenceImagePath && bookingId) {
     void (async () => {
@@ -1209,11 +1301,34 @@ export async function submitPublicBooking(
     price_cents: totalPriceCents,
     staffName: resolvedStaffName,
     addonServiceName: addonRow?.name ?? null,
-    addonPriceCents: addonPriceSnapshot,
-    addons: addonRows.map((a) => ({
-      serviceId: a.id,
+    addonPriceCents:
+      authoritativePricing.addonLines.length > 0
+        ? authoritativePricing.addonCents
+        : null,
+    addons: authoritativePricing.addonLines.map((a) => ({
+      serviceId: a.serviceId,
       name: a.name,
-      priceCents: a.price_cents,
+      priceCents: a.priceCents,
     })),
+    servicePriceCents: authoritativePricing.serviceFinalCents,
+    subtotalCents: authoritativePricing.subtotalCents,
+    taxCents: authoritativePricing.taxCents,
+    totalCents: authoritativePricing.totalCents,
+    currency: authoritativePricing.currency,
+    discountLines: authoritativePricing.discountLines,
+    pricing: authoritativePricing,
+    cardManagementToken,
   };
+}
+
+export async function quotePublicBooking(
+  params: BookingParams,
+): Promise<PublicBookingPricingQuote> {
+  return executePublicBooking(params, "quote") as Promise<PublicBookingPricingQuote>;
+}
+
+export async function submitPublicBooking(
+  params: BookingParams,
+): Promise<BookingResult> {
+  return executePublicBooking(params, "submit") as Promise<BookingResult>;
 }

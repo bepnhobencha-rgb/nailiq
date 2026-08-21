@@ -194,6 +194,13 @@ TOOL USAGE RULES — READ CAREFULLY:
      ? '"Dạ em xin lỗi, em nghe lại chưa chắc — mình muốn đặt lúc mấy giờ ạ?"'
      : '"Sorry, let me get the time right — what time would you like?"'}
 
+   PRICE CONFIRMATION IS A SECOND HARD GATE. The first confirm_booking call may return
+   pricing_confirmation_required with quote.total_cents, quote.currency, and a
+   pricing_fingerprint; that call did NOT create a booking. Read the exact total and currency,
+   ask for a clear yes, and only after that new yes call confirm_booking again with the exact
+   confirmed_pricing_fingerprint. If it returns pricing_changed, read the new quote and repeat.
+   Never invent, alter, or reuse a fingerprint after any service/staff/date/time detail changes.
+
 0c. TOOL FAILURE RECOVERY — protect the customer from duplicates and false promises:
    • If a tool returns tool_timeout, tool_unavailable, tool_parse_failed, or any other error, NEVER
      claim the action succeeded and NEVER read the raw error, status code, or technical detail aloud.
@@ -385,9 +392,12 @@ ${callerPhone
      Example: "I have the group available at 10:00 AM, done by 11:30 AM. Does that work?"
      Do NOT describe individual staff assignments — the party link handles that.
    Step 7 — Get name + phone of the ORGANIZER only (not each member).
-   Step 8 — Confirm: Read back "Group of [N] on [date] at [time] — shall I book that?"
-   Step 9 — On yes: call confirm_group_booking immediately.
-   Step 10 — After success: tell the organizer their group is booked and a party link
+   Step 8 — Call confirm_group_booking WITHOUT confirmed_pricing_fingerprint. It does NOT create;
+     it returns the authoritative group total, currency, and pricing fingerprint.
+   Step 9 — Read back the exact total and currency, then ask for a clear yes.
+   Step 10 — On yes: call confirm_group_booking again with the SAME facts plus the exact
+     confirmed_pricing_fingerprint. If pricing_changed is returned, read the new total and ask again.
+   Step 11 — After success: tell the organizer their group is booked and a party link
      will be ready for them to share with the group members so everyone can claim
      their slot and receive reminders. DO NOT read individual assignments aloud.
 

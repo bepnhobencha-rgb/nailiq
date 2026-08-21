@@ -19,11 +19,7 @@ import type { SupportedLocale } from "@/shared/notifications/resolveCustomerLoca
 import { DEFAULT_CUSTOMER_LOCALE } from "@/shared/notifications/resolveCustomerLocale";
 
 export type StaffNotifyEvent =
-  | "create"
-  | "reschedule"
-  | "cancel"
-  | "no_show"
-  | "staff_change";
+  "create" | "reschedule" | "cancel" | "no_show" | "staff_change";
 
 export const STAFF_NOTIFY_EVENTS: StaffNotifyEvent[] = [
   "create",
@@ -72,9 +68,13 @@ function normLocale(v: unknown): SupportedLocale {
 /** Parse the raw JSONB column into a complete, safe settings object. */
 export function parseStaffNotificationSettings(
   raw: unknown,
+  fallbackLocale: SupportedLocale = DEFAULT_CUSTOMER_LOCALE,
 ): StaffNotificationSettings {
   if (!raw || typeof raw !== "object") {
-    return structuredCloneSettings(DEFAULT_STAFF_NOTIFICATION_SETTINGS);
+    return {
+      ...structuredCloneSettings(DEFAULT_STAFF_NOTIFICATION_SETTINGS),
+      defaultLocale: fallbackLocale,
+    };
   }
   const o = raw as Record<string, unknown>;
 
@@ -109,7 +109,7 @@ export function parseStaffNotificationSettings(
     enabled: o.enabled !== false, // default true
     defaultLocale: o.defaultLocale
       ? normLocale(o.defaultLocale)
-      : DEFAULT_STAFF_NOTIFICATION_SETTINGS.defaultLocale,
+      : fallbackLocale,
     channels,
     eventDefaults,
   };

@@ -3,12 +3,9 @@
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
 import { getEffectivePlan } from "@/shared/lib/subscriptionPlans";
-import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
+import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 import type { LoyaltyCard, LoyaltyProgram, LoyaltyStats } from "./types";
-
-type ActionResult<T = void> =
-  | { ok: true; data: T }
-  | { ok: false; error: string };
+import { LOYALTY_VALUE_MUTATIONS_ENABLED } from "./loyaltyRuntimeConfig";
 
 /** Platform default voucher validity (days) when a program hasn't set its own. */
 const DEFAULT_VOUCHER_VALID_DAYS = 90;
@@ -29,18 +26,19 @@ async function requirePremiumSalon(slug: string) {
   if (!resolved) return { resolved: null, error: "unauthorized" as const };
 
   const supabase = createServiceRoleClient();
-  const { data: salonRow } = await supabase
+  const { data: salonRow, error: salonError } = await supabase
     .from("salons")
     .select("id, subscription_plan, plan_override, feature_flags")
     .eq("id", resolved.salon.id)
     .maybeSingle();
 
+  if (salonError) return { resolved: null, error: "server_error" as const };
   if (!salonRow) return { resolved: null, error: "not_found" as const };
 
   // PR3 — release flag `loyalty` (Beta, default OFF → loyalty_enabled). Gate
   // every loyalty mutation here, before the billing-plan check, so a disabled
   // salon is refused regardless of plan. Release flag stays separate from plan.
-  if (!isReleaseFeatureEnabled(salonRow, "loyalty")) {
+  if (!(await isReleaseFeatureVisible(salonRow, "loyalty"))) {
     return { resolved: null, error: "feature_not_enabled" as const };
   }
 
@@ -58,7 +56,7 @@ async function requirePremiumSalon(slug: string) {
 export async function getLoyaltyProgram(
   slug: string,
 ): Promise<LoyaltyProgram | null> {
-  const resolved = await resolveSalonForDashboard(slug);
+  const { resolved } = await requirePremiumSalon(slug);
   if (!resolved) return null;
 
   const supabase = createServiceRoleClient();
@@ -139,7 +137,7 @@ export async function getClientLoyaltyCard(
   slug: string,
   phone: string,
 ): Promise<LoyaltyCard | null> {
-  const resolved = await resolveSalonForDashboard(slug);
+  const { resolved } = await requirePremiumSalon(slug);
   if (!resolved) return null;
 
   const supabase = createServiceRoleClient();
@@ -154,30 +152,15 @@ export async function getClientLoyaltyCard(
 }
 
 export async function getClientLoyaltyCardByPhone(
-  salonId: string,
-  phone: string,
+  _salonId: string,
+  _phone: string,
 ): Promise<{ card: LoyaltyCard | null; program: LoyaltyProgram | null }> {
-  const supabase = createServiceRoleClient();
-
-  const [{ data: program }, { data: card }] = await Promise.all([
-    supabase
-      .from("loyalty_programs" as never)
-      .select("*")
-      .eq("salon_id", salonId)
-      .eq("is_active", true)
-      .maybeSingle(),
-    supabase
-      .from("loyalty_cards" as never)
-      .select("*")
-      .eq("salon_id", salonId)
-      .eq("client_phone", phone)
-      .maybeSingle(),
-  ]);
-
-  return {
-    program: (program as LoyaltyProgram | null) ?? null,
-    card: (card as LoyaltyCard | null) ?? null,
-  };
+  void _salonId;
+  void _phone;
+  // A browser-supplied salon id + phone number is not authorization to read a
+  // customer's reward balance. Restore this only behind an OTP/booking-bound,
+  // single-use capability issued by a trusted server boundary.
+  return { program: null, card: null };
 }
 
 export async function addStampsManually(
@@ -186,6 +169,9 @@ export async function addStampsManually(
   stamps: number,
   note?: string,
 ): Promise<{ ok: boolean; error?: string }> {
+  if (!LOYALTY_VALUE_MUTATIONS_ENABLED) {
+    return { ok: false, error: "loyalty_mutation_unavailable" };
+  }
   const { resolved, error } = await requirePremiumSalon(slug);
   if (!resolved) return { ok: false, error };
 
@@ -239,6 +225,9 @@ export async function redeemReward(
   slug: string,
   phone: string,
 ): Promise<{ ok: boolean; error?: string; voucherId?: string; code?: string }> {
+  if (!LOYALTY_VALUE_MUTATIONS_ENABLED) {
+    return { ok: false, error: "loyalty_mutation_unavailable" };
+  }
   const { resolved, error } = await requirePremiumSalon(slug);
   if (!resolved) return { ok: false, error };
 
@@ -359,6 +348,7 @@ export async function issueLoyaltyVoucherIfEarned(
   salonId: string,
   clientPhone: string,
 ): Promise<{ issued: boolean; code?: string }> {
+  if (!LOYALTY_VALUE_MUTATIONS_ENABLED) return { issued: false };
   if (!clientPhone) return { issued: false };
 
   const supabase = createServiceRoleClient();

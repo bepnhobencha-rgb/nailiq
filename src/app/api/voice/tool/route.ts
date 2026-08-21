@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { executeVoiceTool, logVoiceToolCall } from "@/shared/voiceai/toolExecutor";
+import { clientIp } from "@/shared/lib/inAppRateLimit";
+import { consumeDurableRateLimitBuckets } from "@/shared/security/publicServerActionRateLimit";
 
 export const runtime     = "nodejs";
 export const maxDuration = 30;
@@ -33,6 +35,16 @@ type ToolCallBody = {
 };
 
 export async function POST(req: NextRequest) {
+  const ip = clientIp(req);
+  const ipRate = await consumeDurableRateLimitBuckets("voice-tool", [
+    { name: "ip-minute", material: [ip], limit: 180, windowSeconds: 60 },
+  ]);
+  if (ipRate !== "allowed") {
+    return NextResponse.json(
+      { error: ipRate === "limited" ? "rate_limited" : "rate_limit_unavailable" },
+      { status: ipRate === "limited" ? 429 : 503, headers: { "Retry-After": ipRate === "limited" ? "60" : "30" } },
+    );
+  }
   let body: ToolCallBody;
   try {
     body = await req.json() as ToolCallBody;
@@ -59,8 +71,40 @@ export async function POST(req: NextRequest) {
   // Trusted only from the bridge — same rule as the caller-ID above.
   const trustedUserUtterance = fromBridge ? (body.lastUserUtterance ?? null) : null;
 
+  const sessionRate = await consumeDurableRateLimitBuckets("voice-tool", [
+    {
+      name: fromBridge ? "bridge-call-minute" : "web-session-minute",
+      material: [
+        fromBridge
+          ? trustedPhoneCallSid ?? sessionId ?? ip
+          : sessionId ?? ip,
+      ],
+      limit: fromBridge ? 240 : 90,
+      windowSeconds: 60,
+    },
+  ]);
+  if (sessionRate !== "allowed") {
+    return NextResponse.json(
+      { error: sessionRate === "limited" ? "rate_limited" : "rate_limit_unavailable" },
+      { status: sessionRate === "limited" ? 429 : 503, headers: { "Retry-After": sessionRate === "limited" ? "60" : "30" } },
+    );
+  }
+
   if (!toolName)  return NextResponse.json({ error: "missing_tool_name"  }, { status: 400 });
   if (!salonSlug) return NextResponse.json({ error: "missing_salon_slug" }, { status: 400 });
+  if (
+    !fromBridge &&
+    (toolName === "confirm_booking" || toolName === "confirm_group_booking")
+  ) {
+    // Browser Voice is a read/prefill assistant. Only the carrier-authenticated
+    // bridge may invoke voice mutation tools; web customers must finish in the
+    // standard BookingFlow so consent, OTP/card/health gates and its explicit
+    // create CTA cannot be bypassed by an old or hostile browser bundle.
+    return NextResponse.json(
+      { error: "web_booking_handoff_required", booking_created: false },
+      { status: 409 },
+    );
+  }
 
   let supabase: ReturnType<typeof createServiceRoleClient>;
   try {

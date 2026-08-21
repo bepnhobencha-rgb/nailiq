@@ -13,6 +13,7 @@ export async function loadGroupBookingSettings(
 ): Promise<{ ok: boolean; settings?: GroupBookingSettings }> {
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) return { ok: false };
+  if (!isOwnerOrAdmin(resolved.role)) return { ok: false };
 
   const db = createServiceRoleClient();
   const { data } = await db

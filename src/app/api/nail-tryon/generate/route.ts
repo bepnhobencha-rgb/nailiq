@@ -8,6 +8,8 @@ import { recordNailTryOnEvent } from "@/shared/nailTryOn/telemetry";
 import { safeProviderError } from "@/shared/nailTryOn/providerError";
 import { GENERATION_STALE_MS, isGenerationStale } from "@/shared/nailTryOn/generationLease";
 import { nailConfigurationSchema } from "@/shared/nailTryOn/configurator";
+import { clientIp } from "@/shared/lib/inAppRateLimit";
+import { consumeDurableRateLimitBuckets } from "@/shared/security/publicServerActionRateLimit";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -17,6 +19,16 @@ type SessionRow = { id: string; salon_id: string; anonymous_token_hash: string; 
 type DesignRow = { id: string; salon_id: string; name: string; preview_path: string; prompt_hint: string | null; version: number };
 
 export async function POST(request: Request) {
+  const ip = clientIp(request);
+  const ipRate = await consumeDurableRateLimitBuckets("nail-tryon-generate", [
+    { name: "ip-hour", material: [ip], limit: 20, windowSeconds: 3_600 },
+  ]);
+  if (ipRate !== "allowed") {
+    return NextResponse.json(
+      { error: ipRate === "limited" ? "rate_limited" : "rate_limit_unavailable" },
+      { status: ipRate === "limited" ? 429 : 503, headers: { "Retry-After": ipRate === "limited" ? "3600" : "30" } },
+    );
+  }
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   const db = createServiceRoleClient();
@@ -24,6 +36,16 @@ export async function POST(request: Request) {
   const session = rawSession as unknown as SessionRow | null;
   const cookie = (await cookies()).get(TRYON_COOKIE)?.value;
   if (!session || !verifySessionCredential(cookie, session.id, session.anonymous_token_hash)) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  const sessionRate = await consumeDurableRateLimitBuckets("nail-tryon-generate", [
+    { name: "session-hour", material: [session.id], limit: 5, windowSeconds: 3_600 },
+    { name: "salon-hour", material: [session.salon_id], limit: 60, windowSeconds: 3_600 },
+  ]);
+  if (sessionRate !== "allowed") {
+    return NextResponse.json(
+      { error: sessionRate === "limited" ? "rate_limited" : "rate_limit_unavailable" },
+      { status: sessionRate === "limited" ? 429 : 503, headers: { "Retry-After": sessionRate === "limited" ? "3600" : "30" } },
+    );
+  }
   if (session.status === "ready" && session.result_image_path) {
     const { data: signed } = await db.storage.from("nail-tryon").createSignedUrl(session.result_image_path, 300);
     return NextResponse.json({ status: "ready", previewUrl: signed?.signedUrl });

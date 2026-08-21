@@ -1,12 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import {
-  getSuperAdminRole,
-  type SuperAdminRole,
-} from "@/shared/lib/superadmin";
+import type { SuperAdminRole } from "@/shared/lib/superadmin";
+import { requireActiveSuperAdminSession } from "@/shared/auth/requireActiveSuperAdminSession";
 import { writeAuditLog } from "@/shared/superadmin/audit";
 import {
   graceDeadline,
@@ -15,6 +12,7 @@ import {
   type TenantPauseReason,
 } from "@/shared/subscriptions/tenantPause";
 import {
+  containsControlledRolloutFlagMutation,
   EDITABLE_RELEASE_FLAG_KEYS,
   RELEASE_FEATURE_KEYS,
   type ReleaseFeatureKey,
@@ -68,19 +66,14 @@ type CallerContext = {
 };
 
 async function requireSuperAdminCaller(): Promise<CallerContext | null> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-
-  const role = await getSuperAdminRole(user.id);
-  if (!role) return null;
+  const access = await requireActiveSuperAdminSession();
+  if (!access.ok) return null;
 
   return {
-    userId: user.id,
-    email: typeof user.email === "string" ? user.email : null,
-    role,
+    userId: access.user.id,
+    email:
+      typeof access.user.email === "string" ? access.user.email : null,
+    role: access.role,
   };
 }
 
@@ -623,6 +616,19 @@ export async function updateSalonFlags(
 
   const id = salonId.trim();
   if (!id) return { ok: false, error: "invalid_payload" };
+
+  // QA-controlled rollouts must never be enabled, disabled, or reset through
+  // either of the generic SuperAdmin flag editors. A dedicated setter will
+  // need an exact disposable-tenant allowlist plus readiness/preflight proof;
+  // until then this boundary is deliberately unavailable.
+  if (
+    containsControlledRolloutFlagMutation(
+      patch.featureFlags,
+      patch.featureFlagsUnset,
+    )
+  ) {
+    return { ok: false, error: "invalid_payload" };
+  }
 
   let admin;
   try {

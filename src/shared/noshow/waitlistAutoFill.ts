@@ -42,7 +42,11 @@ async function resolveOfferedSlotCopy(
   if (!Number.isFinite(startMs)) return null;
   try {
     const [{ data: staffRow }, { data: salonRow }] = await Promise.all([
-      supabase.from("staff").select("name").eq("id", offeredStaffId).maybeSingle(),
+      supabase
+        .from("staff")
+        .select("name")
+        .eq("id", offeredStaffId)
+        .maybeSingle(),
       supabase
         .from("salons")
         .select("timezone")
@@ -53,8 +57,9 @@ async function resolveOfferedSlotCopy(
       (staffRow as { name?: string | null } | null)?.name ?? "",
     ).trim();
     const timeZone =
-      String((salonRow as { timezone?: string | null } | null)?.timezone ?? "").trim() ||
-      "UTC";
+      String(
+        (salonRow as { timezone?: string | null } | null)?.timezone ?? "",
+      ).trim() || "UTC";
     if (!staffName) return null;
     const time = new Intl.DateTimeFormat("en-US", {
       timeZone,
@@ -164,7 +169,10 @@ export async function notifyWaitlistForSlot(params: {
       ? `${params.salonName}: Co cho trong ${params.serviceName} ngay ${params.bookingDateYmd} luc ${offered.time} voi ${offered.staffName}. Giu cho trong 20 phut: ${claimUrl}`
       : `${params.salonName}: Co cho trong ${params.serviceName} ngay ${params.bookingDateYmd}. Giu cho trong 20 phut: ${claimUrl}`;
     const lang = await resolveSalonLang(supabase, params.salonId);
-    const smsResult = await sendSmsReminder(phone, body, { lang });
+    const smsResult = await sendSmsReminder(phone, body, {
+      salonId: params.salonId,
+      lang,
+    });
     smsOk = smsResult.ok;
 
     // Log to booking_notifications (booking_id null — no booking yet). Mirrors
@@ -179,7 +187,7 @@ export async function notifyWaitlistForSlot(params: {
         messageSid: smsResult.messageSid ?? null,
         bodyPreview: body,
         ok: smsResult.ok,
-        errorMessage: smsResult.ok ? null : smsResult.error ?? null,
+        errorMessage: smsResult.ok ? null : (smsResult.error ?? null),
       });
     } catch (e) {
       console.error("[waitlistAutoFill] logNotification", e);

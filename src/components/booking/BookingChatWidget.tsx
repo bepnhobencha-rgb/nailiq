@@ -83,10 +83,12 @@ export function BookingChatWidget({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           salonId,
-          messages: [...messages, userMsg].map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
+          messages: [...messages, userMsg]
+            .slice(-10)
+            .map((m) => ({
+              role: m.role,
+              content: m.content.slice(0, 400),
+            })),
         }),
         signal: abortRef.current.signal,
       });
@@ -203,6 +205,7 @@ export function BookingChatWidget({
               <textarea
                 ref={inputRef}
                 rows={1}
+                maxLength={400}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}

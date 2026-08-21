@@ -28,6 +28,8 @@ import { resolveVertical } from "@/shared/verticals/registry";
 import { loadPublicNailTryOnSalon } from "@/shared/nailTryOn/publicSalon";
 import { SalonClosureBanner } from "@/components/booking/SalonClosureBanner";
 import { hasUpcomingClosure } from "@/shared/booking/upcomingClosureNotice";
+import { loadAuthorizedBookingChatContext } from "@/shared/booking/bookingChatApiBoundary";
+import { loadPublicBookingSequenceReadiness } from "@/shared/booking/bookingSequenceReadiness";
 
 /** Avoid stale static segments for salons created after deploy. */
 export const dynamic = "force-dynamic";
@@ -95,6 +97,15 @@ async function PublicBookingRouteBody({
   // Resolved after the salon loads because it now depends on the salon.
   const lang = langOverride ?? (await resolveBookingLanguage(load.salon.defaultLanguage));
   const t = getBookingMessages(lang);
+  const bookingChatVisible = Boolean(
+    process.env.ANTHROPIC_API_KEY?.trim() &&
+      load.salon.aiTextReceptionistEnabled &&
+      (await loadAuthorizedBookingChatContext(load.salon.id)).ok,
+  );
+  const sequenceReadiness = load.salon.multiServiceBookingEnabled
+    ? await loadPublicBookingSequenceReadiness(load.salon.id)
+    : null;
+  const multiServiceSequenceEnabled = sequenceReadiness?.ok === true;
 
   const shopLabel = formatSalonDisplayName({
     name: load.salon.name,
@@ -321,13 +332,14 @@ async function PublicBookingRouteBody({
                 language={lang}
                 voiceAiEnabled={load.salon.voiceAiEnabled}
                 groupBookingEnabled={load.salon.groupBookingEnabled}
+                multiServiceSequenceEnabled={multiServiceSequenceEnabled}
               />
             </BookingFlowErrorBoundary>
           </div>
         </main>
 
-        {/* P1.4 — AI chat widget; only renders when ANTHROPIC_API_KEY is set */}
-        {process.env.ANTHROPIC_API_KEY ? (
+        {/* Paid public AI stays hidden unless both rollout control planes agree. */}
+        {bookingChatVisible ? (
           <BookingChatWidget salonId={load.salon.id} t={t} />
         ) : null}
 

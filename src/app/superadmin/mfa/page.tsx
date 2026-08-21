@@ -1,6 +1,8 @@
 import { notFound, redirect } from "next/navigation";
-import { createClient } from "@/shared/lib/supabase/server";
-import { getSuperAdminRole } from "@/shared/lib/superadmin";
+import {
+  clearInactiveServerSession,
+  requireActiveSuperAdminSession,
+} from "@/shared/auth/requireActiveSuperAdminSession";
 import { MfaChallengeForm } from "@/components/superadmin/MfaChallengeForm";
 
 export const dynamic = "force-dynamic";
@@ -12,12 +14,13 @@ export const dynamic = "force-dynamic";
  * and the shell lets them through.
  */
 export default async function SuperadminMfaPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/superadmin/login");
-  if ((await getSuperAdminRole(user.id)) === null) notFound();
+  const access = await requireActiveSuperAdminSession();
+  if (!access.ok) {
+    if (access.code === "forbidden") notFound();
+    await clearInactiveServerSession(access.supabase);
+    redirect("/superadmin/login?notice=reauthentication_required");
+  }
+  const { supabase } = access;
 
   const { data: aal } =
     await supabase.auth.mfa.getAuthenticatorAssuranceLevel();

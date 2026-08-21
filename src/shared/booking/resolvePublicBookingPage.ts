@@ -23,8 +23,8 @@ import { createPublicClient } from "@/shared/lib/supabase/publicClient";
  *       with this slug would be unreachable at `/<slug>` (and we want
  *       the wizard to refuse it before the row is even created); OR
  *   (b) it's a brand or shadow-route name we never want a salon to
- *       claim. `wait` lives at `/[slug]/wait/[bookingId]` so the naked
- *       `/wait` should never resolve as a salon.
+   *       claim. Legacy wait URLs fail closed; current customer status links
+   *       use action-scoped `/booking/status?token=...` capabilities.
  *
  * Keep this list in sync whenever a new top-level folder lands in
  * `src/app/` — a quick `ls src/app/` and add anything missing.

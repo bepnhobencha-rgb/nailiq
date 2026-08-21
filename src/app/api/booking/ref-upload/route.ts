@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { randomUUID } from "crypto";
+import { consumePublicRequestRateLimit } from "@/shared/security/publicServerActionRateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,17 @@ const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
 
 export async function POST(req: Request) {
+  const ipRate = await consumePublicRequestRateLimit({
+    request: req,
+    scope: "booking-reference-upload",
+    ipLimits: [[3, 60], [10, 3_600]],
+  });
+  if (ipRate !== "allowed") {
+    return NextResponse.json(
+      { error: ipRate === "limited" ? "rate_limited" : "temporarily_unavailable" },
+      { status: ipRate === "limited" ? 429 : 503 },
+    );
+  }
   const form = await req.formData().catch(() => null);
   if (!form) return NextResponse.json({ error: "invalid_form" }, { status: 400 });
 
@@ -21,6 +33,20 @@ export async function POST(req: Request) {
 
   if (!file || !salonId) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+  }
+
+  const salonRate = await consumePublicRequestRateLimit({
+    request: req,
+    scope: "booking-reference-upload-salon",
+    identity: [salonId],
+    ipLimits: [],
+    identityLimits: [[30, 3_600], [100, 86_400]],
+  });
+  if (salonRate !== "allowed") {
+    return NextResponse.json(
+      { error: salonRate === "limited" ? "rate_limited" : "temporarily_unavailable" },
+      { status: salonRate === "limited" ? 429 : 503 },
+    );
   }
 
   if (!ALLOWED_TYPES.has(file.type)) {

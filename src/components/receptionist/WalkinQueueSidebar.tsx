@@ -157,6 +157,10 @@ export interface WalkinQueueSidebarProps {
   waitLinkEnabled?: boolean;
   /** Salon slug — only used when wait links are enabled. */
   waitLinkSalonSlug?: string;
+  /** Authorized server boundary that returns a status-only capability URL. */
+  onCreateWaitLink?: (
+    bookingId: string,
+  ) => Promise<{ ok: true; statusCapabilityPath: string } | { ok: false; error: string }>;
   onCancelWalkin: (bookingId: string) => Promise<void>;
   onStartAssign: (bookingId: string) => void;
   onCancelAssign: () => void;
@@ -257,6 +261,7 @@ export function WalkinQueueSidebar({
   rushMode = false,
   waitLinkEnabled = false,
   waitLinkSalonSlug,
+  onCreateWaitLink,
   onCancelWalkin,
   onStartAssign,
   onCancelAssign,
@@ -286,6 +291,8 @@ export function WalkinQueueSidebar({
   const [waitLinkOpenForId, setWaitLinkOpenForId] = useState<string | null>(
     null,
   );
+  const [waitLinkUrl, setWaitLinkUrl] = useState<string | null>(null);
+  const [waitLinkLoadingForId, setWaitLinkLoadingForId] = useState<string | null>(null);
   // Per-session dismissals — receptionist can suppress a specific
   // staff's overload warning until the page is reloaded. We key by
   // name (only field surfaced today) so the dismissed set survives
@@ -684,10 +691,18 @@ export function WalkinQueueSidebar({
                           {waitLinkEnabled ? (
                             <button
                               type="button"
-                              disabled={blockOthers}
-                              onClick={() =>
-                                setWaitLinkOpenForId(item.id)
-                              }
+                              disabled={blockOthers || waitLinkLoadingForId === item.id || !onCreateWaitLink}
+                              onClick={() => {
+                                if (!onCreateWaitLink) return;
+                                setWaitLinkLoadingForId(item.id);
+                                setWaitLinkUrl(null);
+                                void onCreateWaitLink(item.id).then((result) => {
+                                  setWaitLinkLoadingForId(null);
+                                  if (!result.ok) return;
+                                  setWaitLinkUrl(new URL(result.statusCapabilityPath, window.location.origin).toString());
+                                  setWaitLinkOpenForId(item.id);
+                                });
+                              }}
                               data-testid={`queue-wait-link-${item.id}`}
                               className={cn(
                                 "min-h-11 w-full touch-manipulation rounded-lg border border-nq-muted/35 bg-transparent px-3 text-xs font-medium text-nq-muted transition-colors hover:border-nq-muted hover:text-nq-foreground",
@@ -713,20 +728,18 @@ export function WalkinQueueSidebar({
         )}
       </div>
 
-      {waitLinkOpenForId && waitLinkSalonSlug ? (() => {
+      {waitLinkOpenForId && waitLinkSalonSlug && waitLinkUrl ? (() => {
         const target = items.find((i) => i.id === waitLinkOpenForId);
         if (!target) return null;
-        // The modal is reachable only from a post-hydration click, so reading
-        // the browser origin here never participates in SSR/hydration.
-        const url = `${window.location.origin}/${encodeURIComponent(
-          waitLinkSalonSlug,
-        )}/wait/${target.id}`;
         return (
           <CustomerWaitLinkModal
             open
-            url={url}
+            url={waitLinkUrl}
             customerName={displayCustomerName(target.client_name, labels.removedGuest)}
-            onClose={() => setWaitLinkOpenForId(null)}
+            onClose={() => {
+              setWaitLinkOpenForId(null);
+              setWaitLinkUrl(null);
+            }}
             labels={labels.waitLinkModal}
           />
         );

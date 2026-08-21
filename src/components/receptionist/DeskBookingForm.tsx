@@ -62,6 +62,11 @@ import {
   defaultNotifyOn,
 } from "@/shared/dashboard/staffNotificationSettings";
 import { buildStaffActionSms } from "@/shared/notifications/staffActionMessages";
+import {
+  deskBookingIntentKey,
+  deskBookingRequestForIntent,
+  type DeskBookingRequestState,
+} from "@/shared/dashboard/deskBookingIdempotency";
 
 type LoadData = Extract<
   Awaited<ReturnType<typeof getDeskBookingData>>,
@@ -399,6 +404,7 @@ export default function DeskBookingForm({
   const [showHits, setShowHits] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const submissionRequestRef = useRef<DeskBookingRequestState | null>(null);
   // Portal target — the modal must escape the (transformed) Front-Desk header,
   // or `position: fixed` is trapped inside it.
   const [mounted, setMounted] = useState(false);
@@ -875,36 +881,65 @@ export default function DeskBookingForm({
     if (!canSubmit) return;
     setSubmitting(true);
     setError(null);
-    const res = await addDeskAppointment(slug, {
+    const notify = {
+      sms: notifyChannels.sms && phone.replace(/\D/g, "").length >= 10,
+      email: notifyChannels.email && !!email.trim(),
+    };
+    const intentKey = deskBookingIntentKey({
       salonId,
       serviceId,
       addonServiceIds: addonIds,
       staffId,
-      staffRequestedByClient:
-        staffId !== BOOKING_ANY_STAFF_ID && staffRequested,
       bookingDateYmd: ymd,
       timeSlot: slotLabel,
-      clientName: name.trim(),
-      clientPhone: phone.trim(),
-      clientEmail: email.trim() || null,
-      clientNotes: notes.trim() || null,
-      language,
-      notify: {
-        sms: notifyChannels.sms && phone.replace(/\D/g, "").length >= 10,
-        email: notifyChannels.email && !!email.trim(),
-      },
-      ...(data?.salon.resourcesEnabled ? { resourceId } : {}),
-      ...(selectedAfterHours
-        ? {
-            afterHoursOverride: {
-              staffConsentConfirmed: afterHoursConsent,
-            },
-          }
-        : {}),
-      recovery,
+      clientName: name,
+      clientPhone: phone,
+      clientEmail: email,
+      clientNotes: notes,
+      resourceId: data?.salon.resourcesEnabled ? resourceId : null,
     });
+    const requestState = recovery
+      ? { intentKey, requestId: recovery.requestId }
+      : deskBookingRequestForIntent(submissionRequestRef.current, intentKey);
+    submissionRequestRef.current = requestState;
+    let res: Awaited<ReturnType<typeof addDeskAppointment>>;
+    try {
+      res = await addDeskAppointment(slug, {
+        requestId: requestState.requestId,
+        salonId,
+        serviceId,
+        addonServiceIds: addonIds,
+        staffId,
+        staffRequestedByClient:
+          staffId !== BOOKING_ANY_STAFF_ID && staffRequested,
+        bookingDateYmd: ymd,
+        timeSlot: slotLabel,
+        clientName: name.trim(),
+        clientPhone: phone.trim(),
+        clientEmail: email.trim() || null,
+        clientNotes: notes.trim() || null,
+        language,
+        notify,
+        ...(data?.salon.resourcesEnabled ? { resourceId } : {}),
+        ...(selectedAfterHours
+          ? {
+              afterHoursOverride: {
+                staffConsentConfirmed: afterHoursConsent,
+              },
+            }
+          : {}),
+        recovery,
+      });
+    } catch {
+      // Ambiguous transport failure: keep submissionRequestRef intact so the
+      // receptionist can retry the exact request instead of minting a new key.
+      setSubmitting(false);
+      setError(tx.submitError);
+      return;
+    }
     setSubmitting(false);
     if (res.ok) {
+      submissionRequestRef.current = null;
       onCreated(res.booking);
       onClose();
     } else {

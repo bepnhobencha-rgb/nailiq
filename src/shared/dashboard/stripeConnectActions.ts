@@ -44,7 +44,7 @@ export async function startStripeConnectOnboarding(
 
   try {
     // Reuse an existing account; else create a fresh Express account.
-    const { data: salonRow } = await ctx.supabase
+    const { data: salonRow } = await createServiceRoleClient()
       .from("salons")
       .select("stripe_connect_account_id, email, name" as never)
       .eq("id", ctx.salon.id)
@@ -107,7 +107,7 @@ export async function refreshStripeConnectStatus(
   const stripe = getStripeClient();
   if (!stripe) return { ok: false, error: "stripe_not_configured" };
 
-  const { data: salonRow } = await ctx.supabase
+  const { data: salonRow } = await createServiceRoleClient()
     .from("salons")
     .select("stripe_connect_account_id" as never)
     .eq("id", ctx.salon.id)

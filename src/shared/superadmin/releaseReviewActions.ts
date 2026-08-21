@@ -2,9 +2,8 @@
 
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { getSuperAdminRole } from "@/shared/lib/superadmin";
+import { requireActiveSuperAdminSession } from "@/shared/auth/requireActiveSuperAdminSession";
 import { writeAuditLog } from "@/shared/superadmin/audit";
 import { loadReleaseReviewById } from "@/shared/superadmin/releaseReviewStore";
 import type { ReleaseReviewDecision } from "@/shared/superadmin/releaseReviewTypes";
@@ -17,12 +16,9 @@ async function requireReviewer(): Promise<{
   userId: string;
   role: string;
 } | null> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-  const role = await getSuperAdminRole(user.id);
+  const access = await requireActiveSuperAdminSession();
+  if (!access.ok) return null;
+  const { role, user } = access;
   if (!role || !ALLOWED_ROLES.has(role)) return null;
   return { userId: user.id, role };
 }

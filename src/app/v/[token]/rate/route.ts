@@ -4,26 +4,11 @@
 // Rating 1-3 → saves internally, no redirect.
 
 import { NextResponse } from "next/server";
-import { jwtVerify } from "jose";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-
-type JwtPayload = {
-  photo_id: string;
-  iat?: number;
-  exp?: number;
-};
+import { verifyPhotoCustomerToken } from "@/shared/photos/photoCustomerToken";
 
 async function decodePhotoToken(token: string): Promise<string | null> {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) return null;
-  try {
-    const secretBytes = new TextEncoder().encode(secret);
-    const { payload } = await jwtVerify(token, secretBytes);
-    const photoId = (payload as unknown as JwtPayload).photo_id;
-    return typeof photoId === "string" ? photoId : null;
-  } catch {
-    return null;
-  }
+  return (await verifyPhotoCustomerToken(token))?.photoId ?? null;
 }
 
 export async function POST(

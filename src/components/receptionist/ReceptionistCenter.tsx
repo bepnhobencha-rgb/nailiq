@@ -108,6 +108,8 @@ import {
   deskClaimPartySlotAction,
 } from "@/shared/dashboard/receptionistActions";
 import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
+import { deskRefundOutcomeMessage } from "@/shared/payments/paymentOutagePresentation";
+import { mintBookingStatusLink } from "@/shared/dashboard/mintBookingStatusLinkAction";
 import { defaultNotifyOn } from "@/shared/dashboard/staffNotificationSettings";
 import {
   NotifyCustomerPanel,
@@ -968,7 +970,17 @@ function ReceptionistCenterInner({
   const [depositCancel, setDepositCancel] = useState<{
     id: string;
     amountCents: number;
+    refundAmount: string;
+    refundRequestId: string;
   } | null>(null);
+  // One logical cancel+refund intent keeps one UUID until the server
+  // acknowledges the saga. A transport loss must not mint a second refund.
+  const cancelRefundRequestIdRef = useRef<string | null>(null);
+  const cancelNotificationRequestRef = useRef<{
+    bookingId: string;
+    requestId: string;
+  } | null>(null);
+  const groupCancelRequestIdsRef = useRef<Map<string, string>>(new Map());
   // Cancel-confirm with the "notify the customer?" panel (non-deposit path).
   const [notifyCancel, setNotifyCancel] = useState<{ id: string } | null>(null);
   // For a booking that is one member of a party, the cancel modal lets the staff
@@ -2404,14 +2416,18 @@ function ReceptionistCenterInner({
 
     setDrawerBusy(true);
     try {
+      const requestId = groupCancelRequestIdsRef.current.get(groupId) ?? crypto.randomUUID();
+      groupCancelRequestIdsRef.current.set(groupId, requestId);
       const r = await cancelDeskGroup(slug, {
         salonId: data.salon.id,
         groupId,
+        requestId,
         notify: notifyChannelsResolved,
       });
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
       } else {
+        groupCancelRequestIdsRef.current.delete(groupId);
         // Whole party cancelled — close the drawer and reload; the grid visibly
         // empties every member's slot, which is its own confirmation.
         closeBookingDrawer();
@@ -2426,8 +2442,10 @@ function ReceptionistCenterInner({
   const doCancelBooking = async (
     id: string,
     refundDeposit: boolean,
+    refundDepositCents?: number,
+    refundRequestId?: string,
     notifyChannels?: NotifyChannels,
-  ) => {
+  ): Promise<boolean> => {
     const b = data.bookingsForDay.find((x) => x.id === id);
     if (
       !b ||
@@ -2437,7 +2455,7 @@ function ReceptionistCenterInner({
         b.status === "in_progress"
       )
     )
-      return;
+      return false;
 
     // Notify channels for the cancel — explicit panel choice, else the salon's
     // smart per-event default (the deposit path has no panel). The server
@@ -2453,19 +2471,42 @@ function ReceptionistCenterInner({
 
     setDrawerBusy(true);
     try {
-      const r = await cancelDeskBooking(slug, {
-        salonId: data.salon.id,
-        bookingId: id,
-        refundDeposit,
-        notify: notifyChannelsResolved,
-      });
+      const notificationRequestId = refundDeposit
+        ? (refundRequestId ?? "")
+        : cancelNotificationRequestRef.current?.bookingId === id
+          ? cancelNotificationRequestRef.current.requestId
+          : crypto.randomUUID();
+      if (!refundDeposit) {
+        cancelNotificationRequestRef.current = { bookingId: id, requestId: notificationRequestId };
+      }
+      const r = refundDeposit
+        ? await cancelDeskBooking(slug, {
+            salonId: data.salon.id,
+            bookingId: id,
+            refundDeposit: true,
+            refundAmountCents: refundDepositCents,
+            refundRequestId: refundRequestId ?? "",
+            notificationRequestId,
+            notify: notifyChannelsResolved,
+          })
+        : await cancelDeskBooking(slug, {
+            salonId: data.salon.id,
+            bookingId: id,
+            refundDeposit: false,
+            notificationRequestId,
+            notify: notifyChannelsResolved,
+          });
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
+        return false;
       } else {
+        cancelNotificationRequestRef.current = null;
         if (refundDeposit && r.depositRefunded === false) {
-          setShakeMessage(
-            `Đã huỷ. Hoàn cọc chưa xong (${r.depositRefundError ?? "lỗi"}) — hoàn tay trong Square.`,
-          );
+          const rawStatus = r.depositRefundStatus ?? "unknown";
+          // A contradictory `depositRefunded:false/status:succeeded` response
+          // must never be displayed as success; preserve ambiguity instead.
+          const status = rawStatus === "succeeded" ? "unknown" : rawStatus;
+          setShakeMessage(deskRefundOutcomeMessage(status, r.depositRefundError));
         }
         // Close drawer and reload grid first so booking disappears
         closeBookingDrawer();
@@ -2490,6 +2531,7 @@ function ReceptionistCenterInner({
             type: "cancel",
           });
         }
+        return true;
       }
     } finally {
       setDrawerBusy(false);
@@ -2511,7 +2553,16 @@ function ReceptionistCenterInner({
       return;
     // A paid Square deposit forces a refund-or-keep decision before cancelling.
     if (b.deposit_status === "paid" && (b.deposit_amount_cents ?? 0) > 0) {
-      setDepositCancel({ id, amountCents: b.deposit_amount_cents ?? 0 });
+      const amountCents = b.deposit_amount_cents ?? 0;
+      const factor = ["VND", "JPY"].includes(data.salon.currencyCode) ? 1 : 100;
+      const refundRequestId = cancelRefundRequestIdRef.current ?? crypto.randomUUID();
+      cancelRefundRequestIdRef.current = refundRequestId;
+      setDepositCancel({
+        id,
+        amountCents,
+        refundAmount: String(amountCents / factor),
+        refundRequestId,
+      });
       return;
     }
     // Otherwise open the cancel-confirm with the "notify the customer?" panel,
@@ -4803,6 +4854,7 @@ function ReceptionistCenterInner({
                 rushMode={rush.active}
                 waitLinkEnabled
                 waitLinkSalonSlug={slug}
+                onCreateWaitLink={(bookingId) => mintBookingStatusLink(slug, bookingId)}
                 onCancelWalkin={onCancelWalkin}
                 onStartAssign={(id) => {
                   setAssigningWalkinId(id);
@@ -5097,24 +5149,58 @@ function ReceptionistCenterInner({
       {depositCancel ? (
         <Modal
           isOpen
-          onClose={() => setDepositCancel(null)}
+          onClose={() => {
+            cancelRefundRequestIdRef.current = null;
+            setDepositCancel(null);
+          }}
           size="sm"
           title="Khách đã đặt cọc"
-          description={`Khách đã cọc ${formatCurrency(depositCancel.amountCents, data.salon.currencyCode) ?? ""}. Hoàn cọc cho khách khi huỷ, hay giữ cọc?`}
+          description={`Khách đã cọc ${formatCurrency(depositCancel.amountCents, data.salon.currencyCode) ?? ""}. Chọn số tiền hoàn rồi huỷ, hoặc giữ cọc.`}
         >
           <div className="flex flex-col gap-2 py-1">
+            <label className="text-sm font-medium">
+              Số tiền hoàn ({data.salon.currencyCode})
+              <input
+                type="number"
+                min="0"
+                step={["VND", "JPY"].includes(data.salon.currencyCode) ? "1" : "0.01"}
+                value={depositCancel.refundAmount}
+                onChange={(event) => setDepositCancel((current) => current
+                  ? { ...current, refundAmount: event.target.value }
+                  : current)}
+                className="mt-1 w-full rounded-md border px-3 py-2"
+                data-testid="deposit-refund-amount"
+              />
+            </label>
             <Button
               type="button"
               variant="primary"
               loading={drawerBusy}
               data-testid="deposit-cancel-refund"
-              onClick={() => {
+              onClick={async () => {
                 const id = depositCancel.id;
-                setDepositCancel(null);
-                void doCancelBooking(id, true);
+                const factor = ["VND", "JPY"].includes(data.salon.currencyCode) ? 1 : 100;
+                const refundCents = Math.round(Number(depositCancel.refundAmount) * factor);
+                if (
+                  !Number.isSafeInteger(refundCents) || refundCents <= 0 ||
+                  refundCents > depositCancel.amountCents
+                ) {
+                  setShakeMessage("Số tiền hoàn không hợp lệ.");
+                  return;
+                }
+                const acknowledged = await doCancelBooking(
+                  id,
+                  true,
+                  refundCents,
+                  depositCancel.refundRequestId,
+                );
+                if (acknowledged) {
+                  cancelRefundRequestIdRef.current = null;
+                  setDepositCancel(null);
+                }
               }}
             >
-              Hoàn cọc &amp; huỷ
+              Hoàn số tiền này &amp; huỷ
             </Button>
             <Button
               type="button"
@@ -5123,8 +5209,9 @@ function ReceptionistCenterInner({
               data-testid="deposit-cancel-keep"
               onClick={() => {
                 const id = depositCancel.id;
+                cancelRefundRequestIdRef.current = null;
                 setDepositCancel(null);
-                void doCancelBooking(id, false);
+                void doCancelBooking(id, false, undefined, undefined);
               }}
             >
               Giữ cọc &amp; huỷ
@@ -5132,7 +5219,10 @@ function ReceptionistCenterInner({
             <Button
               type="button"
               variant="secondary"
-              onClick={() => setDepositCancel(null)}
+              onClick={() => {
+                cancelRefundRequestIdRef.current = null;
+                setDepositCancel(null);
+              }}
             >
               Đóng
             </Button>
@@ -5267,7 +5357,13 @@ function ReceptionistCenterInner({
                         if (cancelWhole && groupId) {
                           void doCancelGroup(groupId, ch);
                         } else {
-                          void doCancelBooking(id, false, ch);
+                          void doCancelBooking(
+                            id,
+                            false,
+                            undefined,
+                            undefined,
+                            ch,
+                          );
                         }
                       }}
                     >

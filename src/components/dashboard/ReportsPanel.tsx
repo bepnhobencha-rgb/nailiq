@@ -6,15 +6,9 @@ import {
   type ReportsDateRange,
   type ReportsSnapshot,
 } from "@/shared/dashboard/loadSalonReports";
-import {
-  getUserMessages,
-  type UserLanguage,
-} from "@/shared/i18n/user";
+import { getUserMessages, type UserLanguage } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
-import {
-  formatCurrency,
-  type Currency,
-} from "@/shared/lib/currencyFormat";
+import { formatCurrency, type Currency } from "@/shared/lib/currencyFormat";
 
 /**
  * Owner-only reports panel.
@@ -110,6 +104,13 @@ export function ReportsPanel({
         })}
       </div>
 
+      <p
+        data-testid="reports-estimated-value-notice"
+        className="rounded-md border border-nq-border bg-nq-surface px-3 py-2 text-xs leading-relaxed text-nq-muted"
+      >
+        {messages.estimatedValueNotice}
+      </p>
+
       {state.kind === "error" ? (
         <p
           role="alert"
@@ -137,22 +138,16 @@ export function ReportsPanel({
         <KPIWidget
           label={messages.kpis.appointments}
           value={
-            state.kind === "ok"
-              ? String(state.data.appointmentCount)
-              : "—"
+            state.kind === "ok" ? String(state.data.appointmentCount) : "—"
           }
         />
         <KPIWidget
           label={messages.kpis.completed}
-          value={
-            state.kind === "ok" ? String(state.data.completedCount) : "—"
-          }
+          value={state.kind === "ok" ? String(state.data.completedCount) : "—"}
         />
         <KPIWidget
           label={messages.kpis.cancelled}
-          value={
-            state.kind === "ok" ? String(state.data.cancelledCount) : "—"
-          }
+          value={state.kind === "ok" ? String(state.data.cancelledCount) : "—"}
         />
         <KPIWidget
           label={messages.kpis.noShow}
@@ -204,57 +199,59 @@ export function ReportsPanel({
           {messages.tables.bySource}
         </h2>
         {state.kind === "ok" && state.data.channelMix.length === 0 ? (
-          <p className="text-sm italic text-nq-muted">{messages.tables.empty}</p>
+          <p className="text-sm italic text-nq-muted">
+            {messages.tables.empty}
+          </p>
         ) : null}
-        {state.kind === "ok" && state.data.channelMix.length > 0 ? (
-          (() => {
-            const total = state.data.channelMix.reduce(
-              (sum, c) => sum + c.count,
-              0,
-            );
-            return (
-              <table
-                className="w-full text-sm"
-                data-testid="reports-by-source"
-              >
-                <thead>
-                  <tr className="text-left text-[11px] uppercase tracking-wide text-nq-muted">
-                    <th className="py-1.5">{messages.tables.sourceCol}</th>
-                    <th className="py-1.5 text-right">
-                      {messages.tables.countCol}
-                    </th>
-                    <th className="py-1.5 text-right">
-                      {messages.tables.shareCol}
-                    </th>
-                    <th className="py-1.5 text-right">
-                      {messages.tables.revenueCol}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-nq-border/50">
-                  {state.data.channelMix.map((c) => (
-                    <tr key={c.channel}>
-                      <td className="py-1.5 text-nq-foreground">
-                        {messages.channelLabels[
-                          c.channel as keyof typeof messages.channelLabels
-                        ] ?? c.channel}
-                      </td>
-                      <td className="py-1.5 text-right tabular-nums">
-                        {c.count}
-                      </td>
-                      <td className="py-1.5 text-right tabular-nums text-nq-muted">
-                        {total > 0 ? Math.round((c.count / total) * 100) : 0}%
-                      </td>
-                      <td className="py-1.5 text-right tabular-nums">
-                        {formatMoney(c.revenueCents, currency)}
-                      </td>
+        {state.kind === "ok" && state.data.channelMix.length > 0
+          ? (() => {
+              const total = state.data.channelMix.reduce(
+                (sum, c) => sum + c.count,
+                0,
+              );
+              return (
+                <table
+                  className="w-full text-sm"
+                  data-testid="reports-by-source"
+                >
+                  <thead>
+                    <tr className="text-left text-[11px] uppercase tracking-wide text-nq-muted">
+                      <th className="py-1.5">{messages.tables.sourceCol}</th>
+                      <th className="py-1.5 text-right">
+                        {messages.tables.countCol}
+                      </th>
+                      <th className="py-1.5 text-right">
+                        {messages.tables.shareCol}
+                      </th>
+                      <th className="py-1.5 text-right">
+                        {messages.tables.revenueCol}
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            );
-          })()
-        ) : null}
+                  </thead>
+                  <tbody className="divide-y divide-nq-border/50">
+                    {state.data.channelMix.map((c) => (
+                      <tr key={c.channel}>
+                        <td className="py-1.5 text-nq-foreground">
+                          {messages.channelLabels[
+                            c.channel as keyof typeof messages.channelLabels
+                          ] ?? c.channel}
+                        </td>
+                        <td className="py-1.5 text-right tabular-nums">
+                          {c.count}
+                        </td>
+                        <td className="py-1.5 text-right tabular-nums text-nq-muted">
+                          {total > 0 ? Math.round((c.count / total) * 100) : 0}%
+                        </td>
+                        <td className="py-1.5 text-right tabular-nums">
+                          {formatMoney(c.revenueCents, currency)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              );
+            })()
+          : null}
       </Card>
 
       {/* C. Top staff table */}
@@ -452,7 +449,10 @@ function BusyHoursChart({
 
   if (max === 0) {
     return (
-      <p className="text-sm italic text-nq-muted" data-testid="reports-busy-empty">
+      <p
+        className="text-sm italic text-nq-muted"
+        data-testid="reports-busy-empty"
+      >
         {emptyLabel}
       </p>
     );

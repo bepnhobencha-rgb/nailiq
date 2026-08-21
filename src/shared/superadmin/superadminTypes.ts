@@ -4,14 +4,9 @@
  * ONLY async functions — types and constants need their own home.
  */
 
-export const SUPPORTED_PLAN_OVERRIDES = [
-  "free",
-  "pro",
-  "premium",
-] as const;
+export const SUPPORTED_PLAN_OVERRIDES = ["free", "pro", "premium"] as const;
 export type SuperAdminPlanOverride =
-  (typeof SUPPORTED_PLAN_OVERRIDES)[number]
-  | null;
+  (typeof SUPPORTED_PLAN_OVERRIDES)[number] | null;
 
 /**
  * Per-salon feature flag taxonomy (PR #108).
@@ -51,278 +46,290 @@ export type SuperAdminFlagDescriptor = {
   danger?: boolean;
 };
 
-export const SUPERADMIN_PER_SALON_FLAGS: ReadonlyArray<SuperAdminFlagDescriptor> = [
-  // ── Group A: Operations ──────────────────────────────────────────
-  {
-    key: "walkin_queue_enabled",
-    group: "operations",
-    label: "Hàng chờ walk-in",
-    description: "Bật panel walk-in queue trên Front Desk.",
-    phase: "live",
-  },
-  {
-    key: "walkin_auto_assign",
-    group: "operations",
-    label: "Tự động gán thợ rảnh",
-    description: "Khách walk-in được gán thẳng khi có thợ rảnh.",
-    phase: "live",
-  },
-  {
-    key: "receptionist_center_enabled",
-    group: "operations",
-    label: "Màn hình Lễ Tân",
-    description: "Bật trang /center cho lễ tân.",
-    phase: "live",
-  },
-  {
-    key: "receptionist_shell_v2_enabled",
-    group: "operations",
-    label: "Vỏ Tiếp tân gọn (Phương án B)",
-    description:
-      "Thử giao diện Tiếp tân gọn: một nút Tạo và một Trung tâm hành động; không đổi lưới hay dữ liệu lịch.",
-    phase: "live",
-  },
-  {
-    key: "waitlist_attention_enabled",
-    group: "operations",
-    label: "Cảnh báo khách Waitlist",
-    description:
-      "Cảnh báo tức thời trong Action Center, phát âm báo ngắn và nhắc lại một lần nếu khách online chưa được mở xem.",
-    phase: "live",
-  },
-  {
-    key: "archived_booking_recovery_enabled",
-    group: "operations",
-    label: "Tạo lịch mới từ lịch đã lưu trữ",
-    description:
-      "Cho owner/admin tạo lịch hẹn hoặc walk-in mới có liên kết từ lịch đã huỷ/no-show; không mở lại lịch cũ và không tự thu tiền.",
-    phase: "live",
-    danger: true,
-  },
-  {
-    key: "rush_hour_mode_enabled",
-    group: "operations",
-    label: "Chế độ giờ cao điểm",
-    description: "Auto-detect rush hour và làm mờ điều khiển phụ.",
-    phase: "live",
-  },
-  {
-    key: "soft_hold_enabled",
-    group: "operations",
-    label: "Giữ chỗ tạm (10 phút)",
-    description: "Cho phép giữ chỗ khi khách bước ra ngoài.",
-    phase: "live",
-  },
-  {
-    key: "density_mode_enabled",
-    group: "operations",
-    label: "Chuyển đổi Simple/Balanced/Pro",
-    description: "Cho phép owner đổi mật độ giao diện.",
-    phase: "live",
-  },
+export const SUPERADMIN_PER_SALON_FLAGS: ReadonlyArray<SuperAdminFlagDescriptor> =
+  [
+    // ── Group A: Operations ──────────────────────────────────────────
+    {
+      key: "walkin_queue_enabled",
+      group: "operations",
+      label: "Hàng chờ walk-in",
+      description: "Bật panel walk-in queue trên Front Desk.",
+      phase: "live",
+    },
+    {
+      key: "walkin_auto_assign",
+      group: "operations",
+      label: "Tự động gán thợ rảnh",
+      description: "Khách walk-in được gán thẳng khi có thợ rảnh.",
+      phase: "live",
+    },
+    {
+      key: "receptionist_center_enabled",
+      group: "operations",
+      label: "Màn hình Lễ Tân",
+      description: "Bật trang /center cho lễ tân.",
+      phase: "live",
+    },
+    {
+      key: "receptionist_shell_v2_enabled",
+      group: "operations",
+      label: "Vỏ Tiếp tân gọn (Phương án B)",
+      description:
+        "Thử giao diện Tiếp tân gọn: một nút Tạo và một Trung tâm hành động; không đổi lưới hay dữ liệu lịch.",
+      phase: "live",
+    },
+    {
+      key: "waitlist_attention_enabled",
+      group: "operations",
+      label: "Cảnh báo khách Waitlist",
+      description:
+        "Cảnh báo tức thời trong Action Center, phát âm báo ngắn và nhắc lại một lần nếu khách online chưa được mở xem.",
+      phase: "live",
+    },
+    {
+      key: "archived_booking_recovery_enabled",
+      group: "operations",
+      label: "Tạo lịch mới từ lịch đã lưu trữ",
+      description:
+        "Cho owner/admin tạo lịch hẹn hoặc walk-in mới có liên kết từ lịch đã huỷ/no-show; không mở lại lịch cũ và không tự thu tiền.",
+      phase: "live",
+      danger: true,
+    },
+    {
+      key: "rush_hour_mode_enabled",
+      group: "operations",
+      label: "Chế độ giờ cao điểm",
+      description: "Auto-detect rush hour và làm mờ điều khiển phụ.",
+      phase: "live",
+    },
+    {
+      key: "soft_hold_enabled",
+      group: "operations",
+      label: "Giữ chỗ tạm (10 phút)",
+      description: "Cho phép giữ chỗ khi khách bước ra ngoài.",
+      phase: "live",
+    },
+    {
+      key: "density_mode_enabled",
+      group: "operations",
+      label: "Chuyển đổi Simple/Balanced/Pro",
+      description: "Cho phép owner đổi mật độ giao diện.",
+      phase: "live",
+    },
 
-  // ── Group B: Intelligence ────────────────────────────────────────
-  {
-    key: "smart_assignment_enabled",
-    group: "intelligence",
-    label: "Gợi ý Best Match tự động",
-    description: "Bật engine gợi ý thợ phù hợp khi thêm walk-in.",
-    phase: "live",
-  },
-  {
-    key: "availability_engine_enabled",
-    group: "intelligence",
-    label: "Tính realtime rảnh/bận",
-    description: "Bật availability engine cho dispatch + form.",
-    phase: "live",
-  },
-  {
-    key: "ai_rule_first_optimization",
-    group: "intelligence",
-    label: "Rule-first AI Optimization",
-    description:
-      "Giảm AI gọi trùng cho no-show, Digest và Watchdog; tắt để quay lại cách cũ ngay.",
-    phase: "live",
-    danger: true,
-  },
-  {
-    key: "nail_tryon_enabled",
-    group: "intelligence",
-    label: "Thử mẫu nail bằng AI",
-    description: "Bật trải nghiệm scan bàn tay và xem trước mẫu nail cho salon pilot.",
-    phase: "phase_3",
-  },
-  {
-    key: "staff_request_tracking",
-    group: "intelligence",
-    label: "Theo dõi yêu cầu thợ ❤️",
-    description: "Hiển thị heart icon khi khách yêu cầu thợ cụ thể.",
-    phase: "live",
-  },
+    // ── Group B: Intelligence ────────────────────────────────────────
+    {
+      key: "smart_assignment_enabled",
+      group: "intelligence",
+      label: "Gợi ý Best Match tự động",
+      description: "Bật engine gợi ý thợ phù hợp khi thêm walk-in.",
+      phase: "live",
+    },
+    {
+      key: "availability_engine_enabled",
+      group: "intelligence",
+      label: "Tính realtime rảnh/bận",
+      description: "Bật availability engine cho dispatch + form.",
+      phase: "live",
+    },
+    {
+      key: "ai_rule_first_optimization",
+      group: "intelligence",
+      label: "Rule-first AI Optimization",
+      description:
+        "Giảm AI gọi trùng cho no-show, Digest và Watchdog; tắt để quay lại cách cũ ngay.",
+      phase: "live",
+      danger: true,
+    },
+    {
+      key: "nail_tryon_enabled",
+      group: "intelligence",
+      label: "Thử mẫu nail bằng AI",
+      description:
+        "Bật trải nghiệm scan bàn tay và xem trước mẫu nail cho salon pilot.",
+      phase: "phase_3",
+    },
+    {
+      key: "ai_text_receptionist_enabled",
+      group: "intelligence",
+      label: "AI chat đặt lịch công khai",
+      description:
+        "Bật trợ lý text trên trang đặt lịch; mặc định tắt và có kill-switch toàn hệ thống.",
+      phase: "phase_3",
+      danger: true,
+    },
+    {
+      key: "staff_request_tracking",
+      group: "intelligence",
+      label: "Theo dõi yêu cầu thợ ❤️",
+      description: "Hiển thị heart icon khi khách yêu cầu thợ cụ thể.",
+      phase: "live",
+    },
 
-  // ── Group C: Customers ───────────────────────────────────────────
-  {
-    key: "customer_wait_page_enabled",
-    group: "customers",
-    label: "Trang chờ khách /wait/",
-    description: "Bật trang công khai theo dõi vị trí cho khách.",
-    phase: "live",
-  },
-  {
-    key: "phone_autolookup_enabled",
-    group: "customers",
-    label: "Tự điền thông tin từ số phone",
-    description: "Tra cứu khách quen khi nhập số điện thoại.",
-    phase: "live",
-  },
-  {
-    key: "client_profiles_enabled",
-    group: "customers",
-    label: "Trang hồ sơ khách hàng",
-    description: "Bật trang /clients quản lý hồ sơ khách.",
-    phase: "live",
-  },
-  {
-    key: "vip_flag_enabled",
-    group: "customers",
-    label: "Badge VIP khách",
-    description: "Hiển thị badge gold cho VIP customers.",
-    phase: "live",
-  },
-  {
-    key: "repeat_customer_badge",
-    group: "customers",
-    label: "Badge khách quen",
-    description: "Hiển thị badge khi khách đã từng ghé.",
-    phase: "live",
-  },
+    // ── Group C: Customers ───────────────────────────────────────────
+    {
+      key: "customer_wait_page_enabled",
+      group: "customers",
+      label: "Trang chờ khách /wait/",
+      description: "Bật trang công khai theo dõi vị trí cho khách.",
+      phase: "live",
+    },
+    {
+      key: "phone_autolookup_enabled",
+      group: "customers",
+      label: "Tự điền thông tin từ số phone",
+      description: "Tra cứu khách quen khi nhập số điện thoại.",
+      phase: "live",
+    },
+    {
+      key: "client_profiles_enabled",
+      group: "customers",
+      label: "Trang hồ sơ khách hàng",
+      description: "Bật trang /clients quản lý hồ sơ khách.",
+      phase: "live",
+    },
+    {
+      key: "vip_flag_enabled",
+      group: "customers",
+      label: "Badge VIP khách",
+      description: "Hiển thị badge gold cho VIP customers.",
+      phase: "live",
+    },
+    {
+      key: "repeat_customer_badge",
+      group: "customers",
+      label: "Badge khách quen",
+      description: "Hiển thị badge khi khách đã từng ghé.",
+      phase: "live",
+    },
 
-  // ── Group D: Analytics ───────────────────────────────────────────
-  {
-    key: "reports_enabled",
-    group: "analytics",
-    label: "Trang Báo cáo & Doanh thu",
-    description: "Bật trang /insights cho owner.",
-    phase: "live",
-  },
-  {
-    key: "audit_log_enabled",
-    group: "analytics",
-    label: "Nhật ký thao tác",
-    description: "Hiển thị audit log viewer trong settings.",
-    phase: "live",
-  },
-  {
-    key: "operational_metrics",
-    group: "analytics",
-    label: "Thu thập metrics nền",
-    description: "Log queue_joined / queue_assigned / rush events.",
-    phase: "live",
-  },
-  {
-    key: "client_health_score",
-    group: "analytics",
-    label: "Điểm sức khỏe khách",
-    description: "Tính điểm health cho khách (Phase 2).",
-    phase: "phase_2",
-  },
-  {
-    key: "smart_retention_alerts",
-    group: "analytics",
-    label: "Cảnh báo khách sắp rời",
-    description: "Cảnh báo khi khách quen ngừng ghé (Phase 2).",
-    phase: "phase_2",
-  },
-  {
-    key: "churn_detection",
-    group: "analytics",
-    label: "Dự đoán churn AI",
-    description: "AI dự đoán khách sắp churn (Phase 3).",
-    phase: "phase_3",
-  },
+    // ── Group D: Analytics ───────────────────────────────────────────
+    {
+      key: "reports_enabled",
+      group: "analytics",
+      label: "Trang Báo cáo & Doanh thu",
+      description: "Bật trang /insights cho owner.",
+      phase: "live",
+    },
+    {
+      key: "audit_log_enabled",
+      group: "analytics",
+      label: "Nhật ký thao tác",
+      description: "Hiển thị audit log viewer trong settings.",
+      phase: "live",
+    },
+    {
+      key: "operational_metrics",
+      group: "analytics",
+      label: "Thu thập metrics nền",
+      description: "Log queue_joined / queue_assigned / rush events.",
+      phase: "live",
+    },
+    {
+      key: "client_health_score",
+      group: "analytics",
+      label: "Điểm sức khỏe khách",
+      description: "Tính điểm health cho khách (Phase 2).",
+      phase: "phase_2",
+    },
+    {
+      key: "smart_retention_alerts",
+      group: "analytics",
+      label: "Cảnh báo khách sắp rời",
+      description: "Cảnh báo khi khách quen ngừng ghé (Phase 2).",
+      phase: "phase_2",
+    },
+    {
+      key: "churn_detection",
+      group: "analytics",
+      label: "Dự đoán churn AI",
+      description: "AI dự đoán khách sắp churn (Phase 3).",
+      phase: "phase_3",
+    },
 
-  // ── Group E: Business ────────────────────────────────────────────
-  {
-    key: "loyalty_enabled",
-    group: "business",
-    label: "Chương trình tích điểm",
-    description: "Bật loyalty / điểm thưởng.",
-    phase: "live",
-  },
-  {
-    key: "group_booking_enabled",
-    group: "business",
-    label: "Đặt lịch theo nhóm",
-    description: "Cho phép đặt 2+ khách cùng lịch.",
-    phase: "live",
-  },
-  {
-    key: "multi_location_enabled",
-    group: "business",
-    label: "Quản lý nhiều tiệm",
-    description: "Bật multi-salon switcher cho owner.",
-    phase: "live",
-  },
-  {
-    key: "booking_pause_enabled",
-    group: "business",
-    label: "Tạm dừng nhận booking",
-    description: "Owner có thể tạm dừng nhận đặt lịch.",
-    phase: "live",
-  },
-  {
-    key: "referral_qr_enabled",
-    group: "business",
-    label: "QR giới thiệu khách",
-    description: "QR code mời bạn bè (Phase 3).",
-    phase: "phase_3",
-  },
-  {
-    key: "sms_campaigns_enabled",
-    group: "business",
-    label: "SMS marketing",
-    description: "Gửi SMS hàng loạt (Phase 3).",
-    phase: "phase_3",
-  },
-  {
-    key: "qr_checkin_enabled",
-    group: "business",
-    label: "Tự check-in bằng QR",
-    description: "Khách quét QR để tự check-in (Phase 3).",
-    phase: "phase_3",
-  },
+    // ── Group E: Business ────────────────────────────────────────────
+    {
+      key: "loyalty_enabled",
+      group: "business",
+      label: "Chương trình tích điểm",
+      description: "Bật loyalty / điểm thưởng.",
+      phase: "live",
+    },
+    {
+      key: "group_booking_enabled",
+      group: "business",
+      label: "Đặt lịch theo nhóm",
+      description: "Cho phép đặt 2+ khách cùng lịch.",
+      phase: "live",
+    },
+    {
+      key: "multi_location_enabled",
+      group: "business",
+      label: "Quản lý nhiều tiệm",
+      description: "Bật multi-salon switcher cho owner.",
+      phase: "live",
+    },
+    {
+      key: "booking_pause_enabled",
+      group: "business",
+      label: "Tạm dừng nhận booking",
+      description: "Owner có thể tạm dừng nhận đặt lịch.",
+      phase: "live",
+    },
+    {
+      key: "referral_qr_enabled",
+      group: "business",
+      label: "QR giới thiệu khách",
+      description: "QR code mời bạn bè (Phase 3).",
+      phase: "phase_3",
+    },
+    {
+      key: "sms_campaigns_enabled",
+      group: "business",
+      label: "SMS marketing",
+      description: "Gửi SMS hàng loạt (Phase 3).",
+      phase: "phase_3",
+    },
+    {
+      key: "qr_checkin_enabled",
+      group: "business",
+      label: "Tự check-in bằng QR",
+      description: "Khách quét QR để tự check-in (Phase 3).",
+      phase: "phase_3",
+    },
 
-  // ── Group F: Limits ──────────────────────────────────────────────
-  {
-    key: "stripe_subscription_enabled",
-    group: "limits",
-    label: "Thu phí Stripe tiệm này",
-    description: "Bật Stripe subscription cho salon cụ thể.",
-    phase: "live",
-  },
-  {
-    key: "unlimited_staff",
-    group: "limits",
-    label: "Không giới hạn nhân viên",
-    description: "Vượt cap free-plan 3 nhân viên.",
-    phase: "live",
-  },
-  {
-    key: "unlimited_services",
-    group: "limits",
-    label: "Không giới hạn dịch vụ",
-    description: "Vượt cap free-plan 10 dịch vụ.",
-    phase: "live",
-  },
-];
+    // ── Group F: Limits ──────────────────────────────────────────────
+    {
+      key: "stripe_subscription_enabled",
+      group: "limits",
+      label: "Thu phí Stripe tiệm này",
+      description: "Bật Stripe subscription cho salon cụ thể.",
+      phase: "live",
+    },
+    {
+      key: "unlimited_staff",
+      group: "limits",
+      label: "Không giới hạn nhân viên",
+      description: "Vượt cap free-plan 3 nhân viên.",
+      phase: "live",
+    },
+    {
+      key: "unlimited_services",
+      group: "limits",
+      label: "Không giới hạn dịch vụ",
+      description: "Vượt cap free-plan 10 dịch vụ.",
+      phase: "live",
+    },
+  ];
 
 /**
  * Frozen string-literal union of all per-salon flag keys for type
  * safety at the boundary. Generated from the descriptor list above so
  * adding a flag is a one-place edit.
  */
-export const SUPERADMIN_FEATURE_FLAG_KEYS =
-  SUPERADMIN_PER_SALON_FLAGS.map((d) => d.key) as ReadonlyArray<string>;
+export const SUPERADMIN_FEATURE_FLAG_KEYS = SUPERADMIN_PER_SALON_FLAGS.map(
+  (d) => d.key,
+) as ReadonlyArray<string>;
 
 export type SuperAdminFeatureFlagKey = string;
 
@@ -440,11 +447,7 @@ export type UpdateSalonFlagsResult =
   | { ok: true }
   | {
       ok: false;
-      error:
-        | "unauthorized"
-        | "invalid_payload"
-        | "not_found"
-        | "server_error";
+      error: "unauthorized" | "invalid_payload" | "not_found" | "server_error";
     };
 
 /** Tables exposed to SuperAdmin restore. Bookings + salons are
@@ -473,11 +476,7 @@ export type RestoreSalonRecordResult =
   | { ok: true }
   | {
       ok: false;
-      error:
-        | "unauthorized"
-        | "invalid_payload"
-        | "not_found"
-        | "server_error";
+      error: "unauthorized" | "invalid_payload" | "not_found" | "server_error";
     };
 
 export function isRestorableTable(value: unknown): value is RestorableTable {
@@ -523,7 +522,8 @@ export const PLATFORM_FLAG_KEYS = [
 ] as const;
 export type PlatformFlagKey = (typeof PLATFORM_FLAG_KEYS)[number];
 
-export type PlatformFlagBadge = "danger" | "billing" | "sms" | "email" | "registration";
+export type PlatformFlagBadge =
+  "danger" | "billing" | "sms" | "email" | "registration";
 
 export type PlatformFlagDescriptor = {
   key: PlatformFlagKey;
@@ -534,39 +534,40 @@ export type PlatformFlagDescriptor = {
   danger?: boolean;
 };
 
-export const PLATFORM_FLAG_DESCRIPTORS: ReadonlyArray<PlatformFlagDescriptor> = [
-  {
-    key: "demo_otp_enabled",
-    label: "Cho phép OTP demo (chỉ dùng khi test)",
-    description: "DANGER — disable on production. Bypasses real OTP.",
-    badge: "danger",
-    danger: true,
-  },
-  {
-    key: "stripe_billing_enabled",
-    label: "Bật thu phí Stripe toàn hệ thống",
-    description: "Enables Stripe checkout / subscription init.",
-    badge: "billing",
-  },
-  {
-    key: "sms_enabled",
-    label: "Bật gửi SMS (Twilio)",
-    description: "Enables SMS transport via Twilio.",
-    badge: "sms",
-  },
-  {
-    key: "email_enabled",
-    label: "Bật gửi email (Resend)",
-    description: "Enables transactional email via Resend.",
-    badge: "email",
-  },
-  {
-    key: "new_salon_registration",
-    label: "Cho phép đăng ký tiệm mới",
-    description: "Disable to freeze /register signup.",
-    badge: "registration",
-  },
-];
+export const PLATFORM_FLAG_DESCRIPTORS: ReadonlyArray<PlatformFlagDescriptor> =
+  [
+    {
+      key: "demo_otp_enabled",
+      label: "Cho phép OTP demo (chỉ dùng khi test)",
+      description: "DANGER — disable on production. Bypasses real OTP.",
+      badge: "danger",
+      danger: true,
+    },
+    {
+      key: "stripe_billing_enabled",
+      label: "Bật thu phí Stripe toàn hệ thống",
+      description: "Enables Stripe checkout / subscription init.",
+      badge: "billing",
+    },
+    {
+      key: "sms_enabled",
+      label: "Bật gửi SMS (Twilio)",
+      description: "Enables SMS transport via Twilio.",
+      badge: "sms",
+    },
+    {
+      key: "email_enabled",
+      label: "Bật gửi email (Resend)",
+      description: "Enables transactional email via Resend.",
+      badge: "email",
+    },
+    {
+      key: "new_salon_registration",
+      label: "Cho phép đăng ký tiệm mới",
+      description: "Disable to freeze /register signup.",
+      badge: "registration",
+    },
+  ];
 
 export type PlatformFlag = {
   key: PlatformFlagKey;
@@ -615,8 +616,7 @@ export type SuperAdminCategoryRow = {
 };
 
 export type LoadAllCategoriesResult =
-  | { ok: true; rows: SuperAdminCategoryRow[] }
-  | { ok: false; error: string };
+  { ok: true; rows: SuperAdminCategoryRow[] } | { ok: false; error: string };
 
 export type AddCategoryInput = {
   slug: string;
@@ -635,7 +635,8 @@ export type UpdateCategoryInput = {
   sortOrder?: number;
 };
 
-export type CategoryMutationResult = { ok: true } | { ok: false; error: string };
+export type CategoryMutationResult =
+  { ok: true } | { ok: false; error: string };
 
 /* ───────────────── SuperAdmin audit-log viewer (Phase 1F) ───────────────── */
 
@@ -697,5 +698,5 @@ export type LoadAuditLogsResult =
     }
   | {
       ok: false;
-      error: "unauthorized" | "forbidden" | "server_error";
+      error: "unauthorized" | "forbidden" | "invalid_input" | "server_error";
     };

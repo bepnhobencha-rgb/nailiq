@@ -1,9 +1,20 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { createClient } from "@/shared/lib/supabase/server";
-import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { getSuperAdminRole } from "@/shared/lib/superadmin";
+import { clearSuperAdminCache, getSuperAdminRole } from "@/shared/lib/superadmin";
+import { consumePublicServerActionRateLimit } from "@/shared/security/publicServerActionRateLimit";
+import { requireActiveAuthSession } from "@/shared/auth/requireActiveAuthSession";
+import {
+  canonicalPasswordResetEmail,
+  isAcceptableRecoveryPassword,
+  issuePasswordRecoveryIntent,
+  PASSWORD_RECOVERY_COOKIE,
+  passwordRecoveryRedirectUrl,
+  sessionIdFromAccessToken,
+  verifyPasswordRecoveryCapability,
+} from "@/shared/auth/passwordRecoverySecurity";
 
 /**
  * Superadmin auth server actions.
@@ -32,6 +43,15 @@ export async function loginSuperadmin(
   if (!trimmedEmail || !password) {
     return { ok: false, error: "invalid_credentials" };
   }
+
+  const rate = await consumePublicServerActionRateLimit({
+    scope: "superadmin-password-login",
+    identity: trimmedEmail,
+    ipLimits: [[8, 300], [30, 3_600]],
+    identityLimits: [[5, 300], [15, 3_600]],
+  });
+  if (rate === "limited") return { ok: false, error: "invalid_credentials" };
+  if (rate === "unavailable") return { ok: false, error: "server_error" };
 
   const supabase = await createClient();
 
@@ -90,61 +110,41 @@ export type RequestPasswordResetResult =
  * belongs to a salon owner." Only well-formed-but-empty input or a
  * thrown error from Supabase surfaces a distinct outcome.
  *
- * Two guard rails before the email actually goes out:
- *   1. Service-role lookup in `auth.users` by email — silently no-ops
- *      if the user does not exist.
- *   2. `public.superadmins` membership check — salon-owner accounts
- *      that happen to share this email never receive a superadmin
- *      reset link. They have their own (OTP) recovery path.
- *
- * Only when both gates pass do we call Supabase's built-in
- * `resetPasswordForEmail` with a `redirectTo` that lands the recipient
- * on `/superadmin/reset-password`, where the recovery session is
- * exchanged for a new password.
+ * We deliberately avoid a service-role email lookup here. The provider request
+ * has a uniform public response, while the callback checks the authenticated
+ * user's current role before issuing the short-lived reset capability.
  */
 export async function requestSuperadminPasswordReset(
   email: string,
 ): Promise<RequestPasswordResetResult> {
-  const trimmedEmail = email.trim().toLowerCase();
+  const trimmedEmail = canonicalPasswordResetEmail(email);
   if (!trimmedEmail) {
     // Empty form should *look* successful so the form doesn't double
     // as an enumeration oracle, but we skip the round-trip entirely.
     return { ok: true };
   }
 
+  const rate = await consumePublicServerActionRateLimit({
+    scope: "superadmin-password-reset",
+    identity: trimmedEmail,
+    ipLimits: [[10, 3_600]],
+    identityLimits: [[3, 3_600]],
+  });
+  if (rate === "limited") return { ok: true };
+  if (rate === "unavailable") return { ok: false, error: "server_error" };
+
   try {
-    const admin = createServiceRoleClient();
-    // The admin listUsers endpoint accepts a filter expression; the
-    // SDK's typed surface doesn't expose a direct email lookup, so we
-    // walk the first page (>1000 superadmin operators is implausible).
-    const { data: userList, error: listError } =
-      await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    if (listError) {
-      console.error("[superadminAuth] listUsers failed:", listError);
-      return { ok: false, error: "server_error" };
-    }
-    const matched = userList.users.find(
-      (u) => u.email?.toLowerCase() === trimmedEmail,
+    const redirectTo = passwordRecoveryRedirectUrl(
+      "superadmin",
+      issuePasswordRecoveryIntent({
+        email: trimmedEmail,
+        surface: "superadmin",
+      }),
     );
-    if (!matched) {
-      return { ok: true };
-    }
-
-    const role = await getSuperAdminRole(matched.id);
-    if (role === null) {
-      return { ok: true };
-    }
-
-    const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL ?? process.env.NEXTAUTH_URL ?? "";
-    const redirectTo = siteUrl
-      ? `${siteUrl.replace(/\/$/, "")}/auth/recovery`
-      : undefined;
-
     const supabase = await createClient();
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(
       trimmedEmail,
-      redirectTo ? { redirectTo } : undefined,
+      { redirectTo },
     );
     if (resetError) {
       return { ok: false, error: "server_error" };
@@ -174,29 +174,56 @@ export type CompletePasswordResetResult =
  *   3. Sign out so the recovery session is consumed — the operator
  *      then signs in fresh with the new credentials.
  *
- * Minimum password length is 6. Anything weaker is surfaced
+ * Password bounds are shared with the salon-owner flow. Anything weaker is surfaced
  * as `weak_password` so the UI can show actionable guidance rather
  * than a generic "server error."
  */
 export async function completeSuperadminPasswordReset(
   newPassword: string,
 ): Promise<CompletePasswordResetResult> {
-  if (!newPassword || newPassword.length < 8) {
+  if (!isAcceptableRecoveryPassword(newPassword)) {
     return { ok: false, error: "weak_password" };
   }
 
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
+    const session = await requireActiveAuthSession(supabase);
+    if (!session.ok) {
+      try {
+        await supabase.auth.signOut({ scope: "local" });
+      } catch {
+        // The password update remains blocked even if cookie cleanup fails.
+      }
+      return {
+        ok: false,
+        error:
+          session.code === "auth_unavailable" ? "server_error" : "no_session",
+      };
+    }
+    const user = session.user;
+
+    const { data: sessionData, error: sessionError } =
+      await supabase.auth.getSession();
+    const sessionId = sessionIdFromAccessToken(
+      sessionData.session?.access_token,
+    );
+    const cookieStore = await cookies();
+    if (
+      sessionError ||
+      !sessionId ||
+      !verifyPasswordRecoveryCapability({
+        token: cookieStore.get(PASSWORD_RECOVERY_COOKIE)?.value,
+        userId: user.id,
+        sessionId,
+      })
+    ) {
       return { ok: false, error: "no_session" };
     }
 
+    clearSuperAdminCache(user.id);
     const role = await getSuperAdminRole(user.id);
     if (role === null) {
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: "global" });
       return { ok: false, error: "no_role" };
     }
 
@@ -216,9 +243,25 @@ export async function completeSuperadminPasswordReset(
       return { ok: false, error: "server_error" };
     }
 
-    // Consume the recovery session — operator must re-authenticate
-    // with the new password on /superadmin/login.
-    await supabase.auth.signOut();
+    try {
+      cookieStore.delete(PASSWORD_RECOVERY_COOKIE);
+    } catch {
+      // Global session revocation below still invalidates the bound session id.
+    }
+    try {
+      const { error: globalSignOutError } = await supabase.auth.signOut({
+        scope: "global",
+      });
+      if (globalSignOutError) {
+        await supabase.auth.signOut({ scope: "local" });
+      }
+    } catch {
+      try {
+        await supabase.auth.signOut({ scope: "local" });
+      } catch {
+        // Password truth is already committed and the recovery bearer is gone.
+      }
+    }
     return { ok: true };
   } catch {
     return { ok: false, error: "server_error" };

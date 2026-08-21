@@ -44,18 +44,7 @@ export async function loadBookingLimitStatus(
 
   const supabase = ctx.supabase;
 
-  // ctx.salon doesn't carry plan fields; fetch them. Cheap PK lookup.
-  const { data: planRow, error: planErr } = await supabase
-    .from("salons")
-    .select("subscription_plan, plan_override, feature_flags" as never)
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
-  if (planErr) {
-    console.error("[loadBookingLimitStatus] plan fetch", planErr);
-    return { ok: false, error: "server_error" };
-  }
-
-  const planFields = (planRow ?? {}) as PlanCheckSalon;
+  const planFields = ctx.salon as PlanCheckSalon;
   const plan = getEffectivePlan(planFields);
   const cap = getEffectivePlanLimits(planFields).maxBookingsPerMonth;
 

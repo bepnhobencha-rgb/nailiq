@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { isOverRateLimit, clientIp } from "@/shared/lib/inAppRateLimit";
+import {
+  clientIp,
+  durableRateLimitKey,
+  isOverRateLimit,
+} from "@/shared/lib/inAppRateLimit";
 
 // ---------------------------------------------------------------------------
 // GET /api/customer/[phone]?salon_id=<uuid>
@@ -32,7 +36,8 @@ export async function GET(
   // via the `rate_limit_hit` RPC) so it actually enforces on any Vercel plan,
   // unlike the WAF hook which is a no-op until a dashboard rule exists. A legit
   // booking calls this a handful of times; a scraper hits it continuously.
-  // Fails open on a limiter outage — never blocks a real booking.
+  // Fails closed on a limiter outage: pre-auth enumeration is not allowed to
+  // bypass its only durable server-side control.
   const ip = clientIp(_req);
   // A full Playwright shard makes many legitimate requests from one loopback
   // IP. Bypass only in the isolated GitHub E2E runtime; Vercel can never meet
@@ -44,9 +49,14 @@ export async function GET(
     !process.env.VERCEL;
   if (
     !bypassRateLimitForE2E &&
-    (await isOverRateLimit(`customer-lookup:${ip}`, 30, 60))
+    (await isOverRateLimit(durableRateLimitKey("customer-lookup", ip), 30, 60, {
+      failureMode: "block",
+    }))
   ) {
-    return NextResponse.json<CustomerLookupResponse>({ found: false }, { status: 429 });
+    return NextResponse.json<CustomerLookupResponse>(
+      { found: false },
+      { status: 429 },
+    );
   }
 
   const { phone: rawPhone } = await params;
@@ -120,7 +130,10 @@ export async function GET(
       return NextResponse.json<CustomerLookupResponse>({ found: false });
     }
 
-    return NextResponse.json<CustomerLookupResponse>({ found: true, isVip: false });
+    return NextResponse.json<CustomerLookupResponse>({
+      found: true,
+      isVip: false,
+    });
   } catch (e) {
     console.error("[customer-lookup] unexpected error", e);
     // Fail safe — never expose internal errors to public callers

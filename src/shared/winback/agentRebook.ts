@@ -215,7 +215,7 @@ export async function runRebook(salonId: string, cap = 3): Promise<void> {
 
       let ok = false;
       if (ch.sms) {
-        const r = await sendSmsReminder(c.phone, `${message}\n${bookingUrl}`, { lang });
+        const r = await sendSmsReminder(c.phone, `${message}\n${bookingUrl}`, { salonId, lang });
         ok = r.ok;
       }
       if (ch.email && c.email) {

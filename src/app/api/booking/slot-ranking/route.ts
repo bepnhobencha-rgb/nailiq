@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/shared/lib/supabase/server";
+import { consumePublicRequestRateLimit } from "@/shared/security/publicServerActionRateLimit";
 
 const MIN_BOOKINGS = 5;
 const TOP_N = 3;
@@ -11,6 +12,20 @@ export async function GET(req: NextRequest) {
 
   if (!salonId) {
     return NextResponse.json({ error: "salon_id required" }, { status: 400 });
+  }
+
+  const rate = await consumePublicRequestRateLimit({
+    request: req,
+    scope: "booking-slot-ranking",
+    identity: [salonId, serviceId ?? "all-services"],
+    ipLimits: [[60, 60], [300, 3_600]],
+    identityLimits: [[120, 60], [1_000, 3_600]],
+  });
+  if (rate !== "allowed") {
+    return NextResponse.json(
+      { error: rate === "limited" ? "rate_limited" : "temporarily_unavailable" },
+      { status: rate === "limited" ? 429 : 503 },
+    );
   }
 
   const db = await createClient();

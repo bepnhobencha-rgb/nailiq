@@ -249,10 +249,11 @@ async function sendEscalationDepositLink(
 ): Promise<void> {
   const { data } = await supabase
     .from("bookings" as never)
-    .select("client_phone, client_email, client_name")
+    .select("salon_id, client_phone, client_email, client_name")
     .eq("id", bookingId)
     .maybeSingle();
   const b = (data ?? {}) as {
+    salon_id?: string | null;
     client_phone?: string | null;
     client_email?: string | null;
     client_name?: string | null;
@@ -266,7 +267,7 @@ async function sendEscalationDepositLink(
       await sendSmsReminder(
         phone,
         `${salon}: A ${amount} deposit is required to confirm your appointment. Please pay here to hold your spot: ${url}`,
-        { lang: "en" },
+        { salonId: String(b.salon_id ?? ""), lang: "en" },
       );
     } catch (e) {
       console.error("[sendEscalationDepositLink] sms", e);

@@ -1,5 +1,4 @@
 import "server-only";
-import { randomUUID } from "node:crypto";
 import {
   type SquareConfig,
   ensureSquareCustomer,
@@ -11,12 +10,19 @@ import {
   listCards as sqListCards,
 } from "@/shared/integrations/square/client";
 import type { PaymentProvider } from "./types";
+import { toProviderMinorAmount } from "@/shared/payments/providerMinorUnits";
 
 /** Square implementation of PaymentProvider — thin wrapper over the existing
  *  Square REST helpers (behaviour identical to the previous direct calls). */
 export class SquareProvider implements PaymentProvider {
   readonly kind = "square" as const;
   constructor(private readonly cfg: SquareConfig) {}
+
+  private assertProviderAccount(providerAccountId?: string) {
+    if (providerAccountId && providerAccountId !== this.cfg.merchantId) {
+      throw new Error("square_provider_account_mismatch");
+    }
+  }
 
   async saveCardOnFile(input: {
     customer: {
@@ -27,18 +33,19 @@ export class SquareProvider implements PaymentProvider {
     };
     sourceToken: string;
     verificationToken?: string;
+    idempotencyKey: string;
   }) {
     const customerId = await ensureSquareCustomer(this.cfg, {
       name: input.customer.name ?? null,
       phone: input.customer.phone ?? null,
       email: input.customer.email ?? null,
       referenceId: input.customer.referenceId,
-      idempotencyKey: randomUUID(),
+      idempotencyKey: `${input.idempotencyKey}:customer`,
     });
     const card = await sqSaveCard(this.cfg, {
       customerId,
       sourceId: input.sourceToken,
-      idempotencyKey: randomUUID(),
+      idempotencyKey: `${input.idempotencyKey}:card`,
       verificationToken: input.verificationToken,
     });
     return {
@@ -56,11 +63,13 @@ export class SquareProvider implements PaymentProvider {
     idempotencyKey: string;
     note?: string;
     referenceId?: string;
+    providerAccountId?: string;
   }) {
+    this.assertProviderAccount(input.providerAccountId);
     const r = await sqCharge(this.cfg, {
       cardId: input.cardId,
       customerId: input.customerId,
-      amountCents: input.amountCents,
+      amountCents: toProviderMinorAmount(input.amountCents, this.cfg.currency),
       idempotencyKey: input.idempotencyKey,
       note: input.note,
       referenceId: input.referenceId,
@@ -73,10 +82,12 @@ export class SquareProvider implements PaymentProvider {
     amountCents: number;
     reason: string;
     idempotencyKey: string;
+    providerAccountId?: string;
   }) {
+    this.assertProviderAccount(input.providerAccountId);
     const r = await sqRefund(this.cfg, {
       paymentId: input.paymentId,
-      amountCents: input.amountCents,
+      amountCents: toProviderMinorAmount(input.amountCents, this.cfg.currency),
       reason: input.reason,
       idempotencyKey: input.idempotencyKey,
     });
@@ -85,6 +96,7 @@ export class SquareProvider implements PaymentProvider {
 
   async removeSavedCard(input: { cardId: string; customerId: string }) {
     await sqDisableCard(this.cfg, input.cardId);
+    return { providerReference: input.cardId };
   }
 
   async findSavedCardByPhone(phone: string) {

@@ -1,63 +1,53 @@
-import { NextRequest, NextResponse } from "next/server";
-import { saveNoShowCardForBooking } from "@/shared/integrations/square/noshow";
-import { isRateLimited, RATE_LIMIT_IDS } from "@/shared/lib/rateLimit";
-import { isOverRateLimit, clientIp } from "@/shared/lib/inAppRateLimit";
+import { NextResponse } from "next/server";
+
+import { saveCardWithManagementCapability } from "@/shared/booking/bookingCardManagement";
+import { consumeBookingManagementRateLimit } from "@/shared/booking/bookingManagementRateLimit";
+import { readJsonObjectWithLimit } from "@/shared/security/readJsonObjectWithLimit";
+import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
 
 export const runtime = "nodejs";
 
-/**
- * POST /api/booking/square-save-card
- * Body: { bookingId, sourceId } — sourceId is the Web Payments SDK card token.
- * Saves the card on file (no charge) so a no-show fee can be taken later.
- */
-export async function POST(req: NextRequest) {
-  let body: {
-    bookingId?: string;
-    sourceId?: string;
-    consent?: boolean;
-    verificationToken?: string;
-  };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ ok: false, error: "bad_json" }, { status: 400 });
+const PRIVATE_HEADERS = {
+  "Cache-Control": "private, no-store, max-age=0", Pragma: "no-cache",
+  "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex, nofollow",
+} as const;
+const json = (body: Record<string, unknown>, status = 200) =>
+  NextResponse.json(body, { status, headers: PRIVATE_HEADERS });
+
+/** Saves a provider token under a durable card_manage operation. No charge. */
+export async function POST(request: Request) {
+  if (!isSameOriginMutation(request)) return json({ ok: false, code: "forbidden" }, 403);
+  if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
+    return json({ ok: false, code: "invalid_request" }, 400);
   }
-  const bookingId = String(body.bookingId ?? "");
-  const sourceId = String(body.sourceId ?? "");
-  const consent = body.consent === true;
-  const verificationToken = body.verificationToken
-    ? String(body.verificationToken)
+  const body = await readJsonObjectWithLimit(request, 4096);
+  const token = typeof body?.token === "string" ? body.token.trim() : "";
+  const requestId = typeof body?.requestId === "string" ? body.requestId.trim() : "";
+  const sourceId = typeof body?.sourceId === "string" ? body.sourceId.trim() : "";
+  const provider = body?.provider === "square" || body?.provider === "stripe" ? body.provider : null;
+  const verificationToken = typeof body?.verificationToken === "string"
+    ? body.verificationToken.trim()
     : undefined;
-  if (!bookingId || !sourceId) {
-    return NextResponse.json({ ok: false, error: "missing_fields" }, { status: 400 });
+  if (!token || !requestId || !sourceId || !provider || body?.consent !== true) {
+    return json({ ok: false, code: "invalid_request" }, 400);
   }
-  // Anti card-testing — two layers: the Vercel WAF rule (fail-open until the
-  // rule exists) AND an app-level DB limiter (enforces on any plan): 6 attempts
-  // per IP+booking per minute.
-  const ip = clientIp(req);
-  if (
-    (await isRateLimited(RATE_LIMIT_IDS.cardSave, {
-      request: req,
-      rateLimitKey: `card-save:${bookingId}`,
-    })) ||
-    (await isOverRateLimit(`card-save:${ip}:${bookingId}`, 6, 60))
-  ) {
-    return NextResponse.json({ ok: false, error: "rate_limited" }, { status: 429 });
+  const rate = await consumeBookingManagementRateLimit({
+    request, tokenId: token, action: "card_manage", phase: "mutate",
+  });
+  if (rate !== "allowed") {
+    return json({ ok: false, code: rate === "limited" ? "rate_limited" : "management_unavailable" }, rate === "limited" ? 429 : 503);
   }
-  if (!consent) {
-    return NextResponse.json({ ok: false, error: "consent_required" }, { status: 400 });
-  }
-  try {
-    const r = await saveNoShowCardForBooking(
-      bookingId,
-      sourceId,
-      consent,
-      verificationToken,
-    );
-    return NextResponse.json(r, { status: r.ok ? 200 : 400 });
-  } catch (e) {
-    console.error("[square-save-card] error", e);
-    // Never leak internals; the card step is best-effort and must not block booking.
-    return NextResponse.json({ ok: false, error: "save_failed" }, { status: 500 });
-  }
+  const result = await saveCardWithManagementCapability({
+    tokenId: token,
+    requestId,
+    provider,
+    sourceToken: sourceId,
+    verificationToken,
+  });
+  const status = result.ok ? 200
+    : result.code === "invalid_request" ? 400
+      : result.code === "invalid_token" || result.code === "expired_or_revoked" ? 404
+        : result.code === "idempotency_mismatch" || result.code === "in_flight" || result.code === "operation_conflict" ? 409
+          : 503;
+  return json(result as unknown as Record<string, unknown>, status);
 }

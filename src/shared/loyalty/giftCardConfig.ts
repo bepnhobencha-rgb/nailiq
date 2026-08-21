@@ -12,3 +12,10 @@
  * Redemption of any already-issued gift voucher is unaffected (0 exist on prod).
  */
 export const GIFT_CARD_PURCHASE_ENABLED = false;
+
+/**
+ * Manual issuance/redemption also changes spendable value. Keep both OFF until
+ * a tenant-bound atomic ledger RPC records authorization, value movement, and
+ * an exact replay result. Existing read-only history remains viewable.
+ */
+export const GIFT_CARD_VALUE_MUTATIONS_ENABLED = false;

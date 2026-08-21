@@ -1,8 +1,7 @@
 "use server";
 
-import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { getSuperAdminRole } from "@/shared/lib/superadmin";
+import { requireActiveSuperAdminSession } from "@/shared/auth/requireActiveSuperAdminSession";
 
 export type ErrorLogRow = {
   id: string;
@@ -28,13 +27,8 @@ type LoadResult =
   { ok: true; rows: ErrorLogRow[] } | { ok: false; error: string };
 
 async function requireSuperadmin(): Promise<string | null> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-  const role = await getSuperAdminRole(user.id);
-  return role ? user.id : null;
+  const access = await requireActiveSuperAdminSession();
+  return access.ok ? access.user.id : null;
 }
 
 export async function loadErrorLogs(

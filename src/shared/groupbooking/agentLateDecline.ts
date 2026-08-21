@@ -72,7 +72,11 @@ export async function handleLateDecline(
       `Đặt lịch ngay (first-come): ${bookingUrl}`,
     ].join(" ");
 
-    const res = await sendSmsReminder(payload.suggested_phone, msg, { salonIsTest, lang: "vi" });
+    const res = await sendSmsReminder(payload.suggested_phone, msg, {
+      salonId,
+      salonIsTest,
+      lang: "vi",
+    });
     outcomes.push(res.ok ? `sms_suggested:ok` : `sms_suggested:fail`);
   }
 
@@ -116,7 +120,11 @@ async function notifyTopWaitlist(
     `Đặt ngay (first-come): ${SITE_URL}/${salon.slug}`,
   ].join(" ");
 
-  const res = await sendSmsReminder(top.client_phone, msg, { salonIsTest, lang: "vi" });
+  const res = await sendSmsReminder(top.client_phone, msg, {
+    salonId,
+    salonIsTest,
+    lang: "vi",
+  });
 
   // Mark as notified so the next dedup pass skips this entry
   if (res.ok) {

@@ -162,10 +162,21 @@ export async function sendSmsReminder(
   body: string,
   /** `statusCallbackUrl` for delivery receipts; `lang` localises the auto opt-out
    *  line; `salonIsTest` routes through the kill-switch. */
-  opts?: { statusCallbackUrl?: string; salonIsTest?: boolean; lang?: "en" | "vi" },
-): Promise<{ ok: boolean; messageSid?: string; error?: string; suppressed?: boolean }> {
+  opts: {
+    salonId: string;
+    statusCallbackUrl?: string;
+    salonIsTest?: boolean;
+    lang?: "en" | "vi";
+  },
+): Promise<{
+  ok: boolean;
+  messageSid?: string;
+  error?: string;
+  suppressed?: boolean;
+  suppressionReason?: string;
+}> {
   // Guarantee an opt-out on every customer SMS (idempotent — see withOptOut).
-  body = withOptOut(body, opts?.lang);
+  body = withOptOut(body, opts.lang);
 
   // Normalise the recipient to E.164 — Twilio needs the leading "+".
   // Done BEFORE the kill-switch so the 555-exchange guard sees clean digits.
@@ -181,7 +192,7 @@ export async function sendSmsReminder(
   // fictional 555 seed numbers / test salons. Prevents E2E + dev from sending
   // real SMS — and stops an E2E run that hits production from billing seed
   // numbers, while real customers are never affected. See smsSuppressReason.
-  const suppressReason = smsSuppressReason(recipient, { salonIsTest: opts?.salonIsTest });
+  const suppressReason = smsSuppressReason(recipient, { salonIsTest: opts.salonIsTest });
   if (suppressReason) {
     // Unique suffix: callers persist this SID into booking_notifications, whose
     // `twilio_message_sid` column is UNIQUE. A constant `SUPPRESSED_<reason>`
@@ -192,7 +203,36 @@ export async function sendSmsReminder(
     // never receives a status webhook, so the value is otherwise opaque.
     const fakeSid = `SUPPRESSED_${suppressReason}_${crypto.randomUUID()}`;
     console.warn(`[sendSmsReminder] SUPPRESSED outbound SMS (${suppressReason}) — no real Twilio call`);
-    return { ok: true, messageSid: fakeSid, suppressed: true };
+    return {
+      ok: true,
+      messageSid: fakeSid,
+      suppressed: true,
+      suppressionReason: suppressReason,
+    };
+  }
+
+  // Durable NailIQ-side STOP/START state is checked immediately before the
+  // provider boundary. Missing/malformed/unavailable truth fails closed; an
+  // affirmative provider/salon suppression is treated as a successful no-send
+  // so cron/worker callers can durably mark that notification handled.
+  const { loadSmsOutboundSuppression } = await import(
+    "@/shared/reminders/smsConsentSuppression"
+  );
+  const consent = await loadSmsOutboundSuppression({
+    salonId: opts.salonId,
+    phone: recipient,
+  });
+  if (consent.suppressed) {
+    if (consent.reason === "consent_unavailable") {
+      return { ok: false, error: "sms_consent_unavailable", suppressed: true, suppressionReason: consent.reason };
+    }
+    const fakeSid = `SUPPRESSED_${consent.reason}_${crypto.randomUUID()}`;
+    return {
+      ok: true,
+      messageSid: fakeSid,
+      suppressed: true,
+      suppressionReason: consent.reason,
+    };
   }
 
   const creds = await getTwilioSmsCreds();
@@ -210,7 +250,7 @@ export async function sendSmsReminder(
     To:   recipient,
     Body: body,
   };
-  if (opts?.statusCallbackUrl) {
+  if (opts.statusCallbackUrl) {
     params.StatusCallback = opts.statusCallbackUrl;
   }
 

@@ -22,20 +22,11 @@ export default async function ActivityPage({ params }: Props) {
 
   const res = await loadActivityFeed(slug);
   const items = res.ok ? res.items : [];
-  const { data: flagSalon, error: flagError } = await ctx.supabase
-    .from("salons")
-    .select("subscription_plan, plan_override, feature_flags, voice_ai_enabled")
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
-  // Archived recovery has its own default-off release gate. Fail closed on the
-  // tenant flag read; the activity timeline itself remains available read-only.
-  let archivedBookingFeatureEnabled =
-    !flagError &&
-    Boolean(flagSalon) &&
-    (await isReleaseFeatureVisible(
-      flagSalon ?? {},
-      "archived_booking_recovery",
-    ));
+  // The central member-profile RPC already returned an allowlisted flag map.
+  let archivedBookingFeatureEnabled = await isReleaseFeatureVisible(
+    ctx.salon,
+    "archived_booking_recovery",
+  );
   if (archivedBookingFeatureEnabled) {
     const { data: wixIntegration, error: wixError } =
       await createServiceRoleClient()

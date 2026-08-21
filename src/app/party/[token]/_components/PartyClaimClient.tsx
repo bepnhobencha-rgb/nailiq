@@ -32,6 +32,7 @@ import type {
   PartyLinkSlot,
   PartyChangeRequestType,
 } from "@/shared/booking/partyLinkActions";
+import { buildIcs } from "@/shared/lib/calendarLinks";
 import type { bookingEn } from "@/shared/i18n/booking/en";
 
 type PartyPageT = (typeof bookingEn)["partyPage"];
@@ -61,42 +62,6 @@ function CheckCircle({ className = "h-5 w-5" }: { className?: string }) {
   );
 }
 
-// ─── ICS generation (Add to Calendar) ────────────────────────────
-function buildIcsContent({
-  title,
-  startUtcIso,
-  endUtcIso,
-  description,
-  location,
-}: {
-  title: string;
-  startUtcIso: string;
-  endUtcIso: string;
-  description: string;
-  location?: string;
-}): string {
-  const fmt = (iso: string) => iso.replace(/[-:]/g, "").replace(/\.\d+/, "").replace("Z", "") + "Z";
-  const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
-  const uid = `nailiq-${Date.now()}@nailiq.ca`;
-  return [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    "PRODID:-//NailIQ//Party Guest Passport//EN",
-    "CALSCALE:GREGORIAN",
-    "METHOD:PUBLISH",
-    "BEGIN:VEVENT",
-    `UID:${uid}`,
-    `DTSTART:${fmt(startUtcIso)}`,
-    `DTEND:${fmt(endUtcIso)}`,
-    `SUMMARY:${esc(title)}`,
-    `DESCRIPTION:${esc(description)}`,
-    location ? `LOCATION:${esc(location)}` : "",
-    "STATUS:CONFIRMED",
-    "END:VEVENT",
-    "END:VCALENDAR",
-  ].filter(Boolean).join("\r\n");
-}
-
 function AddToCalendarButton({
   slot,
   salonName,
@@ -110,14 +75,22 @@ function AddToCalendarButton({
     if (!slot.startUtcIso || !slot.endUtcIso) return;
     const title = `${slot.serviceName} at ${salonName}`;
     const description = `${slot.serviceName} with ${slot.staffName} at ${salonName}.`;
-    const ics = buildIcsContent({ title, startUtcIso: slot.startUtcIso, endUtcIso: slot.endUtcIso, description, location: salonName });
+    const ics = buildIcs({
+      uid: `${slot.bookingId}@booking.nailiq`,
+      title,
+      startUtc: slot.startUtcIso,
+      endUtc: slot.endUtcIso,
+      details: description,
+      location: salonName,
+    });
+    if (!ics) return;
     const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = "appointment.ics";
     a.click();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
   }
 
   return (

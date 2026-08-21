@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/Button";
-import { createClient } from "@/shared/lib/supabase/server";
-import { getSuperAdminRole } from "@/shared/lib/superadmin";
+import { requireActiveSuperAdminSession } from "@/shared/auth/requireActiveSuperAdminSession";
 import { resolveUserLanguage } from "@/shared/i18n/user/resolveUserLanguage";
 import { confirmReleaseReviewDecision } from "@/shared/superadmin/releaseReviewActions";
 import { loadReleaseReviewById } from "@/shared/superadmin/releaseReviewStore";
@@ -21,13 +20,10 @@ export default async function ReleaseReviewDecisionPage({
     error?: string | string[];
   }>;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) notFound();
-  const role = await getSuperAdminRole(user.id);
-  if (!role || !["founder", "ops_admin"].includes(role)) notFound();
+  const access = await requireActiveSuperAdminSession();
+  if (!access.ok || !["founder", "ops_admin"].includes(access.role)) {
+    notFound();
+  }
 
   const [{ reviewId }, query, language] = await Promise.all([
     params,

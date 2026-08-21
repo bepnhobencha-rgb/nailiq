@@ -344,6 +344,35 @@ export async function chargeSavedCard(
   return { paymentId: String(p.id ?? ""), status: String(p.status ?? "") };
 }
 
+/** Customer-present one-time charge from a Web Payments SDK token. The DB
+ * operation owns amount/account/idempotency; this helper accepts no fallback
+ * merchant or generated key. */
+export async function chargeCardToken(
+  cfg: SquareConfig,
+  opts: {
+    sourceId: string;
+    amountCents: number;
+    idempotencyKey: string;
+    referenceId: string;
+  },
+): Promise<{ paymentId: string; status: string }> {
+  const json = await squareReq(cfg, "POST", "/payments", {
+    idempotency_key: opts.idempotencyKey,
+    source_id: opts.sourceId,
+    amount_money: { amount: opts.amountCents, currency: cfg.currency },
+    location_id: cfg.locationId,
+    autocomplete: true,
+    note: "Booking deposit",
+    reference_id: opts.referenceId,
+    customer_details: { customer_initiated: true, seller_keyed_in: false },
+  });
+  const payment = (json.payment as Record<string, unknown>) ?? {};
+  const paymentId = String(payment.id ?? "").trim();
+  const status = String(payment.status ?? "").trim();
+  if (!paymentId || !status) throw new Error("Square CreatePayment returned no receipt");
+  return { paymentId, status };
+}
+
 /** List a customer's saved cards on file (enabled only by default). Used by
  *  returning-customer card reuse + the customer-facing card manager. */
 export async function listCards(
@@ -365,7 +394,21 @@ export async function listCards(
  *  disabled card can never be charged again, which is the removal path the
  *  stored-credential rules require us to offer the cardholder. */
 export async function disableCard(cfg: SquareConfig, cardId: string): Promise<void> {
-  await squareReq(cfg, "POST", `/cards/${encodeURIComponent(cardId)}/disable`);
+  try {
+    await squareReq(cfg, "POST", `/cards/${encodeURIComponent(cardId)}/disable`);
+  } catch (cause) {
+    // Response loss after Square accepted the disable is recoverable: read the
+    // exact card and treat the already-disabled state as success. Never infer
+    // success from the transport error alone.
+    try {
+      const value = await squareReq(cfg, "GET", `/cards/${encodeURIComponent(cardId)}`);
+      const card = value.card as Record<string, unknown> | undefined;
+      if (card?.enabled === false) return;
+    } catch {
+      // Preserve the original ambiguous provider outcome.
+    }
+    throw cause;
+  }
 }
 
 /** Refund a payment (used to return a deposit on a mutually-agreed cancel). */

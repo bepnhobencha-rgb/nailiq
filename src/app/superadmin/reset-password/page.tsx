@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/server";
-import { getSuperAdminRole } from "@/shared/lib/superadmin";
+import { requireActivePasswordRecoverySession } from "@/shared/auth/requireActivePasswordRecoverySession";
+import { clearSuperAdminCache, getSuperAdminRole } from "@/shared/lib/superadmin";
 import { SuperadminResetPasswordForm } from "./SuperadminResetPasswordForm";
 
 export const dynamic = "force-dynamic";
@@ -28,17 +29,24 @@ export const metadata: Metadata = {
  */
 export default async function SuperadminResetPasswordPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/superadmin/forgot-password");
+  const recovery = await requireActivePasswordRecoverySession(supabase);
+  if (!recovery.ok) {
+    try {
+      await supabase.auth.signOut({ scope: "local" });
+    } catch {
+      // Redirect remains fail closed even if local cookie cleanup fails.
+    }
+    redirect(
+      recovery.code === "auth_unavailable"
+        ? "/superadmin/forgot-password?notice=temporarily_unavailable"
+        : "/superadmin/forgot-password?notice=invalid_or_expired",
+    );
   }
 
-  const role = await getSuperAdminRole(user.id);
-  if (role === null) {
-    await supabase.auth.signOut();
+  clearSuperAdminCache(recovery.user.id);
+  const role = await getSuperAdminRole(recovery.user.id);
+  if (!role) {
+    await supabase.auth.signOut({ scope: "global" });
     redirect("/superadmin/login");
   }
 
@@ -52,7 +60,7 @@ export default async function SuperadminResetPasswordPage() {
           Set a new password
         </h1>
         <p className="text-sm text-nq-muted">
-          Choose a password at least 6 characters long. You&apos;ll be
+          Choose a password at least 8 characters long. You&apos;ll be
           signed out and asked to sign in fresh with the new password.
         </p>
       </header>

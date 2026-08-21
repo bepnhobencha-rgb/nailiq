@@ -318,6 +318,7 @@ async function draftMessage(
 }
 
 async function sendMessage(
+  salonId: string,
   client: VipClient,
   message: string,
   bookingUrl: string,
@@ -334,7 +335,7 @@ async function sendMessage(
   let ok = false;
 
   if (ch.sms) {
-    const r = await sendSmsReminder(client.phone, fullText, { lang: "en" });
+    const r = await sendSmsReminder(client.phone, fullText, { salonId, lang: "en" });
     ok = r.ok;
   }
   if (ch.email && client.email) {
@@ -543,7 +544,7 @@ export async function runVipCare(salonId: string): Promise<void> {
           if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
             break clientLoop;
           }
-          const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, delivery, salonName, salonAddress, salonReplyEmail);
+          const { ok, channel, reason } = await sendMessage(salonId, client, msg, bookingUrl, delivery, salonName, salonAddress, salonReplyEmail);
           if (!ok && reason.startsWith("no_channel")) {
             console.warn("[runVipCare] delivery skipped", {
               salonId,
@@ -613,7 +614,7 @@ export async function runVipCare(salonId: string): Promise<void> {
         if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
           break clientLoop;
         }
-        const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, delivery, salonName, salonAddress, salonReplyEmail);
+        const { ok, channel, reason } = await sendMessage(salonId, client, msg, bookingUrl, delivery, salonName, salonAddress, salonReplyEmail);
         if (!ok && reason.startsWith("no_channel")) {
           console.warn("[runVipCare] delivery skipped", {
             salonId,
@@ -673,7 +674,7 @@ export async function runVipCare(salonId: string): Promise<void> {
           if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
             break clientLoop;
           }
-          const { ok, channel, reason } = await sendMessage(client, msg, bookingUrl, delivery, salonName, salonAddress, salonReplyEmail);
+          const { ok, channel, reason } = await sendMessage(salonId, client, msg, bookingUrl, delivery, salonName, salonAddress, salonReplyEmail);
           if (!ok && reason.startsWith("no_channel")) {
             console.warn("[runVipCare] delivery skipped", {
               salonId,

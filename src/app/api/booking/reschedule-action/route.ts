@@ -1,205 +1,223 @@
-import { after } from "next/server";
-import { NextResponse } from "next/server";
-import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
-import { notifyWaitlistForSlot } from "@/shared/noshow/waitlistAutoFill";
-import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
-import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
-import { salonYmdOfUtc, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
-import { logBookingEvent } from "@/shared/dashboard/auditLog";
-import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
+import { after, NextResponse } from "next/server";
+
+import {
+  inspectBookingManagementCapability,
+  rescheduleBookingWithManagementCapability,
+} from "@/shared/booking/bookingManagementCapabilities";
+import {
+  quoteBookingSequenceReschedule,
+  rescheduleBookingSequenceWithManagementCapability,
+} from "@/shared/booking/bookingSequenceReschedule";
+import { consumeBookingManagementRateLimit } from "@/shared/booking/bookingManagementRateLimit";
 import { dayKeyFromLocalDate } from "@/shared/booking/dayKeyFromDate";
 import { hmToMinutes } from "@/shared/booking/hmToMinutes";
+import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
+import { reconcilePublicBookingManagementAudit } from "@/shared/dashboard/reconcilePublicBookingManagementAudit";
+import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
+import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
+import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
+import { deliverPromotedWaitlistOffer } from "@/shared/noshow/deliverPromotedWaitlistOffer";
+import { deliverCustomerBookingTransitionEmail } from "@/shared/notifications/customerBookingTransitionEmail";
+import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
+import { readJsonObjectWithLimit } from "@/shared/security/readJsonObjectWithLimit";
 
-type RescheduleBody = {
-  token: string;
-  date: string;    // YYYY-MM-DD
-  slotLabel: string; // e.g. "9:00 AM"
+const PRIVATE_HEADERS = {
+  "Cache-Control": "private, no-store, max-age=0",
+  Pragma: "no-cache",
+  "Referrer-Policy": "no-referrer",
+  "X-Robots-Tag": "noindex, nofollow",
+} as const;
+
+type Body = {
+  token?: unknown;
+  requestId?: unknown;
+  date?: unknown;
+  slotLabel?: unknown;
+  newStartUtc?: unknown;
+  newEndUtc?: unknown;
+  expectedSequenceFingerprint?: unknown;
 };
 
-export async function POST(req: Request) {
-  let body: RescheduleBody;
-  try {
-    body = (await req.json()) as RescheduleBody;
-  } catch {
-    return NextResponse.json({ ok: false, code: "invalid_body" }, { status: 400 });
+function json(body: Record<string, unknown>, status = 200) {
+  return NextResponse.json(body, { status, headers: PRIVATE_HEADERS });
+}
+
+function errorStatus(code: string): number {
+  if (code === "invalid_request" || code === "invalid_slot") return 400;
+  if (code === "invalid_token") return 404;
+  if (code === "expired_or_revoked" || code === "token_consumed") return 410;
+  if (code === "management_unavailable" || code === "invalid_management_response") return 503;
+  return 409;
+}
+
+export async function POST(request: Request) {
+  if (!isSameOriginMutation(request)) return json({ ok: false, code: "forbidden" }, 403);
+  if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
+    return json({ ok: false, code: "invalid_request" }, 400);
+  }
+  const body = await readJsonObjectWithLimit(request, 2048) as Body | null;
+  if (!body) return json({ ok: false, code: "invalid_request" }, 400);
+  const tokenId = typeof body?.token === "string" ? body.token.trim() : "";
+  const requestId = typeof body?.requestId === "string" ? body.requestId.trim() : "";
+  const date = typeof body?.date === "string" ? body.date.trim() : "";
+  const slotLabel = typeof body?.slotLabel === "string" ? body.slotLabel.trim() : "";
+  const newStartUtc = typeof body?.newStartUtc === "string" ? body.newStartUtc.trim() : "";
+  const newEndUtc = typeof body?.newEndUtc === "string" ? body.newEndUtc.trim() : "";
+  const expectedSequenceFingerprint = typeof body?.expectedSequenceFingerprint === "string"
+    ? body.expectedSequenceFingerprint.trim()
+    : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !slotLabel ||
+      !Number.isFinite(Date.parse(newStartUtc)) || !Number.isFinite(Date.parse(newEndUtc))) {
+    return json({ ok: false, code: "invalid_request" }, 400);
   }
 
-  const { token, date, slotLabel } = body;
-  if (!token || !date || !slotLabel) {
-    return NextResponse.json({ ok: false, code: "missing_params" }, { status: 400 });
-  }
-
-  const supabase = createServiceRoleClient();
-
-  // Resolve booking from token to get service duration + salon + original slot date
-  const { data: tokenRow } = await supabase
-    .from("booking_reminder_tokens" as never)
-    .select("booking_id, used_at, expires_at")
-    .eq("id", token)
-    .maybeSingle();
-
-  const tr = tokenRow as { booking_id: string; used_at: string | null; expires_at: string } | null;
-  if (!tr || tr.used_at !== null || new Date(tr.expires_at) < new Date()) {
-    return NextResponse.json({ ok: false, code: "token_invalid" }, { status: 400 });
-  }
-
-  const { data: booking } = await supabase
-    .from("bookings" as never)
-    .select("salon_id, service_id, start_time_utc")
-    .eq("id", tr.booking_id)
-    .maybeSingle();
-
-  const b = booking as { salon_id: string; service_id: string; start_time_utc: string } | null;
-  if (!b) return NextResponse.json({ ok: false, code: "booking_not_found" }, { status: 404 });
-
-  const [{ data: service }, { data: salon }] = await Promise.all([
-    supabase
-      .from("services" as never)
-      .select("duration_minutes, buffer_minutes")
-      .eq("id", b.service_id)
-      .maybeSingle(),
-    supabase
-      .from("salons" as never)
-      .select("timezone, opening_hours, booking_closed_dates")
-      .eq("id", b.salon_id)
-      .maybeSingle(),
-  ]);
-
-  const svc = service as { duration_minutes: number; buffer_minutes: number | null } | null;
-  if (!svc) return NextResponse.json({ ok: false, code: "service_not_found" }, { status: 404 });
-
-  const salonRow = salon as {
-    timezone: string | null;
-    opening_hours: unknown;
-    booking_closed_dates: unknown;
-  } | null;
-  const timezone = salonRow?.timezone?.trim() || "America/Los_Angeles";
-
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return NextResponse.json({ ok: false, code: "invalid_slot" }, { status: 400 });
-  }
-  let startMinutes: number;
-  try {
-    startMinutes = parseTimeSlotToMinutes(slotLabel);
-  } catch {
-    return NextResponse.json({ ok: false, code: "invalid_slot" }, { status: 400 });
-  }
-
-  const totalBlockMinutes = serviceBlockMinutes(svc.duration_minutes, svc.buffer_minutes);
-
-  // Wall-clock-minutes guard, mirroring submitPublicBooking.ts — the picker
-  // (reschedule-slots) already filters to open hours, but this write path
-  // must not trust the client's raw date+slotLabel without re-checking.
-  const closedYmdSet = parseBookingClosedDateSet(salonRow?.booking_closed_dates);
-  if (closedYmdSet.has(date)) {
-    return NextResponse.json({ ok: false, code: "salon_closed_day" }, { status: 400 });
-  }
-  const week = parseOpeningHours(salonRow?.opening_hours);
-  if (!week) {
-    return NextResponse.json({ ok: false, code: "salon_hours_invalid" }, { status: 400 });
-  }
-  const dayCfg = week[dayKeyFromLocalDate(new Date(`${date}T12:00:00`))];
-  if (!dayCfg || dayCfg.closed) {
-    return NextResponse.json({ ok: false, code: "salon_closed_day" }, { status: 400 });
-  }
-  const openM = hmToMinutes(dayCfg.open);
-  const closeM = hmToMinutes(dayCfg.close);
-  const endMinutes = startMinutes + totalBlockMinutes;
-  if (closeM <= openM || startMinutes < openM || endMinutes > closeM) {
-    return NextResponse.json({ ok: false, code: "outside_opening_hours" }, { status: 400 });
-  }
-
-  // Convert the salon-local wall-clock slot to the correct UTC instant.
-  // Previously `new Date(\`${date}T${hh}:${mm}:00\`)` — the Vercel runtime is
-  // always UTC, so that parsed the wall-clock time AS IF it were UTC,
-  // silently shifting every non-UTC salon's reschedules by its UTC offset.
-  const newStart = new Date(salonWallTimeToUtcIso(date, startMinutes, timezone));
-  const newEnd = new Date(newStart.getTime() + totalBlockMinutes * 60_000);
-
-  const { data, error } = await supabase.rpc("reschedule_booking_as_customer" as never, {
-    p_token_id:      token,
-    p_new_start_utc: newStart.toISOString(),
-    p_new_end_utc:   newEnd.toISOString(),
+  const rate = await consumeBookingManagementRateLimit({
+    request,
+    tokenId,
+    action: "reschedule",
+    phase: "mutate",
   });
-
-  if (error) {
-    console.error("[reschedule-action] RPC error", error);
-    return NextResponse.json({ ok: false, code: "server_error" }, { status: 500 });
+  if (rate !== "allowed") {
+    return json({ ok: false, code: rate === "limited" ? "rate_limited" : "management_unavailable" }, rate === "limited" ? 429 : 503);
   }
 
-  const rows = Array.isArray(data) ? data : [];
-  const row = rows[0] as { ok?: boolean; code?: string; service_name?: string; staff_name?: string; new_start_utc?: string } | undefined;
-
-  if (!row?.ok) {
-    return NextResponse.json({ ok: false, code: row?.code ?? "unknown" }, { status: 400 });
+  const inspected = await inspectBookingManagementCapability({
+    tokenId,
+    expectedAction: "reschedule",
+  });
+  let inspectedSequence = false;
+  if (inspected.ok) {
+    inspectedSequence = inspected.inspection.booking.scheduleModel === "segments_v1";
+    const context = inspected.inspection.context;
+    const db = createServiceRoleClient();
+    const { data: salon } = await db
+      .from("salons" as never)
+      .select("opening_hours, booking_closed_dates")
+      .eq("id", context.salonId)
+      .maybeSingle();
+    const salonRow = salon as { opening_hours?: unknown; booking_closed_dates?: unknown } | null;
+    const week = parseOpeningHours(salonRow?.opening_hours);
+    const closed = parseBookingClosedDateSet(salonRow?.booking_closed_dates);
+    let startMinutes: number;
+    try {
+      startMinutes = parseTimeSlotToMinutes(slotLabel);
+    } catch {
+      return json({ ok: false, code: "invalid_slot" }, 400);
+    }
+    const day = week?.[dayKeyFromLocalDate(new Date(`${date}T12:00:00`))];
+    let canonicalStart: string;
+    try {
+      canonicalStart = salonWallTimeToUtcIso(date, startMinutes, context.timezone);
+    } catch {
+      // A spring-forward wall minute does not exist. Treat it like any other
+      // invalid slot; never normalize it to a different customer-visible time.
+      return json({ ok: false, code: "invalid_slot" }, 400);
+    }
+    const canonicalEnd = new Date(Date.parse(canonicalStart) + context.durationMinutes * 60_000).toISOString();
+    if (!week || !day || day.closed || closed.has(date) ||
+        startMinutes < hmToMinutes(day.open) || startMinutes + context.durationMinutes > hmToMinutes(day.close) ||
+        canonicalStart !== newStartUtc || canonicalEnd !== newEndUtc) {
+      return json({ ok: false, code: "invalid_slot" }, 400);
+    }
+  } else if (inspected.code !== "token_consumed") {
+    return json(inspected, errorStatus(inspected.code));
   }
 
-  const { data: updatedPolicyRow } = await supabase
-    .from("bookings" as never)
-    .select("self_cancel_fee_locked_at")
-    .eq("id", tr.booking_id)
-    .maybeSingle();
-  const policyLockedByReschedule = Boolean(
-    (updatedPolicyRow as { self_cancel_fee_locked_at?: string | null } | null)
-      ?.self_cancel_fee_locked_at,
-  );
+  if (inspected.ok && inspectedSequence && !expectedSequenceFingerprint) {
+    const quoted = await quoteBookingSequenceReschedule({
+      tokenId,
+      requestId,
+      newStartTimeUtc: newStartUtc,
+    });
+    if (!quoted.ok) return json(quoted, errorStatus(quoted.code));
+    return json({
+      ok: true,
+      code: "sequence_review_required",
+      sequenceQuote: quoted.quote,
+    });
+  }
 
-  void logBookingEvent({
-    bookingId: tr.booking_id,
-    salonId: b.salon_id,
-    actorUserId: null,
-    actorRole: "public_guest",
-    eventType: "booking_rescheduled",
+  // On exact response-loss replay the consumed token cannot be inspected, but
+  // the browser resends the server-issued UTC slot and same request ID. The DB
+  // compares its stored canonical payload before returning the prior result.
+  const sequenceMutation = inspectedSequence || Boolean(expectedSequenceFingerprint);
+  const result = sequenceMutation
+    ? await rescheduleBookingSequenceWithManagementCapability({
+        tokenId,
+        requestId,
+        newStartTimeUtc: newStartUtc,
+        expectedSequenceFingerprint,
+      })
+    : await rescheduleBookingWithManagementCapability({
+        tokenId,
+        requestId,
+        newStartTimeUtc: newStartUtc,
+        newEndTimeUtc: newEndUtc,
+      });
+  if (!result.ok) return json(result, errorStatus(result.code));
+  const committed = result.result;
+  let sequenceReceipt = null;
+  let responseCode: string;
+  let responseServiceName: string | null;
+  if ("receipt" in committed) {
+    sequenceReceipt = committed.receipt;
+    responseCode = "rescheduled";
+    responseServiceName = committed.receipt.segments
+      .map((segment) => segment.serviceName)
+      .join(" + ");
+  } else {
+    responseCode = committed.code;
+    responseServiceName = committed.serviceName;
+  }
+
+  const policyLocked = committed.cancelPreview!.policyLockedByReschedule;
+  await reconcilePublicBookingManagementAudit({
+    bookingId: committed.bookingId,
+    salonId: committed.salonId,
+    requestId,
+    action: "reschedule",
     payload: {
-      reason: "customer_email_link",
-      previous_start_utc: b.start_time_utc,
-      new_start_utc: newStart.toISOString(),
-      late_cancel_policy_locked: policyLockedByReschedule,
+      reason: "customer_management_link",
+      previous_start_utc: committed.previousStartTimeUtc,
+      new_start_utc: committed.startTimeUtc,
+      late_cancel_policy_locked: policyLocked,
     },
   });
 
-  // Notify the first waitlist entry for the freed original slot
-  const originalStartUtc = b.start_time_utc;
-  const bookingId = tr.booking_id;
-  const { salon_id, service_id } = b;
+  if (committed.transitionVersion !== null) {
+    after(() => deliverCustomerBookingTransitionEmail({
+      salonId: committed.salonId,
+      bookingId: committed.bookingId,
+      transitionKind: "reschedule",
+      expectedTransitionVersion: committed.transitionVersion!,
+    }));
+  }
   after(async () => {
-    // Owner/manager alert — customer self-rescheduled via email link. Booking
-    // now holds the NEW start; pass the original as previousStartUtc so the
-    // email shows old → new. Best-effort, fire-and-forget.
     await sendOwnerBookingNotification({
-      salonId: salon_id,
-      bookingId,
+      salonId: committed.salonId,
+      bookingId: committed.bookingId,
       event: "reschedule",
-      previousStartUtc: originalStartUtc,
+      previousStartUtc: committed.previousStartTimeUtc,
       changedBy: "customer",
       changedFields: ["time"],
     });
-
-    const sb = createServiceRoleClient();
-    const [{ data: salonData }, { data: svcData }] = await Promise.all([
-      sb.from("salons" as never).select("name, timezone").eq("id", salon_id).maybeSingle(),
-      sb.from("services" as never).select("name").eq("id", service_id).maybeSingle(),
-    ]);
-    const salonName = (salonData as { name: string } | null)?.name ?? "";
-    const serviceName = (svcData as { name: string } | null)?.name ?? "";
-    // Freed slot's date must be the salon-LOCAL day (booking_waitlist_entries
-    // stores booking_date in salon-local time). Using the UTC date shifted
-    // evening NA bookings one day forward → the picker/SMS targeted the wrong
-    // day. Mirror the RPC's salon-tz match.
-    const timezone =
-      (salonData as { timezone: string | null } | null)?.timezone?.trim() ||
-      "America/Los_Angeles";
-    const bookingDateYmd = salonYmdOfUtc(originalStartUtc, timezone);
-    await notifyWaitlistForSlot({ salonId: salon_id, salonName, serviceId: service_id, serviceName, bookingDateYmd });
+    if (committed.promotedWaitlist) {
+      await deliverPromotedWaitlistOffer({
+        salonId: committed.salonId,
+        offer: committed.promotedWaitlist,
+      });
+    }
   });
 
-  return NextResponse.json({
+  return json({
     ok: true,
-    serviceName: row.service_name,
-    staffName: row.staff_name,
-    newStartUtc: row.new_start_utc,
-    lateCancelPolicyLocked: policyLockedByReschedule,
+    code: responseCode,
+    serviceName: responseServiceName,
+    newStartUtc: committed.startTimeUtc,
+    ...(sequenceReceipt ? { sequenceReceipt } : {}),
+    lateCancelPolicyLocked: policyLocked,
+    idempotent: committed.idempotent,
   });
 }

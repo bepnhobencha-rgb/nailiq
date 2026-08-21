@@ -13,8 +13,7 @@ import { sendCustomerLinkEmail } from "@/shared/lib/sendCustomerLinkEmail";
  * receptionist taps one button to text the customer a link to a card-capture
  * page (`/booking/save-card?token=…`). The customer saves a card in one tap —
  * NO upfront charge — and is only charged the no-show fee if they don't show.
- * Reuses the same booking_reminder_tokens system as the self-serve
- * reschedule/cancel/manage-card links. SMS flows through the kill-switch
+ * Uses a short-lived, action-scoped card-management capability. SMS flows through the kill-switch
  * chokepoint (sendSmsReminder), like every other outbound message.
  */
 
@@ -57,16 +56,15 @@ export async function sendSaveCardLink(
 
   // The link only does something if the salon has no-show protection on; fail
   // early with a clear reason rather than texting a dead link.
-  const { data: salon } = await ctx.supabase
-    .from("salons")
-    .select("noshow_protection_enabled, email_links_enabled, address, feature_flags")
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
-  if (!(salon as { noshow_protection_enabled?: boolean } | null)?.noshow_protection_enabled) {
+  const salon = ctx.salon;
+  if (!salon.noshow_protection_enabled) {
     return { ok: false, error: "protection_disabled" };
   }
 
-  const token = await generateReminderToken(bookingId, ctx.salon.id);
+  const token = await generateReminderToken(bookingId, ctx.salon.id, {
+    action: "card_manage",
+    expiresAt: new Date(Date.now() + 20 * 60 * 1000).toISOString(),
+  });
   if (!token) return { ok: false, error: "server_error" };
 
   const url = `${SITE_URL}/booking/save-card?token=${token.id}`;
@@ -128,7 +126,7 @@ export async function sendSaveCardLink(
 
     if (phone) {
       try {
-        const r = await sendSmsReminder(phone, smsBody);
+        const r = await sendSmsReminder(phone, smsBody, { salonId: ctx.salon.id });
         smsSent = r.ok;
       } catch {
         smsSent = false;

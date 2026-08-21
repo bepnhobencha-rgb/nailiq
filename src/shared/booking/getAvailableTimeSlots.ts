@@ -85,6 +85,76 @@ type OccupancyRow = {
   end_time_utc: string;
 };
 
+function isNonEmptyId(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isValidHm(value: unknown): value is string {
+  if (
+    typeof value !== "string" ||
+    !/^\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?$/.test(value)
+  ) {
+    return false;
+  }
+  const [hour, minute, second = 0] = value.split(":").map(Number);
+  return (
+    hour >= 0 &&
+    hour <= 23 &&
+    minute >= 0 &&
+    minute <= 59 &&
+    second >= 0 &&
+    second < 60
+  );
+}
+
+function isStrictOccupancyRow(value: unknown): value is OccupancyRow {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  if (
+    !isNonEmptyId(row.staff_id) ||
+    typeof row.start_time_utc !== "string" ||
+    typeof row.end_time_utc !== "string"
+  ) {
+    return false;
+  }
+  const startMs = Date.parse(row.start_time_utc);
+  const endMs = Date.parse(row.end_time_utc);
+  return Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs;
+}
+
+function isStrictShiftRow(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  if (
+    !isNonEmptyId(row.staff_id) ||
+    !isValidHm(row.start_time) ||
+    !isValidHm(row.end_time) ||
+    hmToMinutes(row.end_time) <= hmToMinutes(row.start_time)
+  ) {
+    return false;
+  }
+  const noBreak = row.break_start_time === null && row.break_end_time === null;
+  if (noBreak) return true;
+  if (!isValidHm(row.break_start_time) || !isValidHm(row.break_end_time)) {
+    return false;
+  }
+  const breakStart = hmToMinutes(row.break_start_time);
+  const breakEnd = hmToMinutes(row.break_end_time);
+  return (
+    breakStart >= hmToMinutes(row.start_time) &&
+    breakEnd <= hmToMinutes(row.end_time) &&
+    breakEnd > breakStart
+  );
+}
+
+function isStrictUnavailableRow(value: unknown): boolean {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      isNonEmptyId((value as Record<string, unknown>).staff_id),
+  );
+}
+
 export type GetAvailableTimeSlotsParams = {
   salonId: string;
   openingHoursRaw: unknown;
@@ -329,16 +399,22 @@ export function computeTimeSlots(args: {
   const now = new Date(nowMs);
 
   // `slotMsAt(mins)` → the absolute UTC ms of a wall-clock minute-of-day.
-  //  - salon-tz path: anchor once at openMin via salonWallTimeToUtcIso (DST-safe;
-  //    no DST transition happens during open hours, so a linear offset from the
-  //    open anchor is exact) → device-timezone-independent.
+  //  - salon-tz path resolves EACH wall minute. A salon can be open through a
+  //    DST transition (including just after midnight), so linear offsets from
+  //    opening time can fabricate a spring-gap slot or shift every later slot.
   //  - legacy path: local-midnight + offset (unchanged; server callers pre-shift
   //    their own frame, and on the client device-tz == salon-tz in the common case).
-  const openAnchorMs = timezone
-    ? Date.parse(salonWallTimeToUtcIso(ymd, openMin, timezone))
-    : baseMidnightMs;
-  const slotMsAt = (mins: number): number =>
-    timezone ? openAnchorMs + (mins - openMin) * 60_000 : baseMidnightMs + mins * 60_000;
+  const salonRange = timezone ? salonDayRangeUtc(ymd, timezone) : null;
+  const slotMsAt = (mins: number): number | null => {
+    if (!timezone) return baseMidnightMs + mins * 60_000;
+    if (mins === 24 * 60) return Date.parse(salonRange!.endUtc);
+    if (mins < 0 || mins >= 24 * 60) return null;
+    try {
+      return Date.parse(salonWallTimeToUtcIso(ymd, mins, timezone));
+    } catch {
+      return null;
+    }
+  };
 
   const isToday = timezone
     ? salonToday(timezone, new Date(nowMs).toISOString()) === ymd
@@ -346,6 +422,7 @@ export function computeTimeSlots(args: {
 
   // Closing boundary in ms — used to guard against slots that run past close.
   const closeBoundaryMs = slotMsAt(closeMin + extensionMin);
+  if (closeBoundaryMs === null) return [];
 
   // ── Phase 1: regular 15-min grid ─────────────────────────────────────────
   // Map<startMs, TimeSlot> — keyed by ms for O(1) dedup in Phase 2.
@@ -361,7 +438,9 @@ export function computeTimeSlots(args: {
     let slotStartMs: number;
     let label: string;
     if (timezone) {
-      slotStartMs = slotMsAt(mins);
+      const resolved = slotMsAt(mins);
+      if (resolved === null) continue;
+      slotStartMs = resolved;
       label = minutesToLabel(mins);
     } else {
       const slotStart = new Date(base);
@@ -420,7 +499,9 @@ export function computeTimeSlots(args: {
     let slotStartMs: number;
     let label: string;
     if (timezone) {
-      slotStartMs = slotMsAt(endMins);
+      const resolved = slotMsAt(endMins);
+      if (resolved === null) continue;
+      slotStartMs = resolved;
       label = minutesToLabel(endMins);
     } else {
       const slotStart = new Date(base);
@@ -494,9 +575,10 @@ export function computeTimeSlots(args: {
   return scored.map(({ slot }) => slot);
 }
 
-export async function getAvailableTimeSlots(
+async function getAvailableTimeSlotsInternal(
   params: GetAvailableTimeSlotsParams,
-): Promise<TimeSlot[]> {
+  mode: "legacy" | "strict",
+): Promise<TimeSlot[] | null> {
   const {
     salonId,
     openingHoursRaw,
@@ -547,7 +629,16 @@ export async function getAvailableTimeSlots(
     },
   );
 
-  if (!occErr && Array.isArray(occData)) {
+  if (mode === "strict") {
+    if (
+      occErr ||
+      !Array.isArray(occData) ||
+      !occData.every(isStrictOccupancyRow)
+    ) {
+      return null;
+    }
+    occupancy = occData;
+  } else if (!occErr && Array.isArray(occData)) {
     occupancy = occData as OccupancyRow[];
   }
 
@@ -578,6 +669,18 @@ export async function getAvailableTimeSlots(
         .eq("date", ymd),
     ]);
 
+    if (
+      mode === "strict" &&
+      (shiftRes.error ||
+        unavailRes.error ||
+        !Array.isArray(shiftRes.data) ||
+        !Array.isArray(unavailRes.data) ||
+        !shiftRes.data.every(isStrictShiftRow) ||
+        !unavailRes.data.every(isStrictUnavailableRow))
+    ) {
+      return null;
+    }
+
     if (!shiftRes.error && Array.isArray(shiftRes.data) && shiftRes.data.length > 0) {
       staffShiftWindows = new Map();
       for (const row of shiftRes.data as {
@@ -602,6 +705,7 @@ export async function getAvailableTimeSlots(
       );
     }
   } catch {
+    if (mode === "strict") return null;
     // Shift tables may not exist on older deploys — degrade gracefully
   }
 
@@ -626,6 +730,37 @@ export async function getAvailableTimeSlots(
     closingExtensionMinutes,
     allowBeyondStaffShiftEnd,
   });
+}
+
+export async function getAvailableTimeSlots(
+  params: GetAvailableTimeSlotsParams,
+): Promise<TimeSlot[]> {
+  return (await getAvailableTimeSlotsInternal(params, "legacy")) ?? [];
+}
+
+export type GetAvailableTimeSlotsStrictResult =
+  | { ok: true; slots: TimeSlot[] }
+  | { ok: false; reason: "unavailable" };
+
+/**
+ * Proof-grade availability read for Guided Setup.
+ *
+ * Unlike the legacy customer grid, this boundary never interprets a failed or
+ * malformed occupancy/shift/unavailability read as an empty result. A backend
+ * outage therefore keeps the rehearsal incomplete instead of presenting a
+ * false-open slot.
+ */
+export async function getAvailableTimeSlotsStrict(
+  params: GetAvailableTimeSlotsParams,
+): Promise<GetAvailableTimeSlotsStrictResult> {
+  try {
+    const slots = await getAvailableTimeSlotsInternal(params, "strict");
+    return slots === null
+      ? { ok: false, reason: "unavailable" }
+      : { ok: true, slots };
+  } catch {
+    return { ok: false, reason: "unavailable" };
+  }
 }
 
 /** Available-slot count for calendar hints (parallel-safe when called per date). */

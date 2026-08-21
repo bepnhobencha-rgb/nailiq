@@ -43,6 +43,11 @@ import {
 } from "@/shared/dashboard/dashboardDensity";
 import type { BookingStatus, SalonDashboardBooking } from "@/shared/types";
 import { ACTIVE_GRID_STATUSES } from "@/shared/types";
+import { requireActiveAuthSession } from "@/shared/auth/requireActiveAuthSession";
+import {
+  loadSalonMemberOperationalProfile,
+  loadSalonOwnerAdminSettings,
+} from "@/shared/dashboard/salonOwnerAdminSettings";
 
 /** Single source of truth for the salon row shape every dashboard
  *  surface needs. Adding `timezone` + dashboard config fields here
@@ -57,7 +62,13 @@ import { ACTIVE_GRID_STATUSES } from "@/shared/types";
  *  at the time of writing; the column itself exists. Here we read
  *  the value through `as { … }` casts at the call site instead. */
 const SALON_DASHBOARD_SELECT =
-  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete, booking_closed_dates, closure_notice, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, subscription_plan, plan_override, feature_flags, voice_ai_enabled, basic_mode_forced, walkin_auto_assign, queue_display_mode, staff_notification_settings, auto_no_show_minutes, vertical";
+  "id, name, slug, address, salon_phone, opening_hours, profile_complete, booking_closed_dates, closure_notice, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, subscription_plan, plan_override, feature_flags, voice_ai_enabled, basic_mode_forced, walkin_auto_assign, queue_display_mode, default_notification_locale, auto_no_show_minutes, vertical";
+
+// The test/demo cookie path uses a service-role client and represents an owner.
+// It may augment the operational row with the same two management values that
+// authenticated owners/admins receive through the curated RPC below.
+const SALON_DASHBOARD_DEMO_SELECT =
+  `${SALON_DASHBOARD_SELECT}, email, staff_notification_settings, client_segment_settings, noshow_protection_enabled, winback_enabled, email_links_enabled`;
 
 type SalonRow = {
   id: string;
@@ -91,7 +102,7 @@ type SalonRow = {
    * registry defaults. No behavior change in PR1; consumed in PR2+. */
   subscription_plan?: string | null;
   plan_override?: string | null;
-  feature_flags?: unknown;
+  feature_flags?: Record<string, unknown> | null;
   voice_ai_enabled?: boolean | null;
   /** `salons.basic_mode_forced` — when true, Basic Mode is auto-enabled and
    *  locked for the Receptionist board. Flows to `preFetchedSalon`. */
@@ -99,6 +110,11 @@ type SalonRow = {
   walkin_auto_assign?: boolean | null;
   queue_display_mode?: string | null;
   staff_notification_settings?: unknown;
+  client_segment_settings?: unknown;
+  noshow_protection_enabled?: boolean | null;
+  winback_enabled?: boolean | null;
+  email_links_enabled?: boolean | null;
+  default_notification_locale?: unknown;
   auto_no_show_minutes?: number | null;
   /** Business vertical slug (e.g. "nail_salon", "head_spa"). */
   vertical?: string | null;
@@ -135,7 +151,7 @@ async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
 
   const { data: salon, error } = await admin
     .from("salons")
-    .select(SALON_DASHBOARD_SELECT)
+    .select(SALON_DASHBOARD_DEMO_SELECT)
     .eq("slug", slug)
     .maybeSingle();
 
@@ -146,6 +162,10 @@ async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
   };
   return {
     ...row,
+    phone:
+      row.salon_phone === undefined || row.salon_phone === null
+        ? ""
+        : String(row.salon_phone).trim(),
     address:
       row.address === undefined || row.address === null
         ? null
@@ -232,10 +252,9 @@ async function getSalonIfMember(
   | null
 > {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
+  const session = await requireActiveAuthSession(supabase);
+  if (!session.ok) return null;
+  const user = session.user;
 
   // Auth user's email — may come from Google OAuth, Supabase email signup,
   // or be null/empty for phone-only OTP users. Trim and coerce empty → null
@@ -254,35 +273,48 @@ async function getSalonIfMember(
 
   const salonIds = members.map((m) => String(m.salon_id));
 
-  const { data: salon, error: salErr } = await supabase
-    .from("salons")
-    .select(SALON_DASHBOARD_SELECT)
+  const { data: salonLookup, error: salErr } = await supabase
+    .from("salon_member_operational_profiles" as never)
+    .select("id, slug")
     .eq("slug", slug)
     .in("id", salonIds)
     .maybeSingle();
 
-  if (salErr || !salon) return null;
+  const lookup = salonLookup as { id?: unknown; slug?: unknown } | null;
+  if (salErr || !lookup?.id || String(lookup.slug ?? "") !== slug) return null;
 
-  const row = salon as SalonRow & {
-    email?: unknown;
+  const operational = await loadSalonMemberOperationalProfile(
+    supabase,
+    String(lookup.id),
+  );
+  if (!operational.ok) return null;
+  const row = operational.salon as SalonRow & {
     profile_complete?: unknown;
   };
+  if (String(row.id) !== String(lookup.id) || row.slug !== slug) return null;
 
-  // Multi-salon: pick the membership row whose `salon_id` matches the salon
-  // we just resolved (the URL slug). The earlier `.in("id", salonIds)` already
-  // confines `salon` to one of the user's memberships — so a match always
-  // exists. Default to "owner" defensively if the row is somehow missing.
-  const matched = members.find(
-    (m) => String(m.salon_id) === String(row.id),
-  );
-  const role = normalizeSalonMemberRole(matched?.role);
+  // The RPC role is authoritative and is read under the same membership lock
+  // as the operational snapshot.
+  const role = normalizeSalonMemberRole(operational.role);
+  const managementSettings = isOwnerOrAdmin(role)
+    ? await loadSalonOwnerAdminSettings(supabase, String(row.id))
+    : null;
+  const privileged = managementSettings?.ok
+    ? managementSettings.settings
+    : null;
 
   return {
     salon: {
       id: row.id,
       name: row.name,
       slug: row.slug,
-      phone: row.phone,
+      // `salons.phone` is the owner's legacy sign-up phone and is deliberately
+      // absent from the member projection. Dashboard display uses the public
+      // business phone instead.
+      phone:
+        row.salon_phone === undefined || row.salon_phone === null
+          ? ""
+          : String(row.salon_phone).trim(),
       address:
         row.address === undefined || row.address === null
           ? null
@@ -297,9 +329,9 @@ async function getSalonIfMember(
       closure_notice:
         (row as { closure_notice?: unknown }).closure_notice ?? null,
       email:
-        row.email === undefined || row.email === null
+        privileged?.email === undefined || privileged.email === null
           ? null
-          : String(row.email).trim() || null,
+          : String(privileged.email).trim() || null,
       profile_complete: !!row.profile_complete,
       timezone:
         typeof row.timezone === "string" ? row.timezone.trim() : "",
@@ -319,7 +351,13 @@ async function getSalonIfMember(
       walkin_auto_assign: row.walkin_auto_assign ?? null,
       queue_display_mode: row.queue_display_mode ?? null,
       staff_notification_settings: row.staff_notification_settings ?? null,
+      client_segment_settings: row.client_segment_settings ?? null,
+      noshow_protection_enabled: row.noshow_protection_enabled === true,
+      winback_enabled: row.winback_enabled !== false,
+      email_links_enabled: row.email_links_enabled !== false,
+      default_notification_locale: row.default_notification_locale ?? null,
       auto_no_show_minutes: row.auto_no_show_minutes ?? null,
+      vertical: typeof row.vertical === "string" ? row.vertical : null,
     },
     role,
     viewerEmail,
@@ -344,6 +382,8 @@ export type LoadSalonDashboardResult =
         profile_complete: boolean;
         timezone: string;
         vertical: string | null;
+        /** Per-salon release overrides used by server-side dashboard gates. */
+        feature_flags: unknown | null;
       };
       setup: {
         services_count: number;
@@ -452,6 +492,7 @@ export async function loadSalonOwnerDashboard(
       profile_complete: !!salon.profile_complete,
       timezone: salon.timezone || "UTC",
       vertical: typeof salon.vertical === "string" ? salon.vertical : null,
+      feature_flags: salon.feature_flags ?? null,
     },
     setup: {
       services_count: servicesCount ?? 0,
@@ -615,10 +656,9 @@ export async function loadOwnerSalons(
   void _slug;
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return [];
+  const session = await requireActiveAuthSession(supabase);
+  if (!session.ok) return [];
+  const user = session.user;
 
   const { data: members, error: memErr } = await supabase
     .from("salon_members")

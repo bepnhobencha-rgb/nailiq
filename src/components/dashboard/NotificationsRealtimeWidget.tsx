@@ -19,6 +19,7 @@ type NotifRow = {
 
 const TYPE_LABEL: Record<string, string> = {
   booking_confirmation: "Confirmation",
+  staff_action: "Staff booking update",
   reminder_24h: "24h Reminder",
   reminder_3h: "3h Reminder",
   review_request: "Review Request",

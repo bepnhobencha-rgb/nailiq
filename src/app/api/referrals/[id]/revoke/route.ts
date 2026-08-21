@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { createClient } from "@/shared/lib/supabase/server";
+import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -9,6 +10,9 @@ type Params = { params: Promise<{ id: string }> };
  * Revokes a referral for abuse prevention. Owner-only.
  */
 export async function PATCH(req: Request, { params }: Params) {
+  if (!isSameOriginMutation(req)) {
+    return NextResponse.json({ ok: false, error: "invalid_origin" }, { status: 403 });
+  }
   const { id } = await params;
   const serverClient = await createClient();
   const { data: { user } } = await serverClient.auth.getUser();

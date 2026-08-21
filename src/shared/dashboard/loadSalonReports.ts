@@ -2,7 +2,7 @@ import "server-only";
 
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
-import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
+import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { salonDayRangeUtc, salonToday } from "@/shared/lib/salonTime";
 import { customerIdentityKey } from "@/shared/customer/customerIdentityKey";
@@ -91,11 +91,12 @@ export async function loadSalonReports(
   if (!resolved) return { ok: false, error: "unauthorized" };
   if (!isOwnerOrAdmin(resolved.role)) return { ok: false, error: "forbidden" };
 
-  // Release flag `advanced_reports` (Beta, default OFF). Refuse the load
-  // even though nav/route gating hides the surface (defense-in-depth).
+  // Effective platform + tenant flag `advanced_reports` (Beta, default OFF).
+  // Refuse the load even though nav/route gating hides the surface
+  // (defense-in-depth), and fail closed when platform state is unavailable.
   // `resolved.salon` already carries feature_flags/plan fields, so the
   // resolver returns the correct OFF state for Base salons.
-  if (!isReleaseFeatureEnabled(resolved.salon, "advanced_reports")) {
+  if (!(await isReleaseFeatureVisible(resolved.salon, "advanced_reports"))) {
     return { ok: false, error: "feature_not_enabled" };
   }
 

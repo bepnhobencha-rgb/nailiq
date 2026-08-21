@@ -8,11 +8,31 @@
 
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
+function safeLogError(error: unknown): string {
+  const value = error as { code?: unknown; message?: unknown } | null;
+  const code = typeof value?.code === "string" ? `${value.code}:` : "";
+  const message =
+    typeof value?.message === "string"
+      ? value.message
+      : error instanceof Error
+        ? error.message
+        : "database_error";
+  return `${code}${message}`
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email]")
+    .replace(/\+?\d[\d\s().-]{7,}\d/g, "[phone]")
+    .replace(/[\r\n\t]+/g, " ")
+    .slice(0, 500);
+}
+
 export type NotificationType =
   | "booking_confirmation"
   | "reminder_24h"
   | "reminder_3h"
   | "review_request"
+  // Legacy scheduled staff create/reschedule/cancel delivery. Kept distinct
+  // from the one-per-booking confirmation retry state machine and its partial
+  // unique key.
+  | "staff_action"
   // Receptionist "invite now" — texting a waitlisted customer the claim link
   // when a slot opens. booking_id is null (the entry isn't a booking yet).
   | "waitlist_invite"
@@ -67,7 +87,7 @@ export async function logNotification(
     // caller means the notification was already recorded; this is an expected
     // idempotency outcome, not a production error.
     if ((error as { code?: string }).code === "23505") return null;
-    console.error("[logNotification]", error);
+    console.error("[logNotification]", safeLogError(error));
     return null;
   }
   return (data as { id: string } | null)?.id ?? null;
@@ -119,7 +139,7 @@ export async function claimNotificationOnce(
     // 23505 = unique_violation → a concurrent path already claimed this slot.
     if ((error as { code?: string }).code === "23505") return "skip";
     // Any other error: don't silently drop a real customer notification.
-    console.error("[claimNotificationOnce]", error);
+    console.error("[claimNotificationOnce]", safeLogError(error));
     return "unguarded";
   }
   return (data as { id: string } | null)?.id ?? "unguarded";
@@ -131,18 +151,61 @@ export async function updateNotificationStatus(
   ok: boolean,
   errorMessage?: string | null,
 ): Promise<void> {
-  const supabase = createServiceRoleClient();
-  const now = new Date().toISOString();
-  const { error } = await supabase
-    .from("booking_notifications" as never)
-    .update({
-      status: ok ? "sent" : "failed",
-      sent_at: ok ? now : null,
-      failed_at: ok ? null : now,
-      error_message: errorMessage ?? null,
-    })
-    .eq("id", id);
-  if (error) console.error("[updateNotificationStatus]", error);
+  await finalizeNotificationClaim(id, {
+    status: ok ? "sent" : "failed",
+    errorMessage,
+  });
+}
+
+export type NotificationFinalStatus =
+  | "sent"
+  | "failed"
+  | "suppressed"
+  | "unknown";
+
+/**
+ * Resolve an atomic claim without overstating provider delivery. `sent` means
+ * the provider accepted the request and returned an id; `suppressed` means no
+ * provider call was made; and `unknown` is retained when a provider request may
+ * have crossed the network boundary but no definitive response came back.
+ */
+export async function finalizeNotificationClaim(
+  id: string,
+  params: {
+    status: NotificationFinalStatus;
+    messageSid?: string | null;
+    errorMessage?: string | null;
+  },
+): Promise<boolean> {
+  try {
+    const supabase = createServiceRoleClient();
+    const now = new Date().toISOString();
+    const accepted = params.status === "sent";
+    const failed = params.status === "failed";
+    const { data, error } = await supabase
+      .from("booking_notifications" as never)
+      .update({
+        status: params.status,
+        twilio_message_sid: params.messageSid ?? null,
+        sent_at: accepted ? now : null,
+        failed_at: failed ? now : null,
+        error_message: params.errorMessage ?? null,
+      })
+      .eq("id", id)
+      .select("id")
+      .maybeSingle();
+    if (error) {
+      console.error("[finalizeNotificationClaim]", safeLogError(error));
+      return false;
+    }
+    // PostgREST can return a successful HTTP response after an RLS-filtered or
+    // otherwise zero-row update. Durable completion is proven only by the exact
+    // claimed row being returned.
+    return (data as { id?: unknown } | null)?.id === id;
+  } catch (error) {
+    console.error("[finalizeNotificationClaim]", safeLogError(error));
+    return false;
+  }
 }
 
 /** Called by Twilio status webhook to update delivery status. */

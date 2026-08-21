@@ -3,6 +3,7 @@
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
 import type { GiftCard } from "./types";
+import { GIFT_CARD_VALUE_MUTATIONS_ENABLED } from "./giftCardConfig";
 
 function generateGiftCode(): string {
   const hex = crypto.randomUUID().replace(/-/g, "").toUpperCase();
@@ -20,6 +21,9 @@ export async function createGiftCard(
     expiryDays?: number;
   },
 ): Promise<{ ok: boolean; error?: string; voucher?: GiftCard }> {
+  if (!GIFT_CARD_VALUE_MUTATIONS_ENABLED) {
+    return { ok: false, error: "gift_card_issuance_unavailable" };
+  }
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
 
@@ -62,15 +66,13 @@ export async function createGiftCard(
   return { ok: true, voucher: data as GiftCard };
 }
 
-export async function getGiftCard(code: string): Promise<GiftCard | null> {
-  const supabase = createServiceRoleClient();
-  const { data } = await supabase
-    .from("vouchers" as never)
-    .select("*")
-    .eq("code", code.trim().toUpperCase())
-    .eq("kind", "gift")
-    .maybeSingle();
-  return (data as GiftCard | null) ?? null;
+export async function getGiftCard(_code: string): Promise<GiftCard | null> {
+  void _code;
+  // A gift-card code is a bearer secret, not authorization to return the
+  // voucher row (which also contains tenant, purchaser and recipient data).
+  // Restore only behind a bounded, single-use tenant capability that returns a
+  // deliberately minimal balance/status projection.
+  return null;
 }
 
 export async function redeemGiftCard(
@@ -78,6 +80,9 @@ export async function redeemGiftCard(
   code: string,
   bookingId?: string,
 ): Promise<{ ok: boolean; error?: string; discountCents?: number }> {
+  if (!GIFT_CARD_VALUE_MUTATIONS_ENABLED) {
+    return { ok: false, error: "gift_card_redemption_unavailable" };
+  }
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
 

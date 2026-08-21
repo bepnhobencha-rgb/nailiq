@@ -87,6 +87,10 @@ export const bookingEn = {
   next: "Continue",
   back: "Back",
   confirmBooking: "Confirm booking",
+  pricingVerifying: "Verifying the current price…",
+  pricingUnavailable: "We couldn’t verify the current price. Please wait and try again.",
+  pricingChanged: "The price changed. Review the updated total, then confirm again.",
+  confirmUpdatedPrice: "Confirm updated price",
   confirmTermsAgree: "By confirming, you agree to the",
   confirmTermsLink: "Booking Terms & Cancellation Policy",
   submitting: "Submitting…",
@@ -119,6 +123,8 @@ export const bookingEn = {
   doneCta: "Book another",
   giftCardPageLink: "Buy a Gift Card",
   submitError: "Could not complete booking. Please try again.",
+  submitUnknown:
+    "We couldn't verify the result. Confirm again to check the same booking — NailIQ won't create a duplicate.",
   summaryShop: "Salon",
   summaryService: "Service",
   summaryStaff: "Staff",
@@ -685,7 +691,8 @@ export const bookingEn = {
     send: "Send",
     typingIndicator: "Thinking…",
     errorFallback: "Sorry, I couldn't connect. Please try again.",
-    disclaimer: "AI assistant — for bookings, use the form above.",
+    disclaimer:
+      "AI may be inaccurate and uses a third-party provider. Don't enter payment, health, or other sensitive information. Use the form above for prices, availability, and bookings.",
   },
   /** Phone step — the new hero step 1 of the booking flow. */
   phoneStepHeading: "Book your appointment",

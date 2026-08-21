@@ -8,7 +8,12 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function ForgotPasswordPage() {
+export default async function ForgotPasswordPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ notice?: string }>;
+}) {
+  const query = await searchParams;
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-8 px-5 py-16 md:px-8">
       <header className="flex flex-col gap-2">
@@ -24,7 +29,10 @@ export default function ForgotPasswordPage() {
         </p>
       </header>
 
-      <ForgotPasswordClient />
+      <ForgotPasswordClient
+        invalidOrExpired={query.notice === "invalid_or_expired"}
+        temporarilyUnavailable={query.notice === "temporarily_unavailable"}
+      />
     </main>
   );
 }

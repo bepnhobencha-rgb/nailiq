@@ -5,6 +5,7 @@
 
 import { NextResponse } from "next/server";
 import { pushWixCreate } from "@/shared/integrations/wix/writeback";
+import { consumePublicRequestRateLimit } from "@/shared/security/publicServerActionRateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,17 @@ function isUuidLike(s: string): boolean {
 }
 
 export async function POST(req: Request) {
+  const ipRate = await consumePublicRequestRateLimit({
+    request: req,
+    scope: "booking-wix-create",
+    ipLimits: [[10, 60], [60, 3_600]],
+  });
+  if (ipRate !== "allowed") {
+    return NextResponse.json(
+      { ok: false, error: ipRate === "limited" ? "rate_limited" : "temporarily_unavailable" },
+      { status: ipRate === "limited" ? 429 : 503 },
+    );
+  }
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ ok: false }, { status: 400 });
 
@@ -32,6 +44,20 @@ export async function POST(req: Request) {
   ) {
     // Return 200 so the fire-and-forget fetch in the browser doesn't log noise.
     return NextResponse.json({ ok: false, error: "invalid_params" });
+  }
+
+  const bookingRate = await consumePublicRequestRateLimit({
+    request: req,
+    scope: "booking-wix-create-booking",
+    identity: [salonId, bookingId],
+    ipLimits: [],
+    identityLimits: [[3, 3_600], [5, 86_400]],
+  });
+  if (bookingRate !== "allowed") {
+    return NextResponse.json(
+      { ok: false, error: bookingRate === "limited" ? "rate_limited" : "temporarily_unavailable" },
+      { status: bookingRate === "limited" ? 429 : 503 },
+    );
   }
 
   // Best-effort: never throw — the caller does not await this route.

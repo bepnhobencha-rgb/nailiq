@@ -1,8 +1,7 @@
 "use server";
 
-import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { getSuperAdminRole } from "@/shared/lib/superadmin";
+import { requireActiveSuperAdminSession } from "@/shared/auth/requireActiveSuperAdminSession";
 import {
   isAnnouncementSeverity,
   isAnnouncementTarget,
@@ -44,12 +43,9 @@ const EMAIL_BODY_MAX_LEN = 4_000;
 type AdminCaller = { userId: string; role: string };
 
 async function requireAnnouncementsAdmin(): Promise<AdminCaller | null> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-  const role = await getSuperAdminRole(user.id);
+  const access = await requireActiveSuperAdminSession();
+  if (!access.ok) return null;
+  const { role, user } = access;
   if (!role || !ADMIN_ROLES_FOR_ANNOUNCEMENTS.has(role)) return null;
   return { userId: user.id, role };
 }

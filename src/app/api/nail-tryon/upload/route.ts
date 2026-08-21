@@ -8,6 +8,8 @@ import { recordNailTryOnEvent } from "@/shared/nailTryOn/telemetry";
 import { decideServerQuality } from "@/shared/nailTryOn/qualityPolicy";
 import { parseNailTryOnCaptureMode } from "@/shared/nailTryOn/captureMode";
 import { isBlockingNailTryOnResolution } from "@/shared/nailTryOn/imageQuality";
+import { clientIp } from "@/shared/lib/inAppRateLimit";
+import { consumeDurableRateLimitBuckets } from "@/shared/security/publicServerActionRateLimit";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,6 +18,17 @@ const MAX_BYTES = 10 * 1024 * 1024;
 const TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export async function POST(request: Request) {
+  const ip = clientIp(request);
+  const ipRate = await consumeDurableRateLimitBuckets("nail-tryon-upload", [
+    { name: "ip-minute", material: [ip], limit: 3, windowSeconds: 60 },
+    { name: "ip-hour", material: [ip], limit: 10, windowSeconds: 3_600 },
+  ]);
+  if (ipRate !== "allowed") {
+    return NextResponse.json(
+      { error: ipRate === "limited" ? "rate_limited" : "rate_limit_unavailable" },
+      { status: ipRate === "limited" ? 429 : 503, headers: { "Retry-After": ipRate === "limited" ? "60" : "30" } },
+    );
+  }
   const form = await request.formData().catch(() => null);
   const photo = form?.get("photo") as File | null;
   const slug = String(form?.get("slug") || "");
@@ -31,10 +44,16 @@ export async function POST(request: Request) {
   if (!salon) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   const db = createServiceRoleClient();
-  const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const { count } = await db.from("nail_tryon_sessions" as never)
-    .select("id", { count: "exact", head: true }).eq("salon_id", salon.id).gte("created_at", since);
-  if ((count ?? 0) >= 20) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+  const salonRate = await consumeDurableRateLimitBuckets("nail-tryon-upload", [
+    { name: "salon-hour", material: [salon.id], limit: 60, windowSeconds: 3_600 },
+    { name: "ip-salon-hour", material: [ip, salon.id], limit: 10, windowSeconds: 3_600 },
+  ]);
+  if (salonRate !== "allowed") {
+    return NextResponse.json(
+      { error: salonRate === "limited" ? "rate_limited" : "rate_limit_unavailable" },
+      { status: salonRate === "limited" ? 429 : 503, headers: { "Retry-After": salonRate === "limited" ? "3600" : "30" } },
+    );
+  }
 
   let normalized: Buffer;
   try {

@@ -1,6 +1,7 @@
 import "server-only";
 import type Stripe from "stripe";
 import type { PaymentProvider } from "./types";
+import { toProviderMinorAmount } from "@/shared/payments/providerMinorUnits";
 
 /**
  * Stripe implementation of PaymentProvider — off-session card-on-file.
@@ -35,6 +36,7 @@ export class StripeProvider implements PaymentProvider {
     /** Ignored by Stripe — card verification happens via the SetupIntent the
      *  client already confirmed. Present only to satisfy the shared interface. */
     verificationToken?: string;
+    idempotencyKey: string;
   }) {
     // Reuse an existing customer by exact email (immediate, no search lag); else
     // create one. Dedupe by email keeps a returning client's cards together.
@@ -50,17 +52,17 @@ export class StripeProvider implements PaymentProvider {
         phone: input.customer.phone ?? undefined,
         email: email || undefined,
         metadata: { referenceId: input.customer.referenceId },
-      });
+      }, { idempotencyKey: `${input.idempotencyKey}:customer` });
       customerId = created.id;
     }
 
     const pm = await this.stripe.paymentMethods.attach(input.sourceToken, {
       customer: customerId,
-    });
+    }, { idempotencyKey: `${input.idempotencyKey}:attach` });
     // Make it the default for off-session invoices/charges.
     await this.stripe.customers.update(customerId, {
       invoice_settings: { default_payment_method: pm.id },
-    });
+    }, { idempotencyKey: `${input.idempotencyKey}:default` });
 
     return {
       customerId,
@@ -77,10 +79,11 @@ export class StripeProvider implements PaymentProvider {
     idempotencyKey: string;
     note?: string;
     referenceId?: string;
+    providerAccountId?: string;
   }) {
     const pi = await this.stripe.paymentIntents.create(
       {
-        amount: input.amountCents,
+        amount: toProviderMinorAmount(input.amountCents, this.currency),
         currency: this.currency,
         customer: input.customerId,
         payment_method: input.cardId,
@@ -89,7 +92,12 @@ export class StripeProvider implements PaymentProvider {
         description: input.note,
         metadata: input.referenceId ? { referenceId: input.referenceId } : undefined,
       },
-      { idempotencyKey: input.idempotencyKey },
+      {
+        idempotencyKey: input.idempotencyKey,
+        ...(input.providerAccountId
+          ? { stripeAccount: input.providerAccountId }
+          : {}),
+      },
     );
     return { paymentId: pi.id, status: pi.status };
   }
@@ -99,17 +107,41 @@ export class StripeProvider implements PaymentProvider {
     amountCents: number;
     reason: string;
     idempotencyKey: string;
+    providerAccountId?: string;
   }) {
     const r = await this.stripe.refunds.create(
-      { payment_intent: input.paymentId, amount: input.amountCents },
-      { idempotencyKey: input.idempotencyKey },
+      {
+        payment_intent: input.paymentId,
+        amount: toProviderMinorAmount(input.amountCents, this.currency),
+      },
+      {
+        idempotencyKey: input.idempotencyKey,
+        ...(input.providerAccountId
+          ? { stripeAccount: input.providerAccountId }
+          : {}),
+      },
     );
     return { refundId: r.id, status: r.status ?? "" };
   }
 
   async removeSavedCard(input: { cardId: string; customerId: string }) {
-    // Detach the PaymentMethod — it can never be charged/re-attached after this.
-    await this.stripe.paymentMethods.detach(input.cardId);
+    // Detach is retried only under the DB-owned operation id. If the first
+    // response was lost, retrieve the exact PaymentMethod and accept only the
+    // authoritative already-detached state (customer=null).
+    try {
+      const current = await this.stripe.paymentMethods.retrieve(input.cardId);
+      if (current.customer == null) return { providerReference: current.id };
+      const removed = await this.stripe.paymentMethods.detach(input.cardId);
+      return { providerReference: removed.id };
+    } catch (cause) {
+      try {
+        const current = await this.stripe.paymentMethods.retrieve(input.cardId);
+        if (current.customer == null) return { providerReference: current.id };
+      } catch {
+        // The provider state is still ambiguous; do not report success.
+      }
+      throw cause;
+    }
   }
 
   async findSavedCardByPhone(phone: string) {

@@ -1,7 +1,9 @@
 import { type ReactNode } from "react";
 import { notFound, redirect } from "next/navigation";
-import { createClient } from "@/shared/lib/supabase/server";
-import { getSuperAdminRole } from "@/shared/lib/superadmin";
+import {
+  clearInactiveServerSession,
+  requireActiveSuperAdminSession,
+} from "@/shared/auth/requireActiveSuperAdminSession";
 import { SuperadminSidebar } from "@/components/superadmin/SuperadminSidebar";
 import { SuperadminBottomNav } from "@/components/superadmin/SuperadminBottomNav";
 import { SuperadminTopBar } from "@/components/superadmin/SuperadminTopBar";
@@ -29,24 +31,15 @@ export default async function SuperadminShellLayout({
 }: {
   children: ReactNode;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  const access = await requireActiveSuperAdminSession();
+  if (!access.ok) {
+    if (access.code === "forbidden") notFound();
     // Proxy normally handles this, but the redirect here is a
-    // defense-in-depth so a misconfigured proxy can't leak the shell.
-    redirect("/superadmin/login");
+    // defense-in-depth so a stale/revoked cookie can't leak the shell.
+    await clearInactiveServerSession(access.supabase);
+    redirect("/superadmin/login?notice=reauthentication_required");
   }
-
-  const role = await getSuperAdminRole(user.id);
-  if (role === null) {
-    // Authenticated but not (or no longer) a superadmin — per §8.3 we
-    // do not reveal that the shell exists. notFound() bubbles to the
-    // global 404 (it returns `never`, so TS narrows below).
-    notFound();
-  }
+  const { role, supabase } = access;
 
   // Soft two-factor gate: ONLY superadmins who have enrolled a verified TOTP
   // factor are challenged (nextLevel resolves to 'aal2'). An un-enrolled account

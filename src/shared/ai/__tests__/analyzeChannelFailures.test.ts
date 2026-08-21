@@ -25,8 +25,12 @@ let mockNotifRows: { status: string; error_code: string | null }[] = [];
 // Controls duplicate-lesson check: null = no existing lesson
 let mockExistingLesson: { id: string } | null = null;
 
+const createServiceRoleClientMock = vi.fn();
+
 vi.mock("@/shared/lib/supabase/serviceRole", () => ({
-  createServiceRoleClient: () => ({
+  createServiceRoleClient: () => {
+    createServiceRoleClientMock();
+    return ({
     from: (table: string) => {
       if (table === "booking_notifications") {
         // Chainable query builder — resolves with mockNotifRows
@@ -68,7 +72,8 @@ vi.mock("@/shared/lib/supabase/serviceRole", () => ({
       // ai_actions_log insert — just swallow
       return { insert: vi.fn(async () => ({ data: null, error: null })) };
     },
-  }),
+    });
+  },
 }));
 
 // Import SUT after mocks
@@ -106,7 +111,7 @@ describe("analyzeChannelFailures", () => {
     mockNotifRows = makeRows(4, 6);
 
     const result: ChannelFailureResult = await analyzeChannelFailures(
-      "salon-123",
+      "11111111-1111-4111-8111-111111111123",
     );
 
     expect(result.lessonCreated).toBe(true);
@@ -115,7 +120,7 @@ describe("analyzeChannelFailures", () => {
     expect(createLesson).toHaveBeenCalledOnce();
     expect(createLesson).toHaveBeenCalledWith(
       expect.objectContaining({
-        salonId: "salon-123",
+        salonId: "11111111-1111-4111-8111-111111111123",
         scope: "channel",
         rule: expect.stringContaining("prefer_email"),
         source: "auto:twilio_fail_analysis",
@@ -128,7 +133,7 @@ describe("analyzeChannelFailures", () => {
     mockNotifRows = makeRows(8, 2);
 
     const result: ChannelFailureResult = await analyzeChannelFailures(
-      "salon-456",
+      "11111111-1111-4111-8111-111111111456",
     );
 
     expect(result.lessonCreated).toBe(false);
@@ -142,7 +147,7 @@ describe("analyzeChannelFailures", () => {
     mockNotifRows = makeRows(0, 3);
 
     const result: ChannelFailureResult = await analyzeChannelFailures(
-      "salon-789",
+      "11111111-1111-4111-8111-111111111789",
     );
 
     expect(result.lessonCreated).toBe(false);
@@ -167,7 +172,7 @@ describe("analyzeChannelFailures", () => {
     ];
 
     const result: ChannelFailureResult = await analyzeChannelFailures(
-      "salon-a2p",
+      "11111111-1111-4111-8111-111111111234",
     );
 
     expect(result.lessonCreated).toBe(true);
@@ -180,11 +185,25 @@ describe("analyzeChannelFailures", () => {
     mockExistingLesson = { id: "existing-lesson-id" };
 
     const result: ChannelFailureResult = await analyzeChannelFailures(
-      "salon-dup",
+      "11111111-1111-4111-8111-111111111345",
     );
 
     expect(result.lessonCreated).toBe(false);
     expect(result.lessonId).toBe("existing-lesson-id");
+    expect(createLesson).not.toHaveBeenCalled();
+  });
+
+  it("rejects PostgREST filter grammar before creating a service client", async () => {
+    const result = await analyzeChannelFailures(
+      "11111111-1111-4111-8111-111111111111),salon_id.neq.ignored",
+    );
+
+    expect(result).toEqual({
+      smsFailRate: 0,
+      lessonCreated: false,
+      lessonId: null,
+    });
+    expect(createServiceRoleClientMock).not.toHaveBeenCalled();
     expect(createLesson).not.toHaveBeenCalled();
   });
 });

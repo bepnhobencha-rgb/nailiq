@@ -34,12 +34,24 @@ export type StaffAvailability = {
   /** Active booking right now (if any). Null when staff is free. */
   currentBooking: {
     bookingId: string;
+    reservationId: string;
     clientName: string;
     /** ISO end time we believe the seat will free up. May be later than
      * the original end_time_utc when the in-service booking is running
      * over. */
     endsAt: string;
+    scheduleModel: "single" | "segments_v1";
+    segmentId: string | null;
+    staffId: string;
+    resourceId: string | null;
+    prepMinutes: number;
+    serviceStartsAt: string;
+    serviceEndsAt: string;
+    occupiedStartsAt: string;
+    occupiedEndsAt: string;
   } | null;
+  /** Exact persisted capacity reservations in the bounded operational window. */
+  reservations: StaffCapacityReservation[];
   /** True when no booking currently occupies the staff's chair. */
   isAvailableNow: boolean;
   /**
@@ -75,6 +87,23 @@ export type StaffAvailability = {
   nextGroupBookingAt: string | null;
 };
 
+export type StaffCapacityReservation = {
+  reservationId: string;
+  bookingId: string;
+  scheduleModel: "single" | "segments_v1";
+  segmentId: string | null;
+  clientName: string;
+  status: string;
+  staffId: string;
+  resourceId: string | null;
+  prepMinutes: number;
+  serviceStartsAt: string;
+  serviceEndsAt: string;
+  occupiedStartsAt: string;
+  occupiedEndsAt: string;
+  groupId: string | null;
+};
+
 export type AvailabilityResult =
   | { ok: false; error: "unauthorized" | "invalid_input" | "server_error" }
   | { ok: true; nowIso: string; staff: StaffAvailability[] };
@@ -87,17 +116,41 @@ type StaffRow = {
 
 type BookingRow = {
   id: string;
+  reservation_id: string;
+  schedule_model: "single" | "segments_v1";
+  segment_id: string | null;
   staff_id: string | null;
+  resource_id: string | null;
   client_name: string | null;
   status: string | null;
+  prep_minutes: number;
   start_time_utc: string | null;
   end_time_utc: string | null;
+  service_start_time_utc: string | null;
+  service_end_time_utc: string | null;
   staff_request_note: string | null;
   /** Non-null means this booking is part of a multi-member group
    * (column populated by `insert_group_bookings`). Walk-in
    * assignment warns the receptionist before stepping on a
    * group's window — see FIX 16. */
   group_id: string | null;
+};
+
+type SequenceAvailabilityRow = {
+  id: string;
+  booking_id: string;
+  staff_id: string;
+  resource_id: string | null;
+  prep_minutes: number;
+  customer_start_utc: string;
+  customer_end_utc: string;
+  occupied_start_utc: string;
+  occupied_end_utc: string;
+  reservation_status: string;
+  booking:
+    | { client_name?: string | null; group_id?: string | null; schedule_model?: string | null }
+    | Array<{ client_name?: string | null; group_id?: string | null; schedule_model?: string | null }>
+    | null;
 };
 
 type StaffServiceRow = {
@@ -181,24 +234,46 @@ export async function getStaffAvailability(
 
   const staffIds = staffRows.map((s) => s.id);
 
-  // One query for in-window bookings (covers "current booking",
-  // "bookings next 2h", and the wait projection).
-  const bookingsRes = (await supabase
-    .from("bookings")
-    .select(
-      "id, staff_id, client_name, status, start_time_utc, end_time_utc, staff_request_note, group_id",
-    )
-    .eq("salon_id", salonId)
-    .in("staff_id", staffIds)
-    .in("status", ["confirmed", "in_progress"])
-    .lte("start_time_utc", horizonIso)
-    .is("deleted_at" as never, null)) as {
-    data: BookingRow[] | null;
-    error: unknown;
-  };
+  // Parallel capacity reads for legacy single bookings and authoritative
+  // sequence segments (covers current booking, 2h load, and wait projection).
+  const [bookingsRes, segmentsRes] = await Promise.all([
+    supabase
+      .from("bookings")
+      .select(
+        "id, staff_id, resource_id, client_name, status, start_time_utc, end_time_utc, staff_request_note, group_id, schedule_model",
+      )
+      .eq("salon_id", salonId)
+      .eq("schedule_model", "single")
+      .in("staff_id", staffIds)
+      .in("status", ["confirmed", "in_progress"])
+      .lte("start_time_utc", horizonIso)
+      .or(`status.eq.in_progress,end_time_utc.gte.${nowIso}`)
+      .is("deleted_at" as never, null),
+    supabase
+      .from("booking_service_segments" as never)
+      .select(
+        `id, booking_id, salon_id, staff_id, resource_id, prep_minutes,
+         customer_start_utc, customer_end_utc, occupied_start_utc,
+         occupied_end_utc, reservation_status,
+         booking:bookings!inner(client_name, group_id, deleted_at, schedule_model)`,
+      )
+      .eq("salon_id" as never, salonId as never)
+      .eq("booking.salon_id" as never, salonId as never)
+      .eq("booking.schedule_model" as never, "segments_v1" as never)
+      .is("booking.deleted_at" as never, null)
+      .in("staff_id" as never, staffIds as never)
+      .in("reservation_status" as never, ["confirmed", "in_progress"] as never)
+      .lte("occupied_start_utc" as never, horizonIso as never)
+      .or(
+        `reservation_status.eq.in_progress,occupied_end_utc.gte.${nowIso}` as never,
+      ),
+  ]);
 
-  if (bookingsRes.error) {
-    console.error("[availabilityEngine] bookings", bookingsRes.error);
+  if (bookingsRes.error || segmentsRes.error) {
+    console.error("[availabilityEngine] capacity reservations", {
+      bookings: bookingsRes.error,
+      segments: segmentsRes.error,
+    });
     return { ok: false, error: "server_error" };
   }
 
@@ -235,13 +310,86 @@ export async function getStaffAvailability(
     }
   }
 
-  const bookings = bookingsRes.data ?? [];
+  const singleBookings: BookingRow[] = ((bookingsRes.data ?? []) as Array<{
+    id: string;
+    staff_id: string | null;
+    resource_id: string | null;
+    client_name: string | null;
+    status: string | null;
+    start_time_utc: string | null;
+    end_time_utc: string | null;
+    staff_request_note: string | null;
+    group_id: string | null;
+    schedule_model?: string | null;
+  }>).filter((row) => (
+    (row.schedule_model == null || row.schedule_model === "single") &&
+    (row.status === "in_progress" || Date.parse(row.end_time_utc ?? "") >= now.getTime())
+  )).map((row) => ({
+    ...row,
+    reservation_id: row.id,
+    schedule_model: "single",
+    segment_id: null,
+    prep_minutes: 0,
+    service_start_time_utc: row.start_time_utc,
+    service_end_time_utc: row.end_time_utc,
+  }));
+  const sequenceBookings: BookingRow[] = ((segmentsRes.data ?? []) as unknown as SequenceAvailabilityRow[])
+    .flatMap((row) => {
+      const parent = Array.isArray(row.booking) ? row.booking[0] : row.booking;
+      if (
+        !parent || parent.schedule_model !== "segments_v1" ||
+        (
+          row.reservation_status !== "in_progress" &&
+          Date.parse(row.occupied_end_utc) < now.getTime()
+        )
+      ) return [];
+      return [{
+        id: row.booking_id,
+        reservation_id: row.id,
+        schedule_model: "segments_v1" as const,
+        segment_id: row.id,
+        staff_id: row.staff_id,
+        resource_id: row.resource_id,
+        client_name: parent.client_name ?? null,
+        status: row.reservation_status,
+        prep_minutes: row.prep_minutes,
+        start_time_utc: row.occupied_start_utc,
+        end_time_utc: row.occupied_end_utc,
+        service_start_time_utc: row.customer_start_utc,
+        service_end_time_utc: row.customer_end_utc,
+        staff_request_note: null,
+        group_id: parent.group_id ?? null,
+      }];
+    });
+  const bookings = [...singleBookings, ...sequenceBookings];
   const twoHoursMs = 2 * 60 * 60 * 1000;
   const horizonMs = horizonIso ? Date.parse(horizonIso) : 0;
   const nowMs = now.getTime();
 
   const result: StaffAvailability[] = staffRows.map((s) => {
     const own = bookings.filter((b) => b.staff_id === s.id);
+    const reservations: StaffCapacityReservation[] = own.flatMap((b) => {
+      if (
+        !b.start_time_utc || !b.end_time_utc ||
+        !b.service_start_time_utc || !b.service_end_time_utc || !b.staff_id
+      ) return [];
+      return [{
+        reservationId: b.reservation_id,
+        bookingId: b.id,
+        scheduleModel: b.schedule_model,
+        segmentId: b.segment_id,
+        clientName: String(b.client_name ?? "").trim() || "—",
+        status: String(b.status ?? ""),
+        staffId: b.staff_id,
+        resourceId: b.resource_id,
+        prepMinutes: b.prep_minutes,
+        serviceStartsAt: b.service_start_time_utc,
+        serviceEndsAt: b.service_end_time_utc,
+        occupiedStartsAt: b.start_time_utc,
+        occupiedEndsAt: b.end_time_utc,
+        groupId: b.group_id,
+      }];
+    }).sort((a, b) => Date.parse(a.occupiedStartsAt) - Date.parse(b.occupiedStartsAt));
 
     // Current booking: the in_progress row (if any) OR the confirmed
     // row whose window covers `now`. We trust end_time_utc as the
@@ -264,8 +412,18 @@ export async function getStaffAvailability(
         if (!currentBooking) {
           currentBooking = {
             bookingId: String(b.id),
+            reservationId: b.reservation_id,
             clientName: String(b.client_name ?? "").trim() || "—",
             endsAt: new Date(endMs).toISOString(),
+            scheduleModel: b.schedule_model,
+            segmentId: b.segment_id,
+            staffId: b.staff_id!,
+            resourceId: b.resource_id,
+            prepMinutes: b.prep_minutes,
+            serviceStartsAt: b.service_start_time_utc!,
+            serviceEndsAt: b.service_end_time_utc!,
+            occupiedStartsAt: b.start_time_utc!,
+            occupiedEndsAt: b.end_time_utc!,
           };
           earliestReadyAt = endMs;
         } else if (endMs > earliestReadyAt!) {
@@ -285,8 +443,18 @@ export async function getStaffAvailability(
         if (currentBooking == null) {
           currentBooking = {
             bookingId: String(b.id),
+            reservationId: b.reservation_id,
             clientName: String(b.client_name ?? "").trim() || "—",
             endsAt: new Date(projected).toISOString(),
+            scheduleModel: b.schedule_model,
+            segmentId: b.segment_id,
+            staffId: b.staff_id!,
+            resourceId: b.resource_id,
+            prepMinutes: b.prep_minutes,
+            serviceStartsAt: b.service_start_time_utc!,
+            serviceEndsAt: b.service_end_time_utc!,
+            occupiedStartsAt: b.start_time_utc!,
+            occupiedEndsAt: b.end_time_utc!,
           };
           earliestReadyAt = projected;
         }
@@ -352,6 +520,7 @@ export async function getStaffAvailability(
       staffId: s.id,
       staffName: String(s.name ?? "").trim(),
       currentBooking,
+      reservations,
       isAvailableNow,
       estimatedReadyAt,
       waitMinutes,

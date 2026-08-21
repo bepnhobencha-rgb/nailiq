@@ -116,6 +116,7 @@ function SaveCardManager() {
                 card via the same APIs as the online booking flow. */}
             <NoShowCardCapture
               bookingId={state.ctx.bookingId}
+              managementToken={token}
               currencyFormat={(cents) =>
                 formatCurrency(cents, state.ctx.currencyCode as Currency) ?? ""
               }

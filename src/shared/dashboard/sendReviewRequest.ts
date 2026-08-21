@@ -216,7 +216,10 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
       const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
       const { sendSmsReminder } = await import("@/shared/lib/twilioSms");
       const { logNotification } = await import("@/shared/lib/notificationLog");
-      const smsResult = await sendSmsReminder(toE164, smsBody, { statusCallbackUrl: `${SITE_URL}/api/twilio/status` });
+      const smsResult = await sendSmsReminder(toE164, smsBody, {
+        salonId: salon.id,
+        statusCallbackUrl: `${SITE_URL}/api/twilio/status`,
+      });
       if (!smsResult.ok) {
         console.error("[sendReviewRequest] SMS failed", smsResult.error);
       }

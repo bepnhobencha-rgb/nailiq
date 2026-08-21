@@ -39,6 +39,15 @@ import {
 
 export type ApprovalUrgency = "urgent" | "normal";
 
+// The database stores approval bearers as exactly 32 random bytes encoded in
+// lowercase hex. Enforce that grammar before any privileged lookup; never put
+// caller-controlled text into PostgREST filter syntax.
+const APPROVAL_TOKEN_RE = /^[0-9a-f]{64}$/;
+
+export function isAiApprovalToken(value: string): boolean {
+  return APPROVAL_TOKEN_RE.test(value);
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type ApprovalRow = {
@@ -515,16 +524,32 @@ export async function processDecision(
     error: string | null;
   };
 }> {
+  if (!isAiApprovalToken(token)) {
+    return {
+      ok: false,
+      salonSlug: null,
+      actionType: null,
+      alreadyDecided: false,
+      expired: false,
+    };
+  }
   const db = createServiceRoleClient();
 
-  // Find request by either token type
-  const { data: row } = await db
+  // Use typed equality filters rather than interpolating the bearer into
+  // PostgREST's `.or()` grammar. The second lookup runs only on a miss.
+  const { data: approvedRow } = await db
     .from("approval_requests" as never)
     .select("*")
-    .or(
-      `approve_token.eq.${token},decline_token.eq.${token}` as never,
-    )
+    .eq("approve_token" as never, token as never)
     .maybeSingle();
+  const { data: declinedRow } = approvedRow
+    ? { data: null }
+    : await db
+        .from("approval_requests" as never)
+        .select("*")
+        .eq("decline_token" as never, token as never)
+        .maybeSingle();
+  const row = approvedRow ?? declinedRow;
 
   if (!row) {
     return { ok: false, salonSlug: null, actionType: null, alreadyDecided: false, expired: false };

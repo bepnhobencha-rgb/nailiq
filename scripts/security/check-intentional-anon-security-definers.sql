@@ -56,8 +56,22 @@ BEGIN
           'RETURNS jsonb',
           ARRAY[
             'v_role = ''anon''',
+            'public.resolve_public_booking_pricing',
+            '''public-booking-client:''',
             '''public-booking:salon:''',
             '''public-booking:phone:'''
+          ]::text[]
+        ),
+        (
+          'public.create_public_booking(uuid,uuid,uuid,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid[],text,uuid,uuid,uuid,boolean,uuid,text)',
+          'v',
+          'RETURNS jsonb',
+          ARRAY[
+            'p_status IS DISTINCT FROM ''confirmed''',
+            'public.resolve_public_booking_pricing',
+            '''pricing_changed''',
+            'public_booking_request_fingerprint',
+            'p_expected_pricing_fingerprint'
           ]::text[]
         ),
         (
@@ -92,18 +106,6 @@ BEGIN
             'b.salon_id = p_salon_id',
             'b.created_at >= now() - interval ''10 minutes''',
             'canonical_phone(p_phone)'
-          ]::text[]
-        ),
-        (
-          'public.insert_group_bookings(jsonb)',
-          'v',
-          'RETURNS jsonb',
-          ARRAY[
-            'v_group_size < 2 OR v_group_size > 20',
-            '''invalid_service''',
-            '''invalid_staff''',
-            '''public-group-booking:salon:''',
-            'jsonb_build_object(''price_cents'', v_price)'
           ]::text[]
         ),
         (
@@ -167,6 +169,10 @@ BEGIN
          SELECT 1
          FROM unnest((SELECT proconfig FROM pg_proc WHERE oid = v_oid)) setting
          WHERE setting LIKE 'search_path=public%'
+            OR (
+              v_target.signature LIKE 'public.create_public_booking(%'
+              AND setting = 'search_path=""'
+            )
        )
        OR v_public_execute
        OR NOT has_function_privilege('anon', v_oid, 'EXECUTE')

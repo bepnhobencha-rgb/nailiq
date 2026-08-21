@@ -4,6 +4,7 @@ import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import type { CustomerChannelMode } from "@/shared/lib/channelResolver";
 import { z } from "zod";
+import { loadSalonOwnerAdminSettingsForDashboardContext } from "@/shared/dashboard/salonOwnerAdminSettings";
 
 const CustomerChannelSettingsInput = z.object({
   smsOutboundEnabled: z.boolean(),
@@ -24,13 +25,9 @@ export async function getCustomerChannelSettings(
     const ctx = await getDashboardWriteClient(slug);
     if (!ctx) return { ok: false };
     if (!isOwnerOrAdmin(ctx.role)) return { ok: false };
-    const { data } = await ctx.supabase
-      .from("salons")
-      .select("sms_outbound_enabled, email_outbound_enabled, customer_channel" as never)
-      .eq("id", ctx.salon.id)
-      .maybeSingle();
-    if (!data) return { ok: false };
-    const d = data as { sms_outbound_enabled?: boolean | null; email_outbound_enabled?: boolean | null; customer_channel?: string };
+    const loaded = await loadSalonOwnerAdminSettingsForDashboardContext(ctx);
+    if (!loaded.ok) return { ok: false };
+    const d = loaded.settings as { sms_outbound_enabled?: boolean | null; email_outbound_enabled?: boolean | null; customer_channel?: string };
     return {
       ok: true,
       settings: {

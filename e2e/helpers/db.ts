@@ -1190,6 +1190,49 @@ export async function prepareTestSalonForGoLive(salonId: string) {
   }
 }
 
+/**
+ * Complete the saved-data requirements used by the Guided Admin Setup hub.
+ *
+ * The shared go-live helper intentionally covers only the original technical
+ * readiness gates. Guided Setup also treats the bilingual booking policy and
+ * notification language as required owner setup. Keep this as a separate
+ * helper so older readiness specs retain their narrower fixture contract.
+ */
+export async function prepareTestSalonForGuidedSetup(salonId: string) {
+  await prepareTestSalonForGoLive(salonId);
+
+  const { error } = await supabase
+    .from("salons")
+    .update({
+      cancellation_policy: {
+        en: "Please contact the salon before cancelling or rescheduling.",
+        vi: "Vui lòng liên hệ salon trước khi huỷ hoặc đổi lịch.",
+      },
+      default_notification_locale: "vi",
+      booking_closed_dates: [],
+      booking_lead_minutes: 0,
+      resources_enabled: false,
+      staff_selection_enabled: true,
+    })
+    .eq("id", salonId);
+
+  if (error) {
+    throw new Error(`prepareTestSalonForGuidedSetup: ${error.message}`);
+  }
+
+  // Make the availability proof deterministic and independent from fixtures
+  // created by other specs. These are disposable QA rows only.
+  const [{ error: shiftError }, { error: leaveError }] = await Promise.all([
+    supabase.from("staff_shifts").delete().eq("salon_id", salonId),
+    supabase.from("staff_unavailability").delete().eq("salon_id", salonId),
+  ]);
+  if (shiftError || leaveError) {
+    throw new Error(
+      `prepareTestSalonForGuidedSetup availability reset: ${shiftError?.message ?? leaveError?.message}`,
+    );
+  }
+}
+
 export async function changeFirstTestServicePrice(salonId: string) {
   const { data: service, error: readError } = await supabase
     .from("services")
@@ -1329,6 +1372,42 @@ export async function getRegisteredSalonForUser(userId: string) {
     serviceCount: serviceCount ?? 0,
     staffCount: staffCount ?? 0,
   };
+}
+
+/**
+ * Enable an opt-in feature on a throwaway E2E salon after registration.
+ *
+ * A newly registered salon does not exist when a SuperAdmin chooses the pilot,
+ * so the registration-to-guided-setup contract needs one safe test-only seam:
+ * create the salon through the real UI, then apply the same JSONB override the
+ * SuperAdmin panel writes. `assertNotProductionFromEnv()` at module load keeps
+ * this helper fenced to the local/CI database.
+ */
+export async function setTestSalonFeatureFlags(
+  salonId: string,
+  patch: Record<string, boolean>,
+) {
+  const { data: row, error: readError } = await supabase
+    .from("salons")
+    .select("feature_flags")
+    .eq("id", salonId)
+    .single();
+
+  if (readError) {
+    throw new Error(`setTestSalonFeatureFlags read: ${readError.message}`);
+  }
+
+  const current =
+    (row as { feature_flags?: Record<string, boolean> } | null)
+      ?.feature_flags ?? {};
+  const { error: updateError } = await supabase
+    .from("salons")
+    .update({ feature_flags: { ...current, ...patch } })
+    .eq("id", salonId);
+
+  if (updateError) {
+    throw new Error(`setTestSalonFeatureFlags update: ${updateError.message}`);
+  }
 }
 
 /** Remove a Supabase auth user (and any salon they own) from E2E test runs. */

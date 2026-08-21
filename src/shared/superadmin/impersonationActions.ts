@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { getSuperAdminRole } from "@/shared/lib/superadmin";
+import { requireActiveSuperAdminSession } from "@/shared/auth/requireActiveSuperAdminSession";
 import {
   clearFounderSessionStash,
   clearImpersonationMeta,
@@ -98,13 +98,11 @@ export async function startImpersonation(
     return { ok: false, error: "reason_required" };
   }
 
-  const founderSupabase = await createClient();
-  const {
-    data: { user: founderUser },
-  } = await founderSupabase.auth.getUser();
-  if (!founderUser) return { ok: false, error: "unauthorized" };
-
-  const founderRole = await getSuperAdminRole(founderUser.id);
+  const access = await requireActiveSuperAdminSession();
+  if (!access.ok) return { ok: false, error: "unauthorized" };
+  const founderSupabase = access.supabase;
+  const founderUser = access.user;
+  const founderRole = access.role;
   if (founderRole !== "founder") {
     return { ok: false, error: "not_founder" };
   }

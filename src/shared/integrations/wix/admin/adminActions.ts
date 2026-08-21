@@ -19,6 +19,7 @@ import { looseServiceClient } from "../looseDb";
 import { wixPostWithKey, invalidateWixKeyCache } from "../client";
 import { categorizeService } from "../categorize";
 import { runForwardSync } from "../sync";
+import { resolveWixEnabledOnCredentialSave } from "../credentialDefaults";
 import type { WixStatus } from "./types";
 
 const SERVICES_QUERY = "https://www.wixapis.com/bookings/v2/services/query";
@@ -187,6 +188,16 @@ export async function saveWixCredentials(
   if (typeof input.autoApprove === "boolean") patch.auto_approve = input.autoApprove;
 
   const db = looseServiceClient();
+  const { data: existing, error: existingError } = await db
+    .from("wix_integrations")
+    .select("enabled")
+    .eq("salon_id", ctx.salon.id)
+    .maybeSingle();
+  if (existingError) return { ok: false, error: existingError.message };
+  patch.enabled = resolveWixEnabledOnCredentialSave(
+    existing?.enabled,
+    input.enabled,
+  );
   const { error } = await db.from("wix_integrations").upsert(patch, { onConflict: "salon_id" });
   if (error) return { ok: false, error: error.message };
   invalidateWixKeyCache(siteId);

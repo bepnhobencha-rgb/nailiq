@@ -4,11 +4,15 @@ import { useEffect, useState, useTransition } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   loadRsvpPageData,
-  confirmMemberAttendance,
-  declineMemberAttendance,
-  reportLateDecline,
   type RsvpPageData,
 } from "@/shared/booking/groupMemberRsvpActions";
+import {
+  acknowledgeBookingManagementRequest,
+  pendingBookingManagementRequest,
+  replayExistingBookingManagementRequest,
+  stableBookingManagementRequestId,
+} from "@/shared/booking/bookingManagementRequestId";
+import { groupRsvpManagementIntent } from "@/shared/booking/groupRsvpRequest";
 
 function formatSlotTime(isoUtc: string, timezone: string): string {
   try {
@@ -39,77 +43,151 @@ type UIState =
 
 export default function GroupRsvpPage() {
   const searchParams = useSearchParams();
-  const token = searchParams?.get("token") ?? "";
+  const confirmToken = searchParams?.get("confirmToken") ?? "";
+  const cancelToken = searchParams?.get("cancelToken") ?? "";
   const lang = (searchParams?.get("lang") ?? "vi") as "en" | "vi";
 
   const [data, setData] = useState<RsvpPageData | null>(null);
   const [uiState, setUiState] = useState<UIState>(
-    token ? "loading" : "error",
+    confirmToken && cancelToken ? "loading" : "error",
   );
   const [sugName, setSugName] = useState("");
   const [sugPhone, setSugPhone] = useState("");
   const [errorCode, setErrorCode] = useState(
-    token ? "" : "missing_token",
+    confirmToken && cancelToken ? "" : "missing_token",
   );
-  const [cutoffHours, setCutoffHours] = useState(2);
+  const [cutoffHours] = useState(2);
   const [isPending, startTransition] = useTransition();
 
   const t = lang === "en" ? EN : VI;
 
   useEffect(() => {
-    if (!token) return;
-    void loadRsvpPageData(token).then((res) => {
+    if (!confirmToken || !cancelToken) return;
+    let alive = true;
+    void (async () => {
+      for (const candidate of [
+        { action: "confirm" as const, token: confirmToken, endpoint: "/api/booking/confirm-action", done: "done_confirm" as const },
+        { action: "cancel" as const, token: cancelToken, endpoint: "/api/booking/cancel-action", done: "done_decline" as const },
+      ]) {
+        const pending = await pendingBookingManagementRequest(candidate);
+        if (!pending) continue;
+        const intent = groupRsvpManagementIntent(candidate.action, candidate.token);
+        const replay = await replayExistingBookingManagementRequest(intent, async (requestId) => {
+          const response = await fetch(candidate.endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: candidate.token, requestId }),
+          });
+          const body = await response.json() as {
+            ok?: boolean;
+            code?: string;
+            booking?: {
+              salonName?: string;
+              salonSlug?: string;
+              salonTimezone?: string;
+              serviceName?: string | null;
+              staffName?: string | null;
+              startTimeUtc?: string;
+            };
+          };
+          return { acknowledged: response.ok && body.ok === true, value: { response, body } };
+        });
+        if (!alive) return;
+        if (replay?.value.response.ok && replay.value.body.ok) {
+          const display = replay.value.body.booking;
+          if (!display?.salonName || !display.salonSlug || !display.salonTimezone || !display.startTimeUtc) {
+            setUiState("error");
+            setErrorCode("management_unavailable");
+            return;
+          }
+          setData({
+            ok: true,
+            bookingId: "",
+            salonName: display.salonName,
+            salonSlug: display.salonSlug,
+            timezone: display.salonTimezone,
+            serviceName: display.serviceName ?? "",
+            staffName: display.staffName ?? "",
+            startAt: display.startTimeUtc,
+            memberName: "",
+            organizerName: "",
+            groupSize: 1,
+            scopeKind: "member_own",
+            currentStatus: candidate.action === "confirm" ? "confirmed" : "declined",
+          });
+          setUiState(candidate.done);
+          return;
+        }
+      }
+      const res = await loadRsvpPageData(confirmToken, cancelToken);
+      if (!alive) return;
       setData(res);
       if (!res.ok) { setUiState("error"); setErrorCode(res.code); return; }
       // Already responded
       if (res.currentStatus === "confirmed") { setUiState("done_confirm"); return; }
       if (res.currentStatus === "declined")  { setUiState("done_decline"); return; }
       setUiState("idle");
+    })().catch(() => {
+      if (alive) { setUiState("error"); setErrorCode("management_unavailable"); }
     });
-  }, [token]);
+    return () => { alive = false; };
+  }, [cancelToken, confirmToken]);
 
   function handleConfirm() {
     if (!data?.ok) return;
     startTransition(async () => {
-      const res = await confirmMemberAttendance(data.bookingId, token);
-      if (res.ok) { setUiState("done_confirm"); }
-      else { setUiState("error"); setErrorCode(res.code ?? "unknown"); }
+      const intent = groupRsvpManagementIntent("confirm", confirmToken);
+      const requestId = await stableBookingManagementRequestId(intent);
+      const response = await fetch("/api/booking/confirm-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: confirmToken, requestId }),
+      });
+      const result = await response.json() as { ok?: boolean; code?: string };
+      if (response.ok && result.ok) {
+        await acknowledgeBookingManagementRequest(intent);
+        setUiState("done_confirm");
+      } else { setUiState("error"); setErrorCode(result.code ?? "unknown"); }
     });
   }
 
   function handleDeclineSubmit() {
     if (!data?.ok) return;
     startTransition(async () => {
-      const res = await declineMemberAttendance(
-        data.bookingId,
-        token,
-        sugName.trim() || undefined,
-        sugPhone.trim() || undefined,
-      );
-      if (res.ok) {
+      // Replacement suggestions remain local-only until a separately authorized,
+      // bounded organizer workflow exists; they never alter canonical cancellation.
+      const suggestedName = sugName.trim().slice(0, 80);
+      const suggestedPhone = sugPhone.trim().slice(0, 32);
+      void suggestedName;
+      void suggestedPhone;
+      const intent = groupRsvpManagementIntent("cancel", cancelToken);
+      const requestId = await stableBookingManagementRequestId(intent);
+      const response = await fetch("/api/booking/cancel-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: cancelToken, requestId }),
+      });
+      const result = await response.json() as {
+        ok?: boolean;
+        code?: string;
+        rsvpSemantic?: string | null;
+        attendanceStatus?: string | null;
+      };
+      if (
+        response.ok && result.ok === true && result.code === "declined" &&
+        result.rsvpSemantic === "decline" && result.attendanceStatus === "declined"
+      ) {
+        await acknowledgeBookingManagementRequest(intent);
         setUiState("done_decline");
-      } else if (res.code === "too_late") {
-        // Past cutoff — switch to Minh-handled flow
-        setCutoffHours(res.cutoffHours ?? 2);
-        setUiState("too_late");
       } else {
         setUiState("error");
-        setErrorCode(res.code ?? "unknown");
+        setErrorCode(result.code ?? "unknown");
       }
     });
   }
 
   function handleLateDeclineSubmit() {
-    if (!data?.ok) return;
-    startTransition(async () => {
-      await reportLateDecline(
-        data.bookingId,
-        token,
-        sugName.trim() || undefined,
-        sugPhone.trim() || undefined,
-      );
-      setUiState("done_late");
-    });
+    handleDeclineSubmit();
   }
 
   // ── Loading ──────────────────────────────────────────────────────────────
@@ -215,6 +293,7 @@ export default function GroupRsvpPage() {
               type="text"
               placeholder={t.suggestNamePlaceholder}
               value={sugName}
+              maxLength={80}
               onChange={(e) => setSugName(e.target.value)}
               className="w-full rounded-xl border border-nq-border/40 bg-nq-bg px-4 py-2.5 text-sm text-white placeholder:text-nq-muted focus:outline-none focus:ring-1 focus:ring-nq-primary/40"
             />
@@ -222,6 +301,7 @@ export default function GroupRsvpPage() {
               type="tel"
               placeholder={t.suggestPhonePlaceholder}
               value={sugPhone}
+              maxLength={32}
               onChange={(e) => setSugPhone(e.target.value)}
               className="w-full rounded-xl border border-nq-border/40 bg-nq-bg px-4 py-2.5 text-sm text-white placeholder:text-nq-muted focus:outline-none focus:ring-1 focus:ring-nq-primary/40"
             />
@@ -271,6 +351,7 @@ export default function GroupRsvpPage() {
               type="text"
               placeholder={t.suggestNamePlaceholder}
               value={sugName}
+              maxLength={80}
               onChange={(e) => setSugName(e.target.value)}
               className="w-full rounded-xl border border-nq-border/40 bg-nq-bg px-4 py-2.5 text-sm text-white placeholder:text-nq-muted focus:outline-none focus:ring-1 focus:ring-nq-primary/40"
             />
@@ -278,6 +359,7 @@ export default function GroupRsvpPage() {
               type="tel"
               placeholder={t.suggestPhonePlaceholder}
               value={sugPhone}
+              maxLength={32}
               onChange={(e) => setSugPhone(e.target.value)}
               className="w-full rounded-xl border border-nq-border/40 bg-nq-bg px-4 py-2.5 text-sm text-white placeholder:text-nq-muted focus:outline-none focus:ring-1 focus:ring-nq-primary/40"
             />

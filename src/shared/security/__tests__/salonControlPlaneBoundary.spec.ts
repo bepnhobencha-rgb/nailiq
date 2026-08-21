@@ -81,7 +81,10 @@ describe("salon control-plane column boundary", () => {
     const action = actions.slice(start, next < 0 ? undefined : next);
 
     expect(start).toBeGreaterThan(-1);
-    expect(action).toContain("if (!ctx || !isOwnerOrAdmin(ctx.role))");
+    expect(action).toContain(
+      "const ctx = await resolveNoShowManagementContext(slug)",
+    );
+    expect(action).toContain('if (!ctx) return { ok: false, error: "unauthorized" }');
     expect(action).toContain(
       "settings.payment_provider !== undefined && !isOwner(ctx.role)",
     );

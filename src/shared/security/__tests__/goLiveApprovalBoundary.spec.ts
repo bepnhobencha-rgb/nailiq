@@ -11,6 +11,9 @@ const migration = read(
 const action = read(
   "src/shared/dashboard/goLiveAttestationAction.ts",
 );
+const readinessLoader = read(
+  "src/shared/dashboard/loadGoLiveReadiness.ts",
+);
 
 describe("go-live approval security boundary", () => {
   it("keeps the history append-only and direct member writes closed", () => {
@@ -46,5 +49,35 @@ describe("go-live approval security boundary", () => {
       "allGoLivePrerequisitesConfirmed(loaded.attestationState)",
     );
     expect(action).toContain("loaded.snapshotHash");
+    expect(action).toContain("loaded.technicalSnapshotHash");
+  });
+
+  it("requires the authenticated read-only preview before Guided rehearsal or approval", () => {
+    expect(action).toContain("loadGuidedBookingPreviewAvailability");
+    expect(action).toContain("guidedPreviewSelection");
+    expect(action).toContain("parseGuidedPreviewEvidence");
+    expect(action).toContain("latestRehearsal");
+    expect(action).toContain('input.action === "attest"');
+    expect(action).toContain('reason: "guided_preview_unavailable"');
+    expect(action.indexOf("loadGuidedBookingPreviewAvailability")).toBeLessThan(
+      action.indexOf("createServiceRoleClient()"),
+    );
+  });
+
+  it("binds availability configuration and the verified selection to durable proof", () => {
+    for (const field of [
+      "booking_lead_minutes",
+      "resources_enabled",
+      "staff_selection_enabled",
+      "buffer_minutes",
+      "tax_lines",
+      "staffShiftSignature",
+      "availabilityConfiguration",
+    ]) {
+      expect(readinessLoader).toContain(field);
+    }
+    expect(action).toContain("[guided-preview:");
+    expect(action).toContain("persistedEvidenceNote.length > 500");
+    expect(action).toContain("evidence_note: persistedEvidenceNote");
   });
 });

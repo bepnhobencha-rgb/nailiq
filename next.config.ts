@@ -176,6 +176,19 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // Capability tokens are carried in booking-page query strings. Keep
+        // them out of caches, referrers and crawler indexes on every response.
+        source: "/booking/:path*",
+        // Referrer-Policy: no-referrer
+        // Cache-Control: private, no-store
+        headers: [
+          { key: "Cache-Control", value: "private, no-store, max-age=0" },
+          { key: "Pragma", value: "no-cache" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+        ],
+      },
     ];
   },
   async redirects() {

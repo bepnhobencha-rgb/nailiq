@@ -2,9 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { getSuperAdminRole } from "@/shared/lib/superadmin";
+import { requireActiveSuperAdminSession } from "@/shared/auth/requireActiveSuperAdminSession";
 import { writeAuditLog } from "@/shared/superadmin/audit";
 import {
   SquareConnectionValidationError,
@@ -80,13 +79,9 @@ export async function loadSquareConnectionStatus(
     return { ok: false, error: "not_found" };
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: "unauthorized" };
-  const role = await getSuperAdminRole(user.id);
-  if (!role) return { ok: false, error: "unauthorized" };
+  const access = await requireActiveSuperAdminSession();
+  if (!access.ok) return { ok: false, error: "unauthorized" };
+  const { role } = access;
 
   try {
     const admin = createServiceRoleClient();
@@ -168,12 +163,9 @@ export async function connectSquareSalon(
     return { ok: false, error: "invalid_input" };
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: "unauthorized" };
-  const role = await getSuperAdminRole(user.id);
+  const access = await requireActiveSuperAdminSession();
+  if (!access.ok) return { ok: false, error: "unauthorized" };
+  const { role, user, supabase } = access;
   if (role !== "founder") {
     return { ok: false, error: "founder_required" };
   }
@@ -212,7 +204,12 @@ export async function connectSquareSalon(
   }
 
   const id = parsed.data.salonId;
-  const [salonResult, existingResult, collisionResult] = await Promise.all([
+  const [
+    salonResult,
+    existingResult,
+    merchantCollisionResult,
+    locationCollisionResult,
+  ] = await Promise.all([
     admin
       .from("salons")
       .select("id,slug,name,payment_provider" as never)
@@ -225,13 +222,21 @@ export async function connectSquareSalon(
       .maybeSingle(),
     admin
       .from("square_integrations")
-      .select("salon_id,merchant_id,location_id" as never)
-      .or(
-        `merchant_id.eq.${validated.merchantId},location_id.eq.${validated.locationId}`,
-      )
+      .select("salon_id,merchant_id" as never)
+      .eq("merchant_id", validated.merchantId)
+      .neq("salon_id", id),
+    admin
+      .from("square_integrations")
+      .select("salon_id,location_id" as never)
+      .eq("location_id", validated.locationId)
       .neq("salon_id", id),
   ]);
-  if (salonResult.error || existingResult.error || collisionResult.error) {
+  if (
+    salonResult.error ||
+    existingResult.error ||
+    merchantCollisionResult.error ||
+    locationCollisionResult.error
+  ) {
     return { ok: false, error: "server_error" };
   }
   const salon = salonResult.data as
@@ -249,7 +254,10 @@ export async function connectSquareSalon(
   ) {
     return { ok: false, error: "payment_provider_conflict" };
   }
-  if ((collisionResult.data ?? []).length > 0) {
+  if (
+    (merchantCollisionResult.data ?? []).length > 0 ||
+    (locationCollisionResult.data ?? []).length > 0
+  ) {
     return { ok: false, error: "account_conflict" };
   }
 

@@ -4,8 +4,7 @@ import type { UserMessages } from "./en";
 
 export const userVi: UserMessages = {
   brandName: "NailIQ",
-  seoIntro:
-    "NailIQ là hệ thống đặt lịch và vận hành dùng AI cho tiệm nail.",
+  seoIntro: "NailIQ là hệ thống đặt lịch và vận hành dùng AI cho tiệm nail.",
   home: {
     headline: "Vận hành tiệm với NailIQ",
     subline:
@@ -16,15 +15,13 @@ export const userVi: UserMessages = {
     navOwnerLoginShort: "Đăng nhập",
     alreadySalonPrefix: "Đã có tiệm? ",
     signInLink: "Đăng nhập →",
-    landingUrgency:
-      "⚠️ Hầu hết tiệm mất $50–$200 mỗi ngày từ cuộc gọi nhỡ",
+    landingUrgency: "⚠️ Hầu hết tiệm mất $50–$200 mỗi ngày từ cuộc gọi nhỡ",
     landingH1Gold: "dành riêng cho tiệm nail.",
     landingBody2: "Khách đó đặt tiệm khác.",
     landingBody3: "Bạn không bao giờ biết mình đã mất họ.",
     landingCta: "Dùng thử 14 ngày miễn phí",
     landingMicrotrust: "14 ngày miễn phí. Không cần thẻ tín dụng.",
-    landingZap:
-      "⚡ Nếu không fix hôm nay, bạn vẫn sẽ mất khách ngày mai",
+    landingZap: "⚡ Nếu không fix hôm nay, bạn vẫn sẽ mất khách ngày mai",
     autoLine: "Hoạt động 24/7 — kể cả khi bạn đang bận làm khách.",
     ctaSpeed: "Đăng ký trong 2 phút.",
     landingSectionEyebrow:
@@ -35,8 +32,7 @@ export const userVi: UserMessages = {
     landingProblem3: "KHÁCH ĐẶT TIỆM KHÁC",
     landingClosingLine1: "Bạn đang mất khách",
     landingClosingLine2: "mỗi ngày.",
-    landingClosingSub:
-      "Nếu không bắt đầu hôm nay, bạn sẽ tiếp tục mất họ.",
+    landingClosingSub: "Nếu không bắt đầu hôm nay, bạn sẽ tiếp tục mất họ.",
     landingClosingCta: "Bắt đầu lấy lại khách ngay",
   },
   register: {
@@ -48,21 +44,16 @@ export const userVi: UserMessages = {
     phoneAuthDemoHelperHint:
       "Dev: bật Phone Auth trong Supabase (Auth → Providers → Phone) trước khi tắt demo.",
     phoneAuthDisabledSubtext: "⚠️ Đăng nhập qua SMS chưa được cấu hình.",
-    returningOwnerHint:
-      "Đã là chủ tiệm? Nhập số điện thoại để đăng nhập lại.",
-    returningOwnerEmailHint:
-      "Đã là chủ tiệm? Nhập email để đăng nhập lại.",
-    welcomeBackAfterSend:
-      "Chào mừng trở lại! Nhập mã để vào bảng điều khiển.",
+    returningOwnerHint: "Đã là chủ tiệm? Nhập số điện thoại để đăng nhập lại.",
+    returningOwnerEmailHint: "Đã là chủ tiệm? Nhập email để đăng nhập lại.",
+    welcomeBackAfterSend: "Chào mừng trở lại! Nhập mã để vào bảng điều khiển.",
     welcomeBackVerifySubtext:
       "Chào mừng trở lại! Nhập mã để vào bảng điều khiển.",
-    newDemoOtpBadgeNote:
-      "DEMO · Mã OTP hiển thị bên dưới.",
+    newDemoOtpBadgeNote: "DEMO · Mã OTP hiển thị bên dưới.",
     demoBadgeReturning: "Quay lại",
     demoBadgeNew: "Chế độ demo",
     demoVerifyCaptionNew: "Lấy mã từ cửa sổ demo hoặc log server.",
-    otpResentToast:
-      "Đã gửi mã mới — mã cũ không còn hiệu lực.",
+    otpResentToast: "Đã gửi mã mới — mã cũ không còn hiệu lực.",
     phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
     phoneDigitsInvalid:
       "Nhập 8–15 chữ số kèm mã quốc gia (ví dụ Canada/Hoa Kỳ: +1 6045551234; Việt Nam: +84901234567).",
@@ -78,8 +69,7 @@ export const userVi: UserMessages = {
     slugHint: "Chỉ chữ và số. Sửa nếu muốn URL ngắn hơn.",
     slugAriaLabel: "Đường dẫn slug",
     timezoneLabel: "Múi giờ",
-    timezoneHint:
-      "Dùng để hiển thị giờ đặt lịch chính xác cho bạn và khách.",
+    timezoneHint: "Dùng để hiển thị giờ đặt lịch chính xác cho bạn và khách.",
     submitCreate: "Tạo trang đặt lịch",
     submitCreating: "Đang tạo…",
     submitErrorGeneric: "Không tạo được tiệm. Thử lại.",
@@ -90,8 +80,7 @@ export const userVi: UserMessages = {
     sendingCode: "Đang gửi…",
     verifyTitle: "Nhập mã",
     verifyDefaultSubtext: "Mã 6 số đã được gửi đến điện thoại của bạn.",
-    verifyNumberEnding:
-      "Số đuôi ····{last4} — nhập đủ 6 chữ số của mã.",
+    verifyNumberEnding: "Số đuôi ····{last4} — nhập đủ 6 chữ số của mã.",
     verifyContinue: "Tiếp tục",
     verifyChecking: "Đang kiểm tra…",
     verifyUseDifferentNumber: "Đổi số điện thoại",
@@ -117,16 +106,14 @@ export const userVi: UserMessages = {
       "Hiện tại chúng tôi không thể nhận đăng ký mới. Vui lòng thử lại sau.",
     success: {
       title: "Tiệm đã tạo xong!",
-      subtext:
-        "Hoàn thành thiết lập để kích hoạt trang đặt lịch.",
+      subtext: "Hoàn thành thiết lập để kích hoạt trang đặt lịch.",
       slugAdjusted:
         "Đường dẫn bạn chọn đã có người dùng, nên chúng tôi giữ {slug} cho bạn.",
       callout:
         "3 bước nhanh trên dashboard: thêm dịch vụ, nhân viên, địa chỉ — rồi link đặt lịch sẽ mở.",
       salonOwnerLabel: "Chủ tiệm",
       goToDashboard: "Vào bảng điều khiển →",
-      dashboardHint:
-        "Link đặt lịch sẽ hiện sau khi bạn hoàn thành thiết lập.",
+      dashboardHint: "Link đặt lịch sẽ hiện sau khi bạn hoàn thành thiết lập.",
       bookingLinkLabel: "Link đặt lịch công khai",
       copyLink: "Sao chép link",
       copied: "Đã chép",
@@ -256,8 +243,7 @@ export const userVi: UserMessages = {
     keepPos: {
       eyebrow: "Đa POS",
       h2: "Giữ nguyên POS bạn đang dùng",
-      intro:
-        "NailIQ không yêu cầu tiệm bạn phải thay hệ thống POS hiện tại.",
+      intro: "NailIQ không yêu cầu tiệm bạn phải thay hệ thống POS hiện tại.",
       square: {
         title: "Hỗ trợ kết nối Square",
         body: "Người dùng Square đủ điều kiện có thể nhận hỗ trợ kết nối và các tính năng Square mà NailIQ hiện hỗ trợ, gồm hỗ trợ setup Square Gift Card khi có thể.",
@@ -398,8 +384,7 @@ export const userVi: UserMessages = {
           "Tối đa 250 SMS segments mỗi tháng theo điều khoản fair-use",
         ],
         cta: "Đăng ký gói năm",
-        savingsLine:
-          "Tiết kiệm $288 so với trả phí setup cộng 12 kỳ tháng.",
+        savingsLine: "Tiết kiệm $288 so với trả phí setup cộng 12 kỳ tháng.",
       },
     },
     posScope: {
@@ -514,8 +499,7 @@ export const userVi: UserMessages = {
     faq: {
       eyebrow: "Câu hỏi thường gặp",
       h2: "Những câu chủ tiệm thường hỏi",
-      sub:
-        "Nếu câu hỏi của bạn không có ở đây, nhắn cho mình — phản hồi trong 1 ngày làm việc.",
+      sub: "Nếu câu hỏi của bạn không có ở đây, nhắn cho mình — phản hồi trong 1 ngày làm việc.",
       items: [
         {
           q: "NailIQ chỉ là phần mềm booking?",
@@ -593,8 +577,7 @@ export const userVi: UserMessages = {
     },
     contact: {
       pageTitle: "Liên hệ",
-      lede:
-        "Đặt tại Vancouver, BC, Canada. Mình phản hồi trong 1 ngày làm việc.",
+      lede: "Đặt tại Vancouver, BC, Canada. Mình phản hồi trong 1 ngày làm việc.",
       intentPilot:
         "Đăng ký Founder Pilot. Kể mình nghe về tiệm và POS hiện tại của bạn — mình sẽ liên hệ để hẹn onboarding.",
       intentDemo:
@@ -658,10 +641,8 @@ export const userVi: UserMessages = {
         "Giữ nguyên POS hiện có. Để NailIQ lo website, booking online và setup tiệm.",
       ctaPrimary: "Bắt đầu dùng thử miễn phí",
       ctaSecondary: "Đặt lịch xem Demo miễn phí",
-      trustNote:
-        "Không cần thẻ tín dụng. Dữ liệu tiệm vẫn thuộc về bạn.",
-      finalLegalNote:
-        `Gói tự cài đặt là ${formatPublicMonthlyPrice("pro", { includeCurrency: true })} mỗi tháng sau thời gian dùng thử, chưa gồm thuế. Dịch vụ setup và tích hợp POS trực tiếp được báo giá riêng.`,
+      trustNote: "Không cần thẻ tín dụng. Dữ liệu tiệm vẫn thuộc về bạn.",
+      finalLegalNote: `Gói tự cài đặt là ${formatPublicMonthlyPrice("pro", { includeCurrency: true })} mỗi tháng sau thời gian dùng thử, chưa gồm thuế. Dịch vụ setup và tích hợp POS trực tiếp được báo giá riêng.`,
     },
     footer: {
       about: "Về chúng tôi",
@@ -727,8 +708,7 @@ export const userVi: UserMessages = {
       "Vui lòng xác nhận email trước khi tiếp tục. Kiểm tra hộp thư để bấm vào liên kết xác nhận chúng tôi đã gửi.",
     pkceRestart:
       "Liên kết đăng nhập này được mở ở trình duyệt khác hoặc đã hết hạn. Hãy bắt đầu đăng nhập lại trong trình duyệt này.",
-    sessionError:
-      "Không thể hoàn tất đăng nhập. Vui lòng thử lại.",
+    sessionError: "Không thể hoàn tất đăng nhập. Vui lòng thử lại.",
     forgotPasswordLink: "Quên mật khẩu?",
     verifyTitle: "Nhập mã OTP",
     verifySubtextSent: "Mã 6 số đã gửi đến số {masked}",
@@ -744,7 +724,8 @@ export const userVi: UserMessages = {
   },
   auth: {
     signInOrSignUpTitle: "Bắt đầu với NailIQ",
-    signInOrSignUpSubtext: "Miễn phí 14 ngày · Không cần thẻ tín dụng · Xong trong 2 phút",
+    signInOrSignUpSubtext:
+      "Miễn phí 14 ngày · Không cần thẻ tín dụng · Xong trong 2 phút",
     orDivider: "hoặc",
     continueWithGoogle: "Tiếp tục với Google",
     googleHelperText: "Nhanh nhất · Không cần nhớ mật khẩu",
@@ -788,20 +769,24 @@ export const userVi: UserMessages = {
     backHome: "← Trang chủ",
     registerMicrotrust: "14 ngày dùng thử miễn phí · Không cần thẻ tín dụng",
     forgotPasswordPageTitle: "Đặt lại mật khẩu",
-    forgotPasswordPageSubtitle: "Nhập địa chỉ email của bạn và chúng tôi sẽ gửi link để đặt lại mật khẩu.",
+    forgotPasswordPageSubtitle:
+      "Nhập địa chỉ email của bạn và chúng tôi sẽ gửi link để đặt lại mật khẩu.",
     forgotPasswordSubmit: "Gửi link đặt lại",
     forgotPasswordSubmitting: "Đang gửi…",
     forgotPasswordSentTitle: "Kiểm tra hộp thư",
-    forgotPasswordSentBody: "Nếu tài khoản tồn tại với email đó, chúng tôi đã gửi link đặt lại mật khẩu. Link có hiệu lực trong 1 giờ.",
+    forgotPasswordSentBody:
+      "Nếu tài khoản tồn tại với email đó, chúng tôi đã gửi link đặt lại mật khẩu. Link có hiệu lực trong 1 giờ.",
     forgotPasswordBackToSignIn: "Quay lại đăng nhập",
     resetPasswordPageTitle: "Tạo mật khẩu mới",
     resetPasswordNewPassword: "Mật khẩu mới",
     resetPasswordConfirmPassword: "Xác nhận mật khẩu",
     resetPasswordSubmit: "Đặt mật khẩu mới",
     resetPasswordSubmitting: "Đang đặt mật khẩu…",
-    resetPasswordSuccess: "Mật khẩu đã được đặt lại thành công. Chuyển hướng đến đăng nhập…",
+    resetPasswordSuccess:
+      "Mật khẩu đã được đặt lại thành công. Chuyển hướng đến đăng nhập…",
     resetPasswordMismatch: "Mật khẩu không khớp.",
-    resetPasswordInvalidLink: "Link đặt lại này đã hết hạn. Yêu cầu một cái mới.",
+    resetPasswordInvalidLink:
+      "Link đặt lại này đã hết hạn. Yêu cầu một cái mới.",
     resetPasswordServerError: "Có lỗi xảy ra. Thử lại.",
     resetPasswordStrengthHint: "Độ mạnh mật khẩu: ",
     brandTagline: "Quản lý salon thông minh — dành riêng cho bạn",
@@ -847,8 +832,7 @@ export const userVi: UserMessages = {
       saveFailed: "Không lưu được email. Thử lại.",
       saveButton: "Lưu email",
       savingButton: "Đang lưu…",
-      headline:
-        "Bảo mật tài khoản — thêm email để không mất quyền truy cập",
+      headline: "Bảo mật tài khoản — thêm email để không mất quyền truy cập",
       socialProof:
         "3 tiệm mất quyền truy cập tuần này vì thiếu email khôi phục",
       ctaAdd: "Thêm email",
@@ -1013,7 +997,8 @@ export const userVi: UserMessages = {
       sendTest: "Gửi email thử",
       testSent: "Đã gửi email thử tới {n} người nhận.",
       testErrorNotEnabled: "Hãy bật thông báo rồi lưu trước.",
-      testErrorNoRecipients: "Chưa có người nhận — thêm email hoặc bật chủ/quản lý.",
+      testErrorNoRecipients:
+        "Chưa có người nhận — thêm email hoặc bật chủ/quản lý.",
       testErrorNoResend: "Dịch vụ email chưa được cấu hình.",
       testErrorGeneric: "Không gửi được email thử.",
     },
@@ -1049,8 +1034,7 @@ export const userVi: UserMessages = {
       noEmailHint: "Chưa có email.",
       verifiedBadge: "Đã xác thực",
       pendingBadge: "Chờ xác thực",
-      pendingHint:
-        "Đã gửi link xác thực — kiểm tra hộp thư (cả thư rác).",
+      pendingHint: "Đã gửi link xác thực — kiểm tra hộp thư (cả thư rác).",
       verifiedToast: "Đã xác thực email.",
       verifyErrorPrefix: "Lỗi xác thực: ",
       changeButton: "Đổi email",
@@ -1110,18 +1094,15 @@ export const userVi: UserMessages = {
         tv: "Chế độ TV",
       },
       descriptions: {
-        minimal:
-          "Chỉ còn hàng chờ. Dùng cho màn nhỏ hoặc ca vắng khách.",
+        minimal: "Chỉ còn hàng chờ. Dùng cho màn nhỏ hoặc ca vắng khách.",
         reception:
           "Mặc định: hàng chờ, thêm walk-in nhanh, thời gian chờ và cảnh báo.",
         rush_hour:
           "Chế độ giờ bận: thêm trạng thái hôm nay và điểm nhấn làn walk-in.",
-        owner:
-          "Đầy đủ chỉ số: KPI, doanh thu hôm nay, gợi ý AI cho chủ tiệm.",
+        owner: "Đầy đủ chỉ số: KPI, doanh thu hôm nay, gợi ý AI cho chủ tiệm.",
         training:
           "Giao diện rút gọn cho nhân viên mới: chỉ hàng chờ và thêm walk-in.",
-        tv:
-          "Hiển thị tường, chỉ đọc: nhìn nhanh hàng chờ, ẩn thao tác nhập.",
+        tv: "Hiển thị tường, chỉ đọc: nhìn nhanh hàng chờ, ẩn thao tác nhập.",
       },
     },
     salonLogo: {
@@ -1217,8 +1198,7 @@ export const userVi: UserMessages = {
       saved: "✓ Đã lưu",
     },
     googleReview: {
-      instruction:
-        'Tìm link trên Google Maps → nút "Viết đánh giá" → copy URL',
+      instruction: 'Tìm link trên Google Maps → nút "Viết đánh giá" → copy URL',
       saveError: "Lưu thất bại",
       save: "Lưu",
       saving: "Đang lưu…",
@@ -1248,7 +1228,8 @@ export const userVi: UserMessages = {
       save: "Lưu",
       saving: "Đang lưu…",
       saved: "✓ Đã lưu",
-      invalidName: "Tên không hợp lệ — chỉ dùng chữ cái, khoảng trắng, hoặc dấu gạch ngang.",
+      invalidName:
+        "Tên không hợp lệ — chỉ dùng chữ cái, khoảng trắng, hoặc dấu gạch ngang.",
       forbidden: "Chỉ owner mới đổi được tên này.",
     },
   },
@@ -1286,8 +1267,7 @@ export const userVi: UserMessages = {
       "Nhân viên đang có booking sắp tới. Reassign hoặc hủy trước khi xóa.",
     staffHasUpcoming:
       "Nhân viên này đang có lịch hẹn sắp tới. Vui lòng chuyển lịch cho nhân viên khác trước khi tạm ngưng.",
-    staffCannotPerformService:
-      "Nhân viên này chưa được gán để làm dịch vụ đó.",
+    staffCannotPerformService: "Nhân viên này chưa được gán để làm dịch vụ đó.",
     staffLimitReached:
       "Gói miễn phí cho phép 1 thợ. Nâng cấp lên Pro để không giới hạn.",
     serviceLimitReached:
@@ -1343,7 +1323,7 @@ export const userVi: UserMessages = {
     hoursOverrideLabel: "Giờ tùy chỉnh",
     closureNoticeTitle: "Thông báo đóng cửa (tuỳ chọn)",
     closureNoticeHint:
-      "Hiện thành banner trên trang đặt lịch công khai — ví dụ \"Đóng cửa sửa chữa Thứ 2 17/8 và Thứ 3 18/8, mở lại bình thường Thứ 4 19/8.\" Điền đủ 2 ngôn ngữ để hiện banner, xoá cả 2 để ẩn. Banner tự động biến mất khi các ngày nghỉ ở trên đã qua.",
+      'Hiện thành banner trên trang đặt lịch công khai — ví dụ "Đóng cửa sửa chữa Thứ 2 17/8 và Thứ 3 18/8, mở lại bình thường Thứ 4 19/8." Điền đủ 2 ngôn ngữ để hiện banner, xoá cả 2 để ẩn. Banner tự động biến mất khi các ngày nghỉ ở trên đã qua.',
     closureNoticeEnLabel: "Nội dung (Tiếng Anh)",
     closureNoticeViLabel: "Nội dung (Tiếng Việt)",
     addressTitle: "Địa chỉ tiệm",
@@ -1390,7 +1370,8 @@ export const userVi: UserMessages = {
   },
   aiPrefill: {
     bannerTitle: "Nhập dịch vụ từ ảnh trong vài giây",
-    bannerSubtitle: "Chụp ảnh bảng giá, AI sẽ tự đọc và điền vào danh sách dịch vụ cho bạn.",
+    bannerSubtitle:
+      "Chụp ảnh bảng giá, AI sẽ tự đọc và điền vào danh sách dịch vụ cho bạn.",
     bannerCta: "Nhập từ ảnh menu",
     step1Title: "Bạn muốn thêm dịch vụ bằng cách nào?",
     uploadCard: "Upload ảnh menu",
@@ -1412,10 +1393,13 @@ export const userVi: UserMessages = {
     importButton: "Nhập dịch vụ",
     importButtonN: "Nhập {n} dịch vụ",
     manualFallback: "Nhập thủ công thay thế",
-    errorVisionFailed: "Không đọc được menu. Thử ảnh rõ hơn hoặc nhập thủ công.",
-    errorNoServices: "Không tìm thấy dịch vụ trong ảnh này. Thử chụp gần bảng giá hơn.",
+    errorVisionFailed:
+      "Không đọc được menu. Thử ảnh rõ hơn hoặc nhập thủ công.",
+    errorNoServices:
+      "Không tìm thấy dịch vụ trong ảnh này. Thử chụp gần bảng giá hơn.",
     errorPlanLimit: "Bạn đã đạt giới hạn dịch vụ của gói hiện tại.",
-    errorPayloadTooLarge: "Ảnh quá lớn. Vui lòng nén xuống dưới 4MB và thử lại.",
+    errorPayloadTooLarge:
+      "Ảnh quá lớn. Vui lòng nén xuống dưới 4MB và thử lại.",
     errorInvalidUrl: "Link ảnh không hợp lệ. Kiểm tra lại đường dẫn.",
     successToast: "Nhập dịch vụ thành công!",
   },
@@ -1479,7 +1463,10 @@ export const userVi: UserMessages = {
         fire_red: { label: "Hỏa — Đỏ 🔴", desc: "Nhiệt huyết, may mắn" },
         fire_orange: { label: "Hỏa — Cam 🟠", desc: "Năng động, tươi sáng" },
         metal_gold: { label: "Kim — Vàng ⭐", desc: "Phát tài, thịnh vượng" },
-        wood_green: { label: "Mộc — Xanh lá 🟢", desc: "Tăng trưởng, sinh khí" },
+        wood_green: {
+          label: "Mộc — Xanh lá 🟢",
+          desc: "Tăng trưởng, sinh khí",
+        },
         water_blue: { label: "Thủy — Xanh lam 🔵", desc: "Bình an, trí tuệ" },
         water_purple: { label: "Thủy — Tím 🟣", desc: "Tâm linh, cao quý" },
         earth_brown: { label: "Thổ — Nâu 🟤", desc: "Ổn định, bền vững" },
@@ -1509,22 +1496,27 @@ export const userVi: UserMessages = {
         online_waitlist: "Vì có khách online đang chờ tiệm phản hồi.",
         not_started: "Vì đã qua giờ hẹn nhưng khách chưa được bắt đầu.",
         long_wait: "Vì khách đã chờ lâu hơn mục tiêu của tiệm.",
-        no_staff_for_waiting: "Vì đang có khách chờ nhưng chưa có thợ sẵn sàng.",
+        no_staff_for_waiting:
+          "Vì đang có khách chờ nhưng chưa có thợ sẵn sàng.",
         sms_failed: "Vì khách có thể chưa nhận được tin xác nhận.",
         party_change: "Vì nhóm này vẫn còn khách chưa xác nhận.",
-        setup_incomplete: "Vì thông tin thiết lập còn thiếu có thể cản trở vận hành.",
+        setup_incomplete:
+          "Vì thông tin thiết lập còn thiếu có thể cản trở vận hành.",
         finish_overdue: "Vì dịch vụ đang kéo dài quá thời gian dự kiến.",
         assign_waiting: "Vì đang có khách chờ và có thể phục vụ tiếp theo.",
         prepare_next: "Vì khách tiếp theo sẽ đến trong vòng 30 phút.",
         party_pending: "Vì lịch nhóm vẫn chưa được xác nhận đầy đủ.",
         suggest_walkin: "Vì còn thợ trống và hiện không có khách chờ.",
-        all_clear: "Vì NailIQ không phát hiện trễ giờ, chờ lâu hay dịch vụ cần xử lý.",
+        all_clear:
+          "Vì NailIQ không phát hiện trễ giờ, chờ lâu hay dịch vụ cần xử lý.",
       },
       alertsHeading: "Cần chú ý",
       moreIssues: (n: number) => `+${n} vấn đề khác`,
       longWaitGuest: (n: number) => `1 khách đã chờ hơn ${n} phút`,
       finishOverdue: (n: number) =>
-        n === 1 ? "1 lịch đang trễ giờ — xử lý hoặc gia hạn" : `${n} lịch đang trễ giờ — xử lý hoặc gia hạn`,
+        n === 1
+          ? "1 lịch đang trễ giờ — xử lý hoặc gia hạn"
+          : `${n} lịch đang trễ giờ — xử lý hoặc gia hạn`,
       assignWaiting: (n: number) =>
         n === 1
           ? "1 khách đang chờ. Gán cho thợ sẵn sàng."
@@ -1532,12 +1524,15 @@ export const userVi: UserMessages = {
       assignWaitingNamed: (name: string) =>
         `${name} đang chờ. Gán cho thợ sẵn sàng.`,
       prepareNext: (n: number) =>
-        n === 1 ? "1 khách sắp đến (30 phút tới)" : `${n} khách sắp đến (30 phút tới)`,
+        n === 1
+          ? "1 khách sắp đến (30 phút tới)"
+          : `${n} khách sắp đến (30 phút tới)`,
       partyPendingNamed: (time: string, name: string) =>
         `Nhóm ${name} · ${time}: 1 khách chưa nhận slot`,
       partyPendingCount: (time: string, n: number) =>
         `${n} khách chưa nhận slot · ${time}`,
-      suggestWalkin: (name: string) => `${name} đang sẵn sàng. Có thể nhận khách vãng lai.`,
+      suggestWalkin: (name: string) =>
+        `${name} đang sẵn sàng. Có thể nhận khách vãng lai.`,
       actionOpenQueue: "Mở hàng chờ",
       actionOpenWaitlist: "Xem và xử lý ngay",
       actionAddWalkin: "+ Khách vãng lai",
@@ -1552,7 +1547,9 @@ export const userVi: UserMessages = {
       alertOverdueNamed: (name: string, time: string) =>
         `${name} trễ giờ · ${time}`,
       alertNotStarted: (n: number) =>
-        n === 1 ? "1 khách quá giờ chưa bắt đầu" : `${n} khách quá giờ chưa bắt đầu`,
+        n === 1
+          ? "1 khách quá giờ chưa bắt đầu"
+          : `${n} khách quá giờ chưa bắt đầu`,
       alertNotStartedNamed: (name: string, time: string) =>
         `${name} chưa bắt đầu · ${time}`,
       alertLongWait: (n: number) => `Khách chờ hơn ${n} phút`,
@@ -1580,7 +1577,8 @@ export const userVi: UserMessages = {
       completed: "Đã xong",
       readyToClose: "Mọi việc đã xong — sẵn sàng đóng ngày",
       workRemaining: (count: number) => `${count} việc còn cần xử lý`,
-      dayWindow: (start: string, end: string) => `Lịch làm việc ${start}–${end}`,
+      dayWindow: (start: string, end: string) =>
+        `Lịch làm việc ${start}–${end}`,
       riskGuests: (count: number) => `${count} khách cần chú ý nguy cơ vắng`,
       calmDay: "Hôm nay chưa có khách nguy cơ cao",
       collapse: "Đánh dấu đã xem báo cáo hôm nay",
@@ -1668,8 +1666,7 @@ export const userVi: UserMessages = {
       assignButton: "Xếp chỗ",
       urgentBadge: "VỘI",
       waitingHint: "Chạm một ô trên lịch để xếp khách",
-      minutesAgo: (n: number) =>
-        n < 1 ? "vừa xong" : `chờ ${n} phút`,
+      minutesAgo: (n: number) => (n < 1 ? "vừa xong" : `chờ ${n} phút`),
       sortLabel: "Sắp xếp",
       sortFifo: "Vào trước",
       sortLongestWait: "Chờ lâu nhất",
@@ -1695,8 +1692,7 @@ export const userVi: UserMessages = {
       waitLinkButton: "Gửi link chờ",
       waitLinkModal: {
         title: "Link theo dõi cho khách",
-        instruction:
-          "Cho {name} quét mã QR hoặc sao chép link gửi qua SMS.",
+        instruction: "Cho {name} quét mã QR hoặc sao chép link gửi qua SMS.",
         copyLink: "Sao chép link",
         copied: "Đã sao chép!",
         openLink: "Mở link",
@@ -1803,8 +1799,7 @@ export const userVi: UserMessages = {
       phoneRequired: "Nhập số điện thoại của khách.",
       nameRequired: "Vui lòng nhập tên khách.",
       nameTooLong: "Tên không được quá 100 ký tự.",
-      invalidNameChars:
-        "Tên chứa ký tự không hợp lệ",
+      invalidNameChars: "Tên chứa ký tự không hợp lệ",
     },
     grid: {
       conflictWith: (clientName: string) =>
@@ -1814,8 +1809,7 @@ export const userVi: UserMessages = {
       conflictShake: "Trùng lịch. Chọn giờ hoặc thợ khác.",
       rescheduleFailed: {
         past_date: "Không thể dời lịch về quá khứ.",
-        outside_hours:
-          "Dịch vụ sẽ kết thúc sau giờ đóng cửa.",
+        outside_hours: "Dịch vụ sẽ kết thúc sau giờ đóng cửa.",
         slot_conflict: "Khung giờ này đã trùng với lịch khác.",
         staff_cannot_perform_service: "Thợ này không làm dịch vụ đó.",
         generic: "Không dời được lịch. Thử lại.",
@@ -1835,7 +1829,8 @@ export const userVi: UserMessages = {
       assignedPrefix: "Đã xếp:",
       assignedMiddle: "→",
       cancelledPrefix: "Đã huỷ lịch:",
-      cancelUndoFailed: "Không thể hoàn tác — lịch hẹn đã qua hoặc thợ vừa có lịch mới.",
+      cancelUndoFailed:
+        "Không thể hoàn tác — lịch hẹn đã qua hoặc thợ vừa có lịch mới.",
     },
     notify: {
       heading: "Báo cho khách",
@@ -1945,9 +1940,12 @@ export const userVi: UserMessages = {
       invalid_phone: "Nhập số điện thoại hợp lệ của khách.",
       monthly_booking_limit_reached:
         "Tiệm đã đạt giới hạn lịch hẹn tháng này theo gói hiện tại. Nâng gói để tiếp tục.",
-      feature_not_enabled: "Tiệm chưa bật chức năng tạo lịch mới từ lịch lưu trữ.",
-      invalid_recovery: "Yêu cầu tạo lịch mới không hợp lệ. Đóng form và thử lại.",
-      invalid_recovery_source: "Lịch gốc không còn đủ điều kiện để tạo lịch mới.",
+      feature_not_enabled:
+        "Tiệm chưa bật chức năng tạo lịch mới từ lịch lưu trữ.",
+      invalid_recovery:
+        "Yêu cầu tạo lịch mới không hợp lệ. Đóng form và thử lại.",
+      invalid_recovery_source:
+        "Lịch gốc không còn đủ điều kiện để tạo lịch mới.",
       already_recovered: "Đã có một lịch mới được tạo từ hồ sơ này.",
       immutable_terminal_state:
         "Lịch Đã huỷ/No-show được khóa để giữ lịch sử. Hãy tạo một lịch mới có liên kết.",
@@ -2114,11 +2112,11 @@ export const userVi: UserMessages = {
       notes: "Ghi chú",
       noNotes: "Chưa có ghi chú.",
       vipLabel: "VIP",
-      vipHint: "VIP áp dụng cho mọi tiệm (khách này sẽ là VIP ở bất kỳ tiệm nào).",
+      vipHint:
+        "VIP áp dụng cho mọi tiệm (khách này sẽ là VIP ở bất kỳ tiệm nào).",
       errors: {
         unauthorized: "Cần đăng nhập.",
-        forbidden:
-          "Chỉ chủ tiệm hoặc lễ tân chính mới xem được khách hàng.",
+        forbidden: "Chỉ chủ tiệm hoặc lễ tân chính mới xem được khách hàng.",
         server_error: "Không tải được. Thử lại sau.",
       },
       vipUpdateErrors: {
@@ -2213,7 +2211,9 @@ export const userVi: UserMessages = {
         composeError: (msg: string) => `Gửi thất bại: ${msg}`,
         regenerateSummary: "Tạo lại tóm tắt",
         rebookInviteTemplate: ({ firstName, service, staff, bookingUrl }) => {
-          const parts = [`Chào ${firstName}! Hi-Lite mời bạn ghé tiệm lại nhé.`];
+          const parts = [
+            `Chào ${firstName}! Hi-Lite mời bạn ghé tiệm lại nhé.`,
+          ];
           if (service) parts.push(`Dịch vụ bạn hay chọn: ${service}.`);
           if (staff) parts.push(`Đặt lịch với ${staff}.`);
           parts.push(`Đặt lịch tại: ${bookingUrl}`);
@@ -2261,6 +2261,8 @@ export const userVi: UserMessages = {
       pageTitle: "Báo cáo",
       navLinkLabel: "Báo cáo",
       loading: "Đang tải báo cáo…",
+      estimatedValueNotice:
+        "Giá trị ước tính dùng giá đã lưu trên lịch hoặc giá catalog cho lịch hoàn tất. Đây không phải tổng tiền đã thu, thuế, tip, hoa hồng hay hoàn tiền; dữ liệu lịch cũ và tích hợp có thể chưa đầy đủ.",
       rangeAriaLabel: "Khoảng thời gian",
       range: {
         today: "Hôm nay",
@@ -2268,7 +2270,7 @@ export const userVi: UserMessages = {
         month: "Tháng này",
       },
       kpis: {
-        totalRevenue: "Doanh thu",
+        totalRevenue: "Giá trị dịch vụ hoàn tất ước tính",
         appointments: "Số lịch hẹn",
         completed: "Hoàn tất",
         cancelled: "Đã huỷ",
@@ -2285,7 +2287,7 @@ export const userVi: UserMessages = {
         countCol: "Số lần",
         appointmentsCol: "Lịch",
         shareCol: "Tỉ lệ",
-        revenueCol: "Doanh thu",
+        revenueCol: "Giá trị ước tính",
       },
       channelLabels: {
         online: "Online",
@@ -2328,8 +2330,7 @@ export const userVi: UserMessages = {
     bookingLimitBanner: {
       warningTitle: "Sắp đạt giới hạn lịch hẹn tháng này",
       blockingTitle: "Đã đạt giới hạn lịch hẹn tháng này",
-      usageText:
-        "{used}/{cap} lịch trong tháng. Nâng cấp Pro để bỏ giới hạn.",
+      usageText: "{used}/{cap} lịch trong tháng. Nâng cấp Pro để bỏ giới hạn.",
       upgradeCta: "Nâng cấp Pro",
       manageCtaSettings: "Mở trang Cài đặt",
       upgradeError:
@@ -2337,9 +2338,11 @@ export const userVi: UserMessages = {
     },
     noShowFeeModal: {
       title: "Phí vắng mặt",
-      desc: (amount: string) => `Thẻ của khách đã lưu khoản phí ${amount} cho lịch này.`,
+      desc: (amount: string) =>
+        `Thẻ của khách đã lưu khoản phí ${amount} cho lịch này.`,
       charge: (amount: string) => `Thu phí ${amount} ngay`,
-      chargeFailed: "Đã đánh dấu vắng mặt nhưng chưa thu được tiền. Hãy kiểm tra mục vắng mặt trước khi thông báo cho khách.",
+      chargeFailed:
+        "Đã đánh dấu vắng mặt nhưng chưa thu được tiền. Hãy kiểm tra mục vắng mặt trước khi thông báo cho khách.",
       waive: "Bỏ qua phí",
       cancel: "Huỷ (đánh dấu vắng, quyết định sau)",
     },
@@ -2366,8 +2369,7 @@ export const userVi: UserMessages = {
     pageTitle: "Tranh chấp thẻ",
     intro: "Xem xét và phản hồi các tranh chấp thẻ từ khách hàng của bạn.",
     navLabel: "Tranh chấp thẻ",
-    needsResponseAlert: (n: number) =>
-      `${n} tranh chấp cần phản hồi`,
+    needsResponseAlert: (n: number) => `${n} tranh chấp cần phản hồi`,
     emptyTitle: "Chưa có tranh chấp nào — tin tốt!",
     emptyBody: "Chưa có tranh chấp thẻ nào được gửi đến tiệm của bạn.",
     loading: "Đang tải tranh chấp…",
@@ -2380,8 +2382,7 @@ export const userVi: UserMessages = {
       warning_needs_response: "Cần xử lý",
       warning_closed: "Đã đóng",
     },
-    evidenceDueIn: (n: number) =>
-      `Còn ${n} ngày để nộp`,
+    evidenceDueIn: (n: number) => `Còn ${n} ngày để nộp`,
     evidenceOverdue: "Đã qua hạn nộp",
     evidenceTitle: "Bộ chứng cứ",
     evidenceLoading: "Đang tải chứng cứ…",

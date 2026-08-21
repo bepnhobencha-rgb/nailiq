@@ -12,6 +12,9 @@ export type MinhLesson = {
   confidence: number;
 };
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 /**
  * Load active lessons for a scope, combining global (salon_id=null) and
  * per-salon lessons. Returns highest-confidence first.
@@ -22,6 +25,10 @@ export async function getLessons(
   scope: string,
   options: { throwOnError?: boolean } = {},
 ): Promise<MinhLesson[]> {
+  if (!UUID_RE.test(salonId)) {
+    if (options.throwOnError) throw new Error("invalid_salon_id");
+    return [];
+  }
   const fetcher = async () => {
     const db = createServiceRoleClient();
     const { data, error } = await db
