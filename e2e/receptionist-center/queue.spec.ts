@@ -1,6 +1,12 @@
-import { test, expect } from "@playwright/test";
+import { createHash } from "node:crypto";
 
-import { cleanupTestSalon } from "../helpers/db";
+import { test, expect, type Page } from "@playwright/test";
+
+import {
+  cleanupTestSalon,
+  cleanupTestUser,
+  seedTestSalonMember,
+} from "../helpers/db";
 import {
   cleanReceptionistData,
   clickAssignSlot,
@@ -19,9 +25,27 @@ import {
 } from "./helpers";
 
 let fx: ReceptionistCenterFixture;
+let owner: Awaited<ReturnType<typeof seedTestSalonMember>> | undefined;
+
+async function loginAs(page: Page, account: { email: string; password: string }) {
+  const digest = createHash("sha256").update(account.email).digest("hex");
+  await page.setExtraHTTPHeaders({
+    "x-forwarded-for": `2001:db8::${digest.slice(0, 4)}:${digest.slice(4, 8)}`,
+  });
+  await page.goto("/register");
+  await expect(page.getByTestId("social-auth-controls")).toHaveAttribute(
+    "data-hydrated",
+    "true",
+  );
+  await page.locator('input[inputmode="email"]').fill(account.email);
+  await page.locator('input[type="password"]').fill(account.password);
+  await page.getByRole("button", { name: /^sign in$/i }).click();
+  await page.waitForURL(/\/dashboard\//, { timeout: 30_000 });
+}
 
 test.beforeAll(async ({}, testInfo) => {
   fx = await seedReceptionistCenterFixture(rcSlug(testInfo.project.name));
+  owner = await seedTestSalonMember(fx.salonId, "owner");
 });
 
 test.beforeEach(async () => {
@@ -29,19 +53,25 @@ test.beforeEach(async () => {
 });
 
 test.afterAll(async ({}, testInfo) => {
-  await cleanupTestSalon(rcSlug(testInfo.project.name));
+  try {
+    await cleanupTestSalon(rcSlug(testInfo.project.name));
+  } finally {
+    if (owner) await cleanupTestUser(owner.userId);
+  }
 });
 
 test.describe("Receptionist queue + assign", () => {
   test("desktop queue panel reserves the header instead of covering its actions", async ({
     page,
   }) => {
+    if (!owner) throw new Error("receptionist owner fixture missing");
     await page.setViewportSize({ width: 1280, height: 800 });
     await seedWalkin(fx.salonId, {
       clientName: testClientNameMarker(),
       serviceId: fx.serviceIds[0]!,
     });
-    await gotoReceptionistCenter(page, fx.slug);
+    await loginAs(page, owner);
+    await gotoReceptionistCenter(page, fx.slug, { useDemoCookie: false });
 
     const panel = page.getByTestId("queue-panel-slideover");
     const toggle = page.getByTestId("queue-panel-toggle");
@@ -73,13 +103,15 @@ test.describe("Receptionist queue + assign", () => {
   test("critical queue actions keep 44px touch targets on a phone", async ({
     page,
   }) => {
+    if (!owner) throw new Error("receptionist owner fixture missing");
     await page.setViewportSize({ width: 390, height: 844 });
     const bookingId = await seedWalkin(fx.salonId, {
       clientName: testClientNameMarker(),
       serviceId: fx.serviceIds[0]!,
     });
 
-    await gotoReceptionistCenter(page, fx.slug);
+    await loginAs(page, owner);
+    await gotoReceptionistCenter(page, fx.slug, { useDemoCookie: false });
 
     for (const action of ["cancel", "assign"] as const) {
       const target = page.getByTestId(`queue-${action}-${bookingId}`);

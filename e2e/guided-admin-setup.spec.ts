@@ -134,11 +134,34 @@ async function recordSafeGuidedAttestations(page: Page) {
     ],
   ] as const;
 
+  // The readiness cards are server-rendered, so WebKit can see and click the
+  // first button before React has attached its handler on a remote Preview.
+  // Prove hydration with the client-only short-note validation: it returns
+  // before the server action and therefore cannot append an audit event.
+  await expect(async () => {
+    await page.getByTestId("go-live-note-hours_confirmed").fill("");
+    await page.getByTestId("go-live-submit-hours_confirmed").click();
+    await expect(page.getByTestId("go-live-attestation-message")).toContainText(
+      /at least 10 characters|ít nhất 10 ký tự/i,
+      { timeout: 1_000 },
+    );
+  }).toPass({ timeout: 15_000 });
+
   for (const [key, note] of steps) {
-    await page.getByTestId(`go-live-note-${key}`).fill(note);
+    const noteField = page.getByTestId(`go-live-note-${key}`);
+    await noteField.fill(note);
     await page.getByTestId(`go-live-submit-${key}`).click();
+    // A successful server action clears only the submitted note. Waiting for
+    // that state prevents a prior step's status message from becoming a false
+    // positive and avoids ever retrying a real attest/revoke click.
+    await expect(noteField).toHaveValue("", { timeout: 30_000 });
+    await expect(page.getByTestId("go-live-attestation-message")).toContainText(
+      /Recorded in the audit history|This state was already recorded|Đã ghi vào lịch sử audit|Trạng thái này đã được ghi nhận trước đó/i,
+      { timeout: 30_000 },
+    );
     await expect(page.getByTestId(`go-live-attestation-${key}`)).toContainText(
       /Đang hiệu lực|Active/i,
+      { timeout: 30_000 },
     );
   }
 }
