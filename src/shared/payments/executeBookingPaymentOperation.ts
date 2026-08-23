@@ -301,6 +301,15 @@ export async function runAuthoritativeBookingPaymentOperation(args: {
     ) {
       return { ok: false, status: "not_claimed", operationId, reason: "payment_replay_material_invalid" };
     }
+    // A stable request UUID identifies one immutable monetary intent.  Replay
+    // must win before mutable booking-state checks, but it must not silently
+    // turn a caller's different amount into success for the stored amount.
+    if (
+      args.amountCents !== undefined && args.amountCents !== null &&
+      args.amountCents !== storedMaterial.amountCents
+    ) {
+      return { ok: false, status: "not_claimed", operationId, reason: "payment_replay_material_conflict" };
+    }
     if (inspectedRow.status === "succeeded") {
       const result = inspectedRow.result && typeof inspectedRow.result === "object"
         ? inspectedRow.result as Record<string, unknown>
@@ -460,6 +469,131 @@ export async function runAuthoritativeBookingPaymentOperation(args: {
     };
   }
   return { ok: false, status: "not_claimed", operationId, reason: code };
+}
+
+/**
+ * Claim and dispatch the exact user-confirmed remaining deposit while the
+ * booking is atomically locked in `cancelled`. The dedicated SQL claim checks
+ * stable-request replay before mutable booking/refund state, so a lost action
+ * response cannot create a second provider refund.
+ */
+export async function runCancelledBookingRemainingDepositRefund(args: {
+  db: RpcClient;
+  salonId: string;
+  bookingId: string;
+  requestId: string;
+  expectedRemainingCents: number;
+  provider?: PaymentProvider;
+}): Promise<BookingPaymentRunOutcome> {
+  let claimed: { data: unknown; error: unknown };
+  try {
+    claimed = await args.db.rpc(
+      "claim_cancelled_booking_remaining_deposit_refund",
+      {
+        p_salon_id: args.salonId,
+        p_booking_id: args.bookingId,
+        p_request_id: args.requestId,
+        p_expected_remaining_cents: args.expectedRemainingCents,
+      },
+    );
+  } catch {
+    return {
+      ok: false,
+      status: "not_claimed",
+      operationId: null,
+      reason: "payment_claim_unavailable",
+    };
+  }
+  if (claimed.error) {
+    return {
+      ok: false,
+      status: "not_claimed",
+      operationId: null,
+      reason: "payment_claim_unavailable",
+    };
+  }
+
+  const claim = parseClaimedBookingPaymentOperation(
+    claimed.data,
+    "deposit_refund",
+  );
+  if (claim) {
+    return dispatchClaimedBookingPaymentOperation({
+      db: args.db,
+      claim,
+      provider: args.provider,
+      reason: "Booking cancelled — deposit refund",
+    });
+  }
+
+  const raw = Array.isArray(claimed.data) ? claimed.data[0] : claimed.data;
+  const row = raw && typeof raw === "object"
+    ? raw as Record<string, unknown>
+    : null;
+  const operationId = typeof row?.operation_id === "string"
+    ? row.operation_id
+    : null;
+  const code = typeof row?.code === "string" ? row.code : "payment_not_claimed";
+  if (
+    row?.success === true && code === "operation_replay" &&
+    row.status === "succeeded" && operationId
+  ) {
+    const result = row.result && typeof row.result === "object"
+      ? row.result as Record<string, unknown>
+      : null;
+    const receipt = typeof result?.provider_refund_id === "string"
+      ? result.provider_refund_id
+      : null;
+    return receipt
+      ? {
+          ok: true,
+          status: "succeeded",
+          operationId,
+          providerReceipt: receipt,
+        }
+      : {
+          ok: false,
+          status: "unknown",
+          operationId,
+          reason: "payment_replay_receipt_invalid",
+        };
+  }
+  if (code === "operation_failed") {
+    if (!operationId) {
+      return {
+        ok: false,
+        status: "not_claimed",
+        operationId: null,
+        reason: "payment_claim_invalid",
+      };
+    }
+    return {
+      ok: false,
+      status: "definite_failure",
+      operationId,
+      reason: typeof row?.error_code === "string"
+        ? row.error_code
+        : "operation_failed",
+    };
+  }
+  if (["reconciliation_required", "in_flight"].includes(code)) {
+    return runAuthoritativeBookingPaymentOperation({
+      db: args.db,
+      salonId: args.salonId,
+      bookingId: args.bookingId,
+      requestId: args.requestId,
+      operationKind: "deposit_refund",
+      amountCents: args.expectedRemainingCents,
+      provider: args.provider,
+      reason: "Booking cancelled — deposit refund",
+    });
+  }
+  return {
+    ok: false,
+    status: "not_claimed",
+    operationId,
+    reason: code,
+  };
 }
 
 /** Dedicated parent-bound Fair Cancel refund. Generic late-cancel refund claims

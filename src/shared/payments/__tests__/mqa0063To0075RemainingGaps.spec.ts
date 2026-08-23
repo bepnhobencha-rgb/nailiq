@@ -16,6 +16,9 @@ const publicDepositPanel = read("src/components/booking/BookingFlowDepositPanel.
 const paymentMigration = read(
   "supabase/migrations/20260820150000_add_authoritative_booking_payment_operations.sql",
 );
+const cancelRefundMaterialRepair = read(
+  "supabase/migrations/20260823164000_return_claimed_material_from_cancel_refund_saga.sql",
+);
 
 describe("MQA-0063..0075 remaining Sellable-V1 payment gaps", () => {
   it("Voice cancellation consumes a canonical occurrence after an explicit fee challenge and exact replay", () => {
@@ -39,7 +42,7 @@ describe("MQA-0063..0075 remaining Sellable-V1 payment gaps", () => {
     expect(receptionistActions).toMatch(/canCancelBooking\(ctx\.role\)/);
     expect(paymentMigration).toMatch(/v_remaining\s*:=\s*greatest\(0,v_captured-v_refunded-v_reserved\)/);
     expect(paymentMigration).toMatch(/refund_amount_exceeds_remaining/);
-    expect(paymentExecutor).toMatch(/inspect_booking_payment_operation[\s\S]{0,2600}?claim_booking_payment_operation_reconciliation/);
+    expect(paymentExecutor).toMatch(/inspect_booking_payment_operation[\s\S]{0,3400}?claim_booking_payment_operation_reconciliation/);
 
     expect.soft(
       receptionistActions,
@@ -66,13 +69,26 @@ describe("MQA-0063..0075 remaining Sellable-V1 payment gaps", () => {
       "the app must call the single service-only DB saga instead of composing cancel and refund writes",
     ).toMatch(/rpc\("cancel_booking_with_deposit_refund_saga"[\s\S]{0,500}?p_saga_request_id:\s*input\.requestId[\s\S]{0,180}?p_refund_amount_cents:\s*input\.amountCents/);
     expect.soft(
-      paymentMigration,
-      "the DB must inspect the stable saga request before the active booking status guard",
+      cancelRefundMaterialRepair,
+      "the effective DB saga must inspect the stable request before the active booking status guard",
     ).toMatch(/WHERE salon_id=p_salon_id AND request_id=p_saga_request_id FOR UPDATE;[\s\S]{0,900}?IF v_booking\.status NOT IN/);
     expect.soft(
-      paymentMigration,
-      "the DB must reserve the refund before committing cancellation in the same transaction",
+      cancelRefundMaterialRepair,
+      "the effective DB saga must reserve the refund before committing cancellation in the same transaction",
     ).toMatch(/v_claim:=public\.claim_booking_payment_operation\([\s\S]{0,700}?UPDATE public\.bookings SET status='cancelled'/);
+    expect.soft(
+      cancelRefundMaterialRepair,
+      "the saga must return the immutable material emitted by the claim, not a missing nested field from the flat loader result",
+    ).toMatch(/'refund_material',v_claim->'material'/);
+    expect(cancelRefundMaterialRepair).not.toMatch(
+      /'refund_material',v_loaded->'material'/,
+    );
+    expect(cancelRefundMaterialRepair).toMatch(
+      /LANGUAGE plpgsql SECURITY DEFINER SET search_path TO ''/,
+    );
+    expect(cancelRefundMaterialRepair).toMatch(
+      /REVOKE ALL ON FUNCTION public\.cancel_booking_with_deposit_refund_saga\([\s\S]{0,180}?FROM PUBLIC, anon, authenticated;[\s\S]{0,180}?GRANT EXECUTE[\s\S]{0,180}?TO service_role;/,
+    );
     expect.soft(
       deskCancelRefundSaga,
       "the action must surface succeeded, pending_provider, and unknown distinctly so callers never retry provider work blindly",

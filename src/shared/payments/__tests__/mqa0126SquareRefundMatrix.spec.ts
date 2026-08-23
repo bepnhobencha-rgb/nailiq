@@ -288,6 +288,43 @@ describe("MQA-0126 fake Square refund matrix", () => {
     });
   });
 
+  it("rejects a reused refund request id when the caller changes the amount", async () => {
+    const refund = vi.fn();
+    const rpc = vi.fn().mockResolvedValueOnce({
+      data: {
+        success: true,
+        code: "operation_loaded",
+        status: "succeeded",
+        operation_id: operationId,
+        salon_id: salonId,
+        booking_id: bookingId,
+        material_fingerprint: materialFingerprint,
+        material: storedMaterial(1_500),
+        result: { provider_refund_id: "square_refund_stored" },
+      },
+      error: null,
+    });
+
+    const result = await runAuthoritativeBookingPaymentOperation({
+      db: { rpc },
+      salonId,
+      bookingId,
+      requestId,
+      operationKind: "deposit_refund",
+      amountCents: 2_000,
+      provider: squareProvider(refund),
+    });
+
+    expect(refund).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      ok: false,
+      status: "not_claimed",
+      operationId,
+      reason: "payment_replay_material_conflict",
+    });
+  });
+
   it("redispatches only after a due reconciliation lease and reuses the exact refund key", async () => {
     const refund = vi.fn().mockResolvedValue({
       refundId: "square_refund_reconciled",

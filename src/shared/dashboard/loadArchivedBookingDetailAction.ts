@@ -1,9 +1,14 @@
 "use server";
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
-import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 import { maskPhoneDigits } from "@/shared/lib/maskPhone";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
+import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import {
+  loadBookingDepositRefundSummary,
+  type BookingDepositRefundSummary,
+} from "@/shared/payments/loadBookingDepositRefundSummary";
+import { isArchivedBookingFeatureAvailable } from "@/shared/dashboard/archivedBookingFeatureAccess";
 
 export type ArchivedBookingStatus = "cancelled" | "no_show";
 export type ArchivedBookingRecoveryKind = "cancelled_rebook" | "no_show_walkin";
@@ -32,6 +37,7 @@ export type ArchivedBookingDetail = {
   bookingChannel: string | null;
   noShowFeeCents: number | null;
   noShowChargeStatus: string | null;
+  depositRefund: BookingDepositRefundSummary | null;
   recoveredBooking: RecoveredBookingSummary | null;
 };
 
@@ -90,14 +96,14 @@ export async function loadArchivedBookingDetail(
   if (!ctx) return { ok: false, error: "unauthorized" };
   if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
-  if (!(await isReleaseFeatureVisible(ctx.salon, "archived_booking_recovery"))) {
+  if (!(await isArchivedBookingFeatureAvailable(ctx.salon))) {
     return { ok: false, error: "feature_disabled" };
   }
 
   const { data, error } = await ctx.supabase
     .from("bookings")
     .select(
-      "id, status, client_name, client_phone, client_notes, start_time_utc, end_time_utc, created_at, price_cents, source, booking_channel, noshow_fee_cents, noshow_charge_status, services!bookings_service_id_fkey ( name ), staff ( name )",
+      "id, status, client_name, client_phone, client_notes, start_time_utc, end_time_utc, created_at, price_cents, source, booking_channel, noshow_fee_cents, noshow_charge_status, deposit_status, deposit_refunded_cents, square_payment_id, stripe_payment_intent_id, services!bookings_service_id_fkey ( name ), staff ( name )",
     )
     .eq("id", normalizedBookingId)
     .eq("salon_id", ctx.salon.id)
@@ -140,6 +146,25 @@ export async function loadArchivedBookingDetail(
         }
       : null;
 
+  let depositRefund: BookingDepositRefundSummary | null = null;
+  if (data.status === "cancelled" && ctx.kind === "member" && ctx.userId) {
+    try {
+      depositRefund = await loadBookingDepositRefundSummary({
+        db: createServiceRoleClient(),
+        salonId: ctx.salon.id,
+        bookingId: normalizedBookingId,
+        booking: data,
+      });
+    } catch (depositError) {
+      // Missing/unavailable ledger truth must suppress the financial CTA, not
+      // turn a read-only archived-booking drawer into a hard failure.
+      console.error(
+        "[loadArchivedBookingDetail] deposit refund summary",
+        depositError,
+      );
+    }
+  }
+
   const phone = nullableString(data.client_phone);
   return {
     ok: true,
@@ -162,6 +187,7 @@ export async function loadArchivedBookingDetail(
       bookingChannel: nullableString(data.booking_channel),
       noShowFeeCents: nullableCents(data.noshow_fee_cents),
       noShowChargeStatus: nullableString(data.noshow_charge_status),
+      depositRefund,
       recoveredBooking,
     },
   };

@@ -12,6 +12,7 @@ import {
   loadArchivedBookingDetail,
   type ArchivedBookingDetail,
 } from "@/shared/dashboard/loadArchivedBookingDetailAction";
+import { refundCancelledBookingDepositRemaining } from "@/shared/dashboard/refundCancelledBookingDepositAction";
 import { undoAiAction } from "@/shared/ai/undoAiAction";
 import {
   activityItemsForTab,
@@ -20,6 +21,7 @@ import {
   type ActivityFeedTab,
 } from "@/shared/dashboard/activityFeedFilter";
 import { activityTimeAgo } from "@/shared/dashboard/activityTime";
+import { formatCurrency } from "@/shared/lib/currencyFormat";
 
 const KIND_ICON: Record<ActivityKind, string> = {
   event: "🗓️",
@@ -122,6 +124,15 @@ export function ActivityFeed({
   const [archivedDetail, setArchivedDetail] =
     useState<ArchivedBookingDetail | null>(null);
   const archivedRequestRef = useRef(0);
+  const archivedRefundRequestRef = useRef<{
+    key: string;
+    requestId: string;
+  } | null>(null);
+  const [archivedRefundPending, startArchivedRefund] = useTransition();
+  const [archivedRefundFeedback, setArchivedRefundFeedback] = useState<{
+    kind: "idle" | "success" | "warning" | "error";
+    message: string | null;
+  }>({ kind: "idle", message: null });
   const [undoneIds, setUndoneIds] = useState<Set<string>>(new Set());
   const [undoing, startUndo] = useTransition();
   // The serialized server instant guarantees identical SSR/client markup.
@@ -170,11 +181,14 @@ export function ActivityFeed({
   const shown = activityItemsForTab(items, tab);
 
   const closeArchivedDrawer = () => {
+    if (archivedRefundPending) return;
     archivedRequestRef.current += 1;
     setArchivedDrawerOpen(false);
+    setArchivedRefundFeedback({ kind: "idle", message: null });
   };
 
   const openArchivedBooking = async (item: ActivityItem) => {
+    if (archivedRefundPending) return;
     const terminalStatus = terminalActivityBookingStatus(item);
     if (!archivedBookingFeatureEnabled || !terminalStatus || !item.bookingId) {
       return;
@@ -186,6 +200,7 @@ export function ActivityFeed({
     setArchivedLoading(true);
     setArchivedError(null);
     setArchivedDetail(null);
+    setArchivedRefundFeedback({ kind: "idle", message: null });
 
     try {
       const result = await loadArchivedBookingDetail(slug, item.bookingId);
@@ -226,6 +241,140 @@ export function ActivityFeed({
     router.push(
       `/dashboard/${encodeURIComponent(slug)}/center?${params.toString()}`,
     );
+  };
+
+  const refundArchivedBookingRemaining = (detail: ArchivedBookingDetail) => {
+    const amount = detail.depositRefund?.remainingRefundableCents ?? 0;
+    if (
+      detail.status !== "cancelled" ||
+      detail.depositRefund?.availability !== "available" ||
+      !Number.isSafeInteger(amount) ||
+      amount <= 0
+    ) {
+      setArchivedRefundFeedback({
+        kind: "error",
+        message: "Số tiền có thể hoàn đã thay đổi. Vui lòng tải lại chi tiết.",
+      });
+      return;
+    }
+
+    const key = `${detail.id}:${amount}`;
+    if (archivedRefundRequestRef.current?.key !== key) {
+      archivedRefundRequestRef.current = {
+        key,
+        requestId: window.crypto.randomUUID(),
+      };
+    }
+    const requestId = archivedRefundRequestRef.current.requestId;
+    const archivedViewRequestId = archivedRequestRef.current;
+    const isCurrentRefundView = () =>
+      archivedRequestRef.current === archivedViewRequestId;
+
+    startArchivedRefund(async () => {
+      setArchivedRefundFeedback({
+        kind: "warning",
+        message: "Đang gửi yêu cầu hoàn tiền. Không đóng hoặc gửi mã mới…",
+      });
+      try {
+        const result = await refundCancelledBookingDepositRemaining(slug, {
+          bookingId: detail.id,
+          requestId,
+          expectedRemainingCents: amount,
+        });
+        if (result.ok) {
+          if (!isCurrentRefundView()) return;
+          if (archivedRefundRequestRef.current?.requestId === requestId) {
+            archivedRefundRequestRef.current = null;
+          }
+          setArchivedDetail((current) =>
+            current?.id === detail.id && current.depositRefund
+              ? {
+                  ...current,
+                  depositRefund: {
+                    ...current.depositRefund,
+                    refundedCents: current.depositRefund.capturedCents,
+                    reservedCents: 0,
+                    remainingRefundableCents: 0,
+                    availability: "fully_refunded",
+                  },
+                }
+              : current,
+          );
+          try {
+            const refreshed = await loadArchivedBookingDetail(slug, detail.id);
+            if (refreshed.ok && isCurrentRefundView()) {
+              setArchivedDetail((current) =>
+                current?.id === detail.id ? refreshed.detail : current,
+              );
+            }
+          } catch {
+            // The acknowledged payment result is authoritative. Keep the safe
+            // full-refund projection above if the follow-up read is unavailable.
+          }
+          if (!isCurrentRefundView()) return;
+          setArchivedRefundFeedback({
+            kind: "success",
+            message: `Đã hoàn ${formatCurrency(amount, detail.currencyCode)}. Booking vẫn ở trạng thái đã huỷ.`,
+          });
+          return;
+        }
+
+        if (result.error === "reconciliation_required") {
+          if (!isCurrentRefundView()) return;
+          setArchivedRefundFeedback({
+            kind: "warning",
+            message:
+              "Chưa thể xác nhận kết quả với provider. Mã yêu cầu hiện tại đã được giữ nguyên; chỉ bấm lại nút này để đối soát, không tạo yêu cầu mới.",
+          });
+          return;
+        }
+
+        if (!isCurrentRefundView()) return;
+        if (archivedRefundRequestRef.current?.requestId === requestId) {
+          archivedRefundRequestRef.current = null;
+        }
+        const shouldRefresh = [
+          "refund_changed",
+          "request_conflict",
+          "not_refundable",
+          "not_cancelled",
+        ].includes(result.error);
+        if (shouldRefresh) {
+          const refreshed = await loadArchivedBookingDetail(slug, detail.id);
+          if (refreshed.ok && isCurrentRefundView()) {
+            setArchivedDetail((current) =>
+              current?.id === detail.id ? refreshed.detail : current,
+            );
+          }
+        }
+        const message = result.error === "refund_changed"
+          ? "Số tiền còn lại đã thay đổi. Hãy kiểm tra lại trước khi xác nhận."
+          : result.error === "not_refundable"
+            ? "Booking này không còn khoản tiền cọc có thể hoàn."
+            : result.error === "not_cancelled"
+              ? "Booking không còn ở trạng thái đã huỷ nên chưa hoàn tiền."
+              : result.error === "provider_failed"
+                ? "Provider đã từ chối yêu cầu hoàn tiền. Không có khoản hoàn nào được ghi nhận."
+                : result.error === "unauthorized" ||
+                    result.error === "forbidden"
+                  ? "Chỉ Owner/Admin đã đăng nhập mới được hoàn tiền."
+                  : result.error === "feature_disabled"
+                    ? "Tính năng hoàn tiền đang tắt cho salon này."
+                    : "Không thể hoàn tiền. Vui lòng kiểm tra lại trước khi thử lần nữa.";
+        if (!isCurrentRefundView()) return;
+        setArchivedRefundFeedback({ kind: "error", message });
+      } catch {
+        // The provider/DB may already have committed even if the action HTTP
+        // response was lost. Keep the same request UUID for an exact replay.
+        if (isCurrentRefundView()) {
+          setArchivedRefundFeedback({
+            kind: "warning",
+            message:
+              "Mất phản hồi sau khi gửi. Mã yêu cầu đã được giữ nguyên; bấm lại đúng nút này để kiểm tra, không tạo yêu cầu mới.",
+          });
+        }
+      }
+    });
   };
 
   return (
@@ -405,6 +554,9 @@ export function ActivityFeed({
         featureEnabled={archivedBookingFeatureEnabled}
         timeZone={timeZone}
         onRecover={continueArchivedRecovery}
+        refundLoading={archivedRefundPending}
+        refundFeedback={archivedRefundFeedback}
+        onRefundRemaining={refundArchivedBookingRemaining}
       />
     </>
   );
