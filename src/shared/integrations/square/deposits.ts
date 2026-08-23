@@ -250,13 +250,29 @@ export async function reconcileSquareHostedDepositClaim(
   db: ReturnType<typeof createServiceRoleClient>,
   value: unknown,
 ): Promise<"succeeded" | "unresolved"> {
+  const result = await reconcileSquareHostedDepositClaimHealth(db, value);
+  return result.status === "succeeded" ? "succeeded" : "unresolved";
+}
+
+type HostedDepositReconciliationHealth =
+  | { ok: true; status: "succeeded" | "pending_provider" }
+  | { ok: false; status: "unhealthy"; error: string };
+
+async function reconcileSquareHostedDepositClaimHealth(
+  db: ReturnType<typeof createServiceRoleClient>,
+  value: unknown,
+): Promise<HostedDepositReconciliationHealth> {
   const row = record(value);
   const claim = parseHostedLinkClaim(value);
   const orderId = str(row?.provider_order_id);
   const linkId = str(row?.provider_link_id);
   const linkUrl = str(row?.provider_link_url);
   if (!claim || !orderId || !linkId || !linkUrl.startsWith("https://")) {
-    return "unresolved";
+    return {
+      ok: false,
+      status: "unhealthy",
+      error: "square_deposit_reconciliation_claim_invalid",
+    };
   }
   let order: Awaited<ReturnType<typeof getOrder>>;
   try {
@@ -264,10 +280,20 @@ export async function reconcileSquareHostedDepositClaim(
     if (
       cfg.merchantId !== claim.providerAccountId || cfg.locationId !== claim.providerLocationId ||
       cfg.environment !== claim.providerEnvironment || cfg.currency !== claim.currency
-    ) return "unresolved";
+    ) {
+      return {
+        ok: false,
+        status: "unhealthy",
+        error: "square_deposit_reconciliation_context_mismatch",
+      };
+    }
     order = await getOrder(cfg, orderId);
   } catch {
-    return "unresolved";
+    return {
+      ok: false,
+      status: "unhealthy",
+      error: "square_deposit_reconciliation_provider_unavailable",
+    };
   }
   const completed = order.state === "COMPLETED" &&
     order.paidCents >= claim.amountCents && Boolean(order.tenderPaymentId);
@@ -290,18 +316,52 @@ export async function reconcileSquareHostedDepositClaim(
         ? "provider_outcome_ambiguous" : null,
     } as never);
     const completedRow = record(result.data);
-    return !result.error && completed && completedRow?.success === true
+    const expectedStatus = completed
       ? "succeeded"
-      : "unresolved";
+      : pending ? "pending_provider" : failed ? "failed" : "unknown";
+    const completionPersisted = !result.error
+      && completedRow?.status === expectedStatus
+      && (completed || pending
+        ? completedRow.success === true
+        : completedRow.success === false);
+    if (!completionPersisted) {
+      return {
+        ok: false,
+        status: "unhealthy",
+        error: "square_deposit_reconciliation_completion_unavailable",
+      };
+    }
+    if (completed) return { ok: true, status: "succeeded" };
+    if (pending) return { ok: true, status: "pending_provider" };
+    return {
+      ok: false,
+      status: "unhealthy",
+      error: failed
+        ? "square_deposit_reconciliation_provider_rejected"
+        : "square_deposit_reconciliation_provider_response_invalid",
+    };
   } catch {
-    return "unresolved";
+    return {
+      ok: false,
+      status: "unhealthy",
+      error: "square_deposit_reconciliation_completion_unavailable",
+    };
   }
 }
 
 /** Reconcile only ledger-owned hosted links; booking financial truth is updated
  * atomically by complete_booking_payment_operation. */
-export async function reconcileDeposits(salonId: string): Promise<{ checked: number; paid: number }> {
-  if (!UUID_RE.test(salonId)) return { checked: 0, paid: 0 };
+export async function reconcileDeposits(
+  salonId: string,
+): Promise<{ ok: boolean; checked: number; paid: number; error?: string }> {
+  if (!UUID_RE.test(salonId)) {
+    return {
+      ok: false,
+      checked: 0,
+      paid: 0,
+      error: "square_deposit_reconciliation_input_invalid",
+    };
+  }
   const db = createServiceRoleClient();
   const { data, error } = await db
     .from("booking_payment_operations" as never)
@@ -311,7 +371,14 @@ export async function reconcileDeposits(salonId: string): Promise<{ checked: num
     .eq("delivery_mode", "square_hosted_link")
     .in("status", ["pending_provider", "unknown"])
     .limit(100);
-  if (error || !Array.isArray(data)) return { checked: 0, paid: 0 };
+  if (error || !Array.isArray(data)) {
+    return {
+      ok: false,
+      checked: 0,
+      paid: 0,
+      error: "square_deposit_reconciliation_inventory_unavailable",
+    };
+  }
   let paid = 0;
   for (const value of data) {
     const row = value as unknown as Record<string, unknown>;
@@ -319,7 +386,12 @@ export async function reconcileDeposits(salonId: string): Promise<{ checked: num
     const requestId = str(row.request_id);
     const fingerprint = str(row.material_fingerprint);
     if (!UUID_RE.test(operationId) || !UUID_RE.test(requestId) || !HASH_RE.test(fingerprint)) {
-      continue;
+      return {
+        ok: false,
+        checked: data.length,
+        paid,
+        error: "square_deposit_reconciliation_inventory_invalid",
+      };
     }
     try {
       const claimed = await db.rpc("claim_booking_payment_operation_reconciliation" as never, {
@@ -327,12 +399,32 @@ export async function reconcileDeposits(salonId: string): Promise<{ checked: num
         p_request_id: requestId,
         p_expected_material_fingerprint: fingerprint,
       } as never);
-      if (!claimed.error && await reconcileSquareHostedDepositClaim(db, claimed.data) === "succeeded") {
-        paid += 1;
+      if (claimed.error) {
+        return {
+          ok: false,
+          checked: data.length,
+          paid,
+          error: "square_deposit_reconciliation_claim_unavailable",
+        };
       }
+      const reconciliation = await reconcileSquareHostedDepositClaimHealth(db, claimed.data);
+      if (!reconciliation.ok) {
+        return {
+          ok: false,
+          checked: data.length,
+          paid,
+          error: reconciliation.error,
+        };
+      }
+      if (reconciliation.status === "succeeded") paid += 1;
     } catch {
-      // A later bounded reconciliation run resumes the same operation/key.
+      return {
+        ok: false,
+        checked: data.length,
+        paid,
+        error: "square_deposit_reconciliation_unavailable",
+      };
     }
   }
-  return { checked: data.length, paid };
+  return { ok: true, checked: data.length, paid };
 }

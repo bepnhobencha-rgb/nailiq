@@ -40,6 +40,30 @@ function body(overrides: Record<string, unknown> = {}) {
   });
 }
 
+function refundBody(overrides: Record<string, unknown> = {}) {
+  return body({
+    type: "refund.updated",
+    event_id: "refund-event-1",
+    created_at: "2026-08-23T17:00:01Z",
+    data: {
+      id: "refund-1",
+      object: {
+        refund: {
+          id: "refund-1",
+          payment_id: "payment-1",
+          location_id: "location-1",
+          status: "COMPLETED",
+          amount_money: { amount: 1_250, currency: "CAD" },
+          updated_at: "2026-08-23T17:00:00Z",
+          reason: "must-not-persist",
+          destination_details: { card_details: { card: "4111111111111111" } },
+          ...overrides,
+        },
+      },
+    },
+  });
+}
+
 function request(raw: string, signature?: string) {
   const valid = createHmac("sha256", signatureKey).update(url).update(raw).digest("base64");
   return new Request(url, {
@@ -148,6 +172,87 @@ describe("Square webhook route", () => {
     const serialized = JSON.stringify(mocks.rpc.mock.calls);
     expect(serialized).not.toContain("must-not-persist");
     expect(serialized).not.toContain("16045550199");
+  });
+
+  it("binds refund.updated to the exact tenant/account operation without raw or PII material", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        success: true,
+        code: "refund_applied",
+        event_id: "refund-event-1",
+      },
+      error: null,
+    });
+
+    const response = await POST(request(refundBody()));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      code: "refund_applied",
+      eventId: "refund-event-1",
+    });
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "record_square_refund_webhook_event",
+      {
+        p_salon_id: salonId,
+        p_event_id: "refund-event-1",
+        p_occurred_at: "2026-08-23T17:00:01Z",
+        p_payload_fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
+        p_provider_refund_id: "refund-1",
+        p_parent_payment_id: "payment-1",
+        p_location_id: "location-1",
+        p_provider_status: "COMPLETED",
+        p_amount_cents: 1_250,
+        p_currency: "CAD",
+        p_refund_updated_at: "2026-08-23T17:00:00Z",
+        p_merchant_id: "merchant-1",
+        p_application_id: "application-1",
+        p_environment: "sandbox",
+      },
+    );
+    const serialized = JSON.stringify(mocks.rpc.mock.calls);
+    expect(serialized).not.toContain("must-not-persist");
+    expect(serialized).not.toContain("4111111111111111");
+  });
+
+  it("rejects a refund location mismatch before the financial inbox RPC", async () => {
+    const response = await POST(request(refundBody({ location_id: "location-hostile" })));
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      code: "provider_context_mismatch",
+    });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["event_replay", true, 200],
+    ["refund_terminal_noop", true, 200],
+    ["stale_event_ignored", true, 200],
+    ["event_conflict", false, 409],
+    ["provider_binding_mismatch", false, 409],
+    ["terminal_state_conflict", false, 409],
+    ["operation_not_found", false, 503],
+  ] as const)("maps refund ingestion result %s truthfully", async (code, success, status) => {
+    mocks.rpc.mockResolvedValue({
+      data: { success, code, event_id: "refund-event-1" },
+      error: null,
+    });
+    const response = await POST(request(refundBody()));
+    expect(response.status).toBe(status);
+    await expect(response.json()).resolves.toMatchObject({ code });
+  });
+
+  it("fails closed when the refund inbox write result is uncertain", async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: "write uncertain" } });
+    const response = await POST(request(refundBody()));
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      code: "webhook_store_unavailable",
+    });
   });
 
   it("accepts Square's current dispute state event", async () => {

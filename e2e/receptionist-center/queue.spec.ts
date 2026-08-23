@@ -33,6 +33,43 @@ test.afterAll(async ({}, testInfo) => {
 });
 
 test.describe("Receptionist queue + assign", () => {
+  test("desktop queue panel reserves the header instead of covering its actions", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await seedWalkin(fx.salonId, {
+      clientName: testClientNameMarker(),
+      serviceId: fx.serviceIds[0]!,
+    });
+    await gotoReceptionistCenter(page, fx.slug);
+
+    const panel = page.getByTestId("queue-panel-slideover");
+    const toggle = page.getByTestId("queue-panel-toggle");
+    // Start from a deliberate closed state so a default-open hydration effect
+    // cannot race the geometry assertion.
+    if ((await panel.getAttribute("aria-hidden")) === "false") {
+      await toggle.click();
+      await expect(panel).toHaveAttribute("aria-hidden", "true");
+    }
+    await page.getByTestId("header-add-walkin").click();
+    await expect(panel).toHaveAttribute("aria-hidden", "false");
+    await expect(panel).toHaveClass(/translate-x-0/);
+    await page.waitForTimeout(350);
+    await expect(panel).toHaveAttribute("aria-hidden", "false");
+
+    const header = page.getByTestId("receptionist-center-header");
+    const actions = page.getByTestId("receptionist-header-actions");
+    const [panelBox, actionsBox, paddingRight] = await Promise.all([
+      panel.boundingBox(),
+      actions.boundingBox(),
+      header.evaluate((element) => getComputedStyle(element).paddingRight),
+    ]);
+    expect(panelBox, "queue panel must have measurable geometry").not.toBeNull();
+    expect(actionsBox, "header actions must have measurable geometry").not.toBeNull();
+    expect(Number.parseFloat(paddingRight)).toBeGreaterThanOrEqual(320);
+    expect(actionsBox!.x + actionsBox!.width).toBeLessThanOrEqual(panelBox!.x + 1);
+  });
+
   test("critical queue actions keep 44px touch targets on a phone", async ({
     page,
   }) => {

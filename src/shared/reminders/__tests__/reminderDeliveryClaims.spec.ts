@@ -58,10 +58,13 @@ describe("reminderDeliveryClaims", () => {
 
   it("classifies accepted, suppressed, known rejection and ambiguity", () => {
     expect(
-      classifyReminderProviderResult({ ok: true, messageSid: "SM123" }),
+      classifyReminderProviderResult(
+        { ok: true, messageSid: `SM${"1".repeat(32)}` },
+        "sms",
+      ),
     ).toEqual({
       status: "sent",
-      providerMessageId: "SM123",
+      providerMessageId: `SM${"1".repeat(32)}`,
       errorCode: null,
     });
     expect(
@@ -69,22 +72,38 @@ describe("reminderDeliveryClaims", () => {
         ok: true,
         suppressed: true,
         suppressionReason: "email_opt_out",
-      }),
+      }, "email"),
     ).toMatchObject({
       status: "suppressed",
       providerMessageId: null,
       errorCode: "delivery_suppressed:email_opt_out",
     });
-    expect(classifyReminderProviderResult({ ok: true })).toMatchObject({
+    expect(classifyReminderProviderResult({ ok: true }, "sms")).toMatchObject({
       status: "unknown",
       errorCode: "provider_receipt_missing",
     });
     expect(
-      classifyReminderProviderResult({ ok: false, error: "twilio_400" }),
+      classifyReminderProviderResult({ ok: false, error: "twilio_400" }, "sms"),
     ).toMatchObject({ status: "failed" });
     expect(
-      classifyReminderProviderResult({ ok: false, error: "fetch failed" }),
+      classifyReminderProviderResult({ ok: false, error: "fetch failed" }, "sms"),
     ).toMatchObject({ status: "unknown" });
+  });
+
+  it("never records malformed SMS or email provider receipts as sent", () => {
+    expect(
+      classifyReminderProviderResult({ ok: true, messageSid: "SM123" }, "sms"),
+    ).toMatchObject({
+      status: "unknown",
+      providerMessageId: null,
+      errorCode: "invalid_provider_receipt",
+    });
+    expect(
+      classifyReminderProviderResult(
+        { ok: true, messageId: `email-${"x".repeat(200)}` },
+        "email",
+      ),
+    ).toMatchObject({ status: "unknown", errorCode: "invalid_provider_receipt" });
   });
 
   it("completes only through the database RPC", async () => {

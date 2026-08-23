@@ -163,6 +163,38 @@ describe("payment cron worker allowlist boundary", () => {
     );
   });
 
+  it("keeps hard-off workers out of healthy heartbeat state", () => {
+    for (const [workerName, source] of [
+      ["deposit_compensation", depositCompensationRoute],
+      ["payment_reconciliation", paymentReconciliationRoute],
+    ] as const) {
+      const authAt = source.indexOf("requireCronAuthorization(");
+      const trackedAt = source.indexOf(`runTrackedCron("${workerName}"`);
+      const hardOffAt = source.indexOf(
+        'process.env.PAYMENT_LEDGER_WORKERS_ENABLED !== "true"',
+      );
+      const providerWorkAt = source.indexOf("createServiceRoleClient()", trackedAt);
+
+      expect(authAt, `${workerName} authorization boundary`).toBeGreaterThanOrEqual(0);
+      expect(hardOffAt, `${workerName} hard-off gate`).toBeGreaterThanOrEqual(0);
+      expect(hardOffAt, `${workerName} auth before hard-off`).toBeGreaterThan(authAt);
+      expect(trackedAt, `${workerName} tracked boundary`).toBeGreaterThan(hardOffAt);
+      expect(providerWorkAt, `${workerName} provider-work boundary`).toBeGreaterThan(trackedAt);
+      expect(source.match(/runTrackedCron\(/g)).toHaveLength(1);
+    }
+  });
+
+  it("marks every unresolved financial batch as an unhealthy HTTP response", () => {
+    for (const [workerName, source] of [
+      ["deposit_compensation", depositCompensationRoute],
+      ["payment_reconciliation", paymentReconciliationRoute],
+    ] as const) {
+      expect(source, `${workerName} unresolved response truth`).toMatch(
+        /ok:\s*unresolved\s*===\s*0[\s\S]{0,260}status:\s*unresolved\s*===\s*0\s*\?\s*200\s*:\s*503/,
+      );
+    }
+  });
+
   it("retains a no-write, service-role-only capability", () => {
     expect(migration).toMatch(
       /create or replace function public\.ai_cron_worker_supported\(p_worker_name text\)[\s\S]+language sql[\s\S]+immutable[\s\S]+security invoker[\s\S]+set search_path = ''/,

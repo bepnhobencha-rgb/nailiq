@@ -17,6 +17,8 @@ import {
   gotoReceptionistCenter,
   rcSlug,
   seedReceptionistCenterFixture,
+  seedDeskBooking,
+  supabaseAdmin,
   testClientNameMarker,
   type ReceptionistCenterFixture,
 } from "./helpers";
@@ -65,6 +67,61 @@ function waitForRealtimeSubscription(page: Page, salonId: string): Promise<void>
   });
 }
 
+async function findBookingByClientName(clientName: string): Promise<{
+  id: string;
+  startTimeUtc: string;
+  endTimeUtc: string;
+}> {
+  const { data, error } = await supabaseAdmin
+    .from("bookings")
+    .select("id, start_time_utc, end_time_utc")
+    .eq("salon_id", fx.salonId)
+    .eq("client_name", clientName)
+    .single();
+
+  if (error || !data?.id || !data.start_time_utc || !data.end_time_utc) {
+    throw new Error(error?.message ?? `Booking not found for ${clientName}`);
+  }
+
+  return {
+    id: String(data.id),
+    startTimeUtc: new Date(String(data.start_time_utc)).toISOString(),
+    endTimeUtc: new Date(String(data.end_time_utc)).toISOString(),
+  };
+}
+
+async function rescheduleBooking(
+  booking: { id: string; startTimeUtc: string; endTimeUtc: string },
+  shiftMinutes: number,
+): Promise<void> {
+  const shiftMs = shiftMinutes * 60_000;
+  const { error } = await supabaseAdmin
+    .from("bookings")
+    .update({
+      staff_id: fx.freeStaffId,
+      start_time_utc: new Date(Date.parse(booking.startTimeUtc) + shiftMs).toISOString(),
+      end_time_utc: new Date(Date.parse(booking.endTimeUtc) + shiftMs).toISOString(),
+    })
+    .eq("salon_id", fx.salonId)
+    .eq("id", booking.id);
+  if (error) throw new Error(`rescheduleBooking: ${error.message}`);
+}
+
+async function cancelBooking(bookingId: string): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("bookings")
+    .update({ status: "cancelled" })
+    .eq("salon_id", fx.salonId)
+    .eq("id", bookingId);
+  if (error) throw new Error(`cancelBooking: ${error.message}`);
+}
+
+async function blockLeftPx(page: Page, bookingId: string): Promise<number> {
+  return await page.getByTestId(`booking-block-${bookingId}`).evaluate((element) => {
+    return Number.parseFloat((element as HTMLElement).style.left);
+  });
+}
+
 test.beforeAll(async ({}, testInfo) => {
   fx = await seedReceptionistCenterFixture(rcSlug(testInfo.project.name));
   owner = await seedTestSalonMember(fx.salonId, "owner");
@@ -84,7 +141,7 @@ test.afterAll(async ({}, testInfo) => {
  * We assert cross-tab consistency within polling window — not true realtime latency.
  */
 test.describe("Cross-tab queue visibility", () => {
-  test("case 3a: authenticated owner calendar receives a public booking within 5 seconds", async ({
+  test("case 3a: authenticated owner calendar receives public create, reschedule, and cancel mutations", async ({
     browser,
   }, testInfo) => {
     test.skip(testInfo.project.name !== "chromium", "Measured once on desktop Chromium; mobile layout is covered separately.");
@@ -145,6 +202,21 @@ test.describe("Cross-tab queue visibility", () => {
       );
       expect(propagationMs, "public-booking success to authenticated owner calendar visibility").toBeLessThanOrEqual(5_000);
       await expect(ownerBlock).toHaveAttribute("data-booking-source", "appointment");
+
+      const booking = await findBookingByClientName(marker);
+      const oldLeftPx = await blockLeftPx(ownerPage, booking.id);
+      await rescheduleBooking(booking, 30);
+      await expect
+        .poll(() => blockLeftPx(ownerPage, booking.id), {
+          timeout: 5_000,
+          message: "Realtime should remove the old slot and render the rescheduled slot",
+        })
+        .not.toBe(oldLeftPx);
+
+      await cancelBooking(booking.id);
+      await expect(ownerPage.getByTestId(`booking-block-${booking.id}`)).toHaveCount(0, {
+        timeout: 5_000,
+      });
     } finally {
       await ownerContext.close();
       await guestContext.close();
@@ -196,6 +268,61 @@ test.describe("Cross-tab queue visibility", () => {
     } finally {
       await ctx1.close();
       await ctx2.close();
+    }
+  });
+
+  test("case 3b: authenticated owner polling fallback receives create, reschedule, and cancel", async ({
+    browser,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== "chromium", "Measured once on desktop Chromium; mobile layout is covered separately.");
+    expect(owner, "authenticated owner fixture").toBeDefined();
+
+    const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
+    const ownerContext = await browser.newContext({ baseURL });
+    const ownerPage = await ownerContext.newPage();
+
+    try {
+      await ownerPage.routeWebSocket(/realtime\/v1\/websocket/, (ws) => {
+        ws.close();
+      });
+      await loginAs(ownerPage, owner!);
+      await gotoReceptionistCenter(ownerPage, fx.slug, {
+        dateYmd: fx.ymdUtc,
+        expectWalkinQueue: false,
+        useDemoCookie: false,
+      });
+
+      const failedStateBanner = ownerPage.locator(
+        '[data-testid="connection-banner-offline"], [data-testid="connection-banner-reconnecting"]',
+      );
+      await expect(failedStateBanner.first()).toBeVisible({ timeout: 15_000 });
+
+      const marker = testClientNameMarker();
+      const bookingId = await seedDeskBooking(fx.salonId, {
+        clientName: marker,
+        serviceId: fx.serviceIds[0]!,
+        staffId: fx.freeStaffId,
+        startIso: new Date(`${fx.ymdUtc}T13:00:00.000Z`).toISOString(),
+        endIso: new Date(`${fx.ymdUtc}T13:55:00.000Z`).toISOString(),
+        status: "confirmed",
+      });
+      const block = ownerPage.getByTestId(`booking-block-${bookingId}`);
+      await expect(block).toBeVisible({ timeout: 12_000 });
+
+      const booking = await findBookingByClientName(marker);
+      const oldLeftPx = await blockLeftPx(ownerPage, bookingId);
+      await rescheduleBooking(booking, 30);
+      await expect
+        .poll(() => blockLeftPx(ownerPage, bookingId), {
+          timeout: 12_000,
+          message: "Polling fallback should remove the old slot and render the rescheduled slot",
+        })
+        .not.toBe(oldLeftPx);
+
+      await cancelBooking(bookingId);
+      await expect(block).toHaveCount(0, { timeout: 12_000 });
+    } finally {
+      await ownerContext.close();
     }
   });
 });

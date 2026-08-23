@@ -5,7 +5,8 @@
  * and environment from SQUARE_WEBHOOK_PROFILES_JSON. The exact raw bytes are
  * bounded before parsing and compared with constant-time HMAC verification.
  * Optional Loyalty/Gift Card/Inventory payloads are reduced to a strict,
- * non-PII material projection before entering the durable DB inbox.
+ * non-PII material projection before entering the durable DB inbox. Financial
+ * refund revisions additionally bind to the exact tenant/provider operation.
  */
 
 export const runtime = "nodejs";
@@ -19,6 +20,7 @@ import {
   readSquareWebhookBody,
   resolveSquareWebhookProfile,
   sanitizeSquareOptionalEvent,
+  sanitizeSquareRefundEvent,
   squareWebhookPayloadFingerprint,
   verifySquareWebhookSignature,
 } from "@/shared/integrations/square/webhookRuntime";
@@ -166,6 +168,91 @@ async function recordOptionalEvent(input: {
   return json({ ok: false, code: recorded.code ?? "event_rejected" }, 400);
 }
 
+async function recordRefundEvent(input: {
+  db: ReturnType<typeof createServiceRoleClient>;
+  integration: IntegrationRow;
+  profile: { applicationId: string; environment: "sandbox" | "production" };
+  event: NonNullable<ReturnType<typeof parseSquareEvent>>;
+  payloadFingerprint: string;
+}) {
+  const refund = sanitizeSquareRefundEvent(input.event);
+  if (!refund) return json({ ok: false, code: "invalid_refund_event" }, 400);
+  if (refund.locationId !== input.integration.location_id) {
+    return json({ ok: false, code: "provider_context_mismatch" }, 409);
+  }
+
+  const { data: rawRecorded, error } = await input.db.rpc(
+    "record_square_refund_webhook_event" as never,
+    {
+      p_salon_id: input.integration.salon_id,
+      p_event_id: input.event.eventId,
+      p_occurred_at: input.event.occurredAt,
+      p_payload_fingerprint: input.payloadFingerprint,
+      p_provider_refund_id: refund.refundId,
+      p_parent_payment_id: refund.paymentId,
+      p_location_id: refund.locationId,
+      p_provider_status: refund.status,
+      p_amount_cents: refund.amountCents,
+      p_currency: refund.currency,
+      p_refund_updated_at: refund.updatedAt,
+      p_merchant_id: input.event.merchantId,
+      p_application_id: input.profile.applicationId,
+      p_environment: input.profile.environment,
+    } as never,
+  );
+  if (error || !rawRecorded || typeof rawRecorded !== "object") {
+    return json({ ok: false, code: "webhook_store_unavailable" }, 503);
+  }
+  const recorded = rawRecorded as unknown as {
+    success?: boolean;
+    code?: string;
+    event_id?: string;
+    result_code?: string;
+  };
+  const acceptedCodes = new Set([
+    "refund_pending",
+    "refund_applied",
+    "refund_failed",
+    "refund_terminal_noop",
+    "stale_event_ignored",
+    "duplicate_revision_ignored",
+    "event_replay",
+  ]);
+  if (
+    recorded.success === true
+    && recorded.event_id === input.event.eventId
+    && acceptedCodes.has(recorded.code ?? "")
+  ) {
+    return json({
+      ok: true,
+      code: recorded.code,
+      eventId: input.event.eventId,
+      ...(recorded.result_code ? { resultCode: recorded.result_code } : {}),
+    });
+  }
+  if (recorded.code === "operation_not_found") {
+    // The exact normalized event remains durable and can be retried after a
+    // narrowly timed provider-response/write race creates the operation.
+    return json({ ok: false, code: "operation_not_found" }, 503);
+  }
+  if ([
+    "event_conflict",
+    "event_replay_rejected",
+    "provider_context_mismatch",
+    "provider_binding_mismatch",
+    "terminal_state_conflict",
+    "revision_conflict",
+    "operation_state_mismatch",
+    "completion_rejected",
+  ].includes(recorded.code ?? "")) {
+    return json({ ok: false, code: recorded.code ?? "refund_event_rejected" }, 409);
+  }
+  if (recorded.code === "invalid_refund_event") {
+    return json({ ok: false, code: "invalid_refund_event" }, 400);
+  }
+  return json({ ok: false, code: "webhook_store_unavailable" }, 503);
+}
+
 async function recordDispute(input: {
   db: ReturnType<typeof createServiceRoleClient>;
   integration: IntegrationRow;
@@ -240,7 +327,11 @@ export async function POST(request: Request) {
 
   const event = parseSquareEvent(body.text);
   if (!event) return json({ ok: false, code: "invalid_event" }, 400);
-  if (!isSquareOptionalWebhookEvent(event.eventType) && !DISPUTE_EVENT_TYPES.has(event.eventType)) {
+  if (
+    event.eventType !== "refund.updated"
+    && !isSquareOptionalWebhookEvent(event.eventType)
+    && !DISPUTE_EVENT_TYPES.has(event.eventType)
+  ) {
     return json({ ok: true, code: "event_ignored" });
   }
 
@@ -259,6 +350,15 @@ export async function POST(request: Request) {
 
   if (isSquareOptionalWebhookEvent(event.eventType)) {
     return recordOptionalEvent({
+      db,
+      integration,
+      profile,
+      event,
+      payloadFingerprint: squareWebhookPayloadFingerprint(body.bytes),
+    });
+  }
+  if (event.eventType === "refund.updated") {
+    return recordRefundEvent({
       db,
       integration,
       profile,

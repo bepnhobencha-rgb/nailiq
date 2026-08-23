@@ -1,6 +1,78 @@
 import "server-only";
-import { looseServiceClient } from "./looseDb";
+import { loadSquareCustomerIdentityMap } from "./customerIdentity";
+import { looseServiceClient, type LooseDb } from "./looseDb";
 import { getSquareConfig, listAllCustomers, type SquareConfig } from "./client";
+
+const IDENTITY_PAGE_SIZE = 500;
+const IDENTITY_PAGE_CAP = 100;
+
+async function loadMultiNamespaceProfileIds(
+  db: LooseDb,
+  cfg: SquareConfig,
+  profileIds: string[],
+): Promise<Set<string>> {
+  const namespaces = new Map<string, Set<string>>();
+  const expectedNamespace = `${cfg.environment}\n${cfg.merchantId.trim()}`;
+
+  for (let batchOffset = 0; batchOffset < profileIds.length; batchOffset += 100) {
+    const chunk = profileIds.slice(batchOffset, batchOffset + 100);
+    const expectedProfiles = new Set(chunk);
+    for (let page = 0; page < IDENTITY_PAGE_CAP; page += 1) {
+      const from = page * IDENTITY_PAGE_SIZE;
+      const { data, error } = await db
+        .from("square_customer_identities")
+        .select("id, client_profile_id, provider_environment, provider_merchant_id")
+        .in("client_profile_id", chunk)
+        .order("id", { ascending: true })
+        .range(from, from + IDENTITY_PAGE_SIZE - 1);
+      if (error || !Array.isArray(data)) {
+        throw new Error("square_email_consent_namespace_lookup_unavailable");
+      }
+
+      for (const rawRow of data) {
+        if (!rawRow || typeof rawRow !== "object" || Array.isArray(rawRow)) {
+          throw new Error("square_email_consent_namespace_lookup_unavailable");
+        }
+        const row = rawRow as Record<string, unknown>;
+        const id = typeof row.id === "string" ? row.id : "";
+        const profileId = typeof row.client_profile_id === "string"
+          ? row.client_profile_id.toLowerCase()
+          : "";
+        const environment = row.provider_environment;
+        const merchantId = typeof row.provider_merchant_id === "string"
+          ? row.provider_merchant_id
+          : "";
+        if (
+          !id
+          || !expectedProfiles.has(profileId)
+          || (environment !== "sandbox" && environment !== "production")
+          || !merchantId
+          || merchantId !== merchantId.trim()
+        ) {
+          throw new Error("square_email_consent_namespace_lookup_unavailable");
+        }
+        const profileNamespaces = namespaces.get(profileId) ?? new Set<string>();
+        profileNamespaces.add(`${environment}\n${merchantId}`);
+        namespaces.set(profileId, profileNamespaces);
+      }
+
+      if (data.length < IDENTITY_PAGE_SIZE) break;
+      if (page === IDENTITY_PAGE_CAP - 1) {
+        throw new Error("square_email_consent_namespace_lookup_unavailable");
+      }
+    }
+  }
+
+  const multiNamespace = new Set<string>();
+  for (const profileId of profileIds) {
+    const profileNamespaces = namespaces.get(profileId);
+    if (!profileNamespaces?.has(expectedNamespace)) {
+      throw new Error("square_email_consent_namespace_lookup_unavailable");
+    }
+    if (profileNamespaces.size > 1) multiNamespace.add(profileId);
+  }
+  return multiNamespace;
+}
 
 /**
  * Sync EMAIL-only marketing consent from Square into client_profiles.
@@ -12,8 +84,9 @@ import { getSquareConfig, listAllCustomers, type SquareConfig } from "./client";
  * has since unsubscribed, so opt-outs propagate.
  *
  * IMPORTANT: this is EMAIL consent ONLY. It must never unlock SMS — the agents
- * gate SMS on `marketing_consent_at` (the full online opt-in). Matched by
- * `square_customer_id`, which the booking/customer sync sets on the profile.
+ * gate SMS on `marketing_consent_at` (the full online opt-in). Matching is
+ * scoped to the exact Square environment + merchant; an identifier collision
+ * in another account can never modify this profile's consent.
  */
 export async function syncSquareEmailConsent(salonId: string): Promise<{
   ok: boolean;
@@ -52,22 +125,69 @@ export async function syncSquareEmailConsent(salonId: string): Promise<{
     return { ok: true, squareCustomers: 0, granted: 0, revoked: 0 };
   }
 
-  // Match to local profiles by square_customer_id (batched IN lookups).
+  let idToProfile: Map<string, string>;
+  try {
+    idToProfile = await loadSquareCustomerIdentityMap(db, cfg, squareIds);
+  } catch (error) {
+    return {
+      ok: false,
+      squareCustomers: customers.length,
+      granted: 0,
+      revoked: 0,
+      error: String(error),
+    };
+  }
+
+  // Multiple Square records can deduplicate to one canonical phone profile.
+  // Any explicit opt-out wins for that profile.
+  const profileSubscribed = new Map<string, boolean>();
+  for (const [squareId, profileId] of idToProfile) {
+    const isSubscribed = subscribed.get(squareId) === true;
+    profileSubscribed.set(
+      profileId,
+      (profileSubscribed.get(profileId) ?? true) && isSubscribed,
+    );
+  }
+
   const grantProfileIds: string[] = [];
   const revokeProfileIds: string[] = [];
-  for (let i = 0; i < squareIds.length; i += 300) {
-    const chunk = squareIds.slice(i, i + 300);
-    const { data } = await db
+  const profileIds = [...profileSubscribed.keys()];
+  let multiNamespaceProfileIds: Set<string>;
+  try {
+    multiNamespaceProfileIds = await loadMultiNamespaceProfileIds(db, cfg, profileIds);
+  } catch {
+    return {
+      ok: false,
+      squareCustomers: customers.length,
+      granted: 0,
+      revoked: 0,
+      error: "square_email_consent_namespace_lookup_unavailable",
+    };
+  }
+  for (let i = 0; i < profileIds.length; i += 300) {
+    const chunk = profileIds.slice(i, i + 300);
+    const { data, error } = await db
       .from("client_profiles")
-      .select("id, square_customer_id, marketing_email_consent_at")
-      .in("square_customer_id", chunk);
+      .select("id, marketing_email_consent_at")
+      .in("id", chunk);
+    if (error) {
+      return {
+        ok: false,
+        squareCustomers: customers.length,
+        granted: 0,
+        revoked: 0,
+        error: "square_email_consent_profile_lookup_unavailable",
+      };
+    }
     for (const r of ((data as
-      | { id: string; square_customer_id: string | null; marketing_email_consent_at: string | null }[]
+      | { id: string; marketing_email_consent_at: string | null }[]
       | null) ?? [])) {
-      const sid = r.square_customer_id;
-      if (!sid) continue;
-      const isSubscribed = subscribed.get(sid) === true;
-      if (isSubscribed && !r.marketing_email_consent_at) {
+      const isSubscribed = profileSubscribed.get(r.id) === true;
+      if (
+        isSubscribed
+        && !r.marketing_email_consent_at
+        && !multiNamespaceProfileIds.has(r.id)
+      ) {
         grantProfileIds.push(r.id); // subscribe: stamp only if not already set
       } else if (!isSubscribed && r.marketing_email_consent_at) {
         revokeProfileIds.push(r.id); // opted out: clear so it propagates
@@ -86,7 +206,16 @@ export async function syncSquareEmailConsent(salonId: string): Promise<{
       .update({ marketing_email_consent_at: nowIso } as never)
       .in("id", chunk)
       .is("marketing_email_consent_at", null);
-    if (!error) granted += chunk.length;
+    if (error) {
+      return {
+        ok: false,
+        squareCustomers: customers.length,
+        granted,
+        revoked,
+        error: "square_email_consent_grant_update_unavailable",
+      };
+    }
+    granted += chunk.length;
   }
   for (let i = 0; i < revokeProfileIds.length; i += 300) {
     const chunk = revokeProfileIds.slice(i, i + 300);
@@ -94,7 +223,16 @@ export async function syncSquareEmailConsent(salonId: string): Promise<{
       .from("client_profiles")
       .update({ marketing_email_consent_at: null } as never)
       .in("id", chunk);
-    if (!error) revoked += chunk.length;
+    if (error) {
+      return {
+        ok: false,
+        squareCustomers: customers.length,
+        granted,
+        revoked,
+        error: "square_email_consent_revoke_update_unavailable",
+      };
+    }
+    revoked += chunk.length;
   }
 
   return { ok: true, squareCustomers: customers.length, granted, revoked };

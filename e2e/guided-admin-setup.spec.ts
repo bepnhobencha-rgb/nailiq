@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   cleanupTestSalon,
   cleanupTestUser,
@@ -49,8 +49,10 @@ async function loginAs(
   );
   await page.locator('input[inputmode="email"]').fill(account.email);
   await page.locator('input[type="password"]').fill(account.password);
-  await page.getByRole("button", { name: /^sign in$/i }).click();
-  await page.waitForURL(/\/dashboard\//, { timeout: 30_000 });
+  await page
+    .getByRole("button", { name: /^sign in$/i })
+    .click({ noWaitAfter: true });
+  await expect(page).toHaveURL(/\/dashboard\//, { timeout: 30_000 });
 }
 
 async function signInForDirectRoute(
@@ -65,8 +67,10 @@ async function signInForDirectRoute(
   );
   await page.locator('input[inputmode="email"]').fill(account.email);
   await page.locator('input[type="password"]').fill(account.password);
-  await page.getByRole("button", { name: /^sign in$/i }).click();
-  await page.waitForURL(/\/(?:dashboard\/|register\/setup)/, {
+  await page
+    .getByRole("button", { name: /^sign in$/i })
+    .click({ noWaitAfter: true });
+  await expect(page).toHaveURL(/\/(?:dashboard\/|register\/setup)/, {
     timeout: 30_000,
   });
 }
@@ -74,7 +78,10 @@ async function signInForDirectRoute(
 async function gotoAfterSignIn(page: Page, path: string) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      await page.goto(path);
+      await page.goto(path, {
+        waitUntil: "domcontentloaded",
+        timeout: 30_000,
+      });
       return;
     } catch (error) {
       if (
@@ -86,7 +93,35 @@ async function gotoAfterSignIn(page: Page, path: string) {
       }
     }
   }
-  await page.goto(path);
+  await page.goto(path, {
+    waitUntil: "domcontentloaded",
+    timeout: 30_000,
+  });
+}
+
+async function clearAppSessionCookies(page: Page) {
+  // Protected Vercel Previews use `_vercel_jwt` to prove the one-time
+  // Automation Bypass handshake. Clearing every cookie logs the synthetic
+  // salon user out but also throws the browser back to Vercel SSO, so the next
+  // `/register` navigation never reaches NailIQ. Preserve only that
+  // infrastructure cookie; local/CI contexts do not have it and still clear
+  // every application cookie exactly as before.
+  await page.context().clearCookies({ name: /^(?!_vercel_jwt$).*$/ });
+}
+
+async function proveControlledSearchHydrated(
+  searchbox: Locator,
+  filteredItems: Locator,
+) {
+  // The setup lists are server-rendered, so a row and its edit button can be
+  // visible before React has attached their handlers on a remote Preview. A
+  // controlled search proves client hydration without relying on a sleep.
+  await expect(async () => {
+    await searchbox.fill("");
+    await searchbox.fill("__guided_hydration_probe__");
+    await expect(filteredItems).toHaveCount(0, { timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+  await searchbox.fill("");
 }
 
 async function recordSafeGuidedAttestations(page: Page) {
@@ -283,7 +318,7 @@ test.describe("Guided Admin Setup", () => {
         .getByRole("progressbar")
         .getAttribute("aria-valuenow");
 
-      await page.context().clearCookies();
+      await clearAppSessionCookies(page);
       await loginAs(page, owner);
       await expect(page).toHaveURL(
         new RegExp(`/dashboard/${registration.salon.slug}/setup$`),
@@ -403,7 +438,7 @@ test.describe("Guided Admin Setup", () => {
       /Booking and cancellation rules|Quy định đặt và huỷ lịch/i,
     );
 
-    await page.context().clearCookies();
+    await clearAppSessionCookies(page);
     await signInForDirectRoute(page, resumeOwner);
     await gotoAfterSignIn(page, `/dashboard/${RESUME_SLUG}/setup`);
     await expect(page).toHaveURL(
@@ -527,9 +562,9 @@ test.describe("Guided Admin Setup", () => {
     );
     await expect(
       page.getByTestId("guided-booking-preview-simulator"),
-    ).toHaveCount(0);
+    ).toHaveCount(0, { timeout: 30_000 });
 
-    await page.context().clearCookies();
+    await clearAppSessionCookies(page);
     await loginAs(page, legacyOwner);
     await page.goto(`/dashboard/${COMPLETE_SLUG}/setup/preview`);
     await expect(page).not.toHaveURL(
@@ -537,7 +572,7 @@ test.describe("Guided Admin Setup", () => {
     );
     await expect(
       page.getByTestId("guided-booking-preview-simulator"),
-    ).toHaveCount(0);
+    ).toHaveCount(0, { timeout: 30_000 });
   });
 
   test("keeps the original dashboard navigation when Guided Setup is disabled", async ({
@@ -630,11 +665,20 @@ test.describe("Guided Admin Setup", () => {
     await expect(
       page.locator('[data-testid^="staff-edit-"]').first(),
     ).toBeVisible();
-    await page.locator('[data-testid^="staff-edit-"]').first().click();
-    await page.getByTestId("staff-drawer-name").fill("Jenny QA");
-    await page
+    const staffEditButtons = page.locator('[data-testid^="staff-edit-"]');
+    await proveControlledSearchHydrated(
+      page.getByRole("searchbox"),
+      staffEditButtons,
+    );
+    await staffEditButtons.first().click();
+    const staffDrawer = page.getByRole("dialog");
+    await expect(staffDrawer).toBeVisible({ timeout: 10_000 });
+    await expect(staffDrawer.getByTestId("staff-drawer-name")).toHaveValue(
+      "Jenny",
+    );
+    await staffDrawer.getByTestId("staff-drawer-name").fill("Jenny QA");
+    await staffDrawer
       .getByRole("button", { name: /^(save|lưu)$/i })
-      .last()
       .click();
     await expect(page.getByText("Jenny QA", { exact: true })).toBeVisible();
     await page.reload();
@@ -646,14 +690,22 @@ test.describe("Guided Admin Setup", () => {
     await expect(
       page.locator('[data-testid^="service-edit-"]').first(),
     ).toBeVisible();
-    await page.locator('[data-testid^="service-edit-"]').first().click();
-    await expect(page.getByTestId("service-drawer-duration")).toHaveValue(
+    const serviceEditButtons = page.locator('[data-testid^="service-edit-"]');
+    await proveControlledSearchHydrated(
+      page.getByRole("searchbox"),
+      serviceEditButtons,
+    );
+    await serviceEditButtons.first().click();
+    const serviceDrawer = page.getByRole("dialog");
+    await expect(serviceDrawer).toBeVisible({ timeout: 10_000 });
+    await expect(
+      serviceDrawer.getByTestId("service-drawer-duration"),
+    ).toHaveValue(
       "45",
     );
-    await page.getByTestId("service-drawer-price").fill("46");
-    await page
+    await serviceDrawer.getByTestId("service-drawer-price").fill("46");
+    await serviceDrawer
       .getByRole("button", { name: /^(save|lưu)$/i })
-      .last()
       .click();
     // The price preview inside the drawer updates immediately while the server
     // action is still running. Wait for onSaved to close the drawer before

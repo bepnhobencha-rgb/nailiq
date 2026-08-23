@@ -220,7 +220,20 @@ describe("query grammar injection inventory", () => {
       "20260823034500_fix_staff_change_capture_btrim.sql",
       "20260823035000_fix_staff_offboarding_deferred_constraint.sql",
       "20260823037000_close_staff_deactivation_assignment_races.sql",
+      "20260823124500_record_twilio_status_receipts_atomically.sql",
     ]);
+
+    const twilioReceipts = fs.readFileSync(
+      path.join(
+        migrationRoot,
+        "20260823124500_record_twilio_status_receipts_atomically.sql",
+      ),
+      "utf8",
+    );
+    expect(twilioReceipts).toContain(
+      "'select public.record_twilio_message_status_receipt($1,$2,$3)'",
+    );
+    expect(twilioReceipts).toMatch(/execute[\s\S]+into v_apply[\s\S]+using/u);
 
     for (const name of executeFormat) {
       const sql = fs.readFileSync(path.join(migrationRoot, name), "utf8");

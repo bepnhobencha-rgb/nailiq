@@ -1,8 +1,11 @@
 import "server-only";
+import { loadSquareCustomerIdentityMap } from "./customerIdentity";
 import { looseServiceClient } from "./looseDb";
 import { getSquareConfig, type SquareConfig } from "./client";
 
 const SQUARE_VERSION = "2024-10-17";
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 function apiBase(env: string): string {
   return env === "sandbox"
@@ -29,13 +32,17 @@ async function fetchOrderServiceNames(
   base: string,
   token: string,
   orderIds: string[],
-): Promise<Map<string, string[]>> {
+): Promise<
+  | { ok: true; serviceNames: Map<string, string[]> }
+  | { ok: false; error: string }
+> {
   const result = new Map<string, string[]>();
-  if (orderIds.length === 0) return result;
+  if (orderIds.length === 0) return { ok: true, serviceNames: result };
   for (let i = 0; i < orderIds.length; i += 100) {
     const batch = orderIds.slice(i, i + 100);
+    let res: Response;
     try {
-      const res = await fetch(`${base}/orders/batch-retrieve`, {
+      res = await fetch(`${base}/orders/batch-retrieve`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -44,20 +51,63 @@ async function fetchOrderServiceNames(
         },
         body: JSON.stringify({ order_ids: batch }),
       });
-      if (!res.ok) continue;
-      const j = (await res.json()) as { orders?: SquareOrderRaw[] };
-      for (const order of j.orders ?? []) {
-        if (!order.id) continue;
-        const names = (order.line_items ?? [])
-          .map((li) => (li.name ?? "").trim())
-          .filter(Boolean);
-        if (names.length > 0) result.set(order.id, names);
-      }
     } catch {
-      // best-effort; skip this batch and continue
+      return { ok: false, error: "square_visit_order_provider_read_unavailable" };
+    }
+    if (!res.ok) {
+      return { ok: false, error: "square_visit_order_provider_read_unavailable" };
+    }
+    let value: unknown;
+    try {
+      value = await res.json();
+    } catch {
+      return { ok: false, error: "square_visit_order_provider_response_invalid" };
+    }
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return { ok: false, error: "square_visit_order_provider_response_invalid" };
+    }
+    const payload = value as { orders?: unknown; errors?: unknown };
+    if (
+      (payload.errors !== undefined
+        && (!Array.isArray(payload.errors) || payload.errors.length > 0))
+      || (payload.orders !== undefined && !Array.isArray(payload.orders))
+    ) {
+      return { ok: false, error: "square_visit_order_provider_response_invalid" };
+    }
+    const requested = new Set(batch);
+    const seen = new Set<string>();
+    for (const value of payload.orders ?? []) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return { ok: false, error: "square_visit_order_provider_response_invalid" };
+      }
+      const order = value as SquareOrderRaw;
+      if (
+        typeof order.id !== "string"
+        || !order.id
+        || !requested.has(order.id)
+        || seen.has(order.id)
+        || (order.line_items !== undefined && !Array.isArray(order.line_items))
+      ) {
+        return { ok: false, error: "square_visit_order_provider_response_invalid" };
+      }
+      seen.add(order.id);
+      const names: string[] = [];
+      for (const lineItem of order.line_items ?? []) {
+        if (
+          !lineItem
+          || typeof lineItem !== "object"
+          || Array.isArray(lineItem)
+          || (lineItem.name !== undefined && typeof lineItem.name !== "string")
+        ) {
+          return { ok: false, error: "square_visit_order_provider_response_invalid" };
+        }
+        const name = (lineItem.name ?? "").trim();
+        if (name) names.push(name);
+      }
+      if (names.length > 0) result.set(order.id, names);
     }
   }
-  return result;
+  return { ok: true, serviceNames: result };
 }
 
 export type VisitSyncResult = {
@@ -67,6 +117,15 @@ export type VisitSyncResult = {
   withServices: number;
   error?: string;
 };
+
+function failedVisitSync(
+  error: string,
+  paymentsScanned = 0,
+  upserted = 0,
+  withServices = 0,
+): VisitSyncResult {
+  return { ok: false, paymentsScanned, upserted, withServices, error };
+}
 
 /**
  * Sync per-visit history from Square payments into square_visit_history.
@@ -87,8 +146,8 @@ export async function syncSquareVisitHistory(
   let cfg: SquareConfig;
   try {
     cfg = await getSquareConfig(db, salonId);
-  } catch (e) {
-    return { ok: false, paymentsScanned: 0, upserted: 0, withServices: 0, error: String(e) };
+  } catch {
+    return failedVisitSync("square_visit_config_unavailable");
   }
 
   const base = apiBase(cfg.environment);
@@ -97,16 +156,23 @@ export async function syncSquareVisitHistory(
   // any reprocessed or late-settled payments are captured.
   let since: string | undefined;
   if (!opts.fullBackfill) {
-    const { data: wm } = await db
+    const { data: wm, error: watermarkError } = await db
       .from("square_visit_history" as never)
       .select("square_created_at")
       .eq("salon_id", salonId)
       .order("square_created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (watermarkError) {
+      return failedVisitSync("square_visit_watermark_unavailable");
+    }
     const wmDate = (wm as { square_created_at?: string } | null)?.square_created_at;
     if (wmDate) {
-      since = new Date(Date.parse(wmDate) - 2 * 86_400_000).toISOString();
+      const watermarkMs = Date.parse(wmDate);
+      if (!Number.isFinite(watermarkMs)) {
+        return failedVisitSync("square_visit_watermark_invalid");
+      }
+      since = new Date(watermarkMs - 2 * 86_400_000).toISOString();
     }
   }
 
@@ -123,71 +189,164 @@ export async function syncSquareVisitHistory(
     });
     if (cursor) params.set("cursor", cursor);
     if (since) params.set("begin_time", since);
-    const res = await fetch(`${base}/payments?${params.toString()}`, {
-      headers: {
-        Authorization: `Bearer ${cfg.accessToken}`,
-        "Square-Version": SQUARE_VERSION,
-      },
-    });
-    if (!res.ok) {
-      return {
-        ok: false,
-        paymentsScanned: payments.length,
-        upserted: 0,
-        withServices: 0,
-        error: `Square HTTP ${res.status}`,
-      };
+    let res: Response;
+    try {
+      res = await fetch(`${base}/payments?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${cfg.accessToken}`,
+          "Square-Version": SQUARE_VERSION,
+        },
+      });
+    } catch {
+      return failedVisitSync(
+        "square_visit_provider_read_unavailable",
+        payments.length,
+      );
     }
-    const j = (await res.json()) as {
+    if (!res.ok) {
+      return failedVisitSync(
+        "square_visit_provider_read_unavailable",
+        payments.length,
+      );
+    }
+    let j: {
       payments?: SquarePaymentRaw[];
       cursor?: string;
       errors?: unknown;
     };
+    try {
+      j = (await res.json()) as typeof j;
+    } catch {
+      return failedVisitSync(
+        "square_visit_provider_response_invalid",
+        payments.length,
+      );
+    }
     if (j.errors) {
-      return {
-        ok: false,
-        paymentsScanned: payments.length,
-        upserted: 0,
-        withServices: 0,
-        error: `Square error: ${JSON.stringify(j.errors)}`,
-      };
+      return failedVisitSync(
+        "square_visit_provider_response_invalid",
+        payments.length,
+      );
     }
     for (const p of j.payments ?? []) {
       if (p.status === "COMPLETED" && p.customer_id && p.id && p.created_at) {
         payments.push(p);
       }
     }
+    if (j.cursor !== undefined && typeof j.cursor !== "string") {
+      return failedVisitSync(
+        "square_visit_provider_response_invalid",
+        payments.length,
+      );
+    }
     cursor = j.cursor;
     pages++;
   } while (cursor && pages < pageLimit);
+
+  if (cursor) {
+    return failedVisitSync(
+      "square_visit_pagination_limit_exceeded",
+      payments.length,
+    );
+  }
 
   if (payments.length === 0) {
     return { ok: true, paymentsScanned: 0, upserted: 0, withServices: 0 };
   }
 
-  // Map Square customer_id → NailIQ client_profile_id
+  // Map only inside the exact Square environment + merchant namespace.
   const squareIds = [...new Set(payments.map((p) => p.customer_id!))];
-  const idToProfile = new Map<string, string>();
-  for (let i = 0; i < squareIds.length; i += 300) {
-    const chunk = squareIds.slice(i, i + 300);
-    const { data } = await db
-      .from("client_profiles")
-      .select("id, square_customer_id")
-      .in("square_customer_id", chunk);
-    for (const r of (data as { id: string; square_customer_id: string | null }[] | null) ?? []) {
-      if (r.square_customer_id) idToProfile.set(r.square_customer_id, r.id);
+  let idToProfile: Map<string, string>;
+  try {
+    idToProfile = await loadSquareCustomerIdentityMap(db, cfg, squareIds);
+  } catch {
+    return failedVisitSync(
+      "square_visit_identity_map_unavailable",
+      payments.length,
+    );
+  }
+
+  // The scoped identity table deliberately has no unsafe legacy backfill. When
+  // an exact account identity has not yet been rebuilt, retain only a profile
+  // already attached to this exact salon + provider payment + customer tuple.
+  // This prevents a replay from erasing valid history without inferring a link
+  // from the old globally-unscoped Square customer id.
+  const existingProfileByPayment = new Map<string, string>();
+  const unmappedPayments = payments.filter((payment) => (
+    !idToProfile.has(payment.customer_id!)
+  ));
+  const requestedPaymentCustomer = new Map<string, string>();
+  for (const payment of unmappedPayments) {
+    const paymentId = payment.id!;
+    const customerId = payment.customer_id!;
+    const previousCustomerId = requestedPaymentCustomer.get(paymentId);
+    if (previousCustomerId && previousCustomerId !== customerId) {
+      return failedVisitSync(
+        "square_visit_provider_response_invalid",
+        payments.length,
+      );
+    }
+    requestedPaymentCustomer.set(paymentId, customerId);
+  }
+  const unmappedPaymentIds = [...requestedPaymentCustomer.keys()];
+  for (let offset = 0; offset < unmappedPaymentIds.length; offset += 300) {
+    const chunk = unmappedPaymentIds.slice(offset, offset + 300);
+    const { data, error } = await db
+      .from("square_visit_history" as never)
+      .select("square_payment_id, square_customer_id, client_profile_id")
+      .eq("salon_id", salonId)
+      .in("square_payment_id", chunk);
+    if (error || !Array.isArray(data)) {
+      return failedVisitSync(
+        "square_visit_existing_identity_lookup_unavailable",
+        payments.length,
+      );
+    }
+    for (const value of data) {
+      const row = value as {
+        square_payment_id?: unknown;
+        square_customer_id?: unknown;
+        client_profile_id?: unknown;
+      };
+      const paymentId = typeof row.square_payment_id === "string"
+        ? row.square_payment_id : "";
+      const customerId = typeof row.square_customer_id === "string"
+        ? row.square_customer_id : "";
+      const requestedCustomerId = requestedPaymentCustomer.get(paymentId);
+      if (!requestedCustomerId || customerId !== requestedCustomerId) {
+        return failedVisitSync(
+          "square_visit_existing_identity_conflict",
+          payments.length,
+        );
+      }
+      if (row.client_profile_id === null) continue;
+      const profileId = typeof row.client_profile_id === "string"
+        ? row.client_profile_id.toLowerCase() : "";
+      const previousProfileId = existingProfileByPayment.get(paymentId);
+      if (!UUID_RE.test(profileId) || (previousProfileId && previousProfileId !== profileId)) {
+        return failedVisitSync(
+          "square_visit_existing_identity_response_invalid",
+          payments.length,
+        );
+      }
+      existingProfileByPayment.set(paymentId, profileId);
     }
   }
 
   // Batch-fetch Square Orders to get service names per visit
   const orderIds = [...new Set(payments.filter((p) => p.order_id).map((p) => p.order_id!))];
-  const orderServiceMap = await fetchOrderServiceNames(base, cfg.accessToken, orderIds);
+  const orderServices = await fetchOrderServiceNames(base, cfg.accessToken, orderIds);
+  if (!orderServices.ok) {
+    return failedVisitSync(orderServices.error, payments.length);
+  }
+  const orderServiceMap = orderServices.serviceNames;
 
   // Build rows
   const now = new Date().toISOString();
   const rows = payments.map((p) => ({
     salon_id: salonId,
-    client_profile_id: idToProfile.get(p.customer_id!) ?? null,
+    client_profile_id:
+      idToProfile.get(p.customer_id!) ?? existingProfileByPayment.get(p.id!) ?? null,
     square_customer_id: p.customer_id!,
     square_payment_id: p.id!,
     square_created_at: p.created_at!,
@@ -207,10 +366,16 @@ export async function syncSquareVisitHistory(
     const { error } = await db
       .from("square_visit_history" as never)
       .upsert(chunk as never, { onConflict: "salon_id,square_payment_id" });
-    if (!error) {
-      upserted += chunk.length;
-      withServices += chunk.filter((r) => r.service_names && r.service_names.length > 0).length;
+    if (error) {
+      return failedVisitSync(
+        "square_visit_upsert_unavailable",
+        payments.length,
+        upserted,
+        withServices,
+      );
     }
+    upserted += chunk.length;
+    withServices += chunk.filter((r) => r.service_names && r.service_names.length > 0).length;
   }
 
   return { ok: true, paymentsScanned: payments.length, upserted, withServices };

@@ -418,7 +418,10 @@ export function WalkinQueueSidebar({
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-3">
+      <div
+        data-testid="walkin-queue-scroll"
+        className="min-h-0 flex-1 overflow-y-auto px-3 pt-3"
+      >
         {showQuickAdd ? (
           <WalkinAddForm
             services={services}

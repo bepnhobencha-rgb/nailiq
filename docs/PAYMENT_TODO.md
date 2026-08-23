@@ -2,9 +2,10 @@
 
 Verified từ code thật. Làm theo thứ tự ưu tiên:
 
-## 1. Gift card thu tiền thật (GẤP)
-- Hiện trạng: `api/gift-card/purchase` + `shared/loyalty/giftCardActions.ts` chỉ sinh mã voucher trong DB (`kind:"gift", amount_off_cents`), KHÔNG charge người mua qua provider nào.
-- Cần: chèn bước thanh toán (Square cho salon Square / Stripe cho salon Stripe) TRƯỚC khi tạo mã.
+## 1. Gift Card thu tiền thật (GẤP)
+- Hiện trạng: route public và action phát hành local cũ đã bị retire vĩnh viễn; trang public trả 404 và API trả 503. Không được bật lại bằng flag hoặc tạo local voucher value.
+- Quyết định sản phẩm: Square là nguồn sự thật duy nhất cho funds/state/balance của Gift Card.
+- Cần: tạo flow mới, tách biệt, dùng durable Square create → completed payment → activation receipt chain rồi mới mở UI. Không phát hành nếu thiếu exact paid receipt; không tự đặt ngày hết hạn.
 
 ## 2. Hợp nhất luật deposit về một nguồn
 - Hiện trạng: đường Stripe (`api/booking/deposit-intent`) dùng rule engine `shared/noshow/evaluateDeposit.ts` (VIP miễn, owner override, lịch sử no-show 50%, high-value 30%, new 20%).
@@ -15,4 +16,4 @@ Verified từ code thật. Làm theo thứ tự ưu tiên:
 - Số `determine_booking_verification` (RPC) báo cho khách phải = số Square/Stripe thật sự trừ.
 
 ## Sau cùng (refactor, không gấp)
-- Gom hai silo Stripe/Square về một `PaymentProvider` interface chung (createDeposit, capture, refund, issueGiftCard, redeemGiftCard, capabilities) + chọn theo salon trong Settings.
+- Gom phần deposit/refund phù hợp về một `PaymentProvider` interface chung; Gift Card vẫn Square-only theo quyết định sản phẩm.

@@ -25,7 +25,6 @@ export async function GET(request: NextRequest) {
   if (process.env.PAYMENT_LEDGER_WORKERS_ENABLED !== "true") {
     return NextResponse.json({ ok: true, code: "disabled", processed: 0 });
   }
-
   return runTrackedCron("deposit_compensation", async () => {
     const db = createServiceRoleClient();
     let discovered: { data: unknown; error: unknown };
@@ -91,6 +90,15 @@ export async function GET(request: NextRequest) {
       if (outcome.ok) refunded += 1;
       else unresolved += 1;
     }
-    return NextResponse.json({ ok: true, processed, refunded, unresolved });
+    return NextResponse.json(
+      {
+        ok: unresolved === 0,
+        ...(unresolved === 0 ? {} : { code: "compensation_incomplete" }),
+        processed,
+        refunded,
+        unresolved,
+      },
+      { status: unresolved === 0 ? 200 : 503 },
+    );
   });
 }

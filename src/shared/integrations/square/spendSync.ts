@@ -1,4 +1,5 @@
 import "server-only";
+import { loadSquareCustomerIdentityMap } from "./customerIdentity";
 import { looseServiceClient } from "./looseDb";
 import { getSquareConfig, type SquareConfig } from "./client";
 
@@ -71,7 +72,8 @@ async function aggregatePaymentsByCustomer(
 /**
  * Sync each customer's lifetime spend AT THIS SALON from Square into
  * `salon_client_spend`. Only customers linked to a NailIQ identity
- * (client_profiles.square_customer_id) get a row. Salon-scoped. Service-role.
+ * in the exact Square environment + merchant get a row. Salon-scoped.
+ * Service-role.
  */
 export async function syncSquareSpend(salonId: string): Promise<{
   ok: boolean;
@@ -101,17 +103,17 @@ export async function syncSquareSpend(salonId: string): Promise<{
     return { ok: true, squareCustomers: 0, matchedProfiles: 0, totalCents: 0 };
   }
 
-  // Square customer_id → client_profile_id (batched IN lookups).
-  const idToProfile = new Map<string, string>();
-  for (let i = 0; i < squareIds.length; i += 300) {
-    const chunk = squareIds.slice(i, i + 300);
-    const { data } = await db
-      .from("client_profiles")
-      .select("id, square_customer_id")
-      .in("square_customer_id", chunk);
-    for (const r of (data as { id: string; square_customer_id: string | null }[] | null) ?? []) {
-      if (r.square_customer_id) idToProfile.set(r.square_customer_id, r.id);
-    }
+  let idToProfile: Map<string, string>;
+  try {
+    idToProfile = await loadSquareCustomerIdentityMap(db, cfg, squareIds);
+  } catch (error) {
+    return {
+      ok: false,
+      squareCustomers: agg.size,
+      matchedProfiles: 0,
+      totalCents: 0,
+      error: String(error),
+    };
   }
 
   // Aggregate to the profile (a profile may link >1 Square customer after a merge).

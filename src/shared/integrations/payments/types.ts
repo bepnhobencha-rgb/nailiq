@@ -64,9 +64,12 @@ export interface PaymentProvider {
     idempotencyKey: string;
     note?: string;
     referenceId?: string;
-    /** DB-bound connected account for Stripe Connect. Square ignores this
-     * field because its provider instance is already tenant-configured. */
+    /** DB-bound provider identity captured with the durable operation. */
     providerAccountId?: string;
+    providerLocationId?: string | null;
+    providerEnvironment?: "sandbox" | "production" | null;
+    providerCurrency?: string;
+    providerAccountFingerprint?: string;
   }): Promise<ChargeResult>;
 
   /** Refund a payment (full or partial). */
@@ -75,8 +78,12 @@ export interface PaymentProvider {
     amountCents: number;
     reason: string;
     idempotencyKey: string;
-    /** DB-bound connected account for Stripe Connect refunds. */
+    /** DB-bound provider identity captured with the durable operation. */
     providerAccountId?: string;
+    providerLocationId?: string | null;
+    providerEnvironment?: "sandbox" | "production" | null;
+    providerCurrency?: string;
+    providerAccountFingerprint?: string;
   }): Promise<RefundResult>;
 
   /** Remove a saved card so it can never be charged again. Square disables the

@@ -50,14 +50,21 @@ describe("reviews boundary", () => {
     expect(dashboard).toContain("createServiceRoleClient()");
     expect(dashboard).toContain('.eq("salon_id", resolved.salon.id)');
     expect(request).toContain("createServiceRoleClient()");
+    const smsClaim = request.indexOf("const smsClaim = await claimNotificationOnce");
+    const smsProvider = request.indexOf("await sendSmsReminder", smsClaim);
+    expect(smsClaim).toBeGreaterThan(-1);
+    expect(smsProvider).toBeGreaterThan(smsClaim);
+    expect(request).toContain('searchParams.set("notification_id", smsClaim)');
+    expect(request).toContain("await completeReviewRequestSmsNotification");
+    expect(request).not.toContain("void logNotification({");
   });
 
   it("updates blank-database parity tripwires", () => {
     const parity = read("scripts/check-schema-parity.ts");
     expect(parity).toContain("through 20260820105820");
-    expect(parity).toContain("policies: 198");
+    expect(parity).toContain("policies: 197");
     expect(parity).toContain(
-      "const GRANTS = { anon: 56, authenticated: 77, service_role: 173 }",
+      "const GRANTS = { anon: 56, authenticated: 77, service_role: 175 }",
     );
   });
 });

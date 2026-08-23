@@ -31,6 +31,18 @@ const giftCardPage = readFileSync(
   join(root, "src/app/[slug]/gift/page.tsx"),
   "utf8",
 );
+const legacyPurchaseRoute = readFileSync(
+  join(root, "src/app/api/gift-card/purchase/route.ts"),
+  "utf8",
+);
+const legacyGiftCardActions = readFileSync(
+  join(root, "src/shared/loyalty/giftCardActions.ts"),
+  "utf8",
+);
+const loyaltySetupClient = readFileSync(
+  join(root, "src/components/dashboard/LoyaltySetupClient.tsx"),
+  "utf8",
+);
 const concurrency = readFileSync(
   join(root, "scripts/security/rehearse-square-gift-card-concurrency.mjs"),
   "utf8",
@@ -43,19 +55,35 @@ describe("MQA-0125 Square Gift Card reconciliation boundary", () => {
     expect(giftCardConfig).toContain("GIFT_CARD_PURCHASE_ENABLED = false");
     expect(giftCardConfig).toContain("GIFT_CARD_VALUE_MUTATIONS_ENABLED = false");
     expect(migration).toMatch(/does\s+-- not call Square, enable Gift Cards, create a NailIQ voucher/);
+    expect(legacyPurchaseRoute).toContain('error: "gift_cards_unavailable"');
+    expect(legacyPurchaseRoute).not.toMatch(
+      /createServiceRoleClient|\.from\(["']vouchers["']|\.insert\(|randomUUID|gift_card_value_cents|expires_at/,
+    );
+    expect(legacyGiftCardActions).not.toMatch(
+      /GIFT_CARD_VALUE_MUTATIONS_ENABLED|\.insert\(|\.update\(|randomUUID|expiryDays|gift_card_value_cents/,
+    );
+    expect(legacyGiftCardActions).toContain(
+      'error: "gift_card_issuance_unavailable"',
+    );
+    expect(legacyGiftCardActions).toContain(
+      'error: "gift_card_redemption_unavailable"',
+    );
+    expect(loyaltySetupClient).toContain(
+      'data-testid="gift-card-issuance-unavailable"',
+    );
+    expect(loyaltySetupClient).not.toMatch(
+      /createGiftCard|Issue gift card manually|Gift card created!|GIFT_DENOMINATIONS/,
+    );
   });
 
-  it("marks the hard-off Gift Card route noindex before any salon lookup", () => {
-    const metadata = giftCardPage.slice(
-      giftCardPage.indexOf("export async function generateMetadata"),
-      giftCardPage.indexOf("export default async function GiftCardPage"),
+  it("permanently noindexes and retires the legacy public purchase page", () => {
+    expect(giftCardPage).toContain('title: { absolute: "Not found | NailIQ" }');
+    expect(giftCardPage).toContain("robots: { index: false, follow: false }");
+    expect(giftCardPage).toContain("alternates: { canonical: null }");
+    expect(giftCardPage).toContain("notFound();");
+    expect(giftCardPage).not.toMatch(
+      /GIFT_CARD_PURCHASE_ENABLED|createClient|GiftCardPurchasePanel|Purchase a gift card/,
     );
-    const hardOff = metadata.indexOf("if (!GIFT_CARD_PURCHASE_ENABLED)");
-    expect(hardOff).toBeGreaterThan(-1);
-    expect(metadata).toContain('title: { absolute: "Not found | NailIQ" }');
-    expect(metadata).toContain("robots: { index: false, follow: false }");
-    expect(metadata).toContain("alternates: { canonical: null }");
-    expect(hardOff).toBeLessThan(metadata.indexOf("createClient()"));
   });
 
   it("binds local issuance evidence only after the complete succeeded receipt chain", () => {

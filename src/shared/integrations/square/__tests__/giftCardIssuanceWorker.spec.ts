@@ -24,6 +24,7 @@ const attemptToken = "55555555-5555-4555-8555-555555555555";
 const giftCardId = "gftc:gift-card-1";
 const orderId = "order-gift-card-1";
 const lineItemUid = "line-gift-card-1";
+const giftCardMirrorId = "66666666-6666-4666-8666-666666666666";
 
 const providerMaterial = {
   salon_id: salonId,
@@ -41,12 +42,16 @@ function database(input?: {
   providerObjectId?: string;
   providerReceiptId?: string;
   bindSuccess?: boolean;
+  bindOverrides?: Record<string, unknown>;
+  operationId?: string;
+  attemptToken?: string;
+  providerIdempotencyKey?: string;
+  completionOverrides?: Record<string, unknown>;
 }) {
   const rpc = vi.fn(async (
     name: string,
     _args?: Record<string, unknown>,
   ) => {
-    void _args;
     if (name === "resolve_square_feature_operation_material") {
       return {
         data: {
@@ -71,22 +76,42 @@ function database(input?: {
           : {
               success: true,
               code,
-              operation_id: operationId,
-              attempt_token: attemptToken,
-              provider_idempotency_key: `nq:${requestId}`,
+              operation_id: input?.operationId ?? operationId,
+              attempt_token: input?.attemptToken ?? attemptToken,
+              provider_idempotency_key:
+                input?.providerIdempotencyKey ?? `nq:${requestId}`,
               provider_material: providerMaterial,
             },
         error: null,
       };
     }
     if (name === "complete_square_feature_operation") {
-      return { data: { success: true, code: "operation_completed" }, error: null };
+      return {
+        data: {
+          success: true,
+          code: "operation_completed",
+          status: "succeeded",
+          operation_id: operationId,
+          provider_object_id: _args?.p_provider_object_id,
+          provider_receipt_id: _args?.p_provider_receipt_id,
+          ...input?.completionOverrides,
+        },
+        error: null,
+      };
     }
     if (name === "bind_square_gift_card_issuance") {
       return {
         data: input?.bindSuccess === false
           ? { success: false, code: "receipt_chain_mismatch" }
-          : { success: true, code: "issuance_bound" },
+          : {
+              success: true,
+              code: "issuance_receipts_bound",
+              gift_card_mirror_id: giftCardMirrorId,
+              square_gift_card_id: giftCardId,
+              issuance_amount_cents: 5_000,
+              issuance_currency: "CAD",
+              ...input?.bindOverrides,
+            },
         error: null,
       };
     }
@@ -237,6 +262,37 @@ describe("Square Gift Card issuance worker", () => {
     );
   });
 
+  it.each([
+    ["success", { success: false }],
+    ["code", { code: "completion_replay" }],
+    ["status", { status: "pending_provider" }],
+    ["operation id", { operation_id: parentOperationId }],
+    ["provider object", { provider_object_id: "gftc:other" }],
+    ["provider receipt", { provider_receipt_id: "gift-card-create:other" }],
+  ])("does not report success for malformed completion %s", async (_label, completionOverrides) => {
+    const { db } = database({ completionOverrides });
+    const createGiftCard = vi.fn(async () => ({
+      gift_card: {
+        id: giftCardId,
+        type: "DIGITAL",
+        state: "PENDING",
+        balance_money: { amount: 0, currency: "CAD" },
+      },
+    }));
+
+    await expect(dispatchSquareGiftCardIssuanceOperation({
+      operationKind: "gift_card_create",
+      salonId,
+      requestId,
+      expectedEnvironment: "sandbox",
+      sourceId: "issuance-intent-1",
+    }, { db, createGiftCard })).resolves.toEqual({
+      status: "retry_pending",
+      reason: "operation_completion_unavailable",
+      operationId,
+    });
+  });
+
   it("refuses provider material from a different expected environment", async () => {
     const { db } = database();
     const createGiftCard = vi.fn();
@@ -309,5 +365,63 @@ describe("Square Gift Card issuance worker", () => {
     });
     expect(activateGiftCard).not.toHaveBeenCalled();
     expect(rpc).toHaveBeenCalledWith("bind_square_gift_card_issuance", expect.anything());
+  });
+
+  it("rejects malformed claim identity before any provider call", async () => {
+    for (const claimInput of [
+      { operationId: "not-a-uuid" },
+      { attemptToken: "not-a-uuid" },
+      { providerIdempotencyKey: "nq:wrong-request" },
+    ]) {
+      const { db } = database(claimInput);
+      const createGiftCard = vi.fn();
+      await expect(dispatchSquareGiftCardIssuanceOperation({
+        operationKind: "gift_card_create",
+        salonId,
+        requestId,
+        expectedEnvironment: "sandbox",
+        sourceId: "issuance-intent-1",
+      }, { db, createGiftCard })).resolves.toMatchObject({
+        status: "failed",
+        reason: "invalid_operation_claim",
+      });
+      expect(createGiftCard).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each([
+    ["code", { code: "wrong_binding_code" }],
+    ["mirror id", { gift_card_mirror_id: "not-a-uuid" }],
+    ["card id", { square_gift_card_id: "gftc:other" }],
+    ["amount", { issuance_amount_cents: 4_999 }],
+    ["currency", { issuance_currency: "USD" }],
+  ])("refuses a success-shaped activation binding with mismatched %s", async (_label, bindOverrides) => {
+    const { db } = database({ bindOverrides });
+    const activateGiftCard = vi.fn(async () => ({
+      gift_card_activity: {
+        id: "gcact:activate-1",
+        gift_card_id: giftCardId,
+        type: "ACTIVATE",
+        location_id: "location-1",
+        gift_card_balance_money: { amount: 5_000, currency: "CAD" },
+        activate_activity_details: { order_id: orderId, line_item_uid: lineItemUid },
+      },
+    }));
+
+    await expect(dispatchSquareGiftCardIssuanceOperation({
+      operationKind: "gift_card_activate",
+      salonId,
+      requestId,
+      expectedEnvironment: "sandbox",
+      sourceId: giftCardId,
+      parentOperationId,
+      amountCents: 5_000,
+      currency: "CAD",
+      orderId,
+      lineItemUid,
+    }, { db, activateGiftCard })).resolves.toMatchObject({
+      status: "retry_pending",
+      reason: "issuance_binding_unavailable",
+    });
   });
 });

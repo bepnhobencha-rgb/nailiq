@@ -180,7 +180,7 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
       // Audit the email send too (the owner's Notifications widget showed only
       // the SMS channel for review requests before this).
       const { logNotification } = await import("@/shared/lib/notificationLog");
-      void logNotification({
+      await logNotification({
         bookingId,
         salonId: salon.id,
         notificationType: "review_request",
@@ -215,25 +215,46 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
         : `Thanks for visiting ${salonName}! Share your feedback (30 sec): ${reviewUrl} · Reply STOP to opt out.`;
       const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
       const { sendSmsReminder } = await import("@/shared/lib/twilioSms");
-      const { logNotification } = await import("@/shared/lib/notificationLog");
-      const smsResult = await sendSmsReminder(toE164, smsBody, {
-        salonId: salon.id,
-        statusCallbackUrl: `${SITE_URL}/api/twilio/status`,
-      });
-      if (!smsResult.ok) {
-        console.error("[sendReviewRequest] SMS failed", smsResult.error);
-      }
-      void logNotification({
+      const {
+        claimNotificationOnce,
+        completeReviewRequestSmsNotification,
+      } = await import("@/shared/lib/notificationLog");
+      const { classifyReminderProviderResult } = await import(
+        "@/shared/reminders/reminderDeliveryClaims"
+      );
+      const smsClaim = await claimNotificationOnce({
         bookingId,
         salonId: salon.id,
         notificationType: "review_request",
         channel: "sms",
         clientPhone: toE164,
-        messageSid: smsResult.messageSid,
         bodyPreview: smsBody,
-        ok: smsResult.ok,
-        errorMessage: smsResult.error,
       });
+      if (smsClaim === "skip" || smsClaim === "unguarded") {
+        console.error(
+          "[sendReviewRequest] durable SMS correlation unavailable; provider not called",
+        );
+        return;
+      }
+      const callbackUrl = new URL("/api/twilio/status", SITE_URL);
+      callbackUrl.searchParams.set("notification_id", smsClaim);
+      const smsResult = await sendSmsReminder(toE164, smsBody, {
+        salonId: salon.id,
+        statusCallbackUrl: callbackUrl.toString(),
+      });
+      if (!smsResult.ok) {
+        console.error("[sendReviewRequest] SMS failed", smsResult.error);
+      }
+      const classified = classifyReminderProviderResult(smsResult, "sms");
+      const completed = await completeReviewRequestSmsNotification({
+        notificationId: smsClaim,
+        status: classified.status,
+        providerMessageId: classified.providerMessageId,
+        errorCode: classified.errorCode,
+      });
+      if (!completed) {
+        console.error("[sendReviewRequest] durable SMS completion unavailable");
+      }
     }
   } catch (e) {
     console.error("[sendReviewRequest] unexpected", e);

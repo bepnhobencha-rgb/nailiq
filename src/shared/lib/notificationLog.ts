@@ -208,24 +208,112 @@ export async function finalizeNotificationClaim(
   }
 }
 
+/**
+ * Complete a pre-provider review SMS claim. The database acquires the same SID
+ * lock as the callback path before exposing the SID, so provider acceptance and
+ * an unusually fast StatusCallback cannot deadlock or overwrite one another.
+ */
+export async function completeReviewRequestSmsNotification(input: {
+  notificationId: string;
+  status: NotificationFinalStatus;
+  providerMessageId?: string | null;
+  errorCode?: string | null;
+}): Promise<boolean> {
+  try {
+    const supabase = createServiceRoleClient();
+    const { data, error } = await supabase.rpc(
+      "complete_review_request_sms_notification" as never,
+      {
+        p_notification_id: input.notificationId,
+        p_status: input.status,
+        p_provider_message_id: input.providerMessageId ?? null,
+        p_error_code: input.errorCode ?? null,
+      } as never,
+    );
+    if (error) {
+      console.error("[completeReviewRequestSmsNotification]", safeLogError(error));
+      return false;
+    }
+    const result = data as unknown as Record<string, unknown> | null;
+    return (
+      result?.success === true &&
+      (result.code === "completed" ||
+        result.code === "already_completed" ||
+        result.code === "callback_terminal")
+    );
+  } catch (error) {
+    console.error("[completeReviewRequestSmsNotification]", safeLogError(error));
+    return false;
+  }
+}
+
 /** Called by Twilio status webhook to update delivery status. */
 export async function updateNotificationBySid(
   messageSid: string,
   status: "delivered" | "undelivered" | "failed",
   errorCode?: string | null,
-): Promise<void> {
-  const supabase = createServiceRoleClient();
-  const now = new Date().toISOString();
-
-  const patch: Record<string, unknown> = { status };
-  if (errorCode) patch.error_code = errorCode;
-  if (status === "delivered") patch.delivered_at = now;
-  else patch.failed_at = now;
-
-  await supabase
-    .from("booking_notifications" as never)
-    .update(patch)
-    .eq("twilio_message_sid", messageSid);
+  notificationId?: string,
+): Promise<
+  | {
+      ok: true;
+      code: "applied" | "pending" | "exact_replay" | "durable_conflict";
+    }
+  | {
+      ok: false;
+      code:
+        | "not_found"
+        | "invalid_receipt"
+        | "terminal_conflict"
+        | "database_error";
+    }
+> {
+  try {
+    const supabase = createServiceRoleClient();
+    const { data, error } = notificationId
+      ? await supabase.rpc(
+          "record_twilio_review_request_status_receipt" as never,
+          {
+            p_notification_id: notificationId,
+            p_message_sid: messageSid,
+            p_status: status,
+            p_error_code: errorCode ?? null,
+          } as never,
+        )
+      : await supabase.rpc(
+          "record_twilio_message_status_receipt" as never,
+          {
+            p_message_sid: messageSid,
+            p_status: status,
+            p_error_code: errorCode ?? null,
+          } as never,
+        );
+    if (error) {
+      console.error("[updateNotificationBySid]", safeLogError(error));
+      return { ok: false, code: "database_error" };
+    }
+    const result = data as unknown as Record<string, unknown> | null;
+    if (
+      result?.success === true &&
+      (result.code === "applied" ||
+        result.code === "pending" ||
+        result.code === "exact_replay" ||
+        result.code === "durable_conflict")
+    ) {
+      return { ok: true, code: result.code };
+    }
+    if (result?.code === "invalid_receipt") {
+      return { ok: false, code: "invalid_receipt" };
+    }
+    if (result?.code === "terminal_conflict") {
+      return { ok: false, code: "terminal_conflict" };
+    }
+    return result?.code === "not_found" || result?.code === "invalid_correlation"
+      ? { ok: false, code: "not_found" }
+      : { ok: false, code: "database_error" };
+  } catch (error) {
+    console.error("[updateNotificationBySid]", safeLogError(error));
+    return { ok: false, code: "database_error" };
+  }
 }
 
 /** Fetch recent notifications for a salon (for dashboard widget). */

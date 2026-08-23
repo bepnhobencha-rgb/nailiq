@@ -38,6 +38,7 @@ const SERVICE_ID = "33333333-3333-4333-8333-333333333333";
 const STAFF_ID = "44444444-4444-4444-8444-444444444444";
 const OPERATION_ID = "55555555-5555-4555-8555-555555555555";
 const ATTEMPT_TOKEN = "66666666-6666-4666-8666-666666666666";
+const PROFILE_ID = "88888888-8888-4888-8888-888888888888";
 const SQUARE_BOOKING_ID = "square-booking-1";
 const SQUARE_CUSTOMER_ID = "square-customer-1";
 const API_VERSION = "2024-12-18";
@@ -186,6 +187,7 @@ function database(input?: {
   let localInserts = 0;
   let providerCustomerId: string | null = null;
   let providerReceiptId: string | null = null;
+  let clientProfileId: string | null = null;
   const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
 
   const from = vi.fn((table: string) => {
@@ -193,7 +195,11 @@ function database(input?: {
     let mutation: Record<string, unknown> | null = null;
     const filters = new Map<string, unknown>();
     let insertMutation = false;
-    const exactBooking = () => ({ ...BOOKING, square_booking_id: squareBookingId });
+    const exactBooking = () => ({
+      ...BOOKING,
+      square_booking_id: squareBookingId,
+      client_profile_id: clientProfileId,
+    });
 
     const list = async () => {
       if (table === "square_booking_writeback_operations") {
@@ -243,6 +249,18 @@ function database(input?: {
         localInserts += 1;
         return { data: { id: "duplicate-local-booking" }, error: null };
       }
+      if (mutation && filters.get("id") === BOOKING_ID) {
+        if (
+          filters.has("client_profile_id")
+          && clientProfileId !== filters.get("client_profile_id")
+        ) {
+          return { data: null, error: null };
+        }
+        if (typeof mutation.client_profile_id === "string") {
+          clientProfileId = mutation.client_profile_id;
+        }
+        return { data: exactBooking(), error: null };
+      }
       if (filters.get("id") === BOOKING_ID) return { data: exactBooking(), error: null };
       if (filters.get("square_booking_id") === SQUARE_BOOKING_ID && squareBookingId) {
         return { data: exactBooking(), error: null };
@@ -258,7 +276,7 @@ function database(input?: {
       delete: () => query,
       eq: (column: string, value: unknown) => { filters.set(column, value); return query; },
       in: () => query,
-      is: () => query,
+      is: (column: string, value: unknown) => { filters.set(column, value); return query; },
       not: () => query,
       gt: () => query,
       gte: () => query,
@@ -278,6 +296,19 @@ function database(input?: {
 
   const rpc = vi.fn(async (fn: string, args: Record<string, unknown>) => {
     rpcCalls.push({ fn, args: structuredClone(args) });
+    if (fn === "resolve_square_customer_identity") {
+      return {
+        data: {
+          code: "replayed",
+          client_profile_id: PROFILE_ID,
+          name: BOOKING.client_name,
+          phone: "16045550101",
+          created_profile: false,
+          salon_link_created: false,
+        },
+        error: null,
+      };
+    }
     if (fn === "claim_square_booking_writeback") {
       if (status === "none") {
         status = "claimed";

@@ -43,7 +43,9 @@ INSERT INTO public.staff(id,salon_id,name,status) VALUES
  ('d6700000-0000-4000-8000-000000000024',
   'd6700000-0000-4000-8000-000000000001','Sequence no-live tenant locked','active'),
  ('d6700000-0000-4000-8000-000000000025',
-  'd6700000-0000-4000-8000-000000000001','Sequence legacy pending drift','active');
+  'd6700000-0000-4000-8000-000000000001','Sequence legacy pending drift','active'),
+ ('d6700000-0000-4000-8000-000000000026',
+  'd6700000-0000-4000-8000-000000000001','Sequence pending profile','pending');
 
 -- Once any active staff capability exists, every candidate must be mapped to
 -- every affected service. The incapable candidate intentionally lacks service two.
@@ -76,6 +78,85 @@ INSERT INTO auth.users(
 INSERT INTO public.salon_members(salon_id,user_id,role) VALUES(
   'd6700000-0000-4000-8000-000000000001',
   'd6700000-0000-4000-8000-000000000030','owner'
+);
+
+-- Exercise the exact browser/RLS boundary on a zero-live staff row. Ordinary
+-- profile edits remain available to the owner, while every lifecycle bypass
+-- fails before it can evade the atomic receipt/minimum-active contract.
+SELECT pg_catalog.set_config('request.jwt.claim.role','authenticated',true);
+SELECT pg_catalog.set_config(
+  'request.jwt.claim.sub','d6700000-0000-4000-8000-000000000030',true
+);
+SELECT pg_catalog.set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","sub":"d6700000-0000-4000-8000-000000000030"}',
+  true
+);
+SET LOCAL ROLE authenticated;
+DO $authenticated_staff_lifecycle_boundary$
+BEGIN
+  UPDATE public.staff
+  SET name='Sequence no-live tenant locked edited'
+  WHERE id='d6700000-0000-4000-8000-000000000024';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'authenticated owner could not edit an ordinary staff field';
+  END IF;
+  UPDATE public.staff
+  SET name='Sequence no-live tenant locked'
+  WHERE id='d6700000-0000-4000-8000-000000000024';
+
+  UPDATE public.staff SET status='inactive'
+  WHERE id='d6700000-0000-4000-8000-000000000026';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'authenticated pending profile could not become inactive';
+  END IF;
+  UPDATE public.staff SET status='pending'
+  WHERE id='d6700000-0000-4000-8000-000000000026';
+
+  BEGIN
+    UPDATE public.staff SET status='pending'
+    WHERE id='d6700000-0000-4000-8000-000000000024';
+    RAISE EXCEPTION 'authenticated zero-live pending transition bypassed atomic offboarding';
+  EXCEPTION WHEN check_violation THEN
+    IF SQLERRM<>'staff lifecycle changes require atomic offboarding' THEN RAISE; END IF;
+  END;
+  BEGIN
+    UPDATE public.staff SET status='inactive'
+    WHERE id='d6700000-0000-4000-8000-000000000024';
+    RAISE EXCEPTION 'authenticated zero-live inactive transition bypassed atomic offboarding';
+  EXCEPTION WHEN check_violation THEN
+    IF SQLERRM<>'staff lifecycle changes require atomic offboarding' THEN RAISE; END IF;
+  END;
+  BEGIN
+    UPDATE public.staff SET deleted_at=transaction_timestamp()
+    WHERE id='d6700000-0000-4000-8000-000000000024';
+    RAISE EXCEPTION 'authenticated zero-live soft delete bypassed atomic offboarding';
+  EXCEPTION WHEN check_violation THEN
+    IF SQLERRM<>'staff lifecycle changes require atomic offboarding' THEN RAISE; END IF;
+  END;
+  BEGIN
+    DELETE FROM public.staff
+    WHERE id='d6700000-0000-4000-8000-000000000024';
+    RAISE EXCEPTION 'authenticated zero-live hard delete retained table privilege';
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL;
+  END;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.staff
+    WHERE id='d6700000-0000-4000-8000-000000000024'
+      AND name='Sequence no-live tenant locked'
+      AND status='active' AND deleted_at IS NULL
+  ) THEN
+    RAISE EXCEPTION 'rejected authenticated lifecycle write changed target row';
+  END IF;
+END;
+$authenticated_staff_lifecycle_boundary$;
+RESET ROLE;
+SELECT pg_catalog.set_config('request.jwt.claim.role','service_role',true);
+SELECT pg_catalog.set_config('request.jwt.claim.sub','',true);
+SELECT pg_catalog.set_config(
+  'request.jwt.claims','{"role":"service_role"}',true
 );
 
 -- Booking A: departing staff is only on the later segment, so the parent

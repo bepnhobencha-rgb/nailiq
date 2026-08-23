@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   dispatch: vi.fn(),
+  runTrackedCron: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
@@ -11,7 +12,7 @@ vi.mock("@/shared/security/cronAuthorization", () => ({
   requireCronAuthorization: () => null,
 }));
 vi.mock("@/shared/security/cronRunHistory", () => ({
-  runTrackedCron: (_name: string, callback: () => Promise<Response>) => callback(),
+  runTrackedCron: mocks.runTrackedCron,
 }));
 vi.mock("@/shared/lib/supabase/serviceRole", () => ({
   createServiceRoleClient: () => ({ rpc: mocks.rpc }),
@@ -65,9 +66,24 @@ describe("GET /api/cron/deposit-compensation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("PAYMENT_LEDGER_WORKERS_ENABLED", "true");
+    mocks.runTrackedCron.mockImplementation(
+      (_name: string, callback: () => Promise<Response>) => callback(),
+    );
   });
 
   afterEach(() => vi.unstubAllEnvs());
+
+  it("stays hard-off without recording a healthy run or reading payment state", async () => {
+    vi.stubEnv("PAYMENT_LEDGER_WORKERS_ENABLED", "false");
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, code: "disabled", processed: 0 });
+    expect(mocks.runTrackedCron).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
 
   it("fails closed when durable discovery is unavailable", async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { message: "db unavailable" } });
@@ -125,6 +141,72 @@ describe("GET /api/cron/deposit-compensation", () => {
       processed: 1,
       refunded: 1,
       unresolved: 0,
+    });
+  });
+
+  it("returns 503 so the heartbeat is failed when any compensation is unresolved", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: [{ success: true, code: "compensation_due" }],
+      error: null,
+    });
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      ok: false,
+      code: "compensation_incomplete",
+      processed: 0,
+      refunded: 0,
+      unresolved: 1,
+    });
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("reports mixed success as incomplete instead of a healthy heartbeat", async () => {
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "discover_due_unbound_deposit_compensations") return {
+        data: [
+          {
+            success: true,
+            code: "compensation_due",
+            parent_operation_id: PARENT_ID,
+            lease_token: LEASE_TOKEN,
+            material_fingerprint: MATERIAL_FP,
+            material: material(),
+          },
+          { success: true, code: "compensation_due" },
+        ],
+        error: null,
+      };
+      if (name === "claim_due_unbound_deposit_refund") return {
+        data: {
+          success: true,
+          code: "claimed",
+          status: "sending",
+          operation_id: OPERATION_ID,
+          attempt_token: ATTEMPT_TOKEN,
+          provider_idempotency_key: `nq:${OPERATION_ID}`,
+          lease_expires_at: "2026-08-20T20:00:00.000Z",
+          attempt_count: 1,
+          material_fingerprint: MATERIAL_FP,
+          material: material(),
+        },
+        error: null,
+      };
+      return { data: null, error: { message: "unexpected rpc" } };
+    });
+    mocks.dispatch.mockResolvedValue({ ok: true, status: "succeeded" });
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      ok: false,
+      code: "compensation_incomplete",
+      processed: 1,
+      refunded: 1,
+      unresolved: 1,
     });
   });
 });

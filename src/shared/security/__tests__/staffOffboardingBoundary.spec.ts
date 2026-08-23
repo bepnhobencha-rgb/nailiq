@@ -22,6 +22,7 @@ const migration = [
   "20260823037000_close_staff_deactivation_assignment_races.sql",
   "20260823037100_allow_salon_cascade_through_staff_invariant.sql",
   "20260823037200_guard_all_nonactive_staff_and_salon_moves.sql",
+  "20260823082850_require_atomic_staff_lifecycle_changes.sql",
 ]
   .map((name) =>
     readFileSync(join(process.cwd(), "supabase/migrations", name), "utf8"),

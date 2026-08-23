@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -36,6 +37,22 @@ const config = {
   },
 };
 
+const configFingerprint = createHash("sha256")
+  .update("square:merchant-current:location-current:sandbox", "utf8")
+  .digest("hex");
+
+const refundInput = {
+  paymentId: "payment",
+  amountCents: 1_000,
+  reason: "refund",
+  idempotencyKey: "nq:refund",
+  providerAccountId: "merchant-current",
+  providerLocationId: "location-current",
+  providerEnvironment: "sandbox" as const,
+  providerCurrency: "CAD",
+  providerAccountFingerprint: configFingerprint,
+};
+
 describe("SquareProvider DB-bound account identity", () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -57,5 +74,29 @@ describe("SquareProvider DB-bound account identity", () => {
     })).rejects.toThrow("square_provider_account_mismatch");
     expect(mocks.charge).not.toHaveBeenCalled();
     expect(mocks.refund).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["location", { providerLocationId: "location-other" }],
+    ["environment", { providerEnvironment: "production" as const }],
+    ["currency", { providerCurrency: "USD" }],
+    ["fingerprint", { providerAccountFingerprint: "f".repeat(64) }],
+  ])("blocks refund dispatch when the claimed Square %s drifted", async (_label, drift) => {
+    const provider = new SquareProvider(config);
+
+    await expect(provider.refund({ ...refundInput, ...drift }))
+      .rejects.toThrow("square_provider_identity_mismatch");
+    expect(mocks.refund).not.toHaveBeenCalled();
+  });
+
+  it("dispatches only when the full claimed Square identity still matches", async () => {
+    mocks.refund.mockResolvedValue({ id: "refund", status: "COMPLETED" });
+    const provider = new SquareProvider(config);
+
+    await expect(provider.refund(refundInput)).resolves.toEqual({
+      refundId: "refund",
+      status: "COMPLETED",
+    });
+    expect(mocks.refund).toHaveBeenCalledTimes(1);
   });
 });

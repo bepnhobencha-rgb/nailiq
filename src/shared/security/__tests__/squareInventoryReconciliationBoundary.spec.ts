@@ -7,6 +7,10 @@ const migration = readFileSync(join(
   root,
   "supabase/migrations/20260822174938_add_square_inventory_reconciliation.sql",
 ), "utf8");
+const outboundGuard = readFileSync(join(
+  root,
+  "supabase/migrations/20260823113000_require_specialized_inventory_adjustment_claim.sql",
+), "utf8");
 const runtime = readFileSync(join(
   root,
   "src/shared/integrations/square/inventoryReconciliation.ts",
@@ -36,6 +40,13 @@ describe("MQA-0127 Square Inventory reconciliation boundary", () => {
     );
     expect(worker).not.toMatch(/fetch\(|squareup\.com|Authorization/);
     expect(cron).toContain("syncSquareInventoryCatalogForSalon");
+    expect(outboundGuard).toContain("specialized_inventory_claim_required");
+    expect(outboundGuard.indexOf("p_operation_kind = 'inventory_adjustment'")).toBeLessThan(
+      outboundGuard.indexOf("pg_advisory_xact_lock"),
+    );
+    expect(outboundGuard.indexOf("p_operation_kind = 'inventory_adjustment'")).toBeLessThan(
+      outboundGuard.indexOf("resolve_square_feature_operation_material"),
+    );
   });
 
   it("models only provider-owned REGULAR retail variations, never services or recipes", () => {

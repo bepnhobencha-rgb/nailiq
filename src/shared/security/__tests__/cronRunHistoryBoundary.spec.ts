@@ -8,11 +8,13 @@ const read = (file: string) =>
 const trackedRoutes = {
   "campaign-scheduler": "campaign_scheduler",
   "close-stale-in-progress": "close_stale_in_progress",
+  "deposit-compensation": "deposit_compensation",
   "error-triage": "error_triage",
   "minh-learn": "minh_learn",
   "nail-tryon-cleanup": "nail_tryon_cleanup",
   "noshow-card-nudge": "noshow_card_nudge",
   "noshow-charge-retry": "noshow_charge_retry",
+  "payment-reconciliation": "payment_reconciliation",
   reminders: "reminders",
   "send-pending-notifications": "send_pending_notifications",
   "spend-sync": "spend_sync",
@@ -25,6 +27,9 @@ const trackedRoutes = {
 describe("cron run history boundary", () => {
   const migration = read(
     "supabase/migrations/20260728142000_track_all_cron_runs.sql",
+  );
+  const paymentWorkerMigration = read(
+    "supabase/migrations/20260823021144_extend_cron_worker_allowlist_for_payment_workers.sql",
   );
 
   it("tracks every non-AI cron only after centralized authorization", () => {
@@ -61,9 +66,15 @@ describe("cron run history boundary", () => {
       "ai_manager",
       ...Object.values(trackedRoutes),
     ]) {
-      expect(migration.match(new RegExp(`'${workerName}'`, "g"))?.length).toBe(
-        3,
-      );
+      const allowlistSource = [
+        "deposit_compensation",
+        "payment_reconciliation",
+      ].includes(workerName)
+        ? paymentWorkerMigration
+        : migration;
+      expect(
+        allowlistSource.match(new RegExp(`'${workerName}'`, "g"))?.length,
+      ).toBe(3);
     }
     expect(migration).toContain(
       "if not public.ai_cron_worker_supported(p_worker_name)",

@@ -3,6 +3,8 @@
 -- live work. A staff row's tenant identity is immutable: moving it would strand
 -- capability, shift, unavailability and historical references in another salon.
 
+BEGIN;
+
 SET LOCAL lock_timeout='5s';
 LOCK TABLE public.staff IN SHARE ROW EXCLUSIVE MODE;
 
@@ -114,3 +116,5 @@ CREATE TRIGGER enforce_no_live_assignments_before_staff_deactivation
   ON public.staff
   FOR EACH ROW
   EXECUTE FUNCTION public.enforce_no_live_assignments_on_staff_deactivation();
+
+COMMIT;

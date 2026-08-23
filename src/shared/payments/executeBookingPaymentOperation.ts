@@ -178,6 +178,10 @@ export async function dispatchClaimedBookingPaymentOperation(args: {
           reason: args.reason ?? "Booking payment refund",
           idempotencyKey: claim.providerIdempotencyKey,
           providerAccountId: claim.material.providerMaterial.providerAccountId,
+          providerLocationId: claim.material.providerMaterial.providerLocationId,
+          providerEnvironment: claim.material.providerMaterial.providerEnvironment,
+          providerCurrency: claim.material.providerMaterial.currency,
+          providerAccountFingerprint: claim.material.providerAccountFingerprint,
         }).then((result) => ({ id: result.refundId, status: result.status }))
       : await provider.chargeSavedCard({
           customerId: claim.material.providerMaterial.customerId!,
@@ -187,6 +191,10 @@ export async function dispatchClaimedBookingPaymentOperation(args: {
           note: args.note ?? "Booking payment",
           referenceId: args.referenceId ?? `booking:${claim.material.bookingId}`,
           providerAccountId: claim.material.providerMaterial.providerAccountId,
+          providerLocationId: claim.material.providerMaterial.providerLocationId,
+          providerEnvironment: claim.material.providerMaterial.providerEnvironment,
+          providerCurrency: claim.material.providerMaterial.currency,
+          providerAccountFingerprint: claim.material.providerAccountFingerprint,
         }).then((result) => ({ id: result.paymentId, status: result.status }));
     completion = providerOutcome(provider.kind, claim.material.operationKind, receipt);
   } catch (error) {

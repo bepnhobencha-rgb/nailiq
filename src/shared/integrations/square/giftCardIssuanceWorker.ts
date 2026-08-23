@@ -201,7 +201,16 @@ async function bindActivation(
     p_activation_operation_id: operationId,
     p_square_gift_card_id: input.sourceId,
   });
-  return !bound.error && record(bound.data)?.success === true;
+  const receipt = record(bound.data);
+  const mirrorId = text(receipt?.gift_card_mirror_id);
+  return !bound.error
+    && receipt?.success === true
+    && receipt.code === "issuance_receipts_bound"
+    && mirrorId !== null
+    && UUID_RE.test(mirrorId)
+    && receipt.square_gift_card_id === input.sourceId
+    && receipt.issuance_amount_cents === input.amountCents
+    && receipt.issuance_currency === input.currency;
 }
 
 /**
@@ -241,8 +250,11 @@ export async function dispatchSquareGiftCardIssuanceOperation(
   if (claimed.error) return { status: "retry_pending", reason: "operation_claim_unavailable" };
   const claim = record(claimed.data);
   const operationId = text(claim?.operation_id);
-  if (claim?.success !== true || !operationId) {
+  if (claim?.success !== true) {
     return { status: "failed", reason: String(claim?.code ?? "operation_claim_rejected") };
+  }
+  if (!operationId || !UUID_RE.test(operationId)) {
+    return { status: "failed", reason: "invalid_operation_claim" };
   }
   if (claim.code === "operation_succeeded") {
     const providerObjectId = text(claim.provider_object_id);
@@ -264,12 +276,17 @@ export async function dispatchSquareGiftCardIssuanceOperation(
       replay: true,
     };
   }
-  if (
-    claim.code !== "operation_claimed"
-    || !text(claim.attempt_token)
-    || !text(claim.provider_idempotency_key, 128)
-  ) {
+  if (claim.code !== "operation_claimed") {
     return { status: "retry_pending", reason: String(claim.code ?? "operation_in_flight"), operationId };
+  }
+  const attemptToken = text(claim.attempt_token);
+  const providerIdempotencyKey = text(claim.provider_idempotency_key, 128);
+  if (
+    !attemptToken
+    || !UUID_RE.test(attemptToken)
+    || providerIdempotencyKey !== `nq:${input.requestId}`
+  ) {
+    return { status: "failed", reason: "invalid_operation_claim", operationId };
   }
   const config = providerConfig(
     claim.provider_material,
@@ -284,7 +301,7 @@ export async function dispatchSquareGiftCardIssuanceOperation(
   try {
     if (input.operationKind === "gift_card_create") {
       const raw = await deps.createGiftCard(config, {
-        idempotencyKey: claim.provider_idempotency_key as string,
+        idempotencyKey: providerIdempotencyKey,
       }, SQUARE_OPTIONAL_API_VERSION);
       const card = record(raw.gift_card);
       const balance = money(card?.balance_money);
@@ -303,7 +320,7 @@ export async function dispatchSquareGiftCardIssuanceOperation(
       };
     } else if (input.operationKind === "gift_card_payment") {
       const raw = await deps.createPayment(config, {
-        idempotencyKey: claim.provider_idempotency_key as string,
+        idempotencyKey: providerIdempotencyKey,
         sourceId: input.paymentSourceToken,
         amountCents: input.amountCents,
         currency: input.currency,
@@ -329,7 +346,7 @@ export async function dispatchSquareGiftCardIssuanceOperation(
       };
     } else {
       const raw = await deps.activateGiftCard(config, {
-        idempotencyKey: claim.provider_idempotency_key as string,
+        idempotencyKey: providerIdempotencyKey,
         giftCardId: input.sourceId,
         orderId: input.orderId,
         lineItemUid: input.lineItemUid,
@@ -366,14 +383,23 @@ export async function dispatchSquareGiftCardIssuanceOperation(
 
   const completed = await deps.db.rpc("complete_square_feature_operation", {
     p_operation_id: operationId,
-    p_attempt_token: claim.attempt_token,
+    p_attempt_token: attemptToken,
     p_status: "succeeded",
     p_provider_object_id: providerObjectId,
     p_provider_receipt_id: providerReceiptId,
     p_result_fingerprint: fingerprint(providerResult),
     p_error_code: null,
   });
-  if (completed.error || record(completed.data)?.success !== true) {
+  const completion = record(completed.data);
+  if (
+    completed.error
+    || completion?.success !== true
+    || completion.code !== "operation_completed"
+    || completion.status !== "succeeded"
+    || completion.operation_id !== operationId
+    || completion.provider_object_id !== providerObjectId
+    || completion.provider_receipt_id !== providerReceiptId
+  ) {
     return { status: "retry_pending", reason: "operation_completion_unavailable", operationId };
   }
   if (

@@ -123,6 +123,7 @@ async function claimReminderChannel(
 
 async function persistReminderProviderResult(
   claimId: string,
+  channel: ReminderChannel,
   result: {
     ok: boolean;
     messageId?: string;
@@ -132,7 +133,7 @@ async function persistReminderProviderResult(
     suppressionReason?: string;
   },
 ) {
-  const outcome = classifyReminderProviderResult(result);
+  const outcome = classifyReminderProviderResult(result, channel);
   const persisted = await completeReminderDelivery({
     claimId,
     status: outcome.status,
@@ -277,7 +278,7 @@ export async function GET(req: Request) {
       errors++;
       return;
     }
-    const delivery = await persistReminderProviderResult(claim.claimId, result);
+    const delivery = await persistReminderProviderResult(claim.claimId, "email", result);
 
     void logNotification({
       bookingId: booking.id,
@@ -355,6 +356,7 @@ export async function GET(req: Request) {
       }
       const memberDelivery = await persistReminderProviderResult(
         memberClaim.claimId,
+        "email",
         memberResult,
       );
       void logNotification({
@@ -461,6 +463,7 @@ export async function GET(req: Request) {
         if (result) {
           const delivery = await persistReminderProviderResult(
             emailClaim.claimId,
+            "email",
             result,
           );
           void logNotification({
@@ -581,23 +584,29 @@ export async function GET(req: Request) {
           });
           const delivery = await persistReminderProviderResult(
             smsClaim.claimId,
+            "sms",
             result,
           );
           if (delivery.status === "sent" || delivery.status === "suppressed") {
             anySuccess = true;
           } else errors++;
-          void logNotification({
-            bookingId: booking.id,
-            salonId: booking.salon_id,
-            notificationType:
-              reminderType === "24h" ? "reminder_24h" : "reminder_3h",
-            channel: "sms",
-            clientPhone: toE164,
-            messageSid: result.messageSid,
-            bodyPreview: body,
-            ok: result.ok,
-            errorMessage: result.error,
-          });
+          // Accepted SMS correlation is materialized transactionally by
+          // complete_booking_reminder_delivery. Do not race the callback with
+          // a fire-and-forget duplicate booking_notifications insert.
+          if (delivery.status === "failed" || delivery.status === "unknown") {
+            await logNotification({
+              bookingId: booking.id,
+              salonId: booking.salon_id,
+              notificationType:
+                reminderType === "24h" ? "reminder_24h" : "reminder_3h",
+              channel: "sms",
+              clientPhone: toE164,
+              messageSid: null,
+              bodyPreview: body,
+              ok: false,
+              errorMessage: delivery.errorCode ?? result.error ?? delivery.status,
+            });
+          }
         }
       }
     }

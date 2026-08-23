@@ -1662,7 +1662,21 @@ function ReceptionistCenterInner({
     if (typeof window === "undefined") return;
 
     let cancelled = false;
+    let fallbackPollInterval: number | undefined;
     const supabase = createClient();
+
+    const startFallbackPolling = () => {
+      if (fallbackPollInterval !== undefined) return;
+      fallbackPollInterval = window.setInterval(() => {
+        if (!cancelled) void reloadCurrentDay();
+      }, 8000);
+    };
+
+    const stopFallbackPolling = () => {
+      if (fallbackPollInterval === undefined) return;
+      window.clearInterval(fallbackPollInterval);
+      fallbackPollInterval = undefined;
+    };
 
     const cleanupPromise = (async () => {
       const {
@@ -1676,16 +1690,8 @@ function ReceptionistCenterInner({
         // Catch any "unexpected response" rejections (middleware redirect when JWT
         // truly expired) and hard-redirect to /login so they don't bubble as unhandled
         // rejections into error_logs or crash the error boundary.
-        const pollInterval = window.setInterval(() => {
-          if (!cancelled) {
-            void reloadCurrentDay().catch(() => {
-              if (!cancelled) window.location.href = "/login";
-            });
-          }
-        }, 8000);
-        return () => {
-          window.clearInterval(pollInterval);
-        };
+        startFallbackPolling();
+        return stopFallbackPolling;
       }
 
       supabase.realtime.setAuth(session.access_token);
@@ -1735,10 +1741,13 @@ function ReceptionistCenterInner({
           // from useState is stable so this is closure-safe.
           if (cancelled) return;
           if (status === "SUBSCRIBED") {
+            stopFallbackPolling();
             setConnectionState("connected");
           } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            startFallbackPolling();
             setConnectionState("reconnecting");
           } else if (status === "CLOSED") {
+            startFallbackPolling();
             setConnectionState("offline");
           }
           if (
@@ -1785,6 +1794,7 @@ function ReceptionistCenterInner({
       };
     })().catch((error) => {
       if (!cancelled) {
+        startFallbackPolling();
         setConnectionState("offline");
         ErrorReporter.captureException(error, {
           tags: {
@@ -1799,6 +1809,7 @@ function ReceptionistCenterInner({
 
     return () => {
       cancelled = true;
+      stopFallbackPolling();
       void cleanupPromise.then((cleanup) => {
         cleanup?.();
       });
@@ -3530,15 +3541,27 @@ function ReceptionistCenterInner({
           />
         ) : null}
         <header
+          data-testid="receptionist-center-header"
           data-preview-header={previewInterface ? "true" : undefined}
           className={cn(
-            "shrink-0 border-b border-nq-muted/20 px-[var(--pad-nq-section-mobile)] py-2.5 backdrop-blur-sm md:px-6 md:py-3",
+            "shrink-0 border-b border-nq-muted/20 px-[var(--pad-nq-section-mobile)] py-2.5 backdrop-blur-sm md:pl-6 md:py-3",
+            "transition-[padding-right] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)]",
             // backdrop-filter creates a stacking context. Give Shell V2's
             // header an explicit layer so Calendar/Create popovers render
             // above the timeline instead of being painted underneath it.
             receptionistShellV2Enabled && "relative z-30",
             previewInterface &&
               "md:hidden",
+            // The desktop queue is a fixed 20rem panel. Reserve that width in
+            // the header too (the day body already does this below), plus the
+            // normal 1.5rem desktop gutter, so Create/Queue controls cannot be
+            // hidden under the slide-over.
+            !previewInterface &&
+              isViewingToday &&
+              (modules.queue_panel || walkinPrefill !== null) &&
+              queuePanelOpen
+              ? "md:pr-[21.5rem]"
+              : "md:pr-6",
           )}
           style={
             previewInterface
@@ -3580,8 +3603,9 @@ function ReceptionistCenterInner({
               </p>
             </div>
             <div
+              data-testid="receptionist-header-actions"
               className={cn(
-                "flex flex-wrap items-center gap-2 sm:gap-3 2xl:mr-0",
+                "flex min-w-0 max-w-full flex-wrap items-center gap-2 sm:gap-3 2xl:mr-0",
                 // DashboardViewControls is fixed in the top-right corner. At
                 // iPad widths it previously sat on top of Shell V2's primary
                 // Create action and intercepted taps. Reserve its footprint

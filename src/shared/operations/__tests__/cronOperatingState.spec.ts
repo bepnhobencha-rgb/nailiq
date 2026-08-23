@@ -43,9 +43,9 @@ function heartbeat(
 
 describe("cron operating state", () => {
   it("defines one freshness contract for every scheduled route", () => {
-    expect(CRON_ROUTE_CONTRACTS).toHaveLength(18);
+    expect(CRON_ROUTE_CONTRACTS).toHaveLength(20);
     expect(new Set(CRON_ROUTE_CONTRACTS.map((item) => item.workerName)).size).toBe(
-      18,
+      20,
     );
   });
 
@@ -61,6 +61,25 @@ describe("cron operating state", () => {
     expect(manifestWorkers.sort()).toEqual(
       CRON_ROUTE_CONTRACTS.map((item) => item.workerName).sort(),
     );
+  });
+
+  it("schedules both payment workers every minute with a five-minute freshness fence", () => {
+    const manifest = JSON.parse(
+      readFileSync(resolve(process.cwd(), "vercel.json"), "utf8"),
+    ) as { crons: Array<{ path: string; schedule: string }> };
+
+    for (const [workerName, path] of [
+      ["deposit_compensation", "/api/cron/deposit-compensation"],
+      ["payment_reconciliation", "/api/cron/payment-reconciliation"],
+    ] as const) {
+      expect(manifest.crons.find((item) => item.path === path)).toEqual({
+        path,
+        schedule: "*/1 * * * *",
+      });
+      expect(
+        CRON_ROUTE_CONTRACTS.find((item) => item.workerName === workerName),
+      ).toMatchObject({ schedule: "Every minute", staleAfterMs: 5 * 60_000 });
+    }
   });
 
   it("distinguishes missing, running, failed, stale, and healthy workers", () => {

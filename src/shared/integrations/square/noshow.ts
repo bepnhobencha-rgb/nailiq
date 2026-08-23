@@ -29,6 +29,8 @@ import { stableBookingPaymentRequestId } from "@/shared/payments/paymentRequestI
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 type Db = ReturnType<typeof looseServiceClient>;
 
@@ -808,44 +810,132 @@ export async function createNoShowFeeLink(
  */
 export async function reconcileNoShowFeeLinks(
   salonId: string,
-): Promise<{ checked: number; paid: number }> {
+): Promise<{ ok: boolean; checked: number; paid: number; error?: string }> {
+  if (!UUID_RE.test(salonId)) {
+    return {
+      ok: false,
+      checked: 0,
+      paid: 0,
+      error: "square_noshow_reconciliation_input_invalid",
+    };
+  }
   const db = looseServiceClient();
-  const { data } = await db
+  const { data, error } = await db
     .from("bookings")
     .select("id, noshow_fee_cents, noshow_fee_order_id, noshow_charge_status")
     .eq("salon_id", salonId)
     .not("noshow_fee_order_id", "is", null)
     .not("noshow_charge_status", "eq", "charged");
-  const rows = (data as Row[]) ?? [];
-  if (rows.length === 0) return { checked: 0, paid: 0 };
+  if (error || !Array.isArray(data)) {
+    return {
+      ok: false,
+      checked: 0,
+      paid: 0,
+      error: "square_noshow_reconciliation_inventory_unavailable",
+    };
+  }
+  const rows = data as Row[];
+  if (rows.length === 0) return { ok: true, checked: 0, paid: 0 };
 
-  const cfg = await getSquareConfig(db, salonId);
+  let cfg: Awaited<ReturnType<typeof getSquareConfig>>;
+  try {
+    cfg = await getSquareConfig(db, salonId);
+  } catch {
+    return {
+      ok: false,
+      checked: rows.length,
+      paid: 0,
+      error: "square_noshow_reconciliation_config_unavailable",
+    };
+  }
   let paid = 0;
   for (const r of rows) {
+    const bookingId = str(r.id);
     const orderId = str(r.noshow_fee_order_id);
-    if (!orderId) continue;
+    const feeCents = num(r.noshow_fee_cents);
+    if (
+      !UUID_RE.test(bookingId)
+      || !orderId
+      || orderId.length > 255
+      || !Number.isSafeInteger(feeCents)
+      || feeCents <= 0
+    ) {
+      return {
+        ok: false,
+        checked: rows.length,
+        paid,
+        error: "square_noshow_reconciliation_inventory_invalid",
+      };
+    }
     try {
       const order = await getOrder(cfg, orderId);
+      const state = order.state.trim().toUpperCase();
       if (
-        order.state === "COMPLETED" ||
-        order.paidCents >= num(r.noshow_fee_cents)
+        !state
+        || !Number.isSafeInteger(order.paidCents)
+        || order.paidCents < 0
+        || (order.tenderPaymentId !== null && typeof order.tenderPaymentId !== "string")
       ) {
-        await db
+        return {
+          ok: false,
+          checked: rows.length,
+          paid,
+          error: "square_noshow_reconciliation_provider_response_invalid",
+        };
+      }
+      if (state === "COMPLETED") {
+        if (order.paidCents < feeCents || !order.tenderPaymentId) {
+          return {
+            ok: false,
+            checked: rows.length,
+            paid,
+            error: "square_noshow_reconciliation_provider_receipt_invalid",
+          };
+        }
+        const update = await db
           .from("bookings")
           .update({
             noshow_charge_status: "charged",
             noshow_payment_id: order.tenderPaymentId,
           } as never)
-          .eq("id", str(r.id));
+          .eq("id", bookingId)
+          .eq("salon_id", salonId)
+          .select("id")
+          .maybeSingle();
+        if (update.error || str(update.data?.id) !== bookingId) {
+          return {
+            ok: false,
+            checked: rows.length,
+            paid,
+            error: "square_noshow_reconciliation_write_unavailable",
+          };
+        }
         paid++;
+        continue;
       }
-    } catch (e) {
-      // Best-effort — retry next run (behaviour unchanged). Log so a PERSISTENT
-      // failure — a customer who PAID the fee link but whose noshow_charge_status
-      // is stuck unresolved because its order never resolves — is diagnosable
-      // instead of silently swallowed.
-      console.error("[reconcileNoShowFeeLinks] order lookup/flip failed", { bookingId: str(r.id), orderId }, e);
+      if (["OPEN", "PENDING", "APPROVED"].includes(state)) continue;
+      if (["CANCELED", "CANCELLED", "FAILED", "REJECTED"].includes(state)) {
+        return {
+          ok: false,
+          checked: rows.length,
+          paid,
+          error: "square_noshow_reconciliation_provider_rejected",
+        };
+      }
+      return {
+        ok: false,
+        checked: rows.length,
+        paid,
+        error: "square_noshow_reconciliation_provider_response_invalid",
+      };
+    } catch {
+      return {
+        ok: false,
+        checked: rows.length,
+        paid,
+        error: "square_noshow_reconciliation_provider_unavailable",
+      };
     }
   }
-  return { checked: rows.length, paid };
+  return { ok: true, checked: rows.length, paid };
 }

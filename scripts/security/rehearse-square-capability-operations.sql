@@ -17,20 +17,22 @@ BEGIN
   IF public.square_feature_contract(v_salon,'inventory')->>'code'<>'not_ready' THEN RAISE EXCEPTION 'platform default-off failed'; END IF;
   INSERT INTO public.platform_settings(id) VALUES('platform') ON CONFLICT(id) DO NOTHING;
   UPDATE public.platform_settings SET square_inventory_platform_enabled=true,square_loyalty_platform_enabled=true WHERE id='platform';
-  v_resolved:=public.resolve_square_feature_operation_material(v_salon,'inventory_adjustment',
-    '{"source_id":"variation_1","quantity":"1.25","from_state":"IN_STOCK","to_state":"SOLD"}');
+  v_resolved:=public.resolve_square_feature_operation_material(v_salon,'inventory_catalog_variation_load',
+    '{"source_id":"__full_scan__","secondary_id":"__first_page__"}');
   IF v_resolved->>'code'<>'resolved' OR v_resolved->'material'->>'api_version'<>'2026-07-15'
      OR v_resolved->'provider_material'->>'access_token'<>'secret-not-returned' THEN RAISE EXCEPTION 'material contract failed: %',v_resolved; END IF;
   v_fp:=v_resolved->>'material_fingerprint';
-  v_claim:=public.claim_square_feature_operation(v_salon,v_request,'inventory_adjustment',
-    '{"source_id":"variation_1","quantity":"1.25","from_state":"IN_STOCK","to_state":"SOLD"}',v_fp);
+  v_claim:=public.claim_square_feature_operation(v_salon,v_request,'inventory_catalog_variation_load',
+    '{"source_id":"__full_scan__","secondary_id":"__first_page__"}',v_fp);
   IF v_claim->>'code'<>'operation_claimed' THEN RAISE EXCEPTION 'claim failed'; END IF;
   v_token:=(v_claim->>'attempt_token')::uuid; v_op:=(v_claim->>'operation_id')::uuid;
-  v_done:=public.complete_square_feature_operation(v_op,v_token,'succeeded','adjustment_1','receipt_1',repeat('a',64),NULL);
+  v_done:=public.complete_square_feature_operation(v_op,v_token,'succeeded','catalog_read_1','catalog_receipt_1',repeat('a',64),NULL);
   IF v_done->>'code'<>'operation_completed' THEN RAISE EXCEPTION 'complete failed'; END IF;
-  IF public.complete_square_feature_operation(v_op,v_token,'succeeded','adjustment_1','receipt_changed',repeat('a',64),NULL)->>'code'<>'completion_conflict' THEN RAISE EXCEPTION 'changed completion replay accepted'; END IF;
-  IF public.claim_square_feature_operation(v_salon,v_request,'inventory_adjustment',
-    '{"source_id":"variation_1","quantity":"1.25","from_state":"IN_STOCK","to_state":"SOLD"}',v_fp)->>'code'<>'operation_succeeded' THEN RAISE EXCEPTION 'exact claim replay failed'; END IF;
+  IF public.complete_square_feature_operation(v_op,v_token,'succeeded','catalog_read_1','receipt_changed',repeat('a',64),NULL)->>'code'<>'completion_conflict' THEN RAISE EXCEPTION 'changed completion replay accepted'; END IF;
+  IF public.claim_square_feature_operation(v_salon,v_request,'inventory_catalog_variation_load',
+    '{"source_id":"__full_scan__","secondary_id":"__first_page__"}',v_fp)->>'code'<>'operation_succeeded' THEN RAISE EXCEPTION 'exact claim replay failed'; END IF;
+  IF public.claim_square_feature_operation(v_salon,gen_random_uuid(),'inventory_adjustment',
+    '{"source_id":"variation_1","quantity":"1.25","from_state":"IN_STOCK","to_state":"SOLD"}',repeat('a',64))->>'code'<>'specialized_inventory_claim_required' THEN RAISE EXCEPTION 'generic Inventory adjustment claim accepted'; END IF;
   IF public.resolve_square_feature_operation_material(v_salon,'inventory_adjustment',
     '{"source_id":"variation_1","quantity":"-1","from_state":"IN_STOCK","to_state":"SOLD"}')->>'code'<>'invalid_inventory_adjustment' THEN RAISE EXCEPTION 'negative inventory accepted'; END IF;
   IF public.resolve_square_feature_operation_material(v_salon,'inventory_adjustment',

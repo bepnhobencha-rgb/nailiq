@@ -9,6 +9,7 @@ import {
   readSquareWebhookBody,
   resolveSquareWebhookProfile,
   sanitizeSquareOptionalEvent,
+  sanitizeSquareRefundEvent,
   verifySquareWebhookSignature,
 } from "../webhookRuntime";
 
@@ -54,6 +55,77 @@ describe("Square webhook runtime boundary", () => {
       headers: { "content-length": "1" },
       body: oversized,
     }))).resolves.toEqual({ ok: false, code: "body_too_large" });
+  });
+
+  it("projects an exact refund.updated revision without customer or card material", () => {
+    const event = parseSquareEvent(JSON.stringify({
+      merchant_id: "merchant-1",
+      type: "refund.updated",
+      event_id: "refund-event-1",
+      created_at: "2026-08-23T17:00:01Z",
+      data: {
+        id: "refund-1",
+        object: {
+          refund: {
+            id: "refund-1",
+            payment_id: "payment-1",
+            location_id: "location-1",
+            status: "COMPLETED",
+            amount_money: { amount: 1_250, currency: "CAD" },
+            updated_at: "2026-08-23T17:00:00.123Z",
+            reason: "customer phone +16045550199",
+            destination_details: { card_details: { card: "secret" } },
+          },
+        },
+      },
+    }));
+
+    expect(event).not.toBeNull();
+    expect(sanitizeSquareRefundEvent(event!)).toEqual({
+      refundId: "refund-1",
+      paymentId: "payment-1",
+      locationId: "location-1",
+      status: "COMPLETED",
+      amountCents: 1_250,
+      currency: "CAD",
+      updatedAt: "2026-08-23T17:00:00.123Z",
+    });
+    expect(JSON.stringify(sanitizeSquareRefundEvent(event!))).not.toMatch(/16045550199|secret|reason/);
+  });
+
+  it.each([
+    ["mismatched data id", { dataId: "other-refund" }],
+    ["missing location", { location_id: undefined }],
+    ["unsupported status", { status: "CANCELED" }],
+    ["zero amount", { amount_money: { amount: 0, currency: "CAD" } }],
+    ["non-canonical currency", { amount_money: { amount: 500, currency: "cad" } }],
+    ["overflowing database integer", { amount_money: { amount: 2_147_483_648, currency: "CAD" } }],
+    ["invalid update time", { updated_at: "2026-08-23" }],
+    ["whitespace provider id", { id: "refund 1" }],
+  ])("rejects refund material with %s", (_name, override) => {
+    const { dataId = "refund-1", ...refundOverride } = override as Record<string, unknown>;
+    const event = parseSquareEvent(JSON.stringify({
+      merchant_id: "merchant-1",
+      type: "refund.updated",
+      event_id: "refund-event-1",
+      created_at: "2026-08-23T17:00:01Z",
+      data: {
+        id: dataId,
+        object: {
+          refund: {
+            id: "refund-1",
+            payment_id: "payment-1",
+            location_id: "location-1",
+            status: "PENDING",
+            amount_money: { amount: 500, currency: "CAD" },
+            updated_at: "2026-08-23T17:00:00Z",
+            ...refundOverride,
+          },
+        },
+      },
+    }));
+    expect(event).not.toBeNull();
+    expect(sanitizeSquareRefundEvent(event!)).toBeNull();
   });
 
   it("keeps loyalty promotion/account material PII-free", () => {

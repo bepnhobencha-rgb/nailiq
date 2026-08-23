@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import {
   type SquareConfig,
   ensureSquareCustomer,
@@ -18,9 +19,32 @@ export class SquareProvider implements PaymentProvider {
   readonly kind = "square" as const;
   constructor(private readonly cfg: SquareConfig) {}
 
-  private assertProviderAccount(providerAccountId?: string) {
-    if (providerAccountId && providerAccountId !== this.cfg.merchantId) {
+  private assertProviderIdentity(input: {
+    providerAccountId?: string;
+    providerLocationId?: string | null;
+    providerEnvironment?: "sandbox" | "production" | null;
+    providerCurrency?: string;
+    providerAccountFingerprint?: string;
+  }) {
+    if (input.providerAccountId && input.providerAccountId !== this.cfg.merchantId) {
       throw new Error("square_provider_account_mismatch");
+    }
+    const fingerprint = createHash("sha256").update(
+      `square:${this.cfg.merchantId}:${this.cfg.locationId}:${this.cfg.environment}`,
+      "utf8",
+    ).digest("hex");
+    const durableIdentityIncomplete = input.providerAccountFingerprint !== undefined && (
+      !input.providerAccountId || !input.providerLocationId ||
+      !input.providerEnvironment || !input.providerCurrency
+    );
+    if (
+      durableIdentityIncomplete ||
+      (input.providerLocationId && input.providerLocationId !== this.cfg.locationId) ||
+      (input.providerEnvironment && input.providerEnvironment !== this.cfg.environment) ||
+      (input.providerCurrency && input.providerCurrency.toUpperCase() !== this.cfg.currency.toUpperCase()) ||
+      (input.providerAccountFingerprint && input.providerAccountFingerprint !== fingerprint)
+    ) {
+      throw new Error("square_provider_identity_mismatch");
     }
   }
 
@@ -64,8 +88,12 @@ export class SquareProvider implements PaymentProvider {
     note?: string;
     referenceId?: string;
     providerAccountId?: string;
+    providerLocationId?: string | null;
+    providerEnvironment?: "sandbox" | "production" | null;
+    providerCurrency?: string;
+    providerAccountFingerprint?: string;
   }) {
-    this.assertProviderAccount(input.providerAccountId);
+    this.assertProviderIdentity(input);
     const r = await sqCharge(this.cfg, {
       cardId: input.cardId,
       customerId: input.customerId,
@@ -83,8 +111,12 @@ export class SquareProvider implements PaymentProvider {
     reason: string;
     idempotencyKey: string;
     providerAccountId?: string;
+    providerLocationId?: string | null;
+    providerEnvironment?: "sandbox" | "production" | null;
+    providerCurrency?: string;
+    providerAccountFingerprint?: string;
   }) {
-    this.assertProviderAccount(input.providerAccountId);
+    this.assertProviderIdentity(input);
     const r = await sqRefund(this.cfg, {
       paymentId: input.paymentId,
       amountCents: toProviderMinorAmount(input.amountCents, this.cfg.currency),

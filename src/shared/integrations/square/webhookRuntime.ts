@@ -23,6 +23,16 @@ export type ParsedSquareEvent = {
   object: Record<string, unknown>;
 };
 
+export type SanitizedSquareRefundEvent = {
+  refundId: string;
+  paymentId: string;
+  locationId: string;
+  status: "PENDING" | "COMPLETED" | "REJECTED" | "FAILED";
+  amountCents: number;
+  currency: string;
+  updatedAt: string;
+};
+
 const OPTIONAL_EVENTS = new Set<string>([
   ...SQUARE_OPTIONAL_CAPABILITY_LIMITS.loyalty.reconciliationEvents,
   ...SQUARE_OPTIONAL_CAPABILITY_LIMITS.gift_cards.reconciliationEvents,
@@ -39,6 +49,10 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function boundedText(value: unknown): string | null {
   return typeof value === "string" && TEXT_RE.test(value) ? value : null;
+}
+
+function providerIdentifier(value: unknown): string | null {
+  return typeof value === "string" && /^[!-~]{1,255}$/.test(value) ? value : null;
 }
 
 function optionalText(value: unknown): string | null {
@@ -202,6 +216,42 @@ export function parseSquareEvent(raw: string): ParsedSquareEvent | null {
 
 export function isSquareOptionalWebhookEvent(eventType: string): boolean {
   return OPTIONAL_EVENTS.has(eventType);
+}
+
+export function sanitizeSquareRefundEvent(
+  event: ParsedSquareEvent,
+): SanitizedSquareRefundEvent | null {
+  if (event.eventType !== "refund.updated") return null;
+  const refund = asRecord(event.object.refund);
+  const refundId = providerIdentifier(refund?.id);
+  const paymentId = providerIdentifier(refund?.payment_id);
+  const locationId = providerIdentifier(refund?.location_id);
+  const status = refund?.status;
+  const amountMoney = money(refund?.amount_money);
+  const updatedAt = typeof refund?.updated_at === "string"
+    && RFC3339_RE.test(refund.updated_at)
+    && Number.isFinite(Date.parse(refund.updated_at))
+    ? refund.updated_at
+    : null;
+  if (
+    !refund || !refundId || event.dataId !== refundId || !paymentId || !locationId
+    || !["PENDING", "COMPLETED", "REJECTED", "FAILED"].includes(
+      typeof status === "string" ? status : "",
+    )
+    || !amountMoney || amountMoney.amount <= 0 || amountMoney.amount > 2_147_483_647
+    || !updatedAt
+  ) {
+    return null;
+  }
+  return {
+    refundId,
+    paymentId,
+    locationId,
+    status: status as SanitizedSquareRefundEvent["status"],
+    amountCents: amountMoney.amount,
+    currency: amountMoney.currency,
+    updatedAt,
+  };
 }
 
 function projectEntity(

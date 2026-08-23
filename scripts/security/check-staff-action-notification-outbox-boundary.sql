@@ -36,6 +36,19 @@ BEGIN
       WHERE c.oid='public.staff_offboarding_receipts'::regclass) THEN
     RAISE EXCEPTION 'staff offboarding receipt FORCE RLS missing';
   END IF;
+  IF has_table_privilege('authenticated','public.staff','DELETE')
+     OR NOT has_table_privilege('service_role','public.staff','DELETE')
+     OR EXISTS (
+       SELECT 1 FROM pg_policies p
+       WHERE p.schemaname='public' AND p.tablename='staff'
+         AND p.cmd IN ('DELETE','ALL')
+         AND (
+           p.roles @> ARRAY['authenticated']::name[]
+           OR p.roles @> ARRAY['public']::name[]
+         )
+     ) THEN
+    RAISE EXCEPTION 'staff lifecycle table privilege/policy boundary mismatch';
+  END IF;
 
   IF has_function_privilege('service_role',
        'public.reschedule_booking_sequence_for_desk_pre_staff_outbox(uuid,uuid,uuid,boolean,boolean,uuid,timestamptz,text)'::regprocedure,'EXECUTE')
@@ -181,9 +194,12 @@ BEGIN
   IF position('FROM public.bookings' IN v_def)=0
      OR position('FROM public.booking_service_segments' IN v_def)=0
      OR position('FROM public.salons' IN v_def)=0
+     OR position('OLD.status=''active''' IN v_def)=0
      OR position('NEW.status<>''active''' IN v_def)=0
      OR position('NEW.salon_id IS DISTINCT FROM OLD.salon_id' IN v_def)=0
      OR position('staff salon_id is immutable' IN v_def)=0
+     OR position('staff_action_notification_caller_is_service_role()' IN v_def)=0
+     OR position('staff lifecycle changes require atomic offboarding' IN v_def)=0
      OR position('FOR UPDATE;' IN v_def)>0 THEN
     RAISE EXCEPTION 'staff-side fail-fast assignment invariant missing';
   END IF;

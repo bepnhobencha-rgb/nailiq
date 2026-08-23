@@ -276,6 +276,15 @@ export async function GET(request: NextRequest) {
       if (result.ok) succeeded += 1;
       else unresolved += 1;
     }
-    return NextResponse.json({ ok: true, processed, succeeded, unresolved });
+    return NextResponse.json(
+      {
+        ok: unresolved === 0,
+        ...(unresolved === 0 ? {} : { code: "reconciliation_incomplete" }),
+        processed,
+        succeeded,
+        unresolved,
+      },
+      { status: unresolved === 0 ? 200 : 503 },
+    );
   });
 }

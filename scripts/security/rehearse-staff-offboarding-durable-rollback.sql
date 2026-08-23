@@ -134,7 +134,11 @@ ALTER TABLE public.staff_action_notification_outbox
 ROLLBACK;
 
 DO $verify$
+DECLARE v_def text;
 BEGIN
+  SELECT pg_get_functiondef(
+    'public.enforce_no_live_assignments_on_staff_deactivation()'::regprocedure
+  ) INTO v_def;
   IF to_regclass('public.staff_offboarding_receipts') IS NULL
      OR to_regprocedure('public.offboard_staff_with_durable_notifications(uuid,uuid,uuid,uuid,text,jsonb,boolean,boolean,boolean,integer)') IS NULL
      OR to_regprocedure('public.offboard_staff_with_durable_notifications_v3_impl(uuid,uuid,uuid,uuid,text,jsonb,boolean,boolean,boolean,integer)') IS NULL
@@ -164,7 +168,21 @@ BEGIN
      OR NOT EXISTS (SELECT 1 FROM pg_constraint c
        WHERE c.conrelid='public.staff_action_notification_outbox'::regclass
          AND c.conname='staff_action_notification_outbox_event_type_check'
-         AND position('staff_change' IN pg_get_constraintdef(c.oid))>0) THEN
+         AND position('staff_change' IN pg_get_constraintdef(c.oid))>0)
+     OR position('OLD.status=''active''' IN v_def)=0
+     OR position('staff_action_notification_caller_is_service_role()' IN v_def)=0
+     OR position('staff lifecycle changes require atomic offboarding' IN v_def)=0
+     OR has_table_privilege('authenticated','public.staff','DELETE')
+     OR NOT has_table_privilege('service_role','public.staff','DELETE')
+     OR EXISTS (
+       SELECT 1 FROM pg_policies p
+       WHERE p.schemaname='public' AND p.tablename='staff'
+         AND p.cmd IN ('DELETE','ALL')
+         AND (
+           p.roles @> ARRAY['authenticated']::name[]
+           OR p.roles @> ARRAY['public']::name[]
+         )
+     ) THEN
     RAISE EXCEPTION 'staff offboarding schema rollback did not restore current contract';
   END IF;
 END;$verify$;

@@ -22,34 +22,54 @@ export async function GET(req: NextRequest) {
   const authorizationError = requireCronAuthorization(req);
   if (authorizationError) return authorizationError;
   return runTrackedCron("square_email_consent", async () => {
-  if (process.env.SQUARE_EMAIL_CONSENT_SYNC !== "1") {
-    return NextResponse.json({ ok: true, skipped: "disabled" });
-  }
-
-  const supabase = looseServiceClient();
-  const { data: integrations, error } = await supabase
-    .from("square_integrations")
-    .select("salon_id")
-    .eq("enabled", true)
-    .not("access_token", "is", null);
-
-  if (error) {
-    console.error("[square-email-consent] load integrations", error);
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
-  }
-
-  const results: Record<string, unknown> = {};
-  for (const it of integrations ?? []) {
-    const salonId = it.salon_id as string;
-    try {
-      results[salonId] = await syncSquareEmailConsent(salonId);
-    } catch (e) {
-      const msg = (e as Error).message;
-      console.error("[square-email-consent] salon", salonId, msg);
-      results[salonId] = { error: msg };
+    if (process.env.SQUARE_EMAIL_CONSENT_SYNC !== "1") {
+      return NextResponse.json({ ok: true, skipped: "disabled" });
     }
-  }
 
-    return NextResponse.json({ ok: true, results });
+    const supabase = looseServiceClient();
+    const { data: integrations, error } = await supabase
+      .from("square_integrations")
+      .select("salon_id")
+      .eq("enabled", true)
+      .not("access_token", "is", null);
+
+    if (error) {
+      return NextResponse.json(
+        { ok: false, error: "square_email_consent_integrations_unavailable" },
+        { status: 500 },
+      );
+    }
+
+    let failed = false;
+    const results: Record<string, unknown> = {};
+    for (const it of integrations ?? []) {
+      const salonId = it.salon_id as string;
+      try {
+        const result = await syncSquareEmailConsent(salonId);
+        if (!result.ok) {
+          failed = true;
+          results[salonId] = {
+            ok: false,
+            squareCustomers: result.squareCustomers,
+            granted: result.granted,
+            revoked: result.revoked,
+            error: "square_email_consent_sync_failed",
+          };
+        } else {
+          results[salonId] = result;
+        }
+      } catch {
+        failed = true;
+        results[salonId] = {
+          ok: false,
+          error: "square_email_consent_sync_failed",
+        };
+      }
+    }
+
+    return NextResponse.json(
+      { ok: !failed, results },
+      failed ? { status: 500 } : undefined,
+    );
   });
 }

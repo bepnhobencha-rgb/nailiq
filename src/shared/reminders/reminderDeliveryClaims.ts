@@ -60,7 +60,10 @@ export async function claimReminderDelivery(input: {
   return { ok: true, claimed: true, claimId: result.claim_id };
 }
 
-export function classifyReminderProviderResult(result: ProviderResult): {
+export function classifyReminderProviderResult(
+  result: ProviderResult,
+  channel: ReminderChannel,
+): {
   status: ReminderDeliveryStatus;
   providerMessageId: string | null;
   errorCode: string | null;
@@ -81,6 +84,17 @@ export function classifyReminderProviderResult(result: ProviderResult): {
         status: "unknown",
         providerMessageId: null,
         errorCode: "provider_receipt_missing",
+      };
+    }
+    if (
+      (channel === "sms" && !/^(?:SM|MM)[0-9a-f]{32}$/iu.test(providerMessageId)) ||
+      (channel === "email" &&
+        (providerMessageId.length > 200 || /[\u0000-\u001f\u007f]/u.test(providerMessageId)))
+    ) {
+      return {
+        status: "unknown",
+        providerMessageId: null,
+        errorCode: "invalid_provider_receipt",
       };
     }
     return { status: "sent", providerMessageId, errorCode: null };

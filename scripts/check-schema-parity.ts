@@ -48,13 +48,24 @@ import { execFileSync } from "node:child_process";
  * environment-gated public Square deposit reconciliation discovery, and the
  * 20260823012836 atomic one-offer-per-salon-session upsell claim contract,
  * the durable Square booking/staff-offboarding hardening through 20260823037200,
- * and the hard-OFF 20260823038000 reactivation delivery evidence contract.
+ * the hard-OFF 20260823038000 reactivation delivery evidence contract, the
+ * 20260823082850 atomic staff-lifecycle browser-write boundary, and the
+ * 20260823085905/20260823093507 set-based edge-limiter and positional
+ * request-microbatch functions, plus the 20260823110412 signature-verified
+ * Square refund webhook inbox and 20260823110500 merchant-scoped Square
+ * customer identity map. The 20260823113000 Inventory guard replaces an
+ * existing function and therefore does not change shape counts. The
+ * 20260823124500/20260823133000 Twilio receipt/correlation migrations add
+ * generic and staff-action delivery binding plus SID-first completion wrappers.
+ * The 20260823134500 review-SMS migration adds pre-provider claim completion
+ * and signed callback-correlation functions.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
  */
 const PRODUCTION = {
-  tables: 171,
+  // +1 PII-free Twilio terminal-receipt inbox.
+  tables: 174,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -84,10 +95,16 @@ const PRODUCTION = {
   // +14 PII-free booking-reminder delivery claim/lease columns.
   // +11 PII-minimized atomic upsell-session claim columns.
   // +63 PII-free reactivation delivery/authorization/receipt columns.
-  columns: 2509,
+  // +22 durable Square refund webhook inbox columns and +8 merchant-scoped
+  // Square customer identity columns.
+  // +4 terminal receipt fields on reminder claims, +4 on staff-action
+  // deliveries, and +13 fields in the PII-free Twilio status receipt inbox.
+  columns: 2560,
   // The upsell migration replaces two legacy member-write policies with one
-  // service-role-only immutable claim policy.
-  policies: 198,
+  // service-role-only immutable claim policy. The staff-lifecycle hardening
+  // removes the browser DELETE policy so hard deletion cannot bypass the
+  // service-role-only atomic offboarding contract.
+  policies: 197,
   /**
    * APP functions only — refreshed after the rehearsed forward migrations.
    *
@@ -98,11 +115,22 @@ const PRODUCTION = {
    * The query below excludes anything a `pg_depend` extension edge points at,
    * so extension placement cannot distort this release-shape tripwire.
    */
-  // +1 Square discovery and +2 atomic/immutable upsell claim functions.
-  functions: 353,
-  triggers: 79,
+  // +1 Square discovery, +2 atomic/immutable upsell claim functions, +1
+  // positional edge-limiter request-microbatch function, +1 refund webhook
+  // recorder, and +1 merchant-scoped customer identity resolver.
+  // +1 atomic Twilio terminal-receipt recorder, +1 correlation trigger
+  // function, and +2 private completion classifiers retained behind the
+  // SID-first service-role wrappers, plus +2 durable review-SMS completion and
+  // signed callback-correlation functions.
+  functions: 362,
+  // +4 pending-receipt correlation triggers across notification/staff INSERT
+  // and provider-SID transitions.
+  triggers: 83,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
-  indexes: 621,
+  // The refund inbox and customer identity map each add PK, unique, and two
+  // focused indexes.
+  // +1 Twilio inbox primary key plus unique reminder/staff SMS SID indexes.
+  indexes: 632,
 } as const;
 
 /**
@@ -160,10 +188,12 @@ const CRITICAL_TABLES = [
   "waitlist_offer_promotion_receipts",
   "booking_payment_operations",
   "booking_cancel_deposit_refund_sagas",
+  "square_refund_webhook_inbox",
   "booking_service_segments",
   "square_feature_operations",
   "square_webhook_inbox",
   "square_sync_cursors",
+  "square_customer_identities",
   "sms_consent_events",
   "sms_consent_provider_states",
   "sms_consent_salon_states",
@@ -196,6 +226,7 @@ const CRITICAL_TABLES = [
   "promo_campaign_draft_claims",
   "reactivation_campaign_draft_claims",
   "booking_reminder_delivery_claims",
+  "twilio_message_status_receipts",
   "ai_upsell_session_claims",
   "reactivation_campaign_deliveries",
   "reactivation_campaign_dispatch_authorizations",
@@ -321,6 +352,7 @@ const CRITICAL_FUNCTIONS = [
   "claim_due_unbound_deposit_refund",
   "load_late_cancel_refund_material",
   "claim_late_cancel_refund",
+  "record_square_refund_webhook_event",
   "sync_booking_cancel_deposit_refund_saga",
   "inspect_booking_cancel_deposit_refund_saga",
   "cancel_booking_with_deposit_refund_saga",
@@ -328,6 +360,7 @@ const CRITICAL_FUNCTIONS = [
   "attach_booking_square_deposit_link",
   "issue_public_square_deposit_capability",
   "claim_public_square_deposit_completion",
+  "resolve_square_customer_identity",
   "resolve_booking_sequence_pricing_and_schedule",
   "quote_public_booking_sequence",
   "create_public_booking_sequence",
@@ -362,6 +395,7 @@ const CRITICAL_FUNCTIONS = [
   "enforce_booking_operational_capacity_guard",
   "bump_salon_availability_revision",
   "rate_limit_hit_many",
+  "rate_limit_hit_request_batch",
   "protect_organization_staff_location",
   "enforce_organization_staff_time_available",
   "enforce_organization_staff_booking_capacity",
@@ -410,6 +444,13 @@ const CRITICAL_FUNCTIONS = [
   "record_reactivation_campaign_manifest",
   "claim_booking_reminder_delivery",
   "complete_booking_reminder_delivery",
+  "record_twilio_message_status_receipt",
+  "apply_pending_twilio_receipt_after_correlation",
+  "complete_booking_confirmation_delivery_unserialized",
+  "complete_staff_action_notification_delivery",
+  "complete_staff_action_notification_delivery_unserialized",
+  "complete_review_request_sms_notification",
+  "record_twilio_review_request_status_receipt",
   "reject_ai_upsell_session_claim_mutation",
   "claim_ai_upsell_offer",
   "materialize_reactivation_campaign_deliveries",
@@ -509,7 +550,9 @@ function main() {
   console.log("\n── Grant matrix ──\n");
   // Retry hardening removes anon's legacy booking_notifications reachability;
   // the delivery-event audit table is service-role-only.
-  const GRANTS = { anon: 56, authenticated: 77, service_role: 173 } as const;
+  // The customer identity map is service-role read-only; the refund inbox is
+  // mutation-through-RPC only and intentionally grants no table reachability.
+  const GRANTS = { anon: 56, authenticated: 77, service_role: 175 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (

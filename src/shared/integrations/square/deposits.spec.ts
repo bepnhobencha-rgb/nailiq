@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   createPaymentLink: vi.fn(),
   getSquareConfig: vi.fn(),
+  runPaymentOperation: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
@@ -18,10 +19,10 @@ vi.mock("./client", () => ({
   getOrder: vi.fn(),
 }));
 vi.mock("@/shared/payments/executeBookingPaymentOperation", () => ({
-  runAuthoritativeBookingPaymentOperation: vi.fn(),
+  runAuthoritativeBookingPaymentOperation: mocks.runPaymentOperation,
 }));
 
-import { createDepositForBooking } from "./deposits";
+import { createDepositForBooking, refundDeposit } from "./deposits";
 
 const SALON_ID = "123e4567-e89b-42d3-a456-426614174000";
 const BOOKING_ID = "223e4567-e89b-42d3-a456-426614174000";
@@ -41,6 +42,14 @@ function bookingQuery() {
     data: { id: BOOKING_ID, salon_id: SALON_ID, client_name: "QA Guest" },
     error: null,
   }));
+  return chain;
+}
+
+function queryResult(data: Record<string, unknown> | null, error: unknown = null) {
+  const chain: Record<string, unknown> = {};
+  chain.select = vi.fn(() => chain);
+  chain.eq = vi.fn(() => chain);
+  chain.maybeSingle = vi.fn(async () => ({ data, error }));
   return chain;
 }
 
@@ -92,6 +101,12 @@ describe("authoritative Square hosted deposit link", () => {
       id: "link_qa",
       orderId: "order_qa",
       url: "https://square.test/pay/link_qa",
+    });
+    mocks.runPaymentOperation.mockResolvedValue({
+      ok: true,
+      status: "succeeded",
+      operationId: OPERATION_ID,
+      providerReceipt: "refund_qa",
     });
   });
 
@@ -153,5 +168,89 @@ describe("authoritative Square hosted deposit link", () => {
         "attach_booking_square_deposit_link",
         "claim_booking_square_deposit_link",
       ]);
+  });
+});
+
+describe("authoritative Square deposit refund wrapper", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.runPaymentOperation.mockResolvedValue({
+      ok: true,
+      status: "succeeded",
+      operationId: OPERATION_ID,
+      providerReceipt: "refund_qa",
+    });
+  });
+
+  it("returns the DB cumulative receipt after a partial refund and tenant-scopes the reread", async () => {
+    const context = queryResult({
+      id: BOOKING_ID,
+      salon_id: SALON_ID,
+      deposit_amount_cents: 1_000,
+      deposit_refunded_cents: 0,
+    });
+    const receipt = queryResult({ deposit_refunded_cents: 400 });
+    mocks.from.mockReturnValueOnce(context).mockReturnValueOnce(receipt);
+
+    const result = await refundDeposit(BOOKING_ID, {
+      requestId: REQUEST_ID,
+      amountCents: 400,
+    });
+
+    expect(mocks.runPaymentOperation).toHaveBeenCalledWith(expect.objectContaining({
+      salonId: SALON_ID,
+      bookingId: BOOKING_ID,
+      requestId: REQUEST_ID,
+      operationKind: "deposit_refund",
+      amountCents: 400,
+    }));
+    expect(receipt.eq).toHaveBeenNthCalledWith(1, "salon_id", SALON_ID);
+    expect(receipt.eq).toHaveBeenNthCalledWith(2, "id", BOOKING_ID);
+    expect(result).toEqual({
+      ok: true,
+      reason: "refunded",
+      refundedCents: 400,
+      remainingCents: 600,
+    });
+  });
+
+  it("defaults the second refund to the exact remaining amount", async () => {
+    mocks.from
+      .mockReturnValueOnce(queryResult({
+        id: BOOKING_ID,
+        salon_id: SALON_ID,
+        deposit_amount_cents: 1_000,
+        deposit_refunded_cents: 400,
+      }))
+      .mockReturnValueOnce(queryResult({ deposit_refunded_cents: 1_000 }));
+
+    const result = await refundDeposit(BOOKING_ID, { requestId: REQUEST_ID });
+
+    expect(mocks.runPaymentOperation).toHaveBeenCalledWith(expect.objectContaining({
+      amountCents: 600,
+    }));
+    expect(result).toEqual({
+      ok: true,
+      reason: "refunded",
+      refundedCents: 1_000,
+      remainingCents: 0,
+    });
+  });
+
+  it("rejects an over-refund before claiming or dispatching an operation", async () => {
+    mocks.from.mockReturnValueOnce(queryResult({
+      id: BOOKING_ID,
+      salon_id: SALON_ID,
+      deposit_amount_cents: 1_000,
+      deposit_refunded_cents: 400,
+    }));
+
+    const result = await refundDeposit(BOOKING_ID, {
+      requestId: REQUEST_ID,
+      amountCents: 601,
+    });
+
+    expect(mocks.runPaymentOperation).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: false, reason: "invalid refund amount" });
   });
 });

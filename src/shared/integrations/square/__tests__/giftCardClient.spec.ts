@@ -200,6 +200,40 @@ describe("Square payment recovery", () => {
 });
 
 describe("Square configuration boundaries", () => {
+  const integrationRow = {
+    salon_id: config.salonId,
+    merchant_id: config.merchantId,
+    location_id: config.locationId,
+    access_token: config.accessToken,
+    application_id: config.applicationId,
+    environment: config.environment,
+    sync_pull_create: null,
+    sync_pull_update: null,
+    sync_pull_cancel: null,
+    sync_push_create: null,
+    sync_push_update: null,
+    sync_push_cancel: null,
+  };
+
+  function configDb(salonResult: {
+    data: { currency_code?: unknown } | null;
+    error: Record<string, unknown> | null;
+  }) {
+    return {
+      from: vi.fn((table: string) => {
+        const result = table === "square_integrations"
+          ? { data: integrationRow, error: null }
+          : salonResult;
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          maybeSingle: async () => result,
+        };
+        return chain;
+      }),
+    };
+  }
+
   it("rejects an unknown stored environment before it can default to production", async () => {
     const maybeSingle = vi.fn(async () => ({
       data: {
@@ -227,4 +261,28 @@ describe("Square configuration boundaries", () => {
     expect(db.from).toHaveBeenCalledTimes(1);
     expect(db.from).toHaveBeenCalledWith("square_integrations");
   });
+
+  it("loads and normalizes an explicit salon currency", async () => {
+    const db = configDb({ data: { currency_code: " cad " }, error: null });
+
+    await expect(getSquareConfig(db as never, config.salonId)).resolves.toMatchObject({
+      currency: "CAD",
+    });
+    expect(db.from).toHaveBeenCalledWith("salons");
+  });
+
+  it.each([
+    ["read error", { data: null, error: { code: "57014", message: "private detail" } }, "square_salon_currency_unavailable"],
+    ["missing row", { data: null, error: null }, "square_salon_currency_unavailable"],
+    ["blank currency", { data: { currency_code: " " }, error: null }, "square_salon_currency_invalid"],
+    ["malformed currency", { data: { currency_code: "CAD$" }, error: null }, "square_salon_currency_invalid"],
+  ] as const)(
+    "fails closed for %s instead of defaulting money requests to USD",
+    async (_label, salonResult, expectedMessage) => {
+      const db = configDb(salonResult);
+      await expect(getSquareConfig(db as never, config.salonId)).rejects.toThrow(
+        expectedMessage,
+      );
+    },
+  );
 });

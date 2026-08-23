@@ -163,15 +163,20 @@ export async function getSquareConfig(db: Db, salonId: string): Promise<SquareCo
 
   // Currency MUST match the salon's Square merchant (Square rejects a mismatch).
   // The salon's configured currency_code is the admin-set source of truth.
-  const { data: salonRow } = await db
+  const { data: salonRow, error: salonCurrencyError } = await db
     .from("salons")
     .select("currency_code")
     .eq("id", salonId)
     .maybeSingle();
-  const currency =
-    String((salonRow as { currency_code?: string } | null)?.currency_code || "USD")
-      .trim()
-      .toUpperCase() || "USD";
+  if (salonCurrencyError || !salonRow) {
+    throw new Error("square_salon_currency_unavailable");
+  }
+  const currency = String(
+    (salonRow as { currency_code?: string } | null)?.currency_code ?? "",
+  ).trim().toUpperCase();
+  if (!/^[A-Z]{3}$/u.test(currency)) {
+    throw new Error("square_salon_currency_invalid");
+  }
 
   return {
     salonId: row.salon_id,
@@ -575,7 +580,24 @@ export async function refundPayment(
     reason: opts.reason,
   });
   const r = (json.refund as Record<string, unknown>) ?? {};
-  return { id: String(r.id ?? ""), status: String(r.status ?? "") };
+  const id = typeof r.id === "string" ? r.id.trim() : "";
+  const status = typeof r.status === "string" ? r.status.trim() : "";
+  const paymentId = typeof r.payment_id === "string" ? r.payment_id.trim() : "";
+  const money = r.amount_money && typeof r.amount_money === "object"
+    ? r.amount_money as Record<string, unknown>
+    : null;
+  const amount = typeof money?.amount === "number" && Number.isSafeInteger(money.amount)
+    ? money.amount
+    : null;
+  const currency = typeof money?.currency === "string"
+    ? money.currency.trim().toUpperCase()
+    : "";
+  if (!id || id.length > 255 || !status || status.length > 64 ||
+      paymentId !== opts.paymentId || amount !== opts.amountCents ||
+      currency !== cfg.currency.toUpperCase()) {
+    throw new Error("Square RefundPayment returned no exact receipt");
+  }
+  return { id, status };
 }
 
 /** Retrieve an order to check whether a payment-link deposit has been paid. */
@@ -594,16 +616,36 @@ export async function getOrder(cfg: SquareConfig, orderId: string): Promise<{ st
 
 /** Retrieve a single customer by id (for on-demand import during sync). */
 export async function getCustomer(cfg: SquareConfig, customerId: string): Promise<SquareCustomer | null> {
-  // A deleted / missing Square customer (404) must NOT crash the whole sync —
-  // a cancelled booking can still reference a customer that was later removed.
-  // Treat any lookup failure as "unknown customer" (the sync falls back to a
-  // guest name) instead of throwing and aborting the salon's entire sync run.
+  // A deleted / missing Square customer (404) is a definitive guest fallback.
+  // Auth, rate-limit, provider, transport and response failures are ambiguous:
+  // fail the run with a stable PII-free code so integration health cannot be
+  // cleared while customer linkage is unavailable.
   try {
     const json = await squareReq(cfg, "GET", `/customers/${encodeURIComponent(customerId)}`);
-    return (json.customer as SquareCustomer) ?? null;
+    const customer = json.customer;
+    const optionalStringFields = [
+      "given_name",
+      "family_name",
+      "phone_number",
+      "email_address",
+    ] as const;
+    if (
+      !customer
+      || typeof customer !== "object"
+      || Array.isArray(customer)
+      || typeof (customer as { id?: unknown }).id !== "string"
+      || !(customer as { id: string }).id
+      || optionalStringFields.some((field) => {
+        const value = (customer as Record<string, unknown>)[field];
+        return value != null && typeof value !== "string";
+      })
+    ) {
+      throw new Error("square_customer_lookup_failed");
+    }
+    return customer as SquareCustomer;
   } catch (e) {
-    console.warn("[getCustomer] lookup failed (treating as unknown)", customerId, e instanceof Error ? e.message : e);
-    return null;
+    if (e instanceof SquareHttpError && e.status === 404) return null;
+    throw new Error("square_customer_lookup_failed");
   }
 }
 
@@ -867,8 +909,8 @@ export async function listBookings(
  * Square's optimistic-concurrency token from the latest fetch; a stale version
  * makes Square reject the call (the caller should re-fetch + retry). The
  * idempotency key is stable per (booking, version) so a retry never
- * double-cancels. Throws on API error (caller logs + continues — one failed
- * cancel must not crash the sync run).
+ * double-cancels. Throws on API error; the caller fails the sync run so
+ * integration and cron health cannot be cleared after a provider failure.
  */
 export async function cancelSquareBooking(
   cfg: SquareConfig,
