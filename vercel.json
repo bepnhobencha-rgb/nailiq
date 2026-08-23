@@ -1,10 +1,4 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "git": {
-    "deploymentEnabled": {
-      "qa/master-checklist-preview-20260822": false
-    }
-  },
   "crons": [
     {
       "path": "/api/cron/campaign-scheduler",
