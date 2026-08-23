@@ -139,7 +139,7 @@ importers:
         specifier: ^4
         version: 4.3.3
       tsx:
-        specifier: ^4.21.0
+        specifier: ^4.23.12
         version: 4.23.12
       typescript:
         specifier: ^5
