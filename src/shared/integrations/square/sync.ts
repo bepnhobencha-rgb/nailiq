@@ -33,8 +33,22 @@ import {
   ensureSquareCustomer,
   type SquareBooking,
 } from "./client";
+import {
+  assertExactSquareBookingWritebackReceipt,
+  assertSquareBookingWritebackInventoryContext,
+  beginSquareBookingWritebackDispatch,
+  claimSquareBookingWriteback,
+  claimSquareBookingWritebackReconciliation,
+  completeSquareBookingWritebackSuccess,
+  findSquareBookingWritebackCorrelation,
+  markSquareBookingWritebackUnknown,
+  recordSquareBookingWritebackCustomer,
+} from "./bookingWriteback";
 
 const RENDER_STATUS = new Set(["pending", "confirmed", "in_progress", "completed"]);
+const ACTIVE_SQUARE = new Set(["ACCEPTED", "PENDING"]);
+const REVERSE_CREATE_NOTE_PREFIX = "NailIQ booking:";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STATUS_MAP: Record<string, string> = {
   ACCEPTED: "confirmed",
   PENDING: "pending",
@@ -47,6 +61,57 @@ const norm = (s: string) => s.toLowerCase().replace(/^\s*\d+\s*[-.]\s*/, "").rep
 const safeName = (s: string) => s.replace(/&/g, "and").replace(/[<>{}=;]/g, " ").replace(/\s+/g, " ").trim().slice(0, 100);
 const overlaps = (aS: number, aE: number, bS: number, bE: number) => aS < bE && bS < aE;
 const str = (v: unknown): string => (v == null ? "" : String(v));
+
+type SquareCreateSnapshot = {
+  id: string;
+  salonId: string;
+  serviceId: string;
+  staffId: string;
+  status: "confirmed" | "pending";
+  startTimeUtc: string;
+  endTimeUtc: string;
+};
+
+function correlatedNailIqBookingId(booking: SquareBooking): string | null {
+  const note = booking.seller_note;
+  if (typeof note !== "string" || !note.startsWith(REVERSE_CREATE_NOTE_PREFIX)) {
+    return null;
+  }
+  const bookingId = note.slice(REVERSE_CREATE_NOTE_PREFIX.length);
+  return UUID_RE.test(bookingId) ? bookingId.toLowerCase() : null;
+}
+
+function snapshotFromRow(
+  row: Record<string, unknown>,
+  salonId: string,
+): SquareCreateSnapshot | null {
+  const id = str(row.id);
+  const serviceId = str(row.service_id);
+  const staffId = str(row.staff_id);
+  const status = row.status;
+  const startTimeUtc = str(row.start_time_utc);
+  const endTimeUtc = str(row.end_time_utc);
+  if (
+    !UUID_RE.test(id)
+    || row.salon_id !== salonId
+    || !serviceId
+    || !staffId
+    || (status !== "confirmed" && status !== "pending")
+    || row.deleted_at != null
+    || !Number.isFinite(Date.parse(startTimeUtc))
+    || !Number.isFinite(Date.parse(endTimeUtc))
+    || Date.parse(endTimeUtc) <= Date.parse(startTimeUtc)
+  ) return null;
+  return {
+    id: id.toLowerCase(),
+    salonId,
+    serviceId,
+    staffId,
+    status,
+    startTimeUtc,
+    endTimeUtc,
+  };
+}
 
 export interface SquareSyncResult {
   pulled: number;
@@ -88,6 +153,49 @@ async function findFreeStaffForInterval(
   return null;
 }
 
+async function recoverCorrelatedSquareBooking(
+  db: ReturnType<typeof looseServiceClient>,
+  cfg: Awaited<ReturnType<typeof getSquareConfig>>,
+  booking: SquareBooking,
+  bookingId: string,
+  requireSellerNote: boolean,
+): Promise<"already_bound" | "recovered"> {
+  const { data, error } = await db
+    .from("bookings")
+    .select("id, salon_id, square_booking_id")
+    .eq("id", bookingId)
+    .eq("salon_id", cfg.salonId)
+    .maybeSingle();
+  if (error || !data) throw new Error("square_create_correlation_missing");
+
+  const existingSquareId = data.square_booking_id;
+  if (existingSquareId != null) {
+    if (existingSquareId !== booking.id) {
+      throw new Error("square_create_correlation_binding_conflict");
+    }
+    // A tagged booking is special only while the local row is unbound. Once
+    // bound to this exact provider ID it must rejoin the ordinary lifecycle so
+    // later cancels, reschedules, completions and Square-side edits reconcile.
+    return "already_bound";
+  }
+
+  // Only a pre-existing durable unknown receipt may authorize recovery. A
+  // seller_note alone is user-editable provider data and is never sufficient
+  // to attach an unbound local row.
+  const claim = await claimSquareBookingWritebackReconciliation(
+    db,
+    cfg,
+    bookingId,
+  );
+  assertExactSquareBookingWritebackReceipt(booking, claim, { requireSellerNote });
+  await completeSquareBookingWritebackSuccess(db, claim, {
+    providerBookingId: booking.id,
+    providerCustomerId: claim.providerCustomerId,
+    providerBookingVersion: Number(booking.version),
+  });
+  return "recovered";
+}
+
 export async function runSquareForwardSync(salonId: string): Promise<SquareSyncResult> {
   const db = looseServiceClient();
   const cfg = await getSquareConfig(db, salonId);
@@ -101,15 +209,37 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
   const items = await listCatalogItems(cfg);
   const variationToItemName = new Map<string, string>();
   for (const it of items) for (const v of it.variations) variationToItemName.set(v.id, it.name);
+  const variationByNorm = new Map<string, { variationId: string; version: number }>();
+  for (const it of items) {
+    const itemNorm = norm(it.name);
+    if (variationByNorm.has(itemNorm)) continue;
+    const variation = it.variations.find((candidate) => typeof candidate.version === "number");
+    if (variation && typeof variation.version === "number") {
+      variationByNorm.set(itemNorm, {
+        variationId: variation.id,
+        version: variation.version,
+      });
+    }
+  }
   const { data: svcRows } = await db.from("services").select("id, name, price_cents").eq("salon_id", salonId).is("deleted_at", null);
   const svcByNorm = new Map<string, { id: string; price_cents: number }>();
   for (const s of svcRows ?? []) svcByNorm.set(norm(str(s.name)), { id: str(s.id), price_cents: Number(s.price_cents) });
+  const serviceIdToNorm = new Map<string, string>();
+  for (const service of svcRows ?? []) {
+    serviceIdToNorm.set(str(service.id), norm(str(service.name)));
+  }
 
   // staff: square bed link + occupancy for free-column fallback
   const { data: staffRows } = await db.from("staff").select("id, square_team_member_id").eq("salon_id", salonId).eq("status", "active").is("deleted_at", null);
   const activeStaff: string[] = (staffRows ?? []).map((s) => str(s.id));
   const tmToStaff = new Map<string, string>();
   for (const s of staffRows ?? []) if (s.square_team_member_id) tmToStaff.set(str(s.square_team_member_id), str(s.id));
+  const staffToTeamMember = new Map<string, string>();
+  for (const staff of staffRows ?? []) {
+    if (staff.square_team_member_id) {
+      staffToTeamMember.set(str(staff.id), str(staff.square_team_member_id));
+    }
+  }
 
   const occ = new Map<string, [number, number][]>();
   for (const id of activeStaff) occ.set(id, []);
@@ -125,7 +255,38 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
   let ownerNotifyCount = 0;
   const clientCache = new Map<string, { name: string | null; phone: string | null }>();
 
+  const { data: pendingWritebacks, error: pendingWritebacksError } = await db
+    .from("square_booking_writeback_operations")
+    .select("booking_id, status, material, material_fingerprint, provider_account_fingerprint, provider_customer_id, provider_booking_id")
+    .eq("salon_id", salonId)
+    .in("status", ["sending", "unknown", "reconciling"]);
+  if (pendingWritebacksError) {
+    throw new Error("square_booking_writeback_reconciliation_inventory_unavailable");
+  }
+  assertSquareBookingWritebackInventoryContext(pendingWritebacks ?? [], cfg);
+
   for (const b of bookings) {
+    const notedBookingId = correlatedNailIqBookingId(b);
+    const durableBookingId = findSquareBookingWritebackCorrelation(
+      pendingWritebacks ?? [],
+      b,
+      cfg,
+    );
+    if (notedBookingId && durableBookingId && notedBookingId !== durableBookingId) {
+      throw new Error("square_booking_writeback_correlation_conflict");
+    }
+    const correlatedBookingId = notedBookingId ?? durableBookingId;
+    if (correlatedBookingId) {
+      const correlation = await recoverCorrelatedSquareBooking(
+        db,
+        cfg,
+        b,
+        correlatedBookingId,
+        durableBookingId === null,
+      );
+      if (correlation === "recovered") continue;
+    }
+
     const seg = b.appointment_segments?.[0];
     const itemName = seg?.service_variation_id ? variationToItemName.get(seg.service_variation_id) : undefined;
     const svc = itemName ? svcByNorm.get(norm(itemName)) : undefined;
@@ -170,6 +331,7 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
       .from("bookings")
       .select("id, status, start_time_utc, end_time_utc, staff_id, local_updated_at, rescheduled_at")
       .eq("square_booking_id", b.id)
+      .eq("salon_id", salonId)
       .maybeSingle();
 
     if (existing) {
@@ -321,7 +483,6 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
   // no-op (NailIQ is already cancelled). One failed cancel is logged, not fatal.
   // Shared by the cancel + reschedule reverse passes: index the fetched Square
   // bookings + the "active in Square" set.
-  const ACTIVE_SQUARE = new Set(["ACCEPTED", "PENDING"]);
   const squareById = new Map<string, SquareBooking>();
   for (const b of bookings) squareById.set(b.id, b);
 
@@ -373,24 +534,12 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
   let createdInSquare = 0;
   if (cfg.sync.pushCreate) {
     const MAX_CREATE_PUSH_PER_RUN = 10;
-    // NailIQ service → Square variation (by normalized item name, first match) + version.
-    const varByNorm = new Map<string, { variationId: string; version: number }>();
-    for (const it of items) {
-      const n = norm(it.name);
-      if (varByNorm.has(n)) continue;
-      const v = it.variations.find((x) => typeof x.version === "number");
-      if (v && typeof v.version === "number") varByNorm.set(n, { variationId: v.id, version: v.version });
-    }
-    const svcIdToNorm = new Map<string, string>();
-    for (const s of svcRows ?? []) svcIdToNorm.set(str(s.id), norm(str(s.name)));
-    const staffToTm = new Map<string, string>();
-    for (const s of staffRows ?? []) if (s.square_team_member_id) staffToTm.set(str(s.id), str(s.square_team_member_id));
-
     const { data: toPush } = await db
       .from("bookings")
-      .select("id, service_id, staff_id, client_name, client_phone, client_email, start_time_utc, end_time_utc")
+      .select("id, salon_id, service_id, staff_id, client_name, client_phone, client_email, status, deleted_at, start_time_utc, end_time_utc")
       .eq("salon_id", salonId)
       .is("square_booking_id", null)
+      .is("deleted_at", null)
       .in("status", ["confirmed", "pending"])
       .gt("start_time_utc", now.toISOString())
       .lt("start_time_utc", end.toISOString())
@@ -401,37 +550,90 @@ export async function runSquareForwardSync(salonId: string): Promise<SquareSyncR
         console.error(`[squareSync] create-push cap hit for salon ${salonId} — deferring rest to next run`);
         break;
       }
-      const tmId = r.staff_id ? staffToTm.get(str(r.staff_id)) : undefined;
+      const tmId = r.staff_id ? staffToTeamMember.get(str(r.staff_id)) : undefined;
       if (!tmId) { skipped++; continue; } // staff not linked to a Square team member
-      const svcNorm = r.service_id ? svcIdToNorm.get(str(r.service_id)) : undefined;
-      const variation = svcNorm ? varByNorm.get(svcNorm) : undefined;
+      const svcNorm = r.service_id ? serviceIdToNorm.get(str(r.service_id)) : undefined;
+      const variation = svcNorm ? variationByNorm.get(svcNorm) : undefined;
       if (!variation) { skipped++; continue; } // service not mappable to a Square variation
-      const startMsR = Date.parse(str(r.start_time_utc));
-      const durMin = Math.max(5, Math.round((Date.parse(str(r.end_time_utc)) - startMsR) / 60_000));
+      const snapshot = snapshotFromRow(r, salonId);
+      if (!snapshot) { skipped++; continue; }
+
+      // Persist an exact, PII-free operation before the first provider call.
+      // Once dispatch begins, any ambiguous response is reconciliation-only:
+      // a later cron may prove the provider receipt but may never blind-POST a
+      // second booking under changed local/customer/account material.
+      const claim = await claimSquareBookingWriteback(db, cfg, {
+        bookingId: snapshot.id,
+        serviceId: snapshot.serviceId,
+        serviceMappingBasis: svcNorm!,
+        staffId: snapshot.staffId,
+        status: snapshot.status,
+        startTimeUtc: snapshot.startTimeUtc,
+        endTimeUtc: snapshot.endTimeUtc,
+        teamMemberId: tmId,
+        serviceVariationId: variation.variationId,
+        serviceVariationVersion: variation.version,
+        clientName: str(r.client_name) || null,
+        clientPhone: str(r.client_phone) || null,
+        clientEmail: str(r.client_email) || null,
+      });
+      let customerId: string | null = null;
+      let created: { id: string; version: number } | null = null;
+      let failureCode = "square_writeback_dispatch_failed";
       try {
-        const customerId = await ensureSquareCustomer(cfg, {
-          name: str(r.client_name) || null,
-          phone: str(r.client_phone) || null,
-          email: str(r.client_email) || null,
-          referenceId: `booking:${str(r.id)}`,
-          idempotencyKey: `sqcust:${str(r.id)}`,
+        const dispatch = await beginSquareBookingWritebackDispatch(db, cfg, claim);
+        failureCode = "square_customer_resolution_unknown";
+        customerId = await ensureSquareCustomer(cfg, {
+          name: dispatch.clientName || null,
+          phone: dispatch.clientPhone,
+          email: dispatch.clientEmail,
+          referenceId: dispatch.customerReferenceId,
+          idempotencyKey: dispatch.material.customerIdempotencyKey,
         });
-        const created = await createSquareBooking(cfg, {
-          startAtIso: new Date(startMsR).toISOString(),
+        failureCode = "square_customer_receipt_write_failed";
+        await recordSquareBookingWritebackCustomer(db, dispatch, customerId);
+        failureCode = "square_booking_create_outcome_unknown";
+        created = await createSquareBooking(cfg, {
+          startAtIso: new Date(Date.parse(dispatch.material.startTimeUtc)).toISOString(),
           customerId,
-          teamMemberId: tmId,
-          serviceVariationId: variation.variationId,
-          serviceVariationVersion: variation.version,
-          durationMinutes: durMin,
-          sellerNote: "Đặt từ NailIQ",
-          idempotencyKey: `create:${str(r.id)}`, // stable → Square dedups a retry
+          teamMemberId: dispatch.material.teamMemberId,
+          serviceVariationId: dispatch.material.serviceVariationId,
+          serviceVariationVersion: dispatch.material.serviceVariationVersion,
+          durationMinutes: dispatch.material.durationMinutes,
+          sellerNote: dispatch.sellerNote,
+          idempotencyKey: dispatch.material.bookingIdempotencyKey,
         });
-        await db.from("bookings").update({ square_booking_id: created.id } as never).eq("id", str(r.id));
-        createdInSquare++;
-      } catch (e) {
-        console.error("[squareSync] create push failed", str(r.id), e);
-        skipped++;
+        failureCode = "square_booking_bind_outcome_unknown";
+        await completeSquareBookingWritebackSuccess(db, dispatch, {
+          providerBookingId: created.id,
+          providerCustomerId: customerId,
+          providerBookingVersion: created.version,
+        });
+      } catch (error) {
+        try {
+          await markSquareBookingWritebackUnknown(
+            db,
+            claim,
+            failureCode,
+            {
+              providerBookingId: created?.id ?? null,
+              providerCustomerId: customerId,
+              providerBookingVersion: created?.version ?? null,
+            },
+          );
+        } catch (markError) {
+          // Response loss here cannot safely downgrade the original failure.
+          // The durable state remains claimed/sending/unknown and the next run
+          // is still reconciliation-only; retain a non-PII diagnostic locally.
+          console.error(
+            "[squareSync] writeback unknown-state receipt failed",
+            snapshot.id,
+            markError instanceof Error ? markError.message : "unknown",
+          );
+        }
+        throw new Error(failureCode, { cause: error });
       }
+      createdInSquare++;
     }
   }
 

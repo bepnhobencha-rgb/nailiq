@@ -155,6 +155,7 @@ describe("superadmin Server Action inventory", () => {
       "announcementsActions.ts",
       "auditLogActions.ts",
       "errorMonitorActions.ts",
+      "guidedSetupQaControlAction.ts",
       "impersonationActions.ts",
       "mfaActions.ts",
       "multiServiceQaControlAction.ts",

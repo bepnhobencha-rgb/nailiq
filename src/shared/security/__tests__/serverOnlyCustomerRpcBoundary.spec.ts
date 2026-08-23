@@ -58,13 +58,15 @@ describe("server-only customer RPC boundary", () => {
   });
 
   it("routes every hardened RPC through a service-role server boundary", () => {
-    const sources = [
+    const delegatedRoutes = [
       "src/app/api/booking/cancel-action/route.ts",
       "src/app/api/booking/reschedule-action/route.ts",
-      "src/app/booking/confirm/page.tsx",
-      "src/app/booking/waitlist-claim/page.tsx",
+      "src/app/api/booking/confirm-action/route.ts",
+    ].map((file) => readFileSync(resolve(process.cwd(), file), "utf8"));
+    const sources = [
       "src/shared/booking/groupMemberRsvpActions.ts",
       "src/shared/booking/partyLinkActions.ts",
+      "src/shared/booking/waitlistClaim.ts",
     ].map((file) =>
       readFileSync(resolve(process.cwd(), file), "utf8"),
     );
@@ -72,14 +74,29 @@ describe("server-only customer RPC boundary", () => {
     for (const source of sources) {
       expect(source).toContain("createServiceRoleClient");
     }
+    expect(delegatedRoutes[0]).toContain("BookingWithManagementCapability");
+    expect(delegatedRoutes[1]).toContain("BookingWithManagementCapability");
+    expect(delegatedRoutes[2]).toContain("bookingManagementCapabilities");
+    const managementCapabilities = readFileSync(
+      resolve(
+        process.cwd(),
+        "src/shared/booking/bookingManagementCapabilities.ts",
+      ),
+      "utf8",
+    );
+    expect(managementCapabilities).toContain("createServiceRoleClient");
 
-    const combined = sources.join("\n");
-    for (const rpc of serverOnlyRpcs.filter(
-      (name) => name !== "cancel_booking_as_customer" && name !== "reschedule_booking_as_customer",
-    )) {
+    const combined = [
+      ...sources,
+      ...delegatedRoutes,
+      managementCapabilities,
+    ].join("\n");
+    for (const rpc of ["claim_party_slot", "update_party_claim_details"]) {
       expect(combined).toContain(`"${rpc}"`);
     }
-    expect(combined).toContain('"cancel_booking_as_customer_with_transition_email"');
-    expect(combined).toContain('"reschedule_booking_as_customer_with_transition_email"');
+    expect(combined).toContain('"claim_waitlist_with_management_capability"');
+    expect(combined).toContain('"confirm_booking_with_management_capability"');
+    expect(combined).toContain('"cancel_booking_with_management_capability"');
+    expect(combined).toContain('"reschedule_booking_with_management_capability"');
   });
 });

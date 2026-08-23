@@ -18,13 +18,21 @@ const migration = readFileSync(
   ),
   "utf8",
 );
+const permissionPolicyMigrations = [
+  migration,
+  readFileSync(
+    resolve(
+      process.cwd(),
+      "supabase/migrations/20260822230102_add_atomic_promo_campaign_drafts.sql",
+    ),
+    "utf8",
+  ),
+].join("\n");
 const schemaParity = readFileSync(
   resolve(process.cwd(), "scripts/check-schema-parity.ts"),
   "utf8",
 );
 const customerOutreachSources = [
-  "src/shared/winback/agentWinback.ts",
-  "src/shared/winback/agentRebook.ts",
   "src/shared/ai/agentVipCare.ts",
   "src/shared/firstvisit/agentFirstVisit.ts",
   "src/app/api/cron/reminders/route.ts",
@@ -89,7 +97,7 @@ describe("AI agent activation boundary", () => {
 
   it("keeps the database impact policy aligned with the application allowlist", () => {
     for (const [flagKey, impact] of Object.entries(AI_AGENT_IMPACT)) {
-      expect(migration).toContain(
+      expect(permissionPolicyMigrations).toContain(
         `when '${flagKey}' then '${impact}'`,
       );
     }

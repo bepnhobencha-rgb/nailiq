@@ -21,7 +21,7 @@ export default function PrivacyPage() {
         <h1 className="mt-8 text-3xl font-semibold tracking-tight md:text-4xl">
           Privacy Policy
         </h1>
-        <p className="mt-2 text-sm text-nq-muted">Last updated: May 2026</p>
+        <p className="mt-2 text-sm text-nq-muted">Last updated: August 22, 2026</p>
 
         <div className="mt-10 space-y-8 text-base leading-relaxed text-nq-foreground/90">
           <section>
@@ -54,6 +54,11 @@ export default function PrivacyPage() {
                 Account activity: sign-in events and basic usage logs needed
                 for security and reliability.
               </li>
+              <li>
+                Optional analytics: after you opt in, coarse page categories
+                and booking-flow milestones such as service selected, time
+                selected, confirmation reached, completion, or abandonment.
+              </li>
             </ul>
           </section>
 
@@ -62,10 +67,35 @@ export default function PrivacyPage() {
               Why we collect it
             </h2>
             <p className="mt-3">
-              We use this information solely to provide the booking and
-              walk-in queue service: showing your booking page to clients,
-              confirming appointments, displaying the live receptionist
-              dashboard, and enabling sign-in.
+              We use this information to provide the booking and walk-in queue
+              service: showing your booking page to clients, confirming
+              appointments, displaying the live receptionist dashboard, and
+              enabling sign-in. If you separately opt in to analytics, we also
+              use aggregate funnel milestones to identify confusing or broken
+              steps and improve the service.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-semibold text-nq-foreground">
+              Optional analytics and your choice
+            </h2>
+            <p className="mt-3">
+              Google Analytics is not loaded until you choose Allow. NailIQ
+              does not attach your name, phone number, email, booking notes,
+              form contents, salon identifier, full page path, query string, or
+              referral URL to analytics events. Routes are grouped into broad
+              categories and booking events use a fixed, minimal allowlist.
+              Advertising signals and ad-personalization signals are disabled.
+              NailIQ does not map the analytics browser identifier to booking,
+              customer, salon, or account records. Google may process browser,
+              device, and network information as the analytics provider.
+            </p>
+            <p className="mt-3">
+              You may decline without losing any booking or dashboard feature.
+              You may also change or withdraw your choice at any time with the
+              Privacy choices control shown on the site when analytics is
+              configured.
             </p>
           </section>
 
@@ -120,11 +150,11 @@ export default function PrivacyPage() {
             </h2>
             <p className="mt-3">
               NailIQ does not sell, rent, or share salon or client data with
-              third parties for marketing. The only third parties involved
-              are infrastructure providers strictly required to run the
-              service (Supabase for storage, Twilio for SMS, Vercel for
-              hosting, Resend for email, and the configured AI providers for
-              explicitly enabled AI features). Runtime errors are stored by
+              third parties for marketing. Service providers include Supabase
+              for storage, Twilio for SMS, Vercel for hosting, Resend for email,
+              and configured AI providers for explicitly enabled AI features.
+              Google Analytics receives only the limited events described
+              above, and only after opt-in. Runtime errors are stored by
               NailIQ&apos;s internal monitor after identifiers are redacted.
             </p>
           </section>

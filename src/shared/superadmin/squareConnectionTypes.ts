@@ -28,6 +28,7 @@ export type SquareConnectError =
   | "token_expired"
   | "token_revoked"
   | "client_disabled"
+  | "credential_identity_mismatch"
   | "insufficient_scopes"
   | "square_forbidden"
   | "square_unavailable"

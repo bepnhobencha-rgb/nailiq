@@ -3,6 +3,9 @@
 import { CheckCircle, XCircle, Clock, AlertTriangle } from "lucide-react";
 
 import { ApprovalDecisionButtons } from "@/components/dashboard/ApprovalDecisionButtons";
+import { PromoCampaignDraftEditor } from "@/components/dashboard/PromoCampaignDraftEditor";
+import { ReactivationCampaignDraftEditor } from "@/components/dashboard/ReactivationCampaignDraftEditor";
+import { ReviewReplyDraftEditor } from "@/components/dashboard/ReviewReplyDraftEditor";
 import { approvalDecisionProvenance } from "@/shared/ai/approvalDecisionPresentation";
 import { approvalExecutionPresentation } from "@/shared/ai/approvalExecutionPresentation";
 import type { ApprovalDisplayRow } from "@/shared/ai/approvalRequests";
@@ -115,6 +118,59 @@ function PendingCard({
         {req.summary}
       </p>
 
+      {req.review_reply_draft ? (
+        <div className="mb-4 rounded-xl border border-nq-border/60 bg-nq-muted/5 p-3">
+          <p className="mb-1 text-xs font-semibold text-nq-foreground">
+            Google · {"★".repeat(req.review_reply_draft.rating)} ·{" "}
+            {req.review_reply_draft.reviewer_name}
+          </p>
+          <p className="mb-3 text-sm italic leading-relaxed text-nq-muted">
+            “{req.review_reply_draft.review_excerpt || "Không có nội dung chữ."}”
+          </p>
+          <ReviewReplyDraftEditor
+            slug={slug}
+            approvalId={req.id}
+            initialDraft={req.review_reply_draft.draft_reply}
+          />
+        </div>
+      ) : null}
+
+      {req.promo_campaign_draft ? (
+        <div className="mb-4 rounded-xl border border-nq-border/60 bg-nq-muted/5 p-3">
+          <p className="mb-1 text-xs font-semibold text-nq-foreground">
+            Ý tưởng chiến dịch · {req.promo_campaign_draft.title}
+          </p>
+          <p className="mb-3 text-xs leading-relaxed text-nq-muted">
+            {req.promo_campaign_draft.reasoning}
+          </p>
+          <PromoCampaignDraftEditor
+            slug={slug}
+            approvalId={req.id}
+            initialMessage={req.promo_campaign_draft.message}
+            initialOfferFactsConfirmed={
+              req.promo_campaign_draft.offer_facts_confirmed
+            }
+          />
+        </div>
+      ) : null}
+
+      {req.reactivation_campaign_draft ? (
+        <div className="mb-4 rounded-xl border border-nq-border/60 bg-nq-muted/5 p-3">
+          <p className="mb-1 text-xs font-semibold text-nq-foreground">
+            {req.reactivation_campaign_draft.kind === "winback"
+              ? "Win-back"
+              : "Rebook"}{" "}
+            · {req.reactivation_campaign_draft.title}
+          </p>
+          <ReactivationCampaignDraftEditor
+            slug={slug}
+            approvalId={req.id}
+            initialMessageEn={req.reactivation_campaign_draft.message_en}
+            initialMessageVi={req.reactivation_campaign_draft.message_vi}
+          />
+        </div>
+      ) : null}
+
       <ApprovalDecisionButtons slug={slug} approvalId={req.id} />
     </div>
   );
@@ -155,10 +211,14 @@ function DecidedRow({
   executionJobsAvailable: boolean;
 }) {
   const provenance = approvalDecisionProvenance(req, "vi");
-  const missingApprovedExecution =
+  const approvedExecutionMissing =
     req.status === "approved" && executionJobsAvailable && !job;
-  const unavailableApprovedExecution =
+  const approvedExecutionUnavailable =
     req.status === "approved" && !executionJobsAvailable;
+  const missingApprovedExecution =
+    req.execution_required && approvedExecutionMissing;
+  const unavailableApprovedExecution =
+    req.execution_required && approvedExecutionUnavailable;
   return (
     <div className="flex flex-col gap-1.5 border-b border-nq-border/40 py-3 last:border-0">
       <div className="flex flex-wrap items-center gap-2">

@@ -1,13 +1,15 @@
+import { createHash } from "node:crypto";
+
 import { expect, test, type Page } from "@playwright/test";
 import {
   cleanupTestSalon,
   cleanupTestUser,
+  configureTestGuidedAdminSetup,
   getRegisteredSalonForUser,
   prepareTestSalonForGuidedSetup,
   seedTestSalon,
   seedTestSalonMember,
   seedTestUser,
-  setTestSalonFeatureFlags,
 } from "./helpers/db";
 import { createServiceRoleClient } from "../src/shared/lib/supabase/serviceRole";
 
@@ -22,14 +24,25 @@ let completeReceptionist:
   | Awaited<ReturnType<typeof seedTestSalonMember>>
   | undefined;
 let completeSalonId: string | undefined;
+let resumeSalonId: string | undefined;
+let surfacesSalonId: string | undefined;
+let activeGuidedSalonId: string | undefined;
 let legacyOwner: Awaited<ReturnType<typeof seedTestSalonMember>> | undefined;
 let surfacesAdmin: Awaited<ReturnType<typeof seedTestSalonMember>> | undefined;
+
+async function isolateAuthRateLimitBucket(page: Page, email: string) {
+  const digest = createHash("sha256").update(email).digest("hex");
+  await page.setExtraHTTPHeaders({
+    "x-forwarded-for": `2001:db8::${digest.slice(0, 4)}:${digest.slice(4, 8)}`,
+  });
+}
 
 async function loginAs(
   page: Page,
   account: { email: string; password: string },
 ) {
-  await page.goto("/register");
+  await isolateAuthRateLimitBucket(page, account.email);
+  await gotoAfterSignIn(page, "/register");
   await expect(page.getByTestId("social-auth-controls")).toHaveAttribute(
     "data-hydrated",
     "true",
@@ -38,6 +51,42 @@ async function loginAs(
   await page.locator('input[type="password"]').fill(account.password);
   await page.getByRole("button", { name: /^sign in$/i }).click();
   await page.waitForURL(/\/dashboard\//, { timeout: 30_000 });
+}
+
+async function signInForDirectRoute(
+  page: Page,
+  account: { email: string; password: string },
+) {
+  await isolateAuthRateLimitBucket(page, account.email);
+  await gotoAfterSignIn(page, "/register");
+  await expect(page.getByTestId("social-auth-controls")).toHaveAttribute(
+    "data-hydrated",
+    "true",
+  );
+  await page.locator('input[inputmode="email"]').fill(account.email);
+  await page.locator('input[type="password"]').fill(account.password);
+  await page.getByRole("button", { name: /^sign in$/i }).click();
+  await page.waitForURL(/\/(?:dashboard\/|register\/setup)/, {
+    timeout: 30_000,
+  });
+}
+
+async function gotoAfterSignIn(page: Page, path: string) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await page.goto(path);
+      return;
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        (!error.message.includes("ERR_ABORTED") &&
+          !error.message.includes("interrupted by another navigation"))
+      ) {
+        throw error;
+      }
+    }
+  }
+  await page.goto(path);
 }
 
 async function recordSafeGuidedAttestations(page: Page) {
@@ -98,8 +147,8 @@ test.describe("Guided Admin Setup", () => {
       slug: RESUME_SLUG,
       name: "Guided Resume Test Salon",
       phone: "15553334001",
-      feature_flags: { guided_admin_setup_enabled: true },
     });
+    resumeSalonId = resumeSalon.salonId;
     // `seedTestSalon` intentionally creates a broadly usable fixture for the
     // rest of the suite. Guided Setup needs a genuinely incomplete starting
     // point so its percentage is certified from saved readiness data instead
@@ -118,7 +167,6 @@ test.describe("Guided Admin Setup", () => {
       slug: COMPLETE_SLUG,
       name: "Guided Complete Test Salon",
       phone: "15553334002",
-      feature_flags: { guided_admin_setup_enabled: true },
     });
     completeSalonId = completeSalon.salonId;
     await prepareTestSalonForGuidedSetup(completeSalon.salonId);
@@ -139,10 +187,17 @@ test.describe("Guided Admin Setup", () => {
       slug: SURFACES_SLUG,
       name: "Guided Setup Surfaces Test Salon",
       phone: "15553334004",
-      feature_flags: { guided_admin_setup_enabled: true },
     });
+    surfacesSalonId = surfacesSalon.salonId;
     await prepareTestSalonForGuidedSetup(surfacesSalon.salonId);
     surfacesAdmin = await seedTestSalonMember(surfacesSalon.salonId, "admin");
+  });
+
+  test.afterEach(async () => {
+    if (activeGuidedSalonId) {
+      await configureTestGuidedAdminSetup(activeGuidedSalonId, false);
+      activeGuidedSalonId = undefined;
+    }
   });
 
   test.afterAll(async () => {
@@ -166,6 +221,7 @@ test.describe("Guided Admin Setup", () => {
     const salonName = `E2E Guided Registration ${owner.userId.slice(0, 8)}`;
 
     try {
+      await isolateAuthRateLimitBucket(page, owner.email);
       await page.goto("/register");
       await expect(page.getByTestId("social-auth-controls")).toHaveAttribute(
         "data-hydrated",
@@ -178,12 +234,18 @@ test.describe("Guided Admin Setup", () => {
         timeout: 15_000,
       });
 
-      await page.locator("#register-setup-salon-name").fill(salonName);
-      await page
-        .getByRole("button", {
-          name: /create your booking page|tạo trang đặt lịch/i,
-        })
-        .click();
+      // The auth redirect can update the URL before the App Router finishes
+      // committing the setup page. Wait for that navigation to settle so a
+      // late RSC commit cannot replace the controlled input after `fill()`.
+      await page.waitForLoadState("networkidle");
+      const salonNameInput = page.locator("#register-setup-salon-name");
+      await salonNameInput.fill(salonName);
+      await expect(salonNameInput).toHaveValue(salonName);
+      const createBookingPage = page.getByRole("button", {
+        name: /create your booking page|tạo trang đặt lịch/i,
+      });
+      await expect(createBookingPage).toBeEnabled();
+      await createBookingPage.click();
       await expect(page).toHaveURL(/\/register\/success\?/, {
         timeout: 30_000,
       });
@@ -199,9 +261,8 @@ test.describe("Guided Admin Setup", () => {
 
       // Emulate the audited SuperAdmin pilot toggle only after this throwaway
       // salon exists. The feature remains default-OFF for every real salon.
-      await setTestSalonFeatureFlags(registration.salon.id, {
-        guided_admin_setup_enabled: true,
-      });
+      await configureTestGuidedAdminSetup(registration.salon.id, true);
+      activeGuidedSalonId = registration.salon.id;
 
       await page
         .getByRole("button", {
@@ -243,8 +304,12 @@ test.describe("Guided Admin Setup", () => {
     page,
   }) => {
     if (!resumeOwner) throw new Error("resume owner fixture missing");
+    if (!resumeSalonId) throw new Error("resume salon fixture missing");
+    await configureTestGuidedAdminSetup(resumeSalonId, true);
+    activeGuidedSalonId = resumeSalonId;
 
-    await loginAs(page, resumeOwner);
+    await signInForDirectRoute(page, resumeOwner);
+    await gotoAfterSignIn(page, `/dashboard/${RESUME_SLUG}/setup`);
     await expect(page).toHaveURL(
       new RegExp(`/dashboard/${RESUME_SLUG}/setup$`),
     );
@@ -339,7 +404,8 @@ test.describe("Guided Admin Setup", () => {
     );
 
     await page.context().clearCookies();
-    await loginAs(page, resumeOwner);
+    await signInForDirectRoute(page, resumeOwner);
+    await gotoAfterSignIn(page, `/dashboard/${RESUME_SLUG}/setup`);
     await expect(page).toHaveURL(
       new RegExp(`/dashboard/${RESUME_SLUG}/setup$`),
     );
@@ -357,8 +423,11 @@ test.describe("Guided Admin Setup", () => {
   }) => {
     if (!completeOwner) throw new Error("complete owner fixture missing");
     if (!completeSalonId) throw new Error("complete salon fixture missing");
+    await configureTestGuidedAdminSetup(completeSalonId, true);
+    activeGuidedSalonId = completeSalonId;
 
-    await loginAs(page, completeOwner);
+    await signInForDirectRoute(page, completeOwner);
+    await gotoAfterSignIn(page, `/dashboard/${COMPLETE_SLUG}/setup`);
     await expect(page).toHaveURL(
       new RegExp(`/dashboard/${COMPLETE_SLUG}/setup$`),
       { timeout: 30_000 },
@@ -447,9 +516,12 @@ test.describe("Guided Admin Setup", () => {
       throw new Error("complete receptionist fixture missing");
     }
     if (!legacyOwner) throw new Error("legacy owner fixture missing");
+    if (!completeSalonId) throw new Error("complete salon fixture missing");
+    await configureTestGuidedAdminSetup(completeSalonId, true);
+    activeGuidedSalonId = completeSalonId;
 
-    await loginAs(page, completeReceptionist);
-    await page.goto(`/dashboard/${COMPLETE_SLUG}/setup/preview`);
+    await signInForDirectRoute(page, completeReceptionist);
+    await gotoAfterSignIn(page, `/dashboard/${COMPLETE_SLUG}/setup/preview`);
     await expect(page).not.toHaveURL(
       new RegExp(`/dashboard/${COMPLETE_SLUG}/setup/preview$`),
     );
@@ -473,8 +545,8 @@ test.describe("Guided Admin Setup", () => {
   }) => {
     if (!legacyOwner) throw new Error("legacy owner fixture missing");
 
-    await loginAs(page, legacyOwner);
-    await page.goto(`/dashboard/${LEGACY_SLUG}/setup/address`);
+    await signInForDirectRoute(page, legacyOwner);
+    await gotoAfterSignIn(page, `/dashboard/${LEGACY_SLUG}/setup/address`);
     await expect(
       page.locator(
         `header a[href="/dashboard/${LEGACY_SLUG}"]`,
@@ -491,8 +563,12 @@ test.describe("Guided Admin Setup", () => {
     page,
   }) => {
     if (!surfacesAdmin) throw new Error("surfaces admin fixture missing");
+    if (!surfacesSalonId) throw new Error("surfaces salon fixture missing");
+    await configureTestGuidedAdminSetup(surfacesSalonId, true);
+    activeGuidedSalonId = surfacesSalonId;
 
-    await loginAs(page, surfacesAdmin);
+    await signInForDirectRoute(page, surfacesAdmin);
+    await gotoAfterSignIn(page, `/dashboard/${SURFACES_SLUG}/setup`);
     await expect(page).toHaveURL(
       new RegExp(`/dashboard/${SURFACES_SLUG}/setup$`),
       { timeout: 30_000 },
@@ -537,18 +613,18 @@ test.describe("Guided Admin Setup", () => {
 
     await expect(
       page.getByTestId("guided-setup-step-integrations"),
-    ).toContainText(/Skipped for now|Đã bỏ qua/i);
+    ).toContainText(/Skipped(?: for now)?|Đã bỏ qua/i);
     const progressBefore = await page
       .getByRole("progressbar")
       .getAttribute("aria-valuenow");
 
-    await page.goto(`/dashboard/${SURFACES_SLUG}/setup/hours`);
+    await gotoAfterSignIn(page, `/dashboard/${SURFACES_SLUG}/setup/hours`);
     await page.getByTestId("hours-preset-standard").click();
     await page.getByTestId("hours-holiday-2026-12-25").click();
     await page.getByRole("button", { name: /Save all|Lưu tất cả/i }).click();
     await expect(page.getByText(/Hours saved|Đã lưu giờ/i)).toBeVisible();
 
-    await page.goto(`/dashboard/${SURFACES_SLUG}/setup/staff`);
+    await gotoAfterSignIn(page, `/dashboard/${SURFACES_SLUG}/setup/staff`);
     await expect(page.getByText("Jenny", { exact: true })).toBeVisible();
     await expect(page.getByText(/Nail tech|Thợ nail|Thợ phụ/i)).toBeVisible();
     await expect(
@@ -564,7 +640,7 @@ test.describe("Guided Admin Setup", () => {
     await page.reload();
     await expect(page.getByText("Jenny QA", { exact: true })).toBeVisible();
 
-    await page.goto(`/dashboard/${SURFACES_SLUG}/setup/services`);
+    await gotoAfterSignIn(page, `/dashboard/${SURFACES_SLUG}/setup/services`);
     await expect(page.getByText("Gel Manicure", { exact: true })).toBeVisible();
     await expect(page.getByText(/\$45(?:\.00)?/).first()).toBeVisible();
     await expect(
@@ -593,28 +669,32 @@ test.describe("Guided Admin Setup", () => {
       timeout: 15_000,
     });
 
-    await page.goto(`/dashboard/${SURFACES_SLUG}/no-show-protection`);
-    await expect(page.getByTestId("policy-en")).toHaveValue(
+    await gotoAfterSignIn(
+      page,
+      `/dashboard/${SURFACES_SLUG}/no-show-protection`,
+    );
+    await expect(page.getByTestId("guided-policy-en")).toHaveValue(
       "Please contact the salon before cancelling or rescheduling.",
     );
-    await expect(page.getByTestId("policy-vi")).toHaveValue(
+    await expect(page.getByTestId("guided-policy-vi")).toHaveValue(
       "Vui lòng liên hệ salon trước khi huỷ hoặc đổi lịch.",
     );
-    await expect(page.getByTestId("booking-policy-coverage")).toBeVisible();
-    await expect(page.getByTestId("booking-policy-group-status")).toContainText(
+    await expect(page.getByTestId("guided-booking-policy-only")).toBeVisible();
+    await expect(page.getByTestId("guided-policy-group-status")).toContainText(
       /optional|không bắt buộc/i,
     );
     await expect(
-      page.getByTestId("booking-policy-after-hours-status"),
+      page.getByTestId("guided-policy-after-hours-status"),
     ).toContainText(/Owner\/Admin|Owner|Admin/i);
     // This fixture is an Admin. It can review and configure salon policy. The
     // whole-party control is conditional on no-show protection being enabled;
     // the late-cancellation window remains visible for policy review.
     await expect(page.getByTestId("noshow-whole-party-toggle")).toHaveCount(0);
-    await expect(page.getByTestId("self-cancel-fee-toggle")).toBeVisible();
-    await expect(page.getByTestId("self-cancel-window-hours")).toBeVisible();
+    await expect(page.getByTestId("self-cancel-fee-toggle")).toHaveCount(0);
+    await expect(page.getByTestId("self-cancel-window-hours")).toHaveCount(0);
 
-    await page.goto(
+    await gotoAfterSignIn(
+      page,
       `/dashboard/${SURFACES_SLUG}/settings?section=notifications`,
     );
     await expect(
@@ -643,18 +723,18 @@ test.describe("Guided Admin Setup", () => {
     await expect(page.getByTestId("staff-notif-locale-vi")).toBeChecked();
 
     for (const [, href] of destinations.slice(0, 8)) {
-      await page.goto(href);
+      await gotoAfterSignIn(page, href);
       await expect(page.getByTestId("guided-setup-return-card")).toBeVisible();
     }
 
-    await page.goto(`/dashboard/${SURFACES_SLUG}/setup/preview`);
+    await gotoAfterSignIn(page, `/dashboard/${SURFACES_SLUG}/setup/preview`);
     await expect(page.getByTestId("guided-booking-preview")).toContainText(
       /Side-effect-free booking preview|Preview booking không tạo side effect/i,
     );
     await expect(page.getByTestId("guided-open-public-booking")).toHaveCount(0);
     await expect(page.getByTestId("guided-preview-continue")).toHaveCount(0);
 
-    await page.goto(`/dashboard/${SURFACES_SLUG}/setup`);
+    await gotoAfterSignIn(page, `/dashboard/${SURFACES_SLUG}/setup`);
     await expect(page.getByRole("progressbar")).toHaveAttribute(
       "aria-valuenow",
       progressBefore ?? "",

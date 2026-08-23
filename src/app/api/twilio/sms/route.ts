@@ -17,7 +17,7 @@
  * outbound sender (kill-switch + opt-out), and we return empty TwiML.
  */
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProviderPolicy";
 import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getTwilioAuthToken, validateTwilioSignature, twilioRequestBaseUrl } from "@/shared/lib/twilioSignature";
@@ -147,7 +147,7 @@ export async function POST(req: NextRequest) {
   const system = buildSystemPrompt(ctx, lang) + SMS_CHANNEL_NOTE;
   const tools = toAnthropicTools(REALTIME_TOOLS as unknown as RealtimeToolSchema[]);
 
-  const ai = new Anthropic({ apiKey });
+  const ai = createTextBackgroundAnthropicClient(apiKey);
   const complete: LlmComplete = async ({ system: sys, tools: t, messages }) => {
     const resp = await trackAnthropicMessage(
       {

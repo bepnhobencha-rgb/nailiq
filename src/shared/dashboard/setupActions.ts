@@ -51,6 +51,7 @@ import {
 import type { SalonMemberRole } from "@/shared/lib/salonMemberRole";
 import { normaliseToE164 } from "@/shared/lib/twilioSms";
 import { trackAnthropicFetch } from "@/shared/ai/usageLedger";
+import { AI_TEXT_BACKGROUND_TIMEOUT_MS } from "@/shared/ai/anthropicProviderPolicy";
 import {
   isSupportedLanguage,
   normalizeAllowedLanguages,
@@ -261,6 +262,7 @@ async function generateServiceDescription(
         model: ANTHROPIC_DESCRIPTION_MODEL,
       },
       () => fetch("https://api.anthropic.com/v1/messages", {
+        signal: AbortSignal.timeout(AI_TEXT_BACKGROUND_TIMEOUT_MS),
         method: "POST",
         headers: {
           "x-api-key": anthropicKey,
@@ -1026,6 +1028,46 @@ export async function addStaff(
 
 export type StaffStatus = "active" | "pending" | "inactive";
 
+const LIVE_STAFF_ASSIGNMENT_STATUSES = [
+  "pending",
+  "confirmed",
+  "in_progress",
+  "waiting",
+] as const;
+
+async function loadLiveStaffAssignmentState(
+  supabase: WritableSupabase,
+  salonId: string,
+  staffId: string,
+): Promise<{ hasAssignments: boolean } | null> {
+  const [parentResult, segmentResult] = await Promise.all([
+    supabase
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("salon_id", salonId)
+      .eq("staff_id", staffId)
+      .is("deleted_at", null)
+      .in("status", [...LIVE_STAFF_ASSIGNMENT_STATUSES]),
+    supabase
+      .from("booking_service_segments")
+      .select("id", { count: "exact", head: true })
+      .eq("salon_id", salonId)
+      .eq("staff_id", staffId)
+      .in("reservation_status", [...LIVE_STAFF_ASSIGNMENT_STATUSES]),
+  ]);
+  if (parentResult.error || segmentResult.error) {
+    console.error("[loadLiveStaffAssignmentState]", {
+      parent: parentResult.error,
+      segment: segmentResult.error,
+    });
+    return null;
+  }
+  return {
+    hasAssignments:
+      (parentResult.count ?? 0) > 0 || (segmentResult.count ?? 0) > 0,
+  };
+}
+
 export async function updateStaff(
   slug: string,
   staffId: string,
@@ -1080,30 +1122,23 @@ export async function updateStaff(
 
   if (!mine?.id) return fail("not_found");
 
-  // Guard: changing an active staff to ANY non-active state strands their
-  // current/future appointments. (Previously active→pending bypassed the
-  // inactive-only guard and silently hid the staff from the schedule.)
-  // "Active" booking statuses
-  // (pending/confirmed/in_progress/waiting) are unresolved by definition —
-  // i.e. current or upcoming — so the front desk must reassign them first.
+  // Active staff must leave through the sequence-aware atomic offboarding RPC,
+  // even when this preview sees zero assignments. That RPC owns the locking,
+  // exact replay receipt and final race check. Scan both scheduling models so
+  // legacy pending rows also fail closed instead of being stranded.
   if (
     data.status !== undefined &&
     data.status !== "active" &&
-    mine.status === "active"
+    data.status !== mine.status
   ) {
-    const { count: openBookingCount, error: openBookingErr } = await supabase
-      .from("bookings")
-      .select("id", { count: "exact", head: true })
-      .eq("salon_id", r.salon.id)
-      .eq("staff_id", staffId)
-      .in("status", ["pending", "confirmed", "in_progress", "waiting"]);
-
-    if (openBookingErr) {
-      console.error("[updateStaff] open booking count", openBookingErr);
-      return fail("server_error");
-    }
-    if ((openBookingCount ?? 0) > 0) {
-      return fail("staff_has_upcoming");
+    const liveAssignments = await loadLiveStaffAssignmentState(
+      supabase,
+      r.salon.id,
+      staffId,
+    );
+    if (!liveAssignments) return fail("server_error");
+    if (mine.status === "active" || liveAssignments.hasAssignments) {
+      return fail("staff_offboarding_required");
     }
   }
 
@@ -1182,71 +1217,20 @@ export async function deleteStaff(
 
   if (!mine?.id) return fail("not_found");
 
-  const { count: activeBookingCount, error: bookingCountErr } = await supabase
-    .from("bookings")
-    .select("id", { count: "exact", head: true })
-    .eq("salon_id", r.salon.id)
-    .eq("staff_id", staffId)
-    .in("status", ["pending", "confirmed", "in_progress", "waiting"]);
-
-  if (bookingCountErr) {
-    console.error("[deleteStaff] active booking count", bookingCountErr);
-    return fail("server_error");
-  }
-  if ((activeBookingCount ?? 0) > 0) {
+  const liveAssignments = await loadLiveStaffAssignmentState(
+    supabase,
+    r.salon.id,
+    staffId,
+  );
+  if (!liveAssignments) return fail("server_error");
+  if (liveAssignments.hasAssignments) {
     return fail("staff_has_bookings");
   }
 
-  // See decisions-log.md 2026-05-02: Staff delete detaches terminal bookings
-  // This authorized delete spans private/profile data and protected booking
-  // history. Keep the privileged portion server-only and scope every write to
-  // the already-resolved salon and target staff member.
-  const admin = createServiceRoleClient();
-  const { error: detachErr } = await admin
-    .from("bookings")
-    .update({ staff_id: null })
-    .eq("salon_id", r.salon.id)
-    .eq("staff_id", staffId)
-    .in("status", ["cancelled", "completed"]);
-
-  if (detachErr) {
-    console.error("[deleteStaff] detach terminal bookings", detachErr);
-    return fail("server_error");
-  }
-
-  // client_profiles intentionally denies all direct authenticated API access;
-  // it is only exposed through scoped server actions. Use the server-only
-  // service role for this referential cleanup after owner/admin authorization
-  // and constrain it to the resolved salon as well as the target staff row.
-  const { error: prefErr } = await admin
-    .from("client_profiles")
-    .update({ preferred_staff_id: null })
-    .eq("salon_id", r.salon.id)
-    .eq("preferred_staff_id", staffId);
-
-  if (prefErr) {
-    console.error("[deleteStaff] clear preferred_staff_id", prefErr);
-    return fail("server_error");
-  }
-
-  // Soft delete (2026-05-10): UPDATE deleted_at instead of DELETE so
-  // historical bookings keep a resolvable staff_id and SuperAdmin can
-  // restore. All read paths filter `deleted_at IS NULL`. Cast: column
-  // not yet in the auto-generated DB types.
-  const { error } = await admin
-    .from("staff")
-    .update({ deleted_at: new Date().toISOString() } as never)
-    .eq("id", staffId)
-    .eq("salon_id", r.salon.id)
-    .is("deleted_at", null);
-
-  if (error) {
-    console.error("[deleteStaff]", error);
-    return fail("server_error");
-  }
-
-  await refreshSalonProfileComplete(supabase, r.salon.id);
-  return { ok: true };
+  // Destructive profile removal no longer has an independent mutation path.
+  // The safe UI preserves the profile for audit and routes through the atomic
+  // offboarding assistant. A stale/direct caller must fail closed as well.
+  return fail("staff_offboarding_required");
 }
 
 export async function updateOpeningHours(

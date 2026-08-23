@@ -1147,11 +1147,13 @@ async function executePublicBooking(
     try {
       const { data: depositRows } = await supabase.rpc(
         "get_booking_client_snapshot" as never,
-        // Salon-scoped: only recognizes a phone that has booked at THIS salon,
-        // so the snapshot can't be used as a cross-tenant phone→PII oracle.
+        // Capability-bound: the public overload requires the newly created,
+        // unguessable booking id in addition to the salon and phone. The
+        // two-argument overload is reserved for trusted service-role callers.
         {
           p_salon_id: String(salon.id),
           p_phone: phoneOk.digits,
+          p_booking_id: bookingId,
         } as never,
       );
       const cp = (Array.isArray(depositRows) ? depositRows[0] : null) as {

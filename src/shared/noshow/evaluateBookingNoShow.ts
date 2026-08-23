@@ -1,6 +1,7 @@
 import "server-only";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { ruleFirstOptimizationEnabled } from "@/shared/ai/executionLimit";
+import { isProviderTimeoutError } from "@/shared/ai/usageLedger";
 import { evaluateDeposit } from "@/shared/noshow/evaluateDeposit";
 import { scoreNoShowRisk } from "@/shared/noshow/scoreNoShowRisk";
 import { resolveVertical } from "@/shared/verticals/registry";
@@ -100,6 +101,13 @@ export async function evaluateBookingNoShow(
       }),
     ]);
 
+    if (
+      riskResult.status === "rejected" &&
+      isProviderTimeoutError(riskResult.reason)
+    ) {
+      throw riskResult.reason;
+    }
+
     const riskScore =
       riskResult.status === "fulfilled" ? riskResult.value.score : null;
 
@@ -170,6 +178,7 @@ export async function evaluateBookingNoShow(
         const agent = await runNoShowPolicyAgent(body.bookingId);
         if (agent) cardRequired = agent.cardRequired;
       } catch (e) {
+        if (isProviderTimeoutError(e)) throw e;
         console.error("[evaluateBookingNoShow] policy agent", e);
       }
     }

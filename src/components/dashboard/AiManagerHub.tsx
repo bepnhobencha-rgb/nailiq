@@ -56,9 +56,9 @@ const AGENTS: AgentDef[] = [
     nameEn: "Người Kéo Về — Win-back",
     nameVi: "Người Kéo Về — Kéo khách trở lại",
     descEn:
-      'Automatically sends a capped "we miss you" SMS or email to eligible, consented guests who have not returned in 60+ days.',
+      'Creates one editable EN/VI dashboard draft for lapsed regulars. It never reads recipients or sends messages until separate audience and release reviews, and dispatch remains locked.',
     descVi:
-      'Tự động gửi tối đa theo giới hạn tin SMS hoặc email "tụi mình nhớ bạn" cho khách đủ điều kiện, đã đồng ý nhận tin và trên 60 ngày chưa quay lại.',
+      "Tạo một bản nháp EN/VI trên dashboard cho khách lâu chưa quay lại. Không đọc danh sách khách hoặc gửi tin; audience và phát hành phải duyệt riêng, dispatch vẫn khóa.",
   },
   {
     key: "ai_rebook",
@@ -66,9 +66,9 @@ const AGENTS: AgentDef[] = [
     nameEn: "Nhịp Tim — Rebook nudge",
     nameVi: "Nhịp Tim — Nhắc đặt lại",
     descEn:
-      "Identifies consented regulars due for their next visit and automatically sends a capped SMS or email rebook nudge.",
+      "Creates one editable EN/VI dashboard draft for regulars due to rebook. It never reads recipients or sends messages until separate audience and release reviews, and dispatch remains locked.",
     descVi:
-      "Nhận ra khách quen đã đồng ý nhận tin và đến chu kỳ quay lại, rồi tự động gửi SMS hoặc email nhắc đặt lịch theo giới hạn.",
+      "Tạo một bản nháp EN/VI trên dashboard cho khách đến chu kỳ đặt lại. Không đọc danh sách khách hoặc gửi tin; audience và phát hành phải duyệt riêng, dispatch vẫn khóa.",
   },
   {
     key: "ai_smart_reminders",
@@ -89,6 +89,16 @@ const AGENTS: AgentDef[] = [
       "Drafts Instagram/Facebook captions on Mon/Wed/Fri at 8am based on your recent bookings and seasonal trends.",
     descVi:
       "Soạn caption Instagram/Facebook vào thứ 2/4/6 lúc 8 giờ sáng, dựa trên lịch hẹn gần đây và xu hướng theo mùa.",
+  },
+  {
+    key: "ai_promo_campaign_drafts",
+    icon: "💡",
+    nameEn: "Promo Campaign — Dashboard drafts",
+    nameVi: "Chiến dịch ưu đãi — Chỉ soạn nháp",
+    descEn:
+      "Creates one editable weekly dashboard idea from aggregate salon activity. It never sets discounts, sends messages, posts, or activates promotions.",
+    descVi:
+      "Tạo một ý tưởng nháp mỗi tuần từ dữ liệu tổng hợp của tiệm. Không tự đặt mức giảm, gửi tin, đăng bài hoặc kích hoạt khuyến mãi.",
   },
   {
     key: "ai_vip_care",

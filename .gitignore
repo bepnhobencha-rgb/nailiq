@@ -16,6 +16,7 @@
 /playwright-report/
 /blob-report/
 /test-results/
+/output/
 
 
 # next.js
@@ -57,6 +58,7 @@ next-env.d.ts
 .cursor/
 .aider*
 supabase/.temp/
+supabase/.branches/
 
 # Wix backfill scratch
 tmp/

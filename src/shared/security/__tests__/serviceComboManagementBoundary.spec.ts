@@ -10,7 +10,7 @@ describe("service combo management authorization boundary", () => {
   it("gates the combos page to owner/admin before feature and catalog reads", () => {
     const page = source("src/app/dashboard/[slug]/combos/page.tsx");
     const roleGuard = page.indexOf("if (!isOwnerOrAdmin(ctx.role))");
-    const featureRead = page.indexOf(".from(\"salons\")");
+    const featureRead = page.indexOf("isReleaseFeatureVisible(salon, \"combos\")");
     const comboRead = page.indexOf(".from(\"service_combos\"");
 
     expect(page).toContain('from "@/shared/lib/salonMemberRole"');

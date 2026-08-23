@@ -80,7 +80,6 @@ export const REALTIME_TOOLS = [
         customer_phone: { type: "string", description: "Customer's phone number, including country code if provided." },
         otp_session_id: { type: "string", description: "The otp_session_id from verify_otp for this phone (required unless the caller is already verified). Omit only if a prior tool result said verification is not needed." },
         confirmed_pricing_fingerprint: { type: "string", description: "Second-call only. Copy the exact pricing_fingerprint returned by pricing_confirmation_required only after reading back its exact total/currency and the caller's latest reply is a clear yes. Never invent or reuse it after any booking detail changes." },
-        upsell_accepted: { type: "boolean", description: "Set true ONLY when this booking is the result of the customer accepting your upsell (an upgrade or added service you offered). Leave unset otherwise." },
       },
       required: ["service_id", "date", "time_slot", "staff_id", "customer_name", "customer_phone"],
     },

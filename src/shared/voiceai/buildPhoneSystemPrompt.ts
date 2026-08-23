@@ -62,7 +62,8 @@ export function buildPhoneSystemPrompt(
     const details = service.description
       ? `; salon_details=${JSON.stringify(service.description)}`
       : "";
-    return `- ${service.name}; ${service.durationMins} min; ${price}; id=${service.id}${tags ? `; ${tags}` : ""}${details}`;
+    const category = service.category ? `; category=${JSON.stringify(service.category)}` : "";
+    return `- ${service.name}; ${service.durationMins} min; ${price}; id=${service.id}${category}${tags ? `; ${tags}` : ""}${details}`;
   }).join("\n");
   const staff = ctx.staff.length
     ? ctx.staff.map((member) => `- ${member.name}; id=${member.id}`).join("\n")
@@ -84,13 +85,14 @@ export function buildPhoneSystemPrompt(
     .slice(0, 8)
     .map((service) => service.name);
   const upsellSection = ctx.upsellEnabled ? `
-# Sales checkpoint — required once for a new individual booking
-- After the caller chooses a tentative time but BEFORE the final booking readback, make exactly ONE brief, relevant offer from the real Menu.
-- Offer a related upgrade or single-menu combo. Useful real candidates: ${upsellCandidates.length ? upsellCandidates.join("; ") : "none configured"}.
-- Skip only when no compatible real candidate exists, the caller is in a hurry, or they already chose a premium/combo/add-on. Never invent a discount, promotion, service, price, or availability.
-- Do not offer a separate add-on service: confirm_booking currently saves one menu service. A menu combo such as a mani-pedi is safe because it has one real service_id.
-- If accepted, switch to the accepted service_id and call get_available_slots AGAIN for that service/date/staff. Keep the tentative time only if it is returned; otherwise offer real alternatives.
-- If declined or hesitant, say "No problem" once and continue. Never repeat the offer. Set upsell_accepted=true only after acceptance.
+# Optional upsell checkpoint — at most once for a new individual booking
+- After the caller chooses a tentative service and time, you MAY make ONE brief offer only when a compatible grounded candidate exists. Otherwise skip upselling silently.
+- Compatibility must be grounded by the real Menu: a matching non-empty category or explicit salon_details must support the relationship. Never infer compatibility from a catchy name alone. Possible real candidates: ${upsellCandidates.length ? upsellCandidates.join("; ") : "none configured"}.
+- State the candidate's exact Menu price label and total duration. State added price/time only when both current and candidate fixed Menu values make the subtraction exact. If the Menu says From, a range, Ask for price, or Contact, repeat that honestly; never turn it into a fixed price.
+- Never invent a discount, promotion, benefit, popularity claim, service, price, duration, or availability. Never auto-add or switch a service.
+- Do not offer a separate add-on service: confirm_booking currently saves one menu service. Only a compatible replacement/upgrade/combo with one real service_id is eligible.
+- If the caller clearly accepts, switch to that service_id, call get_available_slots AGAIN for the service/date/staff, and start the two-stage authoritative price confirmation again. Keep the tentative time only if returned.
+- If declined or hesitant, say "No problem" once and continue. That ends upselling for this session. Never repeat the offer.
 ` : "";
   const callerRules = callerPhone
     ? `- Carrier-verified caller number: ${callerPhone}. Do not ask them to recite it.
@@ -146,7 +148,7 @@ ${upsellSection}
    - If it is still unclear, use anyone available for the availability lookup. Never keep looping on staff preference.
    - Never volunteer a staff name merely because it appears in the Staff list. Mention a name only when the caller asks for that person or a returning-customer result identifies their usual staff.
 2. Call get_available_slots; offer two exact returned times. Never invent availability.
-3. After the caller chooses a tentative time, complete the Sales checkpoint when enabled.
+3. After the caller chooses a tentative time, make the optional upsell only when the grounded eligibility rules above are satisfied; otherwise continue without mentioning it.
 4. Read back the final service/date/time/staff and obtain a clear yes.
 5. Call confirm_booking only after that yes. If it returns pricing_confirmation_required, no booking exists yet: read the exact quote total and currency, ask for a new clear yes, then call confirm_booking again with the exact confirmed_pricing_fingerprint. If pricing_changed, repeat with the new quote. If otp_required for a different number, request and verify OTP, then retry once with otp_session_id.
 6. On success, speak the server-confirmed result, ask if anything else is needed, and wait.

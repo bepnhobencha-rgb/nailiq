@@ -5,6 +5,8 @@ import { createVerify } from "node:crypto";
 export const MAX_WIX_WEBHOOK_BYTES = 64 * 1024;
 
 export type ParsedWixWebhookEvent = {
+  eventId: string;
+  eventTime: string;
   entityFqdn: "wix.bookings.v2.booking";
   slug: "created" | "updated" | "confirmed" | "cancelled" | "canceled" | "declined";
   entityId: string;
@@ -79,11 +81,18 @@ export function parseWixWebhookEvent(
   const body = record(parsed);
   if (!body || record(body.data)) return null;
   const entityFqdn = body.entityFqdn;
+  const eventId = body.id;
+  const eventTime = body.eventTime;
   const slug = body.slug;
   const entityId = body.entityId;
   const bodySiteId = body.siteId;
   const siteId = headerSiteId?.trim() ?? "";
   if (
+    typeof eventId !== "string" ||
+    !BOUNDED_ID_RE.test(eventId) ||
+    typeof eventTime !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(eventTime) ||
+    !Number.isFinite(Date.parse(eventTime)) ||
     entityFqdn !== "wix.bookings.v2.booking" ||
     typeof slug !== "string" ||
     !EVENT_SLUGS.has(slug as ParsedWixWebhookEvent["slug"]) ||
@@ -96,7 +105,14 @@ export function parseWixWebhookEvent(
   ) {
     return null;
   }
-  return { entityFqdn, slug: slug as ParsedWixWebhookEvent["slug"], entityId, siteId };
+  return {
+    eventId,
+    eventTime,
+    entityFqdn,
+    slug: slug as ParsedWixWebhookEvent["slug"],
+    entityId,
+    siteId,
+  };
 }
 
 export function verifyWixWebhookSignature(input: {

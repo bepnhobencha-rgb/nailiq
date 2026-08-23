@@ -31,4 +31,18 @@ describe("FinancialEvidencePanel", () => {
     expect(html).toContain("−CA$20.00"); expect(html).toContain("Không khả dụng");
     expect(html).toContain("Tải CSV"); expect(html).toContain("Tải PDF");
   });
+
+  it("labels verified tips and commission as an estimate rather than payroll", () => {
+    const configured = report();
+    configured.totals.tipCents = 800;
+    configured.totals.commissionCents = 1500;
+    configured.coverage.tips = { unit: "evidence", state: "partial", includedRows: 2, excludedRows: 0, reasonCodes: ["tip_sources_not_fully_reconciled"], sourceCounts: { manual_verified: 2 } };
+    configured.coverage.commission = { unit: "evidence", state: "partial", includedRows: 2, excludedRows: 0, reasonCodes: ["commission_estimate_not_payroll"], sourceCounts: { policy_calculation: 2 } };
+    const html = renderToStaticMarkup(<FinancialEvidencePanel slug="qa" language="vi" result={{ ok: true, report: configured, exportToken: "signed" }} />);
+    expect(html).toContain("Tip có bằng chứng");
+    expect(html).toContain("CA$8.00");
+    expect(html).toContain("Hoa hồng ước tính");
+    expect(html).toContain("CA$15.00");
+    expect(html).toContain("không phải bảng lương hay lệnh chi trả");
+  });
 });

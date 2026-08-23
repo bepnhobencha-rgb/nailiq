@@ -31,12 +31,30 @@ import { execFileSync } from "node:child_process";
  * 20260820234500 durable SMS consent suppression contract and the
  * 20260821000752 booking vacation/resource write guard, the
  * 20260821003000 immutable booking-confirmation dispatch envelopes and the
- * 20260821003932 durable staff-action notification outbox. Refresh these with
- * each schema-changing forward migration — they
+ * 20260821003932 durable staff-action notification outbox, the
+ * 20260822001500 privacy-minimal availability revision signal, the
+ * 20260822023000 batch edge-rate-limit function, and the approved
+ * 20260822155809 organization-scoped multi-location contract, plus the
+ * 20260822163246 immutable tip and commission-estimate evidence contract, and
+ * 20260822165659 PII-free Square Loyalty reconciliation mirrors and the
+ * 20260822172547 GAN-free Square Gift Card receipt/activity mirrors, and the
+ * 20260822174938 approved retail-only Square Inventory catalog/count mirrors,
+ * manual mapping decision contract, and provider latest_time cursor state, plus
+ * the 20260822181000 PII-free durable Wix create/lifecycle claim ledgers and
+ * signature-verified webhook event inbox, and the 20260822223532,
+ * 20260822230102, and 20260822234334 dashboard-only review, promo, and
+ * reactivation draft claim contracts, plus the 20260823003401 atomic leased
+ * booking-reminder delivery claim contract, the 20260823011500 explicitly
+ * environment-gated public Square deposit reconciliation discovery, and the
+ * 20260823012836 atomic one-offer-per-salon-session upsell claim contract,
+ * the durable Square booking/staff-offboarding hardening through 20260823037200,
+ * and the hard-OFF 20260823038000 reactivation delivery evidence contract.
+ * Refresh these
+ * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
  */
 const PRODUCTION = {
-  tables: 136,
+  tables: 171,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -54,10 +72,24 @@ const PRODUCTION = {
   // columns (including information_schema-visible generated/view shape).
   // +9 immutable confirmation dispatch envelope columns.
   // +65 staff-action event, delivery, envelope, receipt and ephemeral capture columns.
-  columns: 2033,
-  policies: 182,
+  // +98 availability-revision, organization/location/staff/customer/loyalty,
+  // and financial metric policy/evidence columns, including visible shape.
+  // +42 Square Loyalty account/event/reward reconciliation mirror columns.
+  // +45 Square Gift Card state/receipt and immutable activity mirror columns.
+  // +65 Square Inventory catalog, mapping, count ledger/snapshot and resumable cursor columns.
+  // +20 durable Wix create claim/reconciliation columns.
+  // +20 durable Wix lifecycle claim/reconciliation columns.
+  // +20 signature-verified Wix webhook event inbox columns.
+  // +37 dashboard-only review, promo, and reactivation draft claim/approval columns.
+  // +14 PII-free booking-reminder delivery claim/lease columns.
+  // +11 PII-minimized atomic upsell-session claim columns.
+  // +63 PII-free reactivation delivery/authorization/receipt columns.
+  columns: 2509,
+  // The upsell migration replaces two legacy member-write policies with one
+  // service-role-only immutable claim policy.
+  policies: 198,
   /**
-   * APP functions only — 270 after the rehearsed forward migrations.
+   * APP functions only — refreshed after the rehearsed forward migrations.
    *
    * Counting every `public` function is a trap: many belong to EXTENSIONS
    * (pgcrypto, btree_gist, pg_trgm, uuid-ossp), which production happens to have
@@ -66,10 +98,11 @@ const PRODUCTION = {
    * The query below excludes anything a `pg_depend` extension edge points at,
    * so extension placement cannot distort this release-shape tripwire.
    */
-  functions: 271,
-  triggers: 62,
+  // +1 Square discovery and +2 atomic/immutable upsell claim functions.
+  functions: 353,
+  triggers: 79,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
-  indexes: 466,
+  indexes: 621,
 } as const;
 
 /**
@@ -134,6 +167,39 @@ const CRITICAL_TABLES = [
   "sms_consent_events",
   "sms_consent_provider_states",
   "sms_consent_salon_states",
+  "salon_availability_revisions",
+  "salon_organizations",
+  "salon_organization_members",
+  "salon_organization_locations",
+  "organization_staff",
+  "organization_staff_locations",
+  "organization_client_consents",
+  "organization_loyalty_programs",
+  "organization_loyalty_accounts",
+  "organization_loyalty_events",
+  "salon_financial_metric_policies",
+  "booking_financial_metric_evidence",
+  "square_loyalty_account_mirrors",
+  "square_loyalty_event_mirrors",
+  "square_loyalty_reward_mirrors",
+  "square_gift_card_mirrors",
+  "square_gift_card_activity_mirrors",
+  "square_inventory_catalog_variation_mirrors",
+  "square_inventory_retail_mappings",
+  "square_inventory_count_event_mirrors",
+  "square_inventory_count_mirrors",
+  "square_inventory_catalog_sync_state",
+  "wix_create_writeback_operations",
+  "wix_lifecycle_writeback_operations",
+  "wix_webhook_event_inbox",
+  "review_reply_draft_claims",
+  "promo_campaign_draft_claims",
+  "reactivation_campaign_draft_claims",
+  "booking_reminder_delivery_claims",
+  "ai_upsell_session_claims",
+  "reactivation_campaign_deliveries",
+  "reactivation_campaign_dispatch_authorizations",
+  "reactivation_campaign_delivery_receipts",
 ] as const;
 
 /** Booking cannot work without these; a missing RPC fails at runtime, not at apply time. */
@@ -250,6 +316,7 @@ const CRITICAL_FUNCTIONS = [
   "resume_public_deposit_customer_confirmation",
   "bind_public_deposit_payment_operation",
   "discover_due_booking_payment_reconciliations",
+  "discover_due_public_square_deposit_reconciliations",
   "discover_due_unbound_deposit_compensations",
   "claim_due_unbound_deposit_refund",
   "load_late_cancel_refund_material",
@@ -293,6 +360,64 @@ const CRITICAL_FUNCTIONS = [
   "inspect_sms_consent_event",
   "load_sms_outbound_suppression",
   "enforce_booking_operational_capacity_guard",
+  "bump_salon_availability_revision",
+  "rate_limit_hit_many",
+  "protect_organization_staff_location",
+  "enforce_organization_staff_time_available",
+  "enforce_organization_staff_booking_capacity",
+  "enforce_organization_staff_segment_capacity",
+  "create_salon_organization",
+  "list_organization_clients",
+  "apply_organization_loyalty_event",
+  "get_organization_booking_report",
+  "load_authoritative_financial_report_base_v2",
+  "reject_financial_metric_evidence_mutation",
+  "configure_salon_financial_metric_policy",
+  "record_booking_tip_evidence",
+  "calculate_booking_commission_evidence",
+  "record_booking_financial_metric_reversal",
+  "reject_square_loyalty_event_mutation",
+  "bind_square_loyalty_subject",
+  "apply_square_loyalty_webhook_event",
+  "reject_square_gift_card_activity_mutation",
+  "bind_square_gift_card_issuance",
+  "apply_square_gift_card_webhook_event",
+  "reject_square_inventory_count_event_mutation",
+  "confirm_square_inventory_retail_mapping",
+  "apply_square_inventory_catalog_page",
+  "apply_square_inventory_webhook_event",
+  "reconcile_stale_square_inventory_catalog_operations",
+  "resolve_wix_create_writeback_material",
+  "claim_wix_create_writeback",
+  "complete_wix_create_writeback",
+  "resolve_wix_lifecycle_writeback_material",
+  "claim_wix_lifecycle_writeback",
+  "complete_wix_lifecycle_writeback",
+  "record_wix_webhook_event",
+  "claim_wix_webhook_event",
+  "complete_wix_webhook_event",
+  "claim_review_reply_draft",
+  "complete_review_reply_draft",
+  "fail_review_reply_draft",
+  "update_review_reply_draft_as_actor",
+  "claim_promo_campaign_draft",
+  "complete_promo_campaign_draft",
+  "fail_promo_campaign_draft",
+  "update_promo_campaign_draft_as_actor",
+  "create_reactivation_campaign_draft",
+  "update_reactivation_campaign_draft_as_actor",
+  "marketing_rebook_audience_candidates",
+  "record_reactivation_campaign_manifest",
+  "claim_booking_reminder_delivery",
+  "complete_booking_reminder_delivery",
+  "reject_ai_upsell_session_claim_mutation",
+  "claim_ai_upsell_offer",
+  "materialize_reactivation_campaign_deliveries",
+  "bind_reactivation_campaign_delivery_material",
+  "claim_reactivation_campaign_deliveries",
+  "complete_reactivation_campaign_delivery",
+  "record_reactivation_campaign_delivery_receipt",
+  "reconcile_stale_reactivation_campaign_deliveries",
 ] as const;
 
 const dbUrl = process.env.DB_URL;
@@ -384,7 +509,7 @@ function main() {
   console.log("\n── Grant matrix ──\n");
   // Retry hardening removes anon's legacy booking_notifications reachability;
   // the delivery-event audit table is service-role-only.
-  const GRANTS = { anon: 55, authenticated: 64, service_role: 141 } as const;
+  const GRANTS = { anon: 56, authenticated: 77, service_role: 173 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (

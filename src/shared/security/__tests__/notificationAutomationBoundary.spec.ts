@@ -60,6 +60,9 @@ describe("notification-automation boundary", () => {
     const reoptin = read("src/shared/reoptin/reoptinCampaign.ts");
     const rebook = read("src/shared/winback/agentRebook.ts");
     const winback = read("src/shared/winback/agentWinback.ts");
+    const reactivationDraft = read(
+      "src/shared/ai/createReactivationCampaignDraft.ts",
+    );
     const undo = read("src/shared/ai/undoAiAction.ts");
     const activity = read(
       "src/shared/dashboard/loadActivityFeedAction.ts",
@@ -71,16 +74,11 @@ describe("notification-automation boundary", () => {
     expect(looseDb).toContain(
       "return createServiceRoleClient() as unknown as LooseDb",
     );
-    for (const source of [
-      schedules,
-      reoptin,
-      rebook,
-      winback,
-      undo,
-      activity,
-    ]) {
+    for (const source of [schedules, reoptin, reactivationDraft, undo, activity]) {
       expect(source).toContain("createServiceRoleClient");
     }
+    expect(rebook).toContain("createReactivationCampaignDraft");
+    expect(winback).toContain("createReactivationCampaignDraft");
     expect(edgeFunction).toContain(
       "createClient(SUPABASE_URL, SERVICE_ROLE_KEY",
     );
@@ -88,9 +86,9 @@ describe("notification-automation boundary", () => {
 
   it("updates the blank-database parity tripwire", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("policies: 174");
+    expect(parity).toContain("policies: 198");
     expect(parity).toContain(
-      "const GRANTS = { anon: 56, authenticated: 64, service_role: 127 }",
+      "const GRANTS = { anon: 56, authenticated: 77, service_role: 173 }",
     );
   });
 });

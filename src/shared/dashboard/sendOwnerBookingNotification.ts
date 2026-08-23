@@ -889,7 +889,7 @@ export async function sendOwnerBookingNotification(
       }
     }
 
-    const [svcRes, staffRes, profRes] = await Promise.all([
+    const [svcRes, staffRes, profRes, vipRes] = await Promise.all([
       b.service_id
         ? admin
             .from("services")
@@ -909,8 +909,16 @@ export async function sendOwnerBookingNotification(
       b.client_profile_id
         ? admin
             .from("client_profiles")
-            .select("visit_count, no_show_count, is_vip")
+            .select("visit_count, no_show_count")
             .eq("id", b.client_profile_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      b.client_profile_id
+        ? admin
+            .from("salon_clients" as never)
+            .select("is_vip" as never)
+            .eq("salon_id" as never, salonId)
+            .eq("client_profile_id" as never, b.client_profile_id)
             .maybeSingle()
         : Promise.resolve({ data: null }),
     ]);
@@ -922,8 +930,8 @@ export async function sendOwnerBookingNotification(
     const prof = profRes.data as {
       visit_count?: number | null;
       no_show_count?: number | null;
-      is_vip?: boolean | null;
     } | null;
+    const isSalonVip = (vipRes.data as { is_vip?: boolean | null } | null)?.is_vip === true;
     const serviceName = svc?.name?.trim() || "—";
     const staffName =
       (staffRes.data as { name?: string } | null)?.name?.trim() || "—";
@@ -987,7 +995,7 @@ export async function sendOwnerBookingNotification(
         bg: "#fee2e2",
         fg: "#991b1b",
       };
-    } else if (prof?.is_vip) {
+    } else if (isSalonVip) {
       custBadge = { text: "★ VIP", bg: "#fef3c7", fg: "#92400e" };
     } else if (visits <= 1) {
       custBadge = {

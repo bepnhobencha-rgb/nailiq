@@ -294,9 +294,14 @@ BEGIN
        'service_role','public.load_authoritative_financial_report(uuid,uuid,date,date,timestamptz)','EXECUTE') THEN
     RAISE EXCEPTION 'financial report RPC ACL mismatch';
   END IF;
-  IF to_regclass('public.booking_financial_metric_evidence') IS NOT NULL
-     OR to_regclass('public.salon_financial_metric_policies') IS NOT NULL THEN
-    RAISE EXCEPTION 'unsupported tip/commission assertion tables must not ship';
+  IF to_regclass('public.booking_financial_metric_evidence') IS NULL
+     OR to_regclass('public.salon_financial_metric_policies') IS NULL
+     OR pg_catalog.has_table_privilege(
+       'authenticated','public.booking_financial_metric_evidence','SELECT'
+     ) OR pg_catalog.has_table_privilege(
+       'service_role','public.booking_financial_metric_evidence','INSERT,UPDATE,DELETE'
+     ) THEN
+    RAISE EXCEPTION 'approved tip/commission evidence ACL mismatch';
   END IF;
 END;
 $acl$;

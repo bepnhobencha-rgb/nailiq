@@ -12,6 +12,13 @@ on:
       - "scripts/security/rehearse-branch-tenant-isolation.sql"
       - "scripts/security/check-no-duplicate-appointments-boundary.sql"
       - "scripts/security/rehearse-no-duplicate-appointments-concurrency.mjs"
+      - "scripts/security/check-staff-action-notification-outbox-boundary.sql"
+      - "scripts/security/rehearse-staff-offboarding-durable.sql"
+      - "scripts/security/rehearse-staff-offboarding-durable-sequence.sql"
+      - "scripts/security/rehearse-staff-offboarding-durable-concurrency.mjs"
+      - "scripts/security/rehearse-staff-offboarding-durable-rollback.sql"
+      - "scripts/security/rehearse-reactivation-campaign-delivery-contract.sql"
+      - "scripts/security/rehearse-reactivation-campaign-delivery-concurrency.mjs"
       - "scripts/verify-schema-dump.ts"
       - "supabase/bootstrap/**"
       - "supabase/migration-history/**"
@@ -207,6 +214,18 @@ jobs:
             node scripts/security/rehearse-staff-action-notification-outbox-concurrency.mjs
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-staff-action-notification-outbox-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-staff-offboarding-durable.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-staff-offboarding-durable-sequence.sql
+          NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
+            node scripts/security/rehearse-staff-offboarding-durable-concurrency.mjs
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-staff-offboarding-durable-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-reactivation-campaign-delivery-contract.sql
+          NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
+            node scripts/security/rehearse-reactivation-campaign-delivery-concurrency.mjs
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/preflight-customer-booking-transition-email-rollout.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \

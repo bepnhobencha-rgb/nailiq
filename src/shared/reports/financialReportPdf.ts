@@ -1,7 +1,7 @@
 import "server-only";
 
 import { readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
+import { resolve } from "node:path";
 import { deflateSync } from "node:zlib";
 
 import sharp from "sharp";
@@ -10,7 +10,13 @@ import { formatCurrency, isSupportedCurrency } from "@/shared/lib/currencyFormat
 import { financialCoverageMetricLabel, financialCoverageReasonLabel, financialCoverageStateLabel } from "./financialCoveragePresentation";
 import type { FinancialReportDTO } from "./financialReportDto";
 
-const require = createRequire(import.meta.url);
+const interFilesDirectory = resolve(
+  process.cwd(),
+  "node_modules",
+  "@fontsource",
+  "inter",
+  "files",
+);
 const PAGE_WIDTH = 1240;
 const PAGE_HEIGHT = 1754;
 const PDF_WIDTH = 595;
@@ -89,9 +95,9 @@ function reportLines(report: FinancialReportDTO): string[] {
 
 async function fontCss(): Promise<string> {
   const [latin, latinExt, vietnamese] = await Promise.all([
-    readFile(require.resolve("@fontsource/inter/files/inter-latin-400-normal.woff2")),
-    readFile(require.resolve("@fontsource/inter/files/inter-latin-ext-400-normal.woff2")),
-    readFile(require.resolve("@fontsource/inter/files/inter-vietnamese-400-normal.woff2")),
+    readFile(resolve(interFilesDirectory, "inter-latin-400-normal.woff2")),
+    readFile(resolve(interFilesDirectory, "inter-latin-ext-400-normal.woff2")),
+    readFile(resolve(interFilesDirectory, "inter-vietnamese-400-normal.woff2")),
   ]);
   const face = (bytes: Buffer, range: string) => `@font-face{font-family:Inter;src:url(data:font/woff2;base64,${bytes.toString("base64")}) format('woff2');font-weight:400;unicode-range:${range};}`;
   return [

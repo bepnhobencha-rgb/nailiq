@@ -11,11 +11,16 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+const APPLICATION_ID = "sq0idp-nailiq-studio";
+
 function squareFetch({ bookingProfile = true } = {}) {
   return vi.fn(async (input: string | URL | Request) => {
     const url = String(input);
     if (url.endsWith("/oauth2/token/status")) {
-      return jsonResponse({ merchant_id: "M_STUDIO" });
+      return jsonResponse({
+        client_id: APPLICATION_ID,
+        merchant_id: "M_STUDIO",
+      });
     }
     if (url.endsWith("/locations")) {
       return jsonResponse({
@@ -53,7 +58,11 @@ describe("validateSquareProductionConnection", () => {
     const fetchMock = squareFetch();
 
     await expect(
-      validateSquareProductionConnection("secret-production-token", fetchMock),
+      validateSquareProductionConnection(
+        "secret-production-token",
+        APPLICATION_ID,
+        fetchMock,
+      ),
     ).resolves.toEqual({
       merchantId: "M_STUDIO",
       merchantBusinessName: "Studio Legal Company",
@@ -79,6 +88,7 @@ describe("validateSquareProductionConnection", () => {
     await expect(
       validateSquareProductionConnection(
         "secret-production-token",
+        APPLICATION_ID,
         squareFetch({ bookingProfile: false }),
       ),
     ).resolves.toMatchObject({
@@ -90,6 +100,12 @@ describe("validateSquareProductionConnection", () => {
   it("refuses to guess when more than one active location exists", async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
+      if (url.endsWith("/oauth2/token/status")) {
+        return jsonResponse({
+          client_id: APPLICATION_ID,
+          merchant_id: "M1",
+        });
+      }
       if (url.endsWith("/locations")) {
         return jsonResponse({
           locations: [
@@ -102,7 +118,11 @@ describe("validateSquareProductionConnection", () => {
     }) as unknown as typeof fetch;
 
     await expect(
-      validateSquareProductionConnection("secret-production-token", fetchMock),
+      validateSquareProductionConnection(
+        "secret-production-token",
+        APPLICATION_ID,
+        fetchMock,
+      ),
     ).rejects.toMatchObject({
       code: "location_ambiguous",
     });
@@ -117,6 +137,7 @@ describe("validateSquareProductionConnection", () => {
     try {
       await validateSquareProductionConnection(
         "secret-production-token",
+        APPLICATION_ID,
         fetchMock,
       );
     } catch (error) {
@@ -149,9 +170,63 @@ describe("validateSquareProductionConnection", () => {
       await expect(
         validateSquareProductionConnection(
           "secret-production-token",
+          APPLICATION_ID,
           fetchMock,
         ),
       ).rejects.toMatchObject({ code: expectedCode });
     },
   );
+
+  it("rejects a token issued to a different Square application", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        client_id: "sq0idp-another-application",
+        merchant_id: "M_STUDIO",
+      }),
+    ) as unknown as typeof fetch;
+
+    await expect(
+      validateSquareProductionConnection(
+        "secret-production-token",
+        APPLICATION_ID,
+        fetchMock,
+      ),
+    ).rejects.toMatchObject({ code: "credential_identity_mismatch" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a token merchant that differs from the discovered location", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/oauth2/token/status")) {
+        return jsonResponse({
+          client_id: APPLICATION_ID,
+          merchant_id: "M_TOKEN",
+        });
+      }
+      if (url.endsWith("/locations")) {
+        return jsonResponse({
+          locations: [
+            {
+              id: "L_STUDIO",
+              merchant_id: "M_LOCATION",
+              status: "ACTIVE",
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/merchants")) {
+        return jsonResponse({ merchant: [{ id: "M_LOCATION" }] });
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    await expect(
+      validateSquareProductionConnection(
+        "secret-production-token",
+        APPLICATION_ID,
+        fetchMock,
+      ),
+    ).rejects.toMatchObject({ code: "credential_identity_mismatch" });
+  });
 });

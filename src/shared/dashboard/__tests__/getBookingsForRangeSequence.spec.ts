@@ -147,4 +147,33 @@ describe("segment-aware calendar range", () => {
     expect(segments.eq).toHaveBeenCalledWith("booking.salon_id", "salon-a");
     expect(segments.eq).toHaveBeenCalledWith("booking.schedule_model", "segments_v1");
   });
+
+  it("uses the service-role-only segment table after compat-path membership authorization", async () => {
+    const bookings = query({ data: [], error: null });
+    const segments = query({ data: [], error: null });
+    const userClient = {
+      from: vi.fn(() => bookings),
+    };
+    const serviceClient = {
+      from: vi.fn(() => segments),
+    };
+    mocks.getDashboardWriteClient.mockResolvedValue({
+      salon: { id: "salon-a", timezone: "UTC" },
+      supabase: userClient,
+    });
+    mocks.createServiceRoleClient.mockReturnValue(serviceClient);
+
+    const result = await getBookingsForRangeAction(
+      "salon-a",
+      "2026-08-21",
+      "2026-08-21",
+    );
+
+    expect(result).toEqual({ ok: true, days: {}, timezone: "UTC" });
+    expect(userClient.from).toHaveBeenCalledWith("bookings");
+    expect(userClient.from).not.toHaveBeenCalledWith("booking_service_segments");
+    expect(serviceClient.from).toHaveBeenCalledWith("booking_service_segments");
+    expect(segments.eq).toHaveBeenCalledWith("salon_id", "salon-a");
+    expect(segments.eq).toHaveBeenCalledWith("booking.salon_id", "salon-a");
+  });
 });

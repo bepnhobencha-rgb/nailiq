@@ -26,6 +26,8 @@ const ERROR_COPY: Record<SquareConnectError, string> = {
     "Square reports that this Production token was revoked. Sign in again and copy the current Production token.",
   client_disabled:
     "Square has disabled this application or account. Resolve the Square account review before retrying.",
+  credential_identity_mismatch:
+    "The Application ID, access token, and Square merchant do not belong to the same Square connection. Nothing was saved.",
   insufficient_scopes:
     "Square accepted the token, but it lacks the required Locations or Merchants permissions.",
   square_forbidden:

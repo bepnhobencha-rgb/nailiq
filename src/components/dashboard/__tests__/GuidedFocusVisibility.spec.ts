@@ -9,6 +9,13 @@ vi.mock("next/navigation", () => ({
 
 import { GuidedFocusVisibility } from "@/components/dashboard/GuidedFocusVisibility";
 
+type GuidedFocusVisibilityProps = Parameters<typeof GuidedFocusVisibility>[0];
+const TestGuidedFocusVisibility = GuidedFocusVisibility as (
+  props: Omit<GuidedFocusVisibilityProps, "children"> & {
+    children?: GuidedFocusVisibilityProps["children"];
+  },
+) => ReturnType<typeof GuidedFocusVisibility>;
+
 describe("GuidedFocusVisibility", () => {
   beforeEach(() => {
     mocks.segment = null;
@@ -18,10 +25,9 @@ describe("GuidedFocusVisibility", () => {
     mocks.segment = "settings";
     expect(
       renderToStaticMarkup(
-        createElement(GuidedFocusVisibility, {
+        createElement(TestGuidedFocusVisibility, {
           stage: "incomplete",
-          children: createElement("a", { href: "/plans" }, "Extra CTA"),
-        }),
+        }, createElement("a", { href: "/plans" }, "Extra CTA")),
       ),
     ).toBe("");
   });
@@ -30,20 +36,18 @@ describe("GuidedFocusVisibility", () => {
     const child = createElement("a", { href: "/plans" }, "Extra CTA");
     expect(
       renderToStaticMarkup(
-        createElement(GuidedFocusVisibility, {
+        createElement(TestGuidedFocusVisibility, {
           stage: "complete",
-          children: child,
-        }),
+        }, child),
       ),
     ).toBe("");
 
     mocks.segment = "center";
     expect(
       renderToStaticMarkup(
-        createElement(GuidedFocusVisibility, {
+        createElement(TestGuidedFocusVisibility, {
           stage: "complete",
-          children: child,
-        }),
+        }, child),
       ),
     ).toContain("Extra CTA");
   });
@@ -51,10 +55,9 @@ describe("GuidedFocusVisibility", () => {
   it("leaves every legacy salon unchanged", () => {
     expect(
       renderToStaticMarkup(
-        createElement(GuidedFocusVisibility, {
+        createElement(TestGuidedFocusVisibility, {
           stage: "disabled",
-          children: createElement("span", null, "Legacy"),
-        }),
+        }, createElement("span", null, "Legacy")),
       ),
     ).toContain("Legacy");
   });

@@ -3,6 +3,7 @@
 import { unstable_cache } from "next/cache";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import Anthropic from "@anthropic-ai/sdk";
+import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProviderPolicy";
 import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
@@ -428,7 +429,7 @@ async function generateBriefing(input: BriefingInput): Promise<string | null> {
   if (!key) return fallback;
 
   try {
-    const anthropic = new Anthropic({ apiKey: key });
+    const anthropic = createTextBackgroundAnthropicClient(key);
     const facts = {
       revenue_today: money(input.revenueTodayCents),
       vs_last_week_same_day_percent: vsBench,

@@ -88,7 +88,8 @@ function email(value: unknown): string | null | undefined {
 }
 
 function event(value: unknown): StaffActionNotificationEvent | null {
-  return value === "create" || value === "reschedule" || value === "cancel"
+  return value === "create" || value === "reschedule" || value === "cancel" ||
+      value === "staff_change"
     ? value
     : null;
 }
@@ -219,13 +220,17 @@ export function parseStaffActionNotificationMaterial(
 
 function subtitle(eventType: StaffActionNotificationEvent, locale: "en" | "vi"): string {
   if (locale === "vi") {
-    return eventType === "reschedule"
+    return eventType === "staff_change"
+      ? "Nhân viên phục vụ đã được cập nhật"
+      : eventType === "reschedule"
       ? "Lịch hẹn đã được dời"
       : eventType === "cancel"
         ? "Lịch hẹn đã huỷ"
         : "Lịch hẹn đã xác nhận";
   }
-  return eventType === "reschedule"
+  return eventType === "staff_change"
+    ? "Appointment Provider Updated"
+    : eventType === "reschedule"
     ? "Appointment Rescheduled"
     : eventType === "cancel"
       ? "Appointment Cancelled"

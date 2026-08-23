@@ -104,7 +104,7 @@ describe("authenticated salons projection inventory", () => {
             receiver.includes(".from('salons')");
           const serviceReceiver =
             receiver.includes("createServiceRoleClient") ||
-            /^(?:admin|db)(?:\.|\s)/.test(receiver.trim());
+            /^(?:admin|db|serviceDb)(?:\.|\s)/.test(receiver.trim());
           const appRequestSurface =
             file.includes(`${join("app", "dashboard")}`) ||
             file.includes(`${join("app", "choose-salon")}`) ||

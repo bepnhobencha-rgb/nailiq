@@ -276,7 +276,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     }
 
     // Chiến Lược Gia — weekly strategist on Sunday 21:00 salon local time
-    if (salonHour === 21) {
+    if (salonHour === 21 && flags.ai_promo_campaign_drafts) {
       const todayYmd = new Intl.DateTimeFormat("en-CA", {
         timeZone: tz,
         weekday: "short",

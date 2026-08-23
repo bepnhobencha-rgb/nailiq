@@ -41,7 +41,7 @@ export async function advanceBookingStep(
  * current grid can legitimately contain only one future day. If this month has
  * none, walk forward until the booking window exposes one.
  */
-export async function selectAvailableBookingDate(page: Page): Promise<void> {
+export async function selectAvailableBookingDate(page: Page): Promise<string> {
   const dateStep = page.locator(
     'section[aria-labelledby="date-heading"]',
   );
@@ -68,7 +68,11 @@ export async function selectAvailableBookingDate(page: Page): Promise<void> {
     if (found) {
       await selectableDay.click();
       await expect(selectableDay).toHaveAttribute("aria-pressed", "true");
-      return;
+      const selectedDateYmd = await selectableDay.getAttribute("data-ymd");
+      if (!selectedDateYmd) {
+        throw new Error("Selected booking date is missing data-ymd");
+      }
+      return selectedDateYmd;
     }
 
     const nextMonth = dateStep.getByTestId("calendar-next-month");
@@ -82,6 +86,11 @@ export async function selectAvailableBookingDate(page: Page): Promise<void> {
   ).toBeVisible({ timeout: 15_000 });
   await selectableDay.click();
   await expect(selectableDay).toHaveAttribute("aria-pressed", "true");
+  const selectedDateYmd = await selectableDay.getAttribute("data-ymd");
+  if (!selectedDateYmd) {
+    throw new Error("Selected booking date is missing data-ymd");
+  }
+  return selectedDateYmd;
 }
 
 /**
@@ -98,10 +107,12 @@ export async function selectAvailableBookingDate(page: Page): Promise<void> {
 export async function navigateToConfirmStep(
   page: Page,
   slug: string,
-  opts?: { name?: string; notes?: string },
-): Promise<void> {
+  opts?: { name?: string; notes?: string; phone?: string },
+): Promise<{ selectedDateYmd: string; selectedSlotAriaLabel: string }> {
   // 1. Phone-first gate → service step.
-  await gotoBookingServiceStep(page, slug);
+  await gotoBookingServiceStep(page, slug, {
+    phone: opts?.phone,
+  });
 
   // 2. Service.
   await page
@@ -121,7 +132,7 @@ export async function navigateToConfirmStep(
 
   // 4. Date. The month grid is collapsed behind a toggle; open it, then walk
   //    forward until a selectable day appears.
-  await selectAvailableBookingDate(page);
+  const selectedDateYmd = await selectAvailableBookingDate(page);
   await page.getByRole("button", { name: "Continue" }).first().click();
 
   // 5. Time.
@@ -134,6 +145,10 @@ export async function navigateToConfirmStep(
     .first();
   await firstAvailableSlot.click();
   await expect(firstAvailableSlot).toHaveAttribute("aria-pressed", "true");
+  const selectedSlotAriaLabel = await firstAvailableSlot.getAttribute("aria-label");
+  if (!selectedSlotAriaLabel) {
+    throw new Error("Selected booking slot is missing aria-label");
+  }
   const timeStep = page.locator(
     'section[aria-labelledby="time-heading"]',
   );
@@ -157,4 +172,6 @@ export async function navigateToConfirmStep(
   await expect(
     page.getByRole("button", { name: "Confirm booking" }),
   ).toBeVisible({ timeout: 15_000 });
+
+  return { selectedDateYmd, selectedSlotAriaLabel };
 }

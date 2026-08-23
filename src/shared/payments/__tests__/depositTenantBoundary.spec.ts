@@ -46,7 +46,7 @@ describe("deposit risk tenant boundary", () => {
     );
   });
 
-  it("calls the deployed two-argument client snapshot contract after public create", () => {
+  it("capability-binds the client snapshot to the newly created booking", () => {
     const source = readFileSync(
       resolve(root, "src/shared/booking/submitPublicBooking.ts"),
       "utf8",
@@ -57,7 +57,7 @@ describe("deposit risk tenant boundary", () => {
     );
     expect(call).toContain("p_salon_id:");
     expect(call).toContain("p_phone:");
-    expect(call).not.toContain("p_booking_id:");
+    expect(call).toContain("p_booking_id: bookingId");
   });
 
   it.each([

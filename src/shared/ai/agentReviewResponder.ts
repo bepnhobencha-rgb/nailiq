@@ -1,33 +1,39 @@
 import "server-only";
+
 import Anthropic from "@anthropic-ai/sdk";
+
+import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProviderPolicy";
+import {
+  buildReviewReplyPrompt,
+  deterministicReviewReply,
+  redactReviewExcerpt,
+  reviewReplyKey,
+  reviewReplyLanguage,
+  safeReviewerName,
+  safeReviewReplyDraft,
+  type ReviewReplyLanguage,
+} from "@/shared/ai/reviewReplyPolicy";
+import {
+  isProviderTimeoutError,
+  trackAnthropicMessage,
+} from "@/shared/ai/usageLedger";
 import { looseServiceClient, type Row } from "@/shared/integrations/square/looseDb";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
-import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 
 /**
- * AI Review Responder — polls Google Places API for new reviews, drafts replies,
- * and routes them based on star rating.
+ * Google Review Responder — dashboard-only draft policy.
  *
- * 4–5 ★: AUTO — AI drafts reply, alerts owner with the text ready to post.
- *   (Requires Google Business Profile OAuth for true auto-post; current impl
- *   delivers a ready-to-copy draft until OAuth is wired up in a future phase.)
- *
- * 1–3 ★: ESCALATE — AI drafts + owner alert emphasising human response needed.
- *   NEVER auto-posts for negative reviews.
- *
- * Dedup: stores review.time (Unix timestamp) in ai_actions_log payload so we
- * never re-draft the same review.
- *
- * Gate: feature_flags.ai_google_reply = true + salons.google_place_id is
- * non-null + GOOGLE_MAPS_API_KEY env is set.
+ * The feature may read configured Google reviews and use the text provider only
+ * after an atomic salon/source/review claim. Every rating creates a NailIQ
+ * approval draft with dispatch disabled. Nothing here posts a public reply,
+ * sends email/SMS, or calls an owner-alert delivery helper.
  */
 
 let anthropic: Anthropic | null = null;
 function getAI(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY?.trim();
   if (!key) return null;
-  if (!anthropic) anthropic = new Anthropic({ apiKey: key });
+  if (!anthropic) anthropic = createTextBackgroundAnthropicClient(key);
   return anthropic;
 }
 
@@ -35,103 +41,164 @@ type PlaceReview = {
   author_name: string;
   rating: number;
   text: string;
-  time: number; // Unix seconds
+  time: number;
   language?: string;
 };
 
 type PlaceDetailsResponse = {
-  result?: {
-    reviews?: PlaceReview[];
-  };
+  result?: { reviews?: PlaceReview[] };
   status: string;
   error_message?: string;
 };
 
-async function fetchGoogleReviews(placeId: string, apiKey: string): Promise<PlaceReview[]> {
+type PreparedReview = {
+  authorName: string;
+  rating: number;
+  reviewExcerpt: string;
+  language: ReviewReplyLanguage;
+  reviewKey: string;
+};
+
+type ClaimRow = {
+  outcome: "claimed" | "existing" | "in_progress" | "exhausted" | "invalid_input";
+  claim_id: string | null;
+  claim_token: string | null;
+  attempt_count: number | null;
+};
+
+async function fetchGoogleReviews(
+  placeId: string,
+  apiKey: string,
+): Promise<PlaceReview[]> {
   const url =
-    `https://maps.googleapis.com/maps/api/place/details/json` +
+    "https://maps.googleapis.com/maps/api/place/details/json" +
     `?place_id=${encodeURIComponent(placeId)}` +
-    `&fields=reviews` +
+    "&fields=reviews" +
     `&key=${encodeURIComponent(apiKey)}`;
-
-  const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-  if (!res.ok) return [];
-
-  const body = (await res.json()) as PlaceDetailsResponse;
+  const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+  if (!response.ok) return [];
+  const body = (await response.json()) as PlaceDetailsResponse;
   if (body.status !== "OK") {
-    console.warn("[reviewResponder] Places API status:", body.status, body.error_message);
+    console.warn(
+      "[reviewResponder] Places API status:",
+      body.status,
+      body.error_message,
+    );
     return [];
   }
   return body.result?.reviews ?? [];
 }
 
-async function loadProcessedReviewTimes(salonId: string): Promise<Set<number>> {
-  const db = createServiceRoleClient();
-  const since = new Date(Date.now() - 90 * 864e5).toISOString(); // last 90 days
-  const { data } = await db
-    .from("ai_actions_log" as never)
-    .select("payload" as never)
-    .eq("salon_id" as never, salonId)
-    .eq("agent" as never, "review_responder")
-    .gte("created_at" as never, since);
-
-  const times = new Set<number>();
-  for (const row of (data ?? []) as unknown as Row[]) {
-    const rt = (row.payload as Record<string, unknown> | null)?.review_time;
-    if (typeof rt === "number") times.add(rt);
-  }
-  return times;
+function prepareReview(review: PlaceReview): PreparedReview | null {
+  const rating = Number(review.rating);
+  const time = Number(review.time);
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) return null;
+  if (!Number.isFinite(time) || time <= 0) return null;
+  const authorName = safeReviewerName(review.author_name);
+  const reviewExcerpt = redactReviewExcerpt(review.text);
+  const language = reviewReplyLanguage(review.language, reviewExcerpt);
+  return {
+    authorName,
+    rating,
+    reviewExcerpt,
+    language,
+    reviewKey: reviewReplyKey({
+      time,
+      rating,
+      authorName,
+      reviewText: reviewExcerpt,
+    }),
+  };
 }
 
 async function draftReply(
   salonId: string,
-  review: PlaceReview,
+  review: PreparedReview,
   salonName: string,
-  lang: string,
 ): Promise<string> {
+  const fallback = deterministicReviewReply({
+    language: review.language,
+    rating: review.rating,
+    salonName,
+  });
   const ai = getAI();
-  const isPositive = review.rating >= 4;
+  if (!ai) return fallback;
 
-  if (!ai) {
-    return isPositive
-      ? `Thank you so much for your wonderful review, ${review.author_name}! We're so glad you enjoyed your experience at ${salonName} and we look forward to seeing you again.`
-      : `Thank you for taking the time to share your feedback, ${review.author_name}. We sincerely apologise for falling short of your expectations and would love the opportunity to make it right. Please reach out to us directly.`;
-  }
-
-  const tone = isPositive ? "warm, grateful, genuine" : "sincere, apologetic, solution-oriented";
-  const instruction = isPositive
-    ? "Thank the reviewer warmly. Mention their name. Reference any specific detail they mentioned. Invite them back."
-    : "Acknowledge their concern genuinely. Do NOT be defensive. Offer to resolve it directly. Include a direct contact option if possible.";
-
-  const prompt = `You are a professional owner of ${salonName} replying to a Google review.
-
-Review (${review.rating} stars, language hint: ${lang || "auto-detect"}):
-"""
-${review.text || "(no text provided)"}
-"""
-Reviewer: ${review.author_name}
-
-Write a ${tone} reply in the SAME language as the review. ${instruction}
-Keep it to 2-3 sentences. No hashtags. No emojis unless the review used them. No generic corporate phrases.
-Return ONLY the reply text.`;
-
+  const prompt = buildReviewReplyPrompt({
+    language: review.language,
+    rating: review.rating,
+    salonName,
+    reviewExcerpt: review.reviewExcerpt,
+  });
   try {
     const model = "claude-sonnet-4-6";
-    const resp = await trackAnthropicMessage(
+    const response = await trackAnthropicMessage(
       { salonId, feature: "review_responder", model },
       () =>
-        anthropic!.messages.create({
+        ai.messages.create({
           model,
           max_tokens: 300,
-          messages: [{ role: "user", content: prompt }],
+          system: prompt.system,
+          messages: [{ role: "user", content: prompt.user }],
         }),
     );
-    const text = resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
-    const clean = text.replace(/^["']|["']$/g, "").trim();
-    return clean.length > 10 ? clean : "";
-  } catch {
-    return "";
+    const candidate =
+      response.content[0]?.type === "text" ? response.content[0].text : "";
+    return safeReviewReplyDraft(candidate, review.language) ?? fallback;
+  } catch (error) {
+    if (isProviderTimeoutError(error)) throw error;
+    return fallback;
   }
+}
+
+async function claimReviewDraft(
+  salonId: string,
+  review: PreparedReview,
+): Promise<ClaimRow | null> {
+  const db = createServiceRoleClient();
+  const { data, error } = await db.rpc("claim_review_reply_draft" as never, {
+    p_salon_id: salonId,
+    p_source: "google",
+    p_review_key: review.reviewKey,
+    p_content_fingerprint: review.reviewKey,
+  } as never);
+  if (error) throw new Error("review_reply_claim_failed", { cause: error });
+  return ((data as unknown as ClaimRow[] | null) ?? [])[0] ?? null;
+}
+
+async function failReviewDraftClaim(
+  claimId: string,
+  claimToken: string,
+  errorCode: string,
+): Promise<void> {
+  const db = createServiceRoleClient();
+  const { error } = await db.rpc("fail_review_reply_draft" as never, {
+    p_claim_id: claimId,
+    p_claim_token: claimToken,
+    p_error_code: errorCode,
+  } as never);
+  if (error) console.error("[reviewResponder] fail claim", error);
+}
+
+async function completeReviewDraft(
+  claimId: string,
+  claimToken: string,
+  review: PreparedReview,
+  draft: string,
+): Promise<boolean> {
+  const db = createServiceRoleClient();
+  const { data, error } = await db.rpc("complete_review_reply_draft" as never, {
+    p_claim_id: claimId,
+    p_claim_token: claimToken,
+    p_reviewer_name: review.authorName,
+    p_rating: review.rating,
+    p_review_excerpt: review.reviewExcerpt,
+    p_draft_reply: draft,
+    p_language: review.language,
+  } as never);
+  if (error) throw new Error("review_reply_complete_failed", { cause: error });
+  const row = ((data as unknown as Array<{ outcome?: unknown }> | null) ?? [])[0];
+  return row?.outcome === "created" || row?.outcome === "existing";
 }
 
 export async function runReviewResponder(salonId: string): Promise<void> {
@@ -140,105 +207,62 @@ export async function runReviewResponder(salonId: string): Promise<void> {
     if (!apiKey) return;
 
     const db = looseServiceClient();
-    const { data: salon } = await db
+    const { data: salon, error: salonError } = await db
       .from("salons" as never)
       .select("name, feature_flags, google_place_id" as never)
       .eq("id" as never, salonId)
       .maybeSingle();
+    if (salonError) throw new Error("review_responder_salon_read_failed");
 
-    const s = (salon as Row | null) ?? {};
-    const flags = (s.feature_flags as Record<string, unknown> | null) ?? {};
+    const row = (salon as Row | null) ?? {};
+    const flags = (row.feature_flags as Record<string, unknown> | null) ?? {};
     if (flags.ai_google_reply !== true) return;
-
-    const placeId = String(s.google_place_id ?? "").trim();
+    const placeId = String(row.google_place_id ?? "").trim();
     if (!placeId) return;
+    const salonName = String(row.name ?? "our salon").trim() || "our salon";
 
-    const salonName = String(s.name ?? "our salon");
+    const reviews = await fetchGoogleReviews(placeId, apiKey);
+    let normalDrafts = 0;
+    let urgentDrafts = 0;
 
-    const [reviews, processed] = await Promise.all([
-      fetchGoogleReviews(placeId, apiKey),
-      loadProcessedReviewTimes(salonId),
-    ]);
+    for (const rawReview of reviews) {
+      const review = prepareReview(rawReview);
+      if (!review) continue;
+      const claim = await claimReviewDraft(salonId, review);
+      if (
+        claim?.outcome !== "claimed" ||
+        !claim.claim_id ||
+        !claim.claim_token
+      ) {
+        continue;
+      }
 
-    const fresh = reviews.filter((r) => !processed.has(r.time));
-    if (fresh.length === 0) return;
-
-    const svc = createServiceRoleClient();
-    let positive = 0;
-    let negative = 0;
-
-    for (const review of fresh) {
-      const isPositive = review.rating >= 4;
-      const draft = await draftReply(
-        salonId,
-        review,
-        salonName,
-        review.language ?? "",
-      );
-      if (!draft) continue;
-
-      const actionType = isPositive ? "draft_review_reply" : "escalate_review_reply";
-      const stars = "★".repeat(review.rating) + "☆".repeat(5 - review.rating);
-
-      await svc.from("ai_actions_log" as never).insert({
-        salon_id: salonId,
-        agent: "review_responder",
-        action_type: actionType,
-        payload: {
-          review_time: review.time,
-          author: review.author_name,
-          rating: review.rating,
-          review_text: review.text?.slice(0, 500),
-          draft_reply: draft,
-        },
-        // Review responses are informational — no undo window
-        undo_deadline: null,
-      } as never);
-
-      if (isPositive) {
-        positive++;
-        await sendOwnerAlert(salonId, {
-          subject: `${salonName} — New ${review.rating}★ review from ${review.author_name}`,
-          bodyText:
-            `Có đánh giá mới ${stars} từ "${review.author_name}".\n\n` +
-            `Review: "${review.text?.slice(0, 300) ?? "(no text)"}"\n\n` +
-            `AI đề xuất reply:\n"${draft}"\n\n` +
-            `Vào Google Business Profile để đăng reply này.`,
-          bodyHtml: `
-<div style="font-family:-apple-system,sans-serif;max-width:560px;color:#1a1a1a">
-  <p style="font-size:15px;font-weight:600;margin:0 0 8px">${stars} ${review.author_name}</p>
-  <blockquote style="border-left:3px solid #ddd;margin:0 0 16px;padding:8px 12px;color:#555;font-style:italic">"${review.text?.slice(0, 300) ?? "(no text)"}"</blockquote>
-  <p style="font-size:13px;font-weight:600;margin:0 0 6px;color:#1a1a1a">AI đề xuất reply:</p>
-  <p style="background:#f5f5f5;border-radius:8px;padding:12px;font-size:14px;margin:0 0 16px">${draft}</p>
-  <p style="font-size:12px;color:#888">Vào Google Business Profile để đăng reply này. AI đề xuất — hãy chỉnh sửa trước khi đăng nếu cần.</p>
-</div>`,
-        });
-      } else {
-        negative++;
-        await sendOwnerAlert(salonId, {
-          subject: `⚠️ ${salonName} — ${review.rating}★ review cần xử lý`,
-          bodyText:
-            `CẦN PHẢN HỒI: Review ${stars} từ "${review.author_name}".\n\n` +
-            `Review: "${review.text?.slice(0, 500) ?? "(no text)"}"\n\n` +
-            `AI đề xuất nháp (chỉnh sửa theo thực tế trước khi đăng):\n"${draft}"\n\n` +
-            `QUAN TRỌNG: AI không tự đăng reply cho review dưới 4 sao. Hãy phản hồi cá nhân, chuyên nghiệp.`,
-          bodyHtml: `
-<div style="font-family:-apple-system,sans-serif;max-width:560px;color:#1a1a1a">
-  <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px;margin:0 0 16px">
-    <p style="color:#dc2626;font-weight:700;margin:0">⚠️ Review xấu cần phản hồi thủ công</p>
-    <p style="color:#dc2626;font-size:12px;margin:4px 0 0">AI KHÔNG tự đăng reply cho review dưới 4 sao</p>
-  </div>
-  <p style="font-size:15px;font-weight:600;margin:0 0 8px">${stars} ${review.author_name}</p>
-  <blockquote style="border-left:3px solid #fca5a5;margin:0 0 16px;padding:8px 12px;color:#555;font-style:italic">"${review.text?.slice(0, 500) ?? "(no text)"}"</blockquote>
-  <p style="font-size:13px;font-weight:600;margin:0 0 6px">AI đề xuất nháp (chỉnh sửa trước khi dùng):</p>
-  <p style="background:#f5f5f5;border-radius:8px;padding:12px;font-size:14px;margin:0 0 16px">${draft}</p>
-  <p style="font-size:12px;color:#888">Vào Google Business Profile để đăng reply đã chỉnh sửa.</p>
-</div>`,
-        });
+      try {
+        const draft = await draftReply(salonId, review, salonName);
+        const completed = await completeReviewDraft(
+          claim.claim_id,
+          claim.claim_token,
+          review,
+          draft,
+        );
+        if (!completed) throw new Error("review_reply_complete_rejected");
+        if (review.rating <= 3) urgentDrafts += 1;
+        else normalDrafts += 1;
+      } catch (error) {
+        await failReviewDraftClaim(
+          claim.claim_id,
+          claim.claim_token,
+          isProviderTimeoutError(error)
+            ? "provider_timeout"
+            : "draft_generation_failed",
+        );
+        throw error;
       }
     }
 
-    console.log(`[reviewResponder] ${salonName}: +${positive} positive, !${negative} negative`);
+    console.log(
+      `[reviewResponder] ${salonName}: ${normalDrafts} normal dashboard drafts, ${urgentDrafts} urgent dashboard drafts`,
+    );
   } catch (e) {
     console.error("[runReviewResponder]", e);
     throw e;

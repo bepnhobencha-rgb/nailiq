@@ -1,6 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { loadSalonVipPhones } from "@/shared/dashboard/salonVipStatus";
+import { sortQueueByPriority } from "@/shared/dashboard/receptionistQueuePriority";
+
+export { sortQueueByPriority } from "@/shared/dashboard/receptionistQueuePriority";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
 import { loadSalonMemberOperationalProfile } from "@/shared/dashboard/salonOwnerAdminSettings";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
@@ -145,8 +149,7 @@ export interface ReceptionistCenterData {
     /** UTC ISO time the requested staff is projected to be free.
      * Null when no requested staff or when projection is unknown. */
     requested_staff_ready_at_iso: string | null;
-    /** True when the customer is a returning VIP per
-     * `client_profiles.is_vip` (joined by phone, salon-agnostic). */
+    /** Salon-scoped VIP recognition badge. It never changes queue order. */
     is_vip: boolean;
     /** UTC ISO time the soft hold expires; null when not held (PR #104). */
     soft_hold_until: string | null;
@@ -421,7 +424,6 @@ export interface ReceptionistCenterData {
     revenueTodayCents: number | null;
   };
 }
-
 export type LoadReceptionistCenterError =
   | "unauthorized"
   | "salon_not_found"
@@ -992,9 +994,8 @@ export async function loadReceptionistCenterData(
     rawQueueRows.push({ row, svc, spanMin, partySize });
   }
 
-  // VIP enrichment — single bulk query against `client_profiles`
-  // (global table, salon-agnostic per the schema doc). Phones already
-  // stored in normalized digit form, so we lower-noise compare.
+  // VIP enrichment is tenant-scoped. The global client_profiles.is_vip flag
+  // is intentionally not authoritative for a salon decision.
   const queuePhones = Array.from(
     new Set(
       rawQueueRows
@@ -1004,23 +1005,13 @@ export async function loadReceptionistCenterData(
   );
   const vipByPhone = new Map<string, boolean>();
   if (queuePhones.length > 0) {
-    // `client_profiles` is deliberately closed to anon/authenticated because
-    // it is a global PII table. The queue phones are already scoped to this
-    // authorized salon, so use the server-only client for this bounded lookup.
-    const profileDb = createServiceRoleClient();
-    const vipRes = (await profileDb
-      .from("client_profiles")
-      .select("phone, is_vip" as never)
-      .in("phone", queuePhones)) as {
-      data: Array<{ phone: string; is_vip: boolean | null }> | null;
-      error: unknown;
-    };
-    if (!vipRes.error) {
-      for (const r of vipRes.data ?? []) {
-        if (r.phone) vipByPhone.set(String(r.phone), r.is_vip === true);
-      }
-    } else {
-      console.error("[loadReceptionistCenterData] vip lookup", vipRes.error);
+    try {
+      const vipPhones = await loadSalonVipPhones(ctx.salon.id, queuePhones);
+      for (const phone of queuePhones) vipByPhone.set(phone, vipPhones.has(phone));
+    } catch (error) {
+      // Presentation-only enrichment fails closed; never fall back to the
+      // cross-tenant legacy field.
+      console.error("[loadReceptionistCenterData] salon vip lookup", error);
     }
   }
 
@@ -1092,11 +1083,8 @@ export async function loadReceptionistCenterData(
     },
   );
 
-  // Apply server-side priority sort. Ordered:
-  //   1. VIP customers first
-  //   2. Anyone waiting > 20 min (longest first within this band)
-  //   3. Customers whose requested staff is free now
-  //   4. FIFO joined_queue_at for the rest
+  // Apply server-side operational priority. VIP is presentation-only and
+  // never changes the dispatch order.
   sortQueueByPriority(walkinQueue, nowMsForReady);
 
   // Itemized add-ons for the day's bookings. `booking_addons` is RLS-locked
@@ -1836,61 +1824,4 @@ function computeKpiSnapshot(args: {
     nextAvailableStaff,
     revenueTodayCents,
   };
-}
-
-
-/**
- * Server-side queue sort with operational priority. Mutates in place
- * for cheap allocation in the hot loader path; callers may treat the
- * input array as the canonical FIFO list and let this rewrite the
- * order for dispatch-board rendering.
- *
- * Ordering bands (highest priority first):
- *   1. VIP customers (`is_vip` from client_profiles).
- *   2. Anyone waiting longer than the danger threshold (20 min) —
- *      the > 20 min protection prevents starvation when many newer
- *      VIPs join.
- *   3. Customers whose requested staff is free right now (the heart
- *      ❤️-line is the operational signal were honouring).
- *   4. FIFO `joined_queue_at` for everyone else.
- *
- * Within each band the older `joined_queue_at` wins.
- */
-const QUEUE_LONG_WAIT_DANGER_MS = 20 * 60 * 1000;
-
-export function sortQueueByPriority<
-  T extends {
-    is_vip: boolean;
-    joined_queue_at: string;
-    requested_staff_name: string | null;
-    requested_staff_ready_at_iso: string | null;
-  },
->(queue: T[], nowMs: number): T[] {
-  function band(item: T): number {
-    if (item.is_vip) return 0;
-    const joinedMs = Date.parse(item.joined_queue_at);
-    if (
-      Number.isFinite(joinedMs) &&
-      nowMs - joinedMs >= QUEUE_LONG_WAIT_DANGER_MS
-    ) {
-      return 1;
-    }
-    if (item.requested_staff_name) {
-      const readyMs = item.requested_staff_ready_at_iso
-        ? Date.parse(item.requested_staff_ready_at_iso)
-        : NaN;
-      if (Number.isFinite(readyMs) && readyMs <= nowMs) return 2;
-    }
-    return 3;
-  }
-  queue.sort((a, b) => {
-    const ba = band(a);
-    const bb = band(b);
-    if (ba !== bb) return ba - bb;
-    const aMs = Date.parse(a.joined_queue_at);
-    const bMs = Date.parse(b.joined_queue_at);
-    if (Number.isFinite(aMs) && Number.isFinite(bMs)) return aMs - bMs;
-    return 0;
-  });
-  return queue;
 }

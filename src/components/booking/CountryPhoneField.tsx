@@ -131,14 +131,15 @@ export default function CountryPhoneField({
   }
 
   return (
-    <div style={{ display: "flex", gap: "8px", alignItems: "stretch" }}>
+    <div className="flex flex-col items-stretch gap-2 min-[280px]:flex-row">
       <select
         aria-label={language === "vi" ? "Chọn quốc gia" : "Select country"}
         data-testid={`${testId}-country`}
         value={iso}
         onChange={(e) => onCountryChange(e.target.value)}
-        className={`nq-booking-field ${invalid ? "border-nq-error/50" : ""}`}
-        style={{ width: showAll ? "150px" : "78px", flexShrink: 0 }}
+        className={`nq-booking-field shrink-0 ${
+          showAll ? "min-[280px]:w-[150px]" : "min-[280px]:w-[78px]"
+        } ${invalid ? "border-nq-error/50" : ""}`}
       >
         {showAll ? (
           <>
@@ -166,14 +167,9 @@ export default function CountryPhoneField({
       </select>
 
       <div
-        style={{
-          flex: 1,
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-          minWidth: 0,
-        }}
-        className={`nq-booking-field ${invalid ? "border-nq-error/50" : ""}`}
+        className={`nq-booking-field flex min-w-0 flex-1 items-center gap-1.5 ${
+          invalid ? "border-nq-error/50" : ""
+        }`}
       >
         <span
           aria-hidden="true"

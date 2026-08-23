@@ -154,6 +154,9 @@ describe("public booking authoritative pricing", () => {
       "utf8",
     );
     expect(migration).toContain("public-booking-pricing-attempt:phone:");
+    expect(migration).toContain(
+      "v_promo_discount := coalesce(v_promo_discount, 0);",
+    );
     expect(migration.indexOf("public-booking-pricing-attempt:phone:")).toBeLessThan(
       migration.indexOf("v_quote := public.resolve_public_booking_pricing", migration.indexOf("CREATE OR REPLACE FUNCTION public.create_public_booking(")),
     );

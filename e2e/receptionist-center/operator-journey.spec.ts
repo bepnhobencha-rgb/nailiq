@@ -91,10 +91,34 @@ test("operator completes the five essential Front Desk tasks in one shift", asyn
   page,
 }) => {
   const appointmentName = testClientNameMarker();
-  const walkinName = testClientNameMarker();
+  const walkinNames = Array.from({ length: 4 }, () => testClientNameMarker());
+  const walkinName = walkinNames[0]!;
   const appointmentPhone = uniqueValidAppointmentPhone();
   const canonicalAppointmentPhone = `1${appointmentPhone}`;
   const bookingYmd = nextOpenYmd(fx.ymdUtc);
+  const journeyStartedAt = Date.now();
+
+  // A busy owner shift must surface online demand without sending anything.
+  // Seed one waiting entry directly into the disposable salon and only assert
+  // visibility; do not press Invite (which is the provider-backed boundary).
+  const waitlistName = testClientNameMarker();
+  const { data: waitlistRow, error: waitlistError } = await supabaseAdmin
+    .from("booking_waitlist_entries" as never)
+    .insert({
+      salon_id: fx.salonId,
+      service_id: fx.serviceIds[0]!,
+      booking_date: fx.ymdUtc,
+      client_name: waitlistName,
+      client_phone: "16045552420",
+      source: "slot_unavailable",
+      status: "waiting",
+    })
+    .select("id")
+    .single();
+  if (waitlistError || !(waitlistRow as { id?: string } | null)?.id) {
+    throw new Error(waitlistError?.message ?? "busy journey waitlist insert failed");
+  }
+  const waitlistId = (waitlistRow as unknown as { id: string }).id;
 
   // 1. View today: the board opens on the salon's current day, with the
   // Today tab selected and the live walk-in intake present.
@@ -106,6 +130,9 @@ test("operator completes the five essential Front Desk tasks in one shift", asyn
   const todayBox = await page.getByTestId("date-switcher-today").boundingBox();
   expect(todayBox?.height ?? 0).toBeGreaterThanOrEqual(44);
   await expect(page.getByTestId("walkin-add-form")).toBeVisible();
+  await expect(page.getByTestId(`waitlist-entry-${waitlistId}`)).toContainText(
+    waitlistName,
+  );
 
   // 2. Create a scheduled appointment through the real desk form. A future
   // fixture day avoids wall-clock-dependent "past slot" filtering.
@@ -167,13 +194,23 @@ test("operator completes the five essential Front Desk tasks in one shift", asyn
     .getByRole("button", { name: "Close" })
     .click();
 
-  // 4. Add a walk-in and prove a waiting queue row was persisted.
-  await fillWalkinGuestContact(page, walkinName);
-  await clickWalkinService(page, fx.serviceIds[0]!);
-  await clickWalkinSubmit(page);
-  await expect(
-    page.locator('[data-testid^="queue-item-"]').filter({ hasText: walkinName }),
-  ).toBeVisible({ timeout: 15_000 });
+  // 4. Add four walk-ins during the same shift. The fourth moves the cockpit
+  // into its explicit busy state, while every guest remains safely queued.
+  for (const name of walkinNames) {
+    await fillWalkinGuestContact(page, name);
+    await clickWalkinService(page, fx.serviceIds[0]!);
+    await clickWalkinSubmit(page);
+    await expect(
+      page.locator('[data-testid^="queue-item-"]').filter({ hasText: name }),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("walkin-submit-label")).toBeVisible({
+      timeout: 15_000,
+    });
+  }
+  await expect(page.getByTestId("status-pill")).toHaveAttribute(
+    "data-state",
+    "busy",
+  );
   await expect
     .poll(async () => {
       const row = await latestBooking(fx.salonId, walkinName);
@@ -215,4 +252,9 @@ test("operator completes the five essential Front Desk tasks in one shift", asyn
       { timeout: 15_000 },
     )
     .toBe("in_progress");
+
+  // A deterministic ceiling catches regressions that turn this compact busy
+  // shift into a multi-minute operator task. This is an automated QA timing
+  // budget, not a claim about a moderated human usability session.
+  expect(Date.now() - journeyStartedAt).toBeLessThan(120_000);
 });

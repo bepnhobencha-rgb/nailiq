@@ -43,7 +43,11 @@ export function mapDeleteStaffError(
   if (code === "minimum_staff") {
     return "You need more than one staff member before you can remove someone.";
   }
-  if (code === "staff_has_bookings" || code === "in_use") {
+  if (
+    code === "staff_has_bookings" ||
+    code === "staff_offboarding_required" ||
+    code === "in_use"
+  ) {
     return setupErrors.staffHasBookings;
   }
   return "Could not remove. Try again.";
@@ -228,11 +232,33 @@ export function StaffDrawer({
 
   // ── handlers ─────────────────────────────────────────────────────────────
 
+  const openAtomicOffboarding = useCallback(() => {
+    if (!staff || !onRequestDelete) return false;
+    setSaveStatus("idle");
+    onRequestDelete(staff.id);
+    onClose();
+    return true;
+  }, [onClose, onRequestDelete, staff]);
+
   const handleSave = useCallback(async () => {
     setFieldError(null);
 
     if (!name.trim()) {
       setFieldError("Enter a name.");
+      return;
+    }
+
+    // An active profile cannot be hidden with a direct status write. Open the
+    // sequence-aware assistant even when the current preview has no bookings;
+    // its RPC owns the final locks, receipt and deactivation transaction.
+    if (
+      isEditMode &&
+      staff?.status === "active" &&
+      patch.status !== undefined &&
+      patch.status !== "active"
+    ) {
+      if (openAtomicOffboarding()) return;
+      setFieldError(setupErrors.staffHasUpcoming);
       return;
     }
 
@@ -261,11 +287,20 @@ export function StaffDrawer({
         return;
       }
       if (!res.ok) {
+        if (
+          res.error === "staff_offboarding_required" &&
+          openAtomicOffboarding()
+        ) {
+          return;
+        }
         setSaveStatus("error");
         // Deactivation blocked because the staff still has open/upcoming
         // appointments — tell the user to reassign them first, and surface it
         // as a field error so it stays visible next to the status control.
-        if (res.error === "staff_has_upcoming") {
+        if (
+          res.error === "staff_has_upcoming" ||
+          res.error === "staff_offboarding_required"
+        ) {
           setFieldError(setupErrors.staffHasUpcoming);
           setToast({ variant: "error", message: setupErrors.staffHasUpcoming });
         } else {
@@ -323,6 +358,7 @@ export function StaffDrawer({
     name,
     onAdded,
     onSaved,
+    openAtomicOffboarding,
     patch,
     role,
     setupErrors.staffHasUpcoming,

@@ -5,6 +5,7 @@ import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { resolveVertical } from "@/shared/verticals/registry";
 import { trackAnthropicFetch } from "@/shared/ai/usageLedger";
+import { AI_TEXT_BACKGROUND_TIMEOUT_MS } from "@/shared/ai/anthropicProviderPolicy";
 import {
   getEffectivePlanLimits,
 } from "@/shared/lib/subscriptionPlans";
@@ -159,6 +160,7 @@ async function callClaudeVision(
         model: "claude-sonnet-4-6",
       },
       () => fetch("https://api.anthropic.com/v1/messages", {
+        signal: AbortSignal.timeout(AI_TEXT_BACKGROUND_TIMEOUT_MS),
         method: "POST",
         headers: {
           "x-api-key": apiKey,

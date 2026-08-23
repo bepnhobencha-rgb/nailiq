@@ -15,6 +15,9 @@ const receiptParser = read("src/shared/booking/bookingSequenceReceipt.ts");
 const receiptServer = read("src/shared/booking/bookingSequenceReceiptServer.ts");
 const readiness = read("src/shared/dashboard/loadGoLiveReadiness.ts");
 const confirmation = read("src/shared/booking/sendBookingConfirmationEmail.ts");
+const confirmationDelivery = read(
+  "src/shared/booking/bookingConfirmationRetryDelivery.ts",
+);
 const capability = read("src/shared/booking/bookingManagementCapabilities.ts");
 const sequenceMigration = read(
   "supabase/migrations/20260820180036_add_authoritative_booking_service_sequences.sql",
@@ -133,11 +136,22 @@ describe("multi-service runtime contract acceptance", () => {
     expect(receiptServer).toContain("parseBookingSequenceReceipt");
     expect(receiptParser).toContain("segmentMatchesSnapshot");
     const receiptIndex = confirmation.indexOf("await loadBookingSequenceReceipt");
-    const claimIndex = confirmation.indexOf("claimNotificationOnce");
-    const providerIndex = confirmation.indexOf("resend.emails.send");
+    const deliveryIndex = confirmation.indexOf("await deliverBookingConfirmation");
     expect(receiptIndex).toBeGreaterThan(-1);
-    expect(claimIndex).toBeGreaterThan(receiptIndex);
-    expect(providerIndex).toBeGreaterThan(claimIndex);
+    expect(deliveryIndex).toBeGreaterThan(receiptIndex);
+    const deliveryStart = confirmationDelivery.indexOf(
+      "export async function deliverBookingConfirmation",
+    );
+    const deliveryEnd = confirmationDelivery.indexOf(
+      "function parseLease",
+      deliveryStart,
+    );
+    const deliveryBody = confirmationDelivery.slice(deliveryStart, deliveryEnd);
+    expect(deliveryBody.indexOf("claim = await deps.claim")).toBeGreaterThan(-1);
+    expect(deliveryBody.indexOf("return dispatchClaimed")).toBeGreaterThan(
+      deliveryBody.indexOf("claim = await deps.claim"),
+    );
+    expect(confirmationDelivery).toContain("return resend.emails.send");
     expect(confirmation).toMatch(/segments[\s\S]{0,500}?(service_name|serviceName)/);
     expect(confirmation).toMatch(/segments[\s\S]{0,700}?(subtotal_cents|total_cents|totalCents)/);
   });

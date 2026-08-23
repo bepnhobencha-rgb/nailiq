@@ -18,6 +18,7 @@ import {
   isFictionalTestNumber,
   smsSuppressReason,
   sendSmsReminder,
+  getSmsMessageStatus,
 } from "../twilioSms";
 
 let pass = 0,
@@ -172,7 +173,44 @@ async function testSuppressedSidUnique() {
   }
 }
 
-void testSuppressedSidUnique().finally(() => {
+async function testDeliveryStatusRead() {
+  const previousFetch = globalThis.fetch;
+  const previousSid = process.env.TWILIO_ACCOUNT_SID;
+  const previousToken = process.env.TWILIO_AUTH_TOKEN;
+  const previousFrom = process.env.TWILIO_PHONE_NUMBER;
+  process.env.TWILIO_ACCOUNT_SID = `AC${"a".repeat(32)}`;
+  process.env.TWILIO_AUTH_TOKEN = "test-token";
+  process.env.TWILIO_PHONE_NUMBER = "+16045101234";
+  try {
+    let method = "";
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      method = init?.method ?? "GET";
+      return new Response(JSON.stringify({ status: "delivered", error_code: null }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+    const result = await getSmsMessageStatus(`SM${"b".repeat(32)}`);
+    test("delivery status lookup is read-only and parses a provider receipt", () => {
+      assertEqual(method, "GET");
+      assertEqual(result, { ok: true, status: "delivered", errorCode: null });
+    });
+    const invalid = await getSmsMessageStatus("not-a-message-sid");
+    test("delivery status lookup rejects an invalid SID before provider access", () => {
+      assertEqual(invalid, { ok: false, error: "invalid_message_sid" });
+    });
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousSid === undefined) delete process.env.TWILIO_ACCOUNT_SID;
+    else process.env.TWILIO_ACCOUNT_SID = previousSid;
+    if (previousToken === undefined) delete process.env.TWILIO_AUTH_TOKEN;
+    else process.env.TWILIO_AUTH_TOKEN = previousToken;
+    if (previousFrom === undefined) delete process.env.TWILIO_PHONE_NUMBER;
+    else process.env.TWILIO_PHONE_NUMBER = previousFrom;
+  }
+}
+
+void testSuppressedSidUnique().then(testDeliveryStatusRead).finally(() => {
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail > 0) process.exit(1);
 });

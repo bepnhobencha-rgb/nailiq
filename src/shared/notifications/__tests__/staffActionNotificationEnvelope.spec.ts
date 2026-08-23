@@ -126,6 +126,27 @@ describe("staff-action immutable material and envelope", () => {
     expect(envelope.text).toContain("Gel manicure");
   });
 
+  it("renders staff_change from the immutable replacement-staff snapshot", () => {
+    const value = raw("email");
+    value.event = "staff_change";
+    value.material.event = "staff_change";
+    const material = parseStaffActionNotificationMaterial(value);
+    const rendered = buildStaffActionNotificationEnvelope(material!, {
+      siteUrl: "https://nailiq.test",
+    });
+    const envelope = JSON.parse(rendered!.envelope);
+
+    expect(envelope).toMatchObject({
+      event: "staff_change",
+      channel: "email",
+      actorUserId: IDS.actor,
+    });
+    expect(envelope.subject).toContain("nhân viên");
+    expect(envelope.text).toContain("Linh");
+    expect(envelope.text).toContain("vẫn giữ nguyên");
+    expect(envelope.html).toContain("Nhân viên phục vụ đã được cập nhật");
+  });
+
   it.each([
     ["top-level identity drift", (value: ReturnType<typeof raw>) => { value.booking_id = IDS.salon; }],
     ["missing staff correlation", (value: ReturnType<typeof raw>) => { value.material.staff_name = null as never; }],

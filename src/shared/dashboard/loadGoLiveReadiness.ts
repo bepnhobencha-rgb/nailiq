@@ -118,13 +118,33 @@ export async function loadGoLiveReadiness(
     latestAttestationResults.some((result) => result.error)
   ) {
     console.error("[loadGoLiveReadiness]", {
-      salon: salonResult.error?.code,
-      services: servicesResult.error?.code,
-      staff: staffResult.error?.code,
-      memberships: membershipsResult.error?.code,
-      attestations: attestationsResult.error?.code,
+      salon: salonResult.error
+        ? { code: salonResult.error.code, message: salonResult.error.message }
+        : undefined,
+      services: servicesResult.error
+        ? { code: servicesResult.error.code, message: servicesResult.error.message }
+        : undefined,
+      staff: staffResult.error
+        ? { code: staffResult.error.code, message: staffResult.error.message }
+        : undefined,
+      memberships: membershipsResult.error
+        ? {
+            code: membershipsResult.error.code,
+            message: membershipsResult.error.message,
+          }
+        : undefined,
+      attestations: attestationsResult.error
+        ? {
+            code: attestationsResult.error.code,
+            message: attestationsResult.error.message,
+          }
+        : undefined,
       latestAttestations: latestAttestationResults
-        .map((result) => result.error?.code)
+        .map((result) =>
+          result.error
+            ? { code: result.error.code, message: result.error.message }
+            : undefined,
+        )
         .filter(Boolean),
     });
     return { ok: false, reason: "unavailable" };
@@ -344,8 +364,12 @@ export async function loadGoLiveReadiness(
     typeof row.staff_selection_enabled === "boolean"
       ? row.staff_selection_enabled
       : null;
-  const taxLineSignature = Array.isArray(row.tax_lines)
-    ? row.tax_lines.flatMap((taxLine) => {
+  // Freshly registered salons use NULL to mean "no tax lines configured".
+  // Treat that canonical empty state as an empty signature while still
+  // failing closed for any other malformed non-array value.
+  const rawTaxLines = row.tax_lines === null ? [] : row.tax_lines;
+  const taxLineSignature = Array.isArray(rawTaxLines)
+    ? rawTaxLines.flatMap((taxLine) => {
         if (!taxLine || typeof taxLine !== "object") return [];
         const value = taxLine as {
           name?: unknown;
@@ -378,8 +402,8 @@ export async function loadGoLiveReadiness(
       bookingLeadMinutes < 0 ||
       resourcesEnabled === null ||
       staffSelectionEnabled === null ||
-      !Array.isArray(row.tax_lines) ||
-      taxLineSignature.length !== row.tax_lines.length ||
+      !Array.isArray(rawTaxLines) ||
+      taxLineSignature.length !== rawTaxLines.length ||
       serviceCandidates.some(
         (service) =>
           !service.isAddon &&

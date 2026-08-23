@@ -10,6 +10,15 @@ export const dynamic = "force-dynamic";
 type Props = { params: Promise<{ slug: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  if (!GIFT_CARD_PURCHASE_ENABLED) {
+    return {
+      title: { absolute: "Not found | NailIQ" },
+      description: "This page does not exist.",
+      robots: { index: false, follow: false },
+      alternates: { canonical: null },
+    };
+  }
+
   const { slug } = await params;
   const supabase = await createClient();
   const { data } = await supabase

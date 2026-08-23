@@ -433,8 +433,8 @@ describe("MQA-0098 channel wiring and bilingual contract", () => {
     expect(source("src/shared/booking/submitPublicBooking.ts"))
       .toContain("clientLocale: params.language ?? \"en\"");
     const receptionist = source("src/shared/dashboard/receptionistActions.ts");
-    expect(receptionist).toContain("clientLocale: input.clientLocale ?? \"en\"");
-    expect(receptionist).toContain("clientLocale: input.language ?? \"en\"");
+    expect(receptionist).toContain("clientLocale: input.language ?? existing.client_locale");
+    expect(receptionist).toContain("clientLocale: input.language ?? null");
     const group = source("src/shared/booking/sendGroupBookingConfirmationEmail.ts");
     expect(group).toContain("client_email, client_locale,");
     expect(group).toContain("organizerLocale: normalizeEmailLocale(organizer.client_locale)");

@@ -38,8 +38,9 @@ describe("booking confirmation retry runtime adoption", () => {
     expect(cron).toContain("BOOKING_CONFIRMATION_RETRY_BATCH = 10");
     expect(cron).toContain("bookingConfirmationRetries");
     expect(cron.indexOf("await runBookingConfirmationRetryWorker")).toBeLessThan(
-      cron.indexOf("for (const rowRaw of due ?? [])"),
+      cron.indexOf('.from("scheduled_notifications")'),
     );
+    expect(cron).not.toContain("for (const rowRaw of due ?? [])");
   });
 
   it("pairs runtime adoption with the later service-only immutable DB envelope contract", () => {

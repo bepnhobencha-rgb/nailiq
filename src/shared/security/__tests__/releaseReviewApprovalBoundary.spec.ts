@@ -41,8 +41,8 @@ describe("release review approval boundary", () => {
     );
     expect(cronSource).toContain("requireCronAuthorization(request)");
     expect(cronSource).toContain('runTrackedCron("release_review"');
-    expect(actionSource).toContain("getSuperAdminRole");
-    expect(actionSource).toContain('new Set(["founder", "ops_admin"])');
+    expect(actionSource).toContain("requireActiveSuperAdminSession");
+    expect(actionSource).toContain('const ALLOWED_ROLES = new Set(["founder", "ops_admin"])');
     expect(actionSource).toContain("writeAuditLog");
     expect(actionSource).toContain('.eq("status" as never, "pending")');
   });

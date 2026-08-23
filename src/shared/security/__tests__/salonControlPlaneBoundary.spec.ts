@@ -69,7 +69,7 @@ describe("salon control-plane column boundary", () => {
       'import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole"',
     );
     expect(ownerChecks).toHaveLength(2);
-    expect(serviceWrites).toHaveLength(2);
+    expect(serviceWrites).toHaveLength(4);
   });
 
   it("keeps payment-provider selection owner-only at the server action", () => {

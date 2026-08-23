@@ -59,9 +59,9 @@ export type BookingPricingEvidence = {
 };
 
 /**
- * Stage 1 deliberately carries collected gross only. Tips, refunds, net and
- * commission remain unknown until a reconciled provider ledger and approved
- * product semantics exist.
+ * Payment-operation rows remain the authority for collected gross and refunds.
+ * Approved tip evidence and policy-calculated commission estimates are carried
+ * separately so an estimate can never be interpreted as payroll or payout.
  */
 export type FinancialOperationKind =
   | "deposit_charge"

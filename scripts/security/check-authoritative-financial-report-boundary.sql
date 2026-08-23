@@ -18,10 +18,23 @@ BEGIN
       AND p.prosecdef
       AND pg_catalog.array_to_string(p.proconfig,',')='search_path=""'
   ) THEN RAISE EXCEPTION 'financial report RPC SECURITY DEFINER/search_path mismatch'; END IF;
-  IF to_regclass('public.salon_financial_metric_policies') IS NOT NULL
-     OR to_regclass('public.booking_financial_metric_evidence') IS NOT NULL
+  IF to_regclass('public.salon_financial_metric_policies') IS NULL
+     OR to_regclass('public.booking_financial_metric_evidence') IS NULL
      OR to_regclass('public.financial_report_snapshots') IS NOT NULL THEN
-    RAISE EXCEPTION 'unsupported/dead financial assertion storage exists';
+    RAISE EXCEPTION 'approved financial metric storage boundary mismatch';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname='public' AND c.relname='salon_financial_metric_policies'
+      AND c.relrowsecurity AND c.relforcerowsecurity
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname='public' AND c.relname='booking_financial_metric_evidence'
+      AND c.relrowsecurity AND c.relforcerowsecurity
+  ) OR has_table_privilege('anon','public.booking_financial_metric_evidence','SELECT')
+     OR has_table_privilege('authenticated','public.booking_financial_metric_evidence','SELECT')
+     OR has_table_privilege('service_role','public.booking_financial_metric_evidence','INSERT,UPDATE,DELETE') THEN
+    RAISE EXCEPTION 'financial metric RLS/ACL boundary mismatch';
   END IF;
   SELECT indexdef INTO v_def FROM pg_indexes
   WHERE schemaname='public' AND indexname='booking_payment_operations_unbound_refund_once';

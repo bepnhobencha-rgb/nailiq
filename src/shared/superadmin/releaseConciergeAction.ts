@@ -1,6 +1,7 @@
 "use server";
 
 import Anthropic from "@anthropic-ai/sdk";
+import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProviderPolicy";
 import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 import { requireActiveSuperAdminSession } from "@/shared/auth/requireActiveSuperAdminSession";
 import type { DraftReleaseUpdateResult } from "@/shared/superadmin/announcementsTypes";
@@ -20,7 +21,7 @@ function getReleaseConciergeClient(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY?.trim();
   if (!key) return null;
   if (!releaseConciergeClient) {
-    releaseConciergeClient = new Anthropic({ apiKey: key });
+    releaseConciergeClient = createTextBackgroundAnthropicClient(key);
   }
   return releaseConciergeClient;
 }

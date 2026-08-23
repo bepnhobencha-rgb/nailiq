@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-describe("deleteStaff private client-profile cleanup", () => {
-  it("uses the server-only client and keeps the update salon-scoped", () => {
+describe("deleteStaff atomic offboarding boundary", () => {
+  it("scans both scheduling models and refuses the legacy destructive path", () => {
     const source = readFileSync(
       new URL("../../dashboard/setupActions.ts", import.meta.url),
       "utf8",
@@ -12,11 +12,11 @@ describe("deleteStaff private client-profile cleanup", () => {
       source.indexOf("export async function updateOpeningHours"),
     );
 
-    expect(deleteStaff).toContain("const admin = createServiceRoleClient()");
-    expect(deleteStaff).toContain('admin\n    .from("bookings")');
-    expect(deleteStaff).toContain('.from("client_profiles")');
-    expect(deleteStaff).toContain('admin\n    .from("staff")');
+    expect(source).toContain("loadLiveStaffAssignmentState");
+    expect(source).toContain('.from("booking_service_segments")');
+    expect(deleteStaff).toContain('fail("staff_offboarding_required")');
+    expect(deleteStaff).not.toContain('from("client_profiles")');
+    expect(deleteStaff).not.toContain("deleted_at: new Date()");
     expect(deleteStaff).toContain('.eq("salon_id", r.salon.id)');
-    expect(deleteStaff).toContain('.eq("preferred_staff_id", staffId)');
   });
 });

@@ -1,7 +1,13 @@
+import { createHash } from "node:crypto";
+
 import { test, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
-import { cleanupTestSalon } from "../helpers/db";
+import {
+  cleanupTestSalon,
+  cleanupTestUser,
+  seedTestSalonMember,
+} from "../helpers/db";
 import { DEFAULT_OPENING_HOURS_JSON } from "@/shared/dashboard/openingHoursDefaults";
 
 import { seedDeskBooking, supabaseAdmin } from "./helpers";
@@ -43,29 +49,24 @@ function isoAtUtcYmdHourMinute(
   return new Date(Date.UTC(y, m - 1, dd, hour, minute, 0)).toISOString();
 }
 
-async function gotoSetupStaff(page: Page, slug: string): Promise<void> {
-  const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
-  let hostname = "localhost";
-  try {
-    hostname = new URL(baseURL).hostname;
-  } catch {
-    /* noop */
-  }
-
-  await page.context().addCookies([
-    {
-      name: "nailiq-demo-slug",
-      value: slug,
-      domain:
-        hostname === "127.0.0.1"
-          ? "127.0.0.1"
-          : hostname === "localhost"
-            ? "localhost"
-            : hostname,
-      path: "/" as const,
-    },
-  ]);
-
+async function gotoSetupStaff(
+  page: Page,
+  slug: string,
+  account: { email: string; password: string },
+): Promise<void> {
+  const digest = createHash("sha256").update(account.email).digest("hex");
+  await page.setExtraHTTPHeaders({
+    "x-forwarded-for": `2001:db8::${digest.slice(0, 4)}:${digest.slice(4, 8)}`,
+  });
+  await page.goto("/register");
+  await expect(page.getByTestId("social-auth-controls")).toHaveAttribute(
+    "data-hydrated",
+    "true",
+  );
+  await page.locator('input[inputmode="email"]').fill(account.email);
+  await page.locator('input[type="password"]').fill(account.password);
+  await page.getByRole("button", { name: /^sign in$/i }).click();
+  await page.waitForURL(/\/dashboard\//, { timeout: 30_000 });
   await page.goto(`/dashboard/${encodeURIComponent(slug)}/setup/staff`);
   await page
     .getByRole("heading", { name: "Staff", exact: false })
@@ -170,9 +171,11 @@ async function openDrawerAndSetStatus(
 }
 
 let fx: Fixture;
+let owner: Awaited<ReturnType<typeof seedTestSalonMember>>;
 
 test.beforeAll(async () => {
   fx = await seedSalonAndService();
+  owner = await seedTestSalonMember(fx.salonId, "owner");
 });
 
 test.beforeEach(async () => {
@@ -181,12 +184,13 @@ test.beforeEach(async () => {
 
 test.afterAll(async () => {
   await cleanupTestSalon(SLUG);
+  await cleanupTestUser(owner.userId);
 });
 
-test.describe("Setup staff deactivate guard", () => {
+test.describe("Setup staff atomic offboarding route", () => {
   test.describe.configure({ timeout: 60_000 });
 
-  test("da-1: cannot deactivate staff with an upcoming appointment", async ({
+  test("da-1: active→inactive opens the atomic reassignment assistant", async ({
     page,
   }) => {
     const blockId = await insertStaff(fx.salonId, NAME_BLOCK);
@@ -201,27 +205,27 @@ test.describe("Setup staff deactivate guard", () => {
       source: "appointment",
     });
 
-    await gotoSetupStaff(page, fx.slug);
+    await gotoSetupStaff(page, fx.slug, owner);
     await openDrawerAndSetStatus(page, blockId, "inactive");
 
     await page.getByRole("button", { name: /^Save$/ }).click();
 
-    // The guard rejects the deactivation → the drawer shows the reassign-first
-    // field error and the drawer stays open.
-    const fieldError = page.getByTestId("staff-drawer-field-error");
-    await expect(fieldError).toBeVisible({ timeout: 15_000 });
-    await expect(fieldError).toContainText(/upcoming appointments|Reassign/i);
+    await expect(
+      page.getByRole("heading", { name: /Offboard staff member/i }),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/1 appointment\(s\) to reassign/i)).toBeVisible();
 
     await page.screenshot({
       path: "playwright-report/deactivate-blocked-desktop.png",
       fullPage: true,
     });
 
-    // Server-side truth: staff is NOT inactive.
+    // Opening the assistant is non-mutating; the atomic confirmation owns the
+    // sequence scan, reassignment and status update.
     expect(await getStaffStatus(blockId)).not.toBe("inactive");
   });
 
-  test("da-2: can deactivate staff with only past/completed history", async ({
+  test("da-2: zero-live-assignment deactivation still uses the atomic RPC", async ({
     page,
   }) => {
     const okId = await insertStaff(fx.salonId, NAME_OK);
@@ -236,12 +240,16 @@ test.describe("Setup staff deactivate guard", () => {
       source: "appointment",
     });
 
-    await gotoSetupStaff(page, fx.slug);
+    await gotoSetupStaff(page, fx.slug, owner);
     await openDrawerAndSetStatus(page, okId, "inactive");
 
     await page.getByRole("button", { name: /^Save$/ }).click();
+    await expect(
+      page.getByRole("heading", { name: /Offboard staff member/i }),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/No appointments need reassignment/i)).toBeVisible();
+    await page.getByTestId("staff-offboarding-complete").click();
 
-    // No field error; deactivation lands in the DB.
     await expect
       .poll(async () => getStaffStatus(okId), { timeout: 15_000 })
       .toBe("inactive");

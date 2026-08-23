@@ -82,6 +82,7 @@ import {
   stablePublicBookingRequestId,
   type PublicBookingRequestMaterial,
 } from "@/shared/booking/publicBookingRequestId";
+import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 
 export type ReturningCustomer = {
   found: true;
@@ -226,8 +227,13 @@ export function useBookingFlowState(
     normalizeNoon(salonTodayCalendarDate(salon.timezone)),
   );
   const [timeSlot, setTimeSlot] = useState<string | null>(null);
+  const timeSlotRef = useRef<string | null>(null);
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
+  const [availabilityRevision, setAvailabilityRevision] = useState(0);
+  const [availabilityRealtimeStatus, setAvailabilityRealtimeStatus] = useState<
+    "idle" | "connecting" | "subscribed" | "degraded"
+  >("idle");
   const pendingWebVoiceTimeSlotRef = useRef<string | null>(null);
   const [popularSlotLabels, setPopularSlotLabels] = useState<string[]>([]);
   const [selectedCombo, setSelectedComboState] = useState<BookingComboItem | null>(null);
@@ -766,6 +772,59 @@ export function useBookingFlowState(
   }, [t.bookingErrors.slotJustTaken]);
 
   useEffect(() => {
+    timeSlotRef.current = timeSlot;
+  }, [timeSlot]);
+
+  useEffect(() => {
+    if (step !== "time") return;
+
+    let cancelled = false;
+    const supabase = createPublicClient();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- expose connection readiness and degraded state to the booking UI/test contract
+    setAvailabilityRealtimeStatus("connecting");
+
+    const onAvailabilityChange = () => {
+      if (!cancelled) setAvailabilityRevision((revision) => revision + 1);
+    };
+    const filter = `salon_id=eq.${salon.id}`;
+    const channel = supabase
+      .channel(`public-booking-availability-${salon.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "salon_availability_revisions",
+          filter,
+        },
+        onAvailabilityChange,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "salon_availability_revisions",
+          filter,
+        },
+        onAvailabilityChange,
+      )
+      .subscribe((status) => {
+        if (cancelled) return;
+        if (status === "SUBSCRIBED") {
+          setAvailabilityRealtimeStatus("subscribed");
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setAvailabilityRealtimeStatus("degraded");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [step, salon.id]);
+
+  useEffect(() => {
     if (step !== "time" || !serviceId || !service) return;
 
     let cancelled = false;
@@ -791,6 +850,16 @@ export function useBookingFlowState(
     }).then((slots) => {
       if (cancelled) return;
       setTimeSlots(slots);
+      const selectedSlot = timeSlotRef.current;
+      if (
+        availabilityRevision > 0 &&
+        selectedSlot &&
+        !slots.some((slot) => slot.available && slot.label === selectedSlot)
+      ) {
+        timeSlotRef.current = null;
+        setTimeSlot(null);
+        setError(t.bookingErrors.slotJustTaken);
+      }
       setSlotsLoading(false);
     });
 
@@ -812,6 +881,8 @@ export function useBookingFlowState(
     salon.timezone,
     slotBookingTiming,
     slotTrailingBufferMinutes,
+    availabilityRevision,
+    t.bookingErrors.slotJustTaken,
   ]);
 
   useEffect(() => {
@@ -2182,6 +2253,7 @@ export function useBookingFlowState(
     timeSlot,
     timeSlots,
     slotsLoading,
+    availabilityRealtimeStatus,
     popularSlotLabels,
     selectedCombo,
     selectedComboId: selectedCombo?.id ?? null,

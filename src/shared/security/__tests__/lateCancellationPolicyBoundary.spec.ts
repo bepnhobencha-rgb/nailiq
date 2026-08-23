@@ -11,6 +11,12 @@ describe("late-cancellation policy boundary", () => {
     "supabase/migrations/20260807071017_lock_late_cancel_policy_across_customer_reschedule.sql",
   );
   const cancelRoute = read("src/app/api/booking/cancel-action/route.ts");
+  const managementCapabilities = read(
+    "src/shared/booking/bookingManagementCapabilities.ts",
+  );
+  const capabilityMigration = read(
+    "supabase/migrations/20260820140000_add_action_scoped_booking_management_capabilities.sql",
+  );
   const voiceExecutor = read("src/shared/voiceai/toolExecutor.ts");
   const voiceTools = read("src/shared/voiceai/realtimeTools.ts");
 
@@ -31,7 +37,14 @@ describe("late-cancellation policy boundary", () => {
   });
 
   it("uses the same server-authoritative evaluator on web and voice", () => {
-    expect(cancelRoute).toContain("evaluateLateCancellationPolicy");
+    expect(cancelRoute).toContain("inspectBookingManagementCapability");
+    expect(cancelRoute).toContain("committed.cancelPreview");
+    expect(managementCapabilities).toContain(
+      '"inspect_booking_management_capability_with_sequence"',
+    );
+    expect(capabilityMigration).toContain(
+      "public.booking_management_cancel_preview(",
+    );
     expect(voiceExecutor).toContain("evaluateLateCancellationPolicy");
     expect(voiceExecutor).toContain("buildLateCancellationLockPatch");
     const voiceReschedule = voiceExecutor.slice(
@@ -53,7 +66,9 @@ describe("late-cancellation policy boundary", () => {
     expect(voiceExecutor).toContain("timingSafeEqual");
     expect(voiceTools).toContain("late_fee_confirmation_token");
     expect(voiceExecutor).toContain("!lateFeeAcknowledged");
-    expect(voiceExecutor).toContain("amountCentsOverride: feePolicy.feeCents");
+    expect(voiceExecutor).toContain(
+      "amountCentsOverride: committed.cancelPreview!.feeCents",
+    );
   });
 
   it("fails closed for group cancellation with card charges", () => {

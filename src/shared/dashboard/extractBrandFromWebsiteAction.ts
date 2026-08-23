@@ -2,6 +2,7 @@
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { trackAnthropicFetch } from "@/shared/ai/usageLedger";
+import { AI_TEXT_BACKGROUND_TIMEOUT_MS } from "@/shared/ai/anthropicProviderPolicy";
 import { isValidBrandColor } from "@/shared/lib/brandColor";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 
@@ -98,6 +99,7 @@ export async function extractBrandFromImageUrl(
         model: "claude-sonnet-4-6",
       },
       () => fetch("https://api.anthropic.com/v1/messages", {
+        signal: AbortSignal.timeout(AI_TEXT_BACKGROUND_TIMEOUT_MS),
         method: "POST",
         headers: {
           "x-api-key": visionKey,

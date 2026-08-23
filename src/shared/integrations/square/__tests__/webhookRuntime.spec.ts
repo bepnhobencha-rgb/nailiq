@@ -67,7 +67,10 @@ describe("Square webhook runtime boundary", () => {
         object: {
           loyalty_account: {
             id: "account-1",
+            program_id: "program-1",
             balance: 12,
+            lifetime_points: 44,
+            updated_at: "2026-08-20T11:59:59Z",
             customer_id: "customer-secret",
             mapping: { phone_number: "+16045550199" },
           },
@@ -79,6 +82,15 @@ describe("Square webhook runtime boundary", () => {
     expect(sanitized?.entityId).toBe("account-1");
     expect(JSON.stringify(sanitized)).not.toContain("phone");
     expect(JSON.stringify(sanitized)).not.toContain("customer-secret");
+    expect(sanitized?.material).toEqual({
+      entity: {
+        id: "account-1",
+        program_id: "program-1",
+        balance: 12,
+        lifetime_points: 44,
+        updated_at: "2026-08-20T11:59:59Z",
+      },
+    });
 
     const promotion = parseSquareEvent(JSON.stringify({
       merchant_id: "merchant",
@@ -88,6 +100,168 @@ describe("Square webhook runtime boundary", () => {
       data: { id: "promotion-1", object: { loyalty_promotion: { id: "promotion-1", status: "CANCELED" } } },
     }));
     expect(sanitizeSquareOptionalEvent(promotion!)?.entityId).toBe("promotion-1");
+  });
+
+  it("normalizes immutable loyalty event metadata without customer identity", () => {
+    const event = parseSquareEvent(JSON.stringify({
+      merchant_id: "merchant",
+      type: "loyalty.event.created",
+      event_id: "webhook-event-1",
+      created_at: "2026-08-20T12:00:01Z",
+      data: {
+        id: "loyalty-event-1",
+        object: {
+          loyalty_event: {
+            id: "loyalty-event-1",
+            type: "ACCUMULATE_POINTS",
+            created_at: "2026-08-20T12:00:00Z",
+            loyalty_account_id: "account-1",
+            location_id: "location-1",
+            source: "LOYALTY_API",
+            accumulate_points: {
+              loyalty_program_id: "program-1",
+              points: 12,
+              order_id: "order-1",
+            },
+            customer_id: "must-not-survive",
+          },
+        },
+      },
+    }));
+    expect(sanitizeSquareOptionalEvent(event!)).toEqual({
+      entityId: "loyalty-event-1",
+      material: {
+        entity: {
+          id: "loyalty-event-1",
+          type: "ACCUMULATE_POINTS",
+          loyalty_account_id: "account-1",
+          program_id: "program-1",
+          created_at: "2026-08-20T12:00:00Z",
+          points_delta: 12,
+          order_id: "order-1",
+          location_id: "location-1",
+          source: "LOYALTY_API",
+        },
+      },
+    });
+  });
+
+  it("keeps Square gift card snapshots GAN-free and provider-authoritative", () => {
+    const event = parseSquareEvent(JSON.stringify({
+      merchant_id: "merchant",
+      type: "gift_card.updated",
+      event_id: "gift-card-event-1",
+      created_at: "2026-08-22T17:00:00Z",
+      data: {
+        id: "gftc:card-1",
+        object: {
+          gift_card: {
+            id: "gftc:card-1",
+            type: "DIGITAL",
+            gan_source: "SQUARE",
+            state: "ACTIVE",
+            balance_money: { amount: 3750, currency: "CAD" },
+            created_at: "2026-08-22T16:00:00Z",
+            gan: "7783320000000000",
+            customer_ids: ["customer-secret"],
+          },
+        },
+      },
+    }));
+    expect(sanitizeSquareOptionalEvent(event!)).toEqual({
+      entityId: "gftc:card-1",
+      material: {
+        entity: {
+          id: "gftc:card-1",
+          type: "DIGITAL",
+          gan_source: "SQUARE",
+          state: "ACTIVE",
+          balance_money: { amount: 3750, currency: "CAD" },
+          created_at: "2026-08-22T16:00:00Z",
+        },
+      },
+    });
+    expect(JSON.stringify(sanitizeSquareOptionalEvent(event!))).not.toMatch(/gan\"|customer-secret/);
+  });
+
+  it("normalizes append-only partial redeem and refund activity revisions", () => {
+    const redeem = parseSquareEvent(JSON.stringify({
+      merchant_id: "merchant",
+      type: "gift_card.activity.updated",
+      event_id: "gift-activity-webhook-1",
+      created_at: "2026-08-22T17:03:00Z",
+      data: {
+        id: "gcact:redeem-1",
+        object: {
+          gift_card_activity: {
+            id: "gcact:redeem-1",
+            type: "REDEEM",
+            location_id: "location-1",
+            created_at: "2026-08-22T17:02:00Z",
+            gift_card_id: "gftc:card-1",
+            gift_card_gan: "7783320000000000",
+            gift_card_balance_money: { amount: 3750, currency: "CAD" },
+            redeem_activity_details: {
+              amount_money: { amount: 1250, currency: "CAD" },
+              payment_id: "payment-1",
+              reference_id: "booking-safe-reference",
+              status: "COMPLETED",
+            },
+          },
+        },
+      },
+    }));
+    expect(sanitizeSquareOptionalEvent(redeem!)).toEqual({
+      entityId: "gcact:redeem-1",
+      material: {
+        entity: {
+          id: "gcact:redeem-1",
+          type: "REDEEM",
+          location_id: "location-1",
+          created_at: "2026-08-22T17:02:00Z",
+          gift_card_id: "gftc:card-1",
+          gift_card_balance_money: { amount: 3750, currency: "CAD" },
+          amount_money: { amount: 1250, currency: "CAD" },
+          status: "COMPLETED",
+          payment_id: "payment-1",
+          reference_id: "booking-safe-reference",
+        },
+      },
+    });
+    expect(JSON.stringify(sanitizeSquareOptionalEvent(redeem!))).not.toContain("7783320000000000");
+
+    const refund = parseSquareEvent(JSON.stringify({
+      merchant_id: "merchant",
+      type: "gift_card.activity.created",
+      event_id: "gift-activity-webhook-2",
+      created_at: "2026-08-22T17:04:00Z",
+      data: {
+        id: "gcact:refund-1",
+        object: {
+          gift_card_activity: {
+            id: "gcact:refund-1",
+            type: "REFUND",
+            location_id: "location-1",
+            created_at: "2026-08-22T17:04:00Z",
+            gift_card_id: "gftc:card-1",
+            gift_card_balance_money: { amount: 4250, currency: "CAD" },
+            refund_activity_details: {
+              amount_money: { amount: 500, currency: "CAD" },
+              payment_id: "payment-1",
+              redeem_activity_id: "gcact:redeem-1",
+            },
+          },
+        },
+      },
+    }));
+    expect(sanitizeSquareOptionalEvent(refund!)?.material).toMatchObject({
+      entity: {
+        type: "REFUND",
+        amount_money: { amount: 500, currency: "CAD" },
+        payment_id: "payment-1",
+        redeem_activity_id: "gcact:redeem-1",
+      },
+    });
   });
 
   it("normalizes official catalog and inventory shapes", () => {

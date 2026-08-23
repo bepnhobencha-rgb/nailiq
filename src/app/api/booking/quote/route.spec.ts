@@ -67,4 +67,20 @@ describe("POST /api/booking/quote boundary", () => {
       else process.env.VERCEL_URL = previous;
     }
   });
+
+  it("accepts the configured public site origin behind a local QA proxy", async () => {
+    const previous = process.env.NEXT_PUBLIC_SITE_URL;
+    process.env.NEXT_PUBLIC_SITE_URL = "https://single-use-name.trycloudflare.com";
+    rpc.mockResolvedValueOnce({ data: null, error: { message: "down" } });
+    try {
+      const response = await POST(
+        request({ origin: "https://single-use-name.trycloudflare.com" }),
+      );
+      expect(response.status).toBe(503);
+      expect(rpc).toHaveBeenCalledTimes(1);
+    } finally {
+      if (previous === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+      else process.env.NEXT_PUBLIC_SITE_URL = previous;
+    }
+  });
 });

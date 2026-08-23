@@ -12,7 +12,10 @@ vi.mock("@/shared/lib/supabase/serviceRole", () => ({
 }));
 import {
   estimateAnthropicCostUsd,
+  isProviderTimeoutError,
   normalizeAnthropicUsage,
+  safeErrorCode,
+  trackAnthropicMessage,
   trackAnthropicFetch,
   trackAnthropicStream,
 } from "@/shared/ai/usageLedger";
@@ -54,6 +57,50 @@ describe("AI usage ledger", () => {
         cacheCreationInputTokens: 0,
       }),
     ).toBeNull();
+  });
+
+  it.each([
+    [{ name: "APIConnectionTimeoutError" }],
+    [{ name: "TimeoutError" }],
+    [{ status: 408 }],
+    [{ code: "ETIMEDOUT" }],
+    [{ cause: { name: "ConnectTimeoutError" } }],
+  ])("normalizes provider timeout errors", (error) => {
+    expect(safeErrorCode(error)).toBe("provider_timeout");
+    expect(isProviderTimeoutError(error)).toBe(true);
+  });
+
+  it("records unknown cost and zero known usage for a timed-out text request", async () => {
+    mocks.insert.mockResolvedValueOnce({ error: null });
+    const timeout = Object.assign(new Error("request timed out"), {
+      name: "APIConnectionTimeoutError",
+    });
+
+    await expect(
+      trackAnthropicMessage(
+        {
+          salonId: "00000000-0000-4000-8000-000000000003",
+          feature: "timeout_matrix",
+          model: "claude-haiku-4-5-20251001",
+        },
+        async () => {
+          throw timeout;
+        },
+      ),
+    ).rejects.toBe(timeout);
+
+    expect(mocks.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "failed",
+        input_tokens: 0,
+        output_tokens: 0,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        estimated_cost_usd: null,
+        error_code: "provider_timeout",
+        latency_ms: expect.any(Number),
+      }),
+    );
   });
 
   it("records cumulative usage after a streaming response completes", async () => {
@@ -214,7 +261,36 @@ describe("AI usage ledger", () => {
         status: "failed",
         input_tokens: 0,
         output_tokens: 0,
+        estimated_cost_usd: null,
         error_code: "http_503",
+      }),
+    );
+  });
+
+  it("records and rethrows a raw-fetch timeout without inventing usage or cost", async () => {
+    mocks.insert.mockResolvedValueOnce({ error: null });
+    const timeout = new DOMException("deadline exceeded", "TimeoutError");
+
+    await expect(
+      trackAnthropicFetch(
+        {
+          salonId: null,
+          feature: "raw_timeout_matrix",
+          model: "claude-sonnet-4-6",
+        },
+        async () => {
+          throw timeout;
+        },
+      ),
+    ).rejects.toBe(timeout);
+
+    expect(mocks.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "failed",
+        input_tokens: 0,
+        output_tokens: 0,
+        estimated_cost_usd: null,
+        error_code: "provider_timeout",
       }),
     );
   });

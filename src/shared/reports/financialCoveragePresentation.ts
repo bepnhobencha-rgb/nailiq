@@ -15,6 +15,10 @@ const EN: Record<string, string> = {
   external_refunds_not_reconciled: "External refunds are not fully reconciled",
   authoritative_tip_ingestion_not_configured: "Authoritative tip data is not configured",
   approved_commission_policy_not_configured: "An approved commission policy is not configured",
+  tip_evidence_missing: "No verified tip evidence exists in this period",
+  tip_sources_not_fully_reconciled: "Tip evidence is recorded, but all external sources are not fully reconciled",
+  commission_evidence_missing: "No commission estimate evidence exists in this period",
+  commission_estimate_not_payroll: "Commission is an estimate and is not payroll or payout authority",
 };
 const VI: Record<string, string> = {
   booking_status_not_completed: "Lịch hẹn chưa hoàn tất",
@@ -31,6 +35,10 @@ const VI: Record<string, string> = {
   external_refunds_not_reconciled: "Khoản hoàn bên ngoài chưa được đối chiếu đầy đủ",
   authoritative_tip_ingestion_not_configured: "Chưa cấu hình nguồn dữ liệu tip đáng tin cậy",
   approved_commission_policy_not_configured: "Chưa cấu hình chính sách hoa hồng được phê duyệt",
+  tip_evidence_missing: "Chưa có bằng chứng tip đã xác minh trong kỳ này",
+  tip_sources_not_fully_reconciled: "Tip đã có bằng chứng nhưng chưa đối chiếu đầy đủ mọi nguồn bên ngoài",
+  commission_evidence_missing: "Chưa có bằng chứng ước tính hoa hồng trong kỳ này",
+  commission_estimate_not_payroll: "Hoa hồng chỉ là ước tính, không phải bảng lương hoặc lệnh chi trả",
 };
 
 export function financialCoverageReasonLabel(code: string, language: "en" | "vi"): string {

@@ -16,6 +16,7 @@ function sameOrigin(request: NextRequest): boolean {
   if (fetchSite === "cross-site") return false;
   const allowed = new Set<string>([request.nextUrl.origin]);
   for (const candidate of [
+    process.env.NEXT_PUBLIC_SITE_URL,
     process.env.NEXT_PUBLIC_APP_URL,
     process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
     process.env.VERCEL_BRANCH_URL ? `https://${process.env.VERCEL_BRANCH_URL}` : null,

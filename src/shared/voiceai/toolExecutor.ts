@@ -622,7 +622,6 @@ function scheduleVoiceBookingReconciliation(input: {
   customerPhone: string;
   resolvedStaffName: string | null;
   startUtcIso: string;
-  upsellAccepted?: boolean;
 }): void {
   const appUrl =
     (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
@@ -662,9 +661,6 @@ function scheduleVoiceBookingReconciliation(input: {
                     .update({
                       booking_id: input.bookingId,
                       status: "completed",
-                      ...(input.upsellAccepted
-                        ? { upsell_accepted: true }
-                        : {}),
                     })
                     .eq("id", input.sessionId!);
                   if (error) throw error;
@@ -1099,6 +1095,9 @@ async function handleConfirmBooking(
 
   const bookingId = result.booking_id ?? null;
   if (bookingId) {
+    // Accepted-upsell attribution is intentionally not read from tool args.
+    // It needs a durable shown-offer receipt linked to this authoritative
+    // booking before analytics may record an accepted outcome or revenue.
     scheduleVoiceBookingReconciliation({
       supabase,
       salonId: String(salon.id),
@@ -1110,7 +1109,6 @@ async function handleConfirmBooking(
       customerPhone,
       resolvedStaffName,
       startUtcIso,
-      upsellAccepted: args.upsell_accepted === true,
     });
   }
 

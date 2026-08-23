@@ -315,10 +315,29 @@ export function parseFinancialReportDto(value: unknown): FinancialReportDTO {
   }
 
   const policies = new Map(metricPolicies.map((policy) => [policy.policyId, policy]));
+  if (policies.size !== metricPolicies.length) throw new Error("financial_report_duplicate_metric_policy");
+  for (const metric of ["tips", "commission"] as const) {
+    const scoped = metricPolicies
+      .filter((policy) => policy.metric === metric)
+      .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+    for (let index = 0; index < scoped.length; index += 1) {
+      const policy = scoped[index]!;
+      if (
+        (metric === "tips" && policy.policyVersion !== "tips-staff-100-proportional-v1") ||
+        (metric === "commission" && policy.policyVersion !== "commission-estimate-net-service-v1") ||
+        (policy.effectiveTo !== null && Date.parse(policy.effectiveTo) <= Date.parse(policy.effectiveFrom))
+      ) throw new Error("financial_report_metric_policy_invalid");
+      const next = scoped[index + 1];
+      if (next && (policy.effectiveTo === null || Date.parse(policy.effectiveTo) > Date.parse(next.effectiveFrom))) {
+        throw new Error("financial_report_metric_policy_overlap");
+      }
+    }
+  }
   for (const event of metricEvents) {
     if (event.signedAmountCents !== (event.effect === "credit" ? event.amountCents : -event.amountCents)) throw new Error("financial_report_metric_amount_invalid");
     const policy = policies.get(event.policyId);
     if (!policy || policy.metric !== event.metric || Date.parse(event.occurredAt) < Date.parse(policy.effectiveFrom) || (policy.effectiveTo !== null && Date.parse(event.occurredAt) >= Date.parse(policy.effectiveTo))) throw new Error("financial_report_metric_policy_invalid");
+    if (event.currency !== parsed.salon.currency) throw new Error("financial_report_metric_currency_mismatch");
     if (event.sourceKind === "provider_receipt" ? (!event.provider || !event.providerAccountFingerprint || !event.providerReceiptId || !event.paymentOperationId) : Boolean(event.provider || event.providerAccountFingerprint || event.providerReceiptId)) throw new Error("financial_report_metric_provider_invalid");
   }
   const bookingSubtotal = sumNullable(bookingRows.map((item) => item.bookedSubtotalCents));
@@ -366,16 +385,47 @@ export function parseFinancialReportDto(value: unknown): FinancialReportDTO {
     !parsed.coverage.payments.reasonCodes.includes("service_and_external_payments_not_reconciled") ||
     !parsed.coverage.refunds.reasonCodes.includes("external_refunds_not_reconciled")
   ) throw new Error("financial_report_coverage_scope_uncertified");
-  if (
-    parsed.coverage.tips.state !== "not_configured" || parsed.coverage.commission.state !== "not_configured" ||
-    parsed.coverage.tips.unit !== "evidence" || parsed.coverage.commission.unit !== "evidence" ||
-    parsed.coverage.tips.includedRows !== 0 || parsed.coverage.tips.excludedRows !== 0 ||
-    parsed.coverage.commission.includedRows !== 0 || parsed.coverage.commission.excludedRows !== 0 ||
-    Object.keys(parsed.coverage.tips.sourceCounts).length !== 0 || Object.keys(parsed.coverage.commission.sourceCounts).length !== 0 ||
-    parsed.coverage.tips.reasonCodes.join("|") !== "authoritative_tip_ingestion_not_configured" ||
-    parsed.coverage.commission.reasonCodes.join("|") !== "approved_commission_policy_not_configured" ||
-    parsed.totals.tipCents !== null || parsed.totals.commissionCents !== null || metricEvents.length !== 0 || metricPolicies.length !== 0
-  ) throw new Error("financial_report_metric_configuration_invalid");
+  const validateMetric = (
+    metric: "tips" | "commission",
+    coverage: FinancialCoverage,
+    total: number | null,
+  ) => {
+    const events = metricEvents.filter((event) => event.metric === metric);
+    const configured = metricPolicies.some((policy) => policy.metric === metric);
+    const unconfiguredReason = metric === "tips"
+      ? "authoritative_tip_ingestion_not_configured"
+      : "approved_commission_policy_not_configured";
+    const missingReason = metric === "tips" ? "tip_evidence_missing" : "commission_evidence_missing";
+    const partialReason = metric === "tips"
+      ? "tip_sources_not_fully_reconciled"
+      : "commission_estimate_not_payroll";
+    const expectedSources = countBy(events.map((event) => event.sourceKind));
+    if (
+      coverage.unit !== "evidence" || coverage.excludedRows !== 0 ||
+      coverage.includedRows !== events.length ||
+      !sameCounts(coverage.sourceCounts, expectedSources)
+    ) throw new Error("financial_report_metric_configuration_invalid");
+    if (!configured) {
+      if (
+        events.length !== 0 || total !== null || coverage.state !== "not_configured" ||
+        coverage.reasonCodes.join("|") !== unconfiguredReason
+      ) throw new Error("financial_report_metric_configuration_invalid");
+      return;
+    }
+    if (events.length === 0) {
+      if (
+        total !== null || coverage.state !== "unknown" ||
+        coverage.reasonCodes.join("|") !== missingReason
+      ) throw new Error("financial_report_metric_configuration_invalid");
+      return;
+    }
+    if (
+      coverage.state !== "partial" ||
+      coverage.reasonCodes.join("|") !== partialReason
+    ) throw new Error("financial_report_metric_configuration_invalid");
+  };
+  validateMetric("tips", parsed.coverage.tips, parsed.totals.tipCents);
+  validateMetric("commission", parsed.coverage.commission, parsed.totals.commissionCents);
   const expectedBasis = bookingIncluded > 0 && chargeIncluded + refundIncluded > 0
     ? "mixed_with_separate_totals"
     : chargeIncluded + refundIncluded > 0 ? "provider_collected" : "booking_estimate";

@@ -9,6 +9,7 @@ export type SquareConnectionValidationCode =
   | "token_expired"
   | "token_revoked"
   | "client_disabled"
+  | "credential_identity_mismatch"
   | "insufficient_scopes"
   | "square_forbidden"
   | "square_unavailable"
@@ -42,6 +43,11 @@ type SquareLocation = {
 type SquareMerchant = {
   id?: unknown;
   business_name?: unknown;
+};
+
+type SquareTokenStatus = {
+  client_id?: unknown;
+  merchant_id?: unknown;
 };
 
 function cleanString(value: unknown): string | null {
@@ -134,14 +140,26 @@ async function squareJson(
  */
 export async function validateSquareProductionConnection(
   accessToken: string,
+  expectedApplicationId: string,
   fetchImpl: FetchLike = fetch,
 ): Promise<ValidatedSquareConnection> {
-  await squareRequest(
+  const tokenStatus = (await squareRequest(
     SQUARE_TOKEN_STATUS,
     accessToken,
     fetchImpl,
     "POST",
-  );
+  )) as SquareTokenStatus;
+  const tokenClientId = cleanString(tokenStatus.client_id);
+  const tokenMerchantId = cleanString(tokenStatus.merchant_id);
+  if (
+    !tokenClientId ||
+    !tokenMerchantId ||
+    tokenClientId !== expectedApplicationId
+  ) {
+    throw new SquareConnectionValidationError(
+      "credential_identity_mismatch",
+    );
+  }
 
   const [locationsPayload, merchantsPayload] = await Promise.all([
     squareJson("/locations", accessToken, fetchImpl),
@@ -161,6 +179,11 @@ export async function validateSquareProductionConnection(
   const merchantIdFromLocation = cleanString(location.merchant_id);
   if (!locationId || !merchantIdFromLocation) {
     throw new SquareConnectionValidationError("square_unavailable");
+  }
+  if (merchantIdFromLocation !== tokenMerchantId) {
+    throw new SquareConnectionValidationError(
+      "credential_identity_mismatch",
+    );
   }
 
   const merchants = Array.isArray(merchantsPayload.merchant)

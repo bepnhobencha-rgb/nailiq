@@ -195,6 +195,7 @@ export async function connectSquareSalon(
   try {
     validated = await validateSquareProductionConnection(
       parsed.data.accessToken,
+      parsed.data.applicationId,
     );
   } catch (error) {
     if (error instanceof SquareConnectionValidationError) {

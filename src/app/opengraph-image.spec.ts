@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 
 import OpengraphImage, { alt, contentType, size } from "./opengraph-image";
 
@@ -16,5 +17,11 @@ describe("Open Graph image artifact", () => {
     expect(size).toEqual({ width: 1200, height: 630 });
     expect(contentType).toBe("image/png");
     expect(alt).toContain("NailIQ");
+  });
+
+  it("does not require a remote emoji asset to render", () => {
+    const source = readFileSync(new URL("./opengraph-image.tsx", import.meta.url), "utf8");
+    expect(source).not.toContain("🇨🇦");
+    expect(source).toContain("Vancouver, BC, Canada");
   });
 });

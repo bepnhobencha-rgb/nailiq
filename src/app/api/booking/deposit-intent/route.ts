@@ -1,6 +1,7 @@
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { resolveSupabaseServerUrl } from "@/shared/lib/supabase/serverUrl";
 import { getStripeClient } from "@/shared/lib/stripe";
 import {
   parseClaimedPublicDepositPaymentOperation,
@@ -24,6 +25,18 @@ export const dynamic = "force-dynamic";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HASH_RE = /^[0-9a-f]{64}$/;
+const QA_SQUARE_RESPONSE_LOSS_HEADER = "x-nailiq-qa-square-response-loss";
+const QA_SQUARE_SALON_ID = "019c0000-0000-7000-8000-000000000196";
+const QA_SQUARE_BOOKING_REQUEST_ID = "019c0000-0000-7000-8000-000000000199";
+const QA_SQUARE_PAYMENT_REQUEST_ID = "019c0000-0000-7000-8000-00000000019a";
+const QA_SQUARE_AMOUNT_CENTS = 100;
+const QA_SQUARE_SOURCE_TOKEN = "cnon:card-nonce-ok";
+const PRODUCTION_SUPABASE_REF = "fshmobzyjhmtvndobwsy";
+const LOCAL_SUPABASE_URL = "http://127.0.0.1:54321";
+const QA_SQUARE_APPLICATION_RE = /^sandbox-sq0idb-[A-Za-z0-9_-]{8,}$/;
+const QA_SQUARE_MERCHANT_RE = /^ML[A-Z0-9]{8,}$/;
+const QA_SQUARE_LOCATION_RE = /^L[A-Z0-9]{8,}$/;
+const QA_SQUARE_TOKEN_RE = /^EAAA[A-Za-z0-9_-]{20,}$/;
 
 type Body = {
   salonId?: string;
@@ -44,6 +57,7 @@ type Body = {
   squareSourceToken?: string;
   squareCapabilityToken?: string;
   operationId?: string;
+  replayOnly?: boolean;
 };
 
 type Db = ReturnType<typeof createServiceRoleClient>;
@@ -321,6 +335,89 @@ async function applyMaterialMeters(db: Db, material: ClaimedPublicDepositPayment
   return null;
 }
 
+function squareResponseLossSecretMatches(candidate: string): boolean {
+  const expected = process.env.NAILIQ_QA_SQUARE_RESPONSE_LOSS_SECRET?.trim() ?? "";
+  if (
+    !/^[A-Za-z0-9_-]{32,256}$/.test(expected) ||
+    !/^[A-Za-z0-9_-]{32,256}$/.test(candidate)
+  ) return false;
+  const expectedDigest = createHash("sha256").update(expected, "utf8").digest();
+  const candidateDigest = createHash("sha256").update(candidate, "utf8").digest();
+  return timingSafeEqual(expectedDigest, candidateDigest);
+}
+
+function hostedSupabaseRef(url: string): string | null {
+  const match = /^https:\/\/([a-z0-9]{20})\.supabase\.(?:co|in)\/?$/i.exec(url);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+function qaSquareResponseLossDatabaseIsNonProduction(requestUrl: string): boolean {
+  const publicUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? "";
+  const internalUrl = process.env.SUPABASE_INTERNAL_URL?.trim() ?? "";
+  const effectiveUrl = resolveSupabaseServerUrl()?.trim() ?? "";
+  if (process.env.NAILIQ_QA_LOCAL_SUPABASE === "1") {
+    let requestIsLoopback = false;
+    try {
+      const parsed = new URL(requestUrl);
+      requestIsLoopback = (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+        ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname.toLowerCase());
+    } catch {
+      requestIsLoopback = false;
+    }
+    return requestIsLoopback && publicUrl === LOCAL_SUPABASE_URL &&
+      effectiveUrl === LOCAL_SUPABASE_URL &&
+      (!internalUrl || internalUrl === LOCAL_SUPABASE_URL) &&
+      !process.env.NAILIQ_QA_EXPECTED_SUPABASE_PROJECT_REF?.trim() &&
+      !process.env.E2E_EXPECTED_PROJECT_REF?.trim();
+  }
+  const ref = hostedSupabaseRef(publicUrl);
+  const expectedRef = process.env.NAILIQ_QA_EXPECTED_SUPABASE_PROJECT_REF?.trim().toLowerCase() ?? "";
+  return ref !== null && ref !== PRODUCTION_SUPABASE_REF && expectedRef === ref &&
+    effectiveUrl === publicUrl && (!internalUrl || internalUrl === publicUrl);
+}
+
+function qaSquareResponseLossEnvelopeAuthorized(secret: string, requestUrl: string): boolean {
+  return process.env.NAILIQ_QA_SQUARE_RESPONSE_LOSS_ENABLED === "1" &&
+    (process.env.VERCEL_ENV === "preview" || process.env.VERCEL_ENV === "development") &&
+    process.env.SQUARE_PUBLIC_DEPOSIT_RECONCILIATION_ENVIRONMENT === "sandbox" &&
+    process.env.PAYMENT_LEDGER_WORKERS_ENABLED === "true" &&
+    process.env.DISABLE_OUTBOUND_SMS === "1" &&
+    process.env.DISABLE_OUTBOUND_CALLS === "1" &&
+    process.env.DISABLE_OUTBOUND_EMAIL === "1" &&
+    qaSquareResponseLossDatabaseIsNonProduction(requestUrl) &&
+    squareResponseLossSecretMatches(secret);
+}
+
+function qaSquareResponseLossAuthorized(input: {
+  secret: string;
+  claim: ClaimedPublicDepositPaymentOperation;
+  config: Awaited<ReturnType<typeof getSquareConfig>>;
+  paymentRequestId: string;
+  sourceToken: string;
+  requestUrl: string;
+}): boolean {
+  const provider = input.claim.material.providerMaterial;
+  return qaSquareResponseLossEnvelopeAuthorized(input.secret, input.requestUrl) &&
+    input.claim.material.salonId === QA_SQUARE_SALON_ID &&
+    input.claim.material.bookingIdempotencyKey === QA_SQUARE_BOOKING_REQUEST_ID &&
+    input.paymentRequestId === QA_SQUARE_PAYMENT_REQUEST_ID &&
+    input.sourceToken === QA_SQUARE_SOURCE_TOKEN &&
+    input.claim.material.provider === "square" &&
+    input.claim.material.amountCents === QA_SQUARE_AMOUNT_CENTS &&
+    input.claim.material.currency === "CAD" &&
+    provider.providerEnvironment === "sandbox" &&
+    input.config.environment === "sandbox" &&
+    input.config.salonId === QA_SQUARE_SALON_ID &&
+    input.config.merchantId === provider.providerAccountId &&
+    input.config.locationId === provider.providerLocationId &&
+    input.config.applicationId === provider.providerApplicationId &&
+    QA_SQUARE_APPLICATION_RE.test(input.config.applicationId ?? "") &&
+    QA_SQUARE_MERCHANT_RE.test(input.config.merchantId) &&
+    QA_SQUARE_LOCATION_RE.test(input.config.locationId) &&
+    QA_SQUARE_TOKEN_RE.test(input.config.accessToken) &&
+    input.config.currency === "CAD";
+}
+
 async function completeSquarePaymentCapability(
   db: Db,
   input: {
@@ -328,6 +425,8 @@ async function completeSquarePaymentCapability(
     paymentRequestId: string;
     capabilityToken: string;
     sourceToken: string;
+    qaResponseLossSecret: string;
+    requestUrl: string;
   },
 ) {
   let claimed: { data: unknown; error: unknown };
@@ -365,15 +464,38 @@ async function completeSquarePaymentCapability(
   const blocked = await applyMaterialMeters(db, claim.material);
   if (blocked) return blocked;
 
-  let receipt: { paymentId: string; status: string };
+  let cfg: Awaited<ReturnType<typeof getSquareConfig>>;
   try {
-    const cfg = await getSquareConfig(db as never, claim.material.salonId);
+    cfg = await getSquareConfig(db as never, claim.material.salonId);
     if (
       cfg.merchantId !== claim.material.providerMaterial.providerAccountId ||
       cfg.locationId !== claim.material.providerMaterial.providerLocationId ||
       cfg.environment !== claim.material.providerMaterial.providerEnvironment ||
       cfg.currency !== claim.material.currency
     ) throw new Error("square_provider_account_mismatch");
+  } catch {
+    await completeUnknown(db, claim);
+    return noStore(503, { error: "deposit_pending" });
+  }
+  const qaResponseLossRequested = input.qaResponseLossSecret.length > 0;
+  if (
+    qaResponseLossRequested &&
+    !qaSquareResponseLossAuthorized({
+      secret: input.qaResponseLossSecret,
+      claim,
+      config: cfg,
+      paymentRequestId: input.paymentRequestId,
+      sourceToken: input.sourceToken,
+      requestUrl: input.requestUrl,
+    })
+  ) {
+    // A malformed/production fault-injection request must stop before Square.
+    // The claimed operation remains durable; no receipt is fabricated.
+    return noStore(403, { error: "deposit_unavailable" });
+  }
+
+  let receipt: { paymentId: string; status: string };
+  try {
     receipt = await chargeCardToken(cfg, {
       sourceId: input.sourceToken,
       amountCents: toProviderMinorAmount(
@@ -388,6 +510,13 @@ async function completeSquarePaymentCapability(
     return noStore(503, { error: "deposit_pending" });
   }
   const normalized = receipt.status.toUpperCase();
+  if (normalized === "COMPLETED" && qaResponseLossRequested) {
+    // QA-only response-loss injection: Square accepted the sandbox payment,
+    // but the application intentionally persists no receipt. The read-only
+    // reconciliation worker must rediscover the exact provider payment.
+    await completeUnknown(db, claim);
+    return noStore(503, { error: "deposit_pending" });
+  }
   const outcome = normalized === "COMPLETED"
     ? "succeeded"
     : ["PENDING", "OPEN", "APPROVED"].includes(normalized)
@@ -405,7 +534,9 @@ async function completeSquarePaymentCapability(
   const completedRow = rpcRow(completed.data);
   if (
     completed.error || outcome !== "succeeded" || completedRow?.success !== true ||
-    !["succeeded", "completion_replay"].includes(String(completedRow.code ?? ""))
+    !["succeeded", "succeeded_unbound", "completion_replay"].includes(
+      String(completedRow.code ?? ""),
+    )
   ) return noStore(outcome === "definite_failure" ? 402 : 503, { error: "deposit_pending" });
   return noStore(200, {
     required: true,
@@ -414,6 +545,45 @@ async function completeSquarePaymentCapability(
     paymentRequestId: input.paymentRequestId,
     materialFingerprint: claim.material.materialFingerprint,
   });
+}
+
+async function replayCompletedSquarePaymentCapability(
+  db: Db,
+  input: {
+    operationId: string;
+    paymentRequestId: string;
+    capabilityToken: string;
+  },
+) {
+  let claimed: { data: unknown; error: unknown };
+  try {
+    claimed = await db.rpc("claim_public_square_deposit_completion", {
+      p_operation_id: input.operationId,
+      p_request_id: input.paymentRequestId,
+      p_capability_token: input.capabilityToken,
+    });
+  } catch {
+    return noStore(503, { error: "deposit_unavailable" });
+  }
+  const row = rpcRow(claimed.data);
+  if (claimed.error) return noStore(503, { error: "deposit_unavailable" });
+  if (
+    row?.success === true && row.code === "operation_replay" &&
+    row.status === "succeeded" && row.operation_id === input.operationId &&
+    HASH_RE.test(clean(row.material_fingerprint, 64))
+  ) {
+    return noStore(200, {
+      required: true,
+      paymentCompleted: true,
+      operationId: input.operationId,
+      paymentRequestId: input.paymentRequestId,
+      materialFingerprint: row.material_fingerprint,
+    });
+  }
+  return noStore(
+    row?.code === "reconciliation_required" ? 503 : 409,
+    { error: row?.code === "reconciliation_required" ? "deposit_pending" : "deposit_unavailable" },
+  );
 }
 
 export async function POST(req: Request) {
@@ -427,9 +597,44 @@ export async function POST(req: Request) {
   const squareSourceToken = clean(body.squareSourceToken, 255);
   const squareCapabilityToken = clean(body.squareCapabilityToken, 256);
   const requestedOperationId = clean(body.operationId, 36);
+  const paymentRequestId = clean(body.paymentRequestId, 36);
+  const qaResponseLossSecret = req.headers.get(QA_SQUARE_RESPONSE_LOSS_HEADER)?.trim() ?? "";
+
+  // Recovery verification has a deliberately separate, exact request shape.
+  // It can only read the already-terminal operation through the capability RPC;
+  // extra fields (including any nonce/source token) are rejected before meters,
+  // Square configuration, or provider dispatch can be reached.
+  if (Object.hasOwn(body, "replayOnly")) {
+    const allowedKeys = new Set([
+      "replayOnly",
+      "operationId",
+      "paymentRequestId",
+      "squareCapabilityToken",
+    ]);
+    if (
+      body.replayOnly !== true || qaResponseLossSecret.length > 0 ||
+      Object.keys(body).length !== allowedKeys.size ||
+      Object.keys(body).some((key) => !allowedKeys.has(key)) ||
+      !UUID_RE.test(requestedOperationId) || !UUID_RE.test(paymentRequestId) ||
+      squareCapabilityToken.length < 32
+    ) return noStore(400, { error: "bad_request" });
+    const db = createServiceRoleClient();
+    return replayCompletedSquarePaymentCapability(db, {
+      operationId: requestedOperationId,
+      paymentRequestId,
+      capabilityToken: squareCapabilityToken,
+    });
+  }
   if (body.squareSourceToken !== undefined && (!squareSourceToken || squareSourceToken.length < 10)) {
     return noStore(400, { error: "bad_request" });
   }
+  if (qaResponseLossSecret && !squareSourceToken) {
+    return noStore(400, { error: "bad_request" });
+  }
+  if (
+    qaResponseLossSecret &&
+    !qaSquareResponseLossEnvelopeAuthorized(qaResponseLossSecret, req.url)
+  ) return noStore(403, { error: "deposit_unavailable" });
 
   const db = createServiceRoleClient();
   const forwarded = req.headers.get("x-forwarded-for")?.split(",", 1)[0]?.trim();
@@ -443,7 +648,6 @@ export async function POST(req: Request) {
   // It deliberately does not re-read mutable pricing/OTP state or accept any
   // browser money/account fields after the card token has been created.
   if (squareSourceToken) {
-    const paymentRequestId = clean(body.paymentRequestId, 36);
     if (
       !UUID_RE.test(requestedOperationId) || !UUID_RE.test(paymentRequestId) ||
       squareCapabilityToken.length < 32
@@ -453,8 +657,11 @@ export async function POST(req: Request) {
       paymentRequestId,
       capabilityToken: squareCapabilityToken,
       sourceToken: squareSourceToken,
+      qaResponseLossSecret,
+      requestUrl: req.url,
     });
   }
+  if (qaResponseLossSecret) return noStore(400, { error: "bad_request" });
   if (body.squareCapabilityToken !== undefined || body.operationId !== undefined) {
     return noStore(400, { error: "bad_request" });
   }
@@ -465,7 +672,6 @@ export async function POST(req: Request) {
   const startTimeUtc = clean(body.startTimeUtc, 64);
   const endTimeUtc = clean(body.endTimeUtc, 64);
   const bookingRequestId = clean(body.bookingRequestId, 36);
-  const paymentRequestId = clean(body.paymentRequestId, 36);
   const expectedPricingFingerprint = clean(body.expectedPricingFingerprint, 64);
   const clientPhone = clean(body.clientPhone, 32);
   const clientEmail = body.clientEmail == null ? null : clean(body.clientEmail, 254);
@@ -672,7 +878,9 @@ export async function POST(req: Request) {
         const completedRow = rpcRow(completed.data);
         if (
           !completed.error && outcome === "succeeded" && completedRow?.success === true &&
-          ["succeeded", "completion_replay"].includes(String(completedRow.code ?? ""))
+          ["succeeded", "succeeded_unbound", "completion_replay"].includes(
+            String(completedRow.code ?? ""),
+          )
         ) {
           return noStore(200, {
             required: true,

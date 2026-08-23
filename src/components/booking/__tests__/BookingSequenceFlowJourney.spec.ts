@@ -32,6 +32,7 @@ vi.mock("react", async (importOriginal) => {
 });
 
 vi.mock("@/shared/lib/salonTime", () => ({
+  salonToday: () => "2026-08-21",
   salonWallTimeToUtcIso: () => "2026-08-28T18:00:00.000Z",
 }));
 vi.mock("@/shared/lib/currencyFormat", () => ({

@@ -18,6 +18,7 @@
  */
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 const HORIZON_HOURS = 4;
 const OVERLOAD_QUEUE_AHEAD = 3;
@@ -171,6 +172,11 @@ export async function getStaffAvailability(
   if (!ctx) return { ok: false, error: "unauthorized" };
 
   const supabase = ctx.supabase;
+  // booking_service_segments is intentionally service-role-only. Membership
+  // has already been derived server-side by getDashboardWriteClient, so use a
+  // privileged client only for that tenant-scoped capacity read rather than
+  // exposing the table to authenticated browser roles.
+  const serviceRole = createServiceRoleClient();
   const salonId = ctx.salon.id;
   const cleanService =
     typeof serviceId === "string" && serviceId.trim() ? serviceId.trim() : null;
@@ -249,7 +255,7 @@ export async function getStaffAvailability(
       .lte("start_time_utc", horizonIso)
       .or(`status.eq.in_progress,end_time_utc.gte.${nowIso}`)
       .is("deleted_at" as never, null),
-    supabase
+    serviceRole
       .from("booking_service_segments" as never)
       .select(
         `id, booking_id, salon_id, staff_id, resource_id, prep_minutes,

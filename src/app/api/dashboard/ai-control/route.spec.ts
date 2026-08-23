@@ -8,6 +8,9 @@ const actions = vi.hoisted(() => ({
   prepareAudience: vi.fn(),
   preflightCampaign: vi.fn(),
   sealCampaign: vi.fn(),
+  savePromoCampaign: vi.fn(),
+  saveReactivationCampaign: vi.fn(),
+  saveReviewReply: vi.fn(),
 }));
 
 vi.mock("@/shared/ai/decideApprovalAction", () => ({
@@ -27,6 +30,15 @@ vi.mock("@/shared/ai/preflightCampaignAction", () => ({
 }));
 vi.mock("@/shared/ai/sealCampaignPlanAction", () => ({
   sealCampaignPlanAction: actions.sealCampaign,
+}));
+vi.mock("@/shared/ai/updateReviewReplyDraftAction", () => ({
+  updateReviewReplyDraftAction: actions.saveReviewReply,
+}));
+vi.mock("@/shared/ai/updatePromoCampaignDraftAction", () => ({
+  updatePromoCampaignDraftAction: actions.savePromoCampaign,
+}));
+vi.mock("@/shared/ai/updateReactivationCampaignDraftAction", () => ({
+  updateReactivationCampaignDraftAction: actions.saveReactivationCampaign,
 }));
 
 import { POST } from "@/app/api/dashboard/ai-control/route";
@@ -54,6 +66,9 @@ describe("AI Control API", () => {
       ok: true,
       status: "approved",
     });
+    actions.saveReviewReply.mockResolvedValue({ ok: true });
+    actions.savePromoCampaign.mockResolvedValue({ ok: true });
+    actions.saveReactivationCampaign.mockResolvedValue({ ok: true });
   });
 
   it("rejects cross-origin mutation requests before invoking an action", async () => {
@@ -131,6 +146,61 @@ describe("AI Control API", () => {
     await expect(response.json()).resolves.toEqual({
       ok: false,
       error: "forbidden",
+    });
+  });
+
+  it("saves a bounded review draft through the same-origin owner boundary", async () => {
+    const response = await POST(
+      request({
+        slug: "hoa-hong",
+        action: "save_review_reply_draft",
+        approvalId: UUID,
+        draftReply: "Thank you for sharing your experience with us.",
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(actions.saveReviewReply).toHaveBeenCalledWith({
+      slug: "hoa-hong",
+      approvalId: UUID,
+      draftReply: "Thank you for sharing your experience with us.",
+    });
+  });
+
+  it("saves a promo draft only with an explicit offer-fact decision", async () => {
+    const response = await POST(
+      request({
+        slug: "hoa-hong",
+        action: "save_promo_campaign_draft",
+        approvalId: UUID,
+        draftMessage: "Discover an owner-confirmed salon offer before booking.",
+        offerFactsConfirmed: false,
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(actions.savePromoCampaign).toHaveBeenCalledWith({
+      slug: "hoa-hong",
+      approvalId: UUID,
+      draftMessage: "Discover an owner-confirmed salon offer before booking.",
+      offerFactsConfirmed: false,
+    });
+  });
+
+  it("saves bounded EN/VI reactivation drafts through the owner boundary", async () => {
+    const response = await POST(
+      request({
+        slug: "hoa-hong",
+        action: "save_reactivation_campaign_draft",
+        approvalId: UUID,
+        messageEn: "We would love to welcome you back when you are ready.",
+        messageVi: "Tiệm rất mong được đón bạn quay lại khi bạn thấy thuận tiện.",
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(actions.saveReactivationCampaign).toHaveBeenCalledWith({
+      slug: "hoa-hong",
+      approvalId: UUID,
+      messageEn: "We would love to welcome you back when you are ready.",
+      messageVi: "Tiệm rất mong được đón bạn quay lại khi bạn thấy thuận tiện.",
     });
   });
 });

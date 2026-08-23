@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProviderPolicy";
 import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
@@ -31,7 +32,7 @@ let anthropicClient: Anthropic | null = null;
 function getClient(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY?.trim();
   if (!key) return null;
-  if (!anthropicClient) anthropicClient = new Anthropic({ apiKey: key });
+  if (!anthropicClient) anthropicClient = createTextBackgroundAnthropicClient(key);
   return anthropicClient;
 }
 

@@ -1,6 +1,8 @@
 /** Edge/Proxy-compatible durable limiter. Deliberately avoids node:crypto and
  * shared clients so Proxy can run in its restricted runtime. */
 
+import { resolveSupabaseServerUrl } from "@/shared/lib/supabase/serverUrl";
+
 export type EdgeRateLimitResult = "allowed" | "limited" | "unavailable";
 
 type EdgeBucket = {
@@ -22,11 +24,16 @@ export async function consumeEdgeDurableRateLimits(input: {
   material: string[];
   buckets: readonly EdgeBucket[];
 }): Promise<EdgeRateLimitResult> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "");
+  const url = resolveSupabaseServerUrl()?.replace(/\/$/, "");
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey || input.material.length === 0) return "unavailable";
 
   try {
+    const persistedBuckets: Array<{
+      p_key: string;
+      p_limit: number;
+      p_window_seconds: number;
+    }> = [];
     for (const bucket of input.buckets) {
       if (
         !bucket.name ||
@@ -40,26 +47,28 @@ export async function consumeEdgeDurableRateLimits(input: {
       const digest = await sha256(
         JSON.stringify([input.scope, bucket.name, ...input.material]),
       );
-      const response = await fetch(`${url}/rest/v1/rpc/rate_limit_hit`, {
-        method: "POST",
-        headers: {
-          apikey: serviceKey,
-          Authorization: `Bearer ${serviceKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          p_key: `public-edge:${input.scope}:${bucket.name}:${digest}`,
-          p_limit: bucket.limit,
-          p_window_seconds: bucket.windowSeconds,
-        }),
-        cache: "no-store",
+      persistedBuckets.push({
+        p_key: `public-edge:${input.scope}:${bucket.name}:${digest}`,
+        p_limit: bucket.limit,
+        p_window_seconds: bucket.windowSeconds,
       });
-      if (!response.ok) return "unavailable";
-      const allowed: unknown = await response.json();
-      if (typeof allowed !== "boolean") return "unavailable";
-      if (!allowed) return "limited";
     }
-    return "allowed";
+    if (persistedBuckets.length === 0) return "unavailable";
+
+    const response = await fetch(`${url}/rest/v1/rpc/rate_limit_hit_many`, {
+      method: "POST",
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ p_buckets: persistedBuckets }),
+      cache: "no-store",
+    });
+    if (!response.ok) return "unavailable";
+    const allowed: unknown = await response.json();
+    if (typeof allowed !== "boolean") return "unavailable";
+    return allowed ? "allowed" : "limited";
   } catch {
     return "unavailable";
   }

@@ -5,6 +5,93 @@ Newest entries on top.
 
 ---
 
+## 2026-08-22 — AI text/background provider timeout policy
+
+**Decision.** Non-streaming Anthropic text/background work has a 20-second
+deadline per provider attempt and disables implicit SDK retries. Current direct
+and cron-driven agents do not add an automatic retry; any future durable
+scheduler may retry at most once and must retain the same logical job identity.
+
+On timeout, telemetry records `provider_timeout`, measured latency, zero known
+tokens, and unknown provider cost. The timed-out provider result must not be
+treated as successful evidence or authorize a downstream send or mutation.
+
+Streaming agents keep a separate timeout policy. Nail Try-On keeps its existing
+45-second provider request, 45-second status poll, and 180-second operation
+deadline policy.
+
+---
+
+## 2026-08-22 — Tips are verified staff money; commission is an estimate, not payroll
+
+**Status.** Approved by the Product Owner for the full-feature launch scope.
+
+**Tip decision.** A verified collected tip belongs 100% to staff. When more
+than one staff member serves a booking, the exact cents are allocated in
+proportion to each service's after-discount value, using largest-remainder
+rounding so no cent is created or lost.
+
+**Commission decision.** Commission is a reporting estimate only and must
+never be represented as payroll, payout authorization or money owed. Its basis
+is after-discount service revenue and excludes tax and tips. Each salon owner
+supplies an effective-dated basis-point rate; NailIQ has no invented default
+rate.
+
+**Corrections.** Refunds and manual adjustments append immutable debit/reversal
+evidence. Historical credit rows are never edited or deleted. Cumulative
+clawback calculation and transaction locking prevent rounding drift, replay and
+concurrent over-reversal.
+
+**Security and evidence.** Policy approval is owner-only. Evidence mutation is
+service-role-only through tenant-checked RPCs; the underlying forced-RLS tables
+are not browser-readable or directly mutable. Local migration, report/parser,
+rollback, concurrency and security-advisor gates do not prove provider,
+deployment, payroll or live-salon behavior.
+
+---
+
+## 2026-08-22 — Multi-location data is shared only inside an explicit salon organization
+
+**Status.** Approved by the Product Owner for the full-feature launch scope.
+
+**Decision.** A business chain is an explicit `salon_organization`. A salon may
+belong to at most one organization. Staff identity, consented customer profile
+access, shared loyalty and aggregate reporting may cross salon boundaries only
+inside that organization. Salons outside it remain isolated even when the same
+phone number or login appears in both businesses.
+
+**Fail-closed rollout.** Existing salons are not auto-linked. Existing global
+`client_profiles` rows are not auto-shared. Organization-level customer access
+requires an active consent row and an existing salon-client relationship at a
+location in the organization. Revocation stops organization profile listing;
+the immutable loyalty history remains retained for accounting integrity.
+
+**Staff scheduling.** One organization-level person maps to separate
+salon-scoped `staff` assignments. Each location retains its own timezone and
+shift rows. Transaction-scoped advisory locking prevents one shared person from
+receiving overlapping live bookings at different locations, including the
+single-booking and service-segment scheduling models.
+
+**Loyalty and reporting.** Chain loyalty uses an atomic, idempotent ledger that
+retains the earning/redeeming salon. Earn events require a completed booking;
+one redemption consumes the configured reward threshold. Reporting returns
+separate branch rows and one organization total without returning customer PII.
+
+**Security.** New tables use forced RLS, explicit least-privilege grants and no
+anonymous access. Authenticated users receive read-only organization rows via
+membership policies; organization creation verifies owner access to every
+requested salon. Customer and reporting functions repeat the organization
+membership check, while loyalty mutation remains service-role-only.
+
+**Implementation evidence.** Migration
+`20260822155809_add_salon_organization_multilocation.sql` and the two disposable
+rehearsals under `scripts/security/` cover two independent chains, two linked
+locations with different timezones, cross-tenant denial, customer consent,
+shared staff overlap, loyalty replay/concurrency and branch/aggregate reports.
+No production schema, provider or live salon is changed by this decision.
+
+---
+
 ## 2026-08-03 — Rule-first paid-AI optimization is opt-in and fail-safe
 
 **Decision.** `salons.feature_flags.ai_rule_first_optimization` gates all new

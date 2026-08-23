@@ -71,4 +71,59 @@ describe("financial report strict parser", () => {
     value.coverage.tax.sourceCounts = { canonical_group_member: 1 };
     expect(parseFinancialReportDto(value).bookingRows[0]?.groupId).toBe("71111111-1111-4111-8111-111111111111");
   });
+
+  it("accepts immutable tip evidence and commission estimates with debit reversals", () => {
+    const value = dto();
+    const tipPolicy = "81111111-1111-4111-8111-111111111111";
+    const commissionPolicy = "91111111-1111-4111-8111-111111111111";
+    value.metricPolicies = [{
+      policyId: tipPolicy, metric: "tips",
+      policyVersion: "tips-staff-100-proportional-v1",
+      effectiveFrom: "2026-08-01T00:00:00.000Z", effectiveTo: null,
+      definitionFingerprint: "c".repeat(64), approvedAt: "2026-08-01T00:00:00.000Z",
+    }, {
+      policyId: commissionPolicy, metric: "commission",
+      policyVersion: "commission-estimate-net-service-v1",
+      effectiveFrom: "2026-08-01T00:00:00.000Z", effectiveTo: null,
+      definitionFingerprint: "d".repeat(64), approvedAt: "2026-08-01T00:00:00.000Z",
+    }];
+    const event = (
+      evidenceId: string,
+      metric: "tips" | "commission",
+      policyId: string,
+      effect: "credit" | "debit",
+      amountCents: number,
+    ) => ({
+      evidenceId, metric, bookingId: value.bookingRows[0]!.bookingId!,
+      paymentOperationId: null, policyId,
+      staffId: value.bookingRows[0]!.staffId, serviceId: value.bookingRows[0]!.serviceId,
+      occurredAt: "2026-08-20T17:00:00.000Z",
+      sourceKind: metric === "tips" ? "manual_verified" as const : "policy_calculation" as const,
+      sourceEventId: `${metric}:${effect}`, currency: "CAD", effect,
+      amountCents, signedAmountCents: effect === "credit" ? amountCents : -amountCents,
+      provider: null, providerAccountFingerprint: null, providerReceiptId: null,
+      materialFingerprint: evidenceId.slice(0, 1).repeat(64),
+    });
+    value.metricEvents = [
+      event("a1111111-1111-4111-8111-111111111111", "tips", tipPolicy, "credit", 1000),
+      event("b1111111-1111-4111-8111-111111111111", "tips", tipPolicy, "debit", 200),
+      event("c1111111-1111-4111-8111-111111111111", "commission", commissionPolicy, "credit", 2000),
+      event("d1111111-1111-4111-8111-111111111111", "commission", commissionPolicy, "debit", 500),
+    ];
+    value.totals.tipCents = 800;
+    value.totals.commissionCents = 1500;
+    value.coverage.tips = {
+      unit: "evidence", state: "partial", includedRows: 2, excludedRows: 0,
+      reasonCodes: ["tip_sources_not_fully_reconciled"], sourceCounts: { manual_verified: 2 },
+    };
+    value.coverage.commission = {
+      unit: "evidence", state: "partial", includedRows: 2, excludedRows: 0,
+      reasonCodes: ["commission_estimate_not_payroll"], sourceCounts: { policy_calculation: 2 },
+    };
+
+    const parsed = parseFinancialReportDto(value);
+    expect(parsed.totals).toMatchObject({ tipCents: 800, commissionCents: 1500 });
+    value.totals.commissionCents = 1499;
+    expect(() => parseFinancialReportDto(value)).toThrow("financial_report_metric_totals_mismatch");
+  });
 });

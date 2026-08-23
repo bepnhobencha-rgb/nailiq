@@ -1,7 +1,10 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProviderPolicy";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { complianceFooterHtml, listUnsubscribeHeaders, isEmailSuppressed } from "@/shared/lib/emailCompliance";
-import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
+import {
+  isProviderTimeoutError,
+  trackAnthropicMessage,
+} from "@/shared/ai/usageLedger";
 import {
   buildEmailBrandHeader,
   escapeEmailHtml,
@@ -82,7 +85,7 @@ async function generateAiBody(input: ReminderEmailInput): Promise<string> {
   if (!key) return defaultBody(input);
 
   try {
-    const client = new Anthropic({ apiKey: key });
+    const client = createTextBackgroundAnthropicClient(key);
     const locale = normalizeEmailLocale(input.locale);
     const formattedTime = formatAppointmentTime(input.startTimeUtc, input.timezone, locale);
 
@@ -112,7 +115,8 @@ Only output the message text, nothing else.`;
     if (response.content[0].type === "text") {
       return response.content[0].text.trim();
     }
-  } catch {
+  } catch (error) {
+    if (isProviderTimeoutError(error)) throw error;
     // fall through to default
   }
 
@@ -344,11 +348,23 @@ export function buildGroupReminderEmailHtml(input: GroupReminderEmailInput): str
  */
 export async function sendGroupReminderEmail(
   input: GroupReminderEmailInput,
-): Promise<{ ok: boolean; error?: string; messageId?: string }> {
+): Promise<{
+  ok: boolean;
+  error?: string;
+  messageId?: string;
+  suppressed?: boolean;
+  suppressionReason?: string;
+}> {
   const resend = getResendClient();
   if (!resend) return { ok: false, error: "resend_not_configured" };
 
-  if (await isEmailSuppressed(input.organizerEmail)) return { ok: true };
+  if (await isEmailSuppressed(input.organizerEmail)) {
+    return {
+      ok: true,
+      suppressed: true,
+      suppressionReason: "email_opt_out",
+    };
+  }
 
   const html = buildGroupReminderEmailHtml(input).replace(
     "</body>",
@@ -382,11 +398,18 @@ export async function sendGroupReminderEmail(
 
 /**
  * Sends a personalized reminder email with AI-written body and one-tap action links.
- * Best-effort: logs errors but never throws.
+ * Best-effort for ordinary failures. Provider timeouts fail closed before the
+ * Resend call so an incomplete AI attempt cannot trigger downstream delivery.
  */
 export async function sendReminderEmail(
   input: ReminderEmailInput,
-): Promise<{ ok: boolean; error?: string; messageId?: string }> {
+): Promise<{
+  ok: boolean;
+  error?: string;
+  messageId?: string;
+  suppressed?: boolean;
+  suppressionReason?: string;
+}> {
   const resend = getResendClient();
   if (!resend) {
     console.warn("[sendReminderEmail] Resend not configured — skipping");
@@ -395,7 +418,11 @@ export async function sendReminderEmail(
 
   // Reminders are optional/relationship mail → honour unsubscribe.
   if (await isEmailSuppressed(input.clientEmail)) {
-    return { ok: true };
+    return {
+      ok: true,
+      suppressed: true,
+      suppressionReason: "email_opt_out",
+    };
   }
 
   const body = await generateAiBody(input);

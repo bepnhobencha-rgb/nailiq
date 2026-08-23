@@ -277,6 +277,25 @@ export async function seedTestSalon(opts?: {
 
   await cleanupTestSalon(slug);
 
+  // A blank local database has no seed.sql, while `services.category` is
+  // protected by the canonical service_categories FK. Production already has
+  // this global catalog; E2E must bootstrap the same inert default explicitly
+  // before inserting a salon service.
+  const { error: categoryError } = await supabase
+    .from("service_categories")
+    .upsert(
+      {
+        slug: "other",
+        name_en: "Other",
+        name_vi: "Khác",
+        sort_order: 999,
+      },
+      { onConflict: "slug", ignoreDuplicates: true },
+    );
+  if (categoryError) {
+    throw new Error(`seedTestSalon category: ${categoryError.message}`);
+  }
+
   const { data: salon, error: salonErr } = await supabase
     .from("salons")
     .insert({
@@ -1213,6 +1232,7 @@ export async function prepareTestSalonForGuidedSetup(salonId: string) {
       booking_lead_minutes: 0,
       resources_enabled: false,
       staff_selection_enabled: true,
+      guided_setup_integrations_skipped_at: new Date().toISOString(),
     })
     .eq("id", salonId);
 
@@ -1410,6 +1430,63 @@ export async function setTestSalonFeatureFlags(
   }
 }
 
+/**
+ * Exercise the hardened single-salon Guided Setup QA rollout contract.
+ * The module-level production guard makes this available only to disposable
+ * local/CI databases; tests must release the allowlist before selecting the
+ * next fixture.
+ */
+export async function configureTestGuidedAdminSetup(
+  salonId: string,
+  enable: boolean,
+) {
+  if (enable) {
+    const { error: salonError } = await supabase
+      .from("salons")
+      .update({ is_beta: true } as never)
+      .eq("id", salonId);
+    if (salonError) {
+      throw new Error(`configureTestGuidedAdminSetup salon: ${salonError.message}`);
+    }
+    const { error: platformError } = await supabase
+      .from("platform_flags")
+      .upsert(
+        {
+          key: "feature_guided_admin_setup",
+          enabled: true,
+          description: "Disposable Guided Setup E2E gate",
+        } as never,
+        { onConflict: "key" },
+      );
+    if (platformError) {
+      throw new Error(
+        `configureTestGuidedAdminSetup platform: ${platformError.message}`,
+      );
+    }
+  }
+
+  const { data, error } = await supabase.rpc(
+    "configure_guided_admin_setup_qa_salon" as never,
+    {
+      p_salon_id: salonId,
+      p_enable: enable,
+      p_confirmation: enable
+        ? "ENABLE_GUIDED_ADMIN_SETUP_QA"
+        : "DISABLE_GUIDED_ADMIN_SETUP_QA",
+    } as never,
+  );
+  if (error) {
+    throw new Error(`configureTestGuidedAdminSetup rpc: ${error.message}`);
+  }
+  const result = data as { success?: boolean; code?: string } | null;
+  if (!enable && result?.code === "not_found") return;
+  if (!result?.success) {
+    throw new Error(
+      `configureTestGuidedAdminSetup rejected: ${result?.code ?? "unknown"}`,
+    );
+  }
+}
+
 /** Remove a Supabase auth user (and any salon they own) from E2E test runs. */
 export async function cleanupTestUser(userId: string) {
   // Remove salon_members first to find any salon owned by this user.
@@ -1577,9 +1654,10 @@ export async function completeGateOtp(
 export async function gotoBookingServiceStep(
   page: Page,
   slug: string,
+  opts?: { phone?: string; name?: string },
 ): Promise<void> {
   await page.goto(`/${slug}`);
-  await completeBookingEntryGate(page);
+  await completeBookingEntryGate(page, opts);
   await page
     .locator('[data-testid="service-tile-select"]')
     .first()

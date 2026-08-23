@@ -3,9 +3,11 @@
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { trackAnthropicFetch } from "@/shared/ai/usageLedger";
+import { AI_TEXT_BACKGROUND_TIMEOUT_MS } from "@/shared/ai/anthropicProviderPolicy";
 import { inferReturnCadenceDays } from "@/shared/booking/returnRhythm";
 import { getSalonDisplayName } from "@/shared/dashboard/salonClientName";
 import { isFrontDeskRole } from "@/shared/lib/salonMemberRole";
+import { loadSalonVipProfileIds } from "@/shared/dashboard/salonVipStatus";
 
 // ---------------------------------------------------------------------------
 // Exported types — UI agent depends on EXACT field names below
@@ -179,7 +181,7 @@ export async function loadClientProfile360(
     supabase
       .from("client_profiles")
       .select(
-        "id, name, phone, email, is_vip, notes, created_at, no_show_count, square_customer_id, preferred_staff_id, birthday",
+        "id, name, phone, email, notes, created_at, no_show_count, square_customer_id, preferred_staff_id, birthday",
       )
       .eq("phone", clientPhone)
       .is("deleted_at" as never, null)
@@ -245,7 +247,6 @@ export async function loadClientProfile360(
     name?: string | null;
     phone?: string | null;
     email?: string | null;
-    is_vip?: boolean | null;
     no_show_count?: number | null;
     square_customer_id?: string | null;
     preferred_staff_id?: string | null;
@@ -253,6 +254,14 @@ export async function loadClientProfile360(
     created_at?: string | null;
   };
   const profileRow = profileRes.data as ProfileRow | null;
+  let profileIsVip = false;
+  if (profileRow?.id) {
+    try {
+      profileIsVip = (await loadSalonVipProfileIds(salonId, [profileRow.id])).has(profileRow.id);
+    } catch (vipError) {
+      console.error("[loadClientProfile360] salon vip status", vipError);
+    }
+  }
 
   let preferredStaffName: string | null = null;
   const preferredStaffId = profileRow?.preferred_staff_id?.trim() || null;
@@ -271,7 +280,7 @@ export async function loadClientProfile360(
     name: profileRow?.name?.trim() ?? null,
     phone: clientPhone,
     email: profileRow?.email?.trim() ?? null,
-    isVip: profileRow?.is_vip === true,
+    isVip: profileIsVip,
     birthday: profileRow?.birthday?.trim() ?? null,
     createdAt: profileRow?.created_at ?? null,
     noShowCount: Number(profileRow?.no_show_count ?? 0),
@@ -817,7 +826,7 @@ export async function generateClient360Summary(
     await Promise.all([
       supabase
         .from("client_profiles")
-        .select("id, name, is_vip, no_show_count, preferred_staff_id")
+        .select("id, name, no_show_count, preferred_staff_id")
         .eq("phone", clientPhone)
         .is("deleted_at" as never, null)
         .maybeSingle(),
@@ -904,7 +913,6 @@ export async function generateClient360Summary(
   type ProfileRow = {
     id?: string | null;
     name?: string | null;
-    is_vip?: boolean | null;
     no_show_count?: number | null;
   };
   const profile = profileRes.data as ProfileRow | null;
@@ -930,7 +938,14 @@ export async function generateClient360Summary(
   // shared profile name.
   const overrideName = await getSalonDisplayName(salonId, clientPhone);
   const clientName = overrideName || profile?.name?.trim() || "Client";
-  const isVip = profile?.is_vip === true;
+  let isVip = false;
+  if (profile?.id) {
+    try {
+      isVip = (await loadSalonVipProfileIds(salonId, [profile.id])).has(profile.id);
+    } catch (vipError) {
+      console.error("[generateClient360Summary] salon vip status", vipError);
+    }
+  }
   const totalNoShows = Number(profile?.no_show_count ?? 0);
   const topService = topName(serviceCounts);
   const lifetimeSpentDollars = (lifetimeSpentCents / 100).toFixed(0);
@@ -988,6 +1003,7 @@ Respond ONLY with valid JSON in this exact format (no markdown, no extra text):
         model: HAIKU_MODEL,
       },
       () => fetch("https://api.anthropic.com/v1/messages", {
+        signal: AbortSignal.timeout(AI_TEXT_BACKGROUND_TIMEOUT_MS),
         method: "POST",
         headers: {
           "x-api-key": anthropicKey,

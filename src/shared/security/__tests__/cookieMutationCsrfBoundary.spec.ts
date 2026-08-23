@@ -28,8 +28,7 @@ describe("MQA-0139 cookie mutation CSRF boundary", () => {
         const source = readFileSync(absolute, "utf8");
         const mutates = /export async function (?:POST|PUT|PATCH|DELETE)/.test(source);
         const usesAmbientCookieAuth =
-          source.includes('@/shared/lib/supabase/server') ||
-          source.includes("@/shared/lib/supabase/server") ||
+          /from\s+["']@\/shared\/lib\/supabase\/server["']/.test(source) ||
           source.includes("getDashboardWriteClient");
         return mutates && usesAmbientCookieAuth;
       })

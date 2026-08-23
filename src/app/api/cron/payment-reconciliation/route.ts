@@ -11,6 +11,7 @@ import { dispatchClaimedBookingPaymentOperation } from "@/shared/payments/execut
 import { derivePublicDepositFinalizeToken } from "@/shared/payments/publicDepositFinalizeCapability";
 import { toProviderMinorAmount } from "@/shared/payments/providerMinorUnits";
 import { reconcileSquareHostedDepositClaim } from "@/shared/integrations/square/deposits";
+import { reconcileSquarePublicDepositResponseLoss } from "@/shared/integrations/square/publicDepositReconciliation";
 import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
 import { runTrackedCron } from "@/shared/security/cronRunHistory";
 
@@ -146,6 +147,30 @@ export async function GET(request: NextRequest) {
   }
   return runTrackedCron("payment_reconciliation", async () => {
     const db = createServiceRoleClient();
+    const squareEnvironment = process.env.SQUARE_PUBLIC_DEPOSIT_RECONCILIATION_ENVIRONMENT;
+    const squareDiscoveryEnabled = squareEnvironment === "sandbox" || squareEnvironment === "production";
+    let squareDiscovered: { data: unknown; error: unknown } = { data: [], error: null };
+    if (squareDiscoveryEnabled) {
+      try {
+        squareDiscovered = await db.rpc(
+          "discover_due_public_square_deposit_reconciliations" as never,
+          {
+            p_expected_environment: squareEnvironment,
+            // Each claim can require a bounded multi-page provider read. Keep
+            // the dedicated batch below the 55-second cron budget.
+            p_limit: 5,
+          } as never,
+        );
+      } catch {
+        squareDiscovered = { data: null, error: new Error("square_discovery_unavailable") };
+      }
+      if (squareDiscovered.error || !Array.isArray(squareDiscovered.data)) {
+        return NextResponse.json(
+          { ok: false, code: "square_discovery_unavailable" },
+          { status: 503 },
+        );
+      }
+    }
     let discovered: { data: unknown; error: unknown };
     try {
       discovered = await db.rpc("discover_due_booking_payment_reconciliations", {
@@ -157,10 +182,14 @@ export async function GET(request: NextRequest) {
     if (discovered.error || !Array.isArray(discovered.data)) {
       return NextResponse.json({ ok: false, code: "discovery_unavailable" }, { status: 503 });
     }
+    const dueOperations = [
+      ...(squareDiscovered.data as unknown[]),
+      ...discovered.data,
+    ];
     let processed = 0;
     let succeeded = 0;
     let unresolved = 0;
-    for (const value of discovered.data) {
+    for (const value of dueOperations) {
       const item = record(value);
       const operationKind = typeof item?.operation_kind === "string"
         ? item.operation_kind
@@ -193,14 +222,32 @@ export async function GET(request: NextRequest) {
           unresolved += 1;
           continue;
         }
-        const ok = await reconcilePublicDeposit(db, {
+        const publicClaim = {
           operationId,
           attemptToken,
           providerIdempotencyKey: providerKey,
           leaseExpiresAt: String(item?.lease_expires_at ?? ""),
           attemptCount: Number(item?.attempt_count),
           material: publicMaterial,
-        }, requestId, typeof item?.provider_payment_id === "string" ? item.provider_payment_id : null);
+        } satisfies ClaimedPublicDepositPaymentOperation;
+        const storedPaymentId = typeof item?.provider_payment_id === "string"
+          ? item.provider_payment_id
+          : null;
+        const ok = publicMaterial.provider === "square"
+          ? (await reconcileSquarePublicDepositResponseLoss(
+              db as never,
+              publicClaim,
+              storedPaymentId,
+              typeof item?.operation_created_at === "string"
+                ? item.operation_created_at
+                : "",
+            )).status === "succeeded"
+          : await reconcilePublicDeposit(
+              db,
+              publicClaim,
+              requestId,
+              storedPaymentId,
+            );
         if (ok) succeeded += 1;
         else unresolved += 1;
         continue;

@@ -80,7 +80,7 @@ async function loadSalonContextUncached(salonSlug: string): Promise<SalonVoiceCo
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const s = salon as any;
 
-  const [{ data: services }, { data: staff }] = await Promise.all([
+  const [{ data: services, error: servicesError }, { data: staff }] = await Promise.all([
     supabase
       .from("services")
       .select("id, name, duration_minutes, price_cents, price_type, price_max_cents, description, category, is_addon, is_popular, is_featured")
@@ -95,6 +95,8 @@ async function loadSalonContextUncached(salonSlug: string): Promise<SalonVoiceCo
       .is("deleted_at", null)
       .order("name"),
   ]);
+
+  if (servicesError) throw new Error("voice_context_services_unavailable");
 
   return {
     salonId:         salon.id,

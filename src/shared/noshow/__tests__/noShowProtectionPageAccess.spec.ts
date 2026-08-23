@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   redirect: vi.fn(),
 }));
 
+vi.mock("server-only", () => ({}));
 vi.mock("next/navigation", () => ({
   redirect: mocks.redirect,
 }));
@@ -57,7 +58,18 @@ function routeContext(
     kind: "member",
     userId: "user-1",
     salon: { id: "salon-1", name: "QA Salon", slug: "qa-salon" },
-    supabase: { from: vi.fn(() => new EmptySingleQuery(policyData)) },
+    supabase: {
+      from: vi.fn(() => new EmptySingleQuery(policyData)),
+      rpc: vi.fn().mockResolvedValue({
+        data: {
+          success: true,
+          code: "loaded",
+          role,
+          settings: policyData,
+        },
+        error: null,
+      }),
+    },
   };
 }
 

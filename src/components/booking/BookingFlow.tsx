@@ -37,6 +37,7 @@ import {
   type ReturningCustomer,
 } from "@/components/booking/useBookingFlowState";
 import type { WebVoiceBookingHandoff } from "@/shared/booking/webVoiceBookingHandoff";
+import { useBookingFunnelAnalytics } from "@/shared/analytics/useBookingFunnelAnalytics";
 
 type BookingFlowProps = {
   t: BookingMessages;
@@ -121,6 +122,13 @@ export function BookingFlow({
     initialOtpSessionId,
   );
   const applyWebVoiceBookingHandoff = flow.applyWebVoiceBookingHandoff;
+
+  useBookingFunnelAnalytics({
+    flow: "individual",
+    step: flow.step,
+    submitting: flow.submitting,
+    hasError: flow.error !== null,
+  });
 
   const [loyaltyCard, setLoyaltyCard] = useState<LoyaltyCard | null>(null);
   const [loyaltyProgram, setLoyaltyProgram] = useState<LoyaltyProgram | null>(null);
@@ -301,6 +309,7 @@ export function BookingFlow({
             timeSlots={flow.timeSlots}
             timeSlot={flow.timeSlot}
             slotsLoading={flow.slotsLoading}
+            availabilityRealtimeStatus={flow.availabilityRealtimeStatus}
             popularSlotLabels={flow.popularSlotLabels}
             timePeriodsEnabled={salon.bookingTimePeriodsEnabled}
             timezoneAbbr={slotsTimezoneAbbr}

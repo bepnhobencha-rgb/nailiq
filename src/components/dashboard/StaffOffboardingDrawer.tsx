@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
@@ -47,11 +47,38 @@ export function StaffOffboardingDrawer({
   const [revokeAccess, setRevokeAccess] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [requestId, setRequestId] = useState<string | null>(null);
+  const onCloseRef = useRef(onClose);
+  const onCompletedRef = useRef(onCompleted);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    onCompletedRef.current = onCompleted;
+  }, [onClose, onCompleted]);
 
   useEffect(() => {
     if (!isOpen || !staffId) return;
+    const storageKey = `nailiq:staff-offboarding-request:${slug}:${staffId}`;
+    let durableRequestId: string;
+    try {
+      const stored = window.sessionStorage.getItem(storageKey);
+      durableRequestId = stored && /^[0-9a-f-]{36}$/i.test(stored)
+        ? stored
+        : crypto.randomUUID();
+      window.sessionStorage.setItem(storageKey, durableRequestId);
+    } catch {
+      durableRequestId = crypto.randomUUID();
+    }
     let alive = true;
-    void loadStaffOffboardingPreview(slug, staffId).then((result) => {
+    void (async () => {
+      // Schedule state synchronization after the effect body; the external
+      // sessionStorage write above is the effect's synchronous responsibility.
+      await Promise.resolve();
+      if (!alive) return;
+      setRequestId(durableRequestId);
+      setPreview(null);
+      setError(null);
+      const result = await loadStaffOffboardingPreview(slug, staffId, durableRequestId);
       if (!alive) return;
       if (!result.ok) {
         setPreview(null);
@@ -60,6 +87,20 @@ export function StaffOffboardingDrawer({
             ? "Không tải được lịch của nhân viên. Vui lòng thử lại."
             : "Could not load this staff member's schedule. Try again.",
         );
+        return;
+      }
+      if ("recovered" in result) {
+        try {
+          window.sessionStorage.removeItem(storageKey);
+        } catch {
+          // Storage is a recovery aid; the durable database receipt is authoritative.
+        }
+        setRequestId(null);
+        const message = vi
+          ? `Yêu cầu trước đã hoàn tất an toàn · chuyển ${result.recovered.reassigned} lịch.`
+          : `The earlier request was already completed safely · ${result.recovered.reassigned} appointment(s) reassigned.`;
+        onCompletedRef.current(message);
+        onCloseRef.current();
         return;
       }
       setPreview(result.preview);
@@ -74,7 +115,7 @@ export function StaffOffboardingDrawer({
         }
       }
       setAssignments(suggested);
-    });
+    })();
     return () => {
       alive = false;
     };
@@ -116,7 +157,9 @@ export function StaffOffboardingDrawer({
   const smsRecipients = reassignable.filter((booking) => booking.hasPhone).length;
   const canComplete =
     Boolean(activePreview) &&
+    Boolean(requestId) &&
     !activePreview?.accessIsOwner &&
+    !activePreview?.tooManyBookings &&
     blockers.length === 0 &&
     !hasNoCandidate &&
     missingAssignments.length === 0 &&
@@ -152,40 +195,77 @@ export function StaffOffboardingDrawer({
         "Nhân viên này đã ở trạng thái Không hoạt động.",
         "This staff member is already inactive.",
       ],
+      notification_channel_unavailable: [
+        "Kênh thông báo vừa bị tắt. Hãy mở lại bảng này và chọn kênh đang hoạt động.",
+        "A notification channel was just disabled. Reopen this panel and choose an enabled channel.",
+      ],
+      sequence_receipt_invalid: [
+        "Một lịch nhiều dịch vụ thiếu dữ liệu xác thực. Chưa có thay đổi nào được lưu; cần kiểm tra lịch này trước.",
+        "A multi-service appointment has invalid receipt data. Nothing was saved; review that appointment first.",
+      ],
+      too_many_bookings: [
+        "Có hơn 100 lịch bị ảnh hưởng. Chưa có thay đổi nào được lưu; cần chia kế hoạch chuyển lịch có kiểm soát.",
+        "More than 100 appointments are affected. Nothing was saved; use a controlled staged reassignment plan.",
+      ],
     };
     const pair = copy[code];
     return pair ? pair[vi ? 0 : 1] : vi ? "Không hoàn tất được. Vui lòng thử lại." : "Could not finish. Try again.";
   }
 
   async function complete() {
-    if (!staffId || !canComplete) return;
+    if (!staffId || !requestId || !canComplete) return;
     setSaving(true);
     setError(null);
-    const result = await completeStaffOffboarding(slug, {
-      staffId,
-      assignments: reassignable.map((booking) => ({
-        bookingId: booking.id,
-        staffId: assignments[booking.id]!,
-      })),
-      notifyEmail,
-      notifySms,
-      revokeAccess,
-    });
+    let result: Awaited<ReturnType<typeof completeStaffOffboarding>>;
+    try {
+      result = await completeStaffOffboarding(slug, {
+        requestId,
+        staffId,
+        assignments: reassignable.map((booking) => ({
+          bookingId: booking.id,
+          staffId: assignments[booking.id]!,
+        })),
+        notifyEmail,
+        notifySms,
+        revokeAccess,
+      });
+    } catch {
+      setSaving(false);
+      setError(
+        vi
+          ? "Mất kết nối sau khi gửi yêu cầu. Đóng và mở lại bảng này để tự kiểm tra kết quả an toàn."
+          : "The connection was lost after submission. Close and reopen this panel to recover the exact result safely.",
+      );
+      return;
+    }
     setSaving(false);
     if (!result.ok) {
       setError(errorMessage(result.error));
       return;
     }
     const deliveryWarning =
-      (notifyEmail || notifySms) && result.notificationsSent === 0
+      (notifyEmail || notifySms) && result.notificationEventsQueued === 0
         ? vi
-          ? " · chưa gửi được thông báo; vui lòng liên hệ khách thủ công"
-          : " · no notice was delivered; contact guests manually"
+          ? " · chưa xếp hàng được thông báo; vui lòng kiểm tra lại"
+          : " · no notice was queued; please review"
         : "";
+    const queuedNotice = result.notificationEventsQueued > 0
+      ? vi
+        ? ` · đã xếp hàng ${result.notificationEventsQueued} sự kiện thông báo / ${result.notificationDeliveriesQueued} lượt theo kênh; thao tác này chưa ghi nhận lần thử nhà cung cấp nào`
+        : ` · ${result.notificationEventsQueued} notice event(s) / ${result.notificationDeliveriesQueued} channel delivery(s) queued; no provider attempt was recorded at this action boundary`
+      : "";
     const message = vi
-      ? `Đã cho ${activePreview?.staffName ?? "nhân viên"} nghỉ việc an toàn · chuyển ${result.reassigned} lịch${result.notificationsSent ? ` · gửi ${result.notificationsSent} thông báo` : ""}`
-      : `${activePreview?.staffName ?? "Staff member"} was safely offboarded · ${result.reassigned} appointment(s) reassigned${result.notificationsSent ? ` · ${result.notificationsSent} notice(s) sent` : ""}`;
-    onCompleted(`${message}${deliveryWarning}.`);
+      ? `Đã cho ${activePreview?.staffName ?? "nhân viên"} nghỉ việc an toàn · chuyển ${result.reassigned} lịch`
+      : `${activePreview?.staffName ?? "Staff member"} was safely offboarded · ${result.reassigned} appointment(s) reassigned`;
+    try {
+      window.sessionStorage.removeItem(
+        `nailiq:staff-offboarding-request:${slug}:${staffId}`,
+      );
+    } catch {
+      // The committed receipt is authoritative even when browser storage is unavailable.
+    }
+    setRequestId(null);
+    onCompleted(`${message}${queuedNotice}${deliveryWarning}.`);
     onClose();
   }
 
@@ -353,29 +433,67 @@ export function StaffOffboardingDrawer({
             </section>
           ) : null}
 
+          {activePreview.tooManyBookings ? (
+            <section className="rounded-2xl border border-nq-error/45 bg-nq-error/10 p-4" role="alert">
+              <p className="font-semibold text-nq-error">
+                {vi ? "Vượt giới hạn chuyển lịch an toàn" : "Safe reassignment limit exceeded"}
+              </p>
+              <p className="mt-1 text-sm text-nq-foreground">
+                {vi
+                  ? `Có ${activePreview.bookings.length} lịch bị ảnh hưởng; giới hạn cho một lần là ${activePreview.bookingLimit}. Chưa có thay đổi nào được lưu.`
+                  : `${activePreview.bookings.length} appointments are affected; the per-request limit is ${activePreview.bookingLimit}. Nothing has been saved.`}
+              </p>
+            </section>
+          ) : null}
+
           <section className="rounded-2xl border border-nq-border/50 bg-nq-bg/50 p-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-nq-primary">
               {vi ? "2 · Báo khách có kiểm soát" : "2 · Controlled guest notice"}
             </p>
             <p className="mt-2 text-sm text-nq-muted">
               {vi
-                ? "Không gửi mặc định. Chỉ gửi sau khi bạn chọn kênh và bấm xác nhận cuối cùng. Nội dung nói rõ lịch vẫn giữ nguyên."
-                : "Nothing is sent by default. Notices send only after your final confirmation and clearly say the appointment time is unchanged."}
+                ? "Không gửi mặc định. Khi xác nhận, kênh đã chọn chỉ được xếp vào hàng đợi bền vững; màn hình này không gọi nhà cung cấp và không chứng minh đã giao. Nội dung nói rõ lịch vẫn giữ nguyên."
+                : "Nothing is sent by default. Confirmation only queues durable work for selected channels; this screen does not call a provider or prove delivery. The notice says the appointment time is unchanged."}
             </p>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               <label className="flex min-h-11 items-center gap-3 rounded-xl border border-nq-border/40 bg-nq-surface px-3 has-[:disabled]:opacity-55">
-                <input type="checkbox" checked={notifyEmail} disabled={emailRecipients === 0} onChange={(e) => setNotifyEmail(e.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={notifyEmail}
+                  disabled={emailRecipients === 0 || !activePreview.emailOutboundEnabled}
+                  onChange={(e) => setNotifyEmail(e.target.checked)}
+                  data-testid="staff-offboarding-notify-email"
+                />
                 <span className="text-sm text-nq-foreground">
                   Email · {emailRecipients} {vi ? "khách" : "guest(s)"}
                 </span>
               </label>
               <label className="flex min-h-11 items-center gap-3 rounded-xl border border-nq-border/40 bg-nq-surface px-3 has-[:disabled]:opacity-55">
-                <input type="checkbox" checked={notifySms} disabled={smsRecipients === 0} onChange={(e) => setNotifySms(e.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={notifySms}
+                  disabled={smsRecipients === 0 || !activePreview.smsOutboundEnabled}
+                  onChange={(e) => setNotifySms(e.target.checked)}
+                  data-testid="staff-offboarding-notify-sms"
+                />
                 <span className="text-sm text-nq-foreground">
                   SMS · {smsRecipients} {vi ? "khách" : "guest(s)"}
                 </span>
               </label>
             </div>
+            {!activePreview.emailOutboundEnabled || !activePreview.smsOutboundEnabled ? (
+              <p className="mt-3 text-sm text-nq-warning" data-testid="staff-offboarding-channel-warning">
+                {vi
+                  ? `Kênh đang tắt: ${[
+                      !activePreview.emailOutboundEnabled ? "Email" : null,
+                      !activePreview.smsOutboundEnabled ? "SMS" : null,
+                    ].filter(Boolean).join(", ")}. Không thể chọn và hệ thống sẽ không xếp hàng kênh này.`
+                  : `Disabled channel(s): ${[
+                      !activePreview.emailOutboundEnabled ? "Email" : null,
+                      !activePreview.smsOutboundEnabled ? "SMS" : null,
+                    ].filter(Boolean).join(", ")}. They cannot be selected or queued.`}
+              </p>
+            ) : null}
           </section>
 
           <section className="rounded-2xl border border-nq-border/50 bg-nq-bg/50 p-4">

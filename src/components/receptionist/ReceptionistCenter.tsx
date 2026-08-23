@@ -2879,6 +2879,21 @@ function ReceptionistCenterInner({
   const oldestOnlineWaitlistMinutes = waitlistAttentionEnabled
     ? waitlistAttentionSummary.oldestWaitingMinutes
     : null;
+  const acknowledgeOnlineWaitlist = (entryIds: readonly string[]) => {
+    for (const id of entryIds) {
+      acknowledgedWaitlistIdsRef.current.add(id);
+      const timer = waitlistReminderTimersRef.current.get(id);
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+        waitlistReminderTimersRef.current.delete(id);
+      }
+    }
+  };
+  const handleOpenWaitlistAttention = () => {
+    acknowledgeOnlineWaitlist(
+      unresolvedOnlineWaitlist.map((entry) => entry.id),
+    );
+  };
 
   const cockpitInputs: CockpitInputs = {
     onlineWaitlistCount: unresolvedOnlineWaitlist.length,
@@ -2950,14 +2965,9 @@ function ReceptionistCenterInner({
       return;
     }
     if (target === "open_waitlist") {
-      for (const entry of unresolvedOnlineWaitlist) {
-        acknowledgedWaitlistIdsRef.current.add(entry.id);
-        const timer = waitlistReminderTimersRef.current.get(entry.id);
-        if (timer !== undefined) {
-          window.clearTimeout(timer);
-          waitlistReminderTimersRef.current.delete(entry.id);
-        }
-      }
+      acknowledgeOnlineWaitlist(
+        unresolvedOnlineWaitlist.map((entry) => entry.id),
+      );
       setQueuePanelOpen(true);
       window.setTimeout(() => {
         document.getElementById("waitlist")?.scrollIntoView({
@@ -3392,6 +3402,7 @@ function ReceptionistCenterInner({
           ? undefined
           : (id) => void handleUndoNoShow(id)
       }
+      onOpenWaitlist={handleOpenWaitlistAttention}
       embedded={embedded}
     />
   );

@@ -3,6 +3,7 @@
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { isFrontDeskRole } from "@/shared/lib/salonMemberRole";
+import { loadSalonVipPhones } from "@/shared/dashboard/salonVipStatus";
 
 /**
  * Typeahead search for the receptionist booking form — find an EXISTING client
@@ -70,12 +71,23 @@ export async function searchClients(
     return { ok: false, error: "server_error" };
   }
 
-  const hits: ClientSearchHit[] = (data ?? [])
-    .filter((r) => typeof r.phone === "string" && r.phone.length > 0)
+  const sourceRows = (data ?? []).filter(
+    (r) => typeof r.phone === "string" && r.phone.length > 0,
+  );
+  let vipPhones = new Set<string>();
+  try {
+    vipPhones = await loadSalonVipPhones(
+      ctx.salon.id,
+      sourceRows.map((row) => String(row.phone)),
+    );
+  } catch (vipError) {
+    console.error("[searchClients] salon vip status", vipError);
+  }
+  const hits: ClientSearchHit[] = sourceRows
     .map((r) => ({
       phone: String(r.phone),
       name: r.name?.trim() || null,
-      isVip: r.is_vip === true,
+      isVip: vipPhones.has(String(r.phone)),
       visitCount: Number(r.visit_count ?? 0),
       lastVisitAt: r.last_visit_at?.trim() ? String(r.last_visit_at) : null,
     }));

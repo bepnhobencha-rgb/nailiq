@@ -36,7 +36,7 @@ describe("readiness service selection", () => {
       "utf8",
     );
     const servicesSelect = loader.match(
-      /\.from\("services"\)[\s\S]*?\.select\(([^\n]+)\)/,
+      /\.from\("services"\)[\s\S]*?\.select\(\s*("[^"]+")\s*,?\s*\)/,
     )?.[1];
 
     expect(servicesSelect).toContain("price_max_cents");

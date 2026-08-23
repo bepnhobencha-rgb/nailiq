@@ -40,4 +40,33 @@ describe("cookie API same-origin mutation fence", () => {
     });
     expect(isSameOriginMutation(mixed, { allowBearerWithoutCookie: true })).toBe(false);
   });
+
+  it("allows the exact configured public origin behind a local reverse proxy", () => {
+    const previous = process.env.NEXT_PUBLIC_SITE_URL;
+    process.env.NEXT_PUBLIC_SITE_URL = "https://single-use-name.trycloudflare.com";
+    try {
+      const proxied = new Request("http://127.0.0.1:3000/api/booking/card-capability", {
+        method: "POST",
+        headers: {
+          Origin: "https://single-use-name.trycloudflare.com",
+          Cookie: "qa_gate=present",
+          "Sec-Fetch-Site": "same-origin",
+        },
+      });
+      expect(isSameOriginMutation(proxied)).toBe(true);
+
+      const attacker = new Request("http://127.0.0.1:3000/api/booking/card-capability", {
+        method: "POST",
+        headers: {
+          Origin: "https://single-use-name.trycloudflare.com.evil.example",
+          Cookie: "qa_gate=present",
+          "Sec-Fetch-Site": "same-origin",
+        },
+      });
+      expect(isSameOriginMutation(attacker)).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+      else process.env.NEXT_PUBLIC_SITE_URL = previous;
+    }
+  });
 });

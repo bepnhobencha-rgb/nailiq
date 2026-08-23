@@ -52,6 +52,69 @@ async function getTwilioSmsCreds(): Promise<{
   return null;
 }
 
+const TWILIO_MESSAGE_SID_RE = /^(SM|MM)[0-9a-f]{32}$/i;
+const TWILIO_MESSAGE_STATUSES = new Set([
+  "accepted",
+  "scheduled",
+  "queued",
+  "sending",
+  "sent",
+  "delivered",
+  "undelivered",
+  "failed",
+  "receiving",
+  "received",
+  "read",
+  "canceled",
+]);
+
+/**
+ * Read a Twilio message's current provider status through the same credential
+ * boundary as sends. This is intentionally read-only; all outbound POSTs must
+ * continue to go through sendSmsReminder so its kill-switches remain active.
+ */
+export async function getSmsMessageStatus(messageSid: string): Promise<{
+  ok: boolean;
+  status?: string;
+  errorCode?: number | null;
+  error?: string;
+}> {
+  const sid = messageSid.trim();
+  if (!TWILIO_MESSAGE_SID_RE.test(sid)) {
+    return { ok: false, error: "invalid_message_sid" };
+  }
+
+  const creds = await getTwilioSmsCreds();
+  if (!creds) return { ok: false, error: "twilio_not_configured" };
+
+  const auth = `Basic ${Buffer.from(
+    `${creds.accountSid}:${creds.authToken}`,
+  ).toString("base64")}`;
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(creds.accountSid)}/Messages/${encodeURIComponent(sid)}.json`;
+
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: auth },
+    });
+    if (!res.ok) return { ok: false, error: `twilio_${res.status}` };
+
+    const json = await res.json() as { status?: unknown; error_code?: unknown };
+    const status = typeof json.status === "string"
+      ? json.status.trim().toLowerCase()
+      : "";
+    if (!TWILIO_MESSAGE_STATUSES.has(status)) {
+      return { ok: false, error: "invalid_provider_status" };
+    }
+    const errorCode = typeof json.error_code === "number" && Number.isSafeInteger(json.error_code)
+      ? json.error_code
+      : null;
+    return { ok: true, status, errorCode };
+  } catch {
+    return { ok: false, error: "provider_status_unavailable" };
+  }
+}
+
 /**
  * Normalise any accepted phone form (+country, bare NANP, formatted) to strict
  * E.164 (`+<digits>`) for the Twilio `To` field.  Twilio rejects/mis-routes

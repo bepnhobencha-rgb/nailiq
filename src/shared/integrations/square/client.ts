@@ -39,7 +39,9 @@ export interface SquareConfig {
 
 /** API base for the config's environment. */
 function apiBase(cfg: SquareConfig): string {
-  return cfg.environment === "sandbox" ? SQUARE_SANDBOX_API : SQUARE_API;
+  if (cfg.environment === "sandbox") return SQUARE_SANDBOX_API;
+  if (cfg.environment === "production") return SQUARE_API;
+  throw new Error("Square environment is invalid");
 }
 
 export interface SquareCustomer {
@@ -74,12 +76,56 @@ export interface SquareBooking {
   start_at?: string;
   customer_id?: string;
   location_id?: string;
+  seller_note?: string;
   appointment_segments?: {
     duration_minutes?: number;
     service_variation_id?: string;
     service_variation_version?: number;
     team_member_id?: string;
   }[];
+}
+
+class SquareHttpError extends Error {
+  readonly status: number;
+  readonly codes: string[];
+
+  constructor(message: string, status: number, codes: string[]) {
+    super(message);
+    this.name = "SquareHttpError";
+    this.status = status;
+    this.codes = codes;
+  }
+}
+
+function squareErrorCodes(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const codes: string[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") return [];
+    const code = (item as { code?: unknown }).code;
+    if (typeof code !== "string" || code.length === 0) return [];
+    codes.push(code);
+  }
+  return codes;
+}
+
+function isDefinitiveInvalidPhoneError(error: unknown): boolean {
+  return error instanceof SquareHttpError
+    && error.status === 400
+    && error.codes.length > 0
+    && error.codes.every((code) => code === "INVALID_PHONE_NUMBER");
+}
+
+function noPhoneCustomerIdempotencyKey(baseKey: string): string {
+  const booking = /^sqcust:([0-9a-f-]{36})$/i.exec(baseKey);
+  if (booking) return `sqc:${booking[1]}-np`;
+  const cardSetup = /^([0-9a-f-]{36}):customer$/i.exec(baseKey);
+  if (cardSetup) return `sqpc:${cardSetup[1]}-np`;
+  const candidate = `${baseKey}-np`;
+  if (candidate.length > 45) {
+    throw new Error("Square no-phone customer idempotency key is too long");
+  }
+  return candidate;
 }
 
 // Loosely typed: square_integrations isn't in the generated Database types yet,
@@ -111,6 +157,9 @@ export async function getSquareConfig(db: Db, salonId: string): Promise<SquareCo
   } | null;
   if (!row) throw new Error(`No square_integrations row for salon ${salonId}`);
   if (!row.access_token) throw new Error(`square_integrations.access_token is empty for salon ${salonId}`);
+  if (row.environment !== "sandbox" && row.environment !== "production") {
+    throw new Error(`square_integrations.environment is invalid for salon ${salonId}`);
+  }
 
   // Currency MUST match the salon's Square merchant (Square rejects a mismatch).
   // The salon's configured currency_code is the admin-set source of truth.
@@ -130,7 +179,7 @@ export async function getSquareConfig(db: Db, salonId: string): Promise<SquareCo
     locationId: row.location_id,
     accessToken: row.access_token,
     applicationId: row.application_id ?? null,
-    environment: row.environment === "sandbox" ? "sandbox" : "production",
+    environment: row.environment,
     currency,
     sync: {
       // PULL defaults true (forward cron's long-standing behaviour), PUSH
@@ -150,21 +199,104 @@ async function squareReq(
   method: "GET" | "POST" | "PUT",
   path: string,
   body?: unknown,
+  apiVersion = SQUARE_VERSION,
 ): Promise<Record<string, unknown>> {
   const res = await fetch(`${apiBase(cfg)}${path}`, {
     method,
     headers: {
       Authorization: `Bearer ${cfg.accessToken}`,
-      "Square-Version": SQUARE_VERSION,
+      "Square-Version": apiVersion,
       "Content-Type": "application/json",
     },
     body: body ? JSON.stringify(body) : undefined,
   });
   const json = (await res.json()) as Record<string, unknown>;
   if (!res.ok) {
-    throw new Error(`Square ${method} ${path} -> ${res.status}: ${JSON.stringify(json.errors ?? json)}`);
+    const errors = json.errors;
+    throw new SquareHttpError(
+      `Square ${method} ${path} -> ${res.status}: ${JSON.stringify(errors ?? json)}`,
+      res.status,
+      squareErrorCodes(errors),
+    );
   }
   return json;
+}
+
+/**
+ * Read one provider catalog page for the optional Inventory worker. The caller
+ * owns durable claim/reconciliation and response sanitization. Keeping this in
+ * the central client prevents worker code from constructing ad-hoc transports.
+ */
+export async function searchSquareInventoryCatalogObjects(
+  cfg: SquareConfig,
+  request: Record<string, unknown>,
+  apiVersion: string,
+): Promise<Record<string, unknown>> {
+  return squareReq(cfg, "POST", "/catalog/search", request, apiVersion);
+}
+
+/** Create a Square-assigned digital gift card. The provider-generated GAN is
+ * deliberately not returned so callers cannot persist or log spendable card
+ * credentials. Durable idempotency and receipt validation belong to the
+ * issuance worker. */
+export async function createSquareDigitalGiftCard(
+  cfg: SquareConfig,
+  input: { idempotencyKey: string },
+  apiVersion: string,
+): Promise<Record<string, unknown>> {
+  return squareReq(cfg, "POST", "/gift-cards", {
+    idempotency_key: input.idempotencyKey,
+    location_id: cfg.locationId,
+    gift_card: { type: "DIGITAL" },
+  }, apiVersion);
+}
+
+/** Collect the already-authorized buyer payment for a gift-card order. */
+export async function createSquareGiftCardPayment(
+  cfg: SquareConfig,
+  input: {
+    idempotencyKey: string;
+    sourceId: string;
+    amountCents: number;
+    currency: string;
+    orderId: string;
+  },
+  apiVersion: string,
+): Promise<Record<string, unknown>> {
+  return squareReq(cfg, "POST", "/payments", {
+    idempotency_key: input.idempotencyKey,
+    source_id: input.sourceId,
+    amount_money: { amount: input.amountCents, currency: input.currency },
+    autocomplete: true,
+    accept_partial_authorization: false,
+    order_id: input.orderId,
+    location_id: cfg.locationId,
+  }, apiVersion);
+}
+
+/** Activate a paid gift card against the exact Square gift-card order line. */
+export async function activateSquareGiftCard(
+  cfg: SquareConfig,
+  input: {
+    idempotencyKey: string;
+    giftCardId: string;
+    orderId: string;
+    lineItemUid: string;
+  },
+  apiVersion: string,
+): Promise<Record<string, unknown>> {
+  return squareReq(cfg, "POST", "/gift-cards/activities", {
+    idempotency_key: input.idempotencyKey,
+    gift_card_activity: {
+      gift_card_id: input.giftCardId,
+      type: "ACTIVATE",
+      location_id: cfg.locationId,
+      activate_activity_details: {
+        order_id: input.orderId,
+        line_item_uid: input.lineItemUid,
+      },
+    },
+  }, apiVersion);
 }
 
 /** Pull every customer for the merchant (paginated). */
@@ -235,16 +367,31 @@ export async function findSquareCustomerByPhone(
   phone: string,
 ): Promise<string | null> {
   for (const candidate of phoneSearchCandidates(phone)) {
-    try {
-      const found = await squareReq(cfg, "POST", "/customers/search", {
-        query: { filter: { phone_number: { exact: candidate } } },
-        limit: 1,
-      });
-      const hit = (found.customers as Array<{ id?: string }> | undefined)?.[0];
-      if (hit?.id) return hit.id;
-    } catch {
-      /* try next candidate */
+    // A failed read is not proof that the customer does not exist. Propagate
+    // transport/provider errors so callers cannot turn an unknown search into a
+    // duplicate CreateCustomer mutation under a fresh idempotency key.
+    const found = await squareReq(cfg, "POST", "/customers/search", {
+      query: { filter: { phone_number: { exact: candidate } } },
+      limit: 1,
+    });
+    const customers = found.customers;
+    if (
+      !Array.isArray(customers)
+      || customers.some((customer) => (
+        !customer
+        || typeof customer !== "object"
+        || typeof (customer as { id?: unknown }).id !== "string"
+        || !(customer as { id: string }).id.trim()
+      ))
+      || (customers.length === 0
+        && found.cursor !== undefined
+        && found.cursor !== null
+        && found.cursor !== "")
+    ) {
+      throw new Error("Square SearchCustomers returned an invalid response");
     }
+    const hit = customers[0] as { id: string } | undefined;
+    if (hit) return hit.id;
   }
   return null;
 }
@@ -254,10 +401,9 @@ export async function ensureSquareCustomer(
   cfg: SquareConfig,
   opts: { name?: string | null; phone?: string | null; email?: string | null; referenceId: string; idempotencyKey: string },
 ): Promise<string> {
-  // Match on phone first (the salon's primary key for a guest). Best-effort —
-  // a phone Square rejects (e.g. fictional 555 numbers) must not break saving.
-  // E.164-aware search (Square stores phones in E.164) avoids creating a
-  // duplicate customer for a returning guest.
+  // Match on phone first (the salon's primary key for a guest). An unsuccessful
+  // provider response must propagate: only a successful empty search proves it
+  // is safe to attempt CreateCustomer.
   if (opts.phone) {
     const existing = await findSquareCustomerByPhone(cfg, opts.phone);
     if (existing) return existing;
@@ -275,17 +421,23 @@ export async function ensureSquareCustomer(
       phone_number: opts.phone || undefined,
       ...base,
     });
-    const id = (json.customer as { id?: string } | undefined)?.id;
-    if (id) return id;
+    const id = (json.customer as { id?: unknown } | undefined)?.id;
+    if (typeof id === "string" && id.trim()) return id;
   } catch (e) {
-    // Square rejected the create (most likely the phone) — retry without it so
-    // the card can still be saved against name/email.
+    // A second idempotency key is safe only when Square definitively rejected
+    // this exact request because of the phone. Transport failures, 5xxs and
+    // unknown/mixed 4xx responses may have created the customer, so replaying
+    // under a different key could create a duplicate.
+    if (!isDefinitiveInvalidPhoneError(e)) throw e;
     const json = await squareReq(cfg, "POST", "/customers", {
-      idempotency_key: `${opts.idempotencyKey}-np`,
+      // Square caps idempotency keys at 45 characters. Keep the explicit `-np`
+      // namespace while deriving a collision-resistant UUID form for NailIQ's
+      // longer durable base keys.
+      idempotency_key: noPhoneCustomerIdempotencyKey(opts.idempotencyKey),
       ...base,
     });
-    const id = (json.customer as { id?: string } | undefined)?.id;
-    if (id) return id;
+    const id = (json.customer as { id?: unknown } | undefined)?.id;
+    if (typeof id === "string" && id.trim()) return id;
     throw e;
   }
   throw new Error("Square CreateCustomer returned no id");
@@ -506,14 +658,129 @@ export interface SquarePayment {
   id: string;
   status: string;
   created_at?: string;
+  location_id?: string;
   amount_money?: { amount?: number; currency?: string };
   tip_money?: { amount?: number };
   refunded_money?: { amount?: number };
   source_type?: string;
+  application_details?: { application_id?: string };
   /** Stable caller reference set at charge time, e.g. "booking:<id>". Square
    *  returns it on the payment object; used to reconcile a charge whose local
    *  DB write failed, before a retry would re-charge. */
   reference_id?: string;
+}
+
+export interface ExactSquarePaymentQuery {
+  referenceId: string;
+  amountCents: number;
+  currency: string;
+  /** Inclusive RFC3339 lower bound sent to Square ListPayments. */
+  beginTime: string;
+  /** RFC3339 upper bound sent to Square ListPayments. */
+  endTime: string;
+}
+
+const RFC3339_RE =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
+const MAX_EXACT_PAYMENT_PAGES = 5;
+
+function parseRfc3339(value: string): number | null {
+  if (!RFC3339_RE.test(value)) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Recover one completed Square payment after an ambiguous create response.
+ *
+ * This intentionally treats a reused reference with different receipt
+ * material as a conflict, not as "not found": retrying a mutation in that
+ * state could collect twice. All pages are read so a duplicate cannot hide
+ * behind the first exact match. The scan is bounded to 5 x 100 responses; an
+ * unfinished result set fails closed instead of returning incomplete proof.
+ */
+export async function findExactSquarePaymentByReference(
+  cfg: SquareConfig,
+  query: ExactSquarePaymentQuery,
+  apiVersion = SQUARE_VERSION,
+): Promise<SquarePayment | null> {
+  const beginMs = parseRfc3339(query.beginTime);
+  const endMs = parseRfc3339(query.endTime);
+  if (
+    !query.referenceId
+    || query.referenceId.length > 192
+    || !Number.isSafeInteger(query.amountCents)
+    || query.amountCents < 1
+    || !/^[A-Z]{3}$/.test(query.currency)
+    || !cfg.applicationId
+    || beginMs === null
+    || endMs === null
+    || beginMs >= endMs
+  ) {
+    throw new Error("square_payment_recovery_query_invalid");
+  }
+
+  const referenced: SquarePayment[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < MAX_EXACT_PAYMENT_PAGES; page += 1) {
+    const params = new URLSearchParams({
+      location_id: cfg.locationId,
+      begin_time: query.beginTime,
+      end_time: query.endTime,
+      sort_order: "ASC",
+      limit: "100",
+    });
+    if (cursor) params.set("cursor", cursor);
+    const json = await squareReq(
+      cfg,
+      "GET",
+      `/payments?${params.toString()}`,
+      undefined,
+      apiVersion,
+    );
+    const payments = json.payments;
+    if (payments !== undefined && !Array.isArray(payments)) {
+      throw new Error("square_payment_recovery_response_invalid");
+    }
+    for (const payment of (payments ?? []) as SquarePayment[]) {
+      if (payment?.reference_id === query.referenceId) referenced.push(payment);
+    }
+    if (referenced.length > 1) {
+      throw new Error("square_payment_recovery_multiple_matches");
+    }
+
+    const nextCursor = json.cursor;
+    if (nextCursor === undefined || nextCursor === null || nextCursor === "") {
+      cursor = undefined;
+      break;
+    }
+    if (typeof nextCursor !== "string" || nextCursor === cursor) {
+      throw new Error("square_payment_recovery_response_invalid");
+    }
+    cursor = nextCursor;
+  }
+  if (cursor) throw new Error("square_payment_recovery_pagination_limit_exceeded");
+  if (referenced.length === 0) return null;
+
+  const payment = referenced[0];
+  const createdMs = typeof payment.created_at === "string"
+    ? parseRfc3339(payment.created_at)
+    : null;
+  if (
+    typeof payment.id !== "string"
+    || payment.id.length === 0
+    || payment.status !== "COMPLETED"
+    || payment.location_id !== cfg.locationId
+    || payment.amount_money?.amount !== query.amountCents
+    || payment.amount_money?.currency !== query.currency
+    || payment.application_details?.application_id !== cfg.applicationId
+    || createdMs === null
+    || createdMs < beginMs
+    || createdMs > endMs
+  ) {
+    throw new Error("square_payment_recovery_receipt_invalid");
+  }
+  return payment;
 }
 
 /** Pull completed payments for the location in [begin, end) (paginated). */
@@ -652,9 +919,43 @@ export async function createSquareBooking(
       ],
     },
   });
-  const b = (json.booking as { id?: string; version?: number } | undefined) ?? {};
-  if (!b.id) throw new Error("Square CreateBooking returned no id");
-  return { id: b.id, version: typeof b.version === "number" ? b.version : 0 };
+  const b = (json.booking as Record<string, unknown> | undefined) ?? {};
+  const segments = b.appointment_segments;
+  const segment = Array.isArray(segments) ? segments[0] : null;
+  const startAt = typeof b.start_at === "string" ? Date.parse(b.start_at) : Number.NaN;
+  if (
+    typeof b.id !== "string"
+    || !b.id.trim()
+    || b.id.length > 255
+    || /[\u0000-\u001f\u007f]/.test(b.id)
+    || !Number.isSafeInteger(b.version)
+    || Number(b.version) < 0
+    || b.location_id !== cfg.locationId
+    || b.customer_id !== opts.customerId
+    || !["ACCEPTED", "PENDING"].includes(String(b.status ?? ""))
+    || !Number.isFinite(startAt)
+    || startAt !== Date.parse(opts.startAtIso)
+    || (opts.sellerNote
+      ? b.seller_note !== opts.sellerNote
+      : b.seller_note != null && b.seller_note !== "")
+    || !Array.isArray(segments)
+    || segments.length !== 1
+    || !segment
+    || typeof segment !== "object"
+    || (segment as Record<string, unknown>).duration_minutes !== opts.durationMinutes
+    || (segment as Record<string, unknown>).team_member_id !== opts.teamMemberId
+    || (segment as Record<string, unknown>).service_variation_id
+      !== opts.serviceVariationId
+    || (segment as Record<string, unknown>).service_variation_version
+      !== opts.serviceVariationVersion
+  ) {
+    // The provider mutation may already have committed, so an incomplete
+    // response is an ambiguous outcome. Never manufacture version=0 and bind
+    // it as an exact receipt; the durable writeback journal will reconcile it
+    // through ListBookings on a later run.
+    throw new Error("Square CreateBooking returned no exact receipt");
+  }
+  return { id: b.id, version: Number(b.version) };
 }
 
 /**

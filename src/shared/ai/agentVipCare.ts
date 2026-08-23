@@ -1,11 +1,12 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
-import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
+import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProviderPolicy";
+import {
+  isProviderTimeoutError,
+  trackAnthropicMessage,
+} from "@/shared/ai/usageLedger";
 import { looseServiceClient, type Row } from "@/shared/integrations/square/looseDb";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { sendSmsReminder } from "@/shared/lib/twilioSms";
-import { getResendClient, getResendFrom } from "@/shared/lib/resend";
-import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
 import {
   applyLearnedAgentCap,
   getLessons,
@@ -20,12 +21,10 @@ import {
   fetchAllVipRows,
   fetchVipRowsForIds,
 } from "@/shared/ai/vipCareData";
-import { selectSalonRelatedManualVipIds } from "@/shared/ai/vipCareIsolation";
+import { createApprovalRequest } from "@/shared/ai/approvalRequests";
+import { parseVipSpendTiers } from "@/shared/dashboard/vipSpendTier";
 import {
-  complianceFooterHtml,
   isEmailSuppressed,
-  listUnsubscribeHeaders,
-  unsubscribeUrl,
 } from "@/shared/lib/emailCompliance";
 
 /**
@@ -36,7 +35,8 @@ import {
  *   milestone    — at 10 / 25 / 50 completed visits; once per milestone
  *   vip_inactive — VIP client silent 30+ days; once per 30-day window
  *
- * All actions logged to ai_actions_log with a 60-min undo window.
+ * Customer communication is draft-only. Every proposal requires an explicit
+ * owner/admin approval and no provider delivery is called from this agent.
  * Gate: feature_flags.ai_vip_care = true
  */
 
@@ -47,7 +47,7 @@ let anthropic: Anthropic | null = null;
 function getAI(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY?.trim();
   if (!key) return null;
-  if (!anthropic) anthropic = new Anthropic({ apiKey: key });
+  if (!anthropic) anthropic = createTextBackgroundAnthropicClient(key);
   return anthropic;
 }
 
@@ -64,7 +64,10 @@ type VipClient = {
   marketingEmailConsentAt: string | null; // email-only (e.g. Square subscriber)
 };
 
-async function loadVipClients(salonId: string): Promise<VipClient[]> {
+async function loadVipClients(
+  salonId: string,
+  eligibility: { spendThresholdCents: number; visitThreshold: number },
+): Promise<VipClient[]> {
   const db = looseServiceClient();
 
   // Load every tenant-scoped relationship first. These tables can exceed the
@@ -100,38 +103,20 @@ async function loadVipClients(salonId: string): Promise<VipClient[]> {
     if (profileId) spendSet.set(profileId, row);
   }
 
-  // `is_vip` is global today, so a manual flag is not enough to prove this
-  // customer belongs to this salon. Start with this salon's relationships,
-  // then ask which related profiles are manual VIPs. This is both tenant-safe
-  // and avoids reading global VIP identities before proving relationship.
-  const relatedProfileIds = new Set([
-    ...spendSet.keys(),
-    ...salonBookings.map((row) => str(row.client_profile_id)),
-    ...salonSquareVisits.map((row) => str(row.client_profile_id)),
-  ].filter(Boolean));
-  const manualVips = await fetchVipRowsForIds(
-    "manual_vips",
-    relatedProfileIds,
-    (ids, from, to) =>
-      db
-        .from("client_profiles")
-        .select("id")
-        .eq("is_vip", true)
-        .in("id", ids)
-        .order("id")
-        .range(from, to),
+  const manualVips = await fetchAllVipRows("manual_vips", (from, to) =>
+    db
+      .from("salon_clients")
+      .select("client_profile_id")
+      .eq("salon_id", salonId)
+      .eq("is_vip", true)
+      .order("client_profile_id")
+      .range(from, to),
   );
-  const relatedManualVipIds = selectSalonRelatedManualVipIds({
-    manualVipIds: manualVips.map((row) => str(row.id)),
-    spendProfileIds: spendSet.keys(),
-    bookingProfileIds: salonBookings.map((row) => str(row.client_profile_id)),
-    squareVisitProfileIds: salonSquareVisits.map((row) => str(row.client_profile_id)),
-  });
-  for (const row of manualVips) {
-    const profileId = str(row.id);
-    if (relatedManualVipIds.has(profileId) && !spendSet.has(profileId)) {
-      spendSet.set(profileId, row);
-    }
+  const manualVipIds = new Set(
+    manualVips.map((row) => str(row.client_profile_id)).filter(Boolean),
+  );
+  for (const profileId of manualVipIds) {
+    if (!spendSet.has(profileId)) spendSet.set(profileId, {});
   }
 
   if (spendSet.size === 0) return [];
@@ -145,7 +130,7 @@ async function loadVipClients(salonId: string): Promise<VipClient[]> {
     (profileIds, from, to) =>
       db
         .from("client_profiles")
-        .select("id, phone, name, email, date_of_birth, is_vip, marketing_consent_at, marketing_email_consent_at")
+        .select("id, phone, name, email, date_of_birth, marketing_consent_at, marketing_email_consent_at")
         .in("id", profileIds)
         .order("id")
         .range(from, to),
@@ -213,10 +198,13 @@ async function loadVipClients(salonId: string): Promise<VipClient[]> {
     const spend = spendSet.get(id);
     const visits = visitCountMap.get(id) ?? 0;
     const spendCents = num(spend?.total_spend_cents);
-    const paymentCount = num(spend?.payment_count);
 
-    // Include if: manually VIP OR $100+ spend OR 5+ visit records
-    if (!p.is_vip && spendCents < 10000 && paymentCount < 5 && visits < 3) continue;
+    const isManualVip = manualVipIds.has(id);
+    if (
+      !isManualVip &&
+      spendCents < eligibility.spendThresholdCents &&
+      visits < eligibility.visitThreshold
+    ) continue;
 
     out.push({
       id,
@@ -224,7 +212,7 @@ async function loadVipClients(salonId: string): Promise<VipClient[]> {
       name: str(p.name) || "there",
       email: str(p.email) || null,
       dateOfBirth: p.date_of_birth ? str(p.date_of_birth) : null,
-      isVip: Boolean(p.is_vip),
+      isVip: isManualVip,
       visitCount: visits,
       lastVisitAt: lastVisitMap.get(id) ?? null,
       marketingConsentAt: p.marketing_consent_at ? str(p.marketing_consent_at) : null,
@@ -237,7 +225,8 @@ async function loadVipClients(salonId: string): Promise<VipClient[]> {
 // Check which ai_actions_log entries already exist for this salon's vip_care agent
 async function loadExistingActions(salonId: string): Promise<Set<string>> {
   const db = createServiceRoleClient();
-  const rows = await fetchAllVipRows("existing_actions", (from, to) =>
+  const [rows, approvalRows] = await Promise.all([
+    fetchAllVipRows("existing_actions", (from, to) =>
     db
       .from("ai_actions_log" as never)
       .select("action_type, target_id, created_at" as never)
@@ -247,9 +236,30 @@ async function loadExistingActions(salonId: string): Promise<Set<string>> {
       .range(from, to) as unknown as PromiseLike<{
         data: Row[] | null;
         error: { message: string } | null;
-      }>);
+      }>),
+    fetchAllVipRows("existing_drafts", (from, to) =>
+      db
+        .from("approval_requests" as never)
+        .select("payload, created_at" as never)
+        .eq("salon_id" as never, salonId)
+        .eq("action_type" as never, "vip_care_outreach_draft")
+        .order("id" as never)
+        .range(from, to) as unknown as PromiseLike<{
+          data: Row[] | null;
+          error: { message: string } | null;
+        }>),
+  ]);
 
-  return buildVipActionDedupeKeys(rows as Array<{
+  const draftActions = approvalRows.flatMap((row) => {
+    const payload = row.payload as Record<string, unknown> | null;
+    const event = str(payload?.event);
+    const targetId = str(payload?.client_profile_id);
+    return event && targetId
+      ? [{ action_type: event, target_id: targetId, created_at: row.created_at }]
+      : [];
+  });
+
+  return buildVipActionDedupeKeys([...rows, ...draftActions] as Array<{
     action_type: unknown;
     target_id: unknown;
     created_at: unknown;
@@ -312,115 +322,43 @@ async function draftMessage(
     return clean.length > 10 && clean.length <= 900
       ? clean
       : `Hi ${client.name}, thinking of you at ${salonName}!\n\nChào ${client.name}, tiệm luôn nhớ bạn tại ${salonName}!`;
-  } catch {
+  } catch (error) {
+    if (isProviderTimeoutError(error)) throw error;
     return `Chào ${client.name}, tiệm luôn nhớ bạn tại ${salonName}!\n\nHi ${client.name}, thinking of you at ${salonName}!`;
   }
 }
 
-async function sendMessage(
-  salonId: string,
-  client: VipClient,
-  message: string,
-  bookingUrl: string,
-  ch: ReturnType<typeof resolveCustomerChannel>,
-  salonName: string,
-  salonAddress?: string | null,
-  salonReplyEmail?: string | null,
-): Promise<{ ok: boolean; channel: "sms" | "email"; reason: string }> {
-  if (ch.noChannel) {
-    return { ok: false, channel: "sms", reason: ch.reason };
-  }
-
-  const fullText = `${message}\n${bookingUrl}`;
-  let ok = false;
-
-  if (ch.sms) {
-    const r = await sendSmsReminder(client.phone, fullText, { salonId, lang: "en" });
-    ok = r.ok;
-  }
-  if (ch.email && client.email) {
-    const resend = getResendClient();
-    if (resend) {
-      const esc = (x: string) =>
-        x.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] ?? c));
-      const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#faf9f7;">
-<div style="max-width:480px;margin:0 auto;padding:28px 22px;font-family:-apple-system,Segoe UI,sans-serif;color:#1a1a1a">
-  <p style="font-size:15px;line-height:1.7;margin:0 0 16px">${esc(message)}</p>
-  <a href="${bookingUrl}" style="display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:14px">Book now</a>
-  ${complianceFooterHtml({ email: client.email, salonName, salonAddress, lang: "en" })}
-</div>
-</body></html>`;
-      const { error } = await resend.emails.send({
-        from: getResendFrom(),
-        to: client.email,
-        subject: `A note from ${salonName}`,
-        html,
-        text: `${fullText}\n\nUnsubscribe: ${unsubscribeUrl(client.email)}`,
-        headers: listUnsubscribeHeaders(client.email),
-        ...(salonReplyEmail ? { replyTo: salonReplyEmail } : {}),
-      });
-      ok = ok || !error;
-    }
-  }
-
-  const channel: "sms" | "email" = ch.email ? "email" : "sms";
-  return { ok, channel, reason: ch.reason };
-}
-
-type RewardCfg = { type: string; percent: number; amountCents: number; validDays: number };
-
-/** Issue an admin-configured care voucher (birthday or milestone) for this
- *  client and return the line to append to the message. Returns null when no
- *  reward is configured OR it couldn't be created — never promise a gift we
- *  didn't make. `code` must be deterministic (once-per-occasion) so a re-issue
- *  is a harmless duplicate. */
-async function issueCareVoucher(
-  svc: ReturnType<typeof createServiceRoleClient>,
-  salonId: string,
-  client: VipClient,
-  cfg: RewardCfg,
-  opts: { voucherKind: "birthday" | "milestone"; code: string; giftPhraseVi: string; giftPhraseEn: string },
-): Promise<{ rewardLine: string } | null> {
-  if (cfg.type === "percent" ? !(cfg.percent > 0) : cfg.type === "amount" ? !(cfg.amountCents > 0) : true) {
-    return null;
-  }
-  const now = new Date();
-  const expires = new Date(now.getTime() + cfg.validDays * 864e5);
-  const row: Record<string, unknown> = {
-    salon_id: salonId,
-    code: opts.code,
-    kind: opts.voucherKind,
-    max_uses: 1,
-    valid_from: now.toISOString(),
-    expires_at: expires.toISOString(),
-    client_phone: client.phone,
-    client_profile_id: client.id,
-  };
-  if (cfg.type === "percent") row.percent_off = cfg.percent;
-  else row.amount_off_cents = cfg.amountCents;
-
-  const { error } = await svc.from("vouchers" as never).insert(row as never);
-  const isDup = error && /duplicate|unique/i.test(String(error.message ?? error));
-  if (error && !isDup) {
-    console.error("[runVipCare] care voucher insert failed", opts.voucherKind, error);
-    return null;
-  }
-  const labelVi = cfg.type === "percent"
-    ? `giảm ${cfg.percent}%`
-    : `giảm $${Math.round(cfg.amountCents / 100)}`;
-  const labelEn = cfg.type === "percent"
-    ? `${cfg.percent}% off`
-    : `$${Math.round(cfg.amountCents / 100)} off`;
-  return {
-    rewardLine:
-      `🎁 ${opts.giftPhraseEn}: ${labelEn} your next visit — code ${opts.code} (valid ${cfg.validDays} days).\n` +
-      `${opts.giftPhraseVi}: ${labelVi} cho lần ghé tới — mã ${opts.code} (dùng trong ${cfg.validDays} ngày).`,
-  };
-}
-
-/** last-4 of phone (fallback to profile id) for a deterministic voucher code. */
-function clientCodeToken(client: VipClient): string {
-  return client.phone.replace(/\D/g, "").slice(-4) || client.id.slice(0, 4);
+async function createVipCareDraft(params: {
+  salonId: string;
+  client: VipClient;
+  event: MessageType | `milestone_${number}`;
+  message: string;
+  bookingUrl: string;
+  channel: ReturnType<typeof resolveCustomerChannel>;
+}): Promise<boolean> {
+  const requestId = await createApprovalRequest({
+    salonId: params.salonId,
+    actionType: "vip_care_outreach_draft",
+    summary: `Review VIP Care draft for ${params.client.name} (${params.event}). No message will be sent automatically.`,
+    payload: {
+      proposal_source: "vip_care",
+      event: params.event,
+      client_profile_id: params.client.id,
+      recipient_phone: params.client.phone,
+      recipient_email: params.client.email,
+      message: params.message,
+      booking_url: params.bookingUrl,
+      suggested_channels: {
+        sms: params.channel.sms,
+        email: params.channel.email,
+        reason: params.channel.reason,
+      },
+      delivery_mode: "draft_only_human_send_required",
+    },
+    urgency: "normal",
+    expiresInHours: 72,
+  });
+  return requestId !== null;
 }
 
 export async function runVipCare(salonId: string): Promise<void> {
@@ -428,7 +366,7 @@ export async function runVipCare(salonId: string): Promise<void> {
     const db = looseServiceClient();
     const { data: salon, error: salonError } = await db
       .from("salons" as never)
-      .select("name, email, address, slug, feature_flags, sms_outbound_enabled, sms_a2p_registered, email_outbound_enabled, customer_channel, birthday_reward_type, birthday_reward_percent, birthday_reward_amount_cents, birthday_reward_valid_days, milestone_reward_type, milestone_reward_percent, milestone_reward_amount_cents, milestone_reward_valid_days" as never)
+      .select("name, slug, feature_flags, sms_outbound_enabled, sms_a2p_registered, email_outbound_enabled, customer_channel, vip_spend_tiers, vip_visit_threshold" as never)
       .eq("id" as never, salonId)
       .maybeSingle();
     if (salonError) throw new Error(`[vip_care:salon] ${salonError.message}`);
@@ -439,30 +377,17 @@ export async function runVipCare(salonId: string): Promise<void> {
 
     const salonName = str(s.name) || "our salon";
     const salonSlug = str(s.slug) || "";
-    const salonAddress = str(s.address) || null;
-    const salonReplyEmail = str(s.email) || null;
     const smsOutboundEnabled = s.sms_outbound_enabled !== false; // default true
     const emailOutboundEnabled = s.email_outbound_enabled !== false; // default true
     const smsA2pRegistered = s.sms_a2p_registered === true; // US A2P 10DLC status
     const customerChannelMode = (str(s.customer_channel) || "smart") as CustomerChannelMode;
     const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
     const bookingUrl = `${SITE_URL}/${salonSlug}?ref=vip`;
-    // Admin-configured care gifts (default 'none' → no reward attached).
-    const birthdayReward: RewardCfg = {
-      type: str(s.birthday_reward_type) || "none",
-      percent: num(s.birthday_reward_percent),
-      amountCents: num(s.birthday_reward_amount_cents),
-      validDays: num(s.birthday_reward_valid_days) || 30,
-    };
-    const milestoneReward: RewardCfg = {
-      type: str(s.milestone_reward_type) || "none",
-      percent: num(s.milestone_reward_percent),
-      amountCents: num(s.milestone_reward_amount_cents),
-      validDays: num(s.milestone_reward_valid_days) || 30,
-    };
+    const spendThresholdCents = parseVipSpendTiers(s.vip_spend_tiers).bronze;
+    const visitThreshold = Math.max(1, Math.min(1000, num(s.vip_visit_threshold) || 5));
 
     const [clients, existing, segmentLessons] = await Promise.all([
-      loadVipClients(salonId),
+      loadVipClients(salonId, { spendThresholdCents, visitThreshold }),
       loadExistingActions(salonId),
       getLessons(salonId, "segment"),
     ]);
@@ -471,26 +396,20 @@ export async function runVipCare(salonId: string): Promise<void> {
 
     const svc = createServiceRoleClient();
     const MILESTONES = [10, 25, 50];
-    // Anti-blast cap. This agent had never actually run (it queried a
-    // non-existent `start_time` column and silently no-op'd), so its dedupe log
-    // is empty — the first successful run would otherwise message EVERY
-    // currently-qualifying VIP at once (e.g. all VIPs inactive 30–60 days).
-    // Cap sends per salon per run so the backlog drains over several daily runs
-    // instead of blasting real customers in one pass; steady-state daily volume
-    // is well under this.
-    const MAX_SENDS_PER_RUN = 15;
-    const learnedSendCap = applyLearnedAgentCap(
-      MAX_SENDS_PER_RUN,
+    // Cap proposals so the approval inbox cannot be flooded by a backlog.
+    const MAX_DRAFTS_PER_RUN = 15;
+    const learnedDraftCap = applyLearnedAgentCap(
+      MAX_DRAFTS_PER_RUN,
       segmentLessons,
       "vip_care",
     );
     // Channel-scoped consent: Square email-subscription (marketing_email_consent_at)
     // unlocks EMAIL only, never SMS. Gated OFF by default until deliberately enabled.
     const emailConsentEnabled = process.env.SQUARE_EMAIL_CONSENT_SEND === "1";
-    let sentCount = 0;
+    let draftCount = 0;
 
     clientLoop: for (const client of clients) {
-      if (sentCount >= learnedSendCap) break;
+      if (draftCount >= learnedDraftCap) break;
       if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) break;
 
       // Full opt-in → SMS or email. Email-only consent (Square) → EMAIL ONLY.
@@ -529,57 +448,16 @@ export async function runVipCare(salonId: string): Promise<void> {
             continue clientLoop;
           }
           if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) break;
-          const baseMsg = await draftMessage("birthday", client, salonName, undefined, salonId);
+          const msg = await draftMessage("birthday", client, salonName, undefined, salonId);
           if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
             break clientLoop;
           }
-          // Attach the admin-configured birthday gift (a real voucher code), if any.
-          const gift = await issueCareVoucher(svc, salonId, client, birthdayReward, {
-            voucherKind: "birthday",
-            code: `BDAY-${clientCodeToken(client)}-${new Date().getUTCFullYear()}`,
-            giftPhraseVi: "Quà sinh nhật",
-            giftPhraseEn: "Your birthday gift",
-          });
-          const msg = gift ? `${baseMsg}\n\n${gift.rewardLine}` : baseMsg;
-          if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
-            break clientLoop;
-          }
-          const { ok, channel, reason } = await sendMessage(salonId, client, msg, bookingUrl, delivery, salonName, salonAddress, salonReplyEmail);
-          if (!ok && reason.startsWith("no_channel")) {
-            console.warn("[runVipCare] delivery skipped", {
-              salonId,
-              event: "birthday",
-              reason,
-            });
-            await svc.from("ai_actions_log" as never).insert({
-              salon_id: salonId,
-              agent: "vip_care",
-              action_type: "skipped_no_channel",
-              target_id: client.id,
-              payload: { name: client.name, event: "birthday", reason },
-              undo_deadline: null,
-            } as never);
-          }
-          if (ok) {
-            sentCount++;
-            await svc.from("ai_actions_log" as never).insert({
-              salon_id: salonId,
-              agent: "vip_care",
-              action_type: "birthday",
-              target_id: client.id,
-              payload: {
-                name: client.name,
-                phone: client.phone,
-                channel,
-                reason,
-                preview: msg.slice(0, 120),
-              },
-              undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-            } as never);
-          }
+          if (await createVipCareDraft({
+            salonId, client, event: "birthday", message: msg, bookingUrl, channel: delivery,
+          })) draftCount += 1;
         }
       }
-      if (sentCount >= learnedSendCap) break;
+      if (draftCount >= learnedDraftCap) break;
 
       // ── Milestones ───────────────────────────────────────────
       for (const milestone of MILESTONES) {
@@ -599,58 +477,21 @@ export async function runVipCare(salonId: string): Promise<void> {
         }
         if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) break;
         // Fire when visits == milestone (allow +1 buffer so cron doesn't miss by 1)
-        const baseMsg = await draftMessage("milestone", client, salonName, milestone, salonId);
+        const msg = await draftMessage("milestone", client, salonName, milestone, salonId);
         if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
           break clientLoop;
         }
-        // Attach the admin-configured milestone gift (a real voucher code), if any.
-        const gift = await issueCareVoucher(svc, salonId, client, milestoneReward, {
-          voucherKind: "milestone",
-          code: `MILE-${clientCodeToken(client)}-${milestone}`,
-          giftPhraseVi: `Quà mốc lần thứ ${milestone}`,
-          giftPhraseEn: `Your visit #${milestone} gift`,
-        });
-        const msg = gift ? `${baseMsg}\n\n${gift.rewardLine}` : baseMsg;
-        if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
-          break clientLoop;
-        }
-        const { ok, channel, reason } = await sendMessage(salonId, client, msg, bookingUrl, delivery, salonName, salonAddress, salonReplyEmail);
-        if (!ok && reason.startsWith("no_channel")) {
-          console.warn("[runVipCare] delivery skipped", {
-            salonId,
-            event: `milestone_${milestone}`,
-            reason,
-          });
-          await svc.from("ai_actions_log" as never).insert({
-            salon_id: salonId,
-            agent: "vip_care",
-            action_type: "skipped_no_channel",
-            target_id: client.id,
-            payload: { name: client.name, event: `milestone_${milestone}`, reason },
-            undo_deadline: null,
-          } as never);
-        }
-        if (ok) {
-          sentCount++;
-          await svc.from("ai_actions_log" as never).insert({
-            salon_id: salonId,
-            agent: "vip_care",
-            action_type: `milestone_${milestone}`,
-            target_id: client.id,
-            payload: {
-              name: client.name,
-              phone: client.phone,
-              channel,
-              reason,
-              visit_count: milestone,
-              preview: msg.slice(0, 120),
-            },
-            undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-          } as never);
-        }
+        if (await createVipCareDraft({
+          salonId,
+          client,
+          event: `milestone_${milestone}`,
+          message: msg,
+          bookingUrl,
+          channel: delivery,
+        })) draftCount += 1;
         break; // only fire one milestone per client per cron run
       }
-      if (sentCount >= learnedSendCap) break;
+      if (draftCount >= learnedDraftCap) break;
 
       // ── VIP inactive 30d ─────────────────────────────────────
       if (!existing.has(`vip_inactive:${client.id}`) && client.lastVisitAt) {
@@ -674,52 +515,18 @@ export async function runVipCare(salonId: string): Promise<void> {
           if (!(await isAiAgentPermissionEnabled(salonId, "ai_vip_care"))) {
             break clientLoop;
           }
-          const { ok, channel, reason } = await sendMessage(salonId, client, msg, bookingUrl, delivery, salonName, salonAddress, salonReplyEmail);
-          if (!ok && reason.startsWith("no_channel")) {
-            console.warn("[runVipCare] delivery skipped", {
-              salonId,
-              event: "vip_inactive",
-              reason,
-            });
-            await svc.from("ai_actions_log" as never).insert({
-              salon_id: salonId,
-              agent: "vip_care",
-              action_type: "skipped_no_channel",
-              target_id: client.id,
-              payload: { name: client.name, event: "vip_inactive", reason, days_since: daysSince },
-              undo_deadline: null,
-            } as never);
-          }
-          if (ok) {
-            sentCount++;
-            await svc.from("ai_actions_log" as never).insert({
-              salon_id: salonId,
-              agent: "vip_care",
-              action_type: "vip_inactive",
-              target_id: client.id,
-              payload: {
-                name: client.name,
-                phone: client.phone,
-                channel,
-                reason,
-                days_since: daysSince,
-                preview: msg.slice(0, 120),
-              },
-              undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-            } as never);
-          }
+          if (await createVipCareDraft({
+            salonId,
+            client,
+            event: "vip_inactive",
+            message: msg,
+            bookingUrl,
+            channel: delivery,
+          })) draftCount += 1;
         }
       }
     }
 
-    if (sentCount > 0) {
-      void sendOwnerAlert(salonId, {
-        subject: `${salonName} — AI VIP Care: ${sentCount} message${sentCount > 1 ? "s" : ""} sent`,
-        bodyText:
-          `AI VIP Care đã gửi ${sentCount} tin nhắn cá nhân tới khách VIP (sinh nhật, milestone, nhắc nhở). ` +
-          `Undo được trong 60 phút từ Activity feed.`,
-      });
-    }
   } catch (e) {
     console.error("[runVipCare]", e);
     throw e;

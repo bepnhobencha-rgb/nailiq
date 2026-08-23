@@ -67,7 +67,7 @@ export default function OpengraphImage() {
               lineHeight: 1.35,
             }}
           >
-            Vietnamese-first salon OS — built in Vancouver, BC 🇨🇦
+            Vietnamese-first salon OS — built in Vancouver, BC, Canada
           </div>
         </div>
 

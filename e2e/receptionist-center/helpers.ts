@@ -168,6 +168,26 @@ export async function seedReceptionistCenterFixture(slugOverride?: string): Prom
   const { cleanupTestSalon } = await import("../helpers/db");
   await cleanupTestSalon(slug);
 
+  // Fresh local resets do not run a seed file, but services.category defaults
+  // to the canonical global `other` slug and is FK-protected. Mirror the
+  // generic E2E salon helper by bootstrapping that inert catalog row.
+  const { error: categoryError } = await supabaseAdmin
+    .from("service_categories")
+    .upsert(
+      {
+        slug: "other",
+        name_en: "Other",
+        name_vi: "Khác",
+        sort_order: 999,
+      },
+      { onConflict: "slug", ignoreDuplicates: true },
+    );
+  if (categoryError) {
+    throw new Error(
+      `seedReceptionistCenterFixture category: ${categoryError.message}`,
+    );
+  }
+
   const ymdUtc = utcDayBoundsYmd();
   const tz = "UTC";
 
@@ -515,19 +535,22 @@ export async function gotoReceptionistCenter(
     dateYmd?: string;
     expectWalkinQueue?: boolean;
     shellV2?: boolean;
+    useDemoCookie?: boolean;
   },
 ): Promise<void> {
   const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
 
-  await page.context().addCookies([
-    {
-      name: "nailiq-demo-slug",
-      value: slug,
-      // Use `url` (not `domain`+`path`) — Playwright derives domain/path from
-      // the URL, which is more reliable for localhost in Chromium on Linux CI.
-      url: baseURL,
-    },
-  ]);
+  if (opts?.useDemoCookie !== false) {
+    await page.context().addCookies([
+      {
+        name: "nailiq-demo-slug",
+        value: slug,
+        // Use `url` (not `domain`+`path`) — Playwright derives domain/path from
+        // the URL, which is more reliable for localhost in Chromium on Linux CI.
+        url: baseURL,
+      },
+    ]);
+  }
 
   // Default the user-language preference to EN before any page script
   // runs. `useUserLanguage` reads `nailiq-user-lang` from localStorage on

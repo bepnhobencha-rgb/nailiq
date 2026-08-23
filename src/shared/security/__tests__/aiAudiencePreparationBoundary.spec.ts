@@ -18,6 +18,13 @@ const migration = readFileSync(
   ),
   "utf8",
 );
+const reactivationMigration = readFileSync(
+  resolve(
+    root,
+    "supabase/migrations/20260822234334_add_atomic_reactivation_campaign_drafts.sql",
+  ),
+  "utf8",
+);
 
 describe("AI audience preparation boundary", () => {
   it("requires owner/admin and binds the service call to the resolved salon", () => {
@@ -28,10 +35,20 @@ describe("AI audience preparation boundary", () => {
 
   it("keeps the execution job waiting for separate release authorization", () => {
     expect(service).toContain('job.status !== "waiting_input"');
-    expect(service).toContain('"record_ai_campaign_manifest" as never');
+    expect(service).toContain('"record_ai_campaign_manifest"');
+    expect(service).toContain('"record_reactivation_campaign_manifest"');
     expect(service).toContain("no_messages_sent: true");
     expect(migration).toContain("'blocker', 'release_approval_required'");
     expect(migration).toContain("and status = 'waiting_input'");
+  });
+
+  it("supports separate consent-aware winback and rebook dry-run segments", () => {
+    expect(service).toContain('"marketing_audience_candidates" as never');
+    expect(service).toContain('"marketing_rebook_audience_candidates" as never');
+    expect(service).toContain('"winback_lapsed_regulars_45_365_days"');
+    expect(service).toContain('"rebook_due_regulars"');
+    expect(reactivationMigration).toContain("p_summary ->> 'segment' not in");
+    expect(reactivationMigration).toContain("'language_routing_required', true");
   });
 
   it("persists manifest, recipients, release approval, and audit atomically", () => {

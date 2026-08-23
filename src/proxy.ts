@@ -41,6 +41,7 @@ import {
   resolveCustomDomainSlug,
 } from "@/shared/lib/customDomainResolver";
 import { consumeEdgeDurableRateLimits } from "@/shared/security/edgeDurableRateLimit";
+import { resolveSupabaseServerUrl } from "@/shared/lib/supabase/serverUrl";
 
 /** Public booking slug path: `/<slug>` only (single segment, kebab case).
  *  Excludes `/dashboard`, `/register`, `/login`, `/api`, `/auth`,
@@ -327,7 +328,7 @@ export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    resolveSupabaseServerUrl()!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {

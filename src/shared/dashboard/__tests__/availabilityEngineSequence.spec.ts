@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  createServiceRoleClient: vi.fn(),
   getDashboardWriteClient: vi.fn(),
 }));
 
 vi.mock("@/shared/dashboard/setupActions", () => ({
   getDashboardWriteClient: mocks.getDashboardWriteClient,
+}));
+vi.mock("@/shared/lib/supabase/serviceRole", () => ({
+  createServiceRoleClient: mocks.createServiceRoleClient,
 }));
 
 import { getStaffAvailability } from "../availabilityEngine";
@@ -101,13 +105,16 @@ describe("segment-aware operational availability", () => {
     const supabase = {
       from: vi.fn((table: string) => {
         if (table === "staff") return staff;
-        if (table === "booking_service_segments") return segments;
         if (table === "bookings" && supabase.from.mock.calls.filter(([name]) => name === "bookings").length === 1) {
           return bookings;
         }
         return queueRows;
       }),
     };
+    const serviceRole = {
+      from: vi.fn(() => segments),
+    };
+    mocks.createServiceRoleClient.mockReturnValue(serviceRole);
     mocks.getDashboardWriteClient.mockResolvedValue({
       salon: { id: "salon-a" },
       supabase,
@@ -157,6 +164,7 @@ describe("segment-aware operational availability", () => {
     expect(segments.or).toHaveBeenCalledWith(
       "reservation_status.eq.in_progress,occupied_end_utc.gte.2026-08-21T18:27:00.000Z",
     );
+    expect(serviceRole.from).toHaveBeenCalledWith("booking_service_segments");
   });
 
   it("fails closed when tenant-scoped segment capacity cannot be loaded", async () => {
@@ -167,12 +175,11 @@ describe("segment-aware operational availability", () => {
     const bookings = query({ data: [], error: null });
     const segments = query({ data: null, error: { message: "denied" } });
     const supabase = {
-      from: vi.fn((table: string) => {
-        if (table === "staff") return staff;
-        if (table === "booking_service_segments") return segments;
-        return bookings;
-      }),
+      from: vi.fn((table: string) => table === "staff" ? staff : bookings),
     };
+    mocks.createServiceRoleClient.mockReturnValue({
+      from: vi.fn(() => segments),
+    });
     mocks.getDashboardWriteClient.mockResolvedValue({
       salon: { id: "salon-a" },
       supabase,

@@ -25,6 +25,8 @@ const url = "https://nailiq.test/api/webhooks/wix";
 const siteId = "site-123";
 const entityId = "booking-123";
 const body = JSON.stringify({
+  id: "event-123",
+  eventTime: "2026-08-22T18:00:00.000Z",
   entityFqdn: "wix.bookings.v2.booking",
   slug: "updated",
   entityId,
@@ -65,7 +67,24 @@ function db(options?: { publicKey?: string | null; selectError?: unknown; update
   const select = vi.fn(() => selectQuery);
   const update = vi.fn(() => updateQuery);
   const from = vi.fn(() => ({ select, update }));
-  return { client: { from }, from, update };
+  const rpc = vi.fn(async (fn: string) => {
+    if (fn === "record_wix_webhook_event") {
+      return { data: { success: true, code: "event_recorded", inbox_id: "inbox-123" }, error: null };
+    }
+    if (fn === "claim_wix_webhook_event") {
+      return {
+        data: {
+          success: true,
+          code: "event_claimed",
+          inbox_id: "inbox-123",
+          claim_token: "claim-123",
+        },
+        error: null,
+      };
+    }
+    return { data: { success: true, code: "event_completed" }, error: null };
+  });
+  return { client: { from, rpc }, from, update, rpc };
 }
 
 function request(raw: string | Uint8Array, headers?: Record<string, string>) {
@@ -154,5 +173,17 @@ describe("signed Wix webhook ingress", () => {
       false,
     );
     expect(database.update).toHaveBeenCalledTimes(1);
+    expect(database.rpc).toHaveBeenCalledWith(
+      "record_wix_webhook_event",
+      expect.objectContaining({
+        p_event_id: "event-123",
+        p_entity_id: entityId,
+        p_event_slug: "updated",
+      }),
+    );
+    expect(database.rpc).toHaveBeenCalledWith(
+      "complete_wix_webhook_event",
+      expect.objectContaining({ p_status: "processed" }),
+    );
   });
 });

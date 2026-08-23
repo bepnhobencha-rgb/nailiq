@@ -77,6 +77,7 @@ import {
   type GroupBookingPricingQuote,
   type GroupBookingPricingRequest,
 } from "@/shared/booking/groupBookingPricing";
+import { useBookingFunnelAnalytics } from "@/shared/analytics/useBookingFunnelAnalytics";
 
 /**
  * Group booking — AI Arrival-First redesign (May 2026).
@@ -454,6 +455,13 @@ export function BookingGroupFlow({
 
   // Per-field error sets for the wizard step validations.
   const [stepErrors, setStepErrors] = useState<Set<string>>(() => new Set());
+
+  useBookingFunnelAnalytics({
+    flow: "group",
+    step,
+    submitting,
+    hasError: errorMessage !== null,
+  });
 
   const groupCopy = (t.groupBooking ?? {}) as NonNullable<
     BookingMessages["groupBooking"]

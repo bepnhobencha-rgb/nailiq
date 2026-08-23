@@ -1,5 +1,6 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProviderPolicy";
 import { looseServiceClient, type Row } from "@/shared/integrations/square/looseDb";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import {
@@ -49,7 +50,7 @@ let client: Anthropic | null = null;
 function getClient(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY?.trim();
   if (!key) return null;
-  if (!client) client = new Anthropic({ apiKey: key });
+  if (!client) client = createTextBackgroundAnthropicClient(key);
   return client;
 }
 

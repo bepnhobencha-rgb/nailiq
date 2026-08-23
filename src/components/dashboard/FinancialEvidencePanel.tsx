@@ -52,8 +52,10 @@ export function FinancialEvidencePanel({ slug, result, language }: Props) {
     [vi ? "Ước tính thuế" : "Booked tax estimate", report.totals.bookedTaxCents],
     [vi ? "Tổng ước tính lịch hẹn" : "Booked total estimate", report.totals.bookedTotalCents],
     [vi ? "Đã thu có biên nhận" : "Receipt-backed gross", report.totals.collectedGrossCents],
+    [vi ? "Tip có bằng chứng" : "Evidenced tips", report.totals.tipCents],
     [vi ? "Hoàn tiền có biên nhận" : "Receipt-backed refunds", report.totals.refundCents],
     [vi ? "Dòng tiền ròng có bằng chứng" : "Evidenced net movement", report.totals.collectedNetCents],
+    [vi ? "Hoa hồng ước tính" : "Estimated commission", report.totals.commissionCents],
   ] as const;
   return (
     <Card variant="default" padding="md">
@@ -90,7 +92,7 @@ export function FinancialEvidencePanel({ slug, result, language }: Props) {
         ))}
       </div>
       <p className="mt-3 text-xs text-nq-muted">
-        {vi ? "Tip và hoa hồng chưa có nguồn dữ liệu/chính sách được phê duyệt trong bản phát hành này; chúng hiển thị “Không khả dụng” và không được tính vào tổng." : "Tips and commission have no approved data source or policy in this release; they display as “Unavailable” and are excluded from totals."}
+        {vi ? "Tip chỉ hiển thị từ bằng chứng đã xác minh. Hoa hồng là ước tính từ doanh thu dịch vụ sau giảm giá, không gồm thuế hoặc tip, và không phải bảng lương hay lệnh chi trả." : "Tips appear only from verified evidence. Commission is an estimate based on after-discount service revenue, excluding tax and tips, and is not payroll or payout authority."}
       </p>
       <p className="mt-2 break-all font-mono text-[10px] text-nq-muted">{vi ? "Mã báo cáo" : "Report fingerprint"}: {report.reportFingerprint}</p>
     </Card>

@@ -20,6 +20,7 @@ describe("disabled quick-rebook production boundary", () => {
   it("has no production caller for the retired privileged endpoint", () => {
     const callers = productionSources(resolve(root, "src"))
       .filter((file) => relative(root, file) !== "src/app/api/quick-rebook/route.ts")
+      .filter((file) => relative(root, file) !== "src/proxy.ts")
       .filter((file) => readFileSync(file, "utf8").includes("/api/quick-rebook"))
       .map((file) => relative(root, file));
 
@@ -51,7 +52,8 @@ describe("disabled quick-rebook production boundary", () => {
     expect(flow).toContain('setStep("time")');
     expect(flow).toContain("submitPublicBooking({");
     expect(flow).toContain("otpSessionId: otpSessionId ?? null");
-    expect(flow).toContain("idempotencyKey: bookingSubmitIdempotencyKeyRef.current");
+    expect(flow).toContain("const bookingRequestIdForAttempt = bookingSubmitIdempotencyKeyRef.current");
+    expect(flow).toContain("idempotencyKey: bookingRequestIdForAttempt");
     expect(flow).not.toContain("/api/quick-rebook");
   });
 });

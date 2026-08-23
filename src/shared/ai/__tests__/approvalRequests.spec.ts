@@ -213,6 +213,32 @@ describe("processDecision", () => {
 });
 
 describe("approval display boundary", () => {
+  it("exposes only bounded EN/VI reactivation draft fields to the owner UI", () => {
+    const display = toApprovalDisplayRow({
+      ...mocks.approval,
+      action_type: "bulk_message",
+      payload: {
+        proposal_source: "reactivation_campaign",
+        campaign_mode: "dashboard_draft_only",
+        notification_mode: "dashboard_only_no_email",
+        dispatch_enabled: false,
+        reactivation_kind: "winback",
+        title: "Win-back campaign draft",
+        message_en: "We would love to welcome you back when you are ready.",
+        message_vi: "Tiệm rất mong được đón bạn quay lại khi bạn thấy thuận tiện.",
+        recipients: [{ phone: "+16045550101" }],
+      },
+    } as ApprovalRow);
+
+    expect(display.reactivation_campaign_draft).toEqual({
+      kind: "winback",
+      title: "Win-back campaign draft",
+      message_en: "We would love to welcome you back when you are ready.",
+      message_vi: "Tiệm rất mong được đón bạn quay lại khi bạn thấy thuận tiện.",
+    });
+    expect(JSON.stringify(display)).not.toContain("+16045550101");
+  });
+
   it("rebuilds a minimal owner row without raw payload or internal fields", () => {
     const display = toApprovalDisplayRow({
       ...mocks.approval,

@@ -10,6 +10,7 @@ export const AI_AGENT_FLAG_KEYS = [
   "ai_unified_digest",
   "ai_gbp_post",
   "ai_yelp_reply",
+  "ai_promo_campaign_drafts",
 ] as const;
 
 export type AiAgentFlagKey = (typeof AI_AGENT_FLAG_KEYS)[number];
@@ -35,6 +36,7 @@ export const AI_AGENT_IMPACT: Record<AiAgentFlagKey, AiAgentImpact> = {
   ai_unified_digest: "owner_notification",
   ai_gbp_post: "draft_only",
   ai_yelp_reply: "draft_only",
+  ai_promo_campaign_drafts: "draft_only",
 };
 
 export const AI_AGENT_DISPLAY_NAME: Record<AiAgentFlagKey, string> = {
@@ -49,6 +51,7 @@ export const AI_AGENT_DISPLAY_NAME: Record<AiAgentFlagKey, string> = {
   ai_unified_digest: "Người Báo Cáo — Daily Digest",
   ai_gbp_post: "Người Đăng Google — GBP Post",
   ai_yelp_reply: "Người Trả Lời Yelp — Yelp Reply",
+  ai_promo_campaign_drafts: "Chiến Lược Gia — Promo Drafts",
 };
 
 export const AI_AGENT_IMPACT_LABEL: Record<AiAgentImpact, string> = {

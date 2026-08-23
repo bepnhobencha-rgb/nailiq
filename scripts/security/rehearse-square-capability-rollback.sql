@@ -1,5 +1,26 @@
 \set ON_ERROR_STOP on
 BEGIN;
+DROP FUNCTION public.apply_square_inventory_webhook_event(uuid,uuid);
+DROP FUNCTION public.reconcile_stale_square_inventory_catalog_operations(integer);
+DROP FUNCTION public.apply_square_inventory_catalog_page(uuid,uuid,timestamptz,text,timestamptz,jsonb,text);
+DROP FUNCTION public.confirm_square_inventory_retail_mapping(uuid,uuid,text);
+DROP TABLE public.square_inventory_count_mirrors;
+DROP TABLE public.square_inventory_count_event_mirrors;
+DROP FUNCTION public.reject_square_inventory_count_event_mutation();
+DROP TABLE public.square_inventory_retail_mappings;
+DROP TABLE public.square_inventory_catalog_variation_mirrors;
+DROP TABLE public.square_inventory_catalog_sync_state;
+DROP FUNCTION public.apply_square_gift_card_webhook_event(uuid,uuid);
+DROP FUNCTION public.bind_square_gift_card_issuance(uuid,uuid,text);
+DROP TABLE public.square_gift_card_activity_mirrors;
+DROP TABLE public.square_gift_card_mirrors;
+DROP FUNCTION public.reject_square_gift_card_activity_mutation();
+DROP FUNCTION public.apply_square_loyalty_webhook_event(uuid,uuid);
+DROP FUNCTION public.bind_square_loyalty_subject(uuid,uuid,text,text);
+DROP TABLE public.square_loyalty_reward_mirrors;
+DROP TABLE public.square_loyalty_event_mirrors;
+DROP TABLE public.square_loyalty_account_mirrors;
+DROP FUNCTION public.reject_square_loyalty_event_mutation();
 DROP TABLE public.square_sync_cursors;
 DROP TABLE public.square_webhook_inbox;
 DROP TABLE public.square_feature_operations;

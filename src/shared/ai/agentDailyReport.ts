@@ -2,6 +2,7 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
+import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProviderPolicy";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { salonToday, salonDayRangeUtc } from "@/shared/lib/salonTime";
 import { defaultSip } from "./defaultSip";
@@ -22,7 +23,7 @@ let _anthropic: Anthropic | null = null;
 function getClient(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY?.trim();
   if (!key) return null;
-  if (!_anthropic) _anthropic = new Anthropic({ apiKey: key });
+  if (!_anthropic) _anthropic = createTextBackgroundAnthropicClient(key);
   return _anthropic;
 }
 

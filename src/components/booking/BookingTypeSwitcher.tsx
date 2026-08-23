@@ -24,6 +24,10 @@ import { BookingFlow } from "@/components/booking/BookingFlow";
 import { BookingGroupFlow } from "@/components/booking/BookingGroupFlow";
 import { BookingSequenceFlow } from "@/components/booking/BookingSequenceFlow";
 import { VoiceBookingButton } from "@/components/booking/VoiceBookingButton";
+import {
+  bookingModeHref,
+  type BookingMode,
+} from "@/components/booking/bookingModeUrl";
 import { cn } from "@/shared/lib/cn";
 import { GROUP_MAX_SIZE } from "@/shared/config/constants";
 import { MAX_WAVES } from "@/shared/booking/groupSchedulerCore";
@@ -371,7 +375,7 @@ export function BookingTypeSwitcher({
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  type BookingMode = "individual" | "sequence" | "group";
+  const currentSearch = searchParams.toString();
   const requestedMode = searchParams.get("mode");
   const groupModeInitiallyAvailable =
     groupBookingEnabled &&
@@ -389,12 +393,10 @@ export function BookingTypeSwitcher({
   // `router.replace` so the history stack stays clean (the user
   // doesn't want a back-button trail for "individual → group").
   useEffect(() => {
-    const current = new URLSearchParams(searchParams.toString());
-    if (mode === "group" || mode === "sequence") current.set("mode", mode);
-    else current.delete("mode");
-    const qs = current.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-  }, [mode, pathname, router, searchParams]);
+    const href = bookingModeHref(pathname, currentSearch, mode);
+    if (href === null) return;
+    router.replace(href, { scroll: false });
+  }, [currentSearch, mode, pathname, router]);
   // QA round-2: active-staff-count drives group capacity. `staff` is
   // already pre-filtered to `status='active'` upstream in
   // `loadBookingServicesForSalonSlug`, so .length is the count.

@@ -35,7 +35,23 @@ export function isSameOriginMutation(
   if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") return false;
 
   try {
-    return new URL(origin).origin === new URL(request.url).origin;
+    const allowed = new Set([new URL(request.url).origin]);
+    for (const candidate of [
+      process.env.NEXT_PUBLIC_SITE_URL,
+      process.env.NEXT_PUBLIC_APP_URL,
+      process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
+      process.env.VERCEL_BRANCH_URL
+        ? `https://${process.env.VERCEL_BRANCH_URL}`
+        : null,
+    ]) {
+      if (!candidate) continue;
+      try {
+        allowed.add(new URL(candidate).origin);
+      } catch {
+        // Misconfigured deployment origin is not an authorization grant.
+      }
+    }
+    return allowed.has(new URL(origin).origin);
   } catch {
     return false;
   }

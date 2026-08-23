@@ -179,6 +179,36 @@ describe("staff-action notification worker", () => {
       .toBe(args.p_payload_fingerprint);
   });
 
+  it("materializes staff_change and dispatches only through the injected provider mock", async () => {
+    const value = material();
+    value.event = "staff_change";
+    value.material.event = "staff_change";
+    const db = client({ materialValue: value });
+    const sendSms = vi.fn().mockResolvedValue({
+      ok: true,
+      messageSid: `SM${"b".repeat(32)}`,
+    });
+
+    await expect(runStaffActionNotificationWorker(1, {
+      client: db as never,
+      siteUrl: "https://nailiq.test",
+      sendSms,
+    })).resolves.toMatchObject({
+      ok: true,
+      materialized: 1,
+      claimed: 1,
+      accepted: 1,
+    });
+    expect(sendSms).toHaveBeenCalledTimes(1);
+    const materializeCall = db.rpc.mock.calls.find(([name]) =>
+      name === "materialize_staff_action_notification_delivery")!;
+    const envelope = JSON.parse(
+      String((materializeCall[1] as Record<string, unknown>).p_dispatch_envelope),
+    );
+    expect(envelope).toMatchObject({ event: "staff_change", channel: "sms" });
+    expect(envelope.body).toContain("Linh");
+  });
+
   it.each([
     ["reconciliation", { reconcileError: true }, "reconciliation_unavailable"],
     ["discovery", { discoveryError: true }, "discovery_unavailable"],
@@ -218,6 +248,35 @@ describe("staff-action notification worker", () => {
     expect(db.rpc).toHaveBeenCalledWith(
       "suppress_unmaterializable_staff_action_delivery",
       { p_delivery_id: ids.delivery, p_reason: "recipient_missing" },
+    );
+  });
+
+  it("suppresses a disabled staff_change channel before either provider boundary", async () => {
+    const value = material();
+    value.event = "staff_change";
+    value.material.event = "staff_change";
+    value.material.sms_outbound_enabled = false;
+    const db = client({ materialValue: value });
+    const sendSms = vi.fn();
+    const sendEmail = vi.fn();
+
+    await expect(runStaffActionNotificationWorker(10, {
+      client: db as never,
+      siteUrl: "https://nailiq.test",
+      sendSms,
+      sendEmail,
+    })).resolves.toMatchObject({
+      ok: true,
+      materialized: 0,
+      unmaterializableSuppressed: 1,
+      claimed: 0,
+    });
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(db.order).not.toContain("materialize_staff_action_notification_delivery");
+    expect(db.rpc).toHaveBeenCalledWith(
+      "suppress_unmaterializable_staff_action_delivery",
+      { p_delivery_id: ids.delivery, p_reason: "channel_disabled" },
     );
   });
 });

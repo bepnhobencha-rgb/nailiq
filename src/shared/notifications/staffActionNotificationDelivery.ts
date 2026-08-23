@@ -6,7 +6,11 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 const SHA256_RE = /^[0-9a-f]{64}$/;
 const MAX_ENVELOPE_BYTES = 256 * 1024;
 
-export type StaffActionNotificationEvent = "create" | "reschedule" | "cancel";
+export type StaffActionNotificationEvent =
+  | "create"
+  | "reschedule"
+  | "cancel"
+  | "staff_change";
 export type StaffActionNotificationStatus = "sent" | "failed" | "suppressed" | "unknown";
 export type StaffActionFailureDisposition =
   | "none"
@@ -104,7 +108,8 @@ function uuid(value: unknown): string | null {
 }
 
 function event(value: unknown): StaffActionNotificationEvent | null {
-  return value === "create" || value === "reschedule" || value === "cancel"
+  return value === "create" || value === "reschedule" || value === "cancel" ||
+      value === "staff_change"
     ? value
     : null;
 }

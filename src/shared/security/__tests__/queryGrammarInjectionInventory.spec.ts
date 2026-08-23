@@ -89,7 +89,6 @@ describe("query grammar injection inventory", () => {
       "src/shared/ai/analyzeChannelFailures.ts": 1,
       "src/shared/ai/lessons.ts": 1,
       "src/shared/dashboard/availabilityEngine.ts": 2,
-      "src/shared/dashboard/receptionistActions.ts": 1,
       "src/shared/groupbooking/agentLateDecline.ts": 1,
       "src/shared/superadmin/agentCertificationActions.ts": 1,
       "src/shared/superadmin/auditLogActions.ts": 1,
@@ -217,6 +216,10 @@ describe("query grammar injection inventory", () => {
       "20260728101931_add_campaign_preflight_freshness.sql",
       "20260728180000_restore_public_salon_slug_suggestions.sql",
       "20260801122337_ensure_public_booking_resource_autoassign_replay.sql",
+      "20260822222042_balance_salon_resource_booked_minutes.sql",
+      "20260823034500_fix_staff_change_capture_btrim.sql",
+      "20260823035000_fix_staff_offboarding_deferred_constraint.sql",
+      "20260823037000_close_staff_deactivation_assignment_races.sql",
     ]);
 
     for (const name of executeFormat) {
@@ -224,5 +227,68 @@ describe("query grammar injection inventory", () => {
       expect(sql).toMatch(/%\d*\$?I/);
       expect(sql).not.toMatch(/execute\s+format\s*\([^;]*%\d*\$?s/i);
     }
+
+    const chairBalance = fs.readFileSync(
+      path.join(
+        migrationRoot,
+        "20260822222042_balance_salon_resource_booked_minutes.sql",
+      ),
+      "utf8",
+    );
+    expect(chairBalance).toContain("pg_catalog.pg_get_functiondef(v_function)");
+    expect(chairBalance).toContain("v_match_count <> 3");
+    expect(chairBalance).toContain("EXECUTE v_definition");
+    expect(chairBalance).not.toMatch(/EXECUTE\s+(?:p_|NEW\.|OLD\.)/i);
+
+    const captureRepair = fs.readFileSync(
+      path.join(
+        migrationRoot,
+        "20260823034500_fix_staff_change_capture_btrim.sql",
+      ),
+      "utf8",
+    );
+    expect(captureRepair).toContain("pg_catalog.pg_get_functiondef(");
+    expect(captureRepair).toContain("<>2 THEN");
+    expect(captureRepair).toContain(
+      "v_definition,'pg_catalog.trim(','pg_catalog.btrim('",
+    );
+    expect(captureRepair).toContain("EXECUTE v_repaired");
+
+    const deferredConstraintRepair = fs.readFileSync(
+      path.join(
+        migrationRoot,
+        "20260823035000_fix_staff_offboarding_deferred_constraint.sql",
+      ),
+      "utf8",
+    );
+    expect(deferredConstraintRepair).toContain("pg_catalog.pg_get_functiondef(");
+    expect(deferredConstraintRepair).toContain(
+      "pg_catalog.strpos(v_definition,v_immediate)=0",
+    );
+    expect(deferredConstraintRepair).toContain(
+      "pg_catalog.strpos(v_definition,v_deferred)=0",
+    );
+    expect(deferredConstraintRepair).toContain(
+      "pg_catalog.replace(v_definition,v_immediate,'SET CONSTRAINTS ALL IMMEDIATE;')",
+    );
+    expect(deferredConstraintRepair).toContain(
+      "pg_catalog.replace(v_repaired,v_deferred,'SET CONSTRAINTS ALL DEFERRED;')",
+    );
+    expect(deferredConstraintRepair).toContain("EXECUTE v_repaired");
+
+    const staffRaceRepair = fs.readFileSync(
+      path.join(
+        migrationRoot,
+        "20260823037000_close_staff_deactivation_assignment_races.sql",
+      ),
+      "utf8",
+    );
+    expect(staffRaceRepair).toContain("pg_catalog.pg_get_functiondef(");
+    expect(staffRaceRepair).toContain(
+      "pg_catalog.strpos(v_definition,'ORDER BY s.id FOR KEY SHARE;')=0",
+    );
+    expect(staffRaceRepair).toContain("'ORDER BY s.id FOR UPDATE;'");
+    expect(staffRaceRepair).toContain("EXECUTE v_definition");
+    expect(staffRaceRepair).not.toMatch(/EXECUTE\s+(?:p_|NEW\.|OLD\.)/i);
   });
 });

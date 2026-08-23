@@ -223,6 +223,9 @@ export async function getBookingsForRangeAction(
 
       // Two bounded capacity reads: legacy single-row bookings plus authoritative
       // sequence segments. Service names are resolved in the same parallel group.
+      // The segment table is deliberately service-role-only; authorization and
+      // tenant identity above came from getDashboardWriteClient, never the caller.
+      const serviceRole = createServiceRoleClient();
       const [bookingsRes, segmentsRes] = await Promise.all([
         ctx.supabase
         .from("bookings")
@@ -237,7 +240,7 @@ export async function getBookingsForRangeAction(
         .lt("start_time_utc", endUtc)
         .in("status", CALENDAR_STATUSES as unknown as string[])
         .order("start_time_utc", { ascending: true }),
-        ctx.supabase
+        serviceRole
           .from("booking_service_segments" as never)
           .select(
             `id, booking_id, salon_id, position, staff_id, resource_id, service_name,

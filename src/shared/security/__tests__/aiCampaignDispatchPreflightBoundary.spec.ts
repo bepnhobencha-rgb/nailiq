@@ -26,6 +26,13 @@ const freshnessMigration = readFileSync(
   ),
   "utf8",
 );
+const conflictTargetMigration = readFileSync(
+  resolve(
+    root,
+    "supabase/migrations/20260822200523_qualify_campaign_preflight_conflict_target.sql",
+  ),
+  "utf8",
+);
 
 describe("AI campaign dispatch preflight boundary", () => {
   it("authorizes only owner/admin dashboard writes", () => {
@@ -89,5 +96,18 @@ describe("AI campaign dispatch preflight boundary", () => {
     expect(freshnessMigration).toContain(
       ") from public, anon, authenticated",
     );
+  });
+
+  it("keeps replay idempotent without an ambiguous output-column conflict target", () => {
+    expect(conflictTargetMigration).toContain(
+      "ON CONFLICT ON CONSTRAINT ai_campaign_dispatch_preflight_decisions_pkey",
+    );
+    expect(conflictTargetMigration).not.toContain(
+      "ON CONFLICT (preflight_id, client_profile_id)",
+    );
+    expect(conflictTargetMigration).toContain(
+      "FROM PUBLIC, anon, authenticated",
+    );
+    expect(conflictTargetMigration).toContain("TO service_role");
   });
 });

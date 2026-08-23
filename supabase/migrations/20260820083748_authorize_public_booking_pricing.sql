@@ -918,8 +918,14 @@ BEGIN
     ORDER BY candidate.discount_cents DESC, candidate.id
     LIMIT 1;
 
+    -- SELECT INTO clears target variables when no row matches. Preserve the
+    -- declared zero for the normal no-promotion path so the authoritative
+    -- receipt remains numerically complete and the fail-closed parser accepts
+    -- it instead of treating a NULL discount as malformed pricing.
     IF FOUND THEN
       v_service_net := greatest(0, v_base_price - v_promo_discount);
+    ELSE
+      v_promo_discount := coalesce(v_promo_discount, 0);
     END IF;
   END IF;
 
