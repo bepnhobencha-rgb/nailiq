@@ -28,11 +28,13 @@ type BatchBody = {
   >;
 };
 
-async function waitForCondition(condition: () => boolean) {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+async function waitForCondition(condition: () => boolean, timeoutMs = 2_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
     if (condition()) return;
     await new Promise<void>((resolve) => setImmediate(resolve));
   }
+  if (condition()) return;
   throw new Error("condition was not met");
 }
 
