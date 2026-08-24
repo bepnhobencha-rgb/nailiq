@@ -254,90 +254,26 @@ $positive$;
 -- Run the same full mutation set as senior, receptionist, nail_tech, and an
 -- owner from another tenant. Each statement must fail closed at RLS.
 reset role;
-create function pg_temp.assert_setup_catalog_denied(
-  p_user_id uuid,
-  p_role_label text
-)
-returns void
-language plpgsql
-as $denied$
-declare
-  v_affected integer;
-begin
-  perform set_config('request.jwt.claim.sub', p_user_id::text, true);
-
-  update public.services
-  set price_cents = 1, duration_minutes = 1
-  where id = '43000000-0000-0000-0000-000000000001';
-  get diagnostics v_affected = row_count;
-  if v_affected <> 0 then
-    raise exception '% unexpectedly updated service price/duration', p_role_label;
-  end if;
-
-  begin
-    insert into public.services (
-      id, salon_id, name, price_cents, duration_minutes
-    )
-    values (
-      '43000000-0000-0000-0000-000000000099',
-      '23000000-0000-0000-0000-000000000001',
-      'Forbidden Service', 1, 1
-    );
-    raise exception '% unexpectedly inserted a service', p_role_label;
-  exception
-    when insufficient_privilege then null;
-  end;
-
-  delete from public.services
-  where id = '43000000-0000-0000-0000-000000000003';
-  get diagnostics v_affected = row_count;
-  if v_affected <> 0 then
-    raise exception '% unexpectedly deleted a service', p_role_label;
-  end if;
-
-  update public.staff_services
-  set service_id = '43000000-0000-0000-0000-000000000002'
-  where staff_id = '33000000-0000-0000-0000-000000000001'
-    and service_id = '43000000-0000-0000-0000-000000000001';
-  get diagnostics v_affected = row_count;
-  if v_affected <> 0 then
-    raise exception '% unexpectedly changed a staff capability', p_role_label;
-  end if;
-
-  begin
-    insert into public.staff_services (staff_id, service_id)
-    values (
-      '33000000-0000-0000-0000-000000000002',
-      '43000000-0000-0000-0000-000000000002'
-    );
-    raise exception '% unexpectedly inserted a staff capability', p_role_label;
-  exception
-    when insufficient_privilege then null;
-  end;
-
-  delete from public.staff_services
-  where staff_id = '33000000-0000-0000-0000-000000000001'
-    and service_id = '43000000-0000-0000-0000-000000000001';
-  get diagnostics v_affected = row_count;
-  if v_affected <> 0 then
-    raise exception '% unexpectedly deleted a staff capability', p_role_label;
-  end if;
-end;
-$denied$;
-
 set local role authenticated;
-select pg_temp.assert_setup_catalog_denied(
-  '13000000-0000-0000-0000-000000000003', 'senior'
-);
-select pg_temp.assert_setup_catalog_denied(
-  '13000000-0000-0000-0000-000000000004', 'receptionist'
-);
-select pg_temp.assert_setup_catalog_denied(
-  '13000000-0000-0000-0000-000000000005', 'nail_tech'
-);
-select pg_temp.assert_setup_catalog_denied(
-  '13000000-0000-0000-0000-000000000006', 'cross-tenant owner'
-);
+
+\set setup_catalog_user_id '13000000-0000-0000-0000-000000000003'
+\set setup_catalog_role_label 'senior'
+\ir assert-setup-catalog-denied.psql
+
+\set setup_catalog_user_id '13000000-0000-0000-0000-000000000004'
+\set setup_catalog_role_label 'receptionist'
+\ir assert-setup-catalog-denied.psql
+
+\set setup_catalog_user_id '13000000-0000-0000-0000-000000000005'
+\set setup_catalog_role_label 'nail_tech'
+\ir assert-setup-catalog-denied.psql
+
+\set setup_catalog_user_id '13000000-0000-0000-0000-000000000006'
+\set setup_catalog_role_label 'cross-tenant owner'
+\ir assert-setup-catalog-denied.psql
+
+\unset setup_catalog_user_id
+\unset setup_catalog_role_label
 
 reset role;
 

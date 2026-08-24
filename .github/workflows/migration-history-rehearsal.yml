@@ -11,6 +11,8 @@ on:
       - "scripts/security/check-branch-tenant-isolation-boundary.sql"
       - "scripts/security/rehearse-branch-tenant-isolation.sql"
       - "scripts/security/check-no-duplicate-appointments-boundary.sql"
+      - "scripts/security/check-setup-catalog-mutation-rls.sql"
+      - "scripts/security/assert-setup-catalog-denied.psql"
       - "scripts/security/rehearse-no-duplicate-appointments-concurrency.mjs"
       - "scripts/security/check-staff-action-notification-outbox-boundary.sql"
       - "scripts/security/rehearse-staff-offboarding-durable.sql"

@@ -11,6 +11,9 @@ const migration = read(
 const matrix = read(
   "scripts/security/check-setup-catalog-mutation-rls.sql",
 );
+const deniedMatrix = read(
+  "scripts/security/assert-setup-catalog-denied.psql",
+);
 const rollback = read(
   "scripts/security/rehearse-setup-catalog-mutation-rls-rollback.sql",
 );
@@ -42,14 +45,23 @@ describe("setup catalog direct Data API mutation boundary", () => {
       expect(matrix).toContain(`'${role}'`);
     }
     expect(matrix).toContain("set local role authenticated");
-    expect(matrix).toContain("set price_cents = 1, duration_minutes = 1");
-    expect(matrix).toContain("unexpectedly changed a staff capability");
+    expect(matrix.match(/\\ir assert-setup-catalog-denied\.psql/g)).toHaveLength(
+      4,
+    );
+    expect(matrix).not.toContain("create function");
+    expect(deniedMatrix).toContain("set price_cents = 1, duration_minutes = 1");
+    expect(deniedMatrix).toContain("unexpectedly changed a staff capability");
+    expect(deniedMatrix).toContain("returning 1");
+    expect(deniedMatrix).toContain("= '42501'");
     expect(matrix).toContain("set local role anon");
   });
 
   it("keeps the behavior and rollback proofs in migration-history CI", () => {
     expect(workflow).toContain(
       "-f scripts/security/check-setup-catalog-mutation-rls.sql",
+    );
+    expect(workflow).toContain(
+      '- "scripts/security/assert-setup-catalog-denied.psql"',
     );
     expect(workflow).toContain(
       "-f scripts/security/rehearse-setup-catalog-mutation-rls-rollback.sql",
