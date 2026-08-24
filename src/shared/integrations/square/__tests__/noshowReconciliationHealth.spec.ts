@@ -33,6 +33,9 @@ vi.mock("@/shared/payments/executeBookingPaymentOperation", () => ({
   runAuthoritativeBookingPaymentOperation: vi.fn(),
   runAuthoritativeLateCancelRefund: vi.fn(),
 }));
+vi.mock("@/shared/release/v1IntegrationScope", () => ({
+  v1AllowsCustomerPaymentGateway: () => true,
+}));
 
 import { reconcileNoShowFeeLinks } from "../noshow";
 

@@ -26,6 +26,7 @@ import {
   runAuthoritativeLateCancelRefund,
 } from "@/shared/payments/executeBookingPaymentOperation";
 import { stableBookingPaymentRequestId } from "@/shared/payments/paymentRequestId";
+import { v1AllowsCustomerPaymentGateway } from "@/shared/release/v1IntegrationScope";
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
@@ -766,6 +767,9 @@ export async function refundRefilledLateCancels(): Promise<{
 export async function createNoShowFeeLink(
   bookingId: string,
 ): Promise<{ ok: boolean; url?: string; amountCents?: number; reason?: string }> {
+  if (!v1AllowsCustomerPaymentGateway()) {
+    return { ok: false, reason: "phase_2_not_available" };
+  }
   const db = looseServiceClient();
   const { data } = await db
     .from("bookings")
@@ -811,6 +815,9 @@ export async function createNoShowFeeLink(
 export async function reconcileNoShowFeeLinks(
   salonId: string,
 ): Promise<{ ok: boolean; checked: number; paid: number; error?: string }> {
+  if (!v1AllowsCustomerPaymentGateway()) {
+    return { ok: false, checked: 0, paid: 0, error: "phase_2_not_available" };
+  }
   if (!UUID_RE.test(salonId)) {
     return {
       ok: false,

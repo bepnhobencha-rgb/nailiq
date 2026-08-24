@@ -18,6 +18,16 @@ export const V1_INTEGRATION_SCOPE = Object.freeze({
   squareGiftCardSync: "phase_2_provider_owned",
 } as const);
 
+/**
+ * V1 never asks NailIQ to create, charge, refund, reconcile, or store a
+ * customer's provider payment method. Salons continue checkout directly in
+ * Square; this fail-closed predicate is the shared server boundary for the
+ * dormant Square/Stripe payment foundation.
+ */
+export function v1AllowsCustomerPaymentGateway(): boolean {
+  return false;
+}
+
 export function v1AllowsWixCalendarConnection(
   existingConnection: boolean,
 ): boolean {

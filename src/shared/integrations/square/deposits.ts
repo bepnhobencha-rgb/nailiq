@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { getSquareConfig, createPaymentLink, getOrder } from "./client";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { runAuthoritativeBookingPaymentOperation } from "@/shared/payments/executeBookingPaymentOperation";
+import { v1AllowsCustomerPaymentGateway } from "@/shared/release/v1IntegrationScope";
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
@@ -105,6 +106,9 @@ export async function createDepositForBooking(
   bookingId: string,
   opts?: { manual?: boolean; hold?: boolean; requestId?: string },
 ): Promise<DepositResult> {
+  if (!v1AllowsCustomerPaymentGateway()) {
+    return { required: false, reason: "phase_2_not_available" };
+  }
   if (!UUID_RE.test(bookingId)) return { required: false, reason: "invalid booking" };
   const requestId = opts?.requestId ?? stableHostedLinkRequestId(bookingId);
   if (!UUID_RE.test(requestId)) return { required: false, reason: "invalid request" };
@@ -190,6 +194,9 @@ export async function refundDeposit(
   bookingId: string,
   options: { amountCents?: number; requestId: string },
 ): Promise<{ ok: boolean; reason: string; refundedCents?: number; remainingCents?: number }> {
+  if (!v1AllowsCustomerPaymentGateway()) {
+    return { ok: false, reason: "phase_2_not_available" };
+  }
   const db = createServiceRoleClient();
   const { data, error } = await db
     .from("bookings")
@@ -250,6 +257,7 @@ export async function reconcileSquareHostedDepositClaim(
   db: ReturnType<typeof createServiceRoleClient>,
   value: unknown,
 ): Promise<"succeeded" | "unresolved"> {
+  if (!v1AllowsCustomerPaymentGateway()) return "unresolved";
   const result = await reconcileSquareHostedDepositClaimHealth(db, value);
   return result.status === "succeeded" ? "succeeded" : "unresolved";
 }
@@ -354,6 +362,9 @@ async function reconcileSquareHostedDepositClaimHealth(
 export async function reconcileDeposits(
   salonId: string,
 ): Promise<{ ok: boolean; checked: number; paid: number; error?: string }> {
+  if (!v1AllowsCustomerPaymentGateway()) {
+    return { ok: false, checked: 0, paid: 0, error: "phase_2_not_available" };
+  }
   if (!UUID_RE.test(salonId)) {
     return {
       ok: false,

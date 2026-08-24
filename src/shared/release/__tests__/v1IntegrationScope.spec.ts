@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   V1_INTEGRATION_SCOPE,
+  v1AllowsCustomerPaymentGateway,
   v1AllowsWixCalendarConnection,
 } from "../v1IntegrationScope";
 
@@ -22,6 +23,33 @@ describe("NailIQ V1 integration scope", () => {
   it("blocks new Wix connections while preserving existing live compatibility", () => {
     expect(v1AllowsWixCalendarConnection(false)).toBe(false);
     expect(v1AllowsWixCalendarConnection(true)).toBe(true);
+  });
+
+  it("keeps NailIQ-initiated customer money paths hard off in V1", () => {
+    expect(v1AllowsCustomerPaymentGateway()).toBe(false);
+
+    const paymentResolver = readFileSync(
+      resolve(process.cwd(), "src/shared/integrations/payments/index.ts"),
+      "utf8",
+    );
+    const deposits = readFileSync(
+      resolve(process.cwd(), "src/shared/integrations/square/deposits.ts"),
+      "utf8",
+    );
+    const noShow = readFileSync(
+      resolve(process.cwd(), "src/shared/integrations/square/noshow.ts"),
+      "utf8",
+    );
+
+    expect(paymentResolver).toMatch(
+      /resolvePaymentProvider[\s\S]*v1AllowsCustomerPaymentGateway\(\)[\s\S]*return null/u,
+    );
+    expect(deposits).toMatch(
+      /createDepositForBooking[\s\S]*phase_2_not_available[\s\S]*createServiceRoleClient/u,
+    );
+    expect(noShow).toMatch(
+      /createNoShowFeeLink[\s\S]*phase_2_not_available[\s\S]*looseServiceClient/u,
+    );
   });
 
   it("places the V1 guard before Wix provider tests and credential upserts", () => {

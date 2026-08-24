@@ -21,6 +21,11 @@ vi.mock("./client", () => ({
 vi.mock("@/shared/payments/executeBookingPaymentOperation", () => ({
   runAuthoritativeBookingPaymentOperation: mocks.runPaymentOperation,
 }));
+vi.mock("@/shared/release/v1IntegrationScope", () => ({
+  // This suite certifies the dormant Phase 2 ledger/provider algorithm. The
+  // separate V1 scope suite proves production remains fail-closed.
+  v1AllowsCustomerPaymentGateway: () => true,
+}));
 
 import { createDepositForBooking, refundDeposit } from "./deposits";
 

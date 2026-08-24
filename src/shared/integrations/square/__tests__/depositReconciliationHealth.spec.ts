@@ -24,6 +24,9 @@ vi.mock("../client", () => ({
 vi.mock("@/shared/payments/executeBookingPaymentOperation", () => ({
   runAuthoritativeBookingPaymentOperation: vi.fn(),
 }));
+vi.mock("@/shared/release/v1IntegrationScope", () => ({
+  v1AllowsCustomerPaymentGateway: () => true,
+}));
 
 import { reconcileDeposits } from "../deposits";
 
