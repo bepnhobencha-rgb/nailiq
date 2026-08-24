@@ -10,6 +10,7 @@ const flagRoute = read("src/app/api/booking/flag-noshow-card/route.ts");
 const removeRoute = read("src/app/api/booking/remove-card/route.ts");
 const capture = read("src/components/booking/NoShowCardCapture.tsx");
 const stripeCapture = read("src/components/booking/NoShowCardCaptureStripe.tsx");
+const depositPanel = read("src/components/booking/BookingFlowDepositPanel.tsx");
 const groupFlow = read("src/components/booking/BookingGroupFlow.tsx");
 const cardPage = read("src/app/booking/card/page.tsx");
 const individualCreate = read("src/shared/booking/submitPublicBooking.ts");
@@ -30,6 +31,24 @@ function forbidPattern(source: string, pattern: RegExp, label: string) {
 }
 
 describe("card_manage exposure and replay boundary", () => {
+  it("does not contact Stripe merely because the public booking bundle was evaluated", () => {
+    for (const [label, source] of [
+      ["no-show capture", stripeCapture],
+      ["deposit panel", depositPanel],
+    ] as const) {
+      requirePattern(
+        source,
+        /from ["']@stripe\/stripe-js\/pure["']/,
+        `${label} does not use Stripe's deferred-loading entrypoint`,
+      );
+      forbidPattern(
+        source,
+        /import\s+(?!type\b)[^;]+from ["']@stripe\/stripe-js["']/,
+        `${label} eagerly injects Stripe.js during public-page module evaluation`,
+      );
+    }
+  });
+
   it("fresh individual and group creation hand the browser a server-minted card_manage capability", () => {
     requirePattern(individualCreate, /cardManage(?:ment)?Token|card_manage_token/, "individual create result omits its card capability");
     requirePattern(individualCreate, /create_public_booking[\s\S]{0,8500}\/api\/booking\/card-capability[\s\S]{0,1200}cardManagementToken/, "individual authoritative create/replay does not exchange and return card_manage");

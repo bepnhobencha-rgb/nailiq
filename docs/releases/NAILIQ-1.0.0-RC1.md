@@ -22,6 +22,28 @@ required local, sandbox/provider, deployment and production-like evidence. The
 scope decision does not authorize commit, push, merge, deploy, provider calls,
 outbound messages, payments or production/live-salon mutations.
 
+### Superseding V1 integration scope — 2026-08-24
+
+The Product Owner superseded the 2026-08-22 full-feature decision for the
+provider-integration rows below. Google Calendar, Outlook Calendar and new Wix
+Calendar sync are Phase 2. V1 also keeps checkout manual and provider-owned:
+staff completes the service in NailIQ, then collects the amount directly in
+Square. NailIQ-initiated Square Terminal, Stripe Terminal and Tap to Pay are
+Phase 2. Square remains the independent system for money, Loyalty and Gift
+Cards; NailIQ V1 does not synchronize Square Loyalty or Square Gift Card
+balances and transactions. These capabilities must not be advertised as
+available in V1.
+
+Existing Wix connections are preserved as legacy compatibility so this scope
+change cannot interrupt a salon that is already live, but V1 refuses new Wix
+connection tests and credential upserts. Square Loyalty and Gift Card
+application contracts remain hard OFF. Payment/deposit foundations in the code
+are not an advertised V1 payment gateway and remain disabled unless a future
+Phase 2 acceptance explicitly enables them. Calendar add-to-calendar links and
+`.ics` downloads are convenience links, not synchronization. This decision
+does not authorize a provider call, production/live-salon mutation, commit,
+push, merge or deploy.
+
 The version and owners were explicitly approved by the product owner. This
 record assigns the release-candidate identity locally; it does not claim that
 the dirty worktree is an immutable artifact, deployed, or production-approved.
@@ -257,6 +279,10 @@ remains hard OFF; there was no Square API call, sandbox receipt/reconciliation,
 remote migration, production proof or live-salon activity. Structured evidence is retained at
 `/Users/huytran/.codex/checkpoints/nailiq-20260820-183925/evidence/mqa-0124-square-loyalty-local-foundation.json`.
 
+The 2026-08-24 V1 scope decision moves Square Loyalty synchronization to Phase
+2. This historical foundation remains retained and hard OFF; it is not a V1
+product claim or release blocker.
+
 ### Square Gift Card local foundation — 2026-08-22
 
 MQA-0125 moved from `FAIL` to `BETA_NOT_PROVEN`, not PASS, after the Product
@@ -281,6 +307,11 @@ loader incompatibility. The application capability and local voucher mutations
 remain hard OFF, and there was no Square API call, sandbox receipt/reconciliation,
 remote migration, production proof or live-salon activity. Structured evidence is retained at
 `/Users/huytran/.codex/checkpoints/nailiq-20260820-183925/evidence/mqa-0125-square-gift-card-local-foundation.json`.
+
+The 2026-08-24 V1 scope decision moves Square Gift Card synchronization to
+Phase 2. V1 salons continue operating Gift Cards directly in Square. This
+historical foundation remains retained and hard OFF; it is not a V1 product
+claim or release blocker.
 
 ### Square Inventory local foundation — 2026-08-22
 
@@ -325,3 +356,9 @@ activation, production/live-salon mutation or deploy occurred. Structured
 evidence is retained at
 `/Users/huytran/.codex/checkpoints/nailiq-20260820-183925/evidence/mqa-0062-wix-create-writeback-local-foundation.json`
 and `evidence/mqa-0109-wix-lifecycle-local-foundation.json`.
+
+The 2026-08-24 V1 scope decision keeps this implementation only as legacy
+compatibility for already-connected salons. V1 blocks new Wix connections and
+does not advertise Wix, Google or Outlook Calendar synchronization. The core
+NailIQ duplicate-prevention proof remains applicable without a connected Wix
+acceptance run.

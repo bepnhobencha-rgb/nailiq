@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { loadStripe, type Stripe } from "@stripe/stripe-js";
+// Keep provider code off the initial public booking page. The pure entrypoint
+// loads Stripe.js only after the server has returned a Stripe deposit intent.
+import { loadStripe } from "@stripe/stripe-js/pure";
+import type { Stripe } from "@stripe/stripe-js";
 import {
   Elements,
   PaymentElement,

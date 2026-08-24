@@ -12,6 +12,7 @@ import {
   setWixAutoApprove,
 } from "@/shared/integrations/wix/admin/adminActions";
 import type { WixStatus } from "@/shared/integrations/wix/admin/types";
+import { v1AllowsWixCalendarConnection } from "@/shared/release/v1IntegrationScope";
 
 type Props = { slug: string };
 
@@ -114,6 +115,39 @@ export function WixIntegrationSettings({ slug }: Props) {
   const connected = status?.connected ?? false;
   const origin = typeof window !== "undefined" ? window.location.origin : "https://nailiq.ca";
 
+  if (!status) {
+    return (
+      <section
+        data-testid="settings-wix-loading"
+        className="mt-6 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-4"
+      >
+        <p className="text-sm font-semibold text-nq-foreground">Kết nối Wix</p>
+        <p className="mt-1 text-xs text-nq-muted">Đang kiểm tra trạng thái kết nối…</p>
+      </section>
+    );
+  }
+
+  if (!v1AllowsWixCalendarConnection(connected)) {
+    return (
+      <section
+        data-testid="settings-wix-phase-2"
+        className="mt-6 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-4"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-nq-foreground">Wix Calendar</p>
+          <span className="rounded-full bg-nq-muted/15 px-2 py-0.5 text-[11px] font-semibold text-nq-muted">
+            Phase 2
+          </span>
+        </div>
+        <p className="mt-1 text-xs text-nq-muted">
+          NailIQ V1 chưa hỗ trợ kết nối hoặc đồng bộ Wix Calendar mới. Lịch hẹn NailIQ hoạt
+          động độc lập; Google Calendar, Outlook Calendar và Wix Calendar sync không được
+          quảng cáo là tính năng V1.
+        </p>
+      </section>
+    );
+  }
+
   return (
     <section
       data-testid="settings-wix"
@@ -134,8 +168,11 @@ export function WixIntegrationSettings({ slug }: Props) {
         ) : null}
       </div>
       <p className="mt-0.5 text-xs text-nq-muted">
-        Đồng bộ 2 chiều lịch hẹn với Wix Bookings. Dán API key + Site ID của salon (lấy ở
-        manage.wix.com → API Keys).
+        Kết nối Wix cũ được giữ để tránh gián đoạn salon đang hoạt động. V1 không mở kết nối
+        Wix mới; các thay đổi bên dưới chỉ dùng để bảo trì kết nối đã có.
+      </p>
+      <p className="mt-2 rounded-xl border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
+        Legacy compatibility — không thuộc tính năng chào bán V1.
       </p>
 
       {/* Credentials */}

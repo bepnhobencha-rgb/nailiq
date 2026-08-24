@@ -30,5 +30,20 @@
 - Hiện country picker mới làm cho **khách đặt lịch**; phần đăng ký chủ tiệm vẫn mặc định +1.
 - Đăng ký chủ tiệm toàn cầu hiện đã ổn nhờ email/Google (không cần SĐT), nên ưu tiên thấp.
 
+## 7. Đồng bộ Google / Outlook / Wix Calendar
+- **Quyết định V1 ngày 2026-08-24:** chưa chào bán hoặc mở kết nối mới.
+- Kết nối Wix cũ chỉ được giữ để không làm gián đoạn salon đang live.
+- Chỉ mở lại khi có provider acceptance trên môi trường non-production, replay/out-of-order proof và kế hoạch migration/rollback cho salon cũ.
+
+## 8. Đồng bộ Square Loyalty / Gift Card
+- **Quyết định V1 ngày 2026-08-24:** Square tiếp tục là hệ thống độc lập cho tiền, Loyalty và Gift Card; NailIQ không đồng bộ số dư hoặc giao dịch.
+- V1 chỉ hướng dẫn luồng chuyển sang thu tiền/phần cứng Square; không quảng cáo Loyalty/Gift Card sync.
+- Chỉ mở Phase 2 sau Square Sandbox E2E đầy đủ, consent binding, refund/reversal/replay proof và quy tắc coexistence với Stripe.
+
+## 9. NailIQ checkout qua Square / Stripe Terminal
+- **Quyết định V1 ngày 2026-08-23, xác nhận lại 2026-08-24:** nhân viên hoàn tất dịch vụ trong NailIQ rồi nhập số tiền và thu trực tiếp trong Square; tiền không đi qua NailIQ.
+- Phase 2 mới mở nút **Collect payment** từ NailIQ sang Square Terminal, Stripe Terminal hoặc Tap to Pay được nhà cung cấp hỗ trợ.
+- Chỉ quảng cáo sau khi có provider parity, exact-amount/reference binding, receipt/replay/refund reconciliation, tenant isolation, hardware/device acceptance và rollback trên môi trường non-production.
+
 ---
 *Cập nhật khi thêm/bớt mục. Nguồn: các phiên làm việc 2026-06.*

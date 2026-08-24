@@ -2,7 +2,11 @@
 
 Verified từ code thật. Làm theo thứ tự ưu tiên:
 
-## 1. Gift Card thu tiền thật (GẤP)
+> Cập nhật phạm vi V1 ngày 2026-08-24: Square tiếp tục vận hành tiền, Loyalty
+> và Gift Card trực tiếp. Gift Card sync/issuance trong NailIQ chuyển Phase 2,
+> không phải blocker V1 và không được quảng cáo là đã có.
+
+## 1. Gift Card thu tiền thật (PHASE 2)
 - Hiện trạng: route public và action phát hành local cũ đã bị retire vĩnh viễn; trang public trả 404 và API trả 503. Không được bật lại bằng flag hoặc tạo local voucher value.
 - Quyết định sản phẩm: Square là nguồn sự thật duy nhất cho funds/state/balance của Gift Card.
 - Cần: tạo flow mới, tách biệt, dùng durable Square create → completed payment → activation receipt chain rồi mới mở UI. Không phát hành nếu thiếu exact paid receipt; không tự đặt ngày hết hạn.

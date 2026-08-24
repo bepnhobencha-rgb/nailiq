@@ -81,7 +81,7 @@ export function LandingFooter() {
           />
 
           <div className="flex items-center gap-4">
-            <span className="text-xs text-nq-muted/60">{t.followUs}</span>
+            <span className="text-xs text-nq-muted">{t.followUs}</span>
             <a
               href={INSTAGRAM_URL}
               target="_blank"

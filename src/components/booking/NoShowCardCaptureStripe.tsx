@@ -1,7 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { loadStripe } from "@stripe/stripe-js";
+// The default Stripe entrypoint injects Stripe.js as soon as this module is
+// evaluated. Use the pure entrypoint so a public booking page does not contact
+// Stripe until this card-capture component actually has an approved intent.
+import { loadStripe } from "@stripe/stripe-js/pure";
 import {
   Elements,
   PaymentElement,

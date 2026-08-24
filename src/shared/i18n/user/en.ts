@@ -2561,17 +2561,18 @@ export const userEn: UserMessages = {
             "Continue using the salon’s current POS",
             "NailIQ manages website, booking and salon scheduling",
             "Payments may continue through Square, Clover, Toast or another POS",
-            "Direct data synchronization depends on the integration currently supported",
+            "V1 does not synchronize external calendars, Square Loyalty or Square Gift Card balances and transactions",
           ],
         },
         {
           title: "Square Setup Assistance",
-          body: "Where eligible, we help connect Square features NailIQ currently supports.",
+          body: "Where eligible, we help configure the V1 payment handoff while Square remains the independent money, Loyalty and Gift Card system.",
           bullets: [
             "Connect one eligible existing Square account where supported",
-            "Technical connection assistance",
-            "Square Physical Gift Card setup assistance",
-            "Square eGift Card setup assistance",
+            "Square payment and hardware handoff guidance",
+            "Square Loyalty stays directly in Square",
+            "Square Gift Cards stay directly in Square",
+            "No Square Loyalty or Gift Card synchronization in V1",
             "Subject to Square eligibility and technical availability",
           ],
         },
@@ -2602,7 +2603,7 @@ export const userEn: UserMessages = {
         "NailIQ does not require your salon to replace its current POS system.",
       square: {
         title: "Square Connection Support",
-        body: "Eligible Square users may receive connection assistance and support for selected Square features currently supported by NailIQ, including Square Gift Card setup assistance where applicable.",
+        body: "Eligible Square users may receive payment-handoff guidance. NailIQ V1 does not synchronize Square Loyalty or Square Gift Card balances and transactions; salons continue operating those products directly in Square.",
       },
       other: {
         title: "Use NailIQ Alongside Your Existing POS",
@@ -2699,9 +2700,8 @@ export const userEn: UserMessages = {
           "OTP setup when enabled",
           "Use NailIQ alongside the salon’s existing POS",
           "One eligible Square connection where supported",
-          "Square Gift Card setup assistance where applicable",
+          "Square payment and hardware handoff guidance",
           "Booking QR code",
-          "Gift Card QR code where applicable",
           "One 60-minute online training session",
           "Up to 90 minutes remote go-live support",
           "Up to 30 minutes of small updates per month",
@@ -2731,9 +2731,8 @@ export const userEn: UserMessages = {
           "OTP setup when enabled",
           "Use NailIQ alongside the salon’s existing POS",
           "One eligible Square connection where supported",
-          "Square Gift Card setup assistance where applicable",
+          "Square payment and hardware handoff guidance",
           "Booking QR code",
-          "Gift Card QR code where applicable",
           "One 60-minute online training session",
           "Up to 90 minutes remote go-live support",
           "Up to 30 minutes of small updates per month",
@@ -2762,7 +2761,7 @@ export const userEn: UserMessages = {
       supportedItems: [
         "One eligible Square account connection",
         "Selected Square setup assistance",
-        "Square Gift Card setup assistance",
+        "Square payment and hardware handoff guidance",
       ],
       notIncludedTitle: "Not included",
       notIncludedItems: [
@@ -2772,6 +2771,9 @@ export const userEn: UserMessages = {
         "POS inventory synchronization",
         "POS payment synchronization",
         "POS order synchronization",
+        "Google, Outlook or Wix Calendar synchronization",
+        "Square Loyalty synchronization",
+        "Square Gift Card synchronization",
         "POS data migration",
         "Custom connector development",
       ],
@@ -2835,7 +2837,7 @@ export const userEn: UserMessages = {
       title: "Payment Provider Notice",
       body: "Square, Clover, Toast and other POS or payment platforms are independent third-party service providers. Each salon maintains its own provider account and is responsible for provider fees, transactions, disputes, chargebacks, hardware, account approval and Gift Card obligations. NailIQ provides website, booking and technical setup assistance within its supported scope but does not hold salon funds, approve transactions or control third-party service availability.",
       squareNote:
-        "Square connection and Gift Card assistance are available only where currently supported and for eligible Square accounts.",
+        "NailIQ V1 does not synchronize Square Loyalty or Square Gift Card balances and transactions. Salons continue operating those products directly in Square.",
     },
     whyJoin: {
       eyebrow: "Founder Pilot Benefits",
@@ -2884,7 +2886,7 @@ export const userEn: UserMessages = {
         },
         {
           q: "What Square assistance is included?",
-          a: "For eligible salons, NailIQ may assist with connecting one supported Square account and setting up selected Square Gift Card features. Square fees, account approval, disputes, chargebacks and hardware remain the salon’s responsibility.",
+          a: "For eligible salons, NailIQ may provide payment and hardware handoff guidance for one supported Square account. Square remains the independent system for money, Loyalty and Gift Cards; NailIQ V1 does not synchronize Loyalty or Gift Card balances and transactions.",
         },
         {
           q: "Can NailIQ integrate with any POS?",

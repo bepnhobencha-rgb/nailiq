@@ -206,17 +206,18 @@ export const userVi: UserMessages = {
             "Tiếp tục sử dụng POS hiện tại",
             "NailIQ quản lý website, booking và lịch nhân viên",
             "Thanh toán tiếp tục qua Square, Clover, Toast hoặc POS khác",
-            "Đồng bộ dữ liệu trực tiếp phụ thuộc vào tích hợp hiện được hỗ trợ",
+            "V1 không đồng bộ lịch ngoài, Square Loyalty hoặc số dư và giao dịch Square Gift Card",
           ],
         },
         {
           title: "Hỗ trợ setup Square",
-          body: "Nếu đủ điều kiện, chúng tôi hỗ trợ kết nối các tính năng Square mà NailIQ hiện hỗ trợ.",
+          body: "Nếu đủ điều kiện, chúng tôi hỗ trợ cấu hình luồng chuyển sang thu tiền của V1; Square vẫn là hệ thống độc lập cho tiền, Loyalty và Gift Card.",
           bullets: [
             "Kết nối 1 tài khoản Square hiện có đủ điều kiện, nơi được hỗ trợ",
-            "Hỗ trợ kết nối kỹ thuật",
-            "Hỗ trợ setup Square Physical Gift Card",
-            "Hỗ trợ setup Square eGift Card",
+            "Hướng dẫn luồng thu tiền và phần cứng Square",
+            "Square Loyalty tiếp tục vận hành trực tiếp trong Square",
+            "Square Gift Card tiếp tục vận hành trực tiếp trong Square",
+            "V1 không đồng bộ Square Loyalty hoặc Gift Card",
             "Phụ thuộc điều kiện Square và khả năng kỹ thuật",
           ],
         },
@@ -246,7 +247,7 @@ export const userVi: UserMessages = {
       intro: "NailIQ không yêu cầu tiệm bạn phải thay hệ thống POS hiện tại.",
       square: {
         title: "Hỗ trợ kết nối Square",
-        body: "Người dùng Square đủ điều kiện có thể nhận hỗ trợ kết nối và các tính năng Square mà NailIQ hiện hỗ trợ, gồm hỗ trợ setup Square Gift Card khi có thể.",
+        body: "Người dùng Square đủ điều kiện có thể nhận hướng dẫn luồng chuyển sang thu tiền. NailIQ V1 không đồng bộ số dư hoặc giao dịch Square Loyalty/Gift Card; salon tiếp tục vận hành các sản phẩm đó trực tiếp trong Square.",
       },
       other: {
         title: "Dùng NailIQ song song với POS hiện có",
@@ -343,9 +344,8 @@ export const userVi: UserMessages = {
           "Setup OTP khi bật",
           "Dùng NailIQ cùng POS hiện có",
           "1 kết nối Square đủ điều kiện, nơi được hỗ trợ",
-          "Hỗ trợ setup Square Gift Card khi có thể",
+          "Hướng dẫn luồng thu tiền và phần cứng Square",
           "QR code booking",
-          "QR code Gift Card khi có thể",
           "Một buổi đào tạo online 60 phút",
           "Tối đa 90 phút hỗ trợ go-live từ xa",
           "Tối đa 30 phút cập nhật nhỏ mỗi tháng",
@@ -375,9 +375,8 @@ export const userVi: UserMessages = {
           "Setup OTP khi bật",
           "Dùng NailIQ cùng POS hiện có",
           "1 kết nối Square đủ điều kiện, nơi được hỗ trợ",
-          "Hỗ trợ setup Square Gift Card khi có thể",
+          "Hướng dẫn luồng thu tiền và phần cứng Square",
           "QR code booking",
-          "QR code Gift Card khi có thể",
           "Một buổi đào tạo online 60 phút",
           "Tối đa 90 phút hỗ trợ go-live từ xa",
           "Tối đa 30 phút cập nhật nhỏ mỗi tháng",
@@ -405,7 +404,7 @@ export const userVi: UserMessages = {
       supportedItems: [
         "1 kết nối tài khoản Square đủ điều kiện",
         "Một số hỗ trợ setup Square",
-        "Hỗ trợ setup Square Gift Card",
+        "Hướng dẫn luồng thu tiền và phần cứng Square",
       ],
       notIncludedTitle: "Không bao gồm",
       notIncludedItems: [
@@ -415,6 +414,9 @@ export const userVi: UserMessages = {
         "Đồng bộ tồn kho POS",
         "Đồng bộ thanh toán POS",
         "Đồng bộ đơn hàng POS",
+        "Đồng bộ Google, Outlook hoặc Wix Calendar",
+        "Đồng bộ Square Loyalty",
+        "Đồng bộ Square Gift Card",
         "Chuyển dữ liệu POS",
         "Phát triển connector tùy chỉnh",
       ],
@@ -478,7 +480,7 @@ export const userVi: UserMessages = {
       title: "Lưu ý về nhà cung cấp thanh toán",
       body: "Square, Clover, Toast và các POS/nền tảng thanh toán khác là nhà cung cấp bên thứ ba độc lập. Mỗi tiệm tự duy trì tài khoản riêng và tự chịu trách nhiệm phí nhà cung cấp, giao dịch, tranh chấp, chargebacks, phần cứng, phê duyệt tài khoản và nghĩa vụ Gift Card. NailIQ hỗ trợ website, booking và setup kỹ thuật trong phạm vi hỗ trợ nhưng không giữ tiền tiệm, không phê duyệt giao dịch và không kiểm soát tính khả dụng của dịch vụ bên thứ ba.",
       squareNote:
-        "Kết nối Square và hỗ trợ Gift Card chỉ khả dụng nơi hiện được hỗ trợ, cho các tài khoản Square đủ điều kiện.",
+        "NailIQ V1 không đồng bộ số dư hoặc giao dịch Square Loyalty/Gift Card. Salon tiếp tục vận hành các sản phẩm đó trực tiếp trong Square.",
     },
     whyJoin: {
       eyebrow: "Lợi ích Founder Pilot",
@@ -527,7 +529,7 @@ export const userVi: UserMessages = {
         },
         {
           q: "Hỗ trợ Square bao gồm những gì?",
-          a: "Với tiệm đủ điều kiện, NailIQ có thể hỗ trợ kết nối 1 tài khoản Square được hỗ trợ và setup một số tính năng Square Gift Card. Phí Square, phê duyệt tài khoản, tranh chấp, chargebacks và phần cứng vẫn thuộc trách nhiệm của tiệm.",
+          a: "Với tiệm đủ điều kiện, NailIQ có thể hướng dẫn luồng chuyển sang thu tiền và phần cứng cho 1 tài khoản Square được hỗ trợ. Square vẫn là hệ thống độc lập cho tiền, Loyalty và Gift Card; NailIQ V1 không đồng bộ số dư hoặc giao dịch Loyalty/Gift Card.",
         },
         {
           q: "NailIQ có tích hợp với mọi POS không?",
