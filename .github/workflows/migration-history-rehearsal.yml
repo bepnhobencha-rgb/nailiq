@@ -77,7 +77,7 @@ jobs:
 
           NEXT_PUBLIC_SUPABASE_URL="${API_URL}" \
             SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY}" \
-            npx tsx -e "import('./e2e/helpers/guardProduction').then(g => { g.assertNotProductionFromEnv(); console.log('✓ guard: not production'); })"
+            npx tsx scripts/assert-e2e-not-production.ts
 
           DB_URL="${DB_URL}" npx tsx scripts/check-schema-parity.ts
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \

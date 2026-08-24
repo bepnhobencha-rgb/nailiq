@@ -6,6 +6,18 @@ const workflow = readFileSync(
   resolve(process.cwd(), ".github/workflows/ci.yml"),
   "utf8",
 );
+const e2eWorkflow = readFileSync(
+  resolve(process.cwd(), ".github/workflows/e2e.yml"),
+  "utf8",
+);
+const migrationWorkflow = readFileSync(
+  resolve(process.cwd(), ".github/workflows/migration-history-rehearsal.yml"),
+  "utf8",
+);
+const productionGuardCli = readFileSync(
+  resolve(process.cwd(), "scripts/assert-e2e-not-production.ts"),
+  "utf8",
+);
 
 function step(name: string, nextName: string): string {
   const start = workflow.indexOf(`- name: ${name}`);
@@ -28,5 +40,20 @@ describe("MQA-0224/0225 required CI gates", () => {
 
     expect(audit).toContain("run: npm audit --audit-level=high");
     expect(audit).not.toContain("continue-on-error");
+  });
+
+  it("loads the production guard through a real TS entrypoint in every Supabase CI preflight", () => {
+    const command = "npx tsx scripts/assert-e2e-not-production.ts";
+    const invocationCount =
+      e2eWorkflow.split(command).length - 1 +
+      migrationWorkflow.split(command).length - 1;
+
+    expect(invocationCount).toBe(4);
+    expect(e2eWorkflow).not.toContain("import('./e2e/helpers/guardProduction')");
+    expect(migrationWorkflow).not.toContain("import('./e2e/helpers/guardProduction')");
+    expect(productionGuardCli).toContain(
+      'import { assertNotProductionFromEnv } from "../e2e/helpers/guardProduction";',
+    );
+    expect(productionGuardCli).toContain("assertNotProductionFromEnv();");
   });
 });

@@ -58,7 +58,8 @@ import { execFileSync } from "node:child_process";
  * 20260823124500/20260823133000 Twilio receipt/correlation migrations add
  * generic and staff-action delivery binding plus SID-first completion wrappers.
  * The 20260823134500 review-SMS migration adds pre-provider claim completion
- * and signed callback-correlation functions.
+ * and signed callback-correlation functions. The 20260823171226 cancelled-
+ * booking refund migration adds the remaining-deposit claim function.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -122,7 +123,7 @@ const PRODUCTION = {
   // function, and +2 private completion classifiers retained behind the
   // SID-first service-role wrappers, plus +2 durable review-SMS completion and
   // signed callback-correlation functions.
-  functions: 362,
+  functions: 363,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   triggers: 83,
@@ -356,6 +357,7 @@ const CRITICAL_FUNCTIONS = [
   "sync_booking_cancel_deposit_refund_saga",
   "inspect_booking_cancel_deposit_refund_saga",
   "cancel_booking_with_deposit_refund_saga",
+  "claim_cancelled_booking_remaining_deposit_refund",
   "claim_booking_square_deposit_link",
   "attach_booking_square_deposit_link",
   "issue_public_square_deposit_capability",
