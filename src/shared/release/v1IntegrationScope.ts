@@ -16,6 +16,7 @@ export const V1_INTEGRATION_SCOPE = Object.freeze({
   wixCalendarSync: "legacy_existing_only",
   squareLoyaltySync: "phase_2_provider_owned",
   squareGiftCardSync: "phase_2_provider_owned",
+  archivedBookingRecovery: "phase_2",
 } as const);
 
 /**
@@ -25,6 +26,15 @@ export const V1_INTEGRATION_SCOPE = Object.freeze({
  * dormant Square/Stripe payment foundation.
  */
 export function v1AllowsCustomerPaymentGateway(): boolean {
+  return false;
+}
+
+/**
+ * Archived Booking Recovery stays dormant in V1. Its linked-child and audit
+ * write must become one authoritative transaction before a later release may
+ * expose the workflow to any salon.
+ */
+export function v1AllowsArchivedBookingRecovery(): boolean {
   return false;
 }
 

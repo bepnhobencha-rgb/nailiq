@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   V1_INTEGRATION_SCOPE,
+  v1AllowsArchivedBookingRecovery,
   v1AllowsCustomerPaymentGateway,
   v1AllowsWixCalendarConnection,
 } from "../v1IntegrationScope";
@@ -17,6 +18,7 @@ describe("NailIQ V1 integration scope", () => {
       wixCalendarSync: "legacy_existing_only",
       squareLoyaltySync: "phase_2_provider_owned",
       squareGiftCardSync: "phase_2_provider_owned",
+      archivedBookingRecovery: "phase_2",
     });
   });
 
@@ -49,6 +51,36 @@ describe("NailIQ V1 integration scope", () => {
     );
     expect(noShow).toMatch(
       /createNoShowFeeLink[\s\S]*phase_2_not_available[\s\S]*looseServiceClient/u,
+    );
+  });
+
+  it("keeps Archived Booking Recovery hard off across V1 UI and writes", () => {
+    expect(v1AllowsArchivedBookingRecovery()).toBe(false);
+
+    const access = readFileSync(
+      resolve(
+        process.cwd(),
+        "src/shared/dashboard/archivedBookingFeatureAccess.ts",
+      ),
+      "utf8",
+    );
+    const actions = readFileSync(
+      resolve(process.cwd(), "src/shared/dashboard/receptionistActions.ts"),
+      "utf8",
+    );
+    const centerPage = readFileSync(
+      resolve(process.cwd(), "src/app/dashboard/[slug]/center/page.tsx"),
+      "utf8",
+    );
+
+    expect(access).toMatch(
+      /isArchivedBookingFeatureAvailable[\s\S]*v1AllowsArchivedBookingRecovery\(\)[\s\S]*return false[\s\S]*isReleaseFeatureVisible/u,
+    );
+    expect(actions).toMatch(
+      /archivedBookingRecoveryEnabled[\s\S]*v1AllowsArchivedBookingRecovery\(\)[\s\S]*return false[\s\S]*createServiceRoleClient/u,
+    );
+    expect(centerPage).toMatch(
+      /archivedBookingRecoveryEnabled\s*=\s*[\s\S]*isArchivedBookingFeatureAvailable\(ctx\.salon\)/u,
     );
   });
 

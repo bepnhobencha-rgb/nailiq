@@ -32,6 +32,7 @@ import {
   isOwnerOrAdmin,
 } from "@/shared/lib/salonMemberRole";
 import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
+import { v1AllowsArchivedBookingRecovery } from "@/shared/release/v1IntegrationScope";
 import { loadBookingServicesForSalonSlug } from "@/shared/booking/loadBookingServices";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
 import {
@@ -233,6 +234,7 @@ async function terminalBookingMustRemainImmutable(
 async function archivedBookingRecoveryEnabled(
   salonId: string,
 ): Promise<boolean> {
+  if (!v1AllowsArchivedBookingRecovery()) return false;
   const db = createServiceRoleClient();
   const { data } = await db
     .from("salons")

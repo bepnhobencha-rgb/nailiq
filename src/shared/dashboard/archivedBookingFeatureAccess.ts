@@ -2,6 +2,7 @@ import "server-only";
 
 import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { v1AllowsArchivedBookingRecovery } from "@/shared/release/v1IntegrationScope";
 
 type FeatureSalon = Parameters<typeof isReleaseFeatureVisible>[0] & {
   id: string;
@@ -11,6 +12,7 @@ type FeatureSalon = Parameters<typeof isReleaseFeatureVisible>[0] & {
 export async function isArchivedBookingFeatureAvailable(
   salon: FeatureSalon,
 ): Promise<boolean> {
+  if (!v1AllowsArchivedBookingRecovery()) return false;
   if (!(await isReleaseFeatureVisible(salon, "archived_booking_recovery"))) {
     return false;
   }
