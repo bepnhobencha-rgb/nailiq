@@ -101,17 +101,57 @@ describe("RegisterSetupPage authorization", () => {
     });
   });
 
-  it("forbids a non-owner from the registration setup surface", async () => {
-    mocks.createClient.mockResolvedValue(
-      pageClient({
-        memberships: [{ salon_id: "salon-1", role: "admin" }],
-      }),
-    );
+  it.each([
+    ["admin", "/dashboard/admin-salon"],
+    ["senior", "/dashboard/admin-salon/center"],
+    ["receptionist", "/dashboard/admin-salon/center"],
+    ["nail_tech", "/dashboard/admin-salon/center"],
+    [null, "/dashboard/admin-salon/center"],
+    ["legacy-manager", "/dashboard/admin-salon/center"],
+  ])(
+    "routes a sole %s membership away from the Owner setup surface",
+    async (role, destination) => {
+      mocks.createClient.mockResolvedValue(
+        pageClient({
+          memberships: [{ salon_id: "salon-1", role }],
+          salon: {
+            slug: "admin-salon",
+            name: "Admin Salon",
+            timezone: "America/Vancouver",
+            setup_wizard_completed_at: "2026-08-19T00:00:00.000Z",
+          },
+        }),
+      );
 
-    await expect(RegisterSetupPage()).rejects.toMatchObject({
-      kind: "not_found",
-    });
-  });
+      await expect(RegisterSetupPage()).rejects.toMatchObject({
+        kind: "redirect",
+        destination,
+      });
+      expect(mocks.notFound).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["admin", "senior", "receptionist", "nail_tech"])(
+    "fails closed for a sole %s membership while the Owner wizard is incomplete",
+    async (role) => {
+      mocks.createClient.mockResolvedValue(
+        pageClient({
+          memberships: [{ salon_id: "salon-1", role }],
+          salon: {
+            slug: "incomplete-salon",
+            name: "Incomplete Salon",
+            timezone: "America/Vancouver",
+            setup_wizard_completed_at: null,
+          },
+        }),
+      );
+
+      await expect(RegisterSetupPage()).rejects.toMatchObject({
+        kind: "not_found",
+      });
+      expect(mocks.redirect).not.toHaveBeenCalled();
+    },
+  );
 
   it("redirects a completed owner salon without rendering the form", async () => {
     mocks.createClient.mockResolvedValue(

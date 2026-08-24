@@ -1,4 +1,8 @@
 import { notFound, redirect } from "next/navigation";
+import {
+  dashboardPathForRole,
+  normalizeSalonMemberRole,
+} from "@/shared/lib/salonMemberRole";
 import { createClient } from "@/shared/lib/supabase/server";
 import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 import { shouldUseAnonymousDemoRegistration } from "@/shared/register/registrationRuntimeMode";
@@ -50,18 +54,9 @@ export default async function RegisterSetupPage() {
   const member = memberships[0];
 
   if (member?.salon_id) {
-    // Registration setup can rename/complete only the canonical owner row.
-    // Admin and staff memberships use their normal dashboard destinations.
-    if (member.role !== "owner") {
-      notFound();
-    }
-
-    // The user already owns a salon. We used to bounce them to the
-    // dashboard here — but the wizard now also handles renames for
-    // half-completed salons (setup_wizard_completed_at IS NULL). The
-    // dashboard layout's gate will redirect back here while the
-    // timestamp is null, so honour that contract: only short-circuit
-    // when the wizard has already been completed.
+    // Resolve the sole membership's canonical salon before choosing its
+    // role-aware destination. Owners may continue into the rename wizard;
+    // every other role is redirected before that form can render.
     // Cast: column not yet in auto-generated DB types.
     const salonRowRes = (await supabase
       .from("salons")
@@ -83,10 +78,28 @@ export default async function RegisterSetupPage() {
     const slug = salonRow?.slug?.trim();
 
     if (salonRowRes.error || !slug) {
-      console.error("[RegisterSetupPage] owner salon", salonRowRes.error);
+      console.error("[RegisterSetupPage] member salon", salonRowRes.error);
       notFound();
     }
 
+    // Password auth intentionally performs a full navigation through this
+    // page so the freshly-written session cookie reaches the server. Setup
+    // itself remains Owner-only: every sole non-owner membership is routed to
+    // its normal dashboard before the setup form can render. If the Owner has
+    // not completed setup yet, fail closed instead of creating a redirect loop
+    // with the dashboard's unfinished-wizard gate.
+    const role = normalizeSalonMemberRole(member.role);
+    if (role !== "owner") {
+      if (salonRow?.setup_wizard_completed_at == null) {
+        notFound();
+      }
+      redirect(dashboardPathForRole(slug, role));
+    }
+
+    // The owner wizard handles renames for half-completed salons
+    // (setup_wizard_completed_at IS NULL). The dashboard layout's gate will
+    // redirect back here while the timestamp is null, so only short-circuit
+    // when the wizard has already been completed.
     if (salonRow?.setup_wizard_completed_at != null) {
       // Wizard already done — go straight to dashboard.
       redirect(`/dashboard/${encodeURIComponent(slug)}`);
