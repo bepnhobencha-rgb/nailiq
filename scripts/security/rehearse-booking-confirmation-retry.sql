@@ -46,6 +46,8 @@ DECLARE
   v_token uuid;
   v_count integer;
 BEGIN
+  PERFORM set_config('request.jwt.claim.role', 'service_role', true);
+
   v_sms := jsonb_build_object(
     'v',1,'channel','sms','salonId',v_salon::text,'to','+1 (604) 555-0200',
     'body','Your NailIQ booking is confirmed.','statusCallbackUrl','https://example.test/twilio/status',
@@ -109,7 +111,7 @@ BEGIN
     v_claim_id, v_token, 'failed', NULL,
     'sms_rate_limited_pre_acceptance', 'retryable_pre_acceptance'
   );
-  IF v_result->>'retry_scheduled' <> 'true'
+  IF v_result->>'retry_scheduled' IS DISTINCT FROM 'true'
      OR NOT EXISTS (SELECT 1 FROM public.booking_confirmation_dispatch_envelopes WHERE claim_id=v_claim_id) THEN
     RAISE EXCEPTION 'retryable completion lost envelope: %', v_result;
   END IF;

@@ -468,7 +468,12 @@ export default function RescheduleBookingPage() {
 function ErrorView({ code }: { code: string }) {
   const messages: Record<string, string> = {
     missing_token: "This reschedule link is invalid.",
+    invalid_request: "This reschedule link is invalid or has expired.",
+    invalid_token: "This reschedule link is invalid or has expired.",
     token_invalid: "This link has already been used or has expired.",
+    expired_or_revoked: "This link has already been used or has expired.",
+    token_consumed: "This link has already been used or has expired.",
+    action_mismatch: "This link cannot reschedule an appointment.",
     slot_conflict: "That time slot is no longer available. Please pick another.",
     booking_not_reschedulable: "This appointment can no longer be rescheduled.",
     load_failed: "Could not load available times. Please try again.",

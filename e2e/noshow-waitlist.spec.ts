@@ -2,8 +2,9 @@
  * No-Show Protection — Waitlist Auto-Fill.
  * Tests: notified entry after cancel, first-claim-wins, claim page UI.
  */
-import { test, expect } from "@playwright/test";
-import { cleanupTestSalon, seedTestSalon } from "./helpers/db";
+import { randomUUID } from "node:crypto";
+import { test, expect, type Page } from "@playwright/test";
+import { cleanupTestSalon, mintBookingActionCapability, seedTestSalon } from "./helpers/db";
 import { createServiceRoleClient } from "../src/shared/lib/supabase/serviceRole";
 
 const MOBILE_VIEWPORT = { width: 390, height: 844 };
@@ -14,6 +15,32 @@ test.describe("No-Show — Waitlist Auto-Fill", () => {
   let bookingId: string;
   let cancelTokenId: string;
   let serviceId: string;
+  let waitlistEntryId: string;
+  const appOrigin = new URL(process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000").origin;
+
+  async function cancelBooking(page: Page): Promise<void> {
+    const res = await page.request.post("/api/booking/cancel-action", {
+      data: { token: cancelTokenId, requestId: randomUUID() },
+      headers: { Origin: appOrigin },
+    });
+    const json = (await res.json()) as { ok?: boolean; code?: string };
+    expect(json, `cancel-action returned ${res.status()}`).toMatchObject({ ok: true });
+  }
+
+  async function activeClaimCapability(): Promise<string> {
+    const supabase = createServiceRoleClient();
+    const { data, error } = await supabase
+      .from("waitlist_claim_capabilities" as never)
+      .select("id")
+      .eq("salon_id", salonId)
+      .eq("waitlist_entry_id", waitlistEntryId)
+      .is("revoked_at", null)
+      .maybeSingle();
+    if (error || !(data as { id?: string } | null)?.id) {
+      throw new Error(error?.message ?? "active waitlist claim capability missing");
+    }
+    return (data as unknown as { id: string }).id;
+  }
 
   test.beforeEach(async () => {
     const { slug, salonId: id } = await seedTestSalon({
@@ -51,16 +78,14 @@ test.describe("No-Show — Waitlist Auto-Fill", () => {
       .select("id").single();
     bookingId = (booking as unknown as { id: string }).id;
 
-    // Seed a cancel token
-    const expires = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-    const { data: token } = await supabase
-      .from("booking_reminder_tokens" as never)
-      .insert({ booking_id: bookingId, salon_id: salonId, expires_at: expires })
-      .select("id").single();
-    cancelTokenId = (token as unknown as { id: string }).id;
+    cancelTokenId = await mintBookingActionCapability({
+      salonId,
+      bookingId,
+      action: "cancel",
+    });
 
     // Seed a waitlist entry for the same service + date
-    await supabase
+    const { data: waitlistEntry, error: waitlistError } = await supabase
       .from("booking_waitlist_entries" as never)
       .insert({
         salon_id: salonId,
@@ -71,7 +96,13 @@ test.describe("No-Show — Waitlist Auto-Fill", () => {
         client_email: "waitlist@example.com",
         source: "slot_unavailable",
         status: "waiting",
-      });
+      })
+      .select("id")
+      .single();
+    if (waitlistError || !(waitlistEntry as { id?: string } | null)?.id) {
+      throw new Error(waitlistError?.message ?? "waitlist fixture insert failed");
+    }
+    waitlistEntryId = (waitlistEntry as unknown as { id: string }).id;
   });
 
   test.afterEach(async () => {
@@ -80,11 +111,7 @@ test.describe("No-Show — Waitlist Auto-Fill", () => {
 
   test("cancelling a booking marks the waitlist entry as notified", async ({ page }) => {
     // Cancel via the API (same as cancel page does)
-    const res = await page.request.post("/api/booking/cancel-action", {
-      data: { token: cancelTokenId },
-    });
-    const json = (await res.json()) as { ok?: boolean };
-    expect(json.ok).toBe(true);
+    await cancelBooking(page);
 
     // Check the waitlist entry is now 'notified'
     const supabase = createServiceRoleClient();
@@ -98,28 +125,21 @@ test.describe("No-Show — Waitlist Auto-Fill", () => {
     const row = data as { status: string; claim_token: string | null } | null;
     expect(row?.status).toBe("notified");
     expect(row?.claim_token).not.toBeNull();
+    expect(await activeClaimCapability()).toMatch(/^[0-9a-f-]{36}$/i);
   });
 
   test("first waitlist claim wins", async ({ page }) => {
     // Cancel the booking to trigger waitlist notification
-    await page.request.post("/api/booking/cancel-action", {
-      data: { token: cancelTokenId },
-    });
-
-    const supabase = createServiceRoleClient();
-    const { data } = await supabase
-      .from("booking_waitlist_entries" as never)
-      .select("claim_token")
-      .eq("salon_id", salonId)
-      .maybeSingle();
-    const row = data as { claim_token: string } | null;
-    expect(row?.claim_token).toBeTruthy();
+    await cancelBooking(page);
+    const claimToken = await activeClaimCapability();
 
     // First claim
-    await page.goto(`/booking/waitlist-claim?token=${row!.claim_token}`);
-    await expect(page.getByText(/spot claimed/i)).toBeVisible({ timeout: 10_000 });
+    await page.goto(`/booking/waitlist-claim?token=${claimToken}`);
+    await page.getByRole("button", { name: /claim this spot/i }).click();
+    await expect(page.getByRole("heading", { name: /confirmed/i })).toBeVisible({ timeout: 10_000 });
 
     // Verify DB state
+    const supabase = createServiceRoleClient();
     const { data: updated } = await supabase
       .from("booking_waitlist_entries" as never)
       .select("status")
@@ -130,27 +150,21 @@ test.describe("No-Show — Waitlist Auto-Fill", () => {
 
   test("second claim attempt shows slot unavailable", async ({ page }) => {
     // Cancel booking
-    await page.request.post("/api/booking/cancel-action", {
-      data: { token: cancelTokenId },
-    });
-
-    const supabase = createServiceRoleClient();
-    const { data } = await supabase
-      .from("booking_waitlist_entries" as never)
-      .select("claim_token")
-      .eq("salon_id", salonId)
-      .maybeSingle();
-    const claimToken = (data as unknown as { claim_token: string }).claim_token;
+    await cancelBooking(page);
+    const claimToken = await activeClaimCapability();
 
     // First claim — succeeds
     await page.goto(`/booking/waitlist-claim?token=${claimToken}`);
-    await page.waitForLoadState("networkidle");
+    await page.getByRole("button", { name: /claim this spot/i }).click();
+    await expect(page.getByRole("heading", { name: /confirmed/i })).toBeVisible({ timeout: 10_000 });
 
-    // Second attempt via direct RPC
-    const { data: secondClaim } = await supabase.rpc("claim_waitlist_slot" as never, {
-      p_claim_token: claimToken,
+    // Second attempt through the same public boundary loses without exposing lifecycle details.
+    const secondClaim = await page.request.post("/api/booking/waitlist-claim", {
+      data: { token: claimToken, requestId: randomUUID() },
+      headers: { Origin: appOrigin },
     });
-    expect(Array.isArray(secondClaim) && secondClaim.length === 0).toBe(true);
+    expect(secondClaim.status()).toBe(409);
+    await expect(secondClaim.json()).resolves.toMatchObject({ ok: false, reason: "unavailable" });
   });
 
   test("invalid claim token shows slot unavailable page", async ({ page }) => {
@@ -164,19 +178,11 @@ test.describe("No-Show — Waitlist Auto-Fill", () => {
 
   test("mobile claim page is usable", async ({ page }) => {
     await page.setViewportSize(MOBILE_VIEWPORT);
-    await page.request.post("/api/booking/cancel-action", {
-      data: { token: cancelTokenId },
-    });
-
-    const supabase = createServiceRoleClient();
-    const { data } = await supabase
-      .from("booking_waitlist_entries" as never)
-      .select("claim_token")
-      .eq("salon_id", salonId)
-      .maybeSingle();
-    const claimToken = (data as unknown as { claim_token: string }).claim_token;
+    await cancelBooking(page);
+    const claimToken = await activeClaimCapability();
 
     await page.goto(`/booking/waitlist-claim?token=${claimToken}`);
-    await expect(page.getByText(/spot claimed|unavailable/i)).toBeVisible({ timeout: 10_000 });
+    await page.getByRole("button", { name: /claim this spot/i }).click();
+    await expect(page.getByRole("heading", { name: /confirmed/i })).toBeVisible({ timeout: 10_000 });
   });
 });

@@ -23,9 +23,10 @@ values (
   'trialing'
 );
 
-update public.platform_flags
-set enabled = true
-where key = 'feature_guided_admin_setup';
+insert into public.platform_flags (key, enabled)
+values ('feature_guided_admin_setup', true)
+on conflict (key) do update
+set enabled = excluded.enabled;
 
 set local role service_role;
 select set_config('request.jwt.claim.role', 'service_role', true);

@@ -84,6 +84,14 @@ export type GroupBookingPricingRequest = {
   applyEmailDiscount: boolean;
 };
 
+/** PostgreSQL and browsers may serialize the same UTC instant differently
+ * (`+00:00` vs `Z`). Security binding cares about the instant, not spelling. */
+export function groupBookingInstantMatches(left: string, right: string): boolean {
+  const leftMs = Date.parse(left);
+  const rightMs = Date.parse(right);
+  return Number.isFinite(leftMs) && Number.isFinite(rightMs) && leftMs === rightMs;
+}
+
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -488,8 +496,11 @@ export function groupBookingQuoteMatchesRequest(
         member.memberIndex === index &&
         member.serviceId === booking.serviceId &&
         member.staffId === booking.staffId &&
-        member.startTimeUtc === booking.startTimeUtc &&
-        member.endTimeUtc === booking.endTimeUtc &&
+        // Postgres serializes UTC as `+00:00`, while browser requests commonly
+        // use `.000Z`. Bind the quote to the exact instants, not one equivalent
+        // ISO spelling, or every valid server receipt is rejected client-side.
+        groupBookingInstantMatches(member.startTimeUtc, booking.startTimeUtc) &&
+        groupBookingInstantMatches(member.endTimeUtc, booking.endTimeUtc) &&
         member.addonServiceIds.length === booking.addonServiceIds.length &&
         member.addonServiceIds.every(
           (id, addonIndex) => id === booking.addonServiceIds[addonIndex],

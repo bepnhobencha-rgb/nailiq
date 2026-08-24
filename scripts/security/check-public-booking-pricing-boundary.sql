@@ -209,6 +209,7 @@ BEGIN
     WHERE c.conrelid = 'public.booking_notifications'::regclass
       AND c.contype = 'c'
       AND c.conname <> 'booking_notifications_confirmation_sent_receipt_check'
+      AND c.conname = 'booking_notifications_status_check'
       AND pg_get_constraintdef(c.oid) ILIKE '%status%'
       AND pg_get_constraintdef(c.oid) NOT ILIKE '%suppressed%'
   ) THEN

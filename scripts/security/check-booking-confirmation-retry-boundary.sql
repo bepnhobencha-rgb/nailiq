@@ -48,7 +48,7 @@ BEGIN
   END LOOP;
 
   SELECT pg_get_functiondef(
-    'public.complete_booking_confirmation_delivery(uuid,uuid,text,text,text,text)'::regprocedure
+    'public.complete_booking_confirmation_delivery_unserialized(uuid,uuid,text,text,text,text)'::regprocedure
   ) INTO v_def;
   IF position('sms_rate_limited_pre_acceptance' IN v_def) = 0
      OR position('email_rate_limited_pre_acceptance' IN v_def) = 0

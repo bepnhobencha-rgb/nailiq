@@ -3,7 +3,7 @@
  * Tests confirm / already-used token / missing token scenarios.
  */
 import { test, expect } from "@playwright/test";
-import { cleanupTestSalon, seedTestSalon } from "./helpers/db";
+import { cleanupTestSalon, mintBookingActionCapability, seedTestSalon } from "./helpers/db";
 import { createServiceRoleClient } from "../src/shared/lib/supabase/serviceRole";
 
 const MOBILE_VIEWPORT = { width: 390, height: 844 };
@@ -57,14 +57,11 @@ test.describe("No-Show — One-Tap Confirm", () => {
       .single();
     bookingId = (booking as unknown as { id: string }).id;
 
-    // Create reminder token
-    const expires = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-    const { data: token } = await supabase
-      .from("booking_reminder_tokens" as never)
-      .insert({ booking_id: bookingId, salon_id: salonId, expires_at: expires })
-      .select("id")
-      .single();
-    tokenId = (token as unknown as { id: string }).id;
+    tokenId = await mintBookingActionCapability({
+      salonId,
+      bookingId,
+      action: "confirm",
+    });
   });
 
   test.afterEach(async () => {
@@ -73,6 +70,7 @@ test.describe("No-Show — One-Tap Confirm", () => {
 
   test("valid token confirms appointment", async ({ page }) => {
     await page.goto(`/booking/confirm?token=${tokenId}`);
+    await page.getByRole("button", { name: /yes, confirm my appointment/i }).click();
     await expect(page.getByText(/appointment confirmed/i)).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/confirmed/i).first()).toBeVisible();
   });
@@ -80,7 +78,8 @@ test.describe("No-Show — One-Tap Confirm", () => {
   test("used token shows error", async ({ page }) => {
     // Confirm once
     await page.goto(`/booking/confirm?token=${tokenId}`);
-    await page.waitForLoadState("networkidle");
+    await page.getByRole("button", { name: /yes, confirm my appointment/i }).click();
+    await expect(page.getByText(/appointment confirmed/i)).toBeVisible({ timeout: 10_000 });
 
     // Try again — token is now used, page renders "Link Unavailable" heading +
     // an error message. Use the h1 heading as the anchor to avoid strict-mode
@@ -99,6 +98,7 @@ test.describe("No-Show — One-Tap Confirm", () => {
   test("mobile confirm flow", async ({ page }) => {
     await page.setViewportSize(MOBILE_VIEWPORT);
     await page.goto(`/booking/confirm?token=${tokenId}`);
+    await page.getByRole("button", { name: /yes, confirm my appointment/i }).click();
     await expect(page.getByText(/appointment confirmed/i)).toBeVisible({ timeout: 10_000 });
   });
 });

@@ -38,7 +38,7 @@ BEGIN
    ('15150000-0000-4000-8000-000000000005','payment-desk-two@nailiq.invalid','',now(),
     '{"provider":"email","providers":["email"]}'::jsonb,'{}'::jsonb,now());
   INSERT INTO public.salon_members(salon_id,user_id,role) VALUES
-   (v_salon,'15150000-0000-4000-8000-000000000004','senior'),
+   (v_salon,'15150000-0000-4000-8000-000000000004','owner'),
    (v_salon,'15150000-0000-4000-8000-000000000005','senior');
 
   -- Canonical successful bind.
@@ -100,7 +100,24 @@ BEGIN
       CASE WHEN v_i=5 THEN now()-interval '1 second' ELSE now()+interval '10 minutes' END,
       now()+interval '10 minutes'
     );
-    IF v_i=4 THEN PERFORM set_config('session_replication_role','replica',true); END IF;
+    IF v_i=4 THEN
+      UPDATE public.salons
+      SET feature_flags = jsonb_set(
+        coalesce(feature_flags, '{}'::jsonb),
+        '{archived_booking_recovery_enabled}',
+        'true'::jsonb,
+        true
+      )
+      WHERE id = v_salon;
+      INSERT INTO public.bookings(
+        id,salon_id,service_id,staff_id,client_name,client_phone,
+        start_time_utc,end_time_utc,status
+      ) VALUES (
+        ('15150000-0000-4000-8000-'||lpad((900+v_i)::text,12,'0'))::uuid,
+        v_salon,v_service,v_staff,'Recovery source QA','+16045550904',
+        v_start,v_end,'cancelled'
+      );
+    END IF;
     INSERT INTO public.bookings(
       id,salon_id,service_id,staff_id,client_name,client_phone,start_time_utc,end_time_utc,
       status,idempotency_key,public_booking_pricing_fingerprint,group_id,deleted_at,
@@ -110,16 +127,22 @@ BEGIN
       CASE WHEN v_i=1 THEN 'cancelled' ELSE 'confirmed' END,v_intent,repeat('c',64),
       CASE WHEN v_i=2 THEN gen_random_uuid() END,
       CASE WHEN v_i=3 THEN now() END,
-      CASE WHEN v_i=4 THEN gen_random_uuid() END,
+      CASE WHEN v_i=4 THEN
+        ('15150000-0000-4000-8000-'||lpad((900+v_i)::text,12,'0'))::uuid
+      END,
       CASE WHEN v_i=4 THEN 'cancelled_rebook' END,
-      CASE WHEN v_i=4 THEN gen_random_uuid() END
+      CASE WHEN v_i=4 THEN '15150000-0000-4000-8000-000000000004'::uuid END
     );
-    IF v_i=4 THEN PERFORM set_config('session_replication_role','origin',true); END IF;
     v_result:=public.bind_public_deposit_payment_operation(v_operation,v_request,v_fp,v_booking);
     IF v_i<5 AND v_result->>'code'<>'booking_not_bindable' THEN
       RAISE EXCEPTION 'lifecycle bind % was not rejected: %',v_i,v_result;
     ELSIF v_i=5 AND v_result->>'code'<>'binding_expired' THEN
       RAISE EXCEPTION 'expired bind was not rejected: %',v_result;
+    END IF;
+    IF v_i=4 THEN
+      UPDATE public.salons
+      SET feature_flags = feature_flags - 'archived_booking_recovery_enabled'
+      WHERE id = v_salon;
     END IF;
   END LOOP;
 

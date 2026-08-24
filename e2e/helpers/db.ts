@@ -26,6 +26,29 @@ assertNotProductionFromEnv();
 
 const supabase = createClient(supabaseUrl, serviceKey);
 
+export async function mintBookingActionCapability(input: {
+  salonId: string;
+  bookingId: string;
+  action: "confirm" | "reschedule" | "cancel";
+}): Promise<string> {
+  const { data, error } = await supabase.rpc(
+    "mint_booking_management_capability" as never,
+    {
+      p_salon_id: input.salonId,
+      p_booking_id: input.bookingId,
+      p_action: input.action,
+      p_min_expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    } as never,
+  );
+  const row = data && typeof data === "object" && !Array.isArray(data)
+    ? data as Record<string, unknown>
+    : null;
+  if (error || row?.ok !== true || typeof row.token_id !== "string") {
+    throw new Error(error?.message ?? `${input.action} capability mint failed: ${String(row?.code ?? "invalid_response")}`);
+  }
+  return row.token_id;
+}
+
 export async function invokeAiAgentPermission(input: {
   salonId: string;
   actorUserId: string;
@@ -163,6 +186,12 @@ export async function getGroupBookingStamps(slug: string): Promise<
 }
 
 export async function cleanupTestSalon(slug: string) {
+  // Every Playwright shard owns a throwaway database and runs serially. Reset
+  // durable public-rate buckets between fixture salons so one spec cannot spend
+  // another spec's IP allowance (all browser requests originate from the same
+  // loopback address). Assertions inside a spec still exercise the real limiter.
+  await supabase.from("rate_limits").delete().like("bucket", "%");
+
   const { data: salon } = await supabase
     .from("salons")
     .select("id")
@@ -304,6 +333,11 @@ export async function seedTestSalon(opts?: {
       phone,
       profile_complete: true,
       opening_hours: SEED_OPENING_HOURS,
+      // Authoritative public/group pricing fails closed when a salon has no
+      // tax configuration. An empty array is the valid "no tax lines" fixture;
+      // leaving this nullable made every group quote return
+      // pricing_config_invalid before the booking flow could be exercised.
+      tax_lines: [],
       feature_flags: opts?.feature_flags ?? {},
       // Only write the column when the caller opts in. Leaving it unset keeps
       // the DB default so `ai_voice` resolves to its Beta default (OFF) — the

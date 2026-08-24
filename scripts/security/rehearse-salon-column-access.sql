@@ -283,29 +283,57 @@ END $$;
 
 RESET ROLE;
 SET LOCAL ROLE anon;
-DO $$
-BEGIN
-  BEGIN
-    PERFORM * FROM public.salon_member_operational_profiles;
-    RAISE EXCEPTION 'anon read authenticated operational view';
-  EXCEPTION WHEN insufficient_privilege THEN
-    NULL;
-  END;
-  BEGIN
-    PERFORM email FROM public.salons LIMIT 1;
-    RAISE EXCEPTION 'anon read salon email';
-  EXCEPTION WHEN insufficient_privilege THEN
-    NULL;
-  END;
-  BEGIN
-    PERFORM public.load_salon_member_operational_profile(
-      '51100000-0000-4000-8000-000000000021'
-    );
-    RAISE EXCEPTION 'anon executed member loader';
-  EXCEPTION WHEN insufficient_privilege THEN
-    NULL;
-  END;
-END $$;
+
+-- Keep expected permission errors out of nested PL/pgSQL exception blocks.
+-- PostgreSQL 17 can terminate the backend while unwinding that combination of
+-- column ACL, security-invoker view and denied function execution. Direct psql
+-- statements plus savepoints prove the same boundary without crashing CI.
+SAVEPOINT anon_operational_view_read;
+\set ON_ERROR_STOP off
+SELECT pg_catalog.count(*) FROM public.salon_member_operational_profiles;
+\set anon_operational_view_sqlstate :SQLSTATE
+ROLLBACK TO SAVEPOINT anon_operational_view_read;
+\set ON_ERROR_STOP on
+SELECT :'anon_operational_view_sqlstate' = '42501'
+  AS anon_operational_view_denied
+\gset
+\if :anon_operational_view_denied
+\else
+  \echo 'anon operational view read returned SQLSTATE' :anon_operational_view_sqlstate
+  SELECT 1 / 0 AS anon_operational_view_was_not_denied;
+\endif
+
+SAVEPOINT anon_salon_email_read;
+\set ON_ERROR_STOP off
+SELECT email FROM public.salons LIMIT 1;
+\set anon_salon_email_sqlstate :SQLSTATE
+ROLLBACK TO SAVEPOINT anon_salon_email_read;
+\set ON_ERROR_STOP on
+SELECT :'anon_salon_email_sqlstate' = '42501' AS anon_salon_email_denied
+\gset
+\if :anon_salon_email_denied
+\else
+  \echo 'anon salon email read returned SQLSTATE' :anon_salon_email_sqlstate
+  SELECT 1 / 0 AS anon_salon_email_was_not_denied;
+\endif
+
+SELECT NOT pg_catalog.has_function_privilege(
+  'anon',
+  'public.load_salon_member_operational_profile(uuid)',
+  'EXECUTE'
+) AS anon_member_loader_denied
+\gset
+\if :anon_member_loader_denied
+\else
+  \echo 'anon retained EXECUTE on member loader'
+  SELECT 1 / 0 AS anon_member_loader_execute_was_not_revoked;
+\endif
+
+\unset anon_operational_view_sqlstate
+\unset anon_operational_view_denied
+\unset anon_salon_email_sqlstate
+\unset anon_salon_email_denied
+\unset anon_member_loader_denied
 
 RESET ROLE;
 SET LOCAL ROLE service_role;

@@ -3,7 +3,7 @@
  * Tests slot loading, reschedule, double-booking prevention, mobile.
  */
 import { test, expect } from "@playwright/test";
-import { cleanupTestSalon, seedTestSalon } from "./helpers/db";
+import { cleanupTestSalon, mintBookingActionCapability, seedTestSalon } from "./helpers/db";
 import { createServiceRoleClient } from "../src/shared/lib/supabase/serviceRole";
 
 const MOBILE_VIEWPORT = { width: 390, height: 844 };
@@ -48,12 +48,11 @@ test.describe("No-Show — Reschedule", () => {
       .select("id").single();
     bookingId = (booking as unknown as { id: string }).id;
 
-    const expires = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-    const { data: token } = await supabase
-      .from("booking_reminder_tokens" as never)
-      .insert({ booking_id: bookingId, salon_id: salonId, expires_at: expires })
-      .select("id").single();
-    tokenId = (token as unknown as { id: string }).id;
+    tokenId = await mintBookingActionCapability({
+      salonId,
+      bookingId,
+      action: "reschedule",
+    });
   });
 
   test.afterEach(async () => {

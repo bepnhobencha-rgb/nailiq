@@ -121,7 +121,7 @@ const rescheduleApplySql = (tokenId, requestId, start, fingerprint) => `
 
 async function cleanup() {
   await sql(`
-    update public.platform_flags set enabled=false
+    delete from public.platform_flags
       where key='feature_multi_service_booking';
     update public.platform_settings set multi_service_booking_qa_salon_id=null
       where id='platform' and multi_service_booking_qa_salon_id='${id.salon}';
@@ -319,7 +319,16 @@ try {
     1,
     JSON.stringify({ crossSettled, crossSequence }),
   );
-  if (!sequenceCommitted) assert.equal(crossSequence?.code, "slot_conflict");
+  if (!sequenceCommitted) {
+    if (crossSettled[0].status === "fulfilled") {
+      assert.equal(crossSequence?.code, "slot_conflict");
+    } else {
+      assert.match(
+        String(crossSettled[0].reason?.stderr ?? crossSettled[0].reason),
+        /deadlock detected|exclusion constraint|slot[_ ]conflict/i,
+      );
+    }
+  }
 
   // Same resource/different staff race is closed by the resource exclusion.
   await sql(

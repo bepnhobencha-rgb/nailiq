@@ -678,9 +678,32 @@ test.describe("Guided Admin Setup", () => {
 
     await gotoAfterSignIn(page, `/dashboard/${SURFACES_SLUG}/setup/hours`);
     await page.getByTestId("hours-preset-standard").click();
-    await page.getByTestId("hours-holiday-2026-12-25").click();
+    const holidayButton = page.getByTestId("hours-holiday-2026-12-25");
+    const closedDatesInput = page
+      .getByTestId("hours-holiday-presets")
+      .locator("..")
+      .locator("textarea");
+    // The holiday chips are present in streamed HTML before their onClick is
+    // hydrated. Prove the controlled textarea changed before asking autosave
+    // or Save all to persist it.
+    await expect(async () => {
+      await holidayButton.click();
+      await expect(closedDatesInput).toHaveValue(/2026-12-25/);
+    }).toPass({ timeout: 15_000 });
     await page.getByRole("button", { name: /Save all|Lưu tất cả/i }).click();
-    await expect(page.getByText(/Hours saved|Đã lưu giờ/i)).toBeVisible();
+    // Guided mode can auto-save 900ms after the edit, racing the explicit
+    // button and making its short-lived toast disappear during router.refresh.
+    // The durable database value is the actual contract for this step.
+    await expect.poll(async () => {
+      const { data, error } = await createServiceRoleClient()
+        .from("salons")
+        .select("booking_closed_dates")
+        .eq("id", surfacesSalonId)
+        .single();
+      if (error) return false;
+      const dates = (data as { booking_closed_dates?: unknown }).booking_closed_dates;
+      return Array.isArray(dates) && dates.includes("2026-12-25");
+    }, { timeout: 15_000 }).toBe(true);
 
     await gotoAfterSignIn(page, `/dashboard/${SURFACES_SLUG}/setup/staff`);
     await expect(page.getByText("Jenny", { exact: true })).toBeVisible();

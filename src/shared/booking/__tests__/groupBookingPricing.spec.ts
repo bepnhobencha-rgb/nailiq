@@ -324,6 +324,16 @@ describe("public group booking authoritative pricing receipt", () => {
       applyEmailDiscount: true,
     };
     expect(groupBookingQuoteMatchesRequest(quote, request)).toBe(true);
+    expect(
+      groupBookingQuoteMatchesRequest(quote, {
+        ...request,
+        bookings: request.bookings.map((booking) => ({
+          ...booking,
+          startTimeUtc: booking.startTimeUtc.replace(".000Z", "+00:00"),
+          endTimeUtc: booking.endTimeUtc.replace(".000Z", "+00:00"),
+        })),
+      }),
+    ).toBe(true);
     const mutateFirst = (
       mutation: Partial<GroupBookingPricingRequest["bookings"][number]>,
     ): GroupBookingPricingRequest => ({

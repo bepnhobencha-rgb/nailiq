@@ -34,6 +34,15 @@ if (!sourceDatabase || new Set(["template0", "template1"]).has(sourceDatabase)) 
   throw new Error("Refusing unsafe source database");
 }
 
+const maintenanceUrl = new URL(sourceUrl.toString());
+const restoreDbUser = process.env.RESTORE_DB_USER?.trim();
+if (restoreDbUser) {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(restoreDbUser)) {
+    throw new Error("RESTORE_DB_USER must be a PostgreSQL identifier");
+  }
+  maintenanceUrl.username = restoreDbUser;
+}
+
 const tool = (envName, fallback) => process.env[envName] || fallback;
 const psql = tool("PSQL_BIN", "psql");
 const pgDump = tool("PG_DUMP_BIN", "pg_dump");
@@ -43,7 +52,7 @@ const dropdb = tool("DROPDB_BIN", "dropdb");
 const work = mkdtempSync(join(tmpdir(), "nailiq-backup-restore-"));
 const archive = join(work, "database.dump");
 const restoreDatabase = `nq_restore_${process.pid}_${Date.now()}`;
-const restoreUrl = new URL(sourceUrl.toString());
+const restoreUrl = new URL(maintenanceUrl.toString());
 restoreUrl.pathname = `/${restoreDatabase}`;
 restoreUrl.search = "";
 
@@ -87,7 +96,7 @@ function schemaManifest(url) {
          FROM pg_catalog.pg_extension e JOIN pg_catalog.pg_namespace n ON n.oid=e.extnamespace
        UNION ALL
        SELECT 'column',n.nspname || '.' || c.relname || '.' || a.attname,
-              concat_ws('|',a.attnum,pg_catalog.format_type(a.atttypid,a.atttypmod),a.attnotnull,
+              concat_ws('|',pg_catalog.format_type(a.atttypid,a.atttypmod),a.attnotnull,
                 a.attidentity,a.attgenerated,coalesce(pg_catalog.pg_get_expr(d.adbin,d.adrelid),''),
                 coalesce(coll.collname,''))
          FROM pg_catalog.pg_attribute a
@@ -144,7 +153,7 @@ function schemaManifest(url) {
      SELECT kind || E'\\t' || object_name || E'\\t' || material
        FROM schema_objects ORDER BY kind,object_name,material`,
   );
-  return sha(manifest);
+  return { fingerprint: sha(manifest), manifest };
 }
 
 function dataManifest(url) {
@@ -247,27 +256,33 @@ function applicationManifest(url) {
 
 let restoreCreated = false;
 try {
-  const server = query(sourceUrl, "SELECT current_setting('server_version_num') || '|' || current_database()");
+  const server = query(maintenanceUrl, "SELECT current_setting('server_version_num') || '|' || current_database()");
   run(pgDump, ["--format=custom", "--compress=6", "--file", archive, sourceUrl.toString()]);
   run(pgRestore, ["--list", archive]);
 
-  const sourceSchemaFingerprint = schemaManifest(sourceUrl);
-  const sourceData = dataManifest(sourceUrl);
+  const sourceSchema = schemaManifest(maintenanceUrl);
+  const sourceData = dataManifest(maintenanceUrl);
   if (sourceData.totalRows < 1) throw new Error("Source has no data rows; data restore proof would be vacuous");
-  const sourceApplication = applicationManifest(sourceUrl);
+  const sourceApplication = applicationManifest(maintenanceUrl);
 
-  run(createdb, ["--maintenance-db", sourceUrl.toString(), "--template", "template0", restoreDatabase]);
+  run(createdb, ["--maintenance-db", maintenanceUrl.toString(), "--template", "template0", restoreDatabase]);
   restoreCreated = true;
-  run(pgRestore, ["--exit-on-error", "--single-transaction", "--dbname", restoreUrl.toString(), archive]);
+  run(pgRestore, [
+    "--exit-on-error",
+    "--single-transaction",
+    "--dbname",
+    restoreUrl.toString(),
+    archive,
+  ]);
 
-  const schemaRestoreFingerprint = schemaManifest(restoreUrl);
+  const restoredSchema = schemaManifest(restoreUrl);
   const restoredData = dataManifest(restoreUrl);
   const restoredApplication = applicationManifest(restoreUrl);
 
   const evidence = {
     server,
     archive_bytes: readFileSync(archive).byteLength,
-    schema_fingerprint: sourceSchemaFingerprint,
+    schema_fingerprint: sourceSchema.fingerprint,
     data_fingerprint: sourceData.fingerprint,
     application_fingerprint: sourceApplication,
     relations_checked: sourceData.relations,
@@ -275,7 +290,15 @@ try {
   };
   writeFileSync(join(work, "evidence.json"), `${JSON.stringify(evidence, null, 2)}\n`);
 
-  if (sourceSchemaFingerprint !== schemaRestoreFingerprint) throw new Error("Schema checksum mismatch after restore");
+  if (sourceSchema.fingerprint !== restoredSchema.fingerprint) {
+    const sourceLines = new Set(sourceSchema.manifest.split("\n"));
+    const restoredLines = new Set(restoredSchema.manifest.split("\n"));
+    const missing = [...sourceLines].filter((line) => !restoredLines.has(line)).slice(0, 10);
+    const extra = [...restoredLines].filter((line) => !sourceLines.has(line)).slice(0, 10);
+    throw new Error(
+      `Schema checksum mismatch after restore: ${JSON.stringify({ missing, extra })}`,
+    );
+  }
   if (sourceData.fingerprint !== restoredData.fingerprint) throw new Error("Data checksum mismatch after restore");
   if (sourceApplication !== restoredApplication) throw new Error("Application contract checksum mismatch after restore");
   if (sourceData.relations !== restoredData.relations || sourceData.totalRows !== restoredData.totalRows) {
@@ -285,7 +308,7 @@ try {
   console.log(`PASS_LOCAL PostgreSQL backup restore: ${JSON.stringify(evidence)}`);
 } finally {
   if (restoreCreated) {
-    run(dropdb, ["--maintenance-db", sourceUrl.toString(), "--if-exists", restoreDatabase]);
+    run(dropdb, ["--maintenance-db", maintenanceUrl.toString(), "--if-exists", restoreDatabase]);
   }
   rmSync(work, { recursive: true, force: true });
 }

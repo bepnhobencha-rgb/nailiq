@@ -3,10 +3,14 @@
 BEGIN;
 SELECT pg_catalog.set_config('request.jwt.claim.role', 'service_role', true);
 
-UPDATE public.platform_settings
-   SET sms_consent_hash_secret = repeat('q', 48),
-       sms_consent_hash_key_id = '18110000-0000-4000-8000-000000000099'
- WHERE id = 'platform';
+INSERT INTO public.platform_settings (
+  id, sms_consent_hash_secret, sms_consent_hash_key_id
+) VALUES (
+  'platform', repeat('q', 48), '18110000-0000-4000-8000-000000000099'
+)
+ON CONFLICT (id) DO UPDATE
+SET sms_consent_hash_secret = excluded.sms_consent_hash_secret,
+    sms_consent_hash_key_id = excluded.sms_consent_hash_key_id;
 
 INSERT INTO public.salons(
   id, slug, name, phone, timezone, is_beta, customer_channel,

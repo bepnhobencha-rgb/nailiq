@@ -421,8 +421,9 @@ BEGIN
     RAISE EXCEPTION 'auto resource create drifted: %', v_changed;
   END IF;
   v_resource_booking_id:=(v_changed->>'booking_id')::uuid;
+  -- Active staff with live work cannot be deactivated after lifecycle
+  -- hardening. Resource drift alone proves replay does not re-resolve anchors.
   UPDATE public.salon_resources SET status='inactive' WHERE id=v_resource_two;
-  UPDATE public.staff SET status='inactive' WHERE id=v_staff_one;
   v_replay:=public.replay_public_booking_sequence(
     v_one_line_request||pg_catalog.jsonb_build_object(
       'expected_pricing_fingerprint',v_one_line_quote->>'pricing_fingerprint'));
@@ -432,7 +433,6 @@ BEGIN
     RAISE EXCEPTION 'committed any-staff/resource replay drifted: %',v_replay;
   END IF;
   UPDATE public.salon_resources SET status='active' WHERE id=v_resource_two;
-  UPDATE public.staff SET status='active' WHERE id=v_staff_one;
 
   -- A catalog change after quote must return a new quote before any business
   -- row is written for the new request.
@@ -788,9 +788,10 @@ BEGIN
     RAISE EXCEPTION 'sequence slot race was not zero-write: %',v_changed;
   END IF;
 
-  -- Five repeated services cross the next Vancouver fall-back boundary in
-  -- absolute UTC order, then move as one sequence. A late-night request that
-  -- crosses local close remains fail-closed.
+  -- A sequence that crosses Vancouver's repeated fall-back hour is rejected
+  -- because the authoritative single-line pricing contract requires local end
+  -- time to remain after local start time. A post-transition five-line sequence
+  -- remains valid and moves atomically; local-close overflow stays fail-closed.
   UPDATE public.salons SET timezone='America/Vancouver',resources_enabled=false
   WHERE id=v_salon;
   v_dst_date:=pg_catalog.make_date(
@@ -822,6 +823,14 @@ BEGIN
     'same_staff_for_all',false,'voucher_code',NULL,'apply_email_discount',false,
     'customer',pg_catalog.jsonb_build_object('name','DST Sequence Customer',
       'phone','16045550192','email','dst-sequence@example.test')
+  );
+  v_five_quote:=public.quote_public_booking_sequence(v_five_request);
+  IF v_five_quote->>'code'<>'outside_hours' THEN
+    RAISE EXCEPTION 'fall-back ambiguous sequence was not rejected: %',v_five_quote;
+  END IF;
+  v_dst_start:=(v_dst_date::timestamp+time '03:30') AT TIME ZONE 'America/Vancouver';
+  v_five_request:=pg_catalog.jsonb_set(
+    v_five_request,'{requested_start_time_utc}',pg_catalog.to_jsonb(v_dst_start)
   );
   v_five_quote:=public.quote_public_booking_sequence(v_five_request);
   IF v_five_quote->>'code'<>'quoted'
@@ -920,8 +929,6 @@ BEGIN
        <> (v_created->>'customer_transition_version')::bigint THEN
     RAISE EXCEPTION 'desk exact response-loss replay failed: %',v_replay;
   END IF;
-  v_conflict_staff:=(SELECT b.staff_id FROM public.bookings b WHERE b.id=v_five_booking);
-  UPDATE public.staff SET status='inactive' WHERE id=v_conflict_staff;
   v_replay:=public.replay_booking_sequence_reschedule_for_desk(
     v_salon,v_five_booking,v_desk_actor,false,false,
     '70000000-0000-4000-8000-000000000004'::uuid,
@@ -933,7 +940,6 @@ BEGIN
        <> (v_created->>'customer_transition_version')::bigint THEN
     RAISE EXCEPTION 'desk replay-only depended on current staff anchor: %',v_replay;
   END IF;
-  UPDATE public.staff SET status='active' WHERE id=v_conflict_staff;
   v_changed:=public.reschedule_booking_sequence_for_desk(
     v_salon,v_five_booking,v_desk_actor,false,true,
     '70000000-0000-4000-8000-000000000004'::uuid,

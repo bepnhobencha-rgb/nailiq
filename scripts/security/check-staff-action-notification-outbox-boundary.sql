@@ -146,7 +146,7 @@ BEGIN
   END IF;
 
   SELECT pg_get_functiondef(
-    'public.complete_staff_action_notification_delivery(uuid,uuid,text,text,text,text)'::regprocedure
+    'public.complete_staff_action_notification_delivery_unserialized(uuid,uuid,text,text,text,text)'::regprocedure
   ) INTO v_def;
   IF position('retryable_pre_acceptance' IN v_def)=0
      OR position('unclassified_provider_outcome' IN v_def)=0

@@ -49,6 +49,17 @@ jobs:
         with:
           version: 2.109.1
 
+      - name: Install PostgreSQL 17 client
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --dearmor -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+
       - name: Audit deploy-ready production prefix
         run: npm run db:history:audit -- --deploy-ready
 
@@ -352,7 +363,7 @@ jobs:
           bucket_count="$(psql "$DB_URL" -tAc "select count(*) from storage.buckets where id = 'nail-tryon' and public = false")"
           test "$bucket_count" -eq 1
 
-          NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
+          NAILIQ_DISPOSABLE_DB=1 RESTORE_DB_USER=supabase_admin DB_URL="$DB_URL" \
             node scripts/security/rehearse-postgres-backup-restore.mjs
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/check-branch-tenant-isolation-boundary.sql

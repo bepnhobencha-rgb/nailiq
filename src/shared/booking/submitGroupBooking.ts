@@ -22,6 +22,7 @@ import {
 import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import {
+  groupBookingInstantMatches,
   parseGroupBookingPricingQuote,
   type GroupBookingPricingQuote,
 } from "@/shared/booking/groupBookingPricing";
@@ -1113,8 +1114,8 @@ export async function submitGroupBooking(
           member.memberIndex !== index ||
           member.serviceId !== current.member.serviceId ||
           member.staffId !== current.member.staffId ||
-          member.startTimeUtc !== current.startUtcIso ||
-          member.endTimeUtc !== current.endUtcIso ||
+          !groupBookingInstantMatches(member.startTimeUtc, current.startUtcIso) ||
+          !groupBookingInstantMatches(member.endTimeUtc, current.endUtcIso) ||
           member.addonServiceIds.length !== current.addonIds.length ||
           member.addonServiceIds.some((id, addonIndex) => id !== current.addonIds[addonIndex]);
       })

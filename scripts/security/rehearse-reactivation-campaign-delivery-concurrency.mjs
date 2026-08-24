@@ -57,7 +57,11 @@ async function cleanup() {
           sms_consent_hash_secret = backup.sms_consent_hash_secret,
           sms_consent_hash_key_id = backup.sms_consent_hash_key_id
         from ${backupTable} backup
-        where settings.id = 'platform';
+        where settings.id = 'platform' and backup.row_existed;
+        delete from public.platform_settings settings
+        where settings.id = 'platform'
+          and exists (select 1 from ${backupTable} backup
+            where not backup.row_existed);
         execute 'drop table ${backupTable}';
       end if;
       delete from public.salons where id = '${ids.salon}';
@@ -71,15 +75,23 @@ async function cleanup() {
 const setupSql = `
   create table ${backupTable} (
     sms_consent_hash_secret text,
-    sms_consent_hash_key_id uuid
+    sms_consent_hash_key_id uuid,
+    row_existed boolean not null
   );
   insert into ${backupTable}
-    select sms_consent_hash_secret, sms_consent_hash_key_id
-      from public.platform_settings where id='platform';
-  update public.platform_settings set
-    sms_consent_hash_secret=repeat('r',48),
-    sms_consent_hash_key_id='18110010-0000-4000-8000-000000000099'
-  where id='platform';
+    select sms_consent_hash_secret, sms_consent_hash_key_id, true
+      from public.platform_settings where id='platform'
+    union all
+    select null, null, false where not exists (
+      select 1 from public.platform_settings where id='platform'
+    );
+  insert into public.platform_settings(
+    id,sms_consent_hash_secret,sms_consent_hash_key_id
+  ) values(
+    'platform',repeat('r',48),'18110010-0000-4000-8000-000000000099'
+  ) on conflict(id) do update set
+    sms_consent_hash_secret=excluded.sms_consent_hash_secret,
+    sms_consent_hash_key_id=excluded.sms_consent_hash_key_id;
 
   insert into public.salons(
     id,slug,name,phone,timezone,is_beta,customer_channel,

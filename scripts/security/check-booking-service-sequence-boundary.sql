@@ -156,7 +156,7 @@ BEGIN
   END IF;
 
   SELECT pg_catalog.pg_get_functiondef(
-    'public.reschedule_booking_sequence_for_desk(uuid,uuid,uuid,boolean,boolean,uuid,timestamptz,text)'::regprocedure
+    'public.reschedule_booking_sequence_for_desk_pre_staff_outbox(uuid,uuid,uuid,boolean,boolean,uuid,timestamptz,text)'::regprocedure
   ) INTO v_definition;
   IF position('salon_members' IN v_definition)=0
      OR position('actor_unauthorized' IN v_definition)=0
@@ -167,7 +167,7 @@ BEGIN
   END IF;
 
   SELECT pg_catalog.pg_get_functiondef(
-    'public.replay_booking_sequence_reschedule_for_desk(uuid,uuid,uuid,boolean,boolean,uuid,timestamptz,text)'::regprocedure
+    'public.replay_booking_sequence_reschedule_for_desk_pre_staff_outbox(uuid,uuid,uuid,boolean,boolean,uuid,timestamptz,text)'::regprocedure
   ) INTO v_definition;
   IF position('booking_management_action_receipts' IN v_definition)=0
      OR position('replay_not_found' IN v_definition)=0

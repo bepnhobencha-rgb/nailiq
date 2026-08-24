@@ -39,11 +39,11 @@ const category = "capacity-concurrency-rehearsal";
 const base = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
 base.setUTCHours(10, 0, 0, 0);
 const start = base.toISOString();
-const end = new Date(base.getTime() + 30 * 60 * 1000).toISOString();
 const vacationDate = start.slice(0, 10);
 
 const cleanup = async () => {
   await run(`
+    select set_config('request.jwt.claim.role','service_role',false);
     delete from public.bookings where salon_id='${id.salon}';
     delete from public.staff_unavailability where salon_id='${id.salon}';
     delete from public.salon_resources where salon_id='${id.salon}';
