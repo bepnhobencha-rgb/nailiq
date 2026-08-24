@@ -56,4 +56,16 @@ describe("MQA-0224/0225 required CI gates", () => {
     );
     expect(productionGuardCli).toContain("assertNotProductionFromEnv();");
   });
+
+  it("uses the PostgreSQL 17 client for the PostgreSQL 17 backup rehearsal", () => {
+    expect(migrationWorkflow).toContain(
+      "sudo apt-get install -y postgresql-client-17",
+    );
+    expect(migrationWorkflow).toContain(
+      "test -x /usr/lib/postgresql/17/bin/pg_dump",
+    );
+    expect(migrationWorkflow).toContain(
+      'echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"',
+    );
+  });
 });
