@@ -17,6 +17,7 @@ import { POST } from "./route";
 const url = "https://nailiq.test/api/webhooks/square";
 const signatureKey = "square-test-signature-key";
 const salonId = "11111111-1111-4111-8111-111111111111";
+const secondSalonId = "22222222-2222-4222-8222-222222222222";
 const fingerprint = "a".repeat(64);
 
 function integrationChain(result: unknown) {
@@ -217,9 +218,74 @@ describe("Square webhook route", () => {
     expect(serialized).not.toContain("4111111111111111");
   });
 
+  it("routes a shared-merchant refund to the exact Square location tenant", async () => {
+    const chain = integrationChain({
+      data: [{
+        salon_id: secondSalonId,
+        merchant_id: "merchant-1",
+        location_id: "location-2",
+        application_id: "application-1",
+        environment: "sandbox",
+      }],
+      error: null,
+    });
+    mocks.from.mockReturnValue(chain);
+    mocks.rpc.mockResolvedValue({
+      data: {
+        success: true,
+        code: "refund_applied",
+        event_id: "refund-event-1",
+      },
+      error: null,
+    });
+
+    const response = await POST(request(refundBody({ location_id: "location-2" })));
+
+    expect(response.status).toBe(200);
+    expect(chain.eq).toHaveBeenCalledWith("location_id", "location-2");
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "record_square_refund_webhook_event",
+      expect.objectContaining({
+        p_salon_id: secondSalonId,
+        p_location_id: "location-2",
+      }),
+    );
+  });
+
+  it("fails closed for merchant-wide events when one merchant maps to multiple salons", async () => {
+    mocks.from.mockReturnValue(integrationChain({
+      data: [
+        {
+          salon_id: salonId,
+          merchant_id: "merchant-1",
+          location_id: "location-1",
+          application_id: "application-1",
+          environment: "sandbox",
+        },
+        {
+          salon_id: secondSalonId,
+          merchant_id: "merchant-1",
+          location_id: "location-2",
+          application_id: "application-1",
+          environment: "sandbox",
+        },
+      ],
+      error: null,
+    }));
+
+    const response = await POST(request(body()));
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      code: "provider_context_mismatch",
+    });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
   it("rejects a refund location mismatch before the financial inbox RPC", async () => {
     const response = await POST(request(refundBody({ location_id: "location-hostile" })));
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(401);
     await expect(response.json()).resolves.toMatchObject({
       ok: false,
       code: "provider_context_mismatch",

@@ -67,18 +67,79 @@ type FeatureContract = {
   provider_account_fingerprint?: string;
 };
 
+function providerLocationId(value: unknown): string | null {
+  return typeof value === "string" && /^[!-~]{1,255}$/.test(value)
+    ? value
+    : null;
+}
+
+/**
+ * Return an exact provider location only when the signed event carries one.
+ * Merchant-wide events deliberately return null: when a merchant is mapped to
+ * multiple NailIQ salons, resolveIntegration then fails closed instead of
+ * guessing which tenant owns the event.
+ */
+function squareWebhookLocationId(
+  event: NonNullable<ReturnType<typeof parseSquareEvent>>,
+): string | null {
+  const refund = sanitizeSquareRefundEvent(event);
+  if (refund) return refund.locationId;
+
+  if (isSquareOptionalWebhookEvent(event.eventType)) {
+    const sanitized = sanitizeSquareOptionalEvent(event);
+    if (!sanitized) return null;
+    const material = sanitized.material;
+    const locations = new Set<string>();
+    const entity = material.entity;
+    if (entity && typeof entity === "object" && !Array.isArray(entity)) {
+      const locationId = providerLocationId(
+        (entity as Record<string, unknown>).location_id,
+      );
+      if (locationId) locations.add(locationId);
+    }
+    if (Array.isArray(material.counts)) {
+      for (const value of material.counts) {
+        if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+        const locationId = providerLocationId(
+          (value as Record<string, unknown>).location_id,
+        );
+        if (locationId) locations.add(locationId);
+      }
+    }
+    return locations.size === 1 ? [...locations][0] : null;
+  }
+
+  if (DISPUTE_EVENT_TYPES.has(event.eventType)) {
+    const dispute = event.object.dispute;
+    if (dispute && typeof dispute === "object" && !Array.isArray(dispute)) {
+      return providerLocationId(
+        (dispute as Record<string, unknown>).location_id,
+      );
+    }
+  }
+  return null;
+}
+
 async function resolveIntegration(
   db: ReturnType<typeof createServiceRoleClient>,
-  input: { merchantId: string; applicationId: string; environment: string },
+  input: {
+    merchantId: string;
+    applicationId: string;
+    environment: string;
+    locationId: string | null;
+  },
 ): Promise<IntegrationRow | null | "unavailable"> {
-  const { data, error } = await db
+  const query = db
     .from("square_integrations" as never)
     .select("salon_id, merchant_id, location_id, application_id, environment" as never)
     .eq("merchant_id" as never, input.merchantId)
     .eq("application_id" as never, input.applicationId)
     .eq("environment" as never, input.environment)
-    .eq("enabled" as never, true)
-    .limit(2);
+    .eq("enabled" as never, true);
+  const scopedQuery = input.locationId
+    ? query.eq("location_id" as never, input.locationId)
+    : query;
+  const { data, error } = await scopedQuery.limit(2);
   if (error || !Array.isArray(data)) return "unavailable";
   if (data.length !== 1) return null;
   const row = data[0] as unknown as IntegrationRow;
@@ -87,7 +148,8 @@ async function resolveIntegration(
     row.merchant_id !== input.merchantId ||
     row.application_id !== input.applicationId ||
     row.environment !== input.environment ||
-    !row.location_id
+    !row.location_id ||
+    (input.locationId !== null && row.location_id !== input.locationId)
   ) {
     return null;
   }
@@ -117,6 +179,7 @@ async function recordOptionalEvent(input: {
     contract.success !== true ||
     contract.salon_id !== input.integration.salon_id ||
     contract.merchant_id !== input.event.merchantId ||
+    contract.location_id !== input.integration.location_id ||
     contract.application_id !== input.profile.applicationId ||
     contract.environment !== input.profile.environment ||
     contract.api_version !== SQUARE_OPTIONAL_API_VERSION ||
@@ -342,6 +405,7 @@ export async function POST(request: Request) {
     merchantId: event.merchantId,
     applicationId: profile.applicationId,
     environment: profile.environment,
+    locationId: squareWebhookLocationId(event),
   });
   if (integration === "unavailable") {
     return json({ ok: false, code: "webhook_store_unavailable" }, 503);
