@@ -22,6 +22,7 @@ import { loadDashboardAnnouncements } from "@/shared/dashboard/platformAnnouncem
 import { PlatformAnnouncementBanner } from "@/components/dashboard/PlatformAnnouncementBanner";
 import { GuidedFocusVisibility } from "@/components/dashboard/GuidedFocusVisibility";
 import { loadGoLiveReadiness } from "@/shared/dashboard/loadGoLiveReadiness";
+import { loadDashboardShellProjection } from "@/shared/dashboard/loadDashboardShellProjection";
 import {
   deriveGuidedSetupProgress,
   resolveGuidedSetupStage,
@@ -97,21 +98,38 @@ export default async function DashboardSlugLayout({ children, params }: Props) {
     return <>{children}</>;
   }
 
+  const { startUtc: todayStartUtc } = salonDayRangeUtc(
+    salonToday(ctx.salon.timezone),
+    ctx.salon.timezone,
+  );
+  const shellProjection = await loadDashboardShellProjection(
+    ctx.salon.id,
+    todayStartUtc,
+  );
+
   // Force-wizard gate (added 2026-05-09): a salon with
   // setup_wizard_completed_at IS NULL has not been through
   // /register/setup yet (placeholder name, no timezone confirmation).
   // Block dashboard access until the owner completes the wizard so
   // guest-facing screens never render with bad identity data.
   // Cast: column not yet in auto-generated DB types.
-  const wizardGate = (await ctx.supabase
-    .from("salons")
-    .select("setup_wizard_completed_at" as never)
-    .eq("id", ctx.salon.id)
-    .maybeSingle()) as {
-    data: { setup_wizard_completed_at?: string | null } | null;
-    error: unknown;
-  };
-  if (wizardGate.data && wizardGate.data.setup_wizard_completed_at == null) {
+  let wizardIncomplete: boolean;
+  if (shellProjection) {
+    wizardIncomplete = shellProjection.setupWizardCompletedAt == null;
+  } else {
+    const wizardGate = (await ctx.supabase
+      .from("salons")
+      .select("setup_wizard_completed_at" as never)
+      .eq("id", ctx.salon.id)
+      .maybeSingle()) as {
+      data: { setup_wizard_completed_at?: string | null } | null;
+      error: unknown;
+    };
+    wizardIncomplete = Boolean(
+      wizardGate.data && wizardGate.data.setup_wizard_completed_at == null,
+    );
+  }
+  if (wizardIncomplete) {
     redirect("/register/setup");
   }
 
@@ -122,17 +140,20 @@ export default async function DashboardSlugLayout({ children, params }: Props) {
   // client-side CSS, or a direct nested URL cannot bypass the screen.
   const privateOffer = getPrivateOfferBySalonId(ctx.salon.id);
   if (privateOffer) {
-    const { data: billingRow } = await createServiceRoleClient()
-      .from("salons")
-      .select("stripe_subscription_id, subscription_status")
-      .eq("id", ctx.salon.id)
-      .maybeSingle();
-    const subscriptionId = (
-      billingRow as { stripe_subscription_id?: string | null } | null
-    )?.stripe_subscription_id?.trim();
-    const status = (
-      billingRow as { subscription_status?: string | null } | null
-    )?.subscription_status;
+    let subscriptionId = shellProjection?.stripeSubscriptionId?.trim();
+    let status = shellProjection?.subscriptionStatus;
+    if (!shellProjection) {
+      const { data: billingRow } = await createServiceRoleClient()
+        .from("salons")
+        .select("stripe_subscription_id, subscription_status")
+        .eq("id", ctx.salon.id)
+        .maybeSingle();
+      subscriptionId = (
+        billingRow as { stripe_subscription_id?: string | null } | null
+      )?.stripe_subscription_id?.trim();
+      status = (billingRow as { subscription_status?: string | null } | null)
+        ?.subscription_status;
+    }
     const paid =
       Boolean(subscriptionId) && (status === "active" || status === "trialing");
     if (!paid) {
@@ -161,69 +182,85 @@ export default async function DashboardSlugLayout({ children, params }: Props) {
   // on per-page navigation — the layout re-renders on every route
   // change so counts stay reasonably fresh without a client-side
   // postgres_changes subscription at the layout level.
-  const { startUtc: todayStartUtc } = salonDayRangeUtc(
-    salonToday(ctx.salon.timezone),
-    ctx.salon.timezone,
-  );
-
-  const [waitingRes, waitlistRes, overdueRes, pendingApprovals] =
-    await Promise.all([
-      ctx.supabase
-        .from("bookings")
-        .select("id", { count: "exact", head: true })
-        .eq("salon_id", ctx.salon.id)
-        .eq("status", "waiting")
-        .gte("joined_queue_at", todayStartUtc),
-      // Online waitlist is a separate customer state from an in-salon walk-in.
-      // Keep its badge separate so receptionists never mistake "waiting online"
-      // for "physically waiting in the salon".
-      (async () => {
-        try {
-          // The waitlist table is intentionally RLS-locked. This executes only
-          // after membership has been verified above and returns a count, never
-          // customer details, to the client shell.
-          return await createServiceRoleClient()
-            .from("booking_waitlist_entries")
-            .select("id", { count: "exact", head: true })
-            .eq("salon_id", ctx.salon.id)
-            .in("status", ["waiting", "notified"]);
-        } catch {
-          return { count: 0 };
-        }
-      })(),
-      // Bounded to today, like the waiting query above. Without a lower bound an
-      // in_progress row nobody ever closed out stays overdue forever: one
-      // abandoned booking from 10 days ago held the badge permanently red, which
-      // trains staff to ignore it — the opposite of what an alert is for. The
-      // stale rows themselves are swept by /api/cron/close-stale-in-progress.
-      ctx.supabase
-        .from("bookings")
-        .select("id", { count: "exact", head: true })
-        .eq("salon_id", ctx.salon.id)
-        .eq("status", "in_progress")
-        .gte("start_time_utc", todayStartUtc)
-        .lt("end_time_utc", new Date().toISOString()),
-      // Only fetch pending approvals for owners/admins who can act on them
+  let walkinQueueCount: number;
+  let waitlistCount: number;
+  let overdueCount: number;
+  let pendingApprovalsCount: number;
+  if (shellProjection) {
+    walkinQueueCount = shellProjection.waitingCount;
+    waitlistCount = shellProjection.waitlistCount;
+    overdueCount = shellProjection.overdueCount;
+    pendingApprovalsCount =
       ctx.role === "owner" || ctx.role === "admin"
-        ? getPendingApprovals(ctx.salon.id)
-        : Promise.resolve([]),
-    ]);
-  const walkinQueueCount = waitingRes.count ?? 0;
-  const waitlistCount = waitlistRes.count ?? 0;
-  const overdueCount = overdueRes.count ?? 0;
-  const pendingApprovalsCount = pendingApprovals.length;
+        ? shellProjection.pendingApprovalsCount
+        : 0;
+  } else {
+    const [waitingRes, waitlistRes, overdueRes, pendingApprovals] =
+      await Promise.all([
+        ctx.supabase
+          .from("bookings")
+          .select("id", { count: "exact", head: true })
+          .eq("salon_id", ctx.salon.id)
+          .eq("status", "waiting")
+          .gte("joined_queue_at", todayStartUtc),
+        // Online waitlist is a separate customer state from an in-salon walk-in.
+        // Keep its badge separate so receptionists never mistake "waiting online"
+        // for "physically waiting in the salon".
+        (async () => {
+          try {
+            // The waitlist table is intentionally RLS-locked. This executes only
+            // after membership has been verified above and returns a count, never
+            // customer details, to the client shell.
+            return await createServiceRoleClient()
+              .from("booking_waitlist_entries")
+              .select("id", { count: "exact", head: true })
+              .eq("salon_id", ctx.salon.id)
+              .in("status", ["waiting", "notified"]);
+          } catch {
+            return { count: 0 };
+          }
+        })(),
+        // Bounded to today, like the waiting query above. Without a lower bound an
+        // in_progress row nobody ever closed out stays overdue forever: one
+        // abandoned booking from 10 days ago held the badge permanently red, which
+        // trains staff to ignore it — the opposite of what an alert is for. The
+        // stale rows themselves are swept by /api/cron/close-stale-in-progress.
+        ctx.supabase
+          .from("bookings")
+          .select("id", { count: "exact", head: true })
+          .eq("salon_id", ctx.salon.id)
+          .eq("status", "in_progress")
+          .gte("start_time_utc", todayStartUtc)
+          .lt("end_time_utc", new Date().toISOString()),
+        // Only fetch pending approvals for owners/admins who can act on them
+        ctx.role === "owner" || ctx.role === "admin"
+          ? getPendingApprovals(ctx.salon.id)
+          : Promise.resolve([]),
+      ]);
+    walkinQueueCount = waitingRes.count ?? 0;
+    waitlistCount = waitlistRes.count ?? 0;
+    overdueCount = overdueRes.count ?? 0;
+    pendingApprovalsCount = pendingApprovals.length;
+  }
 
   // Plan/feature inputs are part of the member-safe operational profile.
   // Billing state is not: only owner/admin may receive it, through a guarded
   // service-role read used solely for the trial banner.
-  const { data: billingPlanRow } =
+  const billingPlanRow =
     ctx.role === "owner" || ctx.role === "admin"
-      ? await createServiceRoleClient()
-          .from("salons")
-          .select("subscription_status, trial_ends_at" as never)
-          .eq("id", ctx.salon.id)
-          .maybeSingle()
-      : { data: null };
+      ? shellProjection
+        ? {
+            subscription_status: shellProjection.subscriptionStatus,
+            trial_ends_at: shellProjection.trialEndsAt,
+          }
+        : (
+            await createServiceRoleClient()
+              .from("salons")
+              .select("subscription_status, trial_ends_at" as never)
+              .eq("id", ctx.salon.id)
+              .maybeSingle()
+          ).data
+      : null;
   const billingPlan = (billingPlanRow ?? {}) as {
     subscription_status?: string | null;
     trial_ends_at?: string | null;

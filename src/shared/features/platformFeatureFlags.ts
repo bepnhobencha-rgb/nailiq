@@ -58,6 +58,24 @@ export function platformFeatureFlagKey(key: ReleaseFeatureKey): string {
 }
 
 async function loadPlatformFeatureControlState(): Promise<PlatformFeatureControlState> {
+  const existing = platformFeatureControlFlight;
+  if (existing) return existing;
+
+  const flight = queryPlatformFeatureControlState();
+  platformFeatureControlFlight = flight;
+  try {
+    return await flight;
+  } finally {
+    if (platformFeatureControlFlight === flight) {
+      platformFeatureControlFlight = null;
+    }
+  }
+}
+
+let platformFeatureControlFlight: Promise<PlatformFeatureControlState> | null =
+  null;
+
+async function queryPlatformFeatureControlState(): Promise<PlatformFeatureControlState> {
   const disabled = new Set<ReleaseFeatureKey>();
   const explicitlyEnabled = new Set<ReleaseFeatureKey>();
   let admin: ReturnType<typeof createServiceRoleClient>;
@@ -96,9 +114,7 @@ async function loadPlatformFeatureControlState(): Promise<PlatformFeatureControl
  * platform state was actually available. An absent row is a successful read
  * and therefore means platform ON; client/query failures are distinct.
  */
-export async function loadPlatformDisabledFeaturesState(): Promise<
-  PlatformDisabledFeaturesState
-> {
+export async function loadPlatformDisabledFeaturesState(): Promise<PlatformDisabledFeaturesState> {
   const state = await loadPlatformFeatureControlState();
   return state.available
     ? { available: true, disabled: state.disabled }
@@ -135,17 +151,22 @@ export async function isReleaseFeatureVisible(
   salon: ReleaseFeatureSalon,
   key: ReleaseFeatureKey,
 ): Promise<boolean> {
+  // A tenant-local OFF can never be overturned by the platform flag. Resolve
+  // that side first so default-off/disabled surfaces do not issue an
+  // authoritative platform read on every dashboard document.
+  if (!isReleaseFeatureEnabled(salon, key)) return false;
+
   if (PLATFORM_EXPLICIT_ON_REQUIRED.has(key)) {
     const state = await loadPlatformFeatureControlState();
     return (
       state.available &&
       state.explicitlyEnabled.has(key) &&
       !state.disabled.has(key) &&
-      isReleaseFeatureEnabled(salon, key)
+      true
     );
   }
   const disabled = await loadPlatformDisabledFeatures();
-  return !disabled.has(key) && isReleaseFeatureEnabled(salon, key);
+  return !disabled.has(key);
 }
 
 /** True when a feature is disabled platform-wide (kill-switch on). */
