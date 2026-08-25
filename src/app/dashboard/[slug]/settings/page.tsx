@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { SalonSettingsHub } from "@/components/dashboard/SalonSettingsHub";
+import { GuidedSetupReturnCard } from "@/components/dashboard/GuidedSetupReturnCard";
 import { parseDashboardModules } from "@/shared/dashboard/dashboardModules";
 import { parsePresetKey } from "@/shared/dashboard/dashboardPresets";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
@@ -16,8 +17,12 @@ import { parseSubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import { getLookPresetsForVertical } from "@/shared/verticals/lookPresets";
 import { resolveVertical } from "@/shared/verticals/registry";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 
-type Props = { params: Promise<{ slug: string }> };
+type Props = {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ section?: string | string[] }>;
+};
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
@@ -28,8 +33,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default async function SalonSettingsPage({ params }: Props) {
+export default async function SalonSettingsPage({ params, searchParams }: Props) {
   const { slug } = await params;
+  const requestedSection = (await searchParams).section;
+  const guidedStep =
+    requestedSection === "integrations" ? "integrations" : "communications";
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) {
     redirect("/register");
@@ -198,9 +206,17 @@ export default async function SalonSettingsPage({ params }: Props) {
   // Messaging & Email settings — default ON when column is null (pre-migration safety).
   const smsOutboundEnabled = row?.sms_outbound_enabled !== false;
   const emailOutboundEnabled = row?.email_outbound_enabled !== false;
+  const guidedSetupEnabled = isReleaseFeatureEnabled(
+    { feature_flags: row?.feature_flags },
+    "guided_admin_setup",
+  );
 
   return (
-    <SalonSettingsHub
+    <div className="space-y-5">
+      {guidedSetupEnabled ? (
+        <GuidedSetupReturnCard slug={slug} currentStep={guidedStep} />
+      ) : null}
+      <SalonSettingsHub
       slug={slug}
       dashboardModules={dashboardModules}
       dashboardPreset={dashboardPreset}
@@ -248,6 +264,7 @@ export default async function SalonSettingsPage({ params }: Props) {
       primaryGridAxis={primaryGridAxis}
       smsOutboundEnabled={smsOutboundEnabled}
       emailOutboundEnabled={emailOutboundEnabled}
-    />
+      />
+    </div>
   );
 }

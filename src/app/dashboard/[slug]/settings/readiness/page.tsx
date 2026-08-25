@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { GoLiveReadinessPageContent } from "@/components/dashboard/GoLiveReadinessPanel";
+import { GuidedSetupReturnCard } from "@/components/dashboard/GuidedSetupReturnCard";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { loadGoLiveReadiness } from "@/shared/dashboard/loadGoLiveReadiness";
@@ -23,6 +24,9 @@ export default async function GoLiveReadinessPage({ params }: Props) {
   return (
     <ResponsiveShell>
       <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 sm:pt-6">
+        {result.ok && result.guidedSetupEnabled ? (
+          <GuidedSetupReturnCard slug={slug} currentStep="go-live" />
+        ) : null}
         <GoLiveReadinessPageContent
           slug={slug}
           readiness={result.ok ? result.readiness : null}
@@ -30,6 +34,7 @@ export default async function GoLiveReadinessPage({ params }: Props) {
           role={result.ok ? result.role : null}
           attestationState={result.ok ? result.attestationState : null}
           attestationEvents={result.ok ? result.attestationEvents : []}
+          guidedSetupEnabled={result.ok ? result.guidedSetupEnabled : false}
         />
       </MobileStack>
     </ResponsiveShell>

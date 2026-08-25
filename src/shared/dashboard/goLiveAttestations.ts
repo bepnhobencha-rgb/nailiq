@@ -9,6 +9,16 @@ export type GoLiveAttestationKey =
   (typeof GO_LIVE_ATTESTATION_KEYS)[number];
 export type GoLiveAttestationAction = "attest" | "revoke";
 
+export function isGuidedPilotAttestationBlocked(
+  guidedSetupEnabled: boolean,
+  checkKey: GoLiveAttestationKey,
+): boolean {
+  return (
+    guidedSetupEnabled &&
+    (checkKey === "live_rehearsal_completed" || checkKey === "owner_approved")
+  );
+}
+
 export type GoLiveAttestationEvent = {
   id: string;
   checkKey: GoLiveAttestationKey;

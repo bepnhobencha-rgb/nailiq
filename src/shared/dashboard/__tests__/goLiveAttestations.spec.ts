@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   allGoLivePrerequisitesConfirmed,
   deriveGoLiveAttestationState,
+  isGuidedPilotAttestationBlocked,
   type GoLiveAttestationEvent,
 } from "@/shared/dashboard/goLiveAttestations";
 
@@ -20,6 +21,18 @@ function event(
 }
 
 describe("go-live attestation state", () => {
+  it("blocks rehearsal and final approval only for the Guided QA pilot", () => {
+    expect(
+      isGuidedPilotAttestationBlocked(true, "live_rehearsal_completed"),
+    ).toBe(true);
+    expect(isGuidedPilotAttestationBlocked(true, "owner_approved")).toBe(true);
+    expect(isGuidedPilotAttestationBlocked(true, "hours_confirmed")).toBe(false);
+    expect(
+      isGuidedPilotAttestationBlocked(false, "live_rehearsal_completed"),
+    ).toBe(false);
+    expect(isGuidedPilotAttestationBlocked(false, "owner_approved")).toBe(false);
+  });
+
   it("uses the latest append-only event for every confirmation", () => {
     const state = deriveGoLiveAttestationState(
       [

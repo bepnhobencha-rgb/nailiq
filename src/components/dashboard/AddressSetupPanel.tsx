@@ -32,6 +32,7 @@ import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 const TOAST_ERR = "✗ Could not save. Check your connection.";
 const ERR = {
+  name: "Please enter a salon name",
   street: "Please enter street address",
   city: "Please enter city",
   province: "Please enter province or state",
@@ -42,6 +43,7 @@ const ERR = {
 } as const;
 
 type FieldKey =
+  | "name"
   | "street"
   | "city"
   | "province"
@@ -49,6 +51,23 @@ type FieldKey =
   | "country"
   | "phone"
   | "timezone";
+
+type AddressFormState = {
+  salonName: string;
+  street: string;
+  city: string;
+  province: string;
+  postal: string;
+  country: string;
+  salonPhone: string;
+  currency: Currency;
+  description: string;
+  timezone: string;
+};
+
+function addressFormSignature(state: AddressFormState): string {
+  return JSON.stringify(state);
+}
 
 function serverErrorMessage(code: string): string {
   switch (code) {
@@ -74,6 +93,8 @@ function serverErrorMessage(code: string): string {
 }
 
 function formIsValid(parts: {
+  salonName: string;
+  requireName: boolean;
   street: string;
   city: string;
   province: string;
@@ -83,6 +104,9 @@ function formIsValid(parts: {
   timezone: string;
 }): boolean {
   return (
+    (!parts.requireName ||
+      (parts.salonName.trim().length > 0 &&
+        parts.salonName.trim().length <= 120)) &&
     validateStreet(parts.street) &&
     validateCity(parts.city) &&
     validateProvince(parts.province) &&
@@ -96,13 +120,19 @@ function formIsValid(parts: {
 
 export function AddressSetupPanel({
   slug,
+  initialSalonName = "",
+  showSalonName = false,
   initialAddress,
   initialSalonPhone,
   initialCurrency,
   initialDescription,
   initialTimezone,
+  autoSave = false,
 }: {
   slug: string;
+  /** Guided Setup identity field; legacy address screens keep it hidden. */
+  initialSalonName?: string;
+  showSalonName?: boolean;
   initialAddress: string;
   initialSalonPhone: string;
   /** Salon's display currency at load time. Defaulted to CAD upstream
@@ -116,10 +146,13 @@ export function AddressSetupPanel({
    *  the dropdown falls back to a blank "choose one" placeholder so
    *  the owner makes a conscious selection. */
   initialTimezone?: string;
+  /** Guided Setup only: persist a valid edit after the owner pauses typing. */
+  autoSave?: boolean;
 }) {
   const router = useRouter();
   const parsed = parseStoredAddress(initialAddress);
 
+  const [salonName, setSalonName] = useState(initialSalonName);
   const [street, setStreet] = useState(parsed.street);
   const [city, setCity] = useState(parsed.city);
   const [province, setProvince] = useState(parsed.province);
@@ -156,6 +189,23 @@ export function AddressSetupPanel({
   const [saveBannerError, setSaveBannerError] = useState<string | null>(null);
   const [toast, setToast] = useState<SetupToastPayload | null>(null);
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialFormSignature = addressFormSignature({
+    salonName: initialSalonName,
+    street: parsed.street,
+    city: parsed.city,
+    province: parsed.province,
+    postal: parsed.postal,
+    country: parsed.country,
+    salonPhone: filterSalonPhoneInput(initialSalonPhone),
+    currency: initialCurrency ?? DEFAULT_CURRENCY,
+    description: initialDescription ?? "",
+    timezone:
+      initialTimezone && isAllowedTimezone(initialTimezone)
+        ? initialTimezone
+        : "",
+  });
+  const lastSavedSignatureRef = useRef(initialFormSignature);
+  const lastAutoSaveAttemptRef = useRef(initialFormSignature);
 
   const clearStatusTimer = useCallback(() => {
     if (statusTimerRef.current !== null) {
@@ -174,6 +224,7 @@ export function AddressSetupPanel({
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- props → local form state */
     const p = parseStoredAddress(initialAddress);
+    setSalonName(initialSalonName);
     setStreet(p.street);
     setCity(p.city);
     setProvince(p.province);
@@ -188,25 +239,46 @@ export function AddressSetupPanel({
         : "",
     );
     setFieldErrors({});
+    const nextSignature = addressFormSignature({
+      salonName: initialSalonName,
+      street: p.street,
+      city: p.city,
+      province: p.province,
+      postal: p.postal,
+      country: p.country,
+      salonPhone: filterSalonPhoneInput(initialSalonPhone),
+      currency: initialCurrency ?? DEFAULT_CURRENCY,
+      description: initialDescription ?? "",
+      timezone:
+        initialTimezone && isAllowedTimezone(initialTimezone)
+          ? initialTimezone
+          : "",
+    });
+    lastSavedSignatureRef.current = nextSignature;
+    lastAutoSaveAttemptRef.current = nextSignature;
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [
     initialAddress,
+    initialSalonName,
     initialSalonPhone,
     initialCurrency,
     initialDescription,
     initialTimezone,
   ]);
 
-  const setFieldError = useCallback((key: FieldKey, message: string | null) => {
-    setFieldErrors((prev) => {
-      if (message === null) {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      }
-      return { ...prev, [key]: message };
-    });
-  }, []);
+  const setFieldError = useCallback(
+    (key: FieldKey, message: string | null) => {
+      setFieldErrors((prev) => {
+        if (message === null) {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        }
+        return { ...prev, [key]: message };
+      });
+    },
+    [setFieldErrors],
+  );
 
   const validateStreetField = useCallback(() => {
     if (!validateStreet(street)) setFieldError("street", ERR.street);
@@ -245,6 +317,8 @@ export function AddressSetupPanel({
   }, [timezone, setFieldError]);
 
   const canSave = formIsValid({
+    salonName,
+    requireName: showSalonName,
     street,
     city,
     province,
@@ -254,57 +328,99 @@ export function AddressSetupPanel({
     timezone,
   });
 
-  const save = useCallback(async () => {
-    setSaveBannerError(null);
-    // Task #04-B — guard at the form layer too. `canSave` already
-    // disables the button; this is a belt-and-braces check in case
-    // a future code path bypasses the disabled state. Surfacing the
-    // inline error gives the owner a clearer signal than the
-    // generic toast.
-    if (!isAllowedTimezone(timezone)) {
-      setFieldError("timezone", ERR.timezone);
-      return;
-    }
-    clearStatusTimer();
-    setSaveStatus("saving");
-    const res = await updateAddress(slug, {
-      street,
-      city,
-      province,
-      postal,
-      country,
-      salon_phone: salonPhone,
-      currency_code: currency,
-      description,
-      timezone,
-    });
-    if (!res.ok) {
-      setSaveStatus("error");
-      setSaveBannerError(serverErrorMessage(res.error));
-      setToast({ variant: "error", message: TOAST_ERR });
-      statusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 3000);
-      return;
-    }
-    setSaveStatus("saved");
-    setToast({ variant: "success", message: tLabels.addressSaved });
-    statusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
-    router.refresh();
-  }, [
+  const currentFormSignature = addressFormSignature({
+    salonName,
+    street,
     city,
-    clearStatusTimer,
+    province,
+    postal,
     country,
+    salonPhone,
     currency,
     description,
-    postal,
-    province,
-    router,
-    salonPhone,
-    setFieldError,
-    slug,
-    street,
-    tLabels.addressSaved,
     timezone,
-  ]);
+  });
+
+  const save = useCallback(
+    async (source: "manual" | "auto" = "manual") => {
+      setSaveBannerError(null);
+      // Task #04-B — guard at the form layer too. `canSave` already
+      // disables the button; this is a belt-and-braces check in case
+      // a future code path bypasses the disabled state. Surfacing the
+      // inline error gives the owner a clearer signal than the
+      // generic toast.
+      if (!isAllowedTimezone(timezone)) {
+        setFieldError("timezone", ERR.timezone);
+        return false;
+      }
+      lastAutoSaveAttemptRef.current = currentFormSignature;
+      clearStatusTimer();
+      setSaveStatus("saving");
+      const res = await updateAddress(slug, {
+        ...(showSalonName ? { name: salonName } : {}),
+        street,
+        city,
+        province,
+        postal,
+        country,
+        salon_phone: salonPhone,
+        currency_code: currency,
+        description,
+        timezone,
+      });
+      if (!res.ok) {
+        setSaveStatus("error");
+        setSaveBannerError(serverErrorMessage(res.error));
+        setToast({ variant: "error", message: TOAST_ERR });
+        statusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 3000);
+        return false;
+      }
+      lastSavedSignatureRef.current = currentFormSignature;
+      setSaveStatus("saved");
+      setToast({ variant: "success", message: tLabels.addressSaved });
+      statusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
+      if (source === "manual") router.refresh();
+      return true;
+    },
+    [
+      city,
+      clearStatusTimer,
+      country,
+      currentFormSignature,
+      currency,
+      description,
+      postal,
+      province,
+      router,
+      salonName,
+      salonPhone,
+      setSaveBannerError,
+      setSaveStatus,
+      setToast,
+      setFieldError,
+      showSalonName,
+      slug,
+      street,
+      tLabels.addressSaved,
+      timezone,
+    ],
+  );
+
+  useEffect(() => {
+    if (!autoSave || !canSave || saveStatus === "saving") return;
+    if (
+      currentFormSignature === lastSavedSignatureRef.current ||
+      currentFormSignature === lastAutoSaveAttemptRef.current
+    ) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      lastAutoSaveAttemptRef.current = currentFormSignature;
+      void save("auto");
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [autoSave, canSave, currentFormSignature, save, saveStatus]);
 
   const inputRing =
     "rounded-xl border bg-nq-bg/90 px-3 py-2.5 text-base text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus";
@@ -318,6 +434,43 @@ export function AddressSetupPanel({
         <p className="rounded-xl border border-nq-error/40 bg-nq-error/10 px-4 py-3 text-sm text-nq-error">
           {saveBannerError}
         </p>
+      ) : null}
+
+      {showSalonName ? (
+        <label className={labelClass}>
+          <span>{pageLang === "vi" ? "Tên salon" : "Salon name"}</span>
+          <span className="text-[#FF375F]" aria-hidden>
+            {" "}
+            *
+          </span>
+          <input
+            type="text"
+            autoComplete="organization"
+            data-testid="setup-salon-name"
+            className={cn(
+              "mt-1.5 flex min-h-[44px] w-full border",
+              inputRing,
+              fieldErrors.name ? "border-red-500/50" : "border-nq-border/50",
+            )}
+            value={salonName}
+            disabled={saveStatus === "saving"}
+            maxLength={120}
+            onBlur={() => {
+              const valid =
+                salonName.trim().length > 0 && salonName.trim().length <= 120;
+              setFieldError("name", valid ? null : ERR.name);
+            }}
+            onChange={(event) => {
+              setSalonName(event.target.value);
+              if (fieldErrors.name) setFieldError("name", null);
+            }}
+          />
+          {fieldErrors.name ? (
+            <p className="mt-1 text-sm text-[#FF375F]" role="alert">
+              {fieldErrors.name}
+            </p>
+          ) : null}
+        </label>
       ) : null}
 
       <label className={labelClass}>
@@ -576,8 +729,8 @@ export function AddressSetupPanel({
       <label className="block text-sm font-medium text-nq-foreground">
         Currency
         <span className="block text-xs font-normal text-nq-muted/85">
-          Used to display service prices and revenue totals across the
-          public booking page and your dashboard.
+          Used to display service prices and revenue totals across the public
+          booking page and your dashboard.
         </span>
         <select
           className={cn(
@@ -604,9 +757,8 @@ export function AddressSetupPanel({
       <label className={labelClass}>
         <span>Mô tả tiệm · Salon description</span>
         <span className="block text-xs font-normal text-nq-muted/85">
-          Hiển thị trên trang đặt lịch dưới tên tiệm — tối đa 400 ký tự.
-          {" "}
-          Shown on the booking page below the salon name (optional, max 400 chars).
+          Hiển thị trên trang đặt lịch dưới tên tiệm — tối đa 400 ký tự. Shown
+          on the booking page below the salon name (optional, max 400 chars).
         </span>
         <textarea
           data-testid="setup-salon-description"
@@ -629,11 +781,22 @@ export function AddressSetupPanel({
       <SaveButton
         status={saveStatus}
         onSave={() => {
-          void save();
+          void save("manual");
         }}
         disabled={!canSave}
         className="min-h-[48px] w-full sm:w-full"
       />
+      {autoSave ? (
+        <p
+          className="text-center text-xs leading-5 text-nq-muted"
+          data-testid="guided-autosave-message"
+          aria-live="polite"
+        >
+          {pageLang === "vi"
+            ? "Các thay đổi hợp lệ sẽ tự lưu sau khi bạn dừng nhập. Nút Lưu vẫn sẵn sàng để bạn lưu ngay."
+            : "Valid changes save automatically after you pause. The Save button remains available to save immediately."}
+        </p>
+      ) : null}
     </div>
   );
 }

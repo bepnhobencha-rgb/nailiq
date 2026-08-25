@@ -4,7 +4,9 @@ import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { loadNoShowDashboard } from "@/shared/noshow/noShowDashboardActions";
 import { NoShowProtectionHub } from "@/components/dashboard/NoShowProtectionHub";
 import { SquareSyncCard } from "@/components/dashboard/SquareSyncCard";
+import { GuidedSetupReturnCard } from "@/components/dashboard/GuidedSetupReturnCard";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -92,9 +94,20 @@ export default async function NoShowProtectionPage({ params }: Props) {
 
   const result = await loadNoShowDashboard(slug);
   if (!result.ok) redirect(`/dashboard/${slug}`);
+  const guidedSetupEnabled = isReleaseFeatureEnabled(
+    { feature_flags: row?.feature_flags },
+    "guided_admin_setup",
+  );
+  const groupBookingEnabled = isReleaseFeatureEnabled(
+    { feature_flags: row?.feature_flags },
+    "group_booking",
+  );
 
   return (
     <div className="space-y-6">
+    {guidedSetupEnabled ? (
+      <GuidedSetupReturnCard slug={slug} currentStep="booking-policies" />
+    ) : null}
     <NoShowProtectionHub
       slug={slug}
       salonId={ctx.salon.id}
@@ -119,6 +132,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
       connectDetailsSubmitted={row?.stripe_connect_details_submitted ?? false}
       paymentProvider={row?.payment_provider ?? null}
       noshowProtectionEnabled={row?.noshow_protection_enabled ?? false}
+      groupBookingEnabled={groupBookingEnabled}
       noshowGroupWholeParty={row?.noshow_group_whole_party !== false}
       noshowDepositEscalationThreshold={row?.noshow_deposit_escalation_threshold ?? null}
       noshowRequireNewCustomer={row?.noshow_require_new_customer !== false}

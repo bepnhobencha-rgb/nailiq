@@ -66,6 +66,7 @@ export type BetaFeatureKey =
   | "ai_control_center"
   | "receptionist_shell_v2"
   | "waitlist_attention"
+  | "guided_admin_setup"
   | "nail_tryon"
   | "archived_booking_recovery";
 
@@ -344,6 +345,16 @@ export const RELEASE_FEATURES: Record<ReleaseFeatureKey, ReleaseFeatureDescripto
     source: { kind: "jsonb", flagKey: "waitlist_attention_enabled" },
     description:
       "Realtime Action Center alert and bounded sound reminder for unresolved online waitlist requests.",
+  },
+  guided_admin_setup: {
+    key: "guided_admin_setup",
+    label: "Guided Admin Setup",
+    group: "platform",
+    phase: "beta",
+    defaultOn: false,
+    source: { kind: "jsonb", flagKey: "guided_admin_setup_enabled" },
+    description:
+      "One-next-step onboarding driven by the salon's real go-live readiness.",
   },
   nail_tryon: {
     key: "nail_tryon",

@@ -3,8 +3,10 @@ import { redirect } from "next/navigation";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
+import { GuidedSetupReturnCard } from "@/components/dashboard/GuidedSetupReturnCard";
 import { AddressSetupPanel } from "@/components/dashboard/AddressSetupPanel";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -50,26 +52,44 @@ export default async function SetupAddressPage({ params }: Props) {
   } | null;
   const initialCurrency = parseCurrency(extraData?.currency_code);
   const initialDescription =
-    typeof extraData?.description === "string"
-      ? extraData.description
-      : "";
+    typeof extraData?.description === "string" ? extraData.description : "";
   const initialTimezone =
-    typeof extraData?.timezone === "string" && extraData.timezone.trim().length > 0
+    typeof extraData?.timezone === "string" &&
+    extraData.timezone.trim().length > 0
       ? extraData.timezone
       : "";
+  const guidedSetupEnabled = isReleaseFeatureEnabled(
+    ctx.salon,
+    "guided_admin_setup",
+  );
 
   return (
     <ResponsiveShell>
       <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-4 sm:pt-6">
-        <SetupBackNav slug={slug} title="Địa chỉ tiệm · Salon address" />
+        <SetupBackNav
+          slug={slug}
+          title="Địa chỉ tiệm · Salon address"
+          backHref={
+            guidedSetupEnabled
+              ? `/dashboard/${encodeURIComponent(slug)}/setup`
+              : undefined
+          }
+          backLabel={guidedSetupEnabled ? "← Setup" : undefined}
+        />
         <AddressSetupPanel
           slug={slug}
+          initialSalonName={ctx.salon.name ?? ""}
+          showSalonName={guidedSetupEnabled}
           initialAddress={ctx.salon.address ?? ""}
           initialSalonPhone={ctx.salon.salon_phone ?? ""}
           initialCurrency={initialCurrency}
           initialDescription={initialDescription}
           initialTimezone={initialTimezone}
+          autoSave={guidedSetupEnabled}
         />
+        {guidedSetupEnabled ? (
+          <GuidedSetupReturnCard slug={slug} currentStep="salon-profile" />
+        ) : null}
       </MobileStack>
     </ResponsiveShell>
   );

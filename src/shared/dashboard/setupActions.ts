@@ -23,6 +23,7 @@ import {
   type OpeningHoursWeek,
 } from "@/shared/dashboard/openingHoursDefaults";
 import {
+  isValidBookingClosedDate,
   normalizeBookingClosedDateList,
 } from "@/shared/booking/parseBookingClosedDates";
 import {
@@ -1226,6 +1227,13 @@ export async function updateOpeningHours(
   if (!revalidated) {
     return fail("invalid_hours");
   }
+  const openDays = Object.values(revalidated).filter((day) => !day.closed);
+  if (
+    openDays.length === 0 ||
+    openDays.some((day) => day.open.trim() >= day.close.trim())
+  ) {
+    return fail("invalid_hours");
+  }
 
   let serialized: string;
   try {
@@ -1237,6 +1245,9 @@ export async function updateOpeningHours(
   const datesForClosed = Array.isArray(closedDatesYmd)
     ? closedDatesYmd.filter((x): x is string => typeof x === "string")
     : [];
+  if (datesForClosed.some((date) => !isValidBookingClosedDate(date))) {
+    return fail("invalid_hours");
+  }
   const closedJson = normalizeBookingClosedDateList(datesForClosed);
 
   // Both languages must be filled or the notice is dropped entirely — a
@@ -1334,6 +1345,8 @@ export async function updateOpeningHours(
 export async function updateAddress(
   slug: string,
   input: {
+    /** Guided Setup identity field. Omitted by legacy address callers. */
+    name?: string;
     street: string;
     city: string;
     province: string;
@@ -1368,6 +1381,12 @@ export async function updateAddress(
   const salonPhone = input.salon_phone.trim();
   if (!isValidPhone(salonPhone)) return fail("invalid_phone");
   if (salonPhone.length > 40) return fail("invalid_phone");
+
+  let salonName: string | undefined;
+  if (input.name !== undefined) {
+    salonName = input.name.trim();
+    if (!salonName || salonName.length > 120) return fail("invalid_name");
+  }
 
   if (!validateStreet(input.street)) return fail("invalid_street");
   if (!validateCity(input.city)) return fail("invalid_city");
@@ -1430,6 +1449,7 @@ export async function updateAddress(
   const patch = {
     address,
     salon_phone: salonPhone,
+    ...(salonName !== undefined ? { name: salonName } : {}),
     ...(currencyCode !== undefined ? { currency_code: currencyCode } : {}),
     ...(descriptionPatch !== undefined
       ? { description: descriptionPatch }
@@ -1482,6 +1502,8 @@ export async function getDashboardWriteClient(slug: string): Promise<
         dashboard_preset: unknown | null;
         dashboard_density: unknown | null;
         currency_code: unknown | null;
+        /** Per-salon release overrides used by setup route gates. */
+        feature_flags?: unknown | null;
       };
       kind: "member" | "demo_cookie";
       /** `salon_members.role` for this user-salon pair. Demo-cookie path is `"owner"`. */

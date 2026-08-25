@@ -106,6 +106,7 @@ export function GoLiveReadinessPanel({
   role,
   attestationState,
   attestationEvents,
+  guidedSetupEnabled,
 }: {
   readiness: GoLiveReadiness;
   salonName: string;
@@ -113,6 +114,7 @@ export function GoLiveReadinessPanel({
   role: "owner" | "admin";
   attestationState: GoLiveAttestationState;
   attestationEvents: GoLiveAttestationEvent[];
+  guidedSetupEnabled: boolean;
 }) {
   const { language } = useUserLanguage();
   const vi = language === "vi";
@@ -226,6 +228,7 @@ export function GoLiveReadinessPanel({
         readiness={readiness}
         state={attestationState}
         events={attestationEvents}
+        guidedSetupEnabled={guidedSetupEnabled}
       />
     </div>
   );
@@ -238,6 +241,7 @@ export function GoLiveReadinessPageContent({
   role,
   attestationState,
   attestationEvents,
+  guidedSetupEnabled,
 }: {
   slug: string;
   readiness: GoLiveReadiness | null;
@@ -245,6 +249,7 @@ export function GoLiveReadinessPageContent({
   role: "owner" | "admin" | null;
   attestationState: GoLiveAttestationState | null;
   attestationEvents: GoLiveAttestationEvent[];
+  guidedSetupEnabled: boolean;
 }) {
   const { language } = useUserLanguage();
   const vi = language === "vi";
@@ -273,6 +278,7 @@ export function GoLiveReadinessPageContent({
           role={role}
           attestationState={attestationState}
           attestationEvents={attestationEvents}
+          guidedSetupEnabled={guidedSetupEnabled}
         />
       )}
     </>

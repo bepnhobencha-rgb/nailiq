@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
+import { GuidedSetupReturnCard } from "@/components/dashboard/GuidedSetupReturnCard";
 import { ServicesSetupPanel } from "@/components/dashboard/ServicesSetupPanel";
 import { loadServiceCategories } from "@/shared/booking/loadServiceCategories";
 import { parseServiceCategory } from "@/shared/booking/serviceCategory";
@@ -11,6 +12,7 @@ import { getUserMessages } from "@/shared/i18n/user";
 import { resolveUserLanguage } from "@/shared/i18n/user/resolveUserLanguage";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
 import { getEffectivePlanLimits } from "@/shared/lib/subscriptionPlans";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -75,11 +77,24 @@ export default async function SetupServicesPage({ params }: Props) {
   const categories = await loadServiceCategories();
   const language = await resolveUserLanguage();
   const t = getUserMessages(language);
+  const guidedSetupEnabled = isReleaseFeatureEnabled(
+    ctx.salon,
+    "guided_admin_setup",
+  );
 
   return (
     <ResponsiveShell>
       <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-4 sm:pt-6">
-        <SetupBackNav slug={slug} title={t.setupLabels.servicesTitle} />
+        <SetupBackNav
+          slug={slug}
+          title={t.setupLabels.servicesTitle}
+          backHref={
+            guidedSetupEnabled
+              ? `/dashboard/${encodeURIComponent(slug)}/setup`
+              : undefined
+          }
+          backLabel={guidedSetupEnabled ? "← Setup" : undefined}
+        />
         <ServicesSetupPanel
           slug={slug}
           maxServices={maxServices}
@@ -132,6 +147,9 @@ export default async function SetupServicesPage({ params }: Props) {
             };
           })}
         />
+        {guidedSetupEnabled ? (
+          <GuidedSetupReturnCard slug={slug} currentStep="service-menu" />
+        ) : null}
       </MobileStack>
     </ResponsiveShell>
   );

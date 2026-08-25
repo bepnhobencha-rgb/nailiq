@@ -2,8 +2,10 @@ import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import {
   evaluateGoLiveReadiness,
   type GoLiveReadiness,
+  type GoLiveReadinessInput,
 } from "@/shared/dashboard/goLiveReadiness";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import {
   deriveGoLiveAttestationState,
   GO_LIVE_ATTESTATION_KEYS,
@@ -16,6 +18,8 @@ import {
   createGoLiveApprovalSnapshotHash,
   createGoLiveReadinessSnapshotHash,
 } from "@/shared/dashboard/goLiveReadinessSnapshot";
+import { normalizeBookingClosedDateList } from "@/shared/booking/parseBookingClosedDates";
+import { selectReadinessServices } from "@/shared/dashboard/readinessServiceSelection";
 
 export type LoadGoLiveReadinessResult =
   | {
@@ -27,6 +31,7 @@ export type LoadGoLiveReadinessResult =
       attestationState: GoLiveAttestationState;
       attestationEvents: GoLiveAttestationEvent[];
       latestAttestationEvents: GoLiveAttestationEvent[];
+      guidedSetupEnabled: boolean;
     }
   | { ok: false; reason: "unauthorized" | "unavailable" };
 
@@ -62,18 +67,18 @@ export async function loadGoLiveReadiness(
     ctx.supabase
       .from("salons")
       .select(
-        "name, address, salon_phone, timezone, opening_hours, profile_complete, email, email_verified, email_links_enabled, phone_otp_enabled",
+        "name, address, salon_phone, timezone, opening_hours, booking_closed_dates, profile_complete, email, email_verified, email_links_enabled, phone_otp_enabled, cancellation_policy, default_notification_locale, payment_provider, voice_ai_enabled, feature_flags, group_together_threshold_minutes, noshow_group_whole_party",
       )
       .eq("id", ctx.salon.id)
       .maybeSingle(),
     ctx.supabase
       .from("services")
-      .select("id, price_cents, duration_minutes")
+      .select("id, price_cents, duration_minutes, is_addon")
       .eq("salon_id", ctx.salon.id)
       .is("deleted_at" as never, null),
     ctx.supabase
       .from("staff")
-      .select("id")
+      .select("id, job_role, user_id")
       .eq("salon_id", ctx.salon.id)
       .eq("status", "active")
       .is("deleted_at" as never, null),
@@ -115,25 +120,39 @@ export async function loadGoLiveReadiness(
         salon_phone?: unknown;
         timezone?: unknown;
         opening_hours?: unknown;
+        booking_closed_dates?: unknown;
         profile_complete?: unknown;
         email?: unknown;
         email_verified?: unknown;
         email_links_enabled?: unknown;
         phone_otp_enabled?: unknown;
+        cancellation_policy?: unknown;
+        default_notification_locale?: unknown;
+        payment_provider?: unknown;
+        voice_ai_enabled?: unknown;
+        feature_flags?: unknown;
+        group_together_threshold_minutes?: unknown;
+        noshow_group_whole_party?: unknown;
       }
     | null;
 
   if (!row) return { ok: false, reason: "unavailable" };
 
+  const guidedSetupEnabled = isReleaseFeatureEnabled(
+    ctx.salon,
+    "guided_admin_setup",
+  );
+
   const salonName =
     typeof row.name === "string" && row.name.trim()
       ? row.name.trim()
       : ctx.salon.name || slug;
-  const activeServices = (servicesResult.data ?? []).map((service) => {
+  const serviceCandidates = (servicesResult.data ?? []).map((service) => {
     const value = service as {
       id?: unknown;
       price_cents?: unknown;
       duration_minutes?: unknown;
+      is_addon?: unknown;
     };
     return {
       id: typeof value.id === "string" ? value.id : "",
@@ -143,14 +162,81 @@ export async function loadGoLiveReadiness(
         typeof value.duration_minutes === "number"
           ? value.duration_minutes
           : null,
+      isAddon: value.is_addon === true,
     };
   });
-  const activeStaffIds = (staffResult.data ?? [])
-    .map((staff) => {
-      const value = staff as { id?: unknown };
-      return typeof value.id === "string" ? value.id : "";
+  const activeServices = selectReadinessServices(
+    serviceCandidates,
+    guidedSetupEnabled,
+  );
+  const allowedJobRoles = new Set(["owner", "senior", "nail_tech"]);
+  const activeStaff = (staffResult.data ?? []).flatMap((staff) => {
+    const value = staff as {
+      id?: unknown;
+      job_role?: unknown;
+      user_id?: unknown;
+    };
+    if (typeof value.id !== "string") return [];
+    const userId = typeof value.user_id === "string" ? value.user_id : null;
+    return [{
+      id: value.id,
+      jobRole: typeof value.job_role === "string" ? value.job_role : null,
+      userId,
+      // Do not infer an authorization state from the normal salon_members
+      // RLS view (it exposes only the caller), and do not call a service-role
+      // helper from this readiness loader. Linked accounts therefore remain
+      // explicitly unverified until a separately approved auth-safe API exists.
+      membershipRole: null,
+      accessActive: null,
+    }];
+  });
+  const activeStaffIds = activeStaff.map((staff) => staff.id);
+  const staffAccessValid =
+    activeStaff.every(
+      (staff) =>
+        staff.jobRole !== null &&
+        allowedJobRoles.has(staff.jobRole) &&
+        staff.userId === null,
+    );
+  const capabilityResult =
+    guidedSetupEnabled && activeStaffIds.length > 0
+      ? await ctx.supabase
+          .from("staff_services")
+          .select("staff_id, service_id")
+          .in("staff_id", activeStaffIds)
+      : { data: [], error: null };
+  if (capabilityResult.error) {
+    console.error("[loadGoLiveReadiness] staff_services", {
+      code: capabilityResult.error.code,
+    });
+    return { ok: false, reason: "unavailable" };
+  }
+  const activeServiceIds = new Set(
+    activeServices.map((service) => service.id).filter(Boolean),
+  );
+  const activeStaffIdSet = new Set(activeStaffIds);
+  const serviceCapabilitySignature = (capabilityResult.data ?? [])
+    .flatMap((capability) => {
+      const value = capability as { staff_id?: unknown; service_id?: unknown };
+      if (
+        typeof value.staff_id !== "string" ||
+        typeof value.service_id !== "string" ||
+        !activeStaffIdSet.has(value.staff_id) ||
+        !activeServiceIds.has(value.service_id)
+      ) {
+        return [];
+      }
+      return [{ staffId: value.staff_id, serviceId: value.service_id }];
     })
-    .filter(Boolean);
+    .sort((a, b) =>
+      `${a.serviceId}:${a.staffId}`.localeCompare(`${b.serviceId}:${b.staffId}`),
+    );
+  const coveredServiceIds = new Set(
+    serviceCapabilitySignature.map((capability) => capability.serviceId),
+  );
+  const serviceCoverageValid = activeServices.every(
+    (service) => Boolean(service.id) && coveredServiceIds.has(service.id),
+  );
   function parseAttestationEvents(data: unknown[]): GoLiveAttestationEvent[] {
     return data
     .map((event): GoLiveAttestationEvent | null => {
@@ -199,7 +285,7 @@ export async function loadGoLiveReadiness(
     ),
   );
 
-  const readinessInput = {
+  const readinessInput: GoLiveReadinessInput = {
     slug,
     name: typeof row.name === "string" ? row.name : null,
     address: typeof row.address === "string" ? row.address : null,
@@ -212,11 +298,79 @@ export async function loadGoLiveReadiness(
     emailVerified: row.email_verified === true,
     emailLinksEnabled: row.email_links_enabled !== false,
     phoneOtpEnabled: row.phone_otp_enabled === true,
+    ...(guidedSetupEnabled
+      ? {
+          bookingClosedDates: row.booking_closed_dates,
+          cancellationPolicy: row.cancellation_policy,
+          defaultNotificationLocale: row.default_notification_locale,
+          paymentProvider: row.payment_provider,
+          voiceAiEnabled: row.voice_ai_enabled === true,
+          guidedSetupEnabled: true,
+          staffAccessValid,
+          serviceCoverageValid,
+          groupBookingEnabled: isReleaseFeatureEnabled(
+            { feature_flags: row.feature_flags },
+            "group_booking",
+          ),
+          groupTogetherThresholdMinutes: row.group_together_threshold_minutes,
+          noShowGroupWholeParty: row.noshow_group_whole_party,
+        }
+      : {}),
     activeServices,
     activeStaffCount: activeStaffIds.length,
   };
   const technicalSnapshotHash = createGoLiveReadinessSnapshotHash({
-    ...readinessInput,
+    // Preserve the exact pre-pilot material for flag-OFF salons. These runtime
+    // keys were part of the historical spread and existing owner approvals
+    // must not become stale merely because Guided Setup code is present.
+    slug: readinessInput.slug,
+    name: readinessInput.name,
+    address: readinessInput.address,
+    salonPhone: readinessInput.salonPhone,
+    timezone: readinessInput.timezone,
+    openingHours: readinessInput.openingHours,
+    ...(guidedSetupEnabled
+      ? {
+          bookingClosedDates: normalizeBookingClosedDateList(
+            readinessInput.bookingClosedDates,
+          ),
+          cancellationPolicy: readinessInput.cancellationPolicy,
+          defaultNotificationLocale: readinessInput.defaultNotificationLocale,
+          paymentProvider: readinessInput.paymentProvider,
+          voiceAiEnabled: readinessInput.voiceAiEnabled,
+        }
+      : {}),
+    profileComplete: readinessInput.profileComplete,
+    email: readinessInput.email,
+    emailVerified: readinessInput.emailVerified,
+    emailLinksEnabled: readinessInput.emailLinksEnabled,
+    phoneOtpEnabled: readinessInput.phoneOtpEnabled,
+    activeServices,
+    activeStaffCount: activeStaffIds.length,
+    // Turning the QA pilot on starts a new approval contract. Omit the false
+    // value so existing, flag-off salons retain their exact historical hash.
+    ...(guidedSetupEnabled ? { guidedSetupEnabled: true as const } : {}),
+    ...(guidedSetupEnabled
+      ? {
+          staffAccessSignature: activeStaff.map((staff) => ({
+            staffId: staff.id,
+            jobRole: staff.jobRole,
+            userId: staff.userId,
+            membershipRole: staff.membershipRole,
+            accessActive: staff.accessActive,
+          })),
+          serviceCapabilitySignature,
+          groupBookingEnabled: readinessInput.groupBookingEnabled,
+          groupTogetherThresholdMinutes:
+            typeof readinessInput.groupTogetherThresholdMinutes === "number"
+              ? readinessInput.groupTogetherThresholdMinutes
+              : null,
+          noShowGroupWholeParty:
+            typeof readinessInput.noShowGroupWholeParty === "boolean"
+              ? readinessInput.noShowGroupWholeParty
+              : null,
+        }
+      : {}),
     services: activeServices,
     activeStaffIds,
   });
@@ -237,6 +391,7 @@ export async function loadGoLiveReadiness(
     attestationState,
     attestationEvents,
     latestAttestationEvents,
+    guidedSetupEnabled,
     readiness: evaluateGoLiveReadiness({
       ...readinessInput,
       humanAttestations: attestationState,

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import {
   allGoLivePrerequisitesConfirmed,
   GO_LIVE_ATTESTATION_KEYS,
+  isGuidedPilotAttestationBlocked,
   type GoLiveAttestationAction,
   type GoLiveAttestationKey,
 } from "@/shared/dashboard/goLiveAttestations";
@@ -21,6 +22,7 @@ export type RecordGoLiveAttestationResult =
         | "invalid_input"
         | "technical_gates_incomplete"
         | "prerequisites_incomplete"
+        | "guided_preview_unavailable"
         | "unavailable";
     };
 
@@ -70,6 +72,14 @@ export async function recordGoLiveAttestation(
       reason:
         loaded.reason === "unauthorized" ? "unauthorized" : "unavailable",
     };
+  }
+  if (
+    isGuidedPilotAttestationBlocked(
+      loaded.guidedSetupEnabled,
+      input.checkKey,
+    )
+  ) {
+    return { ok: false, reason: "guided_preview_unavailable" };
   }
 
   const latestForKey = loaded.latestAttestationEvents.find(

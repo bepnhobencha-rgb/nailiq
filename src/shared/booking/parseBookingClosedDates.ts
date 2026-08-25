@@ -8,11 +8,28 @@ export function parseBookingClosedDateSet(raw: unknown): Set<string> {
   for (const x of raw) {
     if (typeof x !== "string") continue;
     const ymd = x.trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+    if (isValidBookingClosedDate(ymd)) {
       out.add(ymd);
     }
   }
   return out;
+}
+
+/** Strict calendar validation; regex-only checks accepted dates like 2026-99-99. */
+export function isValidBookingClosedDate(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const ymd = value.trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
 }
 
 export function normalizeBookingClosedDateList(dates: unknown): string[] {
@@ -22,7 +39,7 @@ export function normalizeBookingClosedDateList(dates: unknown): string[] {
   for (const d of dates) {
     if (typeof d !== "string") continue;
     const ymd = d.trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) continue;
+    if (!isValidBookingClosedDate(ymd)) continue;
     if (seen.has(ymd)) continue;
     seen.add(ymd);
     out.push(ymd);

@@ -184,6 +184,7 @@ jobs:
               e2e/client-identity-merge.spec.ts
               e2e/dashboard.spec.ts
               e2e/group-booking
+              e2e/guided-admin-setup.spec.ts
               e2e/landing-funnel.spec.ts
               e2e/noshow-confirm.spec.ts
               e2e/noshow-deposit.spec.ts
@@ -451,6 +452,17 @@ jobs:
         run: npx playwright test ${{ matrix.testpath }} ${{ steps.projects.outputs.flag }} --reporter=list,html,json
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
+      - name: Run Guided Setup mobile certification
+        if: >-
+          steps.preflight.outputs.configured == 'true' &&
+          matrix.shard == 1 &&
+          github.event_name == 'pull_request'
+        # The primary suite proves the complete owner/admin journey in Chromium.
+        # Re-run only Guided Setup with the mobile project to certify that the
+        # single-next-step journey stays usable on a receptionist tablet/phone.
+        run: >-
+          npx playwright test e2e/guided-admin-setup.spec.ts
+          --project=mobile --reporter=list
       - name: Run Reports hydration regression in WebKit
         if: >-
           always() &&

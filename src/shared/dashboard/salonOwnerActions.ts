@@ -57,7 +57,7 @@ import { ACTIVE_GRID_STATUSES } from "@/shared/types";
  *  at the time of writing; the column itself exists. Here we read
  *  the value through `as { … }` casts at the call site instead. */
 const SALON_DASHBOARD_SELECT =
-  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete, booking_closed_dates, closure_notice, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, subscription_plan, plan_override, feature_flags, voice_ai_enabled, basic_mode_forced, walkin_auto_assign, queue_display_mode, staff_notification_settings, auto_no_show_minutes, vertical";
+  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete, booking_closed_dates, closure_notice, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, subscription_plan, plan_override, feature_flags, voice_ai_enabled, basic_mode_forced, walkin_auto_assign, queue_display_mode, staff_notification_settings, default_notification_locale, auto_no_show_minutes, vertical";
 
 type SalonRow = {
   id: string;
@@ -99,6 +99,7 @@ type SalonRow = {
   walkin_auto_assign?: boolean | null;
   queue_display_mode?: string | null;
   staff_notification_settings?: unknown;
+  default_notification_locale?: unknown;
   auto_no_show_minutes?: number | null;
   /** Business vertical slug (e.g. "nail_salon", "head_spa"). */
   vertical?: string | null;
@@ -319,6 +320,7 @@ async function getSalonIfMember(
       walkin_auto_assign: row.walkin_auto_assign ?? null,
       queue_display_mode: row.queue_display_mode ?? null,
       staff_notification_settings: row.staff_notification_settings ?? null,
+      default_notification_locale: row.default_notification_locale ?? null,
       auto_no_show_minutes: row.auto_no_show_minutes ?? null,
     },
     role,
@@ -344,6 +346,8 @@ export type LoadSalonDashboardResult =
         profile_complete: boolean;
         timezone: string;
         vertical: string | null;
+        /** Per-salon release overrides used by server-side dashboard gates. */
+        feature_flags: unknown | null;
       };
       setup: {
         services_count: number;
@@ -452,6 +456,7 @@ export async function loadSalonOwnerDashboard(
       profile_complete: !!salon.profile_complete,
       timezone: salon.timezone || "UTC",
       vertical: typeof salon.vertical === "string" ? salon.vertical : null,
+      feature_flags: salon.feature_flags ?? null,
     },
     setup: {
       services_count: servicesCount ?? 0,
