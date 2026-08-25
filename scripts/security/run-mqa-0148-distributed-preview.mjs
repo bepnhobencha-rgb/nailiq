@@ -137,6 +137,41 @@ async function deleteQaRateLimits(db) {
   }
 }
 
+async function verifyQaLoadStateZero(db) {
+  const [salons, bookings, bookingLimits, edgeAuthLimits, actionAuthLimits, users] =
+    await Promise.all([
+      db.from("salons").select("*", { count: "exact", head: true }).like("slug", "e2e-mqa-0148-%"),
+      db.from("bookings").select("*", { count: "exact", head: true }).like("client_name", "Load Guest %"),
+      db.from("rate_limits").select("*", { count: "exact", head: true }).like("bucket", "public-edge:booking-page:%"),
+      db.from("rate_limits").select("*", { count: "exact", head: true }).like("bucket", "public-edge:auth:%"),
+      db.from("rate_limits").select("*", { count: "exact", head: true }).like("bucket", "public:auth-password-signin:%"),
+      db.auth.admin.listUsers({ page: 1, perPage: 1_000 }),
+    ]);
+  for (const result of [salons, bookings, bookingLimits, edgeAuthLimits, actionAuthLimits]) {
+    if (result.error) {
+      throw new Error(`QA cleanup verification failed: ${result.error.message}`);
+    }
+  }
+  if (users.error) {
+    throw new Error(`QA auth cleanup verification failed: ${users.error.message}`);
+  }
+  const snapshot = {
+    salons: salons.count ?? -1,
+    bookings: bookings.count ?? -1,
+    rateLimits:
+      (bookingLimits.count ?? -1) +
+      (edgeAuthLimits.count ?? -1) +
+      (actionAuthLimits.count ?? -1),
+    users: users.data.users.filter((user) =>
+      /^e2e-user-.*@nailiq\.test\.invalid$/i.test(user.email ?? ""),
+    ).length,
+  };
+  if (Object.values(snapshot).some((count) => count !== 0)) {
+    throw new Error(`QA cleanup left state: ${JSON.stringify(snapshot)}`);
+  }
+  return snapshot;
+}
+
 async function readQaRateLimits(db, prefix) {
   const rows = [];
   const pageSize = 500;
@@ -165,19 +200,17 @@ async function sourceProof(db, stage) {
     minuteCountTotal: minute.reduce((sum, row) => sum + Number(row.count), 0),
     hourCountTotal: hour.reduce((sum, row) => sum + Number(row.count), 0),
   };
-  if (
+  const passed = !(
     proof.observedMinuteRows < 10 ||
     proof.observedHourRows < 10 ||
     proof.minuteCountTotal !== expectedPublic ||
     proof.hourCountTotal !== expectedPublic
-  ) {
-    throw new Error(`distributed source proof failed: ${JSON.stringify(proof)}`);
-  }
-  return proof;
+  );
+  return { ...proof, passed };
 }
 
 function triggerWorkflow({ candidateSha, baseURL, stage }) {
-  const startEpochMs = Date.now() + 5 * 60_000;
+  const startEpochMs = Date.now() + 3 * 60_000;
   const triggeredAfter = Date.now() - 5_000;
   run("gh", [
     "workflow",
@@ -418,6 +451,7 @@ const db = createClient(qaSupabaseUrl, serviceKey, {
 const temporaryDirectory = mkdtempSync(join(tmpdir(), "nailiq-mqa-0148-distributed-"));
 const receipts = [];
 let activeFixture;
+let cleanupSnapshot;
 
 try {
   await deleteQaRateLimits(db);
@@ -494,18 +528,27 @@ try {
     );
     copyFileSync(receiptFile, evidenceFile);
     receipts.push({ stage, runId, evidenceFile, result: receipt.result, summary: receipt.summary });
-    if (aggregate.status !== 0 || watch.status !== 0 || receipt.result !== "PASS") {
+    if (
+      aggregate.status !== 0 ||
+      watch.status !== 0 ||
+      receipt.result !== "PASS" ||
+      !receipt.sourceProof.passed
+    ) {
       throw new Error(`MQA-0148 distributed stage ${stage} failed`);
     }
   }
 } finally {
-  if (activeFixture) {
-    await cleanupTestSalon(activeFixture.slug, { clearAllRateLimits: false });
-    for (const userId of activeFixture.ownerUserIds) await cleanupTestUser(userId);
+  try {
+    if (activeFixture) {
+      await cleanupTestSalon(activeFixture.slug, { clearAllRateLimits: false });
+      for (const userId of activeFixture.ownerUserIds) await cleanupTestUser(userId);
+    }
+    await deleteQaRateLimits(db);
+    cleanupSnapshot = await verifyQaLoadStateZero(db);
+  } finally {
+    deleteGithubSecrets();
+    rmSync(temporaryDirectory, { recursive: true, force: true });
   }
-  await deleteQaRateLimits(db);
-  deleteGithubSecrets();
-  rmSync(temporaryDirectory, { recursive: true, force: true });
 }
 
 process.stdout.write(
@@ -514,5 +557,6 @@ process.stdout.write(
     baseURL,
     supabaseProjectRef: qaProjectRef,
     receipts,
+    cleanup: cleanupSnapshot,
   })}\n`,
 );

@@ -50,7 +50,8 @@ if (
       shard.serverMode !== "vercel-preview-distributed" ||
       shard.candidateSha !== candidateSha ||
       shard.stage !== stage ||
-      shard.shardCount !== 10,
+      shard.shardCount !== 10 ||
+      shard.rampDurationMs !== 4_500,
   ) ||
   shardIndexes.some((index, expected) => index !== expected)
 ) {
@@ -68,6 +69,8 @@ if (
 
 const releases = shards.map((shard) => shard.releasedAtMs);
 const releaseSpreadMs = Math.max(...releases) - Math.min(...releases);
+const requestStarts = results.map((result) => result.startedAtEpochMs);
+const requestStartSpreadMs = Math.max(...requestStarts) - Math.min(...requestStarts);
 const failures = results.filter(
   (result) =>
     !result.ok ||
@@ -85,6 +88,7 @@ const summary = {
   p95Ms: percentileNearestRank(samples, 0.95),
   maxMs: Math.max(...samples),
   releaseSpreadMs,
+  requestStartSpreadMs,
 };
 const passed =
   summary.publicBooking === Math.round(stage * 0.7) &&
@@ -92,7 +96,8 @@ const passed =
   summary.failures === 0 &&
   summary.p95Ms < 10_000 &&
   summary.maxMs < 20_000 &&
-  summary.releaseSpreadMs <= 5_000;
+  summary.releaseSpreadMs <= 5_000 &&
+  summary.requestStartSpreadMs <= 5_000;
 
 const receipt = {
   result: passed ? "PASS" : "FAIL",
@@ -105,6 +110,7 @@ const receipt = {
     p95MsExclusive: 10_000,
     maxMsExclusive: 20_000,
     releaseSpreadMsInclusive: 5_000,
+    requestStartSpreadMsInclusive: 5_000,
   },
   githubRunIds: [...new Set(shards.map((shard) => shard.githubRunId))],
   summary,

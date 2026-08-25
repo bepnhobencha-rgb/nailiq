@@ -72,7 +72,12 @@ const { email, password } = owners[shardIndex];
 const assignedIndexes = Array.from({ length: stage }, (_, index) => index).filter(
   (index) => index % shardCount === shardIndex,
 );
-const publicRequests = Math.round(stage * 0.7);
+const rampDurationMs = 4_500;
+function requestKind(globalIndex) {
+  // Keep the 70/30 representative mix evenly distributed across the ramp
+  // instead of placing every public request before every dashboard request.
+  return globalIndex % 10 < 7 ? "booking" : "dashboard";
+}
 const protectionHeaders = {
   "x-vercel-protection-bypass": bypassSecret,
 };
@@ -143,7 +148,7 @@ if (waitMs > 0) {
 
 const contexts = await Promise.all(
   assignedIndexes.map((globalIndex) => {
-    const kind = globalIndex < publicRequests ? "booking" : "dashboard";
+    const kind = requestKind(globalIndex);
     return playwrightRequest.newContext({
       baseURL,
       ...(kind === "dashboard" ? { storageState } : {}),
@@ -160,7 +165,15 @@ let results;
 try {
   results = await Promise.all(
     assignedIndexes.map(async (globalIndex, localIndex) => {
-      const kind = globalIndex < publicRequests ? "booking" : "dashboard";
+      const kind = requestKind(globalIndex);
+      const rampOffsetMs = Math.round(
+        (globalIndex / Math.max(1, stage - 1)) * rampDurationMs,
+      );
+      const requestWaitMs = startEpochMs + rampOffsetMs - Date.now();
+      if (requestWaitMs > 0) {
+        await new Promise((resolveWait) => setTimeout(resolveWait, requestWaitMs));
+      }
+      const startedAtEpochMs = Date.now();
       const startedAt = performance.now();
       try {
         const response = await contexts[localIndex].get(
@@ -179,6 +192,8 @@ try {
             response.url().includes("/register"),
           correctTenant: body.includes(salonName),
           elapsedMs: Math.round(performance.now() - startedAt),
+          startedAtEpochMs,
+          finishedAtEpochMs: Date.now(),
           error: null,
         };
       } catch (error) {
@@ -190,6 +205,8 @@ try {
           redirectedToLogin: false,
           correctTenant: false,
           elapsedMs: Math.round(performance.now() - startedAt),
+          startedAtEpochMs,
+          finishedAtEpochMs: Date.now(),
           error: error instanceof Error ? error.message : String(error),
         };
       }
@@ -218,6 +235,7 @@ const artifact = {
   shardCount,
   shardIndex,
   startEpochMs,
+  rampDurationMs,
   releasedAtMs,
   releaseSkewMs: releasedAtMs - startEpochMs,
   assignedIndexes,
