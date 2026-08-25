@@ -31,6 +31,14 @@ export type ActiveAuthSessionClient = {
   }>;
 };
 
+const TRANSIENT_AUTH_RETRY_DELAYS_MS = [25, 75] as const;
+
+async function waitBeforeAuthRetry(attempt: number): Promise<void> {
+  const delay = TRANSIENT_AUTH_RETRY_DELAYS_MS[attempt];
+  if (delay === undefined) return;
+  await new Promise((resolve) => setTimeout(resolve, delay));
+}
+
 /**
  * Fail-closed server boundary for security-sensitive authenticated actions.
  *
@@ -41,13 +49,31 @@ export type ActiveAuthSessionClient = {
 export async function requireActiveAuthSession(
   client: ActiveAuthSessionClient,
 ): Promise<ActiveAuthSessionResult> {
-  let authResult: Awaited<ReturnType<typeof client.auth.getUser>>;
-  try {
-    authResult = await client.auth.getUser();
-  } catch {
-    return { ok: false, code: "auth_unavailable" };
+  let authResult: Awaited<ReturnType<typeof client.auth.getUser>> | null = null;
+  for (let attempt = 0; attempt <= TRANSIENT_AUTH_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      authResult = await client.auth.getUser();
+    } catch {
+      authResult = null;
+    }
+
+    // Credential denials are authoritative and must never be retried. Network
+    // errors and provider 5xx failures get two short bounded retries so a
+    // healthy session is not converted into a login redirect during a brief
+    // connection-pool handoff.
+    const status = authResult?.error?.status;
+    if (
+      authResult &&
+      (!authResult.error || status === 400 || status === 401 || status === 403)
+    ) {
+      break;
+    }
+    await waitBeforeAuthRetry(attempt);
   }
 
+  if (!authResult) {
+    return { ok: false, code: "auth_unavailable" };
+  }
   if (authResult.error) {
     const status = authResult.error.status;
     if (status === 400 || status === 401 || status === 403) {
@@ -59,13 +85,17 @@ export async function requireActiveAuthSession(
     return { ok: false, code: "unauthenticated" };
   }
 
-  let sessionResult: Awaited<ReturnType<typeof client.rpc>>;
-  try {
-    sessionResult = await client.rpc("current_auth_session_is_active");
-  } catch {
-    return { ok: false, code: "auth_unavailable" };
+  let sessionResult: Awaited<ReturnType<typeof client.rpc>> | null = null;
+  for (let attempt = 0; attempt <= TRANSIENT_AUTH_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      sessionResult = await client.rpc("current_auth_session_is_active");
+    } catch {
+      sessionResult = null;
+    }
+    if (sessionResult && !sessionResult.error) break;
+    await waitBeforeAuthRetry(attempt);
   }
-  if (sessionResult.error) {
+  if (!sessionResult || sessionResult.error) {
     return { ok: false, code: "auth_unavailable" };
   }
   if (sessionResult.data !== true) {

@@ -65,6 +65,8 @@ import { execFileSync } from "node:child_process";
  * The 20260825013913 V1 Fast Track staff-capability migration adds one durable
  * salon mode column, two guarded trigger helpers, and one atomic owner/admin
  * capability-replacement function.
+ * The 20260825103000 MQA-0148 read-path migration adds one RLS-preserving
+ * public booking snapshot plus two service-role-only dashboard projections.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -128,7 +130,7 @@ const PRODUCTION = {
   // function, and +2 private completion classifiers retained behind the
   // SID-first service-role wrappers, plus +2 durable review-SMS completion and
   // signed callback-correlation functions.
-  functions: 369,
+  functions: 372,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -404,6 +406,9 @@ const CRITICAL_FUNCTIONS = [
   "bump_salon_availability_revision",
   "rate_limit_hit_many",
   "rate_limit_hit_request_batch",
+  "load_public_booking_snapshot",
+  "load_salon_dashboard_projection",
+  "load_owner_home_projection",
   "protect_organization_staff_location",
   "enforce_organization_staff_time_available",
   "enforce_organization_staff_booking_capacity",

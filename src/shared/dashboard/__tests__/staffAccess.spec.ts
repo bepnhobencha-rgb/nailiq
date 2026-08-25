@@ -210,7 +210,7 @@ describe("loadTeamAccessMap authorization boundary", () => {
 
   it("fails closed when Supabase Auth rejects instead of returning an error", async () => {
     const spies = installScenario();
-    spies.getUser.mockRejectedValueOnce(new Error("network unavailable"));
+    spies.getUser.mockRejectedValue(new Error("network unavailable"));
 
     await expect(loadTeamAccessMap("owner-salon")).resolves.toEqual({
       ok: false,

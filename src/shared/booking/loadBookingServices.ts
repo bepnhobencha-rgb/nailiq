@@ -140,6 +140,89 @@ export type BookingLoadData = {
   hasActivePromotions: boolean;
 };
 
+export type PublicBookingSnapshot = {
+  salon: Record<string, unknown>;
+  services: unknown[];
+  staff: unknown[];
+  capabilities: unknown[];
+  promotions: unknown[];
+  promotion_services: unknown[];
+  combos: unknown[];
+  resources: unknown[];
+};
+
+/** One RLS-preserving PostgREST round trip for the complete public catalog. */
+export async function loadPublicBookingSnapshot(
+  client: SupabaseClient,
+  normalizedSlug: string,
+): Promise<{
+  snapshot: PublicBookingSnapshot | null;
+  error: { message: string; code?: string } | null;
+}> {
+  const { data, error } = await client.rpc(
+    "load_public_booking_snapshot" as never,
+    { p_slug: normalizedSlug } as never,
+  );
+  if (error) {
+    return {
+      snapshot: null,
+      error: { message: error.message, code: error.code },
+    };
+  }
+  if (data == null) return { snapshot: null, error: null };
+  if (typeof data !== "object" || Array.isArray(data)) {
+    return {
+      snapshot: null,
+      error: { message: "invalid public booking snapshot" },
+    };
+  }
+
+  const raw = data as unknown as Record<string, unknown>;
+  if (!raw.salon || typeof raw.salon !== "object" || Array.isArray(raw.salon)) {
+    return {
+      snapshot: null,
+      error: { message: "public booking snapshot omitted salon" },
+    };
+  }
+  const array = (key: string): unknown[] | null =>
+    Array.isArray(raw[key]) ? (raw[key] as unknown[]) : null;
+  const services = array("services");
+  const staff = array("staff");
+  const capabilities = array("capabilities");
+  const promotions = array("promotions");
+  const promotionServices = array("promotion_services");
+  const combos = array("combos");
+  const resources = array("resources");
+  if (
+    !services ||
+    !staff ||
+    !capabilities ||
+    !promotions ||
+    !promotionServices ||
+    !combos ||
+    !resources
+  ) {
+    return {
+      snapshot: null,
+      error: { message: "public booking snapshot omitted catalog arrays" },
+    };
+  }
+
+  return {
+    snapshot: {
+      salon: raw.salon as Record<string, unknown>,
+      services,
+      staff,
+      capabilities,
+      promotions,
+      promotion_services: promotionServices,
+      combos,
+      resources,
+    },
+    error: null,
+  };
+}
+
 /**
  * Booking flowchart step 4 — load booking data for the salon.
  * Caller must pass a slug already normalized + validated (`resolvePublicBookingPage`).
@@ -152,6 +235,7 @@ export async function loadBookingServicesForSalonSlug(
   normalizedSlug: string,
   supabase?: SupabaseClient,
   knownSalon?: Record<string, unknown>,
+  knownSnapshot?: PublicBookingSnapshot,
 ): Promise<BookingLoadData | null> {
   const client = supabase ?? createPublicClient();
 
@@ -232,19 +316,28 @@ export async function loadBookingServicesForSalonSlug(
         .order("display_order" as never, { ascending: true })
     : Promise.resolve({ data: [], error: null });
 
+  const firstWave = knownSnapshot
+    ? [
+        { data: knownSnapshot.services, error: null },
+        { data: knownSnapshot.staff, error: null },
+        { data: knownSnapshot.promotions, error: null },
+        { data: knownSnapshot.combos, error: null },
+        { data: knownSnapshot.resources, error: null },
+      ]
+    : await Promise.all([
+        servicesQuery,
+        staffQuery,
+        promotionsQuery,
+        combosQuery,
+        resourcesQuery,
+      ]);
   const [
     { data: rows, error: servicesErr },
     { data: staffList, error: staffErr },
     { data: activePromos, error: promotionsError },
     { data: comboRows, error: comboError },
     { data: resourceRows, error: resourceError },
-  ] = await Promise.all([
-    servicesQuery,
-    staffQuery,
-    promotionsQuery,
-    combosQuery,
-    resourcesQuery,
-  ]);
+  ] = firstWave;
 
   if (servicesErr) {
     console.error("loadBookingServices error:", servicesErr);
@@ -407,7 +500,11 @@ export async function loadBookingServicesForSalonSlug(
   const isAddonRow = (r: unknown) =>
     (r as { is_addon?: unknown }).is_addon === true;
 
-  const staff: BookingStaffItem[] = (staffList ?? []).map((s) => ({
+  const staff: BookingStaffItem[] = ((staffList ?? []) as Array<{
+    id: unknown;
+    name?: unknown;
+    job_role?: unknown;
+  }>).map((s) => ({
     id: String(s.id),
     name: String(s.name ?? ""),
     job_role: String(s.job_role ?? ""),
@@ -416,20 +513,25 @@ export async function loadBookingServicesForSalonSlug(
   // Second wave: capability rows depend on staff ids and promotion rules
   // depend on active promotion ids, but the two reads are independent.
   promoList = (activePromos ?? []) as PromoListItem[];
-  const [capabilityResult, rulesResult] = await Promise.all([
-    staff.length > 0
-      ? client
-          .from("staff_services")
-          .select("staff_id, service_id")
-          .in("staff_id", staff.map((s) => s.id))
-      : Promise.resolve({ data: [], error: null }),
-    promoList.length > 0
-      ? client
-          .from("promotion_services" as never)
-          .select("promotion_id, service_id, discount_type, discount_value")
-          .in("promotion_id" as never, promoList.map((p) => p.id))
-      : Promise.resolve({ data: [], error: null }),
-  ]);
+  const [capabilityResult, rulesResult] = knownSnapshot
+    ? [
+        { data: knownSnapshot.capabilities, error: null },
+        { data: knownSnapshot.promotion_services, error: null },
+      ]
+    : await Promise.all([
+        staff.length > 0
+          ? client
+              .from("staff_services")
+              .select("staff_id, service_id")
+              .in("staff_id", staff.map((s) => s.id))
+          : Promise.resolve({ data: [], error: null }),
+        promoList.length > 0
+          ? client
+              .from("promotion_services" as never)
+              .select("promotion_id, service_id, discount_type, discount_value")
+              .in("promotion_id" as never, promoList.map((p) => p.id))
+          : Promise.resolve({ data: [], error: null }),
+      ]);
 
   let capabilityRows: { staff_id: string; service_id: string }[] | null = null;
   if (capabilityResult.error) {
@@ -439,7 +541,10 @@ export async function loadBookingServicesForSalonSlug(
     );
     proofComplete = false;
   } else if ((capabilityResult.data?.length ?? 0) > 0) {
-    capabilityRows = (capabilityResult.data ?? []).map((r) => ({
+    capabilityRows = ((capabilityResult.data ?? []) as Array<{
+      staff_id: unknown;
+      service_id: unknown;
+    }>).map((r) => ({
       staff_id: String(r.staff_id),
       service_id: String(r.service_id),
     }));

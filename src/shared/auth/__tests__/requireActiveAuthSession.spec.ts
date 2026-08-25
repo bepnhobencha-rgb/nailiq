@@ -50,7 +50,23 @@ describe("requireActiveAuthSession", () => {
       ok: false,
       code: "auth_unavailable",
     });
+    expect(getUser).toHaveBeenCalledTimes(3);
     expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("recovers from a transient Auth transport failure", async () => {
+    getUser
+      .mockRejectedValueOnce(new Error("socket closed"))
+      .mockResolvedValueOnce({
+        data: { user: { id: "51340000-0000-4000-8000-000000000001" } },
+        error: null,
+      });
+
+    await expect(requireActiveAuthSession(client)).resolves.toEqual({
+      ok: true,
+      user: { id: "51340000-0000-4000-8000-000000000001" },
+    });
+    expect(getUser).toHaveBeenCalledTimes(2);
   });
 
   it("fails closed when the session lookup is unavailable", async () => {
@@ -59,6 +75,19 @@ describe("requireActiveAuthSession", () => {
       ok: false,
       code: "auth_unavailable",
     });
+    expect(rpc).toHaveBeenCalledTimes(3);
+  });
+
+  it("recovers from a transient active-session lookup failure", async () => {
+    rpc
+      .mockRejectedValueOnce(new Error("socket closed"))
+      .mockResolvedValueOnce({ data: true, error: null });
+
+    await expect(requireActiveAuthSession(client)).resolves.toEqual({
+      ok: true,
+      user: { id: "51340000-0000-4000-8000-000000000001" },
+    });
+    expect(rpc).toHaveBeenCalledTimes(2);
   });
 
   it("returns the Auth-validated user only after the active-session proof", async () => {

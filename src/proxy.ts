@@ -19,7 +19,7 @@
  *   - No deprecation warnings emitted by `npm run build`.
  */
 import * as ErrorReporter from "@/shared/observability/errorReporter";
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { NAILQ_DEMO_SLUG_COOKIE } from "@/shared/lib/demoDashboardCookie";
 import {
@@ -99,6 +99,104 @@ function proxyClientIp(request: NextRequest): string {
     request.headers.get("x-real-ip")?.trim() ||
     "unknown"
   );
+}
+
+const PROXY_AUTH_RETRY_DELAYS_MS = [25, 75] as const;
+
+type ProxyAuthUser = Awaited<
+  ReturnType<ReturnType<typeof createServerClient>["auth"]["getUser"]>
+>["data"]["user"];
+
+type ProxyAuthCookieWrite = {
+  name: string;
+  value: string;
+  options: CookieOptions;
+};
+
+type ProxyAuthFlightResult = {
+  user: ProxyAuthUser;
+  cookieWrites: ProxyAuthCookieWrite[];
+};
+
+// In-flight only: a burst of dashboard documents carrying the exact same
+// Supabase session shares one authoritative Auth validation. Any token-refresh
+// cookie writes produced by the leader are replayed onto every waiting
+// response, so coalescing cannot strand followers on an expired token. The map
+// key is a SHA-256 digest rather than raw credentials and is removed as soon as
+// the active validation settles; there is no post-revocation cache window.
+const proxyAuthFlights = new Map<string, Promise<ProxyAuthFlightResult>>();
+
+async function proxyAuthFlightKey(request: NextRequest): Promise<string | null> {
+  const authCookies = request.cookies
+    .getAll()
+    .filter(
+      ({ name, value }) =>
+        name.startsWith("sb-") && name.includes("-auth-token") && value,
+    )
+    .sort((left, right) => left.name.localeCompare(right.name));
+  if (authCookies.length === 0) return null;
+  const material = authCookies
+    .map(({ name, value }) => `${name}=${value}`)
+    .join("\0");
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(material),
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+async function getProxyAuthUserOnce(
+  supabase: ReturnType<typeof createServerClient>,
+): Promise<ProxyAuthUser> {
+  for (let attempt = 0; attempt <= PROXY_AUTH_RETRY_DELAYS_MS.length; attempt += 1) {
+    let result: Awaited<ReturnType<typeof supabase.auth.getUser>> | null = null;
+    try {
+      result = await supabase.auth.getUser();
+    } catch {
+      result = null;
+    }
+
+    if (result?.data.user) return result.data.user;
+    const status = result?.error?.status;
+    if (!result?.error || status === 400 || status === 401 || status === 403) {
+      return null;
+    }
+    const delay = PROXY_AUTH_RETRY_DELAYS_MS[attempt];
+    if (delay !== undefined) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  return null;
+}
+
+async function getProxyAuthUser(
+  supabase: ReturnType<typeof createServerClient>,
+  request: NextRequest,
+  cookieWrites: ProxyAuthCookieWrite[],
+): Promise<ProxyAuthFlightResult> {
+  const key = await proxyAuthFlightKey(request);
+  if (!key) {
+    return {
+      user: await getProxyAuthUserOnce(supabase),
+      cookieWrites: [...cookieWrites],
+    };
+  }
+
+  let flight = proxyAuthFlights.get(key);
+  if (!flight) {
+    flight = (async () => ({
+      user: await getProxyAuthUserOnce(supabase),
+      cookieWrites: [...cookieWrites],
+    }))();
+    proxyAuthFlights.set(key, flight);
+    const clear = () => {
+      if (proxyAuthFlights.get(key) === flight) proxyAuthFlights.delete(key);
+    };
+    void flight.then(clear, clear);
+  }
+  return flight;
 }
 
 async function consumeProxyLimit(
@@ -283,6 +381,13 @@ export async function proxy(request: NextRequest) {
       return rateLimitedResponse("Too many requests. Please try again in a minute.");
     }
     if (durableLimit === "unavailable") return limiterUnavailableResponse();
+
+    // Public booking documents do not need a Supabase user/session bootstrap.
+    // Returning immediately after the durable limiter removes one Auth call
+    // per anonymous page view and keeps the shared DB pool available for the
+    // tenant catalog read. Custom-domain roots already take the equivalent
+    // early rewrite path above.
+    return NextResponse.next({ request });
   }
 
   // Auth attempts — POST to `/register` or `/login`. After Task #06
@@ -326,6 +431,7 @@ export async function proxy(request: NextRequest) {
   }
 
   let supabaseResponse = NextResponse.next({ request });
+  const proxyAuthCookieWrites: ProxyAuthCookieWrite[] = [];
 
   const supabase = createServerClient(
     resolveSupabaseServerUrl()!,
@@ -336,6 +442,11 @@ export async function proxy(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet, responseHeaders) {
+          proxyAuthCookieWrites.splice(
+            0,
+            proxyAuthCookieWrites.length,
+            ...cookiesToSet,
+          );
           cookiesToSet.forEach(({ name, value }) => {
             request.cookies.set(name, value);
           });
@@ -353,9 +464,16 @@ export async function proxy(request: NextRequest) {
     },
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const authResult = await getProxyAuthUser(
+    supabase,
+    request,
+    proxyAuthCookieWrites,
+  );
+  for (const cookie of authResult.cookieWrites) {
+    request.cookies.set(cookie.name, cookie.value);
+    supabaseResponse.cookies.set(cookie.name, cookie.value, cookie.options);
+  }
+  const user = authResult.user;
 
   const pathname = request.nextUrl.pathname;
   // Any path under /dashboard/[slug]/… (home, setup/services, setup/staff, etc.)
@@ -426,6 +544,14 @@ export async function proxy(request: NextRequest) {
     // On an exempt path: let it through WITHOUT running the membership
     // guards below, so an unconfirmed user sitting on /login isn't
     // bounced into /register/setup by Rule 2.
+    return supabaseResponse;
+  }
+
+  // The dashboard root Server Component performs the exact slug membership
+  // check and redirects fail-closed. Avoid repeating the proxy's coarse
+  // has-any-salon query for this one route; nested dashboard routes retain the
+  // proxy gate below because they do not all share the root loader.
+  if (user && /^\/dashboard\/[^/]+\/?$/.test(pathname)) {
     return supabaseResponse;
   }
 

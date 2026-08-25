@@ -1,5 +1,6 @@
 "use server";
 
+import { createHash } from "node:crypto";
 import { cookies } from "next/headers";
 import { cache } from "react";
 import { isOwner, isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
@@ -24,7 +25,6 @@ import {
 } from "@/shared/lib/salonMemberRole";
 import { isOpeningHoursCustomized } from "@/shared/dashboard/openingHoursDefaults";
 import {
-  DASHBOARD_BOOKING_SELECT,
   mapDashboardBookingRow,
   type BookingRowDb,
 } from "@/shared/dashboard/dashboardBookingMap";
@@ -43,7 +43,6 @@ import {
   type DensityLevel,
 } from "@/shared/dashboard/dashboardDensity";
 import type { BookingStatus, SalonDashboardBooking } from "@/shared/types";
-import { ACTIVE_GRID_STATUSES } from "@/shared/types";
 import { requireActiveAuthSession } from "@/shared/auth/requireActiveAuthSession";
 import {
   loadSalonMemberOperationalProfile,
@@ -188,7 +187,7 @@ async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
 }
 
 /** Authorized dashboard viewer (logged-in salon member or demo cookie slug match). */
-async function resolveSalonForDashboardUncached(
+async function resolveSalonForDashboardCore(
   slug: string,
 ): Promise<
   | {
@@ -241,6 +240,63 @@ async function resolveSalonForDashboardUncached(
   return null;
 }
 
+type ResolvedDashboardSalon = Awaited<
+  ReturnType<typeof resolveSalonForDashboardCore>
+>;
+
+// In-flight only: concurrent documents carrying the exact same Supabase auth
+// cookie and slug share one active-session + membership proof. The key stores
+// only a SHA-256 digest, and the promise is removed as soon as it settles, so
+// this does not create a post-revocation cache window or mix tenant sessions.
+const dashboardAuthorizationFlights = new Map<
+  string,
+  Promise<ResolvedDashboardSalon>
+>();
+
+async function dashboardAuthorizationFlightKey(
+  slug: string,
+): Promise<string | null> {
+  const cookieStore = await cookies();
+  if (typeof cookieStore.getAll !== "function") return null;
+  const authCookies = cookieStore
+    .getAll()
+    .filter(
+      ({ name, value }) =>
+        name.startsWith("sb-") && name.includes("-auth-token") && value,
+    )
+    .sort((left, right) => left.name.localeCompare(right.name));
+  if (authCookies.length === 0) return null;
+  return createHash("sha256")
+    .update(slug)
+    .update("\0")
+    .update(
+      authCookies.map(({ name, value }) => `${name}=${value}`).join("\0"),
+    )
+    .digest("hex");
+}
+
+async function resolveSalonForDashboardUncached(
+  slug: string,
+): Promise<ResolvedDashboardSalon> {
+  const flightKey = await dashboardAuthorizationFlightKey(slug);
+  if (!flightKey || dashboardAuthorizationFlights.size >= 512) {
+    return resolveSalonForDashboardCore(slug);
+  }
+
+  const existing = dashboardAuthorizationFlights.get(flightKey);
+  if (existing) return existing;
+
+  const flight = resolveSalonForDashboardCore(slug);
+  dashboardAuthorizationFlights.set(flightKey, flight);
+  try {
+    return await flight;
+  } finally {
+    if (dashboardAuthorizationFlights.get(flightKey) === flight) {
+      dashboardAuthorizationFlights.delete(flightKey);
+    }
+  }
+}
+
 // A dashboard page asks for several authorized data projections in parallel.
 // Their authorization boundary is identical, so deduplicate that boundary
 // within the current React server render. React cache is request/render scoped:
@@ -268,7 +324,10 @@ async function getSalonIfMember(
 > {
   const supabase = await createClient();
   const session = await requireActiveAuthSession(supabase);
-  if (!session.ok) return null;
+  if (!session.ok) {
+    console.warn("[dashboard-auth] active session unavailable", session.code);
+    return null;
+  }
   const user = session.user;
 
   // Auth user's email — may come from Google OAuth, Supabase email signup,
@@ -284,7 +343,13 @@ async function getSalonIfMember(
     .select("salon_id, role")
     .eq("user_id", user.id);
 
-  if (memErr || !members?.length) return null;
+  if (memErr || !members?.length) {
+    console.warn(
+      "[dashboard-auth] membership lookup unavailable",
+      memErr?.code ?? "not_found",
+    );
+    return null;
+  }
 
   const salonIds = members.map((m) => String(m.salon_id));
 
@@ -296,13 +361,25 @@ async function getSalonIfMember(
     .maybeSingle();
 
   const lookup = salonLookup as { id?: unknown; slug?: unknown } | null;
-  if (salErr || !lookup?.id || String(lookup.slug ?? "") !== slug) return null;
+  if (salErr || !lookup?.id || String(lookup.slug ?? "") !== slug) {
+    console.warn(
+      "[dashboard-auth] salon lookup unavailable",
+      salErr?.code ?? "not_found",
+    );
+    return null;
+  }
 
   const operational = await loadSalonMemberOperationalProfile(
     supabase,
     String(lookup.id),
   );
-  if (!operational.ok) return null;
+  if (!operational.ok) {
+    console.warn(
+      "[dashboard-auth] operational profile unavailable",
+      operational.code,
+    );
+    return null;
+  }
   const row = operational.salon as SalonRow & {
     profile_complete?: unknown;
   };
@@ -425,6 +502,54 @@ export type LoadSalonDashboardResult =
     }
   | { ok: false; error: "unauthorized" | "server_error" };
 
+type DashboardProjectionResult = {
+  data: unknown;
+  error: unknown;
+};
+
+// In-flight only and keyed by the already-authorized tenant plus exact UTC
+// window. Concurrent documents for one dashboard share the same read-only
+// service projection, but the result is removed immediately when it settles so
+// booking changes are visible on the next request.
+const dashboardProjectionFlights = new Map<
+  string,
+  Promise<DashboardProjectionResult>
+>();
+
+async function loadDashboardProjection(input: {
+  salonId: string;
+  from: string;
+  to: string;
+}): Promise<DashboardProjectionResult> {
+  const key = JSON.stringify([input.salonId, input.from, input.to]);
+  const existing = dashboardProjectionFlights.get(key);
+  if (existing) return existing;
+
+  const load = async (): Promise<DashboardProjectionResult> => {
+    const supabase = createServiceRoleClient();
+    const result = await supabase.rpc(
+      "load_salon_dashboard_projection" as never,
+      {
+        p_salon_id: input.salonId,
+        p_from: input.from,
+        p_to: input.to,
+      } as never,
+    );
+    return { data: result.data, error: result.error };
+  };
+  if (dashboardProjectionFlights.size >= 512) return load();
+
+  const flight = load();
+  dashboardProjectionFlights.set(key, flight);
+  try {
+    return await flight;
+  } finally {
+    if (dashboardProjectionFlights.get(key) === flight) {
+      dashboardProjectionFlights.delete(key);
+    }
+  }
+}
+
 export async function loadSalonOwnerDashboard(
   slug: string,
 ): Promise<LoadSalonDashboardResult> {
@@ -436,11 +561,13 @@ export async function loadSalonOwnerDashboard(
   const { salon, kind, role, viewerEmail } = resolved;
   const demoMode = kind === "demo_cookie";
 
-  const supabase =
-    kind === "demo_cookie"
-      ? createServiceRoleClient()
-      : await createClient();
-
+  // The projection is intentionally service-role-only because it is a
+  // SECURITY DEFINER function that accepts a salon id. The membership/demo
+  // boundary above must resolve first; only then may this server action use
+  // the internal client for the already-authorized salon. Calling this RPC
+  // through the browser session would either fail its ACL or, on PostgreSQL
+  // 17.6 behind PostgREST, can terminate the backend instead of returning a
+  // normal permission error.
   const from = new Date();
   from.setDate(from.getDate() - 3);
   from.setHours(0, 0, 0, 0);
@@ -448,47 +575,41 @@ export async function loadSalonOwnerDashboard(
   to.setDate(to.getDate() + 7);
   to.setHours(23, 59, 59, 999);
 
-  const [bookingsResult, servicesCountResult, staffCountResult] =
-    await Promise.all([
-      supabase
-        .from("bookings")
-        .select(DASHBOARD_BOOKING_SELECT)
-        .eq("salon_id", salon.id)
-        /** Excludes `waiting` (walk-in queue) and `cancelled`; keeps `completed` for today stats. */
-        .in("status", ACTIVE_GRID_STATUSES)
-        .gte("start_time_utc", from.toISOString())
-        .lte("start_time_utc", to.toISOString())
-        .order("start_time_utc", { ascending: true }),
-      supabase
-        .from("services")
-        .select("*", { count: "exact", head: true })
-        .eq("salon_id", salon.id)
-        .is("deleted_at" as never, null),
-      supabase
-        .from("staff")
-        .select("*", { count: "exact", head: true })
-        .eq("salon_id", salon.id)
-        .is("deleted_at" as never, null),
-    ]);
-
-  const { data: bookingRows, error: bookingsErr } = bookingsResult;
-
-  if (bookingsErr) {
-    console.error("[loadSalonOwnerDashboard] bookings", bookingsErr);
+  const { data: projectionData, error: projectionError } =
+    await loadDashboardProjection({
+      salonId: salon.id,
+      from: from.toISOString(),
+      to: to.toISOString(),
+    });
+  if (
+    projectionError ||
+    !projectionData ||
+    typeof projectionData !== "object" ||
+    Array.isArray(projectionData)
+  ) {
+    console.error(
+      "[loadSalonOwnerDashboard] projection",
+      projectionError ?? "invalid projection",
+    );
     return { ok: false, error: "server_error" };
   }
 
-  const allBookings = (bookingRows ?? []).map((r) =>
+  const projection = projectionData as unknown as Record<string, unknown>;
+  if (!Array.isArray(projection.bookings)) {
+    console.error("[loadSalonOwnerDashboard] projection omitted bookings");
+    return { ok: false, error: "server_error" };
+  }
+
+  const allBookings = projection.bookings.map((r) =>
     mapDashboardBookingRow(r as unknown as BookingRowDb),
   );
 
   // Setup-checklist counts — soft-deleted services/staff don't count
   // toward "profile complete".
-  const { count: servicesCount, error: scErr } = servicesCountResult;
-  const { count: staffCount, error: stErr } = staffCountResult;
-
-  if (scErr || stErr) {
-    console.error("[loadSalonOwnerDashboard] counts", scErr ?? stErr);
+  const servicesCount = Number(projection.services_count);
+  const staffCount = Number(projection.staff_count);
+  if (!Number.isSafeInteger(servicesCount) || !Number.isSafeInteger(staffCount)) {
+    console.error("[loadSalonOwnerDashboard] projection omitted counts");
     return { ok: false, error: "server_error" };
   }
 

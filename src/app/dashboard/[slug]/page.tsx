@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { SalonOwnerDashboard } from "@/components/dashboard/SalonOwnerDashboard";
 import { GuidedAdminActionCenter } from "@/components/dashboard/GuidedAdminActionCenter";
-import { createClient } from "@/shared/lib/supabase/server";
-import { loadSalonOwnerDashboard } from "@/shared/dashboard/salonOwnerActions";
+import {
+  loadSalonOwnerDashboard,
+  resolveSalonForDashboard,
+} from "@/shared/dashboard/salonOwnerActions";
 import { loadOwnerHomeDashboard } from "@/shared/dashboard/loadOwnerHomeDashboardAction";
 import { loadGoLiveReadiness } from "@/shared/dashboard/loadGoLiveReadiness";
 import {
@@ -16,14 +18,11 @@ type Props = { params: Promise<{ slug: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("salons")
-    .select("name")
-    .eq("slug", slug)
-    .maybeSingle();
-
-  const name = data?.name?.trim();
+  // Reuse the exact request-scoped membership projection consumed by the
+  // page. This removes a separate salon query while keeping tenant metadata
+  // unavailable to unauthenticated callers.
+  const resolved = await resolveSalonForDashboard(slug);
+  const name = resolved?.salon.name?.trim();
   const title = name ? `${name} · Dashboard` : "Salon dashboard";
   return {
     title,

@@ -158,6 +158,44 @@ describe("Proxy durable rate limiter", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
+  it("does not head-of-line block a ready request behind a slow digest", async () => {
+    let releaseFirst!: () => void;
+    let digestCalls = 0;
+    vi.stubGlobal("crypto", {
+      subtle: {
+        digest: vi.fn(async (_algorithm: string, data: BufferSource) => {
+          digestCalls += 1;
+          if (digestCalls === 1) {
+            await new Promise<void>((resolve) => {
+              releaseFirst = resolve;
+            });
+          }
+          const bytes = ArrayBuffer.isView(data)
+            ? Buffer.from(data.buffer, data.byteOffset, data.byteLength)
+            : Buffer.from(data);
+          const digest = createHash("sha256").update(bytes).digest();
+          return digest.buffer.slice(
+            digest.byteOffset,
+            digest.byteOffset + digest.byteLength,
+          );
+        }),
+      },
+    });
+    const fetchMock = vi.fn(
+      async (_url: string, init: RequestInit) => responseForBatch(init),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const slow = oneBucket("203.0.113.22");
+    const ready = oneBucket("203.0.113.23");
+    await waitForCondition(() => fetchMock.mock.calls.length === 1);
+    await expect(ready).resolves.toBe("allowed");
+
+    releaseFirst();
+    await expect(slow).resolves.toBe("allowed");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("co-batches overlapping keys and maps their ordered results exactly", async () => {
     const fetchMock = vi.fn(
       async (_url: string, init: RequestInit) =>

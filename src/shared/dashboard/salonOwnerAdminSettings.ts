@@ -32,13 +32,39 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+const DASHBOARD_PROFILE_RETRY_DELAYS_MS = [25, 75] as const;
+
+async function loadDashboardProfileRpc(
+  supabase: RequestSupabaseClient,
+  name:
+    | "load_salon_member_operational_profile"
+    | "load_salon_owner_admin_settings",
+  salonId: string,
+) {
+  let result: Awaited<ReturnType<RequestSupabaseClient["rpc"]>> | null = null;
+  for (
+    let attempt = 0;
+    attempt <= DASHBOARD_PROFILE_RETRY_DELAYS_MS.length;
+    attempt += 1
+  ) {
+    result = await supabase.rpc(name as never, { p_salon_id: salonId } as never);
+    if (!result.error) return result;
+    const delay = DASHBOARD_PROFILE_RETRY_DELAYS_MS[attempt];
+    if (delay !== undefined) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  return result!;
+}
+
 export async function loadSalonMemberOperationalProfile(
   supabase: RequestSupabaseClient,
   salonId: string,
 ): Promise<SalonMemberOperationalProfileResult> {
-  const { data, error } = await supabase.rpc(
-    "load_salon_member_operational_profile" as never,
-    { p_salon_id: salonId } as never,
+  const { data, error } = await loadDashboardProfileRpc(
+    supabase,
+    "load_salon_member_operational_profile",
+    salonId,
   );
   if (error) return { ok: false, code: "rpc_error" };
 
@@ -81,9 +107,10 @@ export async function loadSalonOwnerAdminSettings(
   supabase: RequestSupabaseClient,
   salonId: string,
 ): Promise<SalonOwnerAdminSettingsResult> {
-  const { data, error } = await supabase.rpc(
-    "load_salon_owner_admin_settings" as never,
-    { p_salon_id: salonId } as never,
+  const { data, error } = await loadDashboardProfileRpc(
+    supabase,
+    "load_salon_owner_admin_settings",
+    salonId,
   );
   if (error) {
     return { ok: false, code: "rpc_error" };

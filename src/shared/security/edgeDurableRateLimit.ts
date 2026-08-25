@@ -111,10 +111,11 @@ function selectDurableRpcBatch() {
   for (let index = 0; index < durableRpcQueue.length; index += 1) {
     const request = durableRpcQueue[index];
 
-    // Preparation is normally shorter than the coalescing delay. Stopping at
-    // an earlier placeholder makes invocation order deterministic even if two
-    // WebCrypto promises settle out of order.
-    if (!request.ready) break;
+    // WebCrypto can settle out of order under a large burst. A single slow
+    // digest must not head-of-line block hundreds of already-prepared,
+    // disjoint requests until their queue timeout. Same-key overlap remains
+    // serialized by target.activeKeys once persisted keys are available.
+    if (!request.ready) continue;
     if (request.state !== "queued") continue;
     if (target && request.target !== target) continue;
     if (keysOverlap(request.keys, request.target.activeKeys)) continue;

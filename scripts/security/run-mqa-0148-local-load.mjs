@@ -61,14 +61,33 @@ if (unexpectedKeys.length > 0) {
 }
 
 const localUrl = "http://127.0.0.1:54321";
-for (const key of [
-  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-  "SUPABASE_SERVICE_ROLE_KEY",
-]) {
-  if (!parsed[key]?.trim()) throw new Error(`REFUSE: ${key} is missing`);
-}
 if (parsed.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "") !== localUrl) {
   throw new Error("REFUSE: .env.test.local Supabase URL is not exact loopback");
+}
+
+// Fresh Supabase CLI resets may rotate modern sb_publishable/sb_secret local
+// keys while .env.test.local still carries an older value. Obtain the current
+// keys independently from the running loopback stack and pin the destructive
+// E2E guard to that exact status result; never trust a stale dotenv key merely
+// because the URL says 127.0.0.1.
+const localStatus = JSON.parse(
+  execFileSync("npx", ["supabase", "status", "-o", "json"], {
+    cwd: root,
+    encoding: "utf8",
+  }),
+);
+const localAnonKey = String(
+  localStatus.PUBLISHABLE_KEY ?? localStatus.ANON_KEY ?? "",
+).trim();
+const localServiceKey = String(
+  localStatus.SECRET_KEY ?? localStatus.SERVICE_ROLE_KEY ?? "",
+).trim();
+if (
+  String(localStatus.API_URL ?? "").replace(/\/$/, "") !== localUrl ||
+  !localAnonKey ||
+  !localServiceKey
+) {
+  throw new Error("REFUSE: independent local Supabase status is incomplete");
 }
 
 const cleanEnv = {
@@ -79,8 +98,9 @@ const cleanEnv = {
   NEXT_PUBLIC_SITE_URL: "http://127.0.0.1:3100",
   NEXT_PUBLIC_SUPABASE_URL: localUrl,
   SUPABASE_INTERNAL_URL: localUrl,
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: parsed.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-  SUPABASE_SERVICE_ROLE_KEY: parsed.SUPABASE_SERVICE_ROLE_KEY,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: localAnonKey,
+  SUPABASE_SERVICE_ROLE_KEY: localServiceKey,
+  E2E_EXPECTED_LOCAL_SERVICE_ROLE_KEY: localServiceKey,
   CRON_SECRET: parsed.CRON_SECRET ?? "",
   INTERNAL_API_SECRET: parsed.INTERNAL_API_SECRET ?? "",
   NEXT_PUBLIC_DEMO_OTP: "false",
@@ -92,6 +112,47 @@ const cleanEnv = {
   DISABLE_OUTBOUND_EMAIL: "1",
   NAILIQ_DISPOSABLE_DB: "1",
 };
+
+const requestedStages = process.env.MQA_LOAD_STAGES?.trim();
+const stages = requestedStages
+  ? requestedStages.split(",").map((value) => Number.parseInt(value.trim(), 10))
+  : [250, 500];
+if (
+  stages.length === 0 ||
+  stages.some((stage) => stage !== 250 && stage !== 500) ||
+  new Set(stages).size !== stages.length
+) {
+  throw new Error("REFUSE: MQA_LOAD_STAGES must be a unique comma list of 250 and/or 500");
+}
+
+async function waitForLocalReadProjection() {
+  const deadline = Date.now() + 30_000;
+  let lastStatus = 0;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(
+        `${localUrl}/rest/v1/rpc/load_public_booking_snapshot`,
+        {
+          method: "POST",
+          headers: {
+            apikey: localAnonKey,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ p_slug: "e2e-mqa-0148-readiness-missing" }),
+        },
+      );
+      lastStatus = response.status;
+      await response.text();
+      if (response.status === 200) return;
+    } catch {
+      lastStatus = 0;
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+  }
+  throw new Error(
+    `REFUSE: local PostgREST projection was not ready (status ${lastStatus})`,
+  );
+}
 
 function sourceFingerprint() {
   return execFileSync(
@@ -114,6 +175,7 @@ function runNode(args, env = cleanEnv) {
 }
 
 const fingerprintBefore = sourceFingerprint();
+await waitForLocalReadProjection();
 runNode(["./node_modules/next/dist/bin/next", "build"]);
 const fingerprintAfter = sourceFingerprint();
 if (fingerprintAfter !== fingerprintBefore) {
@@ -126,7 +188,7 @@ if (!/^[A-Za-z0-9_-]+$/.test(buildId)) {
 }
 const appId = `mqa-local-${fingerprintBefore.slice(0, 12)}-${buildId}`;
 
-for (const stage of [250, 500]) {
+for (const stage of stages) {
   runNode(
     [
       "./node_modules/@playwright/test/cli.js",
@@ -152,7 +214,7 @@ process.stdout.write(
   `${JSON.stringify({
     result: "PASS",
     mqaId: "MQA-0148",
-    stages: [250, 500],
+    stages,
     sourceFingerprint: fingerprintBefore,
     buildId,
     appId,
