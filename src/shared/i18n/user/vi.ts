@@ -2226,7 +2226,7 @@ export const userVi: UserMessages = {
     pricing: {
       sectionTitle: "Gói đăng ký",
       sectionIntro:
-        "Chọn gói phù hợp với tiệm. Có thể nâng cấp hoặc đổi bất cứ lúc nào.",
+        "Chọn gói phù hợp với tiệm. Trong V1, NailIQ hỗ trợ đổi gói thủ công.",
       currentBadge: "Đang dùng",
       perMonth: "/ tháng",
       unlimited: "Không giới hạn",
@@ -2248,6 +2248,8 @@ export const userVi: UserMessages = {
         unauthorized: "Cần đăng nhập.",
         forbidden: "Chỉ chủ tiệm mới đổi được gói.",
         invalid_plan: "Gói không hợp lệ.",
+        phase_2_not_available:
+          "Thanh toán gói tự động sẽ có ở Phase 2. Liên hệ NailIQ để đổi gói thủ công trong V1.",
         no_stripe_client: "Hệ thống thanh toán chưa cấu hình. Liên hệ hỗ trợ.",
         server_error: "Không bắt đầu được thanh toán. Thử lại sau.",
       },
@@ -2255,6 +2257,8 @@ export const userVi: UserMessages = {
         unauthorized: "Cần đăng nhập.",
         forbidden: "Chỉ chủ tiệm mới quản lý được gói.",
         no_customer: "Chưa có gói đang dùng.",
+        phase_2_not_available:
+          "Quản lý gói tự động sẽ có ở Phase 2. Liên hệ NailIQ để được hỗ trợ thủ công trong V1.",
         no_stripe_client: "Hệ thống thanh toán chưa cấu hình. Liên hệ hỗ trợ.",
         server_error: "Không mở được cổng quản lý. Thử lại sau.",
       },

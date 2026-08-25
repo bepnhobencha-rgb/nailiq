@@ -32,7 +32,10 @@ Square. NailIQ-initiated Square Terminal, Stripe Terminal and Tap to Pay are
 Phase 2. Square remains the independent system for money, Loyalty and Gift
 Cards; NailIQ V1 does not synchronize Square Loyalty or Square Gift Card
 balances and transactions. These capabilities must not be advertised as
-available in V1.
+available in V1. NailIQ subscription billing is also manual in V1: automatic
+Stripe Checkout, Customer Portal, private-offer checkout and subscription
+state transitions move to Phase 2 and remain fail closed before provider or
+database mutation.
 
 Existing Wix connections are preserved as legacy compatibility so this scope
 change cannot interrupt a salon that is already live, but V1 refuses new Wix

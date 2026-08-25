@@ -62,6 +62,9 @@ import { execFileSync } from "node:child_process";
  * booking refund migration adds the remaining-deposit claim function.
  * The 20260824234619 V1 terminal-booking policy adds a trigger boundary plus
  * service-only terminal transition and eight-second cancel-undo functions.
+ * The 20260825013913 V1 Fast Track staff-capability migration adds one durable
+ * salon mode column, two guarded trigger helpers, and one atomic owner/admin
+ * capability-replacement function.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -102,7 +105,7 @@ const PRODUCTION = {
   // Square customer identity columns.
   // +4 terminal receipt fields on reminder claims, +4 on staff-action
   // deliveries, and +13 fields in the PII-free Twilio status receipt inbox.
-  columns: 2560,
+  columns: 2561,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -125,11 +128,11 @@ const PRODUCTION = {
   // function, and +2 private completion classifiers retained behind the
   // SID-first service-role wrappers, plus +2 durable review-SMS completion and
   // signed callback-correlation functions.
-  functions: 366,
+  functions: 369,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
-  triggers: 84,
+  triggers: 86,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -467,6 +470,9 @@ const CRITICAL_FUNCTIONS = [
   "enforce_v1_terminal_booking_policy",
   "transition_booking_to_terminal_v1",
   "undo_recent_cancelled_booking_v1",
+  "enforce_staff_capability_write",
+  "enforce_staff_capability_mode_transition",
+  "set_staff_service_capabilities",
 ] as const;
 
 const dbUrl = process.env.DB_URL;

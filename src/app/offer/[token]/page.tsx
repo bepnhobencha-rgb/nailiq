@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { v1AllowsAutomatedSubscriptionBilling } from "@/shared/release/v1IntegrationScope";
 import { formatUsd, getPrivateOffer } from "@/shared/sales/privateOffers";
 import { startPrivateOfferCheckout } from "./actions";
 
@@ -31,6 +32,7 @@ export default async function PrivateOfferPage({ params, searchParams }: Props) 
   const [{ token }, query] = await Promise.all([params, searchParams]);
   const offer = getPrivateOffer(token);
   if (!offer) notFound();
+  if (!v1AllowsAutomatedSubscriptionBilling()) notFound();
   const action = startPrivateOfferCheckout.bind(null, offer.accessKey);
   const monthly = formatUsd(offer.monthlyAmountCents);
   const monthlySetup = formatUsd(offer.monthlySetupAmountCents);

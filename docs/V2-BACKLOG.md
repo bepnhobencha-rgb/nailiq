@@ -45,5 +45,10 @@
 - Phase 2 mới mở nút **Collect payment** từ NailIQ sang Square Terminal, Stripe Terminal hoặc Tap to Pay được nhà cung cấp hỗ trợ.
 - Chỉ quảng cáo sau khi có provider parity, exact-amount/reference binding, receipt/replay/refund reconciliation, tenant isolation, hardware/device acceptance và rollback trên môi trường non-production.
 
+## 10. Thanh toán gói NailIQ tự động bằng Stripe
+- **Quyết định V1 Fast Track ngày 2026-08-24:** đổi gói và thu phí subscription được NailIQ xử lý thủ công; Stripe Checkout, Customer Portal, private-offer checkout và subscription state machine chưa mở trong V1.
+- Phase 2 chỉ mở sau durable checkout/webhook idempotency, signed-event replay/out-of-order proof, tenant pause/resume reconciliation và rollback trên môi trường non-production.
+- V1 không quảng cáo self-serve subscription billing; các endpoint hiện hữu phải fail closed trước provider hoặc database mutation.
+
 ---
 *Cập nhật khi thêm/bớt mục. Nguồn: các phiên làm việc 2026-06.*

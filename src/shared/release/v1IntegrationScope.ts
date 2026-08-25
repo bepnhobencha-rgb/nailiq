@@ -11,6 +11,7 @@
  */
 export const V1_INTEGRATION_SCOPE = Object.freeze({
   paymentGatewayIntegration: "phase_2_provider_terminal",
+  nailiqSubscriptionAutomation: "phase_2_manual_billing_v1",
   googleCalendarSync: "phase_2",
   outlookCalendarSync: "phase_2",
   wixCalendarSync: "legacy_existing_only",
@@ -26,6 +27,15 @@ export const V1_INTEGRATION_SCOPE = Object.freeze({
  * dormant Square/Stripe payment foundation.
  */
 export function v1AllowsCustomerPaymentGateway(): boolean {
+  return false;
+}
+
+/**
+ * V1 subscription collection is coordinated manually by NailIQ. The in-app
+ * Stripe Checkout, Customer Portal and subscription-webhook state machine stay
+ * unavailable until their durable idempotency/replay contract ships in Phase 2.
+ */
+export function v1AllowsAutomatedSubscriptionBilling(): boolean {
   return false;
 }
 

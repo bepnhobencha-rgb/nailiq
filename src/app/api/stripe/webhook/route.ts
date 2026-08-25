@@ -10,6 +10,7 @@ import {
   isSubscriptionPlan,
   type SubscriptionPlan,
 } from "@/shared/lib/subscriptionPlans";
+import { v1AllowsAutomatedSubscriptionBilling } from "@/shared/release/v1IntegrationScope";
 import { graceDeadline, resumeTenant } from "@/shared/subscriptions/tenantPause";
 
 /**
@@ -37,6 +38,12 @@ export const revalidate = 0;
 // Run on Node so we have access to the raw body buffer for signature
 // verification. Edge runtime would need a different verifyAsync path.
 export const runtime = "nodejs";
+
+const V1_DEFERRED_SUBSCRIPTION_EVENTS: ReadonlySet<string> = new Set([
+  "checkout.session.completed",
+  "customer.subscription.updated",
+  "customer.subscription.deleted",
+]);
 
 function planForPriceId(priceId: string | null | undefined): SubscriptionPlan {
   if (!priceId) return "free";
@@ -207,6 +214,13 @@ export async function POST(request: NextRequest) {
       { ok: false, error: "invalid_signature" },
       { status: 400 },
     );
+  }
+
+  if (
+    !v1AllowsAutomatedSubscriptionBilling() &&
+    V1_DEFERRED_SUBSCRIPTION_EVENTS.has(event.type)
+  ) {
+    return NextResponse.json({ ok: true, ignored: "phase_2_subscription" });
   }
 
   try {

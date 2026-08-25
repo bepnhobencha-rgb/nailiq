@@ -8,6 +8,7 @@ import {
 } from "@/shared/lib/stripe";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
+import { v1AllowsAutomatedSubscriptionBilling } from "@/shared/release/v1IntegrationScope";
 
 /**
  * Stripe-backed mutations for the salon Pricing panel.
@@ -31,6 +32,7 @@ export type CreateCheckoutSessionResult =
         | "unauthorized"
         | "forbidden"
         | "invalid_plan"
+        | "phase_2_not_available"
         | "no_stripe_client"
         | "server_error";
     };
@@ -42,6 +44,7 @@ export type CreateCustomerPortalSessionResult =
       error:
         | "unauthorized"
         | "forbidden"
+        | "phase_2_not_available"
         | "no_customer"
         | "no_stripe_client"
         | "server_error";
@@ -68,6 +71,9 @@ export async function createCheckoutSession(
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
   if (!isOwner(resolved.role)) return { ok: false, error: "forbidden" };
+  if (!v1AllowsAutomatedSubscriptionBilling()) {
+    return { ok: false, error: "phase_2_not_available" };
+  }
 
   const priceId = priceIdForPlan(plan);
   if (!priceId) return { ok: false, error: "invalid_plan" };
@@ -162,6 +168,9 @@ export async function createCustomerPortalSession(
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
   if (!isOwner(resolved.role)) return { ok: false, error: "forbidden" };
+  if (!v1AllowsAutomatedSubscriptionBilling()) {
+    return { ok: false, error: "phase_2_not_available" };
+  }
 
   const stripe = getStripeClient();
   if (!stripe) return { ok: false, error: "no_stripe_client" };

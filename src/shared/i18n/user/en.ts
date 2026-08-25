@@ -2132,6 +2132,7 @@ export type UserMessages = {
         unauthorized: string;
         forbidden: string;
         invalid_plan: string;
+        phase_2_not_available: string;
         no_stripe_client: string;
         server_error: string;
       };
@@ -2139,6 +2140,7 @@ export type UserMessages = {
         unauthorized: string;
         forbidden: string;
         no_customer: string;
+        phase_2_not_available: string;
         no_stripe_client: string;
         server_error: string;
       };
@@ -4604,7 +4606,7 @@ export const userEn: UserMessages = {
     pricing: {
       sectionTitle: "Subscription",
       sectionIntro:
-        "Choose the plan that fits your salon. Upgrade or change anytime.",
+        "Choose the plan that fits your salon. V1 billing changes are handled manually by NailIQ support.",
       currentBadge: "Current",
       perMonth: "/ month",
       unlimited: "Unlimited",
@@ -4626,6 +4628,8 @@ export const userEn: UserMessages = {
         unauthorized: "Sign in is required.",
         forbidden: "Only the salon owner can change the subscription.",
         invalid_plan: "That plan is not available.",
+        phase_2_not_available:
+          "Automatic subscription billing arrives in Phase 2. Contact NailIQ support for a manual V1 plan change.",
         no_stripe_client: "Billing is not configured. Contact support.",
         server_error: "Could not start checkout. Try again shortly.",
       },
@@ -4633,6 +4637,8 @@ export const userEn: UserMessages = {
         unauthorized: "Sign in is required.",
         forbidden: "Only the salon owner can manage billing.",
         no_customer: "No active subscription to manage.",
+        phase_2_not_available:
+          "Automatic subscription management arrives in Phase 2. Contact NailIQ support for V1 billing help.",
         no_stripe_client: "Billing is not configured. Contact support.",
         server_error: "Could not open the billing portal. Try again shortly.",
       },

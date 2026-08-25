@@ -14,7 +14,6 @@ import {
   canAddService,
   canAddStaff,
   parseSubscriptionPlan,
-  type SubscriptionPlan,
 } from "@/shared/lib/subscriptionPlans";
 import {
   mergeOpeningHoursFromClient,
@@ -1158,24 +1157,21 @@ export async function updateStaff(
 
   if (touchServices) {
     const serviceIds = sanitizeServiceIds(data.serviceIds);
-    const { error: delErr } = await supabase
-      .from("staff_services")
-      .delete()
-      .eq("staff_id", staffId);
-    if (delErr) {
-      console.error("[updateStaff] staff_services delete", delErr);
+    const { data: capabilityUpdated, error: capabilityError } =
+      await supabase.rpc(
+        "set_staff_service_capabilities" as never,
+        {
+          p_salon_id: r.salon.id,
+          p_staff_id: staffId,
+          p_service_ids: serviceIds,
+        } as never,
+      );
+    if (capabilityError || (capabilityUpdated as unknown) !== true) {
+      console.error(
+        "[updateStaff] set_staff_service_capabilities",
+        capabilityError,
+      );
       return fail("server_error");
-    }
-    if (serviceIds.length > 0) {
-      const { error: insErr } = await supabase
-        .from("staff_services")
-        .insert(
-          serviceIds.map((sid) => ({ staff_id: staffId, service_id: sid })),
-        );
-      if (insErr) {
-        console.error("[updateStaff] staff_services insert", insErr);
-        return fail("server_error");
-      }
     }
   }
 
