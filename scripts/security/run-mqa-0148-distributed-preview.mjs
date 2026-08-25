@@ -113,6 +113,21 @@ async function assertVersion(baseURL, bypassSecret, candidateSha) {
   }
 }
 
+async function assertQaServiceKey(serviceRoleKey) {
+  if (!serviceRoleKey) {
+    throw new Error("REFUSE: Preview Supabase service key is missing");
+  }
+  const response = await fetch(`${qaSupabaseUrl}/auth/v1/admin/users?page=1&per_page=1`, {
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+    },
+  });
+  if (response.status !== 200) {
+    throw new Error("REFUSE: Preview Supabase service key is not valid for the QA project");
+  }
+}
+
 async function deleteQaRateLimits(db) {
   for (const prefix of [
     "public-edge:booking-page:",
@@ -311,7 +326,6 @@ for (const [key, expected] of [
   ["NAILIQ_QA_EXPECTED_SUPABASE_PROJECT_REF", qaProjectRef],
   ["NEXT_PUBLIC_SUPABASE_URL", qaSupabaseUrl],
   ["NEXT_PUBLIC_SUPABASE_ANON_KEY", publishableKey],
-  ["SUPABASE_SERVICE_ROLE_KEY", serviceKey],
 ]) {
   const actual = branchEnv[key]?.trim();
   const matches = key.endsWith("_URL")
@@ -327,6 +341,7 @@ for (const [key, expected] of [
     throw new Error(`REFUSE: exact Preview branch env ${key} is not safely pinned`);
   }
 }
+await assertQaServiceKey(branchEnv.SUPABASE_SERVICE_ROLE_KEY?.trim());
 if (
   branchEnv.SUPABASE_INTERNAL_URL &&
   new URL(branchEnv.SUPABASE_INTERNAL_URL).origin !== qaSupabaseUrl
