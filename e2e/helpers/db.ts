@@ -185,12 +185,17 @@ export async function getGroupBookingStamps(slug: string): Promise<
   return (data ?? []) as Awaited<ReturnType<typeof getGroupBookingStamps>>;
 }
 
-export async function cleanupTestSalon(slug: string) {
+export async function cleanupTestSalon(
+  slug: string,
+  options: { clearAllRateLimits?: boolean } = {},
+) {
   // Every Playwright shard owns a throwaway database and runs serially. Reset
   // durable public-rate buckets between fixture salons so one spec cannot spend
   // another spec's IP allowance (all browser requests originate from the same
   // loopback address). Assertions inside a spec still exercise the real limiter.
-  await supabase.from("rate_limits").delete().like("bucket", "%");
+  if (options.clearAllRateLimits !== false) {
+    await supabase.from("rate_limits").delete().like("bucket", "%");
+  }
 
   const { data: salon } = await supabase
     .from("salons")
