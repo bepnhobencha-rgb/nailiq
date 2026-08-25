@@ -89,7 +89,16 @@ BEGIN
     OR old.staff_id IS DISTINCT FROM new.staff_id
     OR old.resource_id IS DISTINCT FROM new.resource_id
     OR old.group_id IS DISTINCT FROM new.group_id
-    OR old.client_profile_id IS DISTINCT FROM new.client_profile_id
+    OR (
+      old.client_profile_id IS DISTINCT FROM new.client_profile_id
+      -- Privacy cleanup and fixture teardown rely on the FK's ON DELETE SET
+      -- NULL action. Detaching a deleted profile is not a reassignment and
+      -- does not rewrite the terminal booking's customer snapshot.
+      AND NOT (
+        old.client_profile_id IS NOT NULL
+        AND new.client_profile_id IS NULL
+      )
+    )
     OR old.client_name IS DISTINCT FROM new.client_name
     OR old.client_phone IS DISTINCT FROM new.client_phone
     OR old.client_email IS DISTINCT FROM new.client_email

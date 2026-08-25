@@ -52,6 +52,9 @@ describe("V1 terminal booking correction policy", () => {
         `old.${column} IS DISTINCT FROM new.${column}`,
       );
     }
+    expect(migration).toMatch(
+      /old\.client_profile_id IS NOT NULL[\s\S]*new\.client_profile_id IS NULL/u,
+    );
   });
 
   it("couples terminal transitions and their acceptance audit", () => {
