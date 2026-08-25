@@ -38,6 +38,10 @@ describe("V1 Fast Track staff capability boundary", () => {
     expect(migration).toContain("ss.staff_id <> p_staff_id");
     expect(migration).toContain("staff_capability_mode_cannot_reopen_legacy");
     expect(migration).toContain("BEFORE INSERT OR DELETE OR UPDATE");
+    expect(migration).toContain("current_user IN ('service_role', 'postgres', 'supabase_admin')");
+    expect(migration).toMatch(
+      /FUNCTION public\.enforce_staff_capability_write\(\)\nRETURNS trigger\nLANGUAGE plpgsql\nSECURITY INVOKER/u,
+    );
   });
 
   it("routes updateStaff through the atomic RPC instead of delete-then-insert", () => {

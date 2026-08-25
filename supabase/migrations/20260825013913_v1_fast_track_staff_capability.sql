@@ -44,7 +44,7 @@ GRANT SELECT (staff_capability_mode) ON TABLE public.salons TO authenticated;
 CREATE OR REPLACE FUNCTION public.enforce_staff_capability_mode_transition()
 RETURNS trigger
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path TO ''
 AS $function$
 BEGIN
@@ -74,7 +74,7 @@ GRANT EXECUTE ON FUNCTION public.enforce_staff_capability_mode_transition()
 CREATE OR REPLACE FUNCTION public.enforce_staff_capability_write()
 RETURNS trigger
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path TO ''
 AS $function$
 DECLARE
@@ -124,7 +124,17 @@ BEGIN
   -- One direct row must never turn legacy-all into a partial whitelist. The
   -- locked transition RPC seeds the legacy matrix before narrowing one staff.
   IF v_mode <> 'whitelist' THEN
-    RAISE EXCEPTION 'capability_transition_requires_rpc' USING ERRCODE = '55000';
+    IF current_user IN ('service_role', 'postgres', 'supabase_admin') THEN
+      -- Trusted fixtures/maintenance may seed a complete matrix directly.
+      -- The statement remains atomic; its first row permanently closes the
+      -- legacy fallback before any mapping becomes visible.
+      UPDATE public.salons
+      SET staff_capability_mode = 'whitelist'
+      WHERE id = v_salon_id;
+    ELSE
+      RAISE EXCEPTION 'capability_transition_requires_rpc'
+        USING ERRCODE = '55000';
+    END IF;
   END IF;
 
   RETURN NEW;
@@ -135,7 +145,11 @@ DROP TRIGGER IF EXISTS mark_staff_capability_configured
   ON public.staff_services;
 DROP TRIGGER IF EXISTS enforce_staff_capability_write
   ON public.staff_services;
-CREATE TRIGGER enforce_staff_capability_write
+DROP TRIGGER IF EXISTS zz_enforce_staff_capability_write
+  ON public.staff_services;
+-- Keep the established same-tenant trigger first (PostgreSQL orders trigger
+-- names) so existing SQLSTATE/message contracts remain unchanged.
+CREATE TRIGGER zz_enforce_staff_capability_write
 BEFORE INSERT OR DELETE OR UPDATE OF staff_id, service_id
 ON public.staff_services
 FOR EACH ROW EXECUTE FUNCTION public.enforce_staff_capability_write();

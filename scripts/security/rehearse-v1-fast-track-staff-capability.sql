@@ -49,6 +49,9 @@ INSERT INTO public.salon_members (salon_id, user_id, role) VALUES
   ('10000000-0000-4000-8000-000000000071', '40000000-0000-4000-8000-000000000071', 'owner'),
   ('10000000-0000-4000-8000-000000000071', '40000000-0000-4000-8000-000000000072', 'nail_tech');
 
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SELECT set_config('request.jwt.claim.sub', '40000000-0000-4000-8000-000000000071', true);
 DO $direct_partial_write$
 BEGIN
   BEGIN
@@ -62,6 +65,7 @@ BEGIN
   END;
 END
 $direct_partial_write$;
+RESET ROLE;
 
 -- A regular salon member cannot invoke the mutation even though the function
 -- itself is exposed to authenticated callers.
