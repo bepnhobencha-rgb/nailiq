@@ -578,17 +578,25 @@ export async function chargeNoShowFee(
   const provider = await resolvePaymentProvider(str(b.salon_id));
   if (!provider) return { charged: false, reason: "payment provider not configured" };
 
-  // ── Double-charge guard (opt-in; Square only) ────────────────────────────
-  // The daily retry cron rotates the Square idempotency key per attempt (so a
-  // decline can be re-attempted), which means Square's own dedupe can't stop a
-  // re-charge. If a prior attempt CHARGED but its DB write failed (status stuck
-  // 'failed'), the retry would charge again. When enabled, reconcile against
-  // Square first: adopt an existing successful payment for this booking instead
-  // of charging. Fail-safe — any lookup error (or no match) falls through to the
-  // charge, so this can only PREVENT a duplicate, never cause one. Gated OFF by
-  // default: merging is a no-op until verified against a Square sandbox and the
-  // env flag is set.
-  if (process.env.NOSHOW_RECONCILE_BEFORE_CHARGE === "1" && provider.kind === "square") {
+  // ── Double-charge guard for every deliberate retry ──────────────────────
+  // The FIRST attempt has a stable idempotency key (`noshow:<bookingId>`), so a
+  // network retry cannot double-charge it. A deliberate retry after a decline
+  // needs a fresh suffix, however. Before using that new key we MUST reconcile
+  // the provider: the previous attempt may have completed while its response or
+  // our DB write was lost. Reconciliation therefore fails CLOSED. Revenue can
+  // be retried later; a possible duplicate charge cannot be undone silently.
+  //
+  // Square currently supplies the read-only reference lookup. Stripe no-show
+  // charging remains sandbox-only until connected-account routing and an
+  // equivalent reconciliation lookup are implemented, so rotated Stripe retries
+  // are intentionally blocked rather than risking a second PaymentIntent.
+  if (opts?.idempotencySuffix) {
+    if (provider.kind !== "square") {
+      return {
+        charged: false,
+        reason: "retry reconciliation unavailable",
+      };
+    }
     try {
       const cfg = await getSquareConfig(db, str(b.salon_id));
       // Fee is charged within ~7 days of the appointment (+ up to 3 daily
@@ -600,6 +608,14 @@ export async function chargeNoShowFee(
         since,
       );
       if (existing) {
+        const reconciledAmount = num(existing.amount_money?.amount);
+        if (reconciledAmount <= 0) {
+          return {
+            charged: false,
+            reason: "retry reconciliation amount unavailable",
+            paymentId: existing.id,
+          };
+        }
         await db
           .from("bookings")
           .update({
@@ -607,7 +623,10 @@ export async function chargeNoShowFee(
             noshow_payment_id: existing.id,
             noshow_charge_attempts: num(b.noshow_charge_attempts) + 1,
             noshow_charge_error: null,
-            noshow_fee_cents: feeCents,
+            // Persist what Square actually collected. The fee may have changed
+            // locally after the ambiguous first attempt; never claim/refund a
+            // different amount from the successful payment we reconciled.
+            noshow_fee_cents: reconciledAmount,
           } as never)
           .eq("id", bookingId);
         console.warn("[chargeNoShowFee] reconciled existing Square payment — skipped re-charge", {
@@ -617,8 +636,20 @@ export async function chargeNoShowFee(
         return { charged: false, reason: "already_charged_reconciled", paymentId: existing.id };
       }
     } catch (e) {
-      // Reconcile is best-effort; never let it block a legitimate charge.
-      console.error("[chargeNoShowFee] reconcile guard failed — proceeding to charge", { bookingId }, e);
+      const errMsg = e instanceof Error ? e.message : "reconciliation failed";
+      await db
+        .from("bookings")
+        .update({ noshow_charge_error: `retry reconciliation failed: ${errMsg}` } as never)
+        .eq("id", bookingId);
+      console.error(
+        "[chargeNoShowFee] reconcile guard failed — retry blocked",
+        { bookingId },
+        e,
+      );
+      return {
+        charged: false,
+        reason: "retry reconciliation unavailable",
+      };
     }
   }
 
