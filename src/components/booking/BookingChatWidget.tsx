@@ -10,6 +10,15 @@ type ChatMessage = {
   content: string;
 };
 
+export function bookingChatDisclaimer(
+  t: BookingMessages,
+  bookingToolsEnabled: boolean,
+): string {
+  return bookingToolsEnabled
+    ? t.chat.transactionalDisclaimer
+    : t.chat.disclaimer;
+}
+
 function MessageBubble({
   msg,
   isTyping,
@@ -38,9 +47,11 @@ function MessageBubble({
 export function BookingChatWidget({
   salonId,
   t,
+  bookingToolsEnabled = false,
 }: {
   salonId: string;
   t: BookingMessages;
+  bookingToolsEnabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -194,7 +205,7 @@ export function BookingChatWidget({
 
           {/* Disclaimer */}
           <p className="border-t border-[var(--booking-border)] px-3 py-1.5 text-center text-[10px] text-[var(--booking-text-muted)]">
-            {t.chat.disclaimer}
+            {bookingChatDisclaimer(t, bookingToolsEnabled)}
           </p>
 
           {/* Input */}

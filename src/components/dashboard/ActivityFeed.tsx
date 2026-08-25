@@ -176,7 +176,7 @@ export function ActivityFeed({
 
   const openArchivedBooking = async (item: ActivityItem) => {
     const terminalStatus = terminalActivityBookingStatus(item);
-    if (!archivedBookingFeatureEnabled || !terminalStatus || !item.bookingId) {
+    if (!terminalStatus || !item.bookingId) {
       return;
     }
 
@@ -194,15 +194,13 @@ export function ActivityFeed({
         setArchivedDetail(result.detail);
       } else {
         const message =
-          result.error === "feature_disabled"
-            ? "Tính năng khôi phục lịch lưu trữ đang tắt cho salon này."
-            : result.error === "not_found"
-              ? "Lịch này không còn ở trạng thái đã huỷ hoặc không đến. Hãy tải lại trang để xem trạng thái mới nhất."
-              : result.error === "unauthorized" || result.error === "forbidden"
-                ? "Bạn không có quyền xem chi tiết lịch này."
-                : result.error === "invalid_booking"
-                  ? "Mã lịch không hợp lệ."
-                  : "Không thể tải chi tiết lịch. Vui lòng thử lại.";
+          result.error === "not_found"
+            ? "Lịch này không còn ở trạng thái đã huỷ hoặc không đến. Hãy tải lại trang để xem trạng thái mới nhất."
+            : result.error === "unauthorized" || result.error === "forbidden"
+              ? "Bạn không có quyền xem chi tiết lịch này."
+              : result.error === "invalid_booking"
+                ? "Mã lịch không hợp lệ."
+                : "Không thể tải chi tiết lịch. Vui lòng thử lại.";
         setArchivedError(message);
       }
     } catch {
@@ -275,10 +273,7 @@ export function ActivityFeed({
             {shown.map((it) => {
               const unread = Date.parse(it.when) > prevSeenMs;
               const terminalStatus = terminalActivityBookingStatus(it);
-              const canOpenBooking = canOpenActivityBooking(
-                it,
-                archivedBookingFeatureEnabled,
-              );
+              const canOpenBooking = canOpenActivityBooking(it);
               const inner = (
                 <div
                   className={`flex items-start gap-3 py-3 ${unread ? "" : "opacity-55"}`}

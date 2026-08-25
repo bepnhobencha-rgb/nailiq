@@ -70,13 +70,19 @@ from `defaultOn` (Base → ON, Beta → OFF).
 | `nail_tryon` | Scan bàn tay + xem trước mẫu nail | `feature_flags.nail_tryon_enabled` |
 | `archived_booking_recovery` | Linked replacement for cancelled/no-show history | `feature_flags.archived_booking_recovery_enabled` |
 
+Transactional booking chat is a separate high-impact pilot toggle:
+`feature_flags.booking_chat_tools_enabled`. It is absent/false by default and
+only gives the public chat a filtered booking-tool set; phone-only transfer,
+hang-up, owner messaging and payment actions are not exposed.
+
 **No key duplication.** Where a per-salon toggle already exists, the registry
 maps to it rather than minting a new one:
 - `feature_flags` keys come from `SUPERADMIN_PER_SALON_FLAGS`
   (`receptionist_center_enabled`, `walkin_queue_enabled`,
   `group_booking_enabled`, `loyalty_enabled`, `reports_enabled`,
   `admin_copilot_enabled`, `ai_control_center_enabled`,
-  `nail_tryon_enabled`, `archived_booking_recovery_enabled`).
+  `nail_tryon_enabled`, `archived_booking_recovery_enabled`,
+  `booking_chat_tools_enabled`).
 - `ai_voice` reuses the dedicated `salons.voice_ai_enabled` column.
 - `photos` / `reviews` reuse billing-side `PLAN_FEATURES` keys.
 

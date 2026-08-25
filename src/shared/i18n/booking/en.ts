@@ -686,6 +686,8 @@ export const bookingEn = {
     typingIndicator: "Thinking…",
     errorFallback: "Sorry, I couldn't connect. Please try again.",
     disclaimer: "AI assistant — for bookings, use the form above.",
+    transactionalDisclaimer:
+      "AI can check availability and help book. Nothing is confirmed until you review and explicitly agree.",
   },
   /** Phone step — the new hero step 1 of the booking flow. */
   phoneStepHeading: "Book your appointment",

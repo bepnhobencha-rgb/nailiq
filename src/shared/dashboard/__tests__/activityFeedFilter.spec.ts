@@ -42,7 +42,7 @@ describe("activity cancelled-history filter", () => {
     ]);
   });
 
-  it("opens terminal bookings only when archived recovery is enabled", () => {
+  it("always opens terminal history read-only, independently of recovery", () => {
     const cancelled = item({
       id: "cancelled",
       eventType: "booking_cancelled",
@@ -54,10 +54,8 @@ describe("activity cancelled-history filter", () => {
       bookingStatus: "no_show",
     });
 
-    expect(canOpenActivityBooking(cancelled, false)).toBe(false);
-    expect(canOpenActivityBooking(cancelled, true)).toBe(true);
-    expect(canOpenActivityBooking(noShow, false)).toBe(false);
-    expect(canOpenActivityBooking(noShow, true)).toBe(true);
+    expect(canOpenActivityBooking(cancelled)).toBe(true);
+    expect(canOpenActivityBooking(noShow)).toBe(true);
     expect(terminalActivityBookingStatus(noShow)).toBe("no_show");
   });
 
@@ -69,7 +67,6 @@ describe("activity cancelled-history filter", () => {
           eventType: "booking_edited",
           bookingId: "booking-2",
         }),
-        false,
       ),
     ).toBe(true);
   });
@@ -84,7 +81,7 @@ describe("activity cancelled-history filter", () => {
     });
 
     expect(terminalActivityBookingStatus(restored)).toBeNull();
-    expect(canOpenActivityBooking(restored, false)).toBe(true);
+    expect(canOpenActivityBooking(restored)).toBe(true);
     expect(activityItemsForTab([restored], "cancelled")).toEqual([]);
   });
 

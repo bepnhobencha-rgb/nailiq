@@ -23,6 +23,10 @@ export interface StaffActionMessageVars {
   salonPhone?: string | null;
   /** New provider name for a staff-only reassignment. */
   staffName?: string | null;
+  /** Departing provider when the guest explicitly requested them. */
+  previousStaffName?: string | null;
+  /** Distinguishes a guest-selected provider from an ordinary assignment. */
+  customerRequestedPreviousStaff?: boolean;
 }
 
 function greet(name: string, locale: SupportedLocale): string {
@@ -63,6 +67,9 @@ export function buildStaffActionSms(
       case "no_show":
         return null;
       case "staff_change":
+        if (v.customerRequestedPreviousStaff) {
+          return `${g}${v.previousStaffName?.trim() || "nhân viên bạn đã yêu cầu"} không còn phục vụ lịch ${svc} này tại ${salon}. Salon đã sắp xếp ${v.staffName?.trim() || "một nhân viên khác"}; thời gian vẫn giữ nguyên vào ${v.whenLabel}.${call || " Nếu muốn chọn cách khác, vui lòng liên hệ salon."}`.trim();
+        }
         return `${g}lịch hẹn ${svc} của bạn tại ${salon} vẫn giữ nguyên vào ${v.whenLabel} và sẽ do ${v.staffName?.trim() || "một nhân viên khác"} phục vụ.${call}`.trim();
     }
   }
@@ -77,6 +84,9 @@ export function buildStaffActionSms(
     case "no_show":
       return null;
     case "staff_change":
+      if (v.customerRequestedPreviousStaff) {
+        return `${g}${v.previousStaffName?.trim() || "the provider you requested"} is no longer available for this ${svc} appointment at ${salon}. We arranged ${v.staffName?.trim() || "another team member"}; your time remains ${v.whenLabel}.${call || " Contact the salon if you prefer another option."}`.trim();
+      }
       return `${g}your ${svc} appointment at ${salon} remains scheduled for ${v.whenLabel} and will be with ${v.staffName?.trim() || "another team member"}.${call}`.trim();
   }
 }

@@ -134,7 +134,7 @@ TOOL USAGE RULES — READ CAREFULLY:
 
 0. IDENTITY VERIFICATION — before you BOOK, CANCEL, or RESCHEDULE, the caller must prove they
    control the phone number involved. Checking availability or prices needs NO verification.
-   • If a mutating tool returns { error: "otp_required" }, do this, then retry the SAME tool:
+   • If a booking lookup, customer lookup, or mutating tool returns { error: "otp_required" }, do this, then retry the SAME tool:
        a) call request_otp(customer_phone) — for a cancel/reschedule use the phone that OWNS the
           booking. Say nothing BEFORE the call, but the moment it returns you MUST tell them a code
           is on its way and ask them to read it back. Their phone buzzes either way; staying silent
