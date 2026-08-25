@@ -113,18 +113,17 @@ async function assertVersion(baseURL, bypassSecret, candidateSha) {
   }
 }
 
-async function assertQaServiceKey(serviceRoleKey) {
-  if (!serviceRoleKey) {
-    throw new Error("REFUSE: Preview Supabase service key is missing");
-  }
-  const response = await fetch(`${qaSupabaseUrl}/auth/v1/admin/users?page=1&per_page=1`, {
-    headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
-    },
+async function assertPreviewReady(baseURL, bypassSecret) {
+  const response = await fetch(`${baseURL}/api/ready`, {
+    headers: { "x-vercel-protection-bypass": bypassSecret },
+    redirect: "manual",
   });
   if (response.status !== 200) {
-    throw new Error("REFUSE: Preview Supabase service key is not valid for the QA project");
+    throw new Error(`Preview /api/ready returned ${response.status}`);
+  }
+  const body = await response.json();
+  if (body?.status !== "ready") {
+    throw new Error("REFUSE: Preview runtime is not database-ready");
   }
 }
 
@@ -341,12 +340,29 @@ for (const [key, expected] of [
     throw new Error(`REFUSE: exact Preview branch env ${key} is not safely pinned`);
   }
 }
-await assertQaServiceKey(branchEnv.SUPABASE_SERVICE_ROLE_KEY?.trim());
 if (
   branchEnv.SUPABASE_INTERNAL_URL &&
   new URL(branchEnv.SUPABASE_INTERNAL_URL).origin !== qaSupabaseUrl
 ) {
   throw new Error("REFUSE: Preview SUPABASE_INTERNAL_URL points outside QA");
+}
+const envMetadataResponse = commandJson("npx", [
+  "vercel",
+  "env",
+  "ls",
+  "preview",
+  branch,
+  "--format=json",
+]);
+const serviceRoleMetadata = envMetadataResponse.envs?.find(
+  (item) => item.key === "SUPABASE_SERVICE_ROLE_KEY",
+);
+if (
+  serviceRoleMetadata?.type !== "sensitive" ||
+  serviceRoleMetadata.gitBranch !== branch ||
+  !serviceRoleMetadata.target?.includes("preview")
+) {
+  throw new Error("REFUSE: Preview Supabase service key metadata is not branch-sensitive");
 }
 
 const project = commandJson("npx", ["vercel", "api", `/v9/projects/${vercelProjectId}`]);
@@ -379,6 +395,7 @@ if (
 }
 const baseURL = `https://${deployment.url}`;
 await assertVersion(baseURL, bypassSecret, candidateSha);
+await assertPreviewReady(baseURL, bypassSecret);
 
 Object.assign(process.env, {
   NEXT_PUBLIC_SUPABASE_URL: qaSupabaseUrl,
