@@ -583,8 +583,7 @@ jobs:
       MQA_LOAD_START_EPOCH_MS: ${{ inputs.start_epoch_ms }}
       MQA_LOAD_SALON_SLUG: e2e-mqa-0148-${{ inputs.stage }}-distributed-load
       MQA_LOAD_SALON_NAME: E2E MQA-0148 ${{ inputs.stage }} Distributed Load Salon
-      MQA_LOAD_OWNER_EMAIL: ${{ secrets.MQA0148_QA_OWNER_EMAIL }}
-      MQA_LOAD_OWNER_PASSWORD: ${{ secrets.MQA0148_QA_OWNER_PASSWORD }}
+      MQA_LOAD_OWNERS_JSON: ${{ secrets.MQA0148_QA_OWNERS_JSON }}
       VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.MQA0148_VERCEL_BYPASS_SECRET }}
       MQA_LOAD_ARTIFACT_DIRECTORY: artifacts
     steps:

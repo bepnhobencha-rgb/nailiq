@@ -36,8 +36,7 @@ const shardIndex = requiredInteger("MQA_LOAD_SHARD_INDEX");
 const startEpochMs = requiredInteger("MQA_LOAD_START_EPOCH_MS");
 const slug = required("MQA_LOAD_SALON_SLUG");
 const salonName = required("MQA_LOAD_SALON_NAME");
-const email = required("MQA_LOAD_OWNER_EMAIL");
-const password = required("MQA_LOAD_OWNER_PASSWORD");
+const owners = JSON.parse(required("MQA_LOAD_OWNERS_JSON"));
 const bypassSecret = required("VERCEL_AUTOMATION_BYPASS_SECRET");
 const artifactDirectory = resolve(
   process.cwd(),
@@ -54,11 +53,21 @@ if (
   shardCount !== 10 ||
   shardIndex < 0 ||
   shardIndex >= shardCount ||
+  !Array.isArray(owners) ||
+  owners.length !== shardCount ||
+  owners.some(
+    (owner) =>
+      typeof owner?.email !== "string" ||
+      !owner.email.endsWith("@nailiq.test.invalid") ||
+      typeof owner?.password !== "string" ||
+      owner.password.length < 20,
+  ) ||
   slug !== `e2e-mqa-0148-${stage}-distributed-load` ||
   salonName !== `E2E MQA-0148 ${stage} Distributed Load Salon`
 ) {
   throw new Error("REFUSE: distributed shard identity or QA boundary mismatch");
 }
+const { email, password } = owners[shardIndex];
 
 const assignedIndexes = Array.from({ length: stage }, (_, index) => index).filter(
   (index) => index % shardCount === shardIndex,

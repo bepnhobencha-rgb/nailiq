@@ -22,8 +22,7 @@ const vercelProjectId = "prj_1yP37n3CAzbk5BaXizY5TWcOa7gV";
 const qaSupabaseUrl = `https://${qaProjectRef}.supabase.co`;
 const workflow = "e2e.yml";
 const githubSecrets = [
-  "MQA0148_QA_OWNER_EMAIL",
-  "MQA0148_QA_OWNER_PASSWORD",
+  "MQA0148_QA_OWNERS_JSON",
   "MQA0148_VERCEL_BYPASS_SECRET",
 ];
 const evidenceDirectory =
@@ -178,7 +177,7 @@ async function sourceProof(db, stage) {
 }
 
 function triggerWorkflow({ candidateSha, baseURL, stage }) {
-  const startEpochMs = Date.now() + 12 * 60_000;
+  const startEpochMs = Date.now() + 5 * 60_000;
   const triggeredAfter = Date.now() - 5_000;
   run("gh", [
     "workflow",
@@ -433,10 +432,20 @@ try {
       phone: `1555333${stage}`,
     });
     await seedRepresentativeVolume(db, salon.salonId);
-    const owner = await seedTestSalonMember(salon.salonId, "owner");
-    activeFixture = { slug, ownerUserId: owner.userId };
-    setGithubSecret("MQA0148_QA_OWNER_EMAIL", owner.email);
-    setGithubSecret("MQA0148_QA_OWNER_PASSWORD", owner.password);
+    const owners = [];
+    for (let index = 0; index < 10; index += 1) {
+      owners.push(await seedTestSalonMember(salon.salonId, "owner"));
+    }
+    activeFixture = {
+      slug,
+      ownerUserIds: owners.map((owner) => owner.userId),
+    };
+    setGithubSecret(
+      "MQA0148_QA_OWNERS_JSON",
+      JSON.stringify(
+        owners.map(({ email, password }) => ({ email, password })),
+      ),
+    );
 
     const { runId, startEpochMs } = triggerWorkflow({
       candidateSha,
@@ -469,7 +478,7 @@ try {
     receipt.sourceProof = await sourceProof(db, stage);
 
     await cleanupTestSalon(slug, { clearAllRateLimits: false });
-    await cleanupTestUser(owner.userId);
+    for (const owner of owners) await cleanupTestUser(owner.userId);
     activeFixture = undefined;
     await deleteQaRateLimits(db);
     const leftovers = await readQaRateLimits(db, "public-edge:");
@@ -492,7 +501,7 @@ try {
 } finally {
   if (activeFixture) {
     await cleanupTestSalon(activeFixture.slug, { clearAllRateLimits: false });
-    await cleanupTestUser(activeFixture.ownerUserId);
+    for (const userId of activeFixture.ownerUserIds) await cleanupTestUser(userId);
   }
   await deleteQaRateLimits(db);
   deleteGithubSecrets();
