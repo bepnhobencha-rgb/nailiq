@@ -104,27 +104,9 @@ function keysOverlap(left: ReadonlySet<string>, right: ReadonlySet<string>) {
   return false;
 }
 
-function hasEarlierOverlappingRequest(
-  index: number,
-  request: DurableRpcRequest,
-) {
-  for (let earlierIndex = 0; earlierIndex < index; earlierIndex += 1) {
-    const earlier = durableRpcQueue[earlierIndex];
-    if (
-      earlier.state === "queued" &&
-      earlier.target === request.target &&
-      keysOverlap(earlier.keys, request.keys)
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
 function selectDurableRpcBatch() {
   let target: DurableRpcTarget | undefined;
   const batch: DurableRpcRequest[] = [];
-  const batchKeys = new Set<string>();
 
   for (let index = 0; index < durableRpcQueue.length; index += 1) {
     const request = durableRpcQueue[index];
@@ -136,12 +118,9 @@ function selectDurableRpcBatch() {
     if (request.state !== "queued") continue;
     if (target && request.target !== target) continue;
     if (keysOverlap(request.keys, request.target.activeKeys)) continue;
-    if (keysOverlap(request.keys, batchKeys)) continue;
-    if (hasEarlierOverlappingRequest(index, request)) continue;
 
     target ??= request.target;
     batch.push(request);
-    for (const key of request.keys) batchKeys.add(key);
     if (batch.length >= MAX_DURABLE_REQUESTS_PER_RPC) break;
   }
 

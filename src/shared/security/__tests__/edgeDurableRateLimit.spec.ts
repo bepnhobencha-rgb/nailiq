@@ -9,7 +9,7 @@ import { consumeEdgeDurableRateLimits } from "../edgeDurableRateLimit";
 const requestBatchMigration = readFileSync(
   resolve(
     process.cwd(),
-    "supabase/migrations/20260823093507_batch_edge_rate_limit_requests.sql",
+    "supabase/migrations/20260825082500_coalesce_overlapping_edge_rate_limit_requests.sql",
   ),
   "utf8",
 );
@@ -158,7 +158,26 @@ describe("Proxy durable rate limiter", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it("never co-batches overlapping keys and preserves their FIFO order", async () => {
+  it("co-batches overlapping keys and maps their ordered results exactly", async () => {
+    const fetchMock = vi.fn(
+      async (_url: string, init: RequestInit) =>
+        responseForBatch(init, [true, false]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const results = await Promise.all([
+      twoBuckets("198.51.100.42"),
+      twoBuckets("198.51.100.42"),
+    ]);
+
+    expect(results).toEqual(["allowed", "limited"]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = parseBatchBody(fetchMock.mock.calls[0]?.[1]);
+    expect(body.p_requests).toHaveLength(2);
+    expect(body.p_requests[1]).toEqual(body.p_requests[0]);
+  });
+
+  it("does not overlap a queued same-key batch with an active RPC", async () => {
     const releases: Array<(values: readonly boolean[]) => void> = [];
     const fetchMock = vi.fn(
       (_url: string, init: RequestInit) =>
@@ -170,10 +189,10 @@ describe("Proxy durable rate limiter", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const first = twoBuckets("198.51.100.42");
-    const second = twoBuckets("198.51.100.42");
+    const first = twoBuckets("198.51.100.43");
 
     await waitForCondition(() => fetchMock.mock.calls.length === 1);
+    const second = twoBuckets("198.51.100.43");
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(parseBatchBody(fetchMock.mock.calls[0]?.[1]).p_requests).toHaveLength(1);
@@ -210,6 +229,25 @@ describe("Proxy durable rate limiter", () => {
       fetchMock.mock.calls
         .map((call) => parseBatchBody(call[1]).p_requests.length)
         .sort((left, right) => right - left),
+    ).toEqual([32, 32, 1]);
+  });
+
+  it("drains a same-key burst in bounded ordered batches", async () => {
+    const fetchMock = vi.fn(
+      async (_url: string, init: RequestInit) => responseForBatch(init),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const results = await Promise.all(
+      Array.from({ length: 65 }, () => oneBucket("203.0.113.65")),
+    );
+
+    expect(results.every((result) => result === "allowed")).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(
+      fetchMock.mock.calls.map(
+        (call) => parseBatchBody(call[1]).p_requests.length,
+      ),
     ).toEqual([32, 32, 1]);
   });
 
@@ -483,8 +521,12 @@ describe("Proxy durable rate limiter", () => {
     );
     expect(requestBatchMigration).toMatch(/v_request_count > 32/);
     expect(requestBatchMigration).toMatch(/v_bucket_count > 128/);
+    expect(requestBatchMigration).toMatch(/increments AS MATERIALIZED/);
     expect(requestBatchMigration).toMatch(
-      /v_distinct_key_count IS DISTINCT FROM v_bucket_count/,
+      /PARTITION BY prepared\.bucket[\s\S]*?ORDER BY prepared\.request_ordinal/,
+    );
+    expect(requestBatchMigration).toMatch(
+      /GROUP BY bucket\.bucket_json ->> 'p_key'[\s\S]*?pg_catalog\.min[\s\S]*?IS DISTINCT FROM[\s\S]*?pg_catalog\.max/,
     );
     expect(requestBatchMigration).toMatch(
       /jsonb_agg\([\s\S]*?ORDER BY per_request\.request_ordinal/,

@@ -168,7 +168,7 @@ BEGIN
        jsonb_build_array(
          jsonb_build_object(
            'p_key', v_duplicate_key,
-           'p_limit', 1,
+           'p_limit', 2,
            'p_window_seconds', 60
          )
        ),
@@ -180,7 +180,7 @@ BEGIN
          )
        )
      )) IS NOT NULL THEN
-    RAISE EXCEPTION 'bounded or duplicate request batch did not fail closed';
+    RAISE EXCEPTION 'bounded or inconsistent request batch did not fail closed';
   END IF;
 
   IF EXISTS (
@@ -190,6 +190,33 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'invalid request-batch input wrote rate-limit state';
   END IF;
+
+  v_result := public.rate_limit_hit_request_batch(jsonb_build_array(
+    jsonb_build_array(
+      jsonb_build_object(
+        'p_key', v_duplicate_key,
+        'p_limit', 1,
+        'p_window_seconds', 60
+      )
+    ),
+    jsonb_build_array(
+      jsonb_build_object(
+        'p_key', v_duplicate_key,
+        'p_limit', 1,
+        'p_window_seconds', 60
+      )
+    )
+  ));
+  IF v_result IS DISTINCT FROM '[true, false]'::jsonb OR (
+    SELECT count
+    FROM public.rate_limits
+    WHERE bucket LIKE v_duplicate_key || ':%'
+  ) IS DISTINCT FROM 2 THEN
+    RAISE EXCEPTION 'overlapping request batch ordering mismatch: %', v_result;
+  END IF;
+
+  DELETE FROM public.rate_limits
+  WHERE bucket LIKE v_duplicate_key || ':%';
 
   v_payload := jsonb_build_array(
     jsonb_build_array(
