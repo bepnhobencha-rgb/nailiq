@@ -4,6 +4,7 @@ import { requireReleaseFeatureEnabled } from "@/shared/features/requireReleaseFe
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
+import { isNailTryOnEligibleSalon } from "@/shared/nailTryOn/eligibility";
 
 type Props = { params: Promise<{ slug: string }> };
 type DesignRow = { id: string; name: string; description: string | null; preview_path: string; is_active: boolean; service_id: string | null };
@@ -21,7 +22,7 @@ export default async function NailTryOnSetupPage({ params }: Props) {
     redirect(`/dashboard/${encodeURIComponent(slug)}`);
   }
   const gate = await requireReleaseFeatureEnabled(slug, "nail_tryon");
-  if (!gate.ok) notFound();
+  if (!gate.ok || !isNailTryOnEligibleSalon(gate.salon)) notFound();
   const db = createServiceRoleClient();
   const [{ data }, { data: serviceRows }, { data: mappingRows }] = await Promise.all([
     db.from("nail_designs" as never)

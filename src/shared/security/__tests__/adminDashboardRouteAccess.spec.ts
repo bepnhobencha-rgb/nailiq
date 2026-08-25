@@ -152,7 +152,7 @@ describe("salon admin deep-link role matrix", () => {
     mocks.loadOwnerSalons.mockResolvedValue([]);
     mocks.requireReleaseFeatureEnabled.mockResolvedValue({
       ok: true,
-      salon: { id: "salon-1" },
+      salon: { id: "salon-1", vertical: "nail_salon" },
     });
     mocks.createServiceRoleClient.mockImplementation(serviceRoleClient);
   });
@@ -194,6 +194,21 @@ describe("salon admin deep-link role matrix", () => {
       expect(mocks.createServiceRoleClient).toHaveBeenCalledTimes(3);
     },
   );
+
+  it("rejects a non-nail owner before any Try-On service-role read", async () => {
+    mocks.getDashboardWriteClient.mockResolvedValue(routeContext("owner"));
+    mocks.requireReleaseFeatureEnabled.mockResolvedValue({
+      ok: true,
+      salon: { id: "salon-1", vertical: "head_spa" },
+    });
+
+    await expect(
+      NailTryOnSetupPage({
+        params: Promise.resolve({ slug: "qa-salon" }),
+      }),
+    ).rejects.toThrow("NOT_FOUND");
+    expect(mocks.createServiceRoleClient).not.toHaveBeenCalled();
+  });
 
   it.each(["senior", "receptionist", "nail_tech"] as const)(
     "redirects a %s before any settings or service-role read",

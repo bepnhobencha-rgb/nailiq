@@ -28,6 +28,7 @@ export type ReleaseFeatureSalonRow = {
   plan_override: string | null;
   feature_flags: unknown;
   voice_ai_enabled: boolean | null;
+  vertical?: string | null;
 };
 
 export type RequireReleaseFeatureResult =
