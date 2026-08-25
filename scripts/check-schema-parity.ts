@@ -67,6 +67,8 @@ import { execFileSync } from "node:child_process";
  * capability-replacement function.
  * The 20260825103000 MQA-0148 read-path migration adds one RLS-preserving
  * public booking snapshot plus two service-role-only dashboard projections.
+ * The 20260825124500 MQA-0148 dashboard-shell migration adds one
+ * service-role-only shell projection.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -130,7 +132,7 @@ const PRODUCTION = {
   // function, and +2 private completion classifiers retained behind the
   // SID-first service-role wrappers, plus +2 durable review-SMS completion and
   // signed callback-correlation functions.
-  functions: 372,
+  functions: 373,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -409,6 +411,7 @@ const CRITICAL_FUNCTIONS = [
   "load_public_booking_snapshot",
   "load_salon_dashboard_projection",
   "load_owner_home_projection",
+  "load_dashboard_shell_projection",
   "protect_organization_staff_location",
   "enforce_organization_staff_time_available",
   "enforce_organization_staff_booking_capacity",
