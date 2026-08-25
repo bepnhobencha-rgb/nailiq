@@ -18,6 +18,7 @@ const E2E_STAFF_DELETE_SLUG = `e2e-staff-delete-${_RUN_SUFFIX}`;
 const ANCHOR_NAME = "E2E_ST_ANCHOR";
 const NAME_BLOCK = "E2E_ST_BLOCK";
 const NAME_OK = "E2E_ST_OK";
+const TEST_PROFILE_IDS = new Set<string>();
 
 type Fixture = {
   salonId: string;
@@ -176,6 +177,12 @@ test.beforeEach(async () => {
 });
 
 test.afterAll(async () => {
+  if (TEST_PROFILE_IDS.size > 0) {
+    await supabaseAdmin
+      .from("client_profiles")
+      .delete()
+      .in("id", Array.from(TEST_PROFILE_IDS));
+  }
   await cleanupTestSalon(E2E_STAFF_DELETE_SLUG);
 });
 
@@ -301,5 +308,126 @@ test.describe("Safe staff offboarding", () => {
       .single();
     expect(staffAfter?.status).toBe("inactive");
     expect(staffAfter?.deleted_at).toBeNull();
+  });
+
+  test("st-3: protects a named staff request and clears stale preferences", async ({
+    page,
+  }) => {
+    const { data: requestedStaff, error: staffErr } = await supabaseAdmin
+      .from("staff")
+      .insert({
+        salon_id: fx.salonId,
+        name: NAME_BLOCK,
+        job_role: "nail_tech",
+      })
+      .select("id")
+      .single();
+    if (staffErr || !requestedStaff?.id) {
+      throw new Error(staffErr?.message ?? "st-3: staff insert failed");
+    }
+
+    const requestedStaffId = requestedStaff.id as string;
+    const phone = `1555${String(Date.now()).slice(-7)}`;
+    const { data: profile, error: profileErr } = await supabaseAdmin
+      .from("client_profiles")
+      .insert({
+        phone,
+        name: "E2E Named Request Guest",
+        preferred_staff_id: requestedStaffId,
+      })
+      .select("id")
+      .single();
+    if (profileErr || !profile?.id) {
+      throw new Error(profileErr?.message ?? "st-3: profile insert failed");
+    }
+    TEST_PROFILE_IDS.add(profile.id as string);
+
+    const { error: patternErr } = await supabaseAdmin
+      .from("customer_booking_patterns")
+      .insert({
+        salon_id: fx.salonId,
+        client_phone: phone,
+        client_profile_id: profile.id,
+        usual_staff_id: requestedStaffId,
+      });
+    if (patternErr) throw new Error(patternErr.message);
+
+    const ymd = tomorrowYmdUtc();
+    const bookingId = await seedDeskBooking(fx.salonId, {
+      clientName: "E2E_ST_NAMED_REQUEST",
+      clientPhone: phone,
+      serviceId: fx.serviceId,
+      staffId: requestedStaffId,
+      startIso: isoAtUtcYmdHourMinute(ymd, 16, 0),
+      endIso: isoAtUtcYmdHourMinute(ymd, 16, 45),
+      status: "confirmed",
+      source: "appointment",
+    });
+    const { error: requestStampErr } = await supabaseAdmin
+      .from("bookings")
+      .update({
+        client_profile_id: profile.id,
+        staff_requested_by_client: true,
+        staff_request_note: "Requested this provider",
+      } as never)
+      .eq("id", bookingId)
+      .eq("salon_id", fx.salonId);
+    if (requestStampErr) throw new Error(requestStampErr.message);
+
+    await gotoSetupStaff(page, fx.slug);
+    await staffDeleteBtn(page, requestedStaffId).click();
+
+    await expect(
+      page.getByTestId(`staff-offboarding-requested-${bookingId}`),
+    ).toBeVisible();
+    await expect(page.getByTestId("staff-offboarding-complete")).toBeDisabled();
+    await page.getByTestId("staff-offboarding-manual-contact").check();
+    await expect(page.getByTestId("staff-offboarding-complete")).toBeEnabled();
+    await page.getByTestId("staff-offboarding-complete").click();
+
+    await expect
+      .poll(async () => {
+        const { data } = await supabaseAdmin
+          .from("bookings")
+          .select("staff_id, staff_requested_by_client, staff_request_note")
+          .eq("id", bookingId)
+          .single();
+        return data;
+      })
+      .toMatchObject({
+        staff_id: fx.anchorStaffId,
+        staff_requested_by_client: false,
+        staff_request_note: null,
+      });
+
+    const [{ data: profileAfter }, { data: patternAfter }, { data: audit }] =
+      await Promise.all([
+        supabaseAdmin
+          .from("client_profiles")
+          .select("preferred_staff_id")
+          .eq("id", profile.id)
+          .single(),
+        supabaseAdmin
+          .from("customer_booking_patterns")
+          .select("usual_staff_id")
+          .eq("salon_id", fx.salonId)
+          .eq("client_phone", phone)
+          .single(),
+        supabaseAdmin
+          .from("booking_events")
+          .select("payload")
+          .eq("booking_id", bookingId)
+          .eq("event_type", "booking_edited")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single(),
+      ]);
+
+    expect(profileAfter?.preferred_staff_id).toBeNull();
+    expect(patternAfter?.usual_staff_id).toBeNull();
+    expect(
+      (audit?.payload as Record<string, unknown> | null)
+        ?.customer_requested_previous_staff,
+    ).toBe(true);
   });
 });

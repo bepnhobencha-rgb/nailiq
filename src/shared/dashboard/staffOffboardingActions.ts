@@ -6,6 +6,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildCapabilityMap, isStaffCapableForService } from "@/shared/booking/staffCapability";
 import { logBookingEvent, type ActorRole } from "@/shared/dashboard/auditLog";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import {
+  resolveStaffOffboardingContactPlan,
+  type StaffOffboardingContactPlan,
+} from "@/shared/dashboard/staffOffboardingPolicy";
 import { checkBookingConflict, type ConflictCheckBooking } from "@/shared/lib/conflictCheck";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -31,6 +35,8 @@ export type StaffOffboardingBooking = {
   status: OpenStatus;
   hasPhone: boolean;
   hasEmail: boolean;
+  customerRequestedStaff: boolean;
+  originalStaffRequestNote: string | null;
   candidates: StaffOffboardingCandidate[];
 };
 
@@ -60,6 +66,8 @@ type RawBooking = {
   client_name: string | null;
   client_phone: string | null;
   client_email: string | null;
+  staff_requested_by_client: boolean | null;
+  staff_request_note: string | null;
   start_time_utc: string | null;
   end_time_utc: string | null;
   status: string;
@@ -107,7 +115,7 @@ async function loadPreviewData(
   const { data: openRows, error: openErr } = await admin
     .from("bookings")
     .select(
-      "id, staff_id, service_id, addon_service_id, client_name, client_phone, client_email, start_time_utc, end_time_utc, status",
+      "id, staff_id, service_id, addon_service_id, client_name, client_phone, client_email, staff_requested_by_client, staff_request_note, start_time_utc, end_time_utc, status",
     )
     .eq("salon_id", salonId)
     .eq("staff_id", staffId)
@@ -222,6 +230,10 @@ async function loadPreviewData(
       status: booking.status as OpenStatus,
       hasPhone: Boolean(booking.client_phone?.trim()),
       hasEmail: Boolean(booking.client_email?.trim()),
+      customerRequestedStaff:
+        booking.staff_requested_by_client === true ||
+        Boolean(booking.staff_request_note?.trim()),
+      originalStaffRequestNote: booking.staff_request_note?.trim() || null,
       candidates,
     };
   });
@@ -265,12 +277,14 @@ export async function completeStaffOffboarding(
     assignments: Array<{ bookingId: string; staffId: string }>;
     notifySms: boolean;
     notifyEmail: boolean;
+    manualContactConfirmed: boolean;
     revokeAccess: boolean;
   },
 ): Promise<StaffOffboardingResult> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx || !isOwnerOrAdmin(ctx.role)) return fail("unauthorized");
   if (!input.staffId || !Array.isArray(input.assignments)) return fail("invalid_input");
+  const salonId = ctx.salon.id;
 
   let admin: SupabaseClient;
   try {
@@ -309,6 +323,21 @@ export async function completeStaffOffboarding(
     }
   }
 
+  const requestedWithoutContactPlan = reassignable.filter(
+    (booking) =>
+      resolveStaffOffboardingContactPlan({
+        customerRequestedStaff: booking.customerRequestedStaff,
+        hasEmail: booking.hasEmail,
+        hasPhone: booking.hasPhone,
+        notifyEmail: input.notifyEmail,
+        notifySms: input.notifySms,
+        manualContactConfirmed: input.manualContactConfirmed,
+      }) === null,
+  );
+  if (requestedWithoutContactPlan.length > 0) {
+    return fail("requested_staff_contact_required");
+  }
+
   const { count: otherActiveCount, error: activeCountErr } = await admin
     .from("staff")
     .select("id", { count: "exact", head: true })
@@ -319,12 +348,53 @@ export async function completeStaffOffboarding(
   if (activeCountErr) return fail("server_error");
   if ((otherActiveCount ?? 0) < 1) return fail("minimum_active_staff");
 
-  const completed: Array<{ bookingId: string; nextStaffId: string }> = [];
+  const completed: Array<{
+    bookingId: string;
+    nextStaffId: string;
+    customerRequestedPreviousStaff: boolean;
+    originalStaffRequestNote: string | null;
+    customerContactPlan: StaffOffboardingContactPlan;
+  }> = [];
+  async function rollbackAssignments() {
+    for (const done of completed.slice().reverse()) {
+      await admin
+        .from("bookings")
+        .update({
+          staff_id: input.staffId,
+          staff_requested_by_client: done.customerRequestedPreviousStaff,
+          staff_request_note: done.originalStaffRequestNote,
+        } as never)
+        .eq("id", done.bookingId)
+        .eq("salon_id", salonId)
+        .eq("staff_id", done.nextStaffId);
+    }
+  }
+
   for (const booking of reassignable) {
     const nextStaffId = assignmentMap.get(booking.id)!;
+    const customerContactPlan = resolveStaffOffboardingContactPlan({
+      customerRequestedStaff: booking.customerRequestedStaff,
+      hasEmail: booking.hasEmail,
+      hasPhone: booking.hasPhone,
+      notifyEmail: input.notifyEmail,
+      notifySms: input.notifySms,
+      manualContactConfirmed: input.manualContactConfirmed,
+    });
+    if (!customerContactPlan) {
+      await rollbackAssignments();
+      return fail("requested_staff_contact_required");
+    }
     const { data: changed, error } = await admin
       .from("bookings")
-      .update({ staff_id: nextStaffId })
+      .update({
+        staff_id: nextStaffId,
+        ...(booking.customerRequestedStaff
+          ? {
+              staff_requested_by_client: false,
+              staff_request_note: null,
+            }
+          : {}),
+      } as never)
       .eq("id", booking.id)
       .eq("salon_id", ctx.salon.id)
       .eq("staff_id", input.staffId)
@@ -332,17 +402,16 @@ export async function completeStaffOffboarding(
       .select("id")
       .maybeSingle();
     if (error || !changed?.id) {
-      for (const done of completed.reverse()) {
-        await admin
-          .from("bookings")
-          .update({ staff_id: input.staffId })
-          .eq("id", done.bookingId)
-          .eq("salon_id", ctx.salon.id)
-          .eq("staff_id", done.nextStaffId);
-      }
+      await rollbackAssignments();
       return fail(error?.code === "23P01" ? "candidate_unavailable" : "stale_booking");
     }
-    completed.push({ bookingId: booking.id, nextStaffId });
+    completed.push({
+      bookingId: booking.id,
+      nextStaffId,
+      customerRequestedPreviousStaff: booking.customerRequestedStaff,
+      originalStaffRequestNote: booking.originalStaffRequestNote,
+      customerContactPlan,
+    });
   }
 
   if (input.revokeAccess && preview.hasLogin) {
@@ -357,7 +426,7 @@ export async function completeStaffOffboarding(
       const { error: accessErr } = await admin
         .from("salon_members")
         .delete()
-        .eq("salon_id", ctx.salon.id)
+        .eq("salon_id", salonId)
         .eq("user_id", userId)
         .neq("role", "owner");
       if (accessErr) return fail("access_revoke_failed");
@@ -370,13 +439,66 @@ export async function completeStaffOffboarding(
     }
   }
 
+  // A replacement is not automatically the customer's new favorite. Clear
+  // both the explicit global preference and this salon's inferred usual staff
+  // so future rebook suggestions never offer an inactive provider.
+  const { data: clearedProfiles, error: profilePreferenceErr } = await admin
+    .from("client_profiles")
+    .update({ preferred_staff_id: null })
+    .eq("preferred_staff_id", input.staffId)
+    .select("id");
+  if (profilePreferenceErr) {
+    await rollbackAssignments();
+    return fail("preference_cleanup_failed");
+  }
+
+  const { data: clearedPatterns, error: patternPreferenceErr } = await admin
+    .from("customer_booking_patterns")
+    .update({ usual_staff_id: null })
+    .eq("salon_id", ctx.salon.id)
+    .eq("usual_staff_id", input.staffId)
+    .select("id");
+  if (patternPreferenceErr) {
+    const profileIds = (clearedProfiles ?? []).map((row) => row.id);
+    if (profileIds.length > 0) {
+      await admin
+        .from("client_profiles")
+        .update({ preferred_staff_id: input.staffId })
+        .in("id", profileIds);
+    }
+    await rollbackAssignments();
+    return fail("preference_cleanup_failed");
+  }
+
+  async function restorePreferences() {
+    const profileIds = (clearedProfiles ?? []).map((row) => row.id);
+    const patternIds = (clearedPatterns ?? []).map((row) => row.id);
+    if (profileIds.length > 0) {
+      await admin
+        .from("client_profiles")
+        .update({ preferred_staff_id: input.staffId })
+        .in("id", profileIds);
+    }
+    if (patternIds.length > 0) {
+      await admin
+        .from("customer_booking_patterns")
+        .update({ usual_staff_id: input.staffId })
+        .eq("salon_id", salonId)
+        .in("id", patternIds);
+    }
+  }
+
   const { error: deactivateErr } = await admin
     .from("staff")
     .update({ status: "inactive" })
     .eq("id", input.staffId)
     .eq("salon_id", ctx.salon.id)
     .is("deleted_at", null);
-  if (deactivateErr) return fail("deactivate_failed");
+  if (deactivateErr) {
+    await restorePreferences();
+    await rollbackAssignments();
+    return fail("deactivate_failed");
+  }
 
   for (const done of completed) {
     await logBookingEvent({
@@ -389,6 +511,9 @@ export async function completeStaffOffboarding(
         reason: "staff_offboarding",
         previous_staff_id: input.staffId,
         new_staff_id: done.nextStaffId,
+        customer_requested_previous_staff:
+          done.customerRequestedPreviousStaff,
+        customer_contact_plan: done.customerContactPlan,
       },
     });
   }
@@ -403,6 +528,9 @@ export async function completeStaffOffboarding(
         bookingId: done.bookingId,
         event: "staff_change",
         channels: { sms: input.notifySms, email: input.notifyEmail },
+        previousStaffName: preview.staffName,
+        customerRequestedPreviousStaff:
+          done.customerRequestedPreviousStaff,
       });
       notificationsSent += Number(result.smsSent) + Number(result.emailSent);
     }
