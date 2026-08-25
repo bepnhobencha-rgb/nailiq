@@ -18,6 +18,20 @@ INSERT INTO public.staff(id,salon_id,name,status)
 VALUES('c5000000-0000-4000-8000-000000000004',
   'c5000000-0000-4000-8000-000000000001','Transition staff','active');
 
+INSERT INTO auth.users(
+  id,email,encrypted_password,email_confirmed_at,
+  raw_app_meta_data,raw_user_meta_data,created_at
+) VALUES(
+  'c5000000-0000-4000-8000-000000000005',
+  'transition-email-desk@nailiq.invalid','',transaction_timestamp(),
+  '{"provider":"email","providers":["email"]}'::jsonb,'{}'::jsonb,
+  transaction_timestamp()
+);
+INSERT INTO public.salon_members(salon_id,user_id,role) VALUES(
+  'c5000000-0000-4000-8000-000000000001',
+  'c5000000-0000-4000-8000-000000000005','owner'
+);
+
 INSERT INTO public.bookings(
   id,salon_id,service_id,staff_id,client_name,client_email,client_locale,
   start_time_utc,end_time_utc,status,price_cents
@@ -200,7 +214,13 @@ BEGIN
     RAISE EXCEPTION 'A-B-A occurrence/version collision';
   END IF;
   UPDATE public.bookings SET status='cancelled' WHERE id='c5000000-0000-4000-8000-000000000015';
-  UPDATE public.bookings SET status='confirmed' WHERE id='c5000000-0000-4000-8000-000000000015';
+  v_result:=public.undo_recent_cancelled_booking_v1(
+    'c5000000-0000-4000-8000-000000000015',v_salon,
+    'c5000000-0000-4000-8000-000000000005','owner'
+  );
+  IF v_result->>'code'<>'cancel_undone' THEN
+    RAISE EXCEPTION 'V1 immediate cancel undo failed: %',v_result;
+  END IF;
   UPDATE public.bookings SET status='cancelled' WHERE id='c5000000-0000-4000-8000-000000000015';
   IF (SELECT customer_transition_version FROM public.bookings WHERE id='c5000000-0000-4000-8000-000000000015')<>3
      OR (SELECT array_agg(transition_version ORDER BY transition_version)

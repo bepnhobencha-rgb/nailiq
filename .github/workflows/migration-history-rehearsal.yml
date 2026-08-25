@@ -21,6 +21,7 @@ on:
       - "scripts/security/rehearse-staff-offboarding-durable-rollback.sql"
       - "scripts/security/rehearse-reactivation-campaign-delivery-contract.sql"
       - "scripts/security/rehearse-reactivation-campaign-delivery-concurrency.mjs"
+      - "scripts/security/rehearse-v1-terminal-booking-policy.sql"
       - "scripts/verify-schema-dump.ts"
       - "supabase/bootstrap/**"
       - "supabase/migration-history/**"
@@ -359,6 +360,8 @@ jobs:
             -f scripts/security/rehearse-cron-run-history.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-source-owned-exception-resolution.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-v1-terminal-booking-policy.sql
 
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.service_categories')" -eq 13
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.platform_flags')" -eq 5

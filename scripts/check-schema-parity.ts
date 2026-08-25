@@ -60,6 +60,8 @@ import { execFileSync } from "node:child_process";
  * The 20260823134500 review-SMS migration adds pre-provider claim completion
  * and signed callback-correlation functions. The 20260823171226 cancelled-
  * booking refund migration adds the remaining-deposit claim function.
+ * The 20260824234619 V1 terminal-booking policy adds a trigger boundary plus
+ * service-only terminal transition and eight-second cancel-undo functions.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -123,10 +125,11 @@ const PRODUCTION = {
   // function, and +2 private completion classifiers retained behind the
   // SID-first service-role wrappers, plus +2 durable review-SMS completion and
   // signed callback-correlation functions.
-  functions: 363,
+  functions: 366,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
-  triggers: 83,
+  // +1 V1 terminal-booking policy trigger.
+  triggers: 84,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -461,6 +464,9 @@ const CRITICAL_FUNCTIONS = [
   "complete_reactivation_campaign_delivery",
   "record_reactivation_campaign_delivery_receipt",
   "reconcile_stale_reactivation_campaign_deliveries",
+  "enforce_v1_terminal_booking_policy",
+  "transition_booking_to_terminal_v1",
+  "undo_recent_cancelled_booking_v1",
 ] as const;
 
 const dbUrl = process.env.DB_URL;

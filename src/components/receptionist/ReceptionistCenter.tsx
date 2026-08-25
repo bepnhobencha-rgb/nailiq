@@ -128,6 +128,7 @@ import {
 } from "@/shared/dashboard/salonOwnerActions";
 import { editBookingAction } from "@/shared/dashboard/editBookingAction";
 import { getUserMessages } from "@/shared/i18n/user";
+import { v1AllowsArchivedBookingRecovery } from "@/shared/release/v1IntegrationScope";
 import {
   checkBookingConflict,
   type ConflictCheckBooking,
@@ -489,6 +490,8 @@ function ReceptionistCenterInner({
   const searchParams = useSearchParams();
   const { language, setLanguage } = useUserLanguage();
   const messages = useMemo(() => getUserMessages(language), [language]);
+  const v1AllowsLongLivedTerminalCorrection =
+    v1AllowsArchivedBookingRecovery();
 
   // DRC accent color theme — owner-chosen, saved in feature_flags.drc_accent_color.
   // useState for optimistic updates: picker updates immediately, server action saves async.
@@ -1475,12 +1478,10 @@ function ReceptionistCenterInner({
    * check and the bookings query in parallel — cutting ~2 round-trips per
    * week/month navigation event.
    */
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- data.salon.id and timezone are stable refs (come from the same immutable salon row)
   const calendarHint = useMemo<BookingsRangeHint>(
     () => ({ salonId: data.salon.id, timezone }),
     // Re-memoize only when the salon id or timezone actually changes
     // (should never happen mid-session, but guards against future hot-reload).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [data.salon.id, timezone],
   );
   const modules = data.dashboardModules;
@@ -3318,6 +3319,7 @@ function ReceptionistCenterInner({
 
   const drawerRestoreAction =
     openDrawerBooking &&
+    v1AllowsLongLivedTerminalCorrection &&
     !archivedBookingRecoveryEnabled &&
     canUndoCancel(viewerRole) &&
     openDrawerBooking.status === "cancelled" &&
@@ -3409,9 +3411,10 @@ function ReceptionistCenterInner({
       onOpenBooking={(id) => openBookingDrawer(id)}
       onMarkNoShow={(id) => void triggerMarkNoShow(id)}
       onUndoNoShow={
-        archivedBookingRecoveryEnabled
-          ? undefined
-          : (id) => void handleUndoNoShow(id)
+        v1AllowsLongLivedTerminalCorrection &&
+        !archivedBookingRecoveryEnabled
+          ? (id) => void handleUndoNoShow(id)
+          : undefined
       }
       onOpenWaitlist={handleOpenWaitlistAttention}
       embedded={embedded}
@@ -4637,9 +4640,10 @@ function ReceptionistCenterInner({
                       : undefined
                   }
                   onTombstoneUndo={
-                    archivedBookingRecoveryEnabled
-                      ? undefined
-                      : (id) => void handleTombstoneUndo(id)
+                    v1AllowsLongLivedTerminalCorrection &&
+                    !archivedBookingRecoveryEnabled
+                      ? (id) => void handleTombstoneUndo(id)
+                      : undefined
                   }
                   onTombstoneCharge={(id) => void handleTombstoneCharge(id)}
                   onTombstoneWaive={(id) => void handleTombstoneWaive(id)}
@@ -4785,9 +4789,10 @@ function ReceptionistCenterInner({
                 }
                 language={language === "vi" ? "vi" : "en"}
                 onTombstoneUndo={
-                  archivedBookingRecoveryEnabled
-                    ? undefined
-                    : (id) => void handleTombstoneUndo(id)
+                  v1AllowsLongLivedTerminalCorrection &&
+                  !archivedBookingRecoveryEnabled
+                    ? (id) => void handleTombstoneUndo(id)
+                    : undefined
                 }
                 onTombstoneCharge={(id) => void handleTombstoneCharge(id)}
                 onTombstoneWaive={(id) => void handleTombstoneWaive(id)}

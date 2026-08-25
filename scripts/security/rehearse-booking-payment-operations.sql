@@ -76,8 +76,10 @@ BEGIN
   v_result:=public.bind_public_deposit_payment_operation(v_operation,v_request,v_fp,v_booking);
   IF v_result->>'code'<>'binding_replay' THEN RAISE EXCEPTION 'bind replay failed: %',v_result; END IF;
 
-  -- Binding cannot adopt cancelled, grouped, recovery, soft-deleted, or expired rows.
-  FOREACH v_i IN ARRAY ARRAY[1,2,3,4,5] LOOP
+  -- Binding cannot adopt cancelled, grouped, soft-deleted, or expired rows.
+  -- Linked archived recovery is hard-off in V1 and has its own rejection
+  -- rehearsal, so this payment fixture no longer creates a recovery child.
+  FOREACH v_i IN ARRAY ARRAY[1,2,3,5] LOOP
     v_start:=v_start+interval '1 hour';
     v_end:=v_end+interval '1 hour';
     v_operation:=('15150000-0000-4000-8000-'||lpad((100+v_i)::text,12,'0'))::uuid;
@@ -100,24 +102,6 @@ BEGIN
       CASE WHEN v_i=5 THEN now()-interval '1 second' ELSE now()+interval '10 minutes' END,
       now()+interval '10 minutes'
     );
-    IF v_i=4 THEN
-      UPDATE public.salons
-      SET feature_flags = jsonb_set(
-        coalesce(feature_flags, '{}'::jsonb),
-        '{archived_booking_recovery_enabled}',
-        'true'::jsonb,
-        true
-      )
-      WHERE id = v_salon;
-      INSERT INTO public.bookings(
-        id,salon_id,service_id,staff_id,client_name,client_phone,
-        start_time_utc,end_time_utc,status
-      ) VALUES (
-        ('15150000-0000-4000-8000-'||lpad((900+v_i)::text,12,'0'))::uuid,
-        v_salon,v_service,v_staff,'Recovery source QA','+16045550904',
-        v_start,v_end,'cancelled'
-      );
-    END IF;
     INSERT INTO public.bookings(
       id,salon_id,service_id,staff_id,client_name,client_phone,start_time_utc,end_time_utc,
       status,idempotency_key,public_booking_pricing_fingerprint,group_id,deleted_at,
@@ -127,22 +111,13 @@ BEGIN
       CASE WHEN v_i=1 THEN 'cancelled' ELSE 'confirmed' END,v_intent,repeat('c',64),
       CASE WHEN v_i=2 THEN gen_random_uuid() END,
       CASE WHEN v_i=3 THEN now() END,
-      CASE WHEN v_i=4 THEN
-        ('15150000-0000-4000-8000-'||lpad((900+v_i)::text,12,'0'))::uuid
-      END,
-      CASE WHEN v_i=4 THEN 'cancelled_rebook' END,
-      CASE WHEN v_i=4 THEN '15150000-0000-4000-8000-000000000004'::uuid END
+      NULL,NULL,NULL
     );
     v_result:=public.bind_public_deposit_payment_operation(v_operation,v_request,v_fp,v_booking);
     IF v_i<5 AND v_result->>'code'<>'booking_not_bindable' THEN
       RAISE EXCEPTION 'lifecycle bind % was not rejected: %',v_i,v_result;
     ELSIF v_i=5 AND v_result->>'code'<>'binding_expired' THEN
       RAISE EXCEPTION 'expired bind was not rejected: %',v_result;
-    END IF;
-    IF v_i=4 THEN
-      UPDATE public.salons
-      SET feature_flags = feature_flags - 'archived_booking_recovery_enabled'
-      WHERE id = v_salon;
     END IF;
   END LOOP;
 
@@ -376,7 +351,12 @@ BEGIN
 
   -- Undo then cancel again has a new DB-owned transition version.  An unknown
   -- provider outcome reserves only that occurrence and cannot create another.
-  UPDATE public.bookings SET status='confirmed' WHERE id=v_booking;
+  v_result:=public.undo_recent_cancelled_booking_v1(
+    v_booking,v_salon,'15150000-0000-4000-8000-000000000004','owner'
+  );
+  IF v_result->>'code'<>'cancel_undone' THEN
+    RAISE EXCEPTION 'V1 immediate cancel undo failed: %',v_result;
+  END IF;
   UPDATE public.bookings SET status='cancelled' WHERE id=v_booking;
   INSERT INTO public.booking_management_capabilities(
     salon_id,booking_id,action,scope_kind,epoch,booking_version,expires_at,
@@ -412,7 +392,12 @@ BEGIN
   END IF;
 
   -- Group member/organizer RSVP decline can never authorize a fee charge.
-  UPDATE public.bookings SET status='confirmed' WHERE id=v_booking;
+  v_result:=public.undo_recent_cancelled_booking_v1(
+    v_booking,v_salon,'15150000-0000-4000-8000-000000000004','owner'
+  );
+  IF v_result->>'code'<>'cancel_undone' THEN
+    RAISE EXCEPTION 'V1 immediate cancel undo failed: %',v_result;
+  END IF;
   UPDATE public.bookings SET group_id=gen_random_uuid() WHERE id=v_booking;
   UPDATE public.bookings SET status='cancelled' WHERE id=v_booking;
   INSERT INTO public.booking_management_capabilities(

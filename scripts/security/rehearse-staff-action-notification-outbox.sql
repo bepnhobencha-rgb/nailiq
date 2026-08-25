@@ -152,6 +152,7 @@ END;$behavior$;
 SELECT set_config('request.jwt.claim.role','',true);
 
 -- Atomic reschedule capture and undo cancellation of a queued cancel event.
+SELECT set_config('request.jwt.claim.role','service_role',true);
 SET LOCAL ROLE service_role;
 UPDATE public.bookings SET
   start_time_utc=start_time_utc+interval '1 hour',end_time_utc=end_time_utc+interval '1 hour',
@@ -167,8 +168,18 @@ UPDATE public.bookings SET
   staff_action_notification_channels='{"sms":true,"email":false}'::jsonb,
   staff_action_notification_delay_seconds=20
 WHERE id='d6100000-0000-4000-8000-000000000010';
-UPDATE public.bookings SET status='confirmed'
-WHERE id='d6100000-0000-4000-8000-000000000010';
+DO $undo_cancel$
+DECLARE v_result jsonb;
+BEGIN
+  v_result:=public.undo_recent_cancelled_booking_v1(
+    'd6100000-0000-4000-8000-000000000010',
+    'd6100000-0000-4000-8000-000000000001',
+    'd6100000-0000-4000-8000-000000000005','senior'
+  );
+  IF v_result->>'code'<>'cancel_undone' THEN
+    RAISE EXCEPTION 'V1 immediate cancel undo failed: %',v_result;
+  END IF;
+END;$undo_cancel$;
 RESET ROLE;
 
 DO $lifecycle$

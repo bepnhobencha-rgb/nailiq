@@ -213,24 +213,6 @@ function isSameArchivedBookingRecovery(
   );
 }
 
-async function terminalBookingMustRemainImmutable(
-  salonId: string,
-  bookingId: string,
-): Promise<{ ok: true; immutable: boolean } | { ok: false }> {
-  if (await archivedBookingRecoveryEnabled(salonId)) {
-    return { ok: true, immutable: true };
-  }
-  const existing = await loadExistingArchivedBookingRecovery(
-    salonId,
-    bookingId,
-  );
-  if (!existing.ok) return { ok: false };
-  // Feature rollback may restore the legacy behavior only for untouched
-  // terminal rows. Once a linked child exists, reopening the source would
-  // create two active records and is therefore permanently forbidden.
-  return { ok: true, immutable: existing.existing !== null };
-}
-
 async function archivedBookingRecoveryEnabled(
   salonId: string,
 ): Promise<boolean> {
@@ -248,6 +230,70 @@ async function archivedBookingRecoveryEnabled(
     },
     "archived_booking_recovery",
   );
+}
+
+type TerminalTransitionBooking = {
+  id: string;
+  salon_id: string;
+  service_id: string;
+  client_phone: string | null;
+  client_name: string;
+  client_email: string | null;
+  previous_status: string;
+  status: "cancelled" | "no_show";
+};
+
+async function transitionBookingToTerminalV1(
+  ctx: NonNullable<Awaited<ReturnType<typeof getDashboardWriteClient>>>,
+  input: {
+    bookingId: string;
+    reason: "walkin_removed" | "desk_cancel" | "wix_decline" | "desk_no_show";
+    notificationRequestId?: string | null;
+    notifySms?: boolean;
+    notifyEmail?: boolean;
+  },
+): Promise<
+  | { ok: true; booking: TerminalTransitionBooking }
+  | { ok: false; error: string }
+> {
+  const db = createServiceRoleClient();
+  const { data, error } = await db.rpc(
+    "transition_booking_to_terminal_v1" as never,
+    {
+      p_booking_id: input.bookingId,
+      p_salon_id: ctx.salon.id,
+      p_actor_user_id:
+        ctx.kind === "member" && isUuidLike(ctx.userId ?? "")
+          ? ctx.userId
+          : null,
+      p_actor_role: ctxActorRole(ctx),
+      p_reason: input.reason,
+      p_notification_request_id: input.notificationRequestId ?? null,
+      p_notify_sms: input.notifySms === true,
+      p_notify_email: input.notifyEmail === true,
+      p_notification_delay_seconds: 20,
+    } as never,
+  );
+  const raw = Array.isArray(data) ? data[0] : data;
+  const result =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
+  const booking =
+    result?.booking && typeof result.booking === "object"
+      ? (result.booking as Partial<TerminalTransitionBooking>)
+      : null;
+  if (
+    error ||
+    result?.success !== true ||
+    !booking ||
+    !isUuidLike(String(booking.id ?? "")) ||
+    booking.salon_id !== ctx.salon.id ||
+    !isUuidLike(String(booking.service_id ?? "")) ||
+    (booking.status !== "cancelled" && booking.status !== "no_show")
+  ) {
+    const code = typeof result?.code === "string" ? result.code : "server_error";
+    return fail(code === "invalid_state" ? "invalid_state" : "server_error");
+  }
+  return { ok: true, booking: booking as TerminalTransitionBooking };
 }
 
 async function validateArchivedBookingRecovery(
@@ -871,26 +917,11 @@ export async function cancelWaitingWalkin(
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
 
-  const supabase = ctx.supabase;
-
-  const { data: updated, error: upErr } = await supabase
-    .from("bookings")
-    .update({ status: "cancelled" })
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .eq("source", "walkin")
-    .eq("status", "waiting")
-    .select("id")
-    .maybeSingle();
-
-  if (upErr) {
-    console.error("[cancelWaitingWalkin]", upErr);
-    return fail("server_error");
-  }
-
-  if (!updated?.id) {
-    return fail("invalid_state");
-  }
+  const transition = await transitionBookingToTerminalV1(ctx, {
+    bookingId,
+    reason: "walkin_removed",
+  });
+  if (!transition.ok) return transition;
 
   void logBookingEvent({
     bookingId,
@@ -1074,7 +1105,6 @@ export async function cancelDeskBooking(
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
 
-  const supabase = ctx.supabase;
   const memberCanNotify = ctx.kind === "member" && isUuidLike(ctx.userId ?? "");
   const notifySms = memberCanNotify && input.notify?.sms === true;
   const notifyEmail = memberCanNotify && input.notify?.email === true;
@@ -1113,7 +1143,6 @@ export async function cancelDeskBooking(
         : fail("notification_request_conflict");
     }
   }
-  const cancellationDb = notificationRequested ? createServiceRoleClient() : supabase;
   let refundOutcome: Awaited<ReturnType<typeof cancelDeskBookingWithRefundSaga>> | null = null;
   if (input.refundDeposit === true) {
     const requestedRefund = input.refundAmountCents;
@@ -1137,30 +1166,16 @@ export async function cancelDeskBooking(
     });
     if (!refundOutcome.ok) return refundOutcome;
   } else {
-    const { data: updated, error: upErr } = await cancellationDb
-      .from("bookings")
-      .update({
-        status: "cancelled",
-        ...(notificationRequested ? {
-          staff_action_notification_request_id: notificationRequestId,
-          staff_action_notification_actor_user_id: ctxActorUserId(ctx),
-          staff_action_notification_actor_role: ctxActorRole(ctx),
-          staff_action_notification_channels: { sms: notifySms, email: notifyEmail },
-          staff_action_notification_delay_seconds: 20,
-        } : {}),
-      } as never)
-      .eq("id", bookingId)
-      .eq("salon_id", ctx.salon.id)
-      .in("status", ["pending", "confirmed", "in_progress"])
-      .select("id, service_id")
-      .maybeSingle();
-
-    if (upErr) {
-      console.error("[cancelDeskBooking]", upErr);
-      return fail("server_error");
-    }
-
-    if (!updated?.id) return fail("invalid_state");
+    const transition = await transitionBookingToTerminalV1(ctx, {
+      bookingId,
+      reason: "desk_cancel",
+      notificationRequestId: notificationRequested
+        ? notificationRequestId
+        : null,
+      notifySms,
+      notifyEmail,
+    });
+    if (!transition.ok) return transition;
   }
 
   // Owner/admin "cancelled" alert (opt-in, fire-and-forget).
@@ -1967,20 +1982,11 @@ export async function declineWixBooking(
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
 
-  const { data: updated, error: upErr } = await ctx.supabase
-    .from("bookings")
-    .update({ status: "cancelled" })
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .eq("status", "pending")
-    .not("wix_booking_id", "is", null)
-    .select("id")
-    .maybeSingle();
-  if (upErr) {
-    console.error("[declineWixBooking]", upErr);
-    return fail("server_error");
-  }
-  if (!updated?.id) return fail("invalid_state");
+  const transition = await transitionBookingToTerminalV1(ctx, {
+    bookingId,
+    reason: "wix_decline",
+  });
+  if (!transition.ok) return transition;
 
   void logBookingEvent({
     bookingId,
@@ -2031,21 +2037,21 @@ export async function markNoShowBooking(
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
 
-  const { data: updated, error: upErr } = await ctx.supabase
-    .from("bookings")
-    .update({ status: "no_show", no_show_candidate_at: null } as never)
-    .eq("id", bookingId)
+  const transition = await transitionBookingToTerminalV1(ctx, {
+    bookingId,
+    reason: "desk_no_show",
+  });
+  if (!transition.ok) return transition;
+  const { data: service } = await ctx.supabase
+    .from("services")
+    .select("name")
+    .eq("id", transition.booking.service_id)
     .eq("salon_id", ctx.salon.id)
-    .in("status", ["confirmed", "in_progress"])
-    .select(
-      "id, client_phone, client_name, client_email, service_id, services!bookings_service_id_fkey(name)",
-    )
     .maybeSingle();
-  if (upErr) {
-    console.error("[markNoShowBooking]", upErr);
-    return fail("server_error");
-  }
-  if (!updated?.id) return fail("invalid_state");
+  const updated = {
+    ...transition.booking,
+    services: service ? { name: service.name } : null,
+  };
 
   // Owner/admin "no-show" alert (opt-in, fire-and-forget).
   after(() =>
@@ -2185,56 +2191,7 @@ export async function undoNoShowBooking(
     return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
-  // Rollout-safe enforcement: once archived recovery is enabled, no_show is a
-  // terminal audit fact. A late guest gets a new linked walk-in instead.
-  const immutable = await terminalBookingMustRemainImmutable(
-    ctx.salon.id,
-    bookingId,
-  );
-  if (!immutable.ok) return fail("server_error");
-  if (immutable.immutable) {
-    return fail("immutable_terminal_state");
-  }
-
-  const { data: updated, error: upErr } = await ctx.supabase
-    .from("bookings")
-    .update({ status: "confirmed", no_show_candidate_at: null } as never)
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .eq("status", "no_show")
-    .select("id, client_phone")
-    .maybeSingle();
-  if (upErr) {
-    // The slot may have been re-taken (waitlist claim / walk-in) while it was
-    // freed — reverting to confirmed collides with bookings_no_overlap (23P01).
-    // Surface a clear "slot taken" instead of a generic retry message.
-    if ((upErr as { code?: string }).code === "23P01") {
-      return fail("slot_conflict");
-    }
-    console.error("[undoNoShowBooking]", upErr);
-    return fail("server_error");
-  }
-  if (!updated?.id) return fail("invalid_state");
-
-  if (updated.client_phone) {
-    // SECURITY DEFINER fn, revoked from anon/authenticated → call via service role
-    // after the auth checks above.
-    const svc = createServiceRoleClient();
-    const { error: unbumpErr } = await svc.rpc("unbump_client_no_show", {
-      p_phone: updated.client_phone,
-    });
-    if (unbumpErr) console.error("[undoNoShowBooking] unbump", unbumpErr);
-  }
-
-  void logBookingEvent({
-    bookingId,
-    salonId: ctx.salon.id,
-    actorUserId: ctxActorUserId(ctx),
-    actorRole: ctxActorRole(ctx),
-    eventType: "booking_status_changed",
-    payload: { to: "confirmed", reason: "undo_no_show" },
-  });
-  return { ok: true };
+  return fail("phase_2_not_available");
 }
 
 /**
@@ -2416,44 +2373,32 @@ export async function undoCancelBooking(
     return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
-  // The confirmation dialog is the correction boundary. After cancellation,
-  // preserve the original row and create a linked replacement if needed.
-  const immutable = await terminalBookingMustRemainImmutable(
-    ctx.salon.id,
-    bookingId,
+  if (ctx.kind !== "member" || !isUuidLike(ctx.userId ?? "")) {
+    return fail("unauthorized");
+  }
+  const db = createServiceRoleClient();
+  const { data, error } = await db.rpc(
+    "undo_recent_cancelled_booking_v1" as never,
+    {
+      p_booking_id: bookingId,
+      p_salon_id: ctx.salon.id,
+      p_actor_user_id: ctx.userId,
+      p_actor_role: ctx.role,
+    } as never,
   );
-  if (!immutable.ok) return fail("server_error");
-  if (immutable.immutable) {
-    return fail("immutable_terminal_state");
+  const raw = Array.isArray(data) ? data[0] : data;
+  const result =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
+  if (error || result?.success !== true) {
+    const code = typeof result?.code === "string" ? result.code : "server_error";
+    return fail(
+      code === "undo_window_expired"
+        ? "undo_window_expired"
+        : code === "invalid_state"
+          ? "invalid_state"
+          : "server_error",
+    );
   }
-
-  const { data: updated, error: upErr } = await ctx.supabase
-    .from("bookings")
-    .update({ status: "confirmed" })
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .eq("status", "cancelled")
-    .select("id")
-    .maybeSingle();
-
-  if (upErr) {
-    console.error("[undoCancelBooking]", upErr);
-    return fail("server_error");
-  }
-  if (!updated?.id) return fail("invalid_state");
-
-  // The booking trigger cancels the matching queued staff-action occurrence in
-  // this same restore transaction. No separate queue write can race delivery.
-
-  void logBookingEvent({
-    bookingId,
-    salonId: ctx.salon.id,
-    actorUserId: ctxActorUserId(ctx),
-    actorRole: ctxActorRole(ctx),
-    eventType: "booking_restored",
-    payload: { reason: "undo_cancel" },
-  });
-
   return { ok: true };
 }
 
@@ -2476,74 +2421,7 @@ export async function restoreCancelledBooking(
     return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
-  const immutable = await terminalBookingMustRemainImmutable(
-    ctx.salon.id,
-    bookingId,
-  );
-  if (!immutable.ok) return fail("server_error");
-  if (immutable.immutable) {
-    return fail("immutable_terminal_state");
-  }
-
-  const supabase = ctx.supabase;
-
-  // Load the cancelled booking
-  const { data: booking } = await supabase
-    .from("bookings")
-    .select("id, status, staff_id, start_time_utc, end_time_utc, salon_id")
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .eq("status", "cancelled")
-    .maybeSingle();
-
-  if (!booking) return fail("invalid_state");
-
-  // Must be in the future
-  const nowMs = Date.now();
-  const startMs = new Date(booking.start_time_utc).getTime();
-  if (startMs < nowMs + 60_000) return fail("booking_in_past");
-
-  // Check no active conflict for this staff at this time
-  if (booking.staff_id) {
-    const { data: conflicts } = await supabase
-      .from("bookings")
-      .select("id")
-      .eq("staff_id", booking.staff_id)
-      .not("status", "in", '("cancelled","waiting")')
-      .lt("start_time_utc", booking.end_time_utc)
-      .gt("end_time_utc", booking.start_time_utc)
-      .neq("id", bookingId)
-      .limit(1);
-
-    if (conflicts && conflicts.length > 0) return fail("slot_conflict");
-  }
-
-  // Restore to confirmed
-  const { data: updated, error: upErr } = await supabase
-    .from("bookings")
-    .update({ status: "confirmed" })
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .eq("status", "cancelled")
-    .select("id")
-    .maybeSingle();
-
-  if (upErr) {
-    console.error("[restoreCancelledBooking]", upErr);
-    return fail("server_error");
-  }
-  if (!updated?.id) return fail("invalid_state");
-
-  void logBookingEvent({
-    bookingId,
-    salonId: ctx.salon.id,
-    actorUserId: ctxActorUserId(ctx),
-    actorRole: ctxActorRole(ctx),
-    eventType: "booking_restored",
-    payload: { reason: "desk_restore" },
-  });
-
-  return { ok: true };
+  return fail("phase_2_not_available");
 }
 
 /** Desk / grid: reschedule/adjust slots for pending | confirmed only (see `performEditBooking`). */

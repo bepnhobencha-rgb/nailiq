@@ -482,8 +482,14 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'failed staff invariant attempt changed target row';
   END IF;
-  UPDATE public.bookings SET status='confirmed'
-  WHERE id='d6700000-0000-4000-8000-000000000041';
+  v_result:=public.undo_recent_cancelled_booking_v1(
+    'd6700000-0000-4000-8000-000000000041',
+    'd6700000-0000-4000-8000-000000000001',
+    'd6700000-0000-4000-8000-000000000030','owner'
+  );
+  IF v_result->>'code'<>'cancel_undone' THEN
+    RAISE EXCEPTION 'V1 immediate cancel undo failed: %',v_result;
+  END IF;
 
   v_result:=public.offboard_staff_with_durable_notifications(
     'd6700000-0000-4000-8000-000000000001',
