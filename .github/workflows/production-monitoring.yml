@@ -1,0 +1,78 @@
+name: Production Monitoring
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      simulate_failure:
+        description: "Create a controlled alert without failing NailIQ"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: production-monitoring
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: Version, liveness and readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      INCIDENT_TITLE: "[Monitoring] NailIQ production health incident"
+
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v6
+
+      - name: Probe production read-only
+        id: probe
+        continue-on-error: true
+        shell: bash
+        run: |
+          args=(--base-url https://www.nailiq.ca --allow-production-read-only)
+          if [[ "${{ inputs.simulate_failure || false }}" == "true" ]]; then
+            args+=(--simulate-failure)
+          fi
+          node scripts/monitor-production-health.mjs "${args[@]}" > monitor-result.json 2> monitor-error.txt
+
+      - name: Open or update incident
+        if: steps.probe.outcome == 'failure'
+        shell: bash
+        run: |
+          issue_number="$(gh issue list --state open --search "${INCIDENT_TITLE} in:title" --json number,title --jq ".[] | select(.title == \"${INCIDENT_TITLE}\") | .number" | head -n 1)"
+          {
+            echo "Production version/liveness/readiness monitoring failed."
+            echo
+            echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "- Time (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "- Error: $(head -c 500 monitor-error.txt)"
+            echo
+            echo "No customer data or secrets were included."
+          } > incident-body.md
+          if [[ -n "${issue_number}" ]]; then
+            gh issue comment "${issue_number}" --body-file incident-body.md
+          else
+            gh issue create --title "${INCIDENT_TITLE}" --body-file incident-body.md
+          fi
+
+      - name: Close recovered incident
+        if: steps.probe.outcome == 'success'
+        shell: bash
+        run: |
+          issue_number="$(gh issue list --state open --search "${INCIDENT_TITLE} in:title" --json number,title --jq ".[] | select(.title == \"${INCIDENT_TITLE}\") | .number" | head -n 1)"
+          if [[ -n "${issue_number}" ]]; then
+            gh issue comment "${issue_number}" --body "Recovered at $(date -u +%Y-%m-%dT%H:%M:%SZ). Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            gh issue close "${issue_number}" --reason completed
+          fi
+
+      - name: Fail the monitor run after alerting
+        if: steps.probe.outcome == 'failure'
+        run: exit 1
