@@ -330,10 +330,25 @@ BEGIN
   INSERT INTO public.staff_services (staff_id, service_id)
   VALUES (v_staff, v_addon);
 
-  -- A stale mapping owned only by inactive/deleted staff must not switch a
-  -- legacy salon from the all-capable fallback into whitelist mode. Once a
-  -- current active staff mapping exists, the whitelist must be enforced again.
-  DELETE FROM public.staff_services WHERE staff_id = v_staff;
+  -- Once a salon has entered explicit whitelist mode, deleting its final
+  -- active capability must fail closed instead of silently reopening the
+  -- legacy all-capable fallback.
+  BEGIN
+    DELETE FROM public.staff_services WHERE staff_id = v_staff;
+    RAISE EXCEPTION 'configured capability whitelist reopened legacy fallback';
+  EXCEPTION
+    WHEN SQLSTATE '22023' THEN
+      IF SQLERRM <> 'capability_whitelist_cannot_be_globally_empty' THEN
+        RAISE;
+      END IF;
+  END;
+
+  -- Stale mappings owned by inactive/deleted staff do not satisfy an active
+  -- staff member's whitelist. Keep one active sentinel so this test exercises
+  -- quote behavior without attempting the forbidden global-zero transition.
+  DELETE FROM public.staff_services
+  WHERE staff_id = v_staff
+    AND service_id <> v_addon_three;
   INSERT INTO public.staff_services (staff_id, service_id)
   VALUES
     (v_deleted_staff, v_service),
@@ -343,8 +358,8 @@ BEGIN
     v_end + interval '5 hours', ARRAY[v_addon], NULL, NULL,
     '+16045550189', NULL, false
   );
-  IF v_quote->>'success' <> 'true' THEN
-    RAISE EXCEPTION 'stale staff mapping activated capability whitelist: %', v_quote;
+  IF v_quote->>'code' <> 'invalid_staff_capability' THEN
+    RAISE EXCEPTION 'configured whitelist reopened through stale mappings: %', v_quote;
   END IF;
 
   INSERT INTO public.staff_services (staff_id, service_id)
@@ -360,8 +375,7 @@ BEGIN
   INSERT INTO public.staff_services (staff_id, service_id)
   VALUES
     (v_staff, v_addon),
-    (v_staff, v_addon_two),
-    (v_staff, v_addon_three);
+    (v_staff, v_addon_two);
 
   UPDATE public.promotions
   SET time_start = '09:00', time_end = '09:00'
