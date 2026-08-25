@@ -45,16 +45,16 @@ const cleanup = async () => {
   await run(`
     select set_config('request.jwt.claim.role','service_role',false);
     delete from public.bookings where salon_id='${id.salon}';
+    -- Delete schedule rows while the salon still exists so their availability
+    -- revision triggers can complete before the tenant cascade.
     delete from public.staff_unavailability where salon_id='${id.salon}';
     delete from public.salon_resources where salon_id='${id.salon}';
-    delete from public.staff_services where staff_id in (
-      '${id.staffA}','${id.staffB}','${id.staffVacation}'
-    );
-    delete from public.services where id='${id.service}';
-    delete from public.staff where salon_id='${id.salon}';
+    -- Delete the fixture through the supported tenant cascade. Directly
+    -- deleting the final staff_services row is intentionally fail closed and
+    -- would roll back this entire cleanup transaction.
     delete from public.salons where id='${id.salon}';
     delete from public.service_categories where slug='${category}';
-  `).catch(() => {});
+  `);
 };
 
 const insertBooking = ({ booking, staff, phone, resource, offsetMinutes = 0 }) => {
