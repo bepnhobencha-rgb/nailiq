@@ -1,6 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
+import { cache } from "react";
 import { isOwner, isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { redirect } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/server";
@@ -187,7 +188,7 @@ async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
 }
 
 /** Authorized dashboard viewer (logged-in salon member or demo cookie slug match). */
-export async function resolveSalonForDashboard(
+async function resolveSalonForDashboardUncached(
   slug: string,
 ): Promise<
   | {
@@ -238,6 +239,20 @@ export async function resolveSalonForDashboard(
   }
 
   return null;
+}
+
+// A dashboard page asks for several authorized data projections in parallel.
+// Their authorization boundary is identical, so deduplicate that boundary
+// within the current React server render. React cache is request/render scoped:
+// it does not persist a member result across users or across requests.
+const resolveSalonForDashboardInRender = cache(
+  resolveSalonForDashboardUncached,
+);
+
+export async function resolveSalonForDashboard(
+  slug: string,
+): ReturnType<typeof resolveSalonForDashboardUncached> {
+  return resolveSalonForDashboardInRender(slug);
 }
 
 async function getSalonIfMember(
@@ -433,15 +448,30 @@ export async function loadSalonOwnerDashboard(
   to.setDate(to.getDate() + 7);
   to.setHours(23, 59, 59, 999);
 
-  const { data: bookingRows, error: bookingsErr } = await supabase
-    .from("bookings")
-    .select(DASHBOARD_BOOKING_SELECT)
-    .eq("salon_id", salon.id)
-    /** Excludes `waiting` (walk-in queue) and `cancelled`; keeps `completed` for today stats. */
-    .in("status", ACTIVE_GRID_STATUSES)
-    .gte("start_time_utc", from.toISOString())
-    .lte("start_time_utc", to.toISOString())
-    .order("start_time_utc", { ascending: true });
+  const [bookingsResult, servicesCountResult, staffCountResult] =
+    await Promise.all([
+      supabase
+        .from("bookings")
+        .select(DASHBOARD_BOOKING_SELECT)
+        .eq("salon_id", salon.id)
+        /** Excludes `waiting` (walk-in queue) and `cancelled`; keeps `completed` for today stats. */
+        .in("status", ACTIVE_GRID_STATUSES)
+        .gte("start_time_utc", from.toISOString())
+        .lte("start_time_utc", to.toISOString())
+        .order("start_time_utc", { ascending: true }),
+      supabase
+        .from("services")
+        .select("*", { count: "exact", head: true })
+        .eq("salon_id", salon.id)
+        .is("deleted_at" as never, null),
+      supabase
+        .from("staff")
+        .select("*", { count: "exact", head: true })
+        .eq("salon_id", salon.id)
+        .is("deleted_at" as never, null),
+    ]);
+
+  const { data: bookingRows, error: bookingsErr } = bookingsResult;
 
   if (bookingsErr) {
     console.error("[loadSalonOwnerDashboard] bookings", bookingsErr);
@@ -454,17 +484,8 @@ export async function loadSalonOwnerDashboard(
 
   // Setup-checklist counts — soft-deleted services/staff don't count
   // toward "profile complete".
-  const { count: servicesCount, error: scErr } = await supabase
-    .from("services")
-    .select("*", { count: "exact", head: true })
-    .eq("salon_id", salon.id)
-    .is("deleted_at" as never, null);
-
-  const { count: staffCount, error: stErr } = await supabase
-    .from("staff")
-    .select("*", { count: "exact", head: true })
-    .eq("salon_id", salon.id)
-    .is("deleted_at" as never, null);
+  const { count: servicesCount, error: scErr } = servicesCountResult;
+  const { count: staffCount, error: stErr } = staffCountResult;
 
   if (scErr || stErr) {
     console.error("[loadSalonOwnerDashboard] counts", scErr ?? stErr);

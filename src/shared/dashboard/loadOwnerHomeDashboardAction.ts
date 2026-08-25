@@ -88,20 +88,14 @@ export async function loadOwnerHomeDashboard(
 
   const supabase = createServiceRoleClient();
 
-  const { data: salonRow } = await supabase
-    .from("salons")
-    .select("timezone, currency_code")
-    .eq("id", resolved.salon.id)
-    .maybeSingle();
-
   const tz =
-    typeof salonRow?.timezone === "string" && salonRow.timezone.trim()
-      ? salonRow.timezone.trim()
+    typeof resolved.salon.timezone === "string" && resolved.salon.timezone.trim()
+      ? resolved.salon.timezone.trim()
       : "America/Los_Angeles";
 
   const currencyCode =
-    typeof (salonRow as Record<string, unknown>)?.currency_code === "string"
-      ? String((salonRow as Record<string, unknown>).currency_code)
+    typeof resolved.salon.currency_code === "string"
+      ? resolved.salon.currency_code
       : "USD";
 
   const today = salonToday(tz);

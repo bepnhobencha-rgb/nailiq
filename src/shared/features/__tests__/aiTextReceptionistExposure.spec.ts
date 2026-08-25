@@ -138,7 +138,8 @@ describe("AI Text Receptionist public and route boundaries", () => {
 
     expect(pageChecksEffectiveFlag || loaderChecksEffectiveFlag).toBe(true);
     expect(page).toContain("<BookingChatWidget");
-    expect(page).toContain("(await loadAuthorizedBookingChatContext(load.salon.id)).ok");
+    expect(page).toContain("loadAuthorizedBookingChatContext(load.salon.id)");
+    expect(page).toContain("bookingChatContext?.ok === true");
     expect(page).toMatch(
       /\{(?:bookingChatVisible|aiTextReceptionistVisible|load\.salon\.aiTextReceptionistEnabled)\s*\?\s*\(/,
     );

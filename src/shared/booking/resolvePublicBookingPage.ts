@@ -101,8 +101,8 @@ export const resolvePublicBookingPage = cache(
     // that it renders a hard 404, because a Supabase blip would then hand
     // Google a 404 for tech-nails and hilite-anaheim and get them de-indexed.
     //
-    // Costs one indexed single-row lookup. Cheap insurance against silently
-    // de-listing the salons that pay for this.
+    // The exact public row is also threaded into the payload loader below so
+    // this safety check does not become a duplicate lookup under load.
     const client = supabase ?? createPublicClient();
     const { salon: exists, error: lookupErr } = await getSalonBySlug(
       client,
@@ -140,7 +140,11 @@ export const resolvePublicBookingPage = cache(
     // A null now cannot mean "no such salon" — we just proved otherwise one
     // query ago. It means the load failed. Serving a 404 here would tell Google
     // a live salon is gone; a 5xx says "try again", which is the truth.
-    const load = await loadBookingServicesForSalonSlug(normalizedSlug, client);
+    const load = await loadBookingServicesForSalonSlug(
+      normalizedSlug,
+      client,
+      exists,
+    );
     if (!load) {
       return {
         status: "error",
