@@ -102,25 +102,23 @@ export function defaultOpeningHoursWeek(): OpeningHoursWeek {
   return parseOpeningHours(JSON.parse(DEFAULT_OPENING_HOURS_JSON))!;
 }
 
-/** Human preview for salon setup (locale-friendly times). */
+/** Human preview for salon setup with deterministic server/client times. */
 export function compactOpeningHoursLabel(hours: OpeningHoursWeek): string {
   const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
   function fmtHm(hm: string) {
     const [a0, b0] = hm.split(":");
-    const h = Number(a0);
-    const m = Number(b0);
-    const d = new Date(
-      2000,
-      0,
-      1,
-      Number.isFinite(h) ? h : 9,
-      Number.isFinite(m) ? m : 0,
-    );
-    return d.toLocaleTimeString(undefined, {
-      hour: "numeric",
-      minute: "2-digit",
-    });
+    const parsedHour = Number(a0);
+    const parsedMinute = Number(b0);
+    const hour = Number.isFinite(parsedHour)
+      ? Math.min(23, Math.max(0, Math.floor(parsedHour)))
+      : 9;
+    const minute = Number.isFinite(parsedMinute)
+      ? Math.min(59, Math.max(0, Math.floor(parsedMinute)))
+      : 0;
+    const hour12 = hour % 12 || 12;
+    const period = hour < 12 ? "AM" : "PM";
+    return `${hour12}:${String(minute).padStart(2, "0")} ${period}`;
   }
 
   let i = 0;
