@@ -56,9 +56,7 @@ export function SalonOwnerDashboard({
   const [data, setData] = useState<InitialPayload | null>(() =>
     initialResult.ok ? initialResult : null,
   );
-  const [loadError, setLoadError] = useState(
-    () => !initialResult.ok && initialResult.error === "server_error",
-  );
+  const [loadError, setLoadError] = useState(() => !initialResult.ok);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -93,24 +91,25 @@ export function SalonOwnerDashboard({
     const res = await loadSalonOwnerDashboard(slug);
     setIsLoading(false);
     if (!res.ok) {
-      if (res.error === "unauthorized") {
-        router.replace("/register");
-        return;
-      }
+      // Stay on a stable fail-closed document. Redirecting an authorization
+      // miss to /register can be bounced straight back here by the request
+      // proxy for a still-authenticated salon member, creating an infinite
+      // navigation loop and a permanently visible loading skeleton.
+      setData(null);
       setLoadError(true);
       return;
     }
     setLoadError(false);
     setData(res);
     setLastUpdatedAt(Date.now());
-  }, [router, slug]);
+  }, [slug]);
 
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- sync local state with initialResult prop after server reload */
     if (initialResult.ok) {
       setData(initialResult);
       setLoadError(false);
-    } else if (initialResult.error === "server_error") {
+    } else {
       setData(null);
       setLoadError(true);
     }
