@@ -34,6 +34,23 @@ describe("public auth rate-limit boundary", () => {
     expect(proxy).toContain("limiterUnavailableResponse");
   });
 
+  it("keeps auth available during a proxy limiter outage while public surfaces fail closed", () => {
+    const proxy = source("src/proxy.ts");
+    const authBoundary = proxy.slice(
+      proxy.indexOf("if (isPublicAuthAttempt(request))"),
+      proxy.indexOf("// Coarse durable abuse ceiling"),
+    );
+    const publicApiBoundary = proxy.slice(
+      proxy.indexOf("if (isPublicApiBoundary(pathnameEarly))"),
+      proxy.indexOf("let supabaseResponse"),
+    );
+
+    expect(authBoundary).toContain('durableLimit === "unavailable"');
+    expect(authBoundary).toContain("console.warn");
+    expect(authBoundary).not.toContain("return limiterUnavailableResponse()");
+    expect(publicApiBoundary).toContain("return limiterUnavailableResponse()");
+  });
+
   it("places a durable ceiling before every explicitly public API namespace", () => {
     const proxy = source("src/proxy.ts");
 

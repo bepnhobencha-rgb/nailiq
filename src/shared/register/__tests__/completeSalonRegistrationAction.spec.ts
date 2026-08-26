@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   createServiceRoleClient: vi.fn(),
+  isDemoOtpRuntime: vi.fn(),
   pickAvailableSalonSlug: vi.fn(),
 }));
 
@@ -30,7 +31,7 @@ vi.mock("@/shared/lib/demoOtpMode", async (importOriginal) => {
   const original = await importOriginal<
     typeof import("@/shared/lib/demoOtpMode")
   >();
-  return { ...original, isDemoOtpRuntime: () => false };
+  return { ...original, isDemoOtpRuntime: mocks.isDemoOtpRuntime };
 });
 
 import { completeSalonRegistration } from "@/shared/register/completeSalonRegistrationAction";
@@ -96,13 +97,66 @@ function existingOwnerAdminRpc(data: unknown, error: unknown = null) {
   return rpc;
 }
 
+function newOwnerRegistrationAdmin(slug: string) {
+  const salonInsert = vi.fn(() => ({
+    select: vi.fn(() => ({
+      single: vi.fn().mockResolvedValue({
+        data: { id: "salon-new", slug },
+        error: null,
+      }),
+    })),
+  }));
+  const insert = vi.fn().mockResolvedValue({ error: null });
+  const from = vi.fn((table: string) => {
+    if (table === "salons") return { insert: salonInsert };
+    if (["services", "staff", "salon_members"].includes(table)) {
+      return { insert };
+    }
+    throw new Error(`unexpected registration table: ${table}`);
+  });
+  const admin = { from };
+  mocks.createServiceRoleClient.mockReturnValue(admin);
+  return { client: admin, salonInsert };
+}
+
 describe("completeSalonRegistration existing-owner authorization", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.isDemoOtpRuntime.mockReturnValue(false);
     mocks.pickAvailableSalonSlug.mockResolvedValue({
       slug: "owner-salon",
       slugAdjusted: false,
     });
+  });
+
+  it("keeps an authenticated owner on the real slug path when demo OTP is enabled", async () => {
+    mocks.isDemoOtpRuntime.mockReturnValue(true);
+    mocks.createClient.mockResolvedValue(
+      authenticatedClient({ memberships: [] }),
+    );
+    mocks.pickAvailableSalonSlug.mockResolvedValue({
+      slug: "nailiq-preview-qa",
+      slugAdjusted: false,
+    });
+    const admin = newOwnerRegistrationAdmin("nailiq-preview-qa");
+
+    await expect(
+      completeSalonRegistration("NailIQ Preview QA", null, {
+        slug: "nailiq-preview-qa",
+        timezone: "America/Vancouver",
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      slug: "nailiq-preview-qa",
+      slugAdjusted: false,
+    });
+    expect(mocks.pickAvailableSalonSlug).toHaveBeenCalledWith(
+      admin.client,
+      "nailiq-preview-qa",
+    );
+    expect(admin.salonInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: "nailiq-preview-qa" }),
+    );
   });
 
   it("fails closed when the canonical membership lookup errors", async () => {

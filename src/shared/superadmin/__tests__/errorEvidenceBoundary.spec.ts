@@ -49,6 +49,13 @@ const evidenceRow: ErrorLogRow = {
   fix_proposal: null,
   fix_file: null,
   fix_pr_url: null,
+  remediation_state: "detected",
+  qa_candidate_sha: null,
+  qa_evidence: null,
+  qa_passed_at: null,
+  qa_passed_by: null,
+  resolution_approved_at: null,
+  resolution_approved_by: null,
   stack: "Error: Hydration failed\n    at ChooseSalonClient",
   context: {
     href: "https://www.nailiq.ca/choose-salon",
@@ -148,6 +155,35 @@ describe("superadmin error evidence boundary", () => {
     expect(html).toContain("AI triage and draft fixes are blocked");
     expect(html).not.toContain("🧠 Triage");
     expect(html).not.toContain("✨ Draft fix");
-    expect(html).toContain("Resolve");
+    expect(html).not.toContain(">Resolve<");
+    expect(html).not.toContain("Record QA pass");
+  });
+
+  it("shows the human gates and only allows resolve after approval", () => {
+    const detected = renderToStaticMarkup(
+      createElement(ErrorMonitorClient, { initialRows: [evidenceRow] }),
+    );
+    expect(detected).toContain("Detect → Triage → Human fix → QA → Approval → Resolve");
+    expect(detected).toContain("Record QA pass");
+    expect(detected).not.toContain(">Resolve<");
+
+    const approved = renderToStaticMarkup(
+      createElement(ErrorMonitorClient, {
+        initialRows: [
+          {
+            ...evidenceRow,
+            remediation_state: "approved",
+            qa_candidate_sha: "aaa156954b96cf03ad4f24d854d4c301dd73cb85",
+            qa_evidence: "Focused regression and typecheck passed.",
+            qa_passed_at: "2026-08-26T01:00:00.000Z",
+            qa_passed_by: "qa-user",
+            resolution_approved_at: "2026-08-26T01:05:00.000Z",
+            resolution_approved_by: "owner-user",
+          },
+        ],
+      }),
+    );
+    expect(approved).toContain("Approved to resolve");
+    expect(approved).toContain(">Resolve<");
   });
 });

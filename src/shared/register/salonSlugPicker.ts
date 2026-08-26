@@ -1,5 +1,4 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { DEMO_SALON_SLUG, isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
 import { slugifySalonName } from "@/shared/lib/slugifySalonName";
 
 export async function salonSlugTaken(
@@ -18,13 +17,6 @@ export async function pickAvailableSalonSlug(
   supabase: SupabaseClient,
   baseSlug: string,
 ): Promise<{ slug: string; slugAdjusted: boolean }> {
-  // Demo mode is restricted to a single shared salon at DEMO_SALON_SLUG —
-  // the slug is not user-controllable and the same value is returned on
-  // every demo registration. The caller (`completeSalonRegistration`)
-  // handles the case where the demo salon already exists in DB.
-  if (isDemoOtpRuntime()) {
-    return { slug: DEMO_SALON_SLUG, slugAdjusted: false };
-  }
   const normalized = slugifySalonName(baseSlug);
   if (!(await salonSlugTaken(supabase, normalized))) {
     return { slug: normalized, slugAdjusted: false };

@@ -320,8 +320,13 @@ ${fileContent ? `\n--- current ${filePath} ---\n${fileContent}` : ""}`,
 
     await db
       .from("error_logs")
-      .update({ fix_proposal: proposal || "No proposal generated.", fix_file: filePath || null } as never)
-      .eq("id", errorId);
+      .update({
+        fix_proposal: proposal || "No proposal generated.",
+        fix_file: filePath || null,
+        remediation_state: "fix_proposed",
+      } as never)
+      .eq("id", errorId)
+      .in("remediation_state" as never, ["detected", "triaged"] as never);
 
     // 3. Open a DRAFT PR if a token + a confident corrected file exist.
     let prUrl: string | null = null;
