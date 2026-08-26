@@ -39,9 +39,12 @@ export default async function SalonDashboardPage({ params }: Props) {
     loadOwnerHomeDashboard(slug),
   ]);
 
-  if (!initialResult.ok && initialResult.error === "unauthorized") {
-    redirect("/register");
-  }
+  // Do not redirect an authorization miss to /register. The request proxy
+  // redirects authenticated salon members from /register back to this route,
+  // so a stale session or a temporarily unavailable membership projection can
+  // otherwise create a dashboard -> register -> dashboard loop. Rendering the
+  // dashboard's fail-closed retry state keeps salon data hidden and gives the
+  // browser a stable document instead of an endless navigation skeleton.
 
   let guidedSetupComplete: boolean | null = null;
   let guidedSetupEnabled = false;

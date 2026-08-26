@@ -1,15 +1,52 @@
 import { classifyClientErrorDisposition } from "@/shared/observability/clientErrorDisposition";
+import { decideHistoryRateLimitRecovery } from "@/shared/observability/clientRuntimeRecovery";
+
+const HISTORY_RECOVERY_KEY = "nq-history-replace-reload-at";
+let restoredFromBfcache = false;
+
+type RuntimeContext = Record<string, unknown>;
+
+function captureRuntimeContext(extra?: RuntimeContext): RuntimeContext {
+  let navigationType: string | null = null;
+  try {
+    const navigation = performance.getEntriesByType(
+      "navigation",
+    )[0] as PerformanceNavigationTiming | undefined;
+    navigationType = navigation?.type ?? null;
+  } catch {
+    /* performance timing unavailable */
+  }
+
+  return {
+    href: typeof location !== "undefined" ? location.href : null,
+    deploymentId:
+      typeof document !== "undefined"
+        ? document.documentElement.getAttribute("data-dpl-id")
+        : null,
+    navigationType,
+    restoredFromBfcache,
+    visibility:
+      typeof document !== "undefined" ? document.visibilityState : null,
+    historyLength: typeof history !== "undefined" ? history.length : null,
+    ...extra,
+  };
+}
 
 // Client error capture → NailIQ's own /api/errors endpoint.
 // Uses sendBeacon so the report survives even if the page is navigating away.
-function reportClientError(message: string, stack: string | null, level: "error" | "warning") {
+function reportClientError(
+  message: string,
+  stack: string | null,
+  level: "error" | "warning",
+  extraContext?: RuntimeContext,
+) {
   try {
     const payload = JSON.stringify({
       message: message.slice(0, 2000),
       stack: stack?.slice(0, 8000) ?? null,
       level,
       route: typeof location !== "undefined" ? location.pathname + location.search : null,
-      context: { href: typeof location !== "undefined" ? location.href : null },
+      context: captureRuntimeContext(extraContext),
     });
     const blob = new Blob([payload], { type: "application/json" });
     if (navigator.sendBeacon?.("/api/errors", blob)) return;
@@ -68,12 +105,51 @@ function maybeRecoverFromStaleDeploy(msg: string): boolean {
   return true;
 }
 
+function historyRateLimitRecovery(
+  msg: string,
+): "reload" | "guarded" | null {
+  try {
+    const now = Date.now();
+    const decision = decideHistoryRateLimitRecovery(
+      msg,
+      window.sessionStorage.getItem(HISTORY_RECOVERY_KEY),
+      now,
+    );
+    if (decision === "reload") {
+      // Persist before navigating: a second fault after reload is observed but
+      // never allowed to turn into an endless reload cycle.
+      window.sessionStorage.setItem(HISTORY_RECOVERY_KEY, String(now));
+    }
+    return decision;
+  } catch {
+    // If sessionStorage is blocked, do not risk an unguarded reload loop.
+    return decideHistoryRateLimitRecovery(msg, String(Date.now()), Date.now());
+  }
+}
+
 if (typeof window !== "undefined") {
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) restoredFromBfcache = true;
+  });
   window.addEventListener("error", (e) => {
     const msg = e.message || (e.error instanceof Error ? e.error.message : "Unknown error");
     if (isSessionExpiryError(String(msg))) return;
     if (maybeRecoverFromStaleDeploy(String(msg))) return;
     const stack = e.error instanceof Error ? (e.error.stack ?? null) : null;
+    const recovery = historyRateLimitRecovery(String(msg));
+    if (recovery) {
+      reportClientError(
+        String(msg),
+        stack,
+        recovery === "reload" ? "warning" : "error",
+        { automaticRecovery: recovery },
+      );
+      if (recovery === "reload") {
+        e.preventDefault();
+        window.setTimeout(() => window.location.reload(), 0);
+      }
+      return;
+    }
     const evidence = [e.filename, stack].filter(Boolean).join("\n");
     const disposition = classifyClientErrorDisposition(String(msg), evidence);
     if (disposition === "ignore") return;
@@ -85,6 +161,20 @@ if (typeof window !== "undefined") {
     if (isSessionExpiryError(String(msg))) return;
     if (maybeRecoverFromStaleDeploy(String(msg))) return;
     const stack = r instanceof Error ? (r.stack ?? null) : null;
+    const recovery = historyRateLimitRecovery(String(msg));
+    if (recovery) {
+      reportClientError(
+        String(msg),
+        stack,
+        recovery === "reload" ? "warning" : "error",
+        { automaticRecovery: recovery },
+      );
+      if (recovery === "reload") {
+        e.preventDefault();
+        window.setTimeout(() => window.location.reload(), 0);
+      }
+      return;
+    }
     const disposition = classifyClientErrorDisposition(String(msg), stack);
     if (disposition === "ignore") return;
     reportClientError(String(msg), stack, disposition);
