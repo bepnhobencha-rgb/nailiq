@@ -28,10 +28,13 @@ const id = {
   service: "49000000-0000-4000-8000-000000000102",
   staffA: "49000000-0000-4000-8000-000000000103",
   staffB: "49000000-0000-4000-8000-000000000104",
+  staffC: "49000000-0000-4000-8000-000000000112",
   staffVacation: "49000000-0000-4000-8000-000000000105",
   room: "49000000-0000-4000-8000-000000000106",
+  roomB: "49000000-0000-4000-8000-000000000111",
   bookingA: "49000000-0000-4000-8000-000000000107",
   bookingB: "49000000-0000-4000-8000-000000000108",
+  bookingC: "49000000-0000-4000-8000-000000000113",
   vacationA: "49000000-0000-4000-8000-000000000109",
   vacationB: "49000000-0000-4000-8000-000000000110",
 };
@@ -94,12 +97,16 @@ try {
     insert into public.staff(id,salon_id,name,status) values
       ('${id.staffA}','${id.salon}','Capacity A','active'),
       ('${id.staffB}','${id.salon}','Capacity B','active'),
+      ('${id.staffC}','${id.salon}','Capacity C','active'),
       ('${id.staffVacation}','${id.salon}','Capacity Vacation','active');
     insert into public.staff_services(staff_id,service_id) values
       ('${id.staffA}','${id.service}'),('${id.staffB}','${id.service}'),
+      ('${id.staffC}','${id.service}'),
       ('${id.staffVacation}','${id.service}');
-    insert into public.salon_resources(id,salon_id,name,kind,status)
-    values('${id.room}','${id.salon}','Shared Concurrency Room','room','active');
+    insert into public.salon_resources(id,salon_id,name,kind,status,display_order)
+    values
+      ('${id.room}','${id.salon}','Shared Concurrency Room A','room','active',1),
+      ('${id.roomB}','${id.salon}','Shared Concurrency Room B','room','active',2);
   `);
 
   // Different staff racing for one shared room: exactly one commits.
@@ -139,11 +146,42 @@ try {
   assert.equal(await run(`select count(*) from public.bookings
     where id in ('${id.vacationA}','${id.vacationB}')`), "0");
 
-  // Resource-mode cannot be bypassed with a null resource.
-  await assert.rejects(run(insertBooking({
-    booking: id.vacationA, staff: id.staffA,
+  // Group/Party-style null resources are assigned atomically and
+  // deterministically. Two overlapping members receive two distinct rooms.
+  await run(insertBooking({
+    booking: id.bookingA, staff: id.staffA,
     phone: "16045550605", resource: null, offsetMinutes: 120,
-  })));
+  }));
+  await run(insertBooking({
+    booking: id.bookingB, staff: id.staffB,
+    phone: "16045550606", resource: null, offsetMinutes: 120,
+  }));
+  assert.equal(await run(`select count(distinct resource_id) from public.bookings
+    where id in ('${id.bookingA}','${id.bookingB}')`), "2");
+  assert.equal(await run(`select resource_id from public.bookings
+    where id='${id.bookingA}'`), id.room);
+  assert.equal(await run(`select resource_id from public.bookings
+    where id='${id.bookingB}'`), id.roomB);
+
+  await run(`delete from public.bookings where salon_id='${id.salon}'`);
+  const automaticRace = await Promise.allSettled([
+    run(insertBooking({
+      booking: id.bookingA, staff: id.staffA,
+      phone: "16045550607", resource: null, offsetMinutes: 180,
+    })),
+    run(insertBooking({
+      booking: id.bookingB, staff: id.staffB,
+      phone: "16045550608", resource: null, offsetMinutes: 180,
+    })),
+    run(insertBooking({
+      booking: id.bookingC, staff: id.staffC,
+      phone: "16045550609", resource: null, offsetMinutes: 180,
+    })),
+  ]);
+  assert.equal(automaticRace.filter((result) => result.status === "fulfilled").length, 2);
+  assert.equal(automaticRace.filter((result) => result.status === "rejected").length, 1);
+  assert.equal(await run(`select count(distinct resource_id) from public.bookings
+    where id in ('${id.bookingA}','${id.bookingB}','${id.bookingC}')`), "2");
 
   console.log("booking vacation/resource capacity concurrency passed");
 } finally {
