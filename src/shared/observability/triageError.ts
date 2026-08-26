@@ -107,8 +107,13 @@ context: ${JSON.stringify(e.context ?? {}).slice(0, 500)}`;
 
     await db
       .from("error_logs")
-      .update({ ai_summary: summary, ai_suggested_fix: fix } as never)
-      .eq("id", id);
+      .update({
+        ai_summary: summary,
+        ai_suggested_fix: fix,
+        remediation_state: "triaged",
+      } as never)
+      .eq("id", id)
+      .eq("remediation_state" as never, "detected");
     return { ok: true };
   } catch (err) {
     console.error("[triageError]", err);

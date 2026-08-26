@@ -3,12 +3,20 @@
 import { useState, useTransition } from "react";
 import { assessErrorEvidence } from "@/shared/observability/errorEvidence";
 import {
+  approveErrorResolution,
   loadErrorLogs,
+  recordErrorQaPass,
   setErrorStatus,
   triageErrorNow,
   draftFixNow,
   type ErrorLogRow,
 } from "@/shared/superadmin/errorMonitorActions";
+import {
+  canApproveErrorResolution,
+  canRecordErrorQa,
+  canResolveError,
+  ERROR_REMEDIATION_LABEL,
+} from "@/shared/observability/remediationPolicy";
 
 const LEVEL_STYLE: Record<string, string> = {
   fatal: "bg-nq-error/20 text-nq-error border-nq-error/40",
@@ -39,6 +47,8 @@ export function ErrorMonitorClient({ initialRows }: { initialRows: ErrorLogRow[]
   const [rows, setRows] = useState<ErrorLogRow[]>(initialRows);
   const [filter, setFilter] = useState<"open" | "resolved" | "all">("open");
   const [pending, startTransition] = useTransition();
+  const [qaDrafts, setQaDrafts] = useState<Record<string, { sha: string; evidence: string }>>({});
+  const [actionError, setActionError] = useState<string | null>(null);
 
   function refresh(next: "open" | "resolved" | "all") {
     setFilter(next);
@@ -50,9 +60,48 @@ export function ErrorMonitorClient({ initialRows }: { initialRows: ErrorLogRow[]
 
   function act(id: string, status: "resolved" | "ignored" | "open") {
     startTransition(async () => {
-      await setErrorStatus(id, status);
+      setActionError(null);
+      const changed = await setErrorStatus(id, status);
+      if (!changed.ok) setActionError("The requested state change did not pass its release gate.");
       const r = await loadErrorLogs(filter);
       if (r.ok) setRows(r.rows);
+    });
+  }
+
+  function recordQa(id: string) {
+    const draft = qaDrafts[id] ?? { sha: "", evidence: "" };
+    startTransition(async () => {
+      setActionError(null);
+      const result = await recordErrorQaPass({
+        id,
+        candidateSha: draft.sha,
+        evidence: draft.evidence,
+      });
+      if (!result.ok) {
+        setActionError(
+          result.error === "invalid_candidate_sha"
+            ? "QA requires the full 40-character candidate SHA."
+            : "QA requires privacy-safe evidence of at least 12 characters.",
+        );
+      }
+      const refreshed = await loadErrorLogs(filter);
+      if (refreshed.ok) setRows(refreshed.rows);
+    });
+  }
+
+  function approve(id: string) {
+    startTransition(async () => {
+      setActionError(null);
+      const result = await approveErrorResolution(id);
+      if (!result.ok) {
+        setActionError(
+          result.error === "product_owner_required"
+            ? "Final approval requires the Founder / Product Owner role."
+            : "Approval requires a recorded QA pass first.",
+        );
+      }
+      const refreshed = await loadErrorLogs(filter);
+      if (refreshed.ok) setRows(refreshed.rows);
     });
   }
 
@@ -74,6 +123,18 @@ export function ErrorMonitorClient({ initialRows }: { initialRows: ErrorLogRow[]
 
   return (
     <div className="mt-6">
+      <div className="mb-4 rounded-xl border border-nq-info/30 bg-nq-info/10 px-4 py-3 text-xs text-nq-foreground">
+        <p className="font-semibold">Detect → Triage → Human fix → QA → Approval → Resolve</p>
+        <p className="mt-1 text-nq-muted">
+          AI may summarize or draft a fix. It never merges, deploys, rolls back,
+          or resolves an incident automatically.
+        </p>
+      </div>
+      {actionError ? (
+        <p className="mb-4 rounded-lg border border-nq-error/35 bg-nq-error/10 px-3 py-2 text-xs text-nq-error">
+          {actionError}
+        </p>
+      ) : null}
       <div className="mb-4 flex items-center gap-2">
         {(["open", "resolved", "all"] as const).map((f) => (
           <button
@@ -120,6 +181,9 @@ export function ErrorMonitorClient({ initialRows }: { initialRows: ErrorLogRow[]
                     <span className="text-[11px] font-semibold text-nq-foreground">
                       ×{r.occurrence_count}
                     </span>
+                    <span className="rounded border border-nq-info/30 bg-nq-info/10 px-1.5 py-0.5 text-[10px] font-semibold text-nq-info">
+                      {ERROR_REMEDIATION_LABEL[r.remediation_state]}
+                    </span>
                     <span className="text-[11px] text-nq-muted">
                       last {timeAgo(r.last_seen_at)} · first {timeAgo(r.first_seen_at)}
                     </span>
@@ -164,6 +228,12 @@ export function ErrorMonitorClient({ initialRows }: { initialRows: ErrorLogRow[]
                     >
                       → Review draft PR
                     </a>
+                  ) : null}
+                  {r.qa_candidate_sha && r.qa_evidence ? (
+                    <div className="mt-2 rounded-md border border-nq-success/30 bg-nq-success/10 px-2.5 py-2 text-xs text-nq-foreground">
+                      <p className="font-semibold">QA passed · {r.qa_candidate_sha.slice(0, 8)}</p>
+                      <p className="mt-1 text-nq-muted">{r.qa_evidence}</p>
+                    </div>
                   ) : null}
                   {r.stack || formatContext(r.context) ? (
                     <details className="mt-3 rounded-lg border border-nq-muted/20 bg-nq-bg/40">
@@ -216,12 +286,68 @@ export function ErrorMonitorClient({ initialRows }: { initialRows: ErrorLogRow[]
                           ✨ Draft fix
                         </button>
                       ) : null}
-                      <button
-                        onClick={() => act(r.id, "resolved")}
-                        className="rounded-md bg-nq-success/15 px-2.5 py-1 text-xs text-nq-success hover:bg-nq-success/25"
-                      >
-                        Resolve
-                      </button>
+                      {canRecordErrorQa(r.remediation_state) &&
+                      assessErrorEvidence(r.route, r.context).status !== "conflict" ? (
+                        <details className="w-64 rounded-md border border-nq-muted/25 p-2">
+                          <summary className="cursor-pointer text-xs font-semibold text-nq-primary">
+                            Record QA pass
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            <input
+                              aria-label="QA candidate SHA"
+                              value={qaDrafts[r.id]?.sha ?? ""}
+                              onChange={(event) =>
+                                setQaDrafts((current) => ({
+                                  ...current,
+                                  [r.id]: {
+                                    sha: event.target.value,
+                                    evidence: current[r.id]?.evidence ?? "",
+                                  },
+                                }))
+                              }
+                              placeholder="40-character SHA"
+                              className="w-full rounded border border-nq-muted/30 bg-nq-bg px-2 py-1 text-xs text-nq-foreground"
+                            />
+                            <textarea
+                              aria-label="QA evidence"
+                              value={qaDrafts[r.id]?.evidence ?? ""}
+                              onChange={(event) =>
+                                setQaDrafts((current) => ({
+                                  ...current,
+                                  [r.id]: {
+                                    sha: current[r.id]?.sha ?? "",
+                                    evidence: event.target.value,
+                                  },
+                                }))
+                              }
+                              placeholder="Tests/checks passed; no customer data"
+                              className="min-h-20 w-full rounded border border-nq-muted/30 bg-nq-bg px-2 py-1 text-xs text-nq-foreground"
+                            />
+                            <button
+                              onClick={() => recordQa(r.id)}
+                              className="w-full rounded-md bg-nq-success/15 px-2.5 py-1 text-xs font-semibold text-nq-success hover:bg-nq-success/25"
+                            >
+                              Save QA evidence
+                            </button>
+                          </div>
+                        </details>
+                      ) : null}
+                      {canApproveErrorResolution(r.remediation_state) ? (
+                        <button
+                          onClick={() => approve(r.id)}
+                          className="rounded-md bg-nq-warning/15 px-2.5 py-1 text-xs font-semibold text-nq-warning hover:bg-nq-warning/25"
+                        >
+                          Product Owner approval (no deploy)
+                        </button>
+                      ) : null}
+                      {canResolveError(r.remediation_state) ? (
+                        <button
+                          onClick={() => act(r.id, "resolved")}
+                          className="rounded-md bg-nq-success/15 px-2.5 py-1 text-xs text-nq-success hover:bg-nq-success/25"
+                        >
+                          Resolve
+                        </button>
+                      ) : null}
                       <button
                         onClick={() => act(r.id, "ignored")}
                         className="rounded-md px-2.5 py-1 text-xs text-nq-muted hover:text-nq-foreground"

@@ -109,7 +109,8 @@ const PRODUCTION = {
   // Square customer identity columns.
   // +4 terminal receipt fields on reminder claims, +4 on staff-action
   // deliveries, and +13 fields in the PII-free Twilio status receipt inbox.
-  columns: 2561,
+  // +7 fail-closed error-remediation QA and approval evidence columns.
+  columns: 2568,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -132,11 +133,13 @@ const PRODUCTION = {
   // function, and +2 private completion classifiers retained behind the
   // SID-first service-role wrappers, plus +2 durable review-SMS completion and
   // signed callback-correlation functions.
-  functions: 373,
+  // +1 forward-only error-remediation release-gate trigger function.
+  functions: 374,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
-  triggers: 86,
+  // +1 fail-closed error-remediation release-gate trigger.
+  triggers: 87,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
