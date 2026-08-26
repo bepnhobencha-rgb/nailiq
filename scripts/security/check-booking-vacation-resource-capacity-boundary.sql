@@ -4,6 +4,8 @@ DO $$
 DECLARE
   v_oid oid := 'public.enforce_booking_operational_capacity_guard()'::regprocedure;
   v_def text;
+  v_auto_oid oid := 'public.auto_assign_single_booking_resource()'::regprocedure;
+  v_auto_def text;
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_catalog.pg_proc p
@@ -41,6 +43,26 @@ BEGIN
      OR position('ERRCODE = ''23P01''' IN v_def) = 0
   THEN
     RAISE EXCEPTION 'capacity guard vacation/resource sentinel drifted';
+  END IF;
+
+  SELECT pg_catalog.pg_get_functiondef(v_auto_oid) INTO v_auto_def;
+  IF position('booking-capacity:resource-auto:' IN v_auto_def) = 0
+     OR position('NEW.resource_id := v_resource_id' IN v_auto_def) = 0
+     OR position('public.booking_service_segments AS seg' IN v_auto_def) = 0
+     OR pg_catalog.has_function_privilege('public', v_auto_oid, 'EXECUTE')
+     OR pg_catalog.has_function_privilege('anon', v_auto_oid, 'EXECUTE')
+     OR pg_catalog.has_function_privilege(
+       'authenticated', v_auto_oid, 'EXECUTE'
+     )
+     OR pg_catalog.has_function_privilege('service_role', v_auto_oid, 'EXECUTE')
+     OR NOT EXISTS (
+       SELECT 1 FROM pg_catalog.pg_trigger
+       WHERE tgrelid = 'public.bookings'::regclass
+         AND tgname = 'a_auto_assign_single_booking_resource'
+         AND NOT tgisinternal
+     )
+  THEN
+    RAISE EXCEPTION 'automatic resource assignment boundary drifted';
   END IF;
 
   IF NOT EXISTS (
