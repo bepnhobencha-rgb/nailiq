@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
 import { loadPublicNailTryOnSalon } from "@/shared/nailTryOn/publicSalon";
 import { z } from "zod";
 import { mappingMatchesServices } from "@/shared/nailTryOn/designServiceMapping";
@@ -85,6 +86,7 @@ async function analyzeAndSave(args: {
 }
 
 export async function POST(request: Request) {
+  if (!isSameOriginMutation(request)) return NextResponse.json({ error: "invalid_origin" }, { status: 403 });
   const form = await request.formData().catch(() => null);
   const slug = String(form?.get("slug") || "");
   const name = String(form?.get("name") || "").trim();
@@ -123,6 +125,7 @@ export async function POST(request: Request) {
 }
 
 export async function PUT(request: Request) {
+  if (!isSameOriginMutation(request)) return NextResponse.json({ error: "invalid_origin" }, { status: 403 });
   const body = await request.json().catch(() => null);
   const parsed = z.object({ slug: z.string().min(1), designIds: z.array(z.string().uuid()).min(1).max(6) }).safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "invalid_request" }, { status: 400 });
@@ -150,6 +153,7 @@ export async function PUT(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  if (!isSameOriginMutation(request)) return NextResponse.json({ error: "invalid_origin" }, { status: 403 });
   const body = await request.json().catch(() => null);
   const parsed = z.object({ slug: z.string().min(1), designId: z.string().uuid(), serviceIds: serviceIdsSchema, addonServiceIds: serviceIdsSchema, defaultServiceId: optionalServiceId }).safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "invalid_request" }, { status: 400 });

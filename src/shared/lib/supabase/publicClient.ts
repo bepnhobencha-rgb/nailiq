@@ -2,6 +2,7 @@ import {
   createClient as createSupabaseClient,
   type SupabaseClient,
 } from "@supabase/supabase-js";
+import { resolveSupabaseServerUrl } from "@/shared/lib/supabase/serverUrl";
 
 let publicClient: SupabaseClient | null = null;
 
@@ -18,8 +19,13 @@ let publicClient: SupabaseClient | null = null;
 export function createPublicClient(): SupabaseClient {
   if (publicClient) return publicClient;
 
+  const url =
+    typeof window === "undefined"
+      ? resolveSupabaseServerUrl()
+      : process.env.NEXT_PUBLIC_SUPABASE_URL;
+
   publicClient = createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    url!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       auth: {

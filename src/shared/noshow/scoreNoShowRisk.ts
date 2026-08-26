@@ -1,5 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
+import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProviderPolicy";
+import {
+  isProviderTimeoutError,
+  trackAnthropicMessage,
+} from "@/shared/ai/usageLedger";
 
 export type RiskScoreInput = {
   salonId: string;
@@ -27,7 +31,7 @@ let anthropicClient: Anthropic | null = null;
 function getClient(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY?.trim();
   if (!key) return null;
-  if (!anthropicClient) anthropicClient = new Anthropic({ apiKey: key });
+  if (!anthropicClient) anthropicClient = createTextBackgroundAnthropicClient(key);
   return anthropicClient;
 }
 
@@ -79,7 +83,8 @@ Respond with JSON only: {"score": <0-100>, "reasoning": "<1 sentence>"}`;
     const score = typeof parsed.score === "number" ? Math.min(100, Math.max(0, Math.round(parsed.score))) : deterministicNoShowRiskScore(input).score;
     const reasoning = typeof parsed.reasoning === "string" ? parsed.reasoning : "";
     return { score, reasoning };
-  } catch {
+  } catch (error) {
+    if (isProviderTimeoutError(error)) throw error;
     return deterministicNoShowRiskScore(input);
   }
 }

@@ -5,6 +5,7 @@
 // when all are answered it outputs a structured SIP draft JSON.
 
 import Anthropic from "@anthropic-ai/sdk";
+import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProviderPolicy";
 import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
@@ -26,7 +27,7 @@ let _client: Anthropic | null = null;
 function getClient(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY?.trim();
   if (!key) return null;
-  if (!_client) _client = new Anthropic({ apiKey: key });
+  if (!_client) _client = createTextBackgroundAnthropicClient(key);
   return _client;
 }
 

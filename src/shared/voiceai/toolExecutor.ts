@@ -8,6 +8,25 @@ import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { computeTimeSlots } from "@/shared/booking/getAvailableTimeSlots";
 import { parseOpeningHours, type DayKey, type OpeningHoursWeek } from "@/shared/dashboard/openingHoursDefaults";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
+import { voiceBookingLogicalIdempotencyKey } from "@/shared/voiceai/voiceBookingIdempotency";
+import {
+  parseVoiceGroupMode,
+  voiceGroupBookingLogicalIdempotencyKey,
+} from "@/shared/voiceai/voiceGroupBookingIdempotency";
+import { parsePublicBookingPricingQuote } from "@/shared/booking/publicBookingPricing";
+import { parseGroupBookingPricingQuote } from "@/shared/booking/groupBookingPricing";
+import {
+  createGroupBookingsAuthoritative,
+  resolveGroupBookingQuote,
+  type GroupBookingCreateServerRequest,
+} from "@/shared/booking/groupBookingPricingServer";
+import { reconcileCommittedBooking } from "@/shared/booking/reconcileCommittedBooking";
+import { committedBookingLifecycleError } from "@/shared/booking/committedBookingLifecycle";
+import {
+  isClearVoicePricingConfirmation,
+  toVoicePendingGroupPricing,
+  toVoicePendingPricing,
+} from "@/shared/voiceai/voicePricingConfirmation";
 import { computeBookingTiming } from "@/shared/booking/bookingTiming";
 import { checkGroupWithinOpeningHours } from "@/shared/booking/groupBookingHoursPolicy";
 import { salonDayRangeUtc, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
@@ -29,6 +48,7 @@ import {
   buildCapabilityMap,
   type StaffCapabilityMap,
 } from "@/shared/booking/staffCapability";
+import { eligibleVoiceAnyStaff } from "@/shared/voiceai/voiceAnyStaff";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { createPartyLink } from "@/shared/booking/partyLinkActions";
@@ -46,6 +66,10 @@ import {
   type LateCancellationBookingPolicy,
   type LateCancellationSalonPolicy,
 } from "@/shared/noshow/lateCancellationPolicy";
+import {
+  cancelBookingWithManagementCapability,
+  mintBookingManagementCapability,
+} from "@/shared/booking/bookingManagementCapabilities";
 
 /**
  * Shared receptionist tool executor.
@@ -91,6 +115,22 @@ export async function executeVoiceTool(
     ? requestedLanguage
     : "en";
 
+  // Phase A deliberately keeps Voice on the existing one-main-service
+  // contract. Do not silently choose the first item from a model-invented
+  // sequence shape; public individual review is the only multi-service UI.
+  if (
+    (toolName === "get_available_slots" || toolName === "confirm_booking") &&
+    (Array.isArray(toolArgs.service_id) ||
+      Object.prototype.hasOwnProperty.call(toolArgs, "service_ids") ||
+      Object.prototype.hasOwnProperty.call(toolArgs, "services") ||
+      Object.prototype.hasOwnProperty.call(toolArgs, "lines"))
+  ) {
+    return NextResponse.json(
+      { error: "multi_service_not_supported", code: "human_review_required" },
+      { status: 409 },
+    );
+  }
+
   if (toolName === "get_available_slots") {
     return handleGetAvailableSlots(supabase, salonSlug, toolArgs);
   }
@@ -123,7 +163,15 @@ export async function executeVoiceTool(
     return handleGetGroupAvailableSlots(supabase, salonSlug, toolArgs);
   }
   if (toolName === "confirm_group_booking") {
-    return handleConfirmGroupBooking(supabase, salonSlug, toolArgs, sessionId, baseUrl, callerVerifiedPhone);
+    return handleConfirmGroupBooking(
+      supabase,
+      salonSlug,
+      toolArgs,
+      sessionId,
+      baseUrl,
+      callerVerifiedPhone,
+      trustedUserUtterance,
+    );
   }
   if (toolName === "join_waitlist") {
     return handleJoinWaitlist(supabase, salonSlug, toolArgs);
@@ -563,6 +611,96 @@ function parseSlotLabelToMinutes(label: string): number | null {
   return h * 60 + min;
 }
 
+function scheduleVoiceBookingReconciliation(input: {
+  supabase: ReturnType<typeof createServiceRoleClient>;
+  salonId: string;
+  bookingId: string;
+  sessionId: string | null;
+  serviceId: string;
+  serviceName: string;
+  customerName: string;
+  customerPhone: string;
+  resolvedStaffName: string | null;
+  startUtcIso: string;
+}): void {
+  const appUrl =
+    (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+  after(() =>
+    reconcileCommittedBooking({
+      bookingId: input.bookingId,
+      salonId: input.salonId,
+      channel: "voice",
+      stamp: async () => {
+        const { error } = await input.supabase
+          .from("bookings")
+          .update({ source: "voice", booking_channel: "voice" } as never)
+          .eq("id", input.bookingId)
+          .eq("salon_id", input.salonId);
+        if (error) throw error;
+      },
+      ownerNotify: {
+        salonId: input.salonId,
+        bookingId: input.bookingId,
+        event: "new",
+      },
+      audit: {
+        actorUserId: null,
+        actorRole: "system",
+        eventType: "booking_created",
+        payload: { source: "voice", serviceId: input.serviceId },
+      },
+      protectionChannel: "voice",
+      jobs: [
+        ...(input.sessionId
+          ? [
+              {
+                name: "voice session link",
+                run: async () => {
+                  const { error } = await input.supabase
+                    .from("voice_ai_sessions")
+                    .update({
+                      booking_id: input.bookingId,
+                      status: "completed",
+                    })
+                    .eq("id", input.sessionId!);
+                  if (error) throw error;
+                },
+              },
+            ]
+          : []),
+        {
+          name: "customer SMS confirmation",
+          run: async () => {
+            const smsRes = await fetch(`${appUrl}/api/booking/sms-confirm`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                bookingId: input.bookingId,
+                salonId: input.salonId,
+                clientPhone: input.customerPhone,
+                clientName: input.customerName,
+                serviceName: input.serviceName,
+                staffName: input.resolvedStaffName ?? undefined,
+                startTimeUtc: input.startUtcIso,
+              }),
+            });
+            const smsJson = (await smsRes.json().catch(() => ({}))) as {
+              ok?: boolean;
+              error?: string;
+            };
+            if (!(smsRes.ok && smsJson.ok === true)) {
+              console.warn(
+                "[voice/confirm_booking] confirmation SMS not sent:",
+                smsJson.error ?? `http_${smsRes.status}`,
+              );
+            }
+          },
+        },
+      ],
+    }),
+  );
+}
+
 async function handleConfirmBooking(
   supabase: ReturnType<typeof createServiceRoleClient>,
   salonSlug: string,
@@ -580,6 +718,10 @@ async function handleConfirmBooking(
   const staffId       = args.staff_id       as string | undefined;  // UUID or "any"
   const customerName  = args.customer_name  as string | undefined;
   const customerPhone = args.customer_phone as string | undefined;
+  const confirmedPricingFingerprint =
+    typeof args.confirmed_pricing_fingerprint === "string"
+      ? args.confirmed_pricing_fingerprint.trim().toLowerCase()
+      : "";
 
   if (!serviceId || !date || !timeSlot || !staffId || !customerName || !customerPhone) {
     return NextResponse.json({ error: "missing_required_booking_fields" }, { status: 400 });
@@ -667,6 +809,138 @@ async function handleConfirmBooking(
     return NextResponse.json({ error: "time_conversion_failed", detail: String(e) }, { status: 400 });
   }
 
+  const canonicalPhone = toCanonicalPhone(customerPhone) ?? customerPhone;
+  const idempotencyKey = voiceBookingLogicalIdempotencyKey({
+    sessionId,
+    salonId: String(salon.id),
+    serviceId,
+    requestedStaffId: staffId,
+    date,
+    timeSlot,
+    customerName: customerName.trim(),
+    customerPhone: canonicalPhone,
+  });
+  const hasConfirmedFingerprint = /^[a-f0-9]{64}$/.test(confirmedPricingFingerprint);
+  const callerConfirmedPrice =
+    hasConfirmedFingerprint && isClearVoicePricingConfirmation(trustedUserUtterance);
+
+  // If the first transaction committed but its HTTP response was lost, its own
+  // row now makes the assigned "Any" staff look occupied. Resolve the logical
+  // idempotency key before availability, and replay only when the persisted
+  // authoritative fingerprint is the exact one the caller confirmed.
+  if (callerConfirmedPrice) {
+    const { data: replayRow } = await supabase
+      .from("bookings")
+      .select(
+        "id, status, service_id, staff_id, client_name, client_phone, start_time_utc, public_booking_pricing_fingerprint",
+      )
+      .eq("salon_id", salon.id)
+      .eq("idempotency_key", idempotencyKey)
+      .is("group_id", null)
+      .is("recovered_from_booking_id", null)
+      .maybeSingle();
+    if (replayRow) {
+      const persisted = replayRow as {
+        id: string;
+        status?: string | null;
+        service_id?: string | null;
+        staff_id?: string | null;
+        client_name?: string | null;
+        client_phone?: string | null;
+        start_time_utc?: string | null;
+        public_booking_pricing_fingerprint?: string | null;
+      };
+      const sameCoreIntent =
+        String(persisted.service_id ?? "") === serviceId &&
+        String(persisted.client_name ?? "").trim() === customerName.trim() &&
+        String(persisted.client_phone ?? "") === canonicalPhone;
+      if (!sameCoreIntent) {
+        return NextResponse.json(
+          { success: false, error: "idempotency_conflict" },
+          { status: 409 },
+        );
+      }
+      const lifecycleError = committedBookingLifecycleError({
+        status: persisted.status,
+        persistedStartTimeUtc: persisted.start_time_utc,
+        requestedStartTimeUtc: startUtcIso,
+      });
+      if (lifecycleError) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: lifecycleError,
+            bookingId: persisted.id,
+            current_status: persisted.status ?? null,
+            current_start_time_utc: persisted.start_time_utc ?? null,
+          },
+          { status: 409 },
+        );
+      }
+      if (
+        staffId !== "any" &&
+        staffId !== BOOKING_ANY_STAFF_ID &&
+        String(persisted.staff_id ?? "") !== staffId
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "booking_rescheduled",
+            bookingId: persisted.id,
+            current_status: persisted.status ?? null,
+            current_start_time_utc: persisted.start_time_utc ?? null,
+            current_staff_id: persisted.staff_id ?? null,
+          },
+          { status: 409 },
+        );
+      }
+      const persistedFingerprint = String(
+        persisted.public_booking_pricing_fingerprint ?? "",
+      );
+      if (persistedFingerprint !== confirmedPricingFingerprint) {
+        return NextResponse.json({
+          success: false,
+          error: "pricing_changed",
+          requires_price_confirmation: true,
+        }, { status: 409 });
+      }
+      const replayStaffId = String(persisted.staff_id ?? "");
+      const { data: replayStaff } = replayStaffId
+        ? await supabase.from("staff").select("name").eq("id", replayStaffId).maybeSingle()
+        : { data: null };
+      const replayStaffName = String((replayStaff as { name?: string | null } | null)?.name ?? "");
+      const staffPart = replayStaffName ? ` with ${replayStaffName}` : "";
+      const replayBookingId = persisted.id;
+      scheduleVoiceBookingReconciliation({
+        supabase,
+        salonId: String(salon.id),
+        bookingId: replayBookingId,
+        sessionId,
+        serviceId,
+        serviceName: (service as { name: string }).name,
+        customerName,
+        customerPhone,
+        resolvedStaffName: replayStaffName || null,
+        startUtcIso,
+      });
+      return NextResponse.json({
+        success: true,
+        idempotent: true,
+        bookingId: replayBookingId,
+        serviceName: (service as { name: string }).name,
+        date,
+        timeSlot,
+        staffName: replayStaffName || null,
+        customerName,
+        customerPhone,
+        smsSent: "sending",
+        say_this:
+          `All set! I have you booked for ${(service as { name: string }).name} on ${date} at ${timeSlot}${staffPart}.` +
+          " Your confirmation is already being delivered.",
+      });
+    }
+  }
+
   // ── 4b. Resolve "any" staff → first active staff FREE at this specific slot ──
   if (staffId === "any" || staffId === BOOKING_ANY_STAFF_ID) {
     const { data: allStaff } = await supabase
@@ -677,8 +951,27 @@ async function handleConfirmBooking(
       .is("deleted_at", null)
       .order("created_at", { ascending: true });
 
+    const activeStaff = (allStaff ?? []).map((row) => ({
+      id: String(row.id),
+      name: String(row.name ?? ""),
+    }));
+    const { data: capabilityRows } = activeStaff.length > 0
+      ? await supabase
+          .from("staff_services")
+          .select("staff_id, service_id")
+          .in("staff_id", activeStaff.map((row) => row.id))
+      : { data: [] };
+    const eligibleStaff = eligibleVoiceAnyStaff(
+      activeStaff,
+      (capabilityRows ?? []).map((row) => ({
+        staff_id: String(row.staff_id),
+        service_id: String(row.service_id),
+      })),
+      serviceId,
+    );
+
     // Find first staff who has no overlapping active booking at this time
-    for (const s of (allStaff ?? [])) {
+    for (const s of eligibleStaff) {
       const { data: conflicts } = await supabase
         .from("bookings")
         .select("id")
@@ -698,22 +991,72 @@ async function handleConfirmBooking(
     }
   }
 
-  // ── 5. Call create_public_booking RPC with correct parameter names ───────────
-  //  The function signature is:
-  //    (p_salon_id uuid, p_service_id uuid, p_staff_id uuid, p_client_name text,
-  //     p_client_phone text, p_start_time_utc timestamptz, p_end_time_utc timestamptz,
-  //     p_status text, p_price_cents int, p_client_notes text, ...)
+  if (!resolvedStaffId) {
+    return NextResponse.json({ error: "no_staff_available" }, { status: 409 });
+  }
+  const { data: quoteData, error: quoteError } = await supabase.rpc(
+    "resolve_public_booking_pricing" as never,
+    {
+      p_salon_id: salon.id,
+      p_service_id: serviceId,
+      p_staff_id: resolvedStaffId,
+      p_start_time_utc: startUtcIso,
+      p_end_time_utc: endUtcIso,
+      p_addon_service_ids: [],
+      p_combo_id: null,
+      p_voucher_id: null,
+      p_client_phone: canonicalPhone,
+      p_client_email: null,
+      p_apply_email_discount: false,
+      p_lock_claims: false,
+    } as never,
+  );
+  const quoteRaw = Array.isArray(quoteData) ? quoteData[0] : quoteData;
+  const quote = parsePublicBookingPricingQuote(quoteRaw, {
+    resolvedStaffId,
+    resolvedStaffName,
+  });
+  if (quoteError || !quote) {
+    return NextResponse.json({ error: "pricing_unavailable" }, { status: 503 });
+  }
+  const pendingPricing = toVoicePendingPricing(quote);
+  if (!callerConfirmedPrice) {
+    return NextResponse.json({
+      success: false,
+      error:
+        confirmedPricingFingerprint && !hasConfirmedFingerprint
+          ? "pricing_changed"
+          : "pricing_confirmation_required",
+      requires_price_confirmation: true,
+      quote: pendingPricing,
+      message:
+        "Read back the exact total and currency. Ask for a clear yes, then call confirm_booking again with this exact confirmed_pricing_fingerprint.",
+    });
+  }
+  // ── 5. Create with the exact quote just resolved. Provider retries use the
+  // same deterministic key, so they replay instead of creating a second row.
   const { data: rpcData, error: rpcErr } = await supabase.rpc("create_public_booking", {
     p_salon_id:      salon.id,
     p_service_id:    serviceId,
     p_staff_id:      resolvedStaffId,
     p_client_name:   customerName,
-    p_client_phone:  toCanonicalPhone(customerPhone) ?? customerPhone,
+    p_client_phone:  canonicalPhone,
     p_start_time_utc: startUtcIso,
     p_end_time_utc:   endUtcIso,
     p_status:         "confirmed",
-    p_price_cents:    (service as { price_cents: number | null }).price_cents ?? null,
     p_client_notes:   "Voice booking",
+    p_addon_service_ids: [],
+    p_client_email: null,
+    p_resource_id: null,
+    p_combo_id: null,
+    p_voucher_id: null,
+    p_apply_email_discount: false,
+    p_idempotency_key: idempotencyKey,
+    // Send the customer-confirmed snapshot, not the just-refreshed quote. This
+    // lets create_public_booking replay an already-committed idempotent request
+    // before its pricing check; on a first attempt, a stale fingerprint returns
+    // pricing_changed with zero writes.
+    p_expected_pricing_fingerprint: confirmedPricingFingerprint,
   });
 
   if (rpcErr) {
@@ -731,98 +1074,41 @@ async function handleConfirmBooking(
   const result = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as any;
   if (!result?.success) {
     const code = result?.code ?? "unknown";
+    if (code === "pricing_changed") {
+      const changed = parsePublicBookingPricingQuote(result.quote, {
+        resolvedStaffId,
+        resolvedStaffName,
+      });
+      if (!changed) {
+        return NextResponse.json({ error: "pricing_unavailable" }, { status: 503 });
+      }
+      return NextResponse.json({
+        success: false,
+        error: "pricing_changed",
+        requires_price_confirmation: true,
+        quote: toVoicePendingPricing(changed),
+        message: "The price changed before booking. Read back the updated total and ask the customer to confirm again.",
+      }, { status: 409 });
+    }
     return NextResponse.json({ error: "booking_failed", code }, { status: 409 });
   }
 
   const bookingId = result.booking_id ?? null;
-
-  // ── 6. Stamp source = 'voice' (RPC doesn't accept this param, defaults to 'appointment') ─
   if (bookingId) {
-    try {
-      await supabase
-        .from("bookings")
-        .update({ source: "voice", booking_channel: "voice" } as never)
-        .eq("id", bookingId);
-    } catch { /* best-effort */ }
-    // Owner/admin "new booking" alert (opt-in, fire-and-forget).
-    after(() =>
-      sendOwnerBookingNotification({
-        salonId: String(salon.id),
-        bookingId,
-        event: "new",
-      }),
-    );
-    void logBookingEvent({
-      bookingId,
+    // Accepted-upsell attribution is intentionally not read from tool args.
+    // It needs a durable shown-offer receipt linked to this authoritative
+    // booking before analytics may record an accepted outcome or revenue.
+    scheduleVoiceBookingReconciliation({
+      supabase,
       salonId: String(salon.id),
-      actorUserId: null,
-      actorRole: "system",
-      eventType: "booking_created",
-      payload: { source: "voice" },
-    });
-    // Unified no-show protection gate — runs the AI agent when opted-in, else
-    // hard rules. Voice has no in-session card capture, so its result does not
-    // shape the reply. It used to be AWAITED here, adding an AI-call's worth of
-    // latency between the booking succeeding and Lily confirming it — the caller
-    // waited in silence. Deferred to after() so it still runs (Vercel keeps the
-    // function alive) without blocking the response.
-    after(async () => {
-      try {
-        const { handleBookingProtection } = await import(
-          "@/shared/noshow/handleBookingProtection"
-        );
-        await handleBookingProtection(bookingId, String(salon.id), "voice");
-      } catch { /* best-effort */ }
-    });
-  }
-
-  // ── 7. Link booking to voice_ai_session ────────────────────────────────────
-  if (sessionId && bookingId) {
-    try {
-      // upsell_accepted is set by the agent only when this booking came from an
-      // accepted upsell — measures the receptionist's revenue lift.
-      const upsellAccepted = args.upsell_accepted === true;
-      await supabase
-        .from("voice_ai_sessions")
-        .update({
-          booking_id: bookingId,
-          status: "completed",
-          ...(upsellAccepted ? { upsell_accepted: true } : {}),
-        })
-        .eq("id", sessionId);
-    } catch { /* best-effort */ }
-  }
-
-  // ── 8. Send SMS confirmation in the BACKGROUND (after the response) ──────────
-  //  Awaiting the Twilio round-trip here made the agent sit in dead air for
-  //  seconds after "booking that now" — callers said "sao im lặng vậy?". The
-  //  booking is already saved, so fire the SMS via after(): the confirmation is
-  //  spoken immediately and the agent verifies delivery conversationally ("did
-  //  you get the text?", see the closing rule). SMS failure never fails a booking.
-  if (bookingId) {
-    const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
-    after(async () => {
-      try {
-        const smsRes = await fetch(`${appUrl}/api/booking/sms-confirm`, {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            bookingId,
-            salonId:      String(salon.id),
-            clientPhone:  customerPhone,
-            clientName:   customerName,
-            serviceName:  (service as { name: string }).name,
-            staffName:    resolvedStaffName ?? undefined,
-            startTimeUtc: startUtcIso,
-          }),
-        });
-        const smsJson = await smsRes.json().catch(() => ({})) as { ok?: boolean; error?: string };
-        if (!(smsRes.ok && smsJson.ok === true)) {
-          console.warn("[voice/confirm_booking] confirmation SMS not sent:", smsJson.error ?? `http_${smsRes.status}`);
-        }
-      } catch (e: unknown) {
-        console.error("[voice/confirm_booking] sms-confirm dispatch failed", e);
-      }
+      bookingId,
+      sessionId,
+      serviceId,
+      serviceName: (service as { name: string }).name,
+      customerName,
+      customerPhone,
+      resolvedStaffName,
+      startUtcIso,
     });
   }
 
@@ -1029,6 +1315,17 @@ function validateLateFeeChallenge(input: {
   } catch {
     return false;
   }
+}
+
+function stableVoiceCancelRequestId(bookingId: string): string {
+  const bytes = crypto.createHash("sha256")
+    .update(`nailiq:voice-cancel:v1:${bookingId}`, "utf8")
+    .digest()
+    .subarray(0, 16);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 async function handleCancelBooking(
@@ -1305,6 +1602,7 @@ async function handleCancelBooking(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const bk = booking as any as {
     id: string; status: string; client_name: string; client_phone: string;
+    group_id: string | null;
     start_time_utc: string;
     noshow_card_id: string | null;
     noshow_consent_at: string | null;
@@ -1335,7 +1633,10 @@ async function handleCancelBooking(
     booking: voiceBookingLatePolicy(bk),
     salon: latePolicy,
   });
-  if (feePolicy.willCharge && !lateFeeAcknowledged) {
+  // A group member/organizer token is an RSVP for that person's own spot and
+  // must never inherit the individual booking late-fee path.
+  const individualFeeWillCharge = bk.group_id == null && feePolicy.willCharge;
+  if (individualFeeWillCharge && !lateFeeAcknowledged) {
     const confirmationToken = issueLateFeeChallenge({
       bookingId: bookingId!,
       feeCents: feePolicy.feeCents,
@@ -1354,7 +1655,7 @@ async function handleCancelBooking(
     });
   }
   if (
-    feePolicy.willCharge &&
+    individualFeeWillCharge &&
     lateFeeAcknowledged &&
     !validateLateFeeChallenge({
       token: lateFeeConfirmationToken,
@@ -1379,25 +1680,40 @@ async function handleCancelBooking(
     hour: "numeric", minute: "2-digit", hour12: true,
   });
 
-  // UPDATE status → cancelled
-  const { error: updateErr } = await supabase
-    .from("bookings")
-    .update({ status: "cancelled" })
-    .eq("id", bookingId!);
-
-  if (updateErr) {
-    console.error("[voice/cancel_booking] update error:", updateErr);
-    return NextResponse.json({ error: "cancel_failed", detail: updateErr.message }, { status: 500 });
+  const minted = await mintBookingManagementCapability({
+    salonId: String(salon.id),
+    bookingId: bookingId!,
+    action: "cancel",
+    minExpiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+  }, supabase);
+  if (!minted.ok) {
+    return NextResponse.json({ error: "cancel_failed", code: minted.code }, { status: 503 });
   }
-
-  let feeCharged = false;
-  if (feePolicy.willCharge) {
+  if (minted.capability.scopeKind === "organizer_whole_party") {
+    return NextResponse.json({ error: "cancel_failed", code: "group_scope_requires_staff" }, { status: 409 });
+  }
+  const cancelled = await cancelBookingWithManagementCapability({
+    tokenId: minted.capability.tokenId,
+    requestId: stableVoiceCancelRequestId(bookingId!),
+  }, supabase);
+  if (!cancelled.ok) {
+    return NextResponse.json({ error: "cancel_failed", code: cancelled.code }, { status: 409 });
+  }
+  const committed = cancelled.result;
+  const chargeableCommitted = committed.scopeKind === "booking_own" &&
+    committed.rsvpSemantic === null && committed.cancelPreview?.willCharge === true;
+  let feeStatus: "succeeded" | "pending_provider" | "unknown" | "definite_failure" | "not_applicable" =
+    "not_applicable";
+  if (chargeableCommitted) {
     const charge = await chargeNoShowFee(bookingId!, {
       note: "Late cancellation fee",
-      amountCentsOverride: feePolicy.feeCents,
+      amountCentsOverride: committed.cancelPreview!.feeCents,
+      operationKind: "late_cancel_charge",
+      occurrenceVersion: committed.transitionVersion ?? undefined,
     });
-    feeCharged = charge.charged;
+    feeStatus = charge.status;
   }
+  const feeCharged = feeStatus === "succeeded";
 
   void logBookingEvent({
     bookingId: bookingId!,
@@ -1407,16 +1723,16 @@ async function handleCancelBooking(
     eventType: "booking_cancelled",
     payload: {
       reason: "voice_ai_cancel",
-      late: feePolicy.withinWindow,
-      policy_locked_by_reschedule: feePolicy.policyLockedByReschedule,
-      fee_decision: feePolicy.willCharge
-        ? feeCharged
-          ? "charged"
-          : "failed"
+      late: committed.cancelPreview?.withinWindow ?? feePolicy.withinWindow,
+      policy_locked_by_reschedule:
+        committed.cancelPreview?.policyLockedByReschedule ?? feePolicy.policyLockedByReschedule,
+      fee_decision: chargeableCommitted
+        ? feeStatus
         : feePolicy.withinWindow
           ? "not_chargeable"
           : "not_applicable",
-      fee_cents: feePolicy.willCharge ? feePolicy.feeCents : 0,
+      fee_cents: chargeableCommitted ? committed.cancelPreview!.feeCents : 0,
+      transition_version: committed.transitionVersion,
     },
   });
 
@@ -1447,13 +1763,17 @@ async function handleCancelBooking(
     clientName:  bk.client_name,
     reason,
     feeCharged,
-    feeCents: feePolicy.willCharge ? feePolicy.feeCents : 0,
+    feeCents: chargeableCommitted ? committed.cancelPreview!.feeCents : 0,
     currency,
-    feeFailed: feePolicy.willCharge && !feeCharged,
-    message: feePolicy.willCharge
+    feeStatus,
+    feeFailed: chargeableCommitted && feeStatus === "definite_failure",
+    paymentPending: feeStatus === "pending_provider" || feeStatus === "unknown",
+    message: chargeableCommitted
       ? feeCharged
         ? "Lịch hẹn đã được hủy và phí hủy trễ đã được thu thành công."
-        : "Lịch hẹn đã được hủy nhưng thu phí thất bại. Nhân viên cần kiểm tra."
+        : feeStatus === "definite_failure"
+          ? "Lịch hẹn đã được hủy nhưng thu phí bị từ chối. Nhân viên cần kiểm tra."
+          : "Lịch hẹn đã được hủy; trạng thái phí đang được đối soát. Không thu lại."
       : "Lịch hẹn đã được hủy thành công.",
   });
 }
@@ -1553,12 +1873,21 @@ async function handleRescheduleBooking(
   // Load existing booking — verify it belongs to this salon
   const { data: booking } = await supabase
     .from("bookings")
-    .select("id, salon_id, service_id, staff_id, start_time_utc, end_time_utc, status, client_name, client_phone, noshow_fee_cents, self_cancel_fee_locked_at, self_cancel_fee_locked_cents")
+    .select("id, salon_id, service_id, staff_id, start_time_utc, end_time_utc, status, client_name, client_phone, noshow_fee_cents, self_cancel_fee_locked_at, self_cancel_fee_locked_cents, schedule_model")
     .eq("id", bookingId)
     .eq("salon_id", salon.id)
     .single();
 
   if (!booking) return NextResponse.json({ error: "booking_not_found" }, { status: 404 });
+  if ((booking as { schedule_model?: unknown }).schedule_model === "segments_v1") {
+    return NextResponse.json(
+      {
+        error: "sequence_reschedule_requires_human_review",
+        message: "This multi-service booking must be rescheduled as one complete sequence.",
+      },
+      { status: 409 },
+    );
+  }
   if ((booking as { status: string }).status === "cancelled") {
     return NextResponse.json({ error: "booking_already_cancelled" }, { status: 409 });
   }
@@ -1650,8 +1979,10 @@ async function handleRescheduleBooking(
       rescheduled_from_time_utc: oldStart,
       rescheduled_at:            new Date().toISOString(),
       rescheduled_by:            "voice",
+      customer_transition_email_requested: true,
+      customer_transition_email_not_before: new Date().toISOString(),
       ...(lateCancelLockPatch ?? {}),
-    })
+    } as never)
     .eq("id", bookingId);
 
   if (updateErr) {
@@ -2237,9 +2568,194 @@ async function handleGetGroupAvailableSlots(
 
 // ─── confirm_group_booking ───────────────────────────────────────
 
+type VoiceGroupReplayResult =
+  | { kind: "none" }
+  | { kind: "conflict" }
+  | { kind: "current_state"; status: string | null }
+  | {
+      kind: "replayed";
+      groupId: string;
+      bookingIds: string[];
+      pricing: NonNullable<ReturnType<typeof parseGroupBookingPricingQuote>>;
+      bookings: GroupBookingCreateServerRequest["bookings"];
+    }
+  | { kind: "unavailable" };
+
+function voiceLocalYmdHm(utcIso: string, timezone: string) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date(utcIso));
+    const part = (type: Intl.DateTimeFormatPartTypes) =>
+      parts.find((entry) => entry.type === type)?.value ?? "";
+    return {
+      ymd: `${part("year")}-${part("month")}-${part("day")}`,
+      hm: `${part("hour")}:${part("minute")}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function sameVoiceGroupServiceCounts(
+  serviceIds: readonly string[],
+  requested: readonly { service_id: string; count: number }[],
+) {
+  const actual = new Map<string, number>();
+  for (const id of serviceIds) actual.set(id, (actual.get(id) ?? 0) + 1);
+  const expected = new Map<string, number>();
+  for (const entry of requested) {
+    expected.set(entry.service_id, (expected.get(entry.service_id) ?? 0) + entry.count);
+  }
+  return actual.size === expected.size &&
+    [...actual].every(([id, count]) => expected.get(id) === count);
+}
+
+/** Exact response-loss replay before loading fresh group availability. */
+async function replayCommittedVoiceGroup(args: {
+  supabase: ReturnType<typeof createServiceRoleClient>;
+  salonId: string;
+  timezone: string;
+  idempotencyKey: string;
+  serviceAssignments: { service_id: string; count: number }[];
+  dateYmd: string;
+  chosenTime: string;
+  mode: GroupSyncMode;
+  organizerPhone: string;
+  confirmedPricingFingerprint: string;
+}): Promise<VoiceGroupReplayResult> {
+  const { data: organizerRaw, error: organizerError } = await args.supabase
+    .from("bookings")
+    .select("id, group_id, public_booking_pricing_snapshot")
+    .eq("salon_id", args.salonId)
+    .eq("idempotency_key", args.idempotencyKey)
+    .eq("is_group_organizer", true)
+    .maybeSingle();
+  if (organizerError) return { kind: "unavailable" };
+  if (!organizerRaw) return { kind: "none" };
+  const snapshot = (organizerRaw as { public_booking_pricing_snapshot?: unknown })
+    .public_booking_pricing_snapshot;
+  const pricing = parseGroupBookingPricingQuote(snapshot, { voucherCode: null });
+  const raw = snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)
+    ? snapshot as Record<string, unknown>
+    : null;
+  const groupId = typeof raw?.group_id === "string" ? raw.group_id : "";
+  const bookingIds = Array.isArray(raw?.booking_ids)
+    ? raw.booking_ids.filter((id): id is string => typeof id === "string" && id.length > 0)
+    : [];
+  if (
+    !pricing ||
+    pricing.pricingFingerprint !== args.confirmedPricingFingerprint ||
+    !groupId ||
+    organizerRaw.group_id !== groupId ||
+    bookingIds.length !== pricing.groupSize ||
+    !sameVoiceGroupServiceCounts(
+      pricing.memberQuotes.map((member) => member.serviceId),
+      args.serviceAssignments,
+    )
+  ) return { kind: "conflict" };
+
+  const { data: rowsRaw, error: rowsError } = await args.supabase
+    .from("bookings")
+    .select(
+      "id, status, group_id, service_id, staff_id, client_name, client_phone, client_email, client_notes, start_time_utc, end_time_utc, staff_requested_by_client, wave_number, seat_together, client_locale, resource_id",
+    )
+    .eq("salon_id", args.salonId)
+    .in("id", bookingIds);
+  if (rowsError || !Array.isArray(rowsRaw)) return { kind: "unavailable" };
+  const byId = new Map(rowsRaw.map((row) => [String(row.id), row]));
+  const bookings: GroupBookingCreateServerRequest["bookings"] = [];
+  for (let index = 0; index < bookingIds.length; index++) {
+    const row = byId.get(bookingIds[index]);
+    const member = pricing.memberQuotes[index];
+    if (!row || !member || row.group_id !== groupId) return { kind: "conflict" };
+    if (row.status !== "confirmed") {
+      return { kind: "current_state", status: row.status ?? null };
+    }
+    if (
+      row.service_id !== member.serviceId ||
+      row.staff_id !== member.staffId ||
+      row.start_time_utc !== member.startTimeUtc ||
+      row.end_time_utc !== member.endTimeUtc
+    ) {
+      return { kind: "current_state", status: row.status ?? null };
+    }
+    if (
+      row.client_name !== `Guest ${index + 1}` ||
+      row.client_phone !== (index === 0 ? args.organizerPhone : null) ||
+      row.client_email != null ||
+      row.client_notes !== "Voice group booking" ||
+      row.staff_requested_by_client !== false ||
+      row.seat_together !== false ||
+      row.client_locale != null ||
+      row.resource_id != null ||
+      member.addonServiceIds.length !== 0
+    ) return { kind: "conflict" };
+    bookings.push({
+      serviceId: member.serviceId,
+      staffId: member.staffId,
+      startTimeUtc: member.startTimeUtc,
+      endTimeUtc: member.endTimeUtc,
+      addonServiceIds: [],
+      clientName: `Guest ${index + 1}`,
+      clientPhone: index === 0 ? args.organizerPhone : null,
+      clientEmail: null,
+      clientNotes: "Voice group booking",
+      staffRequestedByClient: false,
+      waveNumber: Number(row.wave_number ?? 1),
+      seatTogether: false,
+      clientLocale: null,
+      resourceId: null,
+    });
+  }
+  const starts = bookings.map((booking) => voiceLocalYmdHm(booking.startTimeUtc, args.timezone));
+  const ends = bookings.map((booking) => voiceLocalYmdHm(booking.endTimeUtc, args.timezone));
+  if (starts.some((value) => value?.ymd !== args.dateYmd) || ends.some((value) => value == null)) {
+    return { kind: "conflict" };
+  }
+  const anchor = args.mode === "sync_finish"
+    ? ends.reduce((latest, value) => value!.hm > latest ? value!.hm : latest, "00:00")
+    : starts.reduce((earliest, value) => value!.hm < earliest ? value!.hm : earliest, "23:59");
+  if (anchor !== args.chosenTime) return { kind: "conflict" };
+
+  const created = await createGroupBookingsAuthoritative({
+    salonId: args.salonId,
+    bookings,
+    voucherCode: null,
+    applyEmailDiscount: false,
+    idempotencyKey: args.idempotencyKey,
+    expectedPricingFingerprint: pricing.pricingFingerprint,
+  });
+  if (!created.ok) {
+    return created.code === "idempotency_conflict"
+      ? { kind: "conflict" }
+      : { kind: "unavailable" };
+  }
+  if (
+    !created.idempotent ||
+    created.groupId !== groupId ||
+    created.bookingIds.length !== bookingIds.length ||
+    created.bookingIds.some((id, index) => id !== bookingIds[index])
+  ) return { kind: "conflict" };
+  return {
+    kind: "replayed",
+    groupId,
+    bookingIds,
+    pricing: created.pricing,
+    bookings,
+  };
+}
+
 /**
- * Re-runs the scheduler at the chosen time, inserts group bookings via the
- * insert_group_bookings RPC, creates a Party Link, and returns success data.
+ * Re-runs the scheduler at the chosen time, obtains a server-authoritative
+ * quote, then creates the group only after the caller confirms that exact
+ * total. A committed response-loss retry is recovered before availability.
  */
 async function handleConfirmGroupBooking(
   supabase: ReturnType<typeof createServiceRoleClient>,
@@ -2248,18 +2764,49 @@ async function handleConfirmGroupBooking(
   sessionId: string | null,
   baseUrl: string,
   callerVerifiedPhone: string | null,
+  trustedUserUtterance: string | null,
 ) {
   // 1. Parse args
-  const serviceAssignments = args.service_assignments as { service_id: string; count: number }[] | undefined;
+  let serviceAssignments = args.service_assignments as { service_id: string; count: number }[] | undefined;
   const dateYmd         = args.date           as string | undefined;
   const chosenTime      = args.time           as string | undefined;   // HH:MM 24h
-  const mode            = ((args.mode as string | undefined) ?? "sync_start") as GroupSyncMode;
+  const mode = parseVoiceGroupMode(args.mode);
   const organizerName   = args.organizer_name  as string | undefined;
   const organizerPhone  = args.organizer_phone as string | undefined;
+  const confirmedPricingFingerprint = String(
+    args.confirmed_pricing_fingerprint ?? "",
+  ).trim().toLowerCase();
+  const hasConfirmedFingerprint = /^[a-f0-9]{64}$/.test(confirmedPricingFingerprint);
+  const callerConfirmedPrice =
+    hasConfirmedFingerprint && isClearVoicePricingConfirmation(trustedUserUtterance);
+  if (!mode) {
+    return NextResponse.json({ error: "invalid_group_mode" }, { status: 400 });
+  }
 
   if (!Array.isArray(serviceAssignments) || serviceAssignments.length === 0) {
     return NextResponse.json({ error: "missing_service_assignments" }, { status: 400 });
   }
+  if (
+    serviceAssignments.some(
+      (entry) =>
+        !entry ||
+        typeof entry.service_id !== "string" ||
+        !Number.isInteger(entry.count) ||
+        entry.count < 1,
+    ) ||
+    serviceAssignments.reduce((sum, entry) => sum + entry.count, 0) < 2 ||
+    serviceAssignments.reduce((sum, entry) => sum + entry.count, 0) > 20
+  ) {
+    return NextResponse.json({ error: "invalid_service_assignments" }, { status: 400 });
+  }
+  const serviceCounts = new Map<string, number>();
+  for (const entry of serviceAssignments) {
+    const serviceId = entry.service_id.trim().toLowerCase();
+    serviceCounts.set(serviceId, (serviceCounts.get(serviceId) ?? 0) + entry.count);
+  }
+  serviceAssignments = [...serviceCounts]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([service_id, count]) => ({ service_id, count }));
   if (!dateYmd || !/^\d{4}-\d{2}-\d{2}$/.test(dateYmd)) {
     return NextResponse.json({ error: "invalid_date" }, { status: 400 });
   }
@@ -2270,6 +2817,7 @@ async function handleConfirmGroupBooking(
   if (chosenMin === null) {
     return NextResponse.json({ error: "invalid_time: expected HH:MM (24h)" }, { status: 400 });
   }
+  const canonicalChosenTime = `${String(Math.floor(chosenMin / 60)).padStart(2, "0")}:${String(chosenMin % 60).padStart(2, "0")}`;
   if (!organizerName?.trim()) {
     return NextResponse.json({ error: "missing_organizer_name" }, { status: 400 });
   }
@@ -2284,20 +2832,141 @@ async function handleConfirmGroupBooking(
   }
   const phoneDigits = phoneResult.digits;
 
-  // 3. Load scheduling context (same as get_group_available_slots)
+  // 3. Resolve only tenant identity/timezone first. A response-loss replay must
+  // happen before the scheduler reloads occupancy/capability and sees its own
+  // committed rows as unavailable.
+  const { data: salonIdentity } = await supabase
+    .from("salons")
+    .select("id, timezone")
+    .eq("slug", salonSlug)
+    .maybeSingle();
+  if (!salonIdentity?.id || !salonIdentity.timezone) {
+    return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
+  }
+  const gate = await requirePhoneVerified(supabase, salonIdentity.id, phoneDigits, {
+    otpSessionId: args.otp_session_id as string | undefined,
+    callerVerifiedPhone,
+  });
+  if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
+
+  const idempotencyKey = voiceGroupBookingLogicalIdempotencyKey({
+    sessionId,
+    salonId: String(salonIdentity.id),
+    serviceAssignments: serviceAssignments.map((entry) => ({
+      serviceId: entry.service_id,
+      count: entry.count,
+    })),
+    date: dateYmd,
+    time: canonicalChosenTime,
+    mode,
+    organizerName: organizerName.trim(),
+    organizerPhone: phoneDigits,
+  });
+  const replay: VoiceGroupReplayResult = callerConfirmedPrice
+    ? await replayCommittedVoiceGroup({
+        supabase,
+        salonId: String(salonIdentity.id),
+        timezone: salonIdentity.timezone,
+        idempotencyKey,
+        serviceAssignments,
+        dateYmd,
+        chosenTime: canonicalChosenTime,
+        mode,
+        organizerPhone: phoneDigits,
+        confirmedPricingFingerprint,
+      })
+    : { kind: "none" };
+  if (replay.kind === "conflict") {
+    return NextResponse.json({ success: false, error: "idempotency_conflict" }, { status: 409 });
+  }
+  if (replay.kind === "current_state") {
+    return NextResponse.json({
+      success: false,
+      error: "group_booking_current_state",
+      current_status: replay.status,
+    }, { status: 409 });
+  }
+  if (replay.kind === "unavailable") {
+    return NextResponse.json({ error: "group_booking_replay_unavailable" }, { status: 503 });
+  }
+  if (replay.kind === "replayed") {
+    const earliest = replay.bookings.reduce((value, booking) =>
+      booking.startTimeUtc < value ? booking.startTimeUtc : value,
+    replay.bookings[0]!.startTimeUtc);
+    const latest = replay.bookings.reduce((value, booking) =>
+      booking.endTimeUtc > value ? booking.endTimeUtc : value,
+    replay.bookings[0]!.endTimeUtc);
+    const link = await createPartyLink({
+      groupId: replay.groupId,
+      salonId: String(salonIdentity.id),
+      bookingIds: replay.bookingIds,
+      mode,
+      groupStartUtcIso: earliest,
+      baseUrl,
+      organizerName: organizerName.trim(),
+      organizerPhone: phoneDigits,
+    }).catch(() => null);
+    await supabase
+      .from("bookings")
+      .update({ source: "voice", booking_channel: "voice" } as never)
+      .in("id", replay.bookingIds);
+    if (sessionId) {
+      await supabase.from("voice_ai_sessions").update({ status: "completed" }).eq("id", sessionId);
+    }
+    let smsSent = false;
+    if (replay.bookingIds[0]) {
+      try {
+        const { handleBookingProtection } = await import(
+          "@/shared/noshow/handleBookingProtection"
+        );
+        await handleBookingProtection(replay.bookingIds[0], String(salonIdentity.id), "voice");
+      } catch { /* best-effort */ }
+      after(() => sendOwnerBookingNotification({
+        salonId: String(salonIdentity.id),
+        bookingId: replay.bookingIds[0],
+        event: "new",
+      }));
+      try {
+        const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
+        const response = await fetch(`${appUrl}/api/booking/sms-confirm`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bookingId: replay.bookingIds[0],
+            salonId: String(salonIdentity.id),
+            clientPhone: phoneDigits,
+            clientName: organizerName.trim(),
+            serviceName: `Group of ${replay.bookingIds.length}`,
+            startTimeUtc: earliest,
+          }),
+        });
+        const body = await response.json().catch(() => null) as { ok?: unknown } | null;
+        smsSent = response.ok && body?.ok === true;
+      } catch { /* durable claim/retry remains authoritative */ }
+    }
+    return NextResponse.json({
+      ok: true,
+      idempotent: true,
+      groupId: replay.groupId,
+      bookingIds: replay.bookingIds,
+      partyLinkUrl: link?.ok ? link.url : null,
+      smsSent,
+      pricing: toVoicePendingGroupPricing(replay.pricing),
+      groupStartTime: voiceLocalYmdHm(earliest, salonIdentity.timezone)?.hm ?? canonicalChosenTime,
+      groupEndTime: voiceLocalYmdHm(latest, salonIdentity.timezone)?.hm ?? canonicalChosenTime,
+      date: dateYmd,
+      totalMembers: replay.bookingIds.length,
+      organizerName: organizerName.trim(),
+      message: `Group booking confirmed for ${replay.bookingIds.length} people.`,
+    });
+  }
+
+  // Fresh intent: now load scheduling context and availability.
   const ctxOrErr = await loadGroupCtx(supabase, salonSlug, serviceAssignments, dateYmd);
   if ("error" in ctxOrErr) {
     return NextResponse.json({ error: ctxOrErr.error }, { status: ctxOrErr.status });
   }
   const ctx = ctxOrErr;
-
-  // Identity gate — creating a group booking requires the organizer prove they
-  // control the primary phone (caller-ID on the phone channel, else OTP).
-  const gate = await requirePhoneVerified(supabase, ctx.salonId, phoneDigits, {
-    otpSessionId: args.otp_session_id as string | undefined,
-    callerVerifiedPhone,
-  });
-  if (!gate.ok) return NextResponse.json({ error: gate.error, hint: gate.hint });
 
   // 4. Re-run scheduler at the chosen anchor to get concrete staff assignments
   //    (Ensures we pick up any bookings created since get_group_available_slots was called)
@@ -2409,73 +3078,94 @@ async function handleConfirmGroupBooking(
     );
   }
 
-  // 5. Build the insert_group_bookings payload
-  //    Part A: use Guest N placeholders — real names come from Party Link claiming.
-  //    Guest numbering follows wave order so wave 1 = Guest 1…k, wave 2 = Guest k+1…
-  const idempotencyKey = crypto.randomUUID();
+  // 5. Build the canonical server-only request. Guest numbering follows wave
+  // order so wave 1 = Guest 1…k, wave 2 = Guest k+1…; only the organizer row
+  // carries the verified phone.
   const orderedAssignments = finalAssignments
     .slice()
     .sort((a, b) => a.waveNumber - b.waveNumber || a.memberIdx - b.memberIdx);
-  const insertPayload = orderedAssignments.map((a, idx) => {
+  const canonicalBookings = orderedAssignments.map((a, idx) => {
     const member = ctx.resolvedMembers.find((m) => m.index === a.memberIdx) ?? ctx.resolvedMembers[idx]!;
-    const svc    = ctx.serviceById.get(member.serviceId)!;
     return {
-      salon_id:                  ctx.salonId,
-      staff_id:                  a.staffId,
-      service_id:                member.serviceId,
-      client_name:               `Guest ${idx + 1}`,
-      client_phone:              phoneDigits,
-      client_email:              null,
-      client_notes:              "Voice group booking",
-      start_time_utc:            new Date(a.startMs).toISOString(),
-      end_time_utc:              new Date(a.endMs).toISOString(),
-      price_cents:               svc.priceCents,
-      addon_service_ids:         [],
-      wave_number:               a.waveNumber,
-      staff_requested_by_client: false,
-      idempotency_key:           idempotencyKey,
+      serviceId: member.serviceId,
+      staffId: a.staffId,
+      startTimeUtc: new Date(a.startMs).toISOString(),
+      endTimeUtc: new Date(a.endMs).toISOString(),
+      addonServiceIds: [],
+      clientName: `Guest ${idx + 1}`,
+      clientPhone: idx === 0 ? phoneDigits : null,
+      clientEmail: null,
+      clientNotes: "Voice group booking",
+      staffRequestedByClient: false,
+      waveNumber: a.waveNumber,
+      seatTogether: false,
+      clientLocale: null,
+      resourceId: null,
     };
   });
 
-  // 6. Atomic insert via RPC
-  const { data: rpcData, error: rpcErr } = await supabase.rpc("insert_group_bookings", {
-    p_bookings: insertPayload,
+  // 6. Quote first and require a second tool call carrying the exact fingerprint
+  // after a clear caller readback confirmation.
+  const quoted = await resolveGroupBookingQuote({
+    salonId: ctx.salonId,
+    bookings: canonicalBookings,
+    voucherCode: null,
+    applyEmailDiscount: false,
   });
-
-  if (rpcErr) {
-    console.error("[voice/confirm_group_booking] RPC error:", rpcErr);
-    const e = rpcErr as { code?: string; message?: string };
-    if (e.code === "23P01") {
+  if (!quoted.ok) {
+    return NextResponse.json({ error: "group_pricing_unavailable" }, { status: 503 });
+  }
+  if (!callerConfirmedPrice) {
+    return NextResponse.json({
+      ok: false,
+      error:
+        confirmedPricingFingerprint && !hasConfirmedFingerprint
+          ? "pricing_changed"
+          : "pricing_confirmation_required",
+      booking_created: false,
+      requires_price_confirmation: true,
+      quote: toVoicePendingGroupPricing(quoted.quote),
+      message:
+        "Read back the exact group total and currency. Ask for a clear yes, then call confirm_group_booking again with this exact confirmed_pricing_fingerprint.",
+    });
+  }
+  const created = await createGroupBookingsAuthoritative({
+    salonId: ctx.salonId,
+    bookings: canonicalBookings,
+    voucherCode: null,
+    applyEmailDiscount: false,
+    idempotencyKey,
+    // Use what the caller confirmed, not the just-refreshed quote. A change
+    // returns pricing_changed with zero writes and requires another readback.
+    expectedPricingFingerprint: confirmedPricingFingerprint,
+  });
+  if (!created.ok) {
+    if (created.code === "pricing_changed" && created.quote) {
       return NextResponse.json({
-        ok:     false,
-        reason: "slot_conflict",
-        message: "A booking conflict occurred. Please call get_group_available_slots again to find fresh availability.",
+        ok: false,
+        error: "pricing_changed",
+        booking_created: false,
+        requires_price_confirmation: true,
+        quote: toVoicePendingGroupPricing(created.quote),
+        message:
+          "The group price changed before booking. Read back the updated total and ask the customer to confirm again.",
       }, { status: 409 });
     }
-    if (e.code === "23505") {
-      return NextResponse.json({ ok: false, reason: "duplicate_submission" }, { status: 409 });
-    }
-    return NextResponse.json({ error: "group_booking_failed", detail: e.message }, { status: 500 });
-  }
-
-  const result = rpcData as { success?: boolean; code?: string; group_id?: string; booking_ids?: string[] } | null;
-  if (!result?.success) {
-    const code = result?.code ?? "unknown";
-    if (code === "slot_conflict") {
+    if (created.code === "slot_conflict") {
       return NextResponse.json({
-        ok:     false,
+        ok: false,
         reason: "slot_conflict",
         message: "A booking conflict occurred. Please call get_group_available_slots again.",
       }, { status: 409 });
     }
-    if (code === "duplicate_submission") {
-      return NextResponse.json({ ok: false, reason: "duplicate_submission" }, { status: 409 });
+    if (created.code === "monthly_booking_limit_reached") {
+      return NextResponse.json({ ok: false, reason: created.code }, { status: 409 });
     }
-    return NextResponse.json({ error: "group_booking_failed", code }, { status: 500 });
+    return NextResponse.json({ error: "group_booking_failed", code: created.code }, { status: 409 });
   }
 
-  const groupId    = result.group_id!;
-  const bookingIds = (result.booking_ids ?? []).map(String);
+  const groupId = created.groupId;
+  const bookingIds = created.bookingIds;
 
   // 7. Stamp source = "voice" on all created bookings (best-effort)
   if (bookingIds.length > 0) {
@@ -2586,6 +3276,7 @@ async function handleConfirmGroupBooking(
     bookingIds,
     partyLinkUrl,
     smsSent,
+    pricing: toVoicePendingGroupPricing(created.pricing),
     // Phase 6 wave info — true + waveCount>1 when the large group was split.
     isWaveBooking:     finalArrangement.isWaveBooking,
     waveCount:         finalArrangement.waveCount,

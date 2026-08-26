@@ -108,20 +108,24 @@ describe("buildSystemPrompt receptionist flow", () => {
     );
   });
 
-  it("adds a proactive one-time upsell step (before the summary) when enabled, and marks flagged services", () => {
+  it("allows one optional grounded upsell before the summary and marks flagged services", () => {
     const on = buildSystemPrompt(ctx, "en", "+17788680738");
-    expect(on).toContain("UPSELL — a required step");
-    expect(on).toContain("BEFORE you read back the booking summary");   // proactive, not on-demand
-    expect(on).toContain("Offer it ONCE");
-    expect(on).toContain("upsell_accepted:true");
+    expect(on).toContain("UPSELL — optional and offered AT MOST ONCE");
+    expect(on).toContain("matching non-empty category or explicit salon_details");
+    expect(on).toContain("exact Menu price label and total duration");
+    expect(on).toContain("added price/time only when both current and candidate fixed Menu values");
+    expect(on).toContain("Never auto-add or switch anything");
+    expect(on).toContain("call get_available_slots AGAIN");
+    expect(on).toContain("two-stage authoritative price confirmation");
+    expect(on).not.toContain("upsell_accepted");
     expect(on).toContain("★popular");        // the flagged service is tagged for the agent
-    // the confirm-before-book rule also routes through the upsell step
-    expect(on).toContain("made your ONE upsell offer");
+    expect(on).toContain("grounded optional upsell is appropriate");
+    expect(on).not.toContain("lasts two to three weeks");
 
     // Disabled → no upsell section, and the confirm rule says nothing about upsell.
     const off = buildSystemPrompt({ ...ctx, upsellEnabled: false }, "en", "+17788680738");
-    expect(off).not.toContain("UPSELL — a required step");
-    expect(off).not.toContain("made your ONE upsell offer");
+    expect(off).not.toContain("UPSELL — optional and offered AT MOST ONCE");
+    expect(off).not.toContain("grounded optional upsell is appropriate");
   });
 
   it("adds the human-voice playbook only on the phone channel (callerPhone present)", () => {

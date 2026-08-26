@@ -79,6 +79,63 @@ function weekMondayYmd(todayYmd: string): string {
   return addDays(todayYmd, -monIdx);
 }
 
+async function loadOwnerHomeProjectionBundle(input: {
+  salonId: string;
+  timezone: string;
+  windowStart: string;
+  windowEnd: string;
+  monthStart: string;
+}) {
+  const supabase = createServiceRoleClient();
+  return Promise.all([
+    supabase.rpc(
+      "load_owner_home_projection" as never,
+      {
+        p_salon_id: input.salonId,
+        p_window_start: input.windowStart,
+        p_window_end: input.windowEnd,
+        p_month_start: input.monthStart,
+      } as never,
+    ),
+    getPendingApprovals(input.salonId).catch(() => []),
+    loadUnclosedBookings(input.salonId, input.timezone, { limit: 4 }).catch(
+      () => ({ count: 0, items: [] }),
+    ),
+  ] as const);
+}
+
+const ownerHomeProjectionFlights = new Map<
+  string,
+  ReturnType<typeof loadOwnerHomeProjectionBundle>
+>();
+
+async function loadOwnerHomeProjectionBundleInFlight(
+  input: Parameters<typeof loadOwnerHomeProjectionBundle>[0],
+) {
+  const key = JSON.stringify([
+    input.salonId,
+    input.timezone,
+    input.windowStart,
+    input.windowEnd,
+    input.monthStart,
+  ]);
+  const existing = ownerHomeProjectionFlights.get(key);
+  if (existing) return existing;
+  if (ownerHomeProjectionFlights.size >= 512) {
+    return loadOwnerHomeProjectionBundle(input);
+  }
+
+  const flight = loadOwnerHomeProjectionBundle(input);
+  ownerHomeProjectionFlights.set(key, flight);
+  try {
+    return await flight;
+  } finally {
+    if (ownerHomeProjectionFlights.get(key) === flight) {
+      ownerHomeProjectionFlights.delete(key);
+    }
+  }
+}
+
 export async function loadOwnerHomeDashboard(
   slug: string,
 ): Promise<LoadOwnerHomeResult> {
@@ -86,22 +143,14 @@ export async function loadOwnerHomeDashboard(
   if (!resolved) return { ok: false, error: "unauthorized" };
   if (!isOwnerOrAdmin(resolved.role)) return { ok: false, error: "forbidden" };
 
-  const supabase = createServiceRoleClient();
-
-  const { data: salonRow } = await supabase
-    .from("salons")
-    .select("timezone, currency_code")
-    .eq("id", resolved.salon.id)
-    .maybeSingle();
-
   const tz =
-    typeof salonRow?.timezone === "string" && salonRow.timezone.trim()
-      ? salonRow.timezone.trim()
+    typeof resolved.salon.timezone === "string" && resolved.salon.timezone.trim()
+      ? resolved.salon.timezone.trim()
       : "America/Los_Angeles";
 
   const currencyCode =
-    typeof (salonRow as Record<string, unknown>)?.currency_code === "string"
-      ? String((salonRow as Record<string, unknown>).currency_code)
+    typeof resolved.salon.currency_code === "string"
+      ? resolved.salon.currency_code
       : "USD";
 
   const today = salonToday(tz);
@@ -139,59 +188,56 @@ export async function loadOwnerHomeDashboard(
   );
 
   // Single booking query covering 30 days + tomorrow
-  const [
-    bookingsResult,
-    staffResult,
-    priorClientsResult,
-    pendingApprovals,
-    unclosed,
-  ] = await Promise.all([
-    supabase
-      .from("bookings")
-      .select(
-        "id, status, staff_id, service_id, start_time_utc, end_time_utc, price_cents, addon_price_cents, client_phone, client_profile_id, services!bookings_service_id_fkey ( name )",
-      )
-      .eq("salon_id", resolved.salon.id)
-      .gte("start_time_utc", windowStart)
-      .lt("start_time_utc", windowEnd),
+  const [projectionResult, pendingApprovals, unclosed] =
+    await loadOwnerHomeProjectionBundleInFlight({
+      salonId: resolved.salon.id,
+      timezone: tz,
+      windowStart,
+      windowEnd,
+      monthStart,
+    });
 
-    supabase
-      .from("staff")
-      .select("id, name, status, deleted_at")
-      .eq("salon_id", resolved.salon.id)
-      .order("created_at", { ascending: true }),
-
-    // For "new clients": canonical profile identities that booked before
-    // this month, with normalized-phone fallback for legacy bookings.
-    supabase
-      .from("bookings")
-      .select("client_phone, client_profile_id")
-      .eq("salon_id", resolved.salon.id)
-      .lt("start_time_utc", monthStart)
-      .neq("status", "cancelled"),
-
-    getPendingApprovals(resolved.salon.id).catch(() => []),
-
-    // 4 rows keeps the nudge actionable without pushing today's numbers below
-    // the fold on mobile; the full count is still shown in the subtitle.
-    loadUnclosedBookings(resolved.salon.id, tz, { limit: 4 }).catch(() => ({
-      count: 0,
-      items: [],
-    })),
-  ]);
-
-  if (bookingsResult.error) {
-    console.error("[loadOwnerHomeDashboard] bookings", bookingsResult.error);
+  if (
+    projectionResult.error ||
+    !projectionResult.data ||
+    typeof projectionResult.data !== "object" ||
+    Array.isArray(projectionResult.data)
+  ) {
+    console.error(
+      "[loadOwnerHomeDashboard] projection",
+      projectionResult.error ?? "invalid projection",
+    );
     return { ok: false, error: "server_error" };
   }
 
+  const projection = projectionResult.data as unknown as Record<string, unknown>;
+  if (
+    !Array.isArray(projection.bookings) ||
+    !Array.isArray(projection.staff) ||
+    !Array.isArray(projection.prior_clients)
+  ) {
+    console.error("[loadOwnerHomeDashboard] projection omitted arrays");
+    return { ok: false, error: "server_error" };
+  }
+  const bookingRows = projection.bookings;
+  const staffRows = projection.staff as Array<{
+    id: unknown;
+    name?: unknown;
+    status?: unknown;
+    deleted_at?: unknown;
+  }>;
+  const priorClientRows = projection.prior_clients as Array<{
+    client_phone?: string | null;
+    client_profile_id?: string | null;
+  }>;
+
   const staffNameById = new Map<string, string>();
-  for (const s of staffResult.data ?? []) {
+  for (const s of staffRows) {
     staffNameById.set(String(s.id), String(s.name ?? ""));
   }
 
   const priorClientSet = new Set(
-    (priorClientsResult.data ?? [])
+    priorClientRows
       .map((row) =>
         customerIdentityKey({
           clientProfileId: row.client_profile_id as string | null,
@@ -216,7 +262,7 @@ export async function loadOwnerHomeDashboard(
     services: SvcJoin | SvcJoin[] | null;
   };
 
-  const bookings = (bookingsResult.data ?? []) as BookingRow[];
+  const bookings = bookingRows as BookingRow[];
 
   function revCents(b: BookingRow): number {
     if (b.status !== "completed") return 0;
@@ -376,7 +422,7 @@ export async function loadOwnerHomeDashboard(
   const currentStaff = buildOwnerHomeStaffSnapshot({
     // Keep all staff above so historical leaderboards retain their names,
     // while the live snapshot only exposes the current active roster.
-    staff: (staffResult.data ?? [])
+    staff: staffRows
       .filter(
         (staff) => staff.status === "active" && staff.deleted_at == null,
       )

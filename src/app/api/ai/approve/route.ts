@@ -5,8 +5,12 @@
  */
 
 import { type NextRequest, NextResponse } from "next/server";
-import { processDecision } from "@/shared/ai/approvalRequests";
+import {
+  isAiApprovalToken,
+  processDecision,
+} from "@/shared/ai/approvalRequests";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { readUrlEncodedFormWithLimit } from "@/shared/security/readUrlEncodedFormWithLimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,12 +76,21 @@ async function findToken(token: string): Promise<{
   decision: "approved" | "declined";
   dashHref?: string;
 } | null> {
+  if (!isAiApprovalToken(token)) return null;
   const db = createServiceRoleClient();
-  const { data } = await db
+  const { data: approvedData } = await db
     .from("approval_requests" as never)
     .select("id, approve_token, decline_token, status, salon_id, summary")
-    .or(`approve_token.eq.${token},decline_token.eq.${token}` as never)
+    .eq("approve_token" as never, token as never)
     .maybeSingle();
+  const { data: declinedData } = approvedData
+    ? { data: null }
+    : await db
+        .from("approval_requests" as never)
+        .select("id, approve_token, decline_token, status, salon_id, summary")
+        .eq("decline_token" as never, token as never)
+        .maybeSingle();
+  const data = approvedData ?? declinedData;
 
   if (!data) return null;
   const row = data as TokenRow;
@@ -108,7 +121,7 @@ function invalidToken(): NextResponse {
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const token = req.nextUrl.searchParams.get("token")?.trim();
-  if (!token || token.length < 10) return invalidToken();
+  if (!token || !isAiApprovalToken(token)) return invalidToken();
 
   const match = await findToken(token);
   if (!match) return invalidToken();
@@ -158,10 +171,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const form = await req.formData();
+  const form = await readUrlEncodedFormWithLimit(req, 1_024);
+  if (!form || [...form.keys()].some((key) => key !== "token") || form.getAll("token").length !== 1) {
+    return invalidToken();
+  }
   const rawToken = form.get("token");
   const token = typeof rawToken === "string" ? rawToken.trim() : "";
-  if (token.length < 10) return invalidToken();
+  if (!isAiApprovalToken(token)) return invalidToken();
 
   const match = await findToken(token);
   if (!match) return invalidToken();

@@ -113,6 +113,7 @@ export async function seedPartyLink(opts: SeedPartyLinkOpts): Promise<SeededPart
         start_time_utc: slotStart,
         end_time_utc: slotEnd,
         status: "confirmed",
+        is_group_organizer: i === 0,
         price_cents: 3000 + i * 500,
         source: "appointment",
         idempotency_key: crypto.randomUUID(),

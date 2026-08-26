@@ -7,6 +7,8 @@ export type BookingServiceItem = {
   id: string;
   name: string;
   durationMinutes: number;
+  /** Operational staff/resource setup before customer work. */
+  prepMinutes: number;
   bufferMinutes: number;
   /** Total length in minutes (service duration + buffer), for tiles + blocking. */
   totalMinutes: number;

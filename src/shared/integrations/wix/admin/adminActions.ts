@@ -15,10 +15,12 @@
  * booleans / masks, never the raw key).
  */
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { v1AllowsWixCalendarConnection } from "@/shared/release/v1IntegrationScope";
 import { looseServiceClient } from "../looseDb";
 import { wixPostWithKey, invalidateWixKeyCache } from "../client";
 import { categorizeService } from "../categorize";
 import { runForwardSync } from "../sync";
+import { resolveWixEnabledOnCredentialSave } from "../credentialDefaults";
 import type { WixStatus } from "./types";
 
 const SERVICES_QUERY = "https://www.wixapis.com/bookings/v2/services/query";
@@ -143,12 +145,24 @@ export async function testWixConnection(
 ): Promise<{ ok: true; serviceCount: number } | Fail> {
   const ctx = await ownerCtx(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
+  const db = looseServiceClient();
+  const { data: existing, error: existingError } = await db
+    .from("wix_integrations")
+    .select("site_id, wix_api_key")
+    .eq("salon_id", ctx.salon.id)
+    .maybeSingle();
+  if (existingError) return { ok: false, error: existingError.message };
+  const existingConnected = Boolean(
+    existing?.site_id &&
+      (stripKey(existing.wix_api_key) || stripKey(process.env.WIX_API_KEY)),
+  );
+  if (!v1AllowsWixCalendarConnection(existingConnected)) {
+    return { ok: false, error: "phase_2_not_available" };
+  }
   const siteId = String(input.siteId ?? "").trim();
   let key = stripKey(input.apiKey);
   if (!key || isMasked(String(input.apiKey ?? ""))) {
-    const db = looseServiceClient();
-    const { data } = await db.from("wix_integrations").select("wix_api_key").eq("salon_id", ctx.salon.id).maybeSingle();
-    key = stripKey(data?.wix_api_key) || stripKey(process.env.WIX_API_KEY);
+    key = stripKey(existing?.wix_api_key) || stripKey(process.env.WIX_API_KEY);
   }
   if (!siteId || !key) return { ok: false, error: "missing_credentials" };
 
@@ -174,6 +188,21 @@ export async function saveWixCredentials(
   const siteId = String(input.siteId ?? "").trim();
   if (!siteId) return { ok: false, error: "missing_site_id" };
 
+  const db = looseServiceClient();
+  const { data: existing, error: existingError } = await db
+    .from("wix_integrations")
+    .select("site_id, wix_api_key, enabled")
+    .eq("salon_id", ctx.salon.id)
+    .maybeSingle();
+  if (existingError) return { ok: false, error: existingError.message };
+  const existingConnected = Boolean(
+    existing?.site_id &&
+      (stripKey(existing.wix_api_key) || stripKey(process.env.WIX_API_KEY)),
+  );
+  if (!v1AllowsWixCalendarConnection(existingConnected)) {
+    return { ok: false, error: "phase_2_not_available" };
+  }
+
   const patch: Record<string, unknown> = {
     salon_id: ctx.salon.id,
     site_id: siteId,
@@ -186,7 +215,10 @@ export async function saveWixCredentials(
   if (typeof input.enabled === "boolean") patch.enabled = input.enabled;
   if (typeof input.autoApprove === "boolean") patch.auto_approve = input.autoApprove;
 
-  const db = looseServiceClient();
+  patch.enabled = resolveWixEnabledOnCredentialSave(
+    existing?.enabled,
+    input.enabled,
+  );
   const { error } = await db.from("wix_integrations").upsert(patch, { onConflict: "salon_id" });
   if (error) return { ok: false, error: error.message };
   invalidateWixKeyCache(siteId);

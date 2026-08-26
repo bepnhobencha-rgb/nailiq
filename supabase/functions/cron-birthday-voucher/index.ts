@@ -15,6 +15,7 @@ import {
   rejectUnauthorizedInternalRequest,
 } from "../_shared/internalAuth.ts";
 import { supabaseSecretKey } from "../_shared/supabaseApiKeys.ts";
+import { requireSmsConsentClear } from "../_shared/smsConsentSuppression.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = supabaseSecretKey();
@@ -195,6 +196,8 @@ Deno.serve(async (req) => {
               : `🎂 Chúc mừng sinh nhật, ${name}! ${salon.name} tặng bạn voucher 10% off tháng này. Mã: ${voucher.code}`;
 
           if (twilio) {
+            const consent = await requireSmsConsentClear(db, salon.id, client.phone as string);
+            if (!consent.allowed) continue;
             await sendSms(twilio, client.phone as string, message);
           }
 

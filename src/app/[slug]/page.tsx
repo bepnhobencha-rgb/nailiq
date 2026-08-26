@@ -28,6 +28,8 @@ import { resolveVertical } from "@/shared/verticals/registry";
 import { loadPublicNailTryOnSalon } from "@/shared/nailTryOn/publicSalon";
 import { SalonClosureBanner } from "@/components/booking/SalonClosureBanner";
 import { hasUpcomingClosure } from "@/shared/booking/upcomingClosureNotice";
+import { loadAuthorizedBookingChatContext } from "@/shared/booking/bookingChatApiBoundary";
+import { loadPublicBookingSequenceReadiness } from "@/shared/booking/bookingSequenceReadiness";
 
 /** Avoid stale static segments for salons created after deploy. */
 export const dynamic = "force-dynamic";
@@ -93,8 +95,35 @@ async function PublicBookingRouteBody({
   // salon's own default apply — so a US salon isn't read in Vietnamese by a
   // reviewer or crawler, while a Vietnamese-speaking guest still gets Vietnamese.
   // Resolved after the salon loads because it now depends on the salon.
-  const lang = langOverride ?? (await resolveBookingLanguage(load.salon.defaultLanguage));
+  const [
+    lang,
+    bookingChatContext,
+    sequenceReadiness,
+    pageSections,
+    nailTryOnSalon,
+    serviceCategories,
+  ] = await Promise.all([
+    langOverride
+      ? Promise.resolve(langOverride)
+      : resolveBookingLanguage(load.salon.defaultLanguage),
+    process.env.ANTHROPIC_API_KEY?.trim() &&
+    load.salon.aiTextReceptionistEnabled
+      ? loadAuthorizedBookingChatContext(load.salon.id)
+      : Promise.resolve(null),
+    load.salon.multiServiceBookingEnabled
+      ? loadPublicBookingSequenceReadiness(load.salon.id)
+      : Promise.resolve(null),
+    load.salon.publicSectionsEnabled
+      ? loadSalonPageSections(load.salon.id)
+      : Promise.resolve([]),
+    loadPublicNailTryOnSalon(normalizedSlug),
+    load.salon.acceptingBookings
+      ? loadServiceCategories()
+      : Promise.resolve([]),
+  ]);
   const t = getBookingMessages(lang);
+  const bookingChatVisible = bookingChatContext?.ok === true;
+  const multiServiceSequenceEnabled = sequenceReadiness?.ok === true;
 
   const shopLabel = formatSalonDisplayName({
     name: load.salon.name,
@@ -162,13 +191,6 @@ async function PublicBookingRouteBody({
   const bookingImagery =
     load.salon.bookingImages ?? resolveVertical(load.salon.vertical).bookingImagery;
   const ambientSrc = `${bookingImagery.hero}?auto=format&fit=crop&q=55&w=2400`;
-
-  // Website-builder sections (opt-in per salon). Rendered above the booking
-  // flow when `public_sections_enabled` is on; otherwise the page is unchanged.
-  const pageSections = load.salon.publicSectionsEnabled
-    ? await loadSalonPageSections(load.salon.id)
-    : [];
-  const nailTryOnSalon = await loadPublicNailTryOnSalon(normalizedSlug);
 
   if (!load.salon.acceptingBookings) {
     return (
@@ -317,17 +339,18 @@ async function PublicBookingRouteBody({
                 staff={load.staff}
                 salon={load.salon}
                 capabilityRows={load.capabilityRows}
-                categories={await loadServiceCategories()}
+                categories={serviceCategories}
                 language={lang}
                 voiceAiEnabled={load.salon.voiceAiEnabled}
                 groupBookingEnabled={load.salon.groupBookingEnabled}
+                multiServiceSequenceEnabled={multiServiceSequenceEnabled}
               />
             </BookingFlowErrorBoundary>
           </div>
         </main>
 
-        {/* P1.4 — AI chat widget; only renders when ANTHROPIC_API_KEY is set */}
-        {process.env.ANTHROPIC_API_KEY ? (
+        {/* Paid public AI stays hidden unless both rollout control planes agree. */}
+        {bookingChatVisible ? (
           <BookingChatWidget salonId={load.salon.id} t={t} />
         ) : null}
 

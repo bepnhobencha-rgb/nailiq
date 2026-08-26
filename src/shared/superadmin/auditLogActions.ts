@@ -1,8 +1,7 @@
 "use server";
 
-import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { getSuperAdminRole } from "@/shared/lib/superadmin";
+import { requireActiveSuperAdminSession } from "@/shared/auth/requireActiveSuperAdminSession";
 import type {
   AuditLogFilters,
   AuditLogRow,
@@ -34,12 +33,18 @@ const PAGE_SIZE = 50;
 
 type Cursor = { createdAt: string; id: string };
 
+const RFC3339_INSTANT_RE =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function encodeCursor(c: Cursor): string {
   return Buffer.from(JSON.stringify(c), "utf8").toString("base64url");
 }
 
 function decodeCursor(raw: string | null): Cursor | null {
   if (!raw) return null;
+  if (raw.length > 512 || !/^[A-Za-z0-9_-]+$/.test(raw)) return null;
   try {
     const json = Buffer.from(raw, "base64url").toString("utf8");
     const parsed = JSON.parse(json) as unknown;
@@ -47,7 +52,11 @@ function decodeCursor(raw: string | null): Cursor | null {
       parsed &&
       typeof parsed === "object" &&
       typeof (parsed as Cursor).createdAt === "string" &&
-      typeof (parsed as Cursor).id === "string"
+      typeof (parsed as Cursor).id === "string" &&
+      Object.keys(parsed).length === 2 &&
+      RFC3339_INSTANT_RE.test((parsed as Cursor).createdAt) &&
+      Number.isFinite(Date.parse((parsed as Cursor).createdAt)) &&
+      UUID_RE.test((parsed as Cursor).id)
     ) {
       return parsed as Cursor;
     }
@@ -85,16 +94,16 @@ export async function loadSuperadminAuditLogs(
   filters: AuditLogFilters = {},
   cursor: string | null = null,
 ): Promise<LoadAuditLogsResult> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: "unauthorized" };
-
-  const role = await getSuperAdminRole(user.id);
-  if (!role) return { ok: false, error: "unauthorized" };
+  const access = await requireActiveSuperAdminSession();
+  if (!access.ok) return { ok: false, error: "unauthorized" };
+  const { role } = access;
   if (!AUDIT_LOG_VIEWER_ROLES.has(role)) {
     return { ok: false, error: "forbidden" };
+  }
+
+  const decoded = decodeCursor(cursor);
+  if (cursor !== null && !decoded) {
+    return { ok: false, error: "invalid_input" };
   }
 
   let admin;
@@ -104,8 +113,6 @@ export async function loadSuperadminAuditLogs(
     console.error("[auditLogs/load] service role", e);
     return { ok: false, error: "server_error" };
   }
-
-  const decoded = decodeCursor(cursor);
 
   type Builder = ReturnType<typeof admin.from> & {
     select: (cols: string) => Builder;
@@ -237,13 +244,9 @@ export type LoadAuditActorOptionsResult =
  * revoked_at filter).
  */
 export async function loadAuditActorOptions(): Promise<LoadAuditActorOptionsResult> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: "unauthorized" };
-  const role = await getSuperAdminRole(user.id);
-  if (!role) return { ok: false, error: "unauthorized" };
+  const access = await requireActiveSuperAdminSession();
+  if (!access.ok) return { ok: false, error: "unauthorized" };
+  const { role } = access;
   if (!AUDIT_LOG_VIEWER_ROLES.has(role)) {
     return { ok: false, error: "forbidden" };
   }

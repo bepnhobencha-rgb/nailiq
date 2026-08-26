@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { getStripeClient } from "@/shared/lib/stripe";
+import { v1AllowsAutomatedSubscriptionBilling } from "@/shared/release/v1IntegrationScope";
 import { getPrivateOffer } from "@/shared/sales/privateOffers";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +12,7 @@ type Props = { params: Promise<{ token: string }>; searchParams: Promise<{ sessi
 export default async function OfferSuccessPage({ params, searchParams }: Props) {
   const [{ token }, query] = await Promise.all([params, searchParams]);
   const offer = getPrivateOffer(token);
+  if (!v1AllowsAutomatedSubscriptionBilling()) notFound();
   const sessionId = query.session_id?.trim() ?? "";
   if (!offer || !sessionId.startsWith("cs_")) notFound();
   const stripe = getStripeClient();

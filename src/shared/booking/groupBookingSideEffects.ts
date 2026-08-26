@@ -6,6 +6,7 @@ import {
   sendOwnerBookingNotification,
   type OwnerNotifyInput,
 } from "@/shared/dashboard/sendOwnerBookingNotification";
+import { sendGroupBookingConfirmationEmail } from "@/shared/booking/sendGroupBookingConfirmationEmail";
 
 /**
  * Post-creation field stamps for GROUP bookings.
@@ -48,6 +49,14 @@ export async function stampGroupBookingIdentity(args: {
    *  the sender's service-role client threw and its catch swallowed it — no
    *  group booking ever produced an owner alert. */
   ownerNotify?: OwnerNotifyInput;
+  /** Present only for canonical public/normal-desk groups. Controlled
+   * after-hours has no authoritative persisted pricing snapshot and must never
+   * synthesize a receipt. */
+  authoritativeConfirmation?: {
+    organizerBookingId: string;
+    salonId: string;
+    shopSlug: string;
+  };
 }): Promise<void> {
   const ids = args.bookingIds.filter(
     (id) => typeof id === "string" && id.trim().length > 0,
@@ -84,6 +93,12 @@ export async function stampGroupBookingIdentity(args: {
       if (verifyErr) {
         console.error("[groupBookingSideEffects] verification stamp", verifyErr);
       }
+    }
+
+    if (args.authoritativeConfirmation) {
+      await sendGroupBookingConfirmationEmail(args.authoritativeConfirmation).catch((error) =>
+        console.error("[groupBookingSideEffects] authoritative group email threw", error),
+      );
     }
   });
 }

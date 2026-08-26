@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ReportsPanel } from "@/components/dashboard/ReportsPanel";
+import { FinancialEvidencePanel } from "@/components/dashboard/FinancialEvidencePanel";
 import { Card } from "@/components/ui/Card";
 import {
   loadSalonReports,
@@ -12,6 +13,8 @@ import { resolveUserLanguage } from "@/shared/i18n/user/resolveUserLanguage";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
 import { getEffectivePlanLimits } from "@/shared/lib/subscriptionPlans";
 import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
+import { salonToday } from "@/shared/lib/salonTime";
+import { loadFinancialReport } from "@/shared/reports/loadFinancialReport";
 
 export const dynamic = "force-dynamic";
 
@@ -41,22 +44,7 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
     redirect(`/dashboard/${encodeURIComponent(slug)}`);
   }
 
-  // P0.2 — pull salon currency + plan fields. One SELECT, two
-  // columns: currency for the reports panel; subscription/override
-  // for the Studio-tier staff-performance gate.
-  const { data: salonRow } = await ctx.supabase
-    .from("salons")
-    .select(
-      "currency_code, subscription_plan, plan_override, feature_flags" as never,
-    )
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
-  const planFields = (salonRow ?? {}) as {
-    currency_code?: unknown;
-    subscription_plan?: string | null;
-    plan_override?: string | null;
-    feature_flags?: Record<string, unknown> | null;
-  };
+  const planFields = ctx.salon;
   // Keep the disabled state inside the existing dashboard tree. Throwing
   // notFound() after this route's dynamic auth and salon reads caused Next's
   // App Router to violate React's hook-order invariant (#310) in production.
@@ -85,8 +73,10 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
   const hasStaffPerformance =
     getEffectivePlanLimits(planFields).hasStaffPerformance;
   const range = parseReportsRange((await searchParams).range);
-  const [result, language] = await Promise.all([
+  const financialRange = financialLocalRange(salonToday(ctx.salon.timezone), range);
+  const [result, financialResult, language] = await Promise.all([
     loadSalonReports(slug, range),
+    loadFinancialReport(slug, financialRange.from, financialRange.toExclusive),
     resolveUserLanguage(),
   ]);
 
@@ -100,8 +90,28 @@ export default async function ReportsPage({ params, searchParams }: PageProps) {
         currency={currency}
         hasStaffPerformance={hasStaffPerformance}
       />
+      <div className="mt-4">
+        <FinancialEvidencePanel slug={slug} result={financialResult} language={language} />
+      </div>
     </main>
   );
+}
+
+function financialLocalRange(today: string, range: ReportsDateRange): { from: string; toExclusive: string } {
+  const date = new Date(`${today}T00:00:00.000Z`);
+  const ymd = (value: Date) => value.toISOString().slice(0, 10);
+  if (range === "today") {
+    const next = new Date(date); next.setUTCDate(date.getUTCDate() + 1);
+    return { from: today, toExclusive: ymd(next) };
+  }
+  if (range === "week") {
+    const monday = new Date(date); monday.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+    const next = new Date(monday); next.setUTCDate(monday.getUTCDate() + 7);
+    return { from: ymd(monday), toExclusive: ymd(next) };
+  }
+  const first = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+  const next = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1));
+  return { from: ymd(first), toExclusive: ymd(next) };
 }
 
 function parseReportsRange(

@@ -4,6 +4,22 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { attributeRecentAudit } from "@/shared/dashboard/attributeAudit";
 import { isOwner, isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
+import {
+  chargeNoShowFeeManual as chargeNoShowFeeOperational,
+  sendNoShowFeeLink as sendNoShowFeeLinkOperational,
+  waiveNoShowFee as waiveNoShowFeeOperational,
+} from "@/shared/dashboard/receptionistActions";
+
+type NoShowManagementContext = NonNullable<
+  Awaited<ReturnType<typeof getDashboardWriteClient>>
+>;
+
+async function resolveNoShowManagementContext(
+  slug: string,
+): Promise<NoShowManagementContext | null> {
+  const ctx = await getDashboardWriteClient(slug);
+  return ctx && isOwnerOrAdmin(ctx.role) ? ctx : null;
+}
 
 export type NoShowSummary = {
   unconfirmedCount: number;
@@ -54,6 +70,42 @@ export type UncollectedFee = {
   hasPhone: boolean;
 };
 
+/**
+ * Step 5 management wrappers. Receptionist Center deliberately keeps its
+ * broader front-desk permissions; the policy/configuration surface does not.
+ */
+export async function chargeNoShowFeeFromProtection(
+  slug: string,
+  input: { salonId: string; bookingId: string },
+) {
+  const ctx = await resolveNoShowManagementContext(slug);
+  if (!ctx) return { ok: false as const, error: "unauthorized" };
+  return chargeNoShowFeeOperational(slug, input);
+}
+
+export async function waiveNoShowFeeFromProtection(
+  slug: string,
+  input: { salonId: string; bookingId: string },
+) {
+  const ctx = await resolveNoShowManagementContext(slug);
+  if (!ctx) return { ok: false as const, error: "unauthorized" };
+  return waiveNoShowFeeOperational(slug, input);
+}
+
+export async function sendNoShowFeeLinkFromProtection(
+  slug: string,
+  input: {
+    salonId: string;
+    bookingId: string;
+    sendSms?: boolean;
+    language?: "en" | "vi";
+  },
+) {
+  const ctx = await resolveNoShowManagementContext(slug);
+  if (!ctx) return { ok: false as const, error: "unauthorized" };
+  return sendNoShowFeeLinkOperational(slug, input);
+}
+
 export async function loadNoShowDashboard(slug: string): Promise<{
   ok: boolean;
   summary?: NoShowSummary;
@@ -62,7 +114,7 @@ export async function loadNoShowDashboard(slug: string): Promise<{
   uncollectedFees?: UncollectedFee[];
   error?: string;
 }> {
-  const ctx = await getDashboardWriteClient(slug);
+  const ctx = await resolveNoShowManagementContext(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
 
   const supabase = createServiceRoleClient();
@@ -261,8 +313,8 @@ export async function updateRemindersEnabled(
   slug: string,
   enabled: boolean,
 ): Promise<{ ok: boolean; error?: string }> {
-  const ctx = await getDashboardWriteClient(slug);
-  if (!ctx || !isOwnerOrAdmin(ctx.role)) return { ok: false, error: "unauthorized" };
+  const ctx = await resolveNoShowManagementContext(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
 
   const supabase = createServiceRoleClient();
   const { error } = await supabase
@@ -282,8 +334,8 @@ export async function updateWaitlistAutoBook(
   slug: string,
   enabled: boolean,
 ): Promise<{ ok: boolean; error?: string }> {
-  const ctx = await getDashboardWriteClient(slug);
-  if (!ctx || !isOwnerOrAdmin(ctx.role)) return { ok: false, error: "unauthorized" };
+  const ctx = await resolveNoShowManagementContext(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
 
   const supabase = createServiceRoleClient();
   const { data: row } = await supabase
@@ -328,8 +380,8 @@ export async function updateReminderSettings(
     email_links_enabled?: boolean;
   },
 ): Promise<{ ok: boolean; error?: string }> {
-  const ctx = await getDashboardWriteClient(slug);
-  if (!ctx || !isOwnerOrAdmin(ctx.role)) return { ok: false, error: "unauthorized" };
+  const ctx = await resolveNoShowManagementContext(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
 
   // Clamp deposit percentages to 0–100 (defense-in-depth; the DB also CHECKs).
   const clampPct = (v: number | undefined) =>
@@ -392,8 +444,8 @@ export async function updateSquareSyncSettings(
     sync_push_cancel?: boolean;
   },
 ): Promise<{ ok: boolean; error?: string }> {
-  const ctx = await getDashboardWriteClient(slug);
-  if (!ctx || !isOwnerOrAdmin(ctx.role)) return { ok: false, error: "unauthorized" };
+  const ctx = await resolveNoShowManagementContext(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
 
   const allowed = [
     "sync_pull_create",
@@ -449,8 +501,8 @@ export async function updateNoShowCardSettings(
     self_cancel_fee_percent?: number | null;
   },
 ): Promise<{ ok: boolean; error?: string }> {
-  const ctx = await getDashboardWriteClient(slug);
-  if (!ctx || !isOwnerOrAdmin(ctx.role)) return { ok: false, error: "unauthorized" };
+  const ctx = await resolveNoShowManagementContext(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
   if (settings.payment_provider !== undefined && !isOwner(ctx.role)) {
     return { ok: false, error: "unauthorized" };
   }
@@ -546,7 +598,7 @@ export async function loadNoShowHistory(
     limit?: number;
   },
 ): Promise<{ ok: boolean; items?: NoShowHistoryItem[]; hasMore?: boolean; error?: string }> {
-  const ctx = await getDashboardWriteClient(slug);
+  const ctx = await resolveNoShowManagementContext(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
 
   const supabase = createServiceRoleClient();
@@ -620,8 +672,8 @@ export async function waiveBookingDeposit(
   slug: string,
   bookingId: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const ctx = await getDashboardWriteClient(slug);
-  if (!ctx || !isOwnerOrAdmin(ctx.role)) return { ok: false, error: "unauthorized" };
+  const ctx = await resolveNoShowManagementContext(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
 
   const supabase = createServiceRoleClient();
   const { error } = await supabase

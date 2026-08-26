@@ -117,10 +117,14 @@ function ShiftCell({
 
   if (editing) {
     return (
-      <td className="p-1 align-middle">
+      <td
+        className="p-1 align-middle"
+        data-testid={`staff-shift-cell-${staffId}-${dayKey}`}
+      >
         <div className="flex flex-col gap-1 min-w-[100px]">
           <input
             type="time"
+            data-testid={`staff-shift-start-${staffId}-${dayKey}`}
             value={start}
             onChange={(e) => setStart(e.target.value)}
             className="w-full rounded border border-nq-border bg-nq-bg px-1.5 py-0.5 text-xs"
@@ -149,6 +153,7 @@ function ShiftCell({
           </div>
           <input
             type="time"
+            data-testid={`staff-shift-end-${staffId}-${dayKey}`}
             value={end}
             onChange={(e) => setEnd(e.target.value)}
             className="w-full rounded border border-nq-border bg-nq-bg px-1.5 py-0.5 text-xs"
@@ -158,6 +163,7 @@ function ShiftCell({
           <div className="flex gap-1">
             <button
               onClick={handleSave}
+              data-testid={`staff-shift-save-${staffId}-${dayKey}`}
               disabled={pending}
               className="flex-1 rounded bg-nq-primary px-1.5 py-0.5 text-[10px] font-semibold text-white hover:opacity-90 disabled:opacity-50"
             >
@@ -178,7 +184,10 @@ function ShiftCell({
 
   if (shift) {
     return (
-      <td className="p-1 align-middle text-center">
+      <td
+        className="p-1 align-middle text-center"
+        data-testid={`staff-shift-cell-${staffId}-${dayKey}`}
+      >
         <button
           onClick={handleEdit}
           className="group relative inline-flex flex-col items-center rounded px-2 py-1 text-[11px] hover:bg-nq-muted/30"
@@ -204,7 +213,10 @@ function ShiftCell({
   }
 
   return (
-    <td className="p-1 align-middle text-center">
+    <td
+      className="p-1 align-middle text-center"
+      data-testid={`staff-shift-cell-${staffId}-${dayKey}`}
+    >
       <button
         onClick={handleEdit}
         className="rounded px-2 py-1 text-[11px] text-nq-muted-foreground hover:bg-nq-muted/30 hover:text-nq-foreground"
@@ -456,7 +468,7 @@ export function StaffShiftHub({ slug }: Props) {
       </p>
 
       {/* Weekly grid */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto" data-testid="staff-shift-grid">
         <table className="w-full text-sm">
           <thead>
             <tr>

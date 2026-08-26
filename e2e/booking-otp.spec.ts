@@ -307,10 +307,10 @@ test.describe("Booking Flow — Phone OTP", () => {
     ).toBeVisible({ timeout: 8_000 });
   });
 
-  // Regression — the SMS send endpoint must throttle duplicate sends server-side
-  // (the client cooldown is bypassable). Two rapid sends to the same phone: the
-  // first is accepted, the second is rejected 429 rate_limited. Runs in demo mode
-  // (the guard sits before the demo short-circuit), so no real SMS is sent.
+  // Regression — the SMS send endpoint must throttle bursts server-side (the
+  // client cooldown is bypassable). The current recovery contract permits five
+  // attempts per phone/window; the sixth is rejected 429 rate_limited. Runs in
+  // demo mode (the guard sits before the demo short-circuit), so no SMS is sent.
   test("server throttles duplicate SMS sends to the same phone", async ({
     request,
   }) => {
@@ -320,8 +320,13 @@ test.describe("Booking Flow — Phone OTP", () => {
     const r1 = await request.post("/api/booking-otp/send", { data });
     expect(r1.status()).toBe(200);
 
-    const r2 = await request.post("/api/booking-otp/send", { data });
-    expect(r2.status()).toBe(429);
-    expect((await r2.json()).error).toBe("rate_limited");
+    for (let attempt = 2; attempt <= 5; attempt += 1) {
+      const allowed = await request.post("/api/booking-otp/send", { data });
+      expect(allowed.status()).toBe(200);
+    }
+
+    const limited = await request.post("/api/booking-otp/send", { data });
+    expect(limited.status()).toBe(429);
+    expect((await limited.json()).error).toBe("rate_limited");
   });
 });

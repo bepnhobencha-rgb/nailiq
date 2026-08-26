@@ -18,6 +18,7 @@ import {
   getRegisteredSalonForUser,
   seedTestSalon,
   seedTestUser,
+  setReactInputValue,
 } from "./helpers/db";
 
 /** Mirrors `normalizeRegisterPhone` — OTP rows use canonical digits (NANP gets leading 1). */
@@ -55,14 +56,21 @@ test.describe("Registration flow", () => {
 
       const salonNameInput = page.locator("#register-setup-salon-name");
       await expect(salonNameInput).toBeEditable();
-      await salonNameInput.fill(salonName);
+      const createButton = page.getByRole("button", {
+        name: /create your booking page|tạo trang đặt lịch/i,
+      });
+      // The streamed input can be editable before React has attached its
+      // controlled onChange handler. Retry the native InputEvent until the
+      // product state enables submit; a one-shot fill can be overwritten by
+      // hydration and leave a visibly empty field.
+      await expect(async () => {
+        await setReactInputValue(salonNameInput, salonName);
+        await expect(salonNameInput).toHaveValue(salonName);
+        await expect(createButton).toBeEnabled();
+      }).toPass({ timeout: 15_000 });
 
       const submittedAfter = Date.now();
-      await page
-        .getByRole("button", {
-          name: /create your booking page|tạo trang đặt lịch/i,
-        })
-        .click();
+      await createButton.click();
 
       await expect(page).toHaveURL(/\/register\/success\?/, {
         timeout: 30_000,

@@ -7,6 +7,21 @@ on:
       - "scripts/audit-migration-history.mjs"
       - "scripts/build-folded-migration-history.mjs"
       - "scripts/check-schema-parity.ts"
+      - "scripts/security/rehearse-postgres-backup-restore.mjs"
+      - "scripts/security/check-branch-tenant-isolation-boundary.sql"
+      - "scripts/security/rehearse-branch-tenant-isolation.sql"
+      - "scripts/security/check-no-duplicate-appointments-boundary.sql"
+      - "scripts/security/check-setup-catalog-mutation-rls.sql"
+      - "scripts/security/assert-setup-catalog-denied.psql"
+      - "scripts/security/rehearse-no-duplicate-appointments-concurrency.mjs"
+      - "scripts/security/check-staff-action-notification-outbox-boundary.sql"
+      - "scripts/security/rehearse-staff-offboarding-durable.sql"
+      - "scripts/security/rehearse-staff-offboarding-durable-sequence.sql"
+      - "scripts/security/rehearse-staff-offboarding-durable-concurrency.mjs"
+      - "scripts/security/rehearse-staff-offboarding-durable-rollback.sql"
+      - "scripts/security/rehearse-reactivation-campaign-delivery-contract.sql"
+      - "scripts/security/rehearse-reactivation-campaign-delivery-concurrency.mjs"
+      - "scripts/security/rehearse-v1-terminal-booking-policy.sql"
       - "scripts/verify-schema-dump.ts"
       - "supabase/bootstrap/**"
       - "supabase/migration-history/**"
@@ -34,6 +49,19 @@ jobs:
       - uses: supabase/setup-cli@v2
         with:
           version: 2.109.1
+
+      - name: Install PostgreSQL 17 client
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --batch --yes --dearmor -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+          test -x /usr/lib/postgresql/17/bin/pg_dump
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
 
       - name: Audit deploy-ready production prefix
         run: npm run db:history:audit -- --deploy-ready
@@ -65,7 +93,7 @@ jobs:
 
           NEXT_PUBLIC_SUPABASE_URL="${API_URL}" \
             SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY}" \
-            npx tsx -e "import('./e2e/helpers/guardProduction').then(g => { g.assertNotProductionFromEnv(); console.log('✓ guard: not production'); })"
+            npx tsx scripts/assert-e2e-not-production.ts
 
           DB_URL="${DB_URL}" npx tsx scripts/check-schema-parity.ts
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
@@ -79,6 +107,10 @@ jobs:
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-service-combo-management-rls-rollback.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-setup-catalog-mutation-rls.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-setup-catalog-mutation-rls-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/check-salon-settings-update-rls.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-salon-settings-update-rls-rollback.sql
@@ -86,6 +118,10 @@ jobs:
             -f scripts/security/check-salon-control-plane-columns.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-salon-control-plane-columns-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-guided-admin-setup-qa-rollout-runtime.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-guided-admin-setup-qa-rollout-rollback.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/check-public-view-invoker-boundary.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
@@ -159,6 +195,154 @@ jobs:
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-booking-addons-rollback.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/preflight-public-booking-pricing-rollout.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-public-booking-pricing-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-public-booking-pricing.sql
+          NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
+            node scripts/security/rehearse-public-booking-pricing-concurrency.mjs
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/preflight-public-group-booking-pricing-rollout.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-public-group-booking-pricing-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-public-group-booking-pricing.sql
+          NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
+            node scripts/security/rehearse-public-group-booking-pricing-concurrency.mjs
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/preflight-booking-confirmation-retry-rollout.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-booking-confirmation-retry-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-booking-confirmation-retry.sql
+          NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
+            node scripts/security/rehearse-booking-confirmation-retry-concurrency.mjs
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-booking-confirmation-retry-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/preflight-staff-action-notification-outbox-rollout.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-staff-action-notification-outbox-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-staff-action-notification-outbox.sql
+          NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
+            node scripts/security/rehearse-staff-action-notification-outbox-concurrency.mjs
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-staff-action-notification-outbox-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-staff-offboarding-durable.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-staff-offboarding-durable-sequence.sql
+          NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
+            node scripts/security/rehearse-staff-offboarding-durable-concurrency.mjs
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-staff-offboarding-durable-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-reactivation-campaign-delivery-contract.sql
+          NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
+            node scripts/security/rehearse-reactivation-campaign-delivery-concurrency.mjs
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/preflight-customer-booking-transition-email-rollout.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-customer-booking-transition-email-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-customer-booking-transition-email.sql
+          NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
+            node scripts/security/rehearse-customer-booking-transition-email-concurrency.mjs
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-customer-booking-transition-email-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/preflight-booking-management-capability-rollout.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-booking-management-capability-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-booking-management-capabilities.sql
+          NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
+            node scripts/security/rehearse-booking-management-capabilities-concurrency.mjs
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-waitlist-claim-capabilities.sql
+          NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
+            node scripts/security/rehearse-waitlist-claim-capabilities-concurrency.mjs
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-booking-management-capabilities-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/preflight-booking-payment-operation-rollout.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-booking-payment-operation-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-booking-payment-operations.sql
+          NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
+            node scripts/security/rehearse-booking-payment-operations-concurrency.mjs
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-booking-payment-operations-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/preflight-booking-service-sequence-rollout.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-booking-service-sequence-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-booking-service-sequence.sql
+          NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
+            node scripts/security/rehearse-booking-service-sequence-concurrency.mjs
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-booking-service-sequence-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/preflight-authoritative-financial-report-rollout.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-authoritative-financial-report-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-authoritative-financial-report.sql
+          NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
+            node scripts/security/rehearse-authoritative-financial-report-concurrency.mjs
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-authoritative-financial-report-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/preflight-square-capability-rollout.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-square-capability-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-square-capability-operations.sql
+          NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
+            node scripts/security/rehearse-square-capability-concurrency.mjs
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-square-capability-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-auth-session-policy-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-auth-session-policy.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-auth-session-policy-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/preflight-salon-column-access-rollout.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-salon-column-access-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-salon-column-access.sql
+          NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
+            node scripts/security/rehearse-salon-column-access-concurrency.mjs
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-salon-column-access-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/preflight-sms-consent-suppression-rollout.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-sms-consent-suppression-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-sms-consent-suppression.sql
+          NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
+            node scripts/security/rehearse-sms-consent-suppression-concurrency.mjs
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-sms-consent-suppression-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/preflight-booking-vacation-resource-capacity.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-booking-vacation-resource-capacity-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-booking-vacation-resource-capacity.sql
+          NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
+            node scripts/security/rehearse-booking-vacation-resource-capacity-concurrency.mjs
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-booking-vacation-resource-capacity-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/check-email-optout-boundary.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-email-optout-rollback.sql
@@ -176,11 +360,24 @@ jobs:
             -f scripts/security/rehearse-cron-run-history.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-source-owned-exception-resolution.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-v1-terminal-booking-policy.sql
 
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.service_categories')" -eq 13
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.platform_flags')" -eq 5
           bucket_count="$(psql "$DB_URL" -tAc "select count(*) from storage.buckets where id = 'nail-tryon' and public = false")"
           test "$bucket_count" -eq 1
+
+          NAILIQ_DISPOSABLE_DB=1 RESTORE_DB_USER=supabase_admin DB_URL="$DB_URL" \
+            node scripts/security/rehearse-postgres-backup-restore.mjs
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-branch-tenant-isolation-boundary.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-branch-tenant-isolation.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-no-duplicate-appointments-boundary.sql
+          NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
+            node scripts/security/rehearse-no-duplicate-appointments-concurrency.mjs
 
       - name: Stop throwaway Supabase
         if: always()

@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProviderPolicy";
 import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { copilotRateLimit } from "@/shared/copilot/copilotRateLimit";
 import { SOP_KNOWLEDGE } from "@/shared/copilot/sopKnowledge";
@@ -30,7 +32,7 @@ let anthropicClient: Anthropic | null = null;
 function getClient(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY?.trim();
   if (!key) return null;
-  if (!anthropicClient) anthropicClient = new Anthropic({ apiKey: key });
+  if (!anthropicClient) anthropicClient = createTextBackgroundAnthropicClient(key);
   return anthropicClient;
 }
 
@@ -73,6 +75,9 @@ ${SOP_KNOWLEDGE}
 }
 
 export async function POST(req: NextRequest) {
+  if (!isSameOriginMutation(req)) {
+    return NextResponse.json({ error: "invalid_origin" }, { status: 403 });
+  }
   let body: { slug?: string; messages?: Msg[]; lang?: string; path?: string };
   try {
     body = await req.json();
@@ -100,12 +105,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Feature gate (defence in depth — the UI also hides Coco when disabled).
-  const { data: flagRow } = await ctx.supabase
-    .from("salons")
-    .select("subscription_plan, plan_override, feature_flags, voice_ai_enabled" as never)
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
-  if (!isReleaseFeatureEnabled((flagRow ?? {}) as never, "admin_copilot")) {
+  if (!isReleaseFeatureEnabled(ctx.salon, "admin_copilot")) {
     return NextResponse.json({ error: "not_enabled" }, { status: 403 });
   }
 

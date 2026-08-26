@@ -14,7 +14,10 @@ import {
   type DayKey,
   type OpeningHoursWeek,
 } from "@/shared/dashboard/openingHoursDefaults";
-import { normalizeBookingClosedDateList } from "@/shared/booking/parseBookingClosedDates";
+import {
+  normalizeBookingClosedDateList,
+} from "@/shared/booking/parseBookingClosedDates";
+import { hoursEditorIsValid } from "@/shared/dashboard/hoursSetupValidation";
 import { updateOpeningHours } from "@/shared/dashboard/setupActions";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -127,7 +130,9 @@ function closedDatesInitialText(raw: unknown): string {
   const lines = raw
     .map((x) => (typeof x === "string" ? x.trim() : ""))
     .filter(Boolean);
-  return normalizeBookingClosedDateList(lines).join("\n");
+  // Preserve invalid stored values in the editor. Normalizing here could hide
+  // an impossible date, leave the form looking valid, and later report Saved.
+  return lines.join("\n");
 }
 
 function closureNoticeInitial(raw: unknown): { en: string; vi: string } {
@@ -144,7 +149,9 @@ function closureNoticeInitial(raw: unknown): { en: string; vi: string } {
 function hmFromDateInput(v: string): string {
   if (!v) return "09:00";
   const [h, m] = v.split(":");
-  const hh = Math.min(23, Math.max(0, Number(h))).toString().padStart(2, "0");
+  const hh = Math.min(23, Math.max(0, Number(h)))
+    .toString()
+    .padStart(2, "0");
   const mm = Math.min(59, Math.max(0, Number(m ?? 0)))
     .toString()
     .padStart(2, "0");
@@ -156,7 +163,10 @@ function hmFromDateInput(v: string): string {
 // ---------------------------------------------------------------------------
 
 /** Derive master hours from the most common (open, close) pair among non-closed days. */
-function deriveMasterHours(week: OpeningHoursWeek): { open: string; close: string } {
+function deriveMasterHours(week: OpeningHoursWeek): {
+  open: string;
+  close: string;
+} {
   const counts = new Map<string, number>();
   for (const day of Object.values(week)) {
     if (!day.closed) {
@@ -182,7 +192,10 @@ function deriveOverriddenDays(
   master: { open: string; close: string },
 ): Set<DayKey> {
   const s = new Set<DayKey>();
-  for (const [key, day] of Object.entries(week) as [DayKey, OpeningHoursWeek[DayKey]][]) {
+  for (const [key, day] of Object.entries(week) as [
+    DayKey,
+    OpeningHoursWeek[DayKey],
+  ][]) {
     if (day.closed || day.open !== master.open || day.close !== master.close) {
       s.add(key);
     }
@@ -199,11 +212,14 @@ export function HoursSetupPanel({
   initialRaw,
   initialClosedDatesRaw,
   initialClosureNoticeRaw,
+  autoSave = false,
 }: {
   slug: string;
   initialRaw: unknown;
   initialClosedDatesRaw: unknown;
   initialClosureNoticeRaw: unknown;
+  /** Guided Setup only: persist a valid edit after the owner pauses. */
+  autoSave?: boolean;
 }) {
   const router = useRouter();
   const { language } = useUserLanguage();
@@ -213,12 +229,14 @@ export function HoursSetupPanel({
   // State
   // ---------------------------------------------------------------------------
 
-  const [hours, setHours] = useState<OpeningHoursWeek>(() =>
-    parseOpeningHours(initialRaw) ?? defaultOpeningHoursWeek(),
+  const [hours, setHours] = useState<OpeningHoursWeek>(
+    () => parseOpeningHours(initialRaw) ?? defaultOpeningHoursWeek(),
   );
 
   const [masterHours, setMasterHours] = useState(() =>
-    deriveMasterHours(parseOpeningHours(initialRaw) ?? defaultOpeningHoursWeek()),
+    deriveMasterHours(
+      parseOpeningHours(initialRaw) ?? defaultOpeningHoursWeek(),
+    ),
   );
 
   const [overriddenDays, setOverriddenDays] = useState<Set<DayKey>>(() => {
@@ -241,6 +259,19 @@ export function HoursSetupPanel({
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<SetupToastPayload | null>(null);
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialHours =
+    parseOpeningHours(initialRaw) ?? defaultOpeningHoursWeek();
+  const initialSignature = JSON.stringify({
+    hours: initialHours,
+    closedDates: normalizeBookingClosedDateList(
+      closedDatesInitialText(initialClosedDatesRaw)
+        .split(/\n/)
+        .map((line) => line.trim())
+        .filter(Boolean),
+    ),
+  });
+  const lastSavedSignatureRef = useRef(initialSignature);
+  const lastAutoSaveAttemptRef = useRef(initialSignature);
 
   // ---------------------------------------------------------------------------
   // Effects
@@ -267,14 +298,43 @@ export function HoursSetupPanel({
     setHours(w);
     setMasterHours(m);
     setOverriddenDays(deriveOverriddenDays(w, m));
-    setClosedDatesText(closedDatesInitialText(initialClosedDatesRaw));
+    const nextClosedDatesText = closedDatesInitialText(initialClosedDatesRaw);
+    setClosedDatesText(nextClosedDatesText);
     const notice = closureNoticeInitial(initialClosureNoticeRaw);
     setClosureNoticeEn(notice.en);
     setClosureNoticeVi(notice.vi);
+    const nextSignature = JSON.stringify({
+      hours: w,
+      closedDates: normalizeBookingClosedDateList(
+        nextClosedDatesText
+          .split(/\n/)
+          .map((line) => line.trim())
+          .filter(Boolean),
+      ),
+    });
+    lastSavedSignatureRef.current = nextSignature;
+    lastAutoSaveAttemptRef.current = nextSignature;
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [initialClosedDatesRaw, initialClosureNoticeRaw, initialRaw]);
 
   const preview = useMemo(() => compactOpeningHoursLabel(hours), [hours]);
+  const currentSignature = useMemo(
+    () =>
+      JSON.stringify({
+        hours,
+        closedDates: normalizeBookingClosedDateList(
+          closedDatesText
+            .split(/\n/)
+            .map((line) => line.trim())
+            .filter(Boolean),
+        ),
+      }),
+    [closedDatesText, hours],
+  );
+  const canSaveHours = useMemo(
+    () => hoursEditorIsValid(hours, closedDatesText),
+    [closedDatesText, hours],
+  );
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -289,7 +349,11 @@ export function HoursSetupPanel({
           const next = { ...prevHours };
           for (const key of DAY_KEYS_ORDERED) {
             if (!overriddenDays.has(key)) {
-              next[key] = { ...next[key], open: newMaster.open, close: newMaster.close };
+              next[key] = {
+                ...next[key],
+                open: newMaster.open,
+                close: newMaster.close,
+              };
             }
           }
           return next;
@@ -302,9 +366,16 @@ export function HoursSetupPanel({
 
   /** Day time/closed changed → lock this day as override. */
   const onDayChange = useCallback(
-    (key: DayKey, field: "open" | "close" | "closed", value: string | boolean) => {
+    (
+      key: DayKey,
+      field: "open" | "close" | "closed",
+      value: string | boolean,
+    ) => {
       setOverriddenDays((prev) => new Set([...prev, key]));
-      setHours((prev) => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
+      setHours((prev) => ({
+        ...prev,
+        [key]: { ...prev[key], [field]: value },
+      }));
     },
     [],
   );
@@ -324,7 +395,12 @@ export function HoursSetupPanel({
       });
       setHours((prev) => ({
         ...prev,
-        [key]: { ...prev[key], open: masterHours.open, close: masterHours.close, closed: false },
+        [key]: {
+          ...prev[key],
+          open: masterHours.open,
+          close: masterHours.close,
+          closed: false,
+        },
       }));
     },
     [masterHours],
@@ -338,41 +414,77 @@ export function HoursSetupPanel({
     setHours(preset);
   }, []);
 
-  const onSaveAll = useCallback(async () => {
-    setError(null);
-    clearStatusTimer();
-    setSaveStatus("saving");
-    const closedYmd = normalizeBookingClosedDateList(
-      closedDatesText
-        .split(/\n/)
-        .map((l) => l.trim())
-        .filter(Boolean),
-    );
-    const res = await updateOpeningHours(slug, hours, closedYmd, {
-      en: closureNoticeEn.trim(),
-      vi: closureNoticeVi.trim(),
-    });
-    if (!res.ok) {
-      setSaveStatus("error");
-      setError(openingHoursFailMessage(res.error));
-      setToast({ variant: "error", message: openingHoursToastMessage(res.error) });
-      statusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 3000);
+  const onSaveAll = useCallback(
+    async (source: "manual" | "auto" = "manual") => {
+      setError(null);
+      if (!canSaveHours) {
+        setError(
+          language === "vi"
+            ? "Giờ mở cửa phải sớm hơn giờ đóng cửa; ngày nghỉ phải có dạng YYYY-MM-DD."
+            : "Opening time must be before closing time; closed dates must use YYYY-MM-DD.",
+        );
+        return false;
+      }
+      lastAutoSaveAttemptRef.current = currentSignature;
+      clearStatusTimer();
+      setSaveStatus("saving");
+      const closedYmd = normalizeBookingClosedDateList(
+        closedDatesText
+          .split(/\n/)
+          .map((l) => l.trim())
+          .filter(Boolean),
+      );
+      const res = await updateOpeningHours(slug, hours, closedYmd, {
+        en: closureNoticeEn.trim(),
+        vi: closureNoticeVi.trim(),
+      });
+      if (!res.ok) {
+        setSaveStatus("error");
+        setError(openingHoursFailMessage(res.error));
+        setToast({
+          variant: "error",
+          message: openingHoursToastMessage(res.error),
+        });
+        statusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 3000);
+        return false;
+      }
+      lastSavedSignatureRef.current = currentSignature;
+      setSaveStatus("saved");
+      setToast({ variant: "success", message: labels.hoursSaved });
+      statusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
+      if (source === "manual") router.refresh();
+      return true;
+    },
+    [
+      canSaveHours,
+      clearStatusTimer,
+      closedDatesText,
+      closureNoticeEn,
+      closureNoticeVi,
+      currentSignature,
+      hours,
+      labels.hoursSaved,
+      language,
+      router,
+      slug,
+    ],
+  );
+
+  useEffect(() => {
+    if (!autoSave || !canSaveHours || saveStatus === "saving") return;
+    if (
+      currentSignature === lastSavedSignatureRef.current ||
+      currentSignature === lastAutoSaveAttemptRef.current
+    ) {
       return;
     }
-    setSaveStatus("saved");
-    setToast({ variant: "success", message: labels.hoursSaved });
-    statusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
-    router.refresh();
-  }, [
-    clearStatusTimer,
-    closedDatesText,
-    closureNoticeEn,
-    closureNoticeVi,
-    hours,
-    labels.hoursSaved,
-    router,
-    slug,
-  ]);
+
+    const timer = setTimeout(() => {
+      lastAutoSaveAttemptRef.current = currentSignature;
+      void onSaveAll("auto");
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [autoSave, canSaveHours, currentSignature, onSaveAll, saveStatus]);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -431,7 +543,9 @@ export function HoursSetupPanel({
               className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
               value={toTimeInput(masterHours.open)}
               disabled={saveStatus === "saving"}
-              onChange={(e) => onMasterChange("open", hmFromDateInput(e.target.value))}
+              onChange={(e) =>
+                onMasterChange("open", hmFromDateInput(e.target.value))
+              }
             />
           </label>
           <label className="block text-sm font-medium text-nq-muted">
@@ -441,7 +555,9 @@ export function HoursSetupPanel({
               className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus"
               value={toTimeInput(masterHours.close)}
               disabled={saveStatus === "saving"}
-              onChange={(e) => onMasterChange("close", hmFromDateInput(e.target.value))}
+              onChange={(e) =>
+                onMasterChange("close", hmFromDateInput(e.target.value))
+              }
             />
           </label>
         </div>
@@ -464,7 +580,10 @@ export function HoursSetupPanel({
             if (!isOverride) {
               // State A — Following master (collapsed)
               return (
-                <li key={key} className="flex flex-col gap-1.5 py-4 first:pt-0 last:pb-0">
+                <li
+                  key={key}
+                  className="flex flex-col gap-1.5 py-4 first:pt-0 last:pb-0"
+                >
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-base font-medium text-nq-foreground">
                       {dayLabel}
@@ -533,7 +652,11 @@ export function HoursSetupPanel({
                           value={toTimeInput(day.open)}
                           disabled={day.closed || saveStatus === "saving"}
                           onChange={(e) =>
-                            onDayChange(key, "open", hmFromDateInput(e.target.value))
+                            onDayChange(
+                              key,
+                              "open",
+                              hmFromDateInput(e.target.value),
+                            )
                           }
                         />
                       </label>
@@ -545,7 +668,11 @@ export function HoursSetupPanel({
                           value={toTimeInput(day.close)}
                           disabled={day.closed || saveStatus === "saving"}
                           onChange={(e) =>
-                            onDayChange(key, "close", hmFromDateInput(e.target.value))
+                            onDayChange(
+                              key,
+                              "close",
+                              hmFromDateInput(e.target.value),
+                            )
                           }
                         />
                       </label>
@@ -557,7 +684,9 @@ export function HoursSetupPanel({
                       className="h-5 w-5 rounded border-nq-border/60 text-nq-primary focus:ring-nq-primary"
                       checked={day.closed}
                       disabled={saveStatus === "saving"}
-                      onChange={(e) => onDayChange(key, "closed", e.target.checked)}
+                      onChange={(e) =>
+                        onDayChange(key, "closed", e.target.checked)
+                      }
                     />
                     {labels.closed}
                   </label>
@@ -706,11 +835,23 @@ export function HoursSetupPanel({
       <SaveButton
         status={saveStatus}
         onSave={() => {
-          void onSaveAll();
+          void onSaveAll("manual");
         }}
         idleLabel={labels.saveAll}
+        disabled={!canSaveHours}
         className="min-h-[48px] w-full sm:w-full"
       />
+      {autoSave ? (
+        <p
+          className="text-center text-xs leading-5 text-nq-muted"
+          data-testid="guided-autosave-message"
+          aria-live="polite"
+        >
+          {language === "vi"
+            ? "Các thay đổi hợp lệ sẽ tự lưu sau khi bạn dừng chỉnh sửa. Nút Lưu tất cả vẫn sẵn sàng để lưu ngay."
+            : "Valid changes save automatically after you pause. Save all remains available to save immediately."}
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
+import { calendarBookingTargetId } from "@/shared/dashboard/calendarBookingRows";
 import {
   getBookingsForRangeAction,
   type BookingsRangeHint,
@@ -551,14 +552,14 @@ function DayDetailPanel({
           <ul className="divide-y divide-nq-border/20">
             {sorted.map((b) => (
               <motion.li
-                key={b.id}
+                key={b.calendar_entry_id}
                 whileHover={{ backgroundColor: "var(--color-nq-primary-5, rgba(99,102,241,0.05))" }}
                 transition={{ duration: 0.15 }}
               >
                 <button
                   type="button"
                   aria-label={messages.openBookingAria.replace("{client}", displayCustomerName(b.client_name, removedGuest))}
-                  onClick={() => onBookingClick(b.id)}
+                  onClick={() => onBookingClick(calendarBookingTargetId(b))}
                   className="group flex w-full items-start gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-nq-primary/40"
                 >
                   {/* Time pill */}
@@ -642,13 +643,13 @@ function MonthDayBookings({
     <>
       {visible.map((b) => (
         <button
-          key={b.id}
+          key={b.calendar_entry_id}
           type="button"
           aria-label={openBookingAria.replace("{client}", displayCustomerName(b.client_name, removedGuest))}
           onClick={(e) => {
             // Prevent the day-cell onClick from toggling the panel.
             e.stopPropagation();
-            onBookingClick(b.id);
+            onBookingClick(calendarBookingTargetId(b));
           }}
           className={cn(
             "w-full rounded px-1 py-0.5 text-left text-[10px] leading-tight",

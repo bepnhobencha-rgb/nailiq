@@ -14,7 +14,6 @@ import {
   canAddService,
   canAddStaff,
   parseSubscriptionPlan,
-  type SubscriptionPlan,
 } from "@/shared/lib/subscriptionPlans";
 import {
   mergeOpeningHoursFromClient,
@@ -23,6 +22,7 @@ import {
   type OpeningHoursWeek,
 } from "@/shared/dashboard/openingHoursDefaults";
 import {
+  isValidBookingClosedDate,
   normalizeBookingClosedDateList,
 } from "@/shared/booking/parseBookingClosedDates";
 import {
@@ -50,12 +50,16 @@ import {
 import type { SalonMemberRole } from "@/shared/lib/salonMemberRole";
 import { normaliseToE164 } from "@/shared/lib/twilioSms";
 import { trackAnthropicFetch } from "@/shared/ai/usageLedger";
+import { AI_TEXT_BACKGROUND_TIMEOUT_MS } from "@/shared/ai/anthropicProviderPolicy";
 import {
   isSupportedLanguage,
   normalizeAllowedLanguages,
   normalizeSupportedLanguage,
   type SupportedLanguage,
 } from "@/shared/voiceai/config";
+import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
+import { parseServicePrepMinutes } from "@/shared/booking/bookingSequence";
+import { loadPublicBookingSequenceReadiness } from "@/shared/booking/bookingSequenceReadiness";
 
 export type StaffJobRole = "owner" | "senior" | "nail_tech";
 
@@ -128,47 +132,87 @@ async function verifyDemoSetupSlug(
 
 type GenericSupabase = WritableSupabase;
 
+type ProfileCompleteRefreshStage =
+  | "salon_read"
+  | "service_count"
+  | "staff_count"
+  | "profile_update";
+
+type ProfileCompleteRefreshResult =
+  | { ok: true; profileComplete: boolean }
+  | { ok: false; stage: ProfileCompleteRefreshStage };
+
+function profileCompleteRefreshFailed(
+  stage: ProfileCompleteRefreshStage,
+  error?: unknown,
+): ProfileCompleteRefreshResult {
+  console.error("[refreshSalonProfileComplete]", { stage, error });
+  return { ok: false, stage };
+}
+
 async function refreshSalonProfileComplete(
   supabase: GenericSupabase,
   salonId: string,
-): Promise<void> {
-  const { data: row } = await supabase
+): Promise<ProfileCompleteRefreshResult> {
+  const { data: row, error: salonReadError } = await supabase
     .from("salons")
     .select("address")
     .eq("id", salonId)
     .maybeSingle();
 
+  if (salonReadError || !row) {
+    return profileCompleteRefreshFailed("salon_read", salonReadError);
+  }
+
   // profile_complete refresh — soft-deleted rows don't count.
-  const { count: sc } = await supabase
+  const { count: sc, error: serviceCountError } = await supabase
     .from("services")
     .select("*", { count: "exact", head: true })
     .eq("salon_id", salonId)
     .is("deleted_at" as never, null);
 
-  const { count: tc } = await supabase
+  if (serviceCountError || typeof sc !== "number") {
+    return profileCompleteRefreshFailed(
+      "service_count",
+      serviceCountError,
+    );
+  }
+
+  const { count: tc, error: staffCountError } = await supabase
     .from("staff")
     .select("*", { count: "exact", head: true })
     .eq("salon_id", salonId)
     .is("deleted_at" as never, null);
+
+  if (staffCountError || typeof tc !== "number") {
+    return profileCompleteRefreshFailed("staff_count", staffCountError);
+  }
 
   const addr =
     row && typeof row === "object" && "address" in row
       ? String((row as { address?: unknown }).address ?? "").trim()
       : "";
   const profileComplete = isSalonProfileComplete({
-    activeServiceCount: sc ?? 0,
-    activeStaffCount: tc ?? 0,
+    activeServiceCount: sc,
+    activeStaffCount: tc,
     address: addr,
   });
 
-  const { error } = await supabase
+  const { data: updatedRow, error } = await supabase
     .from("salons")
     .update({ profile_complete: profileComplete })
-    .eq("id", salonId);
+    .eq("id", salonId)
+    .select("id")
+    .maybeSingle();
 
-  if (error) {
-    console.error("[refreshSalonProfileComplete]", error);
+  // Supabase updates return no rows by default, and RLS can filter an UPDATE
+  // down to zero matching rows. Request the id so a missing write cannot be
+  // mistaken for a successful readiness refresh.
+  if (error || !updatedRow?.id) {
+    return profileCompleteRefreshFailed("profile_update", error);
   }
+
+  return { ok: true, profileComplete };
 }
 
 type Fail = { ok: false; error: string };
@@ -217,6 +261,7 @@ async function generateServiceDescription(
         model: ANTHROPIC_DESCRIPTION_MODEL,
       },
       () => fetch("https://api.anthropic.com/v1/messages", {
+        signal: AbortSignal.timeout(AI_TEXT_BACKGROUND_TIMEOUT_MS),
         method: "POST",
         headers: {
           "x-api-key": anthropicKey,
@@ -282,31 +327,20 @@ async function generateServiceDescription(
  */
 async function loadPlanAndCount(
   supabase: GenericSupabase,
-  salonId: string,
+  salon: {
+    id: string;
+    subscription_plan?: string | null;
+    plan_override?: string | null;
+    feature_flags?: Record<string, unknown> | null;
+  },
   table: "staff" | "services",
 ): Promise<{ planSalon: { subscription_plan: string | null; plan_override?: string | null; feature_flags?: Record<string, unknown> | null }; count: number } | null> {
-  // Must select plan_override + feature_flags so canAddService/canAddStaff
-  // can call getEffectivePlanLimits() correctly. Selecting only
-  // subscription_plan caused plan_override='premium' to be ignored,
-  // making the server think every salon is on 'free'.
-  const { data: salonRow, error: salonErr } = await supabase
-    .from("salons")
-    .select("subscription_plan, plan_override, feature_flags" as never)
-    .eq("id", salonId)
-    .maybeSingle();
-  if (salonErr) {
-    console.error("[loadPlanAndCount] salons", salonErr);
-    return null;
-  }
-  const row = salonRow as {
-    subscription_plan?: unknown;
-    plan_override?: unknown;
-    feature_flags?: unknown;
-  } | null;
   const planSalon = {
-    subscription_plan: parseSubscriptionPlan(row?.subscription_plan) as string,
-    plan_override: typeof row?.plan_override === "string" ? row.plan_override : null,
-    feature_flags: (row?.feature_flags as Record<string, unknown> | null) ?? null,
+    subscription_plan: parseSubscriptionPlan(salon.subscription_plan) as string,
+    plan_override:
+      typeof salon.plan_override === "string" ? salon.plan_override : null,
+    feature_flags:
+      (salon.feature_flags as Record<string, unknown> | null) ?? null,
   };
 
   // Plan-limit checks count LIVE rows only — soft-deleted rows free
@@ -315,7 +349,7 @@ async function loadPlanAndCount(
   const { count, error: countErr } = await supabase
     .from(table)
     .select("id", { count: "exact", head: true })
-    .eq("salon_id", salonId)
+    .eq("salon_id", salon.id)
     .is("deleted_at" as never, null);
   if (countErr) {
     console.error("[loadPlanAndCount] count", table, countErr);
@@ -456,6 +490,8 @@ export async function addService(
     price_cents: number;
     duration_minutes: number;
     buffer_minutes: number;
+    /** Operational setup before customer work. QA multi-service only. */
+    prep_minutes?: number;
     category?: ServiceCategory | string;
     /** Optional one-line marketing copy shown under the service name
      * on the public booking page (migration 20260511600000). */
@@ -489,10 +525,19 @@ export async function addService(
   const price = Math.round(Number(input.price_cents));
   const duration = Math.round(Number(input.duration_minutes));
   const buffer = Math.round(Number(input.buffer_minutes));
+  const prep = parseServicePrepMinutes(input.prep_minutes ?? 0);
   if (!Number.isFinite(price) || price < 0) return fail("invalid_price");
   if (!Number.isFinite(duration) || duration < 1)
     return fail("invalid_duration");
   if (!Number.isFinite(buffer) || buffer < 0) return fail("invalid_buffer");
+  if (prep == null) return fail("invalid_prep");
+  if (
+    input.prep_minutes !== undefined &&
+    (!(await isReleaseFeatureVisible(r.salon, "multi_service_booking")) ||
+      !(await loadPublicBookingSequenceReadiness(r.salon.id)).ok)
+  ) {
+    return fail("feature_disabled");
+  }
 
   // Reject unknown categories rather than silently fallback — keeps
   // the form / API contract honest. The slug must currently exist
@@ -542,7 +587,7 @@ export async function addService(
   // Plan-limit gate. Free plan caps services at 10 (see PLAN_LIMITS).
   // Demo path: r.kind === "demo_cookie" and the salon row carries the
   // default 'free' plan unless ops upgraded it; this still enforces.
-  const planCheck = await loadPlanAndCount(supabase, r.salon.id, "services");
+  const planCheck = await loadPlanAndCount(supabase, r.salon, "services");
   if (!planCheck) return fail("server_error");
   if (!canAddService(planCheck.planSalon, planCheck.count)) {
     return fail("plan_limit_reached");
@@ -565,6 +610,7 @@ export async function addService(
     price_max_cents: priceModel.price_max_cents,
     duration_minutes: duration,
     buffer_minutes: buffer,
+    prep_minutes: prep,
     ...(category !== null ? { category } : {}),
     ...(description !== undefined ? { description } : {}),
     ...(isPopular !== undefined ? { is_popular: isPopular } : {}),
@@ -649,6 +695,7 @@ export async function updateService(
     price_cents: number;
     duration_minutes: number;
     buffer_minutes: number;
+    prep_minutes: number;
     category: ServiceCategory | string;
     /** Pass `null` to clear, a trimmed string to set, omit to leave alone. */
     description: string | null;
@@ -690,6 +737,17 @@ export async function updateService(
     const v = Math.round(Number(data.buffer_minutes));
     if (!Number.isFinite(v) || v < 0) return fail("invalid_buffer");
     patch.buffer_minutes = v;
+  }
+  if (data.prep_minutes !== undefined) {
+    const v = parseServicePrepMinutes(data.prep_minutes);
+    if (v == null) return fail("invalid_prep");
+    if (
+      !(await isReleaseFeatureVisible(r.salon, "multi_service_booking")) ||
+      !(await loadPublicBookingSequenceReadiness(r.salon.id)).ok
+    ) {
+      return fail("feature_disabled");
+    }
+    patch.prep_minutes = v;
   }
   if (data.category !== undefined) {
     if (typeof data.category !== "string" || data.category.length === 0) {
@@ -908,7 +966,7 @@ export async function addStaff(
   const supabase = await writableSupabase(slug, r.kind);
 
   // Plan-limit gate. Free plan caps staff at 3 (see PLAN_LIMITS).
-  const planCheck = await loadPlanAndCount(supabase, r.salon.id, "staff");
+  const planCheck = await loadPlanAndCount(supabase, r.salon, "staff");
   if (!planCheck) return fail("server_error");
   if (!canAddStaff(planCheck.planSalon, planCheck.count)) {
     return fail("plan_limit_reached");
@@ -969,6 +1027,46 @@ export async function addStaff(
 
 export type StaffStatus = "active" | "pending" | "inactive";
 
+const LIVE_STAFF_ASSIGNMENT_STATUSES = [
+  "pending",
+  "confirmed",
+  "in_progress",
+  "waiting",
+] as const;
+
+async function loadLiveStaffAssignmentState(
+  supabase: WritableSupabase,
+  salonId: string,
+  staffId: string,
+): Promise<{ hasAssignments: boolean } | null> {
+  const [parentResult, segmentResult] = await Promise.all([
+    supabase
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("salon_id", salonId)
+      .eq("staff_id", staffId)
+      .is("deleted_at", null)
+      .in("status", [...LIVE_STAFF_ASSIGNMENT_STATUSES]),
+    supabase
+      .from("booking_service_segments")
+      .select("id", { count: "exact", head: true })
+      .eq("salon_id", salonId)
+      .eq("staff_id", staffId)
+      .in("reservation_status", [...LIVE_STAFF_ASSIGNMENT_STATUSES]),
+  ]);
+  if (parentResult.error || segmentResult.error) {
+    console.error("[loadLiveStaffAssignmentState]", {
+      parent: parentResult.error,
+      segment: segmentResult.error,
+    });
+    return null;
+  }
+  return {
+    hasAssignments:
+      (parentResult.count ?? 0) > 0 || (segmentResult.count ?? 0) > 0,
+  };
+}
+
 export async function updateStaff(
   slug: string,
   staffId: string,
@@ -1023,30 +1121,23 @@ export async function updateStaff(
 
   if (!mine?.id) return fail("not_found");
 
-  // Guard: changing an active staff to ANY non-active state strands their
-  // current/future appointments. (Previously active→pending bypassed the
-  // inactive-only guard and silently hid the staff from the schedule.)
-  // "Active" booking statuses
-  // (pending/confirmed/in_progress/waiting) are unresolved by definition —
-  // i.e. current or upcoming — so the front desk must reassign them first.
+  // Active staff must leave through the sequence-aware atomic offboarding RPC,
+  // even when this preview sees zero assignments. That RPC owns the locking,
+  // exact replay receipt and final race check. Scan both scheduling models so
+  // legacy pending rows also fail closed instead of being stranded.
   if (
     data.status !== undefined &&
     data.status !== "active" &&
-    mine.status === "active"
+    data.status !== mine.status
   ) {
-    const { count: openBookingCount, error: openBookingErr } = await supabase
-      .from("bookings")
-      .select("id", { count: "exact", head: true })
-      .eq("salon_id", r.salon.id)
-      .eq("staff_id", staffId)
-      .in("status", ["pending", "confirmed", "in_progress", "waiting"]);
-
-    if (openBookingErr) {
-      console.error("[updateStaff] open booking count", openBookingErr);
-      return fail("server_error");
-    }
-    if ((openBookingCount ?? 0) > 0) {
-      return fail("staff_has_upcoming");
+    const liveAssignments = await loadLiveStaffAssignmentState(
+      supabase,
+      r.salon.id,
+      staffId,
+    );
+    if (!liveAssignments) return fail("server_error");
+    if (mine.status === "active" || liveAssignments.hasAssignments) {
+      return fail("staff_offboarding_required");
     }
   }
 
@@ -1066,24 +1157,21 @@ export async function updateStaff(
 
   if (touchServices) {
     const serviceIds = sanitizeServiceIds(data.serviceIds);
-    const { error: delErr } = await supabase
-      .from("staff_services")
-      .delete()
-      .eq("staff_id", staffId);
-    if (delErr) {
-      console.error("[updateStaff] staff_services delete", delErr);
+    const { data: capabilityUpdated, error: capabilityError } =
+      await supabase.rpc(
+        "set_staff_service_capabilities" as never,
+        {
+          p_salon_id: r.salon.id,
+          p_staff_id: staffId,
+          p_service_ids: serviceIds,
+        } as never,
+      );
+    if (capabilityError || (capabilityUpdated as unknown) !== true) {
+      console.error(
+        "[updateStaff] set_staff_service_capabilities",
+        capabilityError,
+      );
       return fail("server_error");
-    }
-    if (serviceIds.length > 0) {
-      const { error: insErr } = await supabase
-        .from("staff_services")
-        .insert(
-          serviceIds.map((sid) => ({ staff_id: staffId, service_id: sid })),
-        );
-      if (insErr) {
-        console.error("[updateStaff] staff_services insert", insErr);
-        return fail("server_error");
-      }
     }
   }
 
@@ -1125,71 +1213,20 @@ export async function deleteStaff(
 
   if (!mine?.id) return fail("not_found");
 
-  const { count: activeBookingCount, error: bookingCountErr } = await supabase
-    .from("bookings")
-    .select("id", { count: "exact", head: true })
-    .eq("salon_id", r.salon.id)
-    .eq("staff_id", staffId)
-    .in("status", ["pending", "confirmed", "in_progress", "waiting"]);
-
-  if (bookingCountErr) {
-    console.error("[deleteStaff] active booking count", bookingCountErr);
-    return fail("server_error");
-  }
-  if ((activeBookingCount ?? 0) > 0) {
+  const liveAssignments = await loadLiveStaffAssignmentState(
+    supabase,
+    r.salon.id,
+    staffId,
+  );
+  if (!liveAssignments) return fail("server_error");
+  if (liveAssignments.hasAssignments) {
     return fail("staff_has_bookings");
   }
 
-  // See decisions-log.md 2026-05-02: Staff delete detaches terminal bookings
-  // This authorized delete spans private/profile data and protected booking
-  // history. Keep the privileged portion server-only and scope every write to
-  // the already-resolved salon and target staff member.
-  const admin = createServiceRoleClient();
-  const { error: detachErr } = await admin
-    .from("bookings")
-    .update({ staff_id: null })
-    .eq("salon_id", r.salon.id)
-    .eq("staff_id", staffId)
-    .in("status", ["cancelled", "completed"]);
-
-  if (detachErr) {
-    console.error("[deleteStaff] detach terminal bookings", detachErr);
-    return fail("server_error");
-  }
-
-  // client_profiles intentionally denies all direct authenticated API access;
-  // it is only exposed through scoped server actions. Use the server-only
-  // service role for this referential cleanup after owner/admin authorization
-  // and constrain it to the resolved salon as well as the target staff row.
-  const { error: prefErr } = await admin
-    .from("client_profiles")
-    .update({ preferred_staff_id: null })
-    .eq("salon_id", r.salon.id)
-    .eq("preferred_staff_id", staffId);
-
-  if (prefErr) {
-    console.error("[deleteStaff] clear preferred_staff_id", prefErr);
-    return fail("server_error");
-  }
-
-  // Soft delete (2026-05-10): UPDATE deleted_at instead of DELETE so
-  // historical bookings keep a resolvable staff_id and SuperAdmin can
-  // restore. All read paths filter `deleted_at IS NULL`. Cast: column
-  // not yet in the auto-generated DB types.
-  const { error } = await admin
-    .from("staff")
-    .update({ deleted_at: new Date().toISOString() } as never)
-    .eq("id", staffId)
-    .eq("salon_id", r.salon.id)
-    .is("deleted_at", null);
-
-  if (error) {
-    console.error("[deleteStaff]", error);
-    return fail("server_error");
-  }
-
-  await refreshSalonProfileComplete(supabase, r.salon.id);
-  return { ok: true };
+  // Destructive profile removal no longer has an independent mutation path.
+  // The safe UI preserves the profile for audit and routes through the atomic
+  // offboarding assistant. A stale/direct caller must fail closed as well.
+  return fail("staff_offboarding_required");
 }
 
 export async function updateOpeningHours(
@@ -1226,6 +1263,13 @@ export async function updateOpeningHours(
   if (!revalidated) {
     return fail("invalid_hours");
   }
+  const openDays = Object.values(revalidated).filter((day) => !day.closed);
+  if (
+    openDays.length === 0 ||
+    openDays.some((day) => day.open.trim() >= day.close.trim())
+  ) {
+    return fail("invalid_hours");
+  }
 
   let serialized: string;
   try {
@@ -1237,6 +1281,9 @@ export async function updateOpeningHours(
   const datesForClosed = Array.isArray(closedDatesYmd)
     ? closedDatesYmd.filter((x): x is string => typeof x === "string")
     : [];
+  if (datesForClosed.some((date) => !isValidBookingClosedDate(date))) {
+    return fail("invalid_hours");
+  }
   const closedJson = normalizeBookingClosedDateList(datesForClosed);
 
   // Both languages must be filled or the notice is dropped entirely — a
@@ -1334,6 +1381,8 @@ export async function updateOpeningHours(
 export async function updateAddress(
   slug: string,
   input: {
+    /** Guided Setup identity field. Omitted by legacy address callers. */
+    name?: string;
     street: string;
     city: string;
     province: string;
@@ -1368,6 +1417,12 @@ export async function updateAddress(
   const salonPhone = input.salon_phone.trim();
   if (!isValidPhone(salonPhone)) return fail("invalid_phone");
   if (salonPhone.length > 40) return fail("invalid_phone");
+
+  let salonName: string | undefined;
+  if (input.name !== undefined) {
+    salonName = input.name.trim();
+    if (!salonName || salonName.length > 120) return fail("invalid_name");
+  }
 
   if (!validateStreet(input.street)) return fail("invalid_street");
   if (!validateCity(input.city)) return fail("invalid_city");
@@ -1430,6 +1485,7 @@ export async function updateAddress(
   const patch = {
     address,
     salon_phone: salonPhone,
+    ...(salonName !== undefined ? { name: salonName } : {}),
     ...(currencyCode !== undefined ? { currency_code: currencyCode } : {}),
     ...(descriptionPatch !== undefined
       ? { description: descriptionPatch }
@@ -1437,18 +1493,30 @@ export async function updateAddress(
     ...(timezoneVal !== undefined ? { timezone: timezoneVal } : {}),
   } as never;
   const supabase = await writableSupabase(slug, r.kind);
-  const { error } = await supabase
+  const { data: updatedSalon, error } = await supabase
     .from("salons")
     .update(patch)
     .eq("id", r.salon.id)
-    .eq("slug", slug);
+    .eq("slug", slug)
+    .select("id")
+    .maybeSingle();
 
-  if (error) {
+  if (error || !updatedSalon?.id) {
     console.error("[updateAddress]", error);
     return fail("server_error");
   }
 
-  await refreshSalonProfileComplete(supabase, r.salon.id);
+  try {
+    const refreshResult = await refreshSalonProfileComplete(
+      supabase,
+      r.salon.id,
+    );
+    if (!refreshResult.ok) return fail("server_error");
+  } catch (error) {
+    console.error("[updateAddress] profile completion refresh", error);
+    return fail("server_error");
+  }
+
   return { ok: true };
 }
 
@@ -1482,6 +1550,22 @@ export async function getDashboardWriteClient(slug: string): Promise<
         dashboard_preset: unknown | null;
         dashboard_density: unknown | null;
         currency_code: unknown | null;
+        /** Per-salon release overrides used by setup route gates. */
+        subscription_plan?: string | null;
+        plan_override?: string | null;
+        feature_flags?: Record<string, unknown> | null;
+        voice_ai_enabled?: boolean | null;
+        basic_mode_forced?: boolean | null;
+        walkin_auto_assign?: boolean | null;
+        queue_display_mode?: string | null;
+        staff_notification_settings?: unknown | null;
+        client_segment_settings?: unknown | null;
+        noshow_protection_enabled?: boolean | null;
+        winback_enabled?: boolean | null;
+        email_links_enabled?: boolean | null;
+        default_notification_locale?: unknown | null;
+        auto_no_show_minutes?: number | null;
+        vertical?: string | null;
       };
       kind: "member" | "demo_cookie";
       /** `salon_members.role` for this user-salon pair. Demo-cookie path is `"owner"`. */

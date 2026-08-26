@@ -1,33 +1,30 @@
-import { NextRequest, NextResponse } from "next/server";
-import { ensureNoShowCardRequirement } from "@/shared/noshow/ensureNoShowCardRequirement";
+import { NextResponse } from "next/server";
 
-export const runtime = "nodejs";
+import { consumeBookingManagementRateLimit } from "@/shared/booking/bookingManagementRateLimit";
+import { readJsonObjectWithLimit } from "@/shared/security/readJsonObjectWithLimit";
+import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
 
 /**
- * POST /api/booking/flag-noshow-card  { bookingId }
- *
- * Runs the unified no-show card gate for a just-created booking. The online
- * GROUP wizard runs in the browser, so it can't import the server-only gate
- * directly (other paths flag server-side at creation) — it calls this instead.
- *
- * Low-risk + idempotent: ensureNoShowCardRequirement only SETS the
- * `noshow_card_required` flag (no charge, no cancel, no data returned) and
- * applies the same risk gate as every other path, so it self-skips when the
- * customer doesn't need a card. Mirrors the existing bookingId-keyed booking
- * endpoints (square-noshow-config / square-save-card).
+ * Retired: trusted booking creation now evaluates no-show policy and mints a
+ * card_manage capability server-side. A browser may never flag an arbitrary
+ * booking by id.
  */
-export async function POST(req: NextRequest) {
-  let body: { bookingId?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ ok: false, error: "bad_json" }, { status: 400 });
+export async function POST(request: Request) {
+  if (!isSameOriginMutation(request)) {
+    return NextResponse.json({ ok: false, code: "forbidden" }, { status: 403 });
   }
-  const bookingId = String(body.bookingId ?? "").trim();
-  if (!bookingId) {
-    return NextResponse.json({ ok: false, error: "missing_booking" }, { status: 400 });
+  if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
+    return NextResponse.json({ ok: false, code: "invalid_request" }, { status: 400 });
   }
-
-  const result = await ensureNoShowCardRequirement(bookingId);
-  return NextResponse.json({ ok: true, required: result.required });
+  const body = await readJsonObjectWithLimit(request, 1024);
+  const token = typeof body?.token === "string" ? body.token.trim() : "";
+  const requestId = typeof body?.requestId === "string" ? body.requestId.trim() : "";
+  if (!token || !requestId) return NextResponse.json({ ok: false, code: "invalid_request" }, { status: 400 });
+  const rate = await consumeBookingManagementRateLimit({
+    request, tokenId: token, action: "card_manage", phase: "mutate",
+  });
+  if (rate !== "allowed") {
+    return NextResponse.json({ ok: false, code: rate === "limited" ? "rate_limited" : "management_unavailable" }, { status: rate === "limited" ? 429 : 503 });
+  }
+  return NextResponse.json({ ok: false, code: "route_retired" }, { status: 410 });
 }

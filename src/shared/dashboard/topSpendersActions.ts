@@ -8,6 +8,7 @@ import {
   spendTier,
   type VipTier,
 } from "@/shared/dashboard/vipSpendTier";
+import { loadSalonVipPhones } from "@/shared/dashboard/salonVipStatus";
 
 /**
  * "Top khách chi tiêu" — the salon's biggest spenders, by real money paid
@@ -45,11 +46,11 @@ export async function loadTopSpenders(slug: string): Promise<LoadTopSpendersResu
     total_spend_cents?: number | null;
     payment_count?: number | null;
     last_payment_at?: string | null;
-    client_profiles?: { phone?: string | null; name?: string | null; is_vip?: boolean | null } | null;
+    client_profiles?: { phone?: string | null; name?: string | null } | null;
   };
   const { data, error } = await admin
     .from("salon_client_spend")
-    .select("total_spend_cents, payment_count, last_payment_at, client_profiles(phone, name, is_vip)")
+    .select("total_spend_cents, payment_count, last_payment_at, client_profiles(phone, name)")
     .eq("salon_id", ctx.salon.id)
     .order("total_spend_cents", { ascending: false })
     .limit(15);
@@ -66,6 +67,12 @@ export async function loadTopSpenders(slug: string): Promise<LoadTopSpendersResu
   // Per-salon display-name override (tenant-isolated rename) wins over the
   // shared profile name.
   const phones = rows.map((r) => String(r.client_profiles!.phone));
+  let vipPhones = new Set<string>();
+  try {
+    vipPhones = await loadSalonVipPhones(ctx.salon.id, phones);
+  } catch (vipError) {
+    console.error("[loadTopSpenders] salon vip status", vipError);
+  }
   const overrides = new Map<string, string>();
   if (phones.length > 0) {
     const { data: ov } = await admin
@@ -92,7 +99,7 @@ export async function loadTopSpenders(slug: string): Promise<LoadTopSpendersResu
     return {
       phone,
       name: overrides.get(phone) || r.client_profiles?.name?.trim() || null,
-      isVip: r.client_profiles?.is_vip === true,
+      isVip: vipPhones.has(phone),
       totalSpendCents,
       paymentCount: Number(r.payment_count ?? 0),
       lastPaymentAt: r.last_payment_at?.trim() ? String(r.last_payment_at) : null,

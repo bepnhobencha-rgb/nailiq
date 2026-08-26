@@ -39,7 +39,14 @@ export default defineConfig({
   testDir: "./e2e",
   // `*.unit.spec.ts` under e2e/ belongs to vitest (the production-guard unit
   // tests). Playwright must not try to run them as browser specs.
-  testIgnore: ["**/*.unit.spec.ts"],
+  // MQA-0032 owns a separate pinned production-build runner, config, port,
+  // source fingerprint, and disposable-database identity. Importing that spec
+  // in the generic receptionist shards fails closed before test discovery, so
+  // keep it exclusive to playwright.mqa-scroll.config.ts.
+  testIgnore: [
+    "**/*.unit.spec.ts",
+    "**/receptionist-center/smooth-scroll-performance.spec.ts",
+  ],
   // Refuses to run at all when the target looks like production, so no worker
   // can create a user, salon, staff row, booking or role grant there.
   globalSetup: "./e2e/helpers/globalSetup.ts",

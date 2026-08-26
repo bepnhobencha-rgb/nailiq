@@ -125,6 +125,7 @@ export function SalonSettingsHub({
   primaryGridAxis,
   smsOutboundEnabled,
   emailOutboundEnabled,
+  guidedFocusSection = null,
 }: {
   slug: string;
   dashboardModules: DashboardModulesConfig;
@@ -176,6 +177,8 @@ export function SalonSettingsHub({
   smsOutboundEnabled: boolean;
   /** Operator-level email kill-switch (default ON). */
   emailOutboundEnabled: boolean;
+  /** Guided onboarding exposes only the current settings job on every viewport. */
+  guidedFocusSection?: "notifications" | "integrations" | null;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -408,7 +411,7 @@ export function SalonSettingsHub({
           titleAccessory={<GearIcon className="h-8 w-8 sm:h-9 sm:w-9" />}
         />
 
-        {subscriptionPlan !== "free" ? (
+        {!guidedFocusSection && subscriptionPlan !== "free" ? (
           <div className="mb-3">
             <Badge
               data-testid={`settings-plan-badge-${subscriptionPlan}`}
@@ -522,7 +525,10 @@ export function SalonSettingsHub({
         <section
           data-testid="settings-desktop-overview"
           aria-labelledby="admin-settings-home-title"
-          className="hidden rounded-3xl border border-nq-border/40 bg-nq-surface/25 p-4 md:block"
+          className={cn(
+            "hidden rounded-3xl border border-nq-border/40 bg-nq-surface/25 p-4 md:block",
+            guidedFocusSection && "md:hidden",
+          )}
         >
           <div className="mb-3 px-1">
             <h2
@@ -576,7 +582,9 @@ export function SalonSettingsHub({
         </section>
 
         {/* ── Jump bar — quick anchors to each category ───────── */}
-        <div className="hidden md:block">
+        <div
+          className={cn("hidden md:block", guidedFocusSection && "md:hidden")}
+        >
           <SettingsJumpBar
             label={t.categories.jumpLabel}
             items={[
@@ -606,364 +614,370 @@ export function SalonSettingsHub({
         </div>
 
         {/* ══ Category: Notifications & reminders ══════════════ */}
-        <SettingsCategory
-          id="cat-notifications"
-          title={t.categories.notifications.title}
-          subtitle={t.categories.notifications.subtitle}
-          mobileFocused={activeMobileSection === "notifications"}
-          mobileBackHref={settingsHomeHref}
-          mobileBackLabel={vi ? "Cài đặt" : "Settings"}
-        >
-          {/* ── Notification email card ──────────────────────────── */}
-          <section
-            data-testid="settings-email-verification"
-            className={cn(
-              "mt-6 overflow-hidden rounded-2xl border bg-nq-surface/35",
-              emailVerified && salonEmail
-                ? "border-nq-primary/30"
-                : salonEmail
-                  ? "border-amber-500/30"
-                  : "border-nq-border/30",
-            )}
+        {!guidedFocusSection || guidedFocusSection === "notifications" ? (
+          <SettingsCategory
+            id="cat-notifications"
+            title={t.categories.notifications.title}
+            subtitle={t.categories.notifications.subtitle}
+            mobileFocused={activeMobileSection === "notifications"}
+            mobileBackHref={settingsHomeHref}
+            mobileBackLabel={vi ? "Cài đặt" : "Settings"}
           >
-            {/* Top accent stripe */}
-            <div
+            {/* ── Notification email card ──────────────────────────── */}
+            <section
+              data-testid="settings-email-verification"
               className={cn(
-                "h-0.5 w-full",
+                "mt-6 overflow-hidden rounded-2xl border bg-nq-surface/35",
                 emailVerified && salonEmail
-                  ? "bg-gradient-to-r from-nq-primary/60 to-transparent"
+                  ? "border-nq-primary/30"
                   : salonEmail
-                    ? "bg-gradient-to-r from-amber-500/60 to-transparent"
-                    : "bg-nq-border/40",
+                    ? "border-amber-500/30"
+                    : "border-nq-border/30",
               )}
-            />
+            >
+              {/* Top accent stripe */}
+              <div
+                className={cn(
+                  "h-0.5 w-full",
+                  emailVerified && salonEmail
+                    ? "bg-gradient-to-r from-nq-primary/60 to-transparent"
+                    : salonEmail
+                      ? "bg-gradient-to-r from-amber-500/60 to-transparent"
+                      : "bg-nq-border/40",
+                )}
+              />
 
-            <div className="px-4 py-4 space-y-3">
-              {/* Header */}
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-nq-foreground">
-                    {t.emailVerification.sectionTitle}
-                  </p>
-                  <p className="mt-0.5 text-xs text-nq-muted">
-                    {t.emailVerification.description}
-                  </p>
+              <div className="px-4 py-4 space-y-3">
+                {/* Header */}
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-nq-foreground">
+                      {t.emailVerification.sectionTitle}
+                    </p>
+                    <p className="mt-0.5 text-xs text-nq-muted">
+                      {t.emailVerification.description}
+                    </p>
+                  </div>
+                  {salonEmail ? (
+                    emailVerified ? (
+                      <Badge
+                        data-testid="settings-email-verified-badge"
+                        variant="success"
+                        state="default"
+                        size="sm"
+                      >
+                        {t.emailVerification.verifiedBadge}
+                      </Badge>
+                    ) : (
+                      <Badge
+                        data-testid="settings-email-pending-badge"
+                        variant="warning"
+                        state="default"
+                        size="sm"
+                      >
+                        {t.emailVerification.pendingBadge}
+                      </Badge>
+                    )
+                  ) : null}
                 </div>
-                {salonEmail ? (
-                  emailVerified ? (
-                    <Badge
-                      data-testid="settings-email-verified-badge"
-                      variant="success"
-                      state="default"
-                      size="sm"
-                    >
-                      {t.emailVerification.verifiedBadge}
-                    </Badge>
-                  ) : (
-                    <Badge
-                      data-testid="settings-email-pending-badge"
-                      variant="warning"
-                      state="default"
-                      size="sm"
-                    >
-                      {t.emailVerification.pendingBadge}
-                    </Badge>
-                  )
+
+                {/* Verified / error flash from URL params */}
+                {verified ? (
+                  <p
+                    role="status"
+                    data-testid="settings-email-verified-toast"
+                    className="rounded-lg border border-nq-success/40 bg-nq-success/10 px-3 py-2 text-xs text-nq-success"
+                  >
+                    {t.emailVerification.verifiedToast}
+                  </p>
                 ) : null}
-              </div>
+                {verifyError ? (
+                  <p
+                    role="alert"
+                    data-testid="settings-email-verify-error"
+                    className="rounded-lg border border-nq-error/40 bg-nq-error/10 px-3 py-2 text-xs text-nq-error"
+                  >
+                    {t.emailVerification.verifyErrorPrefix}
+                    {verifyError}
+                  </p>
+                ) : null}
 
-              {/* Verified / error flash from URL params */}
-              {verified ? (
-                <p
-                  role="status"
-                  data-testid="settings-email-verified-toast"
-                  className="rounded-lg border border-nq-success/40 bg-nq-success/10 px-3 py-2 text-xs text-nq-success"
-                >
-                  {t.emailVerification.verifiedToast}
-                </p>
-              ) : null}
-              {verifyError ? (
-                <p
-                  role="alert"
-                  data-testid="settings-email-verify-error"
-                  className="rounded-lg border border-nq-error/40 bg-nq-error/10 px-3 py-2 text-xs text-nq-error"
-                >
-                  {t.emailVerification.verifyErrorPrefix}
-                  {verifyError}
-                </p>
-              ) : null}
+                {/* Current email display */}
+                {salonEmail ? (
+                  <p className="break-all font-mono text-sm text-nq-foreground">
+                    {salonEmail}
+                  </p>
+                ) : (
+                  <p className="text-sm text-nq-muted/70">
+                    {t.emailVerification.noEmailHint}
+                  </p>
+                )}
 
-              {/* Current email display */}
-              {salonEmail ? (
-                <p className="break-all font-mono text-sm text-nq-foreground">
-                  {salonEmail}
-                </p>
-              ) : (
-                <p className="text-sm text-nq-muted/70">
-                  {t.emailVerification.noEmailHint}
-                </p>
-              )}
+                {/* Pending hint */}
+                {salonEmail && !emailVerified ? (
+                  <p className="text-xs text-nq-muted">
+                    {t.emailVerification.pendingHint}
+                  </p>
+                ) : null}
 
-              {/* Pending hint */}
-              {salonEmail && !emailVerified ? (
-                <p className="text-xs text-nq-muted">
-                  {t.emailVerification.pendingHint}
-                </p>
-              ) : null}
+                {/* Success / error from inline save */}
+                {emailEditSuccess ? (
+                  <p className="rounded-lg border border-nq-success/40 bg-nq-success/10 px-3 py-2 text-xs text-nq-success">
+                    {t.emailVerification.saveSuccess}
+                  </p>
+                ) : null}
+                {resendSent ? (
+                  <p className="rounded-lg border border-nq-success/40 bg-nq-success/10 px-3 py-2 text-xs text-nq-success">
+                    {t.emailVerification.resendSent}
+                  </p>
+                ) : null}
+                {emailEditError ? (
+                  <p className="rounded-lg border border-nq-error/40 bg-nq-error/10 px-3 py-2 text-xs text-nq-error">
+                    {emailEditError}
+                  </p>
+                ) : null}
 
-              {/* Success / error from inline save */}
-              {emailEditSuccess ? (
-                <p className="rounded-lg border border-nq-success/40 bg-nq-success/10 px-3 py-2 text-xs text-nq-success">
-                  {t.emailVerification.saveSuccess}
-                </p>
-              ) : null}
-              {resendSent ? (
-                <p className="rounded-lg border border-nq-success/40 bg-nq-success/10 px-3 py-2 text-xs text-nq-success">
-                  {t.emailVerification.resendSent}
-                </p>
-              ) : null}
-              {emailEditError ? (
-                <p className="rounded-lg border border-nq-error/40 bg-nq-error/10 px-3 py-2 text-xs text-nq-error">
-                  {emailEditError}
-                </p>
-              ) : null}
+                {/* Action buttons (owner/admin only) */}
+                {canManageSalonSettings ? (
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    {/* Resend verification — only when pending */}
+                    {salonEmail && !emailVerified ? (
+                      <button
+                        type="button"
+                        data-testid="settings-email-resend"
+                        disabled={resendPending}
+                        onClick={() => {
+                          setResendSent(false);
+                          startResendTransition(async () => {
+                            await resendVerification(slug);
+                            setResendSent(true);
+                            setTimeout(() => setResendSent(false), 4000);
+                          });
+                        }}
+                        className="inline-flex min-h-11 touch-manipulation items-center rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-400 transition hover:bg-amber-500/15 disabled:opacity-50"
+                      >
+                        {resendPending ? "…" : t.emailVerification.resendButton}
+                      </button>
+                    ) : null}
 
-              {/* Action buttons (owner/admin only) */}
-              {canManageSalonSettings ? (
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  {/* Resend verification — only when pending */}
-                  {salonEmail && !emailVerified ? (
+                    {/* Change email toggle */}
                     <button
                       type="button"
-                      data-testid="settings-email-resend"
-                      disabled={resendPending}
+                      data-testid="settings-email-change"
                       onClick={() => {
-                        setResendSent(false);
-                        startResendTransition(async () => {
-                          await resendVerification(slug);
-                          setResendSent(true);
-                          setTimeout(() => setResendSent(false), 4000);
-                        });
+                        setEmailEditOpen((v) => !v);
+                        setEmailEditError(null);
+                        setEmailEditSuccess(false);
+                        setNewEmailInput(salonEmail ?? "");
                       }}
-                      className="inline-flex min-h-11 touch-manipulation items-center rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-400 transition hover:bg-amber-500/15 disabled:opacity-50"
-                    >
-                      {resendPending ? "…" : t.emailVerification.resendButton}
-                    </button>
-                  ) : null}
-
-                  {/* Change email toggle */}
-                  <button
-                    type="button"
-                    data-testid="settings-email-change"
-                    onClick={() => {
-                      setEmailEditOpen((v) => !v);
-                      setEmailEditError(null);
-                      setEmailEditSuccess(false);
-                      setNewEmailInput(salonEmail ?? "");
-                    }}
-                    className={cn(
-                      "inline-flex min-h-11 touch-manipulation items-center rounded-lg border px-3 py-2 text-xs font-medium transition",
-                      emailEditOpen
-                        ? "border-nq-border bg-nq-border/20 text-nq-muted"
-                        : "border-nq-border bg-nq-surface text-nq-foreground hover:border-nq-primary/40 hover:text-nq-primary",
-                    )}
-                  >
-                    {emailEditOpen
-                      ? t.emailVerification.cancelButton
-                      : t.emailVerification.changeButton}
-                  </button>
-                </div>
-              ) : null}
-
-              {/* Inline edit form */}
-              {emailEditOpen && canManageSalonSettings ? (
-                <form
-                  className="flex flex-wrap items-center gap-2 border-t border-nq-border/20 pt-3"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    setEmailEditError(null);
-                    setEmailEditSuccess(false);
-                    const val = newEmailInput.trim();
-                    if (!val || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
-                      setEmailEditError(t.emailVerification.invalidEmail);
-                      return;
-                    }
-                    startEmailEditTransition(async () => {
-                      const res = await addSalonEmail(slug, val);
-                      if (!res.ok) {
-                        setEmailEditError(
-                          res.error === "invalid_email"
-                            ? t.emailVerification.invalidEmail
-                            : t.emailVerification.saveError,
-                        );
-                        return;
-                      }
-                      setEmailEditSuccess(true);
-                      setEmailEditOpen(false);
-                      router.refresh();
-                      setTimeout(() => setEmailEditSuccess(false), 5000);
-                    });
-                  }}
-                >
-                  <input
-                    type="email"
-                    data-testid="settings-email-input"
-                    autoComplete="email"
-                    placeholder="you@example.com"
-                    value={newEmailInput}
-                    onChange={(e) => setNewEmailInput(e.target.value)}
-                    className="min-h-11 flex-1 min-w-0 rounded-lg border border-nq-border bg-nq-bg px-3 py-2 text-base text-nq-foreground placeholder:text-nq-muted/60 focus:outline-none focus:ring-2 focus:ring-nq-primary/40"
-                  />
-                  <button
-                    type="submit"
-                    data-testid="settings-email-save"
-                    disabled={emailEditPending}
-                    className="inline-flex min-h-11 touch-manipulation items-center rounded-lg border border-nq-primary/40 bg-nq-primary/10 px-4 py-2 text-xs font-semibold text-nq-primary transition hover:bg-nq-primary/15 disabled:opacity-50"
-                  >
-                    {emailEditPending
-                      ? t.emailVerification.saving
-                      : t.emailVerification.saveButton}
-                  </button>
-                </form>
-              ) : null}
-            </div>
-          </section>
-
-          {/* ── Reminder toggle ─────────────────────────────────── */}
-          {canManageSalonSettings ? (
-            <section
-              data-testid="settings-reminder-toggle"
-              className="mt-6 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-4"
-            >
-              <div className="flex items-center justify-between gap-4">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-nq-foreground">
-                    {t.reminders.autoTitle}
-                  </p>
-                  <p className="mt-0.5 text-xs text-nq-muted">
-                    {!smsOutboundEnabled && emailOutboundEnabled
-                      ? language === "vi"
-                        ? "Chỉ gửi email — SMS đang tắt trong Kênh liên lạc với khách."
-                        : "Email only — SMS is disabled in Customer communication."
-                      : !emailOutboundEnabled && smsOutboundEnabled
-                        ? language === "vi"
-                          ? "Chỉ gửi SMS — email đang tắt trong Kênh liên lạc với khách."
-                          : "SMS only — email is disabled in Customer communication."
-                        : !emailOutboundEnabled && !smsOutboundEnabled
-                          ? language === "vi"
-                            ? "Chưa có kênh gửi nào được bật."
-                            : "No delivery channel is currently enabled."
-                          : t.reminders.autoHint}
-                  </p>
-                </div>
-                <Toggle
-                  checked={reminderOn}
-                  disabled={reminderPending}
-                  aria-label={t.reminders.autoTitle}
-                  onChange={handleReminderToggle}
-                />
-              </div>
-
-              <button
-                type="button"
-                data-testid="settings-reminder-advanced"
-                onClick={() => setReminderAdvOpen((v) => !v)}
-                className="mt-3 flex min-h-11 touch-manipulation items-center gap-1 rounded-lg px-2 py-2 text-xs text-nq-muted underline-offset-2 hover:bg-nq-bg/50 hover:text-nq-foreground hover:underline"
-                aria-expanded={reminderAdvOpen}
-              >
-                {t.reminders.advancedToggle}
-                <span aria-hidden className="text-[10px]">
-                  {reminderAdvOpen ? "▲" : "▼"}
-                </span>
-              </button>
-
-              {reminderAdvOpen && (
-                <div className="mt-3 flex flex-col gap-3 border-t border-nq-border/20 pt-3">
-                  {(
-                    [
-                      {
-                        key: "24h",
-                        label: t.reminders.email24h,
-                        checked: emailOutboundEnabled && adv24h,
-                        set: setAdv24h,
-                        available: emailOutboundEnabled,
-                      },
-                      {
-                        key: "3h",
-                        label: t.reminders.email3h,
-                        checked: emailOutboundEnabled && adv3h,
-                        set: setAdv3h,
-                        available: emailOutboundEnabled,
-                      },
-                      {
-                        key: "sms",
-                        label: t.reminders.sms3h,
-                        checked: smsOutboundEnabled && advSms,
-                        set: setAdvSms,
-                        available: smsOutboundEnabled,
-                      },
-                    ] as const
-                  ).map(({ key, label, checked, set, available }) => (
-                    <label
-                      key={key}
-                      data-testid={`settings-reminder-option-${key}`}
                       className={cn(
-                        "flex min-h-11 touch-manipulation items-center gap-3 rounded-lg px-2 py-2 text-sm",
-                        available
-                          ? "cursor-pointer text-nq-foreground"
-                          : "cursor-not-allowed text-nq-muted",
+                        "inline-flex min-h-11 touch-manipulation items-center rounded-lg border px-3 py-2 text-xs font-medium transition",
+                        emailEditOpen
+                          ? "border-nq-border bg-nq-border/20 text-nq-muted"
+                          : "border-nq-border bg-nq-surface text-nq-foreground hover:border-nq-primary/40 hover:text-nq-primary",
                       )}
                     >
-                      <input
-                        type="checkbox"
-                        className="h-5 w-5 rounded border-nq-border/60 text-nq-primary focus:ring-nq-primary/40"
-                        checked={checked}
-                        disabled={reminderPending || !available}
-                        onChange={(e) => set(e.target.checked)}
-                      />
-                      {label}
-                    </label>
-                  ))}
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      data-testid="settings-reminder-advanced-save"
-                      disabled={reminderPending}
-                      onClick={handleReminderAdvSave}
-                      className="inline-flex min-h-11 touch-manipulation items-center rounded-xl border border-nq-primary/40 bg-nq-primary/10 px-3 py-2 text-xs font-semibold text-nq-primary transition hover:bg-nq-primary/15 disabled:opacity-50"
-                    >
-                      {reminderPending ? t.reminders.saving : t.reminders.save}
+                      {emailEditOpen
+                        ? t.emailVerification.cancelButton
+                        : t.emailVerification.changeButton}
                     </button>
-                    {advSaved ? (
-                      <span className="text-xs text-nq-success">
-                        {t.reminders.saved}
-                      </span>
-                    ) : null}
                   </div>
-                </div>
-              )}
+                ) : null}
+
+                {/* Inline edit form */}
+                {emailEditOpen && canManageSalonSettings ? (
+                  <form
+                    className="flex flex-wrap items-center gap-2 border-t border-nq-border/20 pt-3"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      setEmailEditError(null);
+                      setEmailEditSuccess(false);
+                      const val = newEmailInput.trim();
+                      if (!val || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
+                        setEmailEditError(t.emailVerification.invalidEmail);
+                        return;
+                      }
+                      startEmailEditTransition(async () => {
+                        const res = await addSalonEmail(slug, val);
+                        if (!res.ok) {
+                          setEmailEditError(
+                            res.error === "invalid_email"
+                              ? t.emailVerification.invalidEmail
+                              : t.emailVerification.saveError,
+                          );
+                          return;
+                        }
+                        setEmailEditSuccess(true);
+                        setEmailEditOpen(false);
+                        router.refresh();
+                        setTimeout(() => setEmailEditSuccess(false), 5000);
+                      });
+                    }}
+                  >
+                    <input
+                      type="email"
+                      data-testid="settings-email-input"
+                      autoComplete="email"
+                      placeholder="you@example.com"
+                      value={newEmailInput}
+                      onChange={(e) => setNewEmailInput(e.target.value)}
+                      className="min-h-11 flex-1 min-w-0 rounded-lg border border-nq-border bg-nq-bg px-3 py-2 text-base text-nq-foreground placeholder:text-nq-muted/60 focus:outline-none focus:ring-2 focus:ring-nq-primary/40"
+                    />
+                    <button
+                      type="submit"
+                      data-testid="settings-email-save"
+                      disabled={emailEditPending}
+                      className="inline-flex min-h-11 touch-manipulation items-center rounded-lg border border-nq-primary/40 bg-nq-primary/10 px-4 py-2 text-xs font-semibold text-nq-primary transition hover:bg-nq-primary/15 disabled:opacity-50"
+                    >
+                      {emailEditPending
+                        ? t.emailVerification.saving
+                        : t.emailVerification.saveButton}
+                    </button>
+                  </form>
+                ) : null}
+              </div>
             </section>
-          ) : null}
 
-          {/* ── Customer channel (SMS / email / A2P status) ─────── */}
-          {canManageSalonSettings ? <CustomerChannelCard slug={slug} /> : null}
+            {/* ── Reminder toggle ─────────────────────────────────── */}
+            {canManageSalonSettings ? (
+              <section
+                data-testid="settings-reminder-toggle"
+                className="mt-6 rounded-2xl border border-nq-border/30 bg-nq-surface/35 px-4 py-4"
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-nq-foreground">
+                      {t.reminders.autoTitle}
+                    </p>
+                    <p className="mt-0.5 text-xs text-nq-muted">
+                      {!smsOutboundEnabled && emailOutboundEnabled
+                        ? language === "vi"
+                          ? "Chỉ gửi email — SMS đang tắt trong Kênh liên lạc với khách."
+                          : "Email only — SMS is disabled in Customer communication."
+                        : !emailOutboundEnabled && smsOutboundEnabled
+                          ? language === "vi"
+                            ? "Chỉ gửi SMS — email đang tắt trong Kênh liên lạc với khách."
+                            : "SMS only — email is disabled in Customer communication."
+                          : !emailOutboundEnabled && !smsOutboundEnabled
+                            ? language === "vi"
+                              ? "Chưa có kênh gửi nào được bật."
+                              : "No delivery channel is currently enabled."
+                            : t.reminders.autoHint}
+                    </p>
+                  </div>
+                  <Toggle
+                    checked={reminderOn}
+                    disabled={reminderPending}
+                    aria-label={t.reminders.autoTitle}
+                    onChange={handleReminderToggle}
+                  />
+                </div>
 
-          {/* ── Manager + staff notification cards ──────────────── */}
-          {canManageSalonSettings ? (
-            <OwnerNotificationCard slug={slug} />
-          ) : null}
-          {canManageSalonSettings ? (
-            <StaffNotificationCard
-              slug={slug}
-              smsOutboundEnabled={smsOutboundEnabled}
-              emailOutboundEnabled={emailOutboundEnabled}
-            />
-          ) : null}
-          {canManageSalonSettings ? <AIReportCard slug={slug} /> : null}
-        </SettingsCategory>
+                <button
+                  type="button"
+                  data-testid="settings-reminder-advanced"
+                  onClick={() => setReminderAdvOpen((v) => !v)}
+                  className="mt-3 flex min-h-11 touch-manipulation items-center gap-1 rounded-lg px-2 py-2 text-xs text-nq-muted underline-offset-2 hover:bg-nq-bg/50 hover:text-nq-foreground hover:underline"
+                  aria-expanded={reminderAdvOpen}
+                >
+                  {t.reminders.advancedToggle}
+                  <span aria-hidden className="text-[10px]">
+                    {reminderAdvOpen ? "▲" : "▼"}
+                  </span>
+                </button>
+
+                {reminderAdvOpen && (
+                  <div className="mt-3 flex flex-col gap-3 border-t border-nq-border/20 pt-3">
+                    {(
+                      [
+                        {
+                          key: "24h",
+                          label: t.reminders.email24h,
+                          checked: emailOutboundEnabled && adv24h,
+                          set: setAdv24h,
+                          available: emailOutboundEnabled,
+                        },
+                        {
+                          key: "3h",
+                          label: t.reminders.email3h,
+                          checked: emailOutboundEnabled && adv3h,
+                          set: setAdv3h,
+                          available: emailOutboundEnabled,
+                        },
+                        {
+                          key: "sms",
+                          label: t.reminders.sms3h,
+                          checked: smsOutboundEnabled && advSms,
+                          set: setAdvSms,
+                          available: smsOutboundEnabled,
+                        },
+                      ] as const
+                    ).map(({ key, label, checked, set, available }) => (
+                      <label
+                        key={key}
+                        data-testid={`settings-reminder-option-${key}`}
+                        className={cn(
+                          "flex min-h-11 touch-manipulation items-center gap-3 rounded-lg px-2 py-2 text-sm",
+                          available
+                            ? "cursor-pointer text-nq-foreground"
+                            : "cursor-not-allowed text-nq-muted",
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-5 w-5 rounded border-nq-border/60 text-nq-primary focus:ring-nq-primary/40"
+                          checked={checked}
+                          disabled={reminderPending || !available}
+                          onChange={(e) => set(e.target.checked)}
+                        />
+                        {label}
+                      </label>
+                    ))}
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        data-testid="settings-reminder-advanced-save"
+                        disabled={reminderPending}
+                        onClick={handleReminderAdvSave}
+                        className="inline-flex min-h-11 touch-manipulation items-center rounded-xl border border-nq-primary/40 bg-nq-primary/10 px-3 py-2 text-xs font-semibold text-nq-primary transition hover:bg-nq-primary/15 disabled:opacity-50"
+                      >
+                        {reminderPending
+                          ? t.reminders.saving
+                          : t.reminders.save}
+                      </button>
+                      {advSaved ? (
+                        <span className="text-xs text-nq-success">
+                          {t.reminders.saved}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
+              </section>
+            ) : null}
+
+            {/* ── Customer channel (SMS / email / A2P status) ─────── */}
+            {canManageSalonSettings ? (
+              <CustomerChannelCard slug={slug} />
+            ) : null}
+
+            {/* ── Manager + staff notification cards ──────────────── */}
+            {canManageSalonSettings ? (
+              <OwnerNotificationCard slug={slug} />
+            ) : null}
+            {canManageSalonSettings ? (
+              <StaffNotificationCard
+                slug={slug}
+                smsOutboundEnabled={smsOutboundEnabled}
+                emailOutboundEnabled={emailOutboundEnabled}
+              />
+            ) : null}
+            {canManageSalonSettings ? <AIReportCard slug={slug} /> : null}
+          </SettingsCategory>
+        ) : null}
 
         {/* ══ Category: Brand & booking page ═══════════════════ */}
-        {canManageSalonSettings ? (
+        {canManageSalonSettings && !guidedFocusSection ? (
           <SettingsCategory
             id="cat-brand"
             title={t.categories.brand.title}
@@ -985,7 +999,7 @@ export function SalonSettingsHub({
         ) : null}
 
         {/* ══ Category: Booking & queue ════════════════════════ */}
-        {canManageSalonSettings ? (
+        {canManageSalonSettings && !guidedFocusSection ? (
           <SettingsCategory
             id="cat-booking"
             title={t.categories.booking.title}
@@ -1071,7 +1085,7 @@ export function SalonSettingsHub({
         ) : null}
 
         {/* ══ Category: AI Manager ═════════════════════════════ */}
-        {canManageSalonSettings ? (
+        {canManageSalonSettings && !guidedFocusSection ? (
           <SettingsCategory
             id="cat-ai-manager"
             title={vi ? "AI Quản Lý" : "AI Manager"}
@@ -1121,7 +1135,8 @@ export function SalonSettingsHub({
         ) : null}
 
         {/* ══ Category: Integrations ═══════════════════════════ */}
-        {canManageSalonSettings ? (
+        {canManageSalonSettings &&
+        (!guidedFocusSection || guidedFocusSection === "integrations") ? (
           <SettingsCategory
             id="cat-integrations"
             title={t.categories.integrations.title}
@@ -1187,7 +1202,7 @@ export function SalonSettingsHub({
         ) : null}
 
         {/* ══ Category: Plan & advanced ════════════════════════ */}
-        {canManageSalonSettings ? (
+        {canManageSalonSettings && !guidedFocusSection ? (
           <SettingsCategory
             id="cat-plan"
             title={t.categories.plan.title}
@@ -1290,13 +1305,15 @@ export function SalonSettingsHub({
         {/* ══ Mobile-only: Account / Sign out ══════════════════
             Desktop users reach Sign Out via the sidebar account menu.
             This section is hidden on md+ screens. ══════════════ */}
-        <MobileAccountCard
-          userEmail={userEmail}
-          role={role}
-          slug={slug}
-          salonName={salonName}
-          salons={salons}
-        />
+        {!guidedFocusSection ? (
+          <MobileAccountCard
+            userEmail={userEmail}
+            role={role}
+            slug={slug}
+            salonName={salonName}
+            salons={salons}
+          />
+        ) : null}
       </MobileStack>
     </ResponsiveShell>
   );

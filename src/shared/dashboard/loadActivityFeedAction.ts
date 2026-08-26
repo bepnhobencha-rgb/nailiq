@@ -138,6 +138,7 @@ const ROLE_LABEL: Record<string, string> = {
 
 const NOTIF_TITLE: Record<string, string> = {
   booking_confirmation: "Xác nhận đặt lịch",
+  staff_action: "Cập nhật lịch hẹn từ salon",
   reminder_24h: "Nhắc trước 24 giờ",
   reminder_3h: "Nhắc trước 3 giờ",
   review_request: "Mời đánh giá",

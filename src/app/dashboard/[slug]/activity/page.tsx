@@ -3,9 +3,8 @@ import { redirect } from "next/navigation";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { loadActivityFeed } from "@/shared/dashboard/loadActivityFeedAction";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
-import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
-import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { isArchivedBookingFeatureAvailable } from "@/shared/dashboard/archivedBookingFeatureAccess";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -22,30 +21,9 @@ export default async function ActivityPage({ params }: Props) {
 
   const res = await loadActivityFeed(slug);
   const items = res.ok ? res.items : [];
-  const { data: flagSalon, error: flagError } = await ctx.supabase
-    .from("salons")
-    .select("subscription_plan, plan_override, feature_flags, voice_ai_enabled")
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
-  // Archived recovery has its own default-off release gate. Fail closed on the
-  // tenant flag read; the activity timeline itself remains available read-only.
-  let archivedBookingFeatureEnabled =
-    !flagError &&
-    Boolean(flagSalon) &&
-    (await isReleaseFeatureVisible(
-      flagSalon ?? {},
-      "archived_booking_recovery",
-    ));
-  if (archivedBookingFeatureEnabled) {
-    const { data: wixIntegration, error: wixError } =
-      await createServiceRoleClient()
-        .from("wix_integrations")
-        .select("salon_id")
-        .eq("salon_id", ctx.salon.id)
-        .eq("enabled", true)
-        .maybeSingle();
-    archivedBookingFeatureEnabled = !wixError && !wixIntegration?.salon_id;
-  }
+  // The central member-profile RPC already returned an allowlisted flag map.
+  const archivedBookingFeatureEnabled =
+    await isArchivedBookingFeatureAvailable(ctx.salon);
   // Serialize one server-owned clock snapshot. ActivityFeed uses this exact
   // instant for SSR and its first client render, preventing React #418 when a
   // relative-time label crosses a minute boundary during hydration.

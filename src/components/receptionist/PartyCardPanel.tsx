@@ -15,7 +15,7 @@
  *   - Cards are scoped to the caller's salon by the server action.
  */
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { loadPartyCardsAction, type PartyCard, type PartyCardSlot } from "@/shared/dashboard/loadPartyCardsAction";
 import { cancelDeskGroup } from "@/shared/dashboard/receptionistActions";
 import type { Currency } from "@/shared/lib/currencyFormat";
@@ -50,6 +50,7 @@ export function PartyCardPanel({ initialCards, slug, salonId, currencyCode, labe
   const [, startCancelTransition] = useTransition();
   const [copyStates, setCopyStates] = useState<Record<string, "idle" | "copied">>({});
   const [cancelStates, setCancelStates] = useState<Record<string, CancelState>>({});
+  const cancelRequestIdsRef = useRef<Map<string, string>>(new Map());
 
   const todayCount = cards.filter((c) => !c.expired).length;
 
@@ -67,8 +68,16 @@ export function PartyCardPanel({ initialCards, slug, salonId, currencyCode, labe
   function handleCancelGroup(card: PartyCard, notify: { sms: boolean; email: boolean }) {
     setCancelState(card.groupId, "cancelling");
     startCancelTransition(async () => {
-      const result = await cancelDeskGroup(slug, { salonId, groupId: card.groupId, notify });
+      const requestId = cancelRequestIdsRef.current.get(card.groupId) ?? crypto.randomUUID();
+      cancelRequestIdsRef.current.set(card.groupId, requestId);
+      const result = await cancelDeskGroup(slug, {
+        salonId,
+        groupId: card.groupId,
+        requestId,
+        notify,
+      });
       if (result.ok) {
+        cancelRequestIdsRef.current.delete(card.groupId);
         // Refresh from the server so the cancelled party drops off the strip.
         const refreshed = await loadPartyCardsAction(slug);
         if (refreshed.ok) setCards(refreshed.cards);

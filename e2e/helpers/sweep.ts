@@ -45,6 +45,18 @@ export async function sweep(): Promise<{ users: number; salons: number }> {
       // Drop the privilege grant first: a partial failure must never leave an
       // account behind that still holds superadmin.
       await supabase.from("superadmins").delete().eq("user_id", user.id);
+      // Feature-flag tests restore the global value but deliberately retain
+      // who last changed it. `platform_flags.updated_by` is a nullable NO
+      // ACTION FK, so auth.admin.deleteUser otherwise fails and leaks the test
+      // identity even though every owned salon/member row is gone. Preserve
+      // the flag while removing only the marker-owned actor reference.
+      const { error: flagActorError } = await supabase
+        .from("platform_flags" as never)
+        .update({ updated_by: null } as never)
+        .eq("updated_by" as never, user.id);
+      if (flagActorError) {
+        console.warn(`[e2e-sweep] could not clear platform flag actor ${user.id}: ${flagActorError.message}`);
+      }
       const { error: delErr } = await supabase.auth.admin.deleteUser(user.id);
       if (delErr) {
         console.warn(`[e2e-sweep] keep ${user.id}: ${delErr.message}`);

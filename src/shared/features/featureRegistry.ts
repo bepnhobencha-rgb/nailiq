@@ -54,6 +54,7 @@ export type BaseFeatureKey =
 export type BetaFeatureKey =
   | "group_booking"
   | "ai_voice"
+  | "ai_text_receptionist"
   | "loyalty"
   | "reviews"
   | "photos"
@@ -66,8 +67,10 @@ export type BetaFeatureKey =
   | "ai_control_center"
   | "receptionist_shell_v2"
   | "waitlist_attention"
+  | "guided_admin_setup"
   | "nail_tryon"
-  | "archived_booking_recovery";
+  | "archived_booking_recovery"
+  | "multi_service_booking";
 
 export type ReleaseFeatureKey = BaseFeatureKey | BetaFeatureKey;
 
@@ -96,7 +99,13 @@ export type ReleaseFeatureDescriptor = {
   /** Human label (EN); VI labels live with the SuperAdmin descriptors in PR4. */
   label: string;
   /** Grouping for docs / future SuperAdmin UI. */
-  group: "booking" | "operations" | "catalog" | "customers" | "analytics" | "platform";
+  group:
+    | "booking"
+    | "operations"
+    | "catalog"
+    | "customers"
+    | "analytics"
+    | "platform";
   phase: ReleasePhase;
   /** Base → true, Beta → false. The no-override default. */
   defaultOn: boolean;
@@ -121,7 +130,10 @@ export type ReleaseFeatureDescriptor = {
  * All other keys are registry-only for now (resolve from `defaultOn`); a
  * per-salon SuperAdmin store is added for them in PR4.
  */
-export const RELEASE_FEATURES: Record<ReleaseFeatureKey, ReleaseFeatureDescriptor> = {
+export const RELEASE_FEATURES: Record<
+  ReleaseFeatureKey,
+  ReleaseFeatureDescriptor
+> = {
   // ── Base (ON) ──────────────────────────────────────────────────────────
   public_booking: {
     key: "public_booking",
@@ -148,7 +160,8 @@ export const RELEASE_FEATURES: Record<ReleaseFeatureKey, ReleaseFeatureDescripto
     phase: "base",
     defaultOn: true,
     source: { kind: "registry" },
-    description: "Per-device simplified front-desk layout (localStorage toggle).",
+    description:
+      "Per-device simplified front-desk layout (localStorage toggle).",
   },
   walkin_queue: {
     key: "walkin_queue",
@@ -232,6 +245,16 @@ export const RELEASE_FEATURES: Record<ReleaseFeatureKey, ReleaseFeatureDescripto
     defaultOn: false,
     source: { kind: "column", column: "voice_ai_enabled" },
     description: "AI voice receptionist (WebRTC voice booking).",
+  },
+  ai_text_receptionist: {
+    key: "ai_text_receptionist",
+    label: "AI Text Receptionist",
+    group: "booking",
+    phase: "beta",
+    defaultOn: false,
+    source: { kind: "jsonb", flagKey: "ai_text_receptionist_enabled" },
+    description:
+      "Public text assistant for booking-safe service, price, and hours questions.",
   },
   loyalty: {
     key: "loyalty",
@@ -345,6 +368,16 @@ export const RELEASE_FEATURES: Record<ReleaseFeatureKey, ReleaseFeatureDescripto
     description:
       "Realtime Action Center alert and bounded sound reminder for unresolved online waitlist requests.",
   },
+  guided_admin_setup: {
+    key: "guided_admin_setup",
+    label: "Guided Admin Setup",
+    group: "platform",
+    phase: "beta",
+    defaultOn: false,
+    source: { kind: "jsonb", flagKey: "guided_admin_setup_enabled" },
+    description:
+      "One-next-step onboarding driven by the salon's real go-live readiness.",
+  },
   nail_tryon: {
     key: "nail_tryon",
     label: "AI Nail Try-On",
@@ -352,7 +385,8 @@ export const RELEASE_FEATURES: Record<ReleaseFeatureKey, ReleaseFeatureDescripto
     phase: "beta",
     defaultOn: false,
     source: { kind: "jsonb", flagKey: "nail_tryon_enabled" },
-    description: "Private hand-photo preview with a salon nail design before booking.",
+    description:
+      "Private hand-photo preview with a salon nail design before booking.",
   },
   archived_booking_recovery: {
     key: "archived_booking_recovery",
@@ -367,7 +401,54 @@ export const RELEASE_FEATURES: Record<ReleaseFeatureKey, ReleaseFeatureDescripto
     description:
       "Create a linked replacement for a cancelled/no-show booking without reopening history.",
   },
+  multi_service_booking: {
+    key: "multi_service_booking",
+    label: "Multi-service Booking",
+    group: "booking",
+    phase: "beta",
+    defaultOn: false,
+    source: { kind: "jsonb", flagKey: "multi_service_booking_enabled" },
+    description:
+      "QA-only ordered 1–5 service sequence with authoritative prep, staff, schedule, and receipt.",
+  },
 };
+
+/**
+ * Tenant flags whose rollout is intentionally unavailable from the generic
+ * SuperAdmin release/override editors. They require a dedicated, allowlisted
+ * QA setter with its own readiness and production-salon preflight. Until that
+ * boundary exists, the safe state is read-only/default-OFF.
+ */
+export const CONTROLLED_ROLLOUT_RELEASE_FLAG_KEYS: ReadonlySet<string> =
+  new Set(["guided_admin_setup_enabled", "multi_service_booking_enabled"]);
+
+export function containsControlledRolloutFlagMutation(
+  featureFlags: unknown,
+  featureFlagsUnset: unknown,
+): boolean {
+  const writes =
+    featureFlags !== null &&
+    typeof featureFlags === "object" &&
+    !Array.isArray(featureFlags)
+      ? (featureFlags as Record<string, unknown>)
+      : null;
+  if (
+    writes &&
+    [...CONTROLLED_ROLLOUT_RELEASE_FLAG_KEYS].some((key) =>
+      Object.prototype.hasOwnProperty.call(writes, key),
+    )
+  ) {
+    return true;
+  }
+  return (
+    Array.isArray(featureFlagsUnset) &&
+    featureFlagsUnset.some(
+      (key) =>
+        typeof key === "string" &&
+        CONTROLLED_ROLLOUT_RELEASE_FLAG_KEYS.has(key),
+    )
+  );
+}
 
 /** Ordered key list (stable for iteration / docs / tests). */
 export const RELEASE_FEATURE_KEYS = Object.keys(
@@ -595,7 +676,10 @@ export function releaseFeatureEditableFlagKey(
   key: ReleaseFeatureKey,
 ): string | null {
   const source = RELEASE_FEATURES[key].source;
-  return source.kind === "jsonb" ? source.flagKey : null;
+  return source.kind === "jsonb" &&
+    !CONTROLLED_ROLLOUT_RELEASE_FLAG_KEYS.has(source.flagKey)
+    ? source.flagKey
+    : null;
 }
 
 /** True when a release feature is per-salon-editable via the release panel. */

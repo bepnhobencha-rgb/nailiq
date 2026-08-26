@@ -3,6 +3,7 @@ import { looseServiceClient, type Row } from "@/shared/integrations/square/loose
 import { getSquareConfig } from "@/shared/integrations/square/client";
 import { SquareProvider } from "./square";
 import type { PaymentProvider, PaymentProviderKind } from "./types";
+import { v1AllowsCustomerPaymentGateway } from "@/shared/release/v1IntegrationScope";
 
 export type { PaymentProvider } from "./types";
 
@@ -14,24 +15,31 @@ export type { PaymentProvider } from "./types";
  */
 export async function resolvePaymentProvider(
   salonId: string,
+  options?: { strict?: boolean },
 ): Promise<PaymentProvider | null> {
+  if (!v1AllowsCustomerPaymentGateway()) {
+    if (options?.strict) throw new Error("v1_customer_payment_gateway_disabled");
+    return null;
+  }
   const db = looseServiceClient();
 
-  const { data: salonRow } = await db
+  const { data: salonRow, error: salonError } = await db
     .from("salons")
     .select("payment_provider")
     .eq("id", salonId)
     .maybeSingle();
+  if (options?.strict && (salonError || !salonRow)) throw new Error("payment_provider_config_unavailable");
   let kind =
     ((salonRow as Row | null)?.payment_provider as PaymentProviderKind | null) ??
     null;
 
   if (!kind) {
-    const { data: si } = await db
+    const { data: si, error: squareError } = await db
       .from("square_integrations")
       .select("enabled")
       .eq("salon_id", salonId)
       .maybeSingle();
+    if (options?.strict && squareError) throw new Error("payment_provider_config_unavailable");
     if ((si as Row | null)?.enabled) kind = "square";
   }
 
@@ -50,11 +58,12 @@ export async function resolvePaymentProvider(
     if (!stripe) return null; // no Stripe key configured
     // Currency must match the salon's account — never hardcode (Stripe charges
     // in the connected account's currency).
-    const { data: salonRow } = await db
+    const { data: salonRow, error: currencyError } = await db
       .from("salons")
       .select("currency_code")
       .eq("id", salonId)
       .maybeSingle();
+    if (options?.strict && (currencyError || !salonRow)) throw new Error("payment_provider_currency_unavailable");
     const currency = String(
       (salonRow as Row | null)?.currency_code || "USD",
     ).trim().toLowerCase() || "usd";

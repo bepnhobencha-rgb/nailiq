@@ -2,11 +2,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("server-only", () => ({}));
+
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   createServiceRoleClient: vi.fn(),
   getSuperAdminRole: vi.fn(),
   selectedColumns: "",
+  requireActive: vi.fn(),
 }));
 
 vi.mock("@/shared/lib/supabase/server", () => ({
@@ -19,6 +22,9 @@ vi.mock("@/shared/lib/supabase/serviceRole", () => ({
 
 vi.mock("@/shared/lib/superadmin", () => ({
   getSuperAdminRole: mocks.getSuperAdminRole,
+}));
+vi.mock("@/shared/auth/requireActiveSuperAdminSession", () => ({
+  requireActiveSuperAdminSession: mocks.requireActive,
 }));
 
 import { ErrorMonitorClient } from "@/components/superadmin/ErrorMonitorClient";
@@ -54,11 +60,19 @@ describe("superadmin error evidence boundary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.selectedColumns = "";
+    mocks.requireActive.mockResolvedValue({
+      ok: true,
+      user: { id: "founder-user" },
+      role: "founder",
+      supabase: {},
+    });
   });
 
   it("does not access service-role error evidence for an unauthenticated user", async () => {
-    mocks.createClient.mockResolvedValue({
-      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null } }) },
+    mocks.requireActive.mockResolvedValue({
+      ok: false,
+      code: "unauthenticated",
+      supabase: {},
     });
 
     await expect(loadErrorLogs("open")).resolves.toEqual({
@@ -99,7 +113,7 @@ describe("superadmin error evidence boundary", () => {
       ok: true,
       rows: [evidenceRow],
     });
-    expect(mocks.getSuperAdminRole).toHaveBeenCalledWith("founder-user");
+    expect(mocks.requireActive).toHaveBeenCalledTimes(1);
     expect(mocks.selectedColumns).toContain("stack");
     expect(mocks.selectedColumns).toContain("context");
   });

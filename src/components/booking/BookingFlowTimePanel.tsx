@@ -26,6 +26,7 @@ export function BookingFlowTimePanel({
   timeSlots,
   timeSlot,
   slotsLoading,
+  availabilityRealtimeStatus,
   popularSlotLabels = [],
   timePeriodsEnabled = false,
   timezoneAbbr,
@@ -55,6 +56,7 @@ export function BookingFlowTimePanel({
   timeSlots: readonly TimeSlot[];
   timeSlot: string | null;
   slotsLoading: boolean;
+  availabilityRealtimeStatus: "idle" | "connecting" | "subscribed" | "degraded";
   popularSlotLabels?: string[];
   /** QA-first presentation flag. Availability and booking submission stay unchanged. */
   timePeriodsEnabled?: boolean;
@@ -250,6 +252,7 @@ export function BookingFlowTimePanel({
       key="time"
       role="group"
       aria-labelledby="time-heading"
+      data-availability-realtime={availabilityRealtimeStatus}
       custom={stepDir}
       variants={bookingStepVariants}
       initial={reducedMotion ? false : "initial"}
@@ -421,7 +424,16 @@ export function BookingFlowTimePanel({
           </div>
         ) : (
           <>
-          {timePeriodsEnabled && availablePeriods.length > 0 ? (
+            {error && !waitlistOpen ? (
+              <p
+                className="mb-5 rounded-2xl border border-nq-error/35 bg-nq-error/10 px-4 py-3 text-sm text-nq-error"
+                role="alert"
+                data-testid="booking-time-error"
+              >
+                {error}
+              </p>
+            ) : null}
+            {timePeriodsEnabled && availablePeriods.length > 0 ? (
             <div className="mb-5 space-y-3" data-testid="time-period-picker">
               <div
                 className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"

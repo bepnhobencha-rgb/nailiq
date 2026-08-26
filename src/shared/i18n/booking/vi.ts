@@ -87,6 +87,10 @@ export const bookingVi: BookingMessages = {
   next: "Tiếp theo",
   back: "Quay lại",
   confirmBooking: "Xác nhận đặt lịch",
+  pricingVerifying: "Đang xác minh giá hiện tại…",
+  pricingUnavailable: "Không thể xác minh giá hiện tại. Vui lòng chờ và thử lại.",
+  pricingChanged: "Giá đã thay đổi. Vui lòng xem lại tổng mới rồi xác nhận lần nữa.",
+  confirmUpdatedPrice: "Xác nhận giá đã cập nhật",
   confirmTermsAgree: "Khi xác nhận, bạn đồng ý với",
   confirmTermsLink: "Điều khoản đặt lịch & Chính sách huỷ",
   submitting: "Đang gửi…",
@@ -110,6 +114,8 @@ export const bookingVi: BookingMessages = {
   doneCta: "Đặt thêm lịch",
   giftCardPageLink: "Mua thẻ quà tặng",
   submitError: "Không hoàn tất được đặt lịch. Vui lòng thử lại.",
+  submitUnknown:
+    "Chưa thể xác minh kết quả. Hãy xác nhận lại để kiểm tra đúng lịch này — NailIQ sẽ không tạo lịch trùng.",
   summaryShop: "Tiệm",
   summaryService: "Dịch vụ",
   summaryStaff: "Thợ",
@@ -496,7 +502,8 @@ export const bookingVi: BookingMessages = {
     send: "Gửi",
     typingIndicator: "Đang xử lý…",
     errorFallback: "Xin lỗi, không kết nối được. Vui lòng thử lại.",
-    disclaimer: "Trợ lý AI — để đặt lịch, dùng form bên trên.",
+    disclaimer:
+      "AI có thể trả lời chưa chính xác và dùng nhà cung cấp bên thứ ba. Không nhập thông tin thanh toán, sức khỏe hoặc dữ liệu nhạy cảm. Dùng form bên trên để xem giá, giờ trống và đặt lịch.",
   },
   /** Phone step — the new hero step 1 of the booking flow. */
   phoneStepHeading: "Đặt lịch thật nhanh",

@@ -5,8 +5,29 @@ import { sendVerification } from "@/shared/lib/twilioVerify";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { createAndSendEmailOtp } from "@/shared/lib/emailOtp";
 import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
+import {
+  consumeDurableRateLimitBuckets,
+  type DurableRateLimitResult,
+} from "@/shared/security/publicServerActionRateLimit";
+import { clientIp } from "@/shared/lib/inAppRateLimit";
+
+function rateResponse(result: Exclude<DurableRateLimitResult, "allowed">) {
+  return NextResponse.json(
+    { error: result === "limited" ? "rate_limited" : "rate_limit_unavailable" },
+    {
+      status: result === "limited" ? 429 : 503,
+      headers: { "Retry-After": result === "limited" ? "900" : "30" },
+    },
+  );
+}
 
 export async function POST(req: Request) {
+  const ipRate = await consumeDurableRateLimitBuckets("booking-otp-send", [
+    { name: "ip-burst", material: [clientIp(req)], limit: 20, windowSeconds: 900 },
+    { name: "ip-hour", material: [clientIp(req)], limit: 60, windowSeconds: 3_600 },
+  ]);
+  if (ipRate !== "allowed") return rateResponse(ipRate);
+
   let body: { phone?: string; shopSlug?: string; channel?: string; email?: string };
   try {
     body = await req.json();
@@ -30,6 +51,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid_email" }, { status: 400 });
   }
 
+  const identityRate = await consumeDurableRateLimitBuckets("booking-otp-send", [
+    {
+      name: "phone-window",
+      material: [phoneOk.digits],
+      limit: 5,
+      windowSeconds: 900,
+    },
+    {
+      name: "phone-day",
+      material: [phoneOk.digits],
+      limit: 10,
+      windowSeconds: 86_400,
+    },
+  ]);
+  if (identityRate !== "allowed") return rateResponse(identityRate);
+
   const supabase = createServiceRoleClient();
   const { data: salon } = await supabase
     .from("salons")
@@ -46,19 +83,6 @@ export async function POST(req: Request) {
   } | null;
   if (!salonRow || !salonRow.phone_otp_enabled) {
     return NextResponse.json({ error: "otp_not_enabled" }, { status: 400 });
-  }
-
-  // ── Server-side SMS send guard (authoritative) ──────────────────────────────
-  // The client has a 60s resend cooldown + a per-phone auto-send guard, but those
-  // are bypassable (direct API call, second tab, page reload). This DB-backed
-  // guard is the real protection against duplicate Twilio Verify charges: at most
-  // one SMS per phone per 30s, and 5 per 15 min. Runs in demo mode too so it is
-  // E2E-testable. The email channel has its own limit inside createAndSendEmailOtp.
-  if (channel === "sms") {
-    const guard = await guardSmsSend(supabase, String(salonRow.id), phoneOk.digits);
-    if (!guard.ok) {
-      return NextResponse.json({ error: "rate_limited" }, { status: 429 });
-    }
   }
 
   // Demo/E2E mode: skip real sends, accept code 000000 in verify (both channels).
@@ -101,44 +125,4 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json({ ok: true });
-}
-
-const SMS_MIN_GAP_MS = 30_000;          // ≥ 30s between SMS to the same phone
-const SMS_WINDOW_MS  = 15 * 60 * 1000;  // 15-minute window
-const SMS_WINDOW_MAX = 5;               // ≤ 5 SMS per window
-
-/**
- * DB-backed SMS send throttle. Returns `{ ok: false }` when the phone was texted
- * < 30s ago for this salon, or has hit 5 sends in the last 15 minutes. On allow,
- * records the attempt in `otp_send_log` so the next call sees it. Fails OPEN on a
- * DB error — never block a real customer's OTP because the log table hiccuped.
- */
-async function guardSmsSend(
-  supabase: ReturnType<typeof createServiceRoleClient>,
-  salonId: string,
-  phoneDigits: string,
-): Promise<{ ok: boolean }> {
-  try {
-    const since = new Date(Date.now() - SMS_WINDOW_MS).toISOString();
-    const { data: rows } = await supabase
-      .from("otp_send_log" as never)
-      .select("created_at")
-      .eq("salon_id", salonId)
-      .eq("phone", phoneDigits)
-      .eq("channel", "sms")
-      .gte("created_at", since)
-      .order("created_at", { ascending: false });
-
-    const recent = (rows ?? []) as unknown as { created_at: string }[];
-    if (recent.length >= SMS_WINDOW_MAX) return { ok: false };
-    const newest = recent[0]?.created_at ? Date.parse(recent[0].created_at) : 0;
-    if (newest && Date.now() - newest < SMS_MIN_GAP_MS) return { ok: false };
-
-    await supabase
-      .from("otp_send_log" as never)
-      .insert({ salon_id: salonId, phone: phoneDigits, channel: "sms" } as never);
-    return { ok: true };
-  } catch {
-    return { ok: true }; // fail open
-  }
 }

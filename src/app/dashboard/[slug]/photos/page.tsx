@@ -52,14 +52,8 @@ export default async function PhotosPage({ params }: PageProps) {
   // (plan-tier gating still shows the friendly upsell below).
   if (await isFeaturePlatformDisabled("photos")) notFound();
 
-  const { data: planRow } = await ctx.supabase
-    .from("salons")
-    .select("subscription_plan, plan_override, feature_flags" as never)
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
-
   const hasPhotos = hasFeature(
-    (planRow ?? { subscription_plan: "free", plan_override: null, feature_flags: null }) as Parameters<typeof hasFeature>[0],
+    ctx.salon as Parameters<typeof hasFeature>[0],
     "photo_confirmation",
   );
 

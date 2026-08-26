@@ -26,6 +26,29 @@ assertNotProductionFromEnv();
 
 const supabase = createClient(supabaseUrl, serviceKey);
 
+export async function mintBookingActionCapability(input: {
+  salonId: string;
+  bookingId: string;
+  action: "confirm" | "reschedule" | "cancel";
+}): Promise<string> {
+  const { data, error } = await supabase.rpc(
+    "mint_booking_management_capability" as never,
+    {
+      p_salon_id: input.salonId,
+      p_booking_id: input.bookingId,
+      p_action: input.action,
+      p_min_expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    } as never,
+  );
+  const row = data && typeof data === "object" && !Array.isArray(data)
+    ? data as Record<string, unknown>
+    : null;
+  if (error || row?.ok !== true || typeof row.token_id !== "string") {
+    throw new Error(error?.message ?? `${input.action} capability mint failed: ${String(row?.code ?? "invalid_response")}`);
+  }
+  return row.token_id;
+}
+
 export async function invokeAiAgentPermission(input: {
   salonId: string;
   actorUserId: string;
@@ -162,7 +185,18 @@ export async function getGroupBookingStamps(slug: string): Promise<
   return (data ?? []) as Awaited<ReturnType<typeof getGroupBookingStamps>>;
 }
 
-export async function cleanupTestSalon(slug: string) {
+export async function cleanupTestSalon(
+  slug: string,
+  options: { clearAllRateLimits?: boolean } = {},
+) {
+  // Every Playwright shard owns a throwaway database and runs serially. Reset
+  // durable public-rate buckets between fixture salons so one spec cannot spend
+  // another spec's IP allowance (all browser requests originate from the same
+  // loopback address). Assertions inside a spec still exercise the real limiter.
+  if (options.clearAllRateLimits !== false) {
+    await supabase.from("rate_limits").delete().like("bucket", "%");
+  }
+
   const { data: salon } = await supabase
     .from("salons")
     .select("id")
@@ -277,6 +311,25 @@ export async function seedTestSalon(opts?: {
 
   await cleanupTestSalon(slug);
 
+  // A blank local database has no seed.sql, while `services.category` is
+  // protected by the canonical service_categories FK. Production already has
+  // this global catalog; E2E must bootstrap the same inert default explicitly
+  // before inserting a salon service.
+  const { error: categoryError } = await supabase
+    .from("service_categories")
+    .upsert(
+      {
+        slug: "other",
+        name_en: "Other",
+        name_vi: "Khác",
+        sort_order: 999,
+      },
+      { onConflict: "slug", ignoreDuplicates: true },
+    );
+  if (categoryError) {
+    throw new Error(`seedTestSalon category: ${categoryError.message}`);
+  }
+
   const { data: salon, error: salonErr } = await supabase
     .from("salons")
     .insert({
@@ -285,6 +338,11 @@ export async function seedTestSalon(opts?: {
       phone,
       profile_complete: true,
       opening_hours: SEED_OPENING_HOURS,
+      // Authoritative public/group pricing fails closed when a salon has no
+      // tax configuration. An empty array is the valid "no tax lines" fixture;
+      // leaving this nullable made every group quote return
+      // pricing_config_invalid before the booking flow could be exercised.
+      tax_lines: [],
       feature_flags: opts?.feature_flags ?? {},
       // Only write the column when the caller opts in. Leaving it unset keeps
       // the DB default so `ai_voice` resolves to its Beta default (OFF) — the
@@ -1190,6 +1248,50 @@ export async function prepareTestSalonForGoLive(salonId: string) {
   }
 }
 
+/**
+ * Complete the saved-data requirements used by the Guided Admin Setup hub.
+ *
+ * The shared go-live helper intentionally covers only the original technical
+ * readiness gates. Guided Setup also treats the bilingual booking policy and
+ * notification language as required owner setup. Keep this as a separate
+ * helper so older readiness specs retain their narrower fixture contract.
+ */
+export async function prepareTestSalonForGuidedSetup(salonId: string) {
+  await prepareTestSalonForGoLive(salonId);
+
+  const { error } = await supabase
+    .from("salons")
+    .update({
+      cancellation_policy: {
+        en: "Please contact the salon before cancelling or rescheduling.",
+        vi: "Vui lòng liên hệ salon trước khi huỷ hoặc đổi lịch.",
+      },
+      default_notification_locale: "vi",
+      booking_closed_dates: [],
+      booking_lead_minutes: 0,
+      resources_enabled: false,
+      staff_selection_enabled: true,
+      guided_setup_integrations_skipped_at: new Date().toISOString(),
+    })
+    .eq("id", salonId);
+
+  if (error) {
+    throw new Error(`prepareTestSalonForGuidedSetup: ${error.message}`);
+  }
+
+  // Make the availability proof deterministic and independent from fixtures
+  // created by other specs. These are disposable QA rows only.
+  const [{ error: shiftError }, { error: leaveError }] = await Promise.all([
+    supabase.from("staff_shifts").delete().eq("salon_id", salonId),
+    supabase.from("staff_unavailability").delete().eq("salon_id", salonId),
+  ]);
+  if (shiftError || leaveError) {
+    throw new Error(
+      `prepareTestSalonForGuidedSetup availability reset: ${shiftError?.message ?? leaveError?.message}`,
+    );
+  }
+}
+
 export async function changeFirstTestServicePrice(salonId: string) {
   const { data: service, error: readError } = await supabase
     .from("services")
@@ -1329,6 +1431,99 @@ export async function getRegisteredSalonForUser(userId: string) {
     serviceCount: serviceCount ?? 0,
     staffCount: staffCount ?? 0,
   };
+}
+
+/**
+ * Enable an opt-in feature on a throwaway E2E salon after registration.
+ *
+ * A newly registered salon does not exist when a SuperAdmin chooses the pilot,
+ * so the registration-to-guided-setup contract needs one safe test-only seam:
+ * create the salon through the real UI, then apply the same JSONB override the
+ * SuperAdmin panel writes. `assertNotProductionFromEnv()` at module load keeps
+ * this helper fenced to the local/CI database.
+ */
+export async function setTestSalonFeatureFlags(
+  salonId: string,
+  patch: Record<string, boolean>,
+) {
+  const { data: row, error: readError } = await supabase
+    .from("salons")
+    .select("feature_flags")
+    .eq("id", salonId)
+    .single();
+
+  if (readError) {
+    throw new Error(`setTestSalonFeatureFlags read: ${readError.message}`);
+  }
+
+  const current =
+    (row as { feature_flags?: Record<string, boolean> } | null)
+      ?.feature_flags ?? {};
+  const { error: updateError } = await supabase
+    .from("salons")
+    .update({ feature_flags: { ...current, ...patch } })
+    .eq("id", salonId);
+
+  if (updateError) {
+    throw new Error(`setTestSalonFeatureFlags update: ${updateError.message}`);
+  }
+}
+
+/**
+ * Exercise the hardened single-salon Guided Setup QA rollout contract.
+ * The module-level production guard makes this available only to disposable
+ * local/CI databases; tests must release the allowlist before selecting the
+ * next fixture.
+ */
+export async function configureTestGuidedAdminSetup(
+  salonId: string,
+  enable: boolean,
+) {
+  if (enable) {
+    const { error: salonError } = await supabase
+      .from("salons")
+      .update({ is_beta: true } as never)
+      .eq("id", salonId);
+    if (salonError) {
+      throw new Error(`configureTestGuidedAdminSetup salon: ${salonError.message}`);
+    }
+    const { error: platformError } = await supabase
+      .from("platform_flags")
+      .upsert(
+        {
+          key: "feature_guided_admin_setup",
+          enabled: true,
+          description: "Disposable Guided Setup E2E gate",
+        } as never,
+        { onConflict: "key" },
+      );
+    if (platformError) {
+      throw new Error(
+        `configureTestGuidedAdminSetup platform: ${platformError.message}`,
+      );
+    }
+  }
+
+  const { data, error } = await supabase.rpc(
+    "configure_guided_admin_setup_qa_salon" as never,
+    {
+      p_salon_id: salonId,
+      p_enable: enable,
+      p_confirmation: enable
+        ? "ENABLE_GUIDED_ADMIN_SETUP_QA"
+        : "DISABLE_GUIDED_ADMIN_SETUP_QA",
+    } as never,
+  );
+  if (error) {
+    throw new Error(`configureTestGuidedAdminSetup rpc: ${error.message}`);
+  }
+  const result = data as { success?: boolean; code?: string } | null;
+  if (!enable && result?.code === "not_found") return;
+  if (!result?.success) {
+    throw new Error(
+      `configureTestGuidedAdminSetup rejected: ${result?.code ?? "unknown"}`,
+    );
+  }
 }
 
 /** Remove a Supabase auth user (and any salon they own) from E2E test runs. */
@@ -1498,9 +1693,10 @@ export async function completeGateOtp(
 export async function gotoBookingServiceStep(
   page: Page,
   slug: string,
+  opts?: { phone?: string; name?: string },
 ): Promise<void> {
   await page.goto(`/${slug}`);
-  await completeBookingEntryGate(page);
+  await completeBookingEntryGate(page, opts);
   await page
     .locator('[data-testid="service-tile-select"]')
     .first()

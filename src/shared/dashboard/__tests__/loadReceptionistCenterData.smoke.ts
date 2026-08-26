@@ -236,7 +236,7 @@ async function main() {
     const { data, error } = await supabase
       .from("salons")
       .select(
-        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign, queue_display_mode, basic_mode_forced, opening_hours, staff_notification_settings, auto_no_show_minutes" as never,
+        "id, name, slug, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, walkin_auto_assign, queue_display_mode, basic_mode_forced, opening_hours, staff_notification_settings, default_notification_locale, auto_no_show_minutes" as never,
       )
       .eq("id", salon.id)
       .maybeSingle();
@@ -256,6 +256,7 @@ async function main() {
       basic_mode_forced: unknown;
       opening_hours: unknown;
       staff_notification_settings: unknown;
+      default_notification_locale: unknown;
       auto_no_show_minutes: unknown;
     };
     const res = await loadReceptionistCenterData(salon.slug, today, {
@@ -277,7 +278,10 @@ async function main() {
     assert(
       JSON.stringify(res.data.salon.staffNotificationSettings) ===
         JSON.stringify(
-          parseStaffNotificationSettings(prefetched.staff_notification_settings),
+          parseStaffNotificationSettings(
+            prefetched.staff_notification_settings,
+            prefetched.default_notification_locale === "vi" ? "vi" : "en",
+          ),
         ),
       "staff_notification_settings parity mismatch",
     );

@@ -2,7 +2,9 @@
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { trackAnthropicFetch } from "@/shared/ai/usageLedger";
+import { AI_TEXT_BACKGROUND_TIMEOUT_MS } from "@/shared/ai/anthropicProviderPolicy";
 import { isValidBrandColor } from "@/shared/lib/brandColor";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 
 /**
  * Extract a salon's brand color + theme mode from a direct image URL
@@ -46,6 +48,7 @@ export type ExtractBrandResult =
       ok: false;
       error:
         | "unauthorized"
+        | "forbidden"
         | "invalid_url"
         | "vision_failed"
         | "invalid_response"
@@ -71,6 +74,7 @@ export async function extractBrandFromImageUrl(
 ): Promise<ExtractBrandResult> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const imageUrl = normalizeUrl(rawUrl);
   if (!imageUrl) return { ok: false, error: "invalid_url" };
@@ -95,6 +99,7 @@ export async function extractBrandFromImageUrl(
         model: "claude-sonnet-4-6",
       },
       () => fetch("https://api.anthropic.com/v1/messages", {
+        signal: AbortSignal.timeout(AI_TEXT_BACKGROUND_TIMEOUT_MS),
         method: "POST",
         headers: {
           "x-api-key": visionKey,

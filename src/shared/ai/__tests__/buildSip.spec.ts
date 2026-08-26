@@ -1,6 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const aiMocks = vi.hoisted(() => ({ create: vi.fn() }));
+
 vi.mock("server-only", () => ({}));
+vi.mock("@/shared/ai/anthropicProviderPolicy", () => ({
+  createTextBackgroundAnthropicClient: () => ({
+    messages: { create: aiMocks.create },
+  }),
+}));
+vi.mock("../usageLedger", () => ({
+  trackAnthropicMessage: async (
+    _context: unknown,
+    execute: () => Promise<unknown>,
+  ) => execute(),
+  isProviderTimeoutError: (error: unknown) =>
+    error instanceof Error && error.name === "APIConnectionTimeoutError",
+}));
 
 let salonSelect = "";
 let salonError: { message: string } | null = null;
@@ -75,6 +90,7 @@ describe("buildSip", () => {
     salonSelect = "";
     salonError = null;
     savedProfile = null;
+    aiMocks.create.mockReset();
     delete process.env.ANTHROPIC_API_KEY;
   });
 
@@ -96,5 +112,16 @@ describe("buildSip", () => {
     await expect(buildSip(salon.id)).rejects.toThrow(
       "buildSip: failed to load salon salon-123: column salons.language does not exist",
     );
+  });
+
+  it("does not persist a fallback SIP after a provider timeout", async () => {
+    process.env.ANTHROPIC_API_KEY = "qa-key";
+    const timeout = Object.assign(new Error("deadline exceeded"), {
+      name: "APIConnectionTimeoutError",
+    });
+    aiMocks.create.mockRejectedValue(timeout);
+
+    await expect(buildSip(salon.id)).rejects.toBe(timeout);
+    expect(savedProfile).toBeNull();
   });
 });

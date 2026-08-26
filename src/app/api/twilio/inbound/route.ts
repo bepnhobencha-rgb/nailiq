@@ -7,39 +7,23 @@
  *   https://nailiq.ca/api/twilio/inbound
  *
  * Validated with X-Twilio-Signature (HMAC-SHA1), mirroring /api/twilio/status.
- * STOP/START opt-out is handled by Twilio Advanced Opt-Out, not here.
+ * Twilio Advanced Opt-Out remains provider-authoritative. Its signed
+ * OptOutType is also recorded in NailIQ's durable suppression ledger before
+ * any future outbound provider call.
  */
 
 import { NextRequest, NextResponse, after } from "next/server";
-import { salonYmdOfUtc } from "@/shared/lib/salonTime";
 import {
   getTwilioAuthToken,
   validateTwilioSignature,
   twilioRequestBaseUrl,
 } from "@/shared/lib/twilioSignature";
+import { readUrlEncodedFormWithLimit } from "@/shared/security/readUrlEncodedFormWithLimit";
+import { classifyInboundSmsCommand } from "@/shared/reminders/inboundSmsCommand";
+import { recordInboundSmsConsent } from "@/shared/reminders/smsConsentSuppression";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-// Bilingual command words. Single-word replies are how customers actually answer.
-const CONFIRM_WORDS = new Set([
-  "yes", "y", "yeah", "yep", "ya", "ok", "okay", "k", "confirm", "confirmed",
-  "c", "có", "co", "xacnhan", "dongy",
-]);
-const CANCEL_WORDS = new Set([
-  "cancel", "cancelled", "no", "n", "huy", "hủy", "huỷ", "khong", "không",
-]);
-
-function classify(body: string): "confirm" | "cancel" | "unknown" {
-  const norm = body.trim().toLowerCase().replace(/[.!,?]/g, "");
-  if (CONFIRM_WORDS.has(norm)) return "confirm";
-  if (CANCEL_WORDS.has(norm)) return "cancel";
-  // Tolerate "yes please" / "cancel it" — judge on the first word only.
-  const first = norm.split(/\s+/)[0] ?? "";
-  if (CONFIRM_WORDS.has(first)) return "confirm";
-  if (CANCEL_WORDS.has(first)) return "cancel";
-  return "unknown";
-}
 
 function xmlEscape(s: string): string {
   return s.replace(/[<>&'"]/g, (c) =>
@@ -56,8 +40,9 @@ function twiml(message?: string): NextResponse {
 }
 
 export async function POST(req: NextRequest) {
-  const rawBody = await req.text();
-  const params = Object.fromEntries(new URLSearchParams(rawBody).entries());
+  const form = await readUrlEncodedFormWithLimit(req, 16_384);
+  if (!form) return new NextResponse("Invalid request", { status: 400 });
+  const params = Object.fromEntries(form.entries());
 
   const { createServiceRoleClient } = await import("@/shared/lib/supabase/serviceRole");
   const supabase = createServiceRoleClient();
@@ -73,8 +58,23 @@ export async function POST(req: NextRequest) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 
-  const action = classify(params.Body ?? "");
-  // Ignore anything that isn't a clear command (incl. STOP/START → Twilio handles).
+  const action = classifyInboundSmsCommand(params.Body ?? "", params.OptOutType);
+  if (action === "consent_help") return twiml();
+  if (action === "consent_stop" || action === "consent_start") {
+    const recorded = await recordInboundSmsConsent({
+      accountSid: params.AccountSid ?? "",
+      messageSid: params.MessageSid ?? params.SmsMessageSid ?? "",
+      fromPhone: params.From ?? "",
+      toPhone: params.To ?? "",
+      optOutType: action === "consent_stop" ? "STOP" : "START",
+    });
+    // Twilio has already sent the configured Advanced Opt-Out reply. Return
+    // empty TwiML to avoid a duplicate; a 503 asks Twilio to retry a failed
+    // local persistence step under the same MessageSid.
+    return recorded.ok
+      ? twiml()
+      : new NextResponse("Service unavailable", { status: 503 });
+  }
   if (action === "unknown") return twiml();
 
   const { toCanonicalPhone } = await import("@/shared/lib/toCanonicalPhone");
@@ -130,17 +130,14 @@ export async function POST(req: NextRequest) {
 
   const { data: salonRow } = await db
     .from("salons")
-    .select("name, timezone")
+    .select("name")
     .eq("id", booking.salon_id)
     .maybeSingle();
   const salonName = (salonRow as { name?: string } | null)?.name ?? "the salon";
-  const salonTz =
-    (salonRow as { timezone?: string | null } | null)?.timezone?.trim() ||
-    "America/Los_Angeles";
 
   const { logNotification } = await import("@/shared/lib/notificationLog");
 
-  if (action === "confirm") {
+  if (action === "booking_confirm") {
     await db
       .from("bookings")
       .update({ status: "confirmed", confirmed_at: new Date().toISOString() } as never)
@@ -156,14 +153,21 @@ export async function POST(req: NextRequest) {
       bodyPreview: params.Body ?? null,
       ok: true,
     });
-    return twiml(`✅ Confirmed! See you at ${salonName}. Reply CANCEL if your plans change.`);
+    return twiml(`✅ Confirmed! See you at ${salonName}. Reply NO if your plans change.`);
   }
 
-  // action === "cancel" — frees the slot + promotes the waitlist atomically.
-  const { data: res } = await db.rpc("cancel_booking_by_id" as never, {
+  // action === "booking_cancel" — frees the slot + promotes the waitlist atomically.
+  const { data: res, error: cancelError } = await db.rpc(
+    "cancel_booking_by_id_with_waitlist_offer" as never,
+    {
     p_booking_id: booking.id,
-  });
-  const ok = (Array.isArray(res) ? (res[0] as { ok?: boolean } | undefined) : undefined)?.ok === true;
+    } as never,
+  );
+  const cancelResult = res && typeof res === "object"
+    ? (Array.isArray(res) ? res[0] : res) as Record<string, unknown> | undefined
+    : undefined;
+  const ok = !cancelError && cancelResult?.ok === true && cancelResult.code === "ok" &&
+    cancelResult.booking_id === booking.id;
   void logNotification({
     bookingId: booking.id,
     salonId: booking.salon_id,
@@ -185,25 +189,12 @@ export async function POST(req: NextRequest) {
       eventType: "booking_cancelled",
       payload: { reason: "sms_cancel" },
     });
-    // Salon-LOCAL day (not UTC) — the flip RPC + notifyWaitlistForSlot match
-    // booking_date in the salon tz; the UTC day missed the promoted waitlister
-    // for evening NA SMS-cancellations.
-    const bookingDateYmd = salonYmdOfUtc(booking.start_time_utc, salonTz);
-    after(async () => {
-      const { notifyWaitlistForSlot } = await import("@/shared/noshow/waitlistAutoFill");
-      const { data: svc } = await db
-        .from("services")
-        .select("name")
-        .eq("id", booking.service_id)
-        .maybeSingle();
-      const serviceName = (svc as { name?: string } | null)?.name ?? "";
-      await notifyWaitlistForSlot({
-        salonId: booking.salon_id,
-        salonName,
-        serviceId: booking.service_id,
-        serviceName,
-        bookingDateYmd,
-      });
+    const promotedWaitlist = cancelResult?.promoted_waitlist;
+    if (promotedWaitlist) after(async () => {
+      const { deliverCanonicalWaitlistPromotion } =
+        await import("@/shared/noshow/promoteAndDeliverWaitlistOffer");
+      const delivered = await deliverCanonicalWaitlistPromotion(promotedWaitlist);
+      if (!delivered.ok) console.error("[twilio-inbound] canonical waitlist", delivered.code);
     });
   }
   return twiml(`Your appointment at ${salonName} is cancelled. Book again anytime — thank you!`);

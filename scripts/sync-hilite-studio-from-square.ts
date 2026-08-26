@@ -1,9 +1,13 @@
 /**
  * Full Square → NailIQ sync for Hi-Lite Studio (Westminster).
  *
+ * Hi-Lite Studio and Hi-Lite Head Spa are separate Square seller accounts.
+ * This script therefore reads only Studio's own preconfigured integration and
+ * never copies a token, merchant, or location from hilite-anaheim.
+ *
  * Steps:
- *   1. List all Square locations → find Westminster → store in square_integrations
- *   2. Pull all Square customers who have payments at Westminster location
+ *   1. Validate the existing hilite-studio Square integration and location
+ *   2. Pull all Square customers who have payments at that configured location
  *   3. Upsert client_profiles (global, phone-deduped)
  *   4. Link salon_clients for hilite-studio (salon-scoped)
  *   5. Upsert square_visit_history (salon-scoped, full payment history)
@@ -24,7 +28,6 @@ const DRY_RUN = process.argv.includes("--dry-run");
 const SQUARE_VERSION = "2024-12-18";
 const SQUARE_API = "https://connect.squareup.com/v2";
 const SALON_SLUG = "hilite-studio";
-const SOURCE_SALON_SLUG = "hilite-anaheim"; // same Square account, shares the token
 
 const db = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -145,69 +148,46 @@ async function main() {
   const salonId = (salon as { id: string; name: string }).id;
   console.log(`Target salon: ${(salon as { id: string; name: string }).name} (${salonId})`);
 
-  // Load Square token from source salon (same account)
-  const { data: srcSalon } = await db.from("salons").select("id").eq("slug", SOURCE_SALON_SLUG).maybeSingle();
-  if (!srcSalon) throw new Error(`Source salon '${SOURCE_SALON_SLUG}' not found`);
-  const { data: srcCfg } = await db
+  // Load only Studio's own preconfigured Square identity. Head Spa is a
+  // different seller account and must never be used as a credential source.
+  const { data: studioCfg } = await db
     .from("square_integrations")
-    .select("access_token, merchant_id, environment")
-    .eq("salon_id", (srcSalon as { id: string }).id)
+    .select("access_token, merchant_id, location_id, environment, enabled")
+    .eq("salon_id", salonId)
     .maybeSingle();
-  if (!srcCfg) throw new Error("No Square integration found on hilite-anaheim");
-  const { access_token: token, merchant_id: merchantId, environment } = srcCfg as {
-    access_token: string; merchant_id: string; environment: string;
+  if (!studioCfg) throw new Error("No Square integration found on hilite-studio");
+  const {
+    access_token: token,
+    merchant_id: merchantId,
+    location_id: configuredLocationId,
+    environment,
+    enabled,
+  } = studioCfg as {
+    access_token: string;
+    merchant_id: string;
+    location_id: string;
+    environment: string;
+    enabled: boolean;
   };
+  if (!enabled || !token || !merchantId || !configuredLocationId) {
+    throw new Error("Hi-Lite Studio Square integration is incomplete or disabled");
+  }
   console.log(`Square merchant: ${merchantId} (${environment})`);
 
-  // ── STEP 1: Find Westminster location ───────────────────────────────────────
-  console.log("\n[1/6] Listing Square locations...");
+  // ── STEP 1: Validate Studio's configured location ───────────────────────────
+  console.log("\n[1/6] Validating configured Square location...");
   const locations = await listLocations(token);
-  console.log(`  Found ${locations.length} location(s):`);
-  for (const loc of locations) {
-    const addr = [loc.address?.address_line_1, loc.address?.locality].filter(Boolean).join(", ");
-    console.log(`    ${loc.id}  ${loc.name}  ${addr}`);
+  const configuredLocation = locations.find((location) => location.id === configuredLocationId);
+  if (!configuredLocation) {
+    throw new Error(
+      "Configured Hi-Lite Studio location does not belong to its Square credential",
+    );
   }
+  const westminsterLocationId = configuredLocation.id;
+  console.log(`  ✅ Studio location: ${westminsterLocationId} — "${configuredLocation.name}"`);
 
-  // Find Westminster (exclude Anaheim which is LKNG1X7QRRQ4M)
-  const westminster = locations.find(
-    (l) =>
-      l.id !== "LKNG1X7QRRQ4M" &&
-      (
-        (l.address?.locality ?? "").toLowerCase().includes("westminster") ||
-        (l.name ?? "").toLowerCase().includes("westminster") ||
-        (l.name ?? "").toLowerCase().includes("studio")
-      ),
-  );
-  if (!westminster) {
-    console.log("\n⚠️  Could not auto-detect Westminster location. Available locations printed above.");
-    console.log("  Edit this script and set WESTMINSTER_LOCATION_ID manually, then re-run.");
-    process.exit(1);
-  }
-  const westminsterLocationId = westminster.id;
-  console.log(`\n  ✅ Westminster location: ${westminsterLocationId} — "${westminster.name}"`);
-
-  // ── STEP 2: Upsert square_integrations for hilite-studio ───────────────────
-  console.log("\n[2/6] Creating square_integrations for hilite-studio...");
-  if (!DRY_RUN) {
-    const { error } = await db.from("square_integrations").upsert({
-      salon_id: salonId,
-      merchant_id: merchantId,
-      location_id: westminsterLocationId,
-      access_token: token,
-      environment: environment as "production" | "sandbox",
-      enabled: true,
-      sync_pull_create: true,
-      sync_pull_update: true,
-      sync_pull_cancel: true,
-      sync_push_create: false,
-      sync_push_update: false,
-      sync_push_cancel: false,
-    }, { onConflict: "salon_id" });
-    if (error) throw new Error(`square_integrations upsert: ${error.message}`);
-    console.log(`  ✅ square_integrations row saved (location: ${westminsterLocationId})`);
-  } else {
-    console.log(`  [dry] Would save integration row with location_id=${westminsterLocationId}`);
-  }
+  // ── STEP 2: Identity is read-only ───────────────────────────────────────────
+  console.log("\n[2/6] Square integration identity verified; no credential copy or upsert");
 
   // ── STEP 3: Pull payments for Westminster location ──────────────────────────
   console.log("\n[3/6] Fetching completed payments at Westminster location...");

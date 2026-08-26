@@ -110,6 +110,7 @@ export function LandingNavbar() {
           open ? "max-h-96 opacity-100" : "max-h-0 opacity-0",
         )}
         aria-hidden={!open}
+        inert={!open}
       >
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-5 py-5">
           <LangToggle

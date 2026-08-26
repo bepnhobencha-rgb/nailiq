@@ -68,6 +68,16 @@ import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
 import { Button } from "@/components/ui/Button";
 import { QRCodeSVG } from "qrcode.react";
 import type { ReturningCustomer } from "@/components/booking/useBookingFlowState";
+import {
+  groupBookingPricingIntentKey,
+  groupBookingQuoteMatchesRequest,
+  groupBookingIdempotencyForIntent,
+  resetGroupBookingIdempotency,
+  parseGroupBookingPricingQuote,
+  type GroupBookingPricingQuote,
+  type GroupBookingPricingRequest,
+} from "@/shared/booking/groupBookingPricing";
+import { useBookingFunnelAnalytics } from "@/shared/analytics/useBookingFunnelAnalytics";
 
 /**
  * Group booking — AI Arrival-First redesign (May 2026).
@@ -323,12 +333,11 @@ export function BookingGroupFlow({
 
   // Voucher applied to the whole-party total (tied to the organizer phone).
   // Mirrors the individual flow's appliedVoucher; feeds submitGroupBooking.
-  const [appliedVoucher, setAppliedVoucher] = useState<{
-    voucher_id: string;
-    code: string;
-    discount_cents: number;
-    final_price_cents: number;
-  } | null>(null);
+  const [voucherCode, setVoucherCode] = useState<string | null>(null);
+  const [pricingQuote, setPricingQuote] = useState<GroupBookingPricingQuote | null>(null);
+  const [pricingQuoteKey, setPricingQuoteKey] = useState<string | null>(null);
+  const [pricingLoading, setPricingLoading] = useState(false);
+  const [pricingError, setPricingError] = useState<string | null>(null);
 
   // Organizer recognition — when the primary-contact phone is valid we
   // look the customer up (same `/api/customer/[phone]` endpoint the
@@ -389,6 +398,8 @@ export function BookingGroupFlow({
   const [successResult, setSuccessResult] = useState<{
     groupId: string;
     bookingIds: string[];
+    pricing: GroupBookingPricingQuote;
+    cardManagementToken: string | null;
   } | null>(null);
   /** Party Link URL — set asynchronously after submitGroupBooking succeeds. */
   const [partyLinkUrl, setPartyLinkUrl] = useState<string | null>(null);
@@ -405,7 +416,10 @@ export function BookingGroupFlow({
   // any other in-flight retry path. Refreshing the page (full
   // remount) generates a new key, which is correct — that's a new
   // group attempt.
-  const idempotencyKeyRef = useRef<string>(crypto.randomUUID());
+  const idempotencyKeyRef = useRef<{ intentKey: string | null; key: string }>({
+    intentKey: null,
+    key: crypto.randomUUID(),
+  });
 
   // FIX 07 (Task #04-A) — double-tap guard. The `submitting`
   // state flag drives UI disabled, but mobile double-taps can
@@ -441,6 +455,13 @@ export function BookingGroupFlow({
 
   // Per-field error sets for the wizard step validations.
   const [stepErrors, setStepErrors] = useState<Set<string>>(() => new Set());
+
+  useBookingFunnelAnalytics({
+    flow: "group",
+    step,
+    submitting,
+    hasError: errorMessage !== null,
+  });
 
   const groupCopy = (t.groupBooking ?? {}) as NonNullable<
     BookingMessages["groupBooking"]
@@ -529,50 +550,166 @@ export function BookingGroupFlow({
 
   const totalDisplay = useMemo(() => {
     if (totals.totalCents == null) return null;
-    // Show the discounted party total once a voucher is applied.
-    const cents = appliedVoucher ? appliedVoucher.final_price_cents : totals.totalCents;
-    return formatCurrency(cents, salon.currencyCode) ?? null;
-  }, [totals.totalCents, salon.currencyCode, appliedVoucher]);
+    return formatCurrency(totals.totalCents, salon.currencyCode) ?? null;
+  }, [totals.totalCents, salon.currencyCode]);
 
-  // Apply a voucher to the whole-party total, validated against the organizer
-  // phone. Mirrors useBookingFlowState.handleApplyVoucher.
-  const handleApplyVoucher = useCallback(
-    async (code: string, totalCents: number): Promise<{ error?: string }> => {
-      try {
-        const res = await fetch("/api/vouchers/validate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            salon_id: salon.id,
-            code,
-            client_phone: primaryPhone,
-            price_cents: totalCents,
-          }),
-        });
-        const data = (await res.json()) as {
-          ok: boolean;
-          error?: string;
-          voucher_id?: string;
-          code?: string;
-          discount_cents?: number;
-          final_price_cents?: number;
-        };
-        if (!data.ok || !data.voucher_id) return { error: data.error ?? "generic" };
-        setAppliedVoucher({
-          voucher_id: data.voucher_id,
-          code: data.code ?? code,
-          discount_cents: data.discount_cents ?? 0,
-          final_price_cents: data.final_price_cents ?? totalCents,
-        });
-        return {};
-      } catch {
-        return { error: "generic" };
+  const buildPricingRequest = useCallback(
+    (nextVoucherCode: string | null): GroupBookingPricingRequest | null => {
+      if (!scheduleResult || !scheduleResult.ok) return null;
+      const arrangement = scheduleResult.arrangements[selectedArrangementIdx];
+      const organizerPhone = validateGuestPhone(primaryPhone);
+      const email = primaryEmail.trim().toLowerCase();
+      if (!arrangement || !organizerPhone.ok || (email && !isValidEmailFormat(email))) {
+        return null;
       }
-    },
-    [salon.id, primaryPhone],
+      return {
+        salonId: salon.id,
+        bookings: arrangement.assignments
+          .slice()
+          .sort((a, b) => a.memberIndex - b.memberIndex)
+          .map((assignment, index) => {
+            const draft = members[assignment.memberIndex];
+            return {
+              serviceId: draft.serviceId,
+              staffId: assignment.staffId,
+              startTimeUtc: assignment.startUtcIso,
+              endTimeUtc: assignment.endUtcIso,
+              addonServiceIds: [...draft.addonServiceIds],
+              clientName: draft.name.trim() || `Guest ${index + 1}`,
+              clientPhone: index === 0 ? organizerPhone.digits : null,
+              clientEmail: index === 0 && email ? email : null,
+              clientNotes: null,
+              staffRequestedByClient: draft.preferredStaffId !== null,
+              waveNumber: assignment.waveNumber ?? 1,
+              seatTogether,
+              clientLocale: language,
+              resourceId: null,
+            };
+          }),
+        voucherCode: nextVoucherCode,
+        applyEmailDiscount: Boolean(email),
+      };
+    }, [
+      language,
+      members,
+      primaryEmail,
+      primaryPhone,
+      salon.id,
+      scheduleResult,
+      seatTogether,
+      selectedArrangementIdx,
+    ],
   );
 
-  const handleRemoveVoucher = useCallback(() => setAppliedVoucher(null), []);
+  const pricingRequest = useMemo(
+    () => buildPricingRequest(voucherCode),
+    [buildPricingRequest, voucherCode],
+  );
+  const currentPricingKey = pricingRequest
+    ? groupBookingPricingIntentKey(pricingRequest)
+    : null;
+  const pricingReady = Boolean(
+    pricingRequest &&
+    pricingQuote &&
+    pricingQuoteKey === currentPricingKey &&
+    groupBookingQuoteMatchesRequest(pricingQuote, pricingRequest),
+  );
+  const appliedVoucher = useMemo(
+    () => pricingReady && voucherCode && pricingQuote?.voucherId
+      ? {
+          voucher_id: pricingQuote.voucherId,
+          code: voucherCode,
+          discount_cents: pricingQuote.voucherDiscountCents,
+          final_price_cents: pricingQuote.totalCents,
+        }
+      : null,
+    [pricingQuote, pricingReady, voucherCode],
+  );
+
+  const requestPricingQuote = useCallback(
+    async (request: GroupBookingPricingRequest, signal?: AbortSignal) => {
+      try {
+        const response = await fetch("/api/booking/group-quote", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal,
+          body: JSON.stringify({
+            salonId: request.salonId,
+            bookings: request.bookings,
+            voucherCode: request.voucherCode ?? null,
+            applyEmailDiscount: request.applyEmailDiscount,
+          }),
+        });
+        const data = await response.json().catch(() => null) as Record<string, unknown> | null;
+        if (!data || data.ok !== true) {
+          return { quote: null, error: data?.code === "voucher_invalid" ? "invalid" : "generic" };
+        }
+        const quote = parseGroupBookingPricingQuote(data.quote, {
+          voucherCode: request.voucherCode,
+        });
+        if (!quote || !groupBookingQuoteMatchesRequest(quote, request)) {
+          return { quote: null, error: "generic" };
+        }
+        return { quote, error: null };
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") throw error;
+        return { quote: null, error: "generic" };
+      }
+    },
+    [],
+  );
+
+  /* eslint-disable react-hooks/set-state-in-effect -- quote invalidation/loading must be synchronous with the material intent */
+  useEffect(() => {
+    if (step !== 5 || !pricingRequest || !currentPricingKey) return;
+    const controller = new AbortController();
+    setPricingLoading(true);
+    setPricingError(null);
+    void requestPricingQuote(pricingRequest, controller.signal)
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        if (!result.quote) {
+          setPricingQuote(null);
+          setPricingQuoteKey(null);
+          setPricingError(result.error);
+          return;
+        }
+        setPricingQuote(result.quote);
+        setPricingQuoteKey(currentPricingKey);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!controller.signal.aborted) setPricingLoading(false);
+      });
+    return () => controller.abort();
+  }, [currentPricingKey, pricingRequest, requestPricingQuote, step]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Apply a voucher by requesting a complete authoritative re-quote.
+  const handleApplyVoucher = useCallback(
+    async (code: string, _totalCents: number): Promise<{ error?: string }> => {
+      void _totalCents;
+      const normalized = code.trim().toUpperCase();
+      const request = buildPricingRequest(normalized);
+      if (!request) return { error: "generic" };
+      setPricingLoading(true);
+      const result = await requestPricingQuote(request);
+      setPricingLoading(false);
+      if (!result.quote) return { error: result.error ?? "generic" };
+      setVoucherCode(normalized);
+      setPricingQuote(result.quote);
+      setPricingQuoteKey(groupBookingPricingIntentKey(request));
+      setPricingError(null);
+      return {};
+    },
+    [buildPricingRequest, requestPricingQuote],
+  );
+
+  const handleRemoveVoucher = useCallback(() => {
+    setVoucherCode(null);
+    setPricingQuote(null);
+    setPricingQuoteKey(null);
+  }, []);
 
   // Auto-apply a code carried on the landing URL (/<slug>?code=CODE), e.g. from
   // a re-opt-in email. Fires once, on the confirm step, after the organizer
@@ -1005,6 +1142,25 @@ export function BookingGroupFlow({
       submittingRef.current = false;
       return;
     }
+    const submitPricingRequest = buildPricingRequest(voucherCode);
+    const submitPricingKey = submitPricingRequest
+      ? groupBookingPricingIntentKey(submitPricingRequest)
+      : null;
+    if (
+      !submitPricingRequest ||
+      !submitPricingKey ||
+      !pricingQuote ||
+      pricingQuoteKey !== submitPricingKey ||
+      !groupBookingQuoteMatchesRequest(pricingQuote, submitPricingRequest)
+    ) {
+      setErrorMessage(
+        pricingLoading
+          ? "Refreshing the party total…"
+          : "We couldn't verify the party total. Please review it and try again.",
+      );
+      submittingRef.current = false;
+      return;
+    }
     // Option A — capture the organizer's card BEFORE creating the group (only
     // when required). Tokenize once and hold it across a possible OTP round-trip
     // (the card iframe unmounts when the OTP panel replaces the confirm step).
@@ -1065,6 +1221,7 @@ export function BookingGroupFlow({
             email: isOrganizer ? primaryEmail.trim() || undefined : undefined,
             serviceId: draft.serviceId,
             staffId: a.staffId,
+            staffRequestedByClient: draft.preferredStaffId !== null,
             date,
             time: time24,
             // Phase 6.1 — carry the wave so submit persists wave_number per row.
@@ -1074,6 +1231,11 @@ export function BookingGroupFlow({
           };
         });
 
+      idempotencyKeyRef.current = groupBookingIdempotencyForIntent(
+        idempotencyKeyRef.current,
+        submitPricingKey,
+        crypto.randomUUID(),
+      );
       const res: GroupBookingResult = await submitGroupBooking({
         shopSlug,
         members: payload,
@@ -1095,15 +1257,27 @@ export function BookingGroupFlow({
         // `(salon_id, idempotency_key, …)` returns
         // `duplicate_submission` instead of creating a second
         // group.
-        idempotencyKey: idempotencyKeyRef.current,
-        // Whole-party voucher (re-opt-in 10% etc.), redeemed against the lead
-        // booking server-side.
-        voucherRedemption: appliedVoucher
-          ? { voucher_id: appliedVoucher.voucher_id, discount_cents: appliedVoucher.discount_cents }
-          : undefined,
+        idempotencyKey: idempotencyKeyRef.current.key,
+        voucherCode,
+        applyEmailDiscount: submitPricingRequest.applyEmailDiscount,
+        expectedPricingQuote: pricingQuote,
+        noShowCardSourceId: cardTokenRef.current,
+        noShowCardVerificationToken: cardVerificationRef.current,
+        noShowConsent,
       });
       if (res.ok) {
-        setSuccessResult({ groupId: res.groupId, bookingIds: res.bookingIds });
+        if (!res.pricing) {
+          setErrorMessage("We couldn't verify the saved party receipt. Please try again.");
+          return;
+        }
+        setSuccessResult({
+          groupId: res.groupId,
+          bookingIds: res.bookingIds,
+          pricing: res.pricing,
+          cardManagementToken: res.cardManagementToken,
+        });
+        // Only an acknowledged success starts a new logical booking intent.
+        idempotencyKeyRef.current = resetGroupBookingIdempotency(crypto.randomUUID());
         setStep("success");
         // No-show card for the organizer (lead = members[0], the only row with
         // a phone). Option A: a card captured at the confirm step is saved to
@@ -1113,40 +1287,6 @@ export function BookingGroupFlow({
         // failure, flag the lead so the desk collects the card manually (never a
         // silent loss). The flag endpoint is also the path when no card was
         // captured (not required → no-op).
-        const leadId = res.bookingIds?.[0];
-        const flagForDesk = (id: string) =>
-          fetch("/api/booking/flag-noshow-card", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ bookingId: id }),
-          }).catch(() => {});
-        if (leadId) {
-          const token = cardTokenRef.current;
-          if (token) {
-            let saved = false;
-            try {
-              const resp = await fetch("/api/booking/square-save-card", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  bookingId: leadId,
-                  sourceId: token,
-                  consent: true,
-                  verificationToken: cardVerificationRef.current ?? undefined,
-                }),
-              });
-              const json = (await resp.json().catch(() => ({}))) as { ok?: boolean };
-              saved = resp.ok && json.ok === true;
-            } catch {
-              saved = false;
-            }
-            if (!saved) {
-              await flagForDesk(leadId);
-            }
-          } else {
-            await flagForDesk(leadId);
-          }
-        }
         cardTokenRef.current = null;
         cardVerificationRef.current = null;
         // FIX 08 — drop the `?mode=group` query so a browser back
@@ -1202,6 +1342,27 @@ export function BookingGroupFlow({
             setPartyLinkFailed(true);
           });
         }
+        return;
+      }
+      if (res.reason === "pricing_changed") {
+        const request = buildPricingRequest(voucherCode);
+        if (!request || !groupBookingQuoteMatchesRequest(res.pricing, request)) {
+          setPricingQuote(null);
+          setPricingQuoteKey(null);
+          setErrorMessage("We couldn't verify the updated party total. Please try again.");
+          return;
+        }
+        setPricingQuote(res.pricing);
+        setPricingQuoteKey(groupBookingPricingIntentKey(request));
+        setErrorMessage("The party total changed. Review the updated receipt, then confirm again.");
+        return;
+      }
+      if (res.reason === "card_management_pending") {
+        // The party may already be committed. Keep the current group key and
+        // captured source/verification token so the next explicit Confirm
+        // replays and reconciles the exact server operation.
+        setErrorMessage(t.noShowCardError ?? "Card verification is still being completed. Please confirm again.");
+        setStep(5);
         return;
       }
       if (res.reason === "otp_required" || res.reason === "otp_invalid") {
@@ -1279,7 +1440,7 @@ export function BookingGroupFlow({
       // P1 #20 — granular validation reasons. Each carries a 1-indexed
       // `memberNumber` so the copy can pinpoint the problem instead
       // of showing the generic "couldn't book the group" fallback.
-      const mn = String(res.memberNumber ?? 1);
+      const mn = String("memberNumber" in res ? (res.memberNumber ?? 1) : 1);
       if (res.reason === "invalid_name") {
         setErrorMessage(
           (groupCopy.invalidNameForMember ??
@@ -1568,6 +1729,7 @@ export function BookingGroupFlow({
           isSelectedDayClosed={isSelectedDayClosed}
           stepErrors={stepErrors}
           salonId={salon.id}
+          salonTimezone={salon.timezone}
           openingHoursRaw={salon.opening_hours}
           closedDateYmdSet={closedDateYmdSet}
           staff={staff}
@@ -1809,7 +1971,14 @@ export function BookingGroupFlow({
           onOrganizerIsGuestChange={setOrganizerIsGuest}
           submitting={submitting}
           errorMessage={errorMessage}
-          totalDisplay={totalDisplay}
+          totalDisplay={
+            pricingReady && pricingQuote
+              ? formatCurrency(pricingQuote.totalCents, pricingQuote.currency) ?? null
+              : null
+          }
+          pricingQuote={pricingReady ? pricingQuote : null}
+          pricingLoading={pricingLoading}
+          pricingError={pricingError}
           maxMinutes={totals.maxMinutes}
           size={size}
           // P1 #18 / #19 (QA re-sweep 2026-05-12) — disable Confirm
@@ -2496,6 +2665,7 @@ function DateArrivalStep({
   isSelectedDayClosed,
   stepErrors,
   salonId,
+  salonTimezone,
   openingHoursRaw,
   closedDateYmdSet,
   staff,
@@ -2522,6 +2692,7 @@ function DateArrivalStep({
   isSelectedDayClosed: boolean;
   stepErrors: Set<string>;
   salonId: string;
+  salonTimezone: string;
   openingHoursRaw: unknown | null;
   closedDateYmdSet: ReadonlySet<string>;
   staff: readonly BookingStaffItem[];
@@ -2575,6 +2746,7 @@ function DateArrivalStep({
         <BookingCalendarGrid
           t={t}
           salonId={salonId}
+          salonTimezone={salonTimezone}
           openingHoursRaw={openingHoursRaw}
           closedDateYmdSet={closedDateYmdSet}
           staff={staff}
@@ -3619,6 +3791,9 @@ function ConfirmStep({
   submitting,
   errorMessage,
   totalDisplay,
+  pricingQuote,
+  pricingLoading,
+  pricingError,
   maxMinutes,
   size,
   contactReady,
@@ -3664,6 +3839,9 @@ function ConfirmStep({
   submitting: boolean;
   errorMessage: string | null;
   totalDisplay: string | null;
+  pricingQuote: GroupBookingPricingQuote | null;
+  pricingLoading: boolean;
+  pricingError: string | null;
   maxMinutes: number;
   size: number;
   /** Computed by parent — phone ≥ 10 digits AND email empty-or-valid. */
@@ -3853,6 +4031,7 @@ function ConfirmStep({
             const draft = members[a.memberIndex];
             const svc = services.find((s) => s.id === draft?.serviceId);
             const addonCount = draft?.addonServiceIds.length ?? 0;
+            const memberReceipt = pricingQuote?.memberQuotes[a.memberIndex];
             return (
               <li
                 key={a.memberIndex}
@@ -3864,11 +4043,42 @@ function ConfirmStep({
                   {showStaff ? ` · ${a.staffName}` : ""} ·{" "}
                   {svc?.name ?? a.serviceName}
                   {addonCount > 0 ? ` · +${addonCount} add-on` : ""}
+                  {memberReceipt
+                    ? ` · ${formatCurrency(memberReceipt.totalCents, pricingQuote.currency) ?? ""}`
+                    : ""}
                 </span>
               </li>
             );
           })}
         </ul>
+        {pricingLoading ? (
+          <p className="mt-3 text-xs text-[var(--booking-text-muted)]" role="status">
+            Refreshing the party total…
+          </p>
+        ) : pricingError || !pricingQuote ? (
+          <p className="mt-3 text-xs text-nq-error" role="alert" data-testid="group-pricing-unavailable">
+            We couldn&apos;t verify the party total. Please try again.
+          </p>
+        ) : (
+          <div className="mt-4 space-y-1 border-t border-[var(--booking-border)] pt-3 text-sm" data-testid="group-authoritative-receipt">
+            {pricingQuote.discountLines.map((line) => (
+              <div key={`${line.kind}:${line.label}`} className="flex justify-between gap-3 text-[var(--booking-text-muted)]">
+                <span>{line.label}</span>
+                <span>−{formatCurrency(line.amountCents, pricingQuote.currency)}</span>
+              </div>
+            ))}
+            {pricingQuote.taxBreakdown.map((line) => (
+              <div key={`${line.name}:${line.rate}`} className="flex justify-between gap-3 text-[var(--booking-text-muted)]">
+                <span>{line.name}</span>
+                <span>{formatCurrency(line.amountCents, pricingQuote.currency)}</span>
+              </div>
+            ))}
+            <div className="flex justify-between gap-3 font-semibold" data-testid="group-authoritative-total">
+              <span>{groupCopy.groupTotal ?? groupCopy.totalLabel ?? "Total"}</span>
+              <span>{formatCurrency(pricingQuote.totalCents, pricingQuote.currency)}</span>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="space-y-3">
@@ -4174,6 +4384,9 @@ function ConfirmStep({
           disabled={
             submitting ||
             cardRequirementLoading ||
+            pricingLoading ||
+            !pricingQuote ||
+            Boolean(pricingError) ||
             !contactReady ||
             !smsConsent ||
             (cardRequirement?.required === true && !noShowConsent)
@@ -4208,7 +4421,12 @@ function SuccessPanel({
 }: {
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
   t: BookingMessages;
-  successResult: { groupId: string; bookingIds: string[] };
+  successResult: {
+    groupId: string;
+    bookingIds: string[];
+    pricing: GroupBookingPricingQuote;
+    cardManagementToken: string | null;
+  };
   showStaff: boolean;
   /** Couple/group asked to be seated together — warm confirmation line. */
   seatTogether: boolean;
@@ -4294,6 +4512,38 @@ function SuccessPanel({
         </ul>
       ) : null}
 
+      <div
+        className="mt-5 rounded-xl border border-[var(--booking-border)] p-4 text-left text-sm"
+        data-testid="group-success-authoritative-receipt"
+      >
+        {successResult.pricing.memberQuotes.map((member) => {
+          const draft = members[member.memberIndex];
+          const service = services.find((item) => item.id === member.serviceId);
+          return (
+            <div key={member.memberIndex} className="flex justify-between gap-3 py-1 text-[var(--booking-text-muted)]">
+              <span>{draft?.name ?? `Guest ${member.memberIndex + 1}`} · {service?.name ?? "Service"}</span>
+              <span>{formatCurrency(member.totalCents, successResult.pricing.currency)}</span>
+            </div>
+          );
+        })}
+        {successResult.pricing.discountLines.map((line) => (
+          <div key={`${line.kind}:${line.label}`} className="flex justify-between gap-3 py-1 text-[var(--booking-text-muted)]">
+            <span>{line.label}</span>
+            <span>−{formatCurrency(line.amountCents, successResult.pricing.currency)}</span>
+          </div>
+        ))}
+        {successResult.pricing.taxBreakdown.map((line) => (
+          <div key={`${line.name}:${line.rate}`} className="flex justify-between gap-3 py-1 text-[var(--booking-text-muted)]">
+            <span>{line.name}</span>
+            <span>{formatCurrency(line.amountCents, successResult.pricing.currency)}</span>
+          </div>
+        ))}
+        <div className="mt-2 flex justify-between gap-3 border-t border-[var(--booking-border)] pt-2 font-semibold" data-testid="group-success-authoritative-total">
+          <span>{groupCopy.groupTotal ?? groupCopy.totalLabel ?? "Total"}</span>
+          <span>{formatCurrency(successResult.pricing.totalCents, successResult.pricing.currency)}</span>
+        </div>
+      </div>
+
       {seatTogether ? (
         <p
           data-testid="group-success-seat-together"
@@ -4319,10 +4569,11 @@ function SuccessPanel({
       {/* No-show card capture for the organizer (lead booking carries the
           phone). Self-gates: renders the card form only when the lead is
           risk-flagged + Square is configured — same as the individual flow. */}
-      {successResult.bookingIds[0] ? (
+      {successResult.bookingIds[0] && successResult.cardManagementToken ? (
         <div className="mt-5 text-left">
           <NoShowCardCapture
             bookingId={successResult.bookingIds[0]}
+            managementToken={successResult.cardManagementToken}
             currencyFormat={(cents) => formatCurrency(cents, currencyCode) ?? ""}
             t={t}
             savedCard={savedCard}

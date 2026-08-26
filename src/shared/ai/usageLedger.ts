@@ -81,14 +81,43 @@ export function estimateAnthropicCostUsd(
   return Number((cost / 1_000_000).toFixed(6));
 }
 
-function safeErrorCode(error: unknown): string {
+export function safeErrorCode(error: unknown): string {
   if (!error || typeof error !== "object") return "unknown_error";
-  const candidate = error as { status?: unknown; name?: unknown };
+  const candidate = error as {
+    status?: unknown;
+    name?: unknown;
+    code?: unknown;
+    cause?: unknown;
+  };
+  const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+  const code = typeof candidate.code === "string" ? candidate.code.trim() : "";
+  const cause =
+    candidate.cause && typeof candidate.cause === "object"
+      ? (candidate.cause as { name?: unknown; code?: unknown })
+      : null;
+  const causeName = typeof cause?.name === "string" ? cause.name.trim() : "";
+  const causeCode = typeof cause?.code === "string" ? cause.code.trim() : "";
+  if (
+    candidate.status === 408 ||
+    name === "APIConnectionTimeoutError" ||
+    name === "TimeoutError" ||
+    code === "ETIMEDOUT" ||
+    code === "UND_ERR_CONNECT_TIMEOUT" ||
+    causeName === "ConnectTimeoutError" ||
+    causeCode === "ETIMEDOUT" ||
+    causeCode === "UND_ERR_CONNECT_TIMEOUT"
+  ) {
+    return "provider_timeout";
+  }
   if (typeof candidate.status === "number") return `http_${candidate.status}`;
-  if (typeof candidate.name === "string" && candidate.name.trim()) {
-    return candidate.name.trim().slice(0, 120);
+  if (name) {
+    return name.slice(0, 120);
   }
   return "unknown_error";
+}
+
+export function isProviderTimeoutError(error: unknown): boolean {
+  return safeErrorCode(error) === "provider_timeout";
 }
 
 async function writeUsageEvent(row: Record<string, unknown>): Promise<void> {
@@ -122,10 +151,10 @@ async function writeAnthropicUsageEvent(input: {
     output_tokens: input.usage.outputTokens,
     cache_read_input_tokens: input.usage.cacheReadInputTokens,
     cache_creation_input_tokens: input.usage.cacheCreationInputTokens,
-    estimated_cost_usd: estimateAnthropicCostUsd(
-      input.context.model,
-      input.usage,
-    ),
+    estimated_cost_usd:
+      input.status === "failed"
+        ? null
+        : estimateAnthropicCostUsd(input.context.model, input.usage),
     latency_ms: Math.max(0, Date.now() - input.startedAt),
     error_code: input.errorCode,
   });

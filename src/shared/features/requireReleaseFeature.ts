@@ -16,7 +16,6 @@
 import "server-only";
 
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
-import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import {
   isReleaseFeatureEnabled,
   type ReleaseFeatureKey,
@@ -29,6 +28,7 @@ export type ReleaseFeatureSalonRow = {
   plan_override: string | null;
   feature_flags: unknown;
   voice_ai_enabled: boolean | null;
+  vertical?: string | null;
 };
 
 export type RequireReleaseFeatureResult =
@@ -52,18 +52,7 @@ export async function requireReleaseFeatureEnabled(
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
 
-  const supabase = createServiceRoleClient();
-  const { data: row } = await supabase
-    .from("salons")
-    .select(
-      "id, subscription_plan, plan_override, feature_flags, voice_ai_enabled",
-    )
-    .eq("id", resolved.salon.id)
-    .maybeSingle();
-
-  if (!row) return { ok: false, error: "salon_not_found" };
-
-  const salon = row as ReleaseFeatureSalonRow;
+  const salon = resolved.salon as ReleaseFeatureSalonRow;
 
   if (!isReleaseFeatureEnabled(salon, featureKey)) {
     return { ok: false, error: "feature_not_enabled" };

@@ -66,21 +66,24 @@ describe("client_profiles boundary", () => {
     const loader = read(
       "src/shared/dashboard/loadReceptionistCenterData.ts",
     );
-
-    expect(loader).toContain("const profileDb = createServiceRoleClient()");
-    expect(loader).toContain(
-      'profileDb\n      .from("client_profiles")',
+    const vipStatus = read(
+      "src/shared/dashboard/salonVipStatus.ts",
     );
+
+    expect(loader).toContain("loadSalonVipPhones(ctx.salon.id, queuePhones)");
+    expect(vipStatus).toContain("const db = createServiceRoleClient()");
+    expect(vipStatus).toContain('.from("salon_clients" as never)');
+    expect(vipStatus).toContain('.eq("salon_id" as never, salonId)');
     expect(loader).not.toContain(
-      'supabase\n      .from("client_profiles")\n      .select("phone, is_vip"',
+      '.select("phone, is_vip"',
     );
   });
 
   it("updates the blank-database parity tripwire", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("policies: 156");
+    expect(parity).toContain("policies: 197");
     expect(parity).toContain(
-      "const GRANTS = { anon: 57, authenticated: 64, service_role: 112 }",
+      "const GRANTS = { anon: 56, authenticated: 77, service_role: 175 }",
     );
   });
 });

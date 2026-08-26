@@ -92,7 +92,6 @@ describe("public RPC role grant boundary", () => {
     const serviceRoleSources = [
       "src/shared/voiceai/toolExecutor.ts",
       "src/shared/dashboard/receptionistActions.ts",
-      "src/app/api/quick-rebook/route.ts",
       "src/app/api/booking/reschedule-slots/route.ts",
     ].map(read);
     for (const source of serviceRoleSources) {

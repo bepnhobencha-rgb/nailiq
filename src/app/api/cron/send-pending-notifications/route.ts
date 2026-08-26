@@ -1,21 +1,24 @@
 /**
- * Delivers due staff-action customer notifications from `scheduled_notifications`.
- * Called every minute by Vercel Cron. Each row is CLAIMED atomically
- * (pending → sent) before delivery so overlapping runs can't double-send; a
- * delivery failure is logged but the row stays claimed (best-effort, no retry
- * storm for a cancellation notice).
+ * Drains independently leased notification workers. The legacy
+ * `scheduled_notifications` queue is observed only for migration visibility;
+ * it is never rendered from mutable booking rows or marked sent.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { deliverStaffActionNotification } from "@/shared/notifications/deliverStaffActionNotification";
 import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
 import { runTrackedCron } from "@/shared/security/cronRunHistory";
 import { deliverPendingPlatformAnnouncementEmails } from "@/shared/superadmin/platformAnnouncementEmail";
+import { runCustomerBookingTransitionEmailWorker } from "@/shared/notifications/customerBookingTransitionEmail";
+import { runBookingConfirmationRetryWorker } from "@/shared/booking/bookingConfirmationRetryDelivery";
+import { runStaffActionNotificationWorker } from "@/shared/notifications/staffActionNotificationWorker";
 
 export const runtime = "nodejs";
 export const maxDuration = 55;
 
 const BATCH = 100;
+const BOOKING_CONFIRMATION_RETRY_BATCH = 10;
+const CUSTOMER_TRANSITION_BATCH = 10;
+const STAFF_ACTION_DELIVERY_BATCH = 10;
 
 export async function GET(req: NextRequest) {
   const authorizationError = requireCronAuthorization(req);
@@ -24,6 +27,17 @@ export async function GET(req: NextRequest) {
 
   const supabase = createServiceRoleClient();
   const nowIso = new Date().toISOString();
+
+  // Staff-action notifications have their own immutable occurrence/envelope
+  // contract. Drain it before observing the retired mutable legacy queue.
+  const staffActionNotifications =
+    await runStaffActionNotificationWorker(STAFF_ACTION_DELIVERY_BATCH);
+
+  // Confirmation retries have a strict 30-minute window. Drain their small,
+  // independently leased batch before the legacy 100-row sequential queue so
+  // a scheduled-notification backlog cannot starve every retry invocation.
+  const bookingConfirmationRetries =
+    await runBookingConfirmationRetryWorker(BOOKING_CONFIRMATION_RETRY_BATCH);
 
   const { data: due, error } = await supabase
     .from("scheduled_notifications")
@@ -35,57 +49,29 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     console.error("[send-pending-notifications]", error);
-    return NextResponse.json({ error: "query_failed" }, { status: 500 });
   }
 
-  let delivered = 0;
-  let smsCount = 0;
-  let emailCount = 0;
-
-  for (const rowRaw of due ?? []) {
-    const row = rowRaw as unknown as {
-      id: string;
-      salon_id: string;
-      booking_id: string;
-      event: "create" | "reschedule" | "cancel";
-      channels: { sms?: boolean; email?: boolean } | null;
-    };
-
-    // Claim atomically: only proceed if THIS run flips pending → sent.
-    const { data: claimed } = await supabase
-      .from("scheduled_notifications")
-      .update({ status: "sent", sent_at: new Date().toISOString() } as never)
-      .eq("id", row.id)
-      .eq("status", "pending")
-      .select("id")
-      .maybeSingle();
-    if (!claimed) continue; // another run got it (or it was cancelled)
-
-    try {
-      const res = await deliverStaffActionNotification(supabase, {
-        salonId: row.salon_id,
-        bookingId: row.booking_id,
-        event: row.event,
-        channels: row.channels ?? {},
-      });
-      delivered += 1;
-      if (res.smsSent) smsCount += 1;
-      if (res.emailSent) emailCount += 1;
-    } catch (e) {
-      console.error("[send-pending-notifications] deliver failed", row.id, e);
-    }
-  }
+  // Rows written by the retired queue have no immutable occurrence snapshot or
+  // provider lease. Never infer a new envelope from today's booking/salon row
+  // and never mark them sent without a provider receipt.
+  const legacyStaffActionPending = error ? null : (due?.length ?? 0);
 
     const platformNotices = await deliverPendingPlatformAnnouncementEmails(
       supabase,
     );
+    const customerTransitionEmails =
+      await runCustomerBookingTransitionEmailWorker(CUSTOMER_TRANSITION_BATCH);
 
     return NextResponse.json({
       ok: true,
-      claimed: delivered,
-      smsCount,
-      emailCount,
+      claimed: 0,
+      smsCount: 0,
+      emailCount: 0,
+      legacyStaffActionPending,
+      staffActionNotifications,
       platformNotices,
+      bookingConfirmationRetries,
+      customerTransitionEmails,
     });
   });
 }

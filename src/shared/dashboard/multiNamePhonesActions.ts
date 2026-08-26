@@ -4,6 +4,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
+import { loadSalonVipPhones } from "@/shared/dashboard/salonVipStatus";
 
 /**
  * "Một số — nhiều tên": phones whose bookings carry 2+ distinct real names
@@ -66,12 +67,23 @@ export async function loadMultiNamePhones(
     return { ok: false, error: "server_error" };
   }
 
-  const phones: MultiNamePhone[] = (data ?? [])
-    .filter((r) => typeof r.phone === "string" && r.phone.length > 0)
+  const sourceRows = (data ?? []).filter(
+    (r) => typeof r.phone === "string" && r.phone.length > 0,
+  );
+  let vipPhones = new Set<string>();
+  try {
+    vipPhones = await loadSalonVipPhones(
+      ctx.salon.id,
+      sourceRows.map((row) => String(row.phone)),
+    );
+  } catch (vipError) {
+    console.error("[loadMultiNamePhones] salon vip status", vipError);
+  }
+  const phones: MultiNamePhone[] = sourceRows
     .map((r) => ({
       phone: String(r.phone),
       profileName: r.profile_name?.trim() || null,
-      isVip: r.is_vip === true,
+      isVip: vipPhones.has(String(r.phone)),
       distinctNames: Number(r.distinct_names ?? 0),
       totalVisits: Number(r.total_visits ?? 0),
       variants: Array.isArray(r.variants)

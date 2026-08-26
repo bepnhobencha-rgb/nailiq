@@ -48,6 +48,14 @@ export const RATE_LIMIT_IDS = {
 
 export type RateLimitId = (typeof RATE_LIMIT_IDS)[keyof typeof RATE_LIMIT_IDS];
 
+// A missing programmatic firewall rule is stable for a short interval and the
+// SDK otherwise performs an internal HTTP lookup for every request. Cache only
+// the negative "not-found" result, briefly and per warm process. Configured
+// rules, blocked requests, SDK failures and all durable application limiters
+// remain unaffected.
+const NOT_FOUND_CACHE_TTL_MS = 10_000;
+const missingRuleUntil = new Map<RateLimitId, number>();
+
 /**
  * Check a rate limit by ID. Returns `true` when the caller should be
  * blocked (HTTP 429). Returns `false` when the request is allowed —
@@ -67,12 +75,20 @@ export async function isRateLimited(
     rateLimitKey?: string;
   } = {},
 ): Promise<boolean> {
+  const now = Date.now();
+  const cachedUntil = missingRuleUntil.get(id) ?? 0;
+  if (cachedUntil > now) return false;
+  if (cachedUntil > 0) missingRuleUntil.delete(id);
+
   try {
-    const { rateLimited } = await checkRateLimit(id, {
+    const { rateLimited, error } = await checkRateLimit(id, {
       request: options.request,
       headers: options.headers,
       rateLimitKey: options.rateLimitKey,
     });
+    if (error === "not-found") {
+      missingRuleUntil.set(id, now + NOT_FOUND_CACHE_TTL_MS);
+    }
     return rateLimited;
   } catch {
     // Network / SDK failure — fail open. A 429 served by accident is

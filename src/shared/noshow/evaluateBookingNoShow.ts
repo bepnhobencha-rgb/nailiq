@@ -1,6 +1,7 @@
 import "server-only";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { ruleFirstOptimizationEnabled } from "@/shared/ai/executionLimit";
+import { isProviderTimeoutError } from "@/shared/ai/usageLedger";
 import { evaluateDeposit } from "@/shared/noshow/evaluateDeposit";
 import { scoreNoShowRisk } from "@/shared/noshow/scoreNoShowRisk";
 import { resolveVertical } from "@/shared/verticals/registry";
@@ -100,6 +101,13 @@ export async function evaluateBookingNoShow(
       }),
     ]);
 
+    if (
+      riskResult.status === "rejected" &&
+      isProviderTimeoutError(riskResult.reason)
+    ) {
+      throw riskResult.reason;
+    }
+
     const riskScore =
       riskResult.status === "fulfilled" ? riskResult.value.score : null;
 
@@ -170,6 +178,7 @@ export async function evaluateBookingNoShow(
         const agent = await runNoShowPolicyAgent(body.bookingId);
         if (agent) cardRequired = agent.cardRequired;
       } catch (e) {
+        if (isProviderTimeoutError(e)) throw e;
         console.error("[evaluateBookingNoShow] policy agent", e);
       }
     }
@@ -249,10 +258,11 @@ async function sendEscalationDepositLink(
 ): Promise<void> {
   const { data } = await supabase
     .from("bookings" as never)
-    .select("client_phone, client_email, client_name")
+    .select("salon_id, client_phone, client_email, client_name")
     .eq("id", bookingId)
     .maybeSingle();
   const b = (data ?? {}) as {
+    salon_id?: string | null;
     client_phone?: string | null;
     client_email?: string | null;
     client_name?: string | null;
@@ -266,7 +276,7 @@ async function sendEscalationDepositLink(
       await sendSmsReminder(
         phone,
         `${salon}: A ${amount} deposit is required to confirm your appointment. Please pay here to hold your spot: ${url}`,
-        { lang: "en" },
+        { salonId: String(b.salon_id ?? ""), lang: "en" },
       );
     } catch (e) {
       console.error("[sendEscalationDepositLink] sms", e);

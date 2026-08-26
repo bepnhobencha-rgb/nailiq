@@ -3,6 +3,7 @@
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { isOwnerOrAdmin, isFrontDeskRole } from "@/shared/lib/salonMemberRole";
+import { loadSalonVipProfileIds } from "@/shared/dashboard/salonVipStatus";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -105,13 +106,23 @@ export async function loadClientProfiles(
 
   const total = rows.length > 0 ? Number(rows[0]!.total_count ?? 0) : 0;
 
+  let vipProfileIds = new Set<string>();
+  try {
+    vipProfileIds = await loadSalonVipProfileIds(
+      ctx.salon.id,
+      rows.map((row) => row.client_profile_id ?? ""),
+    );
+  } catch (error) {
+    console.error("[loadClientProfiles] salon vip status", error);
+  }
+
   const clients: ClientProfileRow[] = rows.map((r) => ({
     // Use profile id when available; fall back to phone for import-only rows.
     id: r.client_profile_id ?? r.phone,
     name: r.name ?? null,
     phone: r.phone,
     email: r.email ?? null,
-    isVip: Boolean(r.is_vip),
+    isVip: Boolean(r.client_profile_id && vipProfileIds.has(r.client_profile_id)),
     notes: r.notes ?? null,
     visitCount: Number(r.visit_count ?? 0),
     lastVisitAt: r.last_visit ?? null,
@@ -133,10 +144,8 @@ export type UpdateClientProfileResult =
     };
 
 /**
- * Owner-only update of cross-salon client metadata (notes / VIP).
- * Per the migration comment: notes + is_vip are GLOBAL today —
- * different salons see the same flag. A per-salon split needs a
- * `client_salon_metadata` table; out of scope.
+ * Desk roles may maintain notes. Only owner/admin may change the salon-local
+ * VIP relationship; VIP never changes queue, price, policy, or availability.
  */
 export async function updateClientProfile(
   slug: string,
@@ -145,6 +154,9 @@ export async function updateClientProfile(
   const resolved = await getDashboardWriteClient(slug);
   if (!resolved) return { ok: false, error: "unauthorized" };
   if (!isFrontDeskRole(resolved.role)) return { ok: false, error: "forbidden" };
+  if (typeof input.isVip === "boolean" && !isOwnerOrAdmin(resolved.role)) {
+    return { ok: false, error: "forbidden" };
+  }
 
   const phone = String(input.phone ?? "").trim();
   if (!phone) return { ok: false, error: "not_found" };
@@ -152,7 +164,6 @@ export async function updateClientProfile(
   const patch: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
   };
-  if (typeof input.isVip === "boolean") patch.is_vip = input.isVip;
   if (input.notes !== undefined) {
     patch.notes =
       input.notes === null ? null : String(input.notes).slice(0, 2000);
@@ -165,7 +176,7 @@ export async function updateClientProfile(
     .update(patch as never)
     .eq("phone", phone)
     .is("deleted_at" as never, null)
-    .select("phone")
+    .select("id, phone")
     .maybeSingle();
 
   if (error) {
@@ -177,6 +188,23 @@ export async function updateClientProfile(
     // on first booking, so this shouldn't happen in normal use; treat as
     // not_found rather than silently succeeding.
     return { ok: false, error: "not_found" };
+  }
+
+  if (typeof input.isVip === "boolean") {
+    const profile = data as { id?: string | null };
+    if (!profile.id) return { ok: false, error: "not_found" };
+    const { error: vipError } = await supabase
+      .from("salon_clients" as never)
+      .upsert({
+        salon_id: resolved.salon.id,
+        client_profile_id: profile.id,
+        is_vip: input.isVip,
+        source: "manual_vip",
+      } as never, { onConflict: "salon_id,client_profile_id" });
+    if (vipError) {
+      console.error("[updateClientProfile] salon vip", vipError);
+      return { ok: false, error: "server_error" };
+    }
   }
   return { ok: true };
 }

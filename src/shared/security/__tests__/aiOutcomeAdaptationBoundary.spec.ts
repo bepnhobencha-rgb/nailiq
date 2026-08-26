@@ -16,8 +16,6 @@ const tracker = readFileSync(
   "utf8",
 );
 const agents = [
-  "src/shared/winback/agentWinback.ts",
-  "src/shared/winback/agentRebook.ts",
   "src/shared/firstvisit/agentFirstVisit.ts",
   "src/shared/ai/agentVipCare.ts",
 ].map((file) => readFileSync(resolve(root, file), "utf8"));
@@ -71,5 +69,18 @@ describe("AI outcome adaptation boundary", () => {
     }
     expect(mutations).not.toContain("sendSmsReminder");
     expect(mutations).not.toContain("getResendClient");
+  });
+
+  it("keeps reactivation runners out of the post-send outcome loop", () => {
+    for (const file of [
+      "src/shared/winback/agentWinback.ts",
+      "src/shared/winback/agentRebook.ts",
+    ]) {
+      const source = readFileSync(resolve(root, file), "utf8");
+      expect(source).toContain("createReactivationCampaignDraft");
+      expect(source).not.toContain("sendSmsReminder");
+      expect(source).not.toContain("getResendClient");
+      expect(source).not.toContain("undo_deadline");
+    }
   });
 });

@@ -59,7 +59,6 @@ export function OnlineWaitlistPanel({
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
   const toastTimer = useRef<number | null>(null);
-
   useEffect(() => {
     return () => {
       if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);

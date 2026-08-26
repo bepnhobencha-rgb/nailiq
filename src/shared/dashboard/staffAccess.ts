@@ -1,10 +1,17 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { isOwner, isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
+import {
+  isOwner,
+  isOwnerOrAdmin,
+  normalizeSalonMemberRole,
+  type SalonMemberRole,
+} from "@/shared/lib/salonMemberRole";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { addStaff, getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { requireActiveAuthSession } from "@/shared/auth/requireActiveAuthSession";
 
 /**
  * Login/permission roles for a team member's optional dashboard account.
@@ -27,7 +34,15 @@ export type StaffAccessResult =
   | { ok: true; invited?: boolean }
   | { ok: false; error: string };
 
+export type TeamAccessMapResult =
+  | { ok: true; accessMap: Record<string, StaffAccessInfo> }
+  | {
+      ok: false;
+      error: "invalid_slug" | "unauthorized" | "forbidden" | "server_error";
+    };
+
 const ASSIGNABLE: readonly StaffAccessRole[] = ["admin", "receptionist"] as const;
+const SALON_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 // ── Auth-user lookup helpers ────────────────────────────────────────────────
 
@@ -141,6 +156,81 @@ async function authorize(
   return { ok: true, ctx };
 }
 
+type AuthorizedTeamRead = {
+  salonId: string;
+  role: SalonMemberRole;
+  supabase: Awaited<ReturnType<typeof createClient>>;
+};
+
+/**
+ * Authorize the PII-bearing team-access read without using service role.
+ *
+ * This deliberately does not reuse `resolveSalonForDashboard`: that resolver
+ * supports a demo-cookie fallback backed by service role. A public Server
+ * Function that returns Auth email/phone data must require a freshly verified
+ * Supabase user plus an owner/admin membership in the exact slug instead.
+ */
+async function authorizeTeamAccessRead(
+  slug: string,
+): Promise<
+  | { ok: true; auth: AuthorizedTeamRead }
+  | { ok: false; error: "unauthorized" | "forbidden" | "server_error" }
+> {
+  let supabase: Awaited<ReturnType<typeof createClient>>;
+  try {
+    supabase = await createClient();
+  } catch (error) {
+    console.error("[loadTeamAccessMap] create server client", error);
+    return { ok: false, error: "server_error" };
+  }
+
+  const session = await requireActiveAuthSession(supabase);
+  if (!session.ok) {
+    return {
+      ok: false,
+      error:
+        session.code === "auth_unavailable" ? "server_error" : "unauthorized",
+    };
+  }
+  const user = session.user;
+
+  const { data: memberships, error: membershipError } = await supabase
+    .from("salon_members")
+    .select("salon_id, role")
+    .eq("user_id", user.id);
+  if (membershipError) {
+    console.error("[loadTeamAccessMap] memberships", membershipError);
+    return { ok: false, error: "server_error" };
+  }
+  if (!memberships?.length) return { ok: false, error: "unauthorized" };
+
+  const salonIds = memberships.map((membership) => String(membership.salon_id));
+  const { data: salon, error: salonError } = await supabase
+    .from("salons")
+    .select("id, slug")
+    .eq("slug", slug)
+    .in("id", salonIds)
+    .maybeSingle();
+  if (salonError) {
+    console.error("[loadTeamAccessMap] salon", salonError);
+    return { ok: false, error: "server_error" };
+  }
+  if (!salon?.id) return { ok: false, error: "unauthorized" };
+
+  const membership = memberships.find(
+    (candidate) => String(candidate.salon_id) === String(salon.id),
+  );
+  if (!membership) return { ok: false, error: "unauthorized" };
+
+  const role = normalizeSalonMemberRole(membership.role);
+  if (!isOwnerOrAdmin(role)) return { ok: false, error: "forbidden" };
+
+  return {
+    ok: true,
+    auth: { salonId: String(salon.id), role, supabase },
+  };
+}
+
 /** Load a `staff` row scoped to the salon (service-role; caller already authorized). */
 async function loadStaffRow(
   admin: SupabaseClient,
@@ -159,38 +249,89 @@ async function loadStaffRow(
 // ── Data loader for the Team page ───────────────────────────────────────────
 
 /**
- * Map staff.user_id → access info (role, email/phone, active) for the staff
- * members that actually have a linked login (`linkedUserIds`).
+ * Map staff.user_id → access info (role, email/phone, active) for the
+ * authenticated owner/admin's salon.
  *
- * Uses the service-role client because `salon_members` RLS only lets a user
- * read their OWN row — an owner could not otherwise see the whole team.
+ * The public Server Function accepts only the salon slug. It verifies the
+ * caller's Auth user, tenant membership, and owner/admin role using the
+ * request-scoped client before creating a service-role client. Linked user IDs
+ * are derived from canonical `staff` rows; caller-supplied salon/user IDs are
+ * never accepted.
  *
- * Cost scales with the salon's linked-team size, NOT the project's total user
- * count: roles come from one indexed `IN (...)` query, and each user's
- * email/status is fetched with a targeted `getUserById` in parallel. A salon
- * with no logins yet makes ZERO Auth calls. (The previous version paged
- * through *every* auth user in the project — up to 4,000 rows — on each render.)
+ * After authorization, service role is required because `salon_members` RLS
+ * exposes only the caller's own row and Auth admin owns email/phone metadata.
+ * Every DB/Auth error fails the whole read closed; no partial PII map is
+ * returned.
  */
 export async function loadTeamAccessMap(
-  salonId: string,
-  linkedUserIds: string[],
-): Promise<Record<string, StaffAccessInfo>> {
-  const ids = Array.from(new Set(linkedUserIds.filter(Boolean)));
-  if (ids.length === 0) return {};
+  slug: string,
+): Promise<TeamAccessMapResult> {
+  if (
+    typeof slug !== "string" ||
+    slug.length === 0 ||
+    slug.length > 100 ||
+    !SALON_SLUG_RE.test(slug)
+  ) {
+    return { ok: false, error: "invalid_slug" };
+  }
+
+  try {
+    return await loadAuthorizedTeamAccessMap(slug);
+  } catch (error) {
+    // Supabase normally returns `{ error }`, but transport/runtime failures can
+    // reject instead. Keep the public Server Function typed and fail closed in
+    // both cases; never let a partial PII map escape.
+    console.error("[loadTeamAccessMap] unexpected failure", error);
+    return { ok: false, error: "server_error" };
+  }
+}
+
+async function loadAuthorizedTeamAccessMap(
+  slug: string,
+): Promise<TeamAccessMapResult> {
+  const authorization = await authorizeTeamAccessRead(slug);
+  if (!authorization.ok) return authorization;
+  const { salonId, supabase } = authorization.auth;
+
+  const { data: staffRows, error: staffError } = await supabase
+    .from("staff")
+    .select("user_id")
+    .eq("salon_id", salonId)
+    .is("deleted_at" as never, null);
+  if (staffError) {
+    console.error("[loadTeamAccessMap] staff", staffError);
+    return { ok: false, error: "server_error" };
+  }
+
+  const ids = Array.from(
+    new Set(
+      (staffRows ?? [])
+        .map((row) => row.user_id)
+        .filter((userId): userId is string =>
+          typeof userId === "string" && userId.length > 0,
+        ),
+    ),
+  );
+  if (ids.length === 0) return { ok: true, accessMap: {} };
 
   let admin: SupabaseClient;
   try {
     admin = createServiceRoleClient();
-  } catch {
-    return {};
+  } catch (error) {
+    console.error("[loadTeamAccessMap] create service client", error);
+    return { ok: false, error: "server_error" };
   }
 
   // Roles for just the linked users — single indexed query.
-  const { data: members } = await admin
+  const { data: members, error: membersError } = await admin
     .from("salon_members")
     .select("user_id, role")
     .eq("salon_id", salonId)
     .in("user_id", ids);
+  if (membersError) {
+    console.error("[loadTeamAccessMap] linked memberships", membersError);
+    return { ok: false, error: "server_error" };
+  }
 
   const roleByUser = new Map<string, StaffAccessInfo["role"]>();
   for (const m of (members ?? []) as { user_id: string; role: string }[]) {
@@ -198,27 +339,41 @@ export async function loadTeamAccessMap(
       roleByUser.set(m.user_id, m.role);
     }
   }
-  if (roleByUser.size === 0) return {};
+  if (roleByUser.size === 0) return { ok: true, accessMap: {} };
 
   // Email + confirmation status: one targeted lookup per linked user, in
   // parallel. No full-project scan.
-  const entries = await Promise.all(
-    Array.from(roleByUser.entries()).map(async ([userId, role]) => {
-      const { data, error } = await admin.auth.admin.getUserById(userId);
-      const u = error ? null : data.user;
+  try {
+    const authUsers = await Promise.all(
+      Array.from(roleByUser.keys()).map(async (userId) => {
+        const { data, error } = await admin.auth.admin.getUserById(userId);
+        return { userId, user: data.user, error };
+      }),
+    );
+    if (authUsers.some(({ error, user }) => Boolean(error) || !user)) {
+      console.error("[loadTeamAccessMap] Auth user lookup failed");
+      return { ok: false, error: "server_error" };
+    }
+
+    const entries = authUsers.map(({ userId, user }) => {
       const info: StaffAccessInfo = {
-        role,
-        email: u?.email ?? null,
-        phone: u?.phone ?? null,
+        role: roleByUser.get(userId)!,
+        email: user?.email ?? null,
+        phone: user?.phone ?? null,
         active: Boolean(
-          u?.email_confirmed_at || u?.phone_confirmed_at || u?.last_sign_in_at,
+          user?.email_confirmed_at ||
+            user?.phone_confirmed_at ||
+            user?.last_sign_in_at,
         ),
       };
       return [userId, info] as const;
-    }),
-  );
+    });
 
-  return Object.fromEntries(entries);
+    return { ok: true, accessMap: Object.fromEntries(entries) };
+  } catch (error) {
+    console.error("[loadTeamAccessMap] Auth user lookup", error);
+    return { ok: false, error: "server_error" };
+  }
 }
 
 // ── Mutations ───────────────────────────────────────────────────────────────

@@ -1,61 +1,15 @@
-/**
- * Square deposit collection (risk-gated, % of service price).
- *
- * - createDepositForBooking: if the salon enabled deposits AND the booking's
- *   no_show_risk_score >= threshold, create a Square payment link for
- *   round(price * percent), stamp the booking (deposit_required/amount/status +
- *   square link ids), and return the pay URL. Idempotent: a booking that already
- *   has a link returns it instead of creating a second.
- * - reconcileDeposits: for the salon's pending-deposit bookings, check the
- *   Square order and flip deposit_status -> 'paid' once the link is paid. Called
- *   from the square-sync cron each run.
- */
+/** Authoritative Square hosted deposit links backed by the payment ledger. */
 import "server-only";
-import { randomUUID } from "node:crypto";
-import { looseServiceClient, type Row } from "./looseDb";
-import { getSquareConfig, createPaymentLink, getOrder, refundPayment } from "./client";
-import { evaluateDeposit } from "@/shared/noshow/evaluateDeposit";
+import { createHash } from "node:crypto";
+import { getSquareConfig, createPaymentLink, getOrder } from "./client";
+import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { runAuthoritativeBookingPaymentOperation } from "@/shared/payments/executeBookingPaymentOperation";
+import { v1AllowsCustomerPaymentGateway } from "@/shared/release/v1IntegrationScope";
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
-
-/** Per-salon TIERED deposit config (admin-set), so the desk deposit is as smart
- *  as the online flow: different % for new / no-show / high-value. */
-async function loadTieredConfig(db: ReturnType<typeof looseServiceClient>, salonId: string) {
-  const { data } = await db
-    .from("salons")
-    .select("deposit_pct_no_show, deposit_pct_high_value, deposit_pct_new_customer, deposit_high_value_cents")
-    .eq("id", salonId)
-    .maybeSingle();
-  const r = (data as Row) ?? {};
-  return {
-    pctNoShow: num(r.deposit_pct_no_show) || 50,
-    pctHighValue: num(r.deposit_pct_high_value) || 30,
-    pctNewCustomer: num(r.deposit_pct_new_customer) || 20,
-    highValueCents: num(r.deposit_high_value_cents) || 10000,
-  };
-}
-
-/** Risk signals from the phone-keyed client profile — same source the online
- *  deposit flow uses, so a desk deposit reads the customer identically. */
-async function depositSignals(db: ReturnType<typeof looseServiceClient>, phone: string) {
-  let isNewCustomer = true;
-  let previousNoShowCount = 0;
-  let isVip = false;
-  const p = phone.trim();
-  if (p) {
-    const { data } = await db
-      .from("client_profiles")
-      .select("no_show_count, is_vip, visit_count")
-      .eq("phone", p)
-      .maybeSingle();
-    const r = (data ?? {}) as { no_show_count?: number; is_vip?: boolean; visit_count?: number };
-    previousNoShowCount = Math.max(0, Math.round(num(r.no_show_count)));
-    isVip = Boolean(r.is_vip);
-    isNewCustomer = !(num(r.visit_count) > 0);
-  }
-  return { isNewCustomer, previousNoShowCount, isVip };
-}
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const HASH_RE = /^[0-9a-f]{64}$/;
 
 export interface DepositResult {
   required: boolean;
@@ -64,207 +18,424 @@ export interface DepositResult {
   amountCents?: number;
 }
 
-async function loadPolicy(db: ReturnType<typeof looseServiceClient>, salonId: string) {
-  const { data } = await db
-    .from("square_integrations")
-    .select("deposit_enabled, deposit_percent, deposit_risk_threshold")
-    .eq("salon_id", salonId)
-    .maybeSingle();
-  const r = (data as Row) ?? {};
+function record(value: unknown): Record<string, unknown> | null {
+  const row = Array.isArray(value) ? value[0] : value;
+  return row && typeof row === "object" ? row as Record<string, unknown> : null;
+}
+
+type HostedLinkClaim = {
+  operationId: string;
+  bookingId: string;
+  salonId: string;
+  attemptToken: string;
+  providerIdempotencyKey: string;
+  materialFingerprint: string;
+  amountCents: number;
+  currency: string;
+  hold: boolean;
+  providerAccountId: string;
+  providerLocationId: string;
+  providerEnvironment: "sandbox" | "production";
+};
+
+function parseHostedLinkClaim(value: unknown): HostedLinkClaim | null {
+  const row = record(value);
+  if (
+    row?.success !== true ||
+    !["link_claimed", "link_attempt_replay", "reconcile_claimed"].includes(String(row.code ?? "")) ||
+    !["sending", "reconciling"].includes(String(row.status ?? ""))
+  ) return null;
+  const operationId = str(row.operation_id);
+  const bookingId = str(row.booking_id);
+  const attemptToken = str(row.attempt_token);
+  const providerIdempotencyKey = str(row.provider_idempotency_key);
+  const materialFingerprint = str(row.material_fingerprint);
+  const material = record(row.material);
+  const providerMaterial = record(row.provider_material);
+  const salonId = str(material?.salon_id);
+  const amountCents = num(material?.amount_cents);
+  const currency = str(material?.currency).toUpperCase();
+  const accountId = str(providerMaterial?.provider_account_id);
+  const locationId = str(providerMaterial?.provider_location_id);
+  const environment = providerMaterial?.provider_environment === "sandbox" ||
+      providerMaterial?.provider_environment === "production"
+    ? providerMaterial.provider_environment
+    : null;
+  const accountFingerprint = str(material?.provider_account_fingerprint);
+  if (
+    !UUID_RE.test(operationId) || !UUID_RE.test(bookingId) || !UUID_RE.test(salonId) ||
+    !UUID_RE.test(attemptToken) || providerIdempotencyKey !== `nq:${operationId}` ||
+    !HASH_RE.test(materialFingerprint) || material?.booking_id !== bookingId ||
+    material?.operation_kind !== "deposit_charge" ||
+    material?.delivery_mode !== "square_hosted_link" || material?.provider !== "square" ||
+    !Number.isSafeInteger(amountCents) || amountCents <= 0 || !/^[A-Z]{3}$/.test(currency) ||
+    typeof material?.hold !== "boolean" || !accountId || !locationId || !environment ||
+    providerMaterial?.amount_cents !== amountCents ||
+    providerMaterial?.booking_reference !== bookingId ||
+    providerMaterial?.delivery_mode !== "square_hosted_link" ||
+    providerMaterial?.currency !== currency ||
+    accountFingerprint !== createHash("sha256")
+      .update(`square:${accountId}:${locationId}:${environment}`, "utf8").digest("hex")
+  ) return null;
   return {
-    enabled: Boolean(r.deposit_enabled),
-    percent: num(r.deposit_percent) || 30,
-    threshold: num(r.deposit_risk_threshold) || 60,
+    operationId,
+    bookingId,
+    salonId,
+    attemptToken,
+    providerIdempotencyKey,
+    materialFingerprint,
+    amountCents,
+    currency,
+    hold: material.hold,
+    providerAccountId: accountId,
+    providerLocationId: locationId,
+    providerEnvironment: environment,
   };
+}
+
+function stableHostedLinkRequestId(bookingId: string): string {
+  const bytes = Buffer.from(createHash("sha256")
+    .update(`nailiq:hosted-deposit-link:v1:${bookingId}`, "utf8").digest().subarray(0, 16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 export async function createDepositForBooking(
   bookingId: string,
-  /** `manual: true` — a receptionist is requesting the deposit at the desk, so
-   *  skip the no-show-risk gate (the human decided it's warranted). The salon
-   *  still has to have Square deposits enabled — that's a config gate, not a
-   *  risk one. */
-  opts?: { manual?: boolean; hold?: boolean },
+  opts?: { manual?: boolean; hold?: boolean; requestId?: string },
 ): Promise<DepositResult> {
-  const db = looseServiceClient();
-  const { data: bRow } = await db
+  if (!v1AllowsCustomerPaymentGateway()) {
+    return { required: false, reason: "phase_2_not_available" };
+  }
+  if (!UUID_RE.test(bookingId)) return { required: false, reason: "invalid booking" };
+  const requestId = opts?.requestId ?? stableHostedLinkRequestId(bookingId);
+  if (!UUID_RE.test(requestId)) return { required: false, reason: "invalid request" };
+  const db = createServiceRoleClient();
+  const { data: booking, error: bookingError } = await db
     .from("bookings")
-    .select("id, salon_id, status, price_cents, no_show_risk_score, deposit_status, deposit_amount_cents, square_payment_link_id, deposit_link_url, client_name, client_phone, noshow_card_required, noshow_card_id")
+    .select("id, salon_id, client_name")
     .eq("id", bookingId)
     .maybeSingle();
-  const b = bRow as Row | null;
-  if (!b) return { required: false, reason: "booking not found" };
-
-  // Already has a link -> return it (idempotent). Surface the stored amount so
-  // callers (e.g. the SMS sender) don't have to re-read the booking.
-  if (b.deposit_link_url) {
-    return {
-      required: true,
-      reason: "existing link",
-      url: str(b.deposit_link_url),
-      amountCents: num(b.deposit_amount_cents) || undefined,
-    };
+  const bookingRow = booking as { id?: string; salon_id?: string; client_name?: string | null } | null;
+  if (bookingError || bookingRow?.id !== bookingId || !UUID_RE.test(str(bookingRow.salon_id))) {
+    return { required: false, reason: "booking not found" };
   }
-
-  const salonId = str(b.salon_id);
-  const policy = await loadPolicy(db, salonId);
-  if (!policy.enabled) return { required: false, reason: "deposits disabled for salon" };
-
-  const risk = num(b.no_show_risk_score);
-  const manual = opts?.manual === true;
-
-  // No-show card supersedes the deposit (same rule as the online path in
-  // evaluateBookingNoShow): if this booking already requires / has a card on
-  // file — charged only on a confirmed no-show — don't ALSO auto-create an
-  // up-front deposit for the same risk. A manual desk request still goes
-  // through: the receptionist explicitly chose it (human override).
+  const salonId = str(bookingRow.salon_id);
+  const claimed = await db.rpc("claim_booking_square_deposit_link" as never, {
+    p_salon_id: salonId,
+    p_booking_id: bookingId,
+    p_request_id: requestId,
+    p_hold: opts?.hold === true,
+  } as never);
+  if (claimed.error) throw new Error("deposit_link_claim_unavailable");
+  const row = record(claimed.data);
   if (
-    !manual &&
-    (b.noshow_card_required === true || b.noshow_card_id != null)
+    row?.success === true &&
+    ["link_ready", "link_payment_replay"].includes(String(row.code ?? ""))
   ) {
-    return { required: false, reason: "superseded by no-show card on file" };
+    const url = str(row.link_url);
+    const amountCents = num(record(row.material)?.amount_cents ?? record(row.result)?.amount_cents);
+    if (!url.startsWith("https://") || !Number.isSafeInteger(amountCents) || amountCents <= 0) {
+      throw new Error("deposit_link_receipt_invalid");
+    }
+    return { required: true, reason: "existing link", url, amountCents };
   }
-
-  if (!manual && risk < policy.threshold) {
-    return { required: false, reason: `risk ${risk} < threshold ${policy.threshold}` };
+  const claim = parseHostedLinkClaim(claimed.data);
+  if (!claim || claim.bookingId !== bookingId || claim.salonId !== salonId) {
+    const code = str(row?.code);
+    if (["booking_not_deposit_eligible", "square_deposits_disabled"].includes(code)) {
+      return { required: false, reason: code };
+    }
+    throw new Error(code || "deposit_link_claim_invalid");
   }
-
-  // SMART amount — tier by who the customer is (new / prior no-show / high-value /
-  // VIP-exempt), same engine + signals as the online flow, instead of a flat %.
-  const tier = await loadTieredConfig(db, salonId);
-  const signals = await depositSignals(db, str(b.client_phone));
-  const evalInput = {
-    isNewCustomer: signals.isNewCustomer,
-    previousNoShowCount: signals.previousNoShowCount,
-    isVip: signals.isVip,
-    servicePriceCents: num(b.price_cents),
-    highValueThresholdCents: tier.highValueCents,
-    pctNoShow: tier.pctNoShow,
-    pctHighValue: tier.pctHighValue,
-    pctNewCustomer: tier.pctNewCustomer,
-  };
-  let decision = evaluateDeposit(evalInput);
-  // Desk override: the receptionist explicitly requested a deposit, so require it
-  // even when no automatic tier matched (loyal / low-risk / VIP) — at the
-  // high-value %. An auto (non-manual) call past the risk gate does the same.
-  if (!decision.required) {
-    decision = evaluateDeposit({ ...evalInput, ownerOverride: "require" });
-  }
-  if (!decision.required || decision.amountCents <= 0) {
-    return { required: false, reason: "no deposit rule matched" };
-  }
-  const amountCents = Math.max(100, decision.amountCents);
-
-  const cfg = await getSquareConfig(db, salonId);
+  const cfg = await getSquareConfig(db as never, salonId);
+  if (
+    cfg.merchantId !== claim.providerAccountId || cfg.locationId !== claim.providerLocationId ||
+    cfg.environment !== claim.providerEnvironment || cfg.currency !== claim.currency
+  ) throw new Error("square_provider_account_mismatch");
   const link = await createPaymentLink(cfg, {
-    amountCents,
-    name: `Deposit — ${str(b.client_name) || "appointment"}`,
+    amountCents: claim.amountCents,
+    name: `Deposit — ${str(bookingRow.client_name) || "appointment"}`,
     referenceId: bookingId,
-    idempotencyKey: randomUUID(),
+    idempotencyKey: claim.providerIdempotencyKey,
     note: `NailIQ deposit for booking ${bookingId}`,
   });
-
-  // hold = "pay-to-confirm": the slot is only held until the deposit is paid; if
-  // unpaid past the grace window the release-pending cron cancels it. Explicit
-  // opt-in (default OFF) so existing "just collect a deposit" callers are
-  // unchanged — the desk "hold slot" action passes hold:true.
-  const hold = opts?.hold === true;
-  // Pay-to-confirm: a held booking reads as "Chờ cọc" not "Xác nhận", so move a
-  // currently-confirmed slot to `pending` until payment (reconcile flips it back
-  // to confirmed). Only downgrade from confirmed — never touch in_progress /
-  // completed / etc. The OTP-15min release cron is guarded against deposit_hold,
-  // so the slot is only released by the deposit grace window.
-  const patch: Record<string, unknown> = {
-    deposit_required: true,
-    deposit_amount_cents: amountCents,
-    deposit_status: "required",
-    deposit_reason: manual
-      ? `manual desk request (${decision.reason ?? "forced"})`
-      : `smart: ${decision.reason ?? "rule_applied"}`,
-    square_payment_link_id: link.id,
-    square_deposit_order_id: link.orderId,
-    deposit_link_url: link.url,
-    deposit_hold: hold,
-    deposit_requested_at: new Date().toISOString(),
+  if (!link.orderId) throw new Error("square_link_order_missing");
+  const attached = await db.rpc("attach_booking_square_deposit_link" as never, {
+    p_operation_id: claim.operationId,
+    p_attempt_token: claim.attemptToken,
+    p_square_link_id: link.id,
+    p_square_order_id: link.orderId,
+    p_link_url: link.url,
+  } as never);
+  const attachedRow = record(attached.data);
+  if (
+    attached.error || attachedRow?.success !== true ||
+    !["link_attached", "link_attach_replay"].includes(String(attachedRow.code ?? "")) ||
+    attachedRow.operation_id !== claim.operationId || attachedRow.booking_id !== bookingId ||
+    attachedRow.provider_link_id !== link.id || attachedRow.provider_order_id !== link.orderId ||
+    attachedRow.link_url !== link.url || attachedRow.material_fingerprint !== claim.materialFingerprint
+  ) throw new Error("deposit_link_attach_unavailable");
+  return {
+    required: true,
+    reason: "deposit link created",
+    url: link.url,
+    amountCents: claim.amountCents,
   };
-  if (hold && str(b.status) === "confirmed") patch.status = "pending";
-  await db.from("bookings").update(patch as never).eq("id", bookingId);
-
-  return { required: true, reason: "deposit link created", url: link.url, amountCents };
 }
 
 /**
  * Refund a paid Square deposit (mutually-agreed cancel). Returns ok:false with a
  * reason the desk can surface (e.g. refund manually in Square) rather than throwing.
  */
-export async function refundDeposit(bookingId: string): Promise<{ ok: boolean; reason: string; refundedCents?: number }> {
-  const db = looseServiceClient();
-  const { data } = await db
+export async function refundDeposit(
+  bookingId: string,
+  options: { amountCents?: number; requestId: string },
+): Promise<{ ok: boolean; reason: string; refundedCents?: number; remainingCents?: number }> {
+  if (!v1AllowsCustomerPaymentGateway()) {
+    return { ok: false, reason: "phase_2_not_available" };
+  }
+  const db = createServiceRoleClient();
+  const { data, error } = await db
     .from("bookings")
-    .select("id, salon_id, deposit_status, deposit_amount_cents, square_payment_id")
+    .select("id, salon_id, deposit_amount_cents, deposit_refunded_cents")
     .eq("id", bookingId)
     .maybeSingle();
-  const b = data as Row | null;
-  if (!b) return { ok: false, reason: "booking not found" };
-  if (str(b.deposit_status) !== "paid") return { ok: false, reason: "no paid deposit" };
-
-  const paymentId = str(b.square_payment_id);
-  const amount = num(b.deposit_amount_cents);
-  if (!paymentId || amount <= 0) return { ok: false, reason: "missing payment id — refund manually in Square" };
-
-  const cfg = await getSquareConfig(db, str(b.salon_id));
-  try {
-    await refundPayment(cfg, {
-      paymentId,
-      amountCents: amount,
-      reason: "Booking cancelled — deposit refund",
-      idempotencyKey: randomUUID(),
-    });
-  } catch (e) {
-    return { ok: false, reason: `Square refund failed: ${(e as Error).message}` };
+  const b = data as {
+    id?: string;
+    salon_id?: string;
+    deposit_amount_cents?: number | null;
+    deposit_refunded_cents?: number | null;
+  } | null;
+  if (error || !b?.id || !b.salon_id) {
+    return { ok: false, reason: "payment context unavailable" };
   }
-  await db.from("bookings").update({ deposit_status: "refunded" }).eq("id", bookingId);
-  return { ok: true, reason: "refunded", refundedCents: amount };
+  const captured = Number(b.deposit_amount_cents);
+  const refunded = Number(b.deposit_refunded_cents ?? 0);
+  const remaining = captured - refunded;
+  const amountCents = options?.amountCents ?? remaining;
+  if (
+    !Number.isSafeInteger(captured) || !Number.isSafeInteger(refunded) ||
+    !Number.isSafeInteger(amountCents) || captured <= 0 || refunded < 0 ||
+    remaining <= 0 || amountCents <= 0 || amountCents > remaining
+  ) return { ok: false, reason: "invalid refund amount" };
+  const outcome = await runAuthoritativeBookingPaymentOperation({
+    db: db as never,
+    salonId: b.salon_id,
+    bookingId,
+    requestId: options.requestId,
+    operationKind: "deposit_refund",
+    amountCents,
+    reason: "Booking cancelled — deposit refund",
+  });
+  if (!outcome.ok) {
+    return { ok: false, reason: `${outcome.status}:${outcome.reason}` };
+  }
+  const { data: refreshed, error: refreshedError } = await db
+    .from("bookings")
+    .select("deposit_refunded_cents")
+    .eq("salon_id", b.salon_id)
+    .eq("id", bookingId)
+    .maybeSingle();
+  const refundedCents = Number(
+    (refreshed as { deposit_refunded_cents?: unknown } | null)?.deposit_refunded_cents,
+  );
+  if (refreshedError || !Number.isSafeInteger(refundedCents) || refundedCents < 1) {
+    return { ok: false, reason: "refund receipt unavailable" };
+  }
+  return {
+    ok: true,
+    reason: "refunded",
+    refundedCents,
+    remainingCents: Math.max(0, captured - refundedCents),
+  };
 }
 
-/** Flip pending deposits to 'paid' once their Square link is paid. */
-export async function reconcileDeposits(salonId: string): Promise<{ checked: number; paid: number }> {
-  const db = looseServiceClient();
-  const cfg = await getSquareConfig(db, salonId);
-  const { data } = await db
-    .from("bookings")
-    .select("id, status, deposit_hold, deposit_amount_cents, square_deposit_order_id")
+export async function reconcileSquareHostedDepositClaim(
+  db: ReturnType<typeof createServiceRoleClient>,
+  value: unknown,
+): Promise<"succeeded" | "unresolved"> {
+  if (!v1AllowsCustomerPaymentGateway()) return "unresolved";
+  const result = await reconcileSquareHostedDepositClaimHealth(db, value);
+  return result.status === "succeeded" ? "succeeded" : "unresolved";
+}
+
+type HostedDepositReconciliationHealth =
+  | { ok: true; status: "succeeded" | "pending_provider" }
+  | { ok: false; status: "unhealthy"; error: string };
+
+async function reconcileSquareHostedDepositClaimHealth(
+  db: ReturnType<typeof createServiceRoleClient>,
+  value: unknown,
+): Promise<HostedDepositReconciliationHealth> {
+  const row = record(value);
+  const claim = parseHostedLinkClaim(value);
+  const orderId = str(row?.provider_order_id);
+  const linkId = str(row?.provider_link_id);
+  const linkUrl = str(row?.provider_link_url);
+  if (!claim || !orderId || !linkId || !linkUrl.startsWith("https://")) {
+    return {
+      ok: false,
+      status: "unhealthy",
+      error: "square_deposit_reconciliation_claim_invalid",
+    };
+  }
+  let order: Awaited<ReturnType<typeof getOrder>>;
+  try {
+    const cfg = await getSquareConfig(db as never, claim.salonId);
+    if (
+      cfg.merchantId !== claim.providerAccountId || cfg.locationId !== claim.providerLocationId ||
+      cfg.environment !== claim.providerEnvironment || cfg.currency !== claim.currency
+    ) {
+      return {
+        ok: false,
+        status: "unhealthy",
+        error: "square_deposit_reconciliation_context_mismatch",
+      };
+    }
+    order = await getOrder(cfg, orderId);
+  } catch {
+    return {
+      ok: false,
+      status: "unhealthy",
+      error: "square_deposit_reconciliation_provider_unavailable",
+    };
+  }
+  const completed = order.state === "COMPLETED" &&
+    order.paidCents >= claim.amountCents && Boolean(order.tenderPaymentId);
+  const pending = ["OPEN", "PENDING", "APPROVED"].includes(order.state.toUpperCase());
+  const failed = ["CANCELED", "CANCELLED", "FAILED", "REJECTED"].includes(
+    order.state.toUpperCase(),
+  );
+  const outcome = completed
+    ? "succeeded"
+    : pending ? "pending_provider" : failed ? "definite_failure" : "unknown";
+  try {
+    const result = await db.rpc("complete_booking_payment_operation" as never, {
+      p_operation_id: claim.operationId,
+      p_attempt_token: claim.attemptToken,
+      p_outcome: outcome,
+      p_provider_status: order.state,
+      p_provider_payment_id: order.tenderPaymentId,
+      p_provider_refund_id: null,
+      p_error_code: failed ? "provider_rejected" : outcome === "unknown"
+        ? "provider_outcome_ambiguous" : null,
+    } as never);
+    const completedRow = record(result.data);
+    const expectedStatus = completed
+      ? "succeeded"
+      : pending ? "pending_provider" : failed ? "failed" : "unknown";
+    const completionPersisted = !result.error
+      && completedRow?.status === expectedStatus
+      && (completed || pending
+        ? completedRow.success === true
+        : completedRow.success === false);
+    if (!completionPersisted) {
+      return {
+        ok: false,
+        status: "unhealthy",
+        error: "square_deposit_reconciliation_completion_unavailable",
+      };
+    }
+    if (completed) return { ok: true, status: "succeeded" };
+    if (pending) return { ok: true, status: "pending_provider" };
+    return {
+      ok: false,
+      status: "unhealthy",
+      error: failed
+        ? "square_deposit_reconciliation_provider_rejected"
+        : "square_deposit_reconciliation_provider_response_invalid",
+    };
+  } catch {
+    return {
+      ok: false,
+      status: "unhealthy",
+      error: "square_deposit_reconciliation_completion_unavailable",
+    };
+  }
+}
+
+/** Reconcile only ledger-owned hosted links; booking financial truth is updated
+ * atomically by complete_booking_payment_operation. */
+export async function reconcileDeposits(
+  salonId: string,
+): Promise<{ ok: boolean; checked: number; paid: number; error?: string }> {
+  if (!v1AllowsCustomerPaymentGateway()) {
+    return { ok: false, checked: 0, paid: 0, error: "phase_2_not_available" };
+  }
+  if (!UUID_RE.test(salonId)) {
+    return {
+      ok: false,
+      checked: 0,
+      paid: 0,
+      error: "square_deposit_reconciliation_input_invalid",
+    };
+  }
+  const db = createServiceRoleClient();
+  const { data, error } = await db
+    .from("booking_payment_operations" as never)
+    .select("id, request_id, material_fingerprint" as never)
     .eq("salon_id", salonId)
-    .eq("deposit_status", "required")
-    .not("square_deposit_order_id", "is", null);
-  const rows = (data as Row[]) ?? [];
+    .eq("operation_kind", "deposit_charge")
+    .eq("delivery_mode", "square_hosted_link")
+    .in("status", ["pending_provider", "unknown"])
+    .limit(100);
+  if (error || !Array.isArray(data)) {
+    return {
+      ok: false,
+      checked: 0,
+      paid: 0,
+      error: "square_deposit_reconciliation_inventory_unavailable",
+    };
+  }
   let paid = 0;
-  for (const r of rows) {
-    const orderId = str(r.square_deposit_order_id);
-    if (!orderId) continue;
+  for (const value of data) {
+    const row = value as unknown as Record<string, unknown>;
+    const operationId = str(row.id);
+    const requestId = str(row.request_id);
+    const fingerprint = str(row.material_fingerprint);
+    if (!UUID_RE.test(operationId) || !UUID_RE.test(requestId) || !HASH_RE.test(fingerprint)) {
+      return {
+        ok: false,
+        checked: data.length,
+        paid,
+        error: "square_deposit_reconciliation_inventory_invalid",
+      };
+    }
     try {
-      const order = await getOrder(cfg, orderId);
-      if (order.state === "COMPLETED" || order.paidCents >= num(r.deposit_amount_cents)) {
-        // Paid → flip to paid, stamp time, and RELEASE the hold so the cron no
-        // longer eyes it for cancellation. If the slot was held as `pending`
-        // (pay-to-confirm), promote it back to `confirmed` now that it's paid.
-        const upd: Record<string, unknown> = {
-          deposit_status: "paid",
-          square_payment_id: order.tenderPaymentId,
-          deposit_paid_at: new Date().toISOString(),
-          deposit_hold: false,
+      const claimed = await db.rpc("claim_booking_payment_operation_reconciliation" as never, {
+        p_operation_id: operationId,
+        p_request_id: requestId,
+        p_expected_material_fingerprint: fingerprint,
+      } as never);
+      if (claimed.error) {
+        return {
+          ok: false,
+          checked: data.length,
+          paid,
+          error: "square_deposit_reconciliation_claim_unavailable",
         };
-        if (r.deposit_hold === true && str(r.status) === "pending") upd.status = "confirmed";
-        await db.from("bookings").update(upd as never).eq("id", str(r.id));
-        paid++;
       }
-    } catch (e) {
-      // Best-effort — retry next run (behaviour unchanged). Log so a PERSISTENT
-      // failure — a customer who PAID but whose deposit is stuck at 'required'
-      // because its order never resolves — is diagnosable instead of silently
-      // swallowed.
-      console.error("[reconcileDeposits] order lookup/flip failed", { bookingId: str(r.id), orderId }, e);
+      const reconciliation = await reconcileSquareHostedDepositClaimHealth(db, claimed.data);
+      if (!reconciliation.ok) {
+        return {
+          ok: false,
+          checked: data.length,
+          paid,
+          error: reconciliation.error,
+        };
+      }
+      if (reconciliation.status === "succeeded") paid += 1;
+    } catch {
+      return {
+        ok: false,
+        checked: data.length,
+        paid,
+        error: "square_deposit_reconciliation_unavailable",
+      };
     }
   }
-  return { checked: rows.length, paid };
+  return { ok: true, checked: data.length, paid };
 }

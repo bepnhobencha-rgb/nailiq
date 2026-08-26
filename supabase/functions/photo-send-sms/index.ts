@@ -10,6 +10,7 @@ import {
   rejectUnauthorizedInternalRequest,
 } from "../_shared/internalAuth.ts";
 import { supabaseSecretKey } from "../_shared/supabaseApiKeys.ts";
+import { requireSmsConsentClear } from "../_shared/smsConsentSuppression.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = supabaseSecretKey();
@@ -140,6 +141,16 @@ Deno.serve(async (req: Request) => {
     );
   }
 
+  const suppression = await requireSmsConsentClear(db, photoRow.salon_id, clientPhone);
+  if (!suppression.allowed) {
+    return suppression.reason === "consent_unavailable"
+      ? jsonError("SMS consent state unavailable", 503)
+      : new Response(
+        JSON.stringify({ skipped: true, reason: suppression.reason }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+  }
+
   // Get Twilio credentials from platform_settings
   const { data: platformSettings } = await db
     .from("platform_settings")
@@ -156,10 +167,18 @@ Deno.serve(async (req: Request) => {
     return jsonError("SMS service not configured", 503);
   }
 
-  // Sign JWT token with 30-day expiry containing photo_id
+  // Bind the public bearer to the exact photo, salon, and normalized booking
+  // phone. App routes also require the issuer/audience so this token cannot be
+  // confused with another NailIQ JWT purpose.
   const secretBytes = new TextEncoder().encode(JWT_SECRET);
-  const signedToken = await new jose.SignJWT({ photo_id: photoId })
+  const signedToken = await new jose.SignJWT({
+    photo_id: photoId,
+    salon_id: photoRow.salon_id,
+    client_phone: clientPhone.replace(/\D/g, ""),
+  })
     .setProtectedHeader({ alg: "HS256" })
+    .setIssuer("nailiq-photo-send-sms")
+    .setAudience("nailiq-photo-customer")
     .setIssuedAt()
     .setExpirationTime("30d")
     .sign(secretBytes);

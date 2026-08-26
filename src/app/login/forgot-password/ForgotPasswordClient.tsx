@@ -16,7 +16,13 @@ import { requestSalonOwnerPasswordReset } from "@/shared/auth/salonOwnerAuth";
  * enforces the anti-enumeration contract; the form just renders the outcome.
  * `server_error` is the only branch that surfaces a distinct message.
  */
-export function ForgotPasswordClient() {
+export function ForgotPasswordClient({
+  invalidOrExpired = false,
+  temporarilyUnavailable = false,
+}: {
+  invalidOrExpired?: boolean;
+  temporarilyUnavailable?: boolean;
+}) {
   const { language } = useUserLanguage();
   const t = useMemo(() => getUserMessages(language).auth, [language]);
   const [email, setEmail] = useState("");
@@ -62,6 +68,16 @@ export function ForgotPasswordClient() {
       className="flex w-full flex-col gap-4"
       data-testid="salon-owner-forgot-password-form"
     >
+      {invalidOrExpired ? (
+        <p className="text-sm text-nq-error" role="alert">
+          {t.resetPasswordInvalidLink}
+        </p>
+      ) : null}
+      {temporarilyUnavailable ? (
+        <p className="text-sm text-nq-error" role="alert">
+          {t.resetPasswordServerError}
+        </p>
+      ) : null}
       <label className="flex flex-col gap-2">
         <span className="text-sm font-medium text-nq-foreground">{t.emailLabel}</span>
         <Input

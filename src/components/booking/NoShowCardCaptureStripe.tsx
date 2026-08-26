@@ -1,7 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { loadStripe } from "@stripe/stripe-js";
+// The default Stripe entrypoint injects Stripe.js as soon as this module is
+// evaluated. Use the pure entrypoint so a public booking page does not contact
+// Stripe until this card-capture component actually has an approved intent.
+import { loadStripe } from "@stripe/stripe-js/pure";
 import {
   Elements,
   PaymentElement,
@@ -11,6 +14,7 @@ import {
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import type { SavedNoShowCard } from "@/shared/noshow/resolveSavedNoShowCard";
 import { reuseNoShowCardAction } from "@/shared/noshow/saveNoShowCardAction";
+import { stableBookingManagementRequestId } from "@/shared/booking/bookingManagementRequestId";
 
 /**
  * Saved-card reuse tile for the Stripe path. The reuse action is
@@ -113,12 +117,12 @@ function StripeSavedCardReuseTile({
  * resulting PaymentMethod is sent to the provider-agnostic save route.
  */
 function StripeCardForm({
-  bookingId,
+  managementToken,
   feeLabel,
   t,
   onSaved,
 }: {
-  bookingId: string;
+  managementToken: string;
   feeLabel: string;
   t: BookingMessages;
   onSaved: () => void;
@@ -155,7 +159,17 @@ function StripeCardForm({
       const res = await fetch("/api/booking/square-save-card", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookingId, sourceId: pmId, consent: true }),
+        body: JSON.stringify({
+          token: managementToken,
+          requestId: await stableBookingManagementRequestId({
+            action: "card_manage",
+            token: managementToken,
+            material: "stripe_save_card:v1",
+          }),
+          provider: "stripe",
+          sourceId: pmId,
+          consent: true,
+        }),
       });
       const j = (await res.json()) as { ok?: boolean };
       if (j.ok) {
@@ -223,6 +237,7 @@ function StripeCardForm({
 
 export function NoShowCardCaptureStripe({
   bookingId,
+  managementToken,
   clientSecret,
   publishableKey,
   feeLabel,
@@ -231,6 +246,7 @@ export function NoShowCardCaptureStripe({
   otpSessionId,
 }: {
   bookingId: string;
+  managementToken: string;
   clientSecret: string;
   publishableKey: string;
   feeLabel: string;
@@ -284,7 +300,7 @@ export function NoShowCardCaptureStripe({
   return (
     <Elements stripe={stripePromise} options={{ clientSecret }}>
       <StripeCardForm
-        bookingId={bookingId}
+        managementToken={managementToken}
         feeLabel={feeLabel}
         t={t}
         onSaved={() => setSaved(true)}

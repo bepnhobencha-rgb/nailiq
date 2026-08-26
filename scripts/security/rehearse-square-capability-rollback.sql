@@ -1,0 +1,43 @@
+\set ON_ERROR_STOP on
+BEGIN;
+DROP FUNCTION public.apply_square_inventory_webhook_event(uuid,uuid);
+DROP FUNCTION public.reconcile_stale_square_inventory_catalog_operations(integer);
+DROP FUNCTION public.apply_square_inventory_catalog_page(uuid,uuid,timestamptz,text,timestamptz,jsonb,text);
+DROP FUNCTION public.confirm_square_inventory_retail_mapping(uuid,uuid,text);
+DROP TABLE public.square_inventory_count_mirrors;
+DROP TABLE public.square_inventory_count_event_mirrors;
+DROP FUNCTION public.reject_square_inventory_count_event_mutation();
+DROP TABLE public.square_inventory_retail_mappings;
+DROP TABLE public.square_inventory_catalog_variation_mirrors;
+DROP TABLE public.square_inventory_catalog_sync_state;
+DROP FUNCTION public.apply_square_gift_card_webhook_event(uuid,uuid);
+DROP FUNCTION public.bind_square_gift_card_issuance(uuid,uuid,text);
+DROP TABLE public.square_gift_card_activity_mirrors;
+DROP TABLE public.square_gift_card_mirrors;
+DROP FUNCTION public.reject_square_gift_card_activity_mutation();
+DROP FUNCTION public.apply_square_loyalty_webhook_event(uuid,uuid);
+DROP FUNCTION public.bind_square_loyalty_subject(uuid,uuid,text,text);
+DROP TABLE public.square_loyalty_reward_mirrors;
+DROP TABLE public.square_loyalty_event_mirrors;
+DROP TABLE public.square_loyalty_account_mirrors;
+DROP FUNCTION public.reject_square_loyalty_event_mutation();
+DROP TABLE public.square_sync_cursors;
+DROP TABLE public.square_webhook_inbox;
+DROP TABLE public.square_feature_operations;
+DROP FUNCTION public.complete_square_webhook_event(uuid,uuid,text,text,text);
+DROP FUNCTION public.claim_square_webhook_events(text,integer);
+DROP FUNCTION public.record_square_webhook_event(uuid,text,text,timestamptz,text,jsonb,text);
+DROP FUNCTION public.reconcile_stale_square_feature_operations(text,integer);
+DROP FUNCTION public.complete_square_feature_operation(uuid,uuid,text,text,text,text,text);
+DROP FUNCTION public.claim_square_feature_operation(uuid,uuid,text,jsonb,text);
+DROP FUNCTION public.resolve_square_feature_operation_material(uuid,text,jsonb);
+DROP FUNCTION public.square_feature_contract(uuid,text);
+ALTER TABLE public.square_integrations DROP CONSTRAINT square_integrations_oauth_scopes_canonical,
+  DROP COLUMN oauth_scopes,DROP COLUMN loyalty_sync_enabled,DROP COLUMN gift_cards_sync_enabled,DROP COLUMN inventory_sync_enabled;
+ALTER TABLE public.platform_settings DROP COLUMN square_loyalty_platform_enabled,DROP COLUMN square_gift_cards_platform_enabled,DROP COLUMN square_inventory_platform_enabled;
+DROP FUNCTION public.square_oauth_scopes_canonical(text[]);
+ROLLBACK;
+DO $$ BEGIN
+  IF to_regclass('public.square_feature_operations') IS NULL OR NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='square_integrations' AND column_name='oauth_scopes') THEN RAISE EXCEPTION 'rollback did not restore schema'; END IF;
+END $$;
+SELECT 'square capability rollback passed' AS result;

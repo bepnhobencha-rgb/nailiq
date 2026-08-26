@@ -108,17 +108,7 @@ where id = '22000000-0000-0000-0000-000000000001';
 do $test$
 declare
   affected_rows integer;
-  configured_count integer;
 begin
-  select count(*) into configured_count
-  from public.salons
-  where id = '22000000-0000-0000-0000-000000000001'
-    and sms_outbound_enabled = false
-    and email_outbound_enabled = false;
-  if configured_count <> 1 then
-    raise exception 'owner/admin did not update salon settings';
-  end if;
-
   perform set_config(
     'request.jwt.claim.sub',
     '12000000-0000-0000-0000-000000000003',
@@ -131,6 +121,25 @@ begin
   get diagnostics affected_rows = row_count;
   if affected_rows <> 0 then
     raise exception 'receptionist unexpectedly updated salon settings';
+  end if;
+end
+$test$;
+
+reset role;
+
+-- Authenticated members intentionally lack table-wide SELECT after the
+-- curated salon-settings projection was introduced. Verify the final state
+-- through the database role once the authenticated mutation checks finish.
+do $test$
+begin
+  if (
+    select count(*)
+    from public.salons
+    where id = '22000000-0000-0000-0000-000000000001'
+      and sms_outbound_enabled = false
+      and email_outbound_enabled = false
+  ) <> 1 then
+    raise exception 'owner/admin did not update salon settings';
   end if;
 end
 $test$;

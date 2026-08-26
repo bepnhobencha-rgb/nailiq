@@ -39,6 +39,21 @@ import {
 
 export type ApprovalUrgency = "urgent" | "normal";
 
+export function approvalAllowsEmail(
+  request: Pick<ApprovalRow, "payload">,
+): boolean {
+  return request.payload.notification_mode !== "dashboard_only_no_email";
+}
+
+// The database stores approval bearers as exactly 32 random bytes encoded in
+// lowercase hex. Enforce that grammar before any privileged lookup; never put
+// caller-controlled text into PostgREST filter syntax.
+const APPROVAL_TOKEN_RE = /^[0-9a-f]{64}$/;
+
+export function isAiApprovalToken(value: string): boolean {
+  return APPROVAL_TOKEN_RE.test(value);
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type ApprovalRow = {
@@ -94,6 +109,28 @@ export type ApprovalDisplayRow = Pick<
   | "created_at"
 > & {
   decision_actor: ApprovalDecisionActor | null;
+  execution_required: boolean;
+  review_reply_draft: {
+    source: "google";
+    reviewer_name: string;
+    rating: number;
+    review_excerpt: string;
+    draft_reply: string;
+    language: "en" | "vi" | "fr";
+  } | null;
+  promo_campaign_draft: {
+    title: string;
+    reasoning: string;
+    message: string;
+    language: "en" | "vi";
+    offer_facts_confirmed: boolean;
+  } | null;
+  reactivation_campaign_draft: {
+    kind: "winback" | "rebook";
+    title: string;
+    message_en: string;
+    message_vi: string;
+  } | null;
   intelligence: Record<"en" | "vi", ActionIntelligence>;
 };
 
@@ -123,6 +160,106 @@ export function toApprovalDisplayRow(
   row: ApprovalOwnerSourceRow,
   decisionActor: ApprovalDecisionActor | null = null,
 ): ApprovalDisplayRow {
+  const reviewSource = row.payload.review_source;
+  const reviewRating = Number(row.payload.rating);
+  const reviewLanguage = row.payload.language;
+  const reviewDraft = boundedText(
+    typeof row.payload.draft_reply === "string"
+      ? row.payload.draft_reply
+      : "",
+    800,
+  );
+  const reviewReplyDraft =
+    row.action_type === "review_reply_draft" &&
+    reviewSource === "google" &&
+    Number.isInteger(reviewRating) &&
+    reviewRating >= 1 &&
+    reviewRating <= 5 &&
+    (reviewLanguage === "en" ||
+      reviewLanguage === "vi" ||
+      reviewLanguage === "fr") &&
+    reviewDraft.length >= 10
+      ? {
+          source: "google" as const,
+          reviewer_name: boundedText(
+            typeof row.payload.reviewer_name === "string"
+              ? row.payload.reviewer_name
+              : "Guest",
+            120,
+          ),
+          rating: reviewRating,
+          review_excerpt: boundedText(
+            typeof row.payload.review_excerpt === "string"
+              ? row.payload.review_excerpt
+              : "",
+            1_200,
+          ),
+          draft_reply: reviewDraft,
+          language: reviewLanguage as "en" | "vi" | "fr",
+        }
+      : null;
+  const promoLanguage = row.payload.language;
+  const promoTitle = boundedText(
+    typeof row.payload.title === "string" ? row.payload.title : "",
+    120,
+  );
+  const promoReasoning = boundedText(
+    typeof row.payload.reason === "string" ? row.payload.reason : "",
+    600,
+  );
+  const promoMessage = boundedText(
+    typeof row.payload.message === "string" ? row.payload.message : "",
+    1_000,
+  );
+  const promoCampaignDraft =
+    row.action_type === "bulk_message" &&
+    row.payload.proposal_source === "weekly_strategist" &&
+    row.payload.campaign_mode === "dashboard_draft_only" &&
+    row.payload.notification_mode === "dashboard_only_no_email" &&
+    row.payload.dispatch_enabled === false &&
+    (promoLanguage === "en" || promoLanguage === "vi") &&
+    promoTitle.length >= 3 &&
+    promoReasoning.length >= 10 &&
+    promoMessage.length >= 20
+      ? {
+          title: promoTitle,
+          reasoning: promoReasoning,
+          message: promoMessage,
+          language: promoLanguage as "en" | "vi",
+          offer_facts_confirmed:
+            row.payload.owner_offer_facts_confirmed === true,
+        }
+      : null;
+  const reactivationKind = row.payload.reactivation_kind;
+  const reactivationTitle = boundedText(
+    typeof row.payload.title === "string" ? row.payload.title : "",
+    120,
+  );
+  const reactivationMessageEn = boundedText(
+    typeof row.payload.message_en === "string" ? row.payload.message_en : "",
+    480,
+  );
+  const reactivationMessageVi = boundedText(
+    typeof row.payload.message_vi === "string" ? row.payload.message_vi : "",
+    480,
+  );
+  const reactivationCampaignDraft =
+    row.action_type === "bulk_message" &&
+    row.payload.proposal_source === "reactivation_campaign" &&
+    row.payload.campaign_mode === "dashboard_draft_only" &&
+    row.payload.notification_mode === "dashboard_only_no_email" &&
+    row.payload.dispatch_enabled === false &&
+    (reactivationKind === "winback" || reactivationKind === "rebook") &&
+    reactivationTitle.length >= 3 &&
+    reactivationMessageEn.length >= 20 &&
+    reactivationMessageVi.length >= 20
+      ? {
+          kind: reactivationKind as "winback" | "rebook",
+          title: reactivationTitle,
+          message_en: reactivationMessageEn,
+          message_vi: reactivationMessageVi,
+        }
+      : null;
   return {
     id: row.id,
     action_type: boundedText(row.action_type, 100),
@@ -134,6 +271,10 @@ export function toApprovalDisplayRow(
     decided_at: row.decided_at,
     created_at: row.created_at,
     decision_actor: decisionActor,
+    execution_required: row.payload.execution_mode !== "manual_copy_only",
+    review_reply_draft: reviewReplyDraft,
+    promo_campaign_draft: promoCampaignDraft,
+    reactivation_campaign_draft: reactivationCampaignDraft,
     intelligence: {
       en: boundedActionIntelligence(
         buildActionIntelligence(row.action_type, row.payload, "en"),
@@ -429,6 +570,10 @@ export async function sendApprovalEmail(requestId: string): Promise<boolean> {
 
   const req = row as ApprovalRow;
 
+  // Review reply drafts are deliberately dashboard-only. This guard applies
+  // even if a caller explicitly invokes the generic approval-email helper.
+  if (!approvalAllowsEmail(req)) return false;
+
   // Don't re-notify already-notified requests (unless it's the reminder path)
   if (req.notified_at) return true; // already sent
 
@@ -515,16 +660,32 @@ export async function processDecision(
     error: string | null;
   };
 }> {
+  if (!isAiApprovalToken(token)) {
+    return {
+      ok: false,
+      salonSlug: null,
+      actionType: null,
+      alreadyDecided: false,
+      expired: false,
+    };
+  }
   const db = createServiceRoleClient();
 
-  // Find request by either token type
-  const { data: row } = await db
+  // Use typed equality filters rather than interpolating the bearer into
+  // PostgREST's `.or()` grammar. The second lookup runs only on a miss.
+  const { data: approvedRow } = await db
     .from("approval_requests" as never)
     .select("*")
-    .or(
-      `approve_token.eq.${token},decline_token.eq.${token}` as never,
-    )
+    .eq("approve_token" as never, token as never)
     .maybeSingle();
+  const { data: declinedRow } = approvedRow
+    ? { data: null }
+    : await db
+        .from("approval_requests" as never)
+        .select("*")
+        .eq("decline_token" as never, token as never)
+        .maybeSingle();
+  const row = approvedRow ?? declinedRow;
 
   if (!row) {
     return { ok: false, salonSlug: null, actionType: null, alreadyDecided: false, expired: false };
@@ -700,6 +861,7 @@ export async function processExpiredAndRemind(): Promise<{
  * Send a reminder email for a still-pending request (called at most once per request).
  */
 async function sendReminderEmail(req: ApprovalRow): Promise<boolean> {
+  if (!approvalAllowsEmail(req)) return false;
   const salon = await getSalonMeta(req.salon_id);
   if (!salon) return false;
 

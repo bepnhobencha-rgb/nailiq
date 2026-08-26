@@ -1,15 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
+import { resolveSupabaseServerUrl } from "@/shared/lib/supabase/serverUrl";
 
 /**
  * Privileged Supabase client for server-only mutations that bypass RLS
  * (registration OTP rows, salon seeding, etc.). Requires `SUPABASE_SERVICE_ROLE_KEY`.
  */
 export function createServiceRoleClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const url = resolveSupabaseServerUrl();
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
     if (process.env.NODE_ENV !== "production") {
-      // eslint-disable-next-line no-console
       console.warn(
         "\n[nailiq] ⚠️  createServiceRoleClient: SUPABASE_SERVICE_ROLE_KEY is not set.\n" +
           "  Service-role operations (Party Link creation, OTP seeding, etc.) will fail silently.\n" +
@@ -18,7 +18,9 @@ export function createServiceRoleClient() {
           "  → See docs/testing.md §\"Party Link local testing\" for details.\n",
       );
     }
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+    throw new Error(
+      "Missing SUPABASE_INTERNAL_URL/NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY",
+    );
   }
   return createClient(url, key, {
     auth: {

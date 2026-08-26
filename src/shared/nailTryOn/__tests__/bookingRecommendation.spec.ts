@@ -7,6 +7,7 @@ function service(id: string): BookingServiceItem {
     id,
     name: id,
     durationMinutes: 60,
+    prepMinutes: 0,
     bufferMinutes: 0,
     totalMinutes: 60,
     priceCents: 5000,

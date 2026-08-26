@@ -55,6 +55,11 @@ import { computeBookingTiming } from "@/shared/booking/bookingTiming";
 import { evaluateControlledAfterHours } from "@/shared/booking/controlledAfterHours";
 import { GROUP_MAX_SIZE } from "@/shared/config/constants";
 import { MAX_WAVES } from "@/shared/booking/groupSchedulerCore";
+import {
+  deskBookingRequestForIntent,
+  deskGroupIntentKey,
+  type DeskBookingRequestState,
+} from "@/shared/dashboard/deskBookingIdempotency";
 
 type LoadData = Extract<
   Awaited<ReturnType<typeof getDeskBookingData>>,
@@ -336,6 +341,10 @@ export default function DeskGroupForm({
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Keep one logical UUID for an unchanged party intent. A lost HTTP response
+  // must retry the committed canonical transaction instead of making its own
+  // occupied rows look like a new conflict.
+  const submissionRequestRef = useRef<DeskBookingRequestState | null>(null);
 
   // Portal mount flag — the modal must escape the (transformed) header so
   // position:fixed isn't trapped inside it.
@@ -765,17 +774,30 @@ export default function DeskGroupForm({
       // Desk wrapper: enforces receptionist auth + mints the OTP session
       // server-side when the salon requires phone-OTP (the receptionist vouches
       // in person). Reuses the same submitGroupBooking engine underneath.
+      const intentKey = deskGroupIntentKey({
+        salonId,
+        members: payload,
+        seatTogether,
+        language,
+        controlledAfterHours: usingControlledAfterHours,
+      });
+      const requestState = deskBookingRequestForIntent(
+        submissionRequestRef.current,
+        intentKey,
+      );
+      submissionRequestRef.current = requestState;
       const res = await createDeskGroup(slug, {
         salonId,
         members: payload,
         seatTogether,
         language,
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey: requestState.requestId,
         ...(usingControlledAfterHours
           ? { afterHoursOverride: { staffConsentConfirmed: true } }
           : {}),
       });
       if (res.ok) {
+        submissionRequestRef.current = null;
         onCreated();
         onClose();
         return;

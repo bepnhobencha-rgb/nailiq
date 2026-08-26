@@ -1,8 +1,7 @@
 import "server-only";
 
-import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { getSuperAdminRole } from "@/shared/lib/superadmin";
+import { requireActiveSuperAdminSession } from "@/shared/auth/requireActiveSuperAdminSession";
 import { SESSION_TTL_SECONDS } from "@/shared/voiceai/config";
 
 export type CertificationStatus =
@@ -213,9 +212,7 @@ export function buildAgentCertificationMatrix(input: {
 }
 
 async function isSuperadmin(): Promise<boolean> {
-  const db = await createClient();
-  const { data } = await db.auth.getUser();
-  return Boolean(data.user && await getSuperAdminRole(data.user.id));
+  return (await requireActiveSuperAdminSession()).ok;
 }
 
 export async function loadAgentCertificationMatrix(): Promise<

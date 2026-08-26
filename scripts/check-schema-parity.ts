@@ -19,18 +19,104 @@ import { execFileSync } from "node:child_process";
 
 /**
  * Release shape, measured from production plus the rehearsed forward migrations
- * through 20260811183000. Refresh these with each schema-changing forward
- * migration — they are a tripwire, not a spec.
+ * through 20260820105820, plus the additive 20260820123000 confirmation retry
+ * and 20260820131500 customer transition email contracts, plus the additive
+ * 20260820140000 booking-management, 20260820143000 waitlist-capability and
+ * 20260820150000 authoritative payment-operation contracts and the default-off
+ * 20260820180036 authoritative booking-service sequence contract and the
+ * 20260820211503 authoritative financial report read contract and the default-off
+ * 20260820223000 Square optional-capability operation/webhook contract, the
+ * 20260820230000 active-auth-session validator and the 20260820233000
+ * role-scoped salon operational projection/settings loaders and the
+ * 20260820234500 durable SMS consent suppression contract and the
+ * 20260821000752 booking vacation/resource write guard, the
+ * 20260821003000 immutable booking-confirmation dispatch envelopes and the
+ * 20260821003932 durable staff-action notification outbox, the
+ * 20260822001500 privacy-minimal availability revision signal, the
+ * 20260822023000 batch edge-rate-limit function, and the approved
+ * 20260822155809 organization-scoped multi-location contract, plus the
+ * 20260822163246 immutable tip and commission-estimate evidence contract, and
+ * 20260822165659 PII-free Square Loyalty reconciliation mirrors and the
+ * 20260822172547 GAN-free Square Gift Card receipt/activity mirrors, and the
+ * 20260822174938 approved retail-only Square Inventory catalog/count mirrors,
+ * manual mapping decision contract, and provider latest_time cursor state, plus
+ * the 20260822181000 PII-free durable Wix create/lifecycle claim ledgers and
+ * signature-verified webhook event inbox, and the 20260822223532,
+ * 20260822230102, and 20260822234334 dashboard-only review, promo, and
+ * reactivation draft claim contracts, plus the 20260823003401 atomic leased
+ * booking-reminder delivery claim contract, the 20260823011500 explicitly
+ * environment-gated public Square deposit reconciliation discovery, and the
+ * 20260823012836 atomic one-offer-per-salon-session upsell claim contract,
+ * the durable Square booking/staff-offboarding hardening through 20260823037200,
+ * the hard-OFF 20260823038000 reactivation delivery evidence contract, the
+ * 20260823082850 atomic staff-lifecycle browser-write boundary, and the
+ * 20260823085905/20260823093507 set-based edge-limiter and positional
+ * request-microbatch functions, plus the 20260823110412 signature-verified
+ * Square refund webhook inbox and 20260823110500 merchant-scoped Square
+ * customer identity map. The 20260823113000 Inventory guard replaces an
+ * existing function and therefore does not change shape counts. The
+ * 20260823124500/20260823133000 Twilio receipt/correlation migrations add
+ * generic and staff-action delivery binding plus SID-first completion wrappers.
+ * The 20260823134500 review-SMS migration adds pre-provider claim completion
+ * and signed callback-correlation functions. The 20260823171226 cancelled-
+ * booking refund migration adds the remaining-deposit claim function.
+ * The 20260824234619 V1 terminal-booking policy adds a trigger boundary plus
+ * service-only terminal transition and eight-second cancel-undo functions.
+ * The 20260825013913 V1 Fast Track staff-capability migration adds one durable
+ * salon mode column, two guarded trigger helpers, and one atomic owner/admin
+ * capability-replacement function.
+ * The 20260825103000 MQA-0148 read-path migration adds one RLS-preserving
+ * public booking snapshot plus two service-role-only dashboard projections.
+ * The 20260825124500 MQA-0148 dashboard-shell migration adds one
+ * service-role-only shell projection.
+ * Refresh these
+ * with each schema-changing forward migration — they
+ * are a tripwire, not a spec.
  */
 const PRODUCTION = {
-  tables: 107,
+  // +1 PII-free Twilio terminal-receipt inbox.
+  tables: 174,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
-  columns: 1455,
-  policies: 156,
+  // +3 booking pricing evidence columns and +13 owner-notification claim columns
+  // (including the deterministic event occurrence key).
+  // +15 tokenized booking_notifications columns and +10 delivery-event columns.
+  // +7 protected booking transition columns and +53 outbox/event columns.
+  // +131 action-state/capability/receipt/group/card/waitlist-delivery columns.
+  // +80 payment ledger, replay/create-binding, hosted/public Square capability,
+  // and desk cancellation/refund saga columns.
+  // +42 sequence catalog/parent/segment/add-on, QA allowlist and durable OTP
+  // consumed-booking binding columns.
+  // +47 safe columns from the authenticated operational salon view.
+  // +48 SMS consent configuration, event, provider-state and salon-state
+  // columns (including information_schema-visible generated/view shape).
+  // +9 immutable confirmation dispatch envelope columns.
+  // +65 staff-action event, delivery, envelope, receipt and ephemeral capture columns.
+  // +98 availability-revision, organization/location/staff/customer/loyalty,
+  // and financial metric policy/evidence columns, including visible shape.
+  // +42 Square Loyalty account/event/reward reconciliation mirror columns.
+  // +45 Square Gift Card state/receipt and immutable activity mirror columns.
+  // +65 Square Inventory catalog, mapping, count ledger/snapshot and resumable cursor columns.
+  // +20 durable Wix create claim/reconciliation columns.
+  // +20 durable Wix lifecycle claim/reconciliation columns.
+  // +20 signature-verified Wix webhook event inbox columns.
+  // +37 dashboard-only review, promo, and reactivation draft claim/approval columns.
+  // +14 PII-free booking-reminder delivery claim/lease columns.
+  // +11 PII-minimized atomic upsell-session claim columns.
+  // +63 PII-free reactivation delivery/authorization/receipt columns.
+  // +22 durable Square refund webhook inbox columns and +8 merchant-scoped
+  // Square customer identity columns.
+  // +4 terminal receipt fields on reminder claims, +4 on staff-action
+  // deliveries, and +13 fields in the PII-free Twilio status receipt inbox.
+  columns: 2561,
+  // The upsell migration replaces two legacy member-write policies with one
+  // service-role-only immutable claim policy. The staff-lifecycle hardening
+  // removes the browser DELETE policy so hard deletion cannot bypass the
+  // service-role-only atomic offboarding contract.
+  policies: 197,
   /**
-   * APP functions only — 117 after the rehearsed forward migrations.
+   * APP functions only — refreshed after the rehearsed forward migrations.
    *
    * Counting every `public` function is a trap: many belong to EXTENSIONS
    * (pgcrypto, btree_gist, pg_trgm, uuid-ossp), which production happens to have
@@ -39,9 +125,23 @@ const PRODUCTION = {
    * The query below excludes anything a `pg_depend` extension edge points at,
    * so extension placement cannot distort this release-shape tripwire.
    */
-  functions: 117,
-  triggers: 40,
-  indexes: 353,
+  // +1 Square discovery, +2 atomic/immutable upsell claim functions, +1
+  // positional edge-limiter request-microbatch function, +1 refund webhook
+  // recorder, and +1 merchant-scoped customer identity resolver.
+  // +1 atomic Twilio terminal-receipt recorder, +1 correlation trigger
+  // function, and +2 private completion classifiers retained behind the
+  // SID-first service-role wrappers, plus +2 durable review-SMS completion and
+  // signed callback-correlation functions.
+  functions: 373,
+  // +4 pending-receipt correlation triggers across notification/staff INSERT
+  // and provider-SID transitions.
+  // +1 V1 terminal-booking policy trigger.
+  triggers: 86,
+  // Transition/capability PKs, unique keys and focused due/salon indexes.
+  // The refund inbox and customer identity map each add PK, unique, and two
+  // focused indexes.
+  // +1 Twilio inbox primary key plus unique reminder/staff SMS SID indexes.
+  indexes: 632,
 } as const;
 
 /**
@@ -81,6 +181,67 @@ const CRITICAL_TABLES = [
   "ai_execution_limits",
   "platform_release_reviews",
   "platform_announcement_deliveries",
+  "owner_booking_notification_claims",
+  "booking_notification_delivery_events",
+  "booking_confirmation_dispatch_envelopes",
+  "customer_booking_transition_email_outbox",
+  "customer_booking_transition_email_events",
+  "booking_management_action_state",
+  "booking_management_group_state",
+  "booking_management_capabilities",
+  "booking_management_action_receipts",
+  "booking_card_management_operations",
+  "booking_card_save_operations",
+  "waitlist_claim_action_state",
+  "waitlist_claim_capabilities",
+  "waitlist_claim_action_receipts",
+  "waitlist_offer_delivery_outbox",
+  "waitlist_offer_promotion_receipts",
+  "booking_payment_operations",
+  "booking_cancel_deposit_refund_sagas",
+  "square_refund_webhook_inbox",
+  "booking_service_segments",
+  "square_feature_operations",
+  "square_webhook_inbox",
+  "square_sync_cursors",
+  "square_customer_identities",
+  "sms_consent_events",
+  "sms_consent_provider_states",
+  "sms_consent_salon_states",
+  "salon_availability_revisions",
+  "salon_organizations",
+  "salon_organization_members",
+  "salon_organization_locations",
+  "organization_staff",
+  "organization_staff_locations",
+  "organization_client_consents",
+  "organization_loyalty_programs",
+  "organization_loyalty_accounts",
+  "organization_loyalty_events",
+  "salon_financial_metric_policies",
+  "booking_financial_metric_evidence",
+  "square_loyalty_account_mirrors",
+  "square_loyalty_event_mirrors",
+  "square_loyalty_reward_mirrors",
+  "square_gift_card_mirrors",
+  "square_gift_card_activity_mirrors",
+  "square_inventory_catalog_variation_mirrors",
+  "square_inventory_retail_mappings",
+  "square_inventory_count_event_mirrors",
+  "square_inventory_count_mirrors",
+  "square_inventory_catalog_sync_state",
+  "wix_create_writeback_operations",
+  "wix_lifecycle_writeback_operations",
+  "wix_webhook_event_inbox",
+  "review_reply_draft_claims",
+  "promo_campaign_draft_claims",
+  "reactivation_campaign_draft_claims",
+  "booking_reminder_delivery_claims",
+  "twilio_message_status_receipts",
+  "ai_upsell_session_claims",
+  "reactivation_campaign_deliveries",
+  "reactivation_campaign_dispatch_authorizations",
+  "reactivation_campaign_delivery_receipts",
 ] as const;
 
 /** Booking cannot work without these; a missing RPC fails at runtime, not at apply time. */
@@ -113,6 +274,7 @@ const CRITICAL_FUNCTIONS = [
   "ai_tenant_allows_autonomous_execution",
   "ai_cron_worker_supported",
   "suggest_salon_slugs_by_similarity",
+  "complete_existing_owner_registration_setup",
   "merge_salon_client_identity",
   "revoke_salon_client_identity_merge",
   "apply_salon_client_identity_alias",
@@ -122,10 +284,203 @@ const CRITICAL_FUNCTIONS = [
   "release_voice_session_reservation",
   "claim_ai_execution_slot",
   "create_recovered_booking",
+  "financial_json_nonnegative_cents",
+  "load_authoritative_financial_report",
   "validate_archived_booking_recovery",
   "protect_archived_booking_recovery_flag",
+  "protect_guided_admin_setup_rollout_flag",
+  "configure_guided_admin_setup_qa_salon",
   "insert_controlled_after_hours_group_bookings",
   "queue_platform_announcement_deliveries",
+  "resolve_public_booking_pricing",
+  "quote_public_booking",
+  "claim_owner_booking_notification",
+  "complete_owner_booking_notification",
+  "resolve_group_booking_pricing",
+  "quote_group_booking",
+  "create_group_bookings",
+  "claim_booking_confirmation_delivery",
+  "complete_booking_confirmation_delivery",
+  "lease_due_booking_confirmation_retries",
+  "reconcile_stale_booking_confirmation_claims",
+  "track_customer_booking_transition_email_occurrence",
+  "load_customer_booking_transition_email_material",
+  "activate_customer_booking_transition_email",
+  "discover_due_customer_booking_transition_emails",
+  "cancel_booking_as_customer_with_transition_email",
+  "reschedule_booking_as_customer_with_transition_email",
+  "claim_customer_booking_transition_email",
+  "complete_customer_booking_transition_email",
+  "lease_due_customer_booking_transition_email_retries",
+  "reconcile_stale_customer_booking_transition_email_claims",
+  "booking_management_current_group_material",
+  "refresh_booking_management_group_state",
+  "mint_booking_management_capability",
+  "exchange_public_booking_card_management_capability",
+  "booking_management_cancel_preview",
+  "inspect_booking_management_capability",
+  "booking_management_apply_individual",
+  "confirm_booking_with_management_capability",
+  "reschedule_booking_with_management_capability",
+  "cancel_booking_with_management_capability",
+  "booking_management_apply_group",
+  "reschedule_group_booking_with_management_capability",
+  "cancel_group_booking_with_management_capability",
+  "claim_booking_card_management_operation",
+  "complete_booking_card_management_operation",
+  "reconcile_stale_booking_card_management_operations",
+  "claim_booking_card_save_operation",
+  "complete_booking_card_save_operation",
+  "reconcile_stale_booking_card_save_operations",
+  "ensure_waitlist_offer_delivery_outbox",
+  "load_waitlist_offer_delivery_material",
+  "mint_waitlist_claim_capability",
+  "promote_waitlist_for_freed_slot",
+  "promote_waitlist_for_booking",
+  "promote_waitlist_entry",
+  "advance_waitlist_offer_capabilities",
+  "cancel_booking_by_id_with_waitlist_offer",
+  "inspect_waitlist_claim_capability",
+  "claim_waitlist_with_management_capability",
+  "claim_waitlist_offer_delivery",
+  "complete_waitlist_offer_delivery",
+  "load_booking_payment_operation_material",
+  "claim_booking_payment_operation",
+  "complete_booking_payment_operation",
+  "claim_booking_payment_operation_reconciliation",
+  "load_public_deposit_payment_material",
+  "public_deposit_request_fingerprint",
+  "public_booking_create_request_fingerprint",
+  "claim_public_deposit_payment_operation",
+  "create_public_booking_with_deposit_payment",
+  "attach_public_deposit_provider_intent",
+  "claim_public_deposit_finalization",
+  "resume_public_deposit_customer_confirmation",
+  "bind_public_deposit_payment_operation",
+  "discover_due_booking_payment_reconciliations",
+  "discover_due_public_square_deposit_reconciliations",
+  "discover_due_unbound_deposit_compensations",
+  "claim_due_unbound_deposit_refund",
+  "load_late_cancel_refund_material",
+  "claim_late_cancel_refund",
+  "record_square_refund_webhook_event",
+  "sync_booking_cancel_deposit_refund_saga",
+  "inspect_booking_cancel_deposit_refund_saga",
+  "cancel_booking_with_deposit_refund_saga",
+  "claim_cancelled_booking_remaining_deposit_refund",
+  "claim_booking_square_deposit_link",
+  "attach_booking_square_deposit_link",
+  "issue_public_square_deposit_capability",
+  "claim_public_square_deposit_completion",
+  "resolve_square_customer_identity",
+  "resolve_booking_sequence_pricing_and_schedule",
+  "quote_public_booking_sequence",
+  "create_public_booking_sequence",
+  "replay_public_booking_sequence",
+  "resolve_booking_sequence_reschedule",
+  "quote_booking_sequence_reschedule",
+  "reschedule_booking_sequence_with_management_capability",
+  "quote_booking_sequence_reschedule_for_desk",
+  "reschedule_booking_sequence_for_desk",
+  "replay_booking_sequence_reschedule_for_desk",
+  "load_public_booking_sequence_readiness",
+  "load_booking_sequence_receipt",
+  "inspect_booking_management_capability_with_sequence",
+  "configure_multi_service_booking_qa_salon",
+  "square_feature_contract",
+  "resolve_square_feature_operation_material",
+  "claim_square_feature_operation",
+  "complete_square_feature_operation",
+  "reconcile_stale_square_feature_operations",
+  "record_square_webhook_event",
+  "claim_square_webhook_events",
+  "complete_square_webhook_event",
+  "current_auth_session_is_active",
+  "load_salon_member_operational_profile",
+  "load_salon_owner_admin_settings",
+  "sms_consent_provider_context",
+  "hash_sms_consent_phone",
+  "claim_sms_consent_event",
+  "record_sms_consent_event",
+  "inspect_sms_consent_event",
+  "load_sms_outbound_suppression",
+  "enforce_booking_operational_capacity_guard",
+  "bump_salon_availability_revision",
+  "rate_limit_hit_many",
+  "rate_limit_hit_request_batch",
+  "load_public_booking_snapshot",
+  "load_salon_dashboard_projection",
+  "load_owner_home_projection",
+  "load_dashboard_shell_projection",
+  "protect_organization_staff_location",
+  "enforce_organization_staff_time_available",
+  "enforce_organization_staff_booking_capacity",
+  "enforce_organization_staff_segment_capacity",
+  "create_salon_organization",
+  "list_organization_clients",
+  "apply_organization_loyalty_event",
+  "get_organization_booking_report",
+  "load_authoritative_financial_report_base_v2",
+  "reject_financial_metric_evidence_mutation",
+  "configure_salon_financial_metric_policy",
+  "record_booking_tip_evidence",
+  "calculate_booking_commission_evidence",
+  "record_booking_financial_metric_reversal",
+  "reject_square_loyalty_event_mutation",
+  "bind_square_loyalty_subject",
+  "apply_square_loyalty_webhook_event",
+  "reject_square_gift_card_activity_mutation",
+  "bind_square_gift_card_issuance",
+  "apply_square_gift_card_webhook_event",
+  "reject_square_inventory_count_event_mutation",
+  "confirm_square_inventory_retail_mapping",
+  "apply_square_inventory_catalog_page",
+  "apply_square_inventory_webhook_event",
+  "reconcile_stale_square_inventory_catalog_operations",
+  "resolve_wix_create_writeback_material",
+  "claim_wix_create_writeback",
+  "complete_wix_create_writeback",
+  "resolve_wix_lifecycle_writeback_material",
+  "claim_wix_lifecycle_writeback",
+  "complete_wix_lifecycle_writeback",
+  "record_wix_webhook_event",
+  "claim_wix_webhook_event",
+  "complete_wix_webhook_event",
+  "claim_review_reply_draft",
+  "complete_review_reply_draft",
+  "fail_review_reply_draft",
+  "update_review_reply_draft_as_actor",
+  "claim_promo_campaign_draft",
+  "complete_promo_campaign_draft",
+  "fail_promo_campaign_draft",
+  "update_promo_campaign_draft_as_actor",
+  "create_reactivation_campaign_draft",
+  "update_reactivation_campaign_draft_as_actor",
+  "marketing_rebook_audience_candidates",
+  "record_reactivation_campaign_manifest",
+  "claim_booking_reminder_delivery",
+  "complete_booking_reminder_delivery",
+  "record_twilio_message_status_receipt",
+  "apply_pending_twilio_receipt_after_correlation",
+  "complete_booking_confirmation_delivery_unserialized",
+  "complete_staff_action_notification_delivery",
+  "complete_staff_action_notification_delivery_unserialized",
+  "complete_review_request_sms_notification",
+  "record_twilio_review_request_status_receipt",
+  "reject_ai_upsell_session_claim_mutation",
+  "claim_ai_upsell_offer",
+  "materialize_reactivation_campaign_deliveries",
+  "bind_reactivation_campaign_delivery_material",
+  "claim_reactivation_campaign_deliveries",
+  "complete_reactivation_campaign_delivery",
+  "record_reactivation_campaign_delivery_receipt",
+  "reconcile_stale_reactivation_campaign_deliveries",
+  "enforce_v1_terminal_booking_policy",
+  "transition_booking_to_terminal_v1",
+  "undo_recent_cancelled_booking_v1",
+  "enforce_staff_capability_write",
+  "enforce_staff_capability_mode_transition",
+  "set_staff_service_capabilities",
 ] as const;
 
 const dbUrl = process.env.DB_URL;
@@ -215,7 +570,11 @@ function main() {
   // The first dump here was taken with --no-privileges and produced 0 grants.
   // Everything above still went green. That is why this check exists.
   console.log("\n── Grant matrix ──\n");
-  const GRANTS = { anon: 57, authenticated: 64, service_role: 112 } as const;
+  // Retry hardening removes anon's legacy booking_notifications reachability;
+  // the delivery-event audit table is service-role-only.
+  // The customer identity map is service-role read-only; the refund inbox is
+  // mutation-through-RPC only and intentionally grants no table reachability.
+  const GRANTS = { anon: 56, authenticated: 77, service_role: 175 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (

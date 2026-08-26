@@ -1,7 +1,7 @@
 import type { OccupancyInterval } from "@/shared/booking/fetchBookingOccupancy";
 import { hmToMinutes } from "@/shared/booking/hmToMinutes";
 import type { OpeningHoursWeek } from "@/shared/dashboard/openingHoursDefaults";
-import { dayKeyFromLocalDate } from "@/shared/booking/dayKeyFromDate";
+import { salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
 
 /**
  * Minutes between end of the guest block and the next booking start for this staff,
@@ -11,19 +11,28 @@ export function computeStaffFloatGapMinutes(args: {
   occIntervals: readonly OccupancyInterval[];
   staffId: string;
   slotEndMs: number;
-  selectedDate: Date;
+  dateYmd: string;
+  timezone: string;
   week: OpeningHoursWeek;
 }): number {
-  const { occIntervals, staffId, slotEndMs, selectedDate, week } = args;
-  const dayKey = dayKeyFromLocalDate(selectedDate);
+  const { occIntervals, staffId, slotEndMs, dateYmd, timezone, week } = args;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateYmd);
+  if (!match) return 0;
+  const dayIndex = new Date(Date.UTC(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+  )).getUTCDay();
+  const dayKey = (["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const)[dayIndex];
   const cfg = week[dayKey];
   if (!cfg || cfg.closed) return 0;
   const closeMin = hmToMinutes(cfg.close);
-  const base = new Date(selectedDate);
-  base.setHours(0, 0, 0, 0);
-  const closeBoundary = new Date(base);
-  closeBoundary.setHours(0, closeMin, 0, 0);
-  const closeMs = closeBoundary.getTime();
+  let closeMs: number;
+  try {
+    closeMs = Date.parse(salonWallTimeToUtcIso(dateYmd, closeMin, timezone));
+  } catch {
+    return 0;
+  }
 
   let nextStart: number | null = null;
   for (const o of occIntervals) {

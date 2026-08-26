@@ -5,6 +5,7 @@ import { redirect, unstable_rethrow } from "next/navigation";
 
 import { getStripeClient, getStripeReturnOrigin } from "@/shared/lib/stripe";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { v1AllowsAutomatedSubscriptionBilling } from "@/shared/release/v1IntegrationScope";
 import { getPrivateOffer } from "@/shared/sales/privateOffers";
 
 type BillingSchedule = "monthly" | "quarterly" | "semiannual" | "annual";
@@ -35,6 +36,7 @@ function fail(token: string, code: string): never {
 export async function startPrivateOfferCheckout(token: string, formData: FormData): Promise<never> {
   const offer = getPrivateOffer(token);
   if (!offer) redirect("/");
+  if (!v1AllowsAutomatedSubscriptionBilling()) fail(token, "phase-2");
 
   const signerName = String(formData.get("signerName") ?? "").trim();
   const signerTitle = String(formData.get("signerTitle") ?? "").trim();

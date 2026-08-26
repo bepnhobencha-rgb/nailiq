@@ -1,5 +1,6 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProviderPolicy";
 import {
   claimAiExecutionSlot,
   ruleFirstOptimizationEnabled,
@@ -15,7 +16,10 @@ import {
   unclosedBookingHref,
   type UnclosedBookingsResult,
 } from "@/shared/dashboard/unclosedBookingTypes";
-import { getPendingApprovals } from "@/shared/ai/approvalRequests";
+import {
+  approvalAllowsEmail,
+  getPendingApprovals,
+} from "@/shared/ai/approvalRequests";
 
 /**
  * Unified Daily Digest — ONE email per day in the Manager's voice.
@@ -32,7 +36,7 @@ let _ai: Anthropic | null = null;
 function getAI(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY?.trim();
   if (!key) return null;
-  if (!_ai) _ai = new Anthropic({ apiKey: key });
+  if (!_ai) _ai = createTextBackgroundAnthropicClient(key);
   return _ai;
 }
 
@@ -593,11 +597,14 @@ export async function runDigest(salonId: string): Promise<void> {
     ]);
 
     const instructions = s.ai_manager_instructions ?? null;
+    const emailablePendingApprovals = pendingApprovals.filter(
+      approvalAllowsEmail,
+    );
     const outcomeLines = outcomeStats.map(
       (o) => `${o.label}: ${o.sent} gửi → ${o.converted} quay lại (${o.pct}%)`,
     );
     // Normal-urgency pending approvals surface in digest as a summary section
-    const pendingApprovalSummaries = pendingApprovals
+    const pendingApprovalSummaries = emailablePendingApprovals
       .filter((r) => r.urgency === "normal")
       .map((r) => r.summary.slice(0, 100) + (r.summary.length > 100 ? "…" : ""));
 
@@ -617,7 +624,7 @@ export async function runDigest(salonId: string): Promise<void> {
       const material = shouldUseAiDigest({
         agentActionCount: agentActions.reduce((sum, item) => sum + item.actions.length, 0),
         alertCount: alerts.length,
-        pendingApprovalCount: pendingApprovals.length,
+        pendingApprovalCount: emailablePendingApprovals.length,
         unclosedCount: unclosed.count,
       });
       const claimed = material
@@ -657,7 +664,7 @@ export async function runDigest(salonId: string): Promise<void> {
     }
 
     // Pass normal-urgency approvals so the digest email renders one-tap buttons
-    const digestApprovals = pendingApprovals
+    const digestApprovals = emailablePendingApprovals
       .filter((r) => r.urgency === "normal")
       .map((r) => ({
         id: r.id,

@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,9 @@ function parseConsentToggles(raw: string): ConsentToggles | null {
 }
 
 export async function POST(req: Request) {
+  if (!isSameOriginMutation(req)) {
+    return NextResponse.json({ error: "invalid_origin" }, { status: 403 });
+  }
   // Auth check via session cookie
   const supabase = await createClient();
   const {

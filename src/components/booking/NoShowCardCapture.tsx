@@ -9,9 +9,15 @@ import { reuseNoShowCardAction } from "@/shared/noshow/saveNoShowCardAction";
 import { CardWebviewFallback } from "./CardWebviewFallback";
 import { isInAppBrowser } from "@/shared/lib/inAppBrowser";
 import { useInAppBrowser } from "@/shared/lib/useInAppBrowser";
+import {
+  pendingBookingManagementRequest,
+  stableBookingManagementRequestId,
+} from "@/shared/booking/bookingManagementRequestId";
 
 type CaptureProps = {
   bookingId: string;
+  /** Server-minted, action-scoped proof for this exact booking. */
+  managementToken: string;
   /** Formats cents → display string (e.g. "$20.00") in the salon currency. */
   currencyFormat: (cents: number) => string;
   t: BookingMessages;
@@ -34,32 +40,63 @@ export function NoShowCardCapture(props: CaptureProps) {
     clientSecret?: string;
     publishableKey?: string;
     feeCents?: number;
+    finalizeToken?: string;
   } | null>(null);
 
   useEffect(() => {
     let alive = true;
-    fetch("/api/booking/stripe-setup-intent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bookingId: props.bookingId }),
-    })
-      .then((r) => r.json())
-      .then((c) => {
-        if (alive) setStripeCfg(c);
-      })
-      .catch(() => {
+    void (async () => {
+      try {
+        const pending = await pendingBookingManagementRequest({
+          action: "card_manage",
+          token: props.managementToken,
+        });
+        if (pending?.material.startsWith("stripe_setup_intent:v1:")) {
+          const feeCents = Number(pending.material.split(":").at(-1));
+          const response = await fetch("/api/booking/stripe-setup-intent", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: props.managementToken, requestId: pending.requestId }),
+          });
+          const value = await response.json();
+          if (alive) setStripeCfg({ ...value, feeCents: Number.isSafeInteger(feeCents) ? feeCents : 0 });
+          return;
+        }
+        const configResponse = await fetch(
+          `/api/booking/square-noshow-config?token=${encodeURIComponent(props.managementToken)}`,
+        );
+        const config = await configResponse.json() as { required?: boolean; provider?: string; feeCents?: number };
+        if (!configResponse.ok || config.required !== true || config.provider !== "stripe") {
+          if (alive) setStripeCfg({ required: false });
+          return;
+        }
+        const requestId = await stableBookingManagementRequestId({
+          action: "card_manage",
+          token: props.managementToken,
+          material: `stripe_setup_intent:v1:${config.feeCents ?? 0}`,
+        });
+        const response = await fetch("/api/booking/stripe-setup-intent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: props.managementToken, requestId }),
+        });
+        const value = await response.json();
+        if (alive) setStripeCfg({ ...value, feeCents: config.feeCents });
+      } catch {
         if (alive) setStripeCfg({ required: false });
-      });
+      }
+    })();
     return () => {
       alive = false;
     };
-  }, [props.bookingId]);
+  }, [props.managementToken]);
 
   if (stripeCfg === null) return null; // still deciding which provider
-  if (stripeCfg.required && stripeCfg.clientSecret && stripeCfg.publishableKey) {
+  if (stripeCfg.required && stripeCfg.clientSecret && stripeCfg.publishableKey && stripeCfg.finalizeToken) {
     return (
       <NoShowCardCaptureStripe
         bookingId={props.bookingId}
+        managementToken={stripeCfg.finalizeToken}
         clientSecret={stripeCfg.clientSecret}
         publishableKey={stripeCfg.publishableKey}
         feeLabel={props.currencyFormat(stripeCfg.feeCents ?? 0)}
@@ -233,7 +270,7 @@ function SavedCardReuseTile({
 
 /** Square card-entry capture (Web Payments SDK). Used when the salon's provider
  *  is Square. The Stripe path (one-tap wallets) is handled by the dispatcher. */
-function SquareCardCapture({ bookingId, currencyFormat, t, savedCard, otpSessionId }: CaptureProps) {
+function SquareCardCapture({ bookingId, managementToken, currencyFormat, t, savedCard, otpSessionId }: CaptureProps) {
   const [cfg, setCfg] = useState<Cfg | null>(null);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -251,7 +288,7 @@ function SquareCardCapture({ bookingId, currencyFormat, t, savedCard, otpSession
   // 1. Decide whether to show + get the SDK params.
   useEffect(() => {
     let alive = true;
-    fetch(`/api/booking/square-noshow-config?bookingId=${encodeURIComponent(bookingId)}`)
+    fetch(`/api/booking/square-noshow-config?token=${encodeURIComponent(managementToken)}`)
       .then((r) => r.json())
       .then((c: Cfg) => {
         if (alive) setCfg(c);
@@ -262,7 +299,7 @@ function SquareCardCapture({ bookingId, currencyFormat, t, savedCard, otpSession
     return () => {
       alive = false;
     };
-  }, [bookingId]);
+  }, [managementToken]);
 
   // 2. Init the Square card form once we know we need it.
   //    Skip while the reuse tile is showing — the card iframe isn't mounted yet.
@@ -326,7 +363,13 @@ function SquareCardCapture({ bookingId, currencyFormat, t, savedCard, otpSession
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          bookingId,
+          token: managementToken,
+          requestId: await stableBookingManagementRequestId({
+            action: "card_manage",
+            token: managementToken,
+            material: "square_save_card:v1",
+          }),
+          provider: "square",
           sourceId: result.token,
           consent: true,
         }),

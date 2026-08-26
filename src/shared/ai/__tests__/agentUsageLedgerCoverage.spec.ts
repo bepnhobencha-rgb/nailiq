@@ -23,10 +23,12 @@ const COVERAGE: ReadonlyArray<{
     features: ["noshow_save_card_message", "noshow_policy"],
   },
   { file: "src/shared/noshow/sendReminderEmail.ts", features: ["reminder_email"] },
+  {
+    file: "src/shared/noshow/scoreNoShowRisk.ts",
+    features: ["noshow_risk_score"],
+  },
   { file: "src/shared/reminders/agentSmartReminder.ts", features: ["smart_reminder"] },
   { file: "src/shared/watchdog/agentWatchdog.ts", features: ["watchdog"] },
-  { file: "src/shared/winback/agentRebook.ts", features: ["rebook_draft"] },
-  { file: "src/shared/winback/agentWinback.ts", features: ["winback_draft"] },
   { file: "src/shared/ai/buildSip.ts", features: ["sip_builder"] },
   {
     file: "src/shared/ai/managerBriefingAction.ts",
@@ -51,6 +53,10 @@ const COVERAGE: ReadonlyArray<{
   {
     file: "src/shared/observability/draftFix.ts",
     features: ["error_fix_file", "error_fix_draft"],
+  },
+  {
+    file: "src/shared/superadmin/releaseConciergeAction.ts",
+    features: ["release_concierge_draft"],
   },
   {
     file: "src/app/api/chat/booking/route.ts",
@@ -95,6 +101,17 @@ const EDGE_REST_COVERAGE: ReadonlyArray<{
   },
 ];
 
+const TIMEOUT_FAIL_CLOSED_FILES = [
+  "src/shared/ai/buildSip.ts",
+  "src/shared/ai/agentVipCare.ts",
+  "src/shared/noshow/scoreNoShowRisk.ts",
+  "src/shared/noshow/sendReminderEmail.ts",
+  "src/shared/reminders/agentSmartReminder.ts",
+  "src/shared/noshow/agentNoShowPolicy.ts",
+  "src/shared/noshow/evaluateBookingNoShow.ts",
+  "src/app/api/cron/reminders/route.ts",
+] as const;
+
 describe("AI Agent cost-ledger boundary", () => {
   for (const entry of COVERAGE) {
     it(`tracks every Anthropic call in ${entry.file}`, () => {
@@ -109,6 +126,12 @@ describe("AI Agent cost-ledger boundary", () => {
       expect(trackedCalls).toBe(rawCalls);
       for (const feature of entry.features) {
         expect(source).toContain(`feature: "${feature}"`);
+      }
+      if (tracker === "trackAnthropicMessage") {
+        expect(source).toContain("createTextBackgroundAnthropicClient");
+        expect(source).not.toMatch(/new Anthropic\s*\(/);
+      } else {
+        expect(source).not.toContain("createTextBackgroundAnthropicClient");
       }
     });
   }
@@ -128,6 +151,9 @@ describe("AI Agent cost-ledger boundary", () => {
       for (const feature of entry.features) {
         expect(source).toContain(`feature: "${feature}"`);
       }
+      expect(source).toContain(
+        "signal: AbortSignal.timeout(AI_TEXT_BACKGROUND_TIMEOUT_MS)",
+      );
     });
   }
 
@@ -146,6 +172,17 @@ describe("AI Agent cost-ledger boundary", () => {
       for (const feature of entry.features) {
         expect(source).toContain(`feature: "${feature}"`);
       }
+      expect(source).toContain(
+        "signal: AbortSignal.timeout(AI_TEXT_BACKGROUND_TIMEOUT_MS)",
+      );
+    });
+  }
+
+  for (const file of TIMEOUT_FAIL_CLOSED_FILES) {
+    it(`fails closed before downstream work after a timeout in ${file}`, () => {
+      const source = readFileSync(join(process.cwd(), file), "utf8");
+      expect(source).toContain("isProviderTimeoutError");
+      expect(source).toMatch(/if\s*\(\s*isProviderTimeoutError\s*\(/);
     });
   }
 });

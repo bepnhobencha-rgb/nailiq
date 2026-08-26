@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/server";
-import { isCurrentUserSalonMember } from "@/shared/lib/salonMember";
+import { requireActivePasswordRecoverySession } from "@/shared/auth/requireActivePasswordRecoverySession";
 import { SalonOwnerResetPasswordForm } from "./SalonOwnerResetPasswordForm";
 
 export const dynamic = "force-dynamic";
@@ -28,17 +28,23 @@ export const metadata: Metadata = {
  */
 export default async function SalonOwnerResetPasswordPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/login/forgot-password");
+  const recovery = await requireActivePasswordRecoverySession(supabase);
+  if (!recovery.ok) {
+    redirect(
+      recovery.code === "auth_unavailable"
+        ? "/login/forgot-password?notice=temporarily_unavailable"
+        : "/login/forgot-password?notice=invalid_or_expired",
+    );
   }
 
-  const isMember = await isCurrentUserSalonMember();
-  if (!isMember) {
-    await supabase.auth.signOut();
+  const { data: membership, error: membershipError } = await supabase
+    .from("salon_members")
+    .select("id")
+    .eq("user_id", recovery.user.id)
+    .limit(1)
+    .maybeSingle();
+  if (membershipError || !membership) {
+    await supabase.auth.signOut({ scope: "global" });
     redirect("/login");
   }
 

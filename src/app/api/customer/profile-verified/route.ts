@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+import { consumePublicRequestRateLimit } from "@/shared/security/publicServerActionRateLimit";
 
 // GET /api/customer/profile-verified?otp_session_id=&phone=&salon_id=
 // Validates an active (unconsumed, unexpired) OTP session, then returns the
@@ -9,6 +10,17 @@ import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 // already proved phone ownership via the OTP flow.
 // The session is NOT consumed here — consumption happens at booking commit.
 export async function GET(req: Request) {
+  const ipRate = await consumePublicRequestRateLimit({
+    request: req,
+    scope: "customer-profile-verified",
+    ipLimits: [[30, 60], [120, 3_600]],
+  });
+  if (ipRate !== "allowed") {
+    return NextResponse.json(
+      { found: false, error: ipRate === "limited" ? "rate_limited" : "temporarily_unavailable" },
+      { status: ipRate === "limited" ? 429 : 503 },
+    );
+  }
   const { searchParams } = new URL(req.url);
   const otpSessionId = (searchParams.get("otp_session_id") ?? "").trim();
   const phone = (searchParams.get("phone") ?? "").trim();
@@ -23,6 +35,20 @@ export async function GET(req: Request) {
     return NextResponse.json({ found: false, error: "invalid_phone" }, { status: 400 });
   }
   const phoneDigits = phoneOk.digits;
+
+  const identityRate = await consumePublicRequestRateLimit({
+    request: req,
+    scope: "customer-profile-verified-identity",
+    identity: [salonId, phoneDigits, otpSessionId],
+    ipLimits: [],
+    identityLimits: [[10, 900], [30, 86_400]],
+  });
+  if (identityRate !== "allowed") {
+    return NextResponse.json(
+      { found: false, error: identityRate === "limited" ? "rate_limited" : "temporarily_unavailable" },
+      { status: identityRate === "limited" ? 429 : 503 },
+    );
+  }
 
   const supabase = createServiceRoleClient();
 

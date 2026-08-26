@@ -64,6 +64,7 @@ export function AttentionChipBar({
   onOpenBooking,
   onMarkNoShow,
   onUndoNoShow,
+  onOpenWaitlist,
   embedded = false,
 }: {
   language: "en" | "vi";
@@ -83,6 +84,8 @@ export function AttentionChipBar({
   onOpenBooking: (id: string) => void;
   onMarkNoShow: (id: string) => void;
   onUndoNoShow?: (id: string) => void;
+  /** Called only for an explicit operator action that reveals Waitlist rows. */
+  onOpenWaitlist?: () => void;
   /** Compact trigger for use inside the unified Action Center bar. */
   embedded?: boolean;
 }) {
@@ -117,7 +120,13 @@ export function AttentionChipBar({
   // Nothing to surface → don't take any space at all.
   if (!hasOverdue && !hasNoShow && !hasGroups && !hasWaitlist) return null;
 
-  const toggle = (key: ChipKey) => setOpen((cur) => (cur === key ? null : key));
+  const toggle = (key: ChipKey) => {
+    const next = open === key ? null : key;
+    if (next !== null && (key === "waitlist" || key === "all")) {
+      onOpenWaitlist?.();
+    }
+    setOpen(next);
+  };
 
   return (
     <div

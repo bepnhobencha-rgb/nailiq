@@ -1493,10 +1493,7 @@ export type UserMessages = {
       /** "❤️ Khách yêu cầu thợ này" full line. */
       requestedByClientLine: string;
       /** Overload banner template. */
-      overloadBanner: (input: {
-        name: string;
-        queueAhead: number;
-      }) => string;
+      overloadBanner: (input: { name: string; queueAhead: number }) => string;
       overloadBannerDismiss: string;
       /** Soft-hold copy (PR #104). */
       softHoldButton: string;
@@ -2135,6 +2132,7 @@ export type UserMessages = {
         unauthorized: string;
         forbidden: string;
         invalid_plan: string;
+        phase_2_not_available: string;
         no_stripe_client: string;
         server_error: string;
       };
@@ -2142,6 +2140,7 @@ export type UserMessages = {
         unauthorized: string;
         forbidden: string;
         no_customer: string;
+        phase_2_not_available: string;
         no_stripe_client: string;
         server_error: string;
       };
@@ -2151,6 +2150,7 @@ export type UserMessages = {
       pageTitle: string;
       navLinkLabel: string;
       loading: string;
+      estimatedValueNotice: string;
       rangeAriaLabel: string;
       range: {
         today: string;
@@ -2369,8 +2369,7 @@ export const userEn: UserMessages = {
     navOwnerLoginShort: "Login",
     alreadySalonPrefix: "Already have a salon? ",
     signInLink: "Sign in →",
-    landingUrgency:
-      "⚠️ Most salons lose $50–$200 every day from missed calls",
+    landingUrgency: "⚠️ Most salons lose $50–$200 every day from missed calls",
     landingH1Gold: "built for nail salons.",
     landingBody2: "That guest books somewhere else.",
     landingBody3: "You never know you lost them.",
@@ -2388,8 +2387,7 @@ export const userEn: UserMessages = {
     landingProblem3: "GUESTS BOOK A DIFFERENT SALON",
     landingClosingLine1: "You’re losing guests",
     landingClosingLine2: "every day.",
-    landingClosingSub:
-      "If you don’t start today, you’ll keep losing them.",
+    landingClosingSub: "If you don’t start today, you’ll keep losing them.",
     landingClosingCta: "Start winning them back now",
   },
   register: {
@@ -2401,21 +2399,18 @@ export const userEn: UserMessages = {
     phoneAuthDemoHelperHint:
       "Dev: enable Phone Auth in Supabase (Auth → Providers → Phone) before disabling demo.",
     phoneAuthDisabledSubtext: "⚠️ SMS login is not configured yet.",
-    returningOwnerHint:
-      "Returning owner? Enter your number to sign back in.",
+    returningOwnerHint: "Returning owner? Enter your number to sign back in.",
     returningOwnerEmailHint:
       "Returning owner? Enter your email to sign back in.",
     welcomeBackAfterSend:
       "Welcome back! Enter the code to access your dashboard.",
     welcomeBackVerifySubtext:
       "Welcome back! Enter the code to access your dashboard.",
-    newDemoOtpBadgeNote:
-      "DEMO MODE · OTP appears below.",
+    newDemoOtpBadgeNote: "DEMO MODE · OTP appears below.",
     demoBadgeReturning: "Returning",
     demoBadgeNew: "Demo mode",
     demoVerifyCaptionNew: "Use the code from the demo modal or server log.",
-    otpResentToast:
-      "New code sent — previous code is no longer valid.",
+    otpResentToast: "New code sent — previous code is no longer valid.",
     phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
     phoneDigitsInvalid: REGISTER_INVALID_PHONE_HINT_EN,
     wizardTitle: "Name your salon",
@@ -2427,8 +2422,7 @@ export const userEn: UserMessages = {
       "Tip: this is the salon's business name (not your personal name). Guests will see this on the booking page.",
     salonNameInvalid: "Enter a salon name (max 120 characters).",
     slugLabel: "Booking URL",
-    slugHint:
-      "Letters and numbers only. Edit if you want a shorter URL.",
+    slugHint: "Letters and numbers only. Edit if you want a shorter URL.",
     slugAriaLabel: "Booking URL slug",
     timezoneLabel: "Time zone",
     timezoneHint:
@@ -2456,8 +2450,7 @@ export const userEn: UserMessages = {
     verifyErrorInvalid: "Invalid code.",
     verifyErrorMissingToken: "Missing completion token. Try again.",
     emailEntryTitle: "Enter your email",
-    emailAuthSubtext:
-      "We'll send you a secure sign-in link — no code to type.",
+    emailAuthSubtext: "We'll send you a secure sign-in link — no code to type.",
     emailPlaceholder: "you@example.com",
     emailInvalid: "Enter a valid email address.",
     sendEmailLink: "Send sign-in link",
@@ -2470,16 +2463,14 @@ export const userEn: UserMessages = {
       "We're unable to accept new registrations at this time. Please try again later.",
     success: {
       title: "Salon created!",
-      subtext:
-        "Complete a quick setup to activate your booking page.",
+      subtext: "Complete a quick setup to activate your booking page.",
       slugAdjusted:
         "Your first-choice URL was taken, so we reserved {slug} for you.",
       callout:
         "3 quick steps on your dashboard: add services, staff, and address — then your booking link goes live.",
       salonOwnerLabel: "Salon owner",
       goToDashboard: "Go to Dashboard →",
-      dashboardHint:
-        "Your booking link will appear once setup is complete.",
+      dashboardHint: "Your booking link will appear once setup is complete.",
       bookingLinkLabel: "Public booking link",
       copyLink: "Copy link",
       copied: "Copied",
@@ -2572,17 +2563,18 @@ export const userEn: UserMessages = {
             "Continue using the salon’s current POS",
             "NailIQ manages website, booking and salon scheduling",
             "Payments may continue through Square, Clover, Toast or another POS",
-            "Direct data synchronization depends on the integration currently supported",
+            "V1 does not synchronize external calendars, Square Loyalty or Square Gift Card balances and transactions",
           ],
         },
         {
           title: "Square Setup Assistance",
-          body: "Where eligible, we help connect Square features NailIQ currently supports.",
+          body: "Where eligible, we help configure the V1 payment handoff while Square remains the independent money, Loyalty and Gift Card system.",
           bullets: [
             "Connect one eligible existing Square account where supported",
-            "Technical connection assistance",
-            "Square Physical Gift Card setup assistance",
-            "Square eGift Card setup assistance",
+            "Square payment and hardware handoff guidance",
+            "Square Loyalty stays directly in Square",
+            "Square Gift Cards stay directly in Square",
+            "No Square Loyalty or Gift Card synchronization in V1",
             "Subject to Square eligibility and technical availability",
           ],
         },
@@ -2613,7 +2605,7 @@ export const userEn: UserMessages = {
         "NailIQ does not require your salon to replace its current POS system.",
       square: {
         title: "Square Connection Support",
-        body: "Eligible Square users may receive connection assistance and support for selected Square features currently supported by NailIQ, including Square Gift Card setup assistance where applicable.",
+        body: "Eligible Square users may receive payment-handoff guidance. NailIQ V1 does not synchronize Square Loyalty or Square Gift Card balances and transactions; salons continue operating those products directly in Square.",
       },
       other: {
         title: "Use NailIQ Alongside Your Existing POS",
@@ -2710,9 +2702,8 @@ export const userEn: UserMessages = {
           "OTP setup when enabled",
           "Use NailIQ alongside the salon’s existing POS",
           "One eligible Square connection where supported",
-          "Square Gift Card setup assistance where applicable",
+          "Square payment and hardware handoff guidance",
           "Booking QR code",
-          "Gift Card QR code where applicable",
           "One 60-minute online training session",
           "Up to 90 minutes remote go-live support",
           "Up to 30 minutes of small updates per month",
@@ -2742,9 +2733,8 @@ export const userEn: UserMessages = {
           "OTP setup when enabled",
           "Use NailIQ alongside the salon’s existing POS",
           "One eligible Square connection where supported",
-          "Square Gift Card setup assistance where applicable",
+          "Square payment and hardware handoff guidance",
           "Booking QR code",
-          "Gift Card QR code where applicable",
           "One 60-minute online training session",
           "Up to 90 minutes remote go-live support",
           "Up to 30 minutes of small updates per month",
@@ -2773,7 +2763,7 @@ export const userEn: UserMessages = {
       supportedItems: [
         "One eligible Square account connection",
         "Selected Square setup assistance",
-        "Square Gift Card setup assistance",
+        "Square payment and hardware handoff guidance",
       ],
       notIncludedTitle: "Not included",
       notIncludedItems: [
@@ -2783,6 +2773,9 @@ export const userEn: UserMessages = {
         "POS inventory synchronization",
         "POS payment synchronization",
         "POS order synchronization",
+        "Google, Outlook or Wix Calendar synchronization",
+        "Square Loyalty synchronization",
+        "Square Gift Card synchronization",
         "POS data migration",
         "Custom connector development",
       ],
@@ -2846,7 +2839,7 @@ export const userEn: UserMessages = {
       title: "Payment Provider Notice",
       body: "Square, Clover, Toast and other POS or payment platforms are independent third-party service providers. Each salon maintains its own provider account and is responsible for provider fees, transactions, disputes, chargebacks, hardware, account approval and Gift Card obligations. NailIQ provides website, booking and technical setup assistance within its supported scope but does not hold salon funds, approve transactions or control third-party service availability.",
       squareNote:
-        "Square connection and Gift Card assistance are available only where currently supported and for eligible Square accounts.",
+        "NailIQ V1 does not synchronize Square Loyalty or Square Gift Card balances and transactions. Salons continue operating those products directly in Square.",
     },
     whyJoin: {
       eyebrow: "Founder Pilot Benefits",
@@ -2895,7 +2888,7 @@ export const userEn: UserMessages = {
         },
         {
           q: "What Square assistance is included?",
-          a: "For eligible salons, NailIQ may assist with connecting one supported Square account and setting up selected Square Gift Card features. Square fees, account approval, disputes, chargebacks and hardware remain the salon’s responsibility.",
+          a: "For eligible salons, NailIQ may provide payment and hardware handoff guidance for one supported Square account. Square remains the independent system for money, Loyalty and Gift Cards; NailIQ V1 does not synchronize Loyalty or Gift Card balances and transactions.",
         },
         {
           q: "Can NailIQ integrate with any POS?",
@@ -2945,8 +2938,7 @@ export const userEn: UserMessages = {
     },
     contact: {
       pageTitle: "Contact us",
-      lede:
-        "Based in Vancouver, BC, Canada. We aim to respond within one business day.",
+      lede: "Based in Vancouver, BC, Canada. We aim to respond within one business day.",
       intentPilot:
         "Founder Pilot application. Tell us about your salon and current POS — we’ll follow up to schedule onboarding.",
       intentDemo:
@@ -3010,10 +3002,8 @@ export const userEn: UserMessages = {
         "Keep your current POS. Let NailIQ handle your website, online booking and salon setup.",
       ctaPrimary: "Start Your Free Trial",
       ctaSecondary: "Book a Free Demo",
-      trustNote:
-        "No credit card required. Your salon data remains yours.",
-      finalLegalNote:
-        `The self-service plan is ${formatPublicMonthlyPrice("pro", { includeCurrency: true })} per month after the trial, plus applicable taxes. Optional setup services and direct POS integrations are quoted separately.`,
+      trustNote: "No credit card required. Your salon data remains yours.",
+      finalLegalNote: `The self-service plan is ${formatPublicMonthlyPrice("pro", { includeCurrency: true })} per month after the trial, plus applicable taxes. Optional setup services and direct POS integrations are quoted separately.`,
     },
     footer: {
       about: "About",
@@ -3079,8 +3069,7 @@ export const userEn: UserMessages = {
       "Please confirm your email before continuing. Check your inbox for the confirmation link we sent you.",
     pkceRestart:
       "This sign-in link was opened in a different browser or has expired. Start sign-in again in this browser.",
-    sessionError:
-      "We couldn't complete sign-in. Please try again.",
+    sessionError: "We couldn't complete sign-in. Please try again.",
     forgotPasswordLink: "Forgot password?",
     verifyTitle: "Enter OTP",
     verifySubtextSent: "Sent a 6-digit code to {masked}",
@@ -3096,7 +3085,8 @@ export const userEn: UserMessages = {
   },
   auth: {
     signInOrSignUpTitle: "Get started with NailIQ",
-    signInOrSignUpSubtext: "Free 14 days · No credit card required · Ready in 2 minutes",
+    signInOrSignUpSubtext:
+      "Free 14 days · No credit card required · Ready in 2 minutes",
     orDivider: "or",
     continueWithGoogle: "Continue with Google",
     googleHelperText: "Fastest · No password needed",
@@ -3140,18 +3130,21 @@ export const userEn: UserMessages = {
     backHome: "← Home",
     registerMicrotrust: "14-day free trial · No credit card required",
     forgotPasswordPageTitle: "Reset your password",
-    forgotPasswordPageSubtitle: "Enter your email address and we'll send you a link to reset your password.",
+    forgotPasswordPageSubtitle:
+      "Enter your email address and we'll send you a link to reset your password.",
     forgotPasswordSubmit: "Send reset link",
     forgotPasswordSubmitting: "Sending…",
     forgotPasswordSentTitle: "Check your inbox",
-    forgotPasswordSentBody: "If an account exists with that email, we've sent a password reset link. Links expire in one hour.",
+    forgotPasswordSentBody:
+      "If an account exists with that email, we've sent a password reset link. Links expire in one hour.",
     forgotPasswordBackToSignIn: "Back to sign in",
     resetPasswordPageTitle: "Create a new password",
     resetPasswordNewPassword: "New password",
     resetPasswordConfirmPassword: "Confirm password",
     resetPasswordSubmit: "Set new password",
     resetPasswordSubmitting: "Setting password…",
-    resetPasswordSuccess: "Password reset successfully. Redirecting to sign in…",
+    resetPasswordSuccess:
+      "Password reset successfully. Redirecting to sign in…",
     resetPasswordMismatch: "Passwords don't match.",
     resetPasswordInvalidLink: "This reset link has expired. Request a new one.",
     resetPasswordServerError: "Something went wrong. Try again.",
@@ -3202,8 +3195,7 @@ export const userEn: UserMessages = {
       savingButton: "Saving…",
       headline:
         "Secure your account — add email to never lose dashboard access",
-      socialProof:
-        "3 salons lost access this week from missing recovery email",
+      socialProof: "3 salons lost access this week from missing recovery email",
       ctaAdd: "Add email",
       ctaLater: "Maybe later",
       successMessage: "✓ Email saved! You're protected.",
@@ -3214,7 +3206,8 @@ export const userEn: UserMessages = {
     },
     emptyShare: {
       readyTitle: "Your booking page is live!",
-      readySubtitle: "Share your booking link with customers to receive your first booking",
+      readySubtitle:
+        "Share your booking link with customers to receive your first booking",
       copyButton: "Copy link",
       copiedButton: "Copied!",
       openButton: "Open page",
@@ -3366,7 +3359,8 @@ export const userEn: UserMessages = {
       sendTest: "Send test email",
       testSent: "Test email sent to {n} recipient(s).",
       testErrorNotEnabled: "Turn on alerts first, then save.",
-      testErrorNoRecipients: "No recipients yet — add an email or enable owners/admins.",
+      testErrorNoRecipients:
+        "No recipients yet — add an email or enable owners/admins.",
       testErrorNoResend: "Email service not configured.",
       testErrorGeneric: "Could not send the test email.",
     },
@@ -3402,8 +3396,7 @@ export const userEn: UserMessages = {
       noEmailHint: "No email on file.",
       verifiedBadge: "Verified",
       pendingBadge: "Pending",
-      pendingHint:
-        "Verification link sent — check your inbox (and spam).",
+      pendingHint: "Verification link sent — check your inbox (and spam).",
       verifiedToast: "Email verified.",
       verifyErrorPrefix: "Verification failed: ",
       changeButton: "Change email",
@@ -3638,8 +3631,7 @@ export const userEn: UserMessages = {
     staffCannotPerformService:
       "This staff member is not set up to perform that service.",
     staffLimitReached: "Free plan allows 3 staff. Upgrade to Pro for 10.",
-    serviceLimitReached:
-      "Free plan allows 10 services. Upgrade to Pro for 50.",
+    serviceLimitReached: "Free plan allows 10 services. Upgrade to Pro for 50.",
     upgradeCta: "Upgrade your plan",
   },
   setupLabels: {
@@ -3691,7 +3683,7 @@ export const userEn: UserMessages = {
     hoursOverrideLabel: "Custom hours",
     closureNoticeTitle: "Closure notice (optional)",
     closureNoticeHint:
-      "Shown as a banner on your public booking page — e.g. \"Closed for renovation Mon Aug 17 & Tue Aug 18, reopening Wed Aug 19.\" Fill in both languages to show it, or clear both to hide it. It disappears automatically once every date above has passed.",
+      'Shown as a banner on your public booking page — e.g. "Closed for renovation Mon Aug 17 & Tue Aug 18, reopening Wed Aug 19." Fill in both languages to show it, or clear both to hide it. It disappears automatically once every date above has passed.',
     closureNoticeEnLabel: "Message (English)",
     closureNoticeViLabel: "Message (Vietnamese)",
     addressTitle: "Salon address",
@@ -3713,8 +3705,7 @@ export const userEn: UserMessages = {
     invalidName: "Fix the name and try again.",
     minStaffRequired:
       "You need more than one staff member before you can remove someone.",
-    minServiceRequired:
-      "You need more than one service before you can delete.",
+    minServiceRequired: "You need more than one service before you can delete.",
     removed: "Removed",
     undo: "Undo",
   },
@@ -3740,7 +3731,8 @@ export const userEn: UserMessages = {
   },
   aiPrefill: {
     bannerTitle: "Import your menu in seconds",
-    bannerSubtitle: "Take a photo of your price list and AI will fill in your services automatically.",
+    bannerSubtitle:
+      "Take a photo of your price list and AI will fill in your services automatically.",
     bannerCta: "Import from photo",
     step1Title: "How would you like to add your services?",
     uploadCard: "Upload menu photo",
@@ -3754,7 +3746,8 @@ export const userEn: UserMessages = {
     processingTitle: "Reading your menu…",
     processingSub: "AI is extracting your services. This takes a few seconds.",
     reviewTitle: "Review extracted services",
-    reviewSub: "Select the services you'd like to import. You can edit prices and durations.",
+    reviewSub:
+      "Select the services you'd like to import. You can edit prices and durations.",
     selectAll: "Select all",
     deselectAll: "Deselect all",
     priceLabel: "Price",
@@ -3762,10 +3755,13 @@ export const userEn: UserMessages = {
     importButton: "Import services",
     importButtonN: "Import {n} services",
     manualFallback: "Enter manually instead",
-    errorVisionFailed: "Couldn't read the menu. Please try a clearer photo or enter manually.",
-    errorNoServices: "No services found in this image. Try a closer photo of the price list.",
+    errorVisionFailed:
+      "Couldn't read the menu. Please try a clearer photo or enter manually.",
+    errorNoServices:
+      "No services found in this image. Try a closer photo of the price list.",
     errorPlanLimit: "You've reached your plan's service limit.",
-    errorPayloadTooLarge: "Image is too large. Please resize to under 4MB and try again.",
+    errorPayloadTooLarge:
+      "Image is too large. Please resize to under 4MB and try again.",
     errorInvalidUrl: "Invalid image URL. Please check the link and try again.",
     successToast: "Services imported successfully!",
   },
@@ -3832,7 +3828,10 @@ export const userEn: UserMessages = {
         wood_green: { label: "Wood — Green 🟢", desc: "Growth, vitality" },
         water_blue: { label: "Water — Blue 🔵", desc: "Peace, wisdom" },
         water_purple: { label: "Water — Purple 🟣", desc: "Spirit, nobility" },
-        earth_brown: { label: "Earth — Brown 🟤", desc: "Stability, resilience" },
+        earth_brown: {
+          label: "Earth — Brown 🟤",
+          desc: "Stability, resilience",
+        },
         nailiq_gold: { label: "NailIQ Gold ✦", desc: "Default" },
       },
       bgTitle: "DRC Background",
@@ -3856,25 +3855,35 @@ export const userEn: UserMessages = {
       aiAllClear: "The desk is on track — no urgent action right now",
       aiReasons: {
         overdue: "Because the scheduled service end time has passed.",
-        online_waitlist: "Because an online customer is waiting for the salon to respond.",
-        not_started: "Because the appointment time passed and service has not started.",
-        long_wait: "Because this guest has waited longer than the salon’s target.",
-        no_staff_for_waiting: "Because guests are waiting and no staff member is available.",
+        online_waitlist:
+          "Because an online customer is waiting for the salon to respond.",
+        not_started:
+          "Because the appointment time passed and service has not started.",
+        long_wait:
+          "Because this guest has waited longer than the salon’s target.",
+        no_staff_for_waiting:
+          "Because guests are waiting and no staff member is available.",
         sms_failed: "Because a guest may not have received their confirmation.",
         party_change: "Because this group still has unconfirmed guests.",
-        setup_incomplete: "Because missing setup details can block daily operations.",
-        finish_overdue: "Because an active service is running beyond its planned time.",
+        setup_incomplete:
+          "Because missing setup details can block daily operations.",
+        finish_overdue:
+          "Because an active service is running beyond its planned time.",
         assign_waiting: "Because a guest is waiting and can be served next.",
         prepare_next: "Because the next guest is arriving within 30 minutes.",
         party_pending: "Because the group booking is not fully confirmed yet.",
-        suggest_walkin: "Because staff capacity is open and no guest is waiting.",
-        all_clear: "Because no urgent delay, wait, or service issue is detected.",
+        suggest_walkin:
+          "Because staff capacity is open and no guest is waiting.",
+        all_clear:
+          "Because no urgent delay, wait, or service issue is detected.",
       },
       alertsHeading: "Needs attention",
       moreIssues: (n: number) => `+${n} more issue${n === 1 ? "" : "s"}`,
       longWaitGuest: (n: number) => `1 guest has waited over ${n} min`,
       finishOverdue: (n: number) =>
-        n === 1 ? "1 booking is overdue — wrap up or extend" : `${n} bookings overdue — wrap up or extend`,
+        n === 1
+          ? "1 booking is overdue — wrap up or extend"
+          : `${n} bookings overdue — wrap up or extend`,
       assignWaiting: (n: number) =>
         n === 1
           ? "1 guest is waiting. Assign them to an available staff member."
@@ -3882,12 +3891,15 @@ export const userEn: UserMessages = {
       assignWaitingNamed: (name: string) =>
         `${name} is waiting. Assign them to an available staff member.`,
       prepareNext: (n: number) =>
-        n === 1 ? "1 guest arriving in the next 30 min" : `${n} guests arriving in the next 30 min`,
+        n === 1
+          ? "1 guest arriving in the next 30 min"
+          : `${n} guests arriving in the next 30 min`,
       partyPendingNamed: (time: string, name: string) =>
         `${name}'s party · ${time}: 1 guest hasn't claimed`,
       partyPendingCount: (time: string, n: number) =>
         `${n} guests haven't claimed their slot · ${time}`,
-      suggestWalkin: (name: string) => `${name} is available. You can add a walk-in.`,
+      suggestWalkin: (name: string) =>
+        `${name} is available. You can add a walk-in.`,
       actionOpenQueue: "Open queue",
       actionOpenWaitlist: "View and respond",
       actionAddWalkin: "+ Walk-in",
@@ -3902,9 +3914,7 @@ export const userEn: UserMessages = {
       alertOverdueNamed: (name: string, time: string) =>
         `${name} overdue · ${time}`,
       alertNotStarted: (n: number) =>
-        n === 1
-          ? "1 guest overdue to start"
-          : `${n} guests overdue to start`,
+        n === 1 ? "1 guest overdue to start" : `${n} guests overdue to start`,
       alertNotStartedNamed: (name: string, time: string) =>
         `${name} not started · ${time}`,
       alertLongWait: (n: number) => `Guest waiting over ${n} min`,
@@ -3932,10 +3942,14 @@ export const userEn: UserMessages = {
       completed: "Finished",
       readyToClose: "Everything is clear — ready to close",
       workRemaining: (count: number) =>
-        count === 1 ? "1 item still needs attention" : `${count} items still need attention`,
+        count === 1
+          ? "1 item still needs attention"
+          : `${count} items still need attention`,
       dayWindow: (start: string, end: string) => `Schedule ${start}–${end}`,
       riskGuests: (count: number) =>
-        count === 1 ? "1 guest needs no-show attention" : `${count} guests need no-show attention`,
+        count === 1
+          ? "1 guest needs no-show attention"
+          : `${count} guests need no-show attention`,
       calmDay: "No high-risk guests on today’s schedule",
       collapse: "Mark today’s brief as reviewed",
       expand: "Open today’s NailIQ brief",
@@ -3954,7 +3968,8 @@ export const userEn: UserMessages = {
       confirmedProgress: (claimed: number, total: number) =>
         `${claimed}/${total} confirmed`,
       pendingSuffix: (n: number) => `${n} pending`,
-      pendingHelp: "Guests who haven't confirmed their name/phone via the group link.",
+      pendingHelp:
+        "Guests who haven't confirmed their name/phone via the group link.",
       slotsCount: (n: number) => `${n} slot${n !== 1 ? "s" : ""}`,
       waveLabel: (n: number) => `Wave ${n}`,
       copyLink: "Copy group link",
@@ -3971,7 +3986,8 @@ export const userEn: UserMessages = {
       claimCancel: "Cancel",
       claimError: "Couldn't save — please try again",
       cancelParty: "Cancel party",
-      cancelConfirm: (n: number) => `Cancel all ${n} booking${n !== 1 ? "s" : ""} in this party?`,
+      cancelConfirm: (n: number) =>
+        `Cancel all ${n} booking${n !== 1 ? "s" : ""} in this party?`,
       cancelConfirmYes: "Yes, cancel all",
       cancelConfirmNo: "Keep",
       cancelling: "Cancelling…",
@@ -4024,8 +4040,7 @@ export const userEn: UserMessages = {
       assignButton: "Assign",
       urgentBadge: "URGENT",
       waitingHint: "Tap a slot on the timeline to seat this guest",
-      minutesAgo: (n: number) =>
-        n < 1 ? "just now" : `${n} min wait`,
+      minutesAgo: (n: number) => (n < 1 ? "just now" : `${n} min wait`),
       sortLabel: "Sort",
       sortFifo: "First in",
       sortLongestWait: "Longest wait",
@@ -4051,8 +4066,7 @@ export const userEn: UserMessages = {
       waitLinkButton: "Send wait link",
       waitLinkModal: {
         title: "Customer wait link",
-        instruction:
-          "Show this QR to {name} or copy the link to send via SMS.",
+        instruction: "Show this QR to {name} or copy the link to send via SMS.",
         copyLink: "Copy link",
         copied: "Copied!",
         openLink: "Open link",
@@ -4126,8 +4140,7 @@ export const userEn: UserMessages = {
         subLabelAssignNow: "→ Assign now to {name}",
         subLabelQueue: "→ Add to waiting list",
         subLabelAssignTo: "→ Assign to {name}",
-        walkinConflictsGroup:
-          "{name} has a group booking at {time}. Continue?",
+        walkinConflictsGroup: "{name} has a group booking at {time}. Continue?",
         walkinContinueAnyway: "Continue anyway",
         walkinChooseDifferent: "Choose different staff",
         relative: {
@@ -4161,8 +4174,7 @@ export const userEn: UserMessages = {
       phoneRequired: "Enter the guest phone number.",
       nameRequired: "Please enter the guest name.",
       nameTooLong: "Name cannot exceed 100 characters.",
-      invalidNameChars:
-        "Name contains invalid characters.",
+      invalidNameChars: "Name contains invalid characters.",
     },
     grid: {
       conflictWith: (clientName: string) =>
@@ -4173,8 +4185,7 @@ export const userEn: UserMessages = {
         "That slot overlaps another booking. Choose another slot or time.",
       rescheduleFailed: {
         past_date: "Can't move a booking into the past.",
-        outside_hours:
-          "The service would finish after the salon closes.",
+        outside_hours: "The service would finish after the salon closes.",
         slot_conflict: "That slot overlaps another booking.",
         staff_cannot_perform_service:
           "That staff member doesn't perform this service.",
@@ -4195,7 +4206,8 @@ export const userEn: UserMessages = {
       assignedPrefix: "Assigned:",
       assignedMiddle: "→",
       cancelledPrefix: "Cancelled:",
-      cancelUndoFailed: "Cannot undo — appointment already past or staff just booked.",
+      cancelUndoFailed:
+        "Cannot undo — appointment already past or staff just booked.",
     },
     notify: {
       heading: "Notify customer",
@@ -4308,10 +4320,14 @@ export const userEn: UserMessages = {
       invalid_phone: "Enter a valid guest phone number.",
       monthly_booking_limit_reached:
         "This salon hit its plan's monthly booking limit. Upgrade to continue.",
-      feature_not_enabled: "Archived booking recovery is not enabled for this salon.",
-      invalid_recovery: "This recovery request is invalid. Close it and try again.",
-      invalid_recovery_source: "The original booking is no longer eligible for recovery.",
-      already_recovered: "A replacement booking was already created from this record.",
+      feature_not_enabled:
+        "Archived booking recovery is not enabled for this salon.",
+      invalid_recovery:
+        "This recovery request is invalid. Close it and try again.",
+      invalid_recovery_source:
+        "The original booking is no longer eligible for recovery.",
+      already_recovered:
+        "A replacement booking was already created from this record.",
       immutable_terminal_state:
         "Cancelled and no-show records stay locked. Create a new linked booking instead.",
       external_calendar_not_supported:
@@ -4446,8 +4462,7 @@ export const userEn: UserMessages = {
     clientProfiles: {
       pageTitle: "Clients",
       sectionTitle: "Recent clients",
-      sectionIntro:
-        "Full client directory — search by name or phone number.",
+      sectionIntro: "Full client directory — search by name or phone number.",
       searchPlaceholder: "Search by name or phone number…",
       loading: "Loading clients…",
       empty: "No clients yet.",
@@ -4578,7 +4593,9 @@ export const userEn: UserMessages = {
         composeError: (msg: string) => `Failed to send: ${msg}`,
         regenerateSummary: "Regenerate",
         rebookInviteTemplate: ({ firstName, service, staff, bookingUrl }) => {
-          const parts = [`Hi ${firstName}! We'd love to see you again at Hi-Lite.`];
+          const parts = [
+            `Hi ${firstName}! We'd love to see you again at Hi-Lite.`,
+          ];
           if (service) parts.push(`Your favourite service: ${service}.`);
           if (staff) parts.push(`Book with ${staff}.`);
           parts.push(`Book here: ${bookingUrl}`);
@@ -4589,7 +4606,7 @@ export const userEn: UserMessages = {
     pricing: {
       sectionTitle: "Subscription",
       sectionIntro:
-        "Choose the plan that fits your salon. Upgrade or change anytime.",
+        "Choose the plan that fits your salon. V1 billing changes are handled manually by NailIQ support.",
       currentBadge: "Current",
       perMonth: "/ month",
       unlimited: "Unlimited",
@@ -4611,6 +4628,8 @@ export const userEn: UserMessages = {
         unauthorized: "Sign in is required.",
         forbidden: "Only the salon owner can change the subscription.",
         invalid_plan: "That plan is not available.",
+        phase_2_not_available:
+          "Automatic subscription billing arrives in Phase 2. Contact NailIQ support for a manual V1 plan change.",
         no_stripe_client: "Billing is not configured. Contact support.",
         server_error: "Could not start checkout. Try again shortly.",
       },
@@ -4618,6 +4637,8 @@ export const userEn: UserMessages = {
         unauthorized: "Sign in is required.",
         forbidden: "Only the salon owner can manage billing.",
         no_customer: "No active subscription to manage.",
+        phase_2_not_available:
+          "Automatic subscription management arrives in Phase 2. Contact NailIQ support for V1 billing help.",
         no_stripe_client: "Billing is not configured. Contact support.",
         server_error: "Could not open the billing portal. Try again shortly.",
       },
@@ -4626,6 +4647,8 @@ export const userEn: UserMessages = {
       pageTitle: "Reports",
       navLinkLabel: "Reports",
       loading: "Loading reports…",
+      estimatedValueNotice:
+        "Estimated values use stored booking or catalog prices for completed appointments. They are not collected-payment, tax, tip, commission, or refund totals, and unsupported historical or integration rows may be incomplete.",
       rangeAriaLabel: "Date range",
       range: {
         today: "Today",
@@ -4633,7 +4656,7 @@ export const userEn: UserMessages = {
         month: "This month",
       },
       kpis: {
-        totalRevenue: "Total revenue",
+        totalRevenue: "Estimated completed service value",
         appointments: "Appointments",
         completed: "Completed",
         cancelled: "Cancelled",
@@ -4650,7 +4673,7 @@ export const userEn: UserMessages = {
         countCol: "Count",
         appointmentsCol: "Appointments",
         shareCol: "Share",
-        revenueCol: "Revenue",
+        revenueCol: "Estimated value",
       },
       channelLabels: {
         online: "Online",
@@ -4693,7 +4716,8 @@ export const userEn: UserMessages = {
     bookingLimitBanner: {
       warningTitle: "Approaching your monthly booking limit",
       blockingTitle: "Monthly booking limit reached",
-      usageText: "{used} / {cap} bookings this month. Upgrade to Pro to remove the cap.",
+      usageText:
+        "{used} / {cap} bookings this month. Upgrade to Pro to remove the cap.",
       upgradeCta: "Upgrade to Pro",
       manageCtaSettings: "Manage in Settings",
       upgradeError:
@@ -4701,9 +4725,11 @@ export const userEn: UserMessages = {
     },
     noShowFeeModal: {
       title: "No-show fee",
-      desc: (amount: string) => `A fee of ${amount} is saved on this booking's card.`,
+      desc: (amount: string) =>
+        `A fee of ${amount} is saved on this booking's card.`,
       charge: (amount: string) => `Charge ${amount} now`,
-      chargeFailed: "The appointment was marked no-show, but the card was not charged. Check the no-show record before contacting the guest.",
+      chargeFailed:
+        "The appointment was marked no-show, but the card was not charged. Check the no-show record before contacting the guest.",
       waive: "Waive fee",
       cancel: "Cancel (mark no-show, decide later)",
     },

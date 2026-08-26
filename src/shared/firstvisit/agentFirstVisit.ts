@@ -1,5 +1,6 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProviderPolicy";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { isAiAgentPermissionEnabled } from "@/shared/ai/agentPermissionFence";
 import { looseServiceClient, type Row } from "@/shared/integrations/square/looseDb";
@@ -39,7 +40,7 @@ let _ai: Anthropic | null = null;
 function getAI(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY?.trim();
   if (!key) return null;
-  if (!_ai) _ai = new Anthropic({ apiKey: key });
+  if (!_ai) _ai = createTextBackgroundAnthropicClient(key);
   return _ai;
 }
 
@@ -137,8 +138,8 @@ Rules: 1-2 sentences. Warm, zero pressure. Say you'd love to see them again and 
 
 // ─── Send helpers ─────────────────────────────────────────────────────────────
 
-async function sendSms(phone: string, text: string, lang: "en" | "vi"): Promise<boolean> {
-  const r = await sendSmsReminder(phone, text, { lang });
+async function sendSms(salonId: string, phone: string, text: string, lang: "en" | "vi"): Promise<boolean> {
+  const r = await sendSmsReminder(phone, text, { salonId, lang });
   return r.ok;
 }
 
@@ -401,7 +402,7 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
       }
 
       let ok = false;
-      if (ch.sms) ok = await sendSms(fv.phone, warmth, lang);
+      if (ch.sms) ok = await sendSms(salonId, fv.phone, warmth, lang);
       if (ch.email && fv.email) ok = (await sendEmail(fv.email, fv.name, salonName, warmth, null, salonReplyEmail)) || ok;
 
       if (ok) {
@@ -522,7 +523,7 @@ export async function runFirstVisitNurture(salonId: string): Promise<void> {
       }
 
       let ok = false;
-      if (ch.sms) ok = await sendSms(phone, body, lang);
+      if (ch.sms) ok = await sendSms(salonId, phone, body, lang);
       if (ch.email && email) ok = (await sendEmail(email, name, salonName, message, bookingUrl, salonReplyEmail)) || ok;
       if (!ok) continue;
 

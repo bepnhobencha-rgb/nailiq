@@ -12,10 +12,10 @@ export const metadata = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ notice?: string; error?: string }>;
+  searchParams: Promise<{ notice?: string; error?: string; reset?: string }>;
 }) {
   const demoMode = isDemoOtpRuntime();
-  const { notice, error } = await searchParams;
+  const { notice, error, reset } = await searchParams;
 
   // In demo mode always fall back to the phone/OTP path so local dev
   // isn't affected by the platform flag state. Mirrors /register.
@@ -29,6 +29,7 @@ export default async function LoginPage({
       smsEnabled={smsEnabled}
       emailEnabled={emailEnabled}
       showConfirmEmailNotice={notice === "confirm-email"}
+      showPasswordResetNotice={reset === "ok"}
       authError={
         error === "pkce_restart"
           ? "pkce_restart"

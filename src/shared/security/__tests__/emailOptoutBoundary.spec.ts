@@ -66,13 +66,14 @@ describe("client_email_optouts boundary", () => {
     expect(route).toContain("if (!suppressed)");
     expect(route).toContain("status: 503");
     expect(page).toContain("We could not update your email preferences");
-    expect(rebook).toContain("isEmailSuppressed(c.email).catch(() => true)");
+    expect(rebook).not.toContain("getResendClient");
+    expect(rebook).not.toContain(".emails.send");
     expect(firstVisit).toContain("isEmailSuppressed(to).catch(() => true)");
     expect(vipCare).toContain(
       "isEmailSuppressed(client.email).catch(() => true)",
     );
-    expect(vipCare).toContain("listUnsubscribeHeaders(client.email)");
-    expect(vipCare).toContain("complianceFooterHtml({ email: client.email");
+    expect(vipCare).toContain('delivery_mode: "draft_only_human_send_required"');
+    expect(vipCare).not.toContain("resend.emails.send");
     expect(staffAction).toContain(
       "isEmailSuppressed(to).catch(() => true)",
     );
@@ -80,9 +81,9 @@ describe("client_email_optouts boundary", () => {
 
   it("updates blank-database parity tripwires", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("policies: 156");
+    expect(parity).toContain("policies: 197");
     expect(parity).toContain(
-      "const GRANTS = { anon: 57, authenticated: 64, service_role: 112 }",
+      "const GRANTS = { anon: 56, authenticated: 77, service_role: 175 }",
     );
   });
 });

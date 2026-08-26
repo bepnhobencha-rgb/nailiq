@@ -1,5 +1,41 @@
 import { describe, it, expect, vi } from "vitest";
 
+const paymentMocks = vi.hoisted(() => ({
+  charge: vi.fn(async () => ({ charged: true, status: "succeeded" as const })),
+}));
+const managementMocks = vi.hoisted(() => ({
+  mint: vi.fn(async () => ({
+    ok: true as const,
+    capability: {
+      tokenId: "723e4567-e89b-42d3-a456-426614174000",
+      action: "cancel" as const,
+      scopeKind: "booking_own" as const,
+      epoch: 1,
+      expiresAt: new Date(Date.now() + 600_000).toISOString(),
+      reused: false,
+    },
+  })),
+  cancel: vi.fn(async () => ({
+    ok: true as const,
+    result: {
+      scopeKind: "booking_own" as const,
+      rsvpSemantic: null,
+      transitionVersion: 7,
+      cancelPreview: {
+        startPast: false,
+        withinWindow: true,
+        willCharge: true,
+        policyLockedByReschedule: false,
+        feeCents: 1700,
+        cardLast4: "4242",
+        cardBrand: "visa",
+        currency: "USD",
+      },
+    },
+  })),
+}));
+
+vi.mock("server-only", () => ({}));
 // `after()` only runs inside a Next request scope. The success paths below reach
 // the owner-notification side effect, which #787 moved into after() — outside a
 // real request that throws. These tests are about the identity gate, not about
@@ -10,7 +46,11 @@ vi.mock("next/server", async (importOriginal) => {
 });
 
 vi.mock("@/shared/integrations/square/noshow", () => ({
-  chargeNoShowFee: vi.fn(async () => ({ charged: true })),
+  chargeNoShowFee: paymentMocks.charge,
+}));
+vi.mock("@/shared/booking/bookingManagementCapabilities", () => ({
+  mintBookingManagementCapability: managementMocks.mint,
+  cancelBookingWithManagementCapability: managementMocks.cancel,
 }));
 
 import { executeVoiceTool } from "../toolExecutor";
@@ -384,6 +424,9 @@ describe("toolExecutor — late-cancellation payment consent", () => {
   });
 
   it("charges only after explicit acknowledgement and reports success truthfully", async () => {
+    managementMocks.mint.mockClear();
+    managementMocks.cancel.mockClear();
+    paymentMocks.charge.mockClear();
     vi.stubEnv("VOICE_BRIDGE_SECRET", "late-fee-test-secret");
     const challenge = await call(
       "cancel_booking",
@@ -415,8 +458,164 @@ describe("toolExecutor — late-cancellation payment consent", () => {
     expect(body.feeCharged).toBe(true);
     expect(body.feeCents).toBe(1700);
     expect(body.feeFailed).toBe(false);
+    expect(managementMocks.mint).toHaveBeenCalledWith(
+      expect.objectContaining({
+        salonId: SALON_ID,
+        bookingId: BOOKING_ID,
+        action: "cancel",
+      }),
+      expect.anything(),
+    );
+    expect(managementMocks.cancel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tokenId: "723e4567-e89b-42d3-a456-426614174000",
+        requestId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+      }),
+      expect.anything(),
+    );
+    expect(paymentMocks.charge).toHaveBeenCalledWith(BOOKING_ID, {
+      note: "Late cancellation fee",
+      amountCentsOverride: 1700,
+      operationKind: "late_cancel_charge",
+      occurrenceVersion: 7,
+    });
     vi.unstubAllEnvs();
   });
+
+  it("replays the same canonical cancel request and committed charge occurrence", async () => {
+    managementMocks.cancel.mockClear();
+    paymentMocks.charge.mockClear();
+    vi.stubEnv("VOICE_BRIDGE_SECRET", "late-fee-test-secret");
+    const challenge = await call(
+      "cancel_booking",
+      { booking_id: BOOKING_ID },
+      { salons: chargeableSalon, bookings: chargeableBooking },
+      {
+        callerVerifiedPhone: OWNER_PHONE,
+        trustedUserUtterance: "I need to cancel",
+      },
+    );
+    const acknowledged = {
+      booking_id: BOOKING_ID,
+      late_fee_acknowledged: true,
+      late_fee_confirmation_token: challenge.late_fee_confirmation_token,
+    };
+    const options = {
+      callerVerifiedPhone: OWNER_PHONE,
+      trustedUserUtterance: "Yes",
+    };
+
+    const first = await call(
+      "cancel_booking",
+      acknowledged,
+      { salons: chargeableSalon, bookings: chargeableBooking },
+      options,
+    );
+    const replay = await call(
+      "cancel_booking",
+      acknowledged,
+      { salons: chargeableSalon, bookings: chargeableBooking },
+      options,
+    );
+
+    expect(first.success).toBe(true);
+    expect(replay.success).toBe(true);
+    const cancelCalls = managementMocks.cancel.mock.calls as unknown as Array<[
+      { requestId: string },
+      unknown,
+    ]>;
+    const cancelRequests = cancelCalls.map(([input]) => input.requestId);
+    expect(cancelRequests).toHaveLength(2);
+    expect(new Set(cancelRequests).size).toBe(1);
+    expect(paymentMocks.charge).toHaveBeenCalledTimes(2);
+    const chargeCalls = paymentMocks.charge.mock.calls as unknown as Array<[
+      string,
+      { operationKind: string; occurrenceVersion: number },
+    ]>;
+    expect(chargeCalls[0]).toEqual(chargeCalls[1]);
+    expect(chargeCalls[0]?.[1]).toMatchObject({
+      operationKind: "late_cancel_charge",
+      occurrenceVersion: 7,
+    });
+    vi.unstubAllEnvs();
+  });
+
+  it("treats a group member decline as RSVP-only and never calls the charge boundary", async () => {
+    paymentMocks.charge.mockClear();
+    managementMocks.cancel.mockResolvedValueOnce({
+      ok: true as const,
+      result: {
+        scopeKind: "booking_own" as const,
+        rsvpSemantic: "decline",
+        transitionVersion: 8,
+        cancelPreview: {
+          startPast: false,
+          withinWindow: true,
+          willCharge: true,
+          policyLockedByReschedule: false,
+          feeCents: 1700,
+          cardLast4: "4242",
+          cardBrand: "visa",
+          currency: "USD",
+        },
+      },
+    } as never);
+
+    const body = await call(
+      "cancel_booking",
+      { booking_id: BOOKING_ID },
+      {
+        salons: chargeableSalon,
+        bookings: { ...chargeableBooking, group_id: GROUP_ID },
+      },
+      { callerVerifiedPhone: OWNER_PHONE },
+    );
+
+    expect(body.success).toBe(true);
+    expect(body.feeCharged).toBe(false);
+    expect(body.feeCents).toBe(0);
+    expect(body.paymentPending).toBe(false);
+    expect(paymentMocks.charge).not.toHaveBeenCalled();
+  });
+
+  it.each(["pending_provider", "unknown"] as const)(
+    "reports a %s late-cancel charge truthfully without marking it failed",
+    async (status) => {
+      paymentMocks.charge.mockClear();
+      paymentMocks.charge.mockResolvedValueOnce({ charged: false, status } as never);
+      vi.stubEnv("VOICE_BRIDGE_SECRET", "late-fee-test-secret");
+      const challenge = await call(
+        "cancel_booking",
+        { booking_id: BOOKING_ID },
+        { salons: chargeableSalon, bookings: chargeableBooking },
+        {
+          callerVerifiedPhone: OWNER_PHONE,
+          trustedUserUtterance: "I need to cancel",
+        },
+      );
+
+      const body = await call(
+        "cancel_booking",
+        {
+          booking_id: BOOKING_ID,
+          late_fee_acknowledged: true,
+          late_fee_confirmation_token: challenge.late_fee_confirmation_token,
+        },
+        { salons: chargeableSalon, bookings: chargeableBooking },
+        {
+          callerVerifiedPhone: OWNER_PHONE,
+          trustedUserUtterance: "Yes",
+        },
+      );
+
+      expect(body.success).toBe(true);
+      expect(body.feeStatus).toBe(status);
+      expect(body.paymentPending).toBe(true);
+      expect(body.feeFailed).toBe(false);
+      expect(body.feeCharged).toBe(false);
+      vi.unstubAllEnvs();
+    },
+  );
 
   it("does not trust a model-set acknowledgement without a trusted customer yes", async () => {
     const body = await call(

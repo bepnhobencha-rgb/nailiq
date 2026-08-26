@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { consumePublicRequestRateLimit } from "@/shared/security/publicServerActionRateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,17 @@ export const dynamic = "force-dynamic";
  * Idempotent on (voucher_id, booking_id) — safe to call twice.
  */
 export async function POST(req: Request) {
+  const ipRate = await consumePublicRequestRateLimit({
+    request: req,
+    scope: "voucher-redeem",
+    ipLimits: [[20, 60], [100, 3_600]],
+  });
+  if (ipRate !== "allowed") {
+    return NextResponse.json(
+      { ok: false, error: ipRate === "limited" ? "rate_limited" : "temporarily_unavailable" },
+      { status: ipRate === "limited" ? 429 : 503 },
+    );
+  }
   const {
     voucher_id,
     salon_id,
@@ -22,6 +34,20 @@ export async function POST(req: Request) {
 
   if (!voucher_id || !salon_id || !client_phone || typeof discount_cents !== "number") {
     return NextResponse.json({ ok: false, error: "missing_fields" }, { status: 400 });
+  }
+
+  const identityRate = await consumePublicRequestRateLimit({
+    request: req,
+    scope: "voucher-redeem-identity",
+    identity: [salon_id, voucher_id, booking_id ?? "missing-booking"],
+    ipLimits: [],
+    identityLimits: [[3, 3_600], [5, 86_400]],
+  });
+  if (identityRate !== "allowed") {
+    return NextResponse.json(
+      { ok: false, error: identityRate === "limited" ? "rate_limited" : "temporarily_unavailable" },
+      { status: identityRate === "limited" ? 429 : 503 },
+    );
   }
 
   const db = createServiceRoleClient();

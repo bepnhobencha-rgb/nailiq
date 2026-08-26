@@ -3,8 +3,6 @@
 import { useState, useTransition } from "react";
 import { StampCard } from "@/components/loyalty/StampCard";
 import { createOrUpdateLoyaltyProgram } from "@/shared/loyalty/loyaltyActions";
-import { createGiftCard } from "@/shared/loyalty/giftCardActions";
-import { GIFT_CARD_PURCHASE_ENABLED } from "@/shared/loyalty/giftCardConfig";
 import { formatPublicMonthlyPrice } from "@/shared/subscriptions/pricingCatalog";
 import type { LoyaltyProgram, GiftCard } from "@/shared/loyalty/types";
 
@@ -13,8 +11,6 @@ const labelClass = "text-xs text-[#a1a1aa] mb-1 block";
 const selectClass = "w-full rounded-lg bg-[#1c1c1e] border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:border-[#d4af37]/40";
 
 const PRESET_COLORS = ["#D4AF37", "#E57373", "#64B5F6", "#81C784", "#BA68C8", "#FF8A65"];
-const GIFT_DENOMINATIONS = [2500, 5000, 7500, 10000];
-
 type Props = {
   slug: string;
   salonId: string;
@@ -275,114 +271,19 @@ function GiftCardTab({
   salonId: string;
   giftCards: GiftCard[];
 }) {
-  const [isPending, startTransition] = useTransition();
-  const [status, setStatus] = useState<"idle" | "created" | "error">("idle");
-  const [newCode, setNewCode] = useState<string | null>(null);
-  const [valueCents, setValueCents] = useState(5000);
-  const [fromName, setFromName] = useState("");
-  const [message, setMessage] = useState("");
-  const [recipientPhone, setRecipientPhone] = useState("");
-
-  function handleCreate() {
-    startTransition(async () => {
-      const result = await createGiftCard(slug, {
-        valueCents,
-        fromName: fromName || undefined,
-        message: message || undefined,
-        recipientPhone: recipientPhone || undefined,
-      });
-      if (result.ok && result.voucher) {
-        setNewCode(result.voucher.code);
-        setStatus("created");
-        setFromName("");
-        setMessage("");
-        setRecipientPhone("");
-      } else {
-        setStatus("error");
-      }
-      setTimeout(() => { setStatus("idle"); setNewCode(null); }, 5000);
-    });
-  }
-
-  const publicUrl = typeof window !== "undefined"
-    ? `${window.location.origin}/${slug}/gift`
-    : `nailiq.ca/${slug}/gift`;
+  void slug;
+  void salonId;
 
   return (
     <div className="space-y-6">
-      {GIFT_CARD_PURCHASE_ENABLED && (
-      <div className="p-4 rounded-xl bg-[#1c1c1e] border border-white/10">
-        <p className="text-sm text-white font-medium mb-1">Public gift card page</p>
-        <p className="text-xs text-[#a1a1aa] mb-3">Share this link so customers can purchase gift cards online.</p>
-        <div className="flex items-center gap-2">
-          <code className="flex-1 rounded-lg bg-black/30 px-3 py-2 text-xs text-[#D4AF37] truncate">
-            nailiq.ca/{slug}/gift
-          </code>
-          <button
-            onClick={() => navigator.clipboard?.writeText(`https://nailiq.ca/${slug}/gift`)}
-            className="shrink-0 px-3 py-2 rounded-lg border border-white/10 text-xs text-[#a1a1aa] hover:text-white transition-colors"
-          >
-            Copy
-          </button>
-        </div>
-      </div>
-      )}
-
-      <div className="p-5 rounded-xl bg-[#1c1c1e] border border-white/10 space-y-4">
-        <p className="text-sm font-semibold text-white">Issue gift card manually</p>
-
-        <div>
-          <label className={labelClass}>Value</label>
-          <div className="flex gap-2 flex-wrap">
-            {GIFT_DENOMINATIONS.map((d) => (
-              <button
-                key={d}
-                onClick={() => setValueCents(d)}
-                className={`px-4 py-1.5 rounded-full text-sm border transition-colors ${
-                  valueCents === d
-                    ? "bg-[#D4AF37] text-black border-[#D4AF37]"
-                    : "border-white/20 text-white hover:border-white/40"
-                }`}
-              >
-                ${d / 100}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelClass}>From (optional)</label>
-            <input className={inputClass} value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder="Sender name" />
-          </div>
-          <div>
-            <label className={labelClass}>Recipient phone (optional)</label>
-            <input className={inputClass} value={recipientPhone} onChange={(e) => setRecipientPhone(e.target.value)} placeholder="+1 604 555 0100" />
-          </div>
-        </div>
-
-        <div>
-          <label className={labelClass}>Message (optional)</label>
-          <input className={inputClass} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Happy birthday! Enjoy your treatment." />
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleCreate}
-            disabled={isPending}
-            className="px-5 py-2 rounded-full bg-[#D4AF37] text-black text-sm font-semibold hover:brightness-105 disabled:opacity-50 transition-all"
-          >
-            {isPending ? "Creating…" : `Issue $${valueCents / 100} gift card`}
-          </button>
-          {status === "error" && <span className="text-xs text-red-400">Error</span>}
-        </div>
-
-        {newCode && (
-          <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-            <p className="text-xs text-green-400 mb-1">Gift card created!</p>
-            <code className="text-sm font-bold text-white tracking-widest">{newCode}</code>
-          </div>
-        )}
+      <div
+        data-testid="gift-card-issuance-unavailable"
+        className="rounded-xl border border-amber-400/25 bg-amber-400/5 p-5"
+      >
+        <p className="text-sm font-semibold text-white">Gift Card issuance is unavailable</p>
+        <p className="mt-1 text-xs leading-relaxed text-[#a1a1aa]">
+          New value stays disabled until the paid Square create, payment, and activation receipt chain is connected. Existing historical cards remain listed below.
+        </p>
       </div>
 
       {giftCards.length > 0 && (

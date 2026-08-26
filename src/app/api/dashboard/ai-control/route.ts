@@ -6,6 +6,9 @@ import { decideApprovalAction } from "@/shared/ai/decideApprovalAction";
 import { preflightCampaignAction } from "@/shared/ai/preflightCampaignAction";
 import { prepareAudienceAction } from "@/shared/ai/prepareAudienceAction";
 import { sealCampaignPlanAction } from "@/shared/ai/sealCampaignPlanAction";
+import { updatePromoCampaignDraftAction } from "@/shared/ai/updatePromoCampaignDraftAction";
+import { updateReactivationCampaignDraftAction } from "@/shared/ai/updateReactivationCampaignDraftAction";
+import { updateReviewReplyDraftAction } from "@/shared/ai/updateReviewReplyDraftAction";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -76,6 +79,62 @@ export async function POST(request: NextRequest) {
       return json({ ok: false, error: "invalid_request" }, 400);
     }
     result = await decideApprovalAction({ slug, approvalId, decision });
+  } else if (action === "save_review_reply_draft") {
+    const approvalId = id(body?.approvalId);
+    const draftReply = body?.draftReply;
+    if (
+      !approvalId ||
+      typeof draftReply !== "string" ||
+      draftReply.length < 10 ||
+      draftReply.length > 800
+    ) {
+      return json({ ok: false, error: "invalid_request" }, 400);
+    }
+    result = await updateReviewReplyDraftAction({
+      slug,
+      approvalId,
+      draftReply,
+    });
+  } else if (action === "save_promo_campaign_draft") {
+    const approvalId = id(body?.approvalId);
+    const draftMessage = body?.draftMessage;
+    const offerFactsConfirmed = body?.offerFactsConfirmed;
+    if (
+      !approvalId ||
+      typeof draftMessage !== "string" ||
+      draftMessage.length < 20 ||
+      draftMessage.length > 1000 ||
+      typeof offerFactsConfirmed !== "boolean"
+    ) {
+      return json({ ok: false, error: "invalid_request" }, 400);
+    }
+    result = await updatePromoCampaignDraftAction({
+      slug,
+      approvalId,
+      draftMessage,
+      offerFactsConfirmed,
+    });
+  } else if (action === "save_reactivation_campaign_draft") {
+    const approvalId = id(body?.approvalId);
+    const messageEn = body?.messageEn;
+    const messageVi = body?.messageVi;
+    if (
+      !approvalId ||
+      typeof messageEn !== "string" ||
+      typeof messageVi !== "string" ||
+      messageEn.length < 20 ||
+      messageEn.length > 480 ||
+      messageVi.length < 20 ||
+      messageVi.length > 480
+    ) {
+      return json({ ok: false, error: "invalid_request" }, 400);
+    }
+    result = await updateReactivationCampaignDraftAction({
+      slug,
+      approvalId,
+      messageEn,
+      messageVi,
+    });
   } else if (action === "control_exception") {
     const alertId = id(body?.alertId);
     const operation = body?.operation;

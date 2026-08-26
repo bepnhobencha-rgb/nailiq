@@ -169,6 +169,51 @@ export function staffIsFree(
   return true;
 }
 
+/**
+ * Order staff for an "Any" assignment by projected booked minutes in the
+ * caller-supplied salon-day occupancy. Existing appointments and assignments
+ * already reserved by the arrangement both count. The proposed block is
+ * included for clarity and future policies; it is identical for every
+ * candidate in a single assignment.
+ *
+ * A stable ID tie-break keeps the result deterministic and independent of
+ * database return order. Capability and interval availability are still
+ * enforced by the caller before a staff member is selected.
+ */
+export function orderStaffByProjectedSalonDayMinutes(
+  staff: readonly StaffRow[],
+  proposedStartMs: number,
+  proposedEndMs: number,
+  existing: ExistingBooking[],
+  softReservations: Map<string, Array<{ startMs: number; endMs: number }>>,
+): StaffRow[] {
+  const proposedMinutes = Math.max(0, proposedEndMs - proposedStartMs) / 60_000;
+  const occupiedMinutes = new Map<string, number>();
+
+  for (const booking of existing) {
+    const minutes = Math.max(0, booking.endMs - booking.startMs) / 60_000;
+    occupiedMinutes.set(
+      booking.staffId,
+      (occupiedMinutes.get(booking.staffId) ?? 0) + minutes,
+    );
+  }
+  for (const [staffId, reservations] of softReservations) {
+    let minutes = occupiedMinutes.get(staffId) ?? 0;
+    for (const reservation of reservations) {
+      minutes += Math.max(0, reservation.endMs - reservation.startMs) / 60_000;
+    }
+    occupiedMinutes.set(staffId, minutes);
+  }
+
+  return staff.slice().sort((a, b) => {
+    const aProjected = (occupiedMinutes.get(a.id) ?? 0) + proposedMinutes;
+    const bProjected = (occupiedMinutes.get(b.id) ?? 0) + proposedMinutes;
+    if (aProjected !== bProjected) return aProjected - bProjected;
+    if (a.id === b.id) return 0;
+    return a.id < b.id ? -1 : 1;
+  });
+}
+
 // ─── Core assignment functions ───────────────────────────────────
 
 /**
@@ -215,7 +260,13 @@ export function tryAlignedArrangement(
         }
       }
     } else {
-      for (const s of staff) candidateOrder.push(s.id);
+      for (const s of orderStaffByProjectedSalonDayMinutes(
+        staff,
+        startMs,
+        endMs,
+        existing,
+        soft,
+      )) candidateOrder.push(s.id);
     }
 
     let pickedStaff: string | null = null;
@@ -292,7 +343,13 @@ export function tryFinishAlignedArrangement(
         }
       }
     } else {
-      for (const s of staff) candidateOrder.push(s.id);
+      for (const s of orderStaffByProjectedSalonDayMinutes(
+        staff,
+        startMs,
+        endMs,
+        existing,
+        soft,
+      )) candidateOrder.push(s.id);
     }
 
     let pickedStaff: string | null = null;
@@ -488,7 +545,13 @@ export function tryWaveArrangement(
         candidateOrder.push(m.preferredStaffId);
         for (const s of staff) if (s.id !== m.preferredStaffId) candidateOrder.push(s.id);
       } else {
-        for (const s of staff) candidateOrder.push(s.id);
+        for (const s of orderStaffByProjectedSalonDayMinutes(
+          staff,
+          startMs,
+          endMs,
+          occupancy,
+          soft,
+        )) candidateOrder.push(s.id);
       }
 
       let picked: string | null = null;

@@ -1,7 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import {
+  acknowledgeBookingManagementRequest,
+  replayExistingBookingManagementRequest,
+  stableBookingManagementRequestId,
+} from "@/shared/booking/bookingManagementRequestId";
+import { isCommittedCancellationPaymentPending } from "@/shared/payments/paymentOutagePresentation";
 
 type Preview = {
   ok: boolean;
@@ -15,6 +21,17 @@ type Preview = {
   brand?: string | null;
   currency?: string;
   salonSlug?: string | null;
+};
+
+type CancelResponse = {
+  ok?: boolean;
+  code?: string;
+  salonSlug?: string | null;
+  feeCharged?: boolean;
+  feeCents?: number;
+  currency?: string;
+  bookingCommitted?: boolean;
+  feeStatus?: "pending_provider" | "unknown" | "succeeded" | "definite_failure" | "not_applicable";
 };
 
 function fmtMoney(cents: number, currency: string): string {
@@ -32,12 +49,28 @@ export default function CancelBookingPage() {
   const searchParams = useSearchParams();
   const token = searchParams?.get("token") ?? "";
   const [state, setState] = useState<
-    "preview" | "idle" | "loading" | "done" | "error" | "blocked"
+    "preview" | "idle" | "loading" | "done" | "error" | "blocked" | "payment_pending"
   >(token ? "preview" : "error");
   const [code, setCode] = useState(token ? "" : "missing_token");
   const [salonSlug, setSalonSlug] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [feeCharged, setFeeCharged] = useState<{ cents: number; currency: string } | null>(null);
+  const [pendingFee, setPendingFee] = useState<{ cents: number; currency: string; status: string } | null>(null);
+  const applyCommittedPaymentPending = useCallback((json: CancelResponse): void => {
+    setPendingFee({
+      cents: typeof json.feeCents === "number" ? json.feeCents : 0,
+      currency: json.currency ?? "USD",
+      status: json.feeStatus ?? "unknown",
+    });
+    setState("payment_pending");
+  }, []);
+  const applyCommittedCancellation = useCallback((json: CancelResponse): void => {
+    if (json.salonSlug) setSalonSlug(json.salonSlug);
+    if (json.feeCharged && typeof json.feeCents === "number") {
+      setFeeCharged({ cents: json.feeCents, currency: json.currency ?? "USD" });
+    }
+    setState("done");
+  }, []);
 
   // Fetch what a cancel would do (past appointment? late-cancel fee?) so the
   // customer sees the fee BEFORE confirming.
@@ -46,6 +79,28 @@ export default function CancelBookingPage() {
     let alive = true;
     (async () => {
       try {
+        const intent = { action: "cancel" as const, token };
+        const replay = await replayExistingBookingManagementRequest(intent, async (requestId) => {
+          const response = await fetch("/api/booking/cancel-action", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token, requestId }),
+          });
+          const body = await response.json() as CancelResponse;
+          return { acknowledged: response.ok && body.ok === true, value: { response, body } };
+        });
+        if (!alive) return;
+        if (replay) {
+          if (replay.value.response.ok && replay.value.body.ok) {
+            applyCommittedCancellation(replay.value.body);
+          } else if (isCommittedCancellationPaymentPending(replay.value.body)) {
+            applyCommittedPaymentPending(replay.value.body);
+          } else {
+            setState("error");
+            setCode(replay.value.body.code ?? "management_unavailable");
+          }
+          return;
+        }
         const res = await fetch(
           `/api/booking/cancel-action?token=${encodeURIComponent(token)}`,
         );
@@ -68,32 +123,26 @@ export default function CancelBookingPage() {
     return () => {
       alive = false;
     };
-  }, [token]);
+  }, [applyCommittedCancellation, applyCommittedPaymentPending, token]);
 
   async function handleCancel() {
     if (!token) { setState("error"); setCode("missing_token"); return; }
     setState("loading");
 
     try {
+      const intent = { action: "cancel" as const, token };
+      const requestId = await stableBookingManagementRequestId(intent);
       const res = await fetch("/api/booking/cancel-action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, requestId }),
       });
-      const json = (await res.json()) as {
-        ok?: boolean;
-        code?: string;
-        salonSlug?: string | null;
-        feeCharged?: boolean;
-        feeCents?: number;
-        currency?: string;
-      };
+      const json = (await res.json()) as CancelResponse;
       if (json.ok) {
-        if (json.salonSlug) setSalonSlug(json.salonSlug);
-        if (json.feeCharged && json.feeCents) {
-          setFeeCharged({ cents: json.feeCents, currency: json.currency ?? "USD" });
-        }
-        setState("done");
+        await acknowledgeBookingManagementRequest(intent);
+        applyCommittedCancellation(json);
+      } else if (isCommittedCancellationPaymentPending(json)) {
+        applyCommittedPaymentPending(json);
       } else if (json.code === "too_late") {
         setState("blocked");
       } else {
@@ -157,6 +206,38 @@ export default function CancelBookingPage() {
               </a>
             </div>
           )}
+        </div>
+      </Shell>
+    );
+  }
+
+  if (state === "payment_pending") {
+    const fee = pendingFee && pendingFee.cents > 0
+      ? fmtMoney(pendingFee.cents, pendingFee.currency)
+      : null;
+    const pendingStatus = pendingFee?.status === "pending_provider"
+      ? "Provider processing / Nhà cung cấp đang xử lý"
+      : "Outcome unknown / Kết quả chưa xác định";
+    return (
+      <Shell>
+        <div className="text-center">
+          <h1 className="text-xl font-semibold text-white">Cancellation received</h1>
+          <p className="mt-3 text-sm text-nq-muted">
+            Your appointment is cancelled, but the payment result{fee ? ` for ${fee}` : ""} is
+            still being verified. Do not submit another payment or cancellation.
+          </p>
+          <p className="mt-2 text-sm text-nq-muted/80">
+            Lịch hẹn đã được huỷ, nhưng kết quả thanh toán{fee ? ` ${fee}` : ""} đang được
+            đối soát. Không thanh toán hoặc gửi yêu cầu huỷ mới.
+          </p>
+          <p className="mt-3 text-xs text-amber-300/90">{pendingStatus}</p>
+          <button
+            type="button"
+            onClick={() => void handleCancel()}
+            className="mt-6 rounded-xl border border-nq-border/60 px-5 py-3 text-sm text-white"
+          >
+            Check the same payment / Kiểm tra giao dịch này
+          </button>
         </div>
       </Shell>
     );

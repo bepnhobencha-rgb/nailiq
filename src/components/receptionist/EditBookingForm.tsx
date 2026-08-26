@@ -29,6 +29,7 @@ import { ymdToLocalNoon } from "@/shared/lib/localDateYmd";
 import type { SalonDashboardBooking } from "@/shared/types";
 import { cn } from "@/shared/lib/cn";
 import { formatCurrency, formatServicePrice } from "@/shared/lib/currencyFormat";
+import type { BookingSequenceRescheduleQuote } from "@/shared/booking/bookingSequenceReschedule";
 
 /** Desk day row: ids + times required for edit defaults (receptionist `bookingsForDay`).
  *  Addon fields ride along for read-only display + correct end-time calc on save. */
@@ -172,6 +173,37 @@ export function EditBookingForm({
   const [selectedAddon, setSelectedAddon] = useState<string>(originalAddon);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sequenceReview, setSequenceReview] = useState<{
+    requestId: string;
+    quote: BookingSequenceRescheduleQuote;
+    changed: boolean;
+  } | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = sessionStorage.getItem(`nailiq:desk-sequence-reschedule:${bookingId}`);
+      const stored = raw ? JSON.parse(raw) as {
+        requestId?: unknown;
+        quote?: BookingSequenceRescheduleQuote;
+        changed?: unknown;
+      } : null;
+      if (
+        stored && typeof stored.requestId === "string" &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+          .test(stored.requestId) &&
+        stored.quote?.bookingId === bookingId && stored.quote.salonId === salonId &&
+        /^[0-9a-f]{64}$/.test(stored.quote.sequenceFingerprint)
+      ) {
+        return {
+          requestId: stored.requestId,
+          quote: stored.quote,
+          changed: stored.changed === true,
+        };
+      }
+    } catch {
+      // Untrusted browser recovery material is ignored; the server re-quotes.
+    }
+    return null;
+  });
 
   // Bed/resource picker state (resource-mode salons only).
   const originalResourceId = booking.resource_id ?? null;
@@ -365,7 +397,6 @@ export function EditBookingForm({
     if (selectedDay < minDayYmd) {
       // Can't reschedule into the past — mirror the grid drag-drop guard + the
       // server check. No available times → Save stays disabled.
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear grid for a past day
       setSlots([]);
       return;
     }
@@ -476,6 +507,16 @@ export function EditBookingForm({
     return salonWallTimeToUtcIso(selectedDay, startMin, timezone);
   }, [selectedDay, selectedSlotLabel, timezone]);
 
+  const activeSequenceReview =
+    sequenceReview &&
+    sequenceReview.quote.requestedStartTimeUtc === proposedStartUtc &&
+    selectedStaff === originalStaff &&
+    selectedService === originalService &&
+    selectedAddon === originalAddon &&
+    resourceId === originalResourceId
+      ? sequenceReview
+      : null;
+
   const hasChanges =
     (proposedStartUtc != null &&
       !sameUtcInstant(proposedStartUtc, booking.start_time_utc)) ||
@@ -504,6 +545,10 @@ export function EditBookingForm({
     setError(null);
 
     const newStartTimeUtc = salonWallTimeToUtcIso(selectedDay, startMin, timezone);
+    const retainedSequenceReview = activeSequenceReview?.quote.requestedStartTimeUtc === newStartTimeUtc
+      ? activeSequenceReview
+      : null;
+    const sequenceRequestId = retainedSequenceReview?.requestId ?? crypto.randomUUID();
 
     const result = await editBookingAction(slug, {
       salonId,
@@ -518,12 +563,30 @@ export function EditBookingForm({
       newAddonServiceId: selectedAddon === "" ? null : selectedAddon,
       // Pass bed pick only when resources are shown; undefined = keep current.
       ...(deskData?.salon.resourcesEnabled ? { newResourceId: resourceId } : {}),
+      sequenceRequestId,
+      ...(retainedSequenceReview
+        ? { expectedSequenceFingerprint: retainedSequenceReview.quote.sequenceFingerprint }
+        : {}),
     });
 
     setSaving(false);
 
     if (result.ok) {
+      sessionStorage.removeItem(`nailiq:desk-sequence-reschedule:${bookingId}`);
+      setSequenceReview(null);
       onSaved(result.updated);
+      return;
+    }
+
+    if (result.error === "sequence_review_required") {
+      setSequenceReview(result.sequenceReview);
+      sessionStorage.setItem(
+        `nailiq:desk-sequence-reschedule:${bookingId}`,
+        JSON.stringify(result.sequenceReview),
+      );
+      setError(result.sequenceReview.changed
+        ? "Availability changed. Review the updated entire sequence and confirm again."
+        : null);
       return;
     }
 
@@ -778,6 +841,37 @@ export function EditBookingForm({
         </p>
       </div>
 
+      {activeSequenceReview ? (
+        <section
+          className="rounded-xl border border-nq-primary/30 bg-nq-primary/5 p-3"
+          data-testid="edit-sequence-review"
+        >
+          <p className="text-sm font-semibold text-nq-foreground">
+            Review the entire service sequence
+          </p>
+          {activeSequenceReview.changed ? (
+            <p className="mt-1 text-xs text-amber-300">
+              Availability changed. Confirm the updated sequence again.
+            </p>
+          ) : null}
+          <ol className="mt-3 space-y-2">
+            {activeSequenceReview.quote.segments.map((segment) => (
+              <li key={segment.lineId} className="rounded-lg bg-nq-bg p-2 text-xs text-nq-muted">
+                <p className="font-medium text-nq-foreground">
+                  {segment.position + 1}. {services.find((service) => service.id === segment.serviceId)?.name ?? "Service"} · {segment.staffName}
+                </p>
+                <p>
+                  {formatInSalonTz(segment.customerStartUtc, timezone, "time")} – {formatInSalonTz(segment.customerEndUtc, timezone, "time")}
+                </p>
+                <p>
+                  Prep {segment.prepMinutes}m · Customer {segment.serviceDurationMinutes + segment.sequentialAddonMinutes}m · Buffer {segment.trailingBufferMinutes}m
+                </p>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
+
       {error ? (
         <p
           className="text-xs font-medium text-nq-error"
@@ -824,7 +918,11 @@ export function EditBookingForm({
           }
           onClick={() => void handleSave()}
         >
-          {saving ? editCopy.saving : editCopy.saveButton}
+          {saving
+            ? editCopy.saving
+            : activeSequenceReview
+              ? "Confirm entire sequence"
+              : editCopy.saveButton}
         </Button>
       </div>
     </div>

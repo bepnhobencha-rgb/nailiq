@@ -8,8 +8,15 @@ import {
 } from "@/shared/booking/catalog";
 import {
   BookingConflictError,
+  BookingPricingChangedError,
+  quotePublicBooking,
   submitPublicBooking,
+  type BookingParams,
 } from "@/shared/booking/submitPublicBooking";
+import {
+  buildPublicBookingPricingQuoteKey,
+  type PublicBookingPricingQuote,
+} from "@/shared/booking/publicBookingPricing";
 import { submitPublicWaitlistEntry } from "@/shared/booking/submitPublicWaitlist";
 import {
   resolveNoShowCardRequirement,
@@ -41,8 +48,7 @@ import { generateBookingCalendarIcs } from "@/components/booking/bookingCalendar
 import { formatSalonDisplayName } from "@/shared/lib/salonDisplay";
 import { fireBookingConfetti } from "@/components/booking/bookingConfetti";
 import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
-import { parseTimeSlotOnDateInBrowserTz } from "@/shared/booking/parseBookingTimeSlot";
-import { localDayBoundsFromLocalDate } from "@/shared/booking/localDayBounds";
+import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
 import { fetchBookingOccupancyForRange } from "@/shared/booking/fetchBookingOccupancy";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
 import { pickBestStaffAmongFree } from "@/shared/booking/pickBestStaffAmongFree";
@@ -64,6 +70,19 @@ import {
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
+import type { WebVoiceBookingHandoff } from "@/shared/booking/webVoiceBookingHandoff";
+import type { PaidPublicDeposit } from "@/shared/payments/publicDepositTypes";
+import {
+  salonDayRangeUtc,
+  salonWallTimeToUtcIso,
+} from "@/shared/lib/salonTime";
+import { salonTodayCalendarDate } from "@/shared/booking/salonCalendarDate";
+import {
+  acknowledgePublicBookingRequestId,
+  stablePublicBookingRequestId,
+  type PublicBookingRequestMaterial,
+} from "@/shared/booking/publicBookingRequestId";
+import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 
 export type ReturningCustomer = {
   found: true;
@@ -115,6 +134,23 @@ function normalizeNoon(d: Date): Date {
   const x = new Date(d);
   x.setHours(12, 0, 0, 0);
   return x;
+}
+
+function normalizeVoiceSlotLabel(value: string): string {
+  const match = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i.exec(value.trim());
+  if (!match) return value.trim();
+  return `${Number(match[1])}:${match[2] ?? "00"} ${match[3]!.toUpperCase()}`;
+}
+
+function localNoonFromYmd(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12);
+  return date.getFullYear() === Number(match[1]) &&
+    date.getMonth() === Number(match[2]) - 1 &&
+    date.getDate() === Number(match[3])
+    ? date
+    : null;
 }
 
 export function useBookingFlowState(
@@ -188,11 +224,17 @@ export function useBookingFlowState(
   const [serviceId, setServiceId] = useState<string | null>(null);
   const [staffId, setStaffId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(() =>
-    normalizeNoon(new Date()),
+    normalizeNoon(salonTodayCalendarDate(salon.timezone)),
   );
   const [timeSlot, setTimeSlot] = useState<string | null>(null);
+  const timeSlotRef = useRef<string | null>(null);
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
+  const [availabilityRevision, setAvailabilityRevision] = useState(0);
+  const [availabilityRealtimeStatus, setAvailabilityRealtimeStatus] = useState<
+    "idle" | "connecting" | "subscribed" | "degraded"
+  >("idle");
+  const pendingWebVoiceTimeSlotRef = useRef<string | null>(null);
   const [popularSlotLabels, setPopularSlotLabels] = useState<string[]>([]);
   const [selectedCombo, setSelectedComboState] = useState<BookingComboItem | null>(null);
   const [tryonDesignName, setTryonDesignName] = useState<string | null>(null);
@@ -293,8 +335,7 @@ export function useBookingFlowState(
   const [otpVerifiedPhone, setOtpVerifiedPhone] = useState<string | null>(
     initialOtpSessionId ? (initialPhone || null) : null,
   );
-  const [depositPaymentIntentId, setDepositPaymentIntentId] = useState<string | null>(null);
-  const [depositConnectedAccountId, setDepositConnectedAccountId] = useState<string | null>(null);
+  const [paidDeposit, setPaidDeposit] = useState<PaidPublicDeposit | null>(null);
   const [verificationAction, setVerificationAction] = useState<VerificationAction>("none");
   const [verificationLoading, setVerificationLoading] = useState(false);
 
@@ -305,6 +346,21 @@ export function useBookingFlowState(
     final_price_cents: number;
   };
   const [appliedVoucher, setAppliedVoucher] = useState<AppliedVoucher | null>(null);
+  const [bookingRequestId, setBookingRequestId] = useState(() => crypto.randomUUID());
+  const bookingSubmitIdempotencyKeyRef = useRef(bookingRequestId);
+  const bookingSubmitAttemptedRef = useRef(false);
+  const [resolvedBookingRequest, setResolvedBookingRequest] = useState<{
+    materialKey: string;
+    material: PublicBookingRequestMaterial;
+    requestId: string;
+  } | null>(null);
+  const [fetchedPricingQuote, setFetchedPricingQuote] = useState<{
+    key: string;
+    quote: PublicBookingPricingQuote;
+  } | null>(null);
+  const [pricingQuoteLoading, setPricingQuoteLoading] = useState(false);
+  const [pricingQuoteError, setPricingQuoteError] = useState<string | null>(null);
+  const [pricingReconfirmRequired, setPricingReconfirmRequired] = useState(false);
   const [referenceImagePath, setReferenceImagePath] = useState<string | null>(null);
   const [referenceImagePreview, setReferenceImagePreview] = useState<string | null>(null);
 
@@ -354,6 +410,8 @@ export function useBookingFlowState(
     addonPriceCents: number | null;
     addons: { serviceId: string; name: string; priceCents: number | null }[];
     price_cents: number;
+    pricing: PublicBookingPricingQuote;
+    cardManagementToken: string | null;
   } | null>(null);
 
   // Minutes an add-on ADDS to the appointment: concurrent add-ons run alongside
@@ -693,6 +751,79 @@ export function useBookingFlowState(
     };
   }, [clientPhone, salon.id]); // eslint-disable-line react-hooks/exhaustive-deps -- setClientName/setClientEmail are stable setters
 
+  const applyWebVoiceBookingHandoff = useCallback((handoff: WebVoiceBookingHandoff) => {
+    const date = localNoonFromYmd(handoff.bookingDateYmd);
+    if (!date) {
+      setError(t.bookingErrors.slotJustTaken);
+      return;
+    }
+    pendingWebVoiceTimeSlotRef.current = normalizeVoiceSlotLabel(handoff.timeSlot);
+    setServiceId(handoff.serviceId);
+    setSelectedComboState(null);
+    setStaffId(handoff.staffId || BOOKING_ANY_STAFF_ID);
+    setSelectedDate(date);
+    setTimeSlot(null);
+    setClientName(handoff.clientName.trim());
+    setClientPhone(handoff.clientPhone.trim());
+    setError(null);
+    setVerificationAction("none");
+    setStepDir(1);
+    setStep("time");
+  }, [t.bookingErrors.slotJustTaken]);
+
+  useEffect(() => {
+    timeSlotRef.current = timeSlot;
+  }, [timeSlot]);
+
+  useEffect(() => {
+    if (step !== "time") return;
+
+    let cancelled = false;
+    const supabase = createPublicClient();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- expose connection readiness and degraded state to the booking UI/test contract
+    setAvailabilityRealtimeStatus("connecting");
+
+    const onAvailabilityChange = () => {
+      if (!cancelled) setAvailabilityRevision((revision) => revision + 1);
+    };
+    const filter = `salon_id=eq.${salon.id}`;
+    const channel = supabase
+      .channel(`public-booking-availability-${salon.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "salon_availability_revisions",
+          filter,
+        },
+        onAvailabilityChange,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "salon_availability_revisions",
+          filter,
+        },
+        onAvailabilityChange,
+      )
+      .subscribe((status) => {
+        if (cancelled) return;
+        if (status === "SUBSCRIBED") {
+          setAvailabilityRealtimeStatus("subscribed");
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setAvailabilityRealtimeStatus("degraded");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [step, salon.id]);
+
   useEffect(() => {
     if (step !== "time" || !serviceId || !service) return;
 
@@ -719,6 +850,16 @@ export function useBookingFlowState(
     }).then((slots) => {
       if (cancelled) return;
       setTimeSlots(slots);
+      const selectedSlot = timeSlotRef.current;
+      if (
+        availabilityRevision > 0 &&
+        selectedSlot &&
+        !slots.some((slot) => slot.available && slot.label === selectedSlot)
+      ) {
+        timeSlotRef.current = null;
+        setTimeSlot(null);
+        setError(t.bookingErrors.slotJustTaken);
+      }
       setSlotsLoading(false);
     });
 
@@ -740,6 +881,8 @@ export function useBookingFlowState(
     salon.timezone,
     slotBookingTiming,
     slotTrailingBufferMinutes,
+    availabilityRevision,
+    t.bookingErrors.slotJustTaken,
   ]);
 
   useEffect(() => {
@@ -896,25 +1039,27 @@ export function useBookingFlowState(
 
     void (async () => {
       const ymd = bookingDateYmdFromLocalDate(selectedDate);
-      const { start: dayStart, end: dayEnd } =
-        localDayBoundsFromLocalDate(selectedDate);
+      const dayRange = salonDayRangeUtc(ymd, salon.timezone);
       const occ = await fetchBookingOccupancyForRange(
         salon.id,
-        dayStart.toISOString(),
-        dayEnd.toISOString(),
+        dayRange.startUtc,
+        dayRange.endUtc,
       );
       if (cancelled) return;
 
-      let startLocal: Date;
+      let slotStartMs: number;
       try {
-        startLocal = parseTimeSlotOnDateInBrowserTz(timeSlot, ymd);
+        slotStartMs = Date.parse(salonWallTimeToUtcIso(
+          ymd,
+          parseTimeSlotToMinutes(timeSlot),
+          salon.timezone,
+        ));
       } catch {
         setUpsellCandidates([]);
         setUpsellGapMinutes(0);
         return;
       }
 
-      const slotStartMs = startLocal.getTime();
       const mainEndMs = slotStartMs + service.totalMinutes * 60_000;
 
       function isStaffFreeForRange(
@@ -929,8 +1074,8 @@ export function useBookingFlowState(
         return true;
       }
 
-      const dayStartMs = dayStart.getTime();
-      const dayEndMs = dayEnd.getTime();
+      const dayStartMs = Date.parse(dayRange.startUtc);
+      const dayEndMs = Date.parse(dayRange.endUtc);
       const orderedStaff = staff.map((s) => ({
         id: s.id,
         name: s.name,
@@ -967,7 +1112,8 @@ export function useBookingFlowState(
         occIntervals: occ,
         staffId: staffForGap,
         slotEndMs: mainEndMs,
-        selectedDate,
+        dateYmd: ymd,
+        timezone: salon.timezone,
         week,
       });
 
@@ -996,6 +1142,7 @@ export function useBookingFlowState(
     selectedDate,
     salon.id,
     salon.opening_hours,
+    salon.timezone,
     staff,
     services,
     addOns,
@@ -1033,7 +1180,7 @@ export function useBookingFlowState(
       setStaffId(lb.staffId ?? BOOKING_ANY_STAFF_ID);
 
       // Pre-fill date: next occurrence of lb.dayOfWeek from tomorrow
-      const today = new Date();
+      const today = salonTodayCalendarDate(salon.timezone);
       const todayDay = today.getDay(); // 0=Sun
       let daysAhead = lb.dayOfWeek - todayDay;
       if (daysAhead <= 0) daysAhead += 7; // always at least 1 day ahead
@@ -1047,7 +1194,7 @@ export function useBookingFlowState(
       setStepDir(1);
       setStep("time");
     },
-    [],
+    [salon.timezone],
   );
 
   const goServiceNext = useCallback(() => {
@@ -1130,91 +1277,6 @@ export function useBookingFlowState(
     setInfoPhoneError(null);
     setStep("info");
   }, []);
-
-  // Voice full-flow: skip info/verify/otp, submit directly when voice has all 5 fields.
-  // Falls back to goTimeNextDirect if name/phone are missing or invalid.
-  const goVoiceSubmitDirect = useCallback(async (slot: string) => {
-    if (!serviceId) { goTimeNextDirect(slot); return; }
-    const name = clientName.trim();
-    const phone = clientPhone.trim();
-    if (!name || name.length < 2 || !validateGuestPhone(phone).ok) {
-      goTimeNextDirect(slot);
-      return;
-    }
-    setTimeSlot(slot);
-    setSubmitting(true);
-    setStepDir(1);
-    setStep("confirm");
-    try {
-      const result = await submitPublicBooking({
-        shopSlug,
-        serviceId,
-        timeSlot: slot,
-        bookingDateYmd: bookingDateYmdFromLocalDate(selectedDate),
-        staffId: staffId ?? BOOKING_ANY_STAFF_ID,
-        clientName: name,
-        clientPhone: phone,
-        clientEmail: clientEmail.trim() || null,
-        clientNotes: clientNotes.trim(),
-        verificationMethod: "none",
-        language,
-        marketingConsent: marketingConsent || undefined,
-        smsConsent: smsConsent || undefined,
-      });
-      setBookingResult({
-        bookingId: result.bookingId,
-        startTimeUtc: result.startTimeUtc,
-        endTimeUtc: result.endTimeUtc,
-        staffName: result.staffName,
-        addonServiceName: result.addonServiceName,
-        addonPriceCents: result.addonPriceCents,
-        addons: result.addons,
-        price_cents: result.price_cents,
-      });
-      setStepDir(1);
-      setStep("done");
-      void fireBookingConfetti();
-    } catch (err) {
-      setSubmitting(false);
-      if (err instanceof BookingConflictError) {
-        setStepDir(-1);
-        setStep("time");
-        setError(t.bookingErrors.slotJustTaken);
-      } else if (err instanceof Error && err.message === "booking_rate_limited") {
-        setError(t.bookingErrors.rateLimited);
-        setStep("info");
-      } else if (err instanceof Error && err.message === "cannot_book_past") {
-        // The slot was offered but is now within the lead window (or just
-        // passed). Clear the stale selection so the user re-picks from the
-        // freshly re-fetched grid instead of re-submitting the same slot.
-        setTimeSlot(null);
-        setError(t.slotTooSoonError ?? t.pastTimeError);
-        setStep("time");
-      } else if (err instanceof Error && (err.message === "outside_opening_hours" || err.message === "salon_closed_day")) {
-        setError(err.message === "salon_closed_day" ? t.salonClosedError : t.outsideHoursError);
-        setStep("time");
-      } else if (err instanceof Error && err.message === "invalid_phone") {
-        setError(t.bookingErrors.invalidPhone);
-        setStep("info");
-      } else if (err instanceof Error && err.message === "invalid_name_chars") {
-        setError(t.bookingErrors.invalidNameChars);
-        setStep("info");
-      } else {
-        ErrorReporter.captureException(err instanceof Error ? err : new Error(String(err)), {
-          tags: { "salon.slug": shopSlug, "booking.flow": "voice_submit_direct" },
-        });
-        setError(t.submitError);
-        setStep("info");
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  }, [ // eslint-disable-line react-hooks/exhaustive-deps -- goTimeNextDirect is stable
-    shopSlug, serviceId, staffId, selectedDate, clientName, clientPhone, clientEmail, clientNotes,
-    goTimeNextDirect, t.bookingErrors.slotJustTaken, t.bookingErrors.invalidPhone,
-    t.bookingErrors.invalidNameChars, t.bookingErrors.rateLimited, t.pastTimeError, t.salonClosedError,
-    t.outsideHoursError, t.submitError,
-  ]);
 
   const goInfoNext = useCallback(() => {
     const nameTrim = clientName.trim();
@@ -1312,9 +1374,8 @@ export function useBookingFlowState(
   }, []);
 
   // Deposit paid on the salon's connected Stripe → carry ids to submit + confirm.
-  const goDepositPaid = useCallback((piId: string, acct: string) => {
-    setDepositPaymentIntentId(piId);
-    setDepositConnectedAccountId(acct);
+  const goDepositPaid = useCallback((deposit: PaidPublicDeposit) => {
+    setPaidDeposit(deposit);
     setStepDir(1);
     setStep("confirm");
   }, []);
@@ -1343,6 +1404,8 @@ export function useBookingFlowState(
   }, []);
 
   const resetAfterDone = useCallback(() => {
+    // A key represents one customer-confirmed create intent. Rotate only after
+    // the success screen is explicitly reset, so retries/re-renders remain safe.
     setStepDir(1);
     setStep("phone");
     setBookingResult(null);
@@ -1367,6 +1430,15 @@ export function useBookingFlowState(
     setInfoNameError(null);
     setInfoPhoneError(null);
     setInfoEmailError(null);
+    setFetchedPricingQuote(null);
+    setPricingQuoteError(null);
+    setPricingReconfirmRequired(false);
+    setAppliedVoucher(null);
+    setResolvedBookingRequest(null);
+    bookingSubmitAttemptedRef.current = false;
+    const nextBookingRequestId = crypto.randomUUID();
+    bookingSubmitIdempotencyKeyRef.current = nextBookingRequestId;
+    setBookingRequestId(nextBookingRequestId);
   }, []);
 
   const handleAddToCalendar = useCallback((): boolean => {
@@ -1391,6 +1463,7 @@ export function useBookingFlowState(
       end,
       eventUid: `${bookingResult.bookingId}@booking.nailiq`,
     });
+    if (!icsBody) return false;
     const blob = new Blob([icsBody], {
       type: "text/calendar;charset=utf-8",
     });
@@ -1489,10 +1562,188 @@ export function useBookingFlowState(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedCardKey]);
 
+  const buildPricingQuoteRequest = useCallback(
+    (voucherCode: string | null): BookingParams | null => {
+      if (!serviceId || !timeSlot || !staffId) return null;
+      const phone = validateGuestPhone(clientPhone.trim());
+      const name = clientName.trim();
+      const email = clientEmail.trim();
+      if (!phone.ok || !isValidCustomerName(name)) return null;
+      if (email && !isValidEmailFormat(email)) return null;
+      return {
+        shopSlug,
+        serviceId,
+        timeSlot,
+        bookingDateYmd: bookingDateYmdFromLocalDate(selectedDate),
+        staffId,
+        clientName: name,
+        clientPhone: phone.digits,
+        clientEmail: email || null,
+        addonServiceIds: selectedAddonIds.filter((id) =>
+          upsellCandidates.some((candidate) => candidate.id === id),
+        ),
+        comboOverride: selectedCombo
+          ? {
+              comboId: selectedCombo.id,
+              durationMinutes: selectedCombo.durationMinutes,
+              priceCents: selectedCombo.priceCents,
+            }
+          : null,
+        voucherCode,
+        emailCaptureDiscount: email.length > 0,
+      };
+    },
+    [
+      clientEmail,
+      clientName,
+      clientPhone,
+      selectedAddonIds,
+      selectedCombo,
+      selectedDate,
+      serviceId,
+      shopSlug,
+      staffId,
+      timeSlot,
+      upsellCandidates,
+  ],
+  );
+
+  useEffect(() => {
+    const requested = pendingWebVoiceTimeSlotRef.current;
+    if (!requested || step !== "time" || slotsLoading) return;
+    if (timeSlots.length === 0) return;
+    pendingWebVoiceTimeSlotRef.current = null;
+    const match = timeSlots.find(
+      (slot) => slot.available && normalizeVoiceSlotLabel(slot.label) === requested,
+    );
+    if (!match) {
+      setError(t.voice.slotNotFound.replace("{time}", requested));
+      return;
+    }
+    setTimeSlot(match.label);
+    setVerificationAction("none");
+    setStepDir(1);
+    setStep("verify");
+  }, [slotsLoading, step, t.voice.slotNotFound, timeSlots]);
+
+  const pricingQuoteRequest = buildPricingQuoteRequest(appliedVoucher?.code ?? null);
+  const pricingQuoteKey =
+    (step === "confirm" || step === "deposit") && pricingQuoteRequest
+      ? buildPublicBookingPricingQuoteKey({
+          shopSlug: pricingQuoteRequest.shopSlug,
+          serviceId: pricingQuoteRequest.serviceId,
+          staffId: pricingQuoteRequest.staffId,
+          bookingDateYmd: pricingQuoteRequest.bookingDateYmd,
+          timeSlot: pricingQuoteRequest.timeSlot,
+          clientPhone: pricingQuoteRequest.clientPhone,
+          clientEmail: pricingQuoteRequest.clientEmail ?? null,
+          addonServiceIds: [...(pricingQuoteRequest.addonServiceIds ?? [])],
+          comboId: pricingQuoteRequest.comboOverride?.comboId ?? null,
+          voucherCode: pricingQuoteRequest.voucherCode ?? null,
+          applyEmailDiscount: pricingQuoteRequest.emailCaptureDiscount === true,
+        })
+      : null;
+  const fetchedQuote =
+    pricingQuoteKey && fetchedPricingQuote?.key === pricingQuoteKey
+      ? fetchedPricingQuote.quote
+      : null;
+  const bookingRequestMaterial: PublicBookingRequestMaterial | null =
+    fetchedQuote && pricingQuoteRequest
+      ? {
+          salonId: fetchedQuote.salonId,
+          serviceId: fetchedQuote.serviceId,
+          staffId: fetchedQuote.resolvedStaffId,
+          clientName: pricingQuoteRequest.clientName,
+          clientPhone: pricingQuoteRequest.clientPhone,
+          startTimeUtc: fetchedQuote.startTimeUtc,
+          endTimeUtc: fetchedQuote.endTimeUtc,
+          clientNotes: clientNotes.trim() || null,
+          addonServiceIds: [...(pricingQuoteRequest.addonServiceIds ?? [])],
+          clientEmail: pricingQuoteRequest.clientEmail?.trim().toLowerCase() || null,
+          resourceId: null,
+          comboId: fetchedQuote.comboId,
+          voucherId: fetchedQuote.voucherId,
+          applyEmailDiscount: pricingQuoteRequest.emailCaptureDiscount === true,
+          expectedPricingFingerprint: fetchedQuote.pricingFingerprint,
+        }
+      : null;
+  const bookingRequestMaterialKey = bookingRequestMaterial
+    ? JSON.stringify(bookingRequestMaterial)
+    : null;
+  const pricingQuote =
+    fetchedQuote &&
+    bookingRequestMaterialKey &&
+    resolvedBookingRequest?.materialKey === bookingRequestMaterialKey
+      ? fetchedQuote
+      : null;
+
+  useEffect(() => {
+    if (!pricingQuoteKey || !pricingQuoteRequest) return;
+    const requestKey = pricingQuoteKey;
+    const request = pricingQuoteRequest;
+    let alive = true;
+    const timer = window.setTimeout(() => {
+      setPricingQuoteLoading(true);
+      setPricingQuoteError(null);
+      void quotePublicBooking(request)
+        .then((quote) => {
+          if (!alive) return;
+          setFetchedPricingQuote({ key: requestKey, quote });
+          setPricingReconfirmRequired(false);
+        })
+        .catch(() => {
+          if (!alive) return;
+          setPricingQuoteError("quote_unavailable");
+        })
+        .finally(() => {
+          if (alive) setPricingQuoteLoading(false);
+        });
+    }, 120);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+    // pricingQuoteKey contains every request field. Using the object itself as
+    // a dependency would retrigger on each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pricingQuoteKey]);
+
+  useEffect(() => {
+    if (!bookingRequestMaterial || !bookingRequestMaterialKey) return;
+    const materialKey = bookingRequestMaterialKey;
+    let alive = true;
+    void stablePublicBookingRequestId(bookingRequestMaterial)
+      .then((requestId) => {
+        if (!alive) return;
+        if (bookingSubmitIdempotencyKeyRef.current !== requestId) {
+          bookingSubmitAttemptedRef.current = false;
+        }
+        bookingSubmitIdempotencyKeyRef.current = requestId;
+        setBookingRequestId(requestId);
+        setResolvedBookingRequest({
+          materialKey,
+          material: bookingRequestMaterial,
+          requestId,
+        });
+      })
+      .catch(() => {
+        if (alive) setPricingQuoteError("quote_unavailable");
+      });
+    return () => {
+      alive = false;
+    };
+    // The material key contains every normalized DB idempotency field.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookingRequestMaterialKey]);
+
   const onConfirm = useCallback(async (
     extra?: { noShowCardSourceId?: string; noShowCardVerificationToken?: string; noShowConsent?: boolean; noShowReuseSavedCard?: boolean; healthAck?: boolean },
   ) => {
     if (!serviceId || !timeSlot || !staffId) return;
+    if (!pricingQuote || !resolvedBookingRequest || pricingQuoteLoading) {
+      setPricingQuoteError("quote_unavailable");
+      return;
+    }
     setError(null);
     const name = clientName.trim();
     const phone = clientPhone.trim();
@@ -1536,6 +1787,10 @@ export function useBookingFlowState(
     );
 
     setSubmitting(true);
+    const idempotencyReplay = bookingSubmitAttemptedRef.current;
+    bookingSubmitAttemptedRef.current = true;
+    const bookingRequestIdForAttempt = bookingSubmitIdempotencyKeyRef.current;
+    const bookingRequestMaterialForAttempt = resolvedBookingRequest.material;
     try {
       const result = await submitPublicBooking({
         shopSlug,
@@ -1554,13 +1809,11 @@ export function useBookingFlowState(
         // a non-empty value triggers a silent fake-success on the
         // server so the bot doesn't learn it was detected.
         clientWebsite,
-        voucherRedemption: appliedVoucher
-          ? { voucher_id: appliedVoucher.voucher_id, discount_cents: appliedVoucher.discount_cents }
-          : undefined,
-        promoRedemption: baseService?.promoId && baseService?.promoPriceCents != null && baseService?.priceCents
-          ? { promoId: baseService.promoId, discountCents: baseService.priceCents - baseService.promoPriceCents }
-          : undefined,
+        voucherCode: appliedVoucher?.code ?? null,
+        expectedPricingQuote: pricingQuote,
         emailCaptureDiscount: email.length > 0 ? true : undefined,
+        idempotencyKey: bookingRequestIdForAttempt,
+        idempotencyReplay,
         referenceImagePath: referenceImagePath ?? undefined,
         comboOverride: selectedCombo
           ? { comboId: selectedCombo.id, durationMinutes: selectedCombo.durationMinutes, priceCents: selectedCombo.priceCents }
@@ -1582,24 +1835,12 @@ export function useBookingFlowState(
         healthAck: extra?.healthAck,
         marketingConsent: marketingConsent || undefined,
         smsConsent: smsConsent || undefined,
+        paidDeposit,
       });
-      // Link a paid deposit to the freshly-created booking (server re-verifies
-      // the PaymentIntent with Stripe). Best-effort: the webhook is the backstop.
-      if (depositPaymentIntentId && depositConnectedAccountId) {
-        try {
-          await fetch("/api/booking/record-deposit", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              bookingId: result.bookingId,
-              paymentIntentId: depositPaymentIntentId,
-              connectedAccountId: depositConnectedAccountId,
-            }),
-          });
-        } catch (e) {
-          console.error("[booking] record-deposit failed", e);
-        }
-      }
+      await acknowledgePublicBookingRequestId(
+        bookingRequestMaterialForAttempt,
+        bookingRequestIdForAttempt,
+      );
       // A Try-On session is carried only by its opaque UUID in the URL; the
       // server additionally requires the HttpOnly bearer cookie and a fresh
       // same-salon booking before it will attach the private preview.
@@ -1627,11 +1868,21 @@ export function useBookingFlowState(
         addonPriceCents: result.addonPriceCents,
         addons: result.addons,
         price_cents: result.price_cents,
+        pricing: result.pricing,
+        cardManagementToken: result.cardManagementToken,
       });
       setStepDir(1);
       setStep("done");
     } catch (err) {
-      if (err instanceof BookingConflictError) {
+      if (err instanceof BookingPricingChangedError) {
+        bookingSubmitAttemptedRef.current = false;
+        if (pricingQuoteKey) {
+          setFetchedPricingQuote({ key: pricingQuoteKey, quote: err.quote });
+        }
+        setPricingReconfirmRequired(true);
+        setError("pricing_changed");
+      } else if (err instanceof BookingConflictError) {
+        bookingSubmitAttemptedRef.current = false;
         setStepDir(-1);
         setStep("time");
         setError(t.bookingErrors.slotJustTaken);
@@ -1658,6 +1909,7 @@ export function useBookingFlowState(
         err instanceof Error &&
         err.message === "booking_rate_limited"
       ) {
+        bookingSubmitAttemptedRef.current = false;
         setError(t.bookingErrors.rateLimited);
         setStep("info");
       } else if (
@@ -1683,6 +1935,22 @@ export function useBookingFlowState(
         err.message === "salon_not_live"
       ) {
         setError(t.submitError);
+      } else if (
+        err instanceof Error &&
+        (err.message === "booking_commit_unknown" ||
+          err.message === "card_management_pending" ||
+          err.message === "deposit_binding_pending")
+      ) {
+        // The booking commit may already exist. Keep both the logical create
+        // key and replay marker so the next explicit click replays that exact
+        // create and resumes capability/card reconciliation without a second
+        // booking. Stay on Confirm with truthful recovery copy.
+        setError(
+          err.message === "booking_commit_unknown"
+            ? t.submitUnknown
+            : (t.noShowCardError ?? t.submitError),
+        );
+        setStep("confirm");
       } else if (
         err instanceof Error &&
         err.message.startsWith("card_save_failed")
@@ -1752,6 +2020,16 @@ export function useBookingFlowState(
     clientEmail,
     clientNotes,
     clientWebsite,
+    resolvedBookingRequest,
+    pricingQuote,
+    pricingQuoteLoading,
+    pricingQuoteKey,
+    appliedVoucher,
+    paidDeposit,
+    language,
+    marketingConsent,
+    referenceImagePath,
+    selectedCombo,
     selectedAddonIds,
     upsellCandidates,
     selectedDate,
@@ -1764,12 +2042,13 @@ export function useBookingFlowState(
     salon.bookingLeadMinutes,
     salon.timezone,
     closedDateYmdSet,
-    serviceId,
     service,
-    staff,
     capableStaff,
     slotBookingTiming.blockMinutes,
     slotTrailingBufferMinutes,
+    shortestServiceMinutes,
+    smsConsent,
+    verificationAction,
     otpSessionId,
     t.bookingErrors.nameRequired,
     t.bookingErrors.nameTooShort,
@@ -1783,8 +2062,13 @@ export function useBookingFlowState(
     t.salonClosedError,
     t.bookingErrors.slotJustTaken,
     t.bookingErrors.rateLimited,
+    t.bookingErrors.monthlyLimitReached,
+    t.bookingErrors.otpRequired,
+    t.noShowCardError,
+    t.slotTooSoonError,
     t.submitError,
-  ]); // eslint-disable-line react-hooks/exhaustive-deps -- capableStaff, t.bookingErrors.monthlyLimitReached, t.bookingErrors.otpRequired are intentionally omitted; they don't affect the booking submission path
+    t.submitUnknown,
+  ]);
 
   const submitWaitlistSlotUnavailable = useCallback(async () => {
     if (!serviceId || !staffId) return;
@@ -1916,39 +2200,42 @@ export function useBookingFlowState(
 
   async function handleApplyVoucher(
     code: string,
-    totalCents: number,
+    _totalCents: number,
   ): Promise<{ error?: string }> {
+    void _totalCents;
+    const normalizedCode = code.trim().toUpperCase();
+    const request = buildPricingQuoteRequest(normalizedCode);
+    if (!request) return { error: "generic" };
     try {
-      const res = await fetch("/api/vouchers/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          salon_id: salon.id,
-          code,
-          client_phone: clientPhone,
-          price_cents: totalCents,
-        }),
-      });
-      const data = (await res.json()) as {
-        ok: boolean;
-        error?: string;
-        voucher_id?: string;
-        code?: string;
-        discount_cents?: number;
-        final_price_cents?: number;
-      };
-      if (!data.ok || !data.voucher_id) {
-        return { error: data.error ?? "generic" };
-      }
+      setPricingQuoteLoading(true);
+      const quote = await quotePublicBooking(request);
+      if (!quote.voucherId) return { error: "invalid" };
       setAppliedVoucher({
-        voucher_id: data.voucher_id,
-        code: data.code ?? code,
-        discount_cents: data.discount_cents ?? 0,
-        final_price_cents: data.final_price_cents ?? totalCents,
+        voucher_id: quote.voucherId,
+        code: quote.voucherCode ?? normalizedCode,
+        discount_cents: quote.voucherDiscountCents,
+        final_price_cents: quote.subtotalCents,
       });
+      const key = buildPublicBookingPricingQuoteKey({
+        shopSlug: request.shopSlug,
+        serviceId: request.serviceId,
+        staffId: request.staffId,
+        bookingDateYmd: request.bookingDateYmd,
+        timeSlot: request.timeSlot,
+        clientPhone: request.clientPhone,
+        clientEmail: request.clientEmail ?? null,
+        addonServiceIds: [...(request.addonServiceIds ?? [])],
+        comboId: request.comboOverride?.comboId ?? null,
+        voucherCode: normalizedCode,
+        applyEmailDiscount: request.emailCaptureDiscount === true,
+      });
+      setFetchedPricingQuote({ key, quote });
+      setPricingQuoteError(null);
       return {};
     } catch {
       return { error: "generic" };
+    } finally {
+      setPricingQuoteLoading(false);
     }
   }
 
@@ -1966,6 +2253,7 @@ export function useBookingFlowState(
     timeSlot,
     timeSlots,
     slotsLoading,
+    availabilityRealtimeStatus,
     popularSlotLabels,
     selectedCombo,
     selectedComboId: selectedCombo?.id ?? null,
@@ -1988,6 +2276,11 @@ export function useBookingFlowState(
     error,
     serviceError,
     bookingResult,
+    pricingQuote,
+    pricingQuoteLoading,
+    pricingQuoteError,
+    pricingReconfirmRequired,
+    bookingRequestId,
     infoNameError,
     infoPhoneError,
     infoEmailError,
@@ -2034,7 +2327,7 @@ export function useBookingFlowState(
     goDateNext,
     goTimeNext,
     goTimeNextDirect,
-    goVoiceSubmitDirect,
+    applyWebVoiceBookingHandoff,
     goInfoNext,
     goVerifyDecided,
     goSkipOtp,

@@ -32,7 +32,10 @@ type PreferenceRow = {
 
 export type AudiencePreparationSummary = {
   prepared_at: string;
-  segment: "lapsed_regulars_45_365_days";
+  segment:
+    | "lapsed_regulars_45_365_days"
+    | "winback_lapsed_regulars_45_365_days"
+    | "rebook_due_regulars";
   candidate_count: number;
   eligible_count: number;
   sms_recipient_count: number;
@@ -103,6 +106,21 @@ export async function prepareExecutionAudience(input: {
   if (job.action_type !== "bulk_message" || job.status !== "waiting_input") {
     return { ok: false, error: "job_not_preparable" };
   }
+  const isReactivation =
+    job.payload.proposal_source === "reactivation_campaign";
+  const reactivationKind = job.payload.reactivation_kind;
+  if (
+    isReactivation &&
+    reactivationKind !== "winback" &&
+    reactivationKind !== "rebook"
+  ) {
+    return { ok: false, error: "job_not_preparable" };
+  }
+  const segment: AudiencePreparationSummary["segment"] = isReactivation
+    ? reactivationKind === "rebook"
+      ? "rebook_due_regulars"
+      : "winback_lapsed_regulars_45_365_days"
+    : "lapsed_regulars_45_365_days";
 
   const { data: salonRow, error: salonError } = await db
     .from("salons" as never)
@@ -126,16 +144,28 @@ export async function prepareExecutionAudience(input: {
   // consent timestamp alone, which erases email-consented customers at
   // email-only salons. This gate is a superset — every recipient is still
   // re-checked per channel by `decideAudienceEligibility` below.
-  const { data: candidateData, error: candidateError } = await db.rpc(
-    "marketing_audience_candidates" as never,
-    {
-      p_salon_id: input.salonId,
-      p_min_visits: 2,
-      p_lapse_days: 45,
-      p_max_days: 365,
-      p_limit: MAX_AUDIENCE,
-    } as never,
-  );
+  const candidateResult = reactivationKind === "rebook"
+    ? await db.rpc(
+        "marketing_rebook_audience_candidates" as never,
+        {
+          p_salon_id: input.salonId,
+          p_min_visits: 3,
+          p_lookahead_days: 14,
+          p_overdue_days: 30,
+          p_limit: MAX_AUDIENCE,
+        } as never,
+      )
+    : await db.rpc(
+        "marketing_audience_candidates" as never,
+        {
+          p_salon_id: input.salonId,
+          p_min_visits: 2,
+          p_lapse_days: 45,
+          p_max_days: 365,
+          p_limit: MAX_AUDIENCE,
+        } as never,
+      );
+  const { data: candidateData, error: candidateError } = candidateResult;
   if (candidateError) {
     console.error("[prepareExecutionAudience] candidates", candidateError);
     return { ok: false, error: "candidate_query_failed" };
@@ -294,7 +324,7 @@ export async function prepareExecutionAudience(input: {
   const preparedAt = new Date().toISOString();
   const summary: AudiencePreparationSummary = {
     prepared_at: preparedAt,
-    segment: "lapsed_regulars_45_365_days",
+    segment,
     candidate_count: candidates.length,
     eligible_count: eligibleAudienceKeys.length,
     sms_recipient_count: smsRecipientCount,
@@ -319,7 +349,9 @@ export async function prepareExecutionAudience(input: {
   };
 
   const { data: transition, error: updateError } = await db.rpc(
-    "record_ai_campaign_manifest" as never,
+    (isReactivation
+      ? "record_reactivation_campaign_manifest"
+      : "record_ai_campaign_manifest") as never,
     {
       p_job_id: job.id,
       p_salon_id: input.salonId,

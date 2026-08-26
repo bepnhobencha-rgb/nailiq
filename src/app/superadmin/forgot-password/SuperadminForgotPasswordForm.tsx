@@ -36,17 +36,17 @@ export function SuperadminForgotPasswordForm() {
         role="status"
       >
         <p className="text-sm font-medium text-nq-foreground">
-          Check your inbox
+          Check your inbox / Kiểm tra hộp thư
         </p>
         <p className="text-sm text-nq-muted">
-          If your email is on the SuperAdmin roster, a password-reset
-          link is on its way. Links expire in one hour.
+          If the account is eligible, a password-reset link is on its way. /
+          Nếu tài khoản đủ điều kiện, link đặt lại mật khẩu đang được gửi.
         </p>
         <Link
           href="/superadmin/login"
           className="text-sm font-medium text-nq-accent underline-offset-4 hover:underline"
         >
-          Back to sign-in
+          Back to sign-in / Quay lại đăng nhập
         </Link>
       </div>
     );
@@ -87,22 +87,22 @@ export function SuperadminForgotPasswordForm() {
         fullWidth
         loading={pending}
       >
-        Send reset link
+        Send reset link / Gửi link đặt lại
       </Button>
 
       {status === "error" ? (
         <p className="text-sm text-nq-error" role="alert">
-          Something went wrong. Try again.
+          Something went wrong. Try again. / Có lỗi xảy ra. Vui lòng thử lại.
         </p>
       ) : null}
 
       <p className="text-sm text-nq-muted">
-        Remembered it?{" "}
+        Remembered it? / Đã nhớ mật khẩu?{" "}
         <Link
           href="/superadmin/login"
           className="font-medium text-nq-accent underline-offset-4 hover:underline"
         >
-          Back to sign-in
+          Back to sign-in / Quay lại đăng nhập
         </Link>
       </p>
     </form>

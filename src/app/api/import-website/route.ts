@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 
 const bodySchema = z.object({
@@ -22,6 +23,9 @@ function isBlockedUrl(url: string): boolean {
 }
 
 export async function POST(req: Request) {
+  if (!isSameOriginMutation(req)) {
+    return NextResponse.json({ error: "invalid_origin" }, { status: 403 });
+  }
   // Emergency fail-closed kill switch. Keep the importer unavailable until
   // its outbound-fetch SSRF defenses have passed security verification.
   if (process.env.WEBSITE_IMPORT_ENABLED !== "true") {

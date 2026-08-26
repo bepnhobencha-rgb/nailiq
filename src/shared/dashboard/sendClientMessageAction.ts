@@ -76,20 +76,13 @@ export async function sendClientMessage(
   // ── Send via the shared kill-switch chokepoint ────────────────────────────
   // sendSmsReminder already applies smsSuppressReason (env flag / NODE_ENV /
   // 555 seed numbers / salonIsTest). We NEVER call Twilio directly here.
-  const result = await sendSmsReminder(phone, body, { salonIsTest });
+  const result = await sendSmsReminder(phone, body, { salonId: ctx.salon.id, salonIsTest });
 
   // ── Log to booking_notifications ─────────────────────────────────────────
-  // Map kind to the closest existing NotificationType. If the union later gains
-  // "rebook_invite" / "desk_message" as first-class values, update here.
-  // For now: rebook_invite → "review_request" is the closest outbound-promo
-  // type; desk ad-hoc → "booking_confirmation" is used as a stand-in for a
-  // manual desk message. Both are adequately audited regardless of the label.
-  // NOTE: NotificationType currently does not include "rebook_invite" or
-  // "desk_message" — see notificationLog.ts. We use the closest existing
-  // types to avoid a build-breaking union change; the body_preview column
-  // provides the actual context for auditors.
+  // Keep desk messages away from the one-per-booking confirmation state
+  // machine. The body preview retains the specific operator context.
   const notificationType: NotificationType =
-    kind === "rebook_invite" ? "review_request" : "booking_confirmation";
+    kind === "rebook_invite" ? "review_request" : "staff_action";
 
   void logNotification({
     bookingId: null,

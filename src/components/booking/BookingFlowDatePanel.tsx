@@ -14,6 +14,7 @@ import { dayKeyFromLocalDate } from "@/shared/booking/dayKeyFromDate";
 import { bookingDateYmdFromLocalDate } from "@/shared/booking/bookingConfirmLabels";
 import type { BookingStaffItem } from "@/shared/booking/loadBookingServices";
 import { useMemo } from "react";
+import { salonTodayCalendarDate } from "@/shared/booking/salonCalendarDate";
 
 /** Public booking lead time. */
 const BOOKING_WINDOW_DAYS = 60;
@@ -27,6 +28,7 @@ function startOfLocalDay(d: Date): Date {
 export function BookingFlowDatePanel({
   t,
   salonId,
+  salonTimezone,
   openingHoursRaw,
   closedDateYmdSet,
   staff,
@@ -42,6 +44,7 @@ export function BookingFlowDatePanel({
 }: {
   t: BookingMessages;
   salonId: string;
+  salonTimezone: string;
   openingHoursRaw: unknown | null;
   closedDateYmdSet: ReadonlySet<string>;
   staff: readonly BookingStaffItem[];
@@ -56,7 +59,10 @@ export function BookingFlowDatePanel({
   onBack: () => void;
   onNext: () => void;
 }) {
-  const todayStart = useMemo(() => startOfLocalDay(new Date()), []);
+  const todayStart = useMemo(
+    () => startOfLocalDay(salonTodayCalendarDate(salonTimezone)),
+    [salonTimezone],
+  );
   /** Last day the user is allowed to book (inclusive). */
   const windowEnd = useMemo(() => {
     const x = new Date(todayStart);
@@ -115,6 +121,7 @@ export function BookingFlowDatePanel({
         <BookingCalendarGrid
           t={t}
           salonId={salonId}
+          salonTimezone={salonTimezone}
           openingHoursRaw={openingHoursRaw}
           closedDateYmdSet={closedDateYmdSet}
           staff={staff}

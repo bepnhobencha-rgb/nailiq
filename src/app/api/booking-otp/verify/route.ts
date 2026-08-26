@@ -4,8 +4,28 @@ import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { checkVerification } from "@/shared/lib/twilioVerify";
 import { checkEmailOtp } from "@/shared/lib/emailOtp";
 import { isDemoOtpRuntime } from "@/shared/lib/demoOtpMode";
+import {
+  consumeDurableRateLimitBuckets,
+  type DurableRateLimitResult,
+} from "@/shared/security/publicServerActionRateLimit";
+import { clientIp } from "@/shared/lib/inAppRateLimit";
+
+function rateResponse(result: Exclude<DurableRateLimitResult, "allowed">) {
+  return NextResponse.json(
+    { error: result === "limited" ? "rate_limited" : "rate_limit_unavailable" },
+    {
+      status: result === "limited" ? 429 : 503,
+      headers: { "Retry-After": result === "limited" ? "900" : "30" },
+    },
+  );
+}
 
 export async function POST(req: Request) {
+  const ipRate = await consumeDurableRateLimitBuckets("booking-otp-verify", [
+    { name: "ip-window", material: [clientIp(req)], limit: 60, windowSeconds: 900 },
+  ]);
+  if (ipRate !== "allowed") return rateResponse(ipRate);
+
   let body: { phone?: string; code?: string; shopSlug?: string; email?: string };
   try {
     body = await req.json();
@@ -30,6 +50,12 @@ export async function POST(req: Request) {
   if (!/^\d{4,8}$/.test(code)) {
     return NextResponse.json({ error: "invalid_code" }, { status: 400 });
   }
+
+  const identityRate = await consumeDurableRateLimitBuckets("booking-otp-verify", [
+    { name: "phone-window", material: [phoneOk.digits], limit: 10, windowSeconds: 900 },
+    { name: "phone-day", material: [phoneOk.digits], limit: 30, windowSeconds: 86_400 },
+  ]);
+  if (identityRate !== "allowed") return rateResponse(identityRate);
 
   const supabase = createServiceRoleClient();
   const { data: salon } = await supabase

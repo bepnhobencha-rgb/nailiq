@@ -108,6 +108,8 @@ import {
   deskClaimPartySlotAction,
 } from "@/shared/dashboard/receptionistActions";
 import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
+import { deskRefundOutcomeMessage } from "@/shared/payments/paymentOutagePresentation";
+import { mintBookingStatusLink } from "@/shared/dashboard/mintBookingStatusLinkAction";
 import { defaultNotifyOn } from "@/shared/dashboard/staffNotificationSettings";
 import {
   NotifyCustomerPanel,
@@ -126,6 +128,7 @@ import {
 } from "@/shared/dashboard/salonOwnerActions";
 import { editBookingAction } from "@/shared/dashboard/editBookingAction";
 import { getUserMessages } from "@/shared/i18n/user";
+import { v1AllowsArchivedBookingRecovery } from "@/shared/release/v1IntegrationScope";
 import {
   checkBookingConflict,
   type ConflictCheckBooking,
@@ -487,6 +490,8 @@ function ReceptionistCenterInner({
   const searchParams = useSearchParams();
   const { language, setLanguage } = useUserLanguage();
   const messages = useMemo(() => getUserMessages(language), [language]);
+  const v1AllowsLongLivedTerminalCorrection =
+    v1AllowsArchivedBookingRecovery();
 
   // DRC accent color theme — owner-chosen, saved in feature_flags.drc_accent_color.
   // useState for optimistic updates: picker updates immediately, server action saves async.
@@ -968,7 +973,17 @@ function ReceptionistCenterInner({
   const [depositCancel, setDepositCancel] = useState<{
     id: string;
     amountCents: number;
+    refundAmount: string;
+    refundRequestId: string;
   } | null>(null);
+  // One logical cancel+refund intent keeps one UUID until the server
+  // acknowledges the saga. A transport loss must not mint a second refund.
+  const cancelRefundRequestIdRef = useRef<string | null>(null);
+  const cancelNotificationRequestRef = useRef<{
+    bookingId: string;
+    requestId: string;
+  } | null>(null);
+  const groupCancelRequestIdsRef = useRef<Map<string, string>>(new Map());
   // Cancel-confirm with the "notify the customer?" panel (non-deposit path).
   const [notifyCancel, setNotifyCancel] = useState<{ id: string } | null>(null);
   // For a booking that is one member of a party, the cancel modal lets the staff
@@ -1463,12 +1478,10 @@ function ReceptionistCenterInner({
    * check and the bookings query in parallel — cutting ~2 round-trips per
    * week/month navigation event.
    */
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- data.salon.id and timezone are stable refs (come from the same immutable salon row)
   const calendarHint = useMemo<BookingsRangeHint>(
     () => ({ salonId: data.salon.id, timezone }),
     // Re-memoize only when the salon id or timezone actually changes
     // (should never happen mid-session, but guards against future hot-reload).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [data.salon.id, timezone],
   );
   const modules = data.dashboardModules;
@@ -1650,7 +1663,21 @@ function ReceptionistCenterInner({
     if (typeof window === "undefined") return;
 
     let cancelled = false;
+    let fallbackPollInterval: number | undefined;
     const supabase = createClient();
+
+    const startFallbackPolling = () => {
+      if (fallbackPollInterval !== undefined) return;
+      fallbackPollInterval = window.setInterval(() => {
+        if (!cancelled) void reloadCurrentDay();
+      }, 8000);
+    };
+
+    const stopFallbackPolling = () => {
+      if (fallbackPollInterval === undefined) return;
+      window.clearInterval(fallbackPollInterval);
+      fallbackPollInterval = undefined;
+    };
 
     const cleanupPromise = (async () => {
       const {
@@ -1664,16 +1691,8 @@ function ReceptionistCenterInner({
         // Catch any "unexpected response" rejections (middleware redirect when JWT
         // truly expired) and hard-redirect to /login so they don't bubble as unhandled
         // rejections into error_logs or crash the error boundary.
-        const pollInterval = window.setInterval(() => {
-          if (!cancelled) {
-            void reloadCurrentDay().catch(() => {
-              if (!cancelled) window.location.href = "/login";
-            });
-          }
-        }, 8000);
-        return () => {
-          window.clearInterval(pollInterval);
-        };
+        startFallbackPolling();
+        return stopFallbackPolling;
       }
 
       supabase.realtime.setAuth(session.access_token);
@@ -1723,10 +1742,13 @@ function ReceptionistCenterInner({
           // from useState is stable so this is closure-safe.
           if (cancelled) return;
           if (status === "SUBSCRIBED") {
+            stopFallbackPolling();
             setConnectionState("connected");
           } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            startFallbackPolling();
             setConnectionState("reconnecting");
           } else if (status === "CLOSED") {
+            startFallbackPolling();
             setConnectionState("offline");
           }
           if (
@@ -1773,6 +1795,7 @@ function ReceptionistCenterInner({
       };
     })().catch((error) => {
       if (!cancelled) {
+        startFallbackPolling();
         setConnectionState("offline");
         ErrorReporter.captureException(error, {
           tags: {
@@ -1787,6 +1810,7 @@ function ReceptionistCenterInner({
 
     return () => {
       cancelled = true;
+      stopFallbackPolling();
       void cleanupPromise.then((cleanup) => {
         cleanup?.();
       });
@@ -2404,14 +2428,18 @@ function ReceptionistCenterInner({
 
     setDrawerBusy(true);
     try {
+      const requestId = groupCancelRequestIdsRef.current.get(groupId) ?? crypto.randomUUID();
+      groupCancelRequestIdsRef.current.set(groupId, requestId);
       const r = await cancelDeskGroup(slug, {
         salonId: data.salon.id,
         groupId,
+        requestId,
         notify: notifyChannelsResolved,
       });
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
       } else {
+        groupCancelRequestIdsRef.current.delete(groupId);
         // Whole party cancelled — close the drawer and reload; the grid visibly
         // empties every member's slot, which is its own confirmation.
         closeBookingDrawer();
@@ -2426,8 +2454,10 @@ function ReceptionistCenterInner({
   const doCancelBooking = async (
     id: string,
     refundDeposit: boolean,
+    refundDepositCents?: number,
+    refundRequestId?: string,
     notifyChannels?: NotifyChannels,
-  ) => {
+  ): Promise<boolean> => {
     const b = data.bookingsForDay.find((x) => x.id === id);
     if (
       !b ||
@@ -2437,7 +2467,7 @@ function ReceptionistCenterInner({
         b.status === "in_progress"
       )
     )
-      return;
+      return false;
 
     // Notify channels for the cancel — explicit panel choice, else the salon's
     // smart per-event default (the deposit path has no panel). The server
@@ -2453,19 +2483,42 @@ function ReceptionistCenterInner({
 
     setDrawerBusy(true);
     try {
-      const r = await cancelDeskBooking(slug, {
-        salonId: data.salon.id,
-        bookingId: id,
-        refundDeposit,
-        notify: notifyChannelsResolved,
-      });
+      const notificationRequestId = refundDeposit
+        ? (refundRequestId ?? "")
+        : cancelNotificationRequestRef.current?.bookingId === id
+          ? cancelNotificationRequestRef.current.requestId
+          : crypto.randomUUID();
+      if (!refundDeposit) {
+        cancelNotificationRequestRef.current = { bookingId: id, requestId: notificationRequestId };
+      }
+      const r = refundDeposit
+        ? await cancelDeskBooking(slug, {
+            salonId: data.salon.id,
+            bookingId: id,
+            refundDeposit: true,
+            refundAmountCents: refundDepositCents,
+            refundRequestId: refundRequestId ?? "",
+            notificationRequestId,
+            notify: notifyChannelsResolved,
+          })
+        : await cancelDeskBooking(slug, {
+            salonId: data.salon.id,
+            bookingId: id,
+            refundDeposit: false,
+            notificationRequestId,
+            notify: notifyChannelsResolved,
+          });
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
+        return false;
       } else {
+        cancelNotificationRequestRef.current = null;
         if (refundDeposit && r.depositRefunded === false) {
-          setShakeMessage(
-            `Đã huỷ. Hoàn cọc chưa xong (${r.depositRefundError ?? "lỗi"}) — hoàn tay trong Square.`,
-          );
+          const rawStatus = r.depositRefundStatus ?? "unknown";
+          // A contradictory `depositRefunded:false/status:succeeded` response
+          // must never be displayed as success; preserve ambiguity instead.
+          const status = rawStatus === "succeeded" ? "unknown" : rawStatus;
+          setShakeMessage(deskRefundOutcomeMessage(status, r.depositRefundError));
         }
         // Close drawer and reload grid first so booking disappears
         closeBookingDrawer();
@@ -2490,6 +2543,7 @@ function ReceptionistCenterInner({
             type: "cancel",
           });
         }
+        return true;
       }
     } finally {
       setDrawerBusy(false);
@@ -2511,7 +2565,16 @@ function ReceptionistCenterInner({
       return;
     // A paid Square deposit forces a refund-or-keep decision before cancelling.
     if (b.deposit_status === "paid" && (b.deposit_amount_cents ?? 0) > 0) {
-      setDepositCancel({ id, amountCents: b.deposit_amount_cents ?? 0 });
+      const amountCents = b.deposit_amount_cents ?? 0;
+      const factor = ["VND", "JPY"].includes(data.salon.currencyCode) ? 1 : 100;
+      const refundRequestId = cancelRefundRequestIdRef.current ?? crypto.randomUUID();
+      cancelRefundRequestIdRef.current = refundRequestId;
+      setDepositCancel({
+        id,
+        amountCents,
+        refundAmount: String(amountCents / factor),
+        refundRequestId,
+      });
       return;
     }
     // Otherwise open the cancel-confirm with the "notify the customer?" panel,
@@ -2828,6 +2891,21 @@ function ReceptionistCenterInner({
   const oldestOnlineWaitlistMinutes = waitlistAttentionEnabled
     ? waitlistAttentionSummary.oldestWaitingMinutes
     : null;
+  const acknowledgeOnlineWaitlist = (entryIds: readonly string[]) => {
+    for (const id of entryIds) {
+      acknowledgedWaitlistIdsRef.current.add(id);
+      const timer = waitlistReminderTimersRef.current.get(id);
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+        waitlistReminderTimersRef.current.delete(id);
+      }
+    }
+  };
+  const handleOpenWaitlistAttention = () => {
+    acknowledgeOnlineWaitlist(
+      unresolvedOnlineWaitlist.map((entry) => entry.id),
+    );
+  };
 
   const cockpitInputs: CockpitInputs = {
     onlineWaitlistCount: unresolvedOnlineWaitlist.length,
@@ -2899,14 +2977,9 @@ function ReceptionistCenterInner({
       return;
     }
     if (target === "open_waitlist") {
-      for (const entry of unresolvedOnlineWaitlist) {
-        acknowledgedWaitlistIdsRef.current.add(entry.id);
-        const timer = waitlistReminderTimersRef.current.get(entry.id);
-        if (timer !== undefined) {
-          window.clearTimeout(timer);
-          waitlistReminderTimersRef.current.delete(entry.id);
-        }
-      }
+      acknowledgeOnlineWaitlist(
+        unresolvedOnlineWaitlist.map((entry) => entry.id),
+      );
       setQueuePanelOpen(true);
       window.setTimeout(() => {
         document.getElementById("waitlist")?.scrollIntoView({
@@ -3246,6 +3319,7 @@ function ReceptionistCenterInner({
 
   const drawerRestoreAction =
     openDrawerBooking &&
+    v1AllowsLongLivedTerminalCorrection &&
     !archivedBookingRecoveryEnabled &&
     canUndoCancel(viewerRole) &&
     openDrawerBooking.status === "cancelled" &&
@@ -3337,10 +3411,12 @@ function ReceptionistCenterInner({
       onOpenBooking={(id) => openBookingDrawer(id)}
       onMarkNoShow={(id) => void triggerMarkNoShow(id)}
       onUndoNoShow={
-        archivedBookingRecoveryEnabled
-          ? undefined
-          : (id) => void handleUndoNoShow(id)
+        v1AllowsLongLivedTerminalCorrection &&
+        !archivedBookingRecoveryEnabled
+          ? (id) => void handleUndoNoShow(id)
+          : undefined
       }
+      onOpenWaitlist={handleOpenWaitlistAttention}
       embedded={embedded}
     />
   );
@@ -3468,15 +3544,27 @@ function ReceptionistCenterInner({
           />
         ) : null}
         <header
+          data-testid="receptionist-center-header"
           data-preview-header={previewInterface ? "true" : undefined}
           className={cn(
-            "shrink-0 border-b border-nq-muted/20 px-[var(--pad-nq-section-mobile)] py-2.5 backdrop-blur-sm md:px-6 md:py-3",
+            "shrink-0 border-b border-nq-muted/20 px-[var(--pad-nq-section-mobile)] py-2.5 backdrop-blur-sm md:pl-6 md:py-3",
+            "transition-[padding-right] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)]",
             // backdrop-filter creates a stacking context. Give Shell V2's
             // header an explicit layer so Calendar/Create popovers render
             // above the timeline instead of being painted underneath it.
             receptionistShellV2Enabled && "relative z-30",
             previewInterface &&
               "md:hidden",
+            // The desktop queue is a fixed 20rem panel. Reserve that width in
+            // the header too (the day body already does this below), plus the
+            // normal 1.5rem desktop gutter, so Create/Queue controls cannot be
+            // hidden under the slide-over.
+            !previewInterface &&
+              isViewingToday &&
+              (modules.queue_panel || walkinPrefill !== null) &&
+              queuePanelOpen
+              ? "md:pr-[21.5rem]"
+              : "md:pr-6",
           )}
           style={
             previewInterface
@@ -3518,8 +3606,9 @@ function ReceptionistCenterInner({
               </p>
             </div>
             <div
+              data-testid="receptionist-header-actions"
               className={cn(
-                "flex flex-wrap items-center gap-2 sm:gap-3 2xl:mr-0",
+                "flex min-w-0 max-w-full flex-wrap items-center gap-2 sm:gap-3 2xl:mr-0",
                 // DashboardViewControls is fixed in the top-right corner. At
                 // iPad widths it previously sat on top of Shell V2's primary
                 // Create action and intercepted taps. Reserve its footprint
@@ -4551,9 +4640,10 @@ function ReceptionistCenterInner({
                       : undefined
                   }
                   onTombstoneUndo={
-                    archivedBookingRecoveryEnabled
-                      ? undefined
-                      : (id) => void handleTombstoneUndo(id)
+                    v1AllowsLongLivedTerminalCorrection &&
+                    !archivedBookingRecoveryEnabled
+                      ? (id) => void handleTombstoneUndo(id)
+                      : undefined
                   }
                   onTombstoneCharge={(id) => void handleTombstoneCharge(id)}
                   onTombstoneWaive={(id) => void handleTombstoneWaive(id)}
@@ -4699,9 +4789,10 @@ function ReceptionistCenterInner({
                 }
                 language={language === "vi" ? "vi" : "en"}
                 onTombstoneUndo={
-                  archivedBookingRecoveryEnabled
-                    ? undefined
-                    : (id) => void handleTombstoneUndo(id)
+                  v1AllowsLongLivedTerminalCorrection &&
+                  !archivedBookingRecoveryEnabled
+                    ? (id) => void handleTombstoneUndo(id)
+                    : undefined
                 }
                 onTombstoneCharge={(id) => void handleTombstoneCharge(id)}
                 onTombstoneWaive={(id) => void handleTombstoneWaive(id)}
@@ -4803,6 +4894,7 @@ function ReceptionistCenterInner({
                 rushMode={rush.active}
                 waitLinkEnabled
                 waitLinkSalonSlug={slug}
+                onCreateWaitLink={(bookingId) => mintBookingStatusLink(slug, bookingId)}
                 onCancelWalkin={onCancelWalkin}
                 onStartAssign={(id) => {
                   setAssigningWalkinId(id);
@@ -5097,24 +5189,58 @@ function ReceptionistCenterInner({
       {depositCancel ? (
         <Modal
           isOpen
-          onClose={() => setDepositCancel(null)}
+          onClose={() => {
+            cancelRefundRequestIdRef.current = null;
+            setDepositCancel(null);
+          }}
           size="sm"
           title="Khách đã đặt cọc"
-          description={`Khách đã cọc ${formatCurrency(depositCancel.amountCents, data.salon.currencyCode) ?? ""}. Hoàn cọc cho khách khi huỷ, hay giữ cọc?`}
+          description={`Khách đã cọc ${formatCurrency(depositCancel.amountCents, data.salon.currencyCode) ?? ""}. Chọn số tiền hoàn rồi huỷ, hoặc giữ cọc.`}
         >
           <div className="flex flex-col gap-2 py-1">
+            <label className="text-sm font-medium">
+              Số tiền hoàn ({data.salon.currencyCode})
+              <input
+                type="number"
+                min="0"
+                step={["VND", "JPY"].includes(data.salon.currencyCode) ? "1" : "0.01"}
+                value={depositCancel.refundAmount}
+                onChange={(event) => setDepositCancel((current) => current
+                  ? { ...current, refundAmount: event.target.value }
+                  : current)}
+                className="mt-1 w-full rounded-md border px-3 py-2"
+                data-testid="deposit-refund-amount"
+              />
+            </label>
             <Button
               type="button"
               variant="primary"
               loading={drawerBusy}
               data-testid="deposit-cancel-refund"
-              onClick={() => {
+              onClick={async () => {
                 const id = depositCancel.id;
-                setDepositCancel(null);
-                void doCancelBooking(id, true);
+                const factor = ["VND", "JPY"].includes(data.salon.currencyCode) ? 1 : 100;
+                const refundCents = Math.round(Number(depositCancel.refundAmount) * factor);
+                if (
+                  !Number.isSafeInteger(refundCents) || refundCents <= 0 ||
+                  refundCents > depositCancel.amountCents
+                ) {
+                  setShakeMessage("Số tiền hoàn không hợp lệ.");
+                  return;
+                }
+                const acknowledged = await doCancelBooking(
+                  id,
+                  true,
+                  refundCents,
+                  depositCancel.refundRequestId,
+                );
+                if (acknowledged) {
+                  cancelRefundRequestIdRef.current = null;
+                  setDepositCancel(null);
+                }
               }}
             >
-              Hoàn cọc &amp; huỷ
+              Hoàn số tiền này &amp; huỷ
             </Button>
             <Button
               type="button"
@@ -5123,8 +5249,9 @@ function ReceptionistCenterInner({
               data-testid="deposit-cancel-keep"
               onClick={() => {
                 const id = depositCancel.id;
+                cancelRefundRequestIdRef.current = null;
                 setDepositCancel(null);
-                void doCancelBooking(id, false);
+                void doCancelBooking(id, false, undefined, undefined);
               }}
             >
               Giữ cọc &amp; huỷ
@@ -5132,7 +5259,10 @@ function ReceptionistCenterInner({
             <Button
               type="button"
               variant="secondary"
-              onClick={() => setDepositCancel(null)}
+              onClick={() => {
+                cancelRefundRequestIdRef.current = null;
+                setDepositCancel(null);
+              }}
             >
               Đóng
             </Button>
@@ -5267,7 +5397,13 @@ function ReceptionistCenterInner({
                         if (cancelWhole && groupId) {
                           void doCancelGroup(groupId, ch);
                         } else {
-                          void doCancelBooking(id, false, ch);
+                          void doCancelBooking(
+                            id,
+                            false,
+                            undefined,
+                            undefined,
+                            ch,
+                          );
                         }
                       }}
                     >

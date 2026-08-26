@@ -45,7 +45,9 @@ test("default smart per-event: guest-impacting events ON, no_show OFF", () => {
 
 // Partial JSON merges with defaults.
 test("partial events merge with defaults", () => {
-  const s = parseStaffNotificationSettings({ eventDefaults: { cancel: false } });
+  const s = parseStaffNotificationSettings({
+    eventDefaults: { cancel: false },
+  });
   eq(s.eventDefaults.cancel, false);
   eq(s.eventDefaults.reschedule, true); // untouched default
   eq(s.eventDefaults.no_show, false);
@@ -56,8 +58,22 @@ test("enabled defaults true, explicit false respected", () => {
   eq(parseStaffNotificationSettings({ enabled: false }).enabled, false);
 });
 test("defaultLocale normalized; junk → en", () => {
-  eq(parseStaffNotificationSettings({ defaultLocale: "vi" }).defaultLocale, "vi");
-  eq(parseStaffNotificationSettings({ defaultLocale: "fr" }).defaultLocale, "en");
+  eq(
+    parseStaffNotificationSettings({ defaultLocale: "vi" }).defaultLocale,
+    "vi",
+  );
+  eq(
+    parseStaffNotificationSettings({ defaultLocale: "fr" }).defaultLocale,
+    "en",
+  );
+});
+test("saved salon locale is the fallback when notification JSON is missing", () => {
+  eq(parseStaffNotificationSettings(null, "vi").defaultLocale, "vi");
+  eq(parseStaffNotificationSettings({}, "vi").defaultLocale, "vi");
+  eq(
+    parseStaffNotificationSettings({ defaultLocale: "en" }, "vi").defaultLocale,
+    "en",
+  );
 });
 test("channels parsed, missing channel → default true", () => {
   const s = parseStaffNotificationSettings({ channels: { sms: false } });

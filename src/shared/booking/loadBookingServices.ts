@@ -68,9 +68,13 @@ export type BookingSalonMeta = {
   phoneOtpEnabled: boolean;
   /** When true, the Voice AI booking button is shown on the public booking page. */
   voiceAiEnabled: boolean;
+  /** Tenant half of the effective AI text receptionist rollout gate. */
+  aiTextReceptionistEnabled: boolean;
   /** Release flag `group_booking` (PR2). When false, the public booking page
    *  hides the Individual/Group toggle and renders the individual flow only. */
   groupBookingEnabled: boolean;
+  /** Tenant half only. Public UI also requires service-role readiness proof. */
+  multiServiceBookingEnabled: boolean;
   /** QA-first presentation flag. Groups the existing time slots into a short,
    *  customer-friendly period picker without changing availability logic. */
   bookingTimePeriodsEnabled: boolean;
@@ -124,7 +128,100 @@ export type BookingLoadData = {
   salon: BookingSalonMeta;
   /** Active beds/chairs/stations for resource-mode salons. Empty otherwise. */
   resources: { id: string; name: string; displayOrder: number }[];
+  /** True only when every catalog/capability/promo/combo/resource read used to
+   * build this payload completed without an error. Existing public callers
+   * keep their legacy fallback behavior; proof-grade consumers must require
+   * this exact flag. */
+  proofComplete: boolean;
+  /** True when at least one currently effective promotion exists for the
+   * salon, even if no per-service rule currently matches. Proof-grade
+   * consumers must fail closed because this preview does not certify
+   * promotional pricing. */
+  hasActivePromotions: boolean;
 };
+
+export type PublicBookingSnapshot = {
+  salon: Record<string, unknown>;
+  services: unknown[];
+  staff: unknown[];
+  capabilities: unknown[];
+  promotions: unknown[];
+  promotion_services: unknown[];
+  combos: unknown[];
+  resources: unknown[];
+};
+
+/** One RLS-preserving PostgREST round trip for the complete public catalog. */
+export async function loadPublicBookingSnapshot(
+  client: SupabaseClient,
+  normalizedSlug: string,
+): Promise<{
+  snapshot: PublicBookingSnapshot | null;
+  error: { message: string; code?: string } | null;
+}> {
+  const { data, error } = await client.rpc(
+    "load_public_booking_snapshot" as never,
+    { p_slug: normalizedSlug } as never,
+  );
+  if (error) {
+    return {
+      snapshot: null,
+      error: { message: error.message, code: error.code },
+    };
+  }
+  if (data == null) return { snapshot: null, error: null };
+  if (typeof data !== "object" || Array.isArray(data)) {
+    return {
+      snapshot: null,
+      error: { message: "invalid public booking snapshot" },
+    };
+  }
+
+  const raw = data as unknown as Record<string, unknown>;
+  if (!raw.salon || typeof raw.salon !== "object" || Array.isArray(raw.salon)) {
+    return {
+      snapshot: null,
+      error: { message: "public booking snapshot omitted salon" },
+    };
+  }
+  const array = (key: string): unknown[] | null =>
+    Array.isArray(raw[key]) ? (raw[key] as unknown[]) : null;
+  const services = array("services");
+  const staff = array("staff");
+  const capabilities = array("capabilities");
+  const promotions = array("promotions");
+  const promotionServices = array("promotion_services");
+  const combos = array("combos");
+  const resources = array("resources");
+  if (
+    !services ||
+    !staff ||
+    !capabilities ||
+    !promotions ||
+    !promotionServices ||
+    !combos ||
+    !resources
+  ) {
+    return {
+      snapshot: null,
+      error: { message: "public booking snapshot omitted catalog arrays" },
+    };
+  }
+
+  return {
+    snapshot: {
+      salon: raw.salon as Record<string, unknown>,
+      services,
+      staff,
+      capabilities,
+      promotions,
+      promotion_services: promotionServices,
+      combos,
+      resources,
+    },
+    error: null,
+  };
+}
 
 /**
  * Booking flowchart step 4 — load booking data for the salon.
@@ -137,13 +234,15 @@ export type BookingLoadData = {
 export async function loadBookingServicesForSalonSlug(
   normalizedSlug: string,
   supabase?: SupabaseClient,
+  knownSalon?: Record<string, unknown>,
+  knownSnapshot?: PublicBookingSnapshot,
 ): Promise<BookingLoadData | null> {
   const client = supabase ?? createPublicClient();
 
-  const { salon, error: salonErr } = await getSalonBySlug(
-    client,
-    normalizedSlug,
-  );
+  const lookup = knownSalon
+    ? { salon: knownSalon, error: null }
+    : await getSalonBySlug(client, normalizedSlug);
+  const { salon, error: salonErr } = lookup;
 
   if (salonErr) {
     console.error("[PUBLIC_BOOKING] loadBookingServices salon error:", salonErr);
@@ -164,40 +263,94 @@ export async function loadBookingServicesForSalonSlug(
   }
 
   const canonicalSlug = String((salon as { slug?: string }).slug ?? "").trim();
-  if (!canonicalSlug) {
+  if (!canonicalSlug || canonicalSlug !== normalizedSlug) {
     return null;
   }
 
   const salonId = String(salon.id ?? "");
   if (!salonId) return null;
 
-  const { data: rows, error: servicesErr } = await client
+  const salonResourcesEnabled =
+    (salon as { resources_enabled?: unknown }).resources_enabled === true;
+  const now = new Date().toISOString();
+
+  // These catalog reads are tenant-scoped and independent once the exact
+  // public salon row is known. Starting them together keeps the public SSR
+  // critical path to two database waves instead of serializing every table.
+  const servicesQuery = client
     .from("public_service_catalog")
     // `category`, `description`, `is_popular`, `is_featured` were added
     // in migrations 20260511500000 and 20260511600000; `price_type` and
-    // `price_max_cents` by the variable-pricing migration. Not yet in the
-    // auto-generated DB types so the SELECT spread is cast.
+    // `price_max_cents` by the variable-pricing migration.
     .select(
-      "id, name, duration_minutes, buffer_minutes, price_cents, price_type, price_max_cents, category, description, is_popular, is_featured, is_addon, addon_timing" as never,
+      "id, name, duration_minutes, prep_minutes, buffer_minutes, price_cents, price_type, price_max_cents, category, description, is_popular, is_featured, is_addon, addon_timing" as never,
     )
     .eq("salon_id", salonId)
     .order("name", { ascending: true });
-
-  if (servicesErr) {
-    console.error("loadBookingServices error:", servicesErr);
-  }
-
-  // Public booking only sees `active` staff. `pending` and `inactive` rows
-  // remain in the dashboard for the owner but never surface to customers.
-  const { data: staffList, error: staffErr } = await client
+  const staffQuery = client
     .from("public_staff_profiles")
     .select("id, name, job_role")
     .eq("salon_id", salonId)
     .eq("status", "active")
     .order("name", { ascending: true });
+  const promotionsQuery = client
+    .from("promotions" as never)
+    .select("id, name, discount_type, discount_value, applies_to, days_of_week, time_start, time_end")
+    .eq("salon_id" as never, salonId)
+    .eq("active" as never, true)
+    .lte("starts_at" as never, now)
+    .gte("ends_at" as never, now);
+  const combosQuery = client
+    .from("service_combos" as never)
+    .select("id, name, description, service_ids, price_cents, discount_cents, duration_minutes")
+    .eq("salon_id", salonId)
+    .eq("is_active", true)
+    .order("position", { ascending: true });
+  const resourcesQuery = salonResourcesEnabled
+    ? client
+        .from("salon_resources" as never)
+        .select("id, name, display_order")
+        .eq("salon_id" as never, salonId)
+        .eq("status" as never, "active")
+        .is("deleted_at" as never, null)
+        .order("display_order" as never, { ascending: true })
+    : Promise.resolve({ data: [], error: null });
+
+  const firstWave = knownSnapshot
+    ? [
+        { data: knownSnapshot.services, error: null },
+        { data: knownSnapshot.staff, error: null },
+        { data: knownSnapshot.promotions, error: null },
+        { data: knownSnapshot.combos, error: null },
+        { data: knownSnapshot.resources, error: null },
+      ]
+    : await Promise.all([
+        servicesQuery,
+        staffQuery,
+        promotionsQuery,
+        combosQuery,
+        resourcesQuery,
+      ]);
+  const [
+    { data: rows, error: servicesErr },
+    { data: staffList, error: staffErr },
+    { data: activePromos, error: promotionsError },
+    { data: comboRows, error: comboError },
+    { data: resourceRows, error: resourceError },
+  ] = firstWave;
+
+  if (servicesErr) {
+    console.error("loadBookingServices error:", servicesErr);
+  }
+  let proofComplete = !servicesErr;
 
   if (staffErr) {
     console.error("loadBookingServices staff error:", staffErr);
+    proofComplete = false;
+  }
+  if (promotionsError) proofComplete = false;
+  if (comboError || resourceError) {
+    proofComplete = false;
   }
 
   const salonCurrency = parseCurrency(
@@ -271,6 +424,7 @@ export async function loadBookingServicesForSalonSlug(
       id: string;
       name: string;
       duration_minutes?: unknown;
+      prep_minutes?: unknown;
       buffer_minutes?: unknown;
       price_cents?: unknown;
       price_type?: unknown;
@@ -282,6 +436,10 @@ export async function loadBookingServicesForSalonSlug(
       addon_timing?: unknown;
     };
     const duration = Number(row.duration_minutes) || 0;
+    const prepRaw = Math.round(Number(row.prep_minutes));
+    const prep = Number.isFinite(prepRaw) && prepRaw >= 0 && prepRaw <= 180
+      ? prepRaw
+      : 0;
     const buffer = Number(row.buffer_minutes) || 0;
     const totalMinutes = serviceBlockMinutes(duration, buffer);
     const priceCentsRaw = row.price_cents;
@@ -316,6 +474,7 @@ export async function loadBookingServicesForSalonSlug(
       id: row.id,
       name: row.name,
       durationMinutes: duration,
+      prepMinutes: prep,
       bufferMinutes: buffer,
       totalMinutes,
       priceCents,
@@ -341,50 +500,59 @@ export async function loadBookingServicesForSalonSlug(
   const isAddonRow = (r: unknown) =>
     (r as { is_addon?: unknown }).is_addon === true;
 
-  const staff: BookingStaffItem[] = (staffList ?? []).map((s) => ({
+  const staff: BookingStaffItem[] = ((staffList ?? []) as Array<{
+    id: unknown;
+    name?: unknown;
+    job_role?: unknown;
+  }>).map((s) => ({
     id: String(s.id),
     name: String(s.name ?? ""),
     job_role: String(s.job_role ?? ""),
   }));
 
-  let capabilityRows: { staff_id: string; service_id: string }[] | null = null;
-  if (staff.length > 0) {
-    const { data: capRows, error: capErr } = await client
-      .from("staff_services")
-      .select("staff_id, service_id")
-      .in("staff_id", staff.map((s) => s.id));
-
-    if (capErr) {
-      console.error("loadBookingServices staff_services error:", capErr);
-    } else if ((capRows?.length ?? 0) > 0) {
-      capabilityRows = (capRows ?? []).map((r) => ({
-        staff_id: String(r.staff_id),
-        service_id: String(r.service_id),
-      }));
-    }
-  }
-
-  // Load active promotions + per-service rules for this salon in one pass.
-  // Uses the public RLS policy (active = true AND now() BETWEEN starts_at AND ends_at).
-  const now = new Date().toISOString();
-  const { data: activePromos } = await client
-    .from("promotions" as never)
-    .select("id, name, discount_type, discount_value, applies_to, days_of_week, time_start, time_end")
-    .eq("salon_id" as never, salonId)
-    .eq("active" as never, true)
-    .lte("starts_at" as never, now)
-    .gte("ends_at" as never, now);
-
-  // Assign the real data now that the DB queries have resolved.
+  // Second wave: capability rows depend on staff ids and promotion rules
+  // depend on active promotion ids, but the two reads are independent.
   promoList = (activePromos ?? []) as PromoListItem[];
+  const [capabilityResult, rulesResult] = knownSnapshot
+    ? [
+        { data: knownSnapshot.capabilities, error: null },
+        { data: knownSnapshot.promotion_services, error: null },
+      ]
+    : await Promise.all([
+        staff.length > 0
+          ? client
+              .from("staff_services")
+              .select("staff_id, service_id")
+              .in("staff_id", staff.map((s) => s.id))
+          : Promise.resolve({ data: [], error: null }),
+        promoList.length > 0
+          ? client
+              .from("promotion_services" as never)
+              .select("promotion_id, service_id, discount_type, discount_value")
+              .in("promotion_id" as never, promoList.map((p) => p.id))
+          : Promise.resolve({ data: [], error: null }),
+      ]);
 
-  if (promoList.length > 0) {
-    const { data: rules } = await client
-      .from("promotion_services" as never)
-      .select("promotion_id, service_id, discount_type, discount_value")
-      .in("promotion_id" as never, promoList.map((p) => p.id));
-    promoSvcRules = (rules ?? []) as PromoSvcRuleItem[];
+  let capabilityRows: { staff_id: string; service_id: string }[] | null = null;
+  if (capabilityResult.error) {
+    console.error(
+      "loadBookingServices staff_services error:",
+      capabilityResult.error,
+    );
+    proofComplete = false;
+  } else if ((capabilityResult.data?.length ?? 0) > 0) {
+    capabilityRows = ((capabilityResult.data ?? []) as Array<{
+      staff_id: unknown;
+      service_id: unknown;
+    }>).map((r) => ({
+      staff_id: String(r.staff_id),
+      service_id: String(r.service_id),
+    }));
   }
+
+  const { data: rules, error: rulesError } = rulesResult;
+  if (rulesError) proofComplete = false;
+  promoSvcRules = (rules ?? []) as PromoSvcRuleItem[];
 
   // Split add-ons out of the main service list: add-ons are offered only as
   // upsells on the review step, never as a primary bookable service.
@@ -396,13 +564,6 @@ export async function loadBookingServicesForSalonSlug(
     .map(mapServiceRow)
     // Highest-value first so the most profitable upsells lead.
     .sort((a, b) => (b.priceCents ?? 0) - (a.priceCents ?? 0));
-
-  const { data: comboRows } = await client
-    .from("service_combos" as never)
-    .select("id, name, description, service_ids, price_cents, discount_cents, duration_minutes")
-    .eq("salon_id", salonId)
-    .eq("is_active", true)
-    .order("position", { ascending: true });
 
   const combos: BookingComboItem[] = (
     (comboRows ?? []) as {
@@ -424,21 +585,15 @@ export async function loadBookingServicesForSalonSlug(
     durationMinutes: Number(c.duration_minutes) || 60,
   }));
 
-  const salonResourcesEnabled =
-    (salon as { resources_enabled?: unknown }).resources_enabled === true;
-  let resources: { id: string; name: string; displayOrder: number }[] = [];
-  if (salonResourcesEnabled) {
-    const { data: rRows } = await client
-      .from("salon_resources" as never)
-      .select("id, name, display_order")
-      .eq("salon_id" as never, salonId)
-      .eq("status" as never, "active")
-      .is("deleted_at" as never, null)
-      .order("display_order" as never, { ascending: true });
-    resources = ((rRows ?? []) as { id: string; name: string; display_order: number }[]).map(
-      (r) => ({ id: r.id, name: r.name, displayOrder: r.display_order }),
-    );
-  }
+  const resources = ((resourceRows ?? []) as {
+    id: string;
+    name: string;
+    display_order: number;
+  }[]).map((r) => ({
+    id: r.id,
+    name: r.name,
+    displayOrder: r.display_order,
+  }));
 
   return {
     canonicalSlug,
@@ -448,6 +603,8 @@ export async function loadBookingServicesForSalonSlug(
     staff,
     capabilityRows,
     resources,
+    proofComplete,
+    hasActivePromotions: promoList.length > 0,
     salon: {
       id: salonId,
       name: String((salon as { name?: string }).name ?? ""),
@@ -527,6 +684,15 @@ export async function loadBookingServicesForSalonSlug(
         (salon as { phone_otp_enabled?: unknown }).phone_otp_enabled === true,
       voiceAiEnabled:
         (salon as { voice_ai_enabled?: unknown }).voice_ai_enabled === true,
+      aiTextReceptionistEnabled: isReleaseFeatureEnabled(
+        salon as {
+          subscription_plan?: string | null;
+          plan_override?: string | null;
+          feature_flags?: unknown;
+          voice_ai_enabled?: boolean | null;
+        },
+        "ai_text_receptionist",
+      ),
       // Release flag `group_booking` (PR2). Resolved server-side from the
       // salon's flags (getSalonBySlug uses select("*"), so the gating fields
       // are present). Beta → default OFF unless SuperAdmin enables the flag.
@@ -538,6 +704,14 @@ export async function loadBookingServicesForSalonSlug(
           voice_ai_enabled?: boolean | null;
         },
         "group_booking",
+      ),
+      multiServiceBookingEnabled: isReleaseFeatureEnabled(
+        salon as {
+          subscription_plan?: string | null;
+          plan_override?: string | null;
+          feature_flags?: unknown;
+        },
+        "multi_service_booking",
       ),
       bookingTimePeriodsEnabled:
         ((salon as { feature_flags?: Record<string, unknown> | null }).feature_flags

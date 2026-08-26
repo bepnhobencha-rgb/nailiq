@@ -77,6 +77,7 @@ import {
   findEarliestWaveArrangement,
   findFinishArrangementsInWindow,
   MAX_WAVES,
+  orderStaffByProjectedSalonDayMinutes,
   SLOT_STEP_MIN,
   staffIsFree,
   tryAlignedArrangement,
@@ -373,7 +374,13 @@ function tryStaggeredArrangement(
       if (m.preferredStaffId != null) {
         candidateOrder.push(m.preferredStaffId);
       } else {
-        for (const s of staff) candidateOrder.push(s.id);
+        for (const s of orderStaffByProjectedSalonDayMinutes(
+          staff,
+          startMs,
+          endMs,
+          existing,
+          soft,
+        )) candidateOrder.push(s.id);
       }
       for (const sid of candidateOrder) {
         if (!isStaffCapableForService(capability, sid, m.serviceId)) continue;

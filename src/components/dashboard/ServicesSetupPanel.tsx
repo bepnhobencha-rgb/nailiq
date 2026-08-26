@@ -32,6 +32,7 @@ export type SetupServiceRow = {
   price_max_cents: number | null;
   duration_minutes: number;
   buffer_minutes: number;
+  prep_minutes: number;
   category: ServiceCategory;
   description: string | null;
   is_popular: boolean;
@@ -424,6 +425,7 @@ export function ServicesSetupPanel({
   maxServices,
   currency,
   categories,
+  multiServiceEditorEnabled,
 }: {
   slug: string;
   initialRows: SetupServiceRow[];
@@ -435,6 +437,8 @@ export function ServicesSetupPanel({
   currency: Currency;
   /** Live category list from `loadServiceCategories`. */
   categories: readonly ServiceCategorySummary[];
+  /** Effective platform+salon gate. Readiness joins this before rollout. */
+  multiServiceEditorEnabled: boolean;
 }) {
   const { language } = useUserLanguage();
   const messages = getUserMessages(language);
@@ -492,6 +496,7 @@ export function ServicesSetupPanel({
           | "price_cents"
           | "duration_minutes"
           | "buffer_minutes"
+          | "prep_minutes"
           | "category"
           | "description"
           | "is_popular"
@@ -545,6 +550,9 @@ export function ServicesSetupPanel({
                   : {}),
                 ...(patch.buffer_minutes !== undefined
                   ? { buffer_minutes: patch.buffer_minutes }
+                  : {}),
+                ...(patch.prep_minutes !== undefined
+                  ? { prep_minutes: patch.prep_minutes }
                   : {}),
                 ...(patch.category !== undefined
                   ? { category: patch.category }
@@ -969,6 +977,7 @@ export function ServicesSetupPanel({
         categories={categories}
         canDelete={rows.length > 1}
         atServiceLimit={atServiceLimit}
+        multiServiceEditorEnabled={multiServiceEditorEnabled}
       />
     </div>
   );

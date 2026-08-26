@@ -9,6 +9,18 @@ export type GoLiveAttestationKey =
   (typeof GO_LIVE_ATTESTATION_KEYS)[number];
 export type GoLiveAttestationAction = "attest" | "revoke";
 
+export function isGuidedPilotAttestationBlocked(
+  guidedSetupEnabled: boolean,
+  checkKey: GoLiveAttestationKey,
+  safePreviewAvailable: boolean,
+): boolean {
+  return (
+    guidedSetupEnabled &&
+    !safePreviewAvailable &&
+    (checkKey === "live_rehearsal_completed" || checkKey === "owner_approved")
+  );
+}
+
 export type GoLiveAttestationEvent = {
   id: string;
   checkKey: GoLiveAttestationKey;
@@ -35,7 +47,8 @@ const keyToState = {
 
 export function deriveGoLiveAttestationState(
   events: GoLiveAttestationEvent[],
-  currentSnapshotHash: string,
+  technicalSnapshotHash: string,
+  approvalSnapshotHash: string,
 ): GoLiveAttestationState {
   const latest = new Map<GoLiveAttestationKey, GoLiveAttestationEvent>();
   for (const event of events) {
@@ -53,13 +66,16 @@ export function deriveGoLiveAttestationState(
   for (const [key, stateKey] of Object.entries(keyToState) as Array<
     [keyof typeof keyToState, (typeof keyToState)[keyof typeof keyToState]]
   >) {
-    state[stateKey] = latest.get(key)?.action === "attest";
+    const latestEvent = latest.get(key);
+    state[stateKey] =
+      latestEvent?.action === "attest" &&
+      latestEvent.readinessSnapshotHash === technicalSnapshotHash;
   }
 
   const ownerApproval = latest.get("owner_approved");
   if (ownerApproval?.action === "attest") {
     state.ownerApprovalStale =
-      ownerApproval.readinessSnapshotHash !== currentSnapshotHash;
+      ownerApproval.readinessSnapshotHash !== approvalSnapshotHash;
     state.ownerApproved = !state.ownerApprovalStale;
   }
 

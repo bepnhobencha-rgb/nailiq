@@ -20,6 +20,8 @@ import {
   describeReleaseFeaturesForSalon,
   releaseFeatureEditableFlagKey,
   isReleaseFeatureEditable,
+  containsControlledRolloutFlagMutation,
+  CONTROLLED_ROLLOUT_RELEASE_FLAG_KEYS,
   EDITABLE_RELEASE_FLAG_KEYS,
 } from "../featureRegistry";
 
@@ -38,7 +40,8 @@ function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
 }
 function eq<T>(a: T, b: T, msg: string) {
-  if (a !== b) throw new Error(`${msg} — expected ${String(b)}, got ${String(a)}`);
+  if (a !== b)
+    throw new Error(`${msg} — expected ${String(b)}, got ${String(a)}`);
 }
 
 // ── Defaults without any DB row ──────────────────────────────────────────
@@ -105,9 +108,21 @@ test("non-boolean jsonb value falls back to default", () => {
 
 // ── column source (Voice AI) ─────────────────────────────────────────────
 test("ai_voice reads the voice_ai_enabled column", () => {
-  eq(isReleaseFeatureEnabled({ voice_ai_enabled: true }, "ai_voice"), true, "column true");
-  eq(isReleaseFeatureEnabled({ voice_ai_enabled: false }, "ai_voice"), false, "column false");
-  eq(isReleaseFeatureEnabled({}, "ai_voice"), false, "missing column → Beta default OFF");
+  eq(
+    isReleaseFeatureEnabled({ voice_ai_enabled: true }, "ai_voice"),
+    true,
+    "column true",
+  );
+  eq(
+    isReleaseFeatureEnabled({ voice_ai_enabled: false }, "ai_voice"),
+    false,
+    "column false",
+  );
+  eq(
+    isReleaseFeatureEnabled({}, "ai_voice"),
+    false,
+    "missing column → Beta default OFF",
+  );
 });
 
 // ── plan source (billing reuse, read-only) ───────────────────────────────
@@ -133,7 +148,10 @@ test("photos resolves via plan: pro plan enables, free disables", () => {
 test("plan-sourced feature still honours a feature_flags override (via hasFeature)", () => {
   eq(
     isReleaseFeatureEnabled(
-      { subscription_plan: "free", feature_flags: { photo_confirmation: true } },
+      {
+        subscription_plan: "free",
+        feature_flags: { photo_confirmation: true },
+      },
       "photos",
     ),
     true,
@@ -150,7 +168,7 @@ test("every key's descriptor.key matches its map key", () => {
 
 test("registry has the expected Base/Beta inventory", () => {
   eq(BASE_FEATURE_KEYS.length, 10, "Base count");
-  eq(BETA_FEATURE_KEYS.length, 16, "Beta count");
+  eq(BETA_FEATURE_KEYS.length, 19, "Beta count");
   assert(
     BASE_FEATURE_KEYS.every((k) => RELEASE_FEATURES[k].defaultOn === true),
     "all Base defaultOn true",
@@ -163,13 +181,16 @@ test("mapped jsonb/column/plan keys match the known existing keys", () => {
     receptionist_center: "jsonb:receptionist_center_enabled",
     walkin_queue: "jsonb:walkin_queue_enabled",
     group_booking: "jsonb:group_booking_enabled",
+    ai_text_receptionist: "jsonb:ai_text_receptionist_enabled",
     loyalty: "jsonb:loyalty_enabled",
     advanced_reports: "jsonb:reports_enabled",
     ai_control_center: "jsonb:ai_control_center_enabled",
     receptionist_shell_v2: "jsonb:receptionist_shell_v2_enabled",
     waitlist_attention: "jsonb:waitlist_attention_enabled",
+    guided_admin_setup: "jsonb:guided_admin_setup_enabled",
     nail_tryon: "jsonb:nail_tryon_enabled",
     archived_booking_recovery: "jsonb:archived_booking_recovery_enabled",
+    multi_service_booking: "jsonb:multi_service_booking_enabled",
     ai_voice: "column:voice_ai_enabled",
     photos: "plan:photo_confirmation",
     reviews: "plan:reviews",
@@ -223,7 +244,10 @@ test("describe: no override matches the default and is not flagged overridden", 
 });
 
 test("describe: column source (voice) reflects the voice_ai_enabled column", () => {
-  const on = describeReleaseFeatureForSalon({ voice_ai_enabled: true }, "ai_voice");
+  const on = describeReleaseFeatureForSalon(
+    { voice_ai_enabled: true },
+    "ai_voice",
+  );
   eq(on.source, "column", "column source");
   eq(on.resolved, true, "column true → ON");
   eq(on.overridden, true, "ON diverges from Beta default OFF");
@@ -262,11 +286,7 @@ test("releaseFeatureUiGroup: plan & column features land in plan_column", () => 
   eq(releaseFeatureUiGroup("reviews"), "plan_column", "plan → plan_column");
   eq(releaseFeatureUiGroup("photos"), "plan_column", "plan → plan_column");
   eq(releaseFeatureUiGroup("public_booking"), "base", "Base registry → base");
-  eq(
-    releaseFeatureUiGroup("receptionist_center"),
-    "base",
-    "Base jsonb → base",
-  );
+  eq(releaseFeatureUiGroup("receptionist_center"), "base", "Base jsonb → base");
   eq(releaseFeatureUiGroup("group_booking"), "beta", "Beta jsonb → beta");
   eq(releaseFeatureUiGroup("marketing"), "beta", "Beta registry → beta");
 });
@@ -281,7 +301,11 @@ test("describeReleaseFeaturesForSalon: groups partition every key exactly once",
   // Base is every base-phase key NOT in plan_column (none of the 10 base keys
   // are plan/column-sourced today).
   eq(groups.base.length, 10, "all 10 Base keys");
-  eq(groups.beta.length, RELEASE_FEATURE_KEYS.length - 13, "remaining Beta keys");
+  eq(
+    groups.beta.length,
+    RELEASE_FEATURE_KEYS.length - 13,
+    "remaining Beta keys",
+  );
   assert(
     groups.base.every((r) => r.phase === "base"),
     "base group is all base-phase",
@@ -295,11 +319,12 @@ test("describeReleaseFeaturesForSalon: groups partition every key exactly once",
 });
 
 // ── PR4b editability: jsonb editable, others read-only ────────────────────
-test("isReleaseFeatureEditable true for every jsonb-sourced feature", () => {
+test("generic release editor exposes only non-controlled jsonb features", () => {
   const editable = [
     "receptionist_center",
     "walkin_queue",
     "group_booking",
+    "ai_text_receptionist",
     "loyalty",
     "advanced_reports",
     "admin_copilot",
@@ -313,25 +338,75 @@ test("isReleaseFeatureEditable true for every jsonb-sourced feature", () => {
     eq(isReleaseFeatureEditable(k), true, `${k} should be editable`);
   }
   // Count: only these mapped JSONB features are editable across the registry.
-  const editableCount = RELEASE_FEATURE_KEYS.filter(isReleaseFeatureEditable).length;
-  eq(editableCount, 11, "exactly 11 editable features");
+  const editableCount = RELEASE_FEATURE_KEYS.filter(
+    isReleaseFeatureEditable,
+  ).length;
+  eq(editableCount, 12, "exactly 12 generic-editor features");
+  eq(
+    isReleaseFeatureEditable("guided_admin_setup"),
+    false,
+    "Guided Setup requires a dedicated disposable-QA allowlist setter",
+  );
+  eq(
+    isReleaseFeatureEditable("multi_service_booking"),
+    false,
+    "multi-service requires a dedicated QA allowlist setter",
+  );
+  assert(
+    CONTROLLED_ROLLOUT_RELEASE_FLAG_KEYS.has("multi_service_booking_enabled"),
+    "multi-service flag is controlled",
+  );
+  assert(
+    CONTROLLED_ROLLOUT_RELEASE_FLAG_KEYS.has("guided_admin_setup_enabled"),
+    "Guided Setup flag is controlled",
+  );
 });
 
 test("isReleaseFeatureEditable false for column/plan/registry features", () => {
-  eq(isReleaseFeatureEditable("ai_voice"), false, "column (voice) not editable here");
+  eq(
+    isReleaseFeatureEditable("ai_voice"),
+    false,
+    "column (voice) not editable here",
+  );
   eq(isReleaseFeatureEditable("reviews"), false, "plan (reviews) not editable");
   eq(isReleaseFeatureEditable("photos"), false, "plan (photos) not editable");
-  for (const k of ["public_booking", "combos", "marketing", "tv_mode", "experimental_realtime"] as const) {
+  for (const k of [
+    "public_booking",
+    "combos",
+    "marketing",
+    "tv_mode",
+    "experimental_realtime",
+  ] as const) {
     eq(isReleaseFeatureEditable(k), false, `${k} (registry) not editable`);
   }
 });
 
 test("releaseFeatureEditableFlagKey maps each editable feature to its jsonb key", () => {
-  eq(releaseFeatureEditableFlagKey("receptionist_center"), "receptionist_center_enabled", "rc key");
-  eq(releaseFeatureEditableFlagKey("walkin_queue"), "walkin_queue_enabled", "walkin key");
-  eq(releaseFeatureEditableFlagKey("group_booking"), "group_booking_enabled", "group key");
-  eq(releaseFeatureEditableFlagKey("loyalty"), "loyalty_enabled", "loyalty key");
-  eq(releaseFeatureEditableFlagKey("advanced_reports"), "reports_enabled", "reports key");
+  eq(
+    releaseFeatureEditableFlagKey("receptionist_center"),
+    "receptionist_center_enabled",
+    "rc key",
+  );
+  eq(
+    releaseFeatureEditableFlagKey("walkin_queue"),
+    "walkin_queue_enabled",
+    "walkin key",
+  );
+  eq(
+    releaseFeatureEditableFlagKey("group_booking"),
+    "group_booking_enabled",
+    "group key",
+  );
+  eq(
+    releaseFeatureEditableFlagKey("loyalty"),
+    "loyalty_enabled",
+    "loyalty key",
+  );
+  eq(
+    releaseFeatureEditableFlagKey("advanced_reports"),
+    "reports_enabled",
+    "reports key",
+  );
   eq(
     releaseFeatureEditableFlagKey("archived_booking_recovery"),
     "archived_booking_recovery_enabled",
@@ -342,17 +417,23 @@ test("releaseFeatureEditableFlagKey maps each editable feature to its jsonb key"
     "waitlist_attention_enabled",
     "waitlist attention key",
   );
+  eq(
+    releaseFeatureEditableFlagKey("guided_admin_setup"),
+    null,
+    "Guided QA → null",
+  );
   eq(releaseFeatureEditableFlagKey("ai_voice"), null, "column → null");
   eq(releaseFeatureEditableFlagKey("photos"), null, "plan → null");
   eq(releaseFeatureEditableFlagKey("combos"), null, "registry → null");
 });
 
 test("EDITABLE_RELEASE_FLAG_KEYS contains exactly the mapped jsonb keys", () => {
-  eq(EDITABLE_RELEASE_FLAG_KEYS.size, 11, "11 whitelisted keys");
+  eq(EDITABLE_RELEASE_FLAG_KEYS.size, 12, "12 whitelisted keys");
   for (const fk of [
     "receptionist_center_enabled",
     "walkin_queue_enabled",
     "group_booking_enabled",
+    "ai_text_receptionist_enabled",
     "loyalty_enabled",
     "reports_enabled",
     "admin_copilot_enabled",
@@ -364,9 +445,49 @@ test("EDITABLE_RELEASE_FLAG_KEYS contains exactly the mapped jsonb keys", () => 
   ]) {
     assert(EDITABLE_RELEASE_FLAG_KEYS.has(fk), `whitelist has ${fk}`);
   }
+  assert(
+    !EDITABLE_RELEASE_FLAG_KEYS.has("multi_service_booking_enabled"),
+    "QA-controlled flag is excluded from generic edits",
+  );
+  assert(
+    !EDITABLE_RELEASE_FLAG_KEYS.has("guided_admin_setup_enabled"),
+    "Guided QA flag is excluded from generic edits",
+  );
   // A billing/unrelated key is NOT in the whitelist (reset can't strip it).
-  assert(!EDITABLE_RELEASE_FLAG_KEYS.has("photo_confirmation"), "no billing key");
-  assert(!EDITABLE_RELEASE_FLAG_KEYS.has("walkin_auto_assign"), "no unrelated flag");
+  assert(
+    !EDITABLE_RELEASE_FLAG_KEYS.has("photo_confirmation"),
+    "no billing key",
+  );
+  assert(
+    !EDITABLE_RELEASE_FLAG_KEYS.has("walkin_auto_assign"),
+    "no unrelated flag",
+  );
+});
+
+test("controlled rollout flag mutation is rejected for set and unset shapes", () => {
+  eq(
+    containsControlledRolloutFlagMutation(
+      { multi_service_booking_enabled: true },
+      undefined,
+    ),
+    true,
+    "generic set is controlled",
+  );
+  eq(
+    containsControlledRolloutFlagMutation(undefined, [
+      "multi_service_booking_enabled",
+    ]),
+    true,
+    "generic reset is controlled",
+  );
+  eq(
+    containsControlledRolloutFlagMutation(
+      { guided_admin_setup_enabled: true },
+      ["group_booking_enabled"],
+    ),
+    true,
+    "Guided Setup set/unset is controlled",
+  );
 });
 
 test("reset semantics: removing the key yields the default, set-false does NOT", () => {
@@ -378,11 +499,17 @@ test("reset semantics: removing the key yields the default, set-false does NOT",
   );
   eq(setFalse.resolved, false, "explicit false → OFF");
   eq(setFalse.overridden, true, "explicit false diverges from default ON");
-  const reset = describeReleaseFeatureForSalon({ feature_flags: {} }, "receptionist_center");
+  const reset = describeReleaseFeatureForSalon(
+    { feature_flags: {} },
+    "receptionist_center",
+  );
   eq(reset.resolved, true, "no key → default ON");
   eq(reset.overridden, false, "no key → matches default");
   // Beta jsonb feature (group_booking, default OFF): remove key → default OFF.
-  const betaReset = describeReleaseFeatureForSalon({ feature_flags: {} }, "group_booking");
+  const betaReset = describeReleaseFeatureForSalon(
+    { feature_flags: {} },
+    "group_booking",
+  );
   eq(betaReset.resolved, false, "no key → Beta default OFF");
   eq(betaReset.overridden, false, "no key → matches default");
 });

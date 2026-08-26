@@ -16,8 +16,7 @@ import {
 } from "@/shared/booking/formatBookingPrice";
 import type { Currency } from "@/shared/lib/currencyFormat";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
-import { computeTax } from "@/shared/tax/computeTax";
-import type { TaxLine } from "@/shared/tax/taxTypes";
+import type { PublicBookingPricingQuote } from "@/shared/booking/publicBookingPricing";
 import { BookingSummaryGlass } from "@/components/booking/BookingSummaryGlass";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
 import {
@@ -55,7 +54,10 @@ export function BookingFlowConfirmPanel({
   reducedMotion,
   stepTransition,
   currency,
-  salonId,
+  pricingQuote,
+  pricingQuoteLoading,
+  pricingQuoteError,
+  pricingReconfirmRequired,
   appliedVoucher,
   onToggleAddon,
   onAddonRepickTime,
@@ -69,7 +71,6 @@ export function BookingFlowConfirmPanel({
   savedCard,
   smsConsent,
   setSmsConsent,
-  taxLines,
 }: {
   t: BookingMessages;
   shopLabel: string;
@@ -90,8 +91,11 @@ export function BookingFlowConfirmPanel({
   error: string | null;
   submitting: boolean;
   stepDir: BookingMotionDir;
-  /** Salon UUID — needed to call /api/vouchers/validate. */
-  salonId: string;
+  /** The only monetary source rendered on Confirm. */
+  pricingQuote: PublicBookingPricingQuote | null;
+  pricingQuoteLoading: boolean;
+  pricingQuoteError: string | null;
+  pricingReconfirmRequired: boolean;
   appliedVoucher: AppliedVoucher | null;
   onApplyVoucher: (code: string, totalCents: number) => Promise<{ error?: string }>;
   onRemoveVoucher: () => void;
@@ -119,8 +123,6 @@ export function BookingFlowConfirmPanel({
    *  when already given; still gates the button on it as a safety net. */
   smsConsent: boolean;
   setSmsConsent: (v: boolean) => void;
-  /** Tax lines from the salon's settings. Used to show a breakdown in the confirm step. */
-  taxLines?: TaxLine[];
 }) {
   const [voucherInput, setVoucherInput] = useState("");
   const [voucherError, setVoucherError] = useState<string | null>(null);
@@ -177,19 +179,7 @@ export function BookingFlowConfirmPanel({
     selectedAddonIds.includes(s.id),
   );
 
-  const addonsTotalCents = selectedAddOns.reduce(
-    (sum, a) => sum + (a.priceCents ?? 0),
-    0,
-  );
-
-  // Use promo price when active; voucher applies on top
-  const serviceEffectiveCents = service.promoPriceCents ?? service.priceCents ?? 0;
-  const promoDiscountCents =
-    service.promoPriceCents != null && service.priceCents
-      ? service.priceCents - service.promoPriceCents
-      : 0;
-
-  const baseTotalCents = serviceEffectiveCents + addonsTotalCents;
+  const baseTotalCents = pricingQuote?.preVoucherSubtotalCents ?? 0;
 
   // Auto-apply a voucher code carried on the landing URL (/<slug>?code=CODE),
   // e.g. from a re-opt-in email. Fires once, only when a code is present and the
@@ -218,13 +208,6 @@ export function BookingFlowConfirmPanel({
     };
   }, [appliedVoucher, baseTotalCents, onApplyVoucher]);
 
-  const subtotalCents = appliedVoucher
-    ? appliedVoucher.final_price_cents
-    : baseTotalCents;
-
-  const tax = computeTax(subtotalCents, taxLines ?? []);
-  const totalCents = tax.totalCents;
-
   // Display the actual service time only (no inter-service rest buffer). The
   // buffer still drives scheduling via `selectedAddonsTotalMin`/totalMinutes,
   // but it's not part of what the customer "spends".
@@ -242,13 +225,13 @@ export function BookingFlowConfirmPanel({
       : null;
 
   // One pricing line per selected add-on.
-  const addonRows = selectedAddOns.map((a) => {
-    const priceLabel = a.priceDisplay ?? formatBookingPrice(a.priceCents, currency);
+  const addonRows = pricingQuote?.addonLines.map((a) => {
+    const priceLabel = formatBookingPrice(a.priceCents, pricingQuote.currency);
     return {
       label: t.summaryAddOn,
       value: priceLabel ? `${a.name} — ${priceLabel}` : a.name,
     };
-  });
+  }) ?? [];
 
   async function handleApply() {
     const code = voucherInput.trim().toUpperCase();
@@ -268,46 +251,37 @@ export function BookingFlowConfirmPanel({
   const pricingLines = [
     {
       label: t.summaryServicePrice,
-      value:
-        service.promoPriceDisplay ??
-        service.priceDisplay ??
-        formatBookingPrice(service.priceCents, currency) ??
-        "—",
+      value: pricingQuote
+        ? formatBookingPriceReceipt(
+            pricingQuote.serviceOriginalCents,
+            pricingQuote.currency,
+          )
+        : "…",
     },
     ...addonRows,
-    // Promo campaign discount line
-    ...(promoDiscountCents > 0 && service.promoName
-      ? [
-          {
-            label: `🏷️ ${service.promoName}`,
-            value: `–${formatBookingPriceReceipt(promoDiscountCents, currency)}`,
-          },
-        ]
-      : []),
-    ...(appliedVoucher
-      ? [
-          {
-            label: `${t.summaryDiscount} (${appliedVoucher.code})`,
-            value: `–${formatBookingPriceReceipt(appliedVoucher.discount_cents, currency)}`,
-          },
-        ]
-      : []),
-    // Show subtotal + tax breakdown only when tax is non-zero
-    ...(tax.taxAmountCents > 0
+    ...(pricingQuote?.discountLines.map((line) => ({
+      label: line.kind === "voucher" ? t.summaryDiscount : line.label,
+      value: `–${formatBookingPriceReceipt(line.amountCents, pricingQuote.currency)}`,
+    })) ?? []),
+    ...((pricingQuote?.discountLines.length ?? 0) > 0 || (pricingQuote?.taxCents ?? 0) > 0
       ? [
           {
             label: t.summarySubtotal ?? "Subtotal",
-            value: formatBookingPriceReceipt(subtotalCents, currency),
+            value: pricingQuote
+              ? formatBookingPriceReceipt(pricingQuote.subtotalCents, pricingQuote.currency)
+              : "…",
           },
-          ...tax.breakdown.map((b) => ({
+          ...(pricingQuote?.taxBreakdown.map((b) => ({
             label: `${b.name} (${(b.rate * 100).toFixed(b.rate * 100 === Math.round(b.rate * 100) ? 0 : 3).replace(/\.?0+$/, "")}%)`,
-            value: `+${formatBookingPriceReceipt(b.amountCents, currency)}`,
-          })),
+            value: `+${formatBookingPriceReceipt(b.amountCents, pricingQuote.currency)}`,
+          })) ?? []),
         ]
       : []),
     {
       label: t.summaryTotal,
-      value: formatBookingPriceReceipt(totalCents, currency),
+      value: pricingQuote
+        ? formatBookingPriceReceipt(pricingQuote.totalCents, pricingQuote.currency)
+        : "…",
       valueGold: true as const,
     },
   ];
@@ -451,7 +425,7 @@ export function BookingFlowConfirmPanel({
                     )}
                   >
                     {on ? "✓ " : ""}
-                    {s.priceDisplay ? `${s.name} · ${s.priceDisplay}${mins}` : `${s.name}${mins}`}
+                    {`${s.name}${mins}`}
                     {needsMoreTime
                       ? ` · 🕙 ${t.upsellAddonNeedsTime ?? "pick a longer time →"}`
                       : ""}
@@ -464,7 +438,9 @@ export function BookingFlowConfirmPanel({
                 {selectedAddOns.length} add-on
                 {selectedAddOns.length > 1 ? "s" : ""} · +{selectedAddonsTotalMin}′
                 {" · "}
-                {formatBookingPriceReceipt(addonsTotalCents, currency)}
+                {pricingQuote
+                  ? formatBookingPriceReceipt(pricingQuote.addonPreVoucherCents, pricingQuote.currency)
+                  : "…"}
                 {"  ·  "}
                 <span className="text-[var(--booking-text-muted)]">
                   {Math.max(0, upsellGapMinutes - selectedAddonsTotalMin)}′ left
@@ -475,7 +451,22 @@ export function BookingFlowConfirmPanel({
           );
         })() : null}
 
-        {error ? (
+        {pricingQuoteLoading ? (
+          <p className="mt-6 shrink-0 text-sm text-[var(--booking-text-muted)]" role="status">
+            {t.pricingVerifying}
+          </p>
+        ) : null}
+        {pricingQuoteError ? (
+          <p className="mt-6 shrink-0 text-sm text-nq-error" role="alert">
+            {t.pricingUnavailable}
+          </p>
+        ) : null}
+        {pricingReconfirmRequired ? (
+          <p className="mt-6 shrink-0 text-sm text-nq-error" role="alert">
+            {t.pricingChanged}
+          </p>
+        ) : null}
+        {error && error !== "pricing_changed" ? (
           <p className="mt-6 shrink-0 text-sm text-nq-error" role="alert">
             {error}
           </p>
@@ -601,10 +592,10 @@ export function BookingFlowConfirmPanel({
           <LuxuryBookingCta
             className="lg:min-w-[14rem]"
             data-testid="confirm-booking-btn"
-            disabled={submitting || cardRequirementLoading || !smsConsent || (cardRequired && !noShowConsent) || (healthAckOn && !healthAck)}
+            disabled={submitting || pricingQuoteLoading || !pricingQuote || Boolean(pricingQuoteError) || cardRequirementLoading || !smsConsent || (cardRequired && !noShowConsent) || (healthAckOn && !healthAck)}
             onClick={handleConfirm}
           >
-            <span>{submitting ? t.submitting : t.confirmBooking}</span>
+            <span>{submitting ? t.submitting : pricingReconfirmRequired ? t.confirmUpdatedPrice : t.confirmBooking}</span>
           </LuxuryBookingCta>
         </div>
         {/* Passive agreement to the customer Booking Terms + the salon's

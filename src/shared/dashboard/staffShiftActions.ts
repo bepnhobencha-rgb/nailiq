@@ -3,9 +3,11 @@
 // CRUD server actions for staff_shifts (recurring weekly schedule) and
 // staff_unavailability (one-off blocked dates).
 // Callers: StaffShiftHub admin settings panel.
-// Auth: salon member with role owner, admin, or senior_staff (manager-level).
+// Auth: owner/admin only. This module backs the management Settings surface;
+// operational staff must not reach it by replaying the exported Server Actions.
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 
 const VALID_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
 type DayOfWeek = (typeof VALID_DAYS)[number];
@@ -25,6 +27,7 @@ export async function listActiveStaff(
 ): Promise<{ ok: boolean; data?: StaffSummary[]; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { data, error } = await ctx.supabase
     .from("staff")
@@ -59,6 +62,7 @@ export async function listStaffShifts(
 ): Promise<{ ok: boolean; data?: StaffShiftRow[]; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { data, error } = await ctx.supabase
     .from("staff_shifts")
@@ -86,9 +90,7 @@ export async function upsertStaffShift(
 ): Promise<{ ok: boolean; id?: string; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner" && ctx.role !== "admin" && ctx.role !== "senior") {
-    return { ok: false, error: "forbidden" };
-  }
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   if (!VALID_DAYS.includes(dayOfWeek as DayOfWeek)) {
     return { ok: false, error: "invalid_day" };
@@ -157,9 +159,7 @@ export async function deleteStaffShift(
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner" && ctx.role !== "admin" && ctx.role !== "senior") {
-    return { ok: false, error: "forbidden" };
-  }
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { error } = await ctx.supabase
     .from("staff_shifts")
@@ -191,6 +191,7 @@ export async function listStaffUnavailability(
 ): Promise<{ ok: boolean; data?: StaffUnavailabilityRow[]; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   let query = ctx.supabase
     .from("staff_unavailability")
@@ -220,9 +221,7 @@ export async function upsertStaffUnavailability(
 ): Promise<{ ok: boolean; id?: string; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner" && ctx.role !== "admin" && ctx.role !== "senior") {
-    return { ok: false, error: "forbidden" };
-  }
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return { ok: false, error: "invalid_date_format" };
@@ -265,9 +264,7 @@ export async function deleteStaffUnavailability(
 ): Promise<{ ok: boolean; error?: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
-  if (ctx.role !== "owner" && ctx.role !== "admin" && ctx.role !== "senior") {
-    return { ok: false, error: "forbidden" };
-  }
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
 
   const { error } = await ctx.supabase
     .from("staff_unavailability")

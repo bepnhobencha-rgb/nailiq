@@ -1,8 +1,7 @@
 import "server-only";
 
-import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { getSuperAdminRole } from "@/shared/lib/superadmin";
+import { requireActiveSuperAdminSession } from "@/shared/auth/requireActiveSuperAdminSession";
 
 type UsageRow = {
   salon_id: string | null;
@@ -254,9 +253,7 @@ export function summarizeOutcomeRoi(input: {
 }
 
 async function isSuperadmin(): Promise<boolean> {
-  const db = await createClient();
-  const { data } = await db.auth.getUser();
-  return Boolean(data.user && await getSuperAdminRole(data.user.id));
+  return (await requireActiveSuperAdminSession()).ok;
 }
 
 export async function loadAiCostDashboard(): Promise<LoadResult> {

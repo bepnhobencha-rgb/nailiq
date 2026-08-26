@@ -25,6 +25,7 @@ import {
   rejectUnauthorizedInternalRequest,
 } from "../_shared/internalAuth.ts";
 import { supabaseSecretKey } from "../_shared/supabaseApiKeys.ts";
+import { requireSmsConsentClear } from "../_shared/smsConsentSuppression.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = supabaseSecretKey();
@@ -274,6 +275,13 @@ Deno.serve(async (req: Request) => {
   ) {
     console.error("[reschedule-sms] Twilio credentials not configured");
     return jsonError("SMS service not configured", 503);
+  }
+
+  const consent = await requireSmsConsentClear(db, bk.salon_id, toNumber);
+  if (!consent.allowed) {
+    return consent.reason === "consent_unavailable"
+      ? jsonError("SMS consent state unavailable", 503)
+      : jsonOk({ ok: true, skipped: true, reason: consent.reason });
   }
 
   let sid: string;

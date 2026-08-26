@@ -79,7 +79,7 @@ describe("compact phone Realtime config", () => {
     expect(prompt).toContain("Never speak a language outside that list");
   });
 
-  it("requires one real-menu upsell and rechecks availability after acceptance", () => {
+  it("allows at most one grounded real-menu upsell and rechecks availability after acceptance", () => {
     const prompt = buildPhoneSystemPrompt({
       ...ctx,
       services: [
@@ -105,12 +105,20 @@ describe("compact phone Realtime config", () => {
       ],
     }, "en", "+17780000000");
 
-    expect(prompt).toContain("Sales checkpoint — required once");
+    expect(prompt).toContain("Optional upsell checkpoint — at most once");
     expect(prompt).toContain("Manicure Shellac");
     expect(prompt).toContain("Mani-pedi W/ Shellac");
+    expect(prompt).toContain("matching non-empty category or explicit salon_details");
+    expect(prompt).toContain("exact Menu price label and total duration");
+    expect(prompt).toContain("added price/time only when both current and candidate fixed Menu values");
+    expect(prompt).toContain("Never auto-add or switch a service");
     expect(prompt).toContain("call get_available_slots AGAIN");
-    expect(prompt).toContain("Keep the tentative time only if it is returned");
+    expect(prompt).toContain("two-stage authoritative price confirmation again");
+    expect(prompt).toContain("Keep the tentative time only if returned");
+    expect(prompt).toContain("otherwise continue without mentioning it");
     expect(prompt).toContain("Never repeat the offer");
+    expect(prompt).not.toContain("upsell_accepted");
+    expect(prompt).not.toContain("lasts two to three weeks");
   });
 
   it("does not require an upsell when the salon disables it", () => {
@@ -119,7 +127,7 @@ describe("compact phone Realtime config", () => {
       "en",
       "+17780000000",
     );
-    expect(prompt).not.toContain("Sales checkpoint — required once");
+    expect(prompt).not.toContain("Optional upsell checkpoint — at most once");
   });
 
   it("delegates the approved Vietnamese farewell to the phone bridge", () => {

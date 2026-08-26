@@ -1,81 +1,48 @@
-import { NextRequest, NextResponse } from "next/server";
-import { looseServiceClient, type Row } from "@/shared/integrations/square/looseDb";
-import { noShowCardDecision } from "@/shared/integrations/square/noshow";
-import { resolvePaymentProvider } from "@/shared/integrations/payments";
-import { getStripeClient } from "@/shared/lib/stripe";
-import { isRateLimited, RATE_LIMIT_IDS } from "@/shared/lib/rateLimit";
-import { isOverRateLimit, clientIp } from "@/shared/lib/inAppRateLimit";
+import { NextResponse } from "next/server";
+
+import { createStripeSetupWithManagementCapability } from "@/shared/booking/bookingCardManagement";
+import { consumeBookingManagementRateLimit } from "@/shared/booking/bookingManagementRateLimit";
+import { readJsonObjectWithLimit } from "@/shared/security/readJsonObjectWithLimit";
+import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
 
 export const runtime = "nodejs";
 
-/**
- * POST /api/booking/stripe-setup-intent  Body: { bookingId }
- *
- * For a Stripe-provider salon where this booking must leave a card (new /
- * high-risk), creates a SetupIntent (save card, NO charge) and returns the
- * client_secret + publishable key + fee so the client can mount the Payment
- * Element (incl. Apple Pay / Google Pay one-tap). Returns { required:false }
- * whenever it's not applicable — so the client renders nothing.
- */
-export async function POST(req: NextRequest) {
-  let body: { bookingId?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ required: false });
+const PRIVATE_HEADERS = {
+  "Cache-Control": "private, no-store, max-age=0", Pragma: "no-cache",
+  "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex, nofollow",
+} as const;
+const json = (body: Record<string, unknown>, status = 200) =>
+  NextResponse.json(body, { status, headers: PRIVATE_HEADERS });
+
+/** Creates/replays one durable Stripe SetupIntent and returns its successor save token. */
+export async function POST(request: Request) {
+  if (!isSameOriginMutation(request)) return json({ ok: false, code: "forbidden" }, 403);
+  if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
+    return json({ ok: false, code: "invalid_request" }, 400);
   }
-  const bookingId = String(body.bookingId ?? "");
-  if (!bookingId) return NextResponse.json({ required: false });
-
-  // Anti card-testing — two layers: Vercel WAF rule (fail-open until created)
-  // AND an app-level DB limiter (enforces on any plan): 6/min per IP+booking.
-  const ip = clientIp(req);
-  if (
-    (await isRateLimited(RATE_LIMIT_IDS.cardSave, {
-      request: req,
-      rateLimitKey: `card-save:${bookingId}`,
-    })) ||
-    (await isOverRateLimit(`card-save:${ip}:${bookingId}`, 6, 60))
-  ) {
-    return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+  const body = await readJsonObjectWithLimit(request, 1024);
+  const token = typeof body?.token === "string" ? body.token.trim() : "";
+  const requestId = typeof body?.requestId === "string" ? body.requestId.trim() : "";
+  if (!token || !requestId) return json({ ok: false, code: "invalid_request" }, 400);
+  const rate = await consumeBookingManagementRateLimit({
+    request, tokenId: token, action: "card_manage", phase: "mutate",
+  });
+  if (rate !== "allowed") {
+    return json({ ok: false, code: rate === "limited" ? "rate_limited" : "management_unavailable" }, rate === "limited" ? 429 : 503);
   }
-
-  try {
-    const decision = await noShowCardDecision(bookingId);
-    if (!decision.required) return NextResponse.json({ required: false });
-
-    const db = looseServiceClient();
-    const { data } = await db
-      .from("bookings")
-      .select("salon_id")
-      .eq("id", bookingId)
-      .maybeSingle();
-    const salonId = String((data as Row | null)?.salon_id ?? "");
-    if (!salonId) return NextResponse.json({ required: false });
-
-    // Only the Stripe path uses this endpoint; Square uses square-noshow-config.
-    const provider = await resolvePaymentProvider(salonId);
-    if (!provider || provider.kind !== "stripe") {
-      return NextResponse.json({ required: false });
-    }
-    const stripe = getStripeClient();
-    if (!stripe) return NextResponse.json({ required: false });
-
-    const si = await stripe.setupIntents.create({
-      usage: "off_session", // card will be charged later only on a no-show
-      automatic_payment_methods: { enabled: true }, // enables Apple/Google Pay
-      metadata: { bookingId, purpose: "noshow_card_on_file" },
-    });
-
-    return NextResponse.json({
-      required: true,
-      clientSecret: si.client_secret,
-      publishableKey: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "",
-      feeCents: decision.feeCents,
-    });
-  } catch (e) {
-    console.error("[stripe-setup-intent]", e);
-    // Best-effort — never block the booking flow on the card step.
-    return NextResponse.json({ required: false });
-  }
+  const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.trim() ?? "";
+  if (!publishableKey) return json({ ok: false, code: "provider_configuration_invalid" }, 503);
+  const result = await createStripeSetupWithManagementCapability({ tokenId: token, requestId });
+  const status = result.ok ? 200
+    : result.code === "invalid_request" ? 400
+      : result.code === "invalid_token" || result.code === "expired_or_revoked" ? 404
+        : result.code === "idempotency_mismatch" || result.code === "in_flight" || result.code === "operation_conflict" ? 409
+          : 503;
+  return json({
+    ...result,
+    required: result.ok,
+    clientSecret: result.clientSecret,
+    finalizeToken: result.finalizeTokenId,
+    publishableKey: result.ok ? publishableKey : undefined,
+  } as Record<string, unknown>, status);
 }

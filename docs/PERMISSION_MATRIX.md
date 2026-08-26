@@ -139,6 +139,7 @@ Where a cell is **Partial**, an italic note explains bounds.
 | Edit booking _(any teammate's appointment)_ | Yes | Yes | Yes | Yes | No |
 | Edit **past** booking _(after the appointment end time)_ | Yes | Yes | Yes | No | No |
 | Cancel booking | Yes | Yes | Yes | Yes | No |
+| Refund the remaining deposit on a cancelled booking | Yes | Yes | No | No | No |
 | Mark no-show | Yes | Yes | Yes | Yes | No |
 | Reschedule booking | Yes | Yes | Yes | Yes | No |
 | Complete booking | Yes | Yes | Yes | Yes | No |

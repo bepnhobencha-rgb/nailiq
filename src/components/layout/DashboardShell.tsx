@@ -1,6 +1,7 @@
 "use client";
 
 import { type ReactNode } from "react";
+import { useSelectedLayoutSegment } from "next/navigation";
 import {
   DashboardSidebar,
   type ReleaseFeatureMap,
@@ -14,6 +15,10 @@ import { PresenceHeartbeat } from "@/components/layout/PresenceHeartbeat";
 import { useSidebarCollapsed } from "@/shared/lib/useSidebarCollapsed";
 import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
 import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
+import {
+  shouldUseGuidedFocusMode,
+  type GuidedSetupStage,
+} from "@/shared/dashboard/guidedSetup";
 
 type Props = {
   slug: string;
@@ -42,6 +47,8 @@ type Props = {
   userEmail?: string | null;
   /** Salon DB id — passed to PresenceHeartbeat to tag the presence row. */
   salonId?: string | null;
+  /** Focus the shell for Guided Setup and its first post-setup Action Center. */
+  guidedSetupStage?: GuidedSetupStage;
 };
 
 /**
@@ -71,6 +78,7 @@ export function DashboardShell({
   releaseFeatures,
   userEmail,
   salonId,
+  guidedSetupStage = "disabled",
 }: Props) {
   // Single hook instance owns the collapse state. We pass both the
   // value AND the toggle to DashboardSidebar so its toggle button
@@ -80,59 +88,74 @@ export function DashboardShell({
   // CSS variable never updated and the aside width stayed stuck.
   const { collapsed, toggle } = useSidebarCollapsed();
   const sidebarWidth = collapsed ? "4rem" : "15rem";
+  const activeSegment = useSelectedLayoutSegment();
+  const guidedFocusMode = shouldUseGuidedFocusMode(
+    guidedSetupStage,
+    activeSegment,
+  );
 
   return (
     <div
       className="min-h-dvh bg-nq-bg"
       style={{ ["--nq-sidebar-w" as string]: sidebarWidth }}
+      data-guided-setup-mode={guidedFocusMode ? "true" : "false"}
+      data-guided-setup-stage={guidedSetupStage}
     >
       <PwaRegister />
-      {salonId && <PresenceHeartbeat salonId={salonId} />}
-      <DashboardSidebar
-        slug={slug}
-        role={role}
-        salonName={salonName}
-        walkinQueueCount={walkinQueueCount}
-        waitlistCount={waitlistCount}
-        overdueCount={overdueCount}
-        pendingApprovalsCount={pendingApprovalsCount}
-        salons={salons}
-        collapsed={collapsed}
-        onToggleCollapsed={toggle}
-        subscriptionPlan={subscriptionPlan}
-        releaseFeatures={releaseFeatures}
-        userEmail={userEmail}
-      />
+      {!guidedFocusMode && salonId ? <PresenceHeartbeat salonId={salonId} /> : null}
+      {!guidedFocusMode ? (
+        <DashboardSidebar
+          slug={slug}
+          role={role}
+          salonName={salonName}
+          walkinQueueCount={walkinQueueCount}
+          waitlistCount={waitlistCount}
+          overdueCount={overdueCount}
+          pendingApprovalsCount={pendingApprovalsCount}
+          salons={salons}
+          collapsed={collapsed}
+          onToggleCollapsed={toggle}
+          subscriptionPlan={subscriptionPlan}
+          releaseFeatures={releaseFeatures}
+          userEmail={userEmail}
+        />
+      ) : null}
       <main
         data-dashboard-main
         // Padding-left tracks the sidebar width via the CSS variable.
         // Adding a transition makes the grid slide rather than snap
         // when the user toggles collapse — same easing tokens the
         // receptionist motion uses.
-        className="min-h-dvh pb-16 transition-[padding-left] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)] xl:pb-0 xl:pl-[var(--nq-sidebar-w)]"
+        className={
+          guidedFocusMode
+            ? "min-h-dvh"
+            : "min-h-dvh pb-16 transition-[padding-left] duration-[var(--duration-nq-base)] ease-[var(--ease-nq-out)] xl:pb-0 xl:pl-[var(--nq-sidebar-w)]"
+        }
       >
-        <DashboardTopBar slug={slug} />
+        {!guidedFocusMode ? <DashboardTopBar slug={slug} /> : null}
         {/* The view controls (refresh + fullscreen) live here, fixed top-right
             on every page. Fullscreen now targets the whole document so the
             sidebar/nav + portaled drawers all stay usable. */}
         <div id="nq-dashboard-content">
-          <DashboardViewControls />
+          {!guidedFocusMode ? <DashboardViewControls /> : null}
           {children}
         </div>
       </main>
-      <MobileBottomNav
-        slug={slug}
-        walkinQueueCount={walkinQueueCount}
-        waitlistCount={waitlistCount}
-        overdueCount={overdueCount}
-        pendingApprovalsCount={pendingApprovalsCount}
-        role={role}
-        releaseFeatures={releaseFeatures}
-      />
+      {!guidedFocusMode ? (
+        <MobileBottomNav
+          slug={slug}
+          walkinQueueCount={walkinQueueCount}
+          waitlistCount={waitlistCount}
+          overdueCount={overdueCount}
+          pendingApprovalsCount={pendingApprovalsCount}
+          role={role}
+          releaseFeatures={releaseFeatures}
+        />
+      ) : null}
       {/* Coco — in-admin AI assistant. Gated by the admin_copilot release
           feature; nail_tech is view-only so the operational copilot is hidden
           for them. The API route re-checks both (defence in depth). */}
-      {releaseFeatures?.admin_copilot && role !== "nail_tech" && (
+      {!guidedFocusMode && releaseFeatures?.admin_copilot && role !== "nail_tech" && (
         <AdminCopilot
           slug={slug}
           role={role}

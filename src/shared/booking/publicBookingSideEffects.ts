@@ -102,7 +102,7 @@ export async function runPublicBookingSideEffects(args: {
       }
       if (s.healthAck) upd.health_ack_at = new Date().toISOString();
       if (s.subtotalCents != null) upd.subtotal_cents = s.subtotalCents;
-      if (s.taxAmountCents != null && s.taxAmountCents > 0) upd.tax_amount_cents = s.taxAmountCents;
+      if (s.taxAmountCents != null) upd.tax_amount_cents = s.taxAmountCents;
       if (Object.keys(upd).length > 0) {
         jobs.push(
           (async () => {

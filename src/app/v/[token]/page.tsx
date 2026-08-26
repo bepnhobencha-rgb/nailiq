@@ -2,9 +2,9 @@
 // No auth required. Decodes JWT token, shows nail photo + rating UI.
 
 import type { Metadata } from "next";
-import { jwtVerify } from "jose";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import PhotoViewClient from "./_components/PhotoViewClient";
+import { verifyPhotoCustomerToken } from "@/shared/photos/photoCustomerToken";
 
 type Props = { params: Promise<{ token: string }> };
 
@@ -14,23 +14,8 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-type JwtPayload = {
-  photo_id: string;
-  iat?: number;
-  exp?: number;
-};
-
 async function decodePhotoToken(token: string): Promise<string | null> {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) return null;
-  try {
-    const secretBytes = new TextEncoder().encode(secret);
-    const { payload } = await jwtVerify(token, secretBytes);
-    const photoId = (payload as unknown as JwtPayload).photo_id;
-    return typeof photoId === "string" ? photoId : null;
-  } catch {
-    return null;
-  }
+  return (await verifyPhotoCustomerToken(token))?.photoId ?? null;
 }
 
 export default async function PhotoViewPage({ params }: Props) {

@@ -4,12 +4,12 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
+import { loadSalonVipPhones } from "@/shared/dashboard/salonVipStatus";
 
 /**
  * "Top người dẫn nhóm" — the salon's biggest group organizers (by guests
- * brought) + a one-tap "Tặng VIP". Owner-only. The VIP write upserts
- * client_profiles by phone so it works even for a host who has no profile row
- * yet (e.g. an old group organizer who only ever booked as a group).
+ * brought) + a one-tap "Tặng VIP". Owner-only. VIP recognition is stored on
+ * the salon-client relationship, never the global customer identity.
  */
 
 export type TopHost = {
@@ -59,12 +59,23 @@ export async function loadTopHosts(slug: string): Promise<LoadTopHostsResult> {
     return { ok: false, error: "server_error" };
   }
 
-  const hosts: TopHost[] = (data ?? [])
-    .filter((r) => typeof r.phone === "string" && r.phone.length > 0)
+  const sourceRows = (data ?? []).filter(
+    (r) => typeof r.phone === "string" && r.phone.length > 0,
+  );
+  let vipPhones = new Set<string>();
+  try {
+    vipPhones = await loadSalonVipPhones(
+      ctx.salon.id,
+      sourceRows.map((row) => String(row.phone)),
+    );
+  } catch (vipError) {
+    console.error("[loadTopHosts] salon vip status", vipError);
+  }
+  const hosts: TopHost[] = sourceRows
     .map((r) => ({
       phone: String(r.phone),
       name: r.name?.trim() || null,
-      isVip: r.is_vip === true,
+      isVip: vipPhones.has(String(r.phone)),
       groupsOrganized: Number(r.groups_organized ?? 0),
       guestsBrought: Number(r.guests_brought ?? 0),
     }));
@@ -93,19 +104,28 @@ export async function setHostVip(
     return { ok: false, error: "server_error" };
   }
 
-  // Upsert by phone so a host with no profile row still gets the VIP flag.
-  // Only phone + is_vip are written: a brand-new row gets a null name (the
-  // directory falls back to the booking name) and an existing row keeps its
-  // real name untouched.
-  const { error } = await admin
+  const { data: profile, error: profileError } = await admin
     .from("client_profiles")
     .upsert(
-      { phone: canonical, is_vip: isVip, updated_at: new Date().toISOString() } as never,
+      { phone: canonical, updated_at: new Date().toISOString() } as never,
       { onConflict: "phone" },
-    );
+    )
+    .select("id")
+    .maybeSingle();
 
+  const profileId = (profile as { id?: string | null } | null)?.id;
+  if (profileError || !profileId) {
+    console.error("[setHostVip] profile upsert", profileError);
+    return { ok: false, error: "server_error" };
+  }
+  const { error } = await admin.from("salon_clients" as never).upsert({
+    salon_id: ctx.salon.id,
+    client_profile_id: profileId,
+    is_vip: isVip,
+    source: "group_host",
+  } as never, { onConflict: "salon_id,client_profile_id" });
   if (error) {
-    console.error("[setHostVip] upsert", error);
+    console.error("[setHostVip] salon relationship", error);
     return { ok: false, error: "server_error" };
   }
   return { ok: true, isVip };

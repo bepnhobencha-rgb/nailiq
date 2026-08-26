@@ -8,6 +8,7 @@ import { dayKeyFromLocalDate } from "@/shared/booking/dayKeyFromDate";
 import { getAvailableTimeSlotsCount } from "@/shared/booking/getAvailableTimeSlots";
 import { parseOpeningHours } from "@/shared/dashboard/openingHoursDefaults";
 import { cn } from "@/shared/lib/cn";
+import { salonTodayCalendarDate } from "@/shared/booking/salonCalendarDate";
 
 /**
  * Month-grid date picker shared between the individual booking flow
@@ -66,6 +67,7 @@ function monthHeaderLabel(d: Date): string {
 export function BookingCalendarGrid({
   t,
   salonId,
+  salonTimezone,
   openingHoursRaw,
   closedDateYmdSet,
   staff,
@@ -77,6 +79,7 @@ export function BookingCalendarGrid({
 }: {
   t: BookingMessages;
   salonId: string;
+  salonTimezone: string;
   openingHoursRaw: unknown | null;
   closedDateYmdSet: ReadonlySet<string>;
   staff: readonly BookingStaffItem[];
@@ -94,7 +97,10 @@ export function BookingCalendarGrid({
   windowDays: number;
   onSelectDate: (d: Date) => void;
 }) {
-  const todayStart = useMemo(() => startOfLocalDay(new Date()), []);
+  const todayStart = useMemo(
+    () => startOfLocalDay(salonTodayCalendarDate(salonTimezone)),
+    [salonTimezone],
+  );
   const windowEnd = useMemo(() => {
     const x = new Date(todayStart);
     x.setDate(todayStart.getDate() + Math.max(1, windowDays) - 1);

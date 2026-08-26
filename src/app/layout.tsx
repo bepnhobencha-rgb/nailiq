@@ -15,6 +15,7 @@ import "@fontsource/playfair-display/700-italic.css";
 import { getSiteUrl } from "@/shared/seo/site";
 import { UserLanguageProvider } from "@/shared/lib/UserLanguageContext";
 import { resolveUserLanguage } from "@/shared/i18n/user/resolveUserLanguage";
+import { AnalyticsConsentManager } from "@/components/analytics/AnalyticsConsentManager";
 import "./globals.css";
 
 const siteUrl = getSiteUrl();
@@ -94,6 +95,9 @@ export default async function RootLayout({
       <body className="min-h-dvh min-w-0 flex flex-col overflow-x-hidden">
         <UserLanguageProvider initialLanguage={initialLanguage}>
           {children}
+          <AnalyticsConsentManager
+            measurementId={process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID}
+          />
         </UserLanguageProvider>
       </body>
     </html>

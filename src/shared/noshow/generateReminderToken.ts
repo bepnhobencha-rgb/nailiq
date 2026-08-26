@@ -1,15 +1,30 @@
-import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import {
+  mintBookingManagementCapability,
+  type IndividualBookingManagementAction,
+} from "@/shared/booking/bookingManagementCapabilities";
 
-/** TTL: 48 hours so the token covers both 24 h and 3 h reminders. */
-const TOKEN_TTL_MS = 48 * 60 * 60 * 1000;
+/** Safe fallback only. Callers rendering appointment-long links must pass the
+ * exact required expiry; the DB enforces each action's appointment/server cap. */
+const FALLBACK_TTL_MS = 4 * 60 * 1000;
+
+/** Link capabilities are intentionally independent; confirming cannot consume
+ * reschedule, cancel, status or card-management authority. */
+export const REMINDER_MANAGEMENT_ACTIONS = [
+  "confirm",
+  "reschedule",
+  "cancel",
+  "status",
+  "card_manage",
+] as const satisfies readonly IndividualBookingManagementAction[];
 
 export type ReminderToken = {
   id: string;
   expiresAt: string;
+  action: IndividualBookingManagementAction;
 };
 
 /**
- * Creates (or reuses the unexpired) reminder token for a booking.
+ * Creates (or reuses) an action-scoped management capability for a booking.
  * Returns null if the booking isn't found or DB write fails.
  *
  * `opts.expiresAt` overrides the default 48h TTL — used by the booking
@@ -20,35 +35,20 @@ export type ReminderToken = {
 export async function generateReminderToken(
   bookingId: string,
   salonId: string,
-  opts?: { expiresAt?: string },
+  opts: { action: IndividualBookingManagementAction; expiresAt?: string },
 ): Promise<ReminderToken | null> {
-  const supabase = createServiceRoleClient();
-
-  // Reuse unexpired token if one already exists for this booking
-  const { data: existing } = await supabase
-    .from("booking_reminder_tokens" as never)
-    .select("id, expires_at")
-    .eq("booking_id", bookingId)
-    .is("used_at", null)
-    .gt("expires_at", new Date().toISOString())
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (existing) {
-    const row = existing as { id: string; expires_at: string };
-    return { id: row.id, expiresAt: row.expires_at };
-  }
-
   const expiresAt =
-    opts?.expiresAt ?? new Date(Date.now() + TOKEN_TTL_MS).toISOString();
-  const { data, error } = await supabase
-    .from("booking_reminder_tokens" as never)
-    .insert({ booking_id: bookingId, salon_id: salonId, expires_at: expiresAt })
-    .select("id, expires_at")
-    .single();
-
-  if (error || !data) return null;
-  const row = data as { id: string; expires_at: string };
-  return { id: row.id, expiresAt: row.expires_at };
+    opts.expiresAt ?? new Date(Date.now() + FALLBACK_TTL_MS).toISOString();
+  const minted = await mintBookingManagementCapability({
+    bookingId,
+    salonId,
+    action: opts.action,
+    minExpiresAt: expiresAt,
+  });
+  if (!minted.ok) return null;
+  return {
+    id: minted.capability.tokenId,
+    expiresAt: minted.capability.expiresAt,
+    action: minted.capability.action,
+  };
 }

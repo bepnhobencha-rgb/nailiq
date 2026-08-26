@@ -26,6 +26,7 @@ import {
   normalizeRegisterPhone,
   REGISTER_INVALID_PHONE_HINT_EN,
 } from "@/shared/register/phone";
+import { consumePublicServerActionRateLimit } from "@/shared/security/publicServerActionRateLimit";
 
 const INVALID_PHONE_MSG = REGISTER_INVALID_PHONE_HINT_EN;
 
@@ -665,6 +666,22 @@ export async function sendEmailMagicLink(
   const email = emailRaw.trim().toLowerCase();
   if (!email || !email.includes("@") || email.length > 254) {
     return { success: false, error: "Please enter a valid email address." };
+  }
+
+  const rate = await consumePublicServerActionRateLimit({
+    scope: "auth-magic-link",
+    identity: email,
+    ipLimits: [[10, 3_600]],
+    identityLimits: [[5, 3_600]],
+  });
+  if (rate !== "allowed") {
+    return {
+      success: false,
+      error:
+        rate === "limited"
+          ? "Too many requests. Try again later."
+          : "Could not send magic link. Try again.",
+    };
   }
 
   const siteUrl =

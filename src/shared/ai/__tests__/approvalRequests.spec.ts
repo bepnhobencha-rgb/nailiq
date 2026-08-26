@@ -17,8 +17,8 @@ const mocks = vi.hoisted(() => ({
     payload: {} as Record<string, unknown>,
     urgency: "normal",
     status: "pending",
-    approve_token: "approve-token",
-    decline_token: "decline-token",
+    approve_token: "a".repeat(64),
+    decline_token: "b".repeat(64),
     expires_at: "2099-01-01T00:00:00.000Z",
     notified_at: null,
     reminded_at: null,
@@ -52,7 +52,7 @@ vi.mock("@/shared/lib/supabase/serviceRole", () => ({
       if (table === "approval_requests") {
         return {
           select: () => ({
-            or: () => ({
+            eq: () => ({
               maybeSingle: async () => ({ data: mocks.approval }),
             }),
           }),
@@ -142,10 +142,10 @@ describe("processDecision", () => {
       error: null,
     });
 
-    const result = await processDecision("approve-token", "approved");
+    const result = await processDecision("a".repeat(64), "approved");
 
     expect(mocks.rpc).toHaveBeenCalledWith("decide_ai_approval_request", {
-      p_token: "approve-token",
+      p_token: "a".repeat(64),
       p_decision: "approved",
     });
     expect(result).toEqual({
@@ -170,7 +170,7 @@ describe("processDecision", () => {
       error: null,
     });
 
-    const result = await processDecision("approve-token", "approved");
+    const result = await processDecision("a".repeat(64), "approved");
 
     expect(result.ok).toBe(true);
     expect(result.execution?.jobId).toBe(
@@ -186,7 +186,7 @@ describe("processDecision", () => {
     });
 
     await expect(
-      processDecision("approve-token", "approved"),
+      processDecision("a".repeat(64), "approved"),
     ).resolves.toMatchObject({
       ok: false,
       salonSlug: "tech-nails",
@@ -202,7 +202,7 @@ describe("processDecision", () => {
     });
 
     await expect(
-      processDecision("approve-token", "approved"),
+      processDecision("a".repeat(64), "approved"),
     ).resolves.toMatchObject({
       ok: false,
       salonSlug: "tech-nails",
@@ -213,6 +213,32 @@ describe("processDecision", () => {
 });
 
 describe("approval display boundary", () => {
+  it("exposes only bounded EN/VI reactivation draft fields to the owner UI", () => {
+    const display = toApprovalDisplayRow({
+      ...mocks.approval,
+      action_type: "bulk_message",
+      payload: {
+        proposal_source: "reactivation_campaign",
+        campaign_mode: "dashboard_draft_only",
+        notification_mode: "dashboard_only_no_email",
+        dispatch_enabled: false,
+        reactivation_kind: "winback",
+        title: "Win-back campaign draft",
+        message_en: "We would love to welcome you back when you are ready.",
+        message_vi: "Tiệm rất mong được đón bạn quay lại khi bạn thấy thuận tiện.",
+        recipients: [{ phone: "+16045550101" }],
+      },
+    } as ApprovalRow);
+
+    expect(display.reactivation_campaign_draft).toEqual({
+      kind: "winback",
+      title: "Win-back campaign draft",
+      message_en: "We would love to welcome you back when you are ready.",
+      message_vi: "Tiệm rất mong được đón bạn quay lại khi bạn thấy thuận tiện.",
+    });
+    expect(JSON.stringify(display)).not.toContain("+16045550101");
+  });
+
   it("rebuilds a minimal owner row without raw payload or internal fields", () => {
     const display = toApprovalDisplayRow({
       ...mocks.approval,

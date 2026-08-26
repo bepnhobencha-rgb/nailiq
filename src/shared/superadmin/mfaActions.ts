@@ -1,7 +1,6 @@
 "use server";
 
-import { createClient } from "@/shared/lib/supabase/server";
-import { getSuperAdminRole } from "@/shared/lib/superadmin";
+import { requireActiveSuperAdminSession } from "@/shared/auth/requireActiveSuperAdminSession";
 
 /**
  * TOTP two-factor for the superadmin panel — built on Supabase's native MFA.
@@ -15,14 +14,8 @@ import { getSuperAdminRole } from "@/shared/lib/superadmin";
  */
 
 async function requireSuperadmin() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-  const role = await getSuperAdminRole(user.id);
-  if (!role) return null;
-  return supabase;
+  const access = await requireActiveSuperAdminSession();
+  return access.ok ? access.supabase : null;
 }
 
 export type MfaStatus =

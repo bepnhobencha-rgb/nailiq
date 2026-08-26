@@ -1,6 +1,8 @@
 "use server";
 
+import { createHash } from "node:crypto";
 import { cookies } from "next/headers";
+import { cache } from "react";
 import { isOwner, isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { redirect } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/server";
@@ -23,7 +25,6 @@ import {
 } from "@/shared/lib/salonMemberRole";
 import { isOpeningHoursCustomized } from "@/shared/dashboard/openingHoursDefaults";
 import {
-  DASHBOARD_BOOKING_SELECT,
   mapDashboardBookingRow,
   type BookingRowDb,
 } from "@/shared/dashboard/dashboardBookingMap";
@@ -42,7 +43,11 @@ import {
   type DensityLevel,
 } from "@/shared/dashboard/dashboardDensity";
 import type { BookingStatus, SalonDashboardBooking } from "@/shared/types";
-import { ACTIVE_GRID_STATUSES } from "@/shared/types";
+import { requireActiveAuthSession } from "@/shared/auth/requireActiveAuthSession";
+import {
+  loadSalonMemberOperationalProfile,
+  loadSalonOwnerAdminSettings,
+} from "@/shared/dashboard/salonOwnerAdminSettings";
 
 /** Single source of truth for the salon row shape every dashboard
  *  surface needs. Adding `timezone` + dashboard config fields here
@@ -57,7 +62,13 @@ import { ACTIVE_GRID_STATUSES } from "@/shared/types";
  *  at the time of writing; the column itself exists. Here we read
  *  the value through `as { … }` casts at the call site instead. */
 const SALON_DASHBOARD_SELECT =
-  "id, name, slug, phone, email, address, salon_phone, opening_hours, profile_complete, booking_closed_dates, closure_notice, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, subscription_plan, plan_override, feature_flags, voice_ai_enabled, basic_mode_forced, walkin_auto_assign, queue_display_mode, staff_notification_settings, auto_no_show_minutes, vertical";
+  "id, name, slug, address, salon_phone, opening_hours, profile_complete, booking_closed_dates, closure_notice, timezone, dashboard_modules, dashboard_preset, dashboard_density, currency_code, subscription_plan, plan_override, feature_flags, voice_ai_enabled, basic_mode_forced, walkin_auto_assign, queue_display_mode, default_notification_locale, auto_no_show_minutes, vertical";
+
+// The test/demo cookie path uses a service-role client and represents an owner.
+// It may augment the operational row with the same two management values that
+// authenticated owners/admins receive through the curated RPC below.
+const SALON_DASHBOARD_DEMO_SELECT =
+  `${SALON_DASHBOARD_SELECT}, email, staff_notification_settings, client_segment_settings, noshow_protection_enabled, winback_enabled, email_links_enabled`;
 
 type SalonRow = {
   id: string;
@@ -91,7 +102,7 @@ type SalonRow = {
    * registry defaults. No behavior change in PR1; consumed in PR2+. */
   subscription_plan?: string | null;
   plan_override?: string | null;
-  feature_flags?: unknown;
+  feature_flags?: Record<string, unknown> | null;
   voice_ai_enabled?: boolean | null;
   /** `salons.basic_mode_forced` — when true, Basic Mode is auto-enabled and
    *  locked for the Receptionist board. Flows to `preFetchedSalon`. */
@@ -99,6 +110,11 @@ type SalonRow = {
   walkin_auto_assign?: boolean | null;
   queue_display_mode?: string | null;
   staff_notification_settings?: unknown;
+  client_segment_settings?: unknown;
+  noshow_protection_enabled?: boolean | null;
+  winback_enabled?: boolean | null;
+  email_links_enabled?: boolean | null;
+  default_notification_locale?: unknown;
   auto_no_show_minutes?: number | null;
   /** Business vertical slug (e.g. "nail_salon", "head_spa"). */
   vertical?: string | null;
@@ -135,7 +151,7 @@ async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
 
   const { data: salon, error } = await admin
     .from("salons")
-    .select(SALON_DASHBOARD_SELECT)
+    .select(SALON_DASHBOARD_DEMO_SELECT)
     .eq("slug", slug)
     .maybeSingle();
 
@@ -146,6 +162,10 @@ async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
   };
   return {
     ...row,
+    phone:
+      row.salon_phone === undefined || row.salon_phone === null
+        ? ""
+        : String(row.salon_phone).trim(),
     address:
       row.address === undefined || row.address === null
         ? null
@@ -167,7 +187,7 @@ async function getSalonViaDemoCookie(slug: string): Promise<SalonRow | null> {
 }
 
 /** Authorized dashboard viewer (logged-in salon member or demo cookie slug match). */
-export async function resolveSalonForDashboard(
+async function resolveSalonForDashboardCore(
   slug: string,
 ): Promise<
   | {
@@ -220,6 +240,77 @@ export async function resolveSalonForDashboard(
   return null;
 }
 
+type ResolvedDashboardSalon = Awaited<
+  ReturnType<typeof resolveSalonForDashboardCore>
+>;
+
+// In-flight only: concurrent documents carrying the exact same Supabase auth
+// cookie and slug share one active-session + membership proof. The key stores
+// only a SHA-256 digest, and the promise is removed as soon as it settles, so
+// this does not create a post-revocation cache window or mix tenant sessions.
+const dashboardAuthorizationFlights = new Map<
+  string,
+  Promise<ResolvedDashboardSalon>
+>();
+
+async function dashboardAuthorizationFlightKey(
+  slug: string,
+): Promise<string | null> {
+  const cookieStore = await cookies();
+  if (typeof cookieStore.getAll !== "function") return null;
+  const authCookies = cookieStore
+    .getAll()
+    .filter(
+      ({ name, value }) =>
+        name.startsWith("sb-") && name.includes("-auth-token") && value,
+    )
+    .sort((left, right) => left.name.localeCompare(right.name));
+  if (authCookies.length === 0) return null;
+  return createHash("sha256")
+    .update(slug)
+    .update("\0")
+    .update(
+      authCookies.map(({ name, value }) => `${name}=${value}`).join("\0"),
+    )
+    .digest("hex");
+}
+
+async function resolveSalonForDashboardUncached(
+  slug: string,
+): Promise<ResolvedDashboardSalon> {
+  const flightKey = await dashboardAuthorizationFlightKey(slug);
+  if (!flightKey || dashboardAuthorizationFlights.size >= 512) {
+    return resolveSalonForDashboardCore(slug);
+  }
+
+  const existing = dashboardAuthorizationFlights.get(flightKey);
+  if (existing) return existing;
+
+  const flight = resolveSalonForDashboardCore(slug);
+  dashboardAuthorizationFlights.set(flightKey, flight);
+  try {
+    return await flight;
+  } finally {
+    if (dashboardAuthorizationFlights.get(flightKey) === flight) {
+      dashboardAuthorizationFlights.delete(flightKey);
+    }
+  }
+}
+
+// A dashboard page asks for several authorized data projections in parallel.
+// Their authorization boundary is identical, so deduplicate that boundary
+// within the current React server render. React cache is request/render scoped:
+// it does not persist a member result across users or across requests.
+const resolveSalonForDashboardInRender = cache(
+  resolveSalonForDashboardUncached,
+);
+
+export async function resolveSalonForDashboard(
+  slug: string,
+): ReturnType<typeof resolveSalonForDashboardUncached> {
+  return resolveSalonForDashboardInRender(slug);
+}
+
 async function getSalonIfMember(
   slug: string,
 ): Promise<
@@ -232,10 +323,12 @@ async function getSalonIfMember(
   | null
 > {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
+  const session = await requireActiveAuthSession(supabase);
+  if (!session.ok) {
+    console.warn("[dashboard-auth] active session unavailable", session.code);
+    return null;
+  }
+  const user = session.user;
 
   // Auth user's email — may come from Google OAuth, Supabase email signup,
   // or be null/empty for phone-only OTP users. Trim and coerce empty → null
@@ -250,39 +343,70 @@ async function getSalonIfMember(
     .select("salon_id, role")
     .eq("user_id", user.id);
 
-  if (memErr || !members?.length) return null;
+  if (memErr || !members?.length) {
+    console.warn(
+      "[dashboard-auth] membership lookup unavailable",
+      memErr?.code ?? "not_found",
+    );
+    return null;
+  }
 
   const salonIds = members.map((m) => String(m.salon_id));
 
-  const { data: salon, error: salErr } = await supabase
-    .from("salons")
-    .select(SALON_DASHBOARD_SELECT)
+  const { data: salonLookup, error: salErr } = await supabase
+    .from("salon_member_operational_profiles" as never)
+    .select("id, slug")
     .eq("slug", slug)
     .in("id", salonIds)
     .maybeSingle();
 
-  if (salErr || !salon) return null;
+  const lookup = salonLookup as { id?: unknown; slug?: unknown } | null;
+  if (salErr || !lookup?.id || String(lookup.slug ?? "") !== slug) {
+    console.warn(
+      "[dashboard-auth] salon lookup unavailable",
+      salErr?.code ?? "not_found",
+    );
+    return null;
+  }
 
-  const row = salon as SalonRow & {
-    email?: unknown;
+  const operational = await loadSalonMemberOperationalProfile(
+    supabase,
+    String(lookup.id),
+  );
+  if (!operational.ok) {
+    console.warn(
+      "[dashboard-auth] operational profile unavailable",
+      operational.code,
+    );
+    return null;
+  }
+  const row = operational.salon as SalonRow & {
     profile_complete?: unknown;
   };
+  if (String(row.id) !== String(lookup.id) || row.slug !== slug) return null;
 
-  // Multi-salon: pick the membership row whose `salon_id` matches the salon
-  // we just resolved (the URL slug). The earlier `.in("id", salonIds)` already
-  // confines `salon` to one of the user's memberships — so a match always
-  // exists. Default to "owner" defensively if the row is somehow missing.
-  const matched = members.find(
-    (m) => String(m.salon_id) === String(row.id),
-  );
-  const role = normalizeSalonMemberRole(matched?.role);
+  // The RPC role is authoritative and is read under the same membership lock
+  // as the operational snapshot.
+  const role = normalizeSalonMemberRole(operational.role);
+  const managementSettings = isOwnerOrAdmin(role)
+    ? await loadSalonOwnerAdminSettings(supabase, String(row.id))
+    : null;
+  const privileged = managementSettings?.ok
+    ? managementSettings.settings
+    : null;
 
   return {
     salon: {
       id: row.id,
       name: row.name,
       slug: row.slug,
-      phone: row.phone,
+      // `salons.phone` is the owner's legacy sign-up phone and is deliberately
+      // absent from the member projection. Dashboard display uses the public
+      // business phone instead.
+      phone:
+        row.salon_phone === undefined || row.salon_phone === null
+          ? ""
+          : String(row.salon_phone).trim(),
       address:
         row.address === undefined || row.address === null
           ? null
@@ -297,9 +421,9 @@ async function getSalonIfMember(
       closure_notice:
         (row as { closure_notice?: unknown }).closure_notice ?? null,
       email:
-        row.email === undefined || row.email === null
+        privileged?.email === undefined || privileged.email === null
           ? null
-          : String(row.email).trim() || null,
+          : String(privileged.email).trim() || null,
       profile_complete: !!row.profile_complete,
       timezone:
         typeof row.timezone === "string" ? row.timezone.trim() : "",
@@ -319,7 +443,13 @@ async function getSalonIfMember(
       walkin_auto_assign: row.walkin_auto_assign ?? null,
       queue_display_mode: row.queue_display_mode ?? null,
       staff_notification_settings: row.staff_notification_settings ?? null,
+      client_segment_settings: row.client_segment_settings ?? null,
+      noshow_protection_enabled: row.noshow_protection_enabled === true,
+      winback_enabled: row.winback_enabled !== false,
+      email_links_enabled: row.email_links_enabled !== false,
+      default_notification_locale: row.default_notification_locale ?? null,
       auto_no_show_minutes: row.auto_no_show_minutes ?? null,
+      vertical: typeof row.vertical === "string" ? row.vertical : null,
     },
     role,
     viewerEmail,
@@ -344,6 +474,8 @@ export type LoadSalonDashboardResult =
         profile_complete: boolean;
         timezone: string;
         vertical: string | null;
+        /** Per-salon release overrides used by server-side dashboard gates. */
+        feature_flags: unknown | null;
       };
       setup: {
         services_count: number;
@@ -370,6 +502,54 @@ export type LoadSalonDashboardResult =
     }
   | { ok: false; error: "unauthorized" | "server_error" };
 
+type DashboardProjectionResult = {
+  data: unknown;
+  error: unknown;
+};
+
+// In-flight only and keyed by the already-authorized tenant plus exact UTC
+// window. Concurrent documents for one dashboard share the same read-only
+// service projection, but the result is removed immediately when it settles so
+// booking changes are visible on the next request.
+const dashboardProjectionFlights = new Map<
+  string,
+  Promise<DashboardProjectionResult>
+>();
+
+async function loadDashboardProjection(input: {
+  salonId: string;
+  from: string;
+  to: string;
+}): Promise<DashboardProjectionResult> {
+  const key = JSON.stringify([input.salonId, input.from, input.to]);
+  const existing = dashboardProjectionFlights.get(key);
+  if (existing) return existing;
+
+  const load = async (): Promise<DashboardProjectionResult> => {
+    const supabase = createServiceRoleClient();
+    const result = await supabase.rpc(
+      "load_salon_dashboard_projection" as never,
+      {
+        p_salon_id: input.salonId,
+        p_from: input.from,
+        p_to: input.to,
+      } as never,
+    );
+    return { data: result.data, error: result.error };
+  };
+  if (dashboardProjectionFlights.size >= 512) return load();
+
+  const flight = load();
+  dashboardProjectionFlights.set(key, flight);
+  try {
+    return await flight;
+  } finally {
+    if (dashboardProjectionFlights.get(key) === flight) {
+      dashboardProjectionFlights.delete(key);
+    }
+  }
+}
+
 export async function loadSalonOwnerDashboard(
   slug: string,
 ): Promise<LoadSalonDashboardResult> {
@@ -381,11 +561,13 @@ export async function loadSalonOwnerDashboard(
   const { salon, kind, role, viewerEmail } = resolved;
   const demoMode = kind === "demo_cookie";
 
-  const supabase =
-    kind === "demo_cookie"
-      ? createServiceRoleClient()
-      : await createClient();
-
+  // The projection is intentionally service-role-only because it is a
+  // SECURITY DEFINER function that accepts a salon id. The membership/demo
+  // boundary above must resolve first; only then may this server action use
+  // the internal client for the already-authorized salon. Calling this RPC
+  // through the browser session would either fail its ACL or, on PostgreSQL
+  // 17.6 behind PostgREST, can terminate the backend instead of returning a
+  // normal permission error.
   const from = new Date();
   from.setDate(from.getDate() - 3);
   from.setHours(0, 0, 0, 0);
@@ -393,41 +575,41 @@ export async function loadSalonOwnerDashboard(
   to.setDate(to.getDate() + 7);
   to.setHours(23, 59, 59, 999);
 
-  const { data: bookingRows, error: bookingsErr } = await supabase
-    .from("bookings")
-    .select(DASHBOARD_BOOKING_SELECT)
-    .eq("salon_id", salon.id)
-    /** Excludes `waiting` (walk-in queue) and `cancelled`; keeps `completed` for today stats. */
-    .in("status", ACTIVE_GRID_STATUSES)
-    .gte("start_time_utc", from.toISOString())
-    .lte("start_time_utc", to.toISOString())
-    .order("start_time_utc", { ascending: true });
-
-  if (bookingsErr) {
-    console.error("[loadSalonOwnerDashboard] bookings", bookingsErr);
+  const { data: projectionData, error: projectionError } =
+    await loadDashboardProjection({
+      salonId: salon.id,
+      from: from.toISOString(),
+      to: to.toISOString(),
+    });
+  if (
+    projectionError ||
+    !projectionData ||
+    typeof projectionData !== "object" ||
+    Array.isArray(projectionData)
+  ) {
+    console.error(
+      "[loadSalonOwnerDashboard] projection",
+      projectionError ?? "invalid projection",
+    );
     return { ok: false, error: "server_error" };
   }
 
-  const allBookings = (bookingRows ?? []).map((r) =>
+  const projection = projectionData as unknown as Record<string, unknown>;
+  if (!Array.isArray(projection.bookings)) {
+    console.error("[loadSalonOwnerDashboard] projection omitted bookings");
+    return { ok: false, error: "server_error" };
+  }
+
+  const allBookings = projection.bookings.map((r) =>
     mapDashboardBookingRow(r as unknown as BookingRowDb),
   );
 
   // Setup-checklist counts — soft-deleted services/staff don't count
   // toward "profile complete".
-  const { count: servicesCount, error: scErr } = await supabase
-    .from("services")
-    .select("*", { count: "exact", head: true })
-    .eq("salon_id", salon.id)
-    .is("deleted_at" as never, null);
-
-  const { count: staffCount, error: stErr } = await supabase
-    .from("staff")
-    .select("*", { count: "exact", head: true })
-    .eq("salon_id", salon.id)
-    .is("deleted_at" as never, null);
-
-  if (scErr || stErr) {
-    console.error("[loadSalonOwnerDashboard] counts", scErr ?? stErr);
+  const servicesCount = Number(projection.services_count);
+  const staffCount = Number(projection.staff_count);
+  if (!Number.isSafeInteger(servicesCount) || !Number.isSafeInteger(staffCount)) {
+    console.error("[loadSalonOwnerDashboard] projection omitted counts");
     return { ok: false, error: "server_error" };
   }
 
@@ -452,6 +634,7 @@ export async function loadSalonOwnerDashboard(
       profile_complete: !!salon.profile_complete,
       timezone: salon.timezone || "UTC",
       vertical: typeof salon.vertical === "string" ? salon.vertical : null,
+      feature_flags: salon.feature_flags ?? null,
     },
     setup: {
       services_count: servicesCount ?? 0,
@@ -615,10 +798,9 @@ export async function loadOwnerSalons(
   void _slug;
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return [];
+  const session = await requireActiveAuthSession(supabase);
+  if (!session.ok) return [];
+  const user = session.user;
 
   const { data: members, error: memErr } = await supabase
     .from("salon_members")

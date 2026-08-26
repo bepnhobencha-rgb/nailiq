@@ -56,6 +56,7 @@ export type WixBooking = {
   id: string;
   status: string; // CONFIRMED | PENDING | CREATED | CANCELED | DECLINED | WAITING_LIST
   revision: string;
+  externalUserId?: string;
   startDate?: string;
   endDate?: string;
   updatedDate?: string;
@@ -133,10 +134,35 @@ export async function getBooking(siteId: string, bookingId: string): Promise<Wix
   return r.extendedBookings?.[0]?.booking ?? null;
 }
 
+/**
+ * Resolve a NailIQ-origin booking by the stable external user ID supplied on
+ * Create Booking. This is the provider read used after an ambiguous response;
+ * it must happen before any retry decision so a lost response cannot create a
+ * second Wix appointment.
+ */
+export async function getBookingByExternalUserId(
+  siteId: string,
+  externalUserId: string,
+): Promise<WixBooking | null> {
+  const r = (await post(READER, siteId, {
+    query: { filter: { externalUserId } },
+  })) as { extendedBookings?: Array<{ booking: WixBooking }> };
+  const matches = (r.extendedBookings ?? [])
+    .map((row) => row.booking)
+    .filter((booking) => booking.externalUserId === externalUserId);
+  if (matches.length > 1) throw new Error("external_user_id_ambiguous");
+  return matches[0] ?? null;
+}
+
 /** Confirm a PENDING/CREATED Wix booking → CONFIRMED. Fetches the current revision first. */
 export async function confirmWixBooking(siteId: string, bookingId: string): Promise<string> {
   const b = await getBooking(siteId, bookingId);
   if (!b) throw new Error("booking_not_found");
+  const current = b.status.toUpperCase();
+  if (current === "CONFIRMED") return current;
+  if (!["PENDING", "CREATED", "WAITING_LIST"].includes(current)) {
+    throw new Error(`booking_status_not_confirmable:${current}`);
+  }
   const r = (await post(`${WRITER}/${bookingId}/confirm`, siteId, {
     participantNotification: { notifyParticipants: false },
     bookingId,
@@ -149,6 +175,8 @@ export async function confirmWixBooking(siteId: string, bookingId: string): Prom
 export async function cancelWixBooking(siteId: string, bookingId: string): Promise<string> {
   const b = await getBooking(siteId, bookingId);
   if (!b) throw new Error("booking_not_found");
+  const current = b.status.toUpperCase();
+  if (current === "CANCELED" || current === "CANCELLED") return "CANCELED";
   const r = (await post(`${WRITER}/${bookingId}/cancel`, siteId, {
     participantNotification: { notifyParticipants: false },
     bookingId,
@@ -165,6 +193,11 @@ export async function cancelWixBooking(siteId: string, bookingId: string): Promi
 export async function declineWixBooking(siteId: string, bookingId: string): Promise<string> {
   const b = await getBooking(siteId, bookingId);
   if (!b) throw new Error("booking_not_found");
+  const current = b.status.toUpperCase();
+  if (current === "DECLINED") return current;
+  if (!["PENDING", "CREATED", "WAITING_LIST"].includes(current)) {
+    throw new Error(`booking_status_not_declinable:${current}`);
+  }
   const r = (await post(`${WRITER}/${bookingId}/decline`, siteId, {
     participantNotification: { notifyParticipants: false },
     bookingId,

@@ -72,7 +72,7 @@ export function isProductionHost(url: string | undefined): boolean {
   return PRODUCTION_HOST_PATTERNS.some((re) => re.test(host));
 }
 
-/** True for a local Supabase stack (supabase start) — always allowed. */
+/** True for a local Supabase stack (supabase start). */
 function isLocalSupabase(url: string | undefined): boolean {
   if (!url?.trim()) return false;
   try {
@@ -83,12 +83,39 @@ function isLocalSupabase(url: string | undefined): boolean {
   }
 }
 
+/**
+ * Local CLI legacy keys are JWTs issued as `supabase-demo`. Decoding these
+ * claims is intentionally only an accidental-production-key guard, not token
+ * authentication; the MQA local runner additionally pins the exact key from
+ * an independent `supabase status` invocation.
+ */
+export function isLocalSupabaseServiceRoleKey(key: string | undefined): boolean {
+  const parts = key?.trim().split(".") ?? [];
+  if (parts.length !== 3) return false;
+  try {
+    const payload = JSON.parse(
+      Buffer.from(parts[1], "base64url").toString("utf8"),
+    ) as { iss?: unknown; ref?: unknown; role?: unknown };
+    return (
+      payload.iss === "supabase-demo" &&
+      payload.role === "service_role" &&
+      (payload.ref === undefined || payload.ref === "supabase-demo")
+    );
+  } catch {
+    return false;
+  }
+}
+
 export type GuardEnv = {
   supabaseUrl?: string;
+  /** Server-side clients prefer this URL when present. It must be guarded too. */
+  internalSupabaseUrl?: string;
   baseUrl?: string;
   serviceRoleKey?: string;
   /** Optional pin: the exact project ref this run is allowed to write to. */
   expectedProjectRef?: string;
+  /** Exact local key independently returned by `supabase status`, when known. */
+  expectedLocalServiceRoleKey?: string;
 };
 
 /**
@@ -96,40 +123,119 @@ export type GuardEnv = {
  * Pure (no process.env access) so it can be unit-tested.
  */
 export function assertNotProduction(env: GuardEnv): void {
-  const { supabaseUrl, baseUrl, serviceRoleKey, expectedProjectRef } = env;
-  const ref = projectRefFromUrl(supabaseUrl);
+  const {
+    supabaseUrl,
+    internalSupabaseUrl,
+    baseUrl,
+    serviceRoleKey,
+    expectedProjectRef,
+    expectedLocalServiceRoleKey,
+  } = env;
+  const targets = [
+    { name: "NEXT_PUBLIC_SUPABASE_URL", url: supabaseUrl },
+    { name: "SUPABASE_INTERNAL_URL", url: internalSupabaseUrl },
+  ].filter((target) => target.url?.trim());
+  const refs = targets.map((target) => ({
+    ...target,
+    ref: projectRefFromUrl(target.url),
+  }));
 
   // 1. Explicit production project ref.
-  if (isProductionProjectRef(ref)) {
+  const productionTarget = refs.find((target) =>
+    isProductionProjectRef(target.ref),
+  );
+  if (productionTarget) {
     throw new Error(
-      `${FORBIDDEN_MESSAGE} NEXT_PUBLIC_SUPABASE_URL points at the production ` +
-        `Supabase project (ref: ${ref}). Point it at a dedicated test/staging project.`,
+      `${FORBIDDEN_MESSAGE} ${productionTarget.name} points at the production ` +
+        `Supabase project (ref: ${productionTarget.ref}). Point it at a dedicated test/staging project.`,
     );
   }
 
   // 2. Explicit production hostname (either the app under test or the DB URL).
-  if (isProductionHost(baseUrl) || isProductionHost(supabaseUrl)) {
+  if (
+    isProductionHost(baseUrl) ||
+    targets.some((target) => isProductionHost(target.url))
+  ) {
     throw new Error(
       `${FORBIDDEN_MESSAGE} The target host is a production host ` +
         `(BASE_URL: ${baseUrl ?? "unset"}). E2E must run against localhost or a staging host.`,
     );
   }
 
-  // 3. Pinned ref mismatch — the run is aimed somewhere it was not meant to go.
-  if (expectedProjectRef?.trim() && ref !== expectedProjectRef.trim().toLowerCase()) {
+  // 3. A hosted service-role target must always be pinned. Merely recognising a
+  // non-production Supabase hostname is not enough: a stale dotenv value could
+  // otherwise redirect destructive E2E cleanup to another valid QA project.
+  const hostedRefs = refs.filter((target) => target.ref !== null);
+  if (
+    serviceRoleKey?.trim() &&
+    hostedRefs.length > 0 &&
+    !expectedProjectRef?.trim()
+  ) {
     throw new Error(
-      `${FORBIDDEN_MESSAGE} Project ref mismatch: expected ` +
-        `"${expectedProjectRef.trim()}" but NEXT_PUBLIC_SUPABASE_URL resolves to "${ref ?? "none"}".`,
+      `${FORBIDDEN_MESSAGE} Hosted Supabase E2E requires an exact ` +
+        "E2E_EXPECTED_PROJECT_REF pin.",
     );
   }
 
-  // 4. FAIL CLOSED. Holding a service-role key (which bypasses every RLS policy)
+  // 4. Pinned ref mismatch — the run is aimed somewhere it was not meant to go.
+  const normalizedExpectedRef = expectedProjectRef?.trim().toLowerCase();
+  const mismatchedTarget = normalizedExpectedRef
+    ? refs.find((target) => target.ref !== normalizedExpectedRef) ??
+      (refs.length === 0
+        ? {
+            name: "NEXT_PUBLIC_SUPABASE_URL/SUPABASE_INTERNAL_URL",
+            url: undefined,
+            ref: null,
+          }
+        : undefined)
+    : undefined;
+  if (normalizedExpectedRef && mismatchedTarget) {
+    throw new Error(
+      `${FORBIDDEN_MESSAGE} Project ref mismatch: expected ` +
+        `"${normalizedExpectedRef}" but ${mismatchedTarget.name} resolves to ` +
+        `"${mismatchedTarget.ref ?? "none"}".`,
+    );
+  }
+
+  // 5. A loopback hostname is not proof of a local stack: it may be a tunnel
+  // to a hosted project. Reject hosted/opaque keys. Modern non-JWT local keys
+  // are accepted only when exactly pinned to independently obtained CLI status.
+  const localTargets = refs.filter((target) => isLocalSupabase(target.url));
+  if (serviceRoleKey?.trim() && localTargets.length > 0) {
+    const exactLocalPin = expectedLocalServiceRoleKey?.trim();
+    if (exactLocalPin && serviceRoleKey.trim() !== exactLocalPin) {
+      throw new Error(
+        `${FORBIDDEN_MESSAGE} The loopback service-role key does not match ` +
+          "E2E_EXPECTED_LOCAL_SERVICE_ROLE_KEY from local Supabase status.",
+      );
+    }
+    if (!exactLocalPin && !isLocalSupabaseServiceRoleKey(serviceRoleKey)) {
+      throw new Error(
+        `${FORBIDDEN_MESSAGE} A loopback Supabase URL requires a local ` +
+          "supabase-demo service-role key or an exact independent local-status pin.",
+      );
+    }
+  }
+
+  // 6. FAIL CLOSED. Holding a service-role key (which bypasses every RLS policy)
   //    against a project we cannot identify is exactly the situation that caused
   //    the incident. Refuse rather than assume it is safe.
-  if (serviceRoleKey?.trim() && ref === null && !isLocalSupabase(supabaseUrl)) {
+  const unrecognisedTarget = serviceRoleKey?.trim()
+    ? refs.find(
+        (target) => target.ref === null && !isLocalSupabase(target.url),
+      ) ??
+      (refs.length === 0
+        ? {
+            name: "NEXT_PUBLIC_SUPABASE_URL/SUPABASE_INTERNAL_URL",
+            url: undefined,
+            ref: null,
+          }
+        : undefined)
+    : undefined;
+  if (unrecognisedTarget) {
     throw new Error(
       `${FORBIDDEN_MESSAGE} A SUPABASE_SERVICE_ROLE_KEY is set but ` +
-        `NEXT_PUBLIC_SUPABASE_URL ("${supabaseUrl ?? "unset"}") is not a recognisable ` +
+        `${unrecognisedTarget.name} ("${unrecognisedTarget.url ?? "unset"}") is not a recognisable ` +
         `Supabase project URL. Refusing to run rather than guess which database this is.`,
     );
   }
@@ -139,10 +245,13 @@ export function assertNotProduction(env: GuardEnv): void {
 export function assertNotProductionFromEnv(): void {
   assertNotProduction({
     supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    internalSupabaseUrl: process.env.SUPABASE_INTERNAL_URL,
     baseUrl:
       process.env.PLAYWRIGHT_BASE_URL ?? process.env.BASE_URL ?? undefined,
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
     expectedProjectRef: process.env.E2E_EXPECTED_PROJECT_REF,
+    expectedLocalServiceRoleKey:
+      process.env.E2E_EXPECTED_LOCAL_SERVICE_ROLE_KEY,
   });
 }
 

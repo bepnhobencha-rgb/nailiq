@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { formatInSalonTz } from "@/shared/lib/salonTime";
@@ -74,6 +75,56 @@ const esc = (s: string) =>
     c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&amp;",
   );
 
+function recipientLogRef(recipient: string): string {
+  return `recipient:${createHash("sha256")
+    .update(recipient.trim().toLowerCase())
+    .digest("hex")
+    .slice(0, 12)}`;
+}
+
+function sanitizeProviderError(error: unknown): string {
+  const raw =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : String(
+            (error as { message?: unknown } | null)?.message ??
+              "provider_error",
+          );
+  return raw
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email]")
+    .replace(/\+?\d[\d\s().-]{7,}\d/g, "[phone]")
+    .replace(/[\r\n\t]+/g, " ")
+    .slice(0, 500);
+}
+
+function normalizeOccurrenceInstant(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const millis = Date.parse(value);
+  return Number.isFinite(millis) ? new Date(millis).toISOString() : null;
+}
+
+export function ownerNotificationOccurrenceKey(
+  event: OwnerNotificationEvent,
+  booking: {
+    createdAt?: string | null;
+    updatedAt?: string | null;
+    startTimeUtc?: string | null;
+  },
+): string | null {
+  if (event === "new") return normalizeOccurrenceInstant(booking.createdAt);
+  if (event === "reschedule") {
+    const start = normalizeOccurrenceInstant(booking.startTimeUtc);
+    const updated = normalizeOccurrenceInstant(booking.updatedAt);
+    // Start alone collides when an appointment moves A -> B -> A. Pairing the
+    // authoritative transition timestamp keeps exact retries idempotent while
+    // allowing the later transition back to A to notify once.
+    return start && updated ? `${start}|${updated}` : null;
+  }
+  return normalizeOccurrenceInstant(booking.updatedAt);
+}
+
 /** Absolute origin for dashboard links in emails (mirrors booking email helper). */
 function getEmailOrigin(): string {
   const base =
@@ -142,6 +193,136 @@ type NotifyLogRow = {
   error?: string | null;
 };
 
+type OwnerClaimStatus = "sent" | "failed" | "unknown" | "suppressed";
+
+type OwnerClaimRpcClient = {
+  rpc: (
+    name: string,
+    params: Record<string, unknown>,
+  ) => Promise<{
+    data: unknown;
+    error: { message?: string | null } | null;
+  }>;
+};
+
+function isBookingEvent(event: string): event is OwnerNotificationEvent {
+  return (
+    event === "new" ||
+    event === "reschedule" ||
+    event === "cancel" ||
+    event === "no_show"
+  );
+}
+
+async function claimOwnerRecipient(
+  admin: ReturnType<typeof createServiceRoleClient>,
+  meta: {
+    salonId: string;
+    bookingId: string;
+    event: OwnerNotificationEvent;
+    eventOccurrenceKey: string;
+  },
+  recipient: string,
+): Promise<
+  | { claimed: true; claimId: string }
+  | { claimed: false; reason: string }
+> {
+  try {
+    const { data, error } = await (admin as unknown as OwnerClaimRpcClient).rpc(
+      "claim_owner_booking_notification",
+      {
+        p_salon_id: meta.salonId,
+        p_booking_id: meta.bookingId,
+        p_event_type: meta.event,
+        p_recipient_identity: recipient,
+        p_event_occurrence_key: meta.eventOccurrenceKey,
+      },
+    );
+    if (error) {
+      return { claimed: false, reason: "claim_rpc_error" };
+    }
+    const result = data as {
+      success?: unknown;
+      code?: unknown;
+      claimed?: unknown;
+      claim_id?: unknown;
+    } | null;
+    if (
+      result?.success === true &&
+      result.claimed === true &&
+      typeof result.claim_id === "string" &&
+      result.claim_id.length > 0
+    ) {
+      return { claimed: true, claimId: result.claim_id };
+    }
+    if (result?.success === true && result.claimed === false) {
+      return {
+        claimed: false,
+        reason:
+          typeof result.code === "string"
+            ? result.code
+            : "duplicate_suppressed",
+      };
+    }
+    return {
+      claimed: false,
+      reason:
+        typeof result?.code === "string" ? result.code : "invalid_claim_response",
+    };
+  } catch {
+    return { claimed: false, reason: "claim_rpc_exception" };
+  }
+}
+
+async function completeOwnerRecipientClaim(
+  admin: ReturnType<typeof createServiceRoleClient>,
+  claimId: string,
+  status: OwnerClaimStatus,
+  providerMessageId: string | null,
+  errorMessage: string | null,
+): Promise<boolean> {
+  try {
+    const { data, error } = await (admin as unknown as OwnerClaimRpcClient).rpc(
+      "complete_owner_booking_notification",
+      {
+        p_claim_id: claimId,
+        p_status: status,
+        // A suppressed or ambiguous send has no provider proof.
+        p_provider_message_id: providerMessageId,
+        p_error: errorMessage,
+      },
+    );
+    if (error) {
+      console.error(
+        "[ownerNotify] claim completion failed",
+        sanitizeProviderError(error),
+      );
+      return false;
+    }
+    const result = data as {
+      success?: unknown;
+      code?: unknown;
+      status?: unknown;
+    } | null;
+    if (result?.success !== true || result.status !== status) {
+      console.error(
+        "[ownerNotify] claim completion rejected",
+        typeof result?.code === "string"
+          ? `${result.code}:status_mismatch`
+          : "invalid_completion_response",
+      );
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error(
+      "[ownerNotify] claim completion threw",
+      sanitizeProviderError(e),
+    );
+    return false;
+  }
+}
+
 /**
  * Record one attempt. Never throws — the audit trail must not break the thing
  * it audits. Note the `await`: a PostgrestBuilder is lazy, so a bare `void
@@ -161,9 +342,17 @@ async function logNotify(
       resend_id: row.resendId ?? null,
       error: row.error ?? null,
     } as never);
-    if (error) console.error("[ownerNotify] log insert failed", error);
+    if (error) {
+      console.error(
+        "[ownerNotify] log insert failed",
+        sanitizeProviderError(error),
+      );
+    }
   } catch (e) {
-    console.error("[ownerNotify] log insert threw", e);
+    console.error(
+      "[ownerNotify] log insert threw",
+      sanitizeProviderError(e),
+    );
   }
 }
 
@@ -172,42 +361,212 @@ async function logNotify(
  * One suppressed or bouncing address then cannot hide the outcome for everyone
  * else, and recipients no longer see each other's addresses in the To: header.
  */
-async function sendToEachRecipient(
+export async function sendToEachRecipient(
   admin: ReturnType<typeof createServiceRoleClient>,
-  resend: NonNullable<ReturnType<typeof getResendClient>>,
+  resend: ReturnType<typeof getResendClient>,
   recipients: string[],
   payload: { subject: string; html: string; text: string },
-  meta: { salonId: string; bookingId?: string | null; event: string },
+  meta: {
+    salonId: string;
+    bookingId?: string | null;
+    event: string;
+    eventOccurrenceKey?: string | null;
+  },
 ): Promise<{ sent: number; failed: number }> {
   const from = getResendFrom();
   const results = await Promise.all(
-    recipients.map(async (to) => {
+    recipients.map(async (rawRecipient) => {
+      const to = rawRecipient.trim().toLowerCase();
+      const requiresBookingClaim = Boolean(
+        meta.bookingId && isBookingEvent(meta.event),
+      );
+      if (requiresBookingClaim && !meta.eventOccurrenceKey) {
+        await logNotify(admin, {
+          ...meta,
+          recipient: to,
+          status: "skipped",
+          error: "invalid_event_occurrence",
+        });
+        return false;
+      }
+      const bookingMeta =
+        requiresBookingClaim &&
+        meta.bookingId &&
+        meta.eventOccurrenceKey &&
+        isBookingEvent(meta.event)
+          ? {
+              salonId: meta.salonId,
+              bookingId: meta.bookingId,
+              event: meta.event,
+              eventOccurrenceKey: meta.eventOccurrenceKey,
+            }
+          : null;
+      let claimId: string | null = null;
+
+      if (bookingMeta) {
+        const claim = await claimOwnerRecipient(admin, bookingMeta, to);
+        if (!claim.claimed) {
+          await logNotify(admin, {
+            ...meta,
+            recipient: to,
+            status: "skipped",
+            error: claim.reason,
+          });
+          return false;
+        }
+        claimId = claim.claimId;
+      }
+
+      // Test/waitlist callers already short-circuit when Resend is absent.
+      // For booking alerts, preserve a durable suppression instead of leaving
+      // a sending claim or pretending a provider attempt occurred.
+      if (!resend) {
+        if (claimId) {
+          const completed = await completeOwnerRecipientClaim(
+            admin,
+            claimId,
+            "suppressed",
+            null,
+            "no_resend",
+          );
+          if (!completed) {
+            await logNotify(admin, {
+              ...meta,
+              recipient: to,
+              status: "failed",
+              error: "claim_completion_failed:suppressed",
+            });
+            return false;
+          }
+        }
+        await logNotify(admin, {
+          ...meta,
+          recipient: to,
+          status: "skipped",
+          error: "no_resend",
+        });
+        return false;
+      }
+
       try {
         const res = await resend.emails.send({ from, to, ...payload });
         if (res.error) {
-          console.error("[ownerNotify] resend error", to, res.error);
+          const providerError = sanitizeProviderError(res.error);
+          console.error(
+            "[ownerNotify] resend error",
+            recipientLogRef(to),
+            providerError,
+          );
+          if (claimId) {
+            const completed = await completeOwnerRecipientClaim(
+              admin,
+              claimId,
+              "failed",
+              null,
+              providerError,
+            );
+            if (!completed) {
+              await logNotify(admin, {
+                ...meta,
+                recipient: to,
+                status: "failed",
+                error: "claim_completion_failed:failed",
+              });
+              return false;
+            }
+          }
           await logNotify(admin, {
             ...meta,
             recipient: to,
             status: "failed",
-            error: String(res.error.message ?? res.error),
+            error: providerError,
           });
           return false;
+        }
+        const providerMessageId = res.data?.id?.trim() || null;
+        if (!providerMessageId) {
+          if (claimId) {
+            const completed = await completeOwnerRecipientClaim(
+              admin,
+              claimId,
+              "unknown",
+              null,
+              "provider_receipt_missing",
+            );
+            if (!completed) {
+              await logNotify(admin, {
+                ...meta,
+                recipient: to,
+                status: "failed",
+                error: "claim_completion_failed:unknown",
+              });
+              return false;
+            }
+          }
+          await logNotify(admin, {
+            ...meta,
+            recipient: to,
+            status: "failed",
+            error: "unknown:provider_receipt_missing",
+          });
+          return false;
+        }
+        if (claimId) {
+          const completed = await completeOwnerRecipientClaim(
+            admin,
+            claimId,
+            "sent",
+            providerMessageId,
+            null,
+          );
+          if (!completed) {
+            await logNotify(admin, {
+              ...meta,
+              recipient: to,
+              status: "failed",
+              resendId: providerMessageId,
+              error: "claim_completion_failed:provider_accepted",
+            });
+            return false;
+          }
         }
         await logNotify(admin, {
           ...meta,
           recipient: to,
           status: "sent",
-          resendId: res.data?.id ?? null,
+          resendId: providerMessageId,
         });
         return true;
       } catch (e) {
-        console.error("[ownerNotify] send threw", to, e);
+        const error = sanitizeProviderError(e);
+        console.error(
+          "[ownerNotify] send threw",
+          recipientLogRef(to),
+          error,
+        );
+        if (claimId) {
+          const completed = await completeOwnerRecipientClaim(
+            admin,
+            claimId,
+            "unknown",
+            null,
+            "provider_exception",
+          );
+          if (!completed) {
+            await logNotify(admin, {
+              ...meta,
+              recipient: to,
+              status: "failed",
+              error: "claim_completion_failed:unknown",
+            });
+            return false;
+          }
+        }
         await logNotify(admin, {
           ...meta,
           recipient: to,
           status: "failed",
-          error: e instanceof Error ? e.message : String(e),
+          error: `unknown:${error}`,
         });
         return false;
       }
@@ -387,7 +746,10 @@ export async function sendOwnerWaitlistNotification(
       { salonId, event: "waitlist" },
     );
   } catch (e) {
-    console.error("[sendOwnerWaitlistNotification]", e);
+    console.error(
+      "[sendOwnerWaitlistNotification]",
+      sanitizeProviderError(e),
+    );
   }
 }
 
@@ -452,26 +814,26 @@ export async function sendOwnerBookingNotification(
       return;
     }
 
-    const resend = getResendClient();
-    if (!resend) {
-      console.warn("[ownerNotify] no RESEND_API_KEY — skipping");
-      await logNotify(admin, {
-        salonId,
-        bookingId,
-        event,
-        status: "skipped",
-        error: "no_resend",
-      });
-      return;
+    let resend: ReturnType<typeof getResendClient> = null;
+    try {
+      resend = getResendClient();
+    } catch (e) {
+      // Keep the per-recipient durable claim truthful even when provider
+      // configuration is unavailable in production.
+      console.error(
+        "[ownerNotify] Resend unavailable",
+        sanitizeProviderError(e),
+      );
     }
 
     // Booking details + service/staff names.
     const { data: bRow } = await admin
       .from("bookings")
       .select(
-        "client_name, client_phone, service_id, staff_id, start_time_utc, end_time_utc, status, source, booking_channel, price_cents, addon_price_cents, client_profile_id",
+        "client_name, client_phone, service_id, staff_id, start_time_utc, end_time_utc, status, source, booking_channel, price_cents, addon_price_cents, client_profile_id, created_at, updated_at",
       )
       .eq("id", bookingId)
+      .eq("salon_id", salonId)
       .maybeSingle();
     const b = bRow as {
       client_name?: string | null;
@@ -486,8 +848,26 @@ export async function sendOwnerBookingNotification(
       price_cents?: number | null;
       addon_price_cents?: number | null;
       client_profile_id?: string | null;
+      created_at?: string | null;
+      updated_at?: string | null;
     } | null;
     if (!b) return;
+
+    const eventOccurrenceKey = ownerNotificationOccurrenceKey(event, {
+      createdAt: b.created_at,
+      updatedAt: b.updated_at,
+      startTimeUtc: b.start_time_utc,
+    });
+    if (!eventOccurrenceKey) {
+      await logNotify(admin, {
+        salonId,
+        bookingId,
+        event,
+        status: "skipped",
+        error: "invalid_event_occurrence",
+      });
+      return;
+    }
 
     // Defense in depth: never label an unchanged appointment as rescheduled.
     // The desk path already suppresses this, but this guard protects future
@@ -509,22 +889,36 @@ export async function sendOwnerBookingNotification(
       }
     }
 
-    const [svcRes, staffRes, profRes] = await Promise.all([
+    const [svcRes, staffRes, profRes, vipRes] = await Promise.all([
       b.service_id
         ? admin
             .from("services")
             .select("name, duration_minutes, price_cents")
             .eq("id", b.service_id)
+            .eq("salon_id", salonId)
             .maybeSingle()
         : Promise.resolve({ data: null }),
       b.staff_id
-        ? admin.from("staff").select("name").eq("id", b.staff_id).maybeSingle()
+        ? admin
+            .from("staff")
+            .select("name")
+            .eq("id", b.staff_id)
+            .eq("salon_id", salonId)
+            .maybeSingle()
         : Promise.resolve({ data: null }),
       b.client_profile_id
         ? admin
             .from("client_profiles")
-            .select("visit_count, no_show_count, is_vip")
+            .select("visit_count, no_show_count")
             .eq("id", b.client_profile_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      b.client_profile_id
+        ? admin
+            .from("salon_clients" as never)
+            .select("is_vip" as never)
+            .eq("salon_id" as never, salonId)
+            .eq("client_profile_id" as never, b.client_profile_id)
             .maybeSingle()
         : Promise.resolve({ data: null }),
     ]);
@@ -536,8 +930,8 @@ export async function sendOwnerBookingNotification(
     const prof = profRes.data as {
       visit_count?: number | null;
       no_show_count?: number | null;
-      is_vip?: boolean | null;
     } | null;
+    const isSalonVip = (vipRes.data as { is_vip?: boolean | null } | null)?.is_vip === true;
     const serviceName = svc?.name?.trim() || "—";
     const staffName =
       (staffRes.data as { name?: string } | null)?.name?.trim() || "—";
@@ -601,7 +995,7 @@ export async function sendOwnerBookingNotification(
         bg: "#fee2e2",
         fg: "#991b1b",
       };
-    } else if (prof?.is_vip) {
+    } else if (isSalonVip) {
       custBadge = { text: "★ VIP", bg: "#fef3c7", fg: "#92400e" };
     } else if (visits <= 1) {
       custBadge = {
@@ -752,9 +1146,9 @@ export async function sendOwnerBookingNotification(
       resend,
       recipients,
       { subject, html, text },
-      { salonId, bookingId, event },
+      { salonId, bookingId, event, eventOccurrenceKey },
     );
   } catch (e) {
-    console.error("[ownerNotify]", e);
+    console.error("[ownerNotify]", sanitizeProviderError(e));
   }
 }

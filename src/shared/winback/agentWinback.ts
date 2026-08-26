@@ -1,19 +1,6 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
 import { looseServiceClient, type Row } from "@/shared/integrations/square/looseDb";
-import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { sendSmsReminder } from "@/shared/lib/twilioSms";
-import { getResendClient, getResendFrom } from "@/shared/lib/resend";
-import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
-import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
-import {
-  applyLearnedAgentCap,
-  findChannelLesson,
-  getLessons,
-} from "@/shared/ai/lessons";
-import { phoneRegion } from "@/shared/lib/phoneRegion";
-import { isAiAgentPermissionEnabled } from "@/shared/ai/agentPermissionFence";
-import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
+import { createReactivationCampaignDraft } from "@/shared/ai/createReactivationCampaignDraft";
 import {
   collectUnreachablePhones,
   selectWinbackCandidates,
@@ -22,22 +9,15 @@ import {
 } from "@/shared/winback/winbackCandidateSelection";
 
 /**
- * AI Win-back — find opted-in lapsed regulars, draft a warm personalized
- * message, deliver it through the salon's enabled channel, and persist the
- * result. Activation is owner-controlled and each run is capped and deduped.
+ * AI Win-back candidate helpers plus the dashboard-only proposal runner.
+ * The runner never reads recipients, calls a provider, or sends a message.
+ * Audience selection happens only after first owner approval through the
+ * consent-aware immutable campaign-manifest path.
  */
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 
 export type { WinbackCandidate };
-
-let client: Anthropic | null = null;
-function getClient(): Anthropic | null {
-  const key = process.env.ANTHROPIC_API_KEY?.trim();
-  if (!key) return null;
-  if (!client) client = new Anthropic({ apiKey: key });
-  return client;
-}
 
 /** Lapsed regulars not already suggested in the last 30 days. */
 export async function gatherWinbackCandidates(
@@ -108,237 +88,28 @@ export async function gatherWinbackCandidates(
   });
 }
 
-/** ① AI BRAIN — draft a warm win-back message. Returns null on failure. */
-export async function agentDraftWinback(
-  c: WinbackCandidate,
-  salonName: string,
-  lang: "en" | "vi",
-  salonId: string | null = null,
-): Promise<string | null> {
-  const ai = getClient();
-  if (!ai) return null;
-
-  const weeks = Math.max(1, Math.round((Date.now() - Date.parse(c.lastVisit)) / (7 * 864e5)));
-  const langLabel = lang === "vi" ? "tiếng Việt" : "English";
-  const serviceHint = c.usualService
-    ? ` They usually get "${c.usualService}".`
-    : "";
-  const prompt = `Write a short, warm, genuine win-back message in ${langLabel} for a salon customer who hasn't been in for a while. Make them feel remembered, not sold to.
-
-Customer: ${c.name}, visited ${c.visits} times before, last visit about ${weeks} weeks ago.${serviceHint}
-Salon: ${salonName}.
-
-Rules: 1-2 sentences, friendly + personal, mention the salon by name, if a service is given naturally reference it (e.g. "ready for your next Hi-Lite Royal?"), gently invite them to come back, NO emojis, NO links (those are added when sent). Return ONLY the message text, nothing else.`;
-
-  try {
-    const model = "claude-haiku-4-5-20251001";
-    const resp = await trackAnthropicMessage(
-      { salonId, feature: "winback_draft", model },
-      () => ai.messages.create({
-        model,
-        max_tokens: 200,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    );
-    const text = resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
-    const clean = text.replace(/^["']|["']$/g, "").trim();
-    return clean.length > 0 && clean.length <= 480 ? clean : null;
-  } catch {
-    return null;
-  }
-}
-
-const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
-
-async function sendWinbackSms(
-  phone: string,
-  message: string,
-  bookingUrl: string,
-): Promise<boolean> {
-  const body = `${message}\n${bookingUrl}`;
-  const r = await sendSmsReminder(phone, body, { lang: "en" });
-  return r.ok;
-}
-
-async function sendWinbackEmail(
-  toEmail: string,
-  clientName: string,
-  salonName: string,
-  message: string,
-  bookingUrl: string,
-  salonReplyEmail?: string | null,
-): Promise<boolean> {
-  const resend = getResendClient();
-  if (!resend) return false;
-  const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] ?? c));
-  const html = `<div style="max-width:480px;margin:0 auto;font-family:-apple-system,Segoe UI,sans-serif;color:#1a1a1a">
-  <p style="font-size:15px;line-height:1.7;margin:0 0 16px">${esc(message)}</p>
-  <a href="${bookingUrl}" style="display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:14px">Book now</a>
-  <p style="font-size:12px;color:#999;margin-top:20px">${esc(salonName)}</p>
-</div>`;
-  const { error } = await resend.emails.send({
-    from: getResendFrom(),
-    to: toEmail,
-    subject: `${salonName} — we'd love to see you again`,
-    html,
-    text: `${message}\n\n${bookingUrl}\n\n${salonName}`,
-    ...(salonReplyEmail ? { replyTo: salonReplyEmail } : {}),
-  });
-  return !error;
-}
-
 /**
- * Run win-back for one salon: opt-in (feature_flags.ai_winback), sends up to
- * `cap` messages per call with ACT+UNDO (60-min window). Logs to ai_actions_log.
- * 30-day dedupe means it goes quiet once the lapsed list is covered.
+ * Create one PII-free dashboard draft per salon/week. The `cap` argument is
+ * retained for call-site compatibility but is intentionally unused: audience
+ * size is calculated later by the separate dry-run manifest gate.
  */
-export async function runWinback(salonId: string, cap = 3): Promise<void> {
+export async function runWinback(salonId: string, _cap = 3): Promise<void> {
   try {
+    void _cap;
     const db = looseServiceClient();
     const { data: salon } = await db
       .from("salons")
-      .select("name, email, feature_flags, slug, sms_outbound_enabled, sms_a2p_registered, email_outbound_enabled, customer_channel" as never)
+      .select("name, feature_flags" as never)
       .eq("id", salonId)
       .maybeSingle();
     const s = (salon as Row | null) ?? {};
     if ((s.feature_flags as Record<string, unknown> | null)?.ai_winback !== true) return;
-    const salonName = str(s.name) || "our salon";
-    const salonSlug = str(s.slug) || "";
-    const salonReplyEmail = str(s.email) || null;
-    const bookingUrl = `${SITE_URL}/${salonSlug}?ref=winback`;
-    const smsOutboundEnabled = s.sms_outbound_enabled !== false; // default true (non-US salons work without A2P)
-    const smsA2pRegistered = s.sms_a2p_registered === true; // US A2P 10DLC status
-    const emailOutboundEnabled = s.email_outbound_enabled !== false; // default true
-    const customerChannelMode = (str(s.customer_channel) || "smart") as CustomerChannelMode;
-
-    const [channelLessons, segmentLessons] = await Promise.all([
-      getLessons(salonId, "channel"),
-      getLessons(salonId, "segment"),
-    ]);
-    const effectiveCap = applyLearnedAgentCap(cap, segmentLessons, "winback");
-    const candidates = await gatherWinbackCandidates(salonId, effectiveCap);
-    if (candidates.length === 0) return;
-
-    const svc = createServiceRoleClient();
-    let sentCount = 0;
-
-    for (const c of candidates) {
-      // A salon owner can revoke this agent while a multi-customer run is in
-      // progress. Re-read the permission before every external delivery.
-      if (!(await isAiAgentPermissionEnabled(salonId, "ai_winback"))) break;
-
-      // Check DB lessons FIRST — lesson #1: US + unregistered A2P → prefer email.
-      // This mirrors the code guardrail in channelResolver but reads from the DB
-      // so the rule can be adjusted without a code deploy.
-      const country = phoneRegion(c.phone) ?? "";
-      const lessonBlock = findChannelLesson(channelLessons, {
-        country,
-        a2pRegistered: smsA2pRegistered,
-      });
-      // Apply lesson: treat SMS as disabled for this candidate when a lesson fires.
-      const effectiveSmsOutboundEnabled = lessonBlock ? false : smsOutboundEnabled;
-
-      // Resolve channel BEFORE drafting — no point spending AI tokens on a
-      // message that can't be delivered.
-      const ch = resolveCustomerChannel({
-        mode: customerChannelMode,
-        smsOutboundEnabled: effectiveSmsOutboundEnabled,
-        emailOutboundEnabled,
-        customerEmail: c.email,
-        smsA2pRegistered,
-        customerPhone: c.phone,
-      });
-
-      if (ch.noChannel) {
-        console.warn(
-          `[runWinback] no channel for ${c.name} (${c.phone}) — reason: ${ch.reason}. Add email or complete A2P.`,
-        );
-        // Awaited — `void` on a PostgrestBuilder never issued the insert, so
-        // Minh's audit trail had no record of skipped customers.
-        await svc.from("ai_actions_log" as never).insert({
-          salon_id: salonId,
-          agent: "winback",
-          action_type: "skipped_no_channel",
-          target_id: null,
-          payload: {
-            name: c.name,
-            phone: c.phone,
-            reason: ch.reason,
-            ...(lessonBlock ? { lesson_id: lessonBlock.id } : {}),
-          },
-          undo_deadline: null,
-        } as never);
-        continue;
-      }
-
-      const lang: "en" | "vi" = "en";
-      const message = await agentDraftWinback(c, salonName, lang, salonId);
-      if (!message) continue;
-
-      // Derive a single canonical channel for logging (prefer email to record deliverability).
-      const channel: "sms" | "email" = ch.email ? "email" : "sms";
-
-      if (!(await isAiAgentPermissionEnabled(salonId, "ai_winback"))) break;
-
-      // Send to customer first; only log if successful.
-      let ok = false;
-      if (ch.sms) {
-        ok = await sendWinbackSms(c.phone, message, bookingUrl);
-      }
-      if (ch.email && c.email) {
-        const emailOk = await sendWinbackEmail(c.email, c.name, salonName, message, bookingUrl, salonReplyEmail);
-        // Count as delivered if at least one channel succeeded.
-        ok = ok || emailOk;
-      }
-
-      if (!ok) continue;
-      sentCount++;
-
-      // Persist suggestion as "sent"
-      const { data: inserted } = await svc
-        .from("winback_suggestions" as never)
-        .insert({
-          salon_id: salonId,
-          client_phone: c.phone,
-          client_name: c.name,
-          client_email: c.email,
-          last_visit: c.lastVisit,
-          visit_count: c.visits,
-          lang,
-          channel,
-          message,
-          status: "sent",
-        } as never)
-        .select("id")
-        .single();
-
-      const suggestionId = (inserted as { id?: string } | null)?.id ?? null;
-
-      // Audit trail with undo window
-      await svc.from("ai_actions_log" as never).insert({
-        salon_id: salonId,
-        agent: "winback",
-        action_type: `sent_${channel}`,
-        target_id: suggestionId,
-        payload: {
-          name: c.name,
-          phone: c.phone,
-          channel,
-          reason: ch.reason,
-          message_preview: message.slice(0, 120),
-        },
-        undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-      } as never);
-    }
-
-    if (sentCount > 0) {
-      void sendOwnerAlert(salonId, {
-        subject: `${salonName} — AI sent ${sentCount} win-back message${sentCount > 1 ? "s" : ""}`,
-        bodyText:
-          `AI Manager gửi ${sentCount} tin nhắn giữ khách. ` +
-          `Bạn có 60 phút để undo từ Activity feed nếu cần.`,
-      });
-    }
+    const outcome = await createReactivationCampaignDraft({
+      salonId,
+      salonName: str(s.name) || "our salon",
+      kind: "winback",
+    });
+    if (outcome === "failed") throw new Error("winback_draft_failed");
   } catch (e) {
     console.error("[runWinback]", e);
     throw e;

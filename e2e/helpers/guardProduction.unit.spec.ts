@@ -5,6 +5,7 @@ import {
   FORBIDDEN_MESSAGE,
   isE2EEmail,
   isE2ESlug,
+  isLocalSupabaseServiceRoleKey,
   isProductionHost,
   isProductionProjectRef,
   projectRefFromUrl,
@@ -13,6 +14,20 @@ import {
 const PROD_URL = "https://fshmobzyjhmtvndobwsy.supabase.co";
 const TEST_URL = "https://abcdefghijklmnopqrst.supabase.co";
 const KEY = "service-role-key-placeholder";
+const jwt = (payload: Record<string, unknown>) =>
+  [
+    Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString(
+      "base64url",
+    ),
+    Buffer.from(JSON.stringify(payload)).toString("base64url"),
+    "test-signature",
+  ].join(".");
+const LOCAL_KEY = jwt({ iss: "supabase-demo", role: "service_role" });
+const HOSTED_KEY = jwt({
+  iss: "supabase",
+  ref: "abcdefghijklmnopqrst",
+  role: "service_role",
+});
 
 describe("projectRefFromUrl", () => {
   it("extracts the ref from a Supabase project URL", () => {
@@ -55,10 +70,33 @@ describe("isProductionHost", () => {
   });
 });
 
+describe("isLocalSupabaseServiceRoleKey", () => {
+  it("recognises only a local CLI service-role identity", () => {
+    expect(isLocalSupabaseServiceRoleKey(LOCAL_KEY)).toBe(true);
+    expect(isLocalSupabaseServiceRoleKey(HOSTED_KEY)).toBe(false);
+    expect(isLocalSupabaseServiceRoleKey(KEY)).toBe(false);
+    expect(
+      isLocalSupabaseServiceRoleKey(
+        jwt({ iss: "supabase-demo", role: "anon" }),
+      ),
+    ).toBe(false);
+  });
+});
+
 describe("assertNotProduction", () => {
   it("throws when the Supabase URL is the production project", () => {
     expect(() =>
       assertNotProduction({ supabaseUrl: PROD_URL, serviceRoleKey: KEY }),
+    ).toThrow(FORBIDDEN_MESSAGE);
+  });
+
+  it("throws when a local public URL is shadowed by a production internal URL", () => {
+    expect(() =>
+      assertNotProduction({
+        supabaseUrl: "http://127.0.0.1:54321",
+        internalSupabaseUrl: PROD_URL,
+        serviceRoleKey: KEY,
+      }),
     ).toThrow(FORBIDDEN_MESSAGE);
   });
 
@@ -82,6 +120,15 @@ describe("assertNotProduction", () => {
     ).toThrow(FORBIDDEN_MESSAGE);
   });
 
+  it("FAILS CLOSED when a hosted service-role target has no exact ref pin", () => {
+    expect(() =>
+      assertNotProduction({
+        supabaseUrl: TEST_URL,
+        serviceRoleKey: KEY,
+      }),
+    ).toThrow("E2E_EXPECTED_PROJECT_REF");
+  });
+
   it("FAILS CLOSED: a service-role key against an unrecognisable URL is refused", () => {
     expect(() =>
       assertNotProduction({
@@ -89,6 +136,22 @@ describe("assertNotProduction", () => {
         serviceRoleKey: KEY,
       }),
     ).toThrow(FORBIDDEN_MESSAGE);
+  });
+
+  it("FAILS CLOSED when an internal service-role target is unrecognisable", () => {
+    expect(() =>
+      assertNotProduction({
+        supabaseUrl: "http://127.0.0.1:54321",
+        internalSupabaseUrl: "https://db.invalid.example",
+        serviceRoleKey: KEY,
+      }),
+    ).toThrow(FORBIDDEN_MESSAGE);
+  });
+
+  it("FAILS CLOSED when a service-role key has no database target", () => {
+    expect(() => assertNotProduction({ serviceRoleKey: KEY })).toThrow(
+      FORBIDDEN_MESSAGE,
+    );
   });
 
   it("does NOT rely on NODE_ENV — a production build against a test project is allowed", () => {
@@ -102,6 +165,7 @@ describe("assertNotProduction", () => {
         supabaseUrl: TEST_URL,
         baseUrl: "http://localhost:3000",
         serviceRoleKey: KEY,
+        expectedProjectRef: "abcdefghijklmnopqrst",
       }),
     ).not.toThrow();
     vi.unstubAllEnvs();
@@ -132,10 +196,41 @@ describe("assertNotProduction", () => {
     expect(() =>
       assertNotProduction({
         supabaseUrl: "http://127.0.0.1:54321",
+        internalSupabaseUrl: "http://127.0.0.1:54321",
         baseUrl: "http://localhost:3000",
-        serviceRoleKey: KEY,
+        serviceRoleKey: LOCAL_KEY,
       }),
     ).not.toThrow();
+  });
+
+  it("FAILS CLOSED when loopback is paired with a hosted service-role key", () => {
+    expect(() =>
+      assertNotProduction({
+        supabaseUrl: "http://127.0.0.1:54321",
+        internalSupabaseUrl: "http://127.0.0.1:54321",
+        serviceRoleKey: HOSTED_KEY,
+      }),
+    ).toThrow(/loopback Supabase URL requires a local/);
+  });
+
+  it("accepts a modern local key only when exactly pinned to local CLI status", () => {
+    expect(() =>
+      assertNotProduction({
+        supabaseUrl: "http://127.0.0.1:54321",
+        serviceRoleKey: "sb_secret_local-example",
+        expectedLocalServiceRoleKey: "sb_secret_local-example",
+      }),
+    ).not.toThrow();
+  });
+
+  it("FAILS CLOSED when the independently pinned local key differs", () => {
+    expect(() =>
+      assertNotProduction({
+        supabaseUrl: "http://127.0.0.1:54321",
+        serviceRoleKey: LOCAL_KEY,
+        expectedLocalServiceRoleKey: `${LOCAL_KEY}-different`,
+      }),
+    ).toThrow("E2E_EXPECTED_LOCAL_SERVICE_ROLE_KEY");
   });
 
   it("allows a db-free run (no service-role key, no URL)", () => {

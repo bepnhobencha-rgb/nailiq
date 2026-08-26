@@ -1,24 +1,10 @@
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
 import { looseServiceClient, type Row } from "@/shared/integrations/square/looseDb";
-import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { sendSmsReminder } from "@/shared/lib/twilioSms";
-import { getResendClient, getResendFrom } from "@/shared/lib/resend";
-import { listUnsubscribeHeaders, complianceFooterHtml, isEmailSuppressed } from "@/shared/lib/emailCompliance";
-import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
-import {
-  applyLearnedAgentCap,
-  getLessons,
-} from "@/shared/ai/lessons";
-import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
-import { isAiAgentPermissionEnabled } from "@/shared/ai/agentPermissionFence";
-import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
+import { createReactivationCampaignDraft } from "@/shared/ai/createReactivationCampaignDraft";
 
 /**
- * AI "Due to Rebook" — the proactive sibling of win-back. It finds opted-in
- * regulars nearing their median cadence, drafts a personalized message,
- * delivers through the salon's enabled channel, and records the result.
- * Activation is owner-controlled and each run is capped and deduped.
+ * Rebook candidate helper plus the dashboard-only proposal runner. The runner
+ * never reads recipients, calls a provider, or sends a message.
  */
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
@@ -38,14 +24,6 @@ export type RebookCandidate = {
   predictedNext: string;
   usualService: string | null;
 };
-
-let client: Anthropic | null = null;
-function getClient(): Anthropic | null {
-  const key = process.env.ANTHROPIC_API_KEY?.trim();
-  if (!key) return null;
-  if (!client) client = new Anthropic({ apiKey: key });
-  return client;
-}
 
 /** On-rhythm regulars coming due, not already suggested in the last 30 days. */
 export async function gatherRebookCandidates(
@@ -101,198 +79,27 @@ export async function gatherRebookCandidates(
   return out;
 }
 
-/** ① AI BRAIN — draft a warm "you're due" message. Returns null on failure. */
-export async function agentDraftRebook(
-  c: RebookCandidate,
-  salonName: string,
-  lang: "en" | "vi",
-  salonId: string | null = null,
-): Promise<string | null> {
-  const ai = getClient();
-  if (!ai) return null;
-
-  const weeks = Math.max(1, Math.round(c.cadenceDays / 7));
-  const langLabel = lang === "vi" ? "tiếng Việt" : "English";
-  const svc = c.usualService ? `their usual "${c.usualService}"` : "their next visit";
-  const prompt = `Write a short, warm, genuine message in ${langLabel} for a loyal salon regular who is about due for their next appointment but hasn't booked yet. Make it feel caring and personal, not pushy.
-
-Customer: ${c.name}, comes in roughly every ${weeks} week(s), usually books ${svc}, at ${salonName}.
-
-Rules: 1-2 sentences, friendly + personal, mention the salon by name, gently offer to save them a spot for their next visit, NO emojis, NO links (added when sent). Return ONLY the message text.`;
-
-  try {
-    const model = "claude-haiku-4-5-20251001";
-    const resp = await trackAnthropicMessage(
-      { salonId, feature: "rebook_draft", model },
-      () => ai.messages.create({
-        model,
-        max_tokens: 200,
-        messages: [{ role: "user", content: prompt }],
-      }),
-    );
-    const text = resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
-    const clean = text.replace(/^["']|["']$/g, "").trim();
-    return clean.length > 0 && clean.length <= 480 ? clean : null;
-  } catch {
-    return null;
-  }
-}
-
-const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
-
 /**
- * Run "due to rebook" for one salon: opt-in (feature_flags.ai_rebook), sends up
- * to `cap` messages per call with ACT+UNDO (60-min window). Logs to ai_actions_log.
+ * Create one PII-free dashboard draft per salon/week. The `cap` argument is
+ * retained for call-site compatibility but intentionally unused.
  */
-export async function runRebook(salonId: string, cap = 3): Promise<void> {
+export async function runRebook(salonId: string, _cap = 3): Promise<void> {
   try {
+    void _cap;
     const db = looseServiceClient();
     const { data: salon } = await db
       .from("salons")
-      .select("name, email, feature_flags, slug, sms_outbound_enabled, sms_a2p_registered, email_outbound_enabled, customer_channel" as never)
+      .select("name, feature_flags" as never)
       .eq("id", salonId)
       .maybeSingle();
     const s = (salon as Row | null) ?? {};
     if ((s.feature_flags as Record<string, unknown> | null)?.ai_rebook !== true) return;
-    const salonName = str(s.name) || "our salon";
-    const salonSlug = str(s.slug) || "";
-    const salonReplyEmail = str(s.email) || null;
-    const bookingUrl = `${SITE_URL}/${salonSlug}?ref=rebook`;
-    const smsOutboundEnabled = s.sms_outbound_enabled !== false; // default true
-    const emailOutboundEnabled = s.email_outbound_enabled !== false; // default true
-    const smsA2pRegistered = s.sms_a2p_registered === true; // US A2P 10DLC status
-    const customerChannelMode = (str(s.customer_channel) || "smart") as CustomerChannelMode;
-
-    const segmentLessons = await getLessons(salonId, "segment");
-    const effectiveCap = applyLearnedAgentCap(cap, segmentLessons, "rebook");
-    const candidates = await gatherRebookCandidates(salonId, effectiveCap);
-    if (candidates.length === 0) return;
-
-    const svc = createServiceRoleClient();
-    let sentCount = 0;
-
-    for (const c of candidates) {
-      // Permission is deliberately checked per recipient, not just once at
-      // runner start, so an owner revocation fences the remaining deliveries.
-      if (!(await isAiAgentPermissionEnabled(salonId, "ai_rebook"))) break;
-
-      // Resolve channel BEFORE drafting — no point spending AI tokens on a
-      // message that can't be delivered.
-      const ch = resolveCustomerChannel({
-        mode: customerChannelMode,
-        smsOutboundEnabled,
-        emailOutboundEnabled,
-        customerEmail: c.email,
-        smsA2pRegistered,
-        customerPhone: c.phone,
-      });
-
-      if (ch.noChannel) {
-        console.warn("[runRebook] no eligible channel", {
-          salonId,
-          reason: ch.reason,
-        });
-        // Awaited — `void` on a PostgrestBuilder never issued the insert, so
-        // Minh's audit trail had no record of skipped customers.
-        await svc.from("ai_actions_log" as never).insert({
-          salon_id: salonId,
-          agent: "rebook",
-          action_type: "skipped_no_channel",
-          target_id: null,
-          payload: { name: c.name, phone: c.phone, reason: ch.reason },
-          undo_deadline: null,
-        } as never);
-        continue;
-      }
-
-      const lang: "en" | "vi" = "en";
-      const message = await agentDraftRebook(c, salonName, lang, salonId);
-      if (!message) continue;
-
-      const channel: "sms" | "email" = ch.email ? "email" : "sms";
-
-      if (!(await isAiAgentPermissionEnabled(salonId, "ai_rebook"))) break;
-
-      let ok = false;
-      if (ch.sms) {
-        const r = await sendSmsReminder(c.phone, `${message}\n${bookingUrl}`, { lang });
-        ok = r.ok;
-      }
-      if (ch.email && c.email) {
-        const resend = getResendClient();
-        const suppressed = await isEmailSuppressed(c.email).catch(() => true);
-        if (resend && !suppressed) {
-          const esc = (x: string) => x.replace(/[<>&"]/g, (c2) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c2] ?? c2));
-          const bodyHtml = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#faf9f7;">
-  <div style="max-width:480px;margin:0 auto;padding:28px 22px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#2a2a2a;">
-    <p style="margin:0 0 8px;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#888;">${esc(salonName)}</p>
-    <p style="margin:0 0 20px;font-size:15px;line-height:1.6;">${esc(message)}</p>
-    <p style="margin:0 0 22px;">
-      <a href="${bookingUrl}" style="display:inline-block;padding:13px 26px;background:#0a0a0a;color:#fff;text-decoration:none;border-radius:10px;font-weight:600;font-size:15px;">Book now</a>
-    </p>
-  </div>
-${complianceFooterHtml({ email: c.email, salonName, lang })}
-</body></html>`;
-          const { error } = await resend.emails.send({
-            from: getResendFrom(),
-            to: c.email,
-            subject: `Time for your next visit at ${salonName}`,
-            html: bodyHtml,
-            text: `${message}\n\n${bookingUrl}`,
-            headers: listUnsubscribeHeaders(c.email),
-            ...(salonReplyEmail ? { replyTo: salonReplyEmail } : {}),
-          });
-          ok = ok || !error;
-        }
-      }
-
-      if (!ok) continue;
-      sentCount++;
-
-      const { data: inserted } = await svc
-        .from("winback_suggestions" as never)
-        .insert({
-          salon_id: salonId,
-          kind: "due",
-          client_phone: c.phone,
-          client_name: c.name,
-          client_email: c.email,
-          last_visit: c.lastVisit,
-          visit_count: c.visits,
-          lang,
-          channel,
-          message,
-          status: "sent",
-        } as never)
-        .select("id")
-        .single();
-
-      const suggestionId = (inserted as { id?: string } | null)?.id ?? null;
-
-      await svc.from("ai_actions_log" as never).insert({
-        salon_id: salonId,
-        agent: "rebook",
-        action_type: `sent_${channel}`,
-        target_id: suggestionId,
-        payload: {
-          name: c.name,
-          phone: c.phone,
-          channel,
-          reason: ch.reason,
-          message_preview: message.slice(0, 120),
-        },
-        undo_deadline: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-      } as never);
-    }
-
-    if (sentCount > 0) {
-      void sendOwnerAlert(salonId, {
-        subject: `${salonName} — AI sent ${sentCount} rebook reminder${sentCount > 1 ? "s" : ""}`,
-        bodyText:
-          `AI Manager nhắc ${sentCount} khách tới kỳ ghé lại. ` +
-          `Undo được trong 60 phút từ Activity feed.`,
-      });
-    }
+    const outcome = await createReactivationCampaignDraft({
+      salonId,
+      salonName: str(s.name) || "our salon",
+      kind: "rebook",
+    });
+    if (outcome === "failed") throw new Error("rebook_draft_failed");
   } catch (e) {
     console.error("[runRebook]", e);
     throw e;

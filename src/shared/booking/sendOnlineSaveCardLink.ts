@@ -65,7 +65,10 @@ export async function sendOnlineSaveCardLink(bookingId: string): Promise<void> {
       flags?.ai_noshow_policy_live === true || flags?.ai_noshow_policy_shadow === true;
     if (!aiOptedIn) return;
 
-    const token = await generateReminderToken(bookingId, salonId);
+    const token = await generateReminderToken(bookingId, salonId, {
+      action: "card_manage",
+      expiresAt: new Date(Date.now() + 20 * 60 * 1000).toISOString(),
+    });
     if (!token) return;
     const url = `${SITE_URL}/booking/save-card?token=${token.id}`;
 
@@ -104,7 +107,7 @@ export async function sendOnlineSaveCardLink(bookingId: string): Promise<void> {
 
     if (phone) {
       try {
-        await sendSmsReminder(phone, smsBody, { lang });
+        await sendSmsReminder(phone, smsBody, { salonId, lang });
       } catch (e) {
         console.error("[sendOnlineSaveCardLink] sms", e);
       }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/shared/lib/supabase/server";
+import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
 import { USER_LANGUAGES, type UserLanguage } from "@/shared/i18n/user/types";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +15,9 @@ export const dynamic = "force-dynamic";
  * booking page keeps its own per-surface language.
  */
 export async function POST(req: Request) {
+  if (!isSameOriginMutation(req)) {
+    return NextResponse.json({ ok: false, error: "invalid_origin" }, { status: 403 });
+  }
   const body = (await req.json().catch(() => ({}))) as { language?: string };
   const language = body.language;
   if (!language || !USER_LANGUAGES.includes(language as UserLanguage)) {

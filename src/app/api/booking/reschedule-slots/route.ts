@@ -2,7 +2,22 @@ import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { computeTimeSlots } from "@/shared/booking/getAvailableTimeSlots";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
+import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
+import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import { salonWallTimeToUtcIso, salonYmdOfUtc } from "@/shared/lib/salonTime";
+import { inspectBookingManagementCapability } from "@/shared/booking/bookingManagementCapabilities";
+import { consumeBookingManagementRateLimit } from "@/shared/booking/bookingManagementRateLimit";
+
+const PRIVATE_HEADERS = {
+  "Cache-Control": "private, no-store, max-age=0",
+  Pragma: "no-cache",
+  "Referrer-Policy": "no-referrer",
+  "X-Robots-Tag": "noindex, nofollow",
+} as const;
+
+function json(body: Record<string, unknown>, status = 200) {
+  return NextResponse.json(body, { status, headers: PRIVATE_HEADERS });
+}
 
 type QueryParams = {
   token?: string;
@@ -23,57 +38,50 @@ export async function GET(req: Request) {
   };
 
   if (!params.token) {
-    return NextResponse.json({ error: "missing_params" }, { status: 400 });
+    return json({ error: "missing_params" }, 400);
   }
 
   let dateYmd: string | null = null;
   if (params.date) {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(params.date);
-    if (!m) return NextResponse.json({ error: "invalid_date_format" }, { status: 400 });
+    if (!m) return json({ error: "invalid_date_format" }, 400);
     dateYmd = params.date;
   }
 
   const supabase = createServiceRoleClient();
 
-  // Resolve booking from token
-  const { data: tokenRow } = await supabase
-    .from("booking_reminder_tokens" as never)
-    .select("booking_id, used_at, expires_at")
-    .eq("id", params.token)
-    .maybeSingle();
-
-  const tr = tokenRow as { booking_id: string; used_at: string | null; expires_at: string } | null;
-  if (!tr || tr.used_at !== null || new Date(tr.expires_at) < new Date()) {
-    return NextResponse.json({ error: "token_invalid" }, { status: 400 });
+  const rate = await consumeBookingManagementRateLimit({
+    request: req,
+    tokenId: params.token,
+    action: "reschedule",
+    phase: "inspect",
+  });
+  if (rate !== "allowed") {
+    return json({ error: rate === "limited" ? "rate_limited" : "management_unavailable" }, rate === "limited" ? 429 : 503);
   }
+  const inspected = await inspectBookingManagementCapability({
+    tokenId: params.token,
+    expectedAction: "reschedule",
+  });
+  if (!inspected.ok) return json({ error: inspected.code }, inspected.code === "management_unavailable" ? 503 : 404);
+  const context = inspected.inspection.context;
 
-  // Load booking details
-  const { data: booking } = await supabase
-    .from("bookings" as never)
-    .select("salon_id, service_id, staff_id, start_time_utc")
-    .eq("id", tr.booking_id)
-    .in("status", ["pending", "confirmed"])
-    .maybeSingle();
-
-  const b = booking as {
-    salon_id: string; service_id: string; staff_id: string | null; start_time_utc: string;
-  } | null;
-  if (!b) return NextResponse.json({ error: "booking_not_found" }, { status: 404 });
-
-  // Load salon + service data (include timezone for correct slot computation)
-  const [{ data: salon }, { data: service }, { data: staffRows }] = await Promise.all([
-    supabase.from("salons" as never).select("timezone, opening_hours, booking_closed_dates").eq("id", b.salon_id).maybeSingle(),
-    supabase.from("services" as never).select("duration_minutes").eq("id", b.service_id).maybeSingle(),
-    supabase.from("staff" as never).select("id, name, job_role").eq("salon_id", b.salon_id).eq("status" as never, "active").is("deleted_at" as never, null),
+  // Load salon + active staff. Service duration/tenant/staff IDs come from the
+  // capability's service-only authoritative context and are never returned.
+  const [salonResult, staffResult] = await Promise.all([
+    supabase.from("salons" as never).select("timezone, opening_hours, booking_closed_dates").eq("id", context.salonId).maybeSingle(),
+    supabase.from("staff" as never).select("id, name, job_role").eq("salon_id", context.salonId).eq("status" as never, "active").is("deleted_at" as never, null),
   ]);
-
-  const salonRow = salon as { timezone?: string; opening_hours: unknown; booking_closed_dates?: unknown } | null;
-  const serviceRow = service as { duration_minutes: number } | null;
-  if (!salonRow || !serviceRow) {
-    return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
+  if (salonResult.error || staffResult.error) {
+    return json({ error: "management_unavailable" }, 503);
   }
 
-  const allStaff = ((staffRows ?? []) as { id: string; name: string; job_role?: string | null }[]).map((r) => ({
+  const salonRow = salonResult.data as { timezone?: string; opening_hours: unknown; booking_closed_dates?: unknown } | null;
+  if (!salonRow) {
+    return json({ error: "salon_not_found" }, 404);
+  }
+
+  const allStaff = ((staffResult.data ?? []) as { id: string; name: string; job_role?: string | null }[]).map((r) => ({
     id: String(r.id),
     name: String(r.name ?? ""),
     job_role: String(r.job_role ?? ""),
@@ -97,7 +105,7 @@ export async function GET(req: Request) {
   // salon's own "today" before it has picked a date, instead of trusting the
   // customer's device clock/timezone.
   if (!dateYmd) {
-    return NextResponse.json({
+    return json({
       timezone,
       todayYmd: salonYmdOfUtc(new Date().toISOString(), timezone),
       slots: [],
@@ -105,19 +113,25 @@ export async function GET(req: Request) {
   }
 
   const [dy, dm, dd] = dateYmd.split("-").map(Number);
+  const calendarDate = new Date(Date.UTC(dy, dm - 1, dd));
+  if (calendarDate.toISOString().slice(0, 10) !== dateYmd) {
+    return json({ error: "invalid_date_format" }, 400);
+  }
   const salonMidnightUtcMs = Date.parse(salonWallTimeToUtcIso(dateYmd, 0, timezone));
   const utcMidnightMs = Date.UTC(dy, dm - 1, dd);
   const tzOffsetMs = salonMidnightUtcMs - utcMidnightMs;
 
-  // Occupancy query: cover the full salon local day (midnight → midnight+24 h)
+  // Occupancy query: cover exact salon midnights; UTC duration may be 23/25 h on DST days.
   const dayStart = new Date(salonMidnightUtcMs);
-  const dayEnd   = new Date(salonMidnightUtcMs + 24 * 60 * 60 * 1000 - 1);
+  const nextDateYmd = new Date(Date.UTC(dy, dm - 1, dd + 1)).toISOString().slice(0, 10);
+  const dayEnd = new Date(Date.parse(salonWallTimeToUtcIso(nextDateYmd, 0, timezone)) - 1);
 
-  const { data: occData } = await supabase.rpc("public_booking_occupancy_for_range", {
-    p_salon_id: b.salon_id,
+  const { data: occData, error: occupancyError } = await supabase.rpc("public_booking_occupancy_for_range", {
+    p_salon_id: context.salonId,
     p_start:    dayStart.toISOString(),
     p_end:      dayEnd.toISOString(),
   });
+  if (occupancyError) return json({ error: "management_unavailable" }, 503);
 
   // Shift occupancy into fake-UTC frame
   type OccRow = { staff_id: string; start_time_utc: string; end_time_utc: string };
@@ -134,15 +148,33 @@ export async function GET(req: Request) {
   const slots = computeTimeSlots({
     openingHoursRaw:        salonRow.opening_hours,
     selectedDate,
-    staffId:                b.staff_id ?? BOOKING_ANY_STAFF_ID,
+    staffId:                context.staffId ?? BOOKING_ANY_STAFF_ID,
     staffList:              allStaff,
-    serviceDurationMinutes: Number(serviceRow.duration_minutes),
+    serviceDurationMinutes: context.durationMinutes,
     occupancy:              adjustedOccupancy,
     nowMs:                  Date.now() - tzOffsetMs,
-    closedDateYmdSet:       new Set<string>(),
+    closedDateYmdSet:       parseBookingClosedDateSet(salonRow.booking_closed_dates),
   });
 
-  return NextResponse.json({
-    slots: slots.filter((s) => s.available).map((s) => s.label),
+  const slotOptions = slots.flatMap((slot) => {
+    if (!slot.available) return [];
+    try {
+      const startUtc = salonWallTimeToUtcIso(
+        dateYmd!,
+        parseTimeSlotToMinutes(slot.label),
+        timezone,
+      );
+      return [{
+        label: slot.label,
+        startUtc,
+        endUtc: new Date(Date.parse(startUtc) + context.durationMinutes * 60_000).toISOString(),
+      }];
+    } catch {
+      // Fake-UTC slot layout can name a spring-forward minute that is absent
+      // in the salon zone. Omit it rather than returning a shifted instant or
+      // failing the entire day's availability response.
+      return [];
+    }
   });
+  return json({ slots: slotOptions.map((slot) => slot.label), slotOptions });
 }

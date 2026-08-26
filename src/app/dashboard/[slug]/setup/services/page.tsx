@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
+import { GuidedSetupReturnCard } from "@/components/dashboard/GuidedSetupReturnCard";
 import { ServicesSetupPanel } from "@/components/dashboard/ServicesSetupPanel";
 import { loadServiceCategories } from "@/shared/booking/loadServiceCategories";
 import { parseServiceCategory } from "@/shared/booking/serviceCategory";
@@ -11,6 +12,8 @@ import { getUserMessages } from "@/shared/i18n/user";
 import { resolveUserLanguage } from "@/shared/i18n/user/resolveUserLanguage";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
 import { getEffectivePlanLimits } from "@/shared/lib/subscriptionPlans";
+import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
+import { loadPublicBookingSequenceReadiness } from "@/shared/booking/bookingSequenceReadiness";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -40,7 +43,7 @@ export default async function SetupServicesPage({ params }: Props) {
     // `price_max_cents` by the variable-pricing migration. Some columns
     // are not yet in the auto-generated DB types so the SELECT is cast.
     .select(
-      "id, name, price_cents, price_type, price_max_cents, duration_minutes, buffer_minutes, category, description, is_popular, is_featured, is_addon, addon_timing" as never,
+      "id, name, price_cents, price_type, price_max_cents, duration_minutes, prep_minutes, buffer_minutes, category, description, is_popular, is_featured, is_addon, addon_timing" as never,
     )
     .eq("salon_id", ctx.salon.id)
     .is("deleted_at" as never, null)
@@ -51,22 +54,8 @@ export default async function SetupServicesPage({ params }: Props) {
     redirect("/register");
   }
 
-  // Read the salon's effective plan to size the proactive at-limit
-  // banner + hard-disable the Add button on the client. Server still
-  // enforces independently via canAddService — this is UX only.
-  const { data: planRow } = await ctx.supabase
-    .from("salons")
-    .select(
-      "subscription_plan, plan_override, feature_flags, currency_code" as never,
-    )
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
-  const planForLimits = (planRow ?? {}) as {
-    subscription_plan?: string | null;
-    plan_override?: string | null;
-    feature_flags?: Record<string, unknown> | null;
-    currency_code?: unknown;
-  };
+  // The central member-profile RPC supplies allowlisted plan/flag inputs.
+  const planForLimits = ctx.salon;
   const planLimits = getEffectivePlanLimits(planForLimits);
   const maxServices = Number.isFinite(planLimits.maxServices)
     ? planLimits.maxServices
@@ -75,16 +64,35 @@ export default async function SetupServicesPage({ params }: Props) {
   const categories = await loadServiceCategories();
   const language = await resolveUserLanguage();
   const t = getUserMessages(language);
+  const [guidedSetupEnabled, multiServiceTenantVisible, sequenceReadiness] = await Promise.all([
+    isReleaseFeatureVisible(ctx.salon, "guided_admin_setup"),
+    isReleaseFeatureVisible(ctx.salon, "multi_service_booking"),
+    loadPublicBookingSequenceReadiness(ctx.salon.id),
+  ]);
+  const multiServiceEditorEnabled =
+    multiServiceTenantVisible &&
+    sequenceReadiness.ok &&
+    sequenceReadiness.readiness.ready;
 
   return (
     <ResponsiveShell>
       <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-4 sm:pt-6">
-        <SetupBackNav slug={slug} title={t.setupLabels.servicesTitle} />
+        <SetupBackNav
+          slug={slug}
+          title={t.setupLabels.servicesTitle}
+          backHref={
+            guidedSetupEnabled
+              ? `/dashboard/${encodeURIComponent(slug)}/setup`
+              : undefined
+          }
+          backLabel={guidedSetupEnabled ? "← Setup" : undefined}
+        />
         <ServicesSetupPanel
           slug={slug}
           maxServices={maxServices}
           currency={currency}
           categories={categories}
+          multiServiceEditorEnabled={multiServiceEditorEnabled}
           initialRows={(rows ?? []).map((r) => {
             const row = r as unknown as {
               id: string;
@@ -93,6 +101,7 @@ export default async function SetupServicesPage({ params }: Props) {
               price_type?: unknown;
               price_max_cents?: unknown;
               duration_minutes?: number;
+              prep_minutes?: number;
               buffer_minutes?: number;
               category?: unknown;
               description?: unknown;
@@ -118,6 +127,7 @@ export default async function SetupServicesPage({ params }: Props) {
                   ? Math.round(Number(priceMaxRaw))
                   : null,
               duration_minutes: Number(row.duration_minutes ?? 0),
+              prep_minutes: Number(row.prep_minutes ?? 0),
               buffer_minutes: Number(row.buffer_minutes ?? 0),
               category: parseServiceCategory(row.category),
               description:
@@ -132,6 +142,9 @@ export default async function SetupServicesPage({ params }: Props) {
             };
           })}
         />
+        {guidedSetupEnabled ? (
+          <GuidedSetupReturnCard slug={slug} currentStep="service-menu" />
+        ) : null}
       </MobileStack>
     </ResponsiveShell>
   );

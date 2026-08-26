@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 
 import { Badge, type BadgeVariant } from "@/components/ui/Badge";
@@ -214,7 +214,28 @@ function DepositButton({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<{ url: string; amountCents: number } | null>(null);
+  const requestIdRef = useRef<string | null>(null);
   const label = language === "en" ? "💰 Request deposit" : "💰 Tạo link cọc";
+
+  function hostedLinkRequestId(): string {
+    if (requestIdRef.current) return requestIdRef.current;
+    const key = `nailiq:desk-deposit-link:${salonId}:${bookingId}`;
+    try {
+      const stored = sessionStorage.getItem(key);
+      if (stored && /^[0-9a-f-]{36}$/i.test(stored)) {
+        requestIdRef.current = stored;
+        return stored;
+      }
+      const created = crypto.randomUUID();
+      sessionStorage.setItem(key, created);
+      requestIdRef.current = created;
+      return created;
+    } catch {
+      const created = crypto.randomUUID();
+      requestIdRef.current = created;
+      return created;
+    }
+  }
 
   async function onPress() {
     setBusy(true);
@@ -225,7 +246,14 @@ function DepositButton({
       // flipping the booking to pending (the "hold / pay-to-confirm" variant
       // was removed: unused at the desk + its auto-cancel cron isn't wired,
       // so it left bookings stuck "pending"; see no-show card-on-file plan).
-      const r = await requestDepositLink(slug, { salonId, bookingId, manual: true, hold: false, language });
+      const r = await requestDepositLink(slug, {
+        salonId,
+        bookingId,
+        requestId: hostedLinkRequestId(),
+        manual: true,
+        hold: false,
+        language,
+      });
       if (r.ok) setModal({ url: r.url, amountCents: r.amountCents });
       else setError(depositErrorLabel(r.error, language));
     } catch {
@@ -242,6 +270,7 @@ function DepositButton({
       const r = await requestDepositLink(slug, {
         salonId,
         bookingId,
+        requestId: hostedLinkRequestId(),
         manual: true,
         hold: false,
         sendSms: true,

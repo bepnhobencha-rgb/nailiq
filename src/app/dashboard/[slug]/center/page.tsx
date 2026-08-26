@@ -8,6 +8,7 @@ import { ReceptionistErrorBoundary } from "@/components/receptionist/Receptionis
 import { loadBookingLimitStatus } from "@/shared/dashboard/loadBookingLimitStatus";
 import { loadReceptionistCenterData } from "@/shared/dashboard/loadReceptionistCenterData";
 import { loadPartyCardsAction } from "@/shared/dashboard/loadPartyCardsAction";
+import { isArchivedBookingFeatureAvailable } from "@/shared/dashboard/archivedBookingFeatureAccess";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { userEn } from "@/shared/i18n/user";
 import {
@@ -18,7 +19,6 @@ import {
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { loadPlatformDisabledFeatures } from "@/shared/features/platformFeatureFlags";
-import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 export const dynamic = "force-dynamic";
 
@@ -93,19 +93,7 @@ export default async function ReceptionistCenterPage({
   // PR2: resolve Beta release flags that gate in-board surfaces (party-card
   // strip → group_booking, TV preset → tv_mode). Server-resolved so the client
   // component receives plain booleans.
-  const { data: flagRow } = await ctx.supabase
-    .from("salons")
-    .select(
-      "subscription_plan, plan_override, feature_flags, voice_ai_enabled" as never,
-    )
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
-  const flagSalon = (flagRow ?? {}) as {
-    subscription_plan?: string | null;
-    plan_override?: string | null;
-    feature_flags?: unknown;
-    voice_ai_enabled?: boolean | null;
-  };
+  const flagSalon = ctx.salon;
   const groupBookingEnabled = isReleaseFeatureEnabled(flagSalon, "group_booking");
   const tvModeEnabled = isReleaseFeatureEnabled(flagSalon, "tv_mode");
   const featureFlags = flagSalon.feature_flags as Record<string, unknown> | null | undefined;
@@ -137,21 +125,8 @@ export default async function ReceptionistCenterPage({
     featureVisible("receptionist_shell_v2") || receptionistShellPreview;
   const waitlistAttentionEnabled = featureVisible("waitlist_attention");
 
-  let archivedBookingRecoveryEnabled = featureVisible(
-    "archived_booking_recovery",
-  );
-  if (archivedBookingRecoveryEnabled) {
-    const { data: wixIntegration, error: wixError } =
-      await createServiceRoleClient()
-        .from("wix_integrations")
-        .select("salon_id")
-        .eq("salon_id", ctx.salon.id)
-        .eq("enabled", true)
-        .maybeSingle();
-    // The current pilot intentionally performs no Wix write-back. Fail closed
-    // so a real recovery can never exist on only one of two active calendars.
-    archivedBookingRecoveryEnabled = !wixError && !wixIntegration?.salon_id;
-  }
+  const archivedBookingRecoveryEnabled =
+    await isArchivedBookingFeatureAvailable(ctx.salon);
 
   // Archived rows stay immutable. The URL carries only the source UUID and
   // recovery kind; customer details are loaded server-side after proving:

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
+import { GuidedSetupReturnCard } from "@/components/dashboard/GuidedSetupReturnCard";
 import { StaffSetupPanel } from "@/components/dashboard/StaffSetupPanel";
 import { getUserMessages } from "@/shared/i18n/user";
 import { resolveUserLanguage } from "@/shared/i18n/user/resolveUserLanguage";
@@ -15,6 +16,7 @@ import {
   type StaffAccessInfo,
 } from "@/shared/dashboard/staffAccess";
 import { getEffectivePlanLimits } from "@/shared/lib/subscriptionPlans";
+import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -105,31 +107,26 @@ export default async function SetupStaffPage({ params }: Props) {
 
   // Same plan-limit plumbing as the services page — UX gate only; the
   // server still re-enforces via `canAddStaff`.
-  const { data: planRow } = await ctx.supabase
-    .from("salons")
-    .select(
-      "subscription_plan, plan_override, feature_flags" as never,
-    )
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
-  const planForLimits = (planRow ?? {}) as {
-    subscription_plan?: string | null;
-    plan_override?: string | null;
-    feature_flags?: Record<string, unknown> | null;
-  };
+  const planForLimits = ctx.salon;
   const planLimits = getEffectivePlanLimits(planForLimits);
   const maxStaff = Number.isFinite(planLimits.maxStaff)
     ? planLimits.maxStaff
     : Number.POSITIVE_INFINITY;
+  const guidedSetupEnabled = await isReleaseFeatureVisible(
+    ctx.salon,
+    "guided_admin_setup",
+  );
 
-  // Login/permission info per staff member (service-role read — salon_members
-  // RLS only exposes the caller's own row, so the owner couldn't otherwise see
-  // the whole team's access). Resolve only the members that actually have a
-  // linked login, so cost scales with team size — not the whole project.
-  const linkedUserIds = staffRows
-    .map((r) => ("user_id" in r ? (r as { user_id?: unknown }).user_id : undefined))
-    .filter((v): v is string => typeof v === "string");
-  const accessMap = await loadTeamAccessMap(ctx.salon.id, linkedUserIds);
+  // PII-bearing login/permission details are loaded through a self-authorizing
+  // Server Function. It accepts only this route's slug and derives both the
+  // salon ID and linked Auth user IDs server-side; never forward UUIDs from the
+  // page as an authorization boundary.
+  const accessResult = await loadTeamAccessMap(slug);
+  if (!accessResult.ok) {
+    console.error("[setup/staff] team access", accessResult.error);
+    redirect("/register");
+  }
+  const accessMap = accessResult.accessMap;
   const accessByStaff: Record<string, StaffAccessInfo | null> = {};
   for (const r of staffRows) {
     const uid =
@@ -141,7 +138,16 @@ export default async function SetupStaffPage({ params }: Props) {
   return (
     <ResponsiveShell>
       <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-4 sm:pt-6">
-        <SetupBackNav slug={slug} title={t.setupLabels.staffTitle} />
+        <SetupBackNav
+          slug={slug}
+          title={t.setupLabels.staffTitle}
+          backHref={
+            guidedSetupEnabled
+              ? `/dashboard/${encodeURIComponent(slug)}/setup`
+              : undefined
+          }
+          backLabel={guidedSetupEnabled ? "← Setup" : undefined}
+        />
         <StaffSetupPanel
           slug={slug}
           maxStaff={maxStaff}
@@ -149,7 +155,9 @@ export default async function SetupStaffPage({ params }: Props) {
             id: String(r.id),
             name: String(r.name ?? ""),
             job_role: normalizeRole(
-              "job_role" in r ? (r as { job_role?: unknown }).job_role : undefined,
+              "job_role" in r
+                ? (r as { job_role?: unknown }).job_role
+                : undefined,
             ),
             status: normalizeStatus(
               "status" in r ? (r as { status?: unknown }).status : undefined,
@@ -161,6 +169,9 @@ export default async function SetupStaffPage({ params }: Props) {
           accessByStaff={accessByStaff}
           currentUserRole={ctx.role}
         />
+        {guidedSetupEnabled ? (
+          <GuidedSetupReturnCard slug={slug} currentStep="team-access" />
+        ) : null}
       </MobileStack>
     </ResponsiveShell>
   );

@@ -18,6 +18,10 @@ function approval(
       label: "owner@example.com",
       role: "owner",
     },
+    execution_required: true,
+    review_reply_draft: null,
+      promo_campaign_draft: null,
+      reactivation_campaign_draft: null,
     intelligence: {
       en: {
         reason: "Reason",

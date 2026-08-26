@@ -5,6 +5,27 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact QA branch SHA deployed to Vercel Preview
+        required: true
+        type: string
+      preview_url:
+        description: Exact immutable Vercel Preview URL
+        required: true
+        type: string
+      stage:
+        description: Approved MQA-0148 ramp stage
+        required: true
+        type: choice
+        options:
+          - "250"
+          - "500"
+      start_epoch_ms:
+        description: Shared future release barrier in Unix milliseconds
+        required: true
+        type: string
 
 concurrency:
   group: e2e-${{ github.ref }}
@@ -13,6 +34,7 @@ concurrency:
 jobs:
   i18n-check:
     name: i18n & Copy Check
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -36,6 +58,7 @@ jobs:
   # No continue-on-error. No `|| true`. If this goes red, something real broke.
   smoke:
     name: Smoke (required)
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     needs: i18n-check
     timeout-minutes: 25
@@ -109,7 +132,7 @@ jobs:
           export NEXT_PUBLIC_SUPABASE_ANON_KEY="${ANON_KEY}"
           export SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY}"
 
-          npx tsx -e "import('./e2e/helpers/guardProduction').then(g => { const guard = g.assertNotProductionFromEnv ?? g.default?.assertNotProductionFromEnv; if (typeof guard !== 'function') throw new Error('E2E production guard export is unavailable'); guard(); console.log('✓ guard: not production'); })"
+          npx tsx scripts/assert-e2e-not-production.ts
           bash scripts/apply-baseline.sh "${DB_URL}"
           npx tsx scripts/check-schema-parity.ts
           npx tsx scripts/seed-e2e.ts
@@ -154,6 +177,7 @@ jobs:
   # ── FULL REGRESSION (reports, does not gate) ─────────────────────────────────
   e2e:
     name: E2E (Playwright) — ${{ matrix.name }}
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     needs: i18n-check
     # Receptionist desktop and mobile use separate throwaway databases, so they
@@ -184,6 +208,7 @@ jobs:
               e2e/client-identity-merge.spec.ts
               e2e/dashboard.spec.ts
               e2e/group-booking
+              e2e/guided-admin-setup.spec.ts
               e2e/landing-funnel.spec.ts
               e2e/noshow-confirm.spec.ts
               e2e/noshow-deposit.spec.ts
@@ -372,7 +397,7 @@ jobs:
           echo "→ target: ${API_URL}"
           NEXT_PUBLIC_SUPABASE_URL="${API_URL}" \
           SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY}" \
-            npx tsx -e "import('./e2e/helpers/guardProduction').then(g => { const guard = g.assertNotProductionFromEnv ?? g.default?.assertNotProductionFromEnv; if (typeof guard !== 'function') throw new Error('E2E production guard export is unavailable'); guard(); console.log('✓ guard: not production'); })"
+            npx tsx scripts/assert-e2e-not-production.ts
 
           # One script, used by CI and by anyone verifying locally, so the two
           # cannot drift. It applies the prelude (roles, auth shims, extensions)
@@ -451,6 +476,17 @@ jobs:
         run: npx playwright test ${{ matrix.testpath }} ${{ steps.projects.outputs.flag }} --reporter=list,html,json
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
+      - name: Run Guided Setup mobile certification
+        if: >-
+          steps.preflight.outputs.configured == 'true' &&
+          matrix.shard == 1 &&
+          github.event_name == 'pull_request'
+        # The primary suite proves the complete owner/admin journey in Chromium.
+        # Re-run only Guided Setup with the mobile project to certify that the
+        # single-next-step journey stays usable on a receptionist tablet/phone.
+        run: >-
+          npx playwright test e2e/guided-admin-setup.spec.ts
+          --project=mobile --reporter=list
       - name: Run Reports hydration regression in WebKit
         if: >-
           always() &&
@@ -514,7 +550,7 @@ jobs:
     name: E2E (Playwright) — receptionist-center
     runs-on: ubuntu-latest
     needs: e2e
-    if: always()
+    if: github.event_name != 'workflow_dispatch' && always()
     steps:
       - name: Require every E2E shard to pass
         env:
@@ -525,6 +561,57 @@ jobs:
             exit 1
           fi
           echo "All isolated E2E shards passed."
+
+  mqa-0148-distributed-load:
+    name: MQA-0148 ${{ inputs.stage }} / source ${{ matrix.shard }}
+    if: github.event_name == 'workflow_dispatch' && github.sha == inputs.candidate_sha
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    env:
+      PLAYWRIGHT_BASE_URL: ${{ inputs.preview_url }}
+      MQA_LOAD_EXPECTED_APP_ID: ${{ inputs.candidate_sha }}
+      MQA_LOAD_TOTAL_REQUESTS: ${{ inputs.stage }}
+      MQA_LOAD_SHARD_COUNT: "10"
+      MQA_LOAD_SHARD_INDEX: ${{ matrix.shard }}
+      MQA_LOAD_START_EPOCH_MS: ${{ inputs.start_epoch_ms }}
+      MQA_LOAD_SALON_SLUG: e2e-mqa-0148-${{ inputs.stage }}-distributed-load
+      MQA_LOAD_SALON_NAME: E2E MQA-0148 ${{ inputs.stage }} Distributed Load Salon
+      MQA_LOAD_OWNERS_JSON: ${{ secrets.MQA0148_QA_OWNERS_JSON }}
+      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.MQA0148_VERCEL_BYPASS_SECRET }}
+      MQA_LOAD_ARTIFACT_DIRECTORY: artifacts
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.candidate_sha }}
+      - name: Guard exact candidate and approved QA boundary
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ inputs.candidate_sha }}"
+          case "${{ inputs.stage }}" in 250|500) ;; *) exit 1 ;; esac
+          case "${{ inputs.preview_url }}" in https://*.vercel.app) ;; *) exit 1 ;; esac
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run one distributed source shard
+        run: node scripts/security/run-mqa-0148-distributed-shard.mjs
+      - name: Upload source receipt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mqa-0148-${{ inputs.stage }}-source-${{ matrix.shard }}
+          path: artifacts/*.json
+          if-no-files-found: error
+          retention-days: 7
 
   visual-tests:
     name: Visual Regression
@@ -621,7 +708,7 @@ jobs:
           echo "::add-mask::${SERVICE_ROLE_KEY}"
           echo "::add-mask::${ANON_KEY}"
           NEXT_PUBLIC_SUPABASE_URL="${API_URL}" SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY}" \
-            npx tsx -e "import('./e2e/helpers/guardProduction').then(g => { const guard = g.assertNotProductionFromEnv ?? g.default?.assertNotProductionFromEnv; if (typeof guard !== 'function') throw new Error('E2E production guard export is unavailable'); guard(); console.log('✓ guard: not production'); })"
+            npx tsx scripts/assert-e2e-not-production.ts
           # Keep Visual on the same reviewed baseline path as Smoke/E2E. The
           # helper safely omits production-only default-privilege statements
           # and loads the lookup rows required by the fixture seeder.
@@ -695,7 +782,7 @@ jobs:
     name: AI Triage (Claude)
     runs-on: ubuntu-latest
     needs: e2e
-    if: failure()
+    if: github.event_name != 'workflow_dispatch' && failure()
     permissions:
       contents: read
       pull-requests: write

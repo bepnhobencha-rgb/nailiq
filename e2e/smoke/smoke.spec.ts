@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { test, expect } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
@@ -57,6 +59,19 @@ const GUEST_NAME = `Smoke Guest ${process.env.GITHUB_RUN_ID ?? "local"}`;
 const SLUG = "e2e-smoke-salon";
 
 test.describe("@smoke — the flows that must never break", () => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    // Local/CI browser projects otherwise share one loopback source IP. A full
+    // E2E run can legitimately consume the durable booking-page bucket before
+    // smoke reaches its submit test, turning the page into a 429 mid-flow.
+    // Keep the production limiter intact and give each disposable test its own
+    // documentation-only address instead.
+    const material = `${testInfo.project.name}:${testInfo.titlePath.join(":")}`;
+    const digest = createHash("sha256").update(material).digest("hex");
+    await page.setExtraHTTPHeaders({
+      "x-forwarded-for": `2001:db8::${digest.slice(0, 4)}:${digest.slice(4, 8)}`,
+    });
+  });
+
   test.beforeAll(async () => {
     await seedTestSalon({ slug: SLUG, name: "E2E Smoke Salon" });
   });

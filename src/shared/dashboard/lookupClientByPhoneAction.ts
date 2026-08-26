@@ -3,6 +3,7 @@
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+import { loadSalonVipProfileIds } from "@/shared/dashboard/salonVipStatus";
 
 /**
  * Phone-based client lookup for the receptionist walk-in form.
@@ -33,7 +34,7 @@ export type ClientLookupProfile = {
   name: string | null;
   /** Email from client_profiles (global). */
   email: string | null;
-  /** Salon-agnostic VIP flag from client_profiles. */
+  /** Salon-scoped VIP recognition badge. */
   is_vip: boolean;
   /** Free-text notes from client_profiles (global, not salon-scoped). */
   notes: string | null;
@@ -77,14 +78,14 @@ export async function lookupClientByPhone(
   }
 
   type ProfileRow = {
+    id?: string | null;
     name?: string | null;
     email?: string | null;
-    is_vip?: boolean | null;
     notes?: string | null;
   };
   const profileRes = (await admin
     .from("client_profiles")
-    .select("name, email, is_vip, notes" as never)
+    .select("id, name, email, notes" as never)
     .eq("phone", phone)
     .is("deleted_at" as never, null)
     .maybeSingle()) as {
@@ -209,6 +210,15 @@ export async function lookupClientByPhone(
     return { ok: true, found: false, phone };
   }
 
+  let isVip = false;
+  if (profile?.id) {
+    try {
+      isVip = (await loadSalonVipProfileIds(ctx.salon.id, [profile.id])).has(profile.id);
+    } catch (vipError) {
+      console.error("[lookupClientByPhone] salon vip status", vipError);
+    }
+  }
+
   return {
     ok: true,
     found: true,
@@ -216,7 +226,7 @@ export async function lookupClientByPhone(
     profile: {
       name: profile?.name?.trim() || null,
       email: profile?.email?.trim() || null,
-      is_vip: profile?.is_vip === true,
+      is_vip: isVip,
       notes: profile?.notes?.trim() || null,
       visit_count: visitCount,
       total_spent_cents: totalSpentCents,

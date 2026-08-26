@@ -9,6 +9,7 @@
  */
 import { createServerClient } from "@supabase/ssr";
 import { getSiteUrl } from "@/shared/seo/site";
+import { resolveSupabaseServerUrl } from "@/shared/lib/supabase/serverUrl";
 
 /** Hosts that are NEVER custom tenant domains. */
 function platformRootHost(): string {
@@ -60,7 +61,7 @@ export async function resolveCustomDomainSlug(host: string): Promise<string | nu
   let slug: string | null = null;
   try {
     const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      resolveSupabaseServerUrl()!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       { cookies: { getAll: () => [], setAll: () => {} } },
     );

@@ -2,21 +2,44 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
+import {
+  acknowledgeBookingManagementRequest,
+  pendingBookingManagementRequest,
+  replacePendingBookingManagementRequestMaterial,
+  stableBookingManagementRequestId,
+} from "@/shared/booking/bookingManagementRequestId";
 
-type Slot = string; // e.g. "9:00 AM"
+type Slot = { label: string; startUtc: string; endUtc: string };
+type SequenceReview = {
+  sequenceFingerprint: string;
+  parentStartTimeUtc: string;
+  parentEndTimeUtc: string;
+  segments: {
+    lineId: string;
+    position: number;
+    staffName: string;
+    customerStartUtc: string;
+    customerEndUtc: string;
+    prepMinutes: number;
+    serviceDurationMinutes: number;
+    sequentialAddonMinutes: number;
+    trailingBufferMinutes: number;
+  }[];
+};
 
 type State =
   | { phase: "date" }
   | { phase: "slots"; date: string; slots: Slot[] | null; loading: boolean }
   | { phase: "confirm"; date: string; slot: Slot }
+  | { phase: "sequence_review"; date: string; slot: Slot; requestId: string; quote: SequenceReview; changed: boolean }
   | { phase: "submitting" }
   | { phase: "done"; serviceName: string; newStartUtc: string }
   | { phase: "error"; code: string };
 
-function formatTime(isoUtc: string): string {
+function formatTime(isoUtc: string, timezone: string): string {
   try {
     return new Date(isoUtc).toLocaleString("en-US", {
-      timeZone: "America/Los_Angeles",
+      timeZone: timezone,
       weekday: "long",
       month: "long",
       day: "numeric",
@@ -58,6 +81,68 @@ export default function RescheduleBookingPage() {
   const [state, setState] = useState<State>({ phase: "date" });
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [minDate, setMinDate] = useState<string | null>(null);
+  const [salonTimezone, setSalonTimezone] = useState("UTC");
+
+  // A prior explicit click may have committed while its HTTP response was
+  // lost. Recover that exact server-issued UTC intent before asking the
+  // consumed token to inspect again; never generate a new request ID.
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    void (async () => {
+      const pending = await pendingBookingManagementRequest({ action: "reschedule", token });
+      if (!pending || cancelled) return;
+      try {
+        const material = JSON.parse(pending.material) as {
+          date?: unknown; slotLabel?: unknown; newStartUtc?: unknown; newEndUtc?: unknown;
+          expectedSequenceFingerprint?: unknown;
+        };
+        if (![material.date, material.slotLabel, material.newStartUtc, material.newEndUtc]
+          .every((value) => typeof value === "string" && value.length > 0)) return;
+        const response = await fetch("/api/booking/reschedule-action", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, requestId: pending.requestId, ...material }),
+        });
+        const body = await response.json() as {
+          ok?: boolean; code?: string; serviceName?: string; newStartUtc?: string;
+          sequenceQuote?: SequenceReview;
+        };
+        if (cancelled) return;
+        if (response.ok && body.ok && body.code === "sequence_review_required" && body.sequenceQuote) {
+          const slot = {
+            label: String(material.slotLabel),
+            startUtc: String(material.newStartUtc),
+            endUtc: String(material.newEndUtc),
+          };
+          setState({
+            phase: "sequence_review",
+            date: String(material.date),
+            slot,
+            requestId: pending.requestId,
+            quote: body.sequenceQuote,
+            changed: false,
+          });
+        } else if (response.ok && body.ok) {
+          await acknowledgeBookingManagementRequest({
+            action: "reschedule",
+            token,
+            material: pending.material,
+          });
+          setState({
+            phase: "done",
+            serviceName: body.serviceName ?? "your appointment",
+            newStartUtc: body.newStartUtc ?? "",
+          });
+        } else {
+          setState({ phase: "error", code: body.code ?? "management_unavailable" });
+        }
+      } catch {
+        if (!cancelled) setState({ phase: "error", code: "management_unavailable" });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [token]);
 
   // Resolve the salon's own "today" + timezone before showing the date
   // picker — the picker used to default to the CUSTOMER'S DEVICE date, which
@@ -73,9 +158,12 @@ export default function RescheduleBookingPage() {
     (async () => {
       try {
         const res = await fetch(`/api/booking/reschedule-slots?token=${encodeURIComponent(token)}`);
-        const json = (await res.json()) as { todayYmd?: string; error?: string };
+        const json = (await res.json()) as { todayYmd?: string; timezone?: string; error?: string };
         if (cancelled) return;
         const ymd = res.ok && !json.error && json.todayYmd ? json.todayYmd : deviceTodayYmd();
+        if (res.ok && typeof json.timezone === "string" && json.timezone) {
+          setSalonTimezone(json.timezone);
+        }
         setSelectedDate(ymd);
         setMinDate(ymd);
       } catch {
@@ -98,12 +186,12 @@ export default function RescheduleBookingPage() {
         const res = await fetch(
           `/api/booking/reschedule-slots?token=${encodeURIComponent(token)}&date=${date}`,
         );
-        const json = (await res.json()) as { slots?: string[]; error?: string };
+        const json = (await res.json()) as { slotOptions?: Slot[]; error?: string };
         if (!res.ok || json.error) {
           setState({ phase: "error", code: json.error ?? "load_failed" });
           return;
         }
-        setState({ phase: "slots", date, slots: json.slots ?? [], loading: false });
+        setState({ phase: "slots", date, slots: json.slotOptions ?? [], loading: false });
       } catch {
         setState({ phase: "error", code: "network_error" });
       }
@@ -114,15 +202,45 @@ export default function RescheduleBookingPage() {
   async function handleSubmit(date: string, slot: Slot) {
     setState({ phase: "submitting" });
     try {
+      const material = JSON.stringify({
+        date,
+        slotLabel: slot.label,
+        newStartUtc: slot.startUtc,
+        newEndUtc: slot.endUtc,
+      });
+      const intent = {
+        action: "reschedule" as const,
+        token,
+        material,
+      };
+      const requestId = await stableBookingManagementRequestId(intent);
       const res = await fetch("/api/booking/reschedule-action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, date, slotLabel: slot }),
+        body: JSON.stringify({
+          token,
+          date,
+          slotLabel: slot.label,
+          newStartUtc: slot.startUtc,
+          newEndUtc: slot.endUtc,
+          requestId,
+        }),
       });
       const json = (await res.json()) as {
         ok?: boolean; code?: string; serviceName?: string; newStartUtc?: string;
+        sequenceQuote?: SequenceReview;
       };
-      if (json.ok) {
+      if (json.ok && json.code === "sequence_review_required" && json.sequenceQuote) {
+        setState({
+          phase: "sequence_review",
+          date,
+          slot,
+          requestId,
+          quote: json.sequenceQuote,
+          changed: false,
+        });
+      } else if (json.ok) {
+        await acknowledgeBookingManagementRequest(intent);
         setState({
           phase: "done",
           serviceName: json.serviceName ?? "your appointment",
@@ -131,6 +249,85 @@ export default function RescheduleBookingPage() {
       } else {
         setState({ phase: "error", code: json.code ?? "unknown" });
       }
+    } catch {
+      setState({ phase: "error", code: "network_error" });
+    }
+  }
+
+  async function confirmSequenceReview(
+    stateValue: Extract<State, { phase: "sequence_review" }>,
+  ) {
+    setState({ phase: "submitting" });
+    const material = JSON.stringify({
+      date: stateValue.date,
+      slotLabel: stateValue.slot.label,
+      newStartUtc: stateValue.slot.startUtc,
+      newEndUtc: stateValue.slot.endUtc,
+      expectedSequenceFingerprint: stateValue.quote.sequenceFingerprint,
+    });
+    const intent = { action: "reschedule" as const, token, material };
+    try {
+      const quotedMaterial = JSON.stringify({
+        date: stateValue.date,
+        slotLabel: stateValue.slot.label,
+        newStartUtc: stateValue.slot.startUtc,
+        newEndUtc: stateValue.slot.endUtc,
+      });
+      const retained = await replacePendingBookingManagementRequestMaterial({
+        ...intent,
+        requestId: stateValue.requestId,
+        previousMaterial: quotedMaterial,
+      });
+      if (!retained) throw new Error("pending_material");
+      const response = await fetch("/api/booking/reschedule-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          requestId: stateValue.requestId,
+          date: stateValue.date,
+          slotLabel: stateValue.slot.label,
+          newStartUtc: stateValue.slot.startUtc,
+          newEndUtc: stateValue.slot.endUtc,
+          expectedSequenceFingerprint: stateValue.quote.sequenceFingerprint,
+        }),
+      });
+      const body = await response.json() as {
+        ok?: boolean;
+        code?: string;
+        serviceName?: string;
+        newStartUtc?: string;
+        quote?: SequenceReview;
+      };
+      if (body.code === "pricing_changed" && body.quote) {
+        const nextMaterial = JSON.stringify({
+          date: stateValue.date,
+          slotLabel: stateValue.slot.label,
+          newStartUtc: stateValue.slot.startUtc,
+          newEndUtc: stateValue.slot.endUtc,
+          expectedSequenceFingerprint: body.quote.sequenceFingerprint,
+        });
+        const retained = await replacePendingBookingManagementRequestMaterial({
+          action: "reschedule",
+          token,
+          requestId: stateValue.requestId,
+          previousMaterial: material,
+          material: nextMaterial,
+        });
+        if (!retained) throw new Error("pending_material");
+        setState({ ...stateValue, quote: body.quote, changed: true });
+        return;
+      }
+      if (!response.ok || body.ok !== true) {
+        setState({ phase: "error", code: body.code ?? "management_unavailable" });
+        return;
+      }
+      await acknowledgeBookingManagementRequest(intent);
+      setState({
+        phase: "done",
+        serviceName: body.serviceName ?? "your appointment",
+        newStartUtc: body.newStartUtc ?? stateValue.quote.parentStartTimeUtc,
+      });
     } catch {
       setState({ phase: "error", code: "network_error" });
     }
@@ -152,7 +349,7 @@ export default function RescheduleBookingPage() {
             <span className="font-medium text-nq-text">{state.serviceName}</span>
           </p>
           {state.newStartUtc && (
-            <p className="mt-1 text-sm text-nq-muted">{formatTime(state.newStartUtc)}</p>
+            <p className="mt-1 text-sm text-nq-muted">{formatTime(state.newStartUtc, salonTimezone)}</p>
           )}
           <p className="mt-6 text-sm text-nq-muted">You can close this page.</p>
         </div>
@@ -170,6 +367,39 @@ export default function RescheduleBookingPage() {
         <div className="text-center">
           <p className="text-nq-muted">Rescheduling…</p>
         </div>
+      </Shell>
+    );
+  }
+
+  if (state.phase === "sequence_review") {
+    return (
+      <Shell>
+        <h1 className="text-xl font-semibold text-white">Review entire sequence</h1>
+        {state.changed ? (
+          <p className="mt-3 rounded-lg border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100">
+            Availability changed. Review the updated sequence and confirm again.
+          </p>
+        ) : null}
+        <ol className="mt-5 space-y-3">
+          {state.quote.segments.map((segment) => (
+            <li key={segment.lineId} className="rounded-xl border border-nq-border/40 bg-nq-bg p-3">
+              <p className="font-medium text-nq-text">{segment.position + 1}. {segment.staffName}</p>
+              <p className="mt-1 text-sm text-nq-muted">
+                {formatTime(segment.customerStartUtc, salonTimezone)} – {formatTime(segment.customerEndUtc, salonTimezone)}
+              </p>
+              <p className="mt-1 text-xs text-nq-muted">
+                Prep {segment.prepMinutes} min · Customer {segment.serviceDurationMinutes + segment.sequentialAddonMinutes} min · Buffer {segment.trailingBufferMinutes} min
+              </p>
+            </li>
+          ))}
+        </ol>
+        <button
+          type="button"
+          onClick={() => void confirmSequenceReview(state)}
+          className="mt-5 w-full rounded-xl bg-nq-gold px-4 py-3 font-semibold text-black"
+        >
+          Confirm entire sequence
+        </button>
       </Shell>
     );
   }
@@ -220,11 +450,11 @@ export default function RescheduleBookingPage() {
             <div className="grid grid-cols-3 gap-2">
               {(state.slots ?? []).map((slot) => (
                 <button
-                  key={slot}
+                  key={slot.startUtc}
                   onClick={() => handleSubmit(state.date, slot)}
                   className="rounded-lg border border-nq-border/40 bg-nq-surface py-2 text-sm text-nq-text transition hover:border-nq-gold/50 hover:text-nq-gold"
                 >
-                  {slot}
+                  {slot.label}
                 </button>
               ))}
             </div>
@@ -238,7 +468,12 @@ export default function RescheduleBookingPage() {
 function ErrorView({ code }: { code: string }) {
   const messages: Record<string, string> = {
     missing_token: "This reschedule link is invalid.",
+    invalid_request: "This reschedule link is invalid or has expired.",
+    invalid_token: "This reschedule link is invalid or has expired.",
     token_invalid: "This link has already been used or has expired.",
+    expired_or_revoked: "This link has already been used or has expired.",
+    token_consumed: "This link has already been used or has expired.",
+    action_mismatch: "This link cannot reschedule an appointment.",
     slot_conflict: "That time slot is no longer available. Please pick another.",
     booking_not_reschedulable: "This appointment can no longer be rescheduled.",
     load_failed: "Could not load available times. Please try again.",

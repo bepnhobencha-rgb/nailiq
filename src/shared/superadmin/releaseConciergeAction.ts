@@ -1,9 +1,9 @@
 "use server";
 
 import Anthropic from "@anthropic-ai/sdk";
+import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProviderPolicy";
 import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
-import { createClient } from "@/shared/lib/supabase/server";
-import { getSuperAdminRole } from "@/shared/lib/superadmin";
+import { requireActiveSuperAdminSession } from "@/shared/auth/requireActiveSuperAdminSession";
 import type { DraftReleaseUpdateResult } from "@/shared/superadmin/announcementsTypes";
 import {
   fallbackReleaseConciergeDraft,
@@ -21,19 +21,14 @@ function getReleaseConciergeClient(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY?.trim();
   if (!key) return null;
   if (!releaseConciergeClient) {
-    releaseConciergeClient = new Anthropic({ apiKey: key });
+    releaseConciergeClient = createTextBackgroundAnthropicClient(key);
   }
   return releaseConciergeClient;
 }
 
 async function canDraftRelease(): Promise<boolean> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return false;
-  const role = await getSuperAdminRole(user.id);
-  return role !== null && ALLOWED_ROLES.has(role);
+  const access = await requireActiveSuperAdminSession();
+  return access.ok && ALLOWED_ROLES.has(access.role);
 }
 
 /**

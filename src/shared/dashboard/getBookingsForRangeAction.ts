@@ -4,8 +4,16 @@ import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { salonDayRangeUtc, salonYmdOfUtc } from "@/shared/lib/salonTime";
-import type { BookingStatus } from "@/shared/types";
+import { requireActiveAuthSession } from "@/shared/auth/requireActiveAuthSession";
+import { salonDayRangeUtc } from "@/shared/lib/salonTime";
+import {
+  CALENDAR_STATUSES,
+  groupCalendarRowsByDay,
+  type CalendarBooking,
+  type SequenceCalendarRow,
+} from "@/shared/dashboard/calendarBookingRows";
+
+export type { CalendarBooking } from "@/shared/dashboard/calendarBookingRows";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -14,14 +22,6 @@ import type { BookingStatus } from "@/shared/types";
  * Intentionally smaller than `SalonDashboardBooking` — we only fetch what
  * the calendar needs so the range query stays fast.
  */
-export type CalendarBooking = {
-  id: string;
-  client_name: string;
-  service_name: string;
-  start_time_utc: string;
-  status: Extract<BookingStatus, "pending" | "confirmed" | "in_progress" | "completed">;
-};
-
 export type GetBookingsForRangeResult =
   | {
       ok: true;
@@ -56,10 +56,6 @@ export type BookingsRangeHint = {
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-// Salon-local YYYY-MM-DD derivation uses the shared `salonYmdOfUtc`.
-
-const CALENDAR_STATUSES = ["pending", "confirmed", "in_progress", "completed"] as const;
-
 // ─── Fast path (hint provided) ────────────────────────────────────────────────
 
 /**
@@ -69,7 +65,7 @@ const CALENDAR_STATUSES = ["pending", "confirmed", "in_progress", "completed"] a
  *   1. getUser() via server Supabase client (verifies the JWT with Auth server)
  *   2. In parallel:
  *      a. salon_members check → confirms user is a member of this salon
- *      b. bookings range query (service-role) → the actual calendar data
+ *      b. bounded parent + segment reads (service-role) → calendar data
  *
  * The service-role client is safe here because we verify membership in
  * parallel before returning data, and the check is server-side.
@@ -81,15 +77,14 @@ async function fetchWithHint(
 ): Promise<GetBookingsForRangeResult> {
   // Step 1: verify the user is authenticated.
   const userSupabase = await createClient();
-  const {
-    data: { user },
-  } = await userSupabase.auth.getUser();
-  if (!user) return { ok: false, error: "unauthorized" };
+  const session = await requireActiveAuthSession(userSupabase);
+  if (!session.ok) return { ok: false, error: "unauthorized" };
+  const user = session.user;
 
   // Step 2: membership check + bookings query — run in parallel.
   const serviceRole = createServiceRoleClient();
 
-  const [memberRes, bookingsRes] = await Promise.all([
+  const [memberRes, bookingsRes, segmentsRes] = await Promise.all([
     // 2a. Verify user is a member of this salon.
     userSupabase
       .from("salon_members")
@@ -102,14 +97,33 @@ async function fetchWithHint(
     serviceRole
       .from("bookings")
       .select(
-        `id, client_name, start_time_utc, status,
+        `id, client_name, start_time_utc, end_time_utc, staff_id, resource_id,
+         status, schedule_model,
          services!bookings_service_id_fkey ( name )`,
       )
       .eq("salon_id", hint.salonId)
+      .eq("schedule_model", "single")
       .gte("start_time_utc", startUtc)
       .lt("start_time_utc", endUtc)
       .in("status", CALENDAR_STATUSES as unknown as string[])
       .order("start_time_utc", { ascending: true }),
+
+    serviceRole
+      .from("booking_service_segments" as never)
+      .select(
+        `id, booking_id, salon_id, position, staff_id, resource_id, service_name,
+         customer_start_utc, customer_end_utc, occupied_start_utc,
+         occupied_end_utc, prep_minutes, reservation_status,
+         booking:bookings!inner(client_name, status, deleted_at, schedule_model)`,
+      )
+      .eq("salon_id" as never, hint.salonId as never)
+      .eq("booking.salon_id" as never, hint.salonId as never)
+      .eq("booking.schedule_model" as never, "segments_v1" as never)
+      .is("booking.deleted_at" as never, null)
+      .lt("customer_start_utc" as never, endUtc as never)
+      .gte("customer_start_utc" as never, startUtc as never)
+      .in("reservation_status" as never, CALENDAR_STATUSES as unknown as never)
+      .order("customer_start_utc" as never, { ascending: true }),
   ]);
 
   // Auth gate: if membership check failed, reject (even if bookings loaded).
@@ -121,59 +135,34 @@ async function fetchWithHint(
     console.error("[getBookingsForRangeAction/hint] bookings query", bookingsRes.error);
     return { ok: false, error: "server_error" };
   }
-
-  return groupByDay(bookingsRes.data ?? [], hint.timezone);
-}
-
-// ─── Grouping helper ──────────────────────────────────────────────────────────
-
-// Supabase FK joins can return an object, an array, or null depending on the
-// relation cardinality. Use `unknown` here and narrow inside the loop.
-function groupByDay(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data: Array<Record<string, any>>,
-  timezone: string,
-): Extract<GetBookingsForRangeResult, { ok: true }> {
-  const days: Record<string, CalendarBooking[]> = {};
-  for (const row of data) {
-    const st = row.start_time_utc as string | null | undefined;
-    if (!st) continue;
-    const ymd = salonYmdOfUtc(st, timezone);
-    if (!ymd) continue;
-    // FK join `services` may come back as an object, a single-element array,
-    // or null — normalise to a name string.
-    const svcRaw = row.services as { name?: string } | { name?: string }[] | null;
-    const svcName = (
-      Array.isArray(svcRaw) ? svcRaw[0]?.name : svcRaw?.name
-    )?.trim() ?? "";
-    const booking: CalendarBooking = {
-      id: row.id,
-      client_name: String(row.client_name ?? "").trim(),
-      service_name: svcName,
-      start_time_utc: st,
-      status: row.status as CalendarBooking["status"],
-    };
-    (days[ymd] ??= []).push(booking);
+  if (segmentsRes.error) {
+    console.error("[getBookingsForRangeAction/hint] sequence segments query", segmentsRes.error);
+    return { ok: false, error: "server_error" };
   }
-  return { ok: true, days, timezone };
+
+  return groupCalendarRowsByDay(
+    bookingsRes.data ?? [],
+    (segmentsRes.data ?? []) as unknown as SequenceCalendarRow[],
+    hint.timezone,
+  );
 }
 
 // ─── Server action ────────────────────────────────────────────────────────────
 
 /**
  * Fetches all calendar-visible bookings for a salon-local date range in a
- * **single query** — replacing the N parallel `loadReceptionistCenterDataAction`
+ * **two bounded capacity reads** — replacing the N parallel `loadReceptionistCenterDataAction`
  * calls that Week / Month views previously made (7 and ~31 respectively).
  *
  * Performance profile (with hint — fast path):
  *   - 1 auth round-trip (getUser)
- *   - 1 membership check  ┐ parallel
- *   - 1 bookings SELECT   ┘
+ *   - 1 membership check       ┐ parallel
+ *   - parent + segment SELECTs ┘
  *   Total: 2 sequential groups (~120ms) vs 4 sequential calls (~250ms)
  *
  * Performance profile (without hint — compat fallback):
  *   - 1 auth round-trip (getDashboardWriteClient: getUser → salon_members → salons)
- *   - 1 bookings SELECT
+ *   - parent + segment SELECTs in parallel
  *   Total: 4 sequential round-trips (~250ms)
  *
  * @param slug      Salon URL slug (used for auth when hint is absent)
@@ -232,26 +221,56 @@ export async function getBookingsForRangeAction(
         return { ok: false, error: "invalid_date" };
       }
 
-      // Single range query — hits idx_bookings_calendar_range (salon_id, start_time_utc).
-      // Service name is resolved via the FK join in one go (no extra round-trip).
-      const { data, error } = await ctx.supabase
+      // Two bounded capacity reads: legacy single-row bookings plus authoritative
+      // sequence segments. Service names are resolved in the same parallel group.
+      // The segment table is deliberately service-role-only; authorization and
+      // tenant identity above came from getDashboardWriteClient, never the caller.
+      const serviceRole = createServiceRoleClient();
+      const [bookingsRes, segmentsRes] = await Promise.all([
+        ctx.supabase
         .from("bookings")
         .select(
-          `id, client_name, start_time_utc, status,
+          `id, client_name, start_time_utc, end_time_utc, staff_id, resource_id,
+           status, schedule_model,
            services!bookings_service_id_fkey ( name )`,
         )
         .eq("salon_id", ctx.salon.id)
+        .eq("schedule_model", "single")
         .gte("start_time_utc", startUtc)
         .lt("start_time_utc", endUtc)
         .in("status", CALENDAR_STATUSES as unknown as string[])
-        .order("start_time_utc", { ascending: true });
+        .order("start_time_utc", { ascending: true }),
+        serviceRole
+          .from("booking_service_segments" as never)
+          .select(
+            `id, booking_id, salon_id, position, staff_id, resource_id, service_name,
+             customer_start_utc, customer_end_utc, occupied_start_utc,
+             occupied_end_utc, prep_minutes, reservation_status,
+             booking:bookings!inner(client_name, status, deleted_at, schedule_model)`,
+          )
+          .eq("salon_id" as never, ctx.salon.id as never)
+          .eq("booking.salon_id" as never, ctx.salon.id as never)
+          .eq("booking.schedule_model" as never, "segments_v1" as never)
+          .is("booking.deleted_at" as never, null)
+          .lt("customer_start_utc" as never, endUtc as never)
+          .gte("customer_start_utc" as never, startUtc as never)
+          .in("reservation_status" as never, CALENDAR_STATUSES as unknown as never)
+          .order("customer_start_utc" as never, { ascending: true }),
+      ]);
 
-      if (error) {
-        console.error("[getBookingsForRangeAction] bookings query", error);
+      if (bookingsRes.error || segmentsRes.error) {
+        console.error("[getBookingsForRangeAction] calendar query", {
+          bookings: bookingsRes.error,
+          segments: segmentsRes.error,
+        });
         return { ok: false, error: "server_error" };
       }
 
-      return groupByDay(data ?? [], timezone);
+      return groupCalendarRowsByDay(
+        bookingsRes.data ?? [],
+        (segmentsRes.data ?? []) as unknown as SequenceCalendarRow[],
+        timezone,
+      );
     },
   );
 }

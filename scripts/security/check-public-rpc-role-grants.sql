@@ -15,7 +15,7 @@ BEGIN
         ('public.create_public_booking(uuid,uuid,uuid,text,text,timestamp with time zone,timestamp with time zone,text,integer,text,uuid,integer,text,uuid)', true, false),
         ('public.create_public_waitlist_entry(uuid,uuid,uuid,date,text,text,text,text,text)', true, false),
         ('public.get_booking_client_snapshot(uuid,text,uuid)', true, false),
-        ('public.insert_group_bookings(jsonb)', true, false),
+        ('public.insert_group_bookings(jsonb)', false, false),
         ('public.public_booking_occupancy_for_range(uuid,timestamp with time zone,timestamp with time zone)', true, false),
         ('public.public_resolve_domain(text)', true, false),
         ('public.salon_has_staff_services(uuid)', false, true),

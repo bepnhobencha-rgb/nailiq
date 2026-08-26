@@ -30,6 +30,7 @@ export type CompleteSalonRegistrationResult =
         | "invalid_name"
         | "invalid_completion_token"
         | "unauthorized"
+        | "ambiguous_membership"
         | "server_error"
         | "already_complete";
       /** Postgres or internal message when useful for debugging */
@@ -83,6 +84,29 @@ export type CompleteSalonRegistrationInput = {
   /** Optional IANA timezone. Empty/invalid → America/Vancouver. */
   timezone?: string | null;
 };
+
+type ExistingOwnerSetupRpcResult = {
+  success: boolean;
+  code: string;
+  slug?: string;
+};
+
+function parseExistingOwnerSetupRpcResult(
+  value: unknown,
+): ExistingOwnerSetupRpcResult | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+
+  const row = value as Record<string, unknown>;
+  if (typeof row.success !== "boolean" || typeof row.code !== "string") {
+    return null;
+  }
+
+  return {
+    success: row.success,
+    code: row.code,
+    slug: typeof row.slug === "string" ? row.slug : undefined,
+  };
+}
 
 export async function completeSalonRegistration(
   salonNameRaw: string,
@@ -328,18 +352,79 @@ export async function completeSalonRegistration(
     console.log("Step 1: getUser", { userId: user.id });
   }
 
-  const { data: existingMember } = await supabase
+  const { data: existingMemberships, error: membershipErr } = await supabase
     .from("salon_members")
-    .select("salon_id")
-    .eq("user_id", user.id)
-    .maybeSingle();
+    .select("salon_id, role")
+    .eq("user_id", user.id);
 
-  // Existing-member rename branch. The user is already linked to a
-  // salon — apply the wizard inputs as an UPDATE rather than creating
-  // a second row. Closes the loop on the wizard gate: a salon with
-  // setup_wizard_completed_at IS NULL gets stamped here so the
-  // dashboard stops redirecting back.
-  if (existingMember?.salon_id) {
+  if (membershipErr) {
+    console.error(
+      "[completeSalonRegistration] existing memberships",
+      membershipErr,
+    );
+    return {
+      ok: false,
+      error: "server_error",
+      message: membershipErr.message,
+    };
+  }
+
+  const validExistingMemberships = (existingMemberships ?? []).filter(
+    (membership) => Boolean(membership?.salon_id),
+  );
+
+  // This action has no salon selector. More than one membership is therefore
+  // ambiguous and must never fall through to the new-salon INSERT path.
+  if (validExistingMemberships.length > 1) {
+    return { ok: false, error: "ambiguous_membership" };
+  }
+
+  // Existing-owner completion branch. Only the exact canonical `owner` role
+  // may use registration to modify a linked salon; admin/staff memberships
+  // must use their normal dashboard surfaces instead.
+  const existingMembership = validExistingMemberships[0];
+  if (existingMembership?.salon_id) {
+    if (existingMembership.role !== "owner") {
+      return { ok: false, error: "unauthorized" };
+    }
+
+    const existingSalonResult = (await supabase
+      .from("salons")
+      .select("id, slug, setup_wizard_completed_at" as never)
+      .eq("id", existingMembership.salon_id)
+      .maybeSingle()) as {
+      data: {
+        id?: string | null;
+        slug?: string | null;
+        setup_wizard_completed_at?: string | null;
+      } | null;
+      error: { message?: string } | null;
+    };
+
+    if (existingSalonResult.error || !existingSalonResult.data?.id) {
+      console.error(
+        "[completeSalonRegistration] existing owner salon lookup",
+        existingSalonResult.error,
+      );
+      return {
+        ok: false,
+        error: "server_error",
+        message: existingSalonResult.error?.message,
+      };
+    }
+
+    const existingSalon = existingSalonResult.data;
+    const currentSlug = String(existingSalon.slug ?? "").trim();
+    if (!currentSlug) {
+      return { ok: false, error: "server_error" };
+    }
+
+    // A completed salon is a server-side no-op. The page normally redirects
+    // before submission, but a replayed/stale Server Action must also be safe.
+    if (existingSalon.setup_wizard_completed_at != null) {
+      return { ok: true, slug: currentSlug, slugAdjusted: false };
+    }
+
     let renameAdmin;
     try {
       renameAdmin = createServiceRoleClient();
@@ -348,21 +433,6 @@ export async function completeSalonRegistration(
       return { ok: false, error: "server_error" };
     }
 
-    const { data: existingSalon, error: existErr } = await renameAdmin
-      .from("salons")
-      .select("id, slug, name")
-      .eq("id", existingMember.salon_id)
-      .maybeSingle();
-
-    if (existErr || !existingSalon?.id) {
-      console.error(
-        "[completeSalonRegistration] rename existing salon lookup",
-        existErr,
-      );
-      return { ok: false, error: "server_error" };
-    }
-
-    const currentSlug = String(existingSalon.slug ?? "").trim();
     const targetSlug = requestedSlug || slugifySalonName(name);
 
     let nextSlug = currentSlug;
@@ -376,29 +446,58 @@ export async function completeSalonRegistration(
       }
     }
 
-    const { error: upErr } = await renameAdmin
-      .from("salons")
-      .update({
-        name,
-        slug: nextSlug,
-        timezone: wizardTimezone,
-        setup_wizard_completed_at: new Date().toISOString(),
-      } as never)
-      .eq("id", existingSalon.id);
+    // The service-role RPC performs the membership-count, exact owner-role,
+    // incomplete-state and UPDATE checks in one SQL statement. The prior page
+    // and action reads improve UX but are not the authorization boundary.
+    const { data: rpcData, error: updateErr } = (await renameAdmin.rpc(
+      "complete_existing_owner_registration_setup" as never,
+      {
+        p_salon_id: existingSalon.id,
+        p_actor_user_id: user.id,
+        p_name: name,
+        p_slug: nextSlug,
+        p_timezone: wizardTimezone,
+      } as never,
+    )) as {
+      data: unknown;
+      error: { message?: string } | null;
+    };
 
-    if (upErr) {
-      console.error("[completeSalonRegistration] rename update", upErr);
+    if (updateErr) {
+      console.error(
+        "[completeSalonRegistration] existing owner atomic update",
+        updateErr,
+      );
       return {
         ok: false,
         error: "server_error",
-        message: upErr.message,
+        message: updateErr.message,
       };
+    }
+
+    const updateResult = parseExistingOwnerSetupRpcResult(rpcData);
+    if (!updateResult) {
+      return { ok: false, error: "server_error" };
+    }
+
+    if (updateResult.code === "ambiguous_membership") {
+      return { ok: false, error: "ambiguous_membership" };
+    }
+
+    if (updateResult.code === "forbidden") {
+      return { ok: false, error: "unauthorized" };
+    }
+
+    const resolvedSlug = updateResult.slug?.trim();
+    if (!updateResult.success || !resolvedSlug) {
+      return { ok: false, error: "server_error" };
     }
 
     return {
       ok: true,
-      slug: nextSlug,
-      slugAdjusted: nextSlug !== targetSlug,
+      slug: resolvedSlug,
+      slugAdjusted:
+        updateResult.code === "updated" && resolvedSlug !== targetSlug,
     };
   }
 

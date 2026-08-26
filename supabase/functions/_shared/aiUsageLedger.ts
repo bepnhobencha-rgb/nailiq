@@ -1,5 +1,7 @@
 type UsageInsertError = { code?: string } | null;
 
+export const AI_TEXT_BACKGROUND_TIMEOUT_MS = 20_000;
+
 export type EdgeUsageLedgerClient = {
   from(table: "ai_usage_events"): {
     insert(
@@ -97,10 +99,35 @@ function estimateAnthropicCostUsd(
 
 function safeErrorCode(error: unknown): string {
   if (!error || typeof error !== "object") return "unknown_error";
-  const candidate = error as { status?: unknown; name?: unknown };
+  const candidate = error as {
+    status?: unknown;
+    name?: unknown;
+    code?: unknown;
+    cause?: unknown;
+  };
+  const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+  const code = typeof candidate.code === "string" ? candidate.code.trim() : "";
+  const cause =
+    candidate.cause && typeof candidate.cause === "object"
+      ? (candidate.cause as { name?: unknown; code?: unknown })
+      : null;
+  const causeName = typeof cause?.name === "string" ? cause.name.trim() : "";
+  const causeCode = typeof cause?.code === "string" ? cause.code.trim() : "";
+  if (
+    candidate.status === 408 ||
+    name === "APIConnectionTimeoutError" ||
+    name === "TimeoutError" ||
+    code === "ETIMEDOUT" ||
+    code === "UND_ERR_CONNECT_TIMEOUT" ||
+    causeName === "ConnectTimeoutError" ||
+    causeCode === "ETIMEDOUT" ||
+    causeCode === "UND_ERR_CONNECT_TIMEOUT"
+  ) {
+    return "provider_timeout";
+  }
   if (typeof candidate.status === "number") return `http_${candidate.status}`;
-  if (typeof candidate.name === "string" && candidate.name.trim()) {
-    return candidate.name.trim().slice(0, 120);
+  if (name) {
+    return name.slice(0, 120);
   }
   return "unknown_error";
 }
@@ -153,7 +180,9 @@ export async function trackAnthropicEdgeFetch(
       output_tokens: normalized.outputTokens,
       cache_read_input_tokens: normalized.cacheReadInputTokens,
       cache_creation_input_tokens: normalized.cacheCreationInputTokens,
-      estimated_cost_usd: estimateAnthropicCostUsd(context.model, normalized),
+      estimated_cost_usd: response.ok
+        ? estimateAnthropicCostUsd(context.model, normalized)
+        : null,
       latency_ms: Math.max(0, Date.now() - startedAt),
       error_code: response.ok
         ? usage
@@ -173,7 +202,7 @@ export async function trackAnthropicEdgeFetch(
       output_tokens: 0,
       cache_read_input_tokens: 0,
       cache_creation_input_tokens: 0,
-      estimated_cost_usd: 0,
+      estimated_cost_usd: null,
       latency_ms: Math.max(0, Date.now() - startedAt),
       error_code: safeErrorCode(error),
     });

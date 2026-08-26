@@ -16,6 +16,7 @@
 /playwright-report/
 /blob-report/
 /test-results/
+/output/
 
 
 # next.js
@@ -24,6 +25,11 @@
 
 # production
 /build
+
+# Database backup artifacts are local/operator evidence only. The repository is
+# public and a dump may contain salon/customer data even when its filename looks
+# harmless; keep every root-level backup artifact out of Git by default.
+/backups/
 
 # misc
 .DS_Store
@@ -57,6 +63,7 @@ next-env.d.ts
 .cursor/
 .aider*
 supabase/.temp/
+supabase/.branches/
 
 # Wix backfill scratch
 tmp/

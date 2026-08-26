@@ -26,16 +26,30 @@ describe("Square Connect credential boundary", () => {
     expect(action).toContain(
       "parsed.data.applicationId !== STUDIO_APPLICATION_ID",
     );
-    expect(action).toContain("merchant_id.eq.${validated.merchantId}");
-    expect(action).toContain("location_id.eq.${validated.locationId}");
+    expect(action).toContain('.eq("merchant_id", validated.merchantId)');
+    expect(action).toContain('.eq("location_id", validated.locationId)');
+    expect(action).not.toContain(
+      "merchant_id.eq.${validated.merchantId}",
+    );
+    expect(action).not.toContain(
+      "location_id.eq.${validated.locationId}",
+    );
     expect(action).toContain('error: "account_conflict"');
     expect(action).toContain('error: "payment_provider_conflict"');
     expect(action).toContain('error: "saved_card_conflict"');
+    expect(action).toContain(
+      "parsed.data.accessToken,\n      parsed.data.applicationId,",
+    );
   });
 
   it("audits only redacted metadata before writing the credential row", () => {
+    const validationIndex = action.indexOf(
+      "validated = await validateSquareProductionConnection",
+    );
     const auditIndex = action.indexOf("await writeAuditLog");
     const upsertIndex = action.indexOf('.from("square_integrations")\n      .upsert');
+    expect(validationIndex).toBeGreaterThan(-1);
+    expect(validationIndex).toBeLessThan(auditIndex);
     expect(auditIndex).toBeGreaterThan(-1);
     expect(upsertIndex).toBeGreaterThan(auditIndex);
     expect(action).toContain("credentials_stored: Boolean(row.access_token)");

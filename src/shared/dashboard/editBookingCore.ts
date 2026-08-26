@@ -21,6 +21,15 @@ import {
   mapDashboardBookingRow,
 } from "@/shared/dashboard/dashboardBookingMap";
 import {
+  quoteBookingSequenceRescheduleForDesk,
+  replayBookingSequenceRescheduleForDesk,
+  rescheduleBookingSequenceForDesk,
+  type BookingSequenceRescheduleQuote,
+  type BookingSequenceRescheduleResult,
+} from "@/shared/booking/bookingSequenceReschedule";
+import { deliverPromotedWaitlistOffer } from "@/shared/noshow/deliverPromotedWaitlistOffer";
+import { stableBookingIdempotencyKey } from "@/shared/booking/stableBookingIdempotencyKey";
+import {
   type ConflictCheckBooking,
   checkBookingConflict,
 } from "@/shared/lib/conflictCheck";
@@ -40,6 +49,8 @@ type BookingEditRow = {
   start_time_utc?: unknown;
   end_time_utc?: unknown;
   addon_service_id?: unknown;
+  resource_id?: unknown;
+  schedule_model?: unknown;
 };
 
 type ServiceTimingRow = {
@@ -71,6 +82,10 @@ export type EditBookingInput = {
    *  `null` = release current bed and auto-assign a free one.
    *  `undefined` = keep current booking's bed as the preferred one (default). */
   newResourceId?: string | null;
+  /** Stable browser-owned UUID retained through sequence quote/apply replay. */
+  sequenceRequestId?: string;
+  /** Present only after explicit review of the authoritative full sequence. */
+  expectedSequenceFingerprint?: string;
 };
 
 export type EditBookingError =
@@ -80,6 +95,8 @@ export type EditBookingError =
   | "outside_hours"
   | "slot_conflict"
   | "staff_cannot_perform_service"
+  | "sequence_reschedule_required"
+  | "idempotency_mismatch"
   | "server_error"
   /** Resource-mode salon: every bed/chair is occupied for the new time. */
   | "no_resource_available"
@@ -92,7 +109,82 @@ export type EditBookingError =
 
 export type EditBookingResult =
   | { ok: true; updated: SalonDashboardBooking }
+  | {
+      ok: false;
+      error: "sequence_review_required";
+      sequenceReview: {
+        requestId: string;
+        quote: BookingSequenceRescheduleQuote;
+        changed: boolean;
+      };
+    }
   | { ok: false; error: EditBookingError; conflictWith?: string };
+
+async function finishDeskSequenceReschedule(args: {
+  salonId: string;
+  bookingId: string;
+  requestId: string;
+  actor?: { role: ActorRole; userId: string | null };
+  actorUserId: string;
+  committed: BookingSequenceRescheduleResult;
+}): Promise<EditBookingResult> {
+  const sr = createServiceRoleClient();
+  const { data: row, error: rowError } = await sr
+    .from("bookings" as never)
+    .select(DASHBOARD_BOOKING_SELECT as never)
+    .eq("id" as never, args.bookingId)
+    .eq("salon_id" as never, args.salonId)
+    .maybeSingle();
+  if (rowError || !row) return { ok: false, error: "server_error" };
+
+  const auditId = stableBookingIdempotencyKey({
+    channel: "desk_sequence_reschedule_audit",
+    salonId: args.salonId,
+    bookingId: args.bookingId,
+    requestId: args.requestId,
+    eventType: "booking_rescheduled",
+  });
+  const { error: auditError } = await sr.from("booking_events" as never).insert({
+    id: auditId,
+    booking_id: args.bookingId,
+    salon_id: args.salonId,
+    actor_user_id: args.actorUserId,
+    actor_role: args.actor?.role ?? "system",
+    event_type: "booking_rescheduled",
+    payload: {
+      management_request_id: args.requestId,
+      previous_start_time_utc: args.committed.previousStartTimeUtc,
+      new_start_time_utc: args.committed.startTimeUtc,
+      sequence_fingerprint: args.committed.sequenceFingerprint,
+    },
+  } as never);
+  if (auditError && (auditError as { code?: string }).code !== "23505") {
+    console.error("[performEditBooking] sequence audit", auditError);
+  }
+
+  // The DB sequence wrapper captured both requested staff-action channels in
+  // the same transaction as the full-sequence move.
+  after(async () => {
+    await sendOwnerBookingNotification({
+      salonId: args.salonId,
+      bookingId: args.bookingId,
+      event: "reschedule",
+      previousStartUtc: args.committed.previousStartTimeUtc,
+      changedBy: args.actor?.role ?? "system",
+      changedFields: ["time"],
+    });
+    if (args.committed.promotedWaitlist) {
+      await deliverPromotedWaitlistOffer({
+        salonId: args.salonId,
+        offer: args.committed.promotedWaitlist,
+      });
+    }
+  });
+  return {
+    ok: true,
+    updated: mapDashboardBookingRow(row as unknown as BookingRowDb),
+  };
+}
 
 /**
  * Core edit-booking mutation (desk): pending | confirmed only, slot overlap check,
@@ -135,25 +227,53 @@ export async function performEditBooking(
     return { ok: false, error: "server_error" };
   }
 
-  const { data: staffRow, error: staffErr } = await supabase
-    .from("staff")
-    .select("id")
-    .eq("id", newStaffId)
-    .eq("salon_id", salonId)
-    .is("deleted_at" as never, null)
-    .maybeSingle();
-
-  if (
-    staffErr ||
-    !(staffRow as unknown as { id?: unknown } | null)?.id
-  ) {
-    return { ok: false, error: "server_error" };
+  // Older desk callers do not yet own a request UUID. Generate it once for
+  // this guarded mutation; modern/sequence callers retain their UUID through
+  // response-loss replay and take precedence.
+  const sequenceRequestId = input.sequenceRequestId?.trim() || crypto.randomUUID();
+  const sequenceExpectedFingerprint = input.expectedSequenceFingerprint?.trim() ?? "";
+  const sequenceActorUserId = actor?.userId?.trim() ?? "";
+  const sequenceNotifyEmail = input.notify?.email === true;
+  const sequenceNotifySms = (input.notify?.sms ?? true) === true;
+  if (sequenceExpectedFingerprint) {
+    if (
+      !isUuidLike(sequenceRequestId) || !isUuidLike(sequenceActorUserId) ||
+      !/^[0-9a-f]{64}$/.test(sequenceExpectedFingerprint)
+    ) return { ok: false, error: "server_error" };
+    const replay = await replayBookingSequenceRescheduleForDesk({
+      salonId,
+      bookingId,
+      actorUserId: sequenceActorUserId,
+      notifyEmail: sequenceNotifyEmail,
+      notifySms: sequenceNotifySms,
+      requestId: sequenceRequestId,
+      newStartTimeUtc: slotStartUtc,
+      expectedSequenceFingerprint: sequenceExpectedFingerprint,
+    });
+    if (replay.ok) {
+      return finishDeskSequenceReschedule({
+        salonId,
+        bookingId,
+        requestId: sequenceRequestId,
+        actor,
+        actorUserId: sequenceActorUserId,
+        committed: replay.result,
+      });
+    }
+    if (replay.code !== "replay_not_found") {
+      return {
+        ok: false,
+        error: replay.code === "idempotency_mismatch"
+          ? "idempotency_mismatch"
+          : "server_error",
+      };
+    }
   }
 
   const { data: booking, error: bkErr } = await supabase
     .from("bookings")
     .select(
-      "id, salon_id, status, staff_id, service_id, start_time_utc, end_time_utc, addon_service_id",
+      "id, salon_id, status, staff_id, service_id, resource_id, start_time_utc, end_time_utc, addon_service_id, schedule_model",
     )
     .eq("id", bookingId)
     .eq("salon_id", salonId)
@@ -167,6 +287,115 @@ export async function performEditBooking(
   const bookingData = booking as unknown as BookingEditRow | null;
   if (!bookingData?.id) {
     return { ok: false, error: "not_found" };
+  }
+  // A segments_v1 parent is only a compatibility anchor. Editing that row
+  // through the legacy desk form would leave authoritative child capacity and
+  // the persisted receipt at the old schedule.
+  if (bookingData.schedule_model === "segments_v1") {
+    const requestId = sequenceRequestId;
+    const actorUserId = sequenceActorUserId;
+    if (!isUuidLike(requestId) || !isUuidLike(actorUserId)) {
+      return { ok: false, error: "server_error" };
+    }
+    const expectedFingerprint = sequenceExpectedFingerprint;
+    if (expectedFingerprint) {
+      if (!/^[0-9a-f]{64}$/.test(expectedFingerprint)) {
+        return { ok: false, error: "server_error" };
+      }
+      // A reviewed apply is also the exact response-loss replay seam. Do not
+      // compare the mutable compatibility-anchor staff/resource fields first:
+      // an `any` assignment can legitimately change them at commit time. The
+      // desk RPC binds the stable request, actor, notify choice, start and
+      // expected sequence fingerprint before returning the stored result.
+      const notifyEmail = input.notify?.email === true;
+      const applied = await rescheduleBookingSequenceForDesk({
+        salonId,
+        bookingId,
+        actorUserId,
+        notifyEmail,
+        notifySms: sequenceNotifySms,
+        requestId,
+        newStartTimeUtc: slotStartUtc,
+        expectedSequenceFingerprint: expectedFingerprint,
+      });
+      if (!applied.ok) {
+        if (applied.code === "pricing_changed" && applied.quote) {
+          return {
+            ok: false,
+            error: "sequence_review_required",
+            sequenceReview: { requestId, quote: applied.quote, changed: true },
+          };
+        }
+        return {
+          ok: false,
+          error: applied.code === "slot_conflict"
+            ? "slot_conflict"
+            : applied.code === "idempotency_mismatch"
+              ? "idempotency_mismatch"
+              : "server_error",
+        };
+      }
+      return finishDeskSequenceReschedule({
+        salonId,
+        bookingId,
+        requestId,
+        actor,
+          actorUserId,
+          committed: applied.result,
+      });
+    }
+
+    const currentStaffId = String(bookingData.staff_id ?? "").trim();
+    const currentServiceId = String(bookingData.service_id ?? "").trim();
+    const currentAddonId = String(bookingData.addon_service_id ?? "").trim();
+    const currentResourceId = String(bookingData.resource_id ?? "").trim();
+    if (
+      newStaffId !== currentStaffId || newServiceId !== currentServiceId ||
+      (input.newAddonServiceId !== undefined && (input.newAddonServiceId ?? "") !== currentAddonId) ||
+      (input.newResourceId !== undefined && (input.newResourceId ?? "") !== currentResourceId)
+    ) return { ok: false, error: "sequence_reschedule_required" };
+
+    const { data: staffRow, error: staffErr } = await supabase
+      .from("staff")
+      .select("id")
+      .eq("id", newStaffId)
+      .eq("salon_id", salonId)
+      .is("deleted_at" as never, null)
+      .maybeSingle();
+    if (staffErr || !(staffRow as unknown as { id?: unknown } | null)?.id) {
+      return { ok: false, error: "server_error" };
+    }
+
+    const quoted = await quoteBookingSequenceRescheduleForDesk({
+      salonId,
+      bookingId,
+      actorUserId,
+      requestId,
+      newStartTimeUtc: slotStartUtc,
+    });
+    if (!quoted.ok) {
+      return {
+        ok: false,
+        error: quoted.code === "slot_conflict" ? "slot_conflict" : "server_error",
+      };
+    }
+    return {
+      ok: false,
+      error: "sequence_review_required",
+      sequenceReview: { requestId, quote: quoted.quote, changed: false },
+    };
+  }
+
+  const { data: staffRow, error: staffErr } = await supabase
+    .from("staff")
+    .select("id")
+    .eq("id", newStaffId)
+    .eq("salon_id", salonId)
+    .is("deleted_at" as never, null)
+    .maybeSingle();
+
+  if (staffErr || !(staffRow as unknown as { id?: unknown } | null)?.id) {
+    return { ok: false, error: "server_error" };
   }
 
   const st =
@@ -434,10 +663,28 @@ export async function performEditBooking(
     // owns the latest change (last-writer-wins vs the Square booking's updated_at).
     local_updated_at: new Date().toISOString(),
   };
+  const notifySms = startChanged && (input.notify ? input.notify.sms === true : true);
+  const notifyEmail = startChanged && (input.notify ? input.notify.email === true : false);
+  const captureStaffActionNotification = notifySms || notifyEmail;
+  if (captureStaffActionNotification &&
+      (!isUuidLike(sequenceRequestId) ||
+        !(isUuidLike(sequenceActorUserId) || actor?.role === "demo_cookie" || actor?.role === "system"))) {
+    return { ok: false, error: "server_error" };
+  }
   if (startChanged) {
     // A reschedule creates a new attendance window; an old no-show review flag
     // must never follow the booking to its new time.
     baseUpdate.no_show_candidate_at = null;
+    if (captureStaffActionNotification) {
+      baseUpdate.staff_action_notification_request_id = sequenceRequestId;
+      baseUpdate.staff_action_notification_actor_user_id = actor?.userId ?? null;
+      baseUpdate.staff_action_notification_actor_role = actor?.role ?? "system";
+      baseUpdate.staff_action_notification_channels = {
+        sms: notifySms,
+        email: notifyEmail,
+      };
+      baseUpdate.staff_action_notification_delay_seconds = 5;
+    }
   }
   if (input.newAddonServiceId !== undefined) {
     baseUpdate.addon_service_id = effectiveAddonId;
@@ -464,7 +711,10 @@ export async function performEditBooking(
     baseUpdate.resource_id = rr.resourceId;
   }
 
-  const { data: updated, error: upErr } = await supabase
+  // The durable staff-action outbox consumes and clears these transient inputs
+  // in the same transaction as the guarded booking move.
+  const mutationDb = captureStaffActionNotification ? createServiceRoleClient() : supabase;
+  const { data: updated, error: upErr } = await mutationDb
     .from("bookings")
     .update(baseUpdate as never)
     .eq("id", bookingId)
@@ -561,30 +811,8 @@ export async function performEditBooking(
       }),
     );
 
-    // Customer reschedule notification → the durable queue (same path as
-    // cancel): a 1-min cron delivers it via deliverStaffActionNotification, in
-    // the resolved language, on the chosen channels. Legacy callers (no
-    // `notify`) keep the SMS-only behavior. Service-role insert — the
-    // scheduled_notifications table is RLS-locked to service-role.
-    const notifySms = input.notify ? input.notify.sms === true : true;
-    const notifyEmail = input.notify ? input.notify.email === true : false;
-    if (notifySms || notifyEmail) {
-      const sr = createServiceRoleClient();
-      const { error: enqErr } = await sr
-        .from("scheduled_notifications")
-        .insert({
-          salon_id: salonId,
-          booking_id: bookingId,
-          event: "reschedule",
-          channels: { sms: notifySms, email: notifyEmail },
-          send_after: new Date(Date.now() + 5_000).toISOString(),
-        } as never);
-      if (enqErr)
-        console.error(
-          "[performEditBooking] enqueue reschedule notify failed",
-          enqErr,
-        );
-    }
+    // The booking mutation captured both requested channels atomically. The
+    // worker renders only its immutable snapshot; no post-commit enqueue runs.
   }
 
   return {

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
 import type { ArchivedBookingDetail } from "@/shared/dashboard/loadArchivedBookingDetailAction";
@@ -14,6 +15,12 @@ type Props = {
   featureEnabled: boolean;
   timeZone: string;
   onRecover: (detail: ArchivedBookingDetail) => void;
+  refundLoading: boolean;
+  refundFeedback: {
+    kind: "idle" | "success" | "warning" | "error";
+    message: string | null;
+  };
+  onRefundRemaining: (detail: ArchivedBookingDetail) => void;
 };
 
 function formatDateTime(iso: string | null, timeZone: string): string {
@@ -63,7 +70,13 @@ export function ArchivedBookingDrawer({
   featureEnabled,
   timeZone,
   onRecover,
+  refundLoading,
+  refundFeedback,
+  onRefundRemaining,
 }: Props) {
+  const [refundConfirmationKey, setRefundConfirmationKey] = useState<
+    string | null
+  >(null);
   const statusLabel = detail?.status === "no_show" ? "Không đến" : "Đã huỷ";
   const price = detail
     ? formatCurrency(detail.priceCents, detail.currencyCode)
@@ -80,23 +93,84 @@ export function ArchivedBookingDrawer({
       ? "No-show → đã tạo Walk-in mới"
       : "Đã huỷ → đã tạo lịch mới"
     : null;
+  const refund = detail?.status === "cancelled" ? detail.depositRefund : null;
+  const refundConfirmationKeyForDetail = detail && refund
+    ? `${detail.id}:${refund.remainingRefundableCents}`
+    : null;
+  const confirmingRefund = Boolean(
+    refundConfirmationKeyForDetail &&
+      refundConfirmationKey === refundConfirmationKeyForDetail,
+  );
+  const canRefundRemaining = Boolean(
+    featureEnabled &&
+    detail?.status === "cancelled" &&
+      refund?.availability === "available" &&
+      refund.remainingRefundableCents > 0,
+  );
+  const remainingRefundLabel = refund && detail
+    ? formatCurrency(refund.remainingRefundableCents, detail.currencyCode)
+    : null;
+
+  const closeDrawer = () => {
+    if (refundLoading) return;
+    setRefundConfirmationKey(null);
+    onClose();
+  };
 
   return (
     <Drawer
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={closeDrawer}
       title="Chi tiết lịch đã lưu trữ"
-      description="Chế độ chỉ xem — chưa có dữ liệu nào được thay đổi."
+      description="Kiểm tra chi tiết; hành động tài chính luôn cần xác nhận riêng."
       size="md"
+      showCloseButton={!refundLoading}
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button variant="secondary" onClick={onClose}>
+          <Button
+            variant="secondary"
+            onClick={closeDrawer}
+            disabled={refundLoading}
+          >
             Đóng
           </Button>
+          {canRefundRemaining && detail ? (
+            confirmingRefund ? (
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={() => setRefundConfirmationKey(null)}
+                  disabled={refundLoading}
+                  data-testid="archived-refund-remaining-cancel"
+                >
+                  Quay lại
+                </Button>
+                <Button
+                  variant="danger"
+                  loading={refundLoading}
+                  onClick={() => onRefundRemaining(detail)}
+                  data-testid="archived-refund-remaining-submit"
+                >
+                  Xác nhận hoàn {remainingRefundLabel}
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="danger"
+                onClick={() =>
+                  setRefundConfirmationKey(refundConfirmationKeyForDetail)
+                }
+                disabled={refundLoading}
+                data-testid="archived-refund-remaining-open"
+              >
+                Hoàn phần còn lại {remainingRefundLabel}
+              </Button>
+            )
+          ) : null}
           {detail && featureEnabled ? (
             <Button
               onClick={() => onRecover(detail)}
-              disabled={Boolean(detail.recoveredBooking)}
+              disabled={Boolean(detail.recoveredBooking) || refundLoading}
               data-testid="archived-booking-recover"
             >
               {detail.recoveredBooking ? "Đã tạo hồ sơ mới" : recoveryLabel}
@@ -165,6 +239,80 @@ export function ArchivedBookingDrawer({
             ) : null}
             <DetailRow label="Ghi chú" value={detail.clientNotes} />
           </dl>
+
+          {refund ? (
+            <div
+              className="mt-4 rounded-xl border border-nq-border bg-nq-bg/30 p-3"
+              data-testid="archived-deposit-summary"
+            >
+              <p className="text-sm font-semibold text-nq-foreground">
+                Tiền cọc
+              </p>
+              <dl className="mt-2">
+                <DetailRow
+                  label="Đã thu"
+                  value={formatCurrency(
+                    refund.capturedCents,
+                    detail.currencyCode,
+                  )}
+                />
+                <DetailRow
+                  label="Đã hoàn"
+                  value={formatCurrency(
+                    refund.refundedCents,
+                    detail.currencyCode,
+                  )}
+                />
+                {refund.reservedCents > 0 ? (
+                  <DetailRow
+                    label="Đang xử lý"
+                    value={formatCurrency(
+                      refund.reservedCents,
+                      detail.currencyCode,
+                    )}
+                  />
+                ) : null}
+                <DetailRow
+                  label="Còn có thể hoàn"
+                  value={remainingRefundLabel}
+                />
+              </dl>
+              {refund.availability === "reconciliation_required" ? (
+                <p className="mt-2 text-xs leading-relaxed text-nq-warning">
+                  Một khoản hoàn đang chờ đối soát. Không gửi yêu cầu mới cho
+                  đến khi trạng thái này được xác nhận.
+                </p>
+              ) : refund.availability === "fully_refunded" ? (
+                <p className="mt-2 text-xs text-nq-success">
+                  Tiền cọc đã được hoàn hết.
+                </p>
+              ) : confirmingRefund ? (
+                <p
+                  className="mt-2 rounded-lg border border-nq-error/30 bg-nq-error/10 p-3 text-xs leading-relaxed text-nq-foreground"
+                  data-testid="archived-refund-remaining-confirmation"
+                >
+                  Xác nhận hoàn đúng {remainingRefundLabel} về giao dịch thanh
+                  toán ban đầu. Booking vẫn giữ trạng thái đã huỷ.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {refundFeedback.message ? (
+            <div
+              role={refundFeedback.kind === "error" ? "alert" : "status"}
+              className={`mt-4 rounded-xl border p-3 text-sm ${
+                refundFeedback.kind === "success"
+                  ? "border-nq-success/30 bg-nq-success/10 text-nq-success"
+                  : refundFeedback.kind === "warning"
+                    ? "border-nq-warning/30 bg-nq-warning/10 text-nq-warning"
+                    : "border-nq-error/30 bg-nq-error/10 text-nq-error"
+              }`}
+              data-testid="archived-refund-status"
+            >
+              {refundFeedback.message}
+            </div>
+          ) : null}
 
           {detail.recoveredBooking && recoveryTraceLabel ? (
             <div

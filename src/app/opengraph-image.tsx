@@ -67,7 +67,7 @@ export default function OpengraphImage() {
               lineHeight: 1.35,
             }}
           >
-            Vietnamese-first salon OS — built in Vancouver, BC 🇨🇦
+            Vietnamese-first salon OS — built in Vancouver, BC, Canada
           </div>
         </div>
 
@@ -81,8 +81,7 @@ export default function OpengraphImage() {
         >
           <div>nailiq.ca</div>
           <div>
-            From {formatPublicMonthlyPrice("pro", { includeCurrency: true })} / month ·{" "}
-            {PUBLIC_TRIAL_DAYS}-day free trial
+            {`From ${formatPublicMonthlyPrice("pro", { includeCurrency: true })} / month · ${PUBLIC_TRIAL_DAYS}-day free trial`}
           </div>
         </div>
       </div>

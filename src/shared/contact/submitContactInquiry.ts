@@ -3,6 +3,11 @@
 import { headers } from "next/headers";
 import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { isRateLimited, RATE_LIMIT_IDS } from "@/shared/lib/rateLimit";
+import {
+  clientIpFromHeaders,
+  durableRateLimitKey,
+  isOverRateLimit,
+} from "@/shared/lib/inAppRateLimit";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 
@@ -62,8 +67,8 @@ function escapeHtml(s: string): string {
 
 /**
  * Public marketing contact form submission. Validates input, applies
- * a Vercel WAF rate-limit check (fail-open until the rule is
- * configured), and forwards via Resend to the team inbox.
+ * both a Vercel WAF signal and a durable fail-closed DB rate limit, then
+ * forwards via Resend to the team inbox.
  *
  * Honeypot: bots that fill the hidden `_botField` get a silent
  * success — keeps the form usable while dropping spam.
@@ -126,19 +131,29 @@ export async function submitContactInquiry(input: {
       : "";
   const planRaw = typeof input.plan === "string" ? input.plan.trim() : "";
   const plan: ContactPlan | null = isPlan(planRaw) ? planRaw : null;
-  const intentRaw =
-    typeof input.intent === "string" ? input.intent.trim() : "";
+  const intentRaw = typeof input.intent === "string" ? input.intent.trim() : "";
   const intent: ContactIntent | null = isIntent(intentRaw) ? intentRaw : null;
 
   try {
     const hdrs = await headers();
-    const blocked = await isRateLimited(RATE_LIMIT_IDS.contactSubmit, {
-      headers: hdrs as unknown as Headers,
-    });
+    const rateHeaders = hdrs as unknown as Headers;
+    const ip = clientIpFromHeaders(rateHeaders);
+    const blocked =
+      (await isRateLimited(RATE_LIMIT_IDS.contactSubmit, {
+        headers: rateHeaders,
+      })) ||
+      (await isOverRateLimit(
+        durableRateLimitKey("contact-submit", ip),
+        5,
+        60 * 60,
+        {
+          failureMode: "block",
+        },
+      ));
     if (blocked) return { ok: false, reason: "rate_limited" };
   } catch {
-    // Rate-limit subsystem unavailable — fail-open. The honeypot +
-    // Resend's own rate caps are the secondary defenses.
+    // Header/runtime failure is not a reason to open a public provider path.
+    return { ok: false, reason: "rate_limited" };
   }
 
   let resend: Awaited<ReturnType<typeof getResendClient>>;
@@ -177,11 +192,12 @@ export async function submitContactInquiry(input: {
         ? "Monthly Pilot"
         : "Annual Pilot"
     : "—";
-  const intentPrefix = intent === "pilot"
-    ? "[Founder Pilot] "
-    : intent === "demo"
-      ? "[Demo request] "
-      : "";
+  const intentPrefix =
+    intent === "pilot"
+      ? "[Founder Pilot] "
+      : intent === "demo"
+        ? "[Demo request] "
+        : "";
 
   const subject = salon
     ? `${intentPrefix}Contact form: ${name} (${salon})`

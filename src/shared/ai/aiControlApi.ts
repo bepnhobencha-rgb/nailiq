@@ -5,6 +5,23 @@ export type AiControlApiRequest =
       decision: "approved" | "declined";
     }
   | {
+      action: "save_review_reply_draft";
+      approvalId: string;
+      draftReply: string;
+    }
+  | {
+      action: "save_promo_campaign_draft";
+      approvalId: string;
+      draftMessage: string;
+      offerFactsConfirmed: boolean;
+    }
+  | {
+      action: "save_reactivation_campaign_draft";
+      approvalId: string;
+      messageEn: string;
+      messageVi: string;
+    }
+  | {
       action: "control_exception";
       alertId: string;
       operation: "acknowledge" | "resolve" | "reopen";

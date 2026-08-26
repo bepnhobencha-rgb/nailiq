@@ -1,38 +1,18 @@
-import { jwtVerify } from "jose";
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { createClient } from "@/shared/lib/supabase/server";
+import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
+import { consumePublicRequestRateLimit } from "@/shared/security/publicServerActionRateLimit";
+import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
+import { verifyPhotoCustomerToken } from "@/shared/photos/photoCustomerToken";
 
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ phone: string }> };
 
-type CustomerJwtPayload = {
-  photo_id?: string;
-  phone?: string;
-  iat?: number;
-  exp?: number;
-};
-
-async function isValidCustomerJwt(
-  authHeader: string | null,
-  routePhone: string,
-): Promise<boolean> {
-  if (!authHeader) return false;
-  const secret = process.env.JWT_SECRET;
-  if (!secret) return false;
-
-  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-  try {
-    const secretBytes = new TextEncoder().encode(secret);
-    const { payload } = await jwtVerify(token, secretBytes);
-    const p = payload as unknown as CustomerJwtPayload;
-    // Accept if token carries a matching phone, or if it carries a photo_id
-    // (customer arrived via their SMS link — trust the route phone they own)
-    return p.phone === routePhone || typeof p.photo_id === "string";
-  } catch {
-    return false;
-  }
+function bearerToken(authHeader: string | null): string | null {
+  const match = /^Bearer\s+([^\s]+)$/i.exec(authHeader?.trim() ?? "");
+  return match?.[1] ?? null;
 }
 
 /**
@@ -40,14 +20,32 @@ async function isValidCustomerJwt(
  * Body: { revoked_reason?, salon_id? }
  *
  * PIPEDA revocation: revokes all photo consents + soft-deletes customer's photos.
- * Auth: must be authenticated salon member OR a valid customer JWT (photo view token).
+ * Auth: authenticated same-salon member OR a purpose-bound photo customer JWT
+ * whose photo, salon, and canonical booking phone all match this request.
  */
 export async function PATCH(req: Request, { params }: Params) {
+  if (!isSameOriginMutation(req, { allowBearerWithoutCookie: true })) {
+    return NextResponse.json({ ok: false, error: "invalid_origin" }, { status: 403 });
+  }
   const { phone } = await params;
-  const decodedPhone = decodeURIComponent(phone).trim();
+  const decodedPhone = toCanonicalPhone(decodeURIComponent(phone));
 
   if (!decodedPhone) {
     return NextResponse.json({ ok: false, error: "missing_phone" }, { status: 400 });
+  }
+
+  const rate = await consumePublicRequestRateLimit({
+    request: req,
+    scope: "customer-consent-revoke",
+    identity: [decodedPhone],
+    ipLimits: [[10, 300], [30, 3_600]],
+    identityLimits: [[3, 3_600], [5, 86_400]],
+  });
+  if (rate !== "allowed") {
+    return NextResponse.json(
+      { ok: false, error: rate === "limited" ? "rate_limited" : "temporarily_unavailable" },
+      { status: rate === "limited" ? 429 : 503 },
+    );
   }
 
   let body: { revoked_reason?: string; salon_id?: string };
@@ -66,26 +64,25 @@ export async function PATCH(req: Request, { params }: Params) {
     data: { user },
   } = await serverClient.auth.getUser();
 
-  const authHeader = req.headers.get("authorization");
-  const customerJwtValid = await isValidCustomerJwt(authHeader, decodedPhone);
-
-  const db = createServiceRoleClient();
-  const now = new Date().toISOString();
-
   let salonIds: string[] = [];
+  let customerClaims: Awaited<ReturnType<typeof verifyPhotoCustomerToken>> = null;
 
   if (user) {
     // Salon member path
-    const { data: memberships } = await db
+    const { data: memberships, error: membershipError } = await serverClient
       .from("salon_members")
       .select("salon_id")
       .eq("user_id", user.id);
 
+    if (membershipError) {
+      return NextResponse.json({ ok: false, error: "temporarily_unavailable" }, { status: 503 });
+    }
     if (!memberships || memberships.length === 0) {
-      if (!customerJwtValid) {
+      const token = bearerToken(req.headers.get("authorization"));
+      customerClaims = token ? await verifyPhotoCustomerToken(token) : null;
+      if (!customerClaims) {
         return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
       }
-      // Fall through to customer JWT path — salonIds stays empty (revoke all)
     } else {
       salonIds = memberships.map((m) => m.salon_id as string);
       if (requestedSalonId) {
@@ -95,10 +92,60 @@ export async function PATCH(req: Request, { params }: Params) {
         salonIds = [requestedSalonId];
       }
     }
-  } else if (!customerJwtValid) {
-    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  } else {
+    const token = bearerToken(req.headers.get("authorization"));
+    customerClaims = token ? await verifyPhotoCustomerToken(token) : null;
+    if (!customerClaims) {
+      return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+    }
   }
-  // customerJwtValid path: salonIds is empty → revoke all salons for this customer
+
+  // The customer bearer is purpose-bound and carries the exact salon/phone.
+  // Reject cross-customer and cross-tenant attempts before creating a
+  // service-role client or reading any protected row.
+  if (customerClaims) {
+    if (
+      customerClaims.phone !== decodedPhone ||
+      (requestedSalonId !== null && requestedSalonId !== customerClaims.salonId)
+    ) {
+      return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+    }
+    salonIds = [customerClaims.salonId];
+  }
+
+  const db = createServiceRoleClient();
+  if (customerClaims) {
+    type PhotoBinding = {
+      id?: string;
+      salon_id?: string;
+      bookings?:
+        | { client_phone?: string | null; salon_id?: string | null }
+        | { client_phone?: string | null; salon_id?: string | null }[]
+        | null;
+    };
+    const { data: rawPhoto, error: photoBindingError } = await db
+      .from("booking_photos")
+      .select("id, salon_id, bookings!inner(client_phone, salon_id)")
+      .eq("id", customerClaims.photoId)
+      .eq("salon_id", customerClaims.salonId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    const photo = rawPhoto as PhotoBinding | null;
+    const booking = Array.isArray(photo?.bookings)
+      ? photo?.bookings[0]
+      : photo?.bookings;
+    if (
+      photoBindingError ||
+      !photo?.id ||
+      photo.salon_id !== customerClaims.salonId ||
+      booking?.salon_id !== customerClaims.salonId ||
+      toCanonicalPhone(booking?.client_phone ?? "") !== decodedPhone
+    ) {
+      return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+    }
+  }
+
+  const now = new Date().toISOString();
 
   // Revoke consent(s)
   let consentUpdate = db
@@ -158,10 +205,25 @@ export async function PATCH(req: Request, { params }: Params) {
  */
 export async function GET(req: Request, { params }: Params) {
   const { phone } = await params;
+  const canonicalPhone = toCanonicalPhone(decodeURIComponent(phone));
   const { searchParams } = new URL(req.url);
   const salonId = searchParams.get("salon_id");
 
-  if (!salonId) return NextResponse.json({ ok: false, error: "missing_salon_id" }, { status: 400 });
+  if (!salonId || !canonicalPhone) return NextResponse.json({ ok: false, error: "missing_salon_id" }, { status: 400 });
+
+  const rate = await consumePublicRequestRateLimit({
+    request: req,
+    scope: "customer-consent-read",
+    identity: [salonId, canonicalPhone],
+    ipLimits: [[30, 60], [200, 3_600]],
+    identityLimits: [[30, 300], [200, 3_600]],
+  });
+  if (rate !== "allowed") {
+    return NextResponse.json(
+      { ok: false, error: rate === "limited" ? "rate_limited" : "temporarily_unavailable" },
+      { status: rate === "limited" ? 429 : 503 },
+    );
+  }
 
   const serverClient = await createClient();
   const { data: { user } } = await serverClient.auth.getUser();
@@ -181,7 +243,7 @@ export async function GET(req: Request, { params }: Params) {
     .from("customer_photo_consents")
     .select("*")
     .eq("salon_id", salonId)
-    .eq("client_phone", phone)
+    .eq("client_phone", canonicalPhone)
     .is("revoked_at", null)
     .maybeSingle();
 

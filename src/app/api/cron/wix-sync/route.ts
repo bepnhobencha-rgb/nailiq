@@ -4,7 +4,10 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { runForwardSync } from "@/shared/integrations/wix/sync";
-import { pushUnsyncedBookings } from "@/shared/integrations/wix/writeback";
+import {
+  pushUnsyncedBookings,
+  reconcileWixLifecycleWritebacks,
+} from "@/shared/integrations/wix/writeback";
 import { looseServiceClient } from "@/shared/integrations/wix/looseDb";
 import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
 import { runTrackedCron } from "@/shared/security/cronRunHistory";
@@ -38,7 +41,8 @@ export async function GET(req: NextRequest) {
       const r = await runForwardSync(salonId, it.site_id as string, it.cursor_updated_date as string, (it.auto_approve as boolean) ?? true);
       // Reconcile NailIQ→Wix: push any eligible booking whose immediate create-push was missed.
       const reconciled = await pushUnsyncedBookings(salonId);
-      results[salonId] = { ...r, reconciled };
+      const lifecycleReconciled = await reconcileWixLifecycleWritebacks(salonId);
+      results[salonId] = { ...r, reconciled, lifecycleReconciled };
     } catch (e) {
       const msg = (e as Error).message;
       console.error("[wix-sync] salon", salonId, msg);

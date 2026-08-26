@@ -7,6 +7,7 @@ import {
   type StaffNotificationSettings,
 } from "@/shared/dashboard/staffNotificationSettings";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
+import { loadSalonOwnerAdminSettingsForDashboardContext } from "@/shared/dashboard/salonOwnerAdminSettings";
 
 export async function getStaffNotificationSettings(
   slug: string,
@@ -17,14 +18,21 @@ export async function getStaffNotificationSettings(
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
   if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
-  const { data } = await ctx.supabase
-    .from("salons")
-    .select("staff_notification_settings" as never)
-    .eq("id", ctx.salon.id)
-    .maybeSingle();
-  const raw = (data as { staff_notification_settings?: unknown } | null)
-    ?.staff_notification_settings;
-  return { ok: true, settings: parseStaffNotificationSettings(raw) };
+  const loaded = await loadSalonOwnerAdminSettingsForDashboardContext(ctx);
+  if (!loaded.ok) return { ok: false, error: "server_error" };
+  const row = loaded.settings as {
+    staff_notification_settings?: unknown;
+    default_notification_locale?: unknown;
+  };
+  const fallbackLocale =
+    row.default_notification_locale === "vi" ? "vi" : "en";
+  return {
+    ok: true,
+    settings: parseStaffNotificationSettings(
+      row.staff_notification_settings,
+      fallbackLocale,
+    ),
+  };
 }
 
 export async function saveStaffNotificationSettings(

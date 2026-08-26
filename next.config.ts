@@ -8,6 +8,28 @@ import type { NextConfig } from "next";
 const isHttpsOrigin = (process.env.NEXT_PUBLIC_SITE_URL ?? "").startsWith("https://");
 
 /**
+ * Allow one explicitly configured host to request dev-only Next assets.
+ * Production ignores this setting; no wildcard is ever introduced.
+ */
+export function qaAllowedDevOrigins(
+  raw: string | undefined = process.env.NAILIQ_QA_DEV_ORIGIN,
+): string[] | undefined {
+  const value = (raw ?? "").trim();
+  if (!value) return undefined;
+
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
+    if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+      return undefined;
+    }
+    return [url.hostname];
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The Supabase origin this build actually talks to, added to `connect-src`.
  *
  * The CSP allowed `https://*.supabase.co` and nothing else, which is fine for as
@@ -95,6 +117,17 @@ export function appRedirects() {
 }
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: qaAllowedDevOrigins(),
+  // The financial-report route reads three Inter subsets directly from disk
+  // while rendering a server-only PDF. Keep those runtime assets in traced
+  // serverless/standalone output without asking either bundler to parse woff2.
+  outputFileTracingIncludes: {
+    "/api/dashboard/financial-report": [
+      "./node_modules/@fontsource/inter/files/inter-latin-400-normal.woff2",
+      "./node_modules/@fontsource/inter/files/inter-latin-ext-400-normal.woff2",
+      "./node_modules/@fontsource/inter/files/inter-vietnamese-400-normal.woff2",
+    ],
+  },
   async headers() {
     const cspDirectives = [
       "default-src 'self'",
@@ -102,7 +135,7 @@ const nextConfig: NextConfig = {
       // script/frame/connect + pci-connect for tokenization + its font hosts
       // (per https://developer.squareup.com/docs/web-payments/content-security-policy).
       // Both production + sandbox domains so any salon environment works.
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.vercel-scripts.com https://js.stripe.com https://web.squarecdn.com https://sandbox.web.squarecdn.com",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.vercel-scripts.com https://www.googletagmanager.com https://js.stripe.com https://web.squarecdn.com https://sandbox.web.squarecdn.com",
       // Square's Web Payments SDK injects an EXTERNAL stylesheet (card-wrapper.css)
       // from web.squarecdn.com into the parent doc — 'unsafe-inline' alone blocks
       // it and card.attach() throws "unexpected error" (card box never renders).
@@ -111,7 +144,7 @@ const nextConfig: NextConfig = {
       "img-src 'self' data: blob: https:",
       "font-src 'self' data: https://square-fonts-production-f.squarecdn.com https://d1g145x70srn7h.cloudfront.net",
       [
-        "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.stripe.com https://api.openai.com wss://api.openai.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com",
+        "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.google-analytics.com https://api.stripe.com https://api.openai.com wss://api.openai.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com",
         // Whatever Supabase THIS build is configured against — see the note above.
         // A no-op in production; the difference between working and silently
         // broken when the stack is local.
@@ -174,6 +207,19 @@ const nextConfig: NextConfig = {
             key: "Permissions-Policy",
             value: "camera=(self), microphone=(), geolocation=()",
           },
+        ],
+      },
+      {
+        // Capability tokens are carried in booking-page query strings. Keep
+        // them out of caches, referrers and crawler indexes on every response.
+        source: "/booking/:path*",
+        // Referrer-Policy: no-referrer
+        // Cache-Control: private, no-store
+        headers: [
+          { key: "Cache-Control", value: "private, no-store, max-age=0" },
+          { key: "Pragma", value: "no-cache" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
         ],
       },
     ];

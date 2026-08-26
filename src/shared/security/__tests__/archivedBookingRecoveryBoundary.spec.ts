@@ -140,13 +140,14 @@ describe("archived booking recovery database boundary", () => {
 
   it("defaults recovery outbound confirmations off and blocks unsynchronised Wix recovery", () => {
     expect(actions).toContain("external_calendar_not_supported");
-    expect(actions).toMatch(
-      /const notifyCreateSms = recovery[\s\S]*input\.notify\?\.sms === true/,
+    expect(actions).toContain(
+      "const notifyCreateSms = deskNotificationActorId !== null && !recovery",
     );
-    expect(actions).toMatch(
-      /const notifyCreateEmail = recovery[\s\S]*input\.notify\?\.email === true/,
+    expect(actions).toContain(
+      "const notifyCreateEmail = deskNotificationActorId !== null && !recovery",
     );
-    expect(actions).toContain("if (!recovery) after(() => pushWixCreate");
+    expect(actions).toContain("if (!recovery) {");
+    expect(actions).toContain("Recovery deliberately remains outbound-off");
   });
 
   it("allows only service_role to execute the recovery RPC", () => {

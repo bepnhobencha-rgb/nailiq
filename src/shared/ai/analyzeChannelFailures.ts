@@ -4,6 +4,8 @@ import { createLesson } from "./lessonMutations";
 
 const MIN_SAMPLE_SIZE = 5; // ignore if fewer than this many sends
 const FAIL_RATE_THRESHOLD = 0.5; // 50% failure rate triggers a lesson
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type ChannelFailureResult = {
   smsFailRate: number;
@@ -23,6 +25,9 @@ export type ChannelFailureResult = {
 export async function analyzeChannelFailures(
   salonId: string,
 ): Promise<ChannelFailureResult> {
+  if (!UUID_RE.test(salonId)) {
+    return { smsFailRate: 0, lessonCreated: false, lessonId: null };
+  }
   const db = createServiceRoleClient();
   const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
 

@@ -1,71 +1,41 @@
 import { NextResponse } from "next/server";
-import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+
+import { inspectBookingManagementCapability } from "@/shared/booking/bookingManagementCapabilities";
+import { consumeBookingManagementRateLimit } from "@/shared/booking/bookingManagementRateLimit";
 import { noShowCardDecision } from "@/shared/integrations/square/noshow";
+import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
-/**
- * Context for the desk-sent "save a card to hold your spot" page
- * (`/booking/save-card`). Gated by the same self-serve reminder token as the
- * manage-card / reschedule links — the token is the possession factor, arriving
- * only in the customer's SMS. Returns the booking id (so the proven
- * NoShowCardCapture component can fetch the provider config + save the card,
- * exactly as it does in the online booking flow) plus salon display fields.
- */
+const PRIVATE_HEADERS = {
+  "Cache-Control": "private, no-store, max-age=0", Pragma: "no-cache",
+  "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex, nofollow",
+} as const;
+const json = (body: Record<string, unknown>, status = 200) =>
+  NextResponse.json(body, { status, headers: PRIVATE_HEADERS });
+
 export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const token = (url.searchParams.get("token") ?? "").trim();
-  if (!token) return NextResponse.json({ ok: false, code: "missing_token" }, { status: 400 });
+  const token = new URL(req.url).searchParams.get("token")?.trim() ?? "";
+  if (!token) return json({ ok: false, code: "invalid_request" }, 400);
+  const rate = await consumeBookingManagementRateLimit({ request: req, tokenId: token, action: "card_manage", phase: "inspect" });
+  if (rate !== "allowed") return json({ ok: false, code: rate === "limited" ? "rate_limited" : "management_unavailable" }, rate === "limited" ? 429 : 503);
+  const inspected = await inspectBookingManagementCapability({ tokenId: token, expectedAction: "card_manage" });
+  if (!inspected.ok) return json({ ok: false, code: inspected.code }, inspected.code === "management_unavailable" ? 503 : 404);
 
-  const supabase = createServiceRoleClient();
-  const { data: tokenRow } = await supabase
-    .from("booking_reminder_tokens" as never)
-    .select("booking_id, expires_at")
-    .eq("id", token)
-    .maybeSingle();
-  const tr = tokenRow as { booking_id: string; expires_at: string } | null;
-  if (!tr) return NextResponse.json({ ok: false, code: "invalid_token" }, { status: 404 });
-  if (Date.parse(tr.expires_at) < Date.now()) {
-    return NextResponse.json({ ok: false, code: "expired_token" }, { status: 410 });
+  const { bookingId, salonId } = inspected.inspection.context;
+  const db = createServiceRoleClient();
+  const [bookingResult, salonResult] = await Promise.all([
+    db.from("bookings" as never).select("id,status,noshow_card_id").eq("id", bookingId).eq("salon_id", salonId).maybeSingle(),
+    db.from("salons" as never).select("name,currency_code").eq("id", salonId).maybeSingle(),
+  ]);
+  if (bookingResult.error || salonResult.error || !bookingResult.data || !salonResult.data) {
+    return json({ ok: false, code: "management_unavailable" }, 503);
   }
-
-  const { data: bRow } = await supabase
-    .from("bookings" as never)
-    .select("id, salon_id, status, noshow_card_id, service_id, client_phone")
-    .eq("id", tr.booking_id)
-    .maybeSingle();
-  const b = bRow as
-    | {
-        id: string;
-        salon_id: string;
-        status: string;
-        noshow_card_id: string | null;
-        service_id: string | null;
-        client_phone: string | null;
-      }
-    | null;
-  if (!b) return NextResponse.json({ ok: false, code: "not_found" }, { status: 404 });
-
-  const { data: sRow } = await supabase
-    .from("salons" as never)
-    .select("name, currency_code")
-    .eq("id", b.salon_id)
-    .maybeSingle();
-  const s = sRow as { name: string | null; currency_code: string | null } | null;
-
-  // Whether THIS customer actually needs a card — use the SAME post-booking
-  // decision the capture component uses (noShowCardDecision), so the page and
-  // the form never diverge. (resolveNoShowCardRequirement is the PRE-booking
-  // gate; it would count the current booking as prior history and wrongly read
-  // the customer as "returning", hiding the form the component shows.)
-  const decision = await noShowCardDecision(b.id);
-  const cardRequired = decision.required;
-
-  return NextResponse.json({
-    ok: true,
-    bookingId: b.id,
-    salonName: s?.name ?? "",
-    currencyCode: String(s?.currency_code || "USD").trim().toUpperCase() || "USD",
-    alreadySaved: Boolean(b.noshow_card_id),
-    cancelled: b.status === "cancelled",
-    cardRequired,
+  const booking = bookingResult.data as { status: string; noshow_card_id: string | null };
+  const salon = salonResult.data as { name: string | null; currency_code: string | null };
+  const decision = await noShowCardDecision(bookingId);
+  return json({
+    ok: true, bookingId, managementToken: token, salonName: salon.name ?? "",
+    currencyCode: String(salon.currency_code || "USD").trim().toUpperCase() || "USD",
+    alreadySaved: Boolean(booking.noshow_card_id), cancelled: booking.status === "cancelled",
+    cardRequired: decision.required,
   });
 }

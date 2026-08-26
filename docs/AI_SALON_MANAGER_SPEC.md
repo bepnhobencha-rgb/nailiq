@@ -21,12 +21,12 @@ Tiệm vận hành không cần owner giám sát liên tục. Owner can thiệp 
 | Mức | Tên | Nghĩa | Ví dụ |
 |---|---|---|---|
 | **AUTO** | Tự làm hoàn toàn | AI thực thi, ghi log, không chờ ai | Gửi SMS nhắc lịch, gắn cờ no-show, gửi tin win-back |
-| **ACT+UNDO** | Làm rồi báo, có thể huỷ | AI thực thi ngay + mở undo window 60 phút | Gửi tin win-back, đề xuất flash deal nhỏ |
+| **ACT+UNDO** | Làm rồi báo, có thể huỷ | Chỉ dùng cho hành động nội bộ thật sự đảo ngược được | Không dùng cho tin nhắn đã gửi |
 | **ESCALATE** | Chờ owner quyết | AI soạn nháp + thông báo, KHÔNG tự làm | Charge thẻ, đổi giá, review 1-3 sao, thay đổi cơ cấu dịch vụ |
 
 **Quy tắc cứng:**
 - **Tiền di chuyển** (charge thẻ, hoàn tiền, đổi giá) = luôn ESCALATE, không bao giờ AUTO.
-- **Tin nhắn trực tiếp tới khách** = AUTO cho nhắc lịch/rebook/win-back; ESCALATE cho phản hồi review xấu.
+- **Tin nhắn trực tiếp tới khách** = AUTO chỉ cho reminder giao dịch đã có consent và được chứng nhận riêng. Rebook/win-back là draft + 2 approvals, dispatch OFF. Review reply là draft-only.
 - **Cấu hình tiệm** (giá, dịch vụ, giờ mở cửa) = luôn ESCALATE.
 
 ### Undo window
@@ -157,12 +157,12 @@ type SalonIntelligenceProfile = {
 **Làm gì:**
 1. 24h trước: SMS + email nhắc lịch (đã có)
 2. 2h trước: SMS nhắc thêm (đã có)
-3. **Mới — Rebook reminder:** khi khách đến hạn theo cadence của họ mà chưa đặt → gửi "Đến lúc ghé tiệm rồi?" (logic từ `agentRebook.ts`)
+3. **Rebook campaign:** tạo draft song ngữ EN/VI trên dashboard; không đọc người nhận và không gửi ở bước tạo draft.
 4. Giọng điệu từ SIP `brand_voice`, ngôn ngữ từ SIP `language_primary`
 
 **Gap cần fix:**
 - Hiện `draftReminderLead` nhận `lang: "en" | "vi"` hardcode từ caller → cần đọc từ SIP.
-- Rebook reminder (`agentRebook.ts`) đang ghi `winback_suggestions` status `suggested` nhưng chưa tự gửi → P3 sẽ auto-send.
+- Rebook (`agentRebook.ts`) chỉ tạo một draft mỗi salon/loại/tuần. Owner/admin phải sửa và duyệt nội dung, sau đó chạy audience dry-run có consent và duyệt release lần hai. Dispatch vẫn khóa OFF.
 
 **DB tables:** `booking_notifications`, `winback_suggestions`
 **SIP fields:** `brand_voice`, `language_primary`, `contact_window`
@@ -171,22 +171,22 @@ type SalonIntelligenceProfile = {
 
 ### 4.3 💌 Người Kéo Về (Win-back)
 
-**File:** `src/shared/winback/agentWinback.ts` (đã có — cần ACT+UNDO)
+**File:** `src/shared/winback/agentWinback.ts`
 **Trigger:** Cron `/api/cron/manager` (mới, P1) — mỗi ngày 10:00 sáng giờ tiệm
-**Mức tự động:** ACT+UNDO (60 phút)
-**Model:** `claude-haiku-4-5`
+**Mức tự động:** DRAFT ONLY + 2 approvals; dispatch OFF
+**Model:** deterministic local copy; không gọi provider
 
 **Làm gì:**
 1. Tìm khách lapsed theo `winback_cadence` từ SIP (gentle=60d, normal=45d, aggressive=30d)
-2. AI soạn tin cá nhân hoá (tên khách, dịch vụ hay làm, thời gian vắng)
-3. **AUTO gửi** qua SMS/email (không chờ owner duyệt)
-4. Ghi `ai_actions_log` với `undo_deadline = now() + 60min`
-5. Push notification tới owner: "Đã gửi 3 tin win-back. Undo trong 60 phút nếu muốn."
+2. Tạo draft EN/VI không chứa PII, link, số điện thoại hoặc offer chưa xác nhận.
+3. Owner/admin sửa nội dung chính xác và duyệt lần một.
+4. Chạy audience dry-run có kiểm tra consent hiện tại, lưu manifest bất biến không chứa nội dung tin nhắn theo từng người.
+5. Owner/admin duyệt release lần hai; hệ thống vẫn dừng ở `dispatch_not_enabled`, không SMS/email và không có "undo sau khi gửi" giả.
 
-**Gap cần fix:**
-- Hiện tại chỉ ghi `winback_suggestions` status `suggested` — không bao giờ gửi (vòng lặp không khép). **P3** sẽ thêm auto-send.
-- Language hardcode — thay bằng SIP.
-- Cron gắn với `square-sync` → tách sang `/api/cron/manager` (P1).
+**Bằng chứng cần trước khi mở dispatch:**
+- Browser QA trên môi trường không production cho editor, lần duyệt một, audience dry-run và lần duyệt hai.
+- Leased per-recipient/channel dispatch claim, consent preflight ngay trước gửi, retry/reconciliation và provider delivery receipt.
+- Phê duyệt riêng tại thời điểm mở dispatch và gửi thử; không suy ra quyền gửi từ việc duyệt nội dung.
 
 **DB tables:** `winback_suggestions`, `ai_actions_log`, `booking_notifications`
 **SIP fields:** `winback_cadence`, `language_primary`, `brand_voice`, `contact_window`, `tone_examples`
@@ -250,20 +250,22 @@ type SalonIntelligenceProfile = {
 
 ### 4.6 ⭐ Người Trả Lời (Review Responder)
 
-**File:** `src/shared/ai/agentReviewResponder.ts` (mới — cần tạo)
+**File:** `src/shared/ai/agentReviewResponder.ts`
 **Trigger:** Webhook khi phát hiện Google Review mới (polling nếu webhook không khả dụng)
-**Mức tự động:** 4-5 sao = AUTO | 1-3 sao = ESCALATE
+**Mức tự động:** MỌI mức sao = DRAFT ONLY / MANUAL COPY
 **Model:** `claude-sonnet-4-5` (review response ảnh hưởng public reputation)
 
 **Làm gì:**
-- 4-5 sao: AI soạn + auto-post reply bằng ngôn ngữ của reviewer (detect từ review text), tone từ SIP
-- 1-3 sao: AI soạn draft + push notification tới owner "Có review xấu — bạn có muốn sửa nháp không?", KHÔNG auto-post
-- Ghi `ai_actions_log` (4-5 sao = AUTO, 1-3 sao = ESCALATE + pending)
+- 1-5 sao: AI chỉ soạn nháp bằng ngôn ngữ của reviewer, tone từ SIP; không tự đăng và không tự gửi email/SMS.
+- 1-3 sao: đánh dấu khẩn trong dashboard để owner/admin ưu tiên xem; vẫn không tạo outbound notification.
+- Owner/admin có thể sửa và lưu nháp, sau đó chủ động bấm Copy để tự đăng ở nền tảng review.
+- Review được xem là dữ liệu không đáng tin cậy, không phải instruction; nháp không được hứa hoàn tiền/bồi thường, nhận trách nhiệm, tiết lộ dữ liệu riêng tư hoặc chứa thông tin liên hệ.
+- Claim theo salon/source/review được ghi nguyên tử trước khi gọi provider để tránh tạo trùng và kiểm soát retry/chi phí.
 
-**DB tables:** `ai_actions_log`
+**DB tables:** `review_reply_draft_claims`, `approval_requests`
 **SIP fields:** `brand_voice`, `tone_examples`, `language_primary`
 
-**Failure mode:** Google API quota → queue lại, retry sau 1h. Review 1-3 sao không bao giờ auto-post dù agent lỗi.
+**Failure mode:** timeout/quota → ghi failed và retry tối đa 3 lần. Không có đường auto-post hoặc auto-email ở bất kỳ mức sao nào.
 
 ---
 
@@ -310,19 +312,21 @@ type SalonIntelligenceProfile = {
 
 ### 4.9 🧭 Chiến Lược Gia (Weekly Strategist)
 
-**File:** `src/shared/ai/agentStrategist.ts` (mới — cần tạo)
+**File:** `src/shared/ai/agentStrategist.ts`
 **Trigger:** Cron `/api/cron/manager` — Chủ nhật 9:00 tối giờ tiệm
-**Mức tự động:** Flash deal nhỏ / message tweak = ACT+UNDO | Thay đổi cơ cấu = ESCALATE
+**Mức tự động:** Promo campaign = DRAFT ONLY / OWNER CONFIGURATION | Thay đổi cơ cấu = ESCALATE
 **Model:** `claude-sonnet-4-5` (phân tích 4-week trend cần reasoning sâu)
 
 **Làm gì:**
 1. Phân tích 4 tuần: revenue trend, dịch vụ tăng/giảm, slot trống theo giờ/ngày, retention rate
 2. Đối chiếu với `primary_goal` từ SIP
-3. Đề xuất 2-3 actions cụ thể với lý do (ví dụ: "Thứ 3 chiều trống 60% — flash deal -15% sẽ lấp đầy")
-4. Flash deal / message tweak nhỏ → ACT+UNDO (tự áp dụng, owner undo trong 60')
-5. Đổi giá / thêm/bỏ dịch vụ → ESCALATE (gửi draft + link tới settings page)
+3. Khi flag opt-in bật, tạo tối đa một nháp chiến dịch trong dashboard cho mỗi tuần salon-local bằng claim nguyên tử trước provider.
+4. AI không được tự đặt giá, mức giảm, ngày, giờ hoặc dịch vụ. Owner/admin phải trực tiếp nhập và đánh dấu xác nhận mọi offer fact.
+5. Duyệt nháp không gửi email/SMS, không đăng bài, không tạo/kích hoạt promotion và không có ACT+UNDO giả.
+6. Audience là bước riêng: salon-local, channel-consent, opt-out và recent-contact exclusion; message/audience được freeze và cần release approval thứ hai. Dispatch vẫn hard OFF cho tới chứng nhận provider/deployed riêng.
+7. Đổi giá / thêm/bỏ dịch vụ → ESCALATE (dashboard recommendation only).
 
-**DB tables:** `bookings`, `services`, `salon_client_spend`, `ai_actions_log`
+**DB tables:** `bookings`, `services`, `salon_client_spend`, `promo_campaign_draft_claims`, `approval_requests`, `ai_actions_log`
 **SIP fields:** `primary_goal`, `noshow_strictness`, `language_primary`
 
 ---
@@ -443,14 +447,14 @@ When complete:
 - `agentDailyReport.ts`
 - Settings UI: owner_notification_channel
 
-### P3 — Khép vòng lặp: Kéo Về/Nhắc Hẹn tự gửi + Radar → ActivityFeed
-- `winback_suggestions` → auto-send với ACT+UNDO
+### P3 — Khép vòng lặp an toàn: Kéo Về/Nhắc Hẹn draft + Radar → ActivityFeed
+- Winback/Rebook → draft song ngữ, 2 approvals, audience manifest; dispatch OFF cho đến khi được chứng nhận và phê duyệt riêng
 - `watchdog_alerts` → `ActivityFeed` + `ActivityBell` badge
 - `ai_actions_log` table + undo endpoint
 
 ### P4 — Người Trả Lời + VIP Care
 - Google Review webhook/polling
-- `agentReviewResponder.ts` (4-5★ AUTO, 1-3★ ESCALATE)
+- `agentReviewResponder.ts` (1-5★ DRAFT ONLY, owner/admin sửa và manual copy)
 - `agentVipCare.ts` (birthday + milestone + early win-back)
 
 ### P5 — Người Viết Bài Phase 1 (draft only)
@@ -459,7 +463,7 @@ When complete:
 
 ### P6 — Chiến Lược Gia + Revenue Optimizer
 - `agentStrategist.ts`
-- Flash deal ACT+UNDO endpoint
+- Promo campaign dashboard draft; owner-confirmed offer facts; audience/release gates; dispatch OFF
 - Structural change ESCALATE notifications
 
 ### P7 — Người Viết Bài Phase 2 (Meta API auto-post)

@@ -1,0 +1,138 @@
+\if :{?setup_catalog_user_id}
+\else
+  \echo 'setup_catalog_user_id is required'
+  select 1 / 0 as required_setup_catalog_user_id_missing;
+\endif
+
+\if :{?setup_catalog_role_label}
+\else
+  \echo 'setup_catalog_role_label is required'
+  select 1 / 0 as required_setup_catalog_role_label_missing;
+\endif
+
+select set_config(
+  'request.jwt.claim.sub',
+  :'setup_catalog_user_id',
+  true
+);
+
+with changed as (
+  update public.services
+  set price_cents = 1, duration_minutes = 1
+  where id = '43000000-0000-0000-0000-000000000001'
+  returning 1
+)
+select count(*) = 0 as setup_catalog_service_update_denied
+from changed
+\gset
+
+\if :setup_catalog_service_update_denied
+\else
+  \echo :setup_catalog_role_label 'unexpectedly updated service price/duration'
+  select 1 / 0 as setup_catalog_service_update_was_not_denied;
+\endif
+
+savepoint setup_catalog_service_insert;
+\set ON_ERROR_STOP off
+insert into public.services (
+  id, salon_id, name, price_cents, duration_minutes
+)
+values (
+  '43000000-0000-0000-0000-000000000099',
+  '23000000-0000-0000-0000-000000000001',
+  'Forbidden Service', 1, 1
+);
+\set setup_catalog_service_insert_sqlstate :SQLSTATE
+rollback to savepoint setup_catalog_service_insert;
+\set ON_ERROR_STOP on
+
+select :'setup_catalog_service_insert_sqlstate' = '42501'
+  as setup_catalog_service_insert_denied
+\gset
+
+\if :setup_catalog_service_insert_denied
+\else
+  \echo :setup_catalog_role_label 'service insert returned SQLSTATE' :setup_catalog_service_insert_sqlstate 'instead of 42501'
+  select 1 / 0 as setup_catalog_service_insert_was_not_denied;
+\endif
+
+with changed as (
+  delete from public.services
+  where id = '43000000-0000-0000-0000-000000000003'
+  returning 1
+)
+select count(*) = 0 as setup_catalog_service_delete_denied
+from changed
+\gset
+
+\if :setup_catalog_service_delete_denied
+\else
+  \echo :setup_catalog_role_label 'unexpectedly deleted a service'
+  select 1 / 0 as setup_catalog_service_delete_was_not_denied;
+\endif
+
+with changed as (
+  update public.staff_services
+  set service_id = '43000000-0000-0000-0000-000000000002'
+  where staff_id = '33000000-0000-0000-0000-000000000001'
+    and service_id = '43000000-0000-0000-0000-000000000001'
+  returning 1
+)
+select count(*) = 0 as setup_catalog_capability_update_denied
+from changed
+\gset
+
+\if :setup_catalog_capability_update_denied
+\else
+  \echo :setup_catalog_role_label 'unexpectedly changed a staff capability'
+  select 1 / 0 as setup_catalog_capability_update_was_not_denied;
+\endif
+
+savepoint setup_catalog_capability_insert;
+\set ON_ERROR_STOP off
+insert into public.staff_services (staff_id, service_id)
+values (
+  '33000000-0000-0000-0000-000000000002',
+  '43000000-0000-0000-0000-000000000002'
+);
+\set setup_catalog_capability_insert_sqlstate :SQLSTATE
+rollback to savepoint setup_catalog_capability_insert;
+\set ON_ERROR_STOP on
+
+select :'setup_catalog_capability_insert_sqlstate' = case
+    when :'setup_catalog_role_label' = 'cross-tenant owner' then 'P0001'
+    else '42501'
+  end
+  as setup_catalog_capability_insert_denied
+\gset
+
+\if :setup_catalog_capability_insert_denied
+\else
+  \echo :setup_catalog_role_label 'staff capability insert returned unexpected SQLSTATE' :setup_catalog_capability_insert_sqlstate
+  select 1 / 0 as setup_catalog_capability_insert_was_not_denied;
+\endif
+
+with changed as (
+  delete from public.staff_services
+  where staff_id = '33000000-0000-0000-0000-000000000001'
+    and service_id = '43000000-0000-0000-0000-000000000001'
+  returning 1
+)
+select count(*) = 0 as setup_catalog_capability_delete_denied
+from changed
+\gset
+
+\if :setup_catalog_capability_delete_denied
+\else
+  \echo :setup_catalog_role_label 'unexpectedly deleted a staff capability'
+  select 1 / 0 as setup_catalog_capability_delete_was_not_denied;
+\endif
+
+\unset setup_catalog_service_update_denied
+\unset setup_catalog_service_insert_sqlstate
+\unset setup_catalog_service_insert_denied
+\unset setup_catalog_service_delete_denied
+\unset setup_catalog_capability_update_denied
+\unset setup_catalog_capability_insert_sqlstate
+\unset setup_catalog_capability_insert_denied
+\unset setup_catalog_capability_delete_denied

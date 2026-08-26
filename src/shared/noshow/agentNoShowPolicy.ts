@@ -1,5 +1,6 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProviderPolicy";
 import { looseServiceClient, type Row } from "@/shared/integrations/square/looseDb";
 import { resolvePaymentProvider } from "@/shared/integrations/payments";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -8,7 +9,10 @@ import {
   claimAiExecutionSlot,
   ruleFirstOptimizationEnabled,
 } from "@/shared/ai/executionLimit";
-import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
+import {
+  isProviderTimeoutError,
+  trackAnthropicMessage,
+} from "@/shared/ai/usageLedger";
 import { deterministicNoShowRiskScore } from "@/shared/noshow/scoreNoShowRisk";
 
 /**
@@ -84,7 +88,7 @@ let client: Anthropic | null = null;
 function getClient(): Anthropic | null {
   const key = process.env.ANTHROPIC_API_KEY?.trim();
   if (!key) return null;
-  if (!client) client = new Anthropic({ apiKey: key });
+  if (!client) client = createTextBackgroundAnthropicClient(key);
   return client;
 }
 
@@ -128,7 +132,8 @@ export async function gatherPolicyContext(bookingId: string): Promise<PolicyCont
     // Group booking: fetch all members so the agent sees the whole-party fee base.
     // Mirrors the noShowBaseCents() logic in square/noshow.ts (PR #586).
     groupId
-      ? db.from("bookings").select("price_cents, status").eq("group_id", groupId)
+      ? db.from("bookings").select("price_cents, status")
+        .eq("salon_id", salonId).eq("group_id", groupId)
       : Promise.resolve({ data: [] }),
   ]);
 
@@ -240,7 +245,8 @@ Return ONLY JSON: {"sms":"<message>","email":"<message>"}`;
     const email = typeof parsed.email === "string" ? parsed.email.trim() : "";
     if (!sms && !email) return null;
     return { sms, email };
-  } catch {
+  } catch (error) {
+    if (isProviderTimeoutError(error)) throw error;
     return null;
   }
 }
@@ -343,7 +349,8 @@ Return ONLY JSON: {"protection":"none|card","reason":"<1 sentence reason>","mess
       message: typeof parsed.message === "string" && parsed.message.trim() ? parsed.message.trim() : null,
       confidence: parsed.confidence === "low" || parsed.confidence === "high" ? parsed.confidence : "medium",
     };
-  } catch {
+  } catch (error) {
+    if (isProviderTimeoutError(error)) throw error;
     return null;
   }
 }
@@ -438,8 +445,9 @@ export function isNoShowPolicyAmbiguous(ctx: PolicyContext): boolean {
  *
  * The AI still NEVER charges — live only sets the "needs a card on file" flag;
  * the actual charge stays manual + consent-gated + idempotent downstream. If the
- * guarded decision is unusable (low confidence / AI down / unsafe), live falls
- * back to the rule (returns null). Best-effort; never throws.
+ * guarded decision is unusable (low confidence / non-timeout AI failure /
+ * unsafe), live falls back to the rule (returns null). Provider timeouts throw
+ * so callers cannot continue into a downstream mutation.
  */
 export async function runNoShowPolicyAgent(
   bookingId: string,
@@ -565,6 +573,7 @@ export async function runNoShowPolicyAgent(
     }
     return { cardRequired };
   } catch (e) {
+    if (isProviderTimeoutError(e)) throw e;
     console.error("[runNoShowPolicyAgent]", e);
     return null;
   }

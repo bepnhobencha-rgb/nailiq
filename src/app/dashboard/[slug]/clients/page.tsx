@@ -39,20 +39,15 @@ export default async function ClientsPage({ params }: PageProps) {
     redirect(`/dashboard/${encodeURIComponent(slug)}`);
   }
 
-  // Per-salon lifecycle thresholds (Admin Settings). NULL row → app defaults.
-  const [{ data: segRow }, identityReview] = await Promise.all([
-    ctx.supabase
-      .from("salons")
-      .select("client_segment_settings")
-      .eq("id", ctx.salon.id)
-      .maybeSingle(),
+  // The member-profile RPC returns only the two bounded lifecycle thresholds;
+  // unknown/raw management JSON keys never reach desk roles.
+  const identityReview = await (
     ctx.role === "owner" || ctx.role === "admin"
       ? loadClientIdentityReview(slug)
-      : Promise.resolve(null),
-  ]);
+      : Promise.resolve(null)
+  );
   const seg = parseClientSegmentSettings(
-    (segRow as { client_segment_settings?: unknown } | null)
-      ?.client_segment_settings,
+    ctx.salon.client_segment_settings,
   );
 
   return (

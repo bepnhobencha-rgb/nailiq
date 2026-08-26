@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
-import { loadNoShowDashboard } from "@/shared/noshow/noShowDashboardActions";
-import { NoShowProtectionHub } from "@/components/dashboard/NoShowProtectionHub";
-import { SquareSyncCard } from "@/components/dashboard/SquareSyncCard";
+import { GuidedSetupReturnCard } from "@/components/dashboard/GuidedSetupReturnCard";
+import { GuidedBookingPolicySetup } from "@/components/dashboard/GuidedBookingPolicySetup";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
+import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
+import type { StoredPolicy } from "@/shared/lib/cancellationPolicy";
+import { loadSalonOwnerAdminSettingsForDashboardContext } from "@/shared/dashboard/salonOwnerAdminSettings";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -17,6 +20,91 @@ export default async function NoShowProtectionPage({ params }: Props) {
   const { slug } = await params;
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) redirect("/register");
+  if (!isOwnerOrAdmin(ctx.role)) {
+    redirect(`/dashboard/${encodeURIComponent(slug)}`);
+  }
+
+  const guidedSetupEnabled = await isReleaseFeatureVisible(
+    ctx.salon,
+    "guided_admin_setup",
+  );
+  if (guidedSetupEnabled) {
+    const loaded = await loadSalonOwnerAdminSettingsForDashboardContext(ctx);
+    if (!loaded.ok) {
+      redirect(`/dashboard/${encodeURIComponent(slug)}`);
+    }
+
+    const policyRow = loaded.settings as {
+      cancellation_policy?: unknown;
+      feature_flags?: Record<string, unknown> | null;
+      group_together_threshold_minutes?: unknown;
+      noshow_group_whole_party?: unknown;
+    };
+    const rawPolicy =
+      policyRow.cancellation_policy &&
+      typeof policyRow.cancellation_policy === "object" &&
+      !Array.isArray(policyRow.cancellation_policy)
+        ? (policyRow.cancellation_policy as { en?: unknown; vi?: unknown })
+        : {};
+    const storedPolicy: StoredPolicy = {
+      en: typeof rawPolicy.en === "string" ? rawPolicy.en : undefined,
+      vi: typeof rawPolicy.vi === "string" ? rawPolicy.vi : undefined,
+    };
+    const policySaved =
+      typeof rawPolicy.en === "string" &&
+      rawPolicy.en.trim().length > 0 &&
+      typeof rawPolicy.vi === "string" &&
+      rawPolicy.vi.trim().length > 0;
+    const groupBookingEnabled = isReleaseFeatureEnabled(
+      { feature_flags: policyRow.feature_flags },
+      "group_booking",
+    );
+    const rawGroupWindow = policyRow.group_together_threshold_minutes;
+    const groupWindow =
+      typeof rawGroupWindow === "number" &&
+      Number.isFinite(rawGroupWindow) &&
+      rawGroupWindow >= 0 &&
+      rawGroupWindow <= 120
+        ? Math.round(rawGroupWindow)
+        : 15;
+    const groupPolicySaved =
+      !groupBookingEnabled ||
+      (typeof rawGroupWindow === "number" &&
+        Number.isFinite(rawGroupWindow) &&
+        rawGroupWindow >= 0 &&
+        rawGroupWindow <= 120 &&
+        typeof policyRow.noshow_group_whole_party === "boolean");
+    const { resolvePolicy } = await import("@/shared/lib/cancellationPolicy");
+    const salonName = ctx.salon.name.trim() || slug;
+
+    return (
+      <div className="mx-auto w-full max-w-3xl px-4 pb-8 sm:px-6">
+        <GuidedSetupReturnCard slug={slug} currentStep="booking-policies" />
+        <GuidedBookingPolicySetup
+          slug={slug}
+          cancellationPolicyEn={resolvePolicy(
+            storedPolicy,
+            "en",
+            salonName,
+          )}
+          cancellationPolicyVi={resolvePolicy(
+            storedPolicy,
+            "vi",
+            salonName,
+          )}
+          policySaved={policySaved}
+          groupBookingEnabled={groupBookingEnabled}
+          groupPolicySaved={groupPolicySaved}
+          groupTogetherThresholdMinutes={groupWindow}
+          noShowGroupWholeParty={
+            typeof policyRow.noshow_group_whole_party === "boolean"
+              ? policyRow.noshow_group_whole_party
+              : true
+          }
+        />
+      </div>
+    );
+  }
 
   const sb = (await import("@/shared/lib/supabase/serviceRole")).createServiceRoleClient();
   const { data: salonRow } = await sb
@@ -90,8 +178,21 @@ export default async function NoShowProtectionPage({ params }: Props) {
   const { healthAckRequired } = await import("@/shared/lib/healthAck");
   const healthAckEff = healthAckRequired(row?.health_ack_required, row?.vertical);
 
+  const { loadNoShowDashboard } = await import(
+    "@/shared/noshow/noShowDashboardActions"
+  );
   const result = await loadNoShowDashboard(slug);
   if (!result.ok) redirect(`/dashboard/${slug}`);
+  const groupBookingEnabled = isReleaseFeatureEnabled(
+    { feature_flags: row?.feature_flags },
+    "group_booking",
+  );
+  const { NoShowProtectionHub } = await import(
+    "@/components/dashboard/NoShowProtectionHub"
+  );
+  const { SquareSyncCard } = await import(
+    "@/components/dashboard/SquareSyncCard"
+  );
 
   return (
     <div className="space-y-6">
@@ -119,6 +220,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
       connectDetailsSubmitted={row?.stripe_connect_details_submitted ?? false}
       paymentProvider={row?.payment_provider ?? null}
       noshowProtectionEnabled={row?.noshow_protection_enabled ?? false}
+      groupBookingEnabled={groupBookingEnabled}
       noshowGroupWholeParty={row?.noshow_group_whole_party !== false}
       noshowDepositEscalationThreshold={row?.noshow_deposit_escalation_threshold ?? null}
       noshowRequireNewCustomer={row?.noshow_require_new_customer !== false}

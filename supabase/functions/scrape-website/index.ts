@@ -5,6 +5,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
+  AI_TEXT_BACKGROUND_TIMEOUT_MS,
   type EdgeUsageLedgerClient,
   trackAnthropicEdgeFetch,
 } from "../_shared/aiUsageLedger.ts";
@@ -219,6 +220,7 @@ Rules:
       model: ANTHROPIC_MODEL,
     },
     () => fetch("https://api.anthropic.com/v1/messages", {
+      signal: AbortSignal.timeout(AI_TEXT_BACKGROUND_TIMEOUT_MS),
       method: "POST",
       headers: {
         "x-api-key": ANTHROPIC_API_KEY,

@@ -14,8 +14,9 @@ import {
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
 import { StampCard } from "@/components/loyalty/StampCard";
 import { getPublicStaffDisplayName } from "@/shared/booking/publicStaffDisplay";
-import { formatBookingPrice } from "@/shared/booking/formatBookingPrice";
+import { formatBookingPrice, formatBookingPriceReceipt } from "@/shared/booking/formatBookingPrice";
 import type { Currency } from "@/shared/lib/currencyFormat";
+import type { PublicBookingPricingQuote } from "@/shared/booking/publicBookingPricing";
 import { NoShowCardCapture } from "./NoShowCardCapture";
 import {
   formatInSalonTz,
@@ -28,15 +29,13 @@ export function BookingFlowDonePanel({
   smsConsent = false,
   service,
   staffName,
-  addons = [],
-  addonServiceName,
-  addonPriceCents,
   displayStartUtc,
   displayEndUtc,
   bookingId,
+  cardManagementToken,
   salonPhone,
   salonTimezone,
-  totalPaidFormatted,
+  pricing,
   currency,
   onAddToCalendar,
   onBookAnother,
@@ -49,19 +48,16 @@ export function BookingFlowDonePanel({
   smsConsent?: boolean;
   service: BookingServiceItem | undefined;
   staffName: string;
-  /** Itemized add-ons (preferred). Falls back to the single legacy fields. */
-  addons?: { name: string; priceCents: number | null }[];
-  addonServiceName: string | null;
-  addonPriceCents: number | null;
   displayStartUtc: string;
   displayEndUtc: string;
   bookingId: string;
+  cardManagementToken: string | null;
   /** Public salon line: `salons.salon_phone` only (not owner `phone`, never guest). */
   salonPhone: string | null;
   /** IANA TZ — confirmation displays the booking time in the salon's local zone (B-16). */
   salonTimezone: string;
-  /** Receipt-style total from `bookingResult.price_cents`. */
-  totalPaidFormatted: string;
+  /** The persisted server-authoritative receipt returned by create. */
+  pricing: PublicBookingPricingQuote;
   /** Salon's display currency — used to format the addon price chip. */
   currency: Currency;
   /** Fires the .ics download. Returns true if the click was dispatched. */
@@ -103,13 +99,10 @@ export function BookingFlowDonePanel({
           0,
           Math.round((end.getTime() - start.getTime()) / 60_000),
         );
-  // Prefer the itemized list; fall back to the single legacy field.
-  const addonList: { name: string; priceCents: number | null }[] =
-    addons.length > 0
-      ? addons.map((a) => ({ name: a.name.trim(), priceCents: a.priceCents }))
-      : addonServiceName && addonServiceName.trim().length > 0
-        ? [{ name: addonServiceName.trim(), priceCents: addonPriceCents }]
-        : [];
+  const addonList = pricing.addonLines.map((a) => ({
+    name: a.name.trim(),
+    priceCents: a.priceCents,
+  }));
   const hasAddon = addonList.length > 0;
   // Show the actual service time, not the buffer-padded appointment span
   // (end_time_utc bakes in the inter-service rest buffer). Fall back to the
@@ -251,7 +244,7 @@ export function BookingFlowDonePanel({
                 {t.summaryService}
               </span>
               <span className="min-w-0 shrink text-right font-semibold text-[var(--booking-text)]">
-                {service.name}
+                {service.name} — {formatBookingPriceReceipt(pricing.serviceOriginalCents, pricing.currency)}
               </span>
             </div>
           ) : null}
@@ -265,7 +258,7 @@ export function BookingFlowDonePanel({
               </span>
               <span className="min-w-0 shrink text-right font-semibold text-[var(--booking-text)]">
                 {(() => {
-                  const priceLabel = formatBookingPrice(a.priceCents, currency);
+                  const priceLabel = formatBookingPrice(a.priceCents, pricing.currency);
                   return priceLabel ? `${a.name} — ${priceLabel}` : a.name;
                 })()}
               </span>
@@ -295,10 +288,30 @@ export function BookingFlowDonePanel({
               </span>
             </div>
           ) : null}
+          {pricing.discountLines.map((line) => (
+            <div key={`${line.kind}-${line.label}`} className="flex items-baseline justify-between gap-4 border-t border-[var(--booking-border)] pt-3.5 text-[15px] sm:text-base">
+              <span className="font-semibold text-[var(--booking-text-muted)]">{line.label}</span>
+              <span className="font-semibold tabular-nums text-[var(--booking-text)]">
+                –{formatBookingPriceReceipt(line.amountCents, pricing.currency)}
+              </span>
+            </div>
+          ))}
+          {(pricing.discountLines.length > 0 || pricing.taxCents > 0) ? (
+            <div className="flex items-baseline justify-between gap-4 border-t border-[var(--booking-border)] pt-3.5 text-[15px] sm:text-base">
+              <span className="font-semibold text-[var(--booking-text-muted)]">{t.summarySubtotal ?? "Subtotal"}</span>
+              <span className="font-semibold tabular-nums text-[var(--booking-text)]">{formatBookingPriceReceipt(pricing.subtotalCents, pricing.currency)}</span>
+            </div>
+          ) : null}
+          {pricing.taxBreakdown.map((line) => (
+            <div key={`${line.name}-${line.rate}`} className="flex items-baseline justify-between gap-4 border-t border-[var(--booking-border)] pt-3.5 text-[15px] sm:text-base">
+              <span className="font-semibold text-[var(--booking-text-muted)]">{line.name}</span>
+              <span className="font-semibold tabular-nums text-[var(--booking-text)]">+{formatBookingPriceReceipt(line.amountCents, pricing.currency)}</span>
+            </div>
+          ))}
           <div className="flex items-baseline justify-between gap-4 border-t border-[var(--booking-border)] pt-3.5 text-[15px] sm:text-base">
             <span className="font-semibold text-[var(--booking-text-muted)]">{t.summaryTotal}</span>
             <span className="min-w-0 shrink text-right font-semibold tabular-nums text-[var(--salon-primary)]">
-              {totalPaidFormatted}
+              {formatBookingPriceReceipt(pricing.totalCents, pricing.currency)}
             </span>
           </div>
         </div>
@@ -320,11 +333,14 @@ export function BookingFlowDonePanel({
         </div>
       </div>
 
-      <NoShowCardCapture
-        bookingId={bookingId}
-        currencyFormat={(cents) => formatBookingPrice(cents, currency) ?? ""}
-        t={t}
-      />
+      {cardManagementToken ? (
+        <NoShowCardCapture
+          bookingId={bookingId}
+          managementToken={cardManagementToken}
+          currencyFormat={(cents) => formatBookingPrice(cents, currency) ?? ""}
+          t={t}
+        />
+      ) : null}
 
       {loyaltyCard && loyaltyProgram ? (() => {
         const remaining = Math.max(0, loyaltyProgram.stamps_required - loyaltyCard.stamps_current);

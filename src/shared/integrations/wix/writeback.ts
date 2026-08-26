@@ -7,8 +7,112 @@
  * has an enabled `wix_integrations` row.
  */
 import "server-only";
-import { confirmWixBooking, cancelWixBooking, declineWixBooking, createWixBooking } from "./client";
+import { createHash } from "node:crypto";
+import {
+  confirmWixBooking,
+  cancelWixBooking,
+  declineWixBooking,
+  createWixBooking,
+  getBooking,
+  getBookingByExternalUserId,
+  type WixBooking,
+} from "./client";
 import { looseServiceClient } from "./looseDb";
+
+type WixCreateClaim = {
+  success?: boolean;
+  code?: string;
+  operation_id?: string;
+  attempt_token?: string;
+  provider_external_user_id?: string;
+};
+
+type WixLifecycleAction = "confirm" | "cancel" | "decline";
+type WixLifecycleClaim = WixCreateClaim & {
+  action?: WixLifecycleAction;
+  target_status?: "CONFIRMED" | "CANCELED" | "DECLINED";
+  provider_booking_id?: string;
+};
+
+const fingerprint = (value: unknown): string =>
+  createHash("sha256").update(JSON.stringify(value)).digest("hex");
+
+function asClaim(value: unknown): WixCreateClaim {
+  return value && typeof value === "object" ? (value as WixCreateClaim) : {};
+}
+
+async function completeWixCreate(input: {
+  operationId: string;
+  attemptToken: string;
+  status: "succeeded" | "failed" | "unknown";
+  booking?: WixBooking | null;
+  errorCode?: string | null;
+}): Promise<boolean> {
+  const db = looseServiceClient();
+  const providerBookingId = input.booking?.id ?? null;
+  const providerRevision = input.booking?.revision ?? null;
+  const resultFingerprint = fingerprint({
+    status: input.status,
+    providerBookingId,
+    providerRevision,
+    errorCode: input.errorCode ?? null,
+  });
+  const { data, error } = await db.rpc("complete_wix_create_writeback", {
+    p_operation_id: input.operationId,
+    p_attempt_token: input.attemptToken,
+    p_status: input.status,
+    p_provider_booking_id: providerBookingId,
+    p_provider_revision: providerRevision,
+    p_result_fingerprint: resultFingerprint,
+    p_error_code: input.errorCode ?? null,
+  });
+  if (error) {
+    console.error("[wix create] completion RPC", input.operationId, error.message);
+    return false;
+  }
+  const completed = asClaim(data);
+  if (completed.success !== true) {
+    console.error("[wix create] completion rejected", input.operationId, completed.code);
+    return false;
+  }
+  return true;
+}
+
+async function completeWixLifecycle(input: {
+  operationId: string;
+  attemptToken: string;
+  status: "succeeded" | "failed" | "unknown";
+  booking?: WixBooking | null;
+  errorCode?: string | null;
+}): Promise<boolean> {
+  const db = looseServiceClient();
+  const providerRevision = input.booking?.revision ?? null;
+  const resultFingerprint = fingerprint({
+    status: input.status,
+    providerBookingId: input.booking?.id ?? null,
+    providerRevision,
+    providerStatus: input.booking?.status ?? null,
+    errorCode: input.errorCode ?? null,
+  });
+  const { data, error } = await db.rpc("complete_wix_lifecycle_writeback", {
+    p_operation_id: input.operationId,
+    p_attempt_token: input.attemptToken,
+    p_status: input.status,
+    p_provider_revision: providerRevision,
+    p_result_fingerprint: resultFingerprint,
+    p_error_code: input.errorCode ?? null,
+  });
+  if (error) {
+    console.error("[wix lifecycle] completion RPC", input.operationId, error.message);
+    return false;
+  }
+  const completed = asClaim(data);
+  if (completed.success !== true) {
+    console.error("[wix lifecycle] completion rejected", input.operationId, completed.code);
+    return false;
+  }
+  return true;
+}
 
 async function resolve(salonId: string, bookingId: string): Promise<{ siteId: string; wixId: string } | null> {
   const db = looseServiceClient();
@@ -19,34 +123,130 @@ async function resolve(salonId: string, bookingId: string): Promise<{ siteId: st
   return { siteId: integ.site_id as string, wixId: bk.wix_booking_id as string };
 }
 
-export async function pushWixCancel(salonId: string, bookingId: string): Promise<void> {
+async function pushWixLifecycle(
+  salonId: string,
+  bookingId: string,
+  action: WixLifecycleAction,
+): Promise<void> {
   try {
+    const db = looseServiceClient();
+    const { data, error } = await db.rpc("claim_wix_lifecycle_writeback", {
+      p_salon_id: salonId,
+      p_booking_id: bookingId,
+      p_action: action,
+    });
+    if (error) {
+      console.error("[wix lifecycle] claim RPC", bookingId, action, error.message);
+      return;
+    }
+    const claim = asClaim(data) as WixLifecycleClaim;
+    if (
+      claim.code === "operation_succeeded" ||
+      claim.code === "operation_in_flight" ||
+      claim.code === "reconciliation_not_due"
+    ) return;
+    if (
+      claim.success !== true ||
+      !claim.operation_id ||
+      !claim.attempt_token ||
+      claim.action !== action ||
+      !claim.target_status ||
+      !["operation_claimed", "reconciliation_claimed"].includes(claim.code ?? "")
+    ) {
+      console.warn("[wix lifecycle] claim rejected", bookingId, action, claim.code);
+      return;
+    }
+
     const r = await resolve(salonId, bookingId);
     if (!r) return;
-    await cancelWixBooking(r.siteId, r.wixId);
+    let providerBooking: WixBooking | null;
+    try {
+      providerBooking = await getBooking(r.siteId, r.wixId);
+    } catch (e) {
+      await completeWixLifecycle({
+        operationId: claim.operation_id,
+        attemptToken: claim.attempt_token,
+        status: "unknown",
+        errorCode: `provider_lookup_failed:${(e as Error).message}`.slice(0, 240),
+      });
+      return;
+    }
+    if (!providerBooking) {
+      await completeWixLifecycle({
+        operationId: claim.operation_id,
+        attemptToken: claim.attempt_token,
+        status: "unknown",
+        errorCode: "provider_booking_not_found",
+      });
+      return;
+    }
+    const normalizedStatus = providerBooking.status.toUpperCase().replace("CANCELLED", "CANCELED");
+    if (normalizedStatus === claim.target_status) {
+      await completeWixLifecycle({
+        operationId: claim.operation_id,
+        attemptToken: claim.attempt_token,
+        status: "succeeded",
+        booking: providerBooking,
+      });
+      return;
+    }
+    if (claim.code === "reconciliation_claimed") {
+      await completeWixLifecycle({
+        operationId: claim.operation_id,
+        attemptToken: claim.attempt_token,
+        status: "unknown",
+        booking: providerBooking,
+        errorCode: `provider_target_not_visible:${normalizedStatus}`,
+      });
+      return;
+    }
+
+    try {
+      if (action === "confirm") await confirmWixBooking(r.siteId, r.wixId);
+      else if (action === "cancel") await cancelWixBooking(r.siteId, r.wixId);
+      else await declineWixBooking(r.siteId, r.wixId);
+      providerBooking = await getBooking(r.siteId, r.wixId);
+      const finalStatus = providerBooking?.status.toUpperCase().replace("CANCELLED", "CANCELED");
+      if (!providerBooking || finalStatus !== claim.target_status) {
+        await completeWixLifecycle({
+          operationId: claim.operation_id,
+          attemptToken: claim.attempt_token,
+          status: "unknown",
+          booking: providerBooking,
+          errorCode: `provider_target_not_visible:${finalStatus ?? "NOT_FOUND"}`,
+        });
+        return;
+      }
+      await completeWixLifecycle({
+        operationId: claim.operation_id,
+        attemptToken: claim.attempt_token,
+        status: "succeeded",
+        booking: providerBooking,
+      });
+    } catch (e) {
+      await completeWixLifecycle({
+        operationId: claim.operation_id,
+        attemptToken: claim.attempt_token,
+        status: "unknown",
+        booking: providerBooking,
+        errorCode: `provider_${action}_outcome_unknown:${(e as Error).message}`.slice(0, 240),
+      });
+    }
   } catch (e) {
-    console.error("[wix writeback] cancel", bookingId, (e as Error).message);
+    console.error("[wix lifecycle]", action, bookingId, (e as Error).message);
   }
+}
+
+export async function pushWixCancel(salonId: string, bookingId: string): Promise<void> {
+  return pushWixLifecycle(salonId, bookingId, "cancel");
 }
 
 export async function pushWixConfirm(salonId: string, bookingId: string): Promise<void> {
-  try {
-    const r = await resolve(salonId, bookingId);
-    if (!r) return;
-    await confirmWixBooking(r.siteId, r.wixId);
-  } catch (e) {
-    console.error("[wix writeback] confirm", bookingId, (e as Error).message);
-  }
+  return pushWixLifecycle(salonId, bookingId, "confirm");
 }
 
 export async function pushWixDecline(salonId: string, bookingId: string): Promise<void> {
-  try {
-    const r = await resolve(salonId, bookingId);
-    if (!r) return;
-    await declineWixBooking(r.siteId, r.wixId);
-  } catch (e) {
-    console.error("[wix writeback] decline", bookingId, (e as Error).message);
-  }
+  return pushWixLifecycle(salonId, bookingId, "decline");
 }
 
 /**
@@ -89,8 +289,11 @@ export async function pushWixCreate(salonId: string, bookingId: string): Promise
       wix_booking_id: string | null;
     } | null;
     if (!bk) return;
-    // Skip if already linked to Wix (already synced or created from Wix).
-    if (bk.wix_booking_id) return;
+    // Do not return solely because the booking is linked. A forward-sync may
+    // have found the provider row after a lost create response while the
+    // durable operation still says unknown; the claim/read path below closes
+    // that receipt without redispatch. A linked booking with no operation is
+    // returned as already_linked by the RPC.
     if (!bk.start_time_utc || !bk.end_time_utc) return;
 
     // 3. Fetch salon timezone.
@@ -154,6 +357,10 @@ export async function pushWixCreate(salonId: string, bookingId: string): Promise
 
     const createBody: Record<string, unknown> = {
       booking: {
+        // Stable provider-side correlation key. Wix Reader V2 supports exact
+        // filtering by externalUserId, which is how an ambiguous create is
+        // reconciled without POSTing a second appointment.
+        externalUserId: bookingId,
         bookedEntity: {
           slot,
           ...(svc.name ? { title: svc.name } : {}),
@@ -179,25 +386,94 @@ export async function pushWixCreate(salonId: string, bookingId: string): Promise
       },
     };
 
-    // 7. Call Wix Create Booking API.
-    const wixBookingId = await createWixBooking(integ.site_id, createBody);
-
-    // 8. Store returned wix_booking_id so the forward sync never duplicates this booking.
-    await db
-      .from("bookings")
-      .update({ wix_booking_id: wixBookingId } as never)
-      .eq("id", bookingId);
-
-    // 9. Confirm on Wix. Create Booking yields status CREATED (pending), which Wix parks in
-    //    the "Booking Requests" inbox — NOT on the main calendar. A salon-originated booking is
-    //    a real appointment, so confirm it immediately so it shows as a solid slot on Wix.
-    //    Best-effort: if confirm fails the booking still exists (as CREATED) and the cron retries.
-    try {
-      await confirmWixBooking(integ.site_id, wixBookingId);
-      console.log(`[wix create] ✓ created + confirmed wix booking ${wixBookingId} for nailiq ${bookingId}`);
-    } catch (e) {
-      console.warn(`[wix create] created ${wixBookingId} but confirm failed:`, (e as Error).message);
+    // 7. Acquire the durable single-winner claim. A previous timed-out send is
+    // reconciliation-only: it may query externalUserId, but it may not create.
+    const { data: claimData, error: claimError } = await db.rpc(
+      "claim_wix_create_writeback",
+      { p_salon_id: salonId, p_booking_id: bookingId },
+    );
+    if (claimError) {
+      console.error("[wix create] claim RPC", bookingId, claimError.message);
+      return;
     }
+    const claim = asClaim(claimData);
+    if (
+      claim.code === "operation_succeeded" ||
+      claim.code === "already_linked" ||
+      claim.code === "operation_in_flight" ||
+      claim.code === "reconciliation_not_due"
+    ) return;
+    if (
+      claim.success !== true ||
+      !claim.operation_id ||
+      !claim.attempt_token ||
+      claim.provider_external_user_id !== bookingId ||
+      !["operation_claimed", "reconciliation_claimed"].includes(claim.code ?? "")
+    ) {
+      console.warn("[wix create] claim rejected", bookingId, claim.code);
+      return;
+    }
+
+    let providerBooking: WixBooking | null = null;
+    try {
+      providerBooking = await getBookingByExternalUserId(integ.site_id, bookingId);
+    } catch (e) {
+      await completeWixCreate({
+        operationId: claim.operation_id,
+        attemptToken: claim.attempt_token,
+        status: "unknown",
+        errorCode: `provider_lookup_failed:${(e as Error).message}`.slice(0, 240),
+      });
+      return;
+    }
+
+    if (!providerBooking && claim.code === "reconciliation_claimed") {
+      // Provider reads may be eventually consistent. Keep the outcome unknown
+      // and try the read again later; never convert a missing read into a POST.
+      await completeWixCreate({
+        operationId: claim.operation_id,
+        attemptToken: claim.attempt_token,
+        status: "unknown",
+        errorCode: "provider_booking_not_visible",
+      });
+      return;
+    }
+
+    if (!providerBooking) {
+      try {
+        const wixBookingId = await createWixBooking(integ.site_id, createBody);
+        providerBooking = {
+          id: wixBookingId,
+          externalUserId: bookingId,
+          revision: "",
+          status: "CREATED",
+        };
+      } catch (e) {
+        // A transport exception can happen after Wix commits. Persist unknown;
+        // the next run must query externalUserId and must not redispatch.
+        await completeWixCreate({
+          operationId: claim.operation_id,
+          attemptToken: claim.attempt_token,
+          status: "unknown",
+          errorCode: `provider_create_outcome_unknown:${(e as Error).message}`.slice(0, 240),
+        });
+        return;
+      }
+    }
+
+    const bound = await completeWixCreate({
+      operationId: claim.operation_id,
+      attemptToken: claim.attempt_token,
+      status: "succeeded",
+      booking: providerBooking,
+    });
+    if (!bound) return;
+
+    // 8. Confirm through the durable lifecycle contract. Create Booking yields
+    // CREATED, which is not visible on the main calendar. The lifecycle worker
+    // records response loss and reconciles provider truth before any retry.
+    await pushWixConfirm(salonId, bookingId);
+    console.log(`[wix create] ✓ bound wix booking ${providerBooking.id} for nailiq ${bookingId}`);
   } catch (e) {
     // Best-effort — never throw (booking already exists in NailIQ).
     console.error("[wix create] error", bookingId, (e as Error).message);
@@ -205,7 +481,8 @@ export async function pushWixCreate(salonId: string, bookingId: string): Promise
 }
 
 /**
- * Reconciliation safety-net: push NailIQ-origin bookings that *should* be on Wix but aren't yet.
+ * Reconciliation safety-net: close durable ambiguous operations first, then
+ * push recent NailIQ-origin bookings that should be on Wix but are not linked.
  *
  * The immediate per-creation push (public booking page, walk-in queue, …) is best-effort and
  * fire-and-forget — it can be missed (client navigates away, a creation path that isn't wired,
@@ -224,6 +501,20 @@ export async function pushUnsyncedBookings(salonId: string, limit = 20): Promise
     const db = looseServiceClient();
     const nowIso = new Date().toISOString();
     const dayAgoIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: dueData } = await db
+      .from("wix_create_writeback_operations")
+      .select("booking_id")
+      .eq("salon_id", salonId)
+      .in("status", ["sending", "reconciling", "unknown"])
+      .order("created_at", { ascending: true })
+      .limit(limit);
+    const dueRows = (dueData ?? []) as { booking_id: string }[];
+    const attempted = new Set<string>();
+    for (const row of dueRows) {
+      attempted.add(row.booking_id);
+      await pushWixCreate(salonId, row.booking_id);
+    }
+
     const { data } = await db
       .from("bookings")
       .select("id")
@@ -236,12 +527,42 @@ export async function pushUnsyncedBookings(salonId: string, limit = 20): Promise
       .limit(limit);
     const rows = (data ?? []) as { id: string }[];
     for (const r of rows) {
+      if (attempted.has(r.id)) continue;
+      attempted.add(r.id);
       // pushWixCreate is self-guarding + idempotent (skips unmapped service / already-linked).
       await pushWixCreate(salonId, r.id);
     }
-    return rows.length;
+    return attempted.size;
   } catch (e) {
     console.error("[wix reconcile]", salonId, (e as Error).message);
+    return 0;
+  }
+}
+
+/** Close outstanding confirm/cancel/decline receipts without blind retries. */
+export async function reconcileWixLifecycleWritebacks(
+  salonId: string,
+  limit = 20,
+): Promise<number> {
+  try {
+    const db = looseServiceClient();
+    const { data } = await db
+      .from("wix_lifecycle_writeback_operations")
+      .select("booking_id, action")
+      .eq("salon_id", salonId)
+      .in("status", ["sending", "reconciling", "unknown"])
+      .order("created_at", { ascending: true })
+      .limit(limit);
+    const rows = (data ?? []) as Array<{
+      booking_id: string;
+      action: WixLifecycleAction;
+    }>;
+    for (const row of rows) {
+      await pushWixLifecycle(salonId, row.booking_id, row.action);
+    }
+    return rows.length;
+  } catch (e) {
+    console.error("[wix lifecycle reconcile]", salonId, (e as Error).message);
     return 0;
   }
 }

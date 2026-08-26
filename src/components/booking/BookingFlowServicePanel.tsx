@@ -26,9 +26,10 @@ type ServiceGroup = {
  *  not present in `categories` (e.g. a soft-deleted row that still has
  *  attached services) fall into an "Other"-styled bucket at the end so
  *  no service is silently dropped from the menu. */
-function groupServices(
+export function groupServices(
   services: readonly BookingServiceItem[],
   categories: readonly ServiceCategorySummary[],
+  language: "en" | "vi" = "en",
 ): ServiceGroup[] {
   const buckets = new Map<ServiceCategory, BookingServiceItem[]>();
   for (const s of services) {
@@ -55,7 +56,7 @@ function groupServices(
     groupIdxBySlug.set(cat.slug, groups.length);
     groups.push({
       category: cat.slug,
-      label: cat.nameEn,
+      label: language === "vi" ? cat.nameVi : cat.nameEn,
       items: buckets.get(cat.slug) ?? [],
     });
   }
@@ -76,7 +77,11 @@ function groupServices(
       groups.push({
         category: "other",
         label:
-          categories.find((c) => c.slug === "other")?.nameEn ?? "Other",
+          (() => {
+            const other = categories.find((c) => c.slug === "other");
+            if (other) return language === "vi" ? other.nameVi : other.nameEn;
+            return language === "vi" ? "Khác" : "Other";
+          })(),
         items: orphans,
       });
     }
@@ -107,6 +112,7 @@ export function BookingFlowServicePanel({
   stepTransition,
   categories,
   currencyCode,
+  language = "en",
   onSelectService,
   onSelectCombo,
   onNext,
@@ -121,12 +127,14 @@ export function BookingFlowServicePanel({
   tryonBookingQuote?: NailTryOnBookingQuote | null;
   /** Salon's currency for combo price/savings display (defaults handled by formatCurrency). */
   currencyCode?: Currency | string | null;
+  /** Locale selected by the public booking surface. */
+  language?: "en" | "vi";
   error: string | null;
   stepDir: BookingMotionDir;
   reducedMotion: boolean;
   stepTransition: { duration: number; ease: [number, number, number, number] };
   /** Live category list from `loadServiceCategories`. Drives accordion
-   *  order, group labels (EN — booking surface is EN-only), and the
+   *  order, localized group labels, and the
    *  orphan-bucket fallback. */
   categories: readonly ServiceCategorySummary[];
   onSelectService: (id: string) => void;
@@ -138,7 +146,7 @@ export function BookingFlowServicePanel({
   // Group by category for accordion rendering. If the salon hasn't
   // touched setup yet, every row is "other" — render a flat list with
   // no category header so the UI stays backward-compatible.
-  const groups = groupServices(services, categories);
+  const groups = groupServices(services, categories, language);
   const flatLayout = groups.length === 1 && groups[0]?.category === "other";
   const [openCategories, setOpenCategories] = useState<Set<ServiceCategory>>(
     () => initialOpenSet(groups),

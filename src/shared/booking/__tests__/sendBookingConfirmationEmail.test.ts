@@ -37,7 +37,7 @@ const INPUT = {
   totalPriceCents: 9000,
 };
 
-const CONFIRM_URL = "https://nailiq.ca/hilite-anaheim/wait/b-1";
+const CONFIRM_URL = "https://nailiq.ca/booking/status?token=11111111-1111-4111-8111-111111111111";
 const LINKS: ManageLinks = {
   reschedule: "https://nailiq.ca/booking/reschedule?token=tok-123",
   cancel: "https://nailiq.ca/booking/cancel?token=tok-123",

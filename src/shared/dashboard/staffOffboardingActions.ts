@@ -4,16 +4,15 @@ import { revalidatePath } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { buildCapabilityMap, isStaffCapableForService } from "@/shared/booking/staffCapability";
-import { logBookingEvent, type ActorRole } from "@/shared/dashboard/auditLog";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
-import { checkBookingConflict, type ConflictCheckBooking } from "@/shared/lib/conflictCheck";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { deliverStaffActionNotification } from "@/shared/notifications/deliverStaffActionNotification";
 
 const REASSIGNABLE = ["pending", "confirmed"] as const;
 const BLOCKING = ["in_progress", "waiting"] as const;
 const OPEN = [...REASSIGNABLE, ...BLOCKING] as const;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type OpenStatus = (typeof OPEN)[number];
 
@@ -40,6 +39,10 @@ export type StaffOffboardingPreview = {
   timezone: string;
   hasLogin: boolean;
   accessIsOwner: boolean;
+  emailOutboundEnabled: boolean;
+  smsOutboundEnabled: boolean;
+  tooManyBookings: boolean;
+  bookingLimit: number;
   bookings: StaffOffboardingBooking[];
 };
 
@@ -47,8 +50,8 @@ export type StaffOffboardingResult =
   | {
       ok: true;
       reassigned: number;
-      notificationsSent: number;
-      notificationAttempts: number;
+      notificationEventsQueued: number;
+      notificationDeliveriesQueued: number;
     }
   | { ok: false; error: string };
 
@@ -63,6 +66,29 @@ type RawBooking = {
   start_time_utc: string | null;
   end_time_utc: string | null;
   status: string;
+  schedule_model: "single" | "segments_v1";
+};
+
+type RawSegment = {
+  id: string;
+  booking_id: string;
+  line_id: string;
+  service_id: string;
+  staff_id: string;
+  occupied_start_utc: string;
+  occupied_end_utc: string;
+  customer_start_utc: string;
+  customer_end_utc: string;
+  reservation_status: string;
+  addon_lines: unknown;
+};
+
+type CapacityWindow = {
+  bookingId: string;
+  staffId: string;
+  startTimeUtc: string;
+  endTimeUtc: string;
+  status: string;
 };
 
 type RawStaff = {
@@ -76,10 +102,26 @@ function fail(error: string): { ok: false; error: string } {
   return { ok: false, error };
 }
 
-function actorRole(ctx: { kind: "member" | "demo_cookie"; role: string }): ActorRole {
-  if (ctx.kind === "demo_cookie") return "demo_cookie";
-  if (ctx.role === "admin" || ctx.role === "receptionist") return "manager";
-  return ctx.role as ActorRole;
+function addonServiceIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const serviceId = (item as Record<string, unknown>).service_id;
+    return typeof serviceId === "string" && UUID_RE.test(serviceId)
+      ? [serviceId]
+      : [];
+  });
+}
+
+function overlaps(leftStart: string, leftEnd: string, rightStart: string, rightEnd: string) {
+  const leftStartMs = Date.parse(leftStart);
+  const leftEndMs = Date.parse(leftEnd);
+  const rightStartMs = Date.parse(rightStart);
+  const rightEndMs = Date.parse(rightEnd);
+  if ([leftStartMs, leftEndMs, rightStartMs, rightEndMs].some(Number.isNaN)) {
+    return true;
+  }
+  return leftStartMs < rightEndMs && leftEndMs > rightStartMs;
 }
 
 async function loadPreviewData(
@@ -88,12 +130,20 @@ async function loadPreviewData(
   timezone: string,
   staffId: string,
 ): Promise<StaffOffboardingPreview | { error: string }> {
-  const { data: staffRows, error: staffErr } = await admin
-    .from("staff")
-    .select("id, name, status, user_id")
-    .eq("salon_id", salonId)
-    .is("deleted_at", null);
-  if (staffErr) return { error: "server_error" };
+  const [{ data: staffRows, error: staffErr }, { data: salonRow, error: salonErr }] =
+    await Promise.all([
+      admin
+        .from("staff")
+        .select("id, name, status, user_id")
+        .eq("salon_id", salonId)
+        .is("deleted_at", null),
+      admin
+        .from("salons")
+        .select("email_outbound_enabled, sms_outbound_enabled")
+        .eq("id", salonId)
+        .single(),
+    ]);
+  if (staffErr || salonErr || !salonRow) return { error: "server_error" };
 
   const staff = (staffRows ?? []) as RawStaff[];
   const target = staff.find((row) => row.id === staffId);
@@ -104,25 +154,76 @@ async function loadPreviewData(
     (row) => row.id !== staffId && row.status === "active",
   );
 
-  const { data: openRows, error: openErr } = await admin
-    .from("bookings")
+  const { data: targetSegmentRows, error: segmentErr } = await admin
+    .from("booking_service_segments")
     .select(
-      "id, staff_id, service_id, addon_service_id, client_name, client_phone, client_email, start_time_utc, end_time_utc, status",
+      "id, booking_id, line_id, service_id, staff_id, occupied_start_utc, occupied_end_utc, customer_start_utc, customer_end_utc, reservation_status, addon_lines",
     )
     .eq("salon_id", salonId)
     .eq("staff_id", staffId)
+    .in("reservation_status", [...OPEN]);
+  if (segmentErr) return { error: "server_error" };
+  const targetSegments = (targetSegmentRows ?? []) as RawSegment[];
+  const sequenceBookingIds = Array.from(
+    new Set(targetSegments.map((row) => row.booking_id)),
+  );
+
+  const bookingColumns =
+    "id, staff_id, service_id, addon_service_id, client_name, client_phone, client_email, start_time_utc, end_time_utc, status, schedule_model";
+  const { data: parentStaffRows, error: parentStaffErr } = await admin
+    .from("bookings")
+    .select(bookingColumns)
+    .eq("salon_id", salonId)
+    .eq("staff_id", staffId)
     .in("status", [...OPEN])
+    .is("deleted_at", null)
     .order("start_time_utc", { ascending: true });
-  if (openErr) return { error: "server_error" };
-  const openBookings = (openRows ?? []) as RawBooking[];
+  if (parentStaffErr) return { error: "server_error" };
+  let sequenceParentRows: unknown[] = [];
+  if (sequenceBookingIds.length > 0) {
+    const { data, error } = await admin
+      .from("bookings")
+      .select(bookingColumns)
+      .eq("salon_id", salonId)
+      .in("id", sequenceBookingIds)
+      .in("status", [...OPEN])
+      .is("deleted_at", null);
+    if (error) return { error: "server_error" };
+    sequenceParentRows = data ?? [];
+  }
+  const bookingById = new Map<string, RawBooking>();
+  for (const row of [...(parentStaffRows ?? []), ...sequenceParentRows] as RawBooking[]) {
+    if (
+      (row.schedule_model === "single" && row.staff_id === staffId) ||
+      (row.schedule_model === "segments_v1" && sequenceBookingIds.includes(row.id))
+    ) {
+      bookingById.set(row.id, row);
+    }
+  }
+  const openBookings = Array.from(bookingById.values()).sort((left, right) =>
+    (left.start_time_utc ?? "").localeCompare(right.start_time_utc ?? ""),
+  );
+
+  const targetSegmentsByBooking = new Map<string, RawSegment[]>();
+  for (const segment of targetSegments) {
+    const bucket = targetSegmentsByBooking.get(segment.booking_id) ?? [];
+    bucket.push(segment);
+    targetSegmentsByBooking.set(segment.booking_id, bucket);
+  }
 
   const serviceIds = Array.from(
     new Set(
-      openBookings.flatMap((row) =>
-        [row.service_id, row.addon_service_id].filter(
+      openBookings.flatMap((row) => {
+        if (row.schedule_model === "segments_v1") {
+          return (targetSegmentsByBooking.get(row.id) ?? []).flatMap((segment) => [
+            segment.service_id,
+            ...addonServiceIds(segment.addon_lines),
+          ]);
+        }
+        return [row.service_id, row.addon_service_id].filter(
           (id): id is string => Boolean(id),
-        ),
-      ),
+        );
+      }),
     ),
   );
   const serviceNameById = new Map<string, string>();
@@ -150,28 +251,75 @@ async function loadPreviewData(
     (capabilityRows ?? []) as Array<{ staff_id: string; service_id: string }>,
   );
 
-  let existingBookings: ConflictCheckBooking[] = [];
+  const existingCapacity: CapacityWindow[] = [];
   const candidateIds = activeCandidates.map((row) => row.id);
   if (candidateIds.length > 0 && openBookings.length > 0) {
-    const starts = openBookings
-      .map((row) => row.start_time_utc)
-      .filter((value): value is string => Boolean(value));
-    const ends = openBookings
-      .map((row) => row.end_time_utc)
-      .filter((value): value is string => Boolean(value));
+    const affectedWindows = openBookings.flatMap((booking) =>
+      booking.schedule_model === "segments_v1"
+        ? (targetSegmentsByBooking.get(booking.id) ?? []).map((segment) => ({
+            start: segment.occupied_start_utc,
+            end: segment.occupied_end_utc,
+          }))
+        : booking.start_time_utc && booking.end_time_utc
+          ? [{ start: booking.start_time_utc, end: booking.end_time_utc }]
+          : [],
+    );
+    const starts = affectedWindows.map((row) => row.start);
+    const ends = affectedWindows.map((row) => row.end);
     if (starts.length > 0 && ends.length > 0) {
       const minStart = starts.reduce((a, b) => (a < b ? a : b));
       const maxEnd = ends.reduce((a, b) => (a > b ? a : b));
-      const { data: conflicts, error: conflictErr } = await admin
-        .from("bookings")
-        .select("id, staff_id, start_time_utc, end_time_utc, status, client_name")
-        .eq("salon_id", salonId)
-        .in("staff_id", candidateIds)
-        .lt("start_time_utc", maxEnd)
-        .gt("end_time_utc", minStart)
-        .neq("status", "cancelled");
-      if (conflictErr) return { error: "server_error" };
-      existingBookings = (conflicts ?? []) as ConflictCheckBooking[];
+      const [singleResult, segmentResult] = await Promise.all([
+        admin
+          .from("bookings")
+          .select("id, staff_id, start_time_utc, end_time_utc, status")
+          .eq("salon_id", salonId)
+          .eq("schedule_model", "single")
+          .in("staff_id", candidateIds)
+          .is("deleted_at", null)
+          .lt("start_time_utc", maxEnd)
+          .gt("end_time_utc", minStart)
+          .not("status", "in", '("cancelled","no_show","completed")'),
+        admin
+          .from("booking_service_segments")
+          .select("booking_id, staff_id, occupied_start_utc, occupied_end_utc, reservation_status")
+          .eq("salon_id", salonId)
+          .in("staff_id", candidateIds)
+          .lt("occupied_start_utc", maxEnd)
+          .gt("occupied_end_utc", minStart)
+          .not("reservation_status", "in", '("cancelled","no_show","completed")'),
+      ]);
+      if (singleResult.error || segmentResult.error) return { error: "server_error" };
+      for (const row of (singleResult.data ?? []) as Array<{
+        id: string;
+        staff_id: string;
+        start_time_utc: string;
+        end_time_utc: string;
+        status: string;
+      }>) {
+        existingCapacity.push({
+          bookingId: row.id,
+          staffId: row.staff_id,
+          startTimeUtc: row.start_time_utc,
+          endTimeUtc: row.end_time_utc,
+          status: row.status,
+        });
+      }
+      for (const row of (segmentResult.data ?? []) as Array<{
+        booking_id: string;
+        staff_id: string;
+        occupied_start_utc: string;
+        occupied_end_utc: string;
+        reservation_status: string;
+      }>) {
+        existingCapacity.push({
+          bookingId: row.booking_id,
+          staffId: row.staff_id,
+          startTimeUtc: row.occupied_start_utc,
+          endTimeUtc: row.occupied_end_utc,
+          status: row.reservation_status,
+        });
+      }
     }
   }
 
@@ -187,9 +335,23 @@ async function loadPreviewData(
   }
 
   const bookings: StaffOffboardingBooking[] = openBookings.map((booking) => {
-    const requiredServices = [booking.service_id, booking.addon_service_id].filter(
-      (id): id is string => Boolean(id),
-    );
+    const affectedSegments = targetSegmentsByBooking.get(booking.id) ?? [];
+    const requiredServices = booking.schedule_model === "segments_v1"
+      ? affectedSegments.flatMap((segment) => [
+          segment.service_id,
+          ...addonServiceIds(segment.addon_lines),
+        ])
+      : [booking.service_id, booking.addon_service_id].filter(
+          (id): id is string => Boolean(id),
+        );
+    const affectedWindows = booking.schedule_model === "segments_v1"
+      ? affectedSegments.map((segment) => ({
+          start: segment.occupied_start_utc,
+          end: segment.occupied_end_utc,
+        }))
+      : booking.start_time_utc && booking.end_time_utc
+        ? [{ start: booking.start_time_utc, end: booking.end_time_utc }]
+        : [];
     const candidates =
       booking.status === "pending" || booking.status === "confirmed"
         ? activeCandidates
@@ -199,14 +361,22 @@ async function loadPreviewData(
               ),
             )
             .filter((candidate) => {
-              if (!booking.start_time_utc || !booking.end_time_utc) return false;
-              return !checkBookingConflict({
-                staffId: candidate.id,
-                startUtcIso: booking.start_time_utc,
-                endUtcIso: booking.end_time_utc,
-                existingBookings,
-                excludeBookingId: booking.id,
-              });
+              if (affectedWindows.length === 0) return false;
+              return !affectedWindows.some((window) =>
+                existingCapacity.some(
+                  (existing) =>
+                    existing.staffId === candidate.id &&
+                    existing.status !== "cancelled" &&
+                    existing.status !== "no_show" &&
+                    existing.status !== "completed" &&
+                    overlaps(
+                      window.start,
+                      window.end,
+                      existing.startTimeUtc,
+                      existing.endTimeUtc,
+                    ),
+                ),
+              );
             })
             .map(({ id, name }) => ({ id, name }))
         : [];
@@ -215,8 +385,16 @@ async function loadPreviewData(
       id: booking.id,
       clientName: booking.client_name?.trim() || "Guest",
       serviceName:
-        (booking.service_id && serviceNameById.get(booking.service_id)) ||
-        "Service",
+        booking.schedule_model === "segments_v1"
+          ? Array.from(
+              new Set(
+                affectedSegments.map(
+                  (segment) => serviceNameById.get(segment.service_id) || "Service",
+                ),
+              ),
+            ).join(" + ") || "Service"
+          : (booking.service_id && serviceNameById.get(booking.service_id)) ||
+            "Service",
       startTimeUtc: booking.start_time_utc || "",
       endTimeUtc: booking.end_time_utc || "",
       status: booking.status as OpenStatus,
@@ -232,6 +410,14 @@ async function loadPreviewData(
     timezone,
     hasLogin: Boolean(target.user_id),
     accessIsOwner,
+    emailOutboundEnabled: Boolean(
+      (salonRow as { email_outbound_enabled?: boolean }).email_outbound_enabled,
+    ),
+    smsOutboundEnabled: Boolean(
+      (salonRow as { sms_outbound_enabled?: boolean }).sms_outbound_enabled,
+    ),
+    tooManyBookings: bookings.length > 100,
+    bookingLimit: 100,
     bookings,
   };
 }
@@ -239,7 +425,15 @@ async function loadPreviewData(
 export async function loadStaffOffboardingPreview(
   slug: string,
   staffId: string,
-): Promise<{ ok: true; preview: StaffOffboardingPreview } | { ok: false; error: string }> {
+  requestId?: string,
+): Promise<
+  | { ok: true; preview: StaffOffboardingPreview }
+  | { ok: true; recovered: Extract<StaffOffboardingResult, { ok: true }> }
+  | { ok: false; error: string }
+> {
+  if (!UUID_RE.test(staffId) || (requestId !== undefined && !UUID_RE.test(requestId))) {
+    return fail("invalid_input");
+  }
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx || !isOwnerOrAdmin(ctx.role)) return fail("unauthorized");
   let admin: SupabaseClient;
@@ -247,6 +441,31 @@ export async function loadStaffOffboardingPreview(
     admin = createServiceRoleClient();
   } catch {
     return fail("server_error");
+  }
+  if (requestId) {
+    const dbActorRole = ctx.kind === "demo_cookie" ? "demo_cookie" : ctx.role;
+    const { data: recovery, error: recoveryError } = await admin.rpc(
+      "recover_staff_offboarding_with_durable_notifications" as never,
+      {
+        p_salon_id: ctx.salon.id,
+        p_staff_id: staffId,
+        p_request_id: requestId,
+        p_actor_user_id: ctx.userId,
+        p_actor_role: dbActorRole,
+      } as never,
+    );
+    if (recoveryError || !recovery || typeof recovery !== "object" || Array.isArray(recovery)) {
+      console.error("[loadStaffOffboardingPreview] recovery", recoveryError);
+      return fail("server_error");
+    }
+    const recovered = recovery as Record<string, unknown>;
+    if (recovered.success === true) {
+      const parsed = parseCompletedResult(recovered);
+      return parsed.ok ? { ok: true, recovered: parsed } : parsed;
+    }
+    if (recovered.code !== "replay_not_found") {
+      return fail(recovered.code === "idempotency_mismatch" ? recovered.code : "server_error");
+    }
   }
   const preview = await loadPreviewData(
     admin,
@@ -258,9 +477,43 @@ export async function loadStaffOffboardingPreview(
   return { ok: true, preview };
 }
 
+function parseCompletedResult(
+  rpcResult: Record<string, unknown>,
+  expectedAssignments?: number,
+): StaffOffboardingResult {
+  const reassigned = Number(rpcResult.reassigned_count);
+  const notificationEventsQueued = Number(rpcResult.notification_events_queued);
+  const notificationDeliveriesQueued = Number(
+    rpcResult.notification_deliveries_queued,
+  );
+  const auditEvents = Number(rpcResult.audit_events_recorded);
+  const idempotent = rpcResult.idempotent;
+  if (
+    !Number.isSafeInteger(reassigned) ||
+    reassigned < 0 ||
+    (expectedAssignments !== undefined && reassigned !== expectedAssignments) ||
+    !Number.isSafeInteger(notificationEventsQueued) ||
+    notificationEventsQueued < 0 ||
+    !Number.isSafeInteger(notificationDeliveriesQueued) ||
+    notificationDeliveriesQueued < 0 ||
+    !Number.isSafeInteger(auditEvents) ||
+    auditEvents !== reassigned ||
+    typeof idempotent !== "boolean"
+  ) {
+    return fail("server_error");
+  }
+  return {
+    ok: true,
+    reassigned,
+    notificationEventsQueued,
+    notificationDeliveriesQueued,
+  };
+}
+
 export async function completeStaffOffboarding(
   slug: string,
   input: {
+    requestId: string;
     staffId: string;
     assignments: Array<{ bookingId: string; staffId: string }>;
     notifySms: boolean;
@@ -270,7 +523,12 @@ export async function completeStaffOffboarding(
 ): Promise<StaffOffboardingResult> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx || !isOwnerOrAdmin(ctx.role)) return fail("unauthorized");
-  if (!input.staffId || !Array.isArray(input.assignments)) return fail("invalid_input");
+  if (!UUID_RE.test(input.requestId) || !UUID_RE.test(input.staffId) ||
+      !Array.isArray(input.assignments) ||
+      input.assignments.some((row) =>
+        !UUID_RE.test(row.bookingId) || !UUID_RE.test(row.staffId)
+      ) || new Set(input.assignments.map((row) => row.bookingId)).size !==
+        input.assignments.length) return fail("invalid_input");
 
   let admin: SupabaseClient;
   try {
@@ -279,141 +537,54 @@ export async function completeStaffOffboarding(
     return fail("server_error");
   }
 
-  const preview = await loadPreviewData(
-    admin,
-    ctx.salon.id,
-    ctx.salon.timezone,
-    input.staffId,
+  const dbActorRole = ctx.kind === "demo_cookie" ? "demo_cookie" : ctx.role;
+  const { data: rawResult, error: offboardingError } = await admin.rpc(
+    "offboard_staff_with_durable_notifications" as never,
+    {
+      p_salon_id: ctx.salon.id,
+      p_staff_id: input.staffId,
+      p_request_id: input.requestId,
+      p_actor_user_id: ctx.userId,
+      p_actor_role: dbActorRole,
+      p_assignments: input.assignments.map((row) => ({
+        booking_id: row.bookingId,
+        staff_id: row.staffId,
+      })),
+      p_notify_email: input.notifyEmail,
+      p_notify_sms: input.notifySms,
+      p_revoke_access: input.revokeAccess,
+      p_notification_delay_seconds: 20,
+    } as never,
   );
-  if ("error" in preview) return fail(preview.error);
-  if (preview.accessIsOwner) return fail("owner_access_protected");
-
-  const blockers = preview.bookings.filter((booking) =>
-    (BLOCKING as readonly string[]).includes(booking.status),
-  );
-  if (blockers.length > 0) return fail("operational_booking_blocked");
-
-  const reassignable = preview.bookings.filter((booking) =>
-    (REASSIGNABLE as readonly string[]).includes(booking.status),
-  );
-  const assignmentMap = new Map(
-    input.assignments.map((row) => [row.bookingId, row.staffId]),
-  );
-  if (assignmentMap.size !== reassignable.length) return fail("assign_every_booking");
-
-  for (const booking of reassignable) {
-    const nextStaffId = assignmentMap.get(booking.id);
-    if (!nextStaffId) return fail("assign_every_booking");
-    if (!booking.candidates.some((candidate) => candidate.id === nextStaffId)) {
-      return fail("candidate_unavailable");
-    }
+  if (offboardingError || !rawResult || typeof rawResult !== "object" ||
+      Array.isArray(rawResult)) {
+    console.error("[completeStaffOffboarding] atomic RPC", offboardingError);
+    return fail("server_error");
   }
-
-  const { count: otherActiveCount, error: activeCountErr } = await admin
-    .from("staff")
-    .select("id", { count: "exact", head: true })
-    .eq("salon_id", ctx.salon.id)
-    .eq("status", "active")
-    .neq("id", input.staffId)
-    .is("deleted_at", null);
-  if (activeCountErr) return fail("server_error");
-  if ((otherActiveCount ?? 0) < 1) return fail("minimum_active_staff");
-
-  const completed: Array<{ bookingId: string; nextStaffId: string }> = [];
-  for (const booking of reassignable) {
-    const nextStaffId = assignmentMap.get(booking.id)!;
-    const { data: changed, error } = await admin
-      .from("bookings")
-      .update({ staff_id: nextStaffId })
-      .eq("id", booking.id)
-      .eq("salon_id", ctx.salon.id)
-      .eq("staff_id", input.staffId)
-      .in("status", [...REASSIGNABLE])
-      .select("id")
-      .maybeSingle();
-    if (error || !changed?.id) {
-      for (const done of completed.reverse()) {
-        await admin
-          .from("bookings")
-          .update({ staff_id: input.staffId })
-          .eq("id", done.bookingId)
-          .eq("salon_id", ctx.salon.id)
-          .eq("staff_id", done.nextStaffId);
-      }
-      return fail(error?.code === "23P01" ? "candidate_unavailable" : "stale_booking");
-    }
-    completed.push({ bookingId: booking.id, nextStaffId });
+  const rpcResult = rawResult as Record<string, unknown>;
+  if (rpcResult.success !== true) {
+    const code = typeof rpcResult.code === "string" ? rpcResult.code : "server_error";
+    const safeCodes = new Set([
+      "already_inactive",
+      "assign_every_booking",
+      "candidate_unavailable",
+      "idempotency_mismatch",
+      "minimum_active_staff",
+      "notification_channel_unavailable",
+      "not_found",
+      "operational_booking_blocked",
+      "owner_access_protected",
+      "sequence_receipt_invalid",
+      "stale_staff",
+      "stale_booking",
+      "too_many_bookings",
+    ]);
+    return fail(safeCodes.has(code) ? code : "server_error");
   }
-
-  if (input.revokeAccess && preview.hasLogin) {
-    const { data: target } = await admin
-      .from("staff")
-      .select("user_id")
-      .eq("id", input.staffId)
-      .eq("salon_id", ctx.salon.id)
-      .maybeSingle();
-    const userId = (target as { user_id?: string | null } | null)?.user_id;
-    if (userId) {
-      const { error: accessErr } = await admin
-        .from("salon_members")
-        .delete()
-        .eq("salon_id", ctx.salon.id)
-        .eq("user_id", userId)
-        .neq("role", "owner");
-      if (accessErr) return fail("access_revoke_failed");
-      const { error: unlinkErr } = await admin
-        .from("staff")
-        .update({ user_id: null })
-        .eq("id", input.staffId)
-        .eq("salon_id", ctx.salon.id);
-      if (unlinkErr) return fail("access_revoke_failed");
-    }
-  }
-
-  const { error: deactivateErr } = await admin
-    .from("staff")
-    .update({ status: "inactive" })
-    .eq("id", input.staffId)
-    .eq("salon_id", ctx.salon.id)
-    .is("deleted_at", null);
-  if (deactivateErr) return fail("deactivate_failed");
-
-  for (const done of completed) {
-    await logBookingEvent({
-      bookingId: done.bookingId,
-      salonId: ctx.salon.id,
-      actorUserId: ctx.userId,
-      actorRole: actorRole(ctx),
-      eventType: "booking_edited",
-      payload: {
-        reason: "staff_offboarding",
-        previous_staff_id: input.staffId,
-        new_staff_id: done.nextStaffId,
-      },
-    });
-  }
-
-  let notificationAttempts = 0;
-  let notificationsSent = 0;
-  if (input.notifySms || input.notifyEmail) {
-    for (const done of completed) {
-      notificationAttempts += 1;
-      const result = await deliverStaffActionNotification(admin, {
-        salonId: ctx.salon.id,
-        bookingId: done.bookingId,
-        event: "staff_change",
-        channels: { sms: input.notifySms, email: input.notifyEmail },
-      });
-      notificationsSent += Number(result.smsSent) + Number(result.emailSent);
-    }
-  }
+  const parsed = parseCompletedResult(rpcResult, input.assignments.length);
+  if (!parsed.ok) return parsed;
 
   revalidatePath(`/dashboard/${slug}/setup/staff`);
   revalidatePath(`/dashboard/${slug}/center`);
-  return {
-    ok: true,
-    reassigned: completed.length,
-    notificationsSent,
-    notificationAttempts,
-  };
+  return parsed;
 }

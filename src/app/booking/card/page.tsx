@@ -2,6 +2,11 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import {
+  acknowledgeBookingManagementRequest,
+  pendingBookingManagementRequest,
+  stableBookingManagementRequestId,
+} from "@/shared/booking/bookingManagementRequestId";
 
 type CardInfo = {
   ok: boolean;
@@ -11,6 +16,7 @@ type CardInfo = {
   last4: string;
   feeLabel: string;
   status: string;
+  cardFingerprint: string;
   code?: string;
 };
 
@@ -42,6 +48,24 @@ function CardManager() {
     let alive = true;
     void (async () => {
       try {
+        const pending = await pendingBookingManagementRequest({ action: "card_manage", token });
+        if (pending && /^[0-9a-f]{64}$/.test(pending.material)) {
+          const replay = await fetch("/api/booking/remove-card", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              token,
+              requestId: pending.requestId,
+              expectedCardFingerprint: pending.material,
+            }),
+          });
+          const replayJson = await replay.json().catch(() => null) as { ok?: boolean } | null;
+          if (replay.ok && replayJson?.ok === true) {
+            await acknowledgeBookingManagementRequest({ action: "card_manage", token, material: pending.material });
+            if (alive) setState({ phase: "removed" });
+            return;
+          }
+        }
         const res = await fetch(`/api/booking/card-info?token=${encodeURIComponent(token)}`);
         const json = (await res.json()) as CardInfo;
         if (!alive) return;
@@ -62,10 +86,12 @@ function CardManager() {
   async function remove(info: CardInfo) {
     setState({ phase: "removing", info });
     try {
+      const intent = { action: "card_manage" as const, token, material: info.cardFingerprint };
+      const requestId = await stableBookingManagementRequestId(intent);
       const res = await fetch("/api/booking/remove-card", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, requestId, expectedCardFingerprint: info.cardFingerprint }),
       });
       const json = (await res.json()) as { ok: boolean; code?: string };
       if (!res.ok || !json.ok) {
@@ -76,6 +102,7 @@ function CardManager() {
         setState({ phase: "error", code: json.code ?? "remove_failed" });
         return;
       }
+      await acknowledgeBookingManagementRequest(intent);
       setState({ phase: "removed" });
     } catch {
       setState({ phase: "error", code: "network_error" });

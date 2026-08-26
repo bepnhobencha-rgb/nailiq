@@ -94,11 +94,22 @@ describe("client-intelligence boundary", () => {
     }
   });
 
+  it("never copies the Head Spa Square identity into Hi-Lite Studio", () => {
+    const studioSync = read("scripts/sync-hilite-studio-from-square.ts");
+    expect(studioSync).not.toContain("SOURCE_SALON_SLUG");
+    expect(studioSync).not.toContain('eq("slug", "hilite-anaheim")');
+    expect(studioSync).not.toContain('.from("square_integrations").upsert');
+    expect(studioSync).toContain('.eq("salon_id", salonId)');
+    expect(studioSync).toContain(
+      "Configured Hi-Lite Studio location does not belong to its Square credential",
+    );
+  });
+
   it("updates the blank-database parity tripwire", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("policies: 156");
+    expect(parity).toContain("policies: 197");
     expect(parity).toContain(
-      "const GRANTS = { anon: 57, authenticated: 64, service_role: 112 }",
+      "const GRANTS = { anon: 56, authenticated: 77, service_role: 175 }",
     );
   });
 });

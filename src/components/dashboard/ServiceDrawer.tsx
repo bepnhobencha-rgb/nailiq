@@ -11,6 +11,7 @@ import {
   updateService,
 } from "@/shared/dashboard/setupActions";
 import type { ServiceCategorySummary } from "@/shared/booking/loadServiceCategories";
+import { parseServicePrepMinutes } from "@/shared/booking/bookingSequence";
 import {
   ADD_FORM_DEFAULT_CATEGORY,
   type ServiceCategory,
@@ -81,6 +82,8 @@ export type ServiceDrawerProps = {
   canDelete: boolean;
   /** When true, show "Service limit reached" instead of save button in add mode */
   atServiceLimit: boolean;
+  /** Keeps prep editing absent for every flag-off salon. */
+  multiServiceEditorEnabled: boolean;
   /** Delete button calls this with the service id then closes the drawer.
    *  Actual deletion + undo toast lives in the parent (ServicesSetupPanel). */
   onRequestDelete?: (id: string) => void;
@@ -190,6 +193,7 @@ export function ServiceDrawer({
   categories,
   canDelete,
   atServiceLimit,
+  multiServiceEditorEnabled,
   onRequestDelete,
 }: ServiceDrawerProps) {
   const { language } = useUserLanguage();
@@ -228,6 +232,9 @@ export function ServiceDrawer({
   const [buf, setBuf] = useState(
     service ? String(service.buffer_minutes) : "10",
   );
+  const [prep, setPrep] = useState(
+    service ? String(service.prep_minutes) : "0",
+  );
   const [category, setCategory] = useState<ServiceCategory>(
     service?.category ?? ADD_FORM_DEFAULT_CATEGORY,
   );
@@ -253,6 +260,7 @@ export function ServiceDrawer({
     setPriceMax(maxCents !== null ? dollarsFromCents(maxCents) : "");
     setDur(service ? String(service.duration_minutes) : "45");
     setBuf(service ? String(service.buffer_minutes) : "10");
+    setPrep(service ? String(service.prep_minutes) : "0");
     setCategory(service?.category ?? ADD_FORM_DEFAULT_CATEGORY);
     setDescription(service?.description ?? "");
     setIsPopular(service?.is_popular ?? false);
@@ -292,6 +300,7 @@ export function ServiceDrawer({
         | "price_cents"
         | "duration_minutes"
         | "buffer_minutes"
+        | "prep_minutes"
         | "category"
         | "description"
         | "is_popular"
@@ -312,6 +321,14 @@ export function ServiceDrawer({
     const bufNum = Number.parseInt(buf, 10);
     if (Number.isFinite(bufNum) && bufNum >= 0 && bufNum !== service.buffer_minutes)
       patch.buffer_minutes = bufNum;
+    const prepNum = parseServicePrepMinutes(prep);
+    if (
+      multiServiceEditorEnabled &&
+      prepNum != null &&
+      prepNum !== service.prep_minutes
+    ) {
+      patch.prep_minutes = prepNum;
+    }
     if (category !== service.category) patch.category = category;
     const descTrim = description.trim();
     const descNext = descTrim.length === 0 ? null : descTrim;
@@ -333,7 +350,7 @@ export function ServiceDrawer({
       patch.price_max_cents = nextMaxCents;
     }
     return patch;
-  }, [addonTiming, buf, category, description, dur, isAddon, isPopular, name, price, priceMax, priceType, service]);
+  }, [addonTiming, buf, category, description, dur, isAddon, isPopular, multiServiceEditorEnabled, name, prep, price, priceMax, priceType, service]);
 
   const patch = buildDirtyPatch();
   const isDirty = Object.keys(patch).length > 0;
@@ -356,6 +373,14 @@ export function ServiceDrawer({
     if (!Number.isFinite(dm) || dm < 1) return "Duration must be at least 1 minute.";
     const bm = Number.parseInt(buf, 10);
     if (!Number.isFinite(bm) || bm < 0) return "Buffer must be 0 or more minutes.";
+    if (multiServiceEditorEnabled) {
+      const pm = parseServicePrepMinutes(prep);
+      if (pm == null) {
+        return language === "vi"
+          ? "Thời gian chuẩn bị phải từ 0 đến 180 phút."
+          : "Prep time must be between 0 and 180 minutes.";
+      }
+    }
     if (description.trim().length > SERVICE_DESCRIPTION_MAX_LEN)
       return formLabels.descriptionTooLong;
     return null;
@@ -413,6 +438,7 @@ export function ServiceDrawer({
         ...(patch.price_cents !== undefined ? { price_cents: patch.price_cents } : {}),
         ...(patch.duration_minutes !== undefined ? { duration_minutes: patch.duration_minutes } : {}),
         ...(patch.buffer_minutes !== undefined ? { buffer_minutes: patch.buffer_minutes } : {}),
+        ...(patch.prep_minutes !== undefined ? { prep_minutes: patch.prep_minutes } : {}),
         ...(patch.category !== undefined ? { category: patch.category } : {}),
         ...(patch.description !== undefined ? { description: patch.description } : {}),
         ...(patch.is_popular !== undefined ? { is_popular: patch.is_popular } : {}),
@@ -434,6 +460,7 @@ export function ServiceDrawer({
       const cents = centsFromDollarsString(price)!;
       const dm = Number.parseInt(dur, 10);
       const bm = Number.parseInt(buf, 10);
+      const pm = multiServiceEditorEnabled ? parseServicePrepMinutes(prep) : 0;
       const descTrimmed = description.trim();
 
       let res: Awaited<ReturnType<typeof addService>>;
@@ -443,6 +470,7 @@ export function ServiceDrawer({
           price_cents: cents,
           duration_minutes: dm,
           buffer_minutes: bm,
+          ...(multiServiceEditorEnabled && pm != null ? { prep_minutes: pm } : {}),
           category,
           description: descTrimmed.length > 0 ? descTrimmed : null,
           is_popular: isPopular,
@@ -498,12 +526,14 @@ export function ServiceDrawer({
     isPopular,
     language,
     name,
+    prep,
     onAdded,
     onSaved,
     patch,
     price,
     priceMax,
     priceType,
+    multiServiceEditorEnabled,
     service,
     setupErrors.serviceLimitReached,
     slug,
@@ -755,6 +785,27 @@ export function ServiceDrawer({
                 data-testid="service-drawer-buffer"
               />
             </label>
+
+            {multiServiceEditorEnabled ? (
+              <label className="block text-sm font-medium text-nq-muted sm:col-span-2">
+                {language === "vi" ? "Chuẩn bị trước dịch vụ (phút)" : "Prep before service (minutes)"}
+                <input
+                  inputMode="numeric"
+                  min={0}
+                  max={180}
+                  className="mt-1.5 flex min-h-[44px] w-full rounded-xl border border-nq-border/50 bg-nq-bg/90 px-3 py-2.5 text-base tabular-nums text-nq-foreground shadow-nq-sm outline-none focus-visible:border-nq-primary/75 focus-visible:shadow-nq-input-focus disabled:opacity-60"
+                  value={prep}
+                  disabled={isSaving}
+                  onChange={(e) => setPrep(e.target.value)}
+                  data-testid="service-drawer-prep"
+                />
+                <span className="mt-1 block text-xs text-nq-muted/80">
+                  {language === "vi"
+                    ? "Chiếm thời gian của thợ/tài nguyên trước khi bắt đầu phục vụ khách; khác với thời gian dọn sau dịch vụ."
+                    : "Reserves staff/resource setup before customer work; separate from the cleanup buffer."}
+                </span>
+              </label>
+            ) : null}
 
             {/* Category */}
             <label className="block text-sm font-medium text-nq-muted sm:col-span-2">

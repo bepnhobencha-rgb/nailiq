@@ -1,7 +1,18 @@
 "use server";
 
 import { createClient } from "@/shared/lib/supabase/server";
-import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { cookies } from "next/headers";
+import { consumePublicServerActionRateLimit } from "@/shared/security/publicServerActionRateLimit";
+import { requireActiveAuthSession } from "@/shared/auth/requireActiveAuthSession";
+import {
+  canonicalPasswordResetEmail,
+  isAcceptableRecoveryPassword,
+  issuePasswordRecoveryIntent,
+  PASSWORD_RECOVERY_COOKIE,
+  passwordRecoveryRedirectUrl,
+  sessionIdFromAccessToken,
+  verifyPasswordRecoveryCapability,
+} from "@/shared/auth/passwordRecoverySecurity";
 
 /**
  * Salon owner password reset server actions.
@@ -16,17 +27,9 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
  * belongs to a superadmin." Only well-formed-but-empty input or a
  * thrown error from Supabase surfaces a distinct outcome.
  *
- * Guard rails before the email goes out:
- *   1. Service-role lookup in `auth.users` by email — silently no-ops
- *      if the user does not exist.
- *   2. `public.salon_members` membership check — only users with a
- *      salon owner/staff membership receive a reset link. Users who
- *      signed up but were never added to a salon don't receive one.
- *
- * Only when both gates pass do we call Supabase's built-in
- * `resetPasswordForEmail` with a `redirectTo` that lands the recipient
- * on `/auth/recovery` (shared with superadmin), which exchanges the code
- * for a session and redirects to `/login/reset-password`.
+ * We deliberately do not perform a privileged pre-lookup by email. Supabase's
+ * recovery request is itself anti-enumerating, while the callback rechecks the
+ * authenticated user's current role before issuing a reset capability.
  */
 
 export type RequestPasswordResetResult =
@@ -36,64 +39,30 @@ export type RequestPasswordResetResult =
 export async function requestSalonOwnerPasswordReset(
   email: string,
 ): Promise<RequestPasswordResetResult> {
-  const trimmedEmail = email.trim().toLowerCase();
+  const trimmedEmail = canonicalPasswordResetEmail(email);
   if (!trimmedEmail) {
-    // Empty form should *look* successful so the form doesn't double
-    // as an enumeration oracle, but we skip the round-trip entirely.
+    // Malformed and unknown identities share the same public outcome.
     return { ok: true };
   }
 
+  const rate = await consumePublicServerActionRateLimit({
+    scope: "salon-password-reset",
+    identity: trimmedEmail,
+    ipLimits: [[10, 3_600]],
+    identityLimits: [[3, 3_600]],
+  });
+  if (rate === "limited") return { ok: true };
+  if (rate === "unavailable") return { ok: false, error: "server_error" };
+
   try {
-    const admin = createServiceRoleClient();
-    // The admin listUsers endpoint accepts a filter expression; the
-    // SDK's typed surface doesn't expose a direct email lookup, so we
-    // walk the first page (>1000 salon owners is implausible).
-    const { data: userList, error: listError } =
-      await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    if (listError) {
-      console.error("[salonOwnerAuth] listUsers failed:", listError);
-      return { ok: false, error: "server_error" };
-    }
-    const matched = userList.users.find(
-      (u) => u.email?.toLowerCase() === trimmedEmail,
-    );
-    if (!matched) {
-      return { ok: true };
-    }
-
-    // Check if this user has a salon owner/staff membership.
-    //
-    // MUST use the service-role client: the caller is an UNAUTHENTICATED
-    // visitor on the forgot-password form, and `salon_members` has RLS
-    // that only lets an authenticated user read their own row
-    // (`auth.uid() = user_id`). Querying it through the request-scoped
-    // anon client returns zero rows for everyone, so the reset email
-    // would never be sent. `.maybeSingle()` (not `.single()`) so a
-    // multi-salon owner with >1 membership rows isn't treated as a
-    // non-member.
-    const { data: membership, error: membershipError } = await admin
-      .from("salon_members")
-      .select("id")
-      .eq("user_id", matched.id)
-      .limit(1)
-      .maybeSingle();
-
-    if (membershipError || !membership) {
-      // User exists in auth but is not a salon member — silently no-op
-      return { ok: true };
-    }
-
     const supabase = await createClient();
-
-    const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL ?? process.env.NEXTAUTH_URL ?? "";
-    const redirectTo = siteUrl
-      ? `${siteUrl.replace(/\/$/, "")}/auth/recovery`
-      : undefined;
-
+    const redirectTo = passwordRecoveryRedirectUrl(
+      "salon",
+      issuePasswordRecoveryIntent({ email: trimmedEmail, surface: "salon" }),
+    );
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(
       trimmedEmail,
-      redirectTo ? { redirectTo } : undefined,
+      { redirectTo },
     );
     if (resetError) {
       return { ok: false, error: "server_error" };
@@ -134,28 +103,56 @@ export type CompletePasswordResetResult =
 export async function completeSalonOwnerPasswordReset(
   newPassword: string,
 ): Promise<CompletePasswordResetResult> {
-  if (!newPassword || newPassword.length < 8) {
+  if (!isAcceptableRecoveryPassword(newPassword)) {
     return { ok: false, error: "weak_password" };
   }
 
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
+    const active = await requireActiveAuthSession(supabase);
+    if (!active.ok) {
+      try {
+        await supabase.auth.signOut({ scope: "local" });
+      } catch {
+        // The password update remains blocked even if cookie cleanup fails.
+      }
+      return {
+        ok: false,
+        error:
+          active.code === "auth_unavailable" ? "server_error" : "no_session",
+      };
+    }
+    const { data: sessionData, error: sessionError } =
+      await supabase.auth.getSession();
+    const sessionId = sessionIdFromAccessToken(
+      sessionData.session?.access_token,
+    );
+    const cookieStore = await cookies();
+    if (
+      sessionError ||
+      !sessionId ||
+      !verifyPasswordRecoveryCapability({
+        token: cookieStore.get(PASSWORD_RECOVERY_COOKIE)?.value,
+        userId: active.user.id,
+        sessionId,
+      })
+    ) {
       return { ok: false, error: "no_session" };
     }
 
     // Check if user is still a salon member
-    const { data: membership } = await supabase
+    const { data: membership, error: membershipError } = await supabase
       .from("salon_members")
       .select("id")
-      .eq("user_id", user.id)
-      .single();
+      .eq("user_id", active.user.id)
+      .limit(1)
+      .maybeSingle();
 
+    if (membershipError) {
+      return { ok: false, error: "server_error" };
+    }
     if (!membership) {
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: "global" });
       return { ok: false, error: "no_salon_member" };
     }
 
@@ -175,9 +172,27 @@ export async function completeSalonOwnerPasswordReset(
       return { ok: false, error: "server_error" };
     }
 
-    // Consume the recovery session — owner must re-authenticate
-    // with the new password on /login.
-    await supabase.auth.signOut();
+    // The password mutation is the terminal effect. Clear the local recovery
+    // bearer and revoke the recovery session so a replay cannot mutate again.
+    try {
+      cookieStore.delete(PASSWORD_RECOVERY_COOKIE);
+    } catch {
+      // Global session revocation below still invalidates the bound session id.
+    }
+    try {
+      const { error: globalSignOutError } = await supabase.auth.signOut({
+        scope: "global",
+      });
+      if (globalSignOutError) {
+        await supabase.auth.signOut({ scope: "local" });
+      }
+    } catch {
+      try {
+        await supabase.auth.signOut({ scope: "local" });
+      } catch {
+        // Password truth is already committed and the recovery bearer is gone.
+      }
+    }
     return { ok: true };
   } catch {
     return { ok: false, error: "server_error" };

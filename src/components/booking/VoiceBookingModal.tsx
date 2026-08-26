@@ -13,6 +13,10 @@ import {
 import { bookingResultFooterNote } from "./bookingResultFooter";
 import { isNoActiveResponseError } from "./voiceErrorClassify";
 import {
+  executeWebVoiceToolCall,
+  type WebVoiceBookingHandoff,
+} from "@/shared/booking/webVoiceBookingHandoff";
+import {
   classifyVoiceFailure,
   voiceSessionChannelFromPathname,
   type VoiceClientDiagnostics,
@@ -23,6 +27,7 @@ type Props = {
   t: BookingMessages;
   shopSlug: string;
   language?: "en" | "vi";
+  onBookingHandoff: (handoff: WebVoiceBookingHandoff) => void;
   onClose: () => void;
 };
 
@@ -126,7 +131,13 @@ function playKeyClick(ctx: AudioContext): void {
   } catch { /* AudioContext may be suspended or closed — silently ignore */ }
 }
 
-export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Props) {
+export function VoiceBookingModal({
+  t,
+  shopSlug,
+  language = "en",
+  onBookingHandoff,
+  onClose,
+}: Props) {
   const [status, setStatus]               = useState<Status>("idle");
   const [aiActivity, setAiActivity]       = useState<AiActivity>("idle");
   const [error, setError]                 = useState<string | null>(null);
@@ -509,16 +520,21 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
 
       const controller = new AbortController();
       const toolTimeout = setTimeout(() => controller.abort(), 12_000);
-      fetch("/api/voice/tool", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body:    JSON.stringify({ toolName: fnName, toolArgs: args, salonSlug, sessionId }),
-      })
-        .then((r) => {
+      executeWebVoiceToolCall({
+        toolName: fnName,
+        toolArgs: args,
+        onBookingHandoff,
+        forwardToServer: async () => {
+          const r = await fetch("/api/voice/tool", {
+            method:  "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: controller.signal,
+            body: JSON.stringify({ toolName: fnName, toolArgs: args, salonSlug, sessionId }),
+          });
           console.log(`[voice/tool] ◀ ${fnName} HTTP ${r.status}`);
-          return r.json();
-        })
+          return r.json() as Promise<Record<string, unknown>>;
+        },
+      })
         .then((result: unknown) => {
           const res = result as Record<string, unknown>;
           console.log(`[voice/tool] ✓ ${fnName}`, {
@@ -579,6 +595,15 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
             item: { type: "function_call_output", call_id: callId, output: JSON.stringify(result) },
           }));
           sendResponseCreate();
+          if (res.handoff === true) {
+            // The parent wizard now owns the intent. Close only after the
+            // function output is queued so the realtime session is not left
+            // waiting for a tool result. No booking has been created here.
+            window.setTimeout(() => {
+              void endSessionRef.current("completed");
+              onClose();
+            }, 0);
+          }
         })
         .catch(() => {
           const timedOut = controller.signal.aborted;
@@ -944,7 +969,7 @@ export function VoiceBookingModal({ t, shopSlug, language = "en", onClose }: Pro
       setStatus("error");
       void endSessionRef.current("failed", false, "realtime_error");
     }
-  }, [cleanup]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cleanup, language, onBookingHandoff, onClose]);  // eslint-disable-line react-hooks/exhaustive-deps
   // Note: setBookingResult is a stable React setter; wsRef/processedCallIdsRef
   // are stable refs. dispatchFunctionCall is defined inside the callback and
   // captures those correctly. Adding them to deps would cause infinite re-renders.

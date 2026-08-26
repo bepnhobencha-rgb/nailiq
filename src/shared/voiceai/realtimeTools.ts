@@ -67,6 +67,7 @@ export const REALTIME_TOOLS = [
       "This MUST be called to actually create the booking — verbal confirmation alone does NOT save it. " +
       "Call immediately when the customer agrees: yes / ok / sure / đồng ý / được / vâng / ừ / xác nhận / đặt luôn. " +
       "Never skip this tool — if you do not call it, no booking is created. " +
+      "This is a two-stage write: the first call returns the authoritative price without creating; read that price back and make a second call with confirmed_pricing_fingerprint only after a new clear yes. " +
       "The result includes a booking_id — keep it in context in case the customer wants to reschedule.",
     parameters: {
       type: "object" as const,
@@ -78,7 +79,7 @@ export const REALTIME_TOOLS = [
         customer_name:  { type: "string", description: "Customer's full name as they stated it." },
         customer_phone: { type: "string", description: "Customer's phone number, including country code if provided." },
         otp_session_id: { type: "string", description: "The otp_session_id from verify_otp for this phone (required unless the caller is already verified). Omit only if a prior tool result said verification is not needed." },
-        upsell_accepted: { type: "boolean", description: "Set true ONLY when this booking is the result of the customer accepting your upsell (an upgrade or added service you offered). Leave unset otherwise." },
+        confirmed_pricing_fingerprint: { type: "string", description: "Second-call only. Copy the exact pricing_fingerprint returned by pricing_confirmation_required only after reading back its exact total/currency and the caller's latest reply is a clear yes. Never invent or reuse it after any booking detail changes." },
       },
       required: ["service_id", "date", "time_slot", "staff_id", "customer_name", "customer_phone"],
     },
@@ -255,8 +256,8 @@ export const REALTIME_TOOLS = [
     type: "function" as const,
     name: "confirm_group_booking",
     description:
-      "Confirm and save a group booking after the customer agrees to a specific time slot. " +
-      "MUST be called to actually create the group booking — verbal agreement alone does nothing. " +
+      "Two-stage group quote/create. First call after the customer agrees to a time returns the authoritative total and creates nothing. " +
+      "Read that exact total/currency, get a new clear yes, then call again with confirmed_pricing_fingerprint to create. " +
       "Trigger words: yes / ok / sure / đồng ý / được / vâng / ừ / xác nhận / đặt luôn / đặt đi. " +
       "After success: tell the customer their party link will be sent separately — " +
       "do NOT read out each person's individual assignment over voice. " +
@@ -302,6 +303,11 @@ export const REALTIME_TOOLS = [
         otp_session_id: {
           type: "string",
           description: "The otp_session_id from verify_otp for the organizer's phone (required unless the caller is already verified).",
+        },
+        confirmed_pricing_fingerprint: {
+          type: "string",
+          description:
+            "Exact pricing_fingerprint returned by the previous confirm_group_booking quote call. Send it only after reading the exact total/currency and receiving a clear yes.",
         },
       },
       required: ["service_assignments", "date", "time", "mode", "organizer_name", "organizer_phone"],

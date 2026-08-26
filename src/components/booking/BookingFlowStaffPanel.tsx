@@ -112,7 +112,7 @@ export function BookingFlowStaffPanel({
             <span className="block text-[15px] font-medium leading-snug text-[var(--booking-text)] sm:text-base">
               {t.anyStaffOptionTitle}
             </span>
-            <span className="mt-0.5 block text-sm text-[var(--booking-text-muted)]">{t.anyStaffOptionSubtitle}</span>
+            <span className="mt-0.5 block text-sm text-[color-mix(in_srgb,var(--booking-text)_75%,var(--booking-bg))]">{t.anyStaffOptionSubtitle}</span>
           </span>
         </motion.button>
 
@@ -152,7 +152,7 @@ export function BookingFlowStaffPanel({
                 <span className="block text-[15px] font-medium leading-snug text-[var(--booking-text)] sm:text-base">
                   {displayName}
                 </span>
-                <span className="mt-0.5 block text-sm text-[var(--booking-text-muted)]">
+                <span className="mt-0.5 block text-sm text-[color-mix(in_srgb,var(--booking-text)_75%,var(--booking-bg))]">
                   {formatStaffJobRole(s.job_role, techRoleLabel)}
                 </span>
               </span>

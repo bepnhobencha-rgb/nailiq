@@ -1,299 +1,220 @@
-import { after } from "next/server";
-import { NextResponse } from "next/server";
-import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { notifyWaitlistForSlot } from "@/shared/noshow/waitlistAutoFill";
-import { logBookingEvent } from "@/shared/dashboard/auditLog";
-import { deliverStaffActionNotification } from "@/shared/notifications/deliverStaffActionNotification";
+import { after, NextResponse } from "next/server";
+
+import {
+  cancelBookingWithManagementCapability,
+  inspectBookingManagementCapability,
+} from "@/shared/booking/bookingManagementCapabilities";
+import { consumeBookingManagementRateLimit } from "@/shared/booking/bookingManagementRateLimit";
+import { reconcilePublicBookingManagementAudit } from "@/shared/dashboard/reconcilePublicBookingManagementAudit";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { chargeNoShowFee } from "@/shared/integrations/square/noshow";
-import { salonYmdOfUtc } from "@/shared/lib/salonTime";
-import { evaluateLateCancellationPolicy } from "@/shared/noshow/lateCancellationPolicy";
+import { deliverPromotedWaitlistOffer } from "@/shared/noshow/deliverPromotedWaitlistOffer";
+import { deliverCustomerBookingTransitionEmail } from "@/shared/notifications/customerBookingTransitionEmail";
+import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
+import { readJsonObjectWithLimit } from "@/shared/security/readJsonObjectWithLimit";
 
-type BookingRow = {
-  salon_id: string;
-  service_id: string;
-  start_time_utc: string;
-  status: string | null;
-  client_email: string | null;
-  client_locale: string | null;
-  noshow_card_id: string | null;
-  noshow_consent_at: string | null;
-  noshow_fee_cents: number | null;
-  noshow_charge_status: string | null;
-  noshow_card_last4: string | null;
-  noshow_card_brand: string | null;
-  self_cancel_fee_locked_at: string | null;
-  self_cancel_fee_locked_cents: number | null;
-};
+const PRIVATE_HEADERS = {
+  "Cache-Control": "private, no-store, max-age=0",
+  Pragma: "no-cache",
+  "Referrer-Policy": "no-referrer",
+  "X-Robots-Tag": "noindex, nofollow",
+} as const;
 
-type SalonRow = {
-  slug: string | null;
-  currency_code: string | null;
-  self_cancel_fee_enabled: boolean | null;
-  self_cancel_window_hours: number | null;
-  self_cancel_fee_percent: number | null;
-  noshow_fee_percent: number | null;
-};
-
-/**
- * Resolve a reminder token to its booking + salon and decide what a self-cancel
- * would do RIGHT NOW: is the appointment already past (block), is it inside the
- * salon's cancellation window (late), and would a fee be charged (late + saved
- * card + consent + salon opted in). Shared by the GET preview (so the customer
- * sees the fee BEFORE confirming) and the POST that performs the cancel.
- */
-async function evaluateSelfCancel(
-  supabase: ReturnType<typeof createServiceRoleClient>,
-  token: string,
-): Promise<
-  | { ok: false; code: string }
-  | {
-      ok: true;
-      bookingId: string;
-      booking: BookingRow;
-      salon: SalonRow;
-      startPast: boolean;
-      withinWindow: boolean;
-      willCharge: boolean;
-      feeCents: number;
-      policyLockedByReschedule: boolean;
-    }
-> {
-  const { data: tokenRow } = await supabase
-    .from("booking_reminder_tokens" as never)
-    .select("booking_id, used_at, expires_at")
-    .eq("id", token)
-    .maybeSingle();
-  const tr = tokenRow as
-    | { booking_id: string; used_at: string | null; expires_at: string }
-    | null;
-  if (!tr) return { ok: false, code: "token_invalid" };
-  if (tr.used_at !== null || new Date(tr.expires_at) < new Date())
-    return { ok: false, code: "token_invalid" };
-
-  const { data: bRow } = await supabase
-    .from("bookings" as never)
-    .select(
-      "salon_id, service_id, start_time_utc, status, client_email, client_locale, noshow_card_id, noshow_consent_at, noshow_fee_cents, noshow_charge_status, noshow_card_last4, noshow_card_brand, self_cancel_fee_locked_at, self_cancel_fee_locked_cents",
-    )
-    .eq("id", tr.booking_id)
-    .maybeSingle();
-  const booking = bRow as BookingRow | null;
-  if (!booking) return { ok: false, code: "booking_not_cancellable" };
-  if (booking.status !== "pending" && booking.status !== "confirmed")
-    return { ok: false, code: "booking_not_cancellable" };
-
-  const { data: salonRow } = await supabase
-    .from("salons" as never)
-    .select(
-      "slug, currency_code, self_cancel_fee_enabled, self_cancel_window_hours, self_cancel_fee_percent, noshow_fee_percent",
-    )
-    .eq("id", booking.salon_id)
-    .maybeSingle();
-  const salon = (salonRow as SalonRow | null) ?? {
-    slug: null,
-    currency_code: null,
-    self_cancel_fee_enabled: false,
-    self_cancel_window_hours: 24,
-    self_cancel_fee_percent: null,
-    noshow_fee_percent: null,
-  };
-
-  const policy = evaluateLateCancellationPolicy({
-    booking: {
-      startTimeUtc: booking.start_time_utc,
-      noShowFeeCents: booking.noshow_fee_cents,
-      noShowCardId: booking.noshow_card_id,
-      noShowConsentAt: booking.noshow_consent_at,
-      noShowChargeStatus: booking.noshow_charge_status,
-      selfCancelFeeLockedAt: booking.self_cancel_fee_locked_at,
-      selfCancelFeeLockedCents: booking.self_cancel_fee_locked_cents,
-    },
-    salon: {
-      selfCancelFeeEnabled: salon.self_cancel_fee_enabled,
-      selfCancelWindowHours: salon.self_cancel_window_hours,
-      selfCancelFeePercent: salon.self_cancel_fee_percent,
-      noShowFeePercent: salon.noshow_fee_percent,
-    },
-  });
-
-  return {
-    ok: true,
-    bookingId: tr.booking_id,
-    booking,
-    salon,
-    startPast: policy.startPast,
-    withinWindow: policy.withinWindow,
-    willCharge: policy.willCharge,
-    feeCents: policy.feeCents,
-    policyLockedByReschedule: policy.policyLockedByReschedule,
-  };
+function json(body: Record<string, unknown>, status = 200) {
+  return NextResponse.json(body, { status, headers: PRIVATE_HEADERS });
 }
 
-/**
- * Preview endpoint — the cancel page fetches this on load so it can show the
- * late-cancel fee warning (or "call the salon" for a past appointment) BEFORE
- * the customer confirms. Read-only; never cancels or charges.
- */
-export async function GET(req: Request) {
-  const token = (new URL(req.url).searchParams.get("token") ?? "").trim();
-  if (!token)
-    return NextResponse.json({ ok: false, code: "missing_token" }, { status: 400 });
+function errorStatus(code: string): number {
+  if (code === "invalid_request") return 400;
+  if (code === "invalid_token") return 404;
+  if (code === "expired_or_revoked" || code === "token_consumed") return 410;
+  if (code === "management_unavailable" || code === "invalid_management_response") return 503;
+  return 409;
+}
 
-  const supabase = createServiceRoleClient();
-  const ev = await evaluateSelfCancel(supabase, token);
-  if (!ev.ok) return NextResponse.json({ ok: false, code: ev.code });
+async function rate(request: Request, tokenId: string, phase: "inspect" | "mutate") {
+  const result = await consumeBookingManagementRateLimit({
+    request,
+    tokenId,
+    action: "cancel",
+    phase,
+  });
+  if (result === "allowed") return null;
+  return json({
+    ok: false,
+    code: result === "limited" ? "rate_limited" : "management_unavailable",
+  }, result === "limited" ? 429 : 503);
+}
 
-  return NextResponse.json({
+/** Read-only policy preview. It cannot cancel, charge, notify or consume. */
+export async function GET(request: Request) {
+  const tokenId = new URL(request.url).searchParams.get("token")?.trim() ?? "";
+  const limited = await rate(request, tokenId, "inspect");
+  if (limited) return limited;
+  const inspected = await inspectBookingManagementCapability({
+    tokenId,
+    expectedAction: "cancel",
+  });
+  if (!inspected.ok) return json(inspected, errorStatus(inspected.code));
+  const preview = inspected.inspection.cancelPreview;
+  const isRsvpPreview = inspected.inspection.context.groupId !== null &&
+    (inspected.inspection.scopeKind === "member_own" ||
+      inspected.inspection.scopeKind === "organizer_own");
+  return json({
     ok: true,
-    startPast: ev.startPast,
-    withinWindow: ev.withinWindow,
-    willCharge: ev.willCharge,
-    policyLockedByReschedule: ev.policyLockedByReschedule,
-    feeCents: ev.willCharge ? ev.feeCents : 0,
-    last4: ev.willCharge ? ev.booking.noshow_card_last4 : null,
-    brand: ev.willCharge ? ev.booking.noshow_card_brand : null,
-    currency: ev.salon.currency_code ?? "USD",
-    salonSlug: ev.salon.slug ?? null,
+    startPast: preview.startPast,
+    withinWindow: preview.withinWindow,
+    willCharge: isRsvpPreview ? false : preview.willCharge,
+    policyLockedByReschedule: preview.policyLockedByReschedule,
+    feeCents: !isRsvpPreview && preview.willCharge ? preview.feeCents : 0,
+    last4: !isRsvpPreview && preview.willCharge ? preview.cardLast4 : null,
+    brand: !isRsvpPreview && preview.willCharge ? preview.cardBrand : null,
+    currency: preview.currency,
+    salonSlug: inspected.inspection.booking.salonSlug,
   });
 }
 
-export async function POST(req: Request) {
-  let body: { token?: string };
-  try {
-    body = (await req.json()) as { token?: string };
-  } catch {
-    return NextResponse.json({ ok: false, code: "invalid_body" }, { status: 400 });
+export async function POST(request: Request) {
+  if (!isSameOriginMutation(request)) return json({ ok: false, code: "forbidden" }, 403);
+  if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
+    return json({ ok: false, code: "invalid_request" }, 400);
+  }
+  const body = await readJsonObjectWithLimit(request, 1024);
+  if (!body) return json({ ok: false, code: "invalid_request" }, 400);
+  const tokenId = typeof body?.token === "string" ? body.token.trim() : "";
+  const requestId = typeof body?.requestId === "string" ? body.requestId.trim() : "";
+  const limited = await rate(request, tokenId, "mutate");
+  if (limited) return limited;
+
+  // Re-read the authoritative preview immediately before mutation. The DB also
+  // rejects appointments that have started, closing the inspect→write race.
+  const inspected = await inspectBookingManagementCapability({ tokenId, expectedAction: "cancel" });
+  if (!inspected.ok) {
+    // A response-loss replay has a consumed token; the mutation RPC owns exact
+    // replay recovery, so do not reject token_consumed here.
+    if (inspected.code !== "token_consumed") return json(inspected, errorStatus(inspected.code));
+  } else if (inspected.inspection.cancelPreview.startPast) {
+    return json({ ok: false, code: "too_late" }, 409);
   }
 
-  const token = (body.token ?? "").trim();
-  if (!token) {
-    return NextResponse.json({ ok: false, code: "missing_token" }, { status: 400 });
+  const result = await cancelBookingWithManagementCapability({ tokenId, requestId });
+  if (!result.ok) return json(result, errorStatus(result.code));
+  const committed = result.result;
+  const isRsvpDecline = committed.groupId !== null && committed.rsvpSemantic === "decline" &&
+    (committed.scopeKind === "member_own" || committed.scopeKind === "organizer_own");
+  const preview = committed.cancelPreview;
+  if (!preview) {
+    // The booking may already be committed. Fail closed on an invalid stored
+    // receipt and let the same request ID recover once the dependency is fixed.
+    return json({ ok: false, code: "invalid_management_response" }, 503);
   }
 
-  const supabase = createServiceRoleClient();
-
-  const ev = await evaluateSelfCancel(supabase, token);
-  if (!ev.ok) {
-    return NextResponse.json({ ok: false, code: ev.code }, { status: 400 });
-  }
-
-  // Bug fix: never let the self-serve link cancel an appointment that has
-  // already started (the token stays valid up to 2h past start). Past-start
-  // means the salon should decide (attended / no-show), not the customer.
-  if (ev.startPast) {
-    return NextResponse.json({ ok: false, code: "too_late" }, { status: 400 });
-  }
-
-  const { salon_id, service_id, start_time_utc, client_email } = ev.booking;
-  const bookingId = ev.bookingId;
-  const salonSlug = ev.salon.slug ?? null;
-
-  const { data, error } = await supabase.rpc("cancel_booking_as_customer" as never, {
-    p_token_id: token,
-  });
-
-  if (error) {
-    console.error("[cancel-action] RPC error", error);
-    return NextResponse.json({ ok: false, code: "server_error" }, { status: 500 });
-  }
-
-  const rows = Array.isArray(data) ? data : [];
-  const row = rows[0] as { ok?: boolean; code?: string } | undefined;
-
-  if (!row?.ok) {
-    return NextResponse.json({ ok: false, code: row?.code ?? "unknown" }, { status: 400 });
-  }
-
-  // Late-cancel fee — charge synchronously so the response can tell the customer
-  // exactly what happened. chargeNoShowFee is idempotent, re-guards card +
-  // consent + fee, and records saved→charged|failed. The booking is already
-  // cancelled above; a charge failure does not un-cancel it (mirrors no-show).
+  // Charge helper re-reads saved-card/consent state and is idempotent, so exact
+  // response-loss replay can safely reconcile a missing post-commit charge.
   let feeCharged = false;
   let feeCents = 0;
-  if (ev.willCharge) {
+  let feeStatus: "succeeded" | "pending_provider" | "unknown" | "definite_failure" | "not_applicable" =
+    "not_applicable";
+  if (!isRsvpDecline && preview.willCharge && preview.feeCents > 0) {
     try {
-      const res = await chargeNoShowFee(bookingId, {
+      const charged = await chargeNoShowFee(committed.bookingId, {
         note: "Late cancellation fee",
-        amountCentsOverride: ev.feeCents,
+        amountCentsOverride: preview.feeCents,
+        operationKind: "late_cancel_charge",
+        occurrenceVersion: committed.transitionVersion ?? undefined,
       });
-      feeCharged = res.charged;
-      if (res.charged) feeCents = ev.feeCents;
-    } catch (e) {
-      console.error("[cancel-action] late-cancel charge failed", e);
+      feeStatus = charged.status;
+      feeCharged = charged.status === "succeeded";
+      feeCents = preview.feeCents;
+    } catch (error) {
+      console.error("[cancel-action] late-cancel charge failed", error);
+      feeStatus = "unknown";
+      feeCents = preview.feeCents;
     }
   }
 
-  // One truthful audit record after the synchronous payment attempt. Never
-  // imply a charge happened merely because the booking was inside the window.
-  void logBookingEvent({
-    bookingId,
-    salonId: salon_id,
-    actorUserId: null,
-    actorRole: "public_guest",
-    eventType: "booking_cancelled",
+  await reconcilePublicBookingManagementAudit({
+    bookingId: committed.bookingId,
+    salonId: committed.salonId,
+    requestId,
+    action: isRsvpDecline ? "rsvp_decline" : "cancel",
     payload: {
-      reason: "customer_email_link",
-      late: ev.withinWindow,
-      policy_locked_by_reschedule: ev.policyLockedByReschedule,
-      fee_decision: ev.willCharge
-        ? feeCharged
-          ? "charged"
-          : "failed"
-        : ev.withinWindow
-          ? "not_chargeable"
-          : "not_applicable",
-      fee_cents: ev.willCharge ? ev.feeCents : 0,
+      reason: isRsvpDecline ? "rsvp_decline" : "customer_management_link",
+      rsvp_semantic: isRsvpDecline ? "decline" : null,
+      late: preview.withinWindow,
+      policy_locked_by_reschedule: preview.policyLockedByReschedule,
+      fee_decision: isRsvpDecline
+        ? "rsvp_no_charge"
+        : preview.willCharge ? feeStatus : "not_applicable",
+      fee_cents: isRsvpDecline ? 0 : preview.feeCents,
     },
   });
 
-  // Owner alert + customer email + waitlist after the response is flushed.
+  if (committed.transitionVersion !== null) {
+    after(() => deliverCustomerBookingTransitionEmail({
+      salonId: committed.salonId,
+      bookingId: committed.bookingId,
+      transitionKind: "cancel",
+      expectedTransitionVersion: committed.transitionVersion!,
+    }));
+  }
   after(async () => {
-    // Owner/manager alert — customer self-cancelled via email link.
     await sendOwnerBookingNotification({
-      salonId: salon_id,
-      bookingId,
+      salonId: committed.salonId,
+      bookingId: committed.bookingId,
       event: "cancel",
     });
-
-    const sb = createServiceRoleClient();
-    const [{ data: salonData }, { data: svcData }] = await Promise.all([
-      sb.from("salons" as never).select("name, timezone").eq("id", salon_id).maybeSingle(),
-      sb.from("services" as never).select("name").eq("id", service_id).maybeSingle(),
-    ]);
-    const salonName = (salonData as { name: string } | null)?.name ?? "";
-    const serviceName = (svcData as { name: string } | null)?.name ?? "";
-    // Freed slot's date must be the SALON-LOCAL day: booking_waitlist_entries
-    // stores booking_date salon-local and the flip RPC matches it in the salon
-    // tz, and notifyWaitlistForSlot now filters on it. The UTC day missed the
-    // just-promoted waitlister for evening NA cancellations. Mirror reschedule.
-    const timezone =
-      (salonData as { timezone?: string | null } | null)?.timezone?.trim() ||
-      "America/Los_Angeles";
-    const bookingDateYmd = salonYmdOfUtc(start_time_utc, timezone);
-
-    // Send cancellation confirmation email to the customer
-    if (client_email) {
-      try {
-        await deliverStaffActionNotification(sb, {
-          salonId: salon_id,
-          bookingId,
-          event: "cancel",
-          channels: { email: true, sms: false },
-        });
-      } catch {
-        /* best-effort */
-      }
+    if (committed.promotedWaitlist) {
+      await deliverPromotedWaitlistOffer({
+        salonId: committed.salonId,
+        offer: committed.promotedWaitlist,
+      });
     }
-
-    await notifyWaitlistForSlot({ salonId: salon_id, salonName, serviceId: service_id, serviceName, bookingDateYmd });
   });
 
-  return NextResponse.json({
+  if (feeStatus === "pending_provider" || feeStatus === "unknown") {
+    return json({
+      ok: false,
+      code: "payment_reconciliation_required",
+      bookingCommitted: true,
+      feeStatus,
+      feeCents,
+      currency: preview.currency,
+      idempotent: committed.idempotent,
+    }, 503);
+  }
+  if (preview.willCharge && !isRsvpDecline && feeStatus === "not_applicable") {
+    return json({
+      ok: false,
+      code: "payment_unavailable",
+      bookingCommitted: true,
+      feeStatus,
+      feeCents,
+      currency: preview.currency,
+      idempotent: committed.idempotent,
+    }, 503);
+  }
+
+  return json({
     ok: true,
-    salonSlug,
+    code: isRsvpDecline ? "declined" : committed.code,
+    salonSlug: committed.salonSlug,
+    booking: {
+      status: committed.status,
+      startTimeUtc: committed.startTimeUtc,
+      endTimeUtc: committed.endTimeUtc,
+      serviceName: committed.serviceName,
+      staffName: committed.staffName,
+      salonSlug: committed.salonSlug,
+      salonName: committed.salonName,
+      salonTimezone: committed.salonTimezone,
+    },
     feeCharged,
+    feeStatus,
     feeCents,
-    currency: ev.salon.currency_code ?? "USD",
+    currency: preview.currency,
+    rsvpSemantic: committed.rsvpSemantic,
+    attendanceStatus: committed.attendanceStatus,
+    idempotent: committed.idempotent,
   });
 }

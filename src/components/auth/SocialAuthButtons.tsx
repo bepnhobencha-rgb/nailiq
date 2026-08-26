@@ -12,6 +12,8 @@ import { Input } from "@/components/ui/Input";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { createClient } from "@/shared/lib/supabase/client";
+import { authenticateWithEmailPassword } from "@/shared/auth/emailPasswordAuth";
+import { sendEmailMagicLink } from "@/shared/register/actions";
 
 // Google OAuth is blocked by Error 403 disallowed_useragent when the auth flow
 // is triggered inside in-app browsers (Facebook Messenger, Instagram, Twitter, etc.)
@@ -167,17 +169,10 @@ export function SocialAuthButtons({
     }
     setPendingAction("magic");
     startTransition(async () => {
-      const supabase = createClient();
-      const { error: otpErr } = await supabase.auth.signInWithOtp({
-        email: normalized,
-        options: {
-          emailRedirectTo: authCallbackUrl(),
-          shouldCreateUser: true,
-        },
-      });
+      const result = await sendEmailMagicLink(normalized);
       setPendingAction(null);
-      if (otpErr) {
-        setError(otpErr.message ?? t.magicLinkSendFailed);
+      if (!result.success) {
+        setError(t.magicLinkSendFailed);
         return;
       }
       // Surface the dedicated "check your email" screen so the user has
@@ -204,33 +199,15 @@ export function SocialAuthButtons({
     }
     setPendingAction(kind);
     startTransition(async () => {
-      const supabase = createClient();
-      if (kind === "signin") {
-        const { error: signInErr } = await supabase.auth.signInWithPassword({
-          email: normalized,
-          password,
-        });
-        if (signInErr) {
-          setError(t.signInFailed);
-          setPendingAction(null);
-          return;
-        }
-        // Full navigation to /register/setup: the new session cookie is sent with
-        // the next browser request, so the server can read it correctly.
-        // /register/setup handles all cases: no salon → wizard, existing salon →
-        // dashboard redirect.  Using router.push races with cookie propagation.
-        window.location.assign("/register/setup");
-        return;
-      }
-      // Sign up — Supabase may or may not require email confirmation.
-      const { data, error: signUpErr } = await supabase.auth.signUp({
-        email: normalized,
+      const result = await authenticateWithEmailPassword(
+        normalized,
         password,
-        options: { emailRedirectTo: authCallbackUrl() },
-      });
-      if (signUpErr) {
-        const msg = signUpErr.message?.toLowerCase() ?? "";
-        if (msg.includes("already") || msg.includes("registered")) {
+        kind,
+      );
+      if (!result.ok) {
+        if (kind === "signin") {
+          setError(t.signInFailed);
+        } else if (result.error === "account_exists") {
           setError(t.accountExists);
         } else {
           setError(t.signUpFailed);
@@ -238,16 +215,16 @@ export function SocialAuthButtons({
         setPendingAction(null);
         return;
       }
-      // If email confirmation is enabled in Supabase, `session` is null
-      // and the user must click the link in their inbox before we can
-      // resolve their salon membership.
-      if (!data.session) {
-        setSignUpConfirmTo(normalized);
-        setPendingAction(null);
+      if (kind === "signin" || result.status === "signed_in") {
+        // Full navigation to /register/setup: the new session cookie is sent with
+        // the next browser request, so the server can read it correctly.
+        // /register/setup handles all cases: no salon → wizard, existing salon →
+        // dashboard redirect.  Using router.push races with cookie propagation.
+        window.location.assign("/register/setup");
         return;
       }
-      // Same reasoning as sign-in above.
-      window.location.assign("/register/setup");
+      setSignUpConfirmTo(normalized);
+      setPendingAction(null);
     });
   };
 

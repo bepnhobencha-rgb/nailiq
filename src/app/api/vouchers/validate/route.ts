@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
+import { consumePublicRequestRateLimit } from "@/shared/security/publicServerActionRateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,17 @@ export const dynamic = "force-dynamic";
  * override the discount amount. Returns calculated discount.
  */
 export async function POST(req: Request) {
+  const ipRate = await consumePublicRequestRateLimit({
+    request: req,
+    scope: "voucher-validate",
+    ipLimits: [[30, 60], [150, 3_600]],
+  });
+  if (ipRate !== "allowed") {
+    return NextResponse.json(
+      { ok: false, error: ipRate === "limited" ? "rate_limited" : "temporarily_unavailable" },
+      { status: ipRate === "limited" ? 429 : 503 },
+    );
+  }
   const { salon_id, code, client_phone, price_cents } = await req
     .json()
     .catch(() => ({}));
@@ -20,6 +32,20 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { ok: false, error: "missing_fields" },
       { status: 400 }
+    );
+  }
+
+  const identityRate = await consumePublicRequestRateLimit({
+    request: req,
+    scope: "voucher-validate-identity",
+    identity: [salon_id, code, toCanonicalPhone(client_phone)],
+    ipLimits: [],
+    identityLimits: [[10, 300], [40, 3_600]],
+  });
+  if (identityRate !== "allowed") {
+    return NextResponse.json(
+      { ok: false, error: identityRate === "limited" ? "rate_limited" : "temporarily_unavailable" },
+      { status: identityRate === "limited" ? 429 : 503 },
     );
   }
 

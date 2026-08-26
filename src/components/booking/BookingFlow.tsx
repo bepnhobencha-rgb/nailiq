@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, useReducedMotion } from "@/shared/lib/motionClient";
-import { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { getClientLoyaltyCardByPhone } from "@/shared/loyalty/loyaltyActions";
 import type { LoyaltyCard, LoyaltyProgram } from "@/shared/loyalty/types";
 import type { BookingComboItem, BookingServiceItem } from "@/shared/booking/catalog";
@@ -31,59 +31,13 @@ import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import { resolveVertical } from "@/shared/verticals/registry";
 import { healthAckRequired, healthAckText } from "@/shared/lib/healthAck";
-import { formatBookingPriceReceipt } from "@/shared/booking/formatBookingPrice";
 import { salonTimezoneAbbreviation } from "@/shared/lib/salonTime";
 import {
   useBookingFlowState,
   type ReturningCustomer,
 } from "@/components/booking/useBookingFlowState";
-import type { VoiceParseResult } from "@/shared/types/booking";
-
-// Resolve a voice dateHint string to a concrete Date (noon local time)
-function resolveVoiceDateHint(hint: string): Date | null {
-  const lower = hint.toLowerCase();
-  const today = new Date();
-  const norm = (d: Date) => { d.setHours(12, 0, 0, 0); return d; };
-
-  if (lower.includes("today") || lower.includes("hôm nay") || lower.includes("hom nay")) {
-    return norm(new Date(today));
-  }
-  if (lower.includes("tomorrow") || lower.includes("ngày mai") || lower.includes("ngay mai")) {
-    const d = new Date(today); d.setDate(d.getDate() + 1); return norm(d);
-  }
-  if (lower.includes("saturday") || lower.includes("thứ bảy") || lower.includes("thu bay")) {
-    const d = new Date(today);
-    const diff = (6 - d.getDay() + 7) % 7 || 7;
-    d.setDate(d.getDate() + diff); return norm(d);
-  }
-  if (lower.includes("sunday") || lower.includes("chủ nhật") || lower.includes("chu nhat")) {
-    const d = new Date(today);
-    const diff = (7 - d.getDay()) % 7 || 7;
-    d.setDate(d.getDate() + diff); return norm(d);
-  }
-  return null;
-}
-
-// Normalize voice timeHint to match slot label format: "2:00 PM"
-function normalizeVoiceTimeHint(hint: string): string {
-  const h12 = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i.exec(hint.trim());
-  if (h12) {
-    const h = parseInt(h12[1]!, 10);
-    const m = parseInt(h12[2] ?? "0", 10);
-    const period = h12[3]!.toUpperCase();
-    return `${h}:${m.toString().padStart(2, "0")} ${period}`;
-  }
-  const h24 = /^(\d{1,2}):(\d{2})$/.exec(hint.trim());
-  if (h24) {
-    let h = parseInt(h24[1]!, 10);
-    const m = parseInt(h24[2]!, 10);
-    const period = h >= 12 ? "PM" : "AM";
-    if (h > 12) h -= 12;
-    else if (h === 0) h = 12;
-    return `${h}:${m.toString().padStart(2, "0")} ${period}`;
-  }
-  return hint; // already normalized (e.g. "2:00 PM" from chip)
-}
+import type { WebVoiceBookingHandoff } from "@/shared/booking/webVoiceBookingHandoff";
+import { useBookingFunnelAnalytics } from "@/shared/analytics/useBookingFunnelAnalytics";
 
 type BookingFlowProps = {
   t: BookingMessages;
@@ -114,6 +68,10 @@ type BookingFlowProps = {
   /** OTP session verified at the phone gate (Option B gate-first OTP).
    *  When set, the flow skips its own OTP step — phone already verified. */
   initialOtpSessionId?: string | null;
+  /** A browser Voice intent is only a prefill. BookingFlow still owns every
+   * verification/consent gate and the sole explicit create CTA. */
+  webVoiceHandoff?: WebVoiceBookingHandoff | null;
+  onWebVoiceHandoffConsumed?: () => void;
 };
 
 export function BookingFlow({
@@ -134,6 +92,8 @@ export function BookingFlow({
   initialSmsConsent = false,
   initialMarketingConsent = false,
   initialOtpSessionId = null,
+  webVoiceHandoff = null,
+  onWebVoiceHandoffConsumed,
 }: BookingFlowProps) {
   const reducedMotion = useReducedMotion();
   const vertical = resolveVertical(salon.vertical);
@@ -161,71 +121,23 @@ export function BookingFlow({
     initialMarketingConsent,
     initialOtpSessionId,
   );
+  const applyWebVoiceBookingHandoff = flow.applyWebVoiceBookingHandoff;
+
+  useBookingFunnelAnalytics({
+    flow: "individual",
+    step: flow.step,
+    submitting: flow.submitting,
+    hasError: flow.error !== null,
+  });
 
   const [loyaltyCard, setLoyaltyCard] = useState<LoyaltyCard | null>(null);
   const [loyaltyProgram, setLoyaltyProgram] = useState<LoyaltyProgram | null>(null);
 
-  // Pending time hint from voice — matched against slots once they load
-  const pendingSlotHint = useRef<string | null>(null);
-  // When true, matching the slot triggers goVoiceSubmitDirect instead of goTimeNextDirect
-  const pendingVoiceAutoSubmit = useRef(false);
-
-  const handleVoiceFill = useCallback((result: VoiceParseResult) => {
-    if (result.serviceId) flow.setServiceId(result.serviceId);
-    if (result.staffId) flow.setStaffId(result.staffId);
-    if (result.clientName) flow.setClientName(result.clientName);
-    if (result.clientPhone) flow.setClientPhone(result.clientPhone);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- flow setters are stable
-  }, [flow.setServiceId, flow.setStaffId, flow.setClientName, flow.setClientPhone]);
-
-  const handleVoiceDone = useCallback((result: VoiceParseResult) => {
-    // Fill all known fields
-    if (result.serviceId) flow.setServiceId(result.serviceId);
-    if (result.staffId) flow.setStaffId(result.staffId);
-    if (result.clientName) flow.setClientName(result.clientName);
-    if (result.clientPhone) flow.setClientPhone(result.clientPhone);
-
-    // Resolve dateHint → Date
-    if (result.dateHint) {
-      const date = resolveVoiceDateHint(result.dateHint);
-      if (date) flow.setSelectedDate(date);
-    }
-
-    // Store timeHint to match against slots once loaded
-    if (result.timeHint) pendingSlotHint.current = result.timeHint;
-
-    // When voice provides name + phone, skip manual info/verify steps and auto-submit
-    pendingVoiceAutoSubmit.current = !!(result.clientName && result.clientPhone);
-
-    // Jump straight to time step (React 18 batches all setStep calls — last one wins = "time")
-    flow.goServiceNext();
-    flow.goStaffNext();
-    flow.goDateNext();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- flow go* are stable callbacks
-  }, [flow.setServiceId, flow.setStaffId, flow.setClientName, flow.setClientPhone,
-      flow.setSelectedDate, flow.goServiceNext, flow.goStaffNext, flow.goDateNext]);
-
-  // Once slots load at the time step, auto-match hint and advance
   useEffect(() => {
-    const hint = pendingSlotHint.current;
-    if (!hint || flow.step !== "time" || flow.slotsLoading || flow.timeSlots.length === 0) return;
-    pendingSlotHint.current = null;
-    const normalized = normalizeVoiceTimeHint(hint);
-    const match = flow.timeSlots.find((s) => s.available && s.label === normalized);
-    if (match) {
-      if (pendingVoiceAutoSubmit.current) {
-        pendingVoiceAutoSubmit.current = false;
-        void flow.goVoiceSubmitDirect(match.label);
-      } else {
-        flow.goTimeNextDirect(match.label);
-      }
-    } else {
-      pendingVoiceAutoSubmit.current = false;
-      // Slot unavailable — stay on time step, show inline error
-      flow.setError(t.voice.slotNotFound.replace("{time}", normalized));
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: runs when slots arrive
-  }, [flow.step, flow.slotsLoading, flow.timeSlots]);
+    if (!webVoiceHandoff) return;
+    applyWebVoiceBookingHandoff(webVoiceHandoff);
+    onWebVoiceHandoffConsumed?.();
+  }, [applyWebVoiceBookingHandoff, onWebVoiceHandoffConsumed, webVoiceHandoff]);
 
   useEffect(() => {
     if (flow.step !== "done" || !flow.clientPhone.trim()) return;
@@ -296,18 +208,13 @@ export function BookingFlow({
         smsConsent={flow.smsConsent}
         service={flow.service}
         staffName={flow.bookingResult.staffName}
-        addons={flow.bookingResult.addons}
-        addonServiceName={flow.bookingResult.addonServiceName}
-        addonPriceCents={flow.bookingResult.addonPriceCents}
         displayStartUtc={flow.bookingResult.startTimeUtc}
         displayEndUtc={flow.bookingResult.endTimeUtc}
         bookingId={flow.bookingResult.bookingId}
+        cardManagementToken={flow.bookingResult.cardManagementToken}
         salonPhone={salon.salonPhone}
         salonTimezone={salon.timezone}
-        totalPaidFormatted={formatBookingPriceReceipt(
-          flow.bookingResult.price_cents,
-          salon.currencyCode,
-        )}
+        pricing={flow.bookingResult.pricing}
         currency={salon.currencyCode}
         onAddToCalendar={flow.handleAddToCalendar}
         onBookAnother={flow.resetAfterDone}
@@ -351,6 +258,7 @@ export function BookingFlow({
             reducedMotion={Boolean(reducedMotion)}
             stepTransition={stepTransition}
             categories={categories}
+            language={language}
             currencyCode={salon.currencyCode}
             onSelectService={flow.setServiceId}
             onSelectCombo={flow.setSelectedCombo}
@@ -378,6 +286,7 @@ export function BookingFlow({
           <BookingFlowDatePanel
             t={t}
             salonId={salon.id}
+            salonTimezone={salon.timezone}
             openingHoursRaw={salon.opening_hours}
             closedDateYmdSet={closedDateYmdSet}
             staff={flow.capableStaff}
@@ -400,6 +309,7 @@ export function BookingFlow({
             timeSlots={flow.timeSlots}
             timeSlot={flow.timeSlot}
             slotsLoading={flow.slotsLoading}
+            availabilityRealtimeStatus={flow.availabilityRealtimeStatus}
             popularSlotLabels={flow.popularSlotLabels}
             timePeriodsEnabled={salon.bookingTimePeriodsEnabled}
             timezoneAbbr={slotsTimezoneAbbr}
@@ -496,15 +406,22 @@ export function BookingFlow({
             onBack={flow.backFromOtpToInfo}
           />
         ) : null}
-        {flow.step === "deposit" ? (
+        {flow.step === "deposit" && flow.pricingQuote ? (
           <BookingFlowDepositPanel
             salonId={salon.id}
-            serviceId={flow.serviceId ?? ""}
+            pricingQuote={flow.pricingQuote}
+            bookingRequestId={flow.bookingRequestId}
             clientPhone={flow.clientPhone}
+            clientEmail={flow.clientEmail.trim() || null}
+            otpSessionId={flow.otpSessionId}
             onPaid={flow.goDepositPaid}
             onSkip={flow.goDepositSkip}
             onBack={flow.backFromOtpToInfo}
           />
+        ) : flow.step === "deposit" ? (
+          <p className="py-8 text-center text-sm text-[var(--booking-text-muted)]">
+            Preparing secure deposit…
+          </p>
         ) : null}
         {flow.step === "confirm" &&
         flow.service &&
@@ -536,8 +453,10 @@ export function BookingFlow({
             reducedMotion={Boolean(reducedMotion)}
             stepTransition={stepTransition}
             currency={salon.currencyCode}
-            salonId={salon.id}
-            taxLines={salon.taxLines}
+            pricingQuote={flow.pricingQuote}
+            pricingQuoteLoading={flow.pricingQuoteLoading}
+            pricingQuoteError={flow.pricingQuoteError}
+            pricingReconfirmRequired={flow.pricingReconfirmRequired}
             appliedVoucher={flow.appliedVoucher}
             onToggleAddon={flow.toggleAddon}
             onAddonRepickTime={flow.addAddonAndRepickTime}

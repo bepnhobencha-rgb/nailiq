@@ -21,15 +21,19 @@ import {
 } from "@/shared/lib/salonTime";
 import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
+import {
+  groupBookingInstantMatches,
+  parseGroupBookingPricingQuote,
+  type GroupBookingPricingQuote,
+} from "@/shared/booking/groupBookingPricing";
 
 /**
  * Group booking submission — 2–4 friends/family booking together.
  *
- * Each member becomes its own `bookings` row, all sharing a `group_id`
- * UUID. Insert is atomic via the `insert_group_bookings` PostgreSQL
- * function (migration 20260512200000) — if member N conflicts, the
- * whole transaction rolls back and the client sees a structured
- * `slot_conflict` with the index list of conflicting members.
+ * Each member becomes its own `bookings` row, all sharing a `group_id` UUID.
+ * Public writes are atomic through the server-only `create_group_bookings`
+ * quote/fingerprint contract; the authenticated desk override retains its
+ * existing controlled-after-hours writer.
  *
  * Reuses (DOES NOT reimplement):
  *   - `salonWallTimeToUtcIso` for date+time → UTC conversion
@@ -62,17 +66,17 @@ export type GroupBookingMember = {
    * If the spec ever supports "any" inside a group, the picker must
    * run server-side after the per-member checks. */
   staffId: string;
+  /** False when the scheduler resolved an "Any available" request. */
+  staffRequestedByClient?: boolean;
   /** YYYY-MM-DD in salon-local time (not UTC). */
   date: string;
   /** HH:MM (24h) in salon-local time. */
   time: string;
   /** Phase 6.1 — wave this member belongs to (1 for normal bookings). */
   waveNumber?: number;
-  /** Add-on service IDs selected for this member. Stored via
-   *  `add_booking_addons` RPC after the booking row is created.
-   *  Sequential add-ons extend the end_time; concurrent add-ons
-   *  add price but +0 time. Prices/durations are re-derived
-   *  server-side from the DB. */
+  /** Add-on service IDs selected for this member. The canonical public create
+   * stores rows and pricing in the same transaction. Sequential add-ons extend
+   * end_time; concurrent add-ons add price but +0 time. */
   addonServiceIds?: string[];
 };
 
@@ -91,8 +95,9 @@ export type GroupBookingParams = {
   clientWebsite?: string;
   /** Group/couple wants to be seated next to each other (head-spa
    *  curtain "couple" space, or friends sitting together). Persisted
-   *  on every member row inside the `insert_group_bookings` RPC so the
-   *  receptionist board can show a 💕 badge. Default false. */
+   *  on every member row by the canonical transaction (or the separately
+   *  authorized controlled-after-hours writer) so the receptionist board can
+   *  show a 💕 badge. Default false. */
   seatTogether?: boolean;
   /** Language the organizer booked in ("en"|"vi") — the confirmation SMS to
    *  the primary contact matches it. Absent → falls back to stored pref / vi. */
@@ -104,7 +109,11 @@ export type GroupBookingParams = {
   /** Voucher applied to the WHOLE party total, tied to the organizer's phone
    *  (mirrors submitPublicBooking). Redeemed against the lead booking after the
    *  group is created. Absent → no discount. */
-  voucherRedemption?: { voucher_id: string; discount_cents: number } | null;
+  /** Public canonical pricing inputs. Voucher validation/redemption and all
+   * monetary allocation happen inside create_group_bookings. */
+  voucherCode?: string | null;
+  applyEmailDiscount?: boolean;
+  expectedPricingQuote?: GroupBookingPricingQuote | null;
   /** The organizer ticked the required SMS-consent box in their browser. The
    *  desk path (`receptionistActions.createDeskGroup`) calls this server-side
    *  with no checkbox on screen, so it leaves this unset — otherwise we would
@@ -118,10 +127,29 @@ export type GroupBookingParams = {
    *  missing. Defaults to 'online' so the public flow stays correct even if a
    *  caller forgets to pass it. */
   bookingChannel?: "online" | "desk";
+  /** Tokenized card is forwarded only into the trusted group-create boundary. */
+  noShowCardSourceId?: string | null;
+  noShowCardVerificationToken?: string | null;
+  noShowConsent?: boolean;
 };
 
 export type GroupBookingResult =
-  | { ok: true; groupId: string; bookingIds: string[] }
+  | {
+      ok: true;
+      groupId: string;
+      bookingIds: string[];
+      /** Required for public and normal desk bookings. Only the separately
+       * authorized controlled-after-hours compatibility writer (and the
+       * honeypot no-write response) can return null. */
+      pricing: GroupBookingPricingQuote | null;
+      /** Server-minted action proof for organizer card capture, when required. */
+      cardManagementToken: string | null;
+    }
+  | {
+      ok: false;
+      reason: "pricing_changed";
+      pricing: GroupBookingPricingQuote;
+    }
   | {
       ok: false;
       reason: "slot_conflict";
@@ -139,6 +167,9 @@ export type GroupBookingResult =
       ok: false;
       reason:
         | "duplicate_submission"
+        | "pricing_required"
+        | "pricing_invalid"
+        | "idempotency_conflict"
         | "salon_paused"
         | "salon_not_found"
         // Organizer phone not OTP-verified (salon has phone_otp_enabled).
@@ -191,7 +222,8 @@ export type GroupBookingResult =
         // Salon's plan-tier monthly booking cap would be exceeded by
         // this group submit. Recoverable only by the salon owner
         // upgrading the plan.
-        | "monthly_booking_limit_reached";
+        | "monthly_booking_limit_reached"
+        | "card_management_pending";
       /** 1-indexed member number for granular per-member errors so
        *  the UI can say "Person 2 has an invalid phone". `null` when
        *  the error is global (e.g. invalid group size). */
@@ -208,20 +240,65 @@ export type GroupBookingResult =
  * Server-only escape hatch used by the authenticated front-desk action.
  *
  * This is intentionally NOT part of GroupBookingParams: public, Voice and SMS
- * callers can only reach the normal `insert_group_bookings` boundary, which
- * rejects out-of-hours rows. The desk action supplies a privileged writer only
+ * callers can only reach the canonical public boundary, which rejects
+ * out-of-hours rows. The desk action supplies a privileged writer only
  * after proving Owner/Admin, an attributable auth user and staff consent.
  */
-export type TrustedGroupBookingExecution = {
-  controlledAfterHours: {
-    actorUserId: string;
-    staffConsentConfirmed: true;
-  };
-  insertGroupBookings: (payload: Array<Record<string, unknown>>) => Promise<{
-    data: unknown;
-    error: { code?: string; message?: string } | null;
-  }>;
-};
+export type TrustedGroupBookingExecution =
+  | {
+      kind: "controlled_after_hours";
+      controlledAfterHours: {
+        actorUserId: string;
+        staffConsentConfirmed: true;
+      };
+      insertGroupBookings: (payload: Array<Record<string, unknown>>) => Promise<{
+        data: unknown;
+        error: { code?: string; message?: string } | null;
+      }>;
+    }
+  | {
+      kind: "canonical_desk";
+      createGroupBookings: (input: {
+        salonId: string;
+        bookings: Array<{
+          serviceId: string;
+          staffId: string;
+          startTimeUtc: string;
+          endTimeUtc: string;
+          addonServiceIds: string[];
+          clientName: string;
+          clientPhone: string | null;
+          clientEmail: string | null;
+          clientNotes: string | null;
+          staffRequestedByClient: boolean;
+          waveNumber: number;
+          seatTogether: boolean;
+          clientLocale: "en" | "vi" | null;
+          resourceId: null;
+        }>;
+        voucherCode: null;
+        applyEmailDiscount: boolean;
+        idempotencyKey: string;
+      }) => Promise<
+        | {
+            ok: true;
+            groupId: string;
+            bookingIds: string[];
+            pricing: GroupBookingPricingQuote;
+          }
+        | {
+            ok: false;
+            code:
+              | "slot_conflict"
+              | "monthly_booking_limit_reached"
+              | "idempotency_conflict"
+              | "pricing_changed"
+              | "create_unavailable"
+              | "pricing_invalid";
+            quote?: GroupBookingPricingQuote;
+          }
+      >;
+    };
 
 const HHMM_RE = /^(\d{1,2}):(\d{2})$/;
 
@@ -238,7 +315,7 @@ function parseHmToMinutes(hm: string): number | null {
 function fail(
   reason: Exclude<
     Extract<GroupBookingResult, { ok: false }>["reason"],
-    "slot_conflict"
+    "slot_conflict" | "pricing_changed"
   >,
   memberNumber: number | null = null,
 ): GroupBookingResult {
@@ -257,6 +334,12 @@ export async function submitGroupBooking(
   params: GroupBookingParams,
   trustedExecution?: TrustedGroupBookingExecution,
 ): Promise<GroupBookingResult> {
+  const controlledAfterHoursExecution =
+    trustedExecution?.kind === "controlled_after_hours"
+      ? trustedExecution
+      : null;
+  const canonicalDeskExecution =
+    trustedExecution?.kind === "canonical_desk" ? trustedExecution : null;
   const scope = ErrorReporter.getCurrentScope();
   scope.setTag("booking.flow", "submit_group_booking");
   scope.setTag("salon.slug", params.shopSlug);
@@ -279,6 +362,8 @@ export async function submitGroupBooking(
       ok: true,
       groupId: `bot-${Date.now()}`,
       bookingIds: [],
+      pricing: null,
+      cardManagementToken: null,
     };
   }
 
@@ -379,22 +464,24 @@ export async function submitGroupBooking(
   // Plan-tier monthly cap. Group size is the count of new bookings
   // we'd insert, so pass it so a 7-person group can't sneak past a
   // limit that has 6 slots left.
-  try {
-    await assertBookingLimitAvailable(
-      supabase,
-      {
-        id: String(salonRow.id),
-        subscription_plan: salonRow.subscription_plan,
-        plan_override: salonRow.plan_override,
-        feature_flags: salonRow.feature_flags,
-      },
-      params.members.length,
-    );
-  } catch (e) {
-    if (e instanceof Error && e.message === "monthly_booking_limit_reached") {
-      return fail("monthly_booking_limit_reached");
+  if (controlledAfterHoursExecution) {
+    try {
+      await assertBookingLimitAvailable(
+        supabase,
+        {
+          id: String(salonRow.id),
+          subscription_plan: salonRow.subscription_plan,
+          plan_override: salonRow.plan_override,
+          feature_flags: salonRow.feature_flags,
+        },
+        params.members.length,
+      );
+    } catch (e) {
+      if (e instanceof Error && e.message === "monthly_booking_limit_reached") {
+        return fail("monthly_booking_limit_reached");
+      }
+      throw e;
     }
-    throw e;
   }
 
   // Task #04-C (post #04-B cleanup) — `salons.timezone` is NOT NULL
@@ -548,7 +635,7 @@ export async function submitGroupBooking(
   // crafted payload must not assign a service/add-on to someone who cannot do
   // it. As elsewhere in NailIQ, zero capability rows means legacy "all staff
   // can do all services"; once any rows exist, every requested item must match.
-  if (trustedExecution) {
+  if (controlledAfterHoursExecution) {
     const { data: capabilityRows, error: capabilityError } = await supabase
       .from("staff_services")
       .select("staff_id, service_id")
@@ -673,13 +760,13 @@ export async function submitGroupBooking(
     () => null,
   );
   if (!hoursCheck.ok) {
-    if (!trustedExecution) {
+    if (!controlledAfterHoursExecution) {
       if (hoursCheck.reason === "closed_day") return fail("salon_closed_day");
       return fail("invalid_time", hoursCheck.memberIndex + 1);
     }
     if (
-      !trustedExecution.controlledAfterHours.actorUserId ||
-      trustedExecution.controlledAfterHours.staffConsentConfirmed !== true
+      !controlledAfterHoursExecution.controlledAfterHours.actorUserId ||
+      controlledAfterHoursExecution.controlledAfterHours.staffConsentConfirmed !== true
     ) {
       return fail("staff_consent_required");
     }
@@ -720,7 +807,7 @@ export async function submitGroupBooking(
       );
     }
     controlledAfterHoursMinutes = afterHoursByMember;
-  } else if (trustedExecution) {
+  } else if (controlledAfterHoursExecution) {
     // Never stamp a normal group as after-hours because a crafted caller sent
     // the optional server-only execution object.
     return fail("invalid_after_hours_override");
@@ -735,6 +822,13 @@ export async function submitGroupBooking(
   // P1.6 — track in-group conflicts separately from external ones so
   // the UI can show distinct copy. In-group: "two members chose the
   // same staff". External: "another customer just took it".
+  // The public canonical RPC owns availability and checks committed
+  // idempotency before re-evaluating occupancy. Re-running browser preflight
+  // after a lost response would otherwise see its own committed rows as a
+  // conflict and make the successful booking unrecoverable. Only the
+  // controlled-after-hours compatibility path keeps the richer local conflict
+  // attribution.
+  if (controlledAfterHoursExecution) {
   const crossMemberConflicts = new Set<number>();
   const externalConflicts = new Set<number>();
   for (let i = 0; i < resolved.length; i++) {
@@ -808,6 +902,7 @@ export async function submitGroupBooking(
       conflictKind: crossMemberConflicts.size > 0 ? "cross_member" : "external",
     };
   }
+  }
 
   // 8. Atomic RPC insert ---------------------------------------------
   // RPC owns the transaction boundary. Single-key idempotency: the
@@ -846,7 +941,7 @@ export async function submitGroupBooking(
       // inside the SECURITY DEFINER RPC (the anon client can't UPDATE
       // bookings under RLS). COALESCE default false in the RPC.
       seat_together: params.seatTogether === true,
-      staff_requested_by_client: true,
+      staff_requested_by_client: r.member.staffRequestedByClient ?? true,
       idempotency_key: idem,
       // Language the organizer was browsing in — persisted on every member row
       // so each guest's transactional SMS matches it. Read by the RPC as a
@@ -870,25 +965,51 @@ export async function submitGroupBooking(
     const sessionId = (params.otpSessionId ?? "").trim();
     if (!sessionId) return fail("otp_required");
     if (!leadDigits) return fail("otp_invalid");
-    const { data: otpValid, error: otpValidationError } = await supabase.rpc(
-      "validate_phone_otp_session" as never,
-      {
-        p_session_id: sessionId,
-        p_salon_id: String(salonRow.id),
-        p_phone: leadDigits,
-      } as never,
-    );
-    if (otpValidationError || otpValid !== true) {
-      return fail("otp_invalid");
+    if (trustedExecution) {
+      const { data: otpValid, error: otpValidationError } = await supabase.rpc(
+        "validate_phone_otp_session" as never,
+        {
+          p_session_id: sessionId,
+          p_salon_id: String(salonRow.id),
+          p_phone: leadDigits,
+        } as never,
+      );
+      if (otpValidationError || otpValid !== true) {
+        return fail("otp_invalid");
+      }
     }
     otpToConsume = sessionId;
   }
 
-  let rpcData: unknown;
-  let rpcErr: { code?: string; message?: string } | null;
-  if (trustedExecution) {
+  const canonicalBookings = resolved.map((r, index) => {
+    const phone = validateGuestPhone(r.member.phone);
+    return {
+      serviceId: r.member.serviceId,
+      staffId: r.member.staffId,
+      startTimeUtc: r.startUtcIso,
+      endTimeUtc: r.endUtcIso,
+      addonServiceIds: r.addonIds,
+      clientName: r.member.name.trim() || `Guest ${index + 1}`,
+      clientPhone: phone.ok ? phone.digits : null,
+      clientEmail: r.member.email?.trim().toLowerCase() || null,
+      clientNotes: r.member.notes?.trim() || null,
+      staffRequestedByClient: r.member.staffRequestedByClient ?? true,
+      waveNumber: r.member.waveNumber ?? 1,
+      seatTogether: params.seatTogether === true,
+      clientLocale: params.language ?? null,
+      resourceId: null,
+    };
+  });
+
+  let groupId: string;
+  let bookingIdList: string[];
+  let authoritativePricing: GroupBookingPricingQuote | null = null;
+  let publicCardManagementToken: string | null = null;
+  if (controlledAfterHoursExecution) {
+    let rpcData: unknown;
+    let rpcErr: { code?: string; message?: string } | null;
     try {
-      const privateWrite = await trustedExecution.insertGroupBookings(payload);
+      const privateWrite = await controlledAfterHoursExecution.insertGroupBookings(payload);
       rpcData = privateWrite.data;
       rpcErr = privateWrite.error;
     } catch (error) {
@@ -897,123 +1018,195 @@ export async function submitGroupBooking(
       });
       return fail("server_error");
     }
+    if (rpcErr) {
+      ErrorReporter.captureException(rpcErr, {
+        tags: {
+          "booking.rpc": "insert_controlled_after_hours_group_bookings",
+          "booking.flow": "group",
+        },
+        extra: { code: rpcErr.code, message: rpcErr.message },
+      });
+      if (rpcErr.code === "23P01") {
+        return {
+          ok: false,
+          reason: "slot_conflict",
+          conflictingMembers: [],
+          conflictKind: "external",
+        };
+      }
+      if (rpcErr.code === "23505") return fail("duplicate_submission");
+      return fail("server_error");
+    }
+    const result = rpcData as {
+      success?: boolean;
+      code?: string;
+      group_id?: string;
+      booking_ids?: string[];
+    } | null;
+    if (!result || typeof result !== "object") return fail("server_error");
+    if (result.success === false) {
+      const code = result.code ?? "";
+      if (code === "slot_conflict") {
+        return {
+          ok: false,
+          reason: "slot_conflict",
+          conflictingMembers: [],
+          conflictKind: "external",
+        };
+      }
+      if (code === "duplicate_submission") return fail("duplicate_submission");
+      if (code === "invalid_group_size") return fail("invalid_group_size");
+      if (code === "outside_hours" || code === "invalid_booking_time") {
+        return fail("invalid_time");
+      }
+      return fail("server_error");
+    }
+    if (
+      result.success !== true ||
+      typeof result.group_id !== "string" ||
+      !Array.isArray(result.booking_ids) ||
+      result.booking_ids.length !== params.members.length ||
+      result.booking_ids.some((id) => typeof id !== "string" || !id)
+    ) {
+      return fail("server_error");
+    }
+    groupId = result.group_id;
+    bookingIdList = result.booking_ids;
+  } else if (canonicalDeskExecution) {
+    const deskResult = await canonicalDeskExecution.createGroupBookings({
+      salonId: String(salonRow.id),
+      bookings: canonicalBookings,
+      voucherCode: null,
+      applyEmailDiscount: false,
+      idempotencyKey: idem,
+    });
+    if (!deskResult.ok) {
+      if (deskResult.code === "slot_conflict") {
+        return { ok: false, reason: "slot_conflict", conflictingMembers: [], conflictKind: "external" };
+      }
+      if (deskResult.code === "monthly_booking_limit_reached") {
+        return fail("monthly_booking_limit_reached");
+      }
+      if (deskResult.code === "idempotency_conflict") {
+        return fail("idempotency_conflict");
+      }
+      if (deskResult.code === "pricing_changed" && deskResult.quote) {
+        return { ok: false, reason: "pricing_changed", pricing: deskResult.quote };
+      }
+      return fail("server_error");
+    }
+    if (
+      deskResult.bookingIds.length !== params.members.length ||
+      deskResult.pricing.groupSize !== deskResult.bookingIds.length
+    ) return fail("pricing_invalid");
+    groupId = deskResult.groupId;
+    bookingIdList = deskResult.bookingIds;
+    authoritativePricing = deskResult.pricing;
   } else {
-    const publicWrite = await supabase.rpc("insert_group_bookings", {
-      p_bookings: payload,
-    });
-    rpcData = publicWrite.data;
-    rpcErr = publicWrite.error;
-  }
-
-  if (rpcErr) {
-    ErrorReporter.captureException(rpcErr, {
-      tags: {
-        "booking.rpc": "insert_group_bookings",
-        "booking.flow": "group",
-      },
-      extra: { code: rpcErr.code, message: rpcErr.message },
-    });
-    // 23P01 / 23505 should be caught inside the RPC and surface as
-    // structured JSON; if they reach here it means the RPC itself
-    // didn't trap them (e.g. older deployed version).
-    if (rpcErr.code === "23P01") {
-      // DB-level race → another customer took it. Can't attribute
-      // to a specific in-group pair, so kind = external.
-      return {
-        ok: false,
-        reason: "slot_conflict",
-        conflictingMembers: [],
-        conflictKind: "external",
-      };
+    const expected = params.expectedPricingQuote;
+    if (!expected) return fail("pricing_required");
+    if (
+      expected.salonId !== String(salonRow.id) ||
+      expected.groupSize !== params.members.length ||
+      expected.memberQuotes.some((member, index) => {
+        const current = resolved[index];
+        return !current ||
+          member.memberIndex !== index ||
+          member.serviceId !== current.member.serviceId ||
+          member.staffId !== current.member.staffId ||
+          !groupBookingInstantMatches(member.startTimeUtc, current.startUtcIso) ||
+          !groupBookingInstantMatches(member.endTimeUtc, current.endUtcIso) ||
+          member.addonServiceIds.length !== current.addonIds.length ||
+          member.addonServiceIds.some((id, addonIndex) => id !== current.addonIds[addonIndex]);
+      })
+    ) return fail("pricing_required");
+    let response: Response;
+    try {
+      response = await fetch("/api/booking/group-create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          salonId: String(salonRow.id),
+          bookings: canonicalBookings,
+          voucherCode: params.voucherCode?.trim().toUpperCase() || null,
+          applyEmailDiscount: params.applyEmailDiscount === true,
+          idempotencyKey: idem,
+          expectedPricingFingerprint: expected.pricingFingerprint,
+          otpSessionId: params.otpSessionId ?? null,
+          cardSourceId: params.noShowCardSourceId?.trim() || undefined,
+          cardVerificationToken: params.noShowCardVerificationToken?.trim() || undefined,
+          noShowConsent: params.noShowConsent === true || undefined,
+        }),
+      });
+    } catch {
+      return fail("server_error");
     }
-    if (rpcErr.code === "23505") return fail("duplicate_submission");
-    return fail("server_error");
-  }
-
-  const result = rpcData as {
-    success?: boolean;
-    code?: string;
-    group_id?: string;
-    booking_ids?: string[];
-  } | null;
-  if (!result || typeof result !== "object") return fail("server_error");
-  if (result.success === false) {
-    const code = result.code ?? "";
-    if (code === "slot_conflict") {
-      // DB-level race → another customer took it. Can't attribute
-      // to a specific in-group pair, so kind = external.
-      return {
-        ok: false,
-        reason: "slot_conflict",
-        conflictingMembers: [],
-        conflictKind: "external",
-      };
+    const apiResult = await response.json().catch(() => null) as Record<string, unknown> | null;
+    if (!apiResult || typeof apiResult !== "object") return fail("server_error");
+    if (apiResult.ok !== true) {
+      const code = typeof apiResult.code === "string" ? apiResult.code : "";
+      if (code === "pricing_changed") {
+        const pricing = parseGroupBookingPricingQuote(apiResult.quote, {
+          voucherCode: params.voucherCode,
+        });
+        return pricing
+          ? { ok: false, reason: "pricing_changed", pricing }
+          : fail("pricing_invalid");
+      }
+      if (code === "idempotency_conflict") return fail("idempotency_conflict");
+      if (code === "slot_conflict") {
+        return { ok: false, reason: "slot_conflict", conflictingMembers: [], conflictKind: "external" };
+      }
+      if (code === "monthly_booking_limit_reached") {
+        return fail("monthly_booking_limit_reached");
+      }
+      if (code === "otp_required") return fail("otp_required");
+      if (code === "otp_invalid") return fail("otp_invalid");
+      if (code === "card_management_pending") return fail("card_management_pending");
+      return fail("server_error");
     }
-    if (code === "duplicate_submission") return fail("duplicate_submission");
-    if (code === "invalid_group_size") return fail("invalid_group_size");
-    if (code === "outside_hours" || code === "invalid_booking_time") {
-      return fail("invalid_time");
-    }
-    ErrorReporter.captureMessage("insert_group_bookings unknown error code", {
-      level: "error",
-      extra: { code },
+    const pricing = parseGroupBookingPricingQuote(apiResult.pricing, {
+      voucherCode: params.voucherCode,
     });
-    return fail("server_error");
-  }
-  if (
-    result.success !== true ||
-    typeof result.group_id !== "string" ||
-    !Array.isArray(result.booking_ids)
-  ) {
-    return fail("server_error");
-  }
-
-  // The owner/admin "new booking" alert for the party is dispatched from
-  // stampGroupBookingIdentity below — this function runs in the browser for the
-  // public flow, where the sender's service-role client throws and the failure
-  // is swallowed. See groupBookingSideEffects.
-
-  // Identity Layer: the client_profiles resolve (per-member, dedup by phone,
-  // placeholder-name guard, visit_count bump, FK stamp) now happens INSIDE
-  // insert_group_bookings via resolve_client_profile() — atomic + server-
-  // authoritative. The old best-effort browser upsert was removed (migration
-  // 20260614110000); under RLS it could silently no-op, and members without
-  // their own phone (party members) must NOT get a profile keyed to the
-  // organizer's number. Keeping it here would also double-count visits.
-
-  // Task #04-D FIX 02 — atomic-rollback observability. The RPC
-  // is wrapped in a single PL/pgSQL transaction so the only ways
-  // we should see a length mismatch here are:
-  //   (a) the RPC was redeployed with a different contract and
-  //       the client didn't get the version bump, or
-  //   (b) a future RPC author breaks atomicity (e.g. catches a
-  //       per-row exception inside the loop).
-  // Both are silent-data-loss bugs from the customer's POV —
-  // they see "booking confirmed for 4" but only 3 rows exist.
-  // NailIQ Error Monitor capture surfaces the drift; we still return ok so the
-  // confirmation page renders for the rows that did land.
-  if (result.booking_ids.length !== params.members.length) {
-    ErrorReporter.captureMessage("group_booking_partial_rollback", {
-      level: "error",
-      tags: {
-        "booking.rpc": "insert_group_bookings",
-        "booking.flow": "group",
-      },
-      extra: {
-        groupId: result.group_id,
-        successCount: result.booking_ids.length,
-        totalCount: params.members.length,
-        salonId: salonRow.id,
-        slug: params.shopSlug,
-      },
-    });
+    const responseIds = Array.isArray(apiResult.bookingIds)
+      ? apiResult.bookingIds.filter((id): id is string => typeof id === "string" && Boolean(id))
+      : [];
+    if (
+      !pricing ||
+      typeof apiResult.groupId !== "string" ||
+      !apiResult.groupId ||
+      responseIds.length !== params.members.length ||
+      pricing.groupSize !== responseIds.length
+    ) return fail("pricing_invalid");
+    groupId = apiResult.groupId;
+    bookingIdList = responseIds;
+    authoritativePricing = pricing;
+    publicCardManagementToken = typeof apiResult.cardManagementToken === "string"
+      ? apiResult.cardManagementToken
+      : null;
   }
 
-  // Persist itemized add-ons per member — best-effort, exactly like
-  // submitPublicBooking. Prices/durations re-derived server-side
-  // inside the SECURITY DEFINER RPC; failure only loses the
-  // itemized breakdown, not the booking itself.
-  const bookingIdList = result.booking_ids.map((s) => String(s));
+  // Phase-A compatibility only for the separately authorized controlled
+  // after-hours workflow. Public browser and normal desk groups never enter
+  // this branch: canonical create already persists every add-on atomically
+  // with its receipt.
+  if (controlledAfterHoursExecution) {
+    await Promise.all(
+      params.members.map(async (member, index) => {
+        const addonIds = (member.addonServiceIds ?? []).filter((id) => addonById.has(id));
+        const bookingId = bookingIdList[index];
+        if (!bookingId || addonIds.length === 0) return;
+        try {
+          await supabase.rpc("add_booking_addons", {
+            p_booking_id: bookingId,
+            p_service_ids: addonIds,
+          });
+        } catch (error) {
+          console.error("[submitGroupBooking] controlled add-on persistence failed", error);
+        }
+      }),
+    );
+  }
   // NOTE: no-show card flagging for the GROUP lead is done server-side in
   // createDeskGroup (desk path); this function also runs in the browser
   // (online group wizard) so it must NOT import the server-only gate here.
@@ -1039,6 +1232,13 @@ export async function submitGroupBooking(
           bookingId: bookingIdList[0],
           event: "new",
           groupSize: bookingIdList.length,
+        }
+      : undefined,
+    authoritativeConfirmation: authoritativePricing && bookingIdList[0]
+      ? {
+          organizerBookingId: bookingIdList[0],
+          salonId: String(salonRow.id),
+          shopSlug: params.shopSlug,
         }
       : undefined,
   }).catch((e) =>
@@ -1089,29 +1289,6 @@ export async function submitGroupBooking(
     }
   }
 
-  await Promise.all(
-    params.members.map(async (m, i) => {
-      const addonIds = (m.addonServiceIds ?? []).filter((aid) =>
-        addonById.has(aid),
-      );
-      if (addonIds.length === 0) return;
-      const bookingId = bookingIdList[i];
-      if (!bookingId) return;
-      try {
-        await supabase.rpc("add_booking_addons", {
-          p_booking_id: bookingId,
-          p_service_ids: addonIds,
-        });
-      } catch (e) {
-        console.error(
-          "[submitGroupBooking] add_booking_addons failed for member",
-          i,
-          e,
-        );
-      }
-    }),
-  );
-
   // Group confirmation SMS to the primary contact (all members share the
   // organizer's phone). One summary message for the whole party — the group
   // path previously sent NO confirmation at all, unlike individual bookings.
@@ -1142,7 +1319,7 @@ export async function submitGroupBooking(
           // Only what the organizer actually ticked; stamped on the organizer's
           // booking alone, not fanned out across the party.
           smsConsent: params.smsConsent === true,
-          groupId: result.group_id,
+          groupId,
         }),
       });
     }
@@ -1150,49 +1327,11 @@ export async function submitGroupBooking(
     console.error("[submitGroupBooking] group sms-confirm dispatch failed", e);
   }
 
-  // Fire-and-forget: redeem the party voucher against the lead booking. The
-  // voucher is tied to the organizer's phone (only member 0 has a real number)
-  // and applies to the whole-party total, so it redeems once against the lead
-  // row — mirrors submitPublicBooking's redeem side-effect.
-  if (params.voucherRedemption?.voucher_id && bookingIdList[0]) {
-    const organizerPhoneOk = validateGuestPhone(params.members[0]?.phone ?? "");
-    if (organizerPhoneOk.ok) {
-      const groupTotalCents = resolved.reduce(
-        (sum, r) => sum + (r.priceCents ?? 0) + (r.addonPriceCents ?? 0),
-        0,
-      );
-      void (async () => {
-        try {
-          const appUrl =
-            typeof window !== "undefined"
-              ? ""
-              : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() ||
-                "https://nailiq.ca";
-          await fetch(`${appUrl}/api/vouchers/redeem`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              voucher_id: params.voucherRedemption!.voucher_id,
-              salon_id: String(salonRow.id),
-              client_phone: organizerPhoneOk.digits,
-              booking_id: bookingIdList[0],
-              original_price_cents: groupTotalCents,
-              discount_cents: params.voucherRedemption!.discount_cents,
-            }),
-          });
-        } catch (e) {
-          console.error(
-            "[submitGroupBooking] voucher redeem dispatch failed",
-            e,
-          );
-        }
-      })();
-    }
-  }
-
   return {
     ok: true,
-    groupId: result.group_id,
+    groupId,
     bookingIds: bookingIdList,
+    pricing: authoritativePricing,
+    cardManagementToken: publicCardManagementToken,
   };
 }
