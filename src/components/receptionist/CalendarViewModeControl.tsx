@@ -80,7 +80,7 @@ export function CalendarViewModeControl({
         </summary>
         <div
           data-testid="shell-v2-calendar-view-menu"
-          className="absolute right-0 top-full z-50 mt-2 w-48 overflow-hidden rounded-2xl border border-nq-border bg-nq-surface p-1.5 shadow-xl"
+          className="absolute left-0 top-full z-50 mt-2 w-48 overflow-hidden rounded-2xl border border-nq-border bg-nq-surface p-1.5 shadow-xl sm:left-auto sm:right-0"
         >
           {MODES.map((mode) => {
             const active = value === mode;
