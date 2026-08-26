@@ -69,6 +69,8 @@ import { execFileSync } from "node:child_process";
  * public booking snapshot plus two service-role-only dashboard projections.
  * The 20260825124500 MQA-0148 dashboard-shell migration adds one
  * service-role-only shell projection.
+ * The 20260826204500 group-booking resource migration adds one atomic
+ * resource-assignment trigger function and one booking trigger.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -134,12 +136,12 @@ const PRODUCTION = {
   // SID-first service-role wrappers, plus +2 durable review-SMS completion and
   // signed callback-correlation functions.
   // +1 forward-only error-remediation release-gate trigger function.
-  functions: 374,
+  functions: 375,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
   // +1 fail-closed error-remediation release-gate trigger.
-  triggers: 87,
+  triggers: 88,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -408,6 +410,7 @@ const CRITICAL_FUNCTIONS = [
   "inspect_sms_consent_event",
   "load_sms_outbound_suppression",
   "enforce_booking_operational_capacity_guard",
+  "auto_assign_single_booking_resource",
   "bump_salon_availability_revision",
   "rate_limit_hit_many",
   "rate_limit_hit_request_batch",
