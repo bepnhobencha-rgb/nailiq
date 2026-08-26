@@ -231,15 +231,10 @@ export async function completeSalonRegistration(
       };
     }
 
-    let slug: string;
-    try {
-      const slugSeed = requestedSlug || slugifySalonName(name);
-      const picked = await pickAvailableSalonSlug(admin, slugSeed);
-      slug = picked.slug;
-    } catch (e) {
-      console.error("[completeSalonRegistration] demo slug pick", e);
-      return { ok: false, error: "server_error" };
-    }
+    // Anonymous demo registration is the only path allowed to use the shared
+    // demo tenant. Authenticated owners continue through the normal slug
+    // picker below, even when DEMO_OTP is enabled for QA transport safety.
+    const slug = DEMO_SALON_SLUG;
 
     // `setup_wizard_completed_at` is the gate the dashboard checks
     // before letting users in (see DashboardSlugLayout). Stamping it
