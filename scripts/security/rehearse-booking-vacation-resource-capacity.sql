@@ -185,7 +185,8 @@ BEGIN
     (v_room, v_salon, 'Shared Treatment Room', 'room', 3, 'active'),
     (v_equipment, v_salon, 'Shared LED Equipment', 'other', 4, 'active');
 
-  -- Resource-mode group writes may not bypass physical capacity with NULL.
+  -- Resource-mode group writes that omit resource_id receive distinct active
+  -- resources atomically instead of failing after the availability quote.
   v_payload := pg_catalog.jsonb_build_array(
     pg_catalog.jsonb_build_object(
       'service_id', v_service, 'staff_id', v_staff_one,
@@ -209,12 +210,23 @@ BEGIN
     '49000000-0000-4000-8000-000000000031',
     v_quote->>'pricing_fingerprint'
   );
-  IF v_quote->>'code' <> 'quoted' OR v_result->>'code' <> 'slot_conflict'
-     OR (SELECT count(*) FROM public.bookings WHERE salon_id = v_salon) <> v_before
+  IF v_quote->>'code' <> 'quoted' OR v_result->>'code' <> 'booked'
+     OR (SELECT count(*) FROM public.bookings WHERE salon_id = v_salon)
+        <> v_before + 2
+     OR (SELECT count(*) FROM public.bookings
+         WHERE salon_id = v_salon
+           AND client_name IN ('No Resource One', 'No Resource Two')
+           AND resource_id IS NOT NULL) <> 2
+     OR (SELECT count(DISTINCT resource_id) FROM public.bookings
+         WHERE salon_id = v_salon
+           AND client_name IN ('No Resource One', 'No Resource Two')) <> 2
   THEN
-    RAISE EXCEPTION 'resource-mode NULL group bypass remained: %, %',
+    RAISE EXCEPTION 'resource-mode group auto-assignment failed: %, %',
       v_quote, v_result;
   END IF;
+  DELETE FROM public.bookings
+  WHERE salon_id = v_salon
+    AND client_name IN ('No Resource One', 'No Resource Two');
 
   -- MQA-0056: a room is an exclusive physical resource shared by staff. The
   -- first booking owns it for the interval; a different staff member conflicts.
