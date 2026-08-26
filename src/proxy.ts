@@ -414,7 +414,15 @@ export async function proxy(request: NextRequest) {
         "Too many sign-in attempts. Please try again in a minute.",
       );
     }
-    if (durableLimit === "unavailable") return limiterUnavailableResponse();
+    if (durableLimit === "unavailable") {
+      // Keep sign-in available during a code/schema rollout mismatch. Direct
+      // email actions retain their hashed durable server-action limiter, and
+      // Supabase Auth retains its provider-side limits. Public booking and API
+      // boundaries below remain fail-closed when their durable limiter is down.
+      console.warn(
+        "[auth-rate-limit] proxy durable limiter unavailable; using auth provider and server-action limits",
+      );
+    }
   }
 
   // Coarse durable abuse ceiling for every explicitly public API boundary.
