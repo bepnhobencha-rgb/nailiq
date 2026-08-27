@@ -1674,9 +1674,12 @@ export async function createDeskGroup(
             if (!quoted.ok) {
               return {
                 ok: false,
-                code: quoted.code === "pricing_invalid"
-                  ? "pricing_invalid" as const
-                  : "create_unavailable" as const,
+                code:
+                  quoted.code === "pricing_invalid"
+                    ? "pricing_invalid" as const
+                    : quoted.code === "slot_conflict"
+                      ? "slot_conflict" as const
+                      : "create_unavailable" as const,
               };
             }
             const created = await createGroupBookingsAuthoritative({
