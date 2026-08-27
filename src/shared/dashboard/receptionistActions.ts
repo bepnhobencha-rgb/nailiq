@@ -1597,32 +1597,70 @@ export async function createDeskGroup(
     return { ok: false, reason: "idempotency_conflict" };
   }
   if (replay.kind === "unavailable") {
+    ErrorReporter.captureMessage("desk group creation boundary unavailable", {
+      level: "error",
+      tags: {
+        "booking.flow": "desk_group",
+        "booking.stage": "replay",
+        "booking.fail_reason": "replay_unavailable",
+      },
+      extra: { salonId: ctx.salon.id },
+    });
     return { ok: false, reason: "server_error" };
   }
 
   let otpSessionId: string | null = null;
   try {
-    const { data: srow } = await db
+    const { data: srow, error: salonOtpError } = await db
       .from("salons")
       .select("phone_otp_enabled")
       .eq("id", ctx.salon.id)
       .maybeSingle();
+    if (salonOtpError) {
+      ErrorReporter.captureMessage("desk group OTP policy lookup failed", {
+        level: "error",
+        tags: {
+          "booking.flow": "desk_group",
+          "booking.stage": "otp_policy",
+          "booking.fail_reason": salonOtpError.code || "query_failed",
+        },
+        extra: { salonId: ctx.salon.id },
+      });
+    }
     if (
       (srow as { phone_otp_enabled?: boolean } | null)?.phone_otp_enabled ===
       true
     ) {
       const v = validateGuestPhone(input.members[0]?.phone ?? "");
       if (v.ok) {
-        const { data: otpRow } = await db
+        const { data: otpRow, error: otpInsertError } = await db
           .from("phone_otp_sessions")
           .insert({ phone: v.digits, salon_id: ctx.salon.id } as never)
           .select("id")
           .single();
+        if (otpInsertError) {
+          ErrorReporter.captureMessage("desk group OTP session mint failed", {
+            level: "error",
+            tags: {
+              "booking.flow": "desk_group",
+              "booking.stage": "otp_mint",
+              "booking.fail_reason": otpInsertError.code || "insert_failed",
+            },
+            extra: { salonId: ctx.salon.id },
+          });
+        }
         otpSessionId = (otpRow as { id?: string } | null)?.id ?? null;
       }
     }
-  } catch {
-    /* mint failed → submitGroupBooking will surface otp_required, handled by UI */
+  } catch (error) {
+    ErrorReporter.captureException(error, {
+      tags: {
+        "booking.flow": "desk_group",
+        "booking.stage": "otp_mint",
+      },
+      extra: { salonId: ctx.salon.id },
+    });
+    /* submitGroupBooking will surface otp_required; the UI keeps the form open. */
   }
 
   const groupParams = {
@@ -1672,6 +1710,15 @@ export async function createDeskGroup(
           createGroupBookings: async (request) => {
             const quoted = await resolveGroupBookingQuote(request);
             if (!quoted.ok) {
+              ErrorReporter.captureMessage("desk group authoritative quote failed", {
+                level: "error",
+                tags: {
+                  "booking.flow": "desk_group",
+                  "booking.stage": "quote",
+                  "booking.fail_reason": quoted.code,
+                },
+                extra: { salonId: ctx.salon.id },
+              });
               return {
                 ok: false,
                 code:
@@ -1701,12 +1748,30 @@ export async function createDeskGroup(
               created.code === "pricing_changed" ||
               created.code === "pricing_invalid"
             ) {
+              ErrorReporter.captureMessage("desk group authoritative create rejected", {
+                level: created.code === "slot_conflict" ? "warning" : "error",
+                tags: {
+                  "booking.flow": "desk_group",
+                  "booking.stage": "create",
+                  "booking.fail_reason": created.code,
+                },
+                extra: { salonId: ctx.salon.id },
+              });
               return {
                 ok: false,
                 code: created.code,
                 ...(created.quote ? { quote: created.quote } : {}),
               };
             }
+            ErrorReporter.captureMessage("desk group authoritative create unavailable", {
+              level: "error",
+              tags: {
+                "booking.flow": "desk_group",
+                "booking.stage": "create",
+                "booking.fail_reason": created.code,
+              },
+              extra: { salonId: ctx.salon.id },
+            });
             return { ok: false, code: "create_unavailable" };
           },
         });
