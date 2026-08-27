@@ -4,6 +4,7 @@ import {
   checkBookingConflict,
 } from "@/shared/lib/conflictCheck";
 import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit";
+import { runBookingOrchestrator } from "@/shared/booking/bookingOrchestrator";
 import { stampGroupBookingIdentity } from "@/shared/booking/groupBookingSideEffects";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
@@ -330,7 +331,7 @@ function fail(
   return { ok: false, reason, memberNumber };
 }
 
-export async function submitGroupBooking(
+async function executeGroupBooking(
   params: GroupBookingParams,
   trustedExecution?: TrustedGroupBookingExecution,
 ): Promise<GroupBookingResult> {
@@ -1334,4 +1335,24 @@ export async function submitGroupBooking(
     pricing: authoritativePricing,
     cardManagementToken: publicCardManagementToken,
   };
+}
+
+export async function submitGroupBooking(
+  params: GroupBookingParams,
+  trustedExecution?: TrustedGroupBookingExecution,
+): Promise<GroupBookingResult> {
+  return runBookingOrchestrator(
+    {
+      gateway: params.bookingChannel === "desk" ? "desk" : "online",
+      intent: "group",
+      operation: "commit",
+    },
+    (route) => executeGroupBooking(
+      {
+        ...params,
+        bookingChannel: route.channel === "desk" ? "desk" : "online",
+      },
+      trustedExecution,
+    ),
+  );
 }

@@ -23,6 +23,10 @@ import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 import { runPublicBookingSideEffects } from "@/shared/booking/publicBookingSideEffects";
+import {
+  bookingChannelFor,
+  runBookingOrchestrator,
+} from "@/shared/booking/bookingOrchestrator";
 import { reuseNoShowCardAction } from "@/shared/noshow/saveNoShowCardAction";
 import { healthAckRequired } from "@/shared/lib/healthAck";
 import {
@@ -35,6 +39,12 @@ import type { PaidPublicDeposit } from "@/shared/payments/publicDepositTypes";
 import { runBoundedPublicBookingRpc } from "@/shared/booking/publicBookingRpcBoundary";
 import { settleCommittedBookingCardManagement } from "@/shared/booking/settleCommittedBookingCardManagement";
 import { v1AllowsNoShowCardOnFile } from "@/shared/release/v1IntegrationScope";
+
+const ONLINE_BOOKING_CHANNEL = bookingChannelFor({
+  gateway: "online",
+  intent: "individual",
+  operation: "commit",
+});
 
 export type BookingParams = {
   shopSlug: string;
@@ -1182,7 +1192,7 @@ async function executePublicBooking(
         },
         stamp: {
           bookingId,
-          bookingChannel: "online",
+          bookingChannel: ONLINE_BOOKING_CHANNEL,
           clientLocale: params.language || undefined,
           staffRequested: customerRequestedStaff,
           verificationMethod:
@@ -1295,11 +1305,17 @@ async function executePublicBooking(
 export async function quotePublicBooking(
   params: BookingParams,
 ): Promise<PublicBookingPricingQuote> {
-  return executePublicBooking(params, "quote") as Promise<PublicBookingPricingQuote>;
+  return runBookingOrchestrator(
+    { gateway: "online", intent: "individual", operation: "quote" },
+    () => executePublicBooking(params, "quote") as Promise<PublicBookingPricingQuote>,
+  );
 }
 
 export async function submitPublicBooking(
   params: BookingParams,
 ): Promise<BookingResult> {
-  return executePublicBooking(params, "submit") as Promise<BookingResult>;
+  return runBookingOrchestrator(
+    { gateway: "online", intent: "individual", operation: "commit" },
+    () => executePublicBooking(params, "submit") as Promise<BookingResult>,
+  );
 }
