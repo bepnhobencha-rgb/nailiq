@@ -1,92 +1,10 @@
--- A card-save can succeed at Square while NailIQ loses the response. Persist
--- consent before dispatch and reconcile by an exact provider reference. The
--- reconciler is read-only at the provider: it must never re-dispatch CreateCard.
+-- The reconciliation migration at 20260827085412 is already applied in
+-- production. Keep that migration immutable and install the lease-based claim
+-- protocol as a forward migration so existing databases receive the change.
 
 ALTER TABLE public.booking_card_save_operations
-  ADD COLUMN dispatch_prepared_at timestamptz,
-  ADD COLUMN consent_at timestamptz,
-  ADD COLUMN consent_meta jsonb,
-  ADD COLUMN reconciliation_attempt_count integer NOT NULL DEFAULT 0
-    CHECK (reconciliation_attempt_count BETWEEN 0 AND 20),
-  ADD COLUMN next_reconcile_at timestamptz,
-  ADD COLUMN resolution_code text CHECK (
-    resolution_code IS NULL OR resolution_code IN (
-      'provider_card_found', 'provider_card_not_found',
-      'customer_reentry_required', 'manual_review_required'
-    )
-  ),
-  ADD CONSTRAINT booking_card_save_dispatch_consent_check CHECK (
-    (dispatch_prepared_at IS NULL AND consent_at IS NULL AND consent_meta IS NULL)
-    OR (
-      dispatch_prepared_at IS NOT NULL
-      AND consent_at IS NOT NULL
-      AND consent_at BETWEEN created_at - interval '5 minutes'
-        AND dispatch_prepared_at + interval '5 minutes'
-      AND jsonb_typeof(consent_meta) = 'object'
-    )
-  );
-
-CREATE INDEX idx_booking_card_save_operations_reconcile_due
-  ON public.booking_card_save_operations(next_reconcile_at, id)
-  WHERE status IN ('sending', 'unknown') AND next_reconcile_at IS NOT NULL;
-
-CREATE OR REPLACE FUNCTION public.prepare_booking_card_save_dispatch(
-  p_operation_id uuid,
-  p_attempt_token uuid,
-  p_consent_at timestamptz,
-  p_consent_meta jsonb
-)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO ''
-AS $prepare$
-DECLARE
-  v_op public.booking_card_save_operations%ROWTYPE;
-  v_now timestamptz := transaction_timestamp();
-BEGIN
-  IF p_operation_id IS NULL OR p_attempt_token IS NULL OR p_consent_at IS NULL
-     OR p_consent_meta IS NULL OR pg_catalog.jsonb_typeof(p_consent_meta) <> 'object'
-     OR p_consent_at < v_now - interval '5 minutes'
-     OR p_consent_at > v_now + interval '5 minutes' THEN
-    RETURN pg_catalog.jsonb_build_object('ok', false, 'code', 'invalid_dispatch');
-  END IF;
-
-  SELECT * INTO v_op
-  FROM public.booking_card_save_operations
-  WHERE id = p_operation_id
-  FOR UPDATE;
-  IF NOT FOUND THEN
-    RETURN pg_catalog.jsonb_build_object('ok', false, 'code', 'operation_not_found');
-  END IF;
-  IF v_op.attempt_token <> p_attempt_token OR v_op.status <> 'sending' THEN
-    RETURN pg_catalog.jsonb_build_object('ok', false, 'code', 'claim_mismatch');
-  END IF;
-  IF v_op.dispatch_prepared_at IS NOT NULL THEN
-    IF v_op.consent_at IS DISTINCT FROM p_consent_at
-       OR v_op.consent_meta IS DISTINCT FROM p_consent_meta THEN
-      RETURN pg_catalog.jsonb_build_object('ok', false, 'code', 'dispatch_conflict');
-    END IF;
-    RETURN pg_catalog.jsonb_build_object(
-      'ok', true, 'code', 'dispatch_prepared', 'idempotent', true,
-      'provider_reference_key', 'nq-card:' || v_op.id::text
-    );
-  END IF;
-
-  UPDATE public.booking_card_save_operations
-  SET dispatch_prepared_at = v_now,
-      consent_at = p_consent_at,
-      consent_meta = p_consent_meta,
-      next_reconcile_at = v_now + interval '2 minutes',
-      updated_at = v_now
-  WHERE id = v_op.id;
-
-  RETURN pg_catalog.jsonb_build_object(
-    'ok', true, 'code', 'dispatch_prepared', 'idempotent', false,
-    'provider_reference_key', 'nq-card:' || v_op.id::text
-  );
-END;
-$prepare$;
+  ADD COLUMN IF NOT EXISTS reconciliation_token uuid,
+  ADD COLUMN IF NOT EXISTS reconciliation_lease_expires_at timestamptz;
 
 CREATE OR REPLACE FUNCTION public.reconcile_stale_booking_card_save_operations(p_limit integer)
 RETURNS SETOF jsonb
@@ -97,6 +15,7 @@ AS $discover$
 DECLARE
   v_row public.booking_card_save_operations%ROWTYPE;
   v_limit integer := least(greatest(coalesce(p_limit, 0), 0), 25);
+  v_token uuid;
 BEGIN
   FOR v_row IN
     SELECT op.*
@@ -104,14 +23,25 @@ BEGIN
     WHERE op.status IN ('sending', 'unknown')
       AND op.dispatch_prepared_at IS NOT NULL
       AND op.next_reconcile_at <= transaction_timestamp()
+      AND (
+        op.reconciliation_lease_expires_at IS NULL
+        OR op.reconciliation_lease_expires_at <= transaction_timestamp()
+      )
     ORDER BY op.next_reconcile_at, op.id
     LIMIT v_limit
+    FOR UPDATE SKIP LOCKED
   LOOP
+    v_token := extensions.gen_random_uuid();
+    UPDATE public.booking_card_save_operations
+    SET reconciliation_token = v_token,
+        reconciliation_lease_expires_at = transaction_timestamp() + interval '2 minutes',
+        updated_at = transaction_timestamp()
+    WHERE id = v_row.id;
     RETURN NEXT pg_catalog.jsonb_build_object(
       'ok', true,
       'code', 'reconcile_required',
       'operation_id', v_row.id,
-      'attempt_token', v_row.attempt_token,
+      'attempt_token', v_token,
       'provider', v_row.provider,
       'booking_id', v_row.booking_id,
       'salon_id', v_row.salon_id,
@@ -155,7 +85,9 @@ BEGIN
   IF NOT FOUND THEN
     RETURN pg_catalog.jsonb_build_object('ok', false, 'code', 'operation_not_found');
   END IF;
-  IF v_op.attempt_token <> p_attempt_token OR v_op.status NOT IN ('sending', 'unknown')
+  IF v_op.reconciliation_token <> p_attempt_token
+     OR v_op.reconciliation_lease_expires_at <= v_now
+     OR v_op.status NOT IN ('sending', 'unknown')
      OR v_op.dispatch_prepared_at IS NULL THEN
     RETURN pg_catalog.jsonb_build_object('ok', false, 'code', 'claim_mismatch');
   END IF;
@@ -209,7 +141,8 @@ BEGIN
           pg_catalog.convert_to(v_result::text, 'UTF8'), 'sha256'), 'hex'),
         error_code = NULL, result_json = v_result,
         completed_at = coalesce(completed_at, v_now), updated_at = v_now,
-        next_reconcile_at = NULL, resolution_code = 'provider_card_found'
+        next_reconcile_at = NULL, resolution_code = 'provider_card_found',
+        reconciliation_token = NULL, reconciliation_lease_expires_at = NULL
     WHERE id = v_op.id;
     RETURN v_result;
   END IF;
@@ -224,19 +157,19 @@ BEGIN
       END,
       resolution_code = CASE
         WHEN p_outcome = 'manual_review' THEN 'manual_review_required'
-        WHEN v_count >= 3 THEN 'customer_reentry_required'
+        WHEN v_count >= 3 THEN 'manual_review_required'
         ELSE 'provider_card_not_found'
       END,
       error_code = CASE
         WHEN p_outcome = 'manual_review' THEN 'provider_reconciliation_ambiguous'
-        WHEN v_count >= 3 THEN 'customer_reentry_required'
+        WHEN v_count >= 3 THEN 'provider_reconciliation_ambiguous'
         ELSE 'provider_card_not_found'
       END,
       result_json = pg_catalog.jsonb_build_object(
         'ok', false,
         'code', CASE
           WHEN p_outcome = 'manual_review' THEN 'manual_review_required'
-          WHEN v_count >= 3 THEN 'customer_reentry_required'
+          WHEN v_count >= 3 THEN 'manual_review_required'
           ELSE 'reconciliation_pending'
         END,
         'booking_id', v_op.booking_id,
@@ -248,22 +181,24 @@ BEGIN
           pg_catalog.jsonb_build_object('outcome','unknown','operation_id',v_op.id)::text,
           'UTF8'), 'sha256'), 'hex')),
       completed_at = coalesce(completed_at, v_now),
+      reconciliation_token = NULL,
+      reconciliation_lease_expires_at = NULL,
       updated_at = v_now
   WHERE id = v_op.id;
   RETURN pg_catalog.jsonb_build_object(
     'ok', true,
     'code', CASE
       WHEN p_outcome = 'manual_review' THEN 'manual_review_required'
-      WHEN v_count >= 3 THEN 'customer_reentry_required'
+      WHEN v_count >= 3 THEN 'manual_review_required'
       ELSE 'reconciliation_pending'
     END
   );
 END;
 $complete$;
 
-REVOKE ALL ON FUNCTION public.prepare_booking_card_save_dispatch(uuid,uuid,timestamptz,jsonb),
+REVOKE ALL ON FUNCTION public.reconcile_stale_booking_card_save_operations(integer),
   public.complete_booking_card_save_reconciliation(uuid,uuid,text,text,text,text,text)
   FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.prepare_booking_card_save_dispatch(uuid,uuid,timestamptz,jsonb),
+GRANT EXECUTE ON FUNCTION public.reconcile_stale_booking_card_save_operations(integer),
   public.complete_booking_card_save_reconciliation(uuid,uuid,text,text,text,text,text)
   TO service_role;

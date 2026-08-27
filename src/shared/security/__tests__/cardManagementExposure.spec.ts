@@ -27,6 +27,7 @@ const continuationWorker = read("src/shared/booking/reconcileBookingCardContinua
 const continuationMigration = read("supabase/migrations/20260827215428_add_booking_card_continuation_ledger.sql");
 const atomicContinuationMigration = read("supabase/migrations/20260827224306_arm_booking_card_continuation_with_create.sql");
 const cardReconciliationMigration = read("supabase/migrations/20260827085412_add_durable_booking_card_reconciliation.sql");
+const cardReconciliationLeaseMigration = read("supabase/migrations/20260827231246_harden_card_reconciliation_leases.sql");
 
 function requirePattern(source: string, pattern: RegExp, label: string) {
   expect(pattern.test(source), label).toBe(true);
@@ -178,8 +179,9 @@ describe("card_manage exposure and replay boundary", () => {
     requirePattern(atomicContinuationMigration, /resolve_booking_card_management_continuation[\s\S]*idempotency_key = p_create_idempotency_key[\s\S]*public_booking_pricing_fingerprint = p_pricing_fingerprint/i, "assessment resolution is not bound to the exact canonical create receipt");
     requirePattern(atomicContinuationMigration, /v_row\.status = 'armed'[\s\S]*manual_review[\s\S]*assessment_missing/i, "a missing post-commit assessment can disappear without operator review");
     forbidPattern(atomicContinuationMigration, /create_public_booking|create_group_bookings|https?:\/\//i, "atomic continuation can create a booking or contact an external service");
-    requirePattern(cardReconciliationMigration, /reconciliation_lease_expires_at[\s\S]*FOR UPDATE SKIP LOCKED/i, "card response-loss worker has no durable lease");
-    requirePattern(cardReconciliationMigration, /v_count >= 3 THEN 'manual_review_required'/i, "provider no-match is incorrectly treated as proof that customer re-entry is safe");
+    forbidPattern(cardReconciliationMigration, /reconciliation_lease_expires_at/i, "an already-applied production migration was rewritten");
+    requirePattern(cardReconciliationLeaseMigration, /reconciliation_lease_expires_at[\s\S]*FOR UPDATE SKIP LOCKED/i, "card response-loss worker has no durable lease");
+    requirePattern(cardReconciliationLeaseMigration, /v_count >= 3 THEN 'manual_review_required'/i, "provider no-match is incorrectly treated as proof that customer re-entry is safe");
 
     forbidPattern(continuationWorker, /from ["'][^"']*(?:square|stripe|payments?)[^"']*["']/, "continuation worker imports a payment provider");
     forbidPattern(continuationWorker, /\bfetch\s*\(/, "continuation worker can call an external endpoint");
