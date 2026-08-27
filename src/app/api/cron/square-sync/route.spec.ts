@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   integrationLoadError: null as Record<string, unknown> | null,
   healthWriteError: null as Record<string, unknown> | null,
   healthWrites: [] as Array<Record<string, unknown>>,
+  v1AllowsSquareOperationalSync: true,
   runSquareForwardSync: vi.fn(),
   reconcileDeposits: vi.fn(),
   reconcileNoShowFeeLinks: vi.fn(),
@@ -22,6 +23,9 @@ vi.mock("@/shared/security/cronAuthorization", () => ({
 }));
 vi.mock("@/shared/security/cronRunHistory", () => ({
   runTrackedCron: (_worker: string, handler: () => Promise<Response>) => handler(),
+}));
+vi.mock("@/shared/release/v1IntegrationScope", () => ({
+  v1AllowsSquareOperationalSync: () => mocks.v1AllowsSquareOperationalSync,
 }));
 vi.mock("@/shared/integrations/square/looseDb", () => ({
   looseServiceClient: () => ({
@@ -86,6 +90,7 @@ describe("GET /api/cron/square-sync health truth", () => {
     mocks.integrationLoadError = null;
     mocks.healthWriteError = null;
     mocks.healthWrites.length = 0;
+    mocks.v1AllowsSquareOperationalSync = true;
     mocks.runSquareForwardSync.mockResolvedValue({ pulled: 0 });
     mocks.reconcileDeposits.mockResolvedValue({ ok: true, checked: 0, paid: 0 });
     mocks.reconcileNoShowFeeLinks.mockResolvedValue({ ok: true, checked: 0, paid: 0 });
@@ -105,6 +110,25 @@ describe("GET /api/cron/square-sync health truth", () => {
     mocks.processSquareOptionalWebhookInbox.mockResolvedValue([
       { status: "disabled", capability: "inventory" },
     ]);
+  });
+
+  it("returns a healthy V1 skip before database or Square provider access", async () => {
+    mocks.v1AllowsSquareOperationalSync = false;
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      ok: true,
+      skipped: "phase_2_not_available",
+    });
+    expect(mocks.runSquareForwardSync).not.toHaveBeenCalled();
+    expect(mocks.reconcileDeposits).not.toHaveBeenCalled();
+    expect(mocks.reconcileNoShowFeeLinks).not.toHaveBeenCalled();
+    expect(mocks.syncSquareVisitHistory).not.toHaveBeenCalled();
+    expect(mocks.reconcileStaleSquareInventoryCatalogOperations).not.toHaveBeenCalled();
+    expect(mocks.syncSquareInventoryCatalogForSalon).not.toHaveBeenCalled();
+    expect(mocks.processSquareOptionalWebhookInbox).not.toHaveBeenCalled();
   });
 
   it("returns success only when every salon sync succeeds", async () => {

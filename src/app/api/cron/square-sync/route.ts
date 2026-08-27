@@ -13,6 +13,7 @@ import {
   syncSquareInventoryCatalogForSalon,
 } from "@/shared/integrations/square/inventoryWorker";
 import { processSquareOptionalWebhookInbox } from "@/shared/integrations/square/optionalWebhookWorker";
+import { v1AllowsSquareOperationalSync } from "@/shared/release/v1IntegrationScope";
 import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
 import { runTrackedCron } from "@/shared/security/cronRunHistory";
 
@@ -52,6 +53,9 @@ export async function GET(req: NextRequest) {
   const authorizationError = requireCronAuthorization(req);
   if (authorizationError) return authorizationError;
   return runTrackedCron("square_sync", async () => {
+  if (!v1AllowsSquareOperationalSync()) {
+    return NextResponse.json({ ok: true, skipped: "phase_2_not_available" });
+  }
 
   const supabase = looseServiceClient();
   const { data: integrations, error } = await supabase
