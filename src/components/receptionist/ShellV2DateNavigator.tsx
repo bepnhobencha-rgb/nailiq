@@ -44,14 +44,6 @@ function formatDay(ymd: string, locale: string): string {
   }).format(ymdToLocalDate(ymd));
 }
 
-function formatCompactDay(ymd: string, locale: string): string {
-  return new Intl.DateTimeFormat(locale, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  }).format(ymdToLocalDate(ymd));
-}
-
 function formatWeek(mondayYmd: string, locale: string): string {
   const nextMonday = ymdToLocalDate(shiftWeek(mondayYmd, 1));
   nextMonday.setDate(nextMonday.getDate() - 1);
@@ -128,8 +120,6 @@ export function ShellV2DateNavigator({
       : mode === "week"
         ? formatWeek(weekMondayYmd, locale)
         : formatMonth(monthFirstYmd, locale);
-  const compactDisplayLabel =
-    mode === "day" ? formatCompactDay(dayYmd, locale) : displayLabel;
   const isCurrentPeriod = anchorYmd === currentAnchor;
 
   return (
@@ -165,17 +155,7 @@ export function ShellV2DateNavigator({
           )}
         >
           <CalendarDays className="h-4 w-4 shrink-0 text-nq-primary" aria-hidden />
-          <span
-            data-testid="shell-v2-date-label-compact"
-            className="truncate text-xs font-semibold capitalize sm:hidden"
-            aria-hidden
-          >
-            {compactDisplayLabel}
-          </span>
-          <span
-            data-testid="shell-v2-date-label-full"
-            className="hidden truncate text-sm font-semibold capitalize sm:inline"
-          >
+          <span className="truncate text-xs font-semibold capitalize sm:text-sm">
             {displayLabel}
           </span>
           <ChevronDown

@@ -454,6 +454,19 @@ describe("public group booking authoritative server receipt", () => {
     ).resolves.toEqual({ ok: false, code: "pricing_invalid" });
   });
 
+  it("preserves a quote-time slot conflict for receptionist recovery", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { success: false, code: "slot_conflict" },
+      error: null,
+    });
+    createServiceRoleClientMock.mockReturnValue({ rpc });
+
+    await expect(resolveGroupBookingQuote(serverRequest)).resolves.toEqual({
+      ok: false,
+      code: "slot_conflict",
+    });
+  });
+
   it("preserves exact replay and changed-payload conflict outcomes", async () => {
     const replayRpc = vi.fn().mockResolvedValue({
       data: {

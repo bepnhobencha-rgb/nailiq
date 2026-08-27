@@ -78,6 +78,9 @@ import {
   type GroupBookingPricingRequest,
 } from "@/shared/booking/groupBookingPricing";
 import { useBookingFunnelAnalytics } from "@/shared/analytics/useBookingFunnelAnalytics";
+import { v1AllowsNoShowCardOnFile } from "@/shared/release/v1IntegrationScope";
+
+const CUSTOMER_PAYMENT_GATEWAY_ENABLED = v1AllowsNoShowCardOnFile();
 
 /**
  * Group booking — AI Arrival-First redesign (May 2026).
@@ -400,6 +403,7 @@ export function BookingGroupFlow({
     bookingIds: string[];
     pricing: GroupBookingPricingQuote;
     cardManagementToken: string | null;
+    cardManagementPending: boolean;
   } | null>(null);
   /** Party Link URL — set asynchronously after submitGroupBooking succeeds. */
   const [partyLinkUrl, setPartyLinkUrl] = useState<string | null>(null);
@@ -816,7 +820,7 @@ export function BookingGroupFlow({
   // individual flow — drives the card-entry form shown BEFORE the group is
   // created.
   useEffect(() => {
-    if (step !== 5) {
+    if (!CUSTOMER_PAYMENT_GATEWAY_ENABLED || step !== 5) {
       return;
     }
     const svcId = members[0]?.serviceId;
@@ -1275,18 +1279,14 @@ export function BookingGroupFlow({
           bookingIds: res.bookingIds,
           pricing: res.pricing,
           cardManagementToken: res.cardManagementToken,
+          cardManagementPending: res.cardManagementPending,
         });
         // Only an acknowledged success starts a new logical booking intent.
         idempotencyKeyRef.current = resetGroupBookingIdempotency(crypto.randomUUID());
         setStep("success");
-        // No-show card for the organizer (lead = members[0], the only row with
-        // a phone). Option A: a card captured at the confirm step is saved to
-        // the lead now. CRITICAL — this must NOT silently fail: the booking is
-        // already created, so a swallowed save error would leave a confirmed
-        // group with no card and nobody the wiser. We AWAIT the save and, on any
-        // failure, flag the lead so the desk collects the card manually (never a
-        // silent loss). The flag endpoint is also the path when no card was
-        // captured (not required → no-op).
+        // The trusted create boundary has already settled the organizer card
+        // or returned a success-state pending marker. Clear the browser-held
+        // source only after that committed group receipt is acknowledged.
         cardTokenRef.current = null;
         cardVerificationRef.current = null;
         // FIX 08 — drop the `?mode=group` query so a browser back
@@ -1355,14 +1355,6 @@ export function BookingGroupFlow({
         setPricingQuote(res.pricing);
         setPricingQuoteKey(groupBookingPricingIntentKey(request));
         setErrorMessage("The party total changed. Review the updated receipt, then confirm again.");
-        return;
-      }
-      if (res.reason === "card_management_pending") {
-        // The party may already be committed. Keep the current group key and
-        // captured source/verification token so the next explicit Confirm
-        // replays and reconciles the exact server operation.
-        setErrorMessage(t.noShowCardError ?? "Card verification is still being completed. Please confirm again.");
-        setStep(5);
         return;
       }
       if (res.reason === "otp_required" || res.reason === "otp_invalid") {
@@ -4426,6 +4418,7 @@ function SuccessPanel({
     bookingIds: string[];
     pricing: GroupBookingPricingQuote;
     cardManagementToken: string | null;
+    cardManagementPending: boolean;
   };
   showStaff: boolean;
   /** Couple/group asked to be seated together — warm confirmation line. */
@@ -4563,6 +4556,17 @@ function SuccessPanel({
           className="mt-4 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-400"
         >
           {groupCopy.partyLinkUnavailable}
+        </p>
+      ) : null}
+
+      {successResult.cardManagementPending && !successResult.cardManagementToken ? (
+        <p
+          className="nq-booking-glass mt-5 rounded-[1.35rem] px-5 py-4 text-left text-sm leading-relaxed text-[var(--booking-text)]"
+          data-testid="booking-group-card-pending-notice"
+          role="status"
+          aria-live="polite"
+        >
+          {t.cardManagementPendingNotice}
         </p>
       ) : null}
 

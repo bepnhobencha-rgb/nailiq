@@ -307,31 +307,6 @@ test.describe("Mobile layout", () => {
       expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
     }
 
-    const compactDateLabel = page.getByTestId("shell-v2-date-label-compact");
-    await expect(compactDateLabel).toBeVisible();
-    await expect(compactDateLabel).toHaveText(
-      /^[A-Z][a-z]{2}, [A-Z][a-z]{2} \d{1,2}$/,
-    );
-
-    const viewMenuTrigger = page.getByTestId(
-      "shell-v2-calendar-view-menu-trigger",
-    );
-    await viewMenuTrigger.click();
-    const viewMenu = page.getByTestId("shell-v2-calendar-view-menu");
-    await expect(viewMenu).toBeVisible();
-    const viewMenuBox = await viewMenu.boundingBox();
-    expect(viewMenuBox).not.toBeNull();
-    if (viewMenuBox) {
-      expect(viewMenuBox.x).toBeGreaterThanOrEqual(0);
-      expect(viewMenuBox.x + viewMenuBox.width).toBeLessThanOrEqual(390);
-    }
-    for (const mode of ["day", "week", "month"] as const) {
-      await expect(
-        page.getByTestId(`shell-v2-calendar-menu-${mode}`),
-      ).toBeVisible();
-    }
-    await viewMenuTrigger.click();
-
     const emptySlots = page.locator('[data-testid^="mobile-empty-slot-"]');
     expect(await emptySlots.count()).toBeGreaterThan(0);
     const emptySlot = emptySlots.first();

@@ -9,6 +9,10 @@ import {
   checkBookingConflict,
 } from "@/shared/lib/conflictCheck";
 import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit";
+import {
+  bookingChannelFor,
+  runBookingOrchestrator,
+} from "@/shared/booking/bookingOrchestrator";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
@@ -107,6 +111,17 @@ import {
   type QueuePriority,
   type QueueSource,
 } from "@/shared/types";
+
+const DESK_BOOKING_CHANNEL = bookingChannelFor({
+  gateway: "desk",
+  intent: "individual",
+  operation: "commit",
+});
+const WALKIN_BOOKING_CHANNEL = bookingChannelFor({
+  gateway: "walkin",
+  intent: "operational_arrival",
+  operation: "commit",
+});
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -432,6 +447,10 @@ export async function addWalkinToQueue(
     recovery?: ArchivedBookingRecoveryInput;
   },
 ): Promise<OkBooking | { ok: false; error: string }> {
+  await runBookingOrchestrator(
+    { gateway: "walkin", intent: "operational_arrival", operation: "commit" },
+    () => undefined,
+  );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
 
@@ -565,7 +584,7 @@ export async function addWalkinToQueue(
     end_time_utc: null,
     status: "waiting",
     source: "walkin",
-    booking_channel: "walkin",
+    booking_channel: WALKIN_BOOKING_CHANNEL,
     joined_queue_at: joinedAt,
     staff_request_note: note,
     staff_requested_by_client: staffRequestedByClient,
@@ -1597,32 +1616,70 @@ export async function createDeskGroup(
     return { ok: false, reason: "idempotency_conflict" };
   }
   if (replay.kind === "unavailable") {
+    ErrorReporter.captureMessage("desk group creation boundary unavailable", {
+      level: "error",
+      tags: {
+        "booking.flow": "desk_group",
+        "booking.stage": "replay",
+        "booking.fail_reason": "replay_unavailable",
+      },
+      extra: { salonId: ctx.salon.id },
+    });
     return { ok: false, reason: "server_error" };
   }
 
   let otpSessionId: string | null = null;
   try {
-    const { data: srow } = await db
+    const { data: srow, error: salonOtpError } = await db
       .from("salons")
       .select("phone_otp_enabled")
       .eq("id", ctx.salon.id)
       .maybeSingle();
+    if (salonOtpError) {
+      ErrorReporter.captureMessage("desk group OTP policy lookup failed", {
+        level: "error",
+        tags: {
+          "booking.flow": "desk_group",
+          "booking.stage": "otp_policy",
+          "booking.fail_reason": salonOtpError.code || "query_failed",
+        },
+        extra: { salonId: ctx.salon.id },
+      });
+    }
     if (
       (srow as { phone_otp_enabled?: boolean } | null)?.phone_otp_enabled ===
       true
     ) {
       const v = validateGuestPhone(input.members[0]?.phone ?? "");
       if (v.ok) {
-        const { data: otpRow } = await db
+        const { data: otpRow, error: otpInsertError } = await db
           .from("phone_otp_sessions")
           .insert({ phone: v.digits, salon_id: ctx.salon.id } as never)
           .select("id")
           .single();
+        if (otpInsertError) {
+          ErrorReporter.captureMessage("desk group OTP session mint failed", {
+            level: "error",
+            tags: {
+              "booking.flow": "desk_group",
+              "booking.stage": "otp_mint",
+              "booking.fail_reason": otpInsertError.code || "insert_failed",
+            },
+            extra: { salonId: ctx.salon.id },
+          });
+        }
         otpSessionId = (otpRow as { id?: string } | null)?.id ?? null;
       }
     }
-  } catch {
-    /* mint failed → submitGroupBooking will surface otp_required, handled by UI */
+  } catch (error) {
+    ErrorReporter.captureException(error, {
+      tags: {
+        "booking.flow": "desk_group",
+        "booking.stage": "otp_mint",
+      },
+      extra: { salonId: ctx.salon.id },
+    });
+    /* submitGroupBooking will surface otp_required; the UI keeps the form open. */
   }
 
   const groupParams = {
@@ -1634,7 +1691,7 @@ export async function createDeskGroup(
     otpSessionId,
     // Front-desk-entered party — keeps the channel breakdown honest instead of
     // letting desk groups fall through to the 'online' default.
-    bookingChannel: "desk" as const,
+    bookingChannel: DESK_BOOKING_CHANNEL,
   };
   const result: GroupBookingResult = replay.kind === "replayed"
     ? {
@@ -1643,6 +1700,7 @@ export async function createDeskGroup(
         bookingIds: replay.bookingIds,
         pricing: replay.pricing,
         cardManagementToken: null,
+        cardManagementPending: false,
       }
     : wantsAfterHours && ctx.kind === "member" && ctx.userId
       ? await submitGroupBooking(groupParams, {
@@ -1670,13 +1728,35 @@ export async function createDeskGroup(
       : await submitGroupBooking(groupParams, {
           kind: "canonical_desk",
           createGroupBookings: async (request) => {
-            const quoted = await resolveGroupBookingQuote(request);
+            // The create contract carries an idempotency key, but the strict
+            // quote contract intentionally does not. Passing the create object
+            // through unchanged makes the quote fail as `invalid_request`
+            // before it can reach the authoritative pricing RPC.
+            const quoteRequest = {
+              salonId: request.salonId,
+              bookings: request.bookings,
+              voucherCode: request.voucherCode,
+              applyEmailDiscount: request.applyEmailDiscount,
+            };
+            const quoted = await resolveGroupBookingQuote(quoteRequest);
             if (!quoted.ok) {
+              ErrorReporter.captureMessage("desk group authoritative quote failed", {
+                level: "error",
+                tags: {
+                  "booking.flow": "desk_group",
+                  "booking.stage": "quote",
+                  "booking.fail_reason": quoted.code,
+                },
+                extra: { salonId: ctx.salon.id },
+              });
               return {
                 ok: false,
-                code: quoted.code === "pricing_invalid"
-                  ? "pricing_invalid" as const
-                  : "create_unavailable" as const,
+                code:
+                  quoted.code === "pricing_invalid"
+                    ? "pricing_invalid" as const
+                    : quoted.code === "slot_conflict"
+                      ? "slot_conflict" as const
+                      : "create_unavailable" as const,
               };
             }
             const created = await createGroupBookingsAuthoritative({
@@ -1698,12 +1778,30 @@ export async function createDeskGroup(
               created.code === "pricing_changed" ||
               created.code === "pricing_invalid"
             ) {
+              ErrorReporter.captureMessage("desk group authoritative create rejected", {
+                level: created.code === "slot_conflict" ? "warning" : "error",
+                tags: {
+                  "booking.flow": "desk_group",
+                  "booking.stage": "create",
+                  "booking.fail_reason": created.code,
+                },
+                extra: { salonId: ctx.salon.id },
+              });
               return {
                 ok: false,
                 code: created.code,
                 ...(created.quote ? { quote: created.quote } : {}),
               };
             }
+            ErrorReporter.captureMessage("desk group authoritative create unavailable", {
+              level: "error",
+              tags: {
+                "booking.flow": "desk_group",
+                "booking.stage": "create",
+                "booking.fail_reason": created.code,
+              },
+              extra: { salonId: ctx.salon.id },
+            });
             return { ok: false, code: "create_unavailable" };
           },
         });
@@ -1717,7 +1815,7 @@ export async function createDeskGroup(
     await stampGroupBookingIdentity({
       bookingIds: replay.bookingIds,
       organizerBookingId: leadId,
-      bookingChannel: "desk",
+      bookingChannel: DESK_BOOKING_CHANNEL,
       otpSessionId,
       ownerNotify: {
         salonId: ctx.salon.id,
@@ -2817,11 +2915,11 @@ function scheduleDeskBookingReconciliation(input: {
     reconcileCommittedBooking({
       bookingId: input.bookingId,
       salonId: input.salonId,
-      channel: "desk",
+      channel: DESK_BOOKING_CHANNEL,
       stamp: async () => {
         const channelUpdate: Record<string, unknown> = {
           walkin_source: "phone",
-          booking_channel: "desk",
+          booking_channel: DESK_BOOKING_CHANNEL,
         };
         if (input.staffRequestedByClient) {
           channelUpdate.staff_requested_by_client = true;
@@ -2910,6 +3008,10 @@ export async function addDeskAppointment(
     recovery?: ArchivedBookingRecoveryInput;
   },
 ): Promise<OkDeskBooking | { ok: false; error: string }> {
+  await runBookingOrchestrator(
+    { gateway: "desk", intent: "individual", operation: "commit" },
+    () => undefined,
+  );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
   if (ctx.salon.id !== String(input.salonId).trim())
@@ -3644,7 +3746,7 @@ export async function addDeskAppointment(
         source: "appointment",
         price_cents: deskPriceCents ?? svc.price_cents ?? null,
         walkin_source: "phone",
-        booking_channel: "desk",
+        booking_channel: DESK_BOOKING_CHANNEL,
         staff_requested_by_client: input.staffRequestedByClient === true,
         resource_id: resolvedResourceId,
         after_hours_minutes: afterHoursMinutes,
@@ -3929,7 +4031,7 @@ export async function addDeskAppointment(
     try {
       const channelUpdate: Record<string, unknown> = {
         walkin_source: "phone",
-        booking_channel: "desk",
+        booking_channel: DESK_BOOKING_CHANNEL,
       };
       if (input.staffRequestedByClient === true) {
         channelUpdate.staff_requested_by_client = true;

@@ -36,6 +36,11 @@ vi.mock("@/shared/integrations/square/deposits", () => ({
 vi.mock("@/shared/integrations/square/publicDepositReconciliation", () => ({
   reconcileSquarePublicDepositResponseLoss: vi.fn(),
 }));
+vi.mock("@/shared/booking/reconcileBookingCardSaveOperations", () => ({
+  reconcileBookingCardSaveOperations: vi.fn(async () => ({
+    ok: true, processed: 0, reconciled: 0, unresolved: 0,
+  })),
+}));
 
 import { GET } from "./route";
 

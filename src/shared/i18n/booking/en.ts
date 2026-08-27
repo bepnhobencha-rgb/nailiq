@@ -58,6 +58,8 @@ export const bookingEn = {
   noShowCardSaving: "Saving…",
   noShowCardSaved: "Card saved — you're only charged {fee} if you no-show.",
   noShowCardError: "Could not save the card. Please check your details.",
+  cardManagementPendingNotice:
+    "Your booking is confirmed. The no-show card step did not finish. Do not book again; contact the salon if you need help.",
   cardVerificationError:
     "We couldn't verify this card. Check the card details and postal code, then try again. If it still fails, open this page in Safari or Chrome.",
   cardWebviewHint:
