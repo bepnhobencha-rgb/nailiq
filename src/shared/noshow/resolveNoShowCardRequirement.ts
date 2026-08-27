@@ -4,6 +4,7 @@ import { looseServiceClient, type Row } from "@/shared/integrations/square/loose
 import { parseCardGateRules, cardRequiredByHistory } from "@/shared/noshow/cardGateRules";
 import { resolvePaymentProvider } from "@/shared/integrations/payments";
 import { getSquareConfig } from "@/shared/integrations/square/client";
+import { v1AllowsCustomerPaymentGateway } from "@/shared/release/v1IntegrationScope";
 
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
 const str = (v: unknown): string => (v == null ? "" : String(v));
@@ -41,6 +42,12 @@ export async function resolveNoShowCardRequirement(args: {
    *  it matches what the server saves on the organizer's card. */
   groupServiceIds?: string[];
 }): Promise<NoShowCardRequirement> {
+  // Product-level V1 boundary: do not make the browser wait on a database or
+  // provider capability that cannot be used in this release. Keep this guard
+  // ahead of every client construction/read as a second line of defense behind
+  // the client-side gate.
+  if (!v1AllowsCustomerPaymentGateway()) return { required: false };
+
   try {
     const db = looseServiceClient();
 

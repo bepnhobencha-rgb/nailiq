@@ -1,5 +1,6 @@
 import "server-only";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { v1AllowsCustomerPaymentGateway } from "@/shared/release/v1IntegrationScope";
 
 /**
  * Unified no-show card gate for EVERY booking-creation path.
@@ -21,6 +22,13 @@ export async function ensureNoShowCardRequirement(
   bookingId: string,
   options?: { strict?: boolean },
 ): Promise<{ required: boolean; feeCents: number }> {
+  // V1 keeps payment methods entirely provider-owned. This is a definitive
+  // product state, not an outage: do not probe a provider, flag the booking, or
+  // manufacture a card-pending recovery item while the gateway is hard off.
+  if (!v1AllowsCustomerPaymentGateway()) {
+    return { required: false, feeCents: 0 };
+  }
+
   try {
     const id = (bookingId ?? "").trim();
     if (!id) {

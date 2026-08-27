@@ -78,6 +78,9 @@ import {
   type GroupBookingPricingRequest,
 } from "@/shared/booking/groupBookingPricing";
 import { useBookingFunnelAnalytics } from "@/shared/analytics/useBookingFunnelAnalytics";
+import { v1AllowsCustomerPaymentGateway } from "@/shared/release/v1IntegrationScope";
+
+const CUSTOMER_PAYMENT_GATEWAY_ENABLED = v1AllowsCustomerPaymentGateway();
 
 /**
  * Group booking — AI Arrival-First redesign (May 2026).
@@ -816,7 +819,7 @@ export function BookingGroupFlow({
   // individual flow — drives the card-entry form shown BEFORE the group is
   // created.
   useEffect(() => {
-    if (step !== 5) {
+    if (!CUSTOMER_PAYMENT_GATEWAY_ENABLED || step !== 5) {
       return;
     }
     const svcId = members[0]?.serviceId;

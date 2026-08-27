@@ -21,6 +21,7 @@ type ClaimedOperation = {
   operationId: string;
   attemptToken: string;
   providerIdempotencyKey: string;
+  attemptReplay: boolean;
   bookingId: string;
   salonId: string;
   provider: "square" | "stripe";
@@ -93,6 +94,7 @@ function parseClaim(value: unknown): ClaimedOperation | CardOperationResult {
   const operationId = cleanString(valueRow.operation_id);
   const attemptToken = cleanString(valueRow.attempt_token);
   const providerIdempotencyKey = cleanString(valueRow.provider_idempotency_key);
+  const attemptReplay = valueRow.attempt_replay;
   const bookingId = cleanString(valueRow.booking_id);
   const salonId = cleanString(valueRow.salon_id);
   const provider = valueRow.provider === "square" || valueRow.provider === "stripe"
@@ -107,7 +109,7 @@ function parseClaim(value: unknown): ClaimedOperation | CardOperationResult {
   const salonName = cleanString(material?.salon_name);
   if (!operationId || !attemptToken || !providerIdempotencyKey || !bookingId || !salonId ||
       !UUID_RE.test(operationId) || !UUID_RE.test(attemptToken) ||
-      !UUID_RE.test(providerIdempotencyKey) ||
+      !UUID_RE.test(providerIdempotencyKey) || typeof attemptReplay !== "boolean" ||
       !UUID_RE.test(bookingId) || !UUID_RE.test(salonId) || !provider || !mode || !material ||
       typeof feeCents !== "number" || !Number.isSafeInteger(feeCents) || feeCents < 0 ||
       !currency || currency.length > 8 || !salonName || salonName.length > 200) {
@@ -117,6 +119,7 @@ function parseClaim(value: unknown): ClaimedOperation | CardOperationResult {
     operationId,
     attemptToken,
     providerIdempotencyKey,
+    attemptReplay,
     bookingId,
     salonId,
     provider,
@@ -289,6 +292,18 @@ export async function saveCardWithManagementCapability(input: {
   if (claim.provider !== input.provider || claim.mode !== "save_card") {
     return { ok: false, code: "invalid_card_operation_response" };
   }
+  // A replayed `sending` claim means the earlier request may already have
+  // reached the provider. The stored source fingerprint is not a receipt and a
+  // fresh dispatch would be blind, even with the same idempotency key. Leave it
+  // for read/reconciliation or manual recovery instead.
+  if (claim.attemptReplay) {
+    return {
+      ok: false,
+      code: "reconciliation_required",
+      bookingId: claim.bookingId,
+      salonId: claim.salonId,
+    };
+  }
   let provider: PaymentProvider | null;
   try {
     provider = await resolvePaymentProvider(claim.salonId, { strict: true });
@@ -373,6 +388,14 @@ export async function createStripeSetupWithManagementCapability(input: {
   }
   if (claim.provider !== "stripe" || claim.mode !== "setup_intent") {
     return { ok: false, code: "invalid_card_operation_response" };
+  }
+  if (claim.attemptReplay) {
+    return {
+      ok: false,
+      code: "reconciliation_required",
+      bookingId: claim.bookingId,
+      salonId: claim.salonId,
+    };
   }
   let provider: PaymentProvider | null;
   try {

@@ -33,6 +33,8 @@ import {
 import { resolveAnyStaffForPublicBooking } from "@/shared/booking/publicBookingAnyStaff";
 import type { PaidPublicDeposit } from "@/shared/payments/publicDepositTypes";
 import { runBoundedPublicBookingRpc } from "@/shared/booking/publicBookingRpcBoundary";
+import { settleCommittedBookingCardManagement } from "@/shared/booking/settleCommittedBookingCardManagement";
+import { v1AllowsCustomerPaymentGateway } from "@/shared/release/v1IntegrationScope";
 
 export type BookingParams = {
   shopSlug: string;
@@ -84,8 +86,8 @@ export type BookingParams = {
   paidDeposit?: PaidPublicDeposit | null;
   /** Option A no-show card gate: Web Payments SDK card token captured IN the
    *  confirm step. When present, the card is saved server-side right after the
-   *  booking is created and BEFORE any confirmation (SMS/email) — if the save
-   *  fails the booking is cancelled and the customer sees an error. */
+   *  booking is created and BEFORE any confirmation (SMS/email). A card-step
+   *  failure never reverses the already-committed booking outcome. */
   noShowCardSourceId?: string | null;
   /** Legacy Square verification token paired with `noShowCardSourceId`.
    *  Current Web Payments SDK flows embed STORE verification in tokenization;
@@ -147,6 +149,8 @@ export type BookingResult = {
   pricing: PublicBookingPricingQuote;
   /** Action-scoped post-booking card proof. Null until trusted mint succeeds. */
   cardManagementToken: string | null;
+  /** True when no-show card work remains after the booking was committed. */
+  cardManagementPending: boolean;
 };
 
 export class BookingConflictError extends Error {
@@ -285,6 +289,7 @@ async function executePublicBooking(
         totalCents: 0, taxBreakdown: [], addonLines: [], discountLines: [],
       },
       cardManagementToken: null,
+      cardManagementPending: false,
     };
   }
 
@@ -995,67 +1000,30 @@ async function executePublicBooking(
     throw new Error("booking_rpc_empty");
   }
 
-  let cardManagementToken: string | null = null;
-  let cardCapabilityResolved = false;
-  try {
-    const response = await fetch("/api/booking/card-capability", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        salonId: String(salon.id),
-        bookingId,
-        idempotencyKey: createIdempotencyKey,
-        pricingFingerprint: authoritativePricing.pricingFingerprint,
-      }),
-    });
-    const value = await response.json().catch(() => null) as { ok?: boolean; token?: string | null } | null;
-    if (response.ok && value?.ok === true && typeof value.token === "string") {
-      cardManagementToken = value.token;
-    }
-    if (response.ok && value?.ok === true) cardCapabilityResolved = true;
-  } catch {
-    cardManagementToken = null;
-  }
-  if (!cardCapabilityResolved) throw new Error("card_management_pending");
-
-  // Option A no-show card gate: a required-card booking captured the card IN the
-  // confirm step. Save it NOW — before any confirmation goes out. If the
-  // provider/receipt path remains unresolved after the booking commit, surface
-  // recoverable `card_management_pending`; the next explicit Confirm reuses
-  // the exact create/card keys and can never create a second appointment.
-  if (params.noShowCardSourceId && bookingId) {
-    if (cardManagementToken && params.noShowConsent === true) {
-      const response = await fetch("/api/booking/square-save-card", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          token: cardManagementToken,
-          requestId: createIdempotencyKey,
-          provider: "square",
-          sourceId: params.noShowCardSourceId,
-          verificationToken: params.noShowCardVerificationToken ?? undefined,
-          consent: true,
-        }),
-      }).catch(() => null);
-      const value = response
-        ? await response.json().catch(() => null) as { ok?: boolean } | null
-        : null;
-      if (response?.ok && value?.ok === true) cardManagementToken = null;
-      else throw new Error("card_management_pending");
-    }
-  } else if (params.noShowReuseSavedCard && bookingId) {
-    // Returning OTP-verified customer reused their existing card on file. Same
-    // non-fatal contract — a reuse glitch flags the booking, never cancels it.
-    const reused = await reuseNoShowCardAction({
+  // The canonical booking receipt above is the commitment point. Card work is
+  // now a card-only continuation: an outage or ambiguous provider receipt must
+  // never turn that committed booking into a false failure or send the customer
+  // back through create. The helper performs at most one provider mutation and
+  // returns a truthful unresolved state without retry; V1 resolves it as not
+  // applicable before any capability or provider work.
+  const { cardManagementToken, cardManagementPending } =
+    await settleCommittedBookingCardManagement({
+      customerPaymentGatewayEnabled: v1AllowsCustomerPaymentGateway(),
+      salonId: String(salon.id),
       bookingId,
-      otpSessionId: resolvedOtpSessionId,
+      createIdempotencyKey,
+      pricingFingerprint: authoritativePricing.pricingFingerprint,
+      cardSourceId: params.noShowCardSourceId,
+      cardVerificationToken: params.noShowCardVerificationToken,
       consent: params.noShowConsent === true,
+      reuseSavedCard: params.noShowReuseSavedCard
+        ? () => reuseNoShowCardAction({
+            bookingId,
+            otpSessionId: resolvedOtpSessionId,
+            consent: params.noShowConsent === true,
+          })
+        : undefined,
     });
-    if (!reused.ok) {
-      console.error("[submitPublicBooking] card reuse failed — booking kept + flagged:", reused.reason, bookingId);
-    }
-    if (reused.ok) cardManagementToken = null;
-  }
 
   // Finalize identity evidence only after the card/reuse step, which needs the
   // OTP session unconsumed. The narrow RPC binds the unguessable booking id to
@@ -1320,6 +1288,7 @@ async function executePublicBooking(
     discountLines: authoritativePricing.discountLines,
     pricing: authoritativePricing,
     cardManagementToken,
+    cardManagementPending,
   };
 }
 

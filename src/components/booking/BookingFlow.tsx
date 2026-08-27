@@ -212,6 +212,7 @@ export function BookingFlow({
         displayEndUtc={flow.bookingResult.endTimeUtc}
         bookingId={flow.bookingResult.bookingId}
         cardManagementToken={flow.bookingResult.cardManagementToken}
+        cardManagementPending={flow.bookingResult.cardManagementPending}
         salonPhone={salon.salonPhone}
         salonTimezone={salon.timezone}
         pricing={flow.bookingResult.pricing}

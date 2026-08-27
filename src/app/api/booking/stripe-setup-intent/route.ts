@@ -4,6 +4,7 @@ import { createStripeSetupWithManagementCapability } from "@/shared/booking/book
 import { consumeBookingManagementRateLimit } from "@/shared/booking/bookingManagementRateLimit";
 import { readJsonObjectWithLimit } from "@/shared/security/readJsonObjectWithLimit";
 import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
+import { v1AllowsCustomerPaymentGateway } from "@/shared/release/v1IntegrationScope";
 
 export const runtime = "nodejs";
 
@@ -24,6 +25,9 @@ export async function POST(request: Request) {
   const token = typeof body?.token === "string" ? body.token.trim() : "";
   const requestId = typeof body?.requestId === "string" ? body.requestId.trim() : "";
   if (!token || !requestId) return json({ ok: false, code: "invalid_request" }, 400);
+  if (!v1AllowsCustomerPaymentGateway()) {
+    return json({ ok: false, code: "phase_2_not_available" }, 503);
+  }
   const rate = await consumeBookingManagementRateLimit({
     request, tokenId: token, action: "card_manage", phase: "mutate",
   });

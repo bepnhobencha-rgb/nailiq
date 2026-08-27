@@ -4,6 +4,7 @@ import { saveCardWithManagementCapability } from "@/shared/booking/bookingCardMa
 import { consumeBookingManagementRateLimit } from "@/shared/booking/bookingManagementRateLimit";
 import { readJsonObjectWithLimit } from "@/shared/security/readJsonObjectWithLimit";
 import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
+import { v1AllowsCustomerPaymentGateway } from "@/shared/release/v1IntegrationScope";
 
 export const runtime = "nodejs";
 
@@ -30,6 +31,11 @@ export async function POST(request: Request) {
     : undefined;
   if (!token || !requestId || !sourceId || !provider || body?.consent !== true) {
     return json({ ok: false, code: "invalid_request" }, 400);
+  }
+  // A stale Phase 2 capability must not claim a durable operation while the
+  // V1 gateway is disabled. Keep this ahead of rate-limit/database/provider work.
+  if (!v1AllowsCustomerPaymentGateway()) {
+    return json({ ok: false, code: "phase_2_not_available" }, 503);
   }
   const rate = await consumeBookingManagementRateLimit({
     request, tokenId: token, action: "card_manage", phase: "mutate",
