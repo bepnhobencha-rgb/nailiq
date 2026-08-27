@@ -69,7 +69,7 @@ import { execFileSync } from "node:child_process";
  * public booking snapshot plus two service-role-only dashboard projections.
  * The 20260825124500 MQA-0148 dashboard-shell migration adds one
  * service-role-only shell projection.
- * The 20260826204500 group-booking resource migration adds one atomic
+ * The 20260826235226 group-booking resource migration adds one atomic
  * resource-assignment trigger function and one booking trigger.
  * The 20260827085412/20260827215428 card-continuation migrations add leased
  * response-loss reconciliation plus one PII-free, service-role-only
