@@ -23,6 +23,9 @@ const cardCapabilityMigration = read("supabase/migrations/20260820140000_add_act
 const cardManagement = read("src/shared/booking/bookingCardManagement.ts");
 const cardCapabilityRoute = read("src/app/api/booking/card-capability/route.ts");
 const bookingCapabilities = read("src/shared/booking/bookingManagementCapabilities.ts");
+const continuationWorker = read("src/shared/booking/reconcileBookingCardContinuations.ts");
+const continuationMigration = read("supabase/migrations/20260827215428_add_booking_card_continuation_ledger.sql");
+const cardReconciliationMigration = read("supabase/migrations/20260827085412_add_durable_booking_card_reconciliation.sql");
 
 function requirePattern(source: string, pattern: RegExp, label: string) {
   expect(pattern.test(source), label).toBe(true);
@@ -160,5 +163,19 @@ describe("card_manage exposure and replay boundary", () => {
     requirePattern(groupSubmit, /cardManagementPending:\s*publicCardManagementPending/, "committed group does not carry card pending into its success result");
     requirePattern(groupFlow, /cardManagementPending:\s*res\.cardManagementPending[\s\S]{0,500}setStep\(["']success["']\)/, "committed group does not carry card pending into Success");
     requirePattern(groupFlow, /booking-group-card-pending-notice[\s\S]{0,500}cardManagementPendingNotice/, "group Success does not explain the card-only pending state");
+  });
+
+  it("persists pending continuations without giving the continuation worker a provider path", () => {
+    requirePattern(cardCapabilityRoute, /recordCommittedBookingCardPending/, "individual capability failure has no durable continuation");
+    requirePattern(groupCreateRoute, /recordCommittedBookingCardPending/, "group post-commit failure has no durable continuation");
+    requirePattern(continuationMigration, /booking_card_management_continuations[\s\S]*FOR UPDATE SKIP LOCKED/i, "continuation reconciliation is not concurrency safe");
+    requirePattern(continuationMigration, /UNIQUE \(booking_id\)[\s\S]*UNIQUE \(salon_id, create_idempotency_key\)/i, "continuation identity can duplicate a canonical booking");
+    requirePattern(continuationMigration, /booking_card_save_operations_booking_request_unique[\s\S]*booking_id, request_id, provider, mode/i, "capability rotation can create a second provider operation identity");
+    requirePattern(cardReconciliationMigration, /reconciliation_lease_expires_at[\s\S]*FOR UPDATE SKIP LOCKED/i, "card response-loss worker has no durable lease");
+    requirePattern(cardReconciliationMigration, /v_count >= 3 THEN 'manual_review_required'/i, "provider no-match is incorrectly treated as proof that customer re-entry is safe");
+
+    forbidPattern(continuationWorker, /from ["'][^"']*(?:square|stripe|payments?)[^"']*["']/, "continuation worker imports a payment provider");
+    forbidPattern(continuationWorker, /\bfetch\s*\(/, "continuation worker can call an external endpoint");
+    forbidPattern(continuationWorker, /create_public_booking|createGroupBookingsAuthoritative|saveCardOnFile/, "continuation worker can create a booking or card");
   });
 });

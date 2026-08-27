@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   exchange: vi.fn(),
   ensure: vi.fn(),
   overRate: vi.fn(),
+  recordPending: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
@@ -22,6 +23,9 @@ vi.mock("@/shared/lib/inAppRateLimit", () => ({
   durableRateLimitKey: (...parts: string[]) => parts.join(":"),
   isOverRateLimit: mocks.overRate,
 }));
+vi.mock("@/shared/booking/bookingCardContinuation", () => ({
+  recordCommittedBookingCardPending: mocks.recordPending,
+}));
 
 import { POST } from "@/app/api/booking/card-capability/route";
 
@@ -33,6 +37,7 @@ describe("POST /api/booking/card-capability in V1", () => {
       capability: { tokenId: "44444444-4444-4444-8444-444444444444" },
     });
     mocks.ensure.mockResolvedValue({ required: true, feeCents: 2000 });
+    mocks.recordPending.mockResolvedValue(true);
     const response = await POST(new NextRequest(
       "https://nailiq.test/api/booking/card-capability",
       {
@@ -59,5 +64,10 @@ describe("POST /api/booking/card-capability in V1", () => {
     expect(mocks.overRate).toHaveBeenCalledOnce();
     expect(mocks.exchange).toHaveBeenCalledOnce();
     expect(mocks.ensure).toHaveBeenCalledOnce();
+    expect(mocks.recordPending).toHaveBeenCalledWith(expect.objectContaining({
+      scope: "individual",
+      stage: "customer_action",
+      reason: "card_required",
+    }));
   });
 });

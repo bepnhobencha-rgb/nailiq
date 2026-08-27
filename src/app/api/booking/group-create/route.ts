@@ -14,6 +14,7 @@ import { serializeGroupBookingPricingQuote } from "@/shared/booking/groupBooking
 import { ensureNoShowCardRequirement } from "@/shared/noshow/ensureNoShowCardRequirement";
 import { mintBookingManagementCapability } from "@/shared/booking/bookingManagementCapabilities";
 import { saveCardWithManagementCapability } from "@/shared/booking/bookingCardManagement";
+import { recordCommittedBookingCardPending } from "@/shared/booking/bookingCardContinuation";
 
 export const dynamic = "force-dynamic";
 
@@ -81,10 +82,25 @@ export async function POST(request: NextRequest) {
   const result = await createGroupBookingsAuthoritative(parsed.data);
   let cardManagementToken: string | null = null;
   let cardManagementPending = false;
+  let pendingStage: "assessment" | "capability" | "customer_action" | "provider_handoff" = "assessment";
+  let pendingReason: "assessment_unavailable" | "card_required" | "capability_unavailable" |
+    "consent_required" | "card_save_unresolved" | "unexpected_post_commit_error" =
+      "assessment_unavailable";
   if (result.ok && result.bookingIds[0]) {
     try {
       const requirement = await ensureNoShowCardRequirement(result.bookingIds[0], { strict: true });
       if (requirement.required) {
+        pendingStage = "customer_action";
+        pendingReason = "card_required";
+        await recordCommittedBookingCardPending({
+          salonId: parsed.data.salonId,
+          bookingId: result.bookingIds[0],
+          createIdempotencyKey: parsed.data.idempotencyKey,
+          pricingFingerprint: parsed.data.expectedPricingFingerprint,
+          scope: "group_organizer",
+          stage: pendingStage,
+          reason: pendingReason,
+        });
         const capability = await mintBookingManagementCapability({
           salonId: parsed.data.salonId,
           bookingId: result.bookingIds[0],
@@ -92,34 +108,62 @@ export async function POST(request: NextRequest) {
           minExpiresAt: new Date(Date.now() + 25 * 60_000).toISOString(),
         });
         if (capability.ok) cardManagementToken = capability.capability.tokenId;
-        else cardManagementPending = true;
+        else {
+          cardManagementPending = true;
+          pendingStage = "capability";
+          pendingReason = "capability_unavailable";
+        }
       }
     } catch {
       // Booking is already committed. Missing card capability is surfaced as
       // null so the UI never falls back to naked booking-id authorization.
       cardManagementToken = null;
       cardManagementPending = true;
+      pendingStage = "assessment";
+      pendingReason = "assessment_unavailable";
     }
   }
   if (result.ok && !cardManagementPending && cardManagementToken && parsed.data.cardSourceId) {
     if (parsed.data.noShowConsent !== true) {
       cardManagementToken = null;
       cardManagementPending = true;
+      pendingStage = "customer_action";
+      pendingReason = "consent_required";
     } else {
-      const saved = await saveCardWithManagementCapability({
-        tokenId: cardManagementToken,
-        requestId: parsed.data.idempotencyKey,
-        provider: "square",
-        sourceToken: parsed.data.cardSourceId,
-        verificationToken: parsed.data.cardVerificationToken,
-      });
-      if (!saved.ok) {
+      try {
+        const saved = await saveCardWithManagementCapability({
+          tokenId: cardManagementToken,
+          requestId: parsed.data.idempotencyKey,
+          provider: "square",
+          sourceToken: parsed.data.cardSourceId,
+          verificationToken: parsed.data.cardVerificationToken,
+        });
+        if (!saved.ok) {
+          cardManagementToken = null;
+          cardManagementPending = true;
+          pendingStage = "provider_handoff";
+          pendingReason = "card_save_unresolved";
+        } else {
+          cardManagementToken = null;
+        }
+      } catch {
         cardManagementToken = null;
         cardManagementPending = true;
-      } else {
-        cardManagementToken = null;
+        pendingStage = "provider_handoff";
+        pendingReason = "unexpected_post_commit_error";
       }
     }
+  }
+  if (result.ok && result.bookingIds[0] && cardManagementPending) {
+    await recordCommittedBookingCardPending({
+      salonId: parsed.data.salonId,
+      bookingId: result.bookingIds[0],
+      createIdempotencyKey: parsed.data.idempotencyKey,
+      pricingFingerprint: parsed.data.expectedPricingFingerprint,
+      scope: "group_organizer",
+      stage: pendingStage,
+      reason: pendingReason,
+    });
   }
   const status = result.ok
     ? 200

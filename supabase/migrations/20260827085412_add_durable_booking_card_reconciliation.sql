@@ -8,6 +8,8 @@ ALTER TABLE public.booking_card_save_operations
   ADD COLUMN consent_meta jsonb,
   ADD COLUMN reconciliation_attempt_count integer NOT NULL DEFAULT 0
     CHECK (reconciliation_attempt_count BETWEEN 0 AND 20),
+  ADD COLUMN reconciliation_token uuid,
+  ADD COLUMN reconciliation_lease_expires_at timestamptz,
   ADD COLUMN next_reconcile_at timestamptz,
   ADD COLUMN resolution_code text CHECK (
     resolution_code IS NULL OR resolution_code IN (
@@ -97,6 +99,7 @@ AS $discover$
 DECLARE
   v_row public.booking_card_save_operations%ROWTYPE;
   v_limit integer := least(greatest(coalesce(p_limit, 0), 0), 25);
+  v_token uuid;
 BEGIN
   FOR v_row IN
     SELECT op.*
@@ -104,14 +107,25 @@ BEGIN
     WHERE op.status IN ('sending', 'unknown')
       AND op.dispatch_prepared_at IS NOT NULL
       AND op.next_reconcile_at <= transaction_timestamp()
+      AND (
+        op.reconciliation_lease_expires_at IS NULL
+        OR op.reconciliation_lease_expires_at <= transaction_timestamp()
+      )
     ORDER BY op.next_reconcile_at, op.id
     LIMIT v_limit
+    FOR UPDATE SKIP LOCKED
   LOOP
+    v_token := extensions.gen_random_uuid();
+    UPDATE public.booking_card_save_operations
+    SET reconciliation_token = v_token,
+        reconciliation_lease_expires_at = transaction_timestamp() + interval '2 minutes',
+        updated_at = transaction_timestamp()
+    WHERE id = v_row.id;
     RETURN NEXT pg_catalog.jsonb_build_object(
       'ok', true,
       'code', 'reconcile_required',
       'operation_id', v_row.id,
-      'attempt_token', v_row.attempt_token,
+      'attempt_token', v_token,
       'provider', v_row.provider,
       'booking_id', v_row.booking_id,
       'salon_id', v_row.salon_id,
@@ -155,7 +169,9 @@ BEGIN
   IF NOT FOUND THEN
     RETURN pg_catalog.jsonb_build_object('ok', false, 'code', 'operation_not_found');
   END IF;
-  IF v_op.attempt_token <> p_attempt_token OR v_op.status NOT IN ('sending', 'unknown')
+  IF v_op.reconciliation_token <> p_attempt_token
+     OR v_op.reconciliation_lease_expires_at <= v_now
+     OR v_op.status NOT IN ('sending', 'unknown')
      OR v_op.dispatch_prepared_at IS NULL THEN
     RETURN pg_catalog.jsonb_build_object('ok', false, 'code', 'claim_mismatch');
   END IF;
@@ -209,7 +225,8 @@ BEGIN
           pg_catalog.convert_to(v_result::text, 'UTF8'), 'sha256'), 'hex'),
         error_code = NULL, result_json = v_result,
         completed_at = coalesce(completed_at, v_now), updated_at = v_now,
-        next_reconcile_at = NULL, resolution_code = 'provider_card_found'
+        next_reconcile_at = NULL, resolution_code = 'provider_card_found',
+        reconciliation_token = NULL, reconciliation_lease_expires_at = NULL
     WHERE id = v_op.id;
     RETURN v_result;
   END IF;
@@ -224,19 +241,19 @@ BEGIN
       END,
       resolution_code = CASE
         WHEN p_outcome = 'manual_review' THEN 'manual_review_required'
-        WHEN v_count >= 3 THEN 'customer_reentry_required'
+        WHEN v_count >= 3 THEN 'manual_review_required'
         ELSE 'provider_card_not_found'
       END,
       error_code = CASE
         WHEN p_outcome = 'manual_review' THEN 'provider_reconciliation_ambiguous'
-        WHEN v_count >= 3 THEN 'customer_reentry_required'
+        WHEN v_count >= 3 THEN 'provider_reconciliation_ambiguous'
         ELSE 'provider_card_not_found'
       END,
       result_json = pg_catalog.jsonb_build_object(
         'ok', false,
         'code', CASE
           WHEN p_outcome = 'manual_review' THEN 'manual_review_required'
-          WHEN v_count >= 3 THEN 'customer_reentry_required'
+          WHEN v_count >= 3 THEN 'manual_review_required'
           ELSE 'reconciliation_pending'
         END,
         'booking_id', v_op.booking_id,
@@ -248,13 +265,15 @@ BEGIN
           pg_catalog.jsonb_build_object('outcome','unknown','operation_id',v_op.id)::text,
           'UTF8'), 'sha256'), 'hex')),
       completed_at = coalesce(completed_at, v_now),
+      reconciliation_token = NULL,
+      reconciliation_lease_expires_at = NULL,
       updated_at = v_now
   WHERE id = v_op.id;
   RETURN pg_catalog.jsonb_build_object(
     'ok', true,
     'code', CASE
       WHEN p_outcome = 'manual_review' THEN 'manual_review_required'
-      WHEN v_count >= 3 THEN 'customer_reentry_required'
+      WHEN v_count >= 3 THEN 'manual_review_required'
       ELSE 'reconciliation_pending'
     END
   );
