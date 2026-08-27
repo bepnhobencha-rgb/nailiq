@@ -309,6 +309,10 @@ export async function GET(request: NextRequest) {
     unresolved += cardResult.unresolved;
     processed += continuationResult.processed;
     unresolved += continuationResult.errors;
+    const reconciliationDetails = {
+      ...(cardWorkerEnabled ? { card: cardResult } : {}),
+      ...(continuationWorkerEnabled ? { continuation: continuationResult } : {}),
+    };
     return NextResponse.json(
       {
         ok: unresolved === 0,
@@ -316,8 +320,7 @@ export async function GET(request: NextRequest) {
         processed,
         succeeded,
         unresolved,
-        ...(cardWorkerEnabled ? { card: cardResult } : {}),
-        ...(continuationWorkerEnabled ? { continuation: continuationResult } : {}),
+        ...reconciliationDetails,
       },
       { status: unresolved === 0 ? 200 : 503 },
     );
