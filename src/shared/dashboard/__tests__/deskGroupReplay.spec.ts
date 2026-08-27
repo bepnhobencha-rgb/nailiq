@@ -149,5 +149,9 @@ describe("normal desk group response-loss replay", () => {
     expect(action).toContain('quoted.code === "slot_conflict"');
     expect(form).toContain('if (res.reason === "slot_conflict")');
     expect(form).toContain("await runScheduler()");
+    expect(action).toContain("desk group creation boundary unavailable");
+    expect(action).toContain("desk group authoritative quote failed");
+    expect(action).toContain("desk group authoritative create rejected");
+    expect(action).toContain("desk group authoritative create unavailable");
   });
 });
