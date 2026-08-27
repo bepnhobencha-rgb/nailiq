@@ -5,7 +5,7 @@ import { ensureNoShowCardRequirement } from "@/shared/noshow/ensureNoShowCardReq
 import { clientIp, durableRateLimitKey, isOverRateLimit } from "@/shared/lib/inAppRateLimit";
 import { readJsonObjectWithLimit } from "@/shared/security/readJsonObjectWithLimit";
 import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
-import { v1AllowsCustomerPaymentGateway } from "@/shared/release/v1IntegrationScope";
+import { v1AllowsNoShowCardOnFile } from "@/shared/release/v1IntegrationScope";
 
 const PRIVATE_HEADERS = {
   "Cache-Control": "private, no-store, max-age=0", Pragma: "no-cache",
@@ -25,11 +25,10 @@ export async function POST(request: Request) {
   if (!salonId || !bookingId || !idempotencyKey || !/^[0-9a-f]{64}$/.test(pricingFingerprint)) {
     return NextResponse.json({ ok: false, code: "invalid_request" }, { status: 400, headers: PRIVATE_HEADERS });
   }
-  // V1 deliberately leaves customer payment methods in Square/Stripe itself.
   // This is a resolved "not applicable" state, not a retryable provider error.
   // Return before rate/DB/capability work so every committed V1 booking can
   // render success without creating a misleading card-management incident.
-  if (!v1AllowsCustomerPaymentGateway()) {
+  if (!v1AllowsNoShowCardOnFile()) {
     return NextResponse.json({
       ok: true,
       required: false,

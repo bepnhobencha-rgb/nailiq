@@ -78,9 +78,9 @@ import {
   type GroupBookingPricingRequest,
 } from "@/shared/booking/groupBookingPricing";
 import { useBookingFunnelAnalytics } from "@/shared/analytics/useBookingFunnelAnalytics";
-import { v1AllowsCustomerPaymentGateway } from "@/shared/release/v1IntegrationScope";
+import { v1AllowsNoShowCardOnFile } from "@/shared/release/v1IntegrationScope";
 
-const CUSTOMER_PAYMENT_GATEWAY_ENABLED = v1AllowsCustomerPaymentGateway();
+const CUSTOMER_PAYMENT_GATEWAY_ENABLED = v1AllowsNoShowCardOnFile();
 
 /**
  * Group booking — AI Arrival-First redesign (May 2026).

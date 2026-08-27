@@ -83,9 +83,9 @@ import {
   type PublicBookingRequestMaterial,
 } from "@/shared/booking/publicBookingRequestId";
 import { createPublicClient } from "@/shared/lib/supabase/publicClient";
-import { v1AllowsCustomerPaymentGateway } from "@/shared/release/v1IntegrationScope";
+import { v1AllowsNoShowCardOnFile } from "@/shared/release/v1IntegrationScope";
 
-const CUSTOMER_PAYMENT_GATEWAY_ENABLED = v1AllowsCustomerPaymentGateway();
+const CUSTOMER_PAYMENT_GATEWAY_ENABLED = v1AllowsNoShowCardOnFile();
 
 export type ReturningCustomer = {
   found: true;

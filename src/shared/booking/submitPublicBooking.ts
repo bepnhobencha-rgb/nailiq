@@ -34,7 +34,7 @@ import { resolveAnyStaffForPublicBooking } from "@/shared/booking/publicBookingA
 import type { PaidPublicDeposit } from "@/shared/payments/publicDepositTypes";
 import { runBoundedPublicBookingRpc } from "@/shared/booking/publicBookingRpcBoundary";
 import { settleCommittedBookingCardManagement } from "@/shared/booking/settleCommittedBookingCardManagement";
-import { v1AllowsCustomerPaymentGateway } from "@/shared/release/v1IntegrationScope";
+import { v1AllowsNoShowCardOnFile } from "@/shared/release/v1IntegrationScope";
 
 export type BookingParams = {
   shopSlug: string;
@@ -1008,7 +1008,7 @@ async function executePublicBooking(
   // applicable before any capability or provider work.
   const { cardManagementToken, cardManagementPending } =
     await settleCommittedBookingCardManagement({
-      customerPaymentGatewayEnabled: v1AllowsCustomerPaymentGateway(),
+      customerPaymentGatewayEnabled: v1AllowsNoShowCardOnFile(),
       salonId: String(salon.id),
       bookingId,
       createIdempotencyKey,

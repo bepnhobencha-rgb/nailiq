@@ -11,6 +11,9 @@ const { looseServiceClient, resolvePaymentProvider, getSquareConfig } = vi.hoist
 vi.mock("@/shared/integrations/square/looseDb", () => ({
   looseServiceClient,
 }));
+vi.mock("@/shared/release/v1IntegrationScope", () => ({
+  v1AllowsNoShowCardOnFile: () => false,
+}));
 
 vi.mock("@/shared/integrations/payments", () => ({
   resolvePaymentProvider,
@@ -22,7 +25,7 @@ vi.mock("@/shared/integrations/square/client", () => ({
 
 import { resolveNoShowCardRequirement } from "@/shared/noshow/resolveNoShowCardRequirement";
 
-describe("pre-booking card requirement in V1", () => {
+describe("disabled pre-booking card requirement", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });

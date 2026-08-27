@@ -26,7 +26,13 @@ vi.mock("@/shared/lib/inAppRateLimit", () => ({
 import { POST } from "@/app/api/booking/card-capability/route";
 
 describe("POST /api/booking/card-capability in V1", () => {
-  it("resolves card management as not applicable before DB or provider work", async () => {
+  it("permits the narrow no-show card-on-file capability", async () => {
+    mocks.overRate.mockResolvedValue(false);
+    mocks.exchange.mockResolvedValue({
+      ok: true,
+      capability: { tokenId: "44444444-4444-4444-8444-444444444444" },
+    });
+    mocks.ensure.mockResolvedValue({ required: true, feeCents: 2000 });
     const response = await POST(new NextRequest(
       "https://nailiq.test/api/booking/card-capability",
       {
@@ -47,12 +53,11 @@ describe("POST /api/booking/card-capability in V1", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       ok: true,
-      required: false,
-      token: null,
-      cardManagementStatus: "not_applicable",
+      required: true,
+      token: "44444444-4444-4444-8444-444444444444",
     });
-    expect(mocks.overRate).not.toHaveBeenCalled();
-    expect(mocks.exchange).not.toHaveBeenCalled();
-    expect(mocks.ensure).not.toHaveBeenCalled();
+    expect(mocks.overRate).toHaveBeenCalledOnce();
+    expect(mocks.exchange).toHaveBeenCalledOnce();
+    expect(mocks.ensure).toHaveBeenCalledOnce();
   });
 });

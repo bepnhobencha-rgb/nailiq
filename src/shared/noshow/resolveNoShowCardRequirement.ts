@@ -4,7 +4,7 @@ import { looseServiceClient, type Row } from "@/shared/integrations/square/loose
 import { parseCardGateRules, cardRequiredByHistory } from "@/shared/noshow/cardGateRules";
 import { resolvePaymentProvider } from "@/shared/integrations/payments";
 import { getSquareConfig } from "@/shared/integrations/square/client";
-import { v1AllowsCustomerPaymentGateway } from "@/shared/release/v1IntegrationScope";
+import { v1AllowsNoShowCardOnFile } from "@/shared/release/v1IntegrationScope";
 
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
 const str = (v: unknown): string => (v == null ? "" : String(v));
@@ -46,7 +46,7 @@ export async function resolveNoShowCardRequirement(args: {
   // provider capability that cannot be used in this release. Keep this guard
   // ahead of every client construction/read as a second line of defense behind
   // the client-side gate.
-  if (!v1AllowsCustomerPaymentGateway()) return { required: false };
+  if (!v1AllowsNoShowCardOnFile()) return { required: false };
 
   try {
     const db = looseServiceClient();
@@ -68,7 +68,7 @@ export async function resolveNoShowCardRequirement(args: {
         : num(s.noshow_deposit_escalation_threshold);
 
     // Provider must be connected; Square-only gate for the pre-booking flow.
-    const provider = await resolvePaymentProvider(args.salonId);
+    const provider = await resolvePaymentProvider(args.salonId, { purpose: "card_on_file" });
     if (!provider || provider.kind !== "square") return { required: false };
 
     // Fee base: the whole party's services (group + whole-party on) or just this

@@ -191,7 +191,7 @@ export async function removeCardWithManagementCapability(input: {
   }
   let provider: PaymentProvider | null;
   try {
-    provider = await resolvePaymentProvider(salonId, { strict: true });
+    provider = await resolvePaymentProvider(salonId, { strict: true, purpose: "card_on_file" });
   } catch {
     // No provider request occurred. Keep the DB operation recoverable so an
     // exact retry/reconciler can resume after the configuration read recovers.
@@ -268,6 +268,31 @@ async function claimSave(input: {
   return error ? { ok: false, code: "card_management_unavailable" } : parseClaim(data);
 }
 
+async function prepareSaveDispatch(input: {
+  operationId: string;
+  attemptToken: string;
+  consentAt: string;
+  consentMeta: Record<string, unknown>;
+}): Promise<{ ok: boolean; code: string; providerReferenceKey?: string }> {
+  const { data, error } = await createServiceRoleClient().rpc(
+    "prepare_booking_card_save_dispatch" as never,
+    {
+      p_operation_id: input.operationId,
+      p_attempt_token: input.attemptToken,
+      p_consent_at: input.consentAt,
+      p_consent_meta: input.consentMeta,
+    } as never,
+  );
+  if (error) return { ok: false, code: "dispatch_prepare_uncertain" };
+  const value = row(data);
+  const providerReferenceKey = cleanString(value?.provider_reference_key) ?? undefined;
+  if (value?.ok !== true || value.code !== "dispatch_prepared" ||
+      !providerReferenceKey || !/^nq-card:[0-9a-f-]{36}$/i.test(providerReferenceKey)) {
+    return { ok: false, code: "invalid_dispatch_prepare_response" };
+  }
+  return { ok: true, code: "dispatch_prepared", providerReferenceKey };
+}
+
 function isClaim(value: ClaimedOperation | CardOperationResult): value is ClaimedOperation {
   return "operationId" in value;
 }
@@ -306,9 +331,14 @@ export async function saveCardWithManagementCapability(input: {
   }
   let provider: PaymentProvider | null;
   try {
-    provider = await resolvePaymentProvider(claim.salonId, { strict: true });
+    provider = await resolvePaymentProvider(claim.salonId, { strict: true, purpose: "card_on_file" });
   } catch {
-    return { ok: false, code: "card_management_unavailable" };
+    return completeSave({
+      operationId: claim.operationId,
+      attemptToken: claim.attemptToken,
+      outcome: "failed",
+      errorCode: "provider_configuration_unavailable",
+    });
   }
   if (!provider || provider.kind !== input.provider) {
     return completeSave({
@@ -324,6 +354,16 @@ export async function saveCardWithManagementCapability(input: {
     currency: claim.providerMaterial.currency,
     cancellation_policy: claim.providerMaterial.cancellationPolicy,
   };
+  const prepared = await prepareSaveDispatch({
+    operationId: claim.operationId,
+    attemptToken: claim.attemptToken,
+    consentAt,
+    consentMeta,
+  });
+  if (!prepared.ok || !prepared.providerReferenceKey) {
+    // No provider request occurred. A retry may safely resume preparation.
+    return { ok: false, code: prepared.code };
+  }
   try {
     const saved = await provider.saveCardOnFile({
       customer: {
@@ -335,6 +375,7 @@ export async function saveCardWithManagementCapability(input: {
       sourceToken: input.sourceToken.trim(),
       verificationToken: input.verificationToken,
       idempotencyKey: claim.providerIdempotencyKey,
+      cardReferenceId: prepared.providerReferenceKey,
     });
     if (!saved.cardId.trim() || !saved.last4.match(/^\d{4}$/) || !saved.brand.trim()) {
       return completeSave({
@@ -399,7 +440,7 @@ export async function createStripeSetupWithManagementCapability(input: {
   }
   let provider: PaymentProvider | null;
   try {
-    provider = await resolvePaymentProvider(claim.salonId, { strict: true });
+    provider = await resolvePaymentProvider(claim.salonId, { strict: true, purpose: "card_on_file" });
   } catch {
     return { ok: false, code: "card_management_unavailable" };
   }

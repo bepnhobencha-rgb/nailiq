@@ -228,6 +228,14 @@ describe("durable card-management provider boundary", () => {
     mocks.rpc
       .mockResolvedValueOnce({ data: saveClaim("stripe", "save_card"), error: null })
       .mockResolvedValueOnce({
+        data: {
+          ok: true,
+          code: "dispatch_prepared",
+          provider_reference_key: `nq-card:${OPERATION}`,
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({
         data: { ok: true, code: "saved", booking_id: BOOKING, salon_id: SALON, provider_reference: "pm_qa" },
         error: null,
       });
@@ -243,5 +251,27 @@ describe("durable card-management provider boundary", () => {
       expect.objectContaining({ p_token_id: FINAL_TOKEN, p_request_id: REQUEST, p_provider: "stripe", p_mode: "save_card" }),
     ]);
     expect(mocks.saveCardOnFile).toHaveBeenCalledTimes(1);
+    expect(mocks.saveCardOnFile).toHaveBeenCalledWith(expect.objectContaining({
+      idempotencyKey: ATTEMPT,
+      cardReferenceId: `nq-card:${OPERATION}`,
+    }));
+  });
+
+  it("does not reach the provider unless durable dispatch preparation is acknowledged", async () => {
+    mocks.resolveProvider.mockResolvedValue({
+      kind: "square",
+      saveCardOnFile: mocks.saveCardOnFile,
+    });
+    mocks.rpc
+      .mockResolvedValueOnce({ data: saveClaim("square", "save_card"), error: null })
+      .mockResolvedValueOnce({ data: null, error: new Error("write uncertain") });
+
+    await expect(saveCardWithManagementCapability({
+      tokenId: TOKEN,
+      requestId: REQUEST,
+      provider: "square",
+      sourceToken: "cnon:card-nonce-ok",
+    })).resolves.toMatchObject({ ok: false, code: "dispatch_prepare_uncertain" });
+    expect(mocks.saveCardOnFile).not.toHaveBeenCalled();
   });
 });

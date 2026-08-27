@@ -37,7 +37,7 @@ async function withinCardManagementDeadline<T>(
 }
 
 type SettleCommittedBookingCardManagementInput = {
-  /** V1 keeps customer payment methods provider-owned and therefore skips this path. */
+  /** Narrow release gate for card-on-file only; customer money movement stays off. */
   customerPaymentGatewayEnabled: boolean;
   salonId: string;
   bookingId: string;
@@ -55,8 +55,8 @@ type SettleCommittedBookingCardManagementInput = {
  * The booking outcome is no longer conditional on this work. In particular,
  * an ambiguous provider response is never retried here: a fresh capability can
  * create a fresh provider operation identity. The safe outcome is a bounded,
- * visible card-only unresolved state. V1 never enters this gateway path; it
- * must remain Phase 2 until durable reconciliation exists.
+ * visible card-only unresolved state. The card-on-file path is enabled only
+ * with durable dispatch preparation and read-only response-loss reconciliation.
  */
 export async function settleCommittedBookingCardManagement(
   input: SettleCommittedBookingCardManagementInput,

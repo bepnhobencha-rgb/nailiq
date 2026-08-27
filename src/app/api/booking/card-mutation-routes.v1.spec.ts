@@ -33,9 +33,11 @@ function jsonRequest(pathname: string, body: Record<string, unknown>): Request {
 describe("V1 card mutation routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    consumeRateLimit.mockResolvedValue("allowed");
+    saveCard.mockResolvedValue({ ok: true, code: "saved" });
   });
 
-  it("rejects a stale Square capability before rate, database, or provider work", async () => {
+  it("allows only the narrow Square card-on-file mutation", async () => {
     const response = await saveSquareCard(
       jsonRequest("/api/booking/square-save-card", {
         token: "11111111-1111-4111-8111-111111111111",
@@ -46,13 +48,13 @@ describe("V1 card mutation routes", () => {
       }),
     );
 
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
-      ok: false,
-      code: "phase_2_not_available",
+      ok: true,
+      code: "saved",
     });
-    expect(consumeRateLimit).not.toHaveBeenCalled();
-    expect(saveCard).not.toHaveBeenCalled();
+    expect(consumeRateLimit).toHaveBeenCalledOnce();
+    expect(saveCard).toHaveBeenCalledOnce();
   });
 
   it("rejects a stale Stripe capability before rate, database, or provider work", async () => {

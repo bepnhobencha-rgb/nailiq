@@ -7,6 +7,7 @@ import {
   v1AllowsArchivedBookingRecovery,
   v1AllowsAutomatedSubscriptionBilling,
   v1AllowsCustomerPaymentGateway,
+  v1AllowsNoShowCardOnFile,
   v1AllowsWixCalendarConnection,
 } from "../v1IntegrationScope";
 
@@ -31,6 +32,7 @@ describe("NailIQ V1 integration scope", () => {
 
   it("keeps NailIQ-initiated customer money paths hard off in V1", () => {
     expect(v1AllowsCustomerPaymentGateway()).toBe(false);
+    expect(v1AllowsNoShowCardOnFile()).toBe(true);
 
     const paymentResolver = readFileSync(
       resolve(process.cwd(), "src/shared/integrations/payments/index.ts"),
@@ -73,23 +75,20 @@ describe("NailIQ V1 integration scope", () => {
       "utf8",
     );
 
-    expect(paymentResolver).toMatch(
-      /resolvePaymentProvider[\s\S]*v1AllowsCustomerPaymentGateway\(\)[\s\S]*return null/u,
-    );
+    expect(paymentResolver).toMatch(/purpose.*card_on_file[\s\S]*v1AllowsNoShowCardOnFile\(\)/u);
+    expect(paymentResolver).toMatch(/v1AllowsCustomerPaymentGateway\(\)[\s\S]*if\s*\(!allowed\)/u);
     expect(deposits).toMatch(
       /createDepositForBooking[\s\S]*phase_2_not_available[\s\S]*createServiceRoleClient/u,
     );
     expect(noShow).toMatch(
       /createNoShowFeeLink[\s\S]*phase_2_not_available[\s\S]*looseServiceClient/u,
     );
-    expect(cardRequirement).toMatch(
-      /ensureNoShowCardRequirement[\s\S]*v1AllowsCustomerPaymentGateway\(\)[\s\S]*required:\s*false/u,
-    );
+    expect(cardRequirement).toMatch(/ensureNoShowCardRequirement[\s\S]*v1AllowsNoShowCardOnFile\(\)/u);
     expect(cardCapability).toMatch(
-      /v1AllowsCustomerPaymentGateway\(\)[\s\S]*cardManagementStatus:\s*["']not_applicable["'][\s\S]*isOverRateLimit/u,
+      /v1AllowsNoShowCardOnFile\(\)[\s\S]*cardManagementStatus:\s*["']not_applicable["'][\s\S]*isOverRateLimit/u,
     );
     expect(preBookingRequirement).toMatch(
-      /resolveNoShowCardRequirement[\s\S]*v1AllowsCustomerPaymentGateway\(\)[\s\S]*required:\s*false[\s\S]*looseServiceClient/u,
+      /resolveNoShowCardRequirement[\s\S]*v1AllowsNoShowCardOnFile\(\)[\s\S]*required:\s*false[\s\S]*looseServiceClient/u,
     );
     expect(individualBookingFlow).toMatch(
       /CUSTOMER_PAYMENT_GATEWAY_ENABLED\s*&&[\s\S]*step\s*===\s*["']confirm["'][\s\S]*resolveNoShowCardRequirement/u,
@@ -97,11 +96,12 @@ describe("NailIQ V1 integration scope", () => {
     expect(groupBookingFlow).toMatch(
       /if\s*\(\s*!CUSTOMER_PAYMENT_GATEWAY_ENABLED\s*\|\|\s*step\s*!==\s*5\s*\)[\s\S]*resolveNoShowCardRequirement/u,
     );
-    for (const route of [squareCardMutation, stripeCardMutation]) {
-      expect(route).toMatch(
-        /v1AllowsCustomerPaymentGateway\(\)[\s\S]*phase_2_not_available[\s\S]*consumeBookingManagementRateLimit/u,
-      );
-    }
+    expect(squareCardMutation).toMatch(
+      /v1AllowsNoShowCardOnFile\(\)[\s\S]*phase_2_not_available[\s\S]*consumeBookingManagementRateLimit/u,
+    );
+    expect(stripeCardMutation).toMatch(
+      /v1AllowsCustomerPaymentGateway\(\)[\s\S]*phase_2_not_available[\s\S]*consumeBookingManagementRateLimit/u,
+    );
   });
 
   it("keeps NailIQ subscription automation hard off before provider or database mutation", () => {
