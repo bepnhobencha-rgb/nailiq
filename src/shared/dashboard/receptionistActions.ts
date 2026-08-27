@@ -9,6 +9,10 @@ import {
   checkBookingConflict,
 } from "@/shared/lib/conflictCheck";
 import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit";
+import {
+  bookingChannelFor,
+  runBookingOrchestrator,
+} from "@/shared/booking/bookingOrchestrator";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
@@ -107,6 +111,17 @@ import {
   type QueuePriority,
   type QueueSource,
 } from "@/shared/types";
+
+const DESK_BOOKING_CHANNEL = bookingChannelFor({
+  gateway: "desk",
+  intent: "individual",
+  operation: "commit",
+});
+const WALKIN_BOOKING_CHANNEL = bookingChannelFor({
+  gateway: "walkin",
+  intent: "operational_arrival",
+  operation: "commit",
+});
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -432,6 +447,10 @@ export async function addWalkinToQueue(
     recovery?: ArchivedBookingRecoveryInput;
   },
 ): Promise<OkBooking | { ok: false; error: string }> {
+  await runBookingOrchestrator(
+    { gateway: "walkin", intent: "operational_arrival", operation: "commit" },
+    () => undefined,
+  );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
 
@@ -565,7 +584,7 @@ export async function addWalkinToQueue(
     end_time_utc: null,
     status: "waiting",
     source: "walkin",
-    booking_channel: "walkin",
+    booking_channel: WALKIN_BOOKING_CHANNEL,
     joined_queue_at: joinedAt,
     staff_request_note: note,
     staff_requested_by_client: staffRequestedByClient,
@@ -1672,7 +1691,7 @@ export async function createDeskGroup(
     otpSessionId,
     // Front-desk-entered party — keeps the channel breakdown honest instead of
     // letting desk groups fall through to the 'online' default.
-    bookingChannel: "desk" as const,
+    bookingChannel: DESK_BOOKING_CHANNEL,
   };
   const result: GroupBookingResult = replay.kind === "replayed"
     ? {
@@ -1681,6 +1700,7 @@ export async function createDeskGroup(
         bookingIds: replay.bookingIds,
         pricing: replay.pricing,
         cardManagementToken: null,
+        cardManagementPending: false,
       }
     : wantsAfterHours && ctx.kind === "member" && ctx.userId
       ? await submitGroupBooking(groupParams, {
@@ -1795,7 +1815,7 @@ export async function createDeskGroup(
     await stampGroupBookingIdentity({
       bookingIds: replay.bookingIds,
       organizerBookingId: leadId,
-      bookingChannel: "desk",
+      bookingChannel: DESK_BOOKING_CHANNEL,
       otpSessionId,
       ownerNotify: {
         salonId: ctx.salon.id,
@@ -2895,11 +2915,11 @@ function scheduleDeskBookingReconciliation(input: {
     reconcileCommittedBooking({
       bookingId: input.bookingId,
       salonId: input.salonId,
-      channel: "desk",
+      channel: DESK_BOOKING_CHANNEL,
       stamp: async () => {
         const channelUpdate: Record<string, unknown> = {
           walkin_source: "phone",
-          booking_channel: "desk",
+          booking_channel: DESK_BOOKING_CHANNEL,
         };
         if (input.staffRequestedByClient) {
           channelUpdate.staff_requested_by_client = true;
@@ -2988,6 +3008,10 @@ export async function addDeskAppointment(
     recovery?: ArchivedBookingRecoveryInput;
   },
 ): Promise<OkDeskBooking | { ok: false; error: string }> {
+  await runBookingOrchestrator(
+    { gateway: "desk", intent: "individual", operation: "commit" },
+    () => undefined,
+  );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
   if (ctx.salon.id !== String(input.salonId).trim())
@@ -3722,7 +3746,7 @@ export async function addDeskAppointment(
         source: "appointment",
         price_cents: deskPriceCents ?? svc.price_cents ?? null,
         walkin_source: "phone",
-        booking_channel: "desk",
+        booking_channel: DESK_BOOKING_CHANNEL,
         staff_requested_by_client: input.staffRequestedByClient === true,
         resource_id: resolvedResourceId,
         after_hours_minutes: afterHoursMinutes,
@@ -4007,7 +4031,7 @@ export async function addDeskAppointment(
     try {
       const channelUpdate: Record<string, unknown> = {
         walkin_source: "phone",
-        booking_channel: "desk",
+        booking_channel: DESK_BOOKING_CHANNEL,
       };
       if (input.staffRequestedByClient === true) {
         channelUpdate.staff_requested_by_client = true;

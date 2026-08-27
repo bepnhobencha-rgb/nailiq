@@ -99,7 +99,7 @@ export async function settleCommittedBookingCardManagement(
     if (!cardManagementToken || input.consent !== true) {
       return {
         cardManagementToken,
-        cardManagementPending: cardManagementToken !== null,
+        cardManagementPending: true,
       };
     }
 

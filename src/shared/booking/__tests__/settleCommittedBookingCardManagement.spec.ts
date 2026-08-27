@@ -168,6 +168,20 @@ describe("committed booking card-only continuation", () => {
     expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("square-save-card"))).toHaveLength(1);
   });
 
+  it("keeps card work pending when a successful capability response omits its token", async () => {
+    const fetcher = vi.fn(async () => jsonResponse({ ok: true, token: null }));
+
+    await expect(settleCommittedBookingCardManagement({
+      ...baseInput,
+      cardSourceId: "provider-token",
+      consent: true,
+    }, fetcher)).resolves.toEqual({
+      cardManagementToken: null,
+      cardManagementPending: true,
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("returns only a card continuation token when no provider mutation ran", async () => {
     const fetcher = vi.fn(async () =>
       jsonResponse({ ok: true, token: "44444444-4444-4444-8444-444444444444" }),

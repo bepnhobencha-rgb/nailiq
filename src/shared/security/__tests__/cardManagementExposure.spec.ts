@@ -23,6 +23,11 @@ const cardCapabilityMigration = read("supabase/migrations/20260820140000_add_act
 const cardManagement = read("src/shared/booking/bookingCardManagement.ts");
 const cardCapabilityRoute = read("src/app/api/booking/card-capability/route.ts");
 const bookingCapabilities = read("src/shared/booking/bookingManagementCapabilities.ts");
+const continuationWorker = read("src/shared/booking/reconcileBookingCardContinuations.ts");
+const continuationMigration = read("supabase/migrations/20260827215428_add_booking_card_continuation_ledger.sql");
+const atomicContinuationMigration = read("supabase/migrations/20260827224306_arm_booking_card_continuation_with_create.sql");
+const cardReconciliationMigration = read("supabase/migrations/20260827085412_add_durable_booking_card_reconciliation.sql");
+const cardReconciliationLeaseMigration = read("supabase/migrations/20260827231246_harden_card_reconciliation_leases.sql");
 
 function requirePattern(source: string, pattern: RegExp, label: string) {
   expect(pattern.test(source), label).toBe(true);
@@ -153,5 +158,33 @@ describe("card_manage exposure and replay boundary", () => {
     requirePattern(individualFlow, /await acknowledgePublicBookingRequestId[\s\S]{0,1600}cardManagementPending:\s*result\.cardManagementPending[\s\S]{0,300}setStep\(["']done["']\)/, "committed booking identity is not acknowledged before the card-pending success view");
     requirePattern(individualFlow, /cardManagementPending:\s*result\.cardManagementPending[\s\S]{0,300}setStep\(["']done["']\)/, "committed booking does not carry card pending into Done");
     requirePattern(individualDone, /booking-card-pending-notice[\s\S]{0,400}cardManagementPendingNotice/, "Done does not explain the card-only pending state");
+
+    requirePattern(groupCreateRoute, /ok:\s*true[\s\S]{0,500}cardManagementPending/, "committed group card pending is not returned as success");
+    forbidPattern(groupSubmit, /return fail\(["']card_management_pending["']\)/, "committed group card work can still reverse the party result");
+    requirePattern(groupSubmit, /publicCardManagementPending\s*=\s*apiResult\.cardManagementPending\s*===\s*true/, "group submit does not read the server card-pending receipt");
+    requirePattern(groupSubmit, /cardManagementPending:\s*publicCardManagementPending/, "committed group does not carry card pending into its success result");
+    requirePattern(groupFlow, /cardManagementPending:\s*res\.cardManagementPending[\s\S]{0,500}setStep\(["']success["']\)/, "committed group does not carry card pending into Success");
+    requirePattern(groupFlow, /booking-group-card-pending-notice[\s\S]{0,500}cardManagementPendingNotice/, "group Success does not explain the card-only pending state");
+  });
+
+  it("persists pending continuations without giving the continuation worker a provider path", () => {
+    requirePattern(cardCapabilityRoute, /recordCommittedBookingCardPending/, "individual capability failure has no durable continuation");
+    requirePattern(groupCreateRoute, /recordCommittedBookingCardPending/, "group post-commit failure has no durable continuation");
+    requirePattern(continuationMigration, /booking_card_management_continuations[\s\S]*FOR UPDATE SKIP LOCKED/i, "continuation reconciliation is not concurrency safe");
+    requirePattern(continuationMigration, /UNIQUE \(booking_id\)[\s\S]*UNIQUE \(salon_id, create_idempotency_key\)/i, "continuation identity can duplicate a canonical booking");
+    requirePattern(continuationMigration, /booking_card_save_operations_booking_request_unique[\s\S]*booking_id, request_id, provider, mode/i, "capability rotation can create a second provider operation identity");
+    requirePattern(atomicContinuationMigration, /AFTER INSERT ON public\.bookings[\s\S]*arm_booking_card_management_continuation_on_create/i, "canonical booking insert does not arm card continuation in its transaction");
+    requirePattern(atomicContinuationMigration, /AFTER UPDATE OF[\s\S]*idempotency_key[\s\S]*public_booking_pricing_fingerprint[\s\S]*ON public\.bookings/i, "individual canonical create binding does not arm card continuation in its transaction");
+    requirePattern(atomicContinuationMigration, /status[^;]*'armed'[\s\S]*assessment_scheduled[\s\S]*interval '5 minutes'/i, "process-death continuation has no durable assessment deadline");
+    requirePattern(atomicContinuationMigration, /resolve_booking_card_management_continuation[\s\S]*idempotency_key = p_create_idempotency_key[\s\S]*public_booking_pricing_fingerprint = p_pricing_fingerprint/i, "assessment resolution is not bound to the exact canonical create receipt");
+    requirePattern(atomicContinuationMigration, /v_row\.status = 'armed'[\s\S]*manual_review[\s\S]*assessment_missing/i, "a missing post-commit assessment can disappear without operator review");
+    forbidPattern(atomicContinuationMigration, /create_public_booking|create_group_bookings|https?:\/\//i, "atomic continuation can create a booking or contact an external service");
+    forbidPattern(cardReconciliationMigration, /reconciliation_lease_expires_at/i, "an already-applied production migration was rewritten");
+    requirePattern(cardReconciliationLeaseMigration, /reconciliation_lease_expires_at[\s\S]*FOR UPDATE SKIP LOCKED/i, "card response-loss worker has no durable lease");
+    requirePattern(cardReconciliationLeaseMigration, /v_count >= 3 THEN 'manual_review_required'/i, "provider no-match is incorrectly treated as proof that customer re-entry is safe");
+
+    forbidPattern(continuationWorker, /from ["'][^"']*(?:square|stripe|payments?)[^"']*["']/, "continuation worker imports a payment provider");
+    forbidPattern(continuationWorker, /\bfetch\s*\(/, "continuation worker can call an external endpoint");
+    forbidPattern(continuationWorker, /create_public_booking|createGroupBookingsAuthoritative|saveCardOnFile/, "continuation worker can create a booking or card");
   });
 });
