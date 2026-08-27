@@ -1700,6 +1700,7 @@ export async function createDeskGroup(
         bookingIds: replay.bookingIds,
         pricing: replay.pricing,
         cardManagementToken: null,
+        cardManagementPending: false,
       }
     : wantsAfterHours && ctx.kind === "member" && ctx.userId
       ? await submitGroupBooking(groupParams, {

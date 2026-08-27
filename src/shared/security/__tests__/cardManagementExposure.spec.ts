@@ -153,5 +153,12 @@ describe("card_manage exposure and replay boundary", () => {
     requirePattern(individualFlow, /await acknowledgePublicBookingRequestId[\s\S]{0,1600}cardManagementPending:\s*result\.cardManagementPending[\s\S]{0,300}setStep\(["']done["']\)/, "committed booking identity is not acknowledged before the card-pending success view");
     requirePattern(individualFlow, /cardManagementPending:\s*result\.cardManagementPending[\s\S]{0,300}setStep\(["']done["']\)/, "committed booking does not carry card pending into Done");
     requirePattern(individualDone, /booking-card-pending-notice[\s\S]{0,400}cardManagementPendingNotice/, "Done does not explain the card-only pending state");
+
+    requirePattern(groupCreateRoute, /ok:\s*true[\s\S]{0,500}cardManagementPending/, "committed group card pending is not returned as success");
+    forbidPattern(groupSubmit, /return fail\(["']card_management_pending["']\)/, "committed group card work can still reverse the party result");
+    requirePattern(groupSubmit, /publicCardManagementPending\s*=\s*apiResult\.cardManagementPending\s*===\s*true/, "group submit does not read the server card-pending receipt");
+    requirePattern(groupSubmit, /cardManagementPending:\s*publicCardManagementPending/, "committed group does not carry card pending into its success result");
+    requirePattern(groupFlow, /cardManagementPending:\s*res\.cardManagementPending[\s\S]{0,500}setStep\(["']success["']\)/, "committed group does not carry card pending into Success");
+    requirePattern(groupFlow, /booking-group-card-pending-notice[\s\S]{0,500}cardManagementPendingNotice/, "group Success does not explain the card-only pending state");
   });
 });
