@@ -14,7 +14,9 @@ const depositPanel = read("src/components/booking/BookingFlowDepositPanel.tsx");
 const groupFlow = read("src/components/booking/BookingGroupFlow.tsx");
 const cardPage = read("src/app/booking/card/page.tsx");
 const individualCreate = read("src/shared/booking/submitPublicBooking.ts");
+const individualCardSettlement = read("src/shared/booking/settleCommittedBookingCardManagement.ts");
 const individualFlow = read("src/components/booking/useBookingFlowState.ts");
+const individualDone = read("src/components/booking/BookingFlowDonePanel.tsx");
 const groupSubmit = read("src/shared/booking/submitGroupBooking.ts");
 const groupCreateRoute = read("src/app/api/booking/group-create/route.ts");
 const cardCapabilityMigration = read("supabase/migrations/20260820140000_add_action_scoped_booking_management_capabilities.sql");
@@ -51,7 +53,8 @@ describe("card_manage exposure and replay boundary", () => {
 
   it("fresh individual and group creation hand the browser a server-minted card_manage capability", () => {
     requirePattern(individualCreate, /cardManage(?:ment)?Token|card_manage_token/, "individual create result omits its card capability");
-    requirePattern(individualCreate, /create_public_booking[\s\S]{0,8500}\/api\/booking\/card-capability[\s\S]{0,1200}cardManagementToken/, "individual authoritative create/replay does not exchange and return card_manage");
+    requirePattern(individualCreate, /create_public_booking[\s\S]{0,8500}settleCommittedBookingCardManagement/, "individual authoritative create/replay does not hand post-commit card work to the settlement boundary");
+    requirePattern(individualCardSettlement, /\/api\/booking\/card-capability[\s\S]{0,1600}cardManagementToken/, "individual settlement does not exchange and return card_manage");
     requirePattern(cardCapabilityRoute + bookingCapabilities, /exchangePublicBookingCardManagementCapability[\s\S]{0,1600}exchange_public_booking_card_management_capability/, "individual exchange is not handled by the trusted server boundary");
     requirePattern(cardCapabilityMigration, /exchange_public_booking_card_management_capability[\s\S]{0,1800}idempotency_key[\s\S]{0,900}pricing_fingerprint[\s\S]{0,1500}mint_booking_management_capability/i, "individual exchange is not bound to the exact canonical create receipt");
     requirePattern(individualFlow, /(?:cardManage(?:ment)?Token|managementToken)/, "individual success UI does not retain the server capability");
@@ -129,8 +132,9 @@ describe("card_manage exposure and replay boundary", () => {
 
   it("pre-submit card capture follows create replay, deterministic mint, then durable save", () => {
     forbidPattern(individualCreate, /saveNoShowCardAction\s*\(/, "individual create still performs an unaudited post-commit card save");
-    requirePattern(individualCreate, /p_idempotency_key[\s\S]{0,8500}\/api\/booking\/card-capability[\s\S]{0,2500}\/api\/booking\/square-save-card/, "individual captured card is not sequenced create/replay -> exchange -> durable save");
-    requirePattern(individualCreate, /card-capability[\s\S]{0,900}idempotencyKey:\s*createIdempotencyKey[\s\S]{0,2600}square-save-card[\s\S]{0,900}token:\s*cardManagementToken[\s\S]{0,500}requestId:\s*createIdempotencyKey/, "individual response-loss replay does not preserve create binding and card request id");
+    requirePattern(individualCreate, /p_idempotency_key[\s\S]{0,8500}settleCommittedBookingCardManagement/, "individual captured card is not sequenced create/replay -> committed-card settlement");
+    requirePattern(individualCardSettlement, /card-capability[\s\S]{0,2200}square-save-card/, "individual committed-card settlement does not sequence exchange -> durable save");
+    requirePattern(individualCardSettlement, /card-capability[\s\S]{0,900}idempotencyKey:\s*input\.createIdempotencyKey[\s\S]{0,2600}square-save-card[\s\S]{0,900}token:\s*cardManagementToken[\s\S]{0,500}requestId:\s*input\.createIdempotencyKey/, "individual response-loss replay does not preserve create binding and card request id");
 
     forbidPattern(groupFlow, /JSON\.stringify\(\{\s*bookingId[\s\S]{0,500}(?:sourceId|flag-noshow-card)/, "group browser performs a naked post-create card mutation");
     requirePattern(groupFlow, /noShowCardSourceId:\s*cardTokenRef\.current/, "group UI does not submit its pre-captured source");
@@ -139,14 +143,15 @@ describe("card_manage exposure and replay boundary", () => {
     requirePattern(groupCreateRoute, /createGroupBookingsAuthoritative[\s\S]{0,3500}mintBookingManagementCapability/, "group capability can be minted before canonical group create/replay");
   });
 
-  it("required-card exchange failure is recoverable with the exact create key", () => {
-    requirePattern(individualCreate, /cardCapabilityResolved[\s\S]{0,700}throw new Error\(["']card_management_pending["']\)/, "individual create silently hides an unresolved required-card exchange");
-    requirePattern(individualCreate, /square-save-card[\s\S]{0,1400}(?:(?:!response\?\.ok|response\?\.ok\s*===\s*false)[\s\S]{0,500}|response\?\.ok[\s\S]{0,220}else\s+)throw new Error\(["']card_management_pending["']\)/, "required pre-captured card save failure does not resume through the exact create/card replay");
-    const pendingIndex = individualFlow.indexOf("card_management_pending");
-    expect(pendingIndex, "booking flow has no recoverable card-management branch").toBeGreaterThanOrEqual(0);
-    const pendingBranch = individualFlow.slice(pendingIndex, pendingIndex + 900);
-    requirePattern(pendingBranch, /setError\(/, "card management pending is not surfaced to the customer");
-    forbidPattern(pendingBranch, /bookingSubmitIdempotencyKeyRef\.current\s*=\s*crypto\.randomUUID/, "recoverable card exchange rotates the canonical create key");
-    requirePattern(individualCreate, /idempotencyKey:\s*createIdempotencyKey/, "exchange does not carry the exact create key");
+  it("keeps a committed booking successful while card reconciliation remains separate", () => {
+    forbidPattern(individualCreate, /throw new Error\(["']card_management_pending["']\)/, "post-commit card work can still reverse the booking result");
+    forbidPattern(individualFlow, /card_management_pending/, "individual flow still sends a committed booking back to Confirm");
+    requirePattern(individualCardSettlement, /card-capability[\s\S]{0,900}idempotencyKey:\s*input\.createIdempotencyKey/, "exchange does not carry the exact create key");
+    requirePattern(individualCardSettlement, /square-save-card[\s\S]{0,1300}cardManagementToken:\s*null,[\s\S]{0,120}cardManagementPending:\s*true/, "ambiguous card save does not become a non-retriable pending state");
+    forbidPattern(individualCardSettlement, /square-save-card[\s\S]{0,1800}square-save-card/, "ambiguous card save can be blindly dispatched twice");
+    requirePattern(cardManagement, /attempt_replay[\s\S]{0,9000}attemptReplay[\s\S]{0,700}reconciliation_required[\s\S]{0,900}resolvePaymentProvider/, "a replayed in-flight card claim can reach the provider before reconciliation");
+    requirePattern(individualFlow, /await acknowledgePublicBookingRequestId[\s\S]{0,1600}cardManagementPending:\s*result\.cardManagementPending[\s\S]{0,300}setStep\(["']done["']\)/, "committed booking identity is not acknowledged before the card-pending success view");
+    requirePattern(individualFlow, /cardManagementPending:\s*result\.cardManagementPending[\s\S]{0,300}setStep\(["']done["']\)/, "committed booking does not carry card pending into Done");
+    requirePattern(individualDone, /booking-card-pending-notice[\s\S]{0,400}cardManagementPendingNotice/, "Done does not explain the card-only pending state");
   });
 });

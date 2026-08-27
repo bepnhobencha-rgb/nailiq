@@ -83,6 +83,9 @@ import {
   type PublicBookingRequestMaterial,
 } from "@/shared/booking/publicBookingRequestId";
 import { createPublicClient } from "@/shared/lib/supabase/publicClient";
+import { v1AllowsNoShowCardOnFile } from "@/shared/release/v1IntegrationScope";
+
+const CUSTOMER_PAYMENT_GATEWAY_ENABLED = v1AllowsNoShowCardOnFile();
 
 export type ReturningCustomer = {
   found: true;
@@ -412,6 +415,7 @@ export function useBookingFlowState(
     price_cents: number;
     pricing: PublicBookingPricingQuote;
     cardManagementToken: string | null;
+    cardManagementPending: boolean;
   } | null>(null);
 
   // Minutes an add-on ADDS to the appointment: concurrent add-ons run alongside
@@ -1494,7 +1498,10 @@ export function useBookingFlowState(
   // can never be read back under a different service or phone.
   const cardRequirementPhone = validateGuestPhone(clientPhone.trim());
   const cardRequirementKey =
-    step === "confirm" && serviceId && cardRequirementPhone.ok
+    CUSTOMER_PAYMENT_GATEWAY_ENABLED &&
+    step === "confirm" &&
+    serviceId &&
+    cardRequirementPhone.ok
       ? JSON.stringify([salon.id, serviceId, cardRequirementPhone.digits])
       : null;
   const cardRequirement =
@@ -1870,6 +1877,7 @@ export function useBookingFlowState(
         price_cents: result.price_cents,
         pricing: result.pricing,
         cardManagementToken: result.cardManagementToken,
+        cardManagementPending: result.cardManagementPending,
       });
       setStepDir(1);
       setStep("done");
@@ -1938,30 +1946,17 @@ export function useBookingFlowState(
       } else if (
         err instanceof Error &&
         (err.message === "booking_commit_unknown" ||
-          err.message === "card_management_pending" ||
           err.message === "deposit_binding_pending")
       ) {
-        // The booking commit may already exist. Keep both the logical create
-        // key and replay marker so the next explicit click replays that exact
-        // create and resumes capability/card reconciliation without a second
-        // booking. Stay on Confirm with truthful recovery copy.
+        // The booking/deposit commit may already exist. Keep both the logical
+        // create key and replay marker so an explicit retry replays that exact
+        // transaction identity instead of creating another appointment.
         setError(
           err.message === "booking_commit_unknown"
             ? t.submitUnknown
             : (t.noShowCardError ?? t.submitError),
         );
         setStep("confirm");
-      } else if (
-        err instanceof Error &&
-        err.message.startsWith("card_save_failed")
-      ) {
-        // Card couldn't be saved → booking was cancelled server-side. Stay on
-        // the confirm step so the customer can re-enter the card. Show the
-        // provider reason (decline code) to aid diagnosis.
-        const reason = err.message.slice("card_save_failed:".length).trim();
-        setError(
-          (t.noShowCardError ?? t.submitError) + (reason ? ` — ${reason}` : ""),
-        );
       } else if (
         err instanceof Error &&
         err.message === "invalid_name_chars"
