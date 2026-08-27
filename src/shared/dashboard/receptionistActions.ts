@@ -1708,7 +1708,17 @@ export async function createDeskGroup(
       : await submitGroupBooking(groupParams, {
           kind: "canonical_desk",
           createGroupBookings: async (request) => {
-            const quoted = await resolveGroupBookingQuote(request);
+            // The create contract carries an idempotency key, but the strict
+            // quote contract intentionally does not. Passing the create object
+            // through unchanged makes the quote fail as `invalid_request`
+            // before it can reach the authoritative pricing RPC.
+            const quoteRequest = {
+              salonId: request.salonId,
+              bookings: request.bookings,
+              voucherCode: request.voucherCode,
+              applyEmailDiscount: request.applyEmailDiscount,
+            };
+            const quoted = await resolveGroupBookingQuote(quoteRequest);
             if (!quoted.ok) {
               ErrorReporter.captureMessage("desk group authoritative quote failed", {
                 level: "error",
