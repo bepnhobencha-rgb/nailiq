@@ -21,22 +21,13 @@ export const V1_INTEGRATION_SCOPE = Object.freeze({
 } as const);
 
 /**
- * V1 never asks NailIQ to charge or refund customer money. Salons continue
- * checkout directly in Square; this fail-closed predicate is the shared server
- * boundary for deposits, charges and refunds. The narrower no-show card-on-file
- * exception below carries no money movement.
+ * V1 never asks NailIQ to create, charge, refund, reconcile, or store a
+ * customer's provider payment method. Salons continue checkout directly in
+ * Square; this fail-closed predicate is the shared server boundary for the
+ * dormant Square/Stripe payment foundation.
  */
 export function v1AllowsCustomerPaymentGateway(): boolean {
   return false;
-}
-
-/**
- * Narrow exception approved for booking protection: tokenize and vault a card
- * without charging it. Money movement, deposits and refunds remain behind the
- * broader fail-closed gateway boundary above.
- */
-export function v1AllowsNoShowCardOnFile(): boolean {
-  return true;
 }
 
 /**

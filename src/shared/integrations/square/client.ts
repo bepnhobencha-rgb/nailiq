@@ -455,7 +455,6 @@ export async function saveCardOnFile(
     customerId: string;
     sourceId: string;
     idempotencyKey: string;
-    referenceId: string;
     /** Optional legacy verification token. Current Web Payments SDK clients
      *  request STORE verification during `card.tokenize(details)`, embedding
      *  the buyer-verification result in the source token. */
@@ -468,7 +467,7 @@ export async function saveCardOnFile(
     ...(opts.verificationToken
       ? { verification_token: opts.verificationToken }
       : {}),
-    card: { customer_id: opts.customerId, reference_id: opts.referenceId },
+    card: { customer_id: opts.customerId },
   });
   const card = (json.card as Record<string, unknown>) ?? {};
   const cardId = String(card.id ?? "");
@@ -545,35 +544,6 @@ export async function listCards(
     brand: String(c.card_brand ?? ""),
     expMonth: typeof c.exp_month === "number" ? c.exp_month : undefined,
     expYear: typeof c.exp_year === "number" ? c.exp_year : undefined,
-  }));
-}
-
-/** Read-only response-loss recovery. The reference is unique per durable
- * operation, so callers never need to re-submit the source token. */
-export async function listCardsByReferenceId(
-  cfg: SquareConfig,
-  referenceId: string,
-): Promise<Array<{
-  cardId: string;
-  customerId: string;
-  last4: string;
-  brand: string;
-  enabled: boolean;
-  referenceId: string;
-}>> {
-  const json = await squareReq(
-    cfg,
-    "GET",
-    `/cards?reference_id=${encodeURIComponent(referenceId)}&include_disabled=true`,
-  );
-  const cards = (json.cards as Record<string, unknown>[] | undefined) ?? [];
-  return cards.map((card) => ({
-    cardId: String(card.id ?? "").trim(),
-    customerId: String(card.customer_id ?? "").trim(),
-    last4: String(card.last_4 ?? "").trim(),
-    brand: String(card.card_brand ?? "").trim(),
-    enabled: card.enabled !== false,
-    referenceId: String(card.reference_id ?? "").trim(),
   }));
 }
 

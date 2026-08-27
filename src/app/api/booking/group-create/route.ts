@@ -101,25 +101,24 @@ export async function POST(request: NextRequest) {
       cardManagementPending = true;
     }
   }
-  if (result.ok && !cardManagementPending && cardManagementToken && parsed.data.cardSourceId) {
+  if (result.ok && cardManagementPending) {
+    return json({ ok: false, code: "card_management_pending", bookingCommitted: true }, 503);
+  }
+  if (result.ok && cardManagementToken && parsed.data.cardSourceId) {
     if (parsed.data.noShowConsent !== true) {
-      cardManagementToken = null;
-      cardManagementPending = true;
-    } else {
-      const saved = await saveCardWithManagementCapability({
-        tokenId: cardManagementToken,
-        requestId: parsed.data.idempotencyKey,
-        provider: "square",
-        sourceToken: parsed.data.cardSourceId,
-        verificationToken: parsed.data.cardVerificationToken,
-      });
-      if (!saved.ok) {
-        cardManagementToken = null;
-        cardManagementPending = true;
-      } else {
-        cardManagementToken = null;
-      }
+      return json({ ok: false, code: "card_management_pending", bookingCommitted: true }, 409);
     }
+    const saved = await saveCardWithManagementCapability({
+      tokenId: cardManagementToken,
+      requestId: parsed.data.idempotencyKey,
+      provider: "square",
+      sourceToken: parsed.data.cardSourceId,
+      verificationToken: parsed.data.cardVerificationToken,
+    });
+    if (!saved.ok) {
+      return json({ ok: false, code: "card_management_pending", bookingCommitted: true, detail: saved.code }, 503);
+    }
+    cardManagementToken = null;
   }
   const status = result.ok
     ? 200
@@ -139,11 +138,6 @@ export async function POST(request: NextRequest) {
         bookingIds: result.bookingIds,
         idempotent: result.idempotent,
         cardManagementToken,
-        // Booking creation is the authoritative outcome. Card management is a
-        // post-commit recovery concern: the booking row is already flagged by
-        // ensureNoShowCardRequirement, so reporting a false create failure here
-        // would invite the customer to submit the same party again.
-        cardManagementPending,
         pricing: serializeGroupBookingPricingQuote(result.pricing),
       }
     : result.code === "pricing_changed" && result.quote

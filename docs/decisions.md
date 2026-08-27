@@ -5,35 +5,6 @@ Newest entries on top.
 
 ---
 
-## 2026-08-27 — Every booking gateway declares one orchestrated canonical route
-
-**Status.** Approved by the Product Owner in chat: “Hãy đồng bộ hết” and
-“Hãy làm theo đề xuất.”
-
-**Decision.** Every booking-capable gateway must enter through the shared
-`bookingOrchestrator` policy before it can quote, commit or reconcile a
-booking-shaped record. The orchestrator owns the gateway-to-channel and
-intent-to-engine mapping; adapters retain only authentication, input
-normalization and provider-specific translation.
-
-- Online, Desk and Voice route individual appointments to
-  `canonical_individual` and groups to `canonical_group`.
-- Walk-in routes to `operational_queue`; it is not disguised as a scheduled
-  individual appointment.
-- Wix and Square route to `provider_reconciliation`; provider imports retain
-  their exact external identity and reconciliation rules rather than bypassing
-  them through a public customer RPC.
-- Chat is `assist_only`. It cannot quote, commit or reconcile a booking until a
-  separately approved release expands that capability.
-
-**Safety boundary.** The orchestrator is additive and runtime-neutral. It does
-not replace the already-proven canonical RPCs, weaken Desk membership/role
-checks, change booking states, contact providers, or add a database migration.
-A committed booking receipt remains authoritative; card management and other
-post-commit work may remain pending without turning the booking into failure.
-
----
-
 ## 2026-08-22 — AI text/background provider timeout policy
 
 **Decision.** Non-streaming Anthropic text/background work has a 20-second

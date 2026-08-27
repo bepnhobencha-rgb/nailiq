@@ -1,6 +1,5 @@
 import "server-only";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { v1AllowsNoShowCardOnFile } from "@/shared/release/v1IntegrationScope";
 
 /**
  * Unified no-show card gate for EVERY booking-creation path.
@@ -22,11 +21,6 @@ export async function ensureNoShowCardRequirement(
   bookingId: string,
   options?: { strict?: boolean },
 ): Promise<{ required: boolean; feeCents: number }> {
-  // Preserve a fail-closed kill switch ahead of database/provider work.
-  if (!v1AllowsNoShowCardOnFile()) {
-    return { required: false, feeCents: 0 };
-  }
-
   try {
     const id = (bookingId ?? "").trim();
     if (!id) {

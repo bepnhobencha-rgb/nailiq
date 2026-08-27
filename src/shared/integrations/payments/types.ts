@@ -53,8 +53,6 @@ export interface PaymentProvider {
     verificationToken?: string;
     /** Stable per durable card-save operation. Provider retries must reuse it. */
     idempotencyKey: string;
-    /** Exact provider-side lookup key used after an ambiguous response. */
-    cardReferenceId: string;
   }): Promise<SavedCard>;
 
   /** Charge a previously-saved card. `idempotencyKey` MUST be stable per logical

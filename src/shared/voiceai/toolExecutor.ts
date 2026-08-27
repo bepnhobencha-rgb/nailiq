@@ -21,10 +21,6 @@ import {
   type GroupBookingCreateServerRequest,
 } from "@/shared/booking/groupBookingPricingServer";
 import { reconcileCommittedBooking } from "@/shared/booking/reconcileCommittedBooking";
-import {
-  bookingChannelFor,
-  runBookingOrchestrator,
-} from "@/shared/booking/bookingOrchestrator";
 import { committedBookingLifecycleError } from "@/shared/booking/committedBookingLifecycle";
 import {
   isClearVoicePricingConfirmation,
@@ -74,12 +70,6 @@ import {
   cancelBookingWithManagementCapability,
   mintBookingManagementCapability,
 } from "@/shared/booking/bookingManagementCapabilities";
-
-const VOICE_BOOKING_CHANNEL = bookingChannelFor({
-  gateway: "voice",
-  intent: "individual",
-  operation: "commit",
-});
 
 /**
  * Shared receptionist tool executor.
@@ -151,17 +141,7 @@ export async function executeVoiceTool(
     return handleVerifyOtp(salonSlug, toolArgs, baseUrl);
   }
   if (toolName === "confirm_booking") {
-    return runBookingOrchestrator(
-      { gateway: "voice", intent: "individual", operation: "commit" },
-      () => handleConfirmBooking(
-        supabase,
-        salonSlug,
-        toolArgs,
-        sessionId,
-        callerVerifiedPhone,
-        trustedUserUtterance,
-      ),
-    );
+    return handleConfirmBooking(supabase, salonSlug, toolArgs, sessionId, callerVerifiedPhone, trustedUserUtterance);
   }
   if (toolName === "find_booking") {
     return handleFindBooking(supabase, salonSlug, toolArgs);
@@ -183,17 +163,14 @@ export async function executeVoiceTool(
     return handleGetGroupAvailableSlots(supabase, salonSlug, toolArgs);
   }
   if (toolName === "confirm_group_booking") {
-    return runBookingOrchestrator(
-      { gateway: "voice", intent: "group", operation: "commit" },
-      () => handleConfirmGroupBooking(
-        supabase,
-        salonSlug,
-        toolArgs,
-        sessionId,
-        baseUrl,
-        callerVerifiedPhone,
-        trustedUserUtterance,
-      ),
+    return handleConfirmGroupBooking(
+      supabase,
+      salonSlug,
+      toolArgs,
+      sessionId,
+      baseUrl,
+      callerVerifiedPhone,
+      trustedUserUtterance,
     );
   }
   if (toolName === "join_waitlist") {
@@ -652,11 +629,11 @@ function scheduleVoiceBookingReconciliation(input: {
     reconcileCommittedBooking({
       bookingId: input.bookingId,
       salonId: input.salonId,
-      channel: VOICE_BOOKING_CHANNEL,
+      channel: "voice",
       stamp: async () => {
         const { error } = await input.supabase
           .from("bookings")
-          .update({ source: VOICE_BOOKING_CHANNEL, booking_channel: VOICE_BOOKING_CHANNEL } as never)
+          .update({ source: "voice", booking_channel: "voice" } as never)
           .eq("id", input.bookingId)
           .eq("salon_id", input.salonId);
         if (error) throw error;
@@ -2931,7 +2908,7 @@ async function handleConfirmGroupBooking(
     }).catch(() => null);
     await supabase
       .from("bookings")
-      .update({ source: VOICE_BOOKING_CHANNEL, booking_channel: VOICE_BOOKING_CHANNEL } as never)
+      .update({ source: "voice", booking_channel: "voice" } as never)
       .in("id", replay.bookingIds);
     if (sessionId) {
       await supabase.from("voice_ai_sessions").update({ status: "completed" }).eq("id", sessionId);
@@ -3195,7 +3172,7 @@ async function handleConfirmGroupBooking(
     try {
       await supabase
         .from("bookings")
-        .update({ source: VOICE_BOOKING_CHANNEL, booking_channel: VOICE_BOOKING_CHANNEL } as never)
+        .update({ source: "voice", booking_channel: "voice" } as never)
         .in("id", bookingIds);
     } catch { /* best-effort */ }
     bookingIds.forEach((id) =>

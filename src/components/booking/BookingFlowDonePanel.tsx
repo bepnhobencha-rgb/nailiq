@@ -33,7 +33,6 @@ export function BookingFlowDonePanel({
   displayEndUtc,
   bookingId,
   cardManagementToken,
-  cardManagementPending,
   salonPhone,
   salonTimezone,
   pricing,
@@ -53,8 +52,6 @@ export function BookingFlowDonePanel({
   displayEndUtc: string;
   bookingId: string;
   cardManagementToken: string | null;
-  /** Booking is confirmed; only the separate no-show card step remains. */
-  cardManagementPending: boolean;
   /** Public salon line: `salons.salon_phone` only (not owner `phone`, never guest). */
   salonPhone: string | null;
   /** IANA TZ — confirmation displays the booking time in the salon's local zone (B-16). */
@@ -335,17 +332,6 @@ export function BookingFlowDonePanel({
           </div>
         </div>
       </div>
-
-      {cardManagementPending && !cardManagementToken ? (
-        <p
-          className="nq-booking-glass rounded-[1.35rem] px-5 py-4 text-sm leading-relaxed text-[var(--booking-text)]"
-          data-testid="booking-card-pending-notice"
-          role="status"
-          aria-live="polite"
-        >
-          {t.cardManagementPendingNotice}
-        </p>
-      ) : null}
 
       {cardManagementToken ? (
         <NoShowCardCapture

@@ -59,8 +59,6 @@ export const bookingVi: BookingMessages = {
   noShowCardSaving: "Đang lưu…",
   noShowCardSaved: "Đã lưu thẻ — chỉ thu {fee} nếu bạn không đến.",
   noShowCardError: "Không lưu được thẻ. Vui lòng kiểm tra lại thông tin.",
-  cardManagementPendingNotice:
-    "Lịch của bạn đã được xác nhận. Bước lưu thẻ no-show chưa hoàn tất. Đừng đặt lại; hãy liên hệ tiệm nếu bạn cần hỗ trợ.",
   cardVerificationError:
     "Không xác minh được thẻ. Hãy kiểm tra thông tin thẻ và mã bưu chính rồi thử lại. Nếu vẫn lỗi, hãy mở trang bằng Safari hoặc Chrome.",
   cardWebviewHint:

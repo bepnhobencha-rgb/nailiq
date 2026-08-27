@@ -69,8 +69,6 @@ import { execFileSync } from "node:child_process";
  * public booking snapshot plus two service-role-only dashboard projections.
  * The 20260825124500 MQA-0148 dashboard-shell migration adds one
  * service-role-only shell projection.
- * The 20260826204500 group-booking resource migration adds one atomic
- * resource-assignment trigger function and one booking trigger.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -112,7 +110,7 @@ const PRODUCTION = {
   // +4 terminal receipt fields on reminder claims, +4 on staff-action
   // deliveries, and +13 fields in the PII-free Twilio status receipt inbox.
   // +7 fail-closed error-remediation QA and approval evidence columns.
-  columns: 2574,
+  columns: 2568,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -136,17 +134,17 @@ const PRODUCTION = {
   // SID-first service-role wrappers, plus +2 durable review-SMS completion and
   // signed callback-correlation functions.
   // +1 forward-only error-remediation release-gate trigger function.
-  functions: 377,
+  functions: 374,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
   // +1 fail-closed error-remediation release-gate trigger.
-  triggers: 88,
+  triggers: 87,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
   // +1 Twilio inbox primary key plus unique reminder/staff SMS SID indexes.
-  indexes: 633,
+  indexes: 632,
 } as const;
 
 /**
@@ -335,10 +333,8 @@ const CRITICAL_FUNCTIONS = [
   "complete_booking_card_management_operation",
   "reconcile_stale_booking_card_management_operations",
   "claim_booking_card_save_operation",
-  "prepare_booking_card_save_dispatch",
   "complete_booking_card_save_operation",
   "reconcile_stale_booking_card_save_operations",
-  "complete_booking_card_save_reconciliation",
   "ensure_waitlist_offer_delivery_outbox",
   "load_waitlist_offer_delivery_material",
   "mint_waitlist_claim_capability",
@@ -412,7 +408,6 @@ const CRITICAL_FUNCTIONS = [
   "inspect_sms_consent_event",
   "load_sms_outbound_suppression",
   "enforce_booking_operational_capacity_guard",
-  "auto_assign_single_booking_resource",
   "bump_salon_availability_revision",
   "rate_limit_hit_many",
   "rate_limit_hit_request_batch",

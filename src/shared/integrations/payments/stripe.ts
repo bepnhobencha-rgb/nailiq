@@ -37,7 +37,6 @@ export class StripeProvider implements PaymentProvider {
      *  client already confirmed. Present only to satisfy the shared interface. */
     verificationToken?: string;
     idempotencyKey: string;
-    cardReferenceId: string;
   }) {
     // Reuse an existing customer by exact email (immediate, no search lag); else
     // create one. Dedupe by email keeps a returning client's cards together.
@@ -52,10 +51,7 @@ export class StripeProvider implements PaymentProvider {
         name: input.customer.name ?? undefined,
         phone: input.customer.phone ?? undefined,
         email: email || undefined,
-        metadata: {
-          referenceId: input.customer.referenceId,
-          cardReferenceId: input.cardReferenceId,
-        },
+        metadata: { referenceId: input.customer.referenceId },
       }, { idempotencyKey: `${input.idempotencyKey}:customer` });
       customerId = created.id;
     }

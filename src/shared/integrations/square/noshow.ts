@@ -150,10 +150,7 @@ export async function noShowCardDecision(
     return { required: false, feeCents: 0, reason: "no-show protection off" };
   }
   // Connection check is provider-agnostic: a usable Square OR Stripe provider.
-  const provider = await resolvePaymentProvider(str(b.salon_id), {
-    strict: options?.strict === true,
-    purpose: "card_on_file",
-  });
+  const provider = await resolvePaymentProvider(str(b.salon_id), { strict: options?.strict === true });
   if (!provider) {
     return { required: false, feeCents: 0, reason: "no payment provider connected" };
   }
@@ -279,7 +276,7 @@ export async function saveNoShowCardForBooking(
   const decision = await noShowCardDecision(bookingId);
   if (!decision.required) return { ok: false, reason: decision.reason };
 
-  const provider = await resolvePaymentProvider(str(b.salon_id), { purpose: "card_on_file" });
+  const provider = await resolvePaymentProvider(str(b.salon_id));
   if (!provider) return { ok: false, reason: "payment provider not configured" };
   const saved = await provider.saveCardOnFile({
     customer: {
@@ -293,7 +290,6 @@ export async function saveNoShowCardForBooking(
     // Legacy server-only callers retain stable provider dedupe while public
     // card capture migrates to the durable card_manage operation contract.
     idempotencyKey: `legacy-card-save:${bookingId}`,
-    cardReferenceId: `legacy-card:${bookingId}`,
   });
 
   // Server-authored consent evidence: the exact terms the customer agreed to,
@@ -396,7 +392,7 @@ export async function reuseNoShowCardForBooking(
   }
 
   // Provider-agnostic: re-derive the saved card from the OTP-verified phone.
-  const provider = await resolvePaymentProvider(str(b.salon_id), { purpose: "card_on_file" });
+  const provider = await resolvePaymentProvider(str(b.salon_id));
   if (!provider) return { ok: false, reason: "payment provider not configured" };
   const card = await provider.findSavedCardByPhone(sessionPhone);
   if (!card || !card.cardId) return { ok: false, reason: "no saved card" };
@@ -495,7 +491,7 @@ export async function autoAttachReturningCard(
     const policy = await loadPolicy(db, str(b.salon_id));
     if (!policy.enabled) return { attached: false, reason: "no-show protection off" };
 
-    const provider = await resolvePaymentProvider(str(b.salon_id), { purpose: "card_on_file" });
+    const provider = await resolvePaymentProvider(str(b.salon_id));
     if (!provider) return { attached: false, reason: "no payment provider connected" };
 
     // Only CARRY FORWARD a card the customer already authorized — never enroll a

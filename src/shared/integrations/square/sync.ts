@@ -25,10 +25,6 @@ import { after } from "next/server";
 import "server-only";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
-import {
-  bookingChannelFor,
-  runBookingOrchestrator,
-} from "@/shared/booking/bookingOrchestrator";
 import { resolveSquareCustomerIdentity } from "./customerIdentity";
 import { looseServiceClient } from "./looseDb";
 import {
@@ -53,12 +49,6 @@ import {
   markSquareBookingWritebackUnknown,
   recordSquareBookingWritebackCustomer,
 } from "./bookingWriteback";
-
-const SQUARE_BOOKING_CHANNEL = bookingChannelFor({
-  gateway: "square",
-  intent: "external_import",
-  operation: "reconcile",
-});
 
 const RENDER_STATUS = new Set(["pending", "confirmed", "in_progress", "completed"]);
 const ACTIVE_SQUARE = new Set(["ACCEPTED", "PENDING"]);
@@ -253,7 +243,7 @@ async function recoverCorrelatedSquareBooking(
   return "recovered";
 }
 
-async function executeSquareForwardSync(salonId: string): Promise<SquareSyncResult> {
+export async function runSquareForwardSync(salonId: string): Promise<SquareSyncResult> {
   const db = looseServiceClient();
   const cfg = await getSquareConfig(db, salonId);
   const { data: salonMode, error: salonModeError } = await db
@@ -761,7 +751,7 @@ async function executeSquareForwardSync(salonId: string): Promise<SquareSyncResu
       status: targetStatus,
       source: "appointment",
       // booking_channel not yet in generated types — cast below.
-      booking_channel: SQUARE_BOOKING_CHANNEL,
+      booking_channel: "square",
       price_cents: svc.price_cents,
       square_booking_id: b.id,
     } as never).select("id").maybeSingle();
@@ -1031,13 +1021,4 @@ async function executeSquareForwardSync(salonId: string): Promise<SquareSyncResu
   if (healthUpdateError) throw new Error("square_sync_health_update_failed");
 
   return { pulled: bookings.length, inserted, updated, customersAdded, skipped, cancelledInSquare, createdInSquare, updatedInSquare };
-}
-
-export async function runSquareForwardSync(
-  ...args: Parameters<typeof executeSquareForwardSync>
-): Promise<Awaited<ReturnType<typeof executeSquareForwardSync>>> {
-  return runBookingOrchestrator(
-    { gateway: "square", intent: "external_import", operation: "reconcile" },
-    () => executeSquareForwardSync(...args),
-  );
 }

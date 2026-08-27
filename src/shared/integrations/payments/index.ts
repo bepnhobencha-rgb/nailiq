@@ -3,10 +3,7 @@ import { looseServiceClient, type Row } from "@/shared/integrations/square/loose
 import { getSquareConfig } from "@/shared/integrations/square/client";
 import { SquareProvider } from "./square";
 import type { PaymentProvider, PaymentProviderKind } from "./types";
-import {
-  v1AllowsCustomerPaymentGateway,
-  v1AllowsNoShowCardOnFile,
-} from "@/shared/release/v1IntegrationScope";
+import { v1AllowsCustomerPaymentGateway } from "@/shared/release/v1IntegrationScope";
 
 export type { PaymentProvider } from "./types";
 
@@ -18,12 +15,9 @@ export type { PaymentProvider } from "./types";
  */
 export async function resolvePaymentProvider(
   salonId: string,
-  options?: { strict?: boolean; purpose?: "payment" | "card_on_file" },
+  options?: { strict?: boolean },
 ): Promise<PaymentProvider | null> {
-  const allowed = options?.purpose === "card_on_file"
-    ? v1AllowsNoShowCardOnFile()
-    : v1AllowsCustomerPaymentGateway();
-  if (!allowed) {
+  if (!v1AllowsCustomerPaymentGateway()) {
     if (options?.strict) throw new Error("v1_customer_payment_gateway_disabled");
     return null;
   }

@@ -13,16 +13,6 @@ import { categorizeService } from "./categorize";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { parseWixBookingWindow } from "./bookingWindow";
-import {
-  bookingChannelFor,
-  runBookingOrchestrator,
-} from "@/shared/booking/bookingOrchestrator";
-
-const WIX_BOOKING_CHANNEL = bookingChannelFor({
-  gateway: "wix",
-  intent: "external_import",
-  operation: "reconcile",
-});
 
 // --- pure helpers ---
 function canonPhone(p: unknown): string | null {
@@ -179,18 +169,9 @@ async function evaluateClient(ctx: ResolverContext, phone: string, subtotalCents
  * Exported so the webhook handler can call it without going through a full batch sync.
  * The resolver context is built fresh on each webhook call (small overhead, isolated per event).
  */
-async function executeWixBookingEvent(salonId: string, b: WixBooking, autoApprove = true): Promise<BookingEventResult> {
+export async function processWixBookingEvent(salonId: string, b: WixBooking, autoApprove = true): Promise<BookingEventResult> {
   const ctx = await buildResolverContext(salonId, autoApprove);
   return _processOne(ctx, b);
-}
-
-export async function processWixBookingEvent(
-  ...args: Parameters<typeof executeWixBookingEvent>
-): Promise<Awaited<ReturnType<typeof executeWixBookingEvent>>> {
-  return runBookingOrchestrator(
-    { gateway: "wix", intent: "external_import", operation: "reconcile" },
-    () => executeWixBookingEvent(...args),
-  );
 }
 
 /** Internal: process one booking using a pre-built resolver context (reused across the batch loop). */
@@ -235,7 +216,7 @@ async function _processOne(ctx: ResolverContext, b: WixBooking): Promise<Booking
   const fields: Record<string, unknown> = {
     salon_id: ctx.salonId, client_name: clientName, client_phone: ph, client_email: b.contactDetails?.email ?? null,
     service_id: svc.id, staff_id: staffId, start_time_utc: start, end_time_utc: end, status, source: "appointment",
-    booking_channel: WIX_BOOKING_CHANNEL,
+    booking_channel: "wix",
     price_cents: svc.price, staff_request_note: note, staff_requested_by_client: noteRequestsStaff(note),
     verification_method: "none",
     wix_booking_id: b.id,
@@ -274,7 +255,7 @@ async function _processOne(ctx: ResolverContext, b: WixBooking): Promise<Booking
   return { action, bookingId, autoConfirmed, startUtc: start };
 }
 
-async function executeForwardSync(salonId: string, siteId: string, sinceIso: string, autoApprove: boolean): Promise<ForwardSyncResult> {
+export async function runForwardSync(salonId: string, siteId: string, sinceIso: string, autoApprove: boolean): Promise<ForwardSyncResult> {
   const ctx = await buildResolverContext(salonId, autoApprove);
   const bookings = await queryBookingsUpdatedSince(siteId, sinceIso);
   let created = 0, updated = 0, skipped = 0, autoApproved = 0, maxUpdated = sinceIso;
@@ -319,13 +300,4 @@ async function executeForwardSync(salonId: string, siteId: string, sinceIso: str
   const newCursor = new Date(new Date(maxUpdated).getTime() + 1).toISOString();
   await ctx.db.from("wix_integrations").update({ cursor_updated_date: newCursor, last_run_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString() }).eq("salon_id", salonId);
   return { created, updated, skipped, autoApproved, cursor: newCursor };
-}
-
-export async function runForwardSync(
-  ...args: Parameters<typeof executeForwardSync>
-): Promise<Awaited<ReturnType<typeof executeForwardSync>>> {
-  return runBookingOrchestrator(
-    { gateway: "wix", intent: "external_import", operation: "reconcile" },
-    () => executeForwardSync(...args),
-  );
 }

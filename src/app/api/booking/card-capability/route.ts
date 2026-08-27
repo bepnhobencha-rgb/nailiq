@@ -5,7 +5,6 @@ import { ensureNoShowCardRequirement } from "@/shared/noshow/ensureNoShowCardReq
 import { clientIp, durableRateLimitKey, isOverRateLimit } from "@/shared/lib/inAppRateLimit";
 import { readJsonObjectWithLimit } from "@/shared/security/readJsonObjectWithLimit";
 import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
-import { v1AllowsNoShowCardOnFile } from "@/shared/release/v1IntegrationScope";
 
 const PRIVATE_HEADERS = {
   "Cache-Control": "private, no-store, max-age=0", Pragma: "no-cache",
@@ -24,17 +23,6 @@ export async function POST(request: Request) {
   const pricingFingerprint = typeof body?.pricingFingerprint === "string" ? body.pricingFingerprint.trim() : "";
   if (!salonId || !bookingId || !idempotencyKey || !/^[0-9a-f]{64}$/.test(pricingFingerprint)) {
     return NextResponse.json({ ok: false, code: "invalid_request" }, { status: 400, headers: PRIVATE_HEADERS });
-  }
-  // This is a resolved "not applicable" state, not a retryable provider error.
-  // Return before rate/DB/capability work so every committed V1 booking can
-  // render success without creating a misleading card-management incident.
-  if (!v1AllowsNoShowCardOnFile()) {
-    return NextResponse.json({
-      ok: true,
-      required: false,
-      token: null,
-      cardManagementStatus: "not_applicable",
-    }, { status: 200, headers: PRIVATE_HEADERS });
   }
   const limited = await isOverRateLimit(
     durableRateLimitKey("card-capability-exchange", clientIp(request), salonId),

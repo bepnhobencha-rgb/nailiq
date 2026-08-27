@@ -79,15 +79,7 @@ export type GroupBookingCreateServerRequest = z.infer<typeof groupBookingCreateR
 
 type GroupQuoteResult =
   | { ok: true; quote: GroupBookingPricingQuote }
-  | {
-      ok: false;
-      code:
-        | "invalid_request"
-        | "voucher_invalid"
-        | "slot_conflict"
-        | "quote_unavailable"
-        | "pricing_invalid";
-    };
+  | { ok: false; code: "invalid_request" | "voucher_invalid" | "quote_unavailable" | "pricing_invalid" };
 
 export type GroupCreateResult =
   | {
@@ -219,9 +211,6 @@ export async function resolveGroupBookingQuote(input: unknown): Promise<GroupQuo
   if (error || data == null) return { ok: false, code: "quote_unavailable" };
   const raw = Array.isArray(data) ? data[0] : data;
   if (raw && typeof raw === "object" && (raw as { success?: unknown }).success === false) {
-    if ((raw as { code?: unknown }).code === "slot_conflict") {
-      return { ok: false, code: "slot_conflict" };
-    }
     return {
       ok: false,
       code: (raw as { code?: unknown }).code === "voucher_invalid"

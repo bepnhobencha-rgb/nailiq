@@ -110,15 +110,7 @@ describe("public group booking authoritative-pricing rollout boundary", () => {
       submit.slice(compatibilityStart, controlledAddonWrite),
     ).toContain("if (controlledAfterHoursExecution)");
     expect(receptionist).toContain('kind: "canonical_desk"');
-    expect(receptionist).toContain("const quoteRequest = {");
-    expect(receptionist).toContain("salonId: request.salonId");
-    expect(receptionist).toContain("bookings: request.bookings");
-    expect(receptionist).toContain("voucherCode: request.voucherCode");
-    expect(receptionist).toContain(
-      "applyEmailDiscount: request.applyEmailDiscount",
-    );
-    expect(receptionist).toContain("resolveGroupBookingQuote(quoteRequest)");
-    expect(receptionist).not.toContain("resolveGroupBookingQuote(request)");
+    expect(receptionist).toContain("resolveGroupBookingQuote(request)");
     expect(receptionist).toContain("createGroupBookingsAuthoritative");
     expect(receptionist).toContain('kind: "controlled_after_hours"');
   });

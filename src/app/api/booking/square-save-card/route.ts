@@ -4,7 +4,6 @@ import { saveCardWithManagementCapability } from "@/shared/booking/bookingCardMa
 import { consumeBookingManagementRateLimit } from "@/shared/booking/bookingManagementRateLimit";
 import { readJsonObjectWithLimit } from "@/shared/security/readJsonObjectWithLimit";
 import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
-import { v1AllowsNoShowCardOnFile } from "@/shared/release/v1IntegrationScope";
 
 export const runtime = "nodejs";
 
@@ -31,11 +30,6 @@ export async function POST(request: Request) {
     : undefined;
   if (!token || !requestId || !sourceId || !provider || body?.consent !== true) {
     return json({ ok: false, code: "invalid_request" }, 400);
-  }
-  // A stale capability must not claim an operation while the narrow card-on-file
-  // gate is disabled. Keep this ahead of rate-limit/database/provider work.
-  if (!v1AllowsNoShowCardOnFile()) {
-    return json({ ok: false, code: "phase_2_not_available" }, 503);
   }
   const rate = await consumeBookingManagementRateLimit({
     request, tokenId: token, action: "card_manage", phase: "mutate",

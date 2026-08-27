@@ -14,7 +14,6 @@ import { reconcileSquareHostedDepositClaim } from "@/shared/integrations/square/
 import { reconcileSquarePublicDepositResponseLoss } from "@/shared/integrations/square/publicDepositReconciliation";
 import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
 import { runTrackedCron } from "@/shared/security/cronRunHistory";
-import { reconcileBookingCardSaveOperations } from "@/shared/booking/reconcileBookingCardSaveOperations";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -143,26 +142,10 @@ async function reconcilePublicDeposit(
 export async function GET(request: NextRequest) {
   const authorizationError = requireCronAuthorization(request);
   if (authorizationError) return authorizationError;
-  const paymentWorkerDisabled = process.env.PAYMENT_LEDGER_WORKERS_ENABLED !== "true";
-  const paymentWorkerEnabled = !paymentWorkerDisabled;
-  const cardWorkerEnabled = process.env.BOOKING_CARD_RECONCILIATION_ENABLED === "true";
-  if (!paymentWorkerEnabled && !cardWorkerEnabled) {
+  if (process.env.PAYMENT_LEDGER_WORKERS_ENABLED !== "true") {
     return NextResponse.json({ ok: true, code: "disabled", processed: 0 });
   }
   return runTrackedCron("payment_reconciliation", async () => {
-    const cardResult = cardWorkerEnabled
-      ? await reconcileBookingCardSaveOperations(10)
-      : { ok: true, processed: 0, reconciled: 0, unresolved: 0 };
-    if (!paymentWorkerEnabled) {
-      return NextResponse.json({
-        ok: cardResult.ok,
-        ...(cardResult.ok ? {} : { code: "card_reconciliation_incomplete" }),
-        processed: cardResult.processed,
-        succeeded: cardResult.reconciled,
-        unresolved: cardResult.unresolved,
-        card: cardResult,
-      }, { status: cardResult.ok ? 200 : 503 });
-    }
     const db = createServiceRoleClient();
     const squareEnvironment = process.env.SQUARE_PUBLIC_DEPOSIT_RECONCILIATION_ENVIRONMENT;
     const squareDiscoveryEnabled = squareEnvironment === "sandbox" || squareEnvironment === "production";
@@ -293,9 +276,6 @@ export async function GET(request: NextRequest) {
       if (result.ok) succeeded += 1;
       else unresolved += 1;
     }
-    processed += cardResult.processed;
-    succeeded += cardResult.reconciled;
-    unresolved += cardResult.unresolved;
     return NextResponse.json(
       {
         ok: unresolved === 0,
@@ -303,7 +283,6 @@ export async function GET(request: NextRequest) {
         processed,
         succeeded,
         unresolved,
-        ...(cardWorkerEnabled ? { card: cardResult } : {}),
       },
       { status: unresolved === 0 ? 200 : 503 },
     );

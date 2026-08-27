@@ -4,7 +4,6 @@ import {
   checkBookingConflict,
 } from "@/shared/lib/conflictCheck";
 import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit";
-import { runBookingOrchestrator } from "@/shared/booking/bookingOrchestrator";
 import { stampGroupBookingIdentity } from "@/shared/booking/groupBookingSideEffects";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { intervalsOverlapMs } from "@/shared/booking/bookingIntervals";
@@ -145,10 +144,6 @@ export type GroupBookingResult =
       pricing: GroupBookingPricingQuote | null;
       /** Server-minted action proof for organizer card capture, when required. */
       cardManagementToken: string | null;
-      /** True when the party is committed but no-show card work still needs
-       * reconciliation. This is a success-state concern, never a reason to
-       * ask the organizer to submit the party again. */
-      cardManagementPending: boolean;
     }
   | {
       ok: false;
@@ -227,7 +222,8 @@ export type GroupBookingResult =
         // Salon's plan-tier monthly booking cap would be exceeded by
         // this group submit. Recoverable only by the salon owner
         // upgrading the plan.
-        | "monthly_booking_limit_reached";
+        | "monthly_booking_limit_reached"
+        | "card_management_pending";
       /** 1-indexed member number for granular per-member errors so
        *  the UI can say "Person 2 has an invalid phone". `null` when
        *  the error is global (e.g. invalid group size). */
@@ -334,7 +330,7 @@ function fail(
   return { ok: false, reason, memberNumber };
 }
 
-async function executeGroupBooking(
+export async function submitGroupBooking(
   params: GroupBookingParams,
   trustedExecution?: TrustedGroupBookingExecution,
 ): Promise<GroupBookingResult> {
@@ -368,7 +364,6 @@ async function executeGroupBooking(
       bookingIds: [],
       pricing: null,
       cardManagementToken: null,
-      cardManagementPending: false,
     };
   }
 
@@ -1010,7 +1005,6 @@ async function executeGroupBooking(
   let bookingIdList: string[];
   let authoritativePricing: GroupBookingPricingQuote | null = null;
   let publicCardManagementToken: string | null = null;
-  let publicCardManagementPending = false;
   if (controlledAfterHoursExecution) {
     let rpcData: unknown;
     let rpcErr: { code?: string; message?: string } | null;
@@ -1168,6 +1162,7 @@ async function executeGroupBooking(
       }
       if (code === "otp_required") return fail("otp_required");
       if (code === "otp_invalid") return fail("otp_invalid");
+      if (code === "card_management_pending") return fail("card_management_pending");
       return fail("server_error");
     }
     const pricing = parseGroupBookingPricingQuote(apiResult.pricing, {
@@ -1189,7 +1184,6 @@ async function executeGroupBooking(
     publicCardManagementToken = typeof apiResult.cardManagementToken === "string"
       ? apiResult.cardManagementToken
       : null;
-    publicCardManagementPending = apiResult.cardManagementPending === true;
   }
 
   // Phase-A compatibility only for the separately authorized controlled
@@ -1339,26 +1333,5 @@ async function executeGroupBooking(
     bookingIds: bookingIdList,
     pricing: authoritativePricing,
     cardManagementToken: publicCardManagementToken,
-    cardManagementPending: publicCardManagementPending,
   };
-}
-
-export async function submitGroupBooking(
-  params: GroupBookingParams,
-  trustedExecution?: TrustedGroupBookingExecution,
-): Promise<GroupBookingResult> {
-  return runBookingOrchestrator(
-    {
-      gateway: params.bookingChannel === "desk" ? "desk" : "online",
-      intent: "group",
-      operation: "commit",
-    },
-    (route) => executeGroupBooking(
-      {
-        ...params,
-        bookingChannel: route.channel === "desk" ? "desk" : "online",
-      },
-      trustedExecution,
-    ),
-  );
 }

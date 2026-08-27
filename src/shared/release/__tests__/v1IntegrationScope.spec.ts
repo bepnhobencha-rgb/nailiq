@@ -7,7 +7,6 @@ import {
   v1AllowsArchivedBookingRecovery,
   v1AllowsAutomatedSubscriptionBilling,
   v1AllowsCustomerPaymentGateway,
-  v1AllowsNoShowCardOnFile,
   v1AllowsWixCalendarConnection,
 } from "../v1IntegrationScope";
 
@@ -32,7 +31,6 @@ describe("NailIQ V1 integration scope", () => {
 
   it("keeps NailIQ-initiated customer money paths hard off in V1", () => {
     expect(v1AllowsCustomerPaymentGateway()).toBe(false);
-    expect(v1AllowsNoShowCardOnFile()).toBe(true);
 
     const paymentResolver = readFileSync(
       resolve(process.cwd(), "src/shared/integrations/payments/index.ts"),
@@ -46,61 +44,15 @@ describe("NailIQ V1 integration scope", () => {
       resolve(process.cwd(), "src/shared/integrations/square/noshow.ts"),
       "utf8",
     );
-    const cardRequirement = readFileSync(
-      resolve(process.cwd(), "src/shared/noshow/ensureNoShowCardRequirement.ts"),
-      "utf8",
-    );
-    const cardCapability = readFileSync(
-      resolve(process.cwd(), "src/app/api/booking/card-capability/route.ts"),
-      "utf8",
-    );
-    const preBookingRequirement = readFileSync(
-      resolve(process.cwd(), "src/shared/noshow/resolveNoShowCardRequirement.ts"),
-      "utf8",
-    );
-    const individualBookingFlow = readFileSync(
-      resolve(process.cwd(), "src/components/booking/useBookingFlowState.ts"),
-      "utf8",
-    );
-    const groupBookingFlow = readFileSync(
-      resolve(process.cwd(), "src/components/booking/BookingGroupFlow.tsx"),
-      "utf8",
-    );
-    const squareCardMutation = readFileSync(
-      resolve(process.cwd(), "src/app/api/booking/square-save-card/route.ts"),
-      "utf8",
-    );
-    const stripeCardMutation = readFileSync(
-      resolve(process.cwd(), "src/app/api/booking/stripe-setup-intent/route.ts"),
-      "utf8",
-    );
 
-    expect(paymentResolver).toMatch(/purpose.*card_on_file[\s\S]*v1AllowsNoShowCardOnFile\(\)/u);
-    expect(paymentResolver).toMatch(/v1AllowsCustomerPaymentGateway\(\)[\s\S]*if\s*\(!allowed\)/u);
+    expect(paymentResolver).toMatch(
+      /resolvePaymentProvider[\s\S]*v1AllowsCustomerPaymentGateway\(\)[\s\S]*return null/u,
+    );
     expect(deposits).toMatch(
       /createDepositForBooking[\s\S]*phase_2_not_available[\s\S]*createServiceRoleClient/u,
     );
     expect(noShow).toMatch(
       /createNoShowFeeLink[\s\S]*phase_2_not_available[\s\S]*looseServiceClient/u,
-    );
-    expect(cardRequirement).toMatch(/ensureNoShowCardRequirement[\s\S]*v1AllowsNoShowCardOnFile\(\)/u);
-    expect(cardCapability).toMatch(
-      /v1AllowsNoShowCardOnFile\(\)[\s\S]*cardManagementStatus:\s*["']not_applicable["'][\s\S]*isOverRateLimit/u,
-    );
-    expect(preBookingRequirement).toMatch(
-      /resolveNoShowCardRequirement[\s\S]*v1AllowsNoShowCardOnFile\(\)[\s\S]*required:\s*false[\s\S]*looseServiceClient/u,
-    );
-    expect(individualBookingFlow).toMatch(
-      /CUSTOMER_PAYMENT_GATEWAY_ENABLED\s*&&[\s\S]*step\s*===\s*["']confirm["'][\s\S]*resolveNoShowCardRequirement/u,
-    );
-    expect(groupBookingFlow).toMatch(
-      /if\s*\(\s*!CUSTOMER_PAYMENT_GATEWAY_ENABLED\s*\|\|\s*step\s*!==\s*5\s*\)[\s\S]*resolveNoShowCardRequirement/u,
-    );
-    expect(squareCardMutation).toMatch(
-      /v1AllowsNoShowCardOnFile\(\)[\s\S]*phase_2_not_available[\s\S]*consumeBookingManagementRateLimit/u,
-    );
-    expect(stripeCardMutation).toMatch(
-      /v1AllowsCustomerPaymentGateway\(\)[\s\S]*phase_2_not_available[\s\S]*consumeBookingManagementRateLimit/u,
     );
   });
 

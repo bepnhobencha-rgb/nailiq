@@ -3,7 +3,6 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { trackAnthropicStream } from "@/shared/ai/usageLedger";
 import { serviceBlockMinutes } from "@/shared/booking/bookingBlock";
-import { runBookingOrchestrator } from "@/shared/booking/bookingOrchestrator";
 import {
   BOOKING_CHAT_MAX_BODY_BYTES,
   bookingChatRateKey,
@@ -80,7 +79,7 @@ function json(body: unknown, status: number, retryAfter?: string) {
   });
 }
 
-async function executeBookingChatRequest(request: NextRequest) {
+export async function POST(request: NextRequest) {
   if (!isAllowedBookingChatOrigin(request)) {
     return json({ ok: false, code: "forbidden" }, 403);
   }
@@ -274,11 +273,4 @@ Guidelines:
       "cache-control": "no-store",
     },
   });
-}
-
-export async function POST(request: NextRequest) {
-  return runBookingOrchestrator(
-    { gateway: "chat", intent: "assist", operation: "assist" },
-    () => executeBookingChatRequest(request),
-  );
 }
