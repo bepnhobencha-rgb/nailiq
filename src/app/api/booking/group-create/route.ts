@@ -14,7 +14,10 @@ import { serializeGroupBookingPricingQuote } from "@/shared/booking/groupBooking
 import { ensureNoShowCardRequirement } from "@/shared/noshow/ensureNoShowCardRequirement";
 import { mintBookingManagementCapability } from "@/shared/booking/bookingManagementCapabilities";
 import { saveCardWithManagementCapability } from "@/shared/booking/bookingCardManagement";
-import { recordCommittedBookingCardPending } from "@/shared/booking/bookingCardContinuation";
+import {
+  recordCommittedBookingCardPending,
+  resolveCommittedBookingCardContinuation,
+} from "@/shared/booking/bookingCardContinuation";
 
 export const dynamic = "force-dynamic";
 
@@ -113,6 +116,15 @@ export async function POST(request: NextRequest) {
           pendingStage = "capability";
           pendingReason = "capability_unavailable";
         }
+      } else {
+        await resolveCommittedBookingCardContinuation({
+          salonId: parsed.data.salonId,
+          bookingId: result.bookingIds[0],
+          createIdempotencyKey: parsed.data.idempotencyKey,
+          pricingFingerprint: parsed.data.expectedPricingFingerprint,
+          scope: "group_organizer",
+          reason: "card_not_required",
+        });
       }
     } catch {
       // Booking is already committed. Missing card capability is surfaced as

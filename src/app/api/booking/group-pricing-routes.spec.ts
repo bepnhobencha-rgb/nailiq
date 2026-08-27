@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   mintCard: vi.fn(),
   saveCard: vi.fn(),
   recordCardPending: vi.fn(),
+  resolveCardContinuation: vi.fn(),
   serialize: vi.fn((value: unknown) => ({ authoritative: value })),
 }));
 
@@ -39,6 +40,7 @@ vi.mock("@/shared/booking/bookingCardManagement", () => ({
 }));
 vi.mock("@/shared/booking/bookingCardContinuation", () => ({
   recordCommittedBookingCardPending: mocks.recordCardPending,
+  resolveCommittedBookingCardContinuation: mocks.resolveCardContinuation,
 }));
 vi.mock(
   "@/shared/booking/groupBookingApiBoundary",
@@ -127,6 +129,7 @@ describe("public group pricing route boundaries", () => {
     });
     mocks.saveCard.mockResolvedValue({ ok: true, code: "saved" });
     mocks.recordCardPending.mockResolvedValue(true);
+    mocks.resolveCardContinuation.mockResolvedValue(true);
   });
 
   it("denies missing and cross-site origins before rate or pricing work", async () => {
@@ -285,6 +288,14 @@ describe("public group pricing route boundaries", () => {
       pricing: { authoritative: pricing },
     });
     expect(mocks.serialize).toHaveBeenCalledWith(pricing);
+    expect(mocks.resolveCardContinuation).toHaveBeenCalledWith({
+      salonId: validBody.salonId,
+      bookingId: "91111111-1111-4111-8111-111111111111",
+      createIdempotencyKey: body.idempotencyKey,
+      pricingFingerprint: body.expectedPricingFingerprint,
+      scope: "group_organizer",
+      reason: "card_not_required",
+    });
   });
 
   it("returns only the organizer card_manage token when policy requires post-booking capture", async () => {

@@ -6,7 +6,10 @@ import { clientIp, durableRateLimitKey, isOverRateLimit } from "@/shared/lib/inA
 import { readJsonObjectWithLimit } from "@/shared/security/readJsonObjectWithLimit";
 import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
 import { v1AllowsNoShowCardOnFile } from "@/shared/release/v1IntegrationScope";
-import { recordCommittedBookingCardPending } from "@/shared/booking/bookingCardContinuation";
+import {
+  recordCommittedBookingCardPending,
+  resolveCommittedBookingCardContinuation,
+} from "@/shared/booking/bookingCardContinuation";
 
 const PRIVATE_HEADERS = {
   "Cache-Control": "private, no-store, max-age=0", Pragma: "no-cache",
@@ -89,6 +92,15 @@ export async function POST(request: Request) {
       scope: "individual",
       stage: "customer_action",
       reason: "card_required",
+    });
+  } else {
+    await resolveCommittedBookingCardContinuation({
+      salonId,
+      bookingId,
+      createIdempotencyKey: idempotencyKey,
+      pricingFingerprint,
+      scope: "individual",
+      reason: "card_not_required",
     });
   }
   return NextResponse.json({

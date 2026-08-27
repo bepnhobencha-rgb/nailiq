@@ -71,7 +71,7 @@ BEGIN
 
   INSERT INTO public.salons (
     id, slug, name, phone, timezone, currency_code, opening_hours, tax_lines,
-    subscription_plan
+    subscription_plan, noshow_protection_enabled
   ) VALUES
     (
       v_salon, 'group-pricing-rehearsal', 'Group pricing rehearsal',
@@ -86,7 +86,7 @@ BEGIN
         "sat":{"open":"00:00","close":"23:59","closed":false}
       }'::jsonb,
       '[{"name":"GST","rate":0.05,"enabled":true}]'::jsonb,
-      'premium'
+      'premium', true
     ),
     (
       v_penny_salon, 'group-penny-rehearsal', 'Group penny rehearsal',
@@ -101,7 +101,7 @@ BEGIN
         "sat":{"open":"00:00","close":"23:59","closed":false}
       }'::jsonb,
       '[{"name":"PENNY","rate":0.5,"enabled":true}]'::jsonb,
-      'premium'
+      'premium', false
     );
 
   INSERT INTO public.services (
@@ -219,6 +219,21 @@ BEGIN
   v_group_id := (v_result->>'group_id')::uuid;
   v_booking_ids := v_result->'booking_ids';
 
+  IF (SELECT count(*) FROM public.booking_card_management_continuations c
+      WHERE c.booking_id = (v_booking_ids->>0)::uuid
+        AND c.salon_id = v_salon
+        AND c.create_idempotency_key = v_idem
+        AND c.pricing_fingerprint = v_quote->>'pricing_fingerprint'
+        AND c.scope = 'group_organizer'
+        AND c.status = 'armed'
+        AND c.reason_code = 'assessment_scheduled') <> 1
+     OR EXISTS (
+       SELECT 1 FROM public.booking_card_management_continuations c
+       WHERE c.booking_id = (v_booking_ids->>1)::uuid
+     ) THEN
+    RAISE EXCEPTION 'group create did not atomically arm organizer only';
+  END IF;
+
   IF (SELECT count(*) FROM public.bookings b
       WHERE b.group_id = v_group_id AND b.status = 'confirmed') <> 2
      OR (SELECT count(*) FROM public.bookings b
@@ -248,6 +263,25 @@ BEGIN
      OR v_replay->'pricing_snapshot' IS DISTINCT FROM v_result->'pricing_snapshot'
      OR (SELECT used_count FROM public.vouchers WHERE id = v_voucher) <> 1 THEN
     RAISE EXCEPTION 'exact group replay mismatch: %', v_replay;
+  END IF;
+
+  IF (SELECT count(*) FROM public.booking_card_management_continuations c
+      WHERE c.booking_id = (v_booking_ids->>0)::uuid) <> 1 THEN
+    RAISE EXCEPTION 'group replay duplicated its organizer continuation';
+  END IF;
+
+  v_replay := public.resolve_booking_card_management_continuation(
+    v_salon, (v_booking_ids->>0)::uuid, v_idem,
+    v_quote->>'pricing_fingerprint', 'group_organizer', 'card_not_required'
+  );
+  IF v_replay->>'ok' <> 'true'
+     OR NOT EXISTS (
+       SELECT 1 FROM public.booking_card_management_continuations c
+       WHERE c.booking_id = (v_booking_ids->>0)::uuid
+         AND c.status = 'resolved'
+         AND c.reason_code = 'card_not_required'
+     ) THEN
+    RAISE EXCEPTION 'group organizer exact-binding resolution failed: %', v_replay;
   END IF;
 
   v_payload_changed := pg_catalog.jsonb_set(

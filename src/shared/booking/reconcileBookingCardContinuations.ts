@@ -3,6 +3,7 @@ import "server-only";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 type ContinuationStatus =
+  | "armed"
   | "pending"
   | "awaiting_customer"
   | "provider_reconciliation"
@@ -10,6 +11,7 @@ type ContinuationStatus =
   | "manual_review";
 
 const STATUSES = new Set<ContinuationStatus>([
+  "armed",
   "pending",
   "awaiting_customer",
   "provider_reconciliation",

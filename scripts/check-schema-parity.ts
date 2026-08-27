@@ -140,18 +140,21 @@ const PRODUCTION = {
   // SID-first service-role wrappers, plus +2 durable review-SMS completion and
   // signed callback-correlation functions.
   // +1 forward-only error-remediation release-gate trigger function.
-  functions: 379,
+  // +2 atomic booking-card continuation arm/resolve functions.
+  functions: 381,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
   // +1 fail-closed error-remediation release-gate trigger.
-  triggers: 88,
+  // +2 individual/group canonical-create continuation arm triggers.
+  triggers: 90,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
   // +1 Twilio inbox primary key plus unique reminder/staff SMS SID indexes.
   // +5 continuation/card-operation PK, unique and due indexes.
-  indexes: 638,
+  // +2 continuation/card-operation foreign-key support indexes.
+  indexes: 640,
 } as const;
 
 /**
@@ -346,6 +349,7 @@ const CRITICAL_FUNCTIONS = [
   "reconcile_stale_booking_card_save_operations",
   "complete_booking_card_save_reconciliation",
   "record_booking_card_management_pending",
+  "resolve_booking_card_management_continuation",
   "reconcile_due_booking_card_management_continuations",
   "ensure_waitlist_offer_delivery_outbox",
   "load_waitlist_offer_delivery_material",

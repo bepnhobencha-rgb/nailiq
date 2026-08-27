@@ -26,6 +26,15 @@ type RecordPendingInput = {
   reason: BookingCardContinuationReason;
 };
 
+type ResolveContinuationInput = {
+  salonId: string;
+  bookingId: string;
+  createIdempotencyKey: string;
+  pricingFingerprint: string;
+  scope: BookingCardContinuationScope;
+  reason: "card_not_required" | "not_applicable";
+};
+
 function object(value: unknown): Record<string, unknown> | null {
   const candidate = Array.isArray(value) ? value[0] : value;
   return candidate && typeof candidate === "object"
@@ -50,6 +59,32 @@ export async function recordCommittedBookingCardPending(
         p_pricing_fingerprint: input.pricingFingerprint,
         p_scope: input.scope,
         p_stage: input.stage,
+        p_reason_code: input.reason,
+      } as never,
+    );
+    return !error && object(data)?.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Close the transaction-armed continuation after the trusted assessment proves
+ * that customer card action is not required. Exact create binding is rechecked
+ * by the RPC, so a naked booking id cannot resolve another booking's work.
+ */
+export async function resolveCommittedBookingCardContinuation(
+  input: ResolveContinuationInput,
+): Promise<boolean> {
+  try {
+    const { data, error } = await createServiceRoleClient().rpc(
+      "resolve_booking_card_management_continuation" as never,
+      {
+        p_salon_id: input.salonId,
+        p_booking_id: input.bookingId,
+        p_create_idempotency_key: input.createIdempotencyKey,
+        p_pricing_fingerprint: input.pricingFingerprint,
+        p_scope: input.scope,
         p_reason_code: input.reason,
       } as never,
     );

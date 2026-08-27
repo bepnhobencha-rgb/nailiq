@@ -47,8 +47,8 @@ describe("role-localized platform email boundary", () => {
     expect(parity).toContain("tables: 175");
     expect(parity).toContain("columns: 2592");
     expect(parity).toContain("policies: 198");
-    expect(parity).toContain("functions: 379");
-    expect(parity).toContain("indexes: 638");
+    expect(parity).toContain("functions: 381");
+    expect(parity).toContain("indexes: 640");
     expect(parity).toContain("service_role: 176");
   });
 });
