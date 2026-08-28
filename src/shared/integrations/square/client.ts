@@ -379,9 +379,16 @@ export async function findSquareCustomerByPhone(
       query: { filter: { phone_number: { exact: candidate } } },
       limit: 1,
     });
-    const customers = found.customers;
+    // Square documents a successful search with no matches as an empty JSON
+    // object (`{}`), so an omitted `customers` field is a definitive empty
+    // result. Keep every other unexpected shape fail-closed: a malformed read
+    // must never be mistaken for permission to create a duplicate customer.
+    const customers = found.customers === undefined ? [] : found.customers;
+    const responseErrors = found.errors;
     if (
-      !Array.isArray(customers)
+      (responseErrors !== undefined
+        && (!Array.isArray(responseErrors) || responseErrors.length > 0))
+      || !Array.isArray(customers)
       || customers.some((customer) => (
         !customer
         || typeof customer !== "object"
