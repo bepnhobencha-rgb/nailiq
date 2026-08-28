@@ -36,6 +36,15 @@ export type ResendOwnerDeliveryMaterial = {
   occurredAt: string;
 };
 
+export type ResendCustomerDeliveryMaterial = {
+  claimKind: "confirmation" | "reminder" | "transition";
+  claimId: string;
+  providerMessageId: string;
+  eventType: ResendOwnerDeliveryMaterial["eventType"];
+  recipientFingerprint: string;
+  occurredAt: string;
+};
+
 export async function readResendWebhookBody(
   request: Request,
 ): Promise<{ ok: true; bytes: Uint8Array; text: string } | { ok: false; code: string }> {
@@ -150,6 +159,43 @@ export function parseResendOwnerDeliveryMaterial(
     claimId: claimId.toLowerCase(),
     providerMessageId,
     eventType: event.type as ResendOwnerDeliveryMaterial["eventType"],
+    recipientFingerprint: createHash("sha256").update(recipient, "utf8").digest("hex"),
+    occurredAt,
+  };
+}
+
+export function parseResendCustomerDeliveryMaterial(
+  event: WebhookEventPayload,
+): ResendCustomerDeliveryMaterial | "ignored" | null {
+  if (!DELIVERY_EVENTS.has(event.type)) return "ignored";
+  if (!("email_id" in event.data) || !("to" in event.data)) return null;
+
+  const tags = "tags" in event.data ? event.data.tags : undefined;
+  if (tags?.nailiq_flow !== "customer_booking") return "ignored";
+  const claimId = tags.nailiq_claim;
+  const claimKind = tags.nailiq_claim_kind;
+  const providerMessageId = event.data.email_id;
+  const recipients = event.data.to;
+  const occurredAt = event.created_at;
+  if (
+    (claimKind !== "confirmation" && claimKind !== "reminder" && claimKind !== "transition") ||
+    typeof claimId !== "string" || !UUID_RE.test(claimId) ||
+    typeof providerMessageId !== "string" || !PROVIDER_ID_RE.test(providerMessageId) ||
+    !Array.isArray(recipients) || recipients.length !== 1 ||
+    typeof recipients[0] !== "string" || recipients[0].length > 320 ||
+    typeof occurredAt !== "string" || !RFC3339_RE.test(occurredAt) ||
+    !Number.isFinite(Date.parse(occurredAt))
+  ) {
+    return null;
+  }
+
+  const recipient = recipients[0].trim().toLowerCase();
+  if (!recipient || /[\u0000-\u001f\u007f]/.test(recipient)) return null;
+  return {
+    claimKind,
+    claimId: claimId.toLowerCase(),
+    providerMessageId,
+    eventType: event.type as ResendCustomerDeliveryMaterial["eventType"],
     recipientFingerprint: createHash("sha256").update(recipient, "utf8").digest("hex"),
     occurredAt,
   };

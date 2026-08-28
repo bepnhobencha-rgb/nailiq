@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { getResendClient } from "@/shared/lib/resend";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
+import { customerEmailDeliverySuppressionReason } from "@/shared/notifications/customerEmailDeliverySuppression";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA256_RE = /^[0-9a-f]{64}$/;
@@ -76,10 +77,16 @@ export type BookingConfirmationRetryDeliveryDeps = {
     suppressed?: boolean;
     suppressionReason?: string;
   }>;
-  sendEmail(envelope: BookingConfirmationEmailEnvelope): Promise<{
+  sendEmail(envelope: BookingConfirmationEmailEnvelope, context: {
+    claimId: string;
+  }): Promise<{
     data?: { id?: string | null } | null;
     error?: { statusCode?: unknown; code?: unknown } | null;
   }>;
+  emailSuppressionReason(input: {
+    salonId: string;
+    email: string;
+  }): Promise<string | null>;
 };
 
 export type BookingConfirmationDeliveryResult = {
@@ -230,6 +237,7 @@ type Classified = {
 async function dispatch(
   envelope: BookingConfirmationDispatchEnvelope,
   deps: BookingConfirmationRetryDeliveryDeps,
+  claimId: string,
 ): Promise<Classified> {
   if (envelope.channel === "sms") {
     try {
@@ -288,7 +296,7 @@ async function dispatch(
   }
 
   try {
-    const result = await deps.sendEmail(envelope);
+    const result = await deps.sendEmail(envelope, { claimId });
     const receipt = providerReceipt(result.data?.id);
     if (result.error && receipt) return {
       outcome: "unknown", reason: "provider_outcome_unknown", status: "unknown",
@@ -342,12 +350,23 @@ async function dispatchClaimed(
   deps: BookingConfirmationRetryDeliveryDeps,
   suppressionReason?: string,
 ): Promise<BookingConfirmationDeliveryResult> {
-  const classified: Classified = suppressionReason
+  let resolvedSuppressionReason = suppressionReason;
+  if (!resolvedSuppressionReason && envelope.channel === "email") {
+    try {
+      resolvedSuppressionReason = await deps.emailSuppressionReason({
+        salonId: envelope.salonId,
+        email: envelope.to,
+      }) ?? undefined;
+    } catch {
+      resolvedSuppressionReason = "suppression_lookup_unavailable";
+    }
+  }
+  const classified: Classified = resolvedSuppressionReason
     ? {
-        outcome: "suppressed", reason: suppressionReason, status: "suppressed",
+        outcome: "suppressed", reason: resolvedSuppressionReason, status: "suppressed",
         providerMessageId: null, errorCode: "channel_disabled", failureDisposition: "permanent",
       }
-    : await dispatch(envelope, deps);
+    : await dispatch(envelope, deps, claimId);
   let completion: Completion = { success: false, code: "completion_unavailable" };
   try {
     completion = await deps.complete({
@@ -551,7 +570,7 @@ const defaultDeps: BookingConfirmationRetryDeliveryDeps = {
       lang: envelope.lang,
     });
   },
-  async sendEmail(envelope) {
+  async sendEmail(envelope, context) {
     const resend = getResendClient();
     if (!resend) return { data: null, error: { code: "provider_configuration_invalid" } };
     return resend.emails.send({
@@ -562,8 +581,14 @@ const defaultDeps: BookingConfirmationRetryDeliveryDeps = {
       headers: envelope.headers,
       ...(envelope.replyTo ? { replyTo: envelope.replyTo } : {}),
       ...(envelope.attachments.length ? { attachments: envelope.attachments } : {}),
+      tags: [
+        { name: "nailiq_flow", value: "customer_booking" },
+        { name: "nailiq_claim_kind", value: "confirmation" },
+        { name: "nailiq_claim", value: context.claimId },
+      ],
     });
   },
+  emailSuppressionReason: customerEmailDeliverySuppressionReason,
 };
 
 const defaultWorkerDeps: BookingConfirmationRetryWorkerDeps = {

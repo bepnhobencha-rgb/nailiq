@@ -82,13 +82,16 @@ import { execFileSync } from "node:child_process";
  * private/service-only reconciliation functions.
  * The 20260828051308 cancel-email migration adds one service-role-only
  * compatibility handshake for zero-gap code/schema rollout.
+ * The 20260828070918 customer-email delivery-truth migration adds two private
+ * event/suppression tables, 39 delivery/correlation columns, four private or
+ * service-only functions, one recipient-fingerprint trigger and eight indexes.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
  */
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
-  tables: 178,
+  tables: 180,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -126,14 +129,14 @@ const PRODUCTION = {
   // +18 card response-loss lease and continuation-ledger columns.
   // +21 owner-booking notification outbox columns.
   // +27 owner-delivery truth, event and suppression columns.
-  columns: 2640,
+  columns: 2679,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
   // service-role-only atomic offboarding contract.
   // +1 restrictive browser-deny policy on the RPC-only owner outbox.
   // +2 restrictive browser-deny policies on delivery truth tables.
-  policies: 201,
+  policies: 203,
   /**
    * APP functions only — refreshed after the rehearsed forward migrations.
    *
@@ -156,7 +159,7 @@ const PRODUCTION = {
   // +4 owner-alert capture, occurrence resolution, claim, and completion functions.
   // +3 delivery-event reconciliation, recorder, and correlation-trigger functions.
   // +1 deferred desk-cancel owner-notification compatibility handshake.
-  functions: 389,
+  functions: 393,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -164,7 +167,7 @@ const PRODUCTION = {
   // +2 individual/group canonical-create continuation arm triggers.
   // +1 canonical booking owner-alert occurrence trigger.
   // +1 provider-message correlation trigger.
-  triggers: 92,
+  triggers: 93,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -173,7 +176,7 @@ const PRODUCTION = {
   // +2 continuation/card-operation foreign-key support indexes.
   // +4 owner-alert outbox primary, occurrence-unique, due, and salon indexes.
   // +6 delivery truth provider, inbox, pending, salon and suppression indexes.
-  indexes: 650,
+  indexes: 658,
 } as const;
 
 /**
@@ -217,6 +220,8 @@ const CRITICAL_TABLES = [
   "owner_booking_notification_claims",
   "resend_owner_delivery_events",
   "owner_email_delivery_suppressions",
+  "resend_customer_delivery_events",
+  "customer_email_delivery_suppressions",
   "booking_notification_delivery_events",
   "booking_confirmation_dispatch_envelopes",
   "customer_booking_transition_email_outbox",
@@ -335,6 +340,10 @@ const CRITICAL_FUNCTIONS = [
   "record_resend_owner_delivery_event",
   "reconcile_resend_owner_delivery_events",
   "reconcile_resend_owner_delivery_on_claim",
+  "record_resend_customer_delivery_event",
+  "reconcile_resend_customer_delivery_events",
+  "customer_email_delivery_suppression_reason",
+  "capture_booking_reminder_email_recipient",
   "resolve_group_booking_pricing",
   "quote_group_booking",
   "create_group_bookings",

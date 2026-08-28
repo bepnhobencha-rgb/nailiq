@@ -6,6 +6,7 @@ import { complianceFooterHtml, listUnsubscribeHeaders } from "@/shared/lib/email
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { buildStaffActionEmailSubject, buildStaffActionSms } from "./staffActionMessages";
+import { customerEmailDeliverySuppressionReason } from "./customerEmailDeliverySuppression";
 
 export type CustomerBookingTransitionKind = "cancel" | "reschedule";
 
@@ -76,6 +77,7 @@ type Provider = {
     text: string;
     html: string;
     headers: Record<string, string>;
+    tags: Array<{ name: string; value: string }>;
   }): Promise<ProviderResponse>;
 };
 
@@ -100,6 +102,7 @@ export type CustomerBookingTransitionEmailDeps = {
   }): Promise<{ success: boolean; code: string }>;
   provider(): Provider | null;
   from(): string;
+  emailSuppressionReason(input: { salonId: string; email: string }): Promise<string | null>;
 };
 
 export type CustomerBookingTransitionEmailResult = {
@@ -384,6 +387,7 @@ async function completeWithoutSend(
 async function sendClaimedTransition(
   payload: CustomerBookingTransitionEmailPayload,
   material: ClaimedTransition,
+  salonId: string,
   deps: CustomerBookingTransitionEmailDeps,
 ): Promise<CustomerBookingTransitionEmailResult> {
   let status: "sent" | "failed" | "unknown" = "unknown";
@@ -391,6 +395,38 @@ async function sendClaimedTransition(
   let errorCode: string | null = "email_delivery_ambiguous";
   let failureDisposition: string | null = "none";
   let provider: Provider | null = null;
+  let suppressionReason: string | null = null;
+  try {
+    suppressionReason = await deps.emailSuppressionReason({
+      salonId,
+      email: payload.to,
+    });
+  } catch {
+    suppressionReason = "suppression_lookup_unavailable";
+  }
+  if (suppressionReason) {
+    let completion = { success: false, code: "completion_unavailable" };
+    try {
+      completion = await deps.complete({
+        outboxId: material.outboxId,
+        attemptToken: material.attemptToken,
+        status: "suppressed",
+        providerMessageId: null,
+        errorCode: "channel_disabled",
+        failureDisposition: "permanent",
+      });
+    } catch {
+      // No provider call occurred; the durable outbox remains the authority.
+    }
+    const finalized = completion.success === true || completion.code === "already_completed";
+    return {
+      outcome: "suppressed",
+      reason: finalized ? suppressionReason : "completion_unavailable",
+      providerId: null,
+      finalized,
+      transitionVersion: material.transitionVersion,
+    };
+  }
   try {
     provider = deps.provider();
   } catch {
@@ -409,6 +445,11 @@ async function sendClaimedTransition(
         text: payload.text,
         html: payload.html,
         headers: listUnsubscribeHeaders(payload.to),
+        tags: [
+          { name: "nailiq_flow", value: "customer_booking" },
+          { name: "nailiq_claim_kind", value: "transition" },
+          { name: "nailiq_claim", value: material.outboxId },
+        ],
       });
       providerId = nonblankProviderId(response.data?.id);
       if (response.error && providerId) {
@@ -517,7 +558,7 @@ export async function deliverCustomerBookingTransitionEmail(
     return { outcome: "suppressed", reason: "claim_payload_mismatch", providerId: null, finalized: false, transitionVersion: material.transitionVersion };
   }
 
-  return sendClaimedTransition(payload, claim.material, deps);
+  return sendClaimedTransition(payload, claim.material, input.salonId, deps);
 }
 
 function parseLeasedMaterial(value: unknown): ClaimedTransition | null {
@@ -550,7 +591,11 @@ export async function deliverLeasedCustomerBookingTransitionEmailRetry(
   ) {
     return completeWithoutSend(material, deps, "material_changed");
   }
-  return sendClaimedTransition(payload, material, deps);
+  const salonId = record(rawLease) && typeof rawLease.salon_id === "string"
+    ? rawLease.salon_id
+    : "";
+  if (!UUID_RE.test(salonId)) return completeWithoutSend(material, deps, "material_changed");
+  return sendClaimedTransition(payload, material, salonId, deps);
 }
 
 export type CustomerBookingTransitionEmailWorkerDeps = {
@@ -669,6 +714,7 @@ const defaultDeps: CustomerBookingTransitionEmailDeps = {
     return { send: (payload) => client.emails.send(payload) as Promise<ProviderResponse> };
   },
   from: getResendFrom,
+  emailSuppressionReason: customerEmailDeliverySuppressionReason,
 };
 
 const defaultWorkerDeps: CustomerBookingTransitionEmailWorkerDeps = {

@@ -23,6 +23,7 @@ import {
   type ReminderChannel,
   type ReminderType,
 } from "@/shared/reminders/reminderDeliveryClaims";
+import { customerEmailDeliverySuppressionReason } from "@/shared/notifications/customerEmailDeliverySuppression";
 
 /** Vercel Cron calls this route every 15 minutes with the CRON_SECRET header. */
 export const runtime = "nodejs";
@@ -144,6 +145,25 @@ async function persistReminderProviderResult(
   return outcome;
 }
 
+async function suppressReminderEmailBeforeProvider(input: {
+  claimId: string;
+  salonId: string;
+  email: string;
+}): Promise<boolean> {
+  const reason = await customerEmailDeliverySuppressionReason({
+    salonId: input.salonId,
+    email: input.email,
+  });
+  if (!reason) return false;
+  const persisted = await completeReminderDelivery({
+    claimId: input.claimId,
+    status: "suppressed",
+    errorCode: `delivery_suppressed:${reason}`,
+  });
+  if (!persisted) throw new Error("reminder_claim_completion_failed");
+  return true;
+}
+
 export async function GET(req: Request) {
   const authorizationError = requireCronAuthorization(req);
   if (authorizationError) return authorizationError;
@@ -252,10 +272,16 @@ export async function GET(req: Request) {
     const claim = await claimReminderChannel(booking, reminderType, "email");
     if (!claim.ok) { errors++; return; }
     if (!claim.claimed) return;
+    if (await suppressReminderEmailBeforeProvider({
+      claimId: claim.claimId,
+      salonId: booking.salon_id,
+      email: booking.client_email,
+    })) return;
 
     let result;
     try {
       result = await sendGroupReminderEmail({
+        deliveryClaimId: claim.claimId,
         ...capabilities,
         organizerName: booking.client_name,
         organizerEmail: booking.client_email,
@@ -327,10 +353,16 @@ export async function GET(req: Request) {
       );
       if (!memberClaim.ok) { errors++; continue; }
       if (!memberClaim.claimed) continue;
+      if (await suppressReminderEmailBeforeProvider({
+        claimId: memberClaim.claimId,
+        salonId: booking.salon_id,
+        email: m.email,
+      })) continue;
       let memberResult;
       try {
         memberResult = await sendReminderEmail({
           salonId: booking.salon_id,
+          deliveryClaimId: memberClaim.claimId,
           ...memberCapabilities,
           clientName: m.name,
           clientEmail: m.email,
@@ -431,54 +463,67 @@ export async function GET(req: Request) {
       if (!emailClaim.ok) {
         errors++;
       } else if (emailClaim.claimed) {
-        let result;
-        try {
-          result = await sendReminderEmail({
-            salonId:      booking.salon_id,
-            ...capabilities,
-            clientName:   booking.client_name,
-            clientEmail:  booking.client_email!,
-            locale: booking.client_locale?.toLowerCase().startsWith("vi") ? "vi" : "en",
-            serviceName:  booking.services?.name ?? "appointment",
-            staffName:    booking.staff?.name ?? "",
-            startTimeUtc: booking.start_time_utc,
-            salonName:    salon.name,
-            salonSlug:    salon.slug,
-            timezone:     (salon as { timezone?: string | null }).timezone ?? null,
-            businessDescriptor: resolveVertical(
-              (salon as { vertical?: string | null }).vertical,
-            ).aiDescriptor,
-            salonLogoUrl: salon.logo_url,
-          });
-        } catch {
-          const persisted = await completeReminderDelivery({
-            claimId: emailClaim.claimId,
-            status: "unknown",
-            errorCode: "provider_outcome_unknown",
-          });
-          if (!persisted) throw new Error("reminder_claim_completion_failed");
-          errors++;
-          result = null;
-        }
-        if (result) {
-          const delivery = await persistReminderProviderResult(
-            emailClaim.claimId,
-            "email",
-            result,
-          );
-          void logNotification({
-            bookingId: booking.id,
-            salonId: booking.salon_id,
-            notificationType: reminderType === "24h" ? "reminder_24h" : "reminder_3h",
-            channel: "email",
-            messageSid: result.messageId ?? null,
-            bodyPreview: `Reminder email · ${booking.services?.name ?? "appointment"}`,
-            ok: result.ok,
-            errorMessage: result.error,
-          });
-          if (delivery.status === "sent" || delivery.status === "suppressed") {
-            anySuccess = true;
-          } else errors++;
+        const emailSuppressed = await suppressReminderEmailBeforeProvider({
+          claimId: emailClaim.claimId,
+          salonId: booking.salon_id,
+          email: booking.client_email!,
+        });
+        if (!emailSuppressed) {
+          let result;
+          try {
+            result = await sendReminderEmail({
+              salonId: booking.salon_id,
+              deliveryClaimId: emailClaim.claimId,
+              ...capabilities,
+              clientName: booking.client_name,
+              clientEmail: booking.client_email!,
+              locale: booking.client_locale?.toLowerCase().startsWith("vi")
+                ? "vi"
+                : "en",
+              serviceName: booking.services?.name ?? "appointment",
+              staffName: booking.staff?.name ?? "",
+              startTimeUtc: booking.start_time_utc,
+              salonName: salon.name,
+              salonSlug: salon.slug,
+              timezone:
+                (salon as { timezone?: string | null }).timezone ?? null,
+              businessDescriptor: resolveVertical(
+                (salon as { vertical?: string | null }).vertical,
+              ).aiDescriptor,
+              salonLogoUrl: salon.logo_url,
+            });
+          } catch {
+            const persisted = await completeReminderDelivery({
+              claimId: emailClaim.claimId,
+              status: "unknown",
+              errorCode: "provider_outcome_unknown",
+            });
+            if (!persisted) {
+              throw new Error("reminder_claim_completion_failed");
+            }
+            errors++;
+            result = null;
+          }
+          if (result) {
+            const delivery = await persistReminderProviderResult(
+              emailClaim.claimId,
+              "email",
+              result,
+            );
+            void logNotification({
+              bookingId: booking.id,
+              salonId: booking.salon_id,
+              notificationType: reminderType === "24h" ? "reminder_24h" : "reminder_3h",
+              channel: "email",
+              messageSid: result.messageId ?? null,
+              bodyPreview: `Reminder email · ${booking.services?.name ?? "appointment"}`,
+              ok: result.ok,
+              errorMessage: result.error,
+            });
+            if (delivery.status === "sent" || delivery.status === "suppressed") {
+              anySuccess = true;
+            } else errors++;
+          }
         }
       }
     }

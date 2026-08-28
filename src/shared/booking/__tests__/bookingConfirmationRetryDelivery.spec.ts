@@ -58,6 +58,7 @@ function deps(overrides: Partial<BookingConfirmationRetryDeliveryDeps> = {}) {
     complete: vi.fn().mockResolvedValue({ success: true, code: "completed" }),
     sendSms: vi.fn().mockResolvedValue({ ok: true, messageSid: `SM${"a".repeat(32)}` }),
     sendEmail: vi.fn().mockResolvedValue({ data: { id: "resend_accept_1" }, error: null }),
+    emailSuppressionReason: vi.fn().mockResolvedValue(null),
   };
   return { ...base, ...overrides };
 }
@@ -112,6 +113,28 @@ describe("booking confirmation tokenized retry delivery", () => {
     expect(result).toMatchObject({ outcome: "suppressed", reason: "claim_unavailable" });
     expect(d.sendSms).not.toHaveBeenCalled();
     expect(d.sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("completes a provider-suppressed email claim without crossing Resend", async () => {
+    const d = deps({
+      emailSuppressionReason: vi.fn().mockResolvedValue("bounced"),
+    });
+    const result = await deliverBookingConfirmation({
+      bookingId: BOOKING_ID,
+      salonId: SALON_ID,
+      envelope: email,
+    }, d);
+    expect(result).toMatchObject({
+      outcome: "suppressed",
+      reason: "bounced",
+      finalized: true,
+    });
+    expect(d.sendEmail).not.toHaveBeenCalled();
+    expect(d.complete).toHaveBeenCalledWith(expect.objectContaining({
+      status: "suppressed",
+      providerMessageId: null,
+      failureDisposition: "permanent",
+    }));
   });
 
   it("classifies definite SMS and email pre-acceptance failures as the only retryable outcomes", async () => {

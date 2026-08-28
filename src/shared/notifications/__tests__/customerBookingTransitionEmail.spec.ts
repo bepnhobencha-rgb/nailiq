@@ -120,6 +120,7 @@ function deps(overrides: Partial<CustomerBookingTransitionEmailDeps> = {}) {
     complete,
     provider: () => ({ send }),
     from: () => "NailIQ <noreply@example.com>",
+    emailSuppressionReason: vi.fn().mockResolvedValue(null),
     ...overrides,
     send,
   };
@@ -287,11 +288,30 @@ describe("customer booking transition email", () => {
     expect(customerBookingTransitionPayloadFingerprint(a!)).not.toBe(customerBookingTransitionPayloadFingerprint(againA!));
   });
 
+  it("finalizes a complaint-suppressed claim without calling Resend", async () => {
+    const d = deps({
+      emailSuppressionReason: vi.fn().mockResolvedValue("complained"),
+    });
+    const result = await deliverCustomerBookingTransitionEmail(input, d);
+    expect(result).toMatchObject({
+      outcome: "suppressed",
+      reason: "complained",
+      finalized: true,
+    });
+    expect(d.send).not.toHaveBeenCalled();
+    expect(d.complete).toHaveBeenCalledWith(expect.objectContaining({
+      status: "suppressed",
+      providerMessageId: null,
+      failureDisposition: "permanent",
+    }));
+  });
+
   it("sends a leased retry only when stored payload and recipient fingerprints still match", async () => {
     const claimed = claimedMaterial({ status: "sending" });
     const d = deps();
     const result = await deliverLeasedCustomerBookingTransitionEmailRetry(rawMaterial(claimed, {
       code: "leased",
+      salon_id: SALON_ID,
       attempt_token: claimed.attemptToken,
       attempt_count: 2,
     }), d);
@@ -304,6 +324,7 @@ describe("customer booking transition email", () => {
     const d = deps();
     const result = await deliverLeasedCustomerBookingTransitionEmailRetry(rawMaterial(claimed, {
       code: "leased",
+      salon_id: SALON_ID,
       attempt_token: claimed.attemptToken,
       attempt_count: 2,
       payload_fingerprint: "f".repeat(64),
