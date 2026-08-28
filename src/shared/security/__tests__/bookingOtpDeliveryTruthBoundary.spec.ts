@@ -7,6 +7,7 @@ const read = (file: string) =>
 
 describe("booking gate OTP delivery truth boundary", () => {
   const switcher = read("src/components/booking/BookingTypeSwitcher.tsx");
+  const flowPanel = read("src/components/booking/BookingFlowOtpPanel.tsx");
   const english = read("src/shared/i18n/booking/en.ts");
   const vietnamese = read("src/shared/i18n/booking/vi.ts");
   const migration = read(
@@ -54,6 +55,22 @@ describe("booking gate OTP delivery truth boundary", () => {
     expect(emailOtp).toContain("idempotencyKey: `booking-otp/${input.deliveryAttemptId}`");
     expect(emailOtp).toContain('{ name: "nailiq_flow", value: "booking_otp" }');
     expect(emailOtp).toContain('process.env.NODE_ENV === "production" ? null');
+    expect(emailOtp).toContain("process.env.DISABLE_OUTBOUND_EMAIL");
+    expect(emailOtp.indexOf("process.env.DISABLE_OUTBOUND_EMAIL")).toBeLessThan(
+      emailOtp.indexOf("getResendClient()"),
+    );
+  });
+
+  it("carries the exact SMS attempt from send through verification", () => {
+    expect(switcher).toContain("deliveryAttemptId?: string");
+    expect(switcher).toContain("body.deliveryAttemptId = deliveryAttemptId");
+    expect(flowPanel).toContain("deliveryAttemptId?: string");
+    expect(flowPanel).toContain("deliveryAttemptId: smsDeliveryAttemptId || undefined");
+    expect(verifyRoute).toContain("isBookingOtpDeliveryAttemptId(deliveryAttemptId)");
+    expect(verifyRoute).toContain("attemptId: deliveryAttemptId");
+    expect(migration).toContain("OR p_attempt_id IS NULL");
+    expect(migration).toContain("AND a.id = p_attempt_id");
+    expect(migration).not.toContain("p_attempt_id IS NULL OR a.id = p_attempt_id");
   });
 
   it("claims durable truth before either booking OTP provider call", () => {

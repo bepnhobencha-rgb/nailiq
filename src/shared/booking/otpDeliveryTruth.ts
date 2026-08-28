@@ -12,6 +12,10 @@ export type BookingOtpCompletionStatus =
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+export function isBookingOtpDeliveryAttemptId(value: string): boolean {
+  return UUID_RE.test(value);
+}
+
 export function bookingOtpRecipientFingerprint(recipient: string): string {
   return createHash("sha256")
     .update(recipient.trim().toLowerCase(), "utf8")
@@ -93,9 +97,9 @@ export async function markBookingOtpDeliveryVerified(input: {
   salonId: string;
   channel: BookingOtpChannel;
   recipient: string;
-  attemptId?: string | null;
+  attemptId: string;
 }): Promise<boolean> {
-  if (input.attemptId && !UUID_RE.test(input.attemptId)) return false;
+  if (!isBookingOtpDeliveryAttemptId(input.attemptId)) return false;
   try {
     const db = createServiceRoleClient();
     const { data, error } = await db.rpc(
@@ -104,7 +108,7 @@ export async function markBookingOtpDeliveryVerified(input: {
         p_salon_id: input.salonId,
         p_channel: input.channel,
         p_recipient_fingerprint: bookingOtpRecipientFingerprint(input.recipient),
-        p_attempt_id: input.attemptId ?? null,
+        p_attempt_id: input.attemptId,
       } as never,
     );
     return !error && typeof data === "string" && UUID_RE.test(data);

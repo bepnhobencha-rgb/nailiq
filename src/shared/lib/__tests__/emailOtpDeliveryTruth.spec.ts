@@ -117,6 +117,31 @@ describe("email booking OTP delivery truth", () => {
     });
   });
 
+  it("suppresses delivery before the Resend client can be reached", async () => {
+    const table = codeTable();
+    mocks.from.mockReturnValue(table);
+    const send = vi.fn();
+    mocks.resendClient = { emails: { send } };
+    vi.stubEnv("DISABLE_OUTBOUND_EMAIL", "1");
+
+    await expect(createAndSendEmailOtp(args)).resolves.toMatchObject({
+      ok: false,
+      error: "email_suppressed",
+      deliveryAttemptId: attemptId,
+      deliveryStatus: "suppressed",
+    });
+    expect(mocks.getResendClient).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(mocks.completeAttempt).toHaveBeenCalledWith({
+      attemptId,
+      status: "suppressed",
+      errorCode: "email_suppressed",
+    });
+    expect(table.update).toHaveBeenCalledWith(expect.objectContaining({
+      consumed_at: expect.any(String),
+    }));
+  });
+
   it("fails closed when the durable rate-limit lookup is unavailable", async () => {
     mocks.from.mockReturnValue(codeTable({ code: "database_down" }));
     await expect(createAndSendEmailOtp(args)).resolves.toEqual({

@@ -18,7 +18,10 @@ const RESEND_COOLDOWN_S = 60;
 // before verifying) does NOT fire a second SMS while the first code is still
 // valid. Survives component unmount within the same page session; the server
 // cooldown is the cross-tab / cross-reload authority.
-const lastSmsSentAt = new Map<string, number>();
+const lastSmsSend = new Map<
+  string,
+  { sentAt: number; deliveryAttemptId?: string }
+>();
 
 function maskPhone(phone: string): string {
   const digits = phone.replace(/\D/g, "");
@@ -77,6 +80,7 @@ export function BookingFlowOtpPanel({
   const [error, setError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
   const [sent, setSent] = useState(false);
+  const [smsDeliveryAttemptId, setSmsDeliveryAttemptId] = useState("");
   const [isSending, startSendTransition] = useTransition();
   const [isVerifying, startVerifyTransition] = useTransition();
   // Email fallback state. `emailUsed` is the address a code was emailed to — sent
@@ -147,9 +151,12 @@ export function BookingFlowOtpPanel({
       // (customer stepped Back to edit info then Forward again), skip the
       // duplicate SMS — the prior code is still valid — and just restore the UI.
       // A manual resend click is never skipped here (server still throttles it).
-      const last = lastSmsSentAt.get(otpKey) ?? 0;
-      const elapsedS = Math.floor((Date.now() - last) / 1000);
+      const last = lastSmsSend.get(otpKey);
+      const elapsedS = last
+        ? Math.floor((Date.now() - last.sentAt) / 1000)
+        : RESEND_COOLDOWN_S;
       if (opts?.auto && last && elapsedS < RESEND_COOLDOWN_S) {
+        setSmsDeliveryAttemptId(last.deliveryAttemptId ?? "");
         setSent(true);
         startCooldown(RESEND_COOLDOWN_S - elapsedS);
         setTimeout(() => codeInputRef.current?.focus(), 100);
@@ -161,13 +168,21 @@ export function BookingFlowOtpPanel({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ phone: clientPhone, shopSlug }),
         });
-        const body = (await res.json()) as { ok?: boolean; error?: string };
+        const body = (await res.json()) as {
+          ok?: boolean;
+          error?: string;
+          deliveryAttemptId?: string;
+        };
         if (!res.ok || !body.ok) {
           setError(t.bookingErrors.otpSendFailed);
           return;
         }
         setSent(true);
-        lastSmsSentAt.set(otpKey, Date.now());
+        setSmsDeliveryAttemptId(body.deliveryAttemptId ?? "");
+        lastSmsSend.set(otpKey, {
+          sentAt: Date.now(),
+          deliveryAttemptId: body.deliveryAttemptId,
+        });
         startCooldown();
         setTimeout(() => codeInputRef.current?.focus(), 100);
       } catch {
@@ -188,7 +203,13 @@ export function BookingFlowOtpPanel({
         const res = await fetch("/api/booking-otp/verify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone: clientPhone, code: trimmed, shopSlug, email: emailUsed || undefined }),
+          body: JSON.stringify({
+            phone: clientPhone,
+            code: trimmed,
+            shopSlug,
+            email: emailUsed || undefined,
+            deliveryAttemptId: smsDeliveryAttemptId || undefined,
+          }),
         });
         const body = (await res.json()) as {
           ok?: boolean;

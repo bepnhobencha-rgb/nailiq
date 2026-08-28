@@ -9,7 +9,10 @@ import {
   type DurableRateLimitResult,
 } from "@/shared/security/publicServerActionRateLimit";
 import { clientIp } from "@/shared/lib/inAppRateLimit";
-import { markBookingOtpDeliveryVerified } from "@/shared/booking/otpDeliveryTruth";
+import {
+  isBookingOtpDeliveryAttemptId,
+  markBookingOtpDeliveryVerified,
+} from "@/shared/booking/otpDeliveryTruth";
 
 function rateResponse(result: Exclude<DurableRateLimitResult, "allowed">) {
   return NextResponse.json(
@@ -27,7 +30,13 @@ export async function POST(req: Request) {
   ]);
   if (ipRate !== "allowed") return rateResponse(ipRate);
 
-  let body: { phone?: string; code?: string; shopSlug?: string; email?: string };
+  let body: {
+    phone?: string;
+    code?: string;
+    shopSlug?: string;
+    email?: string;
+    deliveryAttemptId?: string;
+  };
   try {
     body = await req.json();
   } catch {
@@ -38,6 +47,7 @@ export async function POST(req: Request) {
   const code = (body.code ?? "").replace(/\s/g, "");
   const shopSlug = (body.shopSlug ?? "").trim();
   const email = (body.email ?? "").trim().toLowerCase();
+  const deliveryAttemptId = (body.deliveryAttemptId ?? "").trim().toLowerCase();
 
   if (!phone || !code || !shopSlug) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
@@ -71,7 +81,7 @@ export async function POST(req: Request) {
 
   const salonId = String(salon.id);
   let verifiedDelivery:
-    | { channel: "sms" | "email"; recipient: string; attemptId?: string }
+    | { channel: "sms" | "email"; recipient: string; attemptId: string }
     | null = null;
 
   if (!isDemoOtpRuntime()) {
@@ -82,12 +92,22 @@ export async function POST(req: Request) {
     const sms = await checkVerification(e164, code);
     let approved = sms.ok;
     let lastError = sms.error ?? "invalid_code";
-    if (approved) verifiedDelivery = { channel: "sms", recipient: e164 };
+    if (approved && isBookingOtpDeliveryAttemptId(deliveryAttemptId)) {
+      verifiedDelivery = {
+        channel: "sms",
+        recipient: e164,
+        attemptId: deliveryAttemptId,
+      };
+    }
 
     if (!approved && email) {
       const em = await checkEmailOtp({ salonId, phone: phoneOk.digits, email, code });
       approved = em.ok;
-      if (approved) {
+      if (
+        approved &&
+        em.deliveryAttemptId &&
+        isBookingOtpDeliveryAttemptId(em.deliveryAttemptId)
+      ) {
         verifiedDelivery = {
           channel: "email",
           recipient: email,

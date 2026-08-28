@@ -25,6 +25,7 @@ DECLARE
     pg_catalog.convert_to('otp@example.invalid', 'UTF8'), 'sha256'
   ), 'hex');
   v_sms uuid;
+  v_sms_retry uuid;
   v_email uuid;
   v_marked uuid;
   v_result jsonb;
@@ -73,6 +74,27 @@ BEGIN
      OR (SELECT status FROM public.booking_otp_delivery_attempts WHERE id = v_sms)
        <> 'delivered' THEN
     RAISE EXCEPTION 'stronger verified state was downgraded: %', v_result;
+  END IF;
+
+  v_sms_retry := public.create_booking_otp_delivery_attempt(
+    v_salon, 'sms', v_sms_fingerprint
+  );
+  v_result := public.complete_booking_otp_delivery_attempt(
+    v_sms_retry, 'suppressed', NULL, NULL, 'qa_suppressed'
+  );
+  IF v_result->>'code' <> 'completed' THEN
+    RAISE EXCEPTION 'SMS retry suppression failed: %', v_result;
+  END IF;
+
+  -- Verification without the exact client-held attempt ID must never mark the
+  -- newest retry (which may be failed or suppressed) as delivered.
+  v_marked := public.mark_booking_otp_delivery_verified(
+    v_salon, 'sms', v_sms_fingerprint, NULL
+  );
+  IF v_marked IS NOT NULL
+     OR (SELECT status FROM public.booking_otp_delivery_attempts WHERE id = v_sms_retry)
+       <> 'suppressed' THEN
+    RAISE EXCEPTION 'missing attempt ID selected a newer SMS retry';
   END IF;
 
   v_email := public.create_booking_otp_delivery_attempt(

@@ -108,7 +108,11 @@ export async function POST(req: Request) {
       salonAddress: salonRow.address ?? null,
     });
     if (!result.ok) {
-      const status = result.error === "rate_limited" ? 429 : 500;
+      const status = result.error === "rate_limited"
+        ? 429
+        : result.error === "email_suppressed"
+          ? 503
+          : 500;
       return NextResponse.json({ error: result.error ?? "send_failed" }, { status });
     }
     return NextResponse.json({

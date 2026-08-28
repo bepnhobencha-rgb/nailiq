@@ -252,7 +252,7 @@ CREATE OR REPLACE FUNCTION public.mark_booking_otp_delivery_verified(
   p_salon_id uuid,
   p_channel text,
   p_recipient_fingerprint text,
-  p_attempt_id uuid DEFAULT NULL
+  p_attempt_id uuid
 )
 RETURNS uuid
 LANGUAGE plpgsql
@@ -264,7 +264,8 @@ DECLARE
 BEGIN
   IF p_salon_id IS NULL
      OR p_channel NOT IN ('sms', 'email')
-     OR p_recipient_fingerprint !~ '^[0-9a-f]{64}$' THEN
+     OR p_recipient_fingerprint !~ '^[0-9a-f]{64}$'
+     OR p_attempt_id IS NULL THEN
     RETURN NULL;
   END IF;
 
@@ -273,7 +274,7 @@ BEGIN
   WHERE a.salon_id = p_salon_id
     AND a.channel = p_channel
     AND a.recipient_fingerprint = p_recipient_fingerprint
-    AND (p_attempt_id IS NULL OR a.id = p_attempt_id)
+    AND a.id = p_attempt_id
     AND a.created_at >= transaction_timestamp() - interval '15 minutes'
   ORDER BY a.created_at DESC, a.id DESC
   LIMIT 1

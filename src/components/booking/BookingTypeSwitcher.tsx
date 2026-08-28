@@ -97,6 +97,9 @@ function GateOtpInline({
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deliveryAttemptIds, setDeliveryAttemptIds] = useState<
+    Partial<Record<"sms" | "email", string>>
+  >({});
   const codeRef = useRef<HTMLInputElement>(null);
 
   async function sendCode(ch: "sms" | "email" = channel) {
@@ -110,8 +113,16 @@ function GateOtpInline({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = (await r.json()) as { ok?: boolean; error?: string };
+      const data = (await r.json()) as {
+        ok?: boolean;
+        error?: string;
+        deliveryAttemptId?: string;
+      };
       if (data.ok) {
+        setDeliveryAttemptIds((current) => ({
+          ...current,
+          [ch]: data.deliveryAttemptId ?? "",
+        }));
         setChannel(ch);
         setStage("sent");
         setShowEmailInput(false);
@@ -144,6 +155,8 @@ function GateOtpInline({
     try {
       const body: Record<string, string> = { shopSlug, phone: phoneDigits, code: trimmed };
       if (channel === "email") body.email = email.trim();
+      const deliveryAttemptId = deliveryAttemptIds[channel];
+      if (deliveryAttemptId) body.deliveryAttemptId = deliveryAttemptId;
       const r = await fetch("/api/booking-otp/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

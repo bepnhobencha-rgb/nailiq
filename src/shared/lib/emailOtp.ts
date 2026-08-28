@@ -55,7 +55,7 @@ function constantTimeEqual(a: string, b: string): boolean {
 
 /**
  * Generate, store, and EMAIL a fresh code for (salon, phone, email).
- * Rate-limited. Returns ok even when Resend is unconfigured in dev (no-op).
+ * Rate-limited and fail-closed whenever delivery is suppressed or unavailable.
  */
 export async function createAndSendEmailOtp(args: {
   salonId: string;
@@ -68,7 +68,7 @@ export async function createAndSendEmailOtp(args: {
   ok: boolean;
   error?: string;
   deliveryAttemptId?: string;
-  deliveryStatus?: "provider_accepted" | "failed" | "unknown";
+  deliveryStatus?: "provider_accepted" | "failed" | "suppressed" | "unknown";
 }> {
   const email = args.email.trim().toLowerCase();
   if (!email) return { ok: false, error: "no_email" };
@@ -130,7 +130,11 @@ export async function createAndSendEmailOtp(args: {
     deliveryAttemptId: attempt.attemptId,
   });
   if (!sent.ok) {
-    const status = sent.outcome === "unknown" ? "unknown" : "failed";
+    const status = sent.suppressed
+      ? "suppressed"
+      : sent.outcome === "unknown"
+        ? "unknown"
+        : "failed";
     await Promise.all([
       completeBookingOtpDeliveryAttempt({
         attemptId: attempt.attemptId,
@@ -250,7 +254,20 @@ async function sendOtpCodeEmail(input: {
   error?: string;
   providerMessageId?: string;
   outcome: "accepted" | "failed_pre_acceptance" | "unknown";
+  suppressed?: boolean;
 }> {
+  const outboundEmailFlag = (process.env.DISABLE_OUTBOUND_EMAIL ?? "")
+    .trim()
+    .toLowerCase();
+  if (["1", "true", "yes"].includes(outboundEmailFlag)) {
+    return {
+      ok: false,
+      error: "email_suppressed",
+      outcome: "failed_pre_acceptance",
+      suppressed: true,
+    };
+  }
+
   // getResendClient() THROWS when the key is missing in a production build (e.g.
   // a preview deployment without the Preview-env key). Treat that as "not
   // configured" rather than a 500 — the SMS channel still works.
