@@ -113,6 +113,12 @@ describe("owner booking notification outbox worker", () => {
     expect(migration).toContain("FOR UPDATE SKIP LOCKED");
     expect(migration).toContain("provider_receipt_count > 0");
     expect(migration).toContain("REVOKE ALL PRIVILEGES ON TABLE public.owner_booking_notification_outbox");
+    expect(migration).not.toMatch(
+      /GRANT\s+(?:ALL|SELECT|INSERT|UPDATE|DELETE)[\s\S]{0,80}ON\s+TABLE\s+public\.owner_booking_notification_outbox\s+TO\s+service_role/i,
+    );
+    expect(migration).toContain(
+      "GRANT EXECUTE ON FUNCTION public.resolve_owner_booking_notification_occurrence(uuid, uuid, text)",
+    );
     expect(migration).toContain("FOR ALL TO anon, authenticated USING (false) WITH CHECK (false)");
     expect(migration).not.toMatch(/INSERT INTO public\.owner_booking_notification_outbox[\s\S]{0,200}SELECT/i);
   });

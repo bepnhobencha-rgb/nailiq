@@ -153,18 +153,20 @@ async function resolveOwnerNotificationOccurrenceKey(
   // working without manufacturing a second key for durable new/reschedules.
   if (input.event === "new" || input.event === "reschedule") {
     try {
-      const { data, error } = await admin
-        .from("owner_booking_notification_outbox" as never)
-        .select("occurrence_key" as never)
-        .eq("booking_id" as never, input.bookingId)
-        .eq("salon_id" as never, input.salonId)
-        .eq("event_type" as never, input.event)
-        .neq("status" as never, "suppressed")
-        .order("created_at" as never, { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      const durableKey = (data as { occurrence_key?: unknown } | null)?.occurrence_key;
-      if (!error && typeof durableKey === "string" && durableKey.trim()) {
+      const { data, error } = await (admin as unknown as OwnerNotificationRpcClient).rpc(
+        "resolve_owner_booking_notification_occurrence",
+        {
+          p_salon_id: input.salonId,
+          p_booking_id: input.bookingId,
+          p_event_type: input.event,
+        },
+      );
+      const result = data as {
+        success?: unknown;
+        occurrence_key?: unknown;
+      } | null;
+      const durableKey = result?.occurrence_key;
+      if (!error && result?.success === true && typeof durableKey === "string" && durableKey.trim()) {
         return durableKey.trim();
       }
     } catch {
@@ -244,7 +246,7 @@ type NotifyLogRow = {
 
 type OwnerClaimStatus = "sent" | "failed" | "unknown" | "suppressed";
 
-type OwnerClaimRpcClient = {
+type OwnerNotificationRpcClient = {
   rpc: (
     name: string,
     params: Record<string, unknown>,
@@ -277,7 +279,7 @@ async function claimOwnerRecipient(
   | { claimed: false; reason: string; status: string | null }
 > {
   try {
-    const { data, error } = await (admin as unknown as OwnerClaimRpcClient).rpc(
+    const { data, error } = await (admin as unknown as OwnerNotificationRpcClient).rpc(
       "claim_owner_booking_notification",
       {
         p_salon_id: meta.salonId,
@@ -334,7 +336,7 @@ async function completeOwnerRecipientClaim(
   errorMessage: string | null,
 ): Promise<boolean> {
   try {
-    const { data, error } = await (admin as unknown as OwnerClaimRpcClient).rpc(
+    const { data, error } = await (admin as unknown as OwnerNotificationRpcClient).rpc(
       "complete_owner_booking_notification",
       {
         p_claim_id: claimId,

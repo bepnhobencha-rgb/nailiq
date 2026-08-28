@@ -69,7 +69,6 @@ CREATE INDEX owner_booking_notification_outbox_salon_created_idx
 ALTER TABLE public.owner_booking_notification_outbox ENABLE ROW LEVEL SECURITY;
 REVOKE ALL PRIVILEGES ON TABLE public.owner_booking_notification_outbox
   FROM PUBLIC, anon, authenticated, service_role;
-GRANT SELECT ON TABLE public.owner_booking_notification_outbox TO service_role;
 CREATE POLICY "deny browser access to owner booking notification outbox"
   ON public.owner_booking_notification_outbox AS RESTRICTIVE
   FOR ALL TO anon, authenticated USING (false) WITH CHECK (false);
@@ -186,6 +185,38 @@ $trigger$;
 CREATE TRIGGER track_owner_booking_notification_occurrence
 AFTER INSERT OR UPDATE OF start_time_utc ON public.bookings
 FOR EACH ROW EXECUTE FUNCTION public.track_owner_booking_notification_occurrence();
+
+CREATE OR REPLACE FUNCTION public.resolve_owner_booking_notification_occurrence(
+  p_salon_id uuid,
+  p_booking_id uuid,
+  p_event_type text
+)
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path TO ''
+AS $resolve$
+  SELECT CASE
+    WHEN p_salon_id IS NULL OR p_booking_id IS NULL
+      OR p_event_type NOT IN ('new', 'reschedule')
+      THEN jsonb_build_object('success', false, 'code', 'invalid_input')
+    ELSE coalesce((
+      SELECT jsonb_build_object(
+        'success', true,
+        'code', 'resolved',
+        'occurrence_key', o.occurrence_key
+      )
+      FROM public.owner_booking_notification_outbox o
+      WHERE o.salon_id = p_salon_id
+        AND o.booking_id = p_booking_id
+        AND o.event_type = p_event_type
+        AND o.status <> 'suppressed'
+      ORDER BY o.created_at DESC, o.id DESC
+      LIMIT 1
+    ), jsonb_build_object('success', false, 'code', 'not_found'))
+  END;
+$resolve$;
 
 CREATE OR REPLACE FUNCTION public.claim_owner_booking_notification_outbox_batch(
   p_limit integer
@@ -357,11 +388,15 @@ $complete$;
 
 REVOKE ALL ON FUNCTION public.track_owner_booking_notification_occurrence()
   FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.resolve_owner_booking_notification_occurrence(uuid, uuid, text)
+  FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.claim_owner_booking_notification_outbox_batch(integer)
   FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.complete_owner_booking_notification_outbox(uuid, uuid, text, text)
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.claim_owner_booking_notification_outbox_batch(integer)
+  TO service_role;
+GRANT EXECUTE ON FUNCTION public.resolve_owner_booking_notification_occurrence(uuid, uuid, text)
   TO service_role;
 GRANT EXECUTE ON FUNCTION public.complete_owner_booking_notification_outbox(uuid, uuid, text, text)
   TO service_role;
