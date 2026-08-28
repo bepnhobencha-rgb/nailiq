@@ -80,6 +80,25 @@ const CHANNEL_LABEL: Record<string, string> = {
   appointment: "Online · Đặt online",
 };
 
+export const OWNER_NOTIFICATION_BOOKING_SELECT_COLUMNS = [
+  "client_name",
+  "client_phone",
+  "service_id",
+  "staff_id",
+  "start_time_utc",
+  "end_time_utc",
+  "status",
+  "source",
+  "booking_channel",
+  "price_cents",
+  "addon_price_cents",
+  "client_profile_id",
+  "created_at",
+  "local_updated_at",
+  "rescheduled_at",
+  "customer_transitioned_at",
+] as const;
+
 const esc = (s: string) =>
   s.replace(/[<>&]/g, (c) =>
     c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&amp;",
@@ -133,6 +152,23 @@ export function ownerNotificationOccurrenceKey(
     return start && updated ? `${start}|${updated}` : null;
   }
   return normalizeOccurrenceInstant(booking.updatedAt);
+}
+
+export function ownerNotificationMutationInstant(
+  event: OwnerNotificationEvent,
+  booking: {
+    localUpdatedAt?: string | null;
+    rescheduledAt?: string | null;
+    customerTransitionedAt?: string | null;
+  },
+): string | null {
+  if (event === "reschedule") {
+    return booking.rescheduledAt ?? booking.localUpdatedAt ?? null;
+  }
+  if (event === "cancel" || event === "no_show") {
+    return booking.customerTransitionedAt ?? booking.localUpdatedAt ?? null;
+  }
+  return booking.localUpdatedAt ?? null;
 }
 
 async function resolveOwnerNotificationOccurrenceKey(
@@ -957,14 +993,24 @@ export async function sendOwnerBookingNotification(
     }
 
     // Booking details + service/staff names.
-    const { data: bRow } = await admin
+    const { data: bRow, error: bookingLookupError } = await admin
       .from("bookings")
-      .select(
-        "client_name, client_phone, service_id, staff_id, start_time_utc, end_time_utc, status, source, booking_channel, price_cents, addon_price_cents, client_profile_id, created_at, updated_at",
-      )
+      .select(OWNER_NOTIFICATION_BOOKING_SELECT_COLUMNS.join(", "))
       .eq("id", bookingId)
       .eq("salon_id", salonId)
       .maybeSingle();
+    if (bookingLookupError) {
+      console.error(
+        "[ownerNotify] booking lookup",
+        sanitizeProviderError(bookingLookupError),
+      );
+      return {
+        outcome: "retryable_failure",
+        reason: "booking_lookup_failed",
+        sent: 0,
+        failed: 1,
+      };
+    }
     const b = bRow as {
       client_name?: string | null;
       client_phone?: string | null;
@@ -979,7 +1025,9 @@ export async function sendOwnerBookingNotification(
       addon_price_cents?: number | null;
       client_profile_id?: string | null;
       created_at?: string | null;
-      updated_at?: string | null;
+      local_updated_at?: string | null;
+      rescheduled_at?: string | null;
+      customer_transitioned_at?: string | null;
     } | null;
     if (!b) {
       return { outcome: "suppressed", reason: "booking_not_found", sent: 0, failed: 0 };
@@ -990,7 +1038,11 @@ export async function sendOwnerBookingNotification(
       input,
       {
         createdAt: b.created_at,
-        updatedAt: b.updated_at,
+        updatedAt: ownerNotificationMutationInstant(event, {
+          localUpdatedAt: b.local_updated_at,
+          rescheduledAt: b.rescheduled_at,
+          customerTransitionedAt: b.customer_transitioned_at,
+        }),
         startTimeUtc: b.start_time_utc,
       },
     );

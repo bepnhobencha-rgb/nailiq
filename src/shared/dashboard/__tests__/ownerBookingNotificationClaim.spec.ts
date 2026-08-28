@@ -10,6 +10,8 @@ vi.mock("@/shared/lib/resend", () => ({
 }));
 
 import {
+  OWNER_NOTIFICATION_BOOKING_SELECT_COLUMNS,
+  ownerNotificationMutationInstant,
   ownerNotificationOccurrenceKey,
   sendToEachRecipient,
 } from "@/shared/dashboard/sendOwnerBookingNotification";
@@ -55,6 +57,39 @@ function completed(status: string) {
 
 describe("owner booking notification durable recipient claim", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("queries only real production booking timestamp columns", () => {
+    expect(OWNER_NOTIFICATION_BOOKING_SELECT_COLUMNS).not.toContain("updated_at");
+    expect(OWNER_NOTIFICATION_BOOKING_SELECT_COLUMNS).toEqual(
+      expect.arrayContaining([
+        "created_at",
+        "local_updated_at",
+        "rescheduled_at",
+        "customer_transitioned_at",
+      ]),
+    );
+  });
+
+  it("uses event-specific persisted timestamps for occurrence fallbacks", () => {
+    const booking = {
+      localUpdatedAt: "2026-08-28T01:00:00Z",
+      rescheduledAt: "2026-08-28T02:00:00Z",
+      customerTransitionedAt: "2026-08-28T03:00:00Z",
+    };
+
+    expect(ownerNotificationMutationInstant("new", booking)).toBe(
+      booking.localUpdatedAt,
+    );
+    expect(ownerNotificationMutationInstant("reschedule", booking)).toBe(
+      booking.rescheduledAt,
+    );
+    expect(ownerNotificationMutationInstant("cancel", booking)).toBe(
+      booking.customerTransitionedAt,
+    );
+    expect(ownerNotificationMutationInstant("no_show", booking)).toBe(
+      booking.customerTransitionedAt,
+    );
+  });
 
   it("claims a normalized deterministic recipient before provider send", async () => {
     const h = makeHarness();
