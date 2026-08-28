@@ -1197,14 +1197,18 @@ export async function cancelDeskBooking(
     if (!transition.ok) return transition;
   }
 
-  // Owner/admin "cancelled" alert (opt-in, fire-and-forget).
-  after(() =>
-    sendOwnerBookingNotification({
-      salonId: ctx.salon.id,
-      bookingId,
-      event: "cancel",
-    }),
-  );
+  // A refundable cancellation has no undo and may notify immediately. The
+  // ordinary desk path is transactionally captured by the owner outbox and
+  // becomes claimable only after the eight-second undo window has settled.
+  if (refundOutcome?.ok) {
+    after(() =>
+      sendOwnerBookingNotification({
+        salonId: ctx.salon.id,
+        bookingId,
+        event: "cancel",
+      }),
+    );
+  }
 
   void logBookingEvent({
     bookingId,

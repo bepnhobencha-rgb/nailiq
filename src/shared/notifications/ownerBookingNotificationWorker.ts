@@ -70,7 +70,9 @@ function parseLease(value: unknown): OwnerOutboxLease | null {
     ? "new"
     : value.event_type === "reschedule"
       ? "reschedule"
-      : null;
+      : value.event_type === "cancel"
+        ? "cancel"
+        : null;
   if (
     !outboxId || !UUID_RE.test(outboxId) ||
     !attemptToken || !UUID_RE.test(attemptToken) ||

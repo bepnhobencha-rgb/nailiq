@@ -171,6 +171,14 @@ export function ownerNotificationMutationInstant(
   return booking.localUpdatedAt ?? null;
 }
 
+export function ownerNotificationBookingStateEligible(
+  event: OwnerNotificationEvent,
+  status: string | null | undefined,
+): boolean {
+  if (event === "cancel") return status === "cancelled";
+  return true;
+}
+
 async function resolveOwnerNotificationOccurrenceKey(
   admin: ReturnType<typeof createServiceRoleClient>,
   input: OwnerNotifyInput,
@@ -1031,6 +1039,14 @@ export async function sendOwnerBookingNotification(
     } | null;
     if (!b) {
       return { outcome: "suppressed", reason: "booking_not_found", sent: 0, failed: 0 };
+    }
+    if (!ownerNotificationBookingStateEligible(event, b.status)) {
+      return {
+        outcome: "suppressed",
+        reason: "booking_not_cancelled",
+        sent: 0,
+        failed: 0,
+      };
     }
 
     const eventOccurrenceKey = await resolveOwnerNotificationOccurrenceKey(
