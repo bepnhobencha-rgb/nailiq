@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createSquareBooking,
   ensureSquareCustomer,
+  findSquareCustomerByPhone,
   type SquareConfig,
 } from "../client";
 
@@ -202,6 +203,45 @@ describe("Square customer create idempotency", () => {
       "Square CreateCustomer returned no id",
     );
     expect(createRequests(fetcher)).toHaveLength(1);
+  });
+});
+
+describe("Square customer phone search identity", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each([
+    ["16045550101", "+16045550101"],
+    ["6045550101", "+16045550101"],
+    ["+84 90 123 4567", "+84901234567"],
+    ["84901234567", "+84901234567"],
+  ])("sends only one validated E.164 candidate for %s", async (phone, expected) => {
+    const fetcher = vi.fn(async (
+      rawUrl: string | URL | Request,
+      init?: RequestInit,
+    ) => {
+      void rawUrl;
+      void init;
+      return response(200, {});
+    });
+    vi.stubGlobal("fetch", fetcher);
+
+    await expect(findSquareCustomerByPhone(config, phone)).resolves.toBeNull();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toMatchObject({
+      query: { filter: { phone_number: { exact: expected } } },
+    });
+  });
+
+  it.each([
+    "00000000",
+    "1234567890123456",
+    "not-a-phone",
+  ])("does not call Square for unusable legacy phone %s", async (phone) => {
+    const fetcher = vi.fn(async () => response(200, {}));
+    vi.stubGlobal("fetch", fetcher);
+
+    await expect(findSquareCustomerByPhone(config, phone)).resolves.toBeNull();
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });
 

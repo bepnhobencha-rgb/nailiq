@@ -6,6 +6,8 @@
  * hardcoded — mirrors the Wix integration's `client.ts` posture.
  */
 
+import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+
 const SQUARE_API = "https://connect.squareup.com/v2";
 const SQUARE_SANDBOX_API = "https://connect.squareupsandbox.com/v2";
 const SQUARE_VERSION = "2024-12-18";
@@ -348,21 +350,30 @@ export async function createPaymentLink(
 // customer no-shows. Proven against sandbox: customer → CreateCard → CreatePayment.
 // ---------------------------------------------------------------------------
 
-/** Candidate phone formats to try against Square. Square stores/searches phone
- *  numbers in E.164 (e.g. "+12368894243"), but our DB keeps digits ("12368894243"
- *  / "2368894243"). Verified against prod: exact match needs the "+E.164" form.
- *  We try the most likely first; de-duplicated, falsy dropped. */
+/** Build the one exact phone identity that is safe to send to Square.
+ *
+ * Square requires exact phone searches to use a complete E.164 value with the
+ * leading `+`. NailIQ persists canonical country-code digits without `+`; the
+ * only legacy exception we can resolve without guessing is a bare 10-digit
+ * NANP number, which the database canonicalizer also treats as country code 1.
+ *
+ * Never try bare digits or trim to the last 10 digits. Those fallbacks are not
+ * valid Square search inputs and can also point at a different customer. An
+ * unusable/ambiguous value therefore produces no provider request and leaves
+ * the caller in its existing safe pending/no-card state. */
 function phoneSearchCandidates(phone: string): string[] {
-  const digits = (phone || "").replace(/\D/g, "");
+  const raw = String(phone || "").trim();
+  const digits = raw.replace(/\D/g, "");
   if (!digits) return [];
-  const last10 = digits.slice(-10);
-  const cands = [
-    `+${digits}`, // "+12368894243" (digits already carry country code)
-    digits.length === 10 ? `+1${digits}` : "", // 10-digit NANP → +1
-    last10.length === 10 ? `+1${last10}` : "", // strip extra prefix, NANP
-    digits, // bare digits (older records)
-  ].filter(Boolean);
-  return Array.from(new Set(cands));
+
+  const parsed = validateGuestPhone(
+    raw.startsWith("+")
+      ? `+${digits}`
+      : digits.length === 10
+        ? digits
+        : `+${digits}`,
+  );
+  return parsed.ok ? [`+${parsed.digits}`] : [];
 }
 
 /** Find an existing Square customer by phone — READ ONLY, never creates. Tries
