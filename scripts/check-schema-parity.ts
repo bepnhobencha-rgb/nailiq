@@ -69,15 +69,18 @@ import { execFileSync } from "node:child_process";
  * public booking snapshot plus two service-role-only dashboard projections.
  * The 20260825124500 MQA-0148 dashboard-shell migration adds one
  * service-role-only shell projection.
- * The 20260826204500 group-booking resource migration adds one atomic
+ * The 20260826235226 group-booking resource migration adds one atomic
  * resource-assignment trigger function and one booking trigger.
+ * The 20260827085412/20260827215428 card-continuation migrations add leased
+ * response-loss reconciliation plus one PII-free, service-role-only
+ * post-commit continuation ledger and two reconciliation functions.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
  */
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
-  tables: 174,
+  tables: 175,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -112,12 +115,13 @@ const PRODUCTION = {
   // +4 terminal receipt fields on reminder claims, +4 on staff-action
   // deliveries, and +13 fields in the PII-free Twilio status receipt inbox.
   // +7 fail-closed error-remediation QA and approval evidence columns.
-  columns: 2568,
+  // +18 card response-loss lease and continuation-ledger columns.
+  columns: 2592,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
   // service-role-only atomic offboarding contract.
-  policies: 197,
+  policies: 198,
   /**
    * APP functions only — refreshed after the rehearsed forward migrations.
    *
@@ -136,17 +140,21 @@ const PRODUCTION = {
   // SID-first service-role wrappers, plus +2 durable review-SMS completion and
   // signed callback-correlation functions.
   // +1 forward-only error-remediation release-gate trigger function.
-  functions: 375,
+  // +2 atomic booking-card continuation arm/resolve functions.
+  functions: 381,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
   // +1 fail-closed error-remediation release-gate trigger.
-  triggers: 88,
+  // +2 individual/group canonical-create continuation arm triggers.
+  triggers: 90,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
   // +1 Twilio inbox primary key plus unique reminder/staff SMS SID indexes.
-  indexes: 632,
+  // +5 continuation/card-operation PK, unique and due indexes.
+  // +2 continuation/card-operation foreign-key support indexes.
+  indexes: 640,
 } as const;
 
 /**
@@ -197,6 +205,7 @@ const CRITICAL_TABLES = [
   "booking_management_action_receipts",
   "booking_card_management_operations",
   "booking_card_save_operations",
+  "booking_card_management_continuations",
   "waitlist_claim_action_state",
   "waitlist_claim_capabilities",
   "waitlist_claim_action_receipts",
@@ -335,8 +344,13 @@ const CRITICAL_FUNCTIONS = [
   "complete_booking_card_management_operation",
   "reconcile_stale_booking_card_management_operations",
   "claim_booking_card_save_operation",
+  "prepare_booking_card_save_dispatch",
   "complete_booking_card_save_operation",
   "reconcile_stale_booking_card_save_operations",
+  "complete_booking_card_save_reconciliation",
+  "record_booking_card_management_pending",
+  "resolve_booking_card_management_continuation",
+  "reconcile_due_booking_card_management_continuations",
   "ensure_waitlist_offer_delivery_outbox",
   "load_waitlist_offer_delivery_material",
   "mint_waitlist_claim_capability",
@@ -580,7 +594,7 @@ function main() {
   // the delivery-event audit table is service-role-only.
   // The customer identity map is service-role read-only; the refund inbox is
   // mutation-through-RPC only and intentionally grants no table reachability.
-  const GRANTS = { anon: 56, authenticated: 77, service_role: 175 } as const;
+  const GRANTS = { anon: 56, authenticated: 77, service_role: 176 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (

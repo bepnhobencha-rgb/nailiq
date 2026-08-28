@@ -5,6 +5,11 @@ import { ensureNoShowCardRequirement } from "@/shared/noshow/ensureNoShowCardReq
 import { clientIp, durableRateLimitKey, isOverRateLimit } from "@/shared/lib/inAppRateLimit";
 import { readJsonObjectWithLimit } from "@/shared/security/readJsonObjectWithLimit";
 import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
+import { v1AllowsNoShowCardOnFile } from "@/shared/release/v1IntegrationScope";
+import {
+  recordCommittedBookingCardPending,
+  resolveCommittedBookingCardContinuation,
+} from "@/shared/booking/bookingCardContinuation";
 
 const PRIVATE_HEADERS = {
   "Cache-Control": "private, no-store, max-age=0", Pragma: "no-cache",
@@ -24,6 +29,17 @@ export async function POST(request: Request) {
   if (!salonId || !bookingId || !idempotencyKey || !/^[0-9a-f]{64}$/.test(pricingFingerprint)) {
     return NextResponse.json({ ok: false, code: "invalid_request" }, { status: 400, headers: PRIVATE_HEADERS });
   }
+  // This is a resolved "not applicable" state, not a retryable provider error.
+  // Return before rate/DB/capability work so every committed V1 booking can
+  // render success without creating a misleading card-management incident.
+  if (!v1AllowsNoShowCardOnFile()) {
+    return NextResponse.json({
+      ok: true,
+      required: false,
+      token: null,
+      cardManagementStatus: "not_applicable",
+    }, { status: 200, headers: PRIVATE_HEADERS });
+  }
   const limited = await isOverRateLimit(
     durableRateLimitKey("card-capability-exchange", clientIp(request), salonId),
     12,
@@ -38,13 +54,55 @@ export async function POST(request: Request) {
     pricingFingerprint,
   });
   if (!exchanged.ok) {
+    if (!["invalid_request", "create_binding_invalid", "exchange_expired"].includes(exchanged.code)) {
+      await recordCommittedBookingCardPending({
+        salonId,
+        bookingId,
+        createIdempotencyKey: idempotencyKey,
+        pricingFingerprint,
+        scope: "individual",
+        stage: "capability",
+        reason: "capability_unavailable",
+      });
+    }
     const status = exchanged.code === "invalid_request" ? 400
       : exchanged.code === "create_binding_invalid" || exchanged.code === "exchange_expired" ? 404
         : 503;
     return NextResponse.json({ ok: false, code: exchanged.code }, { status, headers: PRIVATE_HEADERS });
   }
   const requirement = await ensureNoShowCardRequirement(bookingId, { strict: true }).catch(() => null);
-  if (!requirement) return NextResponse.json({ ok: false, code: "management_unavailable" }, { status: 503, headers: PRIVATE_HEADERS });
+  if (!requirement) {
+    await recordCommittedBookingCardPending({
+      salonId,
+      bookingId,
+      createIdempotencyKey: idempotencyKey,
+      pricingFingerprint,
+      scope: "individual",
+      stage: "assessment",
+      reason: "assessment_unavailable",
+    });
+    return NextResponse.json({ ok: false, code: "management_unavailable" }, { status: 503, headers: PRIVATE_HEADERS });
+  }
+  if (requirement.required) {
+    await recordCommittedBookingCardPending({
+      salonId,
+      bookingId,
+      createIdempotencyKey: idempotencyKey,
+      pricingFingerprint,
+      scope: "individual",
+      stage: "customer_action",
+      reason: "card_required",
+    });
+  } else {
+    await resolveCommittedBookingCardContinuation({
+      salonId,
+      bookingId,
+      createIdempotencyKey: idempotencyKey,
+      pricingFingerprint,
+      scope: "individual",
+      reason: "card_not_required",
+    });
+  }
   return NextResponse.json({
     ok: true,
     required: requirement.required,

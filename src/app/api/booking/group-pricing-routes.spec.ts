@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   ensureCard: vi.fn(),
   mintCard: vi.fn(),
   saveCard: vi.fn(),
+  recordCardPending: vi.fn(),
+  resolveCardContinuation: vi.fn(),
   serialize: vi.fn((value: unknown) => ({ authoritative: value })),
 }));
 
@@ -35,6 +37,10 @@ vi.mock("@/shared/booking/bookingManagementCapabilities", () => ({
 }));
 vi.mock("@/shared/booking/bookingCardManagement", () => ({
   saveCardWithManagementCapability: mocks.saveCard,
+}));
+vi.mock("@/shared/booking/bookingCardContinuation", () => ({
+  recordCommittedBookingCardPending: mocks.recordCardPending,
+  resolveCommittedBookingCardContinuation: mocks.resolveCardContinuation,
 }));
 vi.mock(
   "@/shared/booking/groupBookingApiBoundary",
@@ -122,6 +128,8 @@ describe("public group pricing route boundaries", () => {
       },
     });
     mocks.saveCard.mockResolvedValue({ ok: true, code: "saved" });
+    mocks.recordCardPending.mockResolvedValue(true);
+    mocks.resolveCardContinuation.mockResolvedValue(true);
   });
 
   it("denies missing and cross-site origins before rate or pricing work", async () => {
@@ -276,9 +284,18 @@ describe("public group pricing route boundaries", () => {
       ],
       idempotent: true,
       cardManagementToken: null,
+      cardManagementPending: false,
       pricing: { authoritative: pricing },
     });
     expect(mocks.serialize).toHaveBeenCalledWith(pricing);
+    expect(mocks.resolveCardContinuation).toHaveBeenCalledWith({
+      salonId: validBody.salonId,
+      bookingId: "91111111-1111-4111-8111-111111111111",
+      createIdempotencyKey: body.idempotencyKey,
+      pricingFingerprint: body.expectedPricingFingerprint,
+      scope: "group_organizer",
+      reason: "card_not_required",
+    });
   });
 
   it("returns only the organizer card_manage token when policy requires post-booking capture", async () => {
@@ -344,7 +361,7 @@ describe("public group pricing route boundaries", () => {
     });
   });
 
-  it("reports a committed booking as card_management_pending when required mint fails", async () => {
+  it("acknowledges a committed booking when required card management is pending", async () => {
     mocks.create.mockResolvedValueOnce({
       ok: true,
       groupId: "81111111-1111-4111-8111-111111111111",
@@ -360,12 +377,92 @@ describe("public group pricing route boundaries", () => {
       expectedPricingFingerprint: "a".repeat(64),
       otpSessionId: "71111111-1111-4111-8111-111111111111",
     }));
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
-      ok: false,
-      code: "card_management_pending",
-      bookingCommitted: true,
+      ok: true,
+      groupId: "81111111-1111-4111-8111-111111111111",
+      bookingIds: [
+        "91111111-1111-4111-8111-111111111111",
+        "a1111111-1111-4111-8111-111111111111",
+      ],
+      idempotent: true,
+      cardManagementToken: null,
+      cardManagementPending: true,
+      pricing: { authoritative: { receipt: "create" } },
     });
     expect(mocks.saveCard).not.toHaveBeenCalled();
+  });
+
+  it("acknowledges a committed booking when pre-captured card saving fails", async () => {
+    const pricing = { receipt: "create" };
+    mocks.create.mockResolvedValueOnce({
+      ok: true,
+      groupId: "81111111-1111-4111-8111-111111111111",
+      bookingIds: ["91111111-1111-4111-8111-111111111111", "a1111111-1111-4111-8111-111111111111"],
+      idempotent: false,
+      pricing,
+    });
+    mocks.ensureCard.mockResolvedValueOnce({ required: true, feeCents: 2500 });
+    mocks.saveCard.mockResolvedValueOnce({ ok: false, code: "provider_unavailable" });
+    const body = {
+      ...validBody,
+      idempotencyKey: "61111111-1111-4111-8111-111111111111",
+      expectedPricingFingerprint: "a".repeat(64),
+      otpSessionId: "71111111-1111-4111-8111-111111111111",
+      cardSourceId: "cnon:group-card",
+      cardVerificationToken: "verf-group",
+      noShowConsent: true,
+    };
+
+    const response = await createPost(request("group-create", body));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      groupId: "81111111-1111-4111-8111-111111111111",
+      bookingIds: expect.arrayContaining([
+        "91111111-1111-4111-8111-111111111111",
+        "a1111111-1111-4111-8111-111111111111",
+      ]),
+      cardManagementToken: null,
+      cardManagementPending: true,
+      pricing: { authoritative: pricing },
+    });
+    expect(mocks.recordCardPending).toHaveBeenLastCalledWith(expect.objectContaining({
+      bookingId: "91111111-1111-4111-8111-111111111111",
+      stage: "provider_handoff",
+      reason: "card_save_unresolved",
+    }));
+  });
+
+  it("still returns committed group success when card saving unexpectedly throws", async () => {
+    mocks.create.mockResolvedValueOnce({
+      ok: true,
+      groupId: "81111111-1111-4111-8111-111111111111",
+      bookingIds: ["91111111-1111-4111-8111-111111111111", "a1111111-1111-4111-8111-111111111111"],
+      idempotent: false,
+      pricing: { receipt: "create" },
+    });
+    mocks.ensureCard.mockResolvedValueOnce({ required: true, feeCents: 2500 });
+    mocks.saveCard.mockRejectedValueOnce(new Error("unexpected transport failure"));
+
+    const response = await createPost(request("group-create", {
+      ...validBody,
+      idempotencyKey: "61111111-1111-4111-8111-111111111111",
+      expectedPricingFingerprint: "a".repeat(64),
+      otpSessionId: "71111111-1111-4111-8111-111111111111",
+      cardSourceId: "cnon:group-card",
+      noShowConsent: true,
+    }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      cardManagementToken: null,
+      cardManagementPending: true,
+    });
+    expect(mocks.recordCardPending).toHaveBeenLastCalledWith(expect.objectContaining({
+      stage: "provider_handoff",
+      reason: "unexpected_post_commit_error",
+    }));
   });
 });

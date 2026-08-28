@@ -46,7 +46,7 @@ describe("existing-owner registration setup database boundary", () => {
   });
 
   it("updates the blank-database function tripwire", () => {
-    expect(parity).toContain("functions: 375");
+    expect(parity).toContain("functions: 381");
     expect(parity).toContain(
       '"complete_existing_owner_registration_setup"',
     );

@@ -5,6 +5,10 @@ import { describe, expect, it } from "vitest";
 const root = process.cwd();
 const booking = readFileSync(resolve(root,
   "supabase/migrations/20260820140000_add_action_scoped_booking_management_capabilities.sql"), "utf8");
+const cardReconciliation = readFileSync(resolve(root,
+  "supabase/migrations/20260827085412_add_durable_booking_card_reconciliation.sql"), "utf8");
+const cardReconciliationLease = readFileSync(resolve(root,
+  "supabase/migrations/20260827231246_harden_card_reconciliation_leases.sql"), "utf8");
 const waitlist = readFileSync(resolve(root,
   "supabase/migrations/20260820143000_add_action_scoped_waitlist_claim_capabilities.sql"), "utf8");
 const workflow = readFileSync(resolve(root, ".github/workflows/migration-history-rehearsal.yml"), "utf8");
@@ -34,6 +38,27 @@ describe("MQA-0099 database capability boundary", () => {
     expect(booking).toMatch(/REVOKE ALL[\s\S]+FROM PUBLIC,anon,authenticated/);
   });
 
+  it("reconciles an ambiguous card save by exact provider reads without redispatch", () => {
+    expect(cardReconciliation).toContain("prepare_booking_card_save_dispatch");
+    expect(cardReconciliation).toContain("'nq-card:' || v_op.id::text");
+    expect(cardReconciliation).toContain("complete_booking_card_save_reconciliation");
+    expect(cardReconciliation).toContain("customer_reentry_required");
+    expect(cardReconciliation).toContain("REVOKE ALL ON FUNCTION");
+    expect(cardReconciliation).not.toContain("source_token");
+  });
+
+  it("keeps the applied reconciliation migration immutable and adds leases forward-only", () => {
+    expect(cardReconciliation).not.toContain("reconciliation_token");
+    expect(cardReconciliation).not.toContain("reconciliation_lease_expires_at");
+    expect(cardReconciliationLease).toContain("ADD COLUMN IF NOT EXISTS reconciliation_token");
+    expect(cardReconciliationLease).toContain("ADD COLUMN IF NOT EXISTS reconciliation_lease_expires_at");
+    expect(cardReconciliationLease).toContain("FOR UPDATE SKIP LOCKED");
+    expect(cardReconciliationLease).toContain("v_op.reconciliation_token <> p_attempt_token");
+    expect(cardReconciliationLease).toContain("v_op.reconciliation_lease_expires_at <= v_now");
+    expect(cardReconciliationLease).toContain("WHEN v_count >= 3 THEN 'manual_review_required'");
+    expect(cardReconciliationLease).not.toContain("source_token");
+  });
+
   it("uses a new waitlist capability and a truthful at-most-one delivery claim", () => {
     expect(waitlist).toContain("claim_waitlist_with_management_capability");
     expect(waitlist).toContain("claim_waitlist_offer_delivery");
@@ -58,10 +83,10 @@ describe("MQA-0099 database capability boundary", () => {
       "rehearse-booking-management-capabilities-concurrency.mjs",
       "rehearse-waitlist-claim-capabilities.sql",
       "rehearse-waitlist-claim-capabilities-concurrency.mjs"]) expect(workflow).toContain(proof);
-    expect(parity).toContain("tables: 174");
-    expect(parity).toContain("columns: 2568");
-    expect(parity).toContain("functions: 375");
-    expect(parity).toContain("indexes: 632");
-    expect(parity).toContain("service_role: 175");
+    expect(parity).toContain("tables: 175");
+    expect(parity).toContain("columns: 2592");
+    expect(parity).toContain("functions: 381");
+    expect(parity).toContain("indexes: 640");
+    expect(parity).toContain("service_role: 176");
   });
 });

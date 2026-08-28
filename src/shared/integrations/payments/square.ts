@@ -58,6 +58,7 @@ export class SquareProvider implements PaymentProvider {
     sourceToken: string;
     verificationToken?: string;
     idempotencyKey: string;
+    cardReferenceId: string;
   }) {
     const customerId = await ensureSquareCustomer(this.cfg, {
       name: input.customer.name ?? null,
@@ -71,6 +72,7 @@ export class SquareProvider implements PaymentProvider {
       sourceId: input.sourceToken,
       idempotencyKey: `${input.idempotencyKey}:card`,
       verificationToken: input.verificationToken,
+      referenceId: input.cardReferenceId,
     });
     return {
       customerId,

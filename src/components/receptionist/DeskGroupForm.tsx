@@ -802,7 +802,14 @@ export default function DeskGroupForm({
         onClose();
         return;
       }
-      setError(tx.submitErrors[res.reason] ?? tx.submitFallback);
+      const submitError = tx.submitErrors[res.reason] ?? tx.submitFallback;
+      if (res.reason === "slot_conflict") {
+        // The arrangement was valid when it was found but became stale before
+        // the atomic write. Refresh immediately so the receptionist does not
+        // keep retrying cards that the database has already rejected.
+        await runScheduler();
+      }
+      setError(submitError);
     } catch (e) {
       console.error("[DeskGroupForm] submit failed", e);
       setError(tx.submitFallback);
@@ -827,6 +834,7 @@ export default function DeskGroupForm({
     seatTogether,
     language,
     slug,
+    runScheduler,
     onCreated,
     onClose,
     tx,

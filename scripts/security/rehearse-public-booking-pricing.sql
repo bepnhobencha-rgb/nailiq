@@ -39,7 +39,8 @@ BEGIN
   VALUES ('pricing-rehearsal', 'Pricing rehearsal', 'Pricing rehearsal');
 
   INSERT INTO public.salons (
-    id, slug, name, phone, timezone, currency_code, opening_hours, tax_lines
+    id, slug, name, phone, timezone, currency_code, opening_hours, tax_lines,
+    noshow_protection_enabled
   ) VALUES (
     v_salon,
     'pricing-rehearsal',
@@ -56,7 +57,8 @@ BEGIN
       "fri":{"open":"00:00","close":"23:59","closed":false},
       "sat":{"open":"00:00","close":"23:59","closed":false}
     }'::jsonb,
-    '[{"name":"GST","rate":0.05,"enabled":true}]'::jsonb
+    '[{"name":"GST","rate":0.05,"enabled":true}]'::jsonb,
+    true
   );
 
   INSERT INTO public.services (
@@ -143,6 +145,17 @@ BEGIN
   END IF;
   v_booking_id := (v_result->>'booking_id')::uuid;
 
+  IF (SELECT count(*) FROM public.booking_card_management_continuations c
+      WHERE c.booking_id = v_booking_id
+        AND c.salon_id = v_salon
+        AND c.create_idempotency_key = v_idem
+        AND c.pricing_fingerprint = v_quote->>'pricing_fingerprint'
+        AND c.scope = 'individual'
+        AND c.status = 'armed'
+        AND c.reason_code = 'assessment_scheduled') <> 1 THEN
+    RAISE EXCEPTION 'individual create did not atomically arm one continuation';
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1 FROM public.bookings b
     WHERE b.id = v_booking_id
@@ -177,6 +190,60 @@ BEGIN
      OR (SELECT visit_count FROM public.client_profiles WHERE phone = '16045550199') <> 1
      OR (SELECT used_count FROM public.vouchers WHERE id = v_voucher) <> 1 THEN
     RAISE EXCEPTION 'idempotent replay mismatch: %', v_result;
+  END IF;
+
+  IF (SELECT count(*) FROM public.booking_card_management_continuations c
+      WHERE c.booking_id = v_booking_id) <> 1 THEN
+    RAISE EXCEPTION 'individual replay duplicated its card continuation';
+  END IF;
+
+  -- Simulate a process dying after the canonical commit but before assessment.
+  -- Reconciliation must escalate internally, never retry booking/provider work.
+  UPDATE public.booking_card_management_continuations
+  SET next_reconcile_at = transaction_timestamp()
+  WHERE booking_id = v_booking_id;
+  PERFORM public.reconcile_due_booking_card_management_continuations(25);
+  IF NOT EXISTS (
+    SELECT 1 FROM public.booking_card_management_continuations c
+    WHERE c.booking_id = v_booking_id
+      AND c.status = 'manual_review'
+      AND c.reason_code = 'assessment_missing'
+      AND c.resolved_at IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'missing individual assessment was not escalated safely';
+  END IF;
+
+  v_claim := public.resolve_booking_card_management_continuation(
+    v_salon, v_booking_id, v_idem, v_quote->>'pricing_fingerprint',
+    'individual', 'card_not_required'
+  );
+  IF v_claim->>'ok' <> 'true'
+     OR NOT EXISTS (
+       SELECT 1 FROM public.booking_card_management_continuations c
+       WHERE c.booking_id = v_booking_id
+         AND c.status = 'resolved'
+         AND c.reason_code = 'card_not_required'
+     ) THEN
+    RAISE EXCEPTION 'individual exact-binding resolution failed: %', v_claim;
+  END IF;
+
+  -- Later lifecycle pricing changes belong to the booking, not its immutable
+  -- create receipt. They must not make the create-only trigger reject updates.
+  UPDATE public.bookings
+  SET public_booking_pricing_fingerprint = repeat('f', 64),
+      public_booking_pricing_snapshot = pg_catalog.jsonb_set(
+        public_booking_pricing_snapshot,
+        '{pricing_fingerprint}',
+        pg_catalog.to_jsonb(repeat('f', 64))
+      )
+  WHERE id = v_booking_id;
+  UPDATE public.bookings
+  SET public_booking_pricing_fingerprint = v_quote->>'pricing_fingerprint',
+      public_booking_pricing_snapshot = v_quote
+  WHERE id = v_booking_id;
+  IF (SELECT count(*) FROM public.booking_card_management_continuations c
+      WHERE c.booking_id = v_booking_id) <> 1 THEN
+    RAISE EXCEPTION 'post-create booking update changed continuation identity';
   END IF;
 
   v_result := public.create_public_booking(

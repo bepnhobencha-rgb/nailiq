@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   runTrackedCron: vi.fn(),
+  reconcileContinuations: vi.fn(),
 }));
 
 vi.mock("@/shared/security/cronAuthorization", () => ({
@@ -36,6 +37,14 @@ vi.mock("@/shared/integrations/square/deposits", () => ({
 vi.mock("@/shared/integrations/square/publicDepositReconciliation", () => ({
   reconcileSquarePublicDepositResponseLoss: vi.fn(),
 }));
+vi.mock("@/shared/booking/reconcileBookingCardSaveOperations", () => ({
+  reconcileBookingCardSaveOperations: vi.fn(async () => ({
+    ok: true, processed: 0, reconciled: 0, unresolved: 0,
+  })),
+}));
+vi.mock("@/shared/booking/reconcileBookingCardContinuations", () => ({
+  reconcileBookingCardContinuations: mocks.reconcileContinuations,
+}));
 
 import { GET } from "./route";
 
@@ -48,6 +57,11 @@ describe("GET /api/cron/payment-reconciliation", () => {
     vi.clearAllMocks();
     vi.stubEnv("PAYMENT_LEDGER_WORKERS_ENABLED", "true");
     vi.stubEnv("SQUARE_PUBLIC_DEPOSIT_RECONCILIATION_ENVIRONMENT", "");
+    vi.stubEnv("BOOKING_CARD_CONTINUATION_RECONCILIATION_ENABLED", "false");
+    mocks.reconcileContinuations.mockResolvedValue({
+      ok: true, processed: 0, awaitingCustomer: 0, pendingProvider: 0,
+      resolved: 0, manualReview: 0, errors: 0,
+    });
     mocks.runTrackedCron.mockImplementation(
       (_name: string, callback: () => Promise<Response>) => callback(),
     );
@@ -79,6 +93,30 @@ describe("GET /api/cron/payment-reconciliation", () => {
       unresolved: 0,
     });
     expect(mocks.runTrackedCron).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs the no-provider continuation worker while payment workers are off", async () => {
+    vi.stubEnv("PAYMENT_LEDGER_WORKERS_ENABLED", "false");
+    vi.stubEnv("BOOKING_CARD_CONTINUATION_RECONCILIATION_ENABLED", "true");
+    mocks.reconcileContinuations.mockResolvedValueOnce({
+      ok: true, processed: 2, awaitingCustomer: 1, pendingProvider: 1,
+      resolved: 0, manualReview: 0, errors: 0,
+    });
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      processed: 2,
+      unresolved: 0,
+      continuation: {
+        awaitingCustomer: 1,
+        pendingProvider: 1,
+      },
+    });
+    expect(mocks.reconcileContinuations).toHaveBeenCalledWith(10);
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
   it("returns 503 so the heartbeat is failed when any operation is unresolved", async () => {

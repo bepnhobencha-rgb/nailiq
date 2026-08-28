@@ -19,6 +19,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("server-only", () => ({}));
+vi.mock("@/shared/release/v1IntegrationScope", () => ({
+  v1AllowsCustomerPaymentGateway: () => true,
+  v1AllowsNoShowCardOnFile: () => true,
+}));
 vi.mock("@/shared/security/sameOriginMutation", () => ({ isSameOriginMutation: () => true }));
 vi.mock("@/shared/booking/bookingManagementCapabilities", () => ({
   inspectBookingManagementCapability: mocks.inspect,
