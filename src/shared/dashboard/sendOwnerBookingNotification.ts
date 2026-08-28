@@ -521,7 +521,20 @@ async function sendToEachRecipientDetailed(
       }
 
       try {
-        const res = await resend.emails.send({ from, to, ...payload });
+        const res = claimId
+          ? await resend.emails.send(
+              {
+                from,
+                to,
+                ...payload,
+                tags: [
+                  { name: "nailiq_flow", value: "owner_booking" },
+                  { name: "nailiq_claim", value: claimId },
+                ],
+              },
+              { idempotencyKey: `owner-booking-${claimId}` },
+            )
+          : await resend.emails.send({ from, to, ...payload });
         if (res.error) {
           const providerError = sanitizeProviderError(res.error);
           console.error(
