@@ -74,13 +74,16 @@ import { execFileSync } from "node:child_process";
  * The 20260827085412/20260827215428 card-continuation migrations add leased
  * response-loss reconciliation plus one PII-free, service-role-only
  * post-commit continuation ledger and two reconciliation functions.
+ * The 20260828011125 owner-booking notification migration adds one PII-free,
+ * RPC-only durable outbox, its capture trigger, and three service-only worker
+ * functions without increasing direct service-role table reachability.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
  */
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
-  tables: 175,
+  tables: 176,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -116,12 +119,14 @@ const PRODUCTION = {
   // deliveries, and +13 fields in the PII-free Twilio status receipt inbox.
   // +7 fail-closed error-remediation QA and approval evidence columns.
   // +18 card response-loss lease and continuation-ledger columns.
-  columns: 2592,
+  // +21 owner-booking notification outbox columns.
+  columns: 2613,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
   // service-role-only atomic offboarding contract.
-  policies: 198,
+  // +1 restrictive browser-deny policy on the RPC-only owner outbox.
+  policies: 199,
   /**
    * APP functions only — refreshed after the rehearsed forward migrations.
    *
@@ -141,20 +146,23 @@ const PRODUCTION = {
   // signed callback-correlation functions.
   // +1 forward-only error-remediation release-gate trigger function.
   // +2 atomic booking-card continuation arm/resolve functions.
-  functions: 381,
+  // +4 owner-alert capture, occurrence resolution, claim, and completion functions.
+  functions: 385,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
   // +1 fail-closed error-remediation release-gate trigger.
   // +2 individual/group canonical-create continuation arm triggers.
-  triggers: 90,
+  // +1 canonical booking owner-alert occurrence trigger.
+  triggers: 91,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
   // +1 Twilio inbox primary key plus unique reminder/staff SMS SID indexes.
   // +5 continuation/card-operation PK, unique and due indexes.
   // +2 continuation/card-operation foreign-key support indexes.
-  indexes: 640,
+  // +4 owner-alert outbox primary, occurrence-unique, due, and salon indexes.
+  indexes: 644,
 } as const;
 
 /**
@@ -174,6 +182,7 @@ const CRITICAL_TABLES = [
   "services",
   "client_profiles",
   "salon_members",
+  "owner_booking_notification_outbox",
   "superadmins",
   "superadmin_audit_logs",
   "ai_execution_jobs",
@@ -501,6 +510,10 @@ const CRITICAL_FUNCTIONS = [
   "enforce_staff_capability_write",
   "enforce_staff_capability_mode_transition",
   "set_staff_service_capabilities",
+  "track_owner_booking_notification_occurrence",
+  "resolve_owner_booking_notification_occurrence",
+  "claim_owner_booking_notification_outbox_batch",
+  "complete_owner_booking_notification_outbox",
 ] as const;
 
 const dbUrl = process.env.DB_URL;

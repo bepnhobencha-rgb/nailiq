@@ -30,7 +30,7 @@ export type CommittedBookingReconciliationInput = {
 };
 
 type ReconciliationDependencies = {
-  ownerNotify: typeof sendOwnerBookingNotification;
+  ownerNotify: (input: OwnerNotifyInput) => Promise<unknown>;
   protect: typeof handleBookingProtection;
   auditExists: (input: {
     bookingId: string;

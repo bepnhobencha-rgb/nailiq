@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   order: [] as string[],
   retryWorker: vi.fn(),
   staffActionWorker: vi.fn(),
+  ownerBookingWorker: vi.fn(),
   platform: vi.fn(),
   transitionWorker: vi.fn(),
 }));
@@ -21,6 +22,9 @@ vi.mock("@/shared/booking/bookingConfirmationRetryDelivery", () => ({
 }));
 vi.mock("@/shared/notifications/staffActionNotificationWorker", () => ({
   runStaffActionNotificationWorker: mocks.staffActionWorker,
+}));
+vi.mock("@/shared/notifications/ownerBookingNotificationWorker", () => ({
+  runOwnerBookingNotificationWorker: mocks.ownerBookingWorker,
 }));
 vi.mock("@/shared/superadmin/platformAnnouncementEmail", () => ({
   deliverPendingPlatformAnnouncementEmails: mocks.platform,
@@ -66,6 +70,10 @@ describe("send-pending-notifications booking confirmation retry priority", () =>
       mocks.order.push("staff-action-worker");
       return { ok: true, claimed: 0 };
     });
+    mocks.ownerBookingWorker.mockImplementation(async () => {
+      mocks.order.push("owner-booking-worker");
+      return { ok: true, claimed: 0 };
+    });
     mocks.platform.mockResolvedValue({ sent: 0 });
     mocks.transitionWorker.mockResolvedValue({ retriesProcessed: 0 });
   });
@@ -75,8 +83,10 @@ describe("send-pending-notifications booking confirmation retry priority", () =>
     expect(response.status).toBe(200);
     expect(mocks.retryWorker).toHaveBeenCalledWith(10);
     expect(mocks.staffActionWorker).toHaveBeenCalledWith(10);
+    expect(mocks.ownerBookingWorker).toHaveBeenCalledWith(10);
     expect(mocks.order[0]).toBe("staff-action-worker");
-    expect(mocks.order[1]).toBe("confirmation-retries");
+    expect(mocks.order[1]).toBe("owner-booking-worker");
+    expect(mocks.order[2]).toBe("confirmation-retries");
     expect(await response.json()).toMatchObject({
       claimed: 0,
       legacyStaffActionPending: 100,
