@@ -72,12 +72,26 @@ describe("Square customer create idempotency", () => {
     }
   });
 
+  it("treats Square's documented empty object as a definitive no-match", async () => {
+    const fetcher = vi.fn(async (rawUrl: string | URL | Request) => {
+      const path = new URL(String(rawUrl)).pathname;
+      if (path === "/v2/customers/search") return response(200, {});
+      return response(200, { customer: { id: "square-customer-1" } });
+    });
+    vi.stubGlobal("fetch", fetcher);
+
+    await expect(ensureSquareCustomer(config, customerInput))
+      .resolves.toBe("square-customer-1");
+    expect(createRequests(fetcher)).toHaveLength(1);
+  });
+
   it("does not create after a successful-but-malformed phone search response", async () => {
     for (const malformedSearch of [
-      {},
+      { customers: null },
       { customers: {} },
       { customers: [{}] },
       { customers: [], cursor: "unexpected-next-page" },
+      { errors: [{ code: "INTERNAL_ERROR" }] },
     ]) {
       const fetcher = vi.fn(async (rawUrl: string | URL | Request) => {
         const path = new URL(String(rawUrl)).pathname;
