@@ -104,7 +104,9 @@ describe("MQA-0102 SMS STOP/START runtime adoption", () => {
       if (!source.includes("/Messages.json")) continue;
       if (
         !source.includes('from "../_shared/smsConsentSuppression.ts"') ||
-        (source.match(/requireSmsConsentClear\(/g)?.length ?? 0) < 1
+        (source.match(/requireSmsConsentClear\(/g)?.length ?? 0) < 1 ||
+        !source.includes("legacyDirectSmsDispatchEnabled()") ||
+        !source.includes("durable_sms_dispatch_required")
       ) bypasses.push(path.relative(process.cwd(), file));
     }
     expect(bypasses).toEqual([]);

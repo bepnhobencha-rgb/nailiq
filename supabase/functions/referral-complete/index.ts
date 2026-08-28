@@ -4,7 +4,11 @@
 // Issues vouchers for both referrer and referee, sends SMS notifications.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { rejectUnauthorizedInternalRequest } from "../_shared/internalAuth.ts";
+import {
+  legacyDirectSmsDispatchEnabled,
+  outboundMessagingEnabled,
+  rejectUnauthorizedInternalRequest,
+} from "../_shared/internalAuth.ts";
 import { supabaseSecretKey } from "../_shared/supabaseApiKeys.ts";
 import { requireSmsConsentClear } from "../_shared/smsConsentSuppression.ts";
 
@@ -81,6 +85,8 @@ Deno.serve(async (req: Request) => {
 
   const unauthorized = await rejectUnauthorizedInternalRequest(req, corsHeaders);
   if (unauthorized) return unauthorized;
+  if (!legacyDirectSmsDispatchEnabled()) return jsonError("durable_sms_dispatch_required", 503);
+  if (!outboundMessagingEnabled()) return jsonError("outbound_messaging_disabled", 503);
 
   let body: { booking_id?: string };
   try {

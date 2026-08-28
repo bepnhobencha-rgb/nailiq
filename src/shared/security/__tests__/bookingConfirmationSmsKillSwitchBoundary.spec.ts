@@ -127,6 +127,7 @@ function makeDb(fixture: Fixture) {
             slug: "server-salon",
             address: "123 Server Street",
             sms_outbound_enabled: true,
+            sms_a2p_registered: true,
             email_outbound_enabled: false,
             timezone: "UTC",
             default_notification_locale: "en",
@@ -433,6 +434,7 @@ describe("booking confirmation SMS runtime boundary", () => {
         name: "Server Salon",
         slug: "server-salon",
         sms_outbound_enabled: false,
+        sms_a2p_registered: true,
         email_outbound_enabled: false,
         timezone: "UTC",
         default_notification_locale: "en",
@@ -452,6 +454,37 @@ describe("booking confirmation SMS runtime boundary", () => {
     expect(response.status).toBe(200);
     expect(mocks.sendClaimed).toHaveBeenCalledWith(
       expect.objectContaining({ suppressionReason: "outbound_disabled" }),
+    );
+    expect(mocks.generateReminderToken).not.toHaveBeenCalled();
+  });
+
+  it("suppresses a US recipient when the salon is not affirmatively A2P registered", async () => {
+    const harness = makeDb({
+      booking: { ...individualBooking(), client_phone: "17145101234" },
+      salon: {
+        name: "Server Salon",
+        slug: "server-salon",
+        sms_outbound_enabled: true,
+        sms_a2p_registered: false,
+        email_outbound_enabled: false,
+        timezone: "UTC",
+        default_notification_locale: "en",
+      },
+    });
+    mocks.createServiceRoleClient.mockReturnValue(harness.db);
+    mocks.sendClaimed.mockResolvedValue({
+      outcome: "suppressed",
+      reason: "a2p_not_registered",
+      claimId: "claim-organizer",
+      messageSid: null,
+      claimFinalized: true,
+    });
+
+    const response = await POST(request({ bookingId, salonId, language: "en" }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.sendClaimed).toHaveBeenCalledWith(
+      expect.objectContaining({ suppressionReason: "a2p_not_registered" }),
     );
     expect(mocks.generateReminderToken).not.toHaveBeenCalled();
   });

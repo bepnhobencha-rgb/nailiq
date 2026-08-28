@@ -14,6 +14,7 @@ import {
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { generateReminderToken } from "@/shared/noshow/generateReminderToken";
 import { clientIp } from "@/shared/lib/inAppRateLimit";
+import { isUsPhone } from "@/shared/lib/phoneRegion";
 import { consumeDurableRateLimitBuckets } from "@/shared/security/publicServerActionRateLimit";
 
 export const dynamic = "force-dynamic";
@@ -273,7 +274,7 @@ export async function POST(req: Request) {
   // Check if SMS is enabled for this salon
   const { data: salon } = await db
     .from("salons")
-    .select("name, slug, subscription_plan, plan_override, address, sms_outbound_enabled, timezone, default_notification_locale")
+    .select("name, slug, subscription_plan, plan_override, address, sms_outbound_enabled, sms_a2p_registered, timezone, default_notification_locale")
     .eq("id", salonId)
     .maybeSingle();
 
@@ -412,11 +413,18 @@ export async function POST(req: Request) {
 
   const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
   const smsOutboundEnabled =
-    (salon as { sms_outbound_enabled?: boolean | null }).sms_outbound_enabled !== false;
+    (salon as { sms_outbound_enabled?: boolean | null }).sms_outbound_enabled === true;
+  const smsA2pRegistered =
+    (salon as { sms_a2p_registered?: boolean | null }).sms_a2p_registered === true;
+  const smsPolicySuppressionReason = !smsOutboundEnabled
+    ? "outbound_disabled"
+    : isUsPhone(clientPhone) && !smsA2pRegistered
+      ? "a2p_not_registered"
+      : undefined;
   // Status links are capability-scoped. Never expose a naked booking UUID in a
   // customer message or mint stronger reschedule/cancel rights from that UUID.
   let manageLink = "";
-  if (smsOutboundEnabled && salonSlug && bookingId && !isGroup) {
+  if (!smsPolicySuppressionReason && salonSlug && bookingId && !isGroup) {
     const statusCapability = await generateReminderToken(bookingId, salonId, {
       action: "status",
       expiresAt: new Date(Date.parse(startTimeUtc) + 2 * 60 * 60 * 1000).toISOString(),
@@ -438,7 +446,7 @@ export async function POST(req: Request) {
     statusCallbackUrl,
     salonIsTest,
     lang: lang === "en" ? "en" : "vi",
-    suppressionReason: smsOutboundEnabled ? undefined : "outbound_disabled",
+    suppressionReason: smsPolicySuppressionReason,
   });
   const outcome = dispatch.outcome;
   const outcomeReason = dispatch.reason;
@@ -502,7 +510,7 @@ export async function POST(req: Request) {
   // organizer's unique claim suppresses a second provider attempt, so verify
   // its persisted exact receipt and resume only the still-unclaimed members.
   let groupFanout: GroupFanoutResult | null = null;
-  if (smsOutboundEnabled && isGroup && groupId) {
+  if (!smsPolicySuppressionReason && isGroup && groupId) {
     const organizerAuthorizesFanout =
       claimFinalized &&
       !duplicateStatusFailure &&

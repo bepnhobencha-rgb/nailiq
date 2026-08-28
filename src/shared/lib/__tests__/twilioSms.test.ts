@@ -17,6 +17,7 @@ import {
   normaliseToE164,
   isFictionalTestNumber,
   smsSuppressReason,
+  evaluateSmsSalonDispatchPolicy,
   sendSmsReminder,
   getSmsMessageStatus,
 } from "../twilioSms";
@@ -140,6 +141,46 @@ test("in production: real number sends, 555/test-salon suppressed", () => {
   assertEqual(smsSuppressReason("+16045101234", { salonIsTest: true }), "test_salon");
   (process.env as Record<string, string>).NODE_ENV = prevNode ?? "";
   if (prevFlag !== undefined) process.env.DISABLE_OUTBOUND_SMS = prevFlag;
+});
+
+// ── SALON/A2P POLICY: exact tenant truth at provider boundary ───────
+test("US recipient is suppressed unless salon A2P registration is exact-true", () => {
+  assertEqual(
+    evaluateSmsSalonDispatchPolicy({
+      recipientE164: "+17145101234",
+      smsOutboundEnabled: true,
+      smsA2pRegistered: false,
+    }),
+    { allowed: false, disposition: "suppressed", reason: "a2p_not_registered" },
+  );
+  assertEqual(
+    evaluateSmsSalonDispatchPolicy({
+      recipientE164: "+17145101234",
+      smsOutboundEnabled: true,
+      smsA2pRegistered: null,
+    }),
+    { allowed: false, disposition: "suppressed", reason: "a2p_not_registered" },
+  );
+});
+test("Canadian recipient does not require the US A2P marker", () => {
+  assertEqual(
+    evaluateSmsSalonDispatchPolicy({
+      recipientE164: "+16045101234",
+      smsOutboundEnabled: true,
+      smsA2pRegistered: false,
+    }),
+    { allowed: true },
+  );
+});
+test("missing or false salon outbound state always suppresses", () => {
+  assertEqual(
+    evaluateSmsSalonDispatchPolicy({
+      recipientE164: "+16045101234",
+      smsOutboundEnabled: undefined,
+      smsA2pRegistered: true,
+    }),
+    { allowed: false, disposition: "suppressed", reason: "outbound_disabled" },
+  );
 });
 
 // ── Suppressed sends must return a UNIQUE fake SID ──────────────────
