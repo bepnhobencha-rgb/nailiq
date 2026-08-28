@@ -83,11 +83,21 @@ describe("owner booking notification durable recipient claim", () => {
       p_recipient_identity: "owner@example.com",
       p_event_occurrence_key: "2026-08-20T01:02:03.000Z",
     });
-    expect(h.send).toHaveBeenCalledWith({
-      from: "NailIQ <noreply@nailiq.ca>",
-      to: "owner@example.com",
-      ...payload,
-    });
+    expect(h.send).toHaveBeenCalledWith(
+      {
+        from: "NailIQ <noreply@nailiq.ca>",
+        to: "owner@example.com",
+        ...payload,
+        tags: [
+          { name: "nailiq_flow", value: "owner_booking" },
+          {
+            name: "nailiq_claim",
+            value: "33333333-3333-4333-8333-333333333333",
+          },
+        ],
+      },
+      { idempotencyKey: "owner-booking-33333333-3333-4333-8333-333333333333" },
+    );
     expect(h.rpc).toHaveBeenNthCalledWith(2, "complete_owner_booking_notification", {
       p_claim_id: "33333333-3333-4333-8333-333333333333",
       p_status: "sent",
@@ -241,6 +251,11 @@ describe("owner booking notification durable recipient claim", () => {
 
     expect(h.rpc).not.toHaveBeenCalled();
     expect(h.send).toHaveBeenCalledTimes(1);
+    expect(h.send).toHaveBeenCalledWith({
+      from: "NailIQ <noreply@nailiq.ca>",
+      to: "owner@example.com",
+      ...payload,
+    });
   });
 
   it("derives bounded deterministic occurrence keys from authoritative booking timestamps", () => {
