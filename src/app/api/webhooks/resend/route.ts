@@ -12,6 +12,7 @@ import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import {
   parseResendCustomerDeliveryMaterial,
+  parseResendBookingOtpDeliveryMaterial,
   parseResendOwnerDeliveryMaterial,
   readResendWebhookBody,
   resendWebhookPayloadFingerprint,
@@ -51,10 +52,16 @@ export async function POST(request: Request) {
   const customerMaterial = ownerMaterial === "ignored"
     ? parseResendCustomerDeliveryMaterial(event)
     : "ignored";
-  if (ownerMaterial === "ignored" && customerMaterial === "ignored") {
+  const otpMaterial = ownerMaterial === "ignored" && customerMaterial === "ignored"
+    ? parseResendBookingOtpDeliveryMaterial(event)
+    : "ignored";
+  if (
+    ownerMaterial === "ignored" && customerMaterial === "ignored" &&
+    otpMaterial === "ignored"
+  ) {
     return json({ ok: true, code: "event_ignored" });
   }
-  if (ownerMaterial === null || customerMaterial === null) {
+  if (ownerMaterial === null || customerMaterial === null || otpMaterial === null) {
     return json({ ok: false, code: "invalid_event" }, 400);
   }
 
@@ -64,16 +71,25 @@ export async function POST(request: Request) {
   } catch {
     return json({ ok: false, code: "webhook_store_unavailable" }, 503);
   }
-  const material = ownerMaterial === "ignored" ? customerMaterial : ownerMaterial;
+  const material = ownerMaterial !== "ignored"
+    ? ownerMaterial
+    : customerMaterial !== "ignored"
+      ? customerMaterial
+      : otpMaterial;
   if (material === "ignored") return json({ ok: true, code: "event_ignored" });
-  const rpcName = ownerMaterial === "ignored"
-    ? "record_resend_customer_delivery_event"
-    : "record_resend_owner_delivery_event";
+  const isOtp = ownerMaterial === "ignored" && customerMaterial === "ignored";
+  const rpcName = isOtp
+    ? "record_resend_booking_otp_delivery_event"
+    : ownerMaterial === "ignored"
+      ? "record_resend_customer_delivery_event"
+      : "record_resend_owner_delivery_event";
   const params = {
-    ...(ownerMaterial === "ignored" && "claimKind" in material
+    ...(isOtp && "deliveryAttemptId" in material
+      ? { p_delivery_attempt_id: material.deliveryAttemptId }
+      : ownerMaterial === "ignored" && "claimKind" in material
       ? { p_claim_kind: material.claimKind }
       : {}),
-    p_claim_id: material.claimId,
+    ...("claimId" in material ? { p_claim_id: material.claimId } : {}),
     p_provider_event_id: providerEventId,
     p_provider_message_id: material.providerMessageId,
     p_event_type: material.eventType,

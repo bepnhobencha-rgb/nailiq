@@ -53,6 +53,18 @@ function customerPayload() {
   return JSON.stringify(parsed);
 }
 
+function otpPayload() {
+  const parsed = JSON.parse(payload()) as {
+    data: { to: string[]; tags: Record<string, string> };
+  };
+  parsed.data.to = ["OtpGuest@Example.COM"];
+  parsed.data.tags = {
+    nailiq_flow: "booking_otp",
+    nailiq_claim: "55555555-5555-4555-8555-555555555555",
+  };
+  return JSON.stringify(parsed);
+}
+
 function request(raw: string, headers: Record<string, string> = {}) {
   return new Request(url, {
     method: "POST",
@@ -149,6 +161,24 @@ describe("Resend owner delivery webhook", () => {
       p_payload_fingerprint: createHash("sha256").update(raw).digest("hex"),
     });
     expect(JSON.stringify(mocks.rpc.mock.calls)).not.toContain("Guest@Example.COM");
+  });
+
+  it("routes booking OTP receipts to the private OTP delivery ledger", async () => {
+    const raw = otpPayload();
+    const response = await POST(request(raw));
+    expect(response.status).toBe(200);
+    expect(mocks.rpc).toHaveBeenCalledWith("record_resend_booking_otp_delivery_event", {
+      p_delivery_attempt_id: "55555555-5555-4555-8555-555555555555",
+      p_provider_event_id: "evt_test_1",
+      p_provider_message_id: "resend-message-1",
+      p_event_type: "email.delivered",
+      p_recipient_fingerprint: createHash("sha256")
+        .update("otpguest@example.com")
+        .digest("hex"),
+      p_occurred_at: occurredAt,
+      p_payload_fingerprint: createHash("sha256").update(raw).digest("hex"),
+    });
+    expect(JSON.stringify(mocks.rpc.mock.calls)).not.toContain("OtpGuest@Example.COM");
   });
 
   it("acknowledges signed non-delivery events without touching the database", async () => {

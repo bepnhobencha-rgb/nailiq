@@ -45,6 +45,14 @@ export type ResendCustomerDeliveryMaterial = {
   occurredAt: string;
 };
 
+export type ResendBookingOtpDeliveryMaterial = {
+  deliveryAttemptId: string;
+  providerMessageId: string;
+  eventType: ResendOwnerDeliveryMaterial["eventType"];
+  recipientFingerprint: string;
+  occurredAt: string;
+};
+
 export async function readResendWebhookBody(
   request: Request,
 ): Promise<{ ok: true; bytes: Uint8Array; text: string } | { ok: false; code: string }> {
@@ -196,6 +204,40 @@ export function parseResendCustomerDeliveryMaterial(
     claimId: claimId.toLowerCase(),
     providerMessageId,
     eventType: event.type as ResendCustomerDeliveryMaterial["eventType"],
+    recipientFingerprint: createHash("sha256").update(recipient, "utf8").digest("hex"),
+    occurredAt,
+  };
+}
+
+export function parseResendBookingOtpDeliveryMaterial(
+  event: WebhookEventPayload,
+): ResendBookingOtpDeliveryMaterial | "ignored" | null {
+  if (!DELIVERY_EVENTS.has(event.type)) return "ignored";
+  if (!("email_id" in event.data) || !("to" in event.data)) return null;
+
+  const tags = "tags" in event.data ? event.data.tags : undefined;
+  if (tags?.nailiq_flow !== "booking_otp") return "ignored";
+  const deliveryAttemptId = tags.nailiq_claim;
+  const providerMessageId = event.data.email_id;
+  const recipients = event.data.to;
+  const occurredAt = event.created_at;
+  if (
+    typeof deliveryAttemptId !== "string" || !UUID_RE.test(deliveryAttemptId) ||
+    typeof providerMessageId !== "string" || !PROVIDER_ID_RE.test(providerMessageId) ||
+    !Array.isArray(recipients) || recipients.length !== 1 ||
+    typeof recipients[0] !== "string" || recipients[0].length > 320 ||
+    typeof occurredAt !== "string" || !RFC3339_RE.test(occurredAt) ||
+    !Number.isFinite(Date.parse(occurredAt))
+  ) {
+    return null;
+  }
+
+  const recipient = recipients[0].trim().toLowerCase();
+  if (!recipient || /[\u0000-\u001f\u007f]/.test(recipient)) return null;
+  return {
+    deliveryAttemptId: deliveryAttemptId.toLowerCase(),
+    providerMessageId,
+    eventType: event.type as ResendBookingOtpDeliveryMaterial["eventType"],
     recipientFingerprint: createHash("sha256").update(recipient, "utf8").digest("hex"),
     occurredAt,
   };
