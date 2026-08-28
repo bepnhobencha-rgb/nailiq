@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   integrationLoadError: null as Record<string, unknown> | null,
   healthWriteError: null as Record<string, unknown> | null,
   healthWrites: [] as Array<Record<string, unknown>>,
+  v1AllowsCustomerPaymentGateway: true,
   runSquareForwardSync: vi.fn(),
   reconcileDeposits: vi.fn(),
   reconcileNoShowFeeLinks: vi.fn(),
@@ -22,6 +23,9 @@ vi.mock("@/shared/security/cronAuthorization", () => ({
 }));
 vi.mock("@/shared/security/cronRunHistory", () => ({
   runTrackedCron: (_worker: string, handler: () => Promise<Response>) => handler(),
+}));
+vi.mock("@/shared/release/v1IntegrationScope", () => ({
+  v1AllowsCustomerPaymentGateway: () => mocks.v1AllowsCustomerPaymentGateway,
 }));
 vi.mock("@/shared/integrations/square/looseDb", () => ({
   looseServiceClient: () => ({
@@ -86,6 +90,7 @@ describe("GET /api/cron/square-sync health truth", () => {
     mocks.integrationLoadError = null;
     mocks.healthWriteError = null;
     mocks.healthWrites.length = 0;
+    mocks.v1AllowsCustomerPaymentGateway = true;
     mocks.runSquareForwardSync.mockResolvedValue({ pulled: 0 });
     mocks.reconcileDeposits.mockResolvedValue({ ok: true, checked: 0, paid: 0 });
     mocks.reconcileNoShowFeeLinks.mockResolvedValue({ ok: true, checked: 0, paid: 0 });
@@ -105,6 +110,40 @@ describe("GET /api/cron/square-sync health truth", () => {
     mocks.processSquareOptionalWebhookInbox.mockResolvedValue([
       { status: "disabled", capability: "inventory" },
     ]);
+  });
+
+  it("skips only Phase 2 payment reconciliation while operational sync stays healthy", async () => {
+    mocks.v1AllowsCustomerPaymentGateway = false;
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      results: {
+        [SALON_ID]: {
+          deposits: {
+            ok: true,
+            checked: 0,
+            paid: 0,
+            skipped: "phase_2_not_available",
+          },
+          noShowFees: {
+            ok: true,
+            checked: 0,
+            paid: 0,
+            skipped: "phase_2_not_available",
+          },
+        },
+      },
+    });
+    expect(mocks.runSquareForwardSync).toHaveBeenCalledWith(SALON_ID);
+    expect(mocks.reconcileDeposits).not.toHaveBeenCalled();
+    expect(mocks.reconcileNoShowFeeLinks).not.toHaveBeenCalled();
+    expect(mocks.syncSquareVisitHistory).toHaveBeenCalledWith(SALON_ID);
+    expect(mocks.reconcileStaleSquareInventoryCatalogOperations).toHaveBeenCalledOnce();
+    expect(mocks.syncSquareInventoryCatalogForSalon).toHaveBeenCalledWith(SALON_ID);
+    expect(mocks.processSquareOptionalWebhookInbox).toHaveBeenCalledTimes(3);
   });
 
   it("returns success only when every salon sync succeeds", async () => {

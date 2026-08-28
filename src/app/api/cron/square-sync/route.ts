@@ -13,6 +13,7 @@ import {
   syncSquareInventoryCatalogForSalon,
 } from "@/shared/integrations/square/inventoryWorker";
 import { processSquareOptionalWebhookInbox } from "@/shared/integrations/square/optionalWebhookWorker";
+import { v1AllowsCustomerPaymentGateway } from "@/shared/release/v1IntegrationScope";
 import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
 import { runTrackedCron } from "@/shared/security/cronRunHistory";
 
@@ -52,6 +53,7 @@ export async function GET(req: NextRequest) {
   const authorizationError = requireCronAuthorization(req);
   if (authorizationError) return authorizationError;
   return runTrackedCron("square_sync", async () => {
+  const paymentGatewayEnabled = v1AllowsCustomerPaymentGateway();
 
   const supabase = looseServiceClient();
   const { data: integrations, error } = await supabase
@@ -100,11 +102,27 @@ export async function GET(req: NextRequest) {
     const salonId = it.salon_id as string;
     try {
       const sync = await runSquareForwardSync(salonId);
-      const deposits = await reconcileDeposits(salonId);
+      const deposits = paymentGatewayEnabled
+        ? await reconcileDeposits(salonId)
+        : {
+            ok: true,
+            checked: 0,
+            paid: 0,
+            error: undefined,
+            skipped: "phase_2_not_available" as const,
+          };
       if (!deposits.ok) {
         throw new Error(deposits.error ?? "square_deposit_reconciliation_unhealthy");
       }
-      const noShowFees = await reconcileNoShowFeeLinks(salonId);
+      const noShowFees = paymentGatewayEnabled
+        ? await reconcileNoShowFeeLinks(salonId)
+        : {
+            ok: true,
+            checked: 0,
+            paid: 0,
+            error: undefined,
+            skipped: "phase_2_not_available" as const,
+          };
       if (!noShowFees.ok) {
         throw new Error(noShowFees.error ?? "square_noshow_reconciliation_unhealthy");
       }
