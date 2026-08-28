@@ -28,28 +28,45 @@ ALTER TABLE public.customer_booking_transition_email_outbox
   ADD COLUMN email_delivery_updated_at timestamptz;
 
 DO $delivery_checks$
-DECLARE
-  v_table regclass;
-  v_name text;
 BEGIN
-  FOR v_table, v_name IN
-    SELECT * FROM (VALUES
-      ('public.booking_notifications'::regclass, 'booking_notifications_email_delivery_status_check'),
-      ('public.booking_reminder_delivery_claims'::regclass, 'booking_reminder_claims_email_delivery_status_check'),
-      ('public.customer_booking_transition_email_outbox'::regclass, 'customer_transition_email_delivery_status_check')
-    ) AS checks(table_name, constraint_name)
-  LOOP
-    IF NOT EXISTS (
-      SELECT 1 FROM pg_catalog.pg_constraint
-      WHERE conrelid = v_table AND conname = v_name
-    ) THEN
-      EXECUTE pg_catalog.format(
-        'ALTER TABLE %s ADD CONSTRAINT %I CHECK (email_delivery_status IS NULL OR email_delivery_status IN (%L,%L,%L,%L,%L,%L,%L)) NOT VALID',
-        v_table, v_name, 'provider_accepted', 'delivery_delayed', 'delivered',
-        'failed', 'suppressed', 'bounced', 'complained'
-      );
-    END IF;
-  END LOOP;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_constraint
+    WHERE conrelid = 'public.booking_notifications'::regclass
+      AND conname = 'booking_notifications_email_delivery_status_check'
+  ) THEN
+    ALTER TABLE public.booking_notifications
+      ADD CONSTRAINT booking_notifications_email_delivery_status_check
+      CHECK (email_delivery_status IS NULL OR email_delivery_status IN (
+        'provider_accepted', 'delivery_delayed', 'delivered', 'failed',
+        'suppressed', 'bounced', 'complained'
+      )) NOT VALID;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_constraint
+    WHERE conrelid = 'public.booking_reminder_delivery_claims'::regclass
+      AND conname = 'booking_reminder_claims_email_delivery_status_check'
+  ) THEN
+    ALTER TABLE public.booking_reminder_delivery_claims
+      ADD CONSTRAINT booking_reminder_claims_email_delivery_status_check
+      CHECK (email_delivery_status IS NULL OR email_delivery_status IN (
+        'provider_accepted', 'delivery_delayed', 'delivered', 'failed',
+        'suppressed', 'bounced', 'complained'
+      )) NOT VALID;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_constraint
+    WHERE conrelid = 'public.customer_booking_transition_email_outbox'::regclass
+      AND conname = 'customer_transition_email_delivery_status_check'
+  ) THEN
+    ALTER TABLE public.customer_booking_transition_email_outbox
+      ADD CONSTRAINT customer_transition_email_delivery_status_check
+      CHECK (email_delivery_status IS NULL OR email_delivery_status IN (
+        'provider_accepted', 'delivery_delayed', 'delivered', 'failed',
+        'suppressed', 'bounced', 'complained'
+      )) NOT VALID;
+  END IF;
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_catalog.pg_constraint
