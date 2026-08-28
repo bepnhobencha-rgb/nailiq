@@ -114,6 +114,9 @@ type Props = {
   };
   /** Per-salon notify config — drives the "notify customer?" panel defaults. */
   notifySettings: StaffNotificationSettings;
+  /** Effective salon communication gates. A disabled channel is shown but
+   * cannot be selected, matching the delivery worker's behavior. */
+  notifyAvailability: NotifyChannels;
   /** Viewport coords of the originating grid click. When set (desktop), the form
    *  opens as a CARD anchored next to the clicked cell so the grid stays visible
    *  — instead of a centered modal that covers it. */
@@ -183,6 +186,7 @@ const COPY = {
       willNotNotify: "Customer won't be notified.",
       noPhone: "no phone",
       noEmail: "no email",
+      unavailable: "disabled in salon settings",
       langEn: "in English",
       langVi: "in Vietnamese",
     },
@@ -282,6 +286,7 @@ const COPY = {
       willNotNotify: "Khách sẽ không được báo.",
       noPhone: "chưa có SĐT",
       noEmail: "chưa có email",
+      unavailable: "đang tắt trong cài đặt salon",
       langEn: "bằng tiếng Anh",
       langVi: "bằng tiếng Việt",
     },
@@ -342,6 +347,7 @@ export default function DeskBookingForm({
   initialNotes,
   recovery,
   notifySettings,
+  notifyAvailability,
   anchor,
 }: Props) {
   const tx = COPY[language === "vi" ? "vi" : "en"];
@@ -351,8 +357,8 @@ export default function DeskBookingForm({
     if (recovery) return { sms: false, email: false };
     const on = defaultNotifyOn(notifySettings, "create");
     return {
-      sms: on && notifySettings.channels.sms,
-      email: on && notifySettings.channels.email,
+      sms: on && notifyAvailability.sms,
+      email: on && notifyAvailability.email,
     };
   });
   const [data, setData] = useState<LoadData | null>(null);
@@ -882,8 +888,12 @@ export default function DeskBookingForm({
     setSubmitting(true);
     setError(null);
     const notify = {
-      sms: notifyChannels.sms && phone.replace(/\D/g, "").length >= 10,
-      email: notifyChannels.email && !!email.trim(),
+      sms:
+        notifyChannels.sms &&
+        notifyAvailability.sms &&
+        phone.replace(/\D/g, "").length >= 10,
+      email:
+        notifyChannels.email && notifyAvailability.email && !!email.trim(),
     };
     const intentKey = deskBookingIntentKey({
       salonId,
@@ -961,6 +971,8 @@ export default function DeskBookingForm({
     notes,
     language,
     notifyChannels,
+    notifyAvailability.email,
+    notifyAvailability.sms,
     onCreated,
     onClose,
     tx,
@@ -1484,6 +1496,7 @@ export default function DeskBookingForm({
                 onChange={setNotifyChannels}
                 hasPhone={phone.replace(/\D/g, "").length >= 10}
                 hasEmail={!!email.trim()}
+                availability={notifyAvailability}
                 previewText={buildStaffActionSms("create", language, {
                   customerName: name.trim(),
                   salonName: data?.salon.name ?? "",
@@ -1502,6 +1515,7 @@ export default function DeskBookingForm({
                   willNotNotify: tx.notify.willNotNotify,
                   noPhone: tx.notify.noPhone,
                   noEmail: tx.notify.noEmail,
+                  unavailable: tx.notify.unavailable,
                   languageNote:
                     language === "vi" ? tx.notify.langVi : tx.notify.langEn,
                 }}

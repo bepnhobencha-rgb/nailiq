@@ -8,6 +8,7 @@ import {
   parseStaffNotificationSettings,
   defaultNotifyOn,
   DEFAULT_STAFF_NOTIFICATION_SETTINGS,
+  resolveStaffNotificationChannelAvailability,
 } from "../staffNotificationSettings";
 
 let pass = 0,
@@ -89,6 +90,27 @@ test("defaultNotifyOn false when feature disabled", () => {
 test("defaultNotifyOn true for cancel by default", () => {
   eq(defaultNotifyOn(parseStaffNotificationSettings(null), "cancel"), true);
   eq(defaultNotifyOn(parseStaffNotificationSettings(null), "no_show"), false);
+});
+
+test("effective channels require both staff settings and outbound capability", () => {
+  const settings = parseStaffNotificationSettings(null);
+  eq(
+    resolveStaffNotificationChannelAvailability(settings, {
+      sms: false,
+      email: true,
+    }),
+    { sms: false, email: true },
+  );
+});
+test("master switch disables every effective channel", () => {
+  const settings = parseStaffNotificationSettings({ enabled: false });
+  eq(
+    resolveStaffNotificationChannelAvailability(settings, {
+      sms: true,
+      email: true,
+    }),
+    { sms: false, email: false },
+  );
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

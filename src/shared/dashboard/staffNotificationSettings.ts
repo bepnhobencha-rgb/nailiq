@@ -31,6 +31,11 @@ export const STAFF_NOTIFY_EVENTS: StaffNotifyEvent[] = [
 
 export type StaffNotifyChannel = "sms" | "email";
 
+export type StaffNotificationChannelAvailability = Record<
+  StaffNotifyChannel,
+  boolean
+>;
+
 export type StaffNotificationSettings = {
   /** Master switch. When false the notify panel never appears and staff
    *  actions stay silent (legacy behavior). */
@@ -122,6 +127,19 @@ export function defaultNotifyOn(
   event: StaffNotifyEvent,
 ): boolean {
   return settings.enabled && settings.eventDefaults[event] === true;
+}
+
+/** Resolve what the receptionist may actually offer. Stored preferences alone
+ * are not delivery capability: the salon-wide outbound switch remains the
+ * authoritative operational gate used by the notification worker. */
+export function resolveStaffNotificationChannelAvailability(
+  settings: StaffNotificationSettings,
+  outbound: StaffNotificationChannelAvailability,
+): StaffNotificationChannelAvailability {
+  return {
+    sms: settings.enabled && settings.channels.sms && outbound.sms,
+    email: settings.enabled && settings.channels.email && outbound.email,
+  };
 }
 
 function structuredCloneSettings(

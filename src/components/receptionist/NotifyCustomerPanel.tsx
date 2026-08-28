@@ -26,6 +26,8 @@ export interface NotifyCustomerPanelLabels {
   /** Tooltip/subtext when a channel is unavailable (no contact on file). */
   noPhone: string;
   noEmail: string;
+  /** Channel is disabled by salon communication settings. */
+  unavailable: string;
 }
 
 export interface NotifyCustomerPanelProps {
@@ -33,6 +35,8 @@ export interface NotifyCustomerPanelProps {
   onChange: (next: NotifyChannels) => void;
   hasPhone: boolean;
   hasEmail: boolean;
+  /** Effective salon-level channel gates. */
+  availability: NotifyChannels;
   /** Exact message body that will be sent, already built in the target locale.
    *  Null hides the preview (e.g. no_show). */
   previewText: string | null;
@@ -98,11 +102,12 @@ export function NotifyCustomerPanel({
   onChange,
   hasPhone,
   hasEmail,
+  availability,
   previewText,
   labels,
 }: NotifyCustomerPanelProps) {
-  const smsOn = value.sms && hasPhone;
-  const emailOn = value.email && hasEmail;
+  const smsOn = value.sms && hasPhone && availability.sms;
+  const emailOn = value.email && hasEmail && availability.email;
   const nothingOn = !smsOn && !emailOn;
 
   return (
@@ -120,17 +125,17 @@ export function NotifyCustomerPanel({
         <ToggleChip
           testId="notify-toggle-sms"
           on={value.sms}
-          disabled={!hasPhone}
+          disabled={!hasPhone || !availability.sms}
           label={labels.sms}
-          sublabel={labels.noPhone}
+          sublabel={!availability.sms ? labels.unavailable : labels.noPhone}
           onClick={() => onChange({ ...value, sms: !value.sms })}
         />
         <ToggleChip
           testId="notify-toggle-email"
           on={value.email}
-          disabled={!hasEmail}
+          disabled={!hasEmail || !availability.email}
           label={labels.email}
-          sublabel={labels.noEmail}
+          sublabel={!availability.email ? labels.unavailable : labels.noEmail}
           onClick={() => onChange({ ...value, email: !value.email })}
         />
       </div>

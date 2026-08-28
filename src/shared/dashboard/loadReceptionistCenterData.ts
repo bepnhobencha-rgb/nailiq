@@ -38,6 +38,8 @@ import {
 } from "@/shared/dashboard/dashboardDensity";
 import {
   parseStaffNotificationSettings,
+  resolveStaffNotificationChannelAvailability,
+  type StaffNotificationChannelAvailability,
   type StaffNotificationSettings,
 } from "@/shared/dashboard/staffNotificationSettings";
 
@@ -85,6 +87,10 @@ export interface ReceptionistCenterData {
      * "notify the customer?" decision when staff create / reschedule / cancel.
      */
     staffNotificationSettings: StaffNotificationSettings;
+    /** Effective staff-action channels after the salon master switches and
+     * per-channel notification settings are applied. The desk must never offer
+     * a channel that the delivery worker will deterministically suppress. */
+    staffNotificationChannelAvailability: StaffNotificationChannelAvailability;
     /**
      * `salons.auto_no_show_minutes` — minutes past start after which the cron
      * flags a never-started booking for human no-show review (0/null = off).
@@ -733,17 +739,44 @@ export async function loadReceptionistCenterData(
   // config flag the desk uses to decide whether to show the "request deposit +
   // text link" action (so non-Square salons never get a dead button).
   let depositsEnabled = false;
+  let smsOutboundEnabled = false;
+  let emailOutboundEnabled = false;
   try {
-    const { data: sqRow } = await createServiceRoleClient()
-      .from("square_integrations")
-      .select("deposit_enabled")
-      .eq("salon_id", ctx.salon.id)
-      .maybeSingle();
+    const admin = createServiceRoleClient();
+    const [{ data: sqRow }, { data: channelRow }] = await Promise.all([
+      admin
+        .from("square_integrations")
+        .select("deposit_enabled")
+        .eq("salon_id", ctx.salon.id)
+        .maybeSingle(),
+      admin
+        .from("salons")
+        .select("sms_outbound_enabled, email_outbound_enabled")
+        .eq("id", ctx.salon.id)
+        .maybeSingle(),
+    ]);
     depositsEnabled =
       (sqRow as { deposit_enabled?: boolean } | null)?.deposit_enabled === true;
+    smsOutboundEnabled =
+      (channelRow as { sms_outbound_enabled?: boolean } | null)
+        ?.sms_outbound_enabled === true;
+    emailOutboundEnabled =
+      (channelRow as { email_outbound_enabled?: boolean } | null)
+        ?.email_outbound_enabled === true;
   } catch {
-    /* leave false — desk just won't show the deposit action */
+    /* Fail closed: don't offer a payment or notification channel whose
+       operational switch could not be proven. */
   }
+
+  const staffNotificationSettings = parseStaffNotificationSettings(
+    salonData.staff_notification_settings,
+    salonData.default_notification_locale === "vi" ? "vi" : "en",
+  );
+  const staffNotificationChannelAvailability =
+    resolveStaffNotificationChannelAvailability(staffNotificationSettings, {
+      sms: smsOutboundEnabled,
+      email: emailOutboundEnabled,
+    });
 
   const salonRow = {
     id: salonData.id,
@@ -756,10 +789,8 @@ export async function loadReceptionistCenterData(
     basicModeForced: salonData.basic_mode_forced === true,
     depositsEnabled,
     ...openingHoursForDay(salonData.opening_hours, dateYmd),
-    staffNotificationSettings: parseStaffNotificationSettings(
-      salonData.staff_notification_settings,
-      salonData.default_notification_locale === "vi" ? "vi" : "en",
-    ),
+    staffNotificationSettings,
+    staffNotificationChannelAvailability,
     autoNoShowMinutes: (() => {
       const v = salonData.auto_no_show_minutes;
       if (v == null) return null;
