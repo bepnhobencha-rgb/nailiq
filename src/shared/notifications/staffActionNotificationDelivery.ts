@@ -286,17 +286,20 @@ async function dispatch(
   if (envelope.channel === "sms") {
     try {
       const result = await deps.sendSms(envelope);
+      if (!result.ok && (
+        result.error === "sms_policy_unavailable" ||
+        result.error === "sms_consent_unavailable"
+      )) {
+        const reason = result.error === "sms_policy_unavailable"
+          ? "sms_policy_unavailable_pre_acceptance"
+          : "consent_unavailable_pre_acceptance";
+        return {
+          outcome: "rejected", reason, status: "failed",
+          providerMessageId: null, errorCode: reason,
+          failureDisposition: "retryable_pre_acceptance",
+        };
+      }
       if (result.suppressed) {
-        if (!result.ok && result.suppressionReason === "consent_unavailable") {
-          return {
-            outcome: "rejected",
-            reason: "consent_unavailable_pre_acceptance",
-            status: "failed",
-            providerMessageId: null,
-            errorCode: "consent_unavailable_pre_acceptance",
-            failureDisposition: "retryable_pre_acceptance",
-          };
-        }
         return {
           outcome: "suppressed",
           reason: result.suppressionReason ?? "channel_disabled",

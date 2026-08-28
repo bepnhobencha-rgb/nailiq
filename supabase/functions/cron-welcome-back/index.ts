@@ -9,6 +9,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
+  legacyDirectSmsDispatchEnabled,
   outboundMessageLimit,
   outboundMessagingEnabled,
   rejectUnauthorizedInternalRequest,
@@ -72,6 +73,9 @@ Deno.serve(async (req) => {
 
   const unauthorized = await rejectUnauthorizedInternalRequest(req);
   if (unauthorized) return unauthorized;
+  if (!legacyDirectSmsDispatchEnabled()) {
+    return new Response(JSON.stringify({ error: "durable_sms_dispatch_required" }), { status: 503 });
+  }
   if (!outboundMessagingEnabled()) {
     return new Response(JSON.stringify({ error: "outbound_messaging_disabled" }), { status: 503 });
   }

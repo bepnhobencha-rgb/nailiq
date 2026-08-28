@@ -183,8 +183,6 @@ describe("durable staff-action notification delivery", () => {
     vi.mocked(d.sendSms).mockResolvedValue({
       ok: false,
       error: "sms_consent_unavailable",
-      suppressed: true,
-      suppressionReason: "consent_unavailable",
     });
 
     const result = await deliverClaimedStaffActionNotification(lease(smsEnvelope), d);
@@ -192,6 +190,23 @@ describe("durable staff-action notification delivery", () => {
     expect(d.complete).toHaveBeenCalledWith(expect.objectContaining({
       status: "failed",
       errorCode: "consent_unavailable_pre_acceptance",
+      failureDisposition: "retryable_pre_acceptance",
+    }));
+    expect(result).toMatchObject({ outcome: "rejected", finalized: true });
+  });
+
+  it("fails closed and permits retry when salon/A2P policy truth is unavailable", async () => {
+    const d = deps();
+    vi.mocked(d.sendSms).mockResolvedValue({
+      ok: false,
+      error: "sms_policy_unavailable",
+    });
+
+    const result = await deliverClaimedStaffActionNotification(lease(smsEnvelope), d);
+
+    expect(d.complete).toHaveBeenCalledWith(expect.objectContaining({
+      status: "failed",
+      errorCode: "sms_policy_unavailable_pre_acceptance",
       failureDisposition: "retryable_pre_acceptance",
     }));
     expect(result).toMatchObject({ outcome: "rejected", finalized: true });

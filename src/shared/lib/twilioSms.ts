@@ -8,6 +8,7 @@
  */
 
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+import { isUsPhone } from "@/shared/lib/phoneRegion";
 
 async function getTwilioSmsCreds(): Promise<{
   accountSid: string;
@@ -201,6 +202,83 @@ export function smsSuppressReason(
   return null;
 }
 
+export type SmsSalonDispatchPolicy =
+  | { allowed: true }
+  | {
+      allowed: false;
+      disposition: "suppressed" | "unknown";
+      reason: "outbound_disabled" | "a2p_not_registered" | "sms_policy_unavailable";
+    };
+
+/**
+ * Evaluate the salon policy that governs Twilio Messages sends. US recipients
+ * require an affirmative A2P registration marker; Canadian and international
+ * recipients do not. Every boolean is exact-true so missing/stale tenant state
+ * can never silently enable outbound SMS.
+ */
+export function evaluateSmsSalonDispatchPolicy(input: {
+  recipientE164: string;
+  smsOutboundEnabled: boolean | null | undefined;
+  smsA2pRegistered: boolean | null | undefined;
+}): SmsSalonDispatchPolicy {
+  if (input.smsOutboundEnabled !== true) {
+    return {
+      allowed: false,
+      disposition: "suppressed",
+      reason: "outbound_disabled",
+    };
+  }
+  if (isUsPhone(input.recipientE164) && input.smsA2pRegistered !== true) {
+    return {
+      allowed: false,
+      disposition: "suppressed",
+      reason: "a2p_not_registered",
+    };
+  }
+  return { allowed: true };
+}
+
+async function loadSmsSalonDispatchPolicy(
+  salonId: string,
+  recipientE164: string,
+): Promise<SmsSalonDispatchPolicy> {
+  try {
+    const { createServiceRoleClient } = await import(
+      "@/shared/lib/supabase/serviceRole"
+    );
+    const supabase = createServiceRoleClient();
+    const { data, error } = await supabase
+      .from("salons")
+      .select("sms_outbound_enabled, sms_a2p_registered")
+      .eq("id", salonId)
+      .maybeSingle();
+
+    if (error || !data) {
+      return {
+        allowed: false,
+        disposition: "unknown",
+        reason: "sms_policy_unavailable",
+      };
+    }
+
+    const row = data as {
+      sms_outbound_enabled?: boolean | null;
+      sms_a2p_registered?: boolean | null;
+    };
+    return evaluateSmsSalonDispatchPolicy({
+      recipientE164,
+      smsOutboundEnabled: row.sms_outbound_enabled,
+      smsA2pRegistered: row.sms_a2p_registered,
+    });
+  } catch {
+    return {
+      allowed: false,
+      disposition: "unknown",
+      reason: "sms_policy_unavailable",
+    };
+  }
+}
+
 /**
  * Send an outbound SMS reminder.
  * @param toE164 - recipient phone; any accepted form (+country / bare NANP /
@@ -274,6 +352,23 @@ export async function sendSmsReminder(
     };
   }
 
+  // Tenant/A2P truth is enforced again at the single provider boundary. Route
+  // preflights improve customer-facing truth, but only this check protects
+  // every caller (including retries) from bypassing salon policy.
+  const salonPolicy = await loadSmsSalonDispatchPolicy(opts.salonId, recipient);
+  if (!salonPolicy.allowed) {
+    if (salonPolicy.disposition === "unknown") {
+      return { ok: false, error: salonPolicy.reason };
+    }
+    const fakeSid = `SUPPRESSED_${salonPolicy.reason}_${crypto.randomUUID()}`;
+    return {
+      ok: true,
+      messageSid: fakeSid,
+      suppressed: true,
+      suppressionReason: salonPolicy.reason,
+    };
+  }
+
   // Durable NailIQ-side STOP/START state is checked immediately before the
   // provider boundary. Missing/malformed/unavailable truth fails closed; an
   // affirmative provider/salon suppression is treated as a successful no-send
@@ -287,7 +382,9 @@ export async function sendSmsReminder(
   });
   if (consent.suppressed) {
     if (consent.reason === "consent_unavailable") {
-      return { ok: false, error: "sms_consent_unavailable", suppressed: true, suppressionReason: consent.reason };
+      // This is a pre-provider infrastructure outage, not an affirmative STOP
+      // or policy suppression. Keep it retryable through the durable worker.
+      return { ok: false, error: "sms_consent_unavailable" };
     }
     const fakeSid = `SUPPRESSED_${consent.reason}_${crypto.randomUUID()}`;
     return {

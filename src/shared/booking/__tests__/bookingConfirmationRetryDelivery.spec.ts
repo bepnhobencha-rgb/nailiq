@@ -178,6 +178,26 @@ describe("booking confirmation tokenized retry delivery", () => {
     }));
   });
 
+  it.each([
+    ["sms_policy_unavailable", "sms_policy_unavailable_pre_acceptance"],
+    ["sms_consent_unavailable", "consent_unavailable_pre_acceptance"],
+  ])("retries %s because the dispatcher proved it stopped before provider", async (error, reason) => {
+    const d = deps({ sendSms: vi.fn().mockResolvedValue({ ok: false, error }) });
+
+    const result = await deliverBookingConfirmation({
+      bookingId: BOOKING_ID,
+      salonId: SALON_ID,
+      envelope: sms,
+    }, d);
+
+    expect(result).toMatchObject({ outcome: "rejected", reason, finalized: true });
+    expect(d.complete).toHaveBeenCalledWith(expect.objectContaining({
+      status: "failed",
+      errorCode: reason,
+      failureDisposition: "retryable_pre_acceptance",
+    }));
+  });
+
   it("keeps thrown or contradictory provider outcomes unknown with no replay permission", async () => {
     const thrown = deps({ sendSms: vi.fn().mockRejectedValue(new Error("response lost")) });
     await deliverBookingConfirmation({ bookingId: BOOKING_ID, salonId: SALON_ID, envelope: sms }, thrown);

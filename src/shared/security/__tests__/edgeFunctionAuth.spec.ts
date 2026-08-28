@@ -16,6 +16,15 @@ const privilegedFunctions = [
   "scrape-website",
 ] as const;
 
+const legacyDirectSmsFunctions = [
+  "cron-auto-reconfirm",
+  "cron-birthday-voucher",
+  "cron-welcome-back",
+  "photo-send-sms",
+  "referral-complete",
+  "reschedule-sms",
+] as const;
+
 function sourceFor(slug: string): string {
   return readFileSync(resolve(process.cwd(), "supabase/functions", slug, "index.ts"), "utf8");
 }
@@ -51,6 +60,8 @@ describe("privileged Supabase Edge Function authentication", () => {
     expect(source).toContain('crypto.subtle.digest("SHA-256"');
     expect(source).toContain('Deno.env.get("OUTBOUND_MESSAGING_ENABLED") === "true"');
     expect(source).toContain('Deno.env.get("MAX_OUTBOUND_MESSAGES_PER_RUN") ?? "100"');
+    expect(source).toContain("export function legacyDirectSmsDispatchEnabled(): false");
+    expect(source).toContain("return false;");
   });
 
   it("fails closed on modern Supabase keys without accepting legacy keys", () => {
@@ -82,15 +93,25 @@ describe("privileged Supabase Edge Function authentication", () => {
     expect(source).not.toContain("Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}");
   });
 
-  it.each([
-    "cron-auto-reconfirm",
-    "cron-birthday-voucher",
-    "cron-welcome-back",
-    "photo-send-sms",
-    "reschedule-sms",
-  ])("gives %s a fail-closed messaging kill switch", (slug) => {
+  it.each(legacyDirectSmsFunctions)("gives %s a fail-closed messaging kill switch", (slug) => {
     const source = sourceFor(slug);
     expect(source).toContain("outboundMessagingEnabled()");
     expect(source).toContain("outbound_messaging_disabled");
   });
+
+  it.each(legacyDirectSmsFunctions)(
+    "hard-disables %s before body parsing until it uses the durable dispatcher",
+    (slug) => {
+      const source = sourceFor(slug);
+      const handler = source.slice(source.indexOf("Deno.serve"));
+      const durableGate = handler.indexOf("legacyDirectSmsDispatchEnabled()");
+      const bodyParse = handler.indexOf("req.json(");
+
+      expect(source).toContain("legacyDirectSmsDispatchEnabled,");
+      expect(durableGate).toBeGreaterThan(-1);
+      expect(bodyParse).toBeGreaterThan(-1);
+      expect(durableGate).toBeLessThan(bodyParse);
+      expect(handler).toContain("durable_sms_dispatch_required");
+    },
+  );
 });

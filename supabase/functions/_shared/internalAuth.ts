@@ -61,3 +61,13 @@ export function outboundMessageLimit(): number {
 export function outboundMessagingEnabled(): boolean {
   return Deno.env.get("OUTBOUND_MESSAGING_ENABLED") === "true";
 }
+
+/**
+ * Legacy Edge Functions still contain direct Twilio Messages calls and do not
+ * own the durable claim/reconcile contract used by the Next.js dispatcher.
+ * Keep those entrypoints impossible to enable by configuration until their
+ * provider calls are removed and migrated to the single dispatcher.
+ */
+export function legacyDirectSmsDispatchEnabled(): false {
+  return false;
+}

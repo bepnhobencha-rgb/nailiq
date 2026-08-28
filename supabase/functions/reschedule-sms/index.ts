@@ -21,6 +21,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
+  legacyDirectSmsDispatchEnabled,
   outboundMessagingEnabled,
   rejectUnauthorizedInternalRequest,
 } from "../_shared/internalAuth.ts";
@@ -194,6 +195,7 @@ Deno.serve(async (req: Request) => {
 
   const unauthorized = await rejectUnauthorizedInternalRequest(req, corsHeaders);
   if (unauthorized) return unauthorized;
+  if (!legacyDirectSmsDispatchEnabled()) return jsonError("durable_sms_dispatch_required", 503);
   if (!outboundMessagingEnabled()) return jsonError("outbound_messaging_disabled", 503);
 
   let body: { booking_id?: string; lang?: string };
