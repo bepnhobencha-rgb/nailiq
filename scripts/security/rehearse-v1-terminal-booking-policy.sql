@@ -125,6 +125,19 @@ VALUES
     transaction_timestamp() + interval '2 days 4 hours 30 minutes',
     'confirmed',
     4700
+  ),
+  (
+    'fa470000-0000-4000-8000-000000000015',
+    'fa470000-0000-4000-8000-000000000001',
+    'fa470000-0000-4000-8000-000000000002',
+    'fa470000-0000-4000-8000-000000000003',
+    'Legacy rollout QA',
+    '+16045550476',
+    'legacy-rollout-qa@nailiq.invalid',
+    transaction_timestamp() + interval '2 days 5 hours',
+    transaction_timestamp() + interval '2 days 5 hours 30 minutes',
+    'confirmed',
+    4700
   );
 
 CREATE OR REPLACE FUNCTION public.mqa_reject_terminal_audit_for_rehearsal()
@@ -192,14 +205,16 @@ DECLARE
   v_no_show uuid := 'fa470000-0000-4000-8000-000000000012';
   v_source uuid := 'fa470000-0000-4000-8000-000000000013';
   v_target uuid := 'fa470000-0000-4000-8000-000000000014';
+  v_legacy uuid := 'fa470000-0000-4000-8000-000000000015';
   v_result jsonb;
   v_cancel_lease jsonb;
 BEGIN
-  v_result := public.transition_booking_to_terminal_v1(
-    v_booking, v_salon, v_actor, 'owner', 'desk_cancel',
+  v_result := public.transition_desk_booking_cancel_with_deferred_owner_v1(
+    v_booking, v_salon, v_actor, 'owner',
     v_cancel_request, false, true, 20
   );
   IF v_result->>'code' <> 'transitioned'
+     OR v_result->>'owner_cancel_notification_deferred' <> 'true'
      OR (SELECT status FROM public.bookings WHERE id = v_booking) <> 'cancelled' THEN
     RAISE EXCEPTION 'atomic cancel failed: %', v_result;
   END IF;
@@ -309,11 +324,12 @@ BEGIN
     RAISE EXCEPTION 'immediate undo replay was not idempotent: %', v_result;
   END IF;
 
-  v_result := public.transition_booking_to_terminal_v1(
-    v_expired, v_salon, v_actor, 'owner', 'desk_cancel',
+  v_result := public.transition_desk_booking_cancel_with_deferred_owner_v1(
+    v_expired, v_salon, v_actor, 'owner',
     v_expired_request, false, true, 20
   );
-  IF v_result->>'code' <> 'transitioned' THEN
+  IF v_result->>'code' <> 'transitioned'
+     OR v_result->>'owner_cancel_notification_deferred' <> 'true' THEN
     RAISE EXCEPTION 'expired-window setup failed: %', v_result;
   END IF;
   UPDATE public.booking_events
@@ -340,6 +356,21 @@ BEGIN
    LIMIT 1;
   IF v_cancel_lease IS NULL OR v_cancel_lease->>'code' <> 'leased' THEN
     RAISE EXCEPTION 'settled cancellation did not become claimable';
+  END IF;
+
+  -- Migration-first rollout compatibility: old application code still calls
+  -- the legacy transition. Without the explicit handshake it must not queue a
+  -- second owner email alongside that code's immediate notification.
+  v_result := public.transition_booking_to_terminal_v1(
+    v_legacy, v_salon, v_actor, 'owner', 'desk_cancel'
+  );
+  IF v_result->>'code' <> 'transitioned'
+     OR (SELECT status FROM public.bookings WHERE id = v_legacy) <> 'cancelled'
+     OR EXISTS (
+       SELECT 1 FROM public.owner_booking_notification_outbox
+        WHERE booking_id = v_legacy AND event_type = 'cancel'
+     ) THEN
+    RAISE EXCEPTION 'legacy rollout path created a duplicate delayed owner email: %', v_result;
   END IF;
 
   v_result := public.transition_booking_to_terminal_v1(

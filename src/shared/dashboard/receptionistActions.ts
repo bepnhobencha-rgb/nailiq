@@ -258,6 +258,15 @@ type TerminalTransitionBooking = {
   status: "cancelled" | "no_show";
 };
 
+function deferredOwnerCancelRpcUnavailable(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const rpcError = error as { code?: unknown; message?: unknown };
+  return rpcError.code === "PGRST202" || rpcError.code === "42883" ||
+    String(rpcError.message ?? "").includes(
+      "transition_desk_booking_cancel_with_deferred_owner_v1",
+    );
+}
+
 async function transitionBookingToTerminalV1(
   ctx: NonNullable<Awaited<ReturnType<typeof getDashboardWriteClient>>>,
   input: {
@@ -268,27 +277,52 @@ async function transitionBookingToTerminalV1(
     notifyEmail?: boolean;
   },
 ): Promise<
-  | { ok: true; booking: TerminalTransitionBooking }
+  | {
+      ok: true;
+      booking: TerminalTransitionBooking;
+      ownerCancelNotificationDeferred: boolean;
+    }
   | { ok: false; error: string }
 > {
   const db = createServiceRoleClient();
-  const { data, error } = await db.rpc(
-    "transition_booking_to_terminal_v1" as never,
-    {
-      p_booking_id: input.bookingId,
-      p_salon_id: ctx.salon.id,
-      p_actor_user_id:
-        ctx.kind === "member" && isUuidLike(ctx.userId ?? "")
-          ? ctx.userId
-          : null,
-      p_actor_role: ctxActorRole(ctx),
-      p_reason: input.reason,
-      p_notification_request_id: input.notificationRequestId ?? null,
-      p_notify_sms: input.notifySms === true,
-      p_notify_email: input.notifyEmail === true,
-      p_notification_delay_seconds: 20,
-    } as never,
-  );
+  const actorUserId = ctx.kind === "member" && isUuidLike(ctx.userId ?? "")
+    ? ctx.userId
+    : null;
+  const commonParams = {
+    p_booking_id: input.bookingId,
+    p_salon_id: ctx.salon.id,
+    p_actor_user_id: actorUserId,
+    p_actor_role: ctxActorRole(ctx),
+    p_notification_request_id: input.notificationRequestId ?? null,
+    p_notify_sms: input.notifySms === true,
+    p_notify_email: input.notifyEmail === true,
+    p_notification_delay_seconds: 20,
+  };
+  let usedDeferredOwnerCancelRpc = false;
+  let response;
+  if (input.reason === "desk_cancel") {
+    response = await db.rpc(
+      "transition_desk_booking_cancel_with_deferred_owner_v1" as never,
+      commonParams as never,
+    );
+    if (deferredOwnerCancelRpcUnavailable(response.error)) {
+      response = await db.rpc(
+        "transition_booking_to_terminal_v1" as never,
+        { ...commonParams, p_reason: input.reason } as never,
+      );
+    } else {
+      usedDeferredOwnerCancelRpc = true;
+    }
+  } else {
+    response = await db.rpc(
+      "transition_booking_to_terminal_v1" as never,
+      {
+        ...commonParams,
+        p_reason: input.reason,
+      } as never,
+    );
+  }
+  const { data, error } = response;
   const raw = Array.isArray(data) ? data[0] : data;
   const result =
     raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
@@ -308,7 +342,11 @@ async function transitionBookingToTerminalV1(
     const code = typeof result?.code === "string" ? result.code : "server_error";
     return fail(code === "invalid_state" ? "invalid_state" : "server_error");
   }
-  return { ok: true, booking: booking as TerminalTransitionBooking };
+  return {
+    ok: true,
+    booking: booking as TerminalTransitionBooking,
+    ownerCancelNotificationDeferred: usedDeferredOwnerCancelRpc,
+  };
 }
 
 async function validateArchivedBookingRecovery(
@@ -1163,6 +1201,7 @@ export async function cancelDeskBooking(
     }
   }
   let refundOutcome: Awaited<ReturnType<typeof cancelDeskBookingWithRefundSaga>> | null = null;
+  let ownerCancelNotificationDeferred = false;
   if (input.refundDeposit === true) {
     const requestedRefund = input.refundAmountCents;
     const requestId = String(input.refundRequestId ?? "").trim();
@@ -1195,12 +1234,13 @@ export async function cancelDeskBooking(
       notifyEmail,
     });
     if (!transition.ok) return transition;
+    ownerCancelNotificationDeferred = transition.ownerCancelNotificationDeferred;
   }
 
   // A refundable cancellation has no undo and may notify immediately. The
   // ordinary desk path is transactionally captured by the owner outbox and
   // becomes claimable only after the eight-second undo window has settled.
-  if (refundOutcome?.ok) {
+  if (refundOutcome?.ok || !ownerCancelNotificationDeferred) {
     after(() =>
       sendOwnerBookingNotification({
         salonId: ctx.salon.id,

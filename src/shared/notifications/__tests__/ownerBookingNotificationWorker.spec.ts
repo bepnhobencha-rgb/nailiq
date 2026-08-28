@@ -157,5 +157,16 @@ describe("owner booking notification outbox worker", () => {
     expect(migration).toContain("last_error = 'booking_cancel_undone'");
     expect(migration).toContain("b.status IS DISTINCT FROM 'cancelled'");
     expect(migration).toContain("AFTER INSERT OR UPDATE OF start_time_utc, status ON public.bookings");
+    expect(migration).toContain("transition_desk_booking_cancel_with_deferred_owner_v1");
+    expect(migration).toContain("nailiq.defer_owner_cancel_notification");
+    expect(migration).toContain("AND v_defer_owner_cancel THEN");
+
+    const action = readFileSync(resolve(
+      process.cwd(),
+      "src/shared/dashboard/receptionistActions.ts",
+    ), "utf8");
+    expect(action).toContain("transition_desk_booking_cancel_with_deferred_owner_v1");
+    expect(action).toContain("deferredOwnerCancelRpcUnavailable(response.error)");
+    expect(action).toContain("refundOutcome?.ok || !ownerCancelNotificationDeferred");
   });
 });

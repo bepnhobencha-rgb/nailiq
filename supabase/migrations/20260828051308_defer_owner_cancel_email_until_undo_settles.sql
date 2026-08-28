@@ -30,6 +30,10 @@ DECLARE
   v_changed_fields jsonb := '[]'::jsonb;
   v_expires_at timestamptz;
   v_next_attempt_at timestamptz;
+  v_defer_owner_cancel boolean := coalesce(
+    current_setting('nailiq.defer_owner_cancel_notification', true),
+    ''
+  ) = '1';
   v_terminal_reason text := coalesce(
     current_setting('nailiq.v1_terminal_reason', true),
     ''
@@ -62,7 +66,8 @@ BEGIN
   IF TG_OP = 'UPDATE'
      AND NEW.status = 'cancelled'
      AND OLD.status IS DISTINCT FROM 'cancelled'
-     AND v_terminal_reason = 'desk_cancel' THEN
+     AND v_terminal_reason = 'desk_cancel'
+     AND v_defer_owner_cancel THEN
     v_event := 'cancel';
     v_changed_by := CASE lower(trim(coalesce(
       current_setting('nailiq.v1_terminal_actor_role', true),
@@ -183,6 +188,72 @@ DROP TRIGGER track_owner_booking_notification_occurrence ON public.bookings;
 CREATE TRIGGER track_owner_booking_notification_occurrence
 AFTER INSERT OR UPDATE OF start_time_utc, status ON public.bookings
 FOR EACH ROW EXECUTE FUNCTION public.track_owner_booking_notification_occurrence();
+
+-- Compatibility handshake for a zero-gap rollout:
+--   1. New code + old schema falls back to the legacy transition and sends the
+--      owner email immediately.
+--   2. Old code + new schema never sets this transaction-local flag, so the
+--      legacy immediate email remains the sole owner notification.
+--   3. Only new code + new schema captures the delayed owner occurrence.
+CREATE OR REPLACE FUNCTION public.transition_desk_booking_cancel_with_deferred_owner_v1(
+  p_booking_id uuid,
+  p_salon_id uuid,
+  p_actor_user_id uuid,
+  p_actor_role text,
+  p_notification_request_id uuid DEFAULT NULL,
+  p_notify_sms boolean DEFAULT false,
+  p_notify_email boolean DEFAULT false,
+  p_notification_delay_seconds integer DEFAULT 20
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO ''
+AS $transition$
+DECLARE
+  v_result jsonb;
+BEGIN
+  PERFORM pg_catalog.set_config(
+    'nailiq.defer_owner_cancel_notification',
+    '1',
+    true
+  );
+  v_result := public.transition_booking_to_terminal_v1(
+    p_booking_id,
+    p_salon_id,
+    p_actor_user_id,
+    p_actor_role,
+    'desk_cancel',
+    p_notification_request_id,
+    p_notify_sms,
+    p_notify_email,
+    p_notification_delay_seconds
+  );
+  PERFORM pg_catalog.set_config(
+    'nailiq.defer_owner_cancel_notification',
+    '',
+    true
+  );
+  RETURN v_result || jsonb_build_object(
+    'owner_cancel_notification_deferred',
+    coalesce((v_result->>'success')::boolean, false)
+  );
+EXCEPTION WHEN OTHERS THEN
+  PERFORM pg_catalog.set_config(
+    'nailiq.defer_owner_cancel_notification',
+    '',
+    true
+  );
+  RAISE;
+END;
+$transition$;
+
+REVOKE ALL ON FUNCTION public.transition_desk_booking_cancel_with_deferred_owner_v1(
+  uuid, uuid, uuid, text, uuid, boolean, boolean, integer
+) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.transition_desk_booking_cancel_with_deferred_owner_v1(
+  uuid, uuid, uuid, text, uuid, boolean, boolean, integer
+) TO service_role;
 
 CREATE OR REPLACE FUNCTION public.claim_owner_booking_notification_outbox_batch(
   p_limit integer
