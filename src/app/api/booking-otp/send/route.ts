@@ -10,6 +10,10 @@ import {
   type DurableRateLimitResult,
 } from "@/shared/security/publicServerActionRateLimit";
 import { clientIp } from "@/shared/lib/inAppRateLimit";
+import {
+  completeBookingOtpDeliveryAttempt,
+  createBookingOtpDeliveryAttempt,
+} from "@/shared/booking/otpDeliveryTruth";
 
 function rateResponse(result: Exclude<DurableRateLimitResult, "allowed">) {
   return NextResponse.json(
@@ -104,25 +108,77 @@ export async function POST(req: Request) {
       salonAddress: salonRow.address ?? null,
     });
     if (!result.ok) {
-      const status = result.error === "rate_limited" ? 429 : 500;
+      const status = result.error === "rate_limited"
+        ? 429
+        : result.error === "email_suppressed"
+          ? 503
+          : 500;
       return NextResponse.json({ error: result.error ?? "send_failed" }, { status });
     }
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+      deliveryAttemptId: result.deliveryAttemptId,
+      deliveryStatus: result.deliveryStatus,
+    });
   }
 
   // ── SMS channel (default) ───────────────────────────────────────────────
   const e164 = `+${phoneOk.digits}`;
+  const attempt = await createBookingOtpDeliveryAttempt({
+    salonId: String(salonRow.id),
+    channel: "sms",
+    recipient: e164,
+  });
+  if (!attempt.ok) {
+    return NextResponse.json({ error: attempt.error }, { status: 503 });
+  }
   // Show the salon's own name in the OTP message instead of the generic Verify
   // Service name, so the customer recognizes who's texting them.
-  const result = await sendVerification(e164, salonRow.name ?? undefined);
+  const result = await sendVerification(e164, salonRow.name ?? undefined, {
+    deliveryAttemptId: attempt.attemptId,
+  });
+
+  if (result.suppressed) {
+    await completeBookingOtpDeliveryAttempt({
+      attemptId: attempt.attemptId,
+      status: "suppressed",
+      errorCode: "sms_suppressed",
+    });
+    return NextResponse.json({ error: "sms_suppressed" }, { status: 503 });
+  }
 
   if (!result.ok) {
     console.error("[booking-otp/send] sendVerification failed", result.error);
+    const unknown = result.error === "provider_response_unknown" ||
+      result.error === "provider_response_unverified";
+    await completeBookingOtpDeliveryAttempt({
+      attemptId: attempt.attemptId,
+      status: unknown ? "unknown" : "failed",
+      providerRequestId: result.verificationSid,
+      providerAttemptId: result.providerAttemptId,
+      errorCode: result.error ?? "send_failed",
+    });
     return NextResponse.json(
-      { error: result.error ?? "send_failed" },
-      { status: 500 },
+      { error: unknown ? "delivery_unknown" : result.error ?? "send_failed" },
+      { status: unknown ? 503 : 500 },
     );
   }
 
-  return NextResponse.json({ ok: true });
+  const finalized = await completeBookingOtpDeliveryAttempt({
+    attemptId: attempt.attemptId,
+    status: "provider_accepted",
+    providerRequestId: result.verificationSid,
+    providerAttemptId: result.providerAttemptId,
+  });
+  if (!finalized) {
+    // The pre-send claim and Twilio Verify tags preserve correlation even if
+    // this completion write is temporarily unavailable.
+    console.error("[booking-otp/send] SMS accepted; completion pending reconciliation");
+  }
+
+  return NextResponse.json({
+    ok: true,
+    deliveryAttemptId: attempt.attemptId,
+    deliveryStatus: "provider_accepted",
+  });
 }

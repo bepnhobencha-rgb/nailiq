@@ -307,6 +307,63 @@ test.describe("Booking Flow — Phone OTP", () => {
     ).toBeVisible({ timeout: 8_000 });
   });
 
+  test("email-only OTP receipt stays truthful and can switch explicitly to SMS", async ({
+    page,
+  }) => {
+    const channels: string[] = [];
+    const verifyBodies: Array<Record<string, string>> = [];
+    const smsAttemptId = "77777777-7777-4777-8777-777777777777";
+    await page.route("**/api/booking-otp/send", async (route) => {
+      const body = route.request().postDataJSON() as { channel?: string };
+      const requestedChannel = body.channel ?? "sms";
+      channels.push(requestedChannel);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          deliveryAttemptId: requestedChannel === "sms"
+            ? smsAttemptId
+            : "88888888-8888-4888-8888-888888888888",
+        }),
+      });
+    });
+    await page.route("**/api/booking-otp/verify", async (route) => {
+      verifyBodies.push(route.request().postDataJSON() as Record<string, string>);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          sessionId: "99999999-9999-4999-8999-999999999999",
+        }),
+      });
+    });
+
+    await gotoGate(page);
+    await page.getByTestId("booking-gate-otp-email-fallback").click();
+    await page
+      .getByTestId("booking-gate-otp-email-input")
+      .fill("otp-truth@example.test");
+    await page.getByTestId("booking-gate-otp-email-send").click();
+
+    const emailReceipt = page.getByTestId("booking-gate-otp-delivery-email");
+    await expect(emailReceipt).toBeVisible();
+    await expect(emailReceipt).toContainText("o•••@example.test");
+    await expect(emailReceipt).not.toContainText(clientPhone.slice(-4));
+    expect(channels).toEqual(["email"]);
+
+    await page.getByTestId("booking-gate-otp-sms-send").click();
+    const smsReceipt = page.getByTestId("booking-gate-otp-delivery-sms");
+    await expect(smsReceipt).toBeVisible();
+    await expect(smsReceipt).toContainText(clientPhone.slice(-4));
+    expect(channels).toEqual(["email", "sms"]);
+
+    await page.getByTestId("booking-gate-otp-input").fill("123456");
+    await expect.poll(() => verifyBodies.length).toBe(1);
+    expect(verifyBodies[0]?.deliveryAttemptId).toBe(smsAttemptId);
+  });
+
   // Regression — the SMS send endpoint must throttle bursts server-side (the
   // client cooldown is bypassable). The current recovery contract permits five
   // attempts per phone/window; the sixth is rejected 429 rate_limited. Runs in

@@ -94,14 +94,15 @@ function sanitizeFriendlyName(name: string): string {
 export async function sendVerification(
   e164Phone: string,
   friendlyName?: string,
-): Promise<{ ok: boolean; error?: string }> {
-  const creds = await getTwilioCreds();
-  if (!creds) {
-    return {
-      ok: false,
-      error: "SMS is not configured (Twilio credentials missing).",
-    };
-  }
+  options?: { deliveryAttemptId?: string },
+): Promise<{
+  ok: boolean;
+  error?: string;
+  suppressed?: boolean;
+  verificationSid?: string;
+  providerAttemptId?: string;
+  providerStatus?: string;
+}> {
   if (!e164Phone.startsWith("+")) {
     return { ok: false, error: "Invalid phone format." };
   }
@@ -111,16 +112,36 @@ export async function sendVerification(
   const suppressReason = smsSuppressReason(e164Phone);
   if (suppressReason) {
     console.warn(`[sendVerification] SUPPRESSED OTP (${suppressReason}) — no real Twilio call`);
-    return { ok: true };
+    return { ok: true, suppressed: true, providerStatus: "suppressed" };
+  }
+
+  const creds = await getTwilioCreds();
+  if (!creds) {
+    return {
+      ok: false,
+      error: "twilio_not_configured",
+    };
   }
 
   const auth = `Basic ${Buffer.from(`${creds.accountSid}:${creds.authToken}`).toString("base64")}`;
   const url = `https://verify.twilio.com/v2/Services/${encodeURIComponent(creds.verifyServiceSid)}/Verifications`;
   const fn = friendlyName ? sanitizeFriendlyName(friendlyName) : "";
+  const deliveryAttemptId = options?.deliveryAttemptId?.trim() ?? "";
+  const taggedAttemptId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    deliveryAttemptId,
+  ) ? deliveryAttemptId.toLowerCase() : "";
 
   const post = (withName: boolean) => {
     const params: Record<string, string> = { To: e164Phone, Channel: "sms" };
     if (withName && fn) params.CustomFriendlyName = fn;
+    if (taggedAttemptId) {
+      // Twilio includes these non-PII tags in Verify Message Status/Event
+      // Streams, allowing a future signed receipt to match this exact claim.
+      params.Tags = JSON.stringify({
+        nailiq_flow: "booking_otp",
+        nailiq_claim: taggedAttemptId,
+      });
+    }
     return fetch(url, {
       method: "POST",
       headers: {
@@ -152,13 +173,46 @@ export async function sendVerification(
         status: res.status,
         body: text.slice(0, 300),
       });
-      return { ok: false, error: "Could not send SMS. Try again." };
+      return { ok: false, error: `twilio_${res.status}` };
+    }
+    const body = parseTwilioJson(text);
+    const verificationSid = typeof body.sid === "string" ? body.sid : "";
+    const providerStatus = typeof body.status === "string"
+      ? body.status.toLowerCase()
+      : "";
+    const attempts = Array.isArray(body.send_code_attempts)
+      ? body.send_code_attempts
+      : [];
+    const latest = attempts.at(-1);
+    const providerAttemptId = latest && typeof latest === "object" &&
+      typeof (latest as { attempt_sid?: unknown }).attempt_sid === "string"
+      ? String((latest as { attempt_sid: string }).attempt_sid)
+      : "";
+    if (!/^VE[0-9a-f]{32}$/i.test(verificationSid) || providerStatus !== "pending") {
+      return {
+        ok: false,
+        error: "provider_response_unverified",
+        verificationSid: /^VE[0-9a-f]{32}$/i.test(verificationSid)
+          ? verificationSid
+          : undefined,
+        providerAttemptId: /^VL[0-9a-f]{32}$/i.test(providerAttemptId)
+          ? providerAttemptId
+          : undefined,
+        providerStatus: providerStatus || undefined,
+      };
     }
 
-    return { ok: true };
+    return {
+      ok: true,
+      verificationSid,
+      providerAttemptId: /^VL[0-9a-f]{32}$/i.test(providerAttemptId)
+        ? providerAttemptId
+        : undefined,
+      providerStatus,
+    };
   } catch (e) {
     console.error("[sendVerification]", e);
-    return { ok: false, error: "Could not send SMS. Try again." };
+    return { ok: false, error: "provider_response_unknown" };
   }
 }
 

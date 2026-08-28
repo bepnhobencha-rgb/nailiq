@@ -52,6 +52,12 @@ const noopSubscribe = () => () => {};
 const getHydratedSnapshot = () => true;
 const getServerFalseSnapshot = () => false;
 
+function maskOtpEmail(email: string): string {
+  const [user, domain] = email.split("@");
+  if (!user || !domain) return email;
+  return `${user.slice(0, 1)}•••@${domain}`;
+}
+
 // Compact OTP widget rendered INSIDE the phone gate card so the "Send code"
 // button is always visible without scrolling. Handles SMS + email fallback.
 /**
@@ -91,6 +97,9 @@ function GateOtpInline({
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deliveryAttemptIds, setDeliveryAttemptIds] = useState<
+    Partial<Record<"sms" | "email", string>>
+  >({});
   const codeRef = useRef<HTMLInputElement>(null);
 
   async function sendCode(ch: "sms" | "email" = channel) {
@@ -104,20 +113,35 @@ function GateOtpInline({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = (await r.json()) as { ok?: boolean; error?: string };
+      const data = (await r.json()) as {
+        ok?: boolean;
+        error?: string;
+        deliveryAttemptId?: string;
+      };
       if (data.ok) {
+        setDeliveryAttemptIds((current) => ({
+          ...current,
+          [ch]: data.deliveryAttemptId ?? "",
+        }));
         setChannel(ch);
         setStage("sent");
+        setShowEmailInput(false);
         setTimeout(() => codeRef.current?.focus(), 100);
       } else {
         setError(
           data.error === "rate_limited"
             ? (t.bookingErrors.otpExpired ?? "Too many attempts.")
-            : (t.bookingErrors.otpSendFailed ?? "Couldn't send code."),
+            : ch === "email"
+              ? t.bookingErrors.otpEmailSendFailed
+              : (t.bookingErrors.otpSendFailed ?? "Couldn't send code."),
         );
       }
     } catch {
-      setError(t.bookingErrors.otpSendFailed ?? "Couldn't send code.");
+      setError(
+        ch === "email"
+          ? t.bookingErrors.otpEmailSendFailed
+          : (t.bookingErrors.otpSendFailed ?? "Couldn't send code."),
+      );
     } finally {
       setSending(false);
     }
@@ -131,6 +155,8 @@ function GateOtpInline({
     try {
       const body: Record<string, string> = { shopSlug, phone: phoneDigits, code: trimmed };
       if (channel === "email") body.email = email.trim();
+      const deliveryAttemptId = deliveryAttemptIds[channel];
+      if (deliveryAttemptId) body.deliveryAttemptId = deliveryAttemptId;
       const r = await fetch("/api/booking-otp/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -170,6 +196,7 @@ function GateOtpInline({
         {showEmailInput && emailLinksEnabled ? (
           <>
             <input
+              data-testid="booking-gate-otp-email-input"
               type="email"
               autoComplete="email"
               value={email}
@@ -179,6 +206,7 @@ function GateOtpInline({
             />
             <button
               type="button"
+              data-testid="booking-gate-otp-email-send"
               disabled={sending || !email.includes("@")}
               onClick={() => void sendCode("email")}
               className="nq-booking-btn-primary w-full"
@@ -224,8 +252,15 @@ function GateOtpInline({
       className="fade-in mt-4 space-y-2 border-t border-[var(--booking-border)] pt-4"
     >
       <p className="text-sm font-medium text-[var(--booking-text,var(--color-nq-foreground))] opacity-80">
-        {t.otpStepSubheading} ···{phoneDigits.slice(-4)}
-        {channel === "email" ? ` ${t.otpAndEmail ?? "& email"}` : ""}
+        {channel === "email" ? (
+          <span data-testid="booking-gate-otp-delivery-email">
+            {t.otpEmailStepSubheading} {maskOtpEmail(email)}
+          </span>
+        ) : (
+          <span data-testid="booking-gate-otp-delivery-sms">
+            {t.otpStepSubheading} ···{phoneDigits.slice(-4)}
+          </span>
+        )}
       </p>
       <input
         ref={codeRef}
@@ -262,14 +297,33 @@ function GateOtpInline({
         onClick={() => { setCode(""); void sendCode(channel); }}
         className="nq-booking-btn-ghost w-full"
       >
-        {sending ? t.otpSending : t.otpResend}
+        {sending
+          ? channel === "email"
+            ? t.otpEmailSending
+            : t.otpSending
+          : channel === "email"
+            ? t.otpEmailResendCta
+            : t.otpSmsResendCta}
       </button>
+
+      {channel === "email" ? (
+        <button
+          type="button"
+          data-testid="booking-gate-otp-sms-send"
+          disabled={sending}
+          onClick={() => { setCode(""); void sendCode("sms"); }}
+          className="nq-booking-btn-ghost w-full"
+        >
+          {sending ? t.otpSending : t.otpSmsSendCta}
+        </button>
+      ) : null}
 
       {/* Email fallback — visible after SMS is sent */}
       {emailLinksEnabled && channel === "sms" ? (
         showEmailInput ? (
           <div className="space-y-2 pt-1">
             <input
+              data-testid="booking-gate-otp-email-input"
               type="email"
               autoComplete="email"
               value={email}
@@ -279,6 +333,7 @@ function GateOtpInline({
             />
             <button
               type="button"
+              data-testid="booking-gate-otp-email-send"
               disabled={sending || !email.includes("@")}
               onClick={() => { setCode(""); void sendCode("email"); }}
               className="nq-booking-btn-primary w-full"

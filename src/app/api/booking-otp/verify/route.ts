@@ -9,6 +9,10 @@ import {
   type DurableRateLimitResult,
 } from "@/shared/security/publicServerActionRateLimit";
 import { clientIp } from "@/shared/lib/inAppRateLimit";
+import {
+  isBookingOtpDeliveryAttemptId,
+  markBookingOtpDeliveryVerified,
+} from "@/shared/booking/otpDeliveryTruth";
 
 function rateResponse(result: Exclude<DurableRateLimitResult, "allowed">) {
   return NextResponse.json(
@@ -26,7 +30,13 @@ export async function POST(req: Request) {
   ]);
   if (ipRate !== "allowed") return rateResponse(ipRate);
 
-  let body: { phone?: string; code?: string; shopSlug?: string; email?: string };
+  let body: {
+    phone?: string;
+    code?: string;
+    shopSlug?: string;
+    email?: string;
+    deliveryAttemptId?: string;
+  };
   try {
     body = await req.json();
   } catch {
@@ -37,6 +47,7 @@ export async function POST(req: Request) {
   const code = (body.code ?? "").replace(/\s/g, "");
   const shopSlug = (body.shopSlug ?? "").trim();
   const email = (body.email ?? "").trim().toLowerCase();
+  const deliveryAttemptId = (body.deliveryAttemptId ?? "").trim().toLowerCase();
 
   if (!phone || !code || !shopSlug) {
     return NextResponse.json({ error: "missing_fields" }, { status: 400 });
@@ -69,6 +80,9 @@ export async function POST(req: Request) {
   }
 
   const salonId = String(salon.id);
+  let verifiedDelivery:
+    | { channel: "sms" | "email"; recipient: string; attemptId: string }
+    | null = null;
 
   if (!isDemoOtpRuntime()) {
     // The customer typed ONE code — it may have arrived by SMS or by email
@@ -78,16 +92,46 @@ export async function POST(req: Request) {
     const sms = await checkVerification(e164, code);
     let approved = sms.ok;
     let lastError = sms.error ?? "invalid_code";
+    if (approved && isBookingOtpDeliveryAttemptId(deliveryAttemptId)) {
+      verifiedDelivery = {
+        channel: "sms",
+        recipient: e164,
+        attemptId: deliveryAttemptId,
+      };
+    }
 
     if (!approved && email) {
       const em = await checkEmailOtp({ salonId, phone: phoneOk.digits, email, code });
       approved = em.ok;
+      if (
+        approved &&
+        em.deliveryAttemptId &&
+        isBookingOtpDeliveryAttemptId(em.deliveryAttemptId)
+      ) {
+        verifiedDelivery = {
+          channel: "email",
+          recipient: email,
+          attemptId: em.deliveryAttemptId,
+        };
+      }
       if (!approved) lastError = em.error ?? lastError;
     }
 
     if (!approved) {
       const status = lastError === "expired_or_max_attempts" ? 410 : 400;
       return NextResponse.json({ error: lastError }, { status });
+    }
+
+    if (verifiedDelivery) {
+      const recorded = await markBookingOtpDeliveryVerified({
+        salonId,
+        ...verifiedDelivery,
+      });
+      if (!recorded) {
+        // The customer's successful verification remains authoritative. A
+        // telemetry write must never force them to request another code.
+        console.error("[booking-otp/verify] delivery verification truth not recorded");
+      }
     }
   } else if (code !== "000000") {
     // Demo mode: only accept the magic test code.
