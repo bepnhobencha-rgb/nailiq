@@ -77,9 +77,11 @@ import { execFileSync } from "node:child_process";
  * The 20260828011125 owner-booking notification migration adds one PII-free,
  * RPC-only durable outbox, its capture trigger, and three service-only worker
  * functions without increasing direct service-role table reachability.
- * The 20260828023453 Resend delivery-truth migration adds two PII-free,
+ * The 20260828042657 Resend delivery-truth migration adds two PII-free,
  * RPC-only event/suppression tables, one correlation trigger, and three
  * private/service-only reconciliation functions.
+ * The 20260828051308 cancel-email migration adds one service-role-only
+ * compatibility handshake for zero-gap code/schema rollout.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -153,7 +155,8 @@ const PRODUCTION = {
   // +2 atomic booking-card continuation arm/resolve functions.
   // +4 owner-alert capture, occurrence resolution, claim, and completion functions.
   // +3 delivery-event reconciliation, recorder, and correlation-trigger functions.
-  functions: 388,
+  // +1 deferred desk-cancel owner-notification compatibility handshake.
+  functions: 389,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -519,6 +522,7 @@ const CRITICAL_FUNCTIONS = [
   "reconcile_stale_reactivation_campaign_deliveries",
   "enforce_v1_terminal_booking_policy",
   "transition_booking_to_terminal_v1",
+  "transition_desk_booking_cancel_with_deferred_owner_v1",
   "undo_recent_cancelled_booking_v1",
   "enforce_staff_capability_write",
   "enforce_staff_capability_mode_transition",

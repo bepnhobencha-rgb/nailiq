@@ -87,6 +87,30 @@ describe("owner booking notification outbox worker", () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
+  it("dispatches a durable cancellation only from a valid leased occurrence", async () => {
+    const h = harness();
+    const cancelLease = { ...lease, event_type: "cancel" };
+    h.rpc.mockReset()
+      .mockResolvedValueOnce({ data: [cancelLease], error: null })
+      .mockResolvedValueOnce({ data: { success: true, code: "completed" }, error: null });
+    const send = vi.fn().mockResolvedValue({
+      outcome: "sent",
+      reason: "provider_accepted",
+      sent: 1,
+      failed: 0,
+    });
+
+    await expect(runOwnerBookingNotificationWorker(10, {
+      client: h.client,
+      send,
+    })).resolves.toMatchObject({ ok: true, claimed: 1, sent: 1 });
+
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      event: "cancel",
+      eventOccurrenceKey: cancelLease.occurrence_key,
+    }));
+  });
+
   it("never dispatches malformed leases", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: [{ ...lease, occurrence_key: "not-a-fingerprint" }],
@@ -121,5 +145,28 @@ describe("owner booking notification outbox worker", () => {
     );
     expect(migration).toContain("FOR ALL TO anon, authenticated USING (false) WITH CHECK (false)");
     expect(migration).not.toMatch(/INSERT INTO public\.owner_booking_notification_outbox[\s\S]{0,200}SELECT/i);
+  });
+
+  it("defers desk-cancel owner email until undo settles and suppresses restored bookings", () => {
+    const migration = readFileSync(resolve(
+      process.cwd(),
+      "supabase/migrations/20260828051308_defer_owner_cancel_email_until_undo_settles.sql",
+    ), "utf8");
+    expect(migration).toContain("v_terminal_reason = 'desk_cancel'");
+    expect(migration).toContain("v_next_attempt_at := v_now + interval '20 seconds'");
+    expect(migration).toContain("last_error = 'booking_cancel_undone'");
+    expect(migration).toContain("b.status IS DISTINCT FROM 'cancelled'");
+    expect(migration).toContain("AFTER INSERT OR UPDATE OF start_time_utc, status ON public.bookings");
+    expect(migration).toContain("transition_desk_booking_cancel_with_deferred_owner_v1");
+    expect(migration).toContain("nailiq.defer_owner_cancel_notification");
+    expect(migration).toContain("AND v_defer_owner_cancel THEN");
+
+    const action = readFileSync(resolve(
+      process.cwd(),
+      "src/shared/dashboard/receptionistActions.ts",
+    ), "utf8");
+    expect(action).toContain("transition_desk_booking_cancel_with_deferred_owner_v1");
+    expect(action).toContain("deferredOwnerCancelRpcUnavailable(response.error)");
+    expect(action).toContain("refundOutcome?.ok || !ownerCancelNotificationDeferred");
   });
 });

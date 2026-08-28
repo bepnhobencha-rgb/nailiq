@@ -11,6 +11,7 @@ vi.mock("@/shared/lib/resend", () => ({
 
 import {
   OWNER_NOTIFICATION_BOOKING_SELECT_COLUMNS,
+  ownerNotificationBookingStateEligible,
   ownerNotificationMutationInstant,
   ownerNotificationOccurrenceKey,
   sendToEachRecipient,
@@ -89,6 +90,12 @@ describe("owner booking notification durable recipient claim", () => {
     expect(ownerNotificationMutationInstant("no_show", booking)).toBe(
       booking.customerTransitionedAt,
     );
+  });
+
+  it("never sends a cancellation label after the booking was restored", () => {
+    expect(ownerNotificationBookingStateEligible("cancel", "cancelled")).toBe(true);
+    expect(ownerNotificationBookingStateEligible("cancel", "confirmed")).toBe(false);
+    expect(ownerNotificationBookingStateEligible("new", "confirmed")).toBe(true);
   });
 
   it("claims a normalized deterministic recipient before provider send", async () => {

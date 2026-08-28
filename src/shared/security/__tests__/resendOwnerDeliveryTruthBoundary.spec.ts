@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const migration = readFileSync(resolve(
   process.cwd(),
-  "supabase/migrations/20260828023453_add_resend_owner_delivery_truth.sql",
+  "supabase/migrations/20260828042657_add_resend_owner_delivery_truth.sql",
 ), "utf8");
 const route = readFileSync(resolve(
   process.cwd(),
