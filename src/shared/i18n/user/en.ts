@@ -1692,6 +1692,7 @@ export type UserMessages = {
       willNotNotify: string;
       noPhone: string;
       noEmail: string;
+      unavailable: string;
       langEn: string;
       langVi: string;
       cancelTitle: string;
@@ -4217,6 +4218,7 @@ export const userEn: UserMessages = {
       willNotNotify: "Customer won't be notified.",
       noPhone: "no phone",
       noEmail: "no email",
+      unavailable: "disabled in salon settings",
       langEn: "in English",
       langVi: "in Vietnamese",
       cancelTitle: "Cancel appointment?",

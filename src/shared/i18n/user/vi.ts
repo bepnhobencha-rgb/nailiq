@@ -1842,6 +1842,7 @@ export const userVi: UserMessages = {
       willNotNotify: "Khách sẽ không được báo.",
       noPhone: "chưa có SĐT",
       noEmail: "chưa có email",
+      unavailable: "đang tắt trong cài đặt salon",
       langEn: "bằng tiếng Anh",
       langVi: "bằng tiếng Việt",
       cancelTitle: "Huỷ lịch hẹn?",

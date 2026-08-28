@@ -2420,10 +2420,7 @@ function ReceptionistCenterInner({
     const notifyChannelsResolved =
       notifyChannels ??
       (defaultNotifyOn(data.salon.staffNotificationSettings, "cancel")
-        ? {
-            sms: data.salon.staffNotificationSettings.channels.sms,
-            email: data.salon.staffNotificationSettings.channels.email,
-          }
+        ? data.salon.staffNotificationChannelAvailability
         : { sms: false, email: false });
 
     setDrawerBusy(true);
@@ -2475,10 +2472,7 @@ function ReceptionistCenterInner({
     const notifyChannelsResolved =
       notifyChannels ??
       (defaultNotifyOn(data.salon.staffNotificationSettings, "cancel")
-        ? {
-            sms: data.salon.staffNotificationSettings.channels.sms,
-            email: data.salon.staffNotificationSettings.channels.email,
-          }
+        ? data.salon.staffNotificationChannelAvailability
         : { sms: false, email: false });
 
     setDrawerBusy(true);
@@ -2582,8 +2576,8 @@ function ReceptionistCenterInner({
     const settings = data.salon.staffNotificationSettings;
     const on = defaultNotifyOn(settings, "cancel");
     setNotifyCancelChannels({
-      sms: on && settings.channels.sms,
-      email: on && settings.channels.email,
+      sms: on && data.salon.staffNotificationChannelAvailability.sms,
+      email: on && data.salon.staffNotificationChannelAvailability.email,
     });
     setCancelScope("this");
     setNotifyCancel({ id });
@@ -3957,6 +3951,9 @@ function ReceptionistCenterInner({
                   timezone={data.salon.timezone}
                   language={language}
                   notifySettings={data.salon.staffNotificationSettings}
+                  notifyAvailability={
+                    data.salon.staffNotificationChannelAvailability
+                  }
                   initialStaffId={deskPrefill?.staffId}
                   initialYmd={deskPrefill?.ymd}
                   initialSlotLabel={deskPrefill?.slotLabel}
@@ -4710,13 +4707,7 @@ function ReceptionistCenterInner({
                             data.salon.staffNotificationSettings,
                             "reschedule",
                           )
-                            ? {
-                                sms: data.salon.staffNotificationSettings
-                                  .channels.sms,
-                                email:
-                                  data.salon.staffNotificationSettings.channels
-                                    .email,
-                              }
+                            ? data.salon.staffNotificationChannelAvailability
                             : { sms: false, email: false },
                         });
                         if (result.ok) {
@@ -5369,6 +5360,9 @@ function ReceptionistCenterInner({
                     onChange={setNotifyCancelChannels}
                     hasPhone={hasPhone}
                     hasEmail={hasEmail}
+                    availability={
+                      data.salon.staffNotificationChannelAvailability
+                    }
                     previewText={previewText}
                     labels={{
                       heading: n.heading,
@@ -5378,6 +5372,7 @@ function ReceptionistCenterInner({
                       willNotNotify: n.willNotNotify,
                       noPhone: n.noPhone,
                       noEmail: n.noEmail,
+                      unavailable: n.unavailable,
                       languageNote: locale === "vi" ? n.langVi : n.langEn,
                     }}
                   />
@@ -5390,8 +5385,14 @@ function ReceptionistCenterInner({
                       onClick={() => {
                         const id = notifyCancel.id;
                         const ch = {
-                          sms: notifyCancelChannels.sms && hasPhone,
-                          email: notifyCancelChannels.email && hasEmail,
+                          sms:
+                            notifyCancelChannels.sms &&
+                            hasPhone &&
+                            data.salon.staffNotificationChannelAvailability.sms,
+                          email:
+                            notifyCancelChannels.email &&
+                            hasEmail &&
+                            data.salon.staffNotificationChannelAvailability.email,
                         };
                         setNotifyCancel(null);
                         if (cancelWhole && groupId) {
