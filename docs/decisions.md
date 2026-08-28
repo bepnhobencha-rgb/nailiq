@@ -5,6 +5,37 @@ Newest entries on top.
 
 ---
 
+## 2026-08-27 — Owner booking alerts use a transactional occurrence outbox
+
+**Status.** Approved by the Product Owner after live salons reported missing
+new-booking and reschedule email alerts.
+
+**Decision.** A canonical future booking insert, or a real future start-time
+change, records one owner-notification occurrence in the same database
+transaction. The existing notification cron leases those occurrences and the
+existing per-recipient provider claim remains the idempotency barrier. Booking
+success never waits for email; the outbox can retry definite pre-acceptance
+failure at most twice and never retries an ambiguous provider outcome.
+
+- Group bookings record only the organizer row and carry the party size.
+- Inline and worker senders resolve the same occurrence key, preventing a race
+  from producing duplicate manager emails.
+- Provider-accepted completion requires an existing Resend receipt in the
+  recipient claim ledger.
+- A newer unsent reschedule suppresses older mutable material; no historical
+  booking is backfilled or blindly resent.
+- Wix/Square imports retain their existing bounded per-sync alert caps. A bulk
+  provider import must not become an unbounded email backlog.
+- The outbox and its claim/completion functions are service-only with RLS and
+  explicit browser-role denial.
+
+**Release boundary.** Apply and verify the additive migration before enabling
+the worker in production. A code-first preview fails closed when the RPC is not
+present. Production migration, provider email proof, merge and deployment each
+remain separately approval-gated.
+
+---
+
 ## 2026-08-27 — Every booking gateway declares one orchestrated canonical route
 
 **Status.** Approved by the Product Owner in chat: “Hãy đồng bộ hết” and

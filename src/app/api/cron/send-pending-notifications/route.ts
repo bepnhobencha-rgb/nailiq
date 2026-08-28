@@ -11,6 +11,7 @@ import { deliverPendingPlatformAnnouncementEmails } from "@/shared/superadmin/pl
 import { runCustomerBookingTransitionEmailWorker } from "@/shared/notifications/customerBookingTransitionEmail";
 import { runBookingConfirmationRetryWorker } from "@/shared/booking/bookingConfirmationRetryDelivery";
 import { runStaffActionNotificationWorker } from "@/shared/notifications/staffActionNotificationWorker";
+import { runOwnerBookingNotificationWorker } from "@/shared/notifications/ownerBookingNotificationWorker";
 
 export const runtime = "nodejs";
 export const maxDuration = 55;
@@ -19,6 +20,7 @@ const BATCH = 100;
 const BOOKING_CONFIRMATION_RETRY_BATCH = 10;
 const CUSTOMER_TRANSITION_BATCH = 10;
 const STAFF_ACTION_DELIVERY_BATCH = 10;
+const OWNER_BOOKING_NOTIFICATION_BATCH = 10;
 
 export async function GET(req: NextRequest) {
   const authorizationError = requireCronAuthorization(req);
@@ -32,6 +34,12 @@ export async function GET(req: NextRequest) {
   // contract. Drain it before observing the retired mutable legacy queue.
   const staffActionNotifications =
     await runStaffActionNotificationWorker(STAFF_ACTION_DELIVERY_BATCH);
+
+  // Booking/reschedule manager alerts are recorded transactionally by the
+  // bookings trigger. This leased worker is the only catch-up path when a
+  // request finishes before its best-effort inline sender runs.
+  const ownerBookingNotifications =
+    await runOwnerBookingNotificationWorker(OWNER_BOOKING_NOTIFICATION_BATCH);
 
   // Confirmation retries have a strict 30-minute window. Drain their small,
   // independently leased batch before the legacy 100-row sequential queue so
@@ -69,6 +77,7 @@ export async function GET(req: NextRequest) {
       emailCount: 0,
       legacyStaffActionPending,
       staffActionNotifications,
+      ownerBookingNotifications,
       platformNotices,
       bookingConfirmationRetries,
       customerTransitionEmails,
