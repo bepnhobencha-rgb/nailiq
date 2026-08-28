@@ -77,7 +77,7 @@ import { execFileSync } from "node:child_process";
  * The 20260828011125 owner-booking notification migration adds one PII-free,
  * RPC-only durable outbox, its capture trigger, and three service-only worker
  * functions without increasing direct service-role table reachability.
- * The 20260828023453 Resend delivery-truth migration adds two PII-free,
+ * The 20260828042657 Resend delivery-truth migration adds two PII-free,
  * RPC-only event/suppression tables, one correlation trigger, and three
  * private/service-only reconciliation functions.
  * The 20260828051308 cancel-email migration adds one service-role-only
