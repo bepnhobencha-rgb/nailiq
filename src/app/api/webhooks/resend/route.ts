@@ -11,6 +11,7 @@ export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import {
+  parseResendCustomerDeliveryMaterial,
   parseResendOwnerDeliveryMaterial,
   readResendWebhookBody,
   resendWebhookPayloadFingerprint,
@@ -46,9 +47,16 @@ export async function POST(request: Request) {
   });
   if (!event) return json({ ok: false, code: "invalid_signature" }, 401);
 
-  const material = parseResendOwnerDeliveryMaterial(event);
-  if (material === "ignored") return json({ ok: true, code: "event_ignored" });
-  if (!material) return json({ ok: false, code: "invalid_event" }, 400);
+  const ownerMaterial = parseResendOwnerDeliveryMaterial(event);
+  const customerMaterial = ownerMaterial === "ignored"
+    ? parseResendCustomerDeliveryMaterial(event)
+    : "ignored";
+  if (ownerMaterial === "ignored" && customerMaterial === "ignored") {
+    return json({ ok: true, code: "event_ignored" });
+  }
+  if (ownerMaterial === null || customerMaterial === null) {
+    return json({ ok: false, code: "invalid_event" }, 400);
+  }
 
   let db: ReturnType<typeof createServiceRoleClient>;
   try {
@@ -56,18 +64,24 @@ export async function POST(request: Request) {
   } catch {
     return json({ ok: false, code: "webhook_store_unavailable" }, 503);
   }
-  const { data, error } = await db.rpc(
-    "record_resend_owner_delivery_event" as never,
-    {
-      p_claim_id: material.claimId,
-      p_provider_event_id: providerEventId,
-      p_provider_message_id: material.providerMessageId,
-      p_event_type: material.eventType,
-      p_recipient_fingerprint: material.recipientFingerprint,
-      p_occurred_at: material.occurredAt,
-      p_payload_fingerprint: resendWebhookPayloadFingerprint(body.bytes),
-    } as never,
-  );
+  const material = ownerMaterial === "ignored" ? customerMaterial : ownerMaterial;
+  if (material === "ignored") return json({ ok: true, code: "event_ignored" });
+  const rpcName = ownerMaterial === "ignored"
+    ? "record_resend_customer_delivery_event"
+    : "record_resend_owner_delivery_event";
+  const params = {
+    ...(ownerMaterial === "ignored" && "claimKind" in material
+      ? { p_claim_kind: material.claimKind }
+      : {}),
+    p_claim_id: material.claimId,
+    p_provider_event_id: providerEventId,
+    p_provider_message_id: material.providerMessageId,
+    p_event_type: material.eventType,
+    p_recipient_fingerprint: material.recipientFingerprint,
+    p_occurred_at: material.occurredAt,
+    p_payload_fingerprint: resendWebhookPayloadFingerprint(body.bytes),
+  };
+  const { data, error } = await db.rpc(rpcName as never, params as never);
   if (error || !data || typeof data !== "object") {
     return json({ ok: false, code: "webhook_store_unavailable" }, 503);
   }

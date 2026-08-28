@@ -44,11 +44,11 @@ describe("role-localized platform email boundary", () => {
     expect(parity).toContain("through 20260820105820");
     expect(parity).toContain('"platform_announcement_deliveries"');
     expect(parity).toContain('"queue_platform_announcement_deliveries"');
-    expect(parity).toContain("tables: 178");
-    expect(parity).toContain("columns: 2640");
-    expect(parity).toContain("policies: 201");
-    expect(parity).toContain("functions: 389");
-    expect(parity).toContain("indexes: 650");
+    expect(parity).toContain("tables: 180");
+    expect(parity).toContain("columns: 2679");
+    expect(parity).toContain("policies: 203");
+    expect(parity).toContain("functions: 393");
+    expect(parity).toContain("indexes: 658");
     expect(parity).toContain("service_role: 176");
   });
 });

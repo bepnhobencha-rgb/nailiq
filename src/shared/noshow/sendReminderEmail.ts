@@ -14,6 +14,8 @@ import {
 
 export type ReminderEmailInput = {
   salonId: string;
+  /** Durable reminder claim used only for signed delivery correlation. */
+  deliveryClaimId?: string;
   confirmToken: string;
   rescheduleToken: string;
   cancelToken: string;
@@ -208,6 +210,8 @@ export type GroupMember = {
 };
 
 export type GroupReminderEmailInput = {
+  /** Durable reminder claim used only for signed delivery correlation. */
+  deliveryClaimId?: string;
   confirmToken: string;
   rescheduleToken: string;
   cancelToken: string;
@@ -382,6 +386,13 @@ export async function sendGroupReminderEmail(
       html,
       headers: listUnsubscribeHeaders(input.organizerEmail),
       ...(input.salonContactEmail ? { replyTo: input.salonContactEmail } : {}),
+      ...(input.deliveryClaimId ? {
+        tags: [
+          { name: "nailiq_flow", value: "customer_booking" },
+          { name: "nailiq_claim_kind", value: "reminder" },
+          { name: "nailiq_claim", value: input.deliveryClaimId },
+        ],
+      } : {}),
     });
     if (error) {
       console.error("[sendGroupReminderEmail] Resend error", error);
@@ -441,6 +452,13 @@ export async function sendReminderEmail(
       html,
       headers: listUnsubscribeHeaders(input.clientEmail),
       ...(input.salonContactEmail ? { replyTo: input.salonContactEmail } : {}),
+      ...(input.deliveryClaimId ? {
+        tags: [
+          { name: "nailiq_flow", value: "customer_booking" },
+          { name: "nailiq_claim_kind", value: "reminder" },
+          { name: "nailiq_claim", value: input.deliveryClaimId },
+        ],
+      } : {}),
     });
 
     if (error) {

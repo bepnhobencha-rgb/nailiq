@@ -40,6 +40,19 @@ function payload(type = "email.delivered") {
   });
 }
 
+function customerPayload() {
+  const parsed = JSON.parse(payload()) as {
+    data: { to: string[]; tags: Record<string, string> };
+  };
+  parsed.data.to = ["Guest@Example.COM"];
+  parsed.data.tags = {
+    nailiq_flow: "customer_booking",
+    nailiq_claim_kind: "reminder",
+    nailiq_claim: "44444444-4444-4444-8444-444444444444",
+  };
+  return JSON.stringify(parsed);
+}
+
 function request(raw: string, headers: Record<string, string> = {}) {
   return new Request(url, {
     method: "POST",
@@ -117,6 +130,25 @@ describe("Resend owner delivery webhook", () => {
     });
     expect(JSON.stringify(mocks.rpc.mock.calls)).not.toContain("Owner@Example.COM");
     expect(JSON.stringify(mocks.rpc.mock.calls)).not.toContain("must-not-persist");
+  });
+
+  it("routes customer booking receipts to the generic customer ledger", async () => {
+    const raw = customerPayload();
+    const response = await POST(request(raw));
+    expect(response.status).toBe(200);
+    expect(mocks.rpc).toHaveBeenCalledWith("record_resend_customer_delivery_event", {
+      p_claim_kind: "reminder",
+      p_claim_id: "44444444-4444-4444-8444-444444444444",
+      p_provider_event_id: "evt_test_1",
+      p_provider_message_id: "resend-message-1",
+      p_event_type: "email.delivered",
+      p_recipient_fingerprint: createHash("sha256")
+        .update("guest@example.com")
+        .digest("hex"),
+      p_occurred_at: occurredAt,
+      p_payload_fingerprint: createHash("sha256").update(raw).digest("hex"),
+    });
+    expect(JSON.stringify(mocks.rpc.mock.calls)).not.toContain("Guest@Example.COM");
   });
 
   it("acknowledges signed non-delivery events without touching the database", async () => {
