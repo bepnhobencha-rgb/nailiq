@@ -361,12 +361,20 @@ async function dispatchClaimed(
       resolvedSuppressionReason = "suppression_lookup_unavailable";
     }
   }
-  const classified: Classified = resolvedSuppressionReason
+  const suppressionLookupUnavailable = resolvedSuppressionReason === "lookup_unavailable" ||
+    resolvedSuppressionReason === "suppression_lookup_unavailable";
+  const classified: Classified = suppressionLookupUnavailable
     ? {
-        outcome: "suppressed", reason: resolvedSuppressionReason, status: "suppressed",
-        providerMessageId: null, errorCode: "channel_disabled", failureDisposition: "permanent",
+        outcome: "rejected", reason: "suppression_lookup_unavailable", status: "failed",
+        providerMessageId: null, errorCode: "suppression_lookup_unavailable",
+        failureDisposition: "retryable_pre_acceptance",
       }
-    : await dispatch(envelope, deps, claimId);
+    : resolvedSuppressionReason
+      ? {
+          outcome: "suppressed", reason: resolvedSuppressionReason, status: "suppressed",
+          providerMessageId: null, errorCode: "channel_disabled", failureDisposition: "permanent",
+        }
+      : await dispatch(envelope, deps, claimId);
   let completion: Completion = { success: false, code: "completion_unavailable" };
   try {
     completion = await deps.complete({

@@ -149,19 +149,22 @@ async function suppressReminderEmailBeforeProvider(input: {
   claimId: string;
   salonId: string;
   email: string;
-}): Promise<boolean> {
+}): Promise<"send" | "suppressed" | "retryable"> {
   const reason = await customerEmailDeliverySuppressionReason({
     salonId: input.salonId,
     email: input.email,
   });
-  if (!reason) return false;
+  if (!reason) return "send";
+  const lookupUnavailable = reason === "lookup_unavailable";
   const persisted = await completeReminderDelivery({
     claimId: input.claimId,
-    status: "suppressed",
-    errorCode: `delivery_suppressed:${reason}`,
+    status: lookupUnavailable ? "failed" : "suppressed",
+    errorCode: lookupUnavailable
+      ? "suppression_lookup_unavailable"
+      : `delivery_suppressed:${reason}`,
   });
   if (!persisted) throw new Error("reminder_claim_completion_failed");
-  return true;
+  return lookupUnavailable ? "retryable" : "suppressed";
 }
 
 export async function GET(req: Request) {
@@ -262,71 +265,82 @@ export async function GET(req: Request) {
     const members = await fetchGroupMembers(booking.group_id);
     const { resolveVertical } = await import("@/shared/verticals/registry");
 
-    const capabilities = await mintReminderCapabilities(
-      booking.id,
-      booking.salon_id,
-      booking.start_time_utc,
-    );
-    if (!capabilities) { errors++; return; }
-
     const claim = await claimReminderChannel(booking, reminderType, "email");
     if (!claim.ok) { errors++; return; }
-    if (!claim.claimed) return;
-    if (await suppressReminderEmailBeforeProvider({
-      claimId: claim.claimId,
-      salonId: booking.salon_id,
-      email: booking.client_email,
-    })) return;
-
-    let result;
-    try {
-      result = await sendGroupReminderEmail({
-        deliveryClaimId: claim.claimId,
-        ...capabilities,
-        organizerName: booking.client_name,
-        organizerEmail: booking.client_email,
-        locale: booking.client_locale?.toLowerCase().startsWith("vi") ? "vi" : "en",
-        salonName: salon.name,
-        salonSlug: salon.slug,
-        reminderType,
-        timezone: (salon as { timezone?: string | null }).timezone ?? null,
-        businessDescriptor: resolveVertical((salon as { vertical?: string | null }).vertical).aiDescriptor,
-        salonLogoUrl: salon.logo_url,
-        members,
-      });
-    } catch {
-      const persisted = await completeReminderDelivery({
+    if (claim.claimed) {
+      const organizerSuppression = await suppressReminderEmailBeforeProvider({
         claimId: claim.claimId,
-        status: "unknown",
-        errorCode: "provider_outcome_unknown",
+        salonId: booking.salon_id,
+        email: booking.client_email,
       });
-      if (!persisted) throw new Error("reminder_claim_completion_failed");
-      errors++;
+      if (organizerSuppression === "retryable") { errors++; return; }
+      if (organizerSuppression === "send") {
+        const capabilities = await mintReminderCapabilities(
+          booking.id,
+          booking.salon_id,
+          booking.start_time_utc,
+        );
+        if (!capabilities) {
+          const persisted = await completeReminderDelivery({
+            claimId: claim.claimId,
+            status: "failed",
+            errorCode: "capability_mint_unavailable",
+          });
+          if (!persisted) throw new Error("reminder_claim_completion_failed");
+          errors++;
+          return;
+        }
+        let result;
+        try {
+          result = await sendGroupReminderEmail({
+            deliveryClaimId: claim.claimId,
+            ...capabilities,
+            organizerName: booking.client_name,
+            organizerEmail: booking.client_email,
+            locale: booking.client_locale?.toLowerCase().startsWith("vi") ? "vi" : "en",
+            salonName: salon.name,
+            salonSlug: salon.slug,
+            reminderType,
+            timezone: (salon as { timezone?: string | null }).timezone ?? null,
+            businessDescriptor: resolveVertical((salon as { vertical?: string | null }).vertical).aiDescriptor,
+            salonLogoUrl: salon.logo_url,
+            members,
+          });
+        } catch {
+          const persisted = await completeReminderDelivery({
+            claimId: claim.claimId,
+            status: "unknown",
+            errorCode: "provider_outcome_unknown",
+          });
+          if (!persisted) throw new Error("reminder_claim_completion_failed");
+          errors++;
+          return;
+        }
+        const delivery = await persistReminderProviderResult(claim.claimId, "email", result);
+
+        void logNotification({
+          bookingId: booking.id,
+          salonId: booking.salon_id,
+          notificationType: reminderType === "24h" ? "reminder_24h" : "reminder_3h",
+          channel: "email",
+          clientPhone: booking.client_phone ? `+${booking.client_phone}` : null,
+          messageSid: result.messageId ?? null,
+          bodyPreview: `Group reminder · party of ${members.length}`,
+          ok: result.ok,
+          errorMessage: result.error,
+        });
+
+        if (delivery.status !== "sent" && delivery.status !== "suppressed") {
+          errors++;
+          return;
+        }
+      }
+    } else if (!["sent", "suppressed"].includes(claim.status)) {
       return;
     }
-    const delivery = await persistReminderProviderResult(claim.claimId, "email", result);
-
-    void logNotification({
-      bookingId: booking.id,
-      salonId: booking.salon_id,
-      notificationType: reminderType === "24h" ? "reminder_24h" : "reminder_3h",
-      channel: "email",
-      clientPhone: booking.client_phone ? `+${booking.client_phone}` : null,
-      messageSid: result.messageId ?? null,
-      bodyPreview: `Group reminder · party of ${members.length}`,
-      ok: result.ok,
-      errorMessage: result.error,
-    });
-
-    if (delivery.status !== "sent" && delivery.status !== "suppressed") {
-      errors++;
-      return;
-    }
-
-    // Mark all group members as reminded so they don't receive individual emails
-    await markGroupReminderSent(booking.group_id, reminderType);
 
     // Send individual reminder to members with their own distinct email
+    let retryableMemberFailure = false;
     for (const m of members) {
       if (!m.email || m.email === booking.client_email) continue;
       // The token MUST be bound to the member's OWN booking — the reminder email
@@ -335,12 +349,6 @@ export async function GET(req: Request) {
       if (!m.bookingId) continue;
       if (await import("@/shared/lib/emailCompliance").then((mod) => mod.isEmailSuppressed(m.email!))) continue;
       const { sendReminderEmail } = await import("@/shared/noshow/sendReminderEmail");
-      const memberCapabilities = await mintReminderCapabilities(
-        m.bookingId,
-        booking.salon_id,
-        m.startTimeUtc,
-      );
-      if (!memberCapabilities) continue;
       const memberBooking: BookingRow = {
         ...booking,
         id: m.bookingId,
@@ -351,13 +359,39 @@ export async function GET(req: Request) {
         reminderType,
         "email",
       );
-      if (!memberClaim.ok) { errors++; continue; }
+      if (!memberClaim.ok) {
+        errors++;
+        retryableMemberFailure = true;
+        continue;
+      }
       if (!memberClaim.claimed) continue;
-      if (await suppressReminderEmailBeforeProvider({
+      const memberSuppression = await suppressReminderEmailBeforeProvider({
         claimId: memberClaim.claimId,
         salonId: booking.salon_id,
         email: m.email,
-      })) continue;
+      });
+      if (memberSuppression === "retryable") {
+        errors++;
+        retryableMemberFailure = true;
+        continue;
+      }
+      if (memberSuppression === "suppressed") continue;
+      const memberCapabilities = await mintReminderCapabilities(
+        m.bookingId,
+        booking.salon_id,
+        m.startTimeUtc,
+      );
+      if (!memberCapabilities) {
+        const persisted = await completeReminderDelivery({
+          claimId: memberClaim.claimId,
+          status: "failed",
+          errorCode: "capability_mint_unavailable",
+        });
+        if (!persisted) throw new Error("reminder_claim_completion_failed");
+        errors++;
+        retryableMemberFailure = true;
+        continue;
+      }
       let memberResult;
       try {
         memberResult = await sendReminderEmail({
@@ -404,8 +438,17 @@ export async function GET(req: Request) {
       if (
         memberDelivery.status !== "sent" &&
         memberDelivery.status !== "suppressed"
-      ) errors++;
+      ) {
+        errors++;
+        if (memberDelivery.status === "failed") retryableMemberFailure = true;
+      }
     }
+
+    if (retryableMemberFailure) return;
+    // Mark only after every retryable, definitely pre-provider member failure
+    // has cleared. A later cron run can reuse the organizer's terminal claim
+    // while reclaiming just the failed member claim, without duplicate sends.
+    await markGroupReminderSent(booking.group_id, reminderType);
 
     if (reminderType === "24h") sent24h++; else sent3h++;
   }
@@ -463,12 +506,13 @@ export async function GET(req: Request) {
       if (!emailClaim.ok) {
         errors++;
       } else if (emailClaim.claimed) {
-        const emailSuppressed = await suppressReminderEmailBeforeProvider({
+        const emailSuppression = await suppressReminderEmailBeforeProvider({
           claimId: emailClaim.claimId,
           salonId: booking.salon_id,
           email: booking.client_email!,
         });
-        if (!emailSuppressed) {
+        if (emailSuppression === "retryable") errors++;
+        if (emailSuppression === "send") {
           let result;
           try {
             result = await sendReminderEmail({

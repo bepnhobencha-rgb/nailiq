@@ -63,6 +63,18 @@ describe("Resend customer delivery truth boundary", () => {
     expect(transitions.indexOf("emailSuppressionReason")).toBeLessThan(
       transitions.indexOf("provider.send"),
     );
+    for (const source of [confirmation, transitions]) {
+      expect(source).toContain('"suppression_lookup_unavailable"');
+      expect(source).toContain('"retryable_pre_acceptance"');
+    }
+    expect(cron).toContain('status: lookupUnavailable ? "failed" : "suppressed"');
+    expect(cron).toContain('errorCode: "capability_mint_unavailable"');
+    const retryableMember = cron.indexOf("let retryableMemberFailure");
+    expect(retryableMember).toBeGreaterThan(-1);
+    expect(cron.indexOf(
+      "await markGroupReminderSent(booking.group_id, reminderType)",
+      retryableMember,
+    )).toBeGreaterThan(retryableMember);
   });
 
   it("keeps the ledger private and wires executable schema gates", () => {

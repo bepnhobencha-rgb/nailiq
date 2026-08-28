@@ -137,6 +137,29 @@ describe("booking confirmation tokenized retry delivery", () => {
     }));
   });
 
+  it("retries a suppression lookup outage without crossing Resend", async () => {
+    const d = deps({
+      emailSuppressionReason: vi.fn().mockResolvedValue("lookup_unavailable"),
+    });
+    const result = await deliverBookingConfirmation({
+      bookingId: BOOKING_ID,
+      salonId: SALON_ID,
+      envelope: email,
+    }, d);
+    expect(result).toMatchObject({
+      outcome: "rejected",
+      reason: "suppression_lookup_unavailable",
+      finalized: true,
+    });
+    expect(d.sendEmail).not.toHaveBeenCalled();
+    expect(d.complete).toHaveBeenCalledWith(expect.objectContaining({
+      status: "failed",
+      providerMessageId: null,
+      errorCode: "suppression_lookup_unavailable",
+      failureDisposition: "retryable_pre_acceptance",
+    }));
+  });
+
   it("classifies definite SMS and email pre-acceptance failures as the only retryable outcomes", async () => {
     const smsDeps = deps({ sendSms: vi.fn().mockResolvedValue({ ok: false, error: "twilio_429" }) });
     await deliverBookingConfirmation({ bookingId: BOOKING_ID, salonId: SALON_ID, envelope: sms }, smsDeps);

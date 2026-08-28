@@ -306,6 +306,25 @@ describe("customer booking transition email", () => {
     }));
   });
 
+  it("retries a suppression lookup outage without calling Resend", async () => {
+    const d = deps({
+      emailSuppressionReason: vi.fn().mockResolvedValue("lookup_unavailable"),
+    });
+    const result = await deliverCustomerBookingTransitionEmail(input, d);
+    expect(result).toMatchObject({
+      outcome: "failed",
+      reason: "suppression_lookup_unavailable",
+      finalized: true,
+    });
+    expect(d.send).not.toHaveBeenCalled();
+    expect(d.complete).toHaveBeenCalledWith(expect.objectContaining({
+      status: "failed",
+      providerMessageId: null,
+      errorCode: "suppression_lookup_unavailable",
+      failureDisposition: "retryable_pre_acceptance",
+    }));
+  });
+
   it("sends a leased retry only when stored payload and recipient fingerprints still match", async () => {
     const claimed = claimedMaterial({ status: "sending" });
     const d = deps();

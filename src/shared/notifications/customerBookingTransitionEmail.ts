@@ -405,23 +405,27 @@ async function sendClaimedTransition(
     suppressionReason = "suppression_lookup_unavailable";
   }
   if (suppressionReason) {
+    const lookupUnavailable = suppressionReason === "lookup_unavailable" ||
+      suppressionReason === "suppression_lookup_unavailable";
     let completion = { success: false, code: "completion_unavailable" };
     try {
       completion = await deps.complete({
         outboxId: material.outboxId,
         attemptToken: material.attemptToken,
-        status: "suppressed",
+        status: lookupUnavailable ? "failed" : "suppressed",
         providerMessageId: null,
-        errorCode: "channel_disabled",
-        failureDisposition: "permanent",
+        errorCode: lookupUnavailable ? "suppression_lookup_unavailable" : "channel_disabled",
+        failureDisposition: lookupUnavailable ? "retryable_pre_acceptance" : "permanent",
       });
     } catch {
       // No provider call occurred; the durable outbox remains the authority.
     }
     const finalized = completion.success === true || completion.code === "already_completed";
     return {
-      outcome: "suppressed",
-      reason: finalized ? suppressionReason : "completion_unavailable",
+      outcome: lookupUnavailable ? "failed" : "suppressed",
+      reason: finalized
+        ? lookupUnavailable ? "suppression_lookup_unavailable" : suppressionReason
+        : "completion_unavailable",
       providerId: null,
       finalized,
       transitionVersion: material.transitionVersion,
