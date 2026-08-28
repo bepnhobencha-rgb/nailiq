@@ -7,7 +7,6 @@ import {
   v1AllowsArchivedBookingRecovery,
   v1AllowsAutomatedSubscriptionBilling,
   v1AllowsCustomerPaymentGateway,
-  v1AllowsSquareOperationalSync,
   v1AllowsNoShowCardOnFile,
   v1AllowsWixCalendarConnection,
 } from "../v1IntegrationScope";
@@ -20,23 +19,10 @@ describe("NailIQ V1 integration scope", () => {
       googleCalendarSync: "phase_2",
       outlookCalendarSync: "phase_2",
       wixCalendarSync: "legacy_existing_only",
-      squareOperationalSync: "phase_2",
       squareLoyaltySync: "phase_2_provider_owned",
       squareGiftCardSync: "phase_2_provider_owned",
       archivedBookingRecovery: "phase_2",
     });
-  });
-
-  it("keeps scheduled Square operational sync hard off before DB or provider access", () => {
-    expect(v1AllowsSquareOperationalSync()).toBe(false);
-
-    const cron = readFileSync(
-      resolve(process.cwd(), "src/app/api/cron/square-sync/route.ts"),
-      "utf8",
-    );
-    expect(cron).toMatch(
-      /v1AllowsSquareOperationalSync\(\)[\s\S]*phase_2_not_available[\s\S]*looseServiceClient\(\)/u,
-    );
   });
 
   it("blocks new Wix connections while preserving existing live compatibility", () => {

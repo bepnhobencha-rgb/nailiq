@@ -15,7 +15,6 @@ export const V1_INTEGRATION_SCOPE = Object.freeze({
   googleCalendarSync: "phase_2",
   outlookCalendarSync: "phase_2",
   wixCalendarSync: "legacy_existing_only",
-  squareOperationalSync: "phase_2",
   squareLoyaltySync: "phase_2_provider_owned",
   squareGiftCardSync: "phase_2_provider_owned",
   archivedBookingRecovery: "phase_2",
@@ -28,16 +27,6 @@ export const V1_INTEGRATION_SCOPE = Object.freeze({
  * exception below carries no money movement.
  */
 export function v1AllowsCustomerPaymentGateway(): boolean {
-  return false;
-}
-
-/**
- * Square appointment/customer operational sync is not part of V1. The two
- * live salons keep using Square independently for checkout, loyalty and gift
- * cards; this predicate must fail before any database inventory or Square API
- * access from the scheduled sync worker.
- */
-export function v1AllowsSquareOperationalSync(): boolean {
   return false;
 }
 
