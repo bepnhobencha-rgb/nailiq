@@ -2,7 +2,27 @@ import type { ReactElement } from "react";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+type CardRequirementResult =
+  | { required: false }
+  | {
+      required: true;
+      feeCents: number;
+      provider: "square";
+      applicationId: string;
+      locationId: string;
+      environment: "production" | "sandbox";
+    };
+type SavedCardResult =
+  | { hasSavedCard: false }
+  | { hasSavedCard: true; brand: string; last4: string };
+
 const hookState = vi.hoisted(() => ({ cursor: 0, values: [] as unknown[] }));
+const cardRequirement = vi.hoisted(() =>
+  vi.fn<() => Promise<CardRequirementResult>>(async () => ({ required: false })),
+);
+const savedCard = vi.hoisted(() =>
+  vi.fn<() => Promise<SavedCardResult>>(async () => ({ hasSavedCard: false })),
+);
 
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
@@ -12,6 +32,12 @@ vi.mock("react", async (importOriginal) => {
       effect();
     },
     useMemo: <T,>(factory: () => T) => factory(),
+    useRef: <T,>(initial: T) => {
+      const index = hookState.cursor;
+      hookState.cursor += 1;
+      if (!(index in hookState.values)) hookState.values[index] = { current: initial };
+      return hookState.values[index] as { current: T };
+    },
     useState: <T,>(initial: T | (() => T)) => {
       const index = hookState.cursor;
       hookState.cursor += 1;
@@ -38,6 +64,15 @@ vi.mock("@/shared/lib/salonTime", () => ({
 vi.mock("@/shared/lib/currencyFormat", () => ({
   formatCurrency: (cents: number, currency: string) => `${currency}:${cents}`,
 }));
+vi.mock("@/shared/noshow/resolveNoShowCardRequirement", () => ({
+  resolveNoShowCardRequirement: cardRequirement,
+}));
+vi.mock("@/shared/noshow/resolveSavedNoShowCard", () => ({
+  resolveSavedNoShowCard: savedCard,
+}));
+vi.mock("@/components/booking/ConfirmStepCardCapture", () => ({
+  ConfirmStepCardCapture: () => null,
+}));
 
 import type { BookingSequenceQuote } from "@/shared/booking/bookingSequenceServer";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
@@ -45,6 +80,7 @@ import type {
   BookingSalonMeta,
   BookingStaffItem,
 } from "@/shared/booking/loadBookingServices";
+import { bookingEn } from "@/shared/i18n/booking/en";
 
 type ElementNode = ReactElement<Record<string, unknown>>;
 let BookingSequenceFlow: typeof import("../BookingSequenceFlow").BookingSequenceFlow;
@@ -69,6 +105,7 @@ function quote(label: string, fingerprint: string, totalCents: number) {
       {
         lineId: "44444444-4444-4444-8444-444444444444",
         position: 0,
+        serviceId,
         serviceName: `${label} A`,
         staffName: "Mai",
         serviceStartUtc: "2026-08-28T18:00:00.000Z",
@@ -85,6 +122,7 @@ function quote(label: string, fingerprint: string, totalCents: number) {
       {
         lineId: "44444444-4444-4444-8444-444444444445",
         position: 1,
+        serviceId: secondServiceId,
         serviceName: `${label} B`,
         staffName: "Mai",
         serviceStartUtc: "2026-08-28T18:45:00.000Z",
@@ -129,6 +167,7 @@ function elements(value: unknown, found: ElementNode[] = []): ElementNode[] {
 function renderFlow() {
   hookState.cursor = 0;
   return BookingSequenceFlow({
+    t: bookingEn,
     services: [
       { id: serviceId, name: "Gel" },
       { id: secondServiceId, name: "Art" },
@@ -198,6 +237,8 @@ describe("BookingSequenceFlow authoritative journey", () => {
     hookState.values = [];
     vi.restoreAllMocks();
     vi.resetModules();
+    cardRequirement.mockResolvedValue({ required: false });
+    savedCard.mockResolvedValue({ hasSavedCard: false });
     ({ BookingSequenceFlow } = await import("../BookingSequenceFlow"));
     vi.stubGlobal("sessionStorage", {
       getItem: vi.fn(() => null),
@@ -222,6 +263,10 @@ describe("BookingSequenceFlow authoritative journey", () => {
     await vi.waitFor(() => {
       tree = renderFlow();
       expect(text(tree)).toContain("Confirm sequence");
+      const confirm = elements(tree).find(
+        (node) => node.type === "button" && text(node.props.children).includes("Confirm sequence"),
+      );
+      expect(confirm?.props.disabled).toBe(false);
     });
     click(tree, "Confirm sequence");
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
@@ -229,6 +274,10 @@ describe("BookingSequenceFlow authoritative journey", () => {
       tree = renderFlow();
       expect(text(tree)).toContain("Price or timing changed");
       expect(text(tree)).toContain("Confirm updated price");
+      const confirm = elements(tree).find(
+        (node) => node.type === "button" && text(node.props.children).includes("Confirm updated price"),
+      );
+      expect(confirm?.props.disabled).toBe(false);
     });
     click(tree, "Confirm updated price");
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
@@ -282,6 +331,10 @@ describe("BookingSequenceFlow authoritative journey", () => {
     await vi.waitFor(() => {
       tree = renderFlow();
       expect(text(tree)).toContain("Confirm sequence");
+      const confirm = elements(tree).find(
+        (node) => node.type === "button" && text(node.props.children).includes("Confirm sequence"),
+      );
+      expect(confirm?.props.disabled).toBe(false);
     });
     click(tree, "Confirm sequence");
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
@@ -295,5 +348,59 @@ describe("BookingSequenceFlow authoritative journey", () => {
     expect(text(tree)).toContain("Persisted create receipt");
     expect(text(tree)).toContain("CAD:5900");
     expect(text(tree)).not.toContain("Earlier quote");
+  });
+
+  it("keeps Done visible and warns against rebooking when saved-card reconciliation is pending", async () => {
+    cardRequirement.mockResolvedValue({
+      required: true,
+      feeCents: 1_000,
+      provider: "square",
+      applicationId: "sq-app",
+      locationId: "sq-location",
+      environment: "sandbox",
+    });
+    savedCard.mockResolvedValue({ hasSavedCard: true, brand: "Visa", last4: "4242" });
+    const authoritativeQuote = quote("Protected sequence", "a".repeat(64), 5_000);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(true, { ok: true, quote: authoritativeQuote }))
+      .mockResolvedValueOnce(response(true, {
+        ok: true,
+        quote: authoritativeQuote,
+        cardManagementPending: true,
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    let tree = prepareIntent();
+    click(tree, "Review sequence");
+    await vi.waitFor(() => {
+      tree = renderFlow();
+      expect(elements(tree).some(
+        (node) => node.props["data-testid"] === "booking-sequence-noshow-consent",
+      )).toBe(true);
+      expect(text(tree)).toContain("Visa");
+    });
+    const consent = elements(tree).find(
+      (node) => node.props["data-testid"] === "booking-sequence-noshow-consent",
+    );
+    (consent?.props.onChange as (event: unknown) => void)({ target: { checked: true } });
+    tree = renderFlow();
+    click(tree, "Confirm sequence");
+
+    await vi.waitFor(() => {
+      tree = renderFlow();
+      expect(elements(tree).some(
+        (node) => node.props["data-testid"] === "booking-sequence-done",
+      )).toBe(true);
+      expect(elements(tree).some(
+        (node) => node.props["data-testid"] === "booking-sequence-card-pending",
+      )).toBe(true);
+    });
+    expect(text(tree)).toContain("please do not book again");
+    const createBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+    expect(createBody).toMatchObject({
+      noShowConsent: true,
+      cardSourceId: null,
+      cardVerificationToken: null,
+    });
   });
 });

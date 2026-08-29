@@ -75,6 +75,7 @@ function quote() {
       qa_allowlisted: true,
       catalog_ready: true,
       capacity_contract_ready: true,
+      payment_policy_ready: true,
       ready: true,
     },
     timing_segments: [timing],
@@ -153,12 +154,13 @@ describe("parseBookingSequenceQuote", () => {
   it("rejects allowlist, timing, add-on, tax, and arithmetic drift", () => {
     const cases = [
       (() => { const value = quote(); value.readiness.qa_allowlisted = false; return value; })(),
+      (() => { const value = quote(); value.readiness.payment_policy_ready = false; return value; })(),
       (() => { const value = quote(); value.segments[0].occupied_start_utc = "2026-08-20T17:49:00.000Z"; return value; })(),
       (() => { const value = quote(); value.segments[0].addon_service_ids = []; return value; })(),
       (() => { const value = quote(); value.tax_breakdown[0].name = "PST"; return value; })(),
       (() => { const value = quote(); value.total_cents = 5251; return value; })(),
     ];
-    expect(cases.map(parseBookingSequenceQuote)).toEqual(Array(5).fill(null));
+    expect(cases.map(parseBookingSequenceQuote)).toEqual(Array(6).fill(null));
   });
 
   it("binds the quote to exact ordered request material", () => {

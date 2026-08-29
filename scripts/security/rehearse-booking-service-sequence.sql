@@ -76,13 +76,24 @@ BEGIN
   INSERT INTO public.salons(
     id, slug, name, phone, timezone, opening_hours, currency_code,
     subscription_plan, subscription_status, is_beta, resources_enabled,
-    tax_lines, feature_flags
+    tax_lines, feature_flags, noshow_protection_enabled, payment_provider,
+    cancellation_policy
   ) VALUES (
     v_salon, 'disposable-sequence-qa', 'Disposable Sequence QA', '+16045550101',
     'UTC',
     '{"sun":{"open":"00:00","close":"23:59","closed":false},"mon":{"open":"00:00","close":"23:59","closed":false},"tue":{"open":"00:00","close":"23:59","closed":false},"wed":{"open":"00:00","close":"23:59","closed":false},"thu":{"open":"00:00","close":"23:59","closed":false},"fri":{"open":"00:00","close":"23:59","closed":false},"sat":{"open":"00:00","close":"23:59","closed":false}}'::jsonb,
     'CAD', 'premium', 'active', true, false,
-    '[{"name":"GST","rate":0.05,"enabled":true}]'::jsonb, '{}'::jsonb
+    '[{"name":"GST","rate":0.05,"enabled":true}]'::jsonb, '{}'::jsonb,
+    true, 'square',
+    '{"en":"QA no-show policy with exact fee consent.","vi":"Chính sách vắng mặt QA với phí đồng ý chính xác."}'::jsonb
+  );
+  INSERT INTO public.square_integrations(
+    salon_id, merchant_id, location_id, access_token, application_id,
+    environment, enabled, deposit_enabled
+  ) VALUES (
+    v_salon, 'disposable-sequence-merchant', 'disposable-sequence-location',
+    'disposable-sequence-token', 'disposable-sequence-app',
+    'sandbox', true, false
   );
   INSERT INTO auth.users(
     id,email,encrypted_password,email_confirmed_at,
@@ -457,9 +468,9 @@ BEGIN
   END IF;
   UPDATE public.services SET price_cents = price_cents - 1 WHERE id = v_service_two;
 
-  -- A quote obtained under the Phase-A no-payment policy cannot be used after
-  -- that policy changes. The create-side locked re-read must fail before any
-  -- booking/profile write.
+  -- A quote obtained under the supported Square card-only policy cannot be
+  -- used after deposits are enabled. The create-side locked re-read must fail
+  -- before any booking/profile write.
   v_one_line_request := pg_catalog.jsonb_set(
     v_one_line_request, '{request_id}',
     '"40000000-0000-4000-8000-000000000005"'::jsonb
@@ -469,7 +480,8 @@ BEGIN
     pg_catalog.to_jsonb(v_start + interval '3 days')
   );
   v_quote := public.quote_public_booking_sequence(v_one_line_request);
-  UPDATE public.salons SET noshow_protection_enabled = true WHERE id = v_salon;
+  UPDATE public.square_integrations SET deposit_enabled = true
+  WHERE salon_id = v_salon;
   v_changed := public.create_public_booking_sequence(
     v_one_line_request || pg_catalog.jsonb_build_object(
       'expected_pricing_fingerprint', v_quote->>'pricing_fingerprint'
@@ -481,7 +493,8 @@ BEGIN
          AND b.idempotency_key='40000000-0000-4000-8000-000000000005') THEN
     RAISE EXCEPTION 'payment policy drift was not atomic/zero-write: %', v_changed;
   END IF;
-  UPDATE public.salons SET noshow_protection_enabled = false WHERE id = v_salon;
+  UPDATE public.square_integrations SET deposit_enabled = false
+  WHERE salon_id = v_salon;
 
   -- OTP-disabled salons reject, rather than silently attach, a supplied
   -- session. Then enable OTP and prove missing, cross-phone, success,

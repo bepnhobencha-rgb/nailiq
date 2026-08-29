@@ -83,12 +83,21 @@ export async function settleCommittedBookingCardManagement(
       });
       const capabilityValue = await capabilityResponse.json().catch(() => null) as {
         ok?: boolean;
+        required?: boolean;
         token?: string | null;
       } | null;
       return { response: capabilityResponse, value: capabilityValue };
     });
     if (!response.ok || value?.ok !== true) {
       return { cardManagementToken: null, cardManagementPending: true };
+    }
+    // A replay can arrive after the original request already saved or
+    // auto-attached the card. The authoritative capability exchange resolves
+    // that continuation as `required: false`; never turn that completed state
+    // back into a customer-visible pending error merely because the browser is
+    // still holding the original one-time Square source token.
+    if (value.required === false) {
+      return { cardManagementToken: null, cardManagementPending: false };
     }
     cardManagementToken = typeof value.token === "string" ? value.token : null;
   } catch {

@@ -1,7 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import {
+  ConfirmStepCardCapture,
+  type ConfirmStepCardHandle,
+} from "@/components/booking/ConfirmStepCardCapture";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
 import type {
   BookingSalonMeta,
@@ -13,6 +17,15 @@ import type {
 import { salonToday, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { bookingSequenceDraftStorageKey } from "@/shared/booking/bookingSequenceDraft";
+import type { BookingMessages } from "@/shared/i18n/booking/en";
+import {
+  resolveNoShowCardRequirement,
+  type NoShowCardRequirement,
+} from "@/shared/noshow/resolveNoShowCardRequirement";
+import {
+  resolveSavedNoShowCard,
+  type SavedNoShowCard,
+} from "@/shared/noshow/resolveSavedNoShowCard";
 
 type EditableLine = {
   lineId: string;
@@ -28,6 +41,7 @@ function newId(): string {
 }
 
 export function BookingSequenceFlow({
+  t,
   services,
   addOns,
   staff,
@@ -38,6 +52,7 @@ export function BookingSequenceFlow({
   otpSessionId,
   initialSmsConsent,
 }: {
+  t: BookingMessages;
   services: readonly BookingServiceItem[];
   addOns: readonly BookingServiceItem[];
   staff: readonly BookingStaffItem[];
@@ -68,6 +83,20 @@ export function BookingSequenceFlow({
   const [stage, setStage] = useState<"build" | "review">("build");
   const [restored, setRestored] = useState(false);
   const [storageKey, setStorageKey] = useState<string | null>(null);
+  const [fetchedCardRequirement, setFetchedCardRequirement] = useState<{
+    key: string;
+    requirement: NoShowCardRequirement | null;
+  } | null>(null);
+  const [fetchedSavedCard, setFetchedSavedCard] = useState<{
+    key: string;
+    card: SavedNoShowCard | null;
+  } | null>(null);
+  const [noShowConsent, setNoShowConsent] = useState(false);
+  const [useDifferentCard, setUseDifferentCard] = useState(false);
+  const [cardSourceId, setCardSourceId] = useState<string | null>(null);
+  const [cardVerificationToken, setCardVerificationToken] = useState<string | null>(null);
+  const [cardManagementPending, setCardManagementPending] = useState(false);
+  const cardRef = useRef<ConfirmStepCardHandle>(null);
 
   useEffect(() => {
     let active = true;
@@ -151,22 +180,7 @@ export function BookingSequenceFlow({
   }, [date, salon.timezone, time]);
   const salonTodayYmd = useMemo(() => salonToday(salon.timezone), [salon.timezone]);
 
-  function beginNewIntent() {
-    setRequestId(newId());
-    setQuote(null);
-    setDone(false);
-    setReconfirmRequired(false);
-    setError(null);
-    setStage("build");
-  }
-
-  function updateLine(index: number, patch: Partial<EditableLine>) {
-    setLines((current) => current.map((line, position) =>
-      position === index ? { ...line, ...patch } : line));
-    beginNewIntent();
-  }
-
-  function intent() {
+  const currentIntent = useMemo(() => {
     if (!requestedStartTimeUtc || lines.some((line) => !line.serviceId)) return null;
     return {
       salonId: salon.id,
@@ -185,10 +199,104 @@ export function BookingSequenceFlow({
       applyEmailDiscount: applyEmailDiscount && Boolean(customer.email),
       customer,
     };
+  }, [
+    applyEmailDiscount,
+    customer,
+    lines,
+    requestId,
+    requestedStartTimeUtc,
+    salon.id,
+    sameStaffForAll,
+    voucherCode,
+  ]);
+
+  const cardRequirementKey = quote
+    ? JSON.stringify([
+        salon.id,
+        quote.pricingFingerprint,
+        customer.phone.replace(/\D/g, ""),
+        quote.lines.map((line) => line.serviceId),
+      ])
+    : null;
+  const cardRequirement =
+    cardRequirementKey && fetchedCardRequirement?.key === cardRequirementKey
+      ? fetchedCardRequirement.requirement
+      : null;
+  const cardRequirementLoading =
+    cardRequirementKey !== null && fetchedCardRequirement?.key !== cardRequirementKey;
+
+  useEffect(() => {
+    if (!cardRequirementKey || !quote?.lines.length) return;
+    if (!currentIntent) return;
+    const requestKey = cardRequirementKey;
+    let alive = true;
+    void resolveNoShowCardRequirement({
+      salonId: salon.id,
+      serviceId: quote.lines[0].serviceId,
+      sequenceIntent: currentIntent,
+      sequencePricingFingerprint: quote.pricingFingerprint,
+      clientPhone: customer.phone,
+    })
+      .then((requirement) => {
+        if (alive) setFetchedCardRequirement({ key: requestKey, requirement });
+      })
+      .catch(() => {
+        if (alive) setFetchedCardRequirement({ key: requestKey, requirement: null });
+      });
+    return () => { alive = false; };
+  }, [cardRequirementKey, currentIntent, customer.phone, quote, salon.id]);
+
+  const savedCardKey =
+    cardRequirement?.required === true && otpSessionId
+      ? JSON.stringify([salon.id, otpSessionId])
+      : null;
+  const savedCard =
+    savedCardKey && fetchedSavedCard?.key === savedCardKey
+      ? fetchedSavedCard.card
+      : null;
+  useEffect(() => {
+    if (!savedCardKey || !otpSessionId) return;
+    const requestKey = savedCardKey;
+    let alive = true;
+    void resolveSavedNoShowCard({ salonId: salon.id, otpSessionId })
+      .then((card) => {
+        if (alive) setFetchedSavedCard({ key: requestKey, card });
+      })
+      .catch(() => {
+        if (alive) setFetchedSavedCard({ key: requestKey, card: null });
+      });
+    return () => { alive = false; };
+  }, [otpSessionId, salon.id, savedCardKey]);
+
+  const reuseSavedCard =
+    cardRequirement?.required === true &&
+    savedCard?.hasSavedCard === true &&
+    !useDifferentCard;
+
+  function beginNewIntent() {
+    setRequestId(newId());
+    setQuote(null);
+    setDone(false);
+    setReconfirmRequired(false);
+    setError(null);
+    setStage("build");
+    setFetchedCardRequirement(null);
+    setFetchedSavedCard(null);
+    setNoShowConsent(false);
+    setUseDifferentCard(false);
+    setCardSourceId(null);
+    setCardVerificationToken(null);
+    setCardManagementPending(false);
+  }
+
+  function updateLine(index: number, patch: Partial<EditableLine>) {
+    setLines((current) => current.map((line, position) =>
+      position === index ? { ...line, ...patch } : line));
+    beginNewIntent();
   }
 
   async function fetchQuote() {
-    const material = intent();
+    const material = currentIntent;
     if (!material) {
       setError(vi ? "Chọn đủ dịch vụ, ngày và giờ." : "Choose every service, date, and time.");
       return;
@@ -217,11 +325,13 @@ export function BookingSequenceFlow({
   }
 
   async function createBooking() {
-    const material = intent();
+    const material = currentIntent;
     if (
       !material ||
       !quote ||
       !acceptedTerms ||
+      cardRequirementLoading ||
+      (cardRequirement?.required === true && !noShowConsent) ||
       (salon.healthAckRequired === true && !healthAcknowledged)
     ) {
       setError(vi ? "Vui lòng xác nhận điều khoản bắt buộc." : "Please accept the required terms.");
@@ -230,6 +340,17 @@ export function BookingSequenceFlow({
     setBusy(true);
     setError(null);
     try {
+      let sourceId = cardSourceId;
+      let verificationToken = cardVerificationToken;
+      if (cardRequirement?.required === true && !reuseSavedCard && !sourceId) {
+        cardRef.current?.clearError();
+        const tokenized = await cardRef.current?.tokenize();
+        if (!tokenized) return;
+        sourceId = tokenized.token;
+        verificationToken = tokenized.verificationToken ?? null;
+        setCardSourceId(sourceId);
+        setCardVerificationToken(verificationToken);
+      }
       const response = await fetch("/api/booking/sequence-create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -240,15 +361,24 @@ export function BookingSequenceFlow({
           healthAcknowledged,
           smsConsent: initialSmsConsent,
           language,
+          cardSourceId: sourceId,
+          cardVerificationToken: verificationToken,
+          noShowConsent,
         }),
       });
       const result = await response.json() as {
         ok?: boolean;
         code?: string;
         quote?: BookingSequenceQuote;
+        cardManagementPending?: boolean;
       };
       if (result.code === "pricing_changed" && result.quote) {
         setQuote(result.quote);
+        setFetchedCardRequirement(null);
+        setFetchedSavedCard(null);
+        setNoShowConsent(false);
+        setCardSourceId(null);
+        setCardVerificationToken(null);
         setReconfirmRequired(true);
         setError(vi ? "Giá hoặc lịch đã đổi. Vui lòng xem lại và bấm xác nhận lần nữa." : "Price or timing changed. Review it and confirm again.");
         return;
@@ -256,9 +386,12 @@ export function BookingSequenceFlow({
       if (!response.ok || result.ok !== true) throw new Error("create");
       if (!result.quote) throw new Error("receipt");
       setQuote(result.quote);
+      setCardManagementPending(result.cardManagementPending === true);
       setDone(true);
       setReconfirmRequired(false);
       if (storageKey) sessionStorage.removeItem(storageKey);
+      setCardSourceId(null);
+      setCardVerificationToken(null);
     } catch {
       setError(vi ? "Chưa thể hoàn tất. Booking chưa được tạo thêm; vui lòng thử lại." : "We could not finish. No extra booking was created; please retry.");
     } finally {
@@ -300,6 +433,17 @@ export function BookingSequenceFlow({
           {quote.taxBreakdown.map((tax) => <p key={`${tax.name}:${tax.rate}`}>+ {tax.name}: {formatCurrency(tax.amountCents, quote.currency)}</p>)}
           <p className="font-semibold">{vi ? "Tổng cộng" : "Total"}: {formatCurrency(quote.totalCents, quote.currency)}</p>
         </div>
+        {cardManagementPending ? (
+          <p
+            role="status"
+            data-testid="booking-sequence-card-pending"
+            className="mt-4 rounded-xl border border-[var(--booking-border)] bg-[var(--booking-bg-input)] p-3 text-sm text-[var(--booking-text-muted)]"
+          >
+            {vi
+              ? "Lịch hẹn đã được xác nhận. Việc lưu thẻ vẫn đang được đối soát — vui lòng không đặt lại lịch. Salon có thể hỗ trợ nếu cần."
+              : "Your booking is confirmed. Card storage is still being reconciled—please do not book again. The salon can help if needed."}
+          </p>
+        ) : null}
       </section>
     );
   }
@@ -431,6 +575,74 @@ export function BookingSequenceFlow({
           </div>
         </div>
       ) : null}
+      {cardRequirementLoading ? (
+        <p role="status" className="text-sm text-[var(--booking-text-muted)]">
+          {vi ? "Đang kiểm tra chính sách lưu thẻ…" : "Checking card-on-file policy…"}
+        </p>
+      ) : null}
+      {quote && cardRequirement?.required === true ? (
+        <div data-testid="booking-sequence-card-policy">
+          {reuseSavedCard && savedCard?.hasSavedCard ? (
+            <div className="rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-4">
+              <p className="text-sm font-semibold text-[var(--booking-text)]">
+                {t.noShowCardTitle ?? "Secure your appointment"}
+              </p>
+              <div className="mt-3 flex items-center gap-3 rounded-lg border border-[var(--booking-border)] bg-[var(--booking-bg-input)] px-3 py-3">
+                <span aria-hidden>💳</span>
+                <span className="text-sm font-medium text-[var(--booking-text)]">
+                  {savedCard.brand || "Card"} •••• {savedCard.last4}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setUseDifferentCard(true); setCardSourceId(null); setCardVerificationToken(null); }}
+                className="mt-2 text-xs font-semibold text-[var(--salon-primary)] underline"
+              >
+                {t.noShowUseDifferentCard ?? "Use a different card"}
+              </button>
+            </div>
+          ) : (
+            <>
+              <ConfirmStepCardCapture
+                ref={cardRef}
+                applicationId={cardRequirement.applicationId}
+                locationId={cardRequirement.locationId}
+                environment={cardRequirement.environment}
+                feeLabel={formatCurrency(cardRequirement.feeCents, quote.currency) ?? ""}
+                customerName={customer.name}
+                customerPhone={customer.phone}
+                customerEmail={customer.email ?? ""}
+                t={t}
+              />
+              {savedCard?.hasSavedCard ? (
+                <button
+                  type="button"
+                  onClick={() => { setUseDifferentCard(false); setCardSourceId(null); setCardVerificationToken(null); }}
+                  className="mt-2 text-xs font-semibold text-[var(--salon-primary)] underline"
+                >
+                  {t.noShowUseSavedCard ?? "Use my saved card instead"}
+                </button>
+              ) : null}
+            </>
+          )}
+          <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
+            <input
+              type="checkbox"
+              data-testid="booking-sequence-noshow-consent"
+              checked={noShowConsent}
+              onChange={(event) => setNoShowConsent(event.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+            />
+            <span>
+              {(t.noShowConsent ??
+                "I agree to the no-show policy and authorize this salon to charge {fee} to this card only if I don't show up.").replace(
+                "{fee}",
+                formatCurrency(cardRequirement.feeCents, quote.currency) ?? "",
+              )}
+            </span>
+          </label>
+        </div>
+      ) : null}
       {error ? <p role="alert" className="text-sm text-red-500">{error}</p> : null}
       {stage === "review" ? (
         <button type="button" onClick={() => { setStage("build"); setQuote(null); setReconfirmRequired(false); }} className="nq-booking-btn-ghost w-full">
@@ -438,7 +650,7 @@ export function BookingSequenceFlow({
         </button>
       ) : null}
       {quote ? (
-        <button type="button" disabled={busy || !acceptedTerms || (salon.healthAckRequired === true && !healthAcknowledged)} onClick={() => void createBooking()} className="nq-booking-btn-primary w-full">
+        <button type="button" disabled={busy || cardRequirementLoading || !acceptedTerms || (cardRequirement?.required === true && !noShowConsent) || (salon.healthAckRequired === true && !healthAcknowledged)} onClick={() => void createBooking()} className="nq-booking-btn-primary w-full">
           {busy ? "…" : reconfirmRequired ? (vi ? "Xác nhận giá mới" : "Confirm updated price") : (vi ? "Xác nhận đặt chuỗi" : "Confirm sequence")}
         </button>
       ) : (

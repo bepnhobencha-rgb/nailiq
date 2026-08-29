@@ -143,6 +143,27 @@ describe("committed booking card-only continuation", () => {
     });
   });
 
+  it("treats an already-resolved replay as complete without redispatching the held source", async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({ ok: true, required: false, token: null }),
+    );
+
+    const result = await settleCommittedBookingCardManagement(
+      {
+        ...baseInput,
+        cardSourceId: "already-consumed-provider-token",
+        consent: true,
+      },
+      fetcher,
+    );
+
+    expect(result).toEqual({
+      cardManagementToken: null,
+      cardManagementPending: false,
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("does not redispatch or expose a possibly consumed token after an ambiguous save", async () => {
     const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       void init;

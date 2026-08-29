@@ -12,8 +12,10 @@ import {
 } from "@/shared/booking/bookingSequence";
 import { loadPublicBookingSequenceReadiness } from "@/shared/booking/bookingSequenceReadiness";
 import { sendBookingConfirmationEmail } from "@/shared/booking/sendBookingConfirmationEmail";
+import { settleCommittedBookingCardManagement } from "@/shared/booking/settleCommittedBookingCardManagement";
 import { clientIp } from "@/shared/lib/inAppRateLimit";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { v1AllowsNoShowCardOnFile } from "@/shared/release/v1IntegrationScope";
 import { readJsonObjectWithLimit } from "@/shared/security/readJsonObjectWithLimit";
 import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
 
@@ -72,6 +74,9 @@ export async function POST(request: NextRequest) {
         "healthAcknowledged",
         "smsConsent",
         "language",
+        "cardSourceId",
+        "cardVerificationToken",
+        "noShowConsent",
       ].includes(key),
     )
   ) {
@@ -91,6 +96,17 @@ export async function POST(request: NextRequest) {
   const healthAcknowledged = raw.healthAcknowledged;
   const smsConsent = raw.smsConsent;
   const language = raw.language;
+  const cardSourceId = raw.cardSourceId == null
+    ? null
+    : typeof raw.cardSourceId === "string"
+      ? raw.cardSourceId.trim()
+      : "";
+  const cardVerificationToken = raw.cardVerificationToken == null
+    ? null
+    : typeof raw.cardVerificationToken === "string"
+      ? raw.cardVerificationToken.trim()
+      : "";
+  const noShowConsent = raw.noShowConsent == null ? false : raw.noShowConsent;
   if (
     !intent ||
     !SHA256_RE.test(expectedPricingFingerprint) ||
@@ -98,7 +114,13 @@ export async function POST(request: NextRequest) {
     (otpSessionId != null && !UUID_RE.test(otpSessionId)) ||
     typeof healthAcknowledged !== "boolean" ||
     typeof smsConsent !== "boolean" ||
-    (language !== "en" && language !== "vi")
+    (language !== "en" && language !== "vi") ||
+    cardSourceId === "" ||
+    (cardSourceId != null && cardSourceId.length > 4_096) ||
+    cardVerificationToken === "" ||
+    (cardVerificationToken != null && cardVerificationToken.length > 4_096) ||
+    typeof noShowConsent !== "boolean" ||
+    (cardSourceId != null && noShowConsent !== true)
   ) {
     return json({ ok: false, code: "invalid_request" }, 400);
   }
@@ -115,7 +137,13 @@ export async function POST(request: NextRequest) {
   // readiness and OTP preflight. The read-only DB seam waits for an in-flight
   // create and binds the full canonical request (including consent/locale).
   const replay = await replayPublicBookingSequence(createArgs);
-  if (replay.ok) return finishSequenceCreate(replay, intent);
+  if (replay.ok) {
+    return finishSequenceCreate(replay, intent, request, {
+      cardSourceId,
+      cardVerificationToken,
+      noShowConsent,
+    });
+  }
   if (replay.code !== "replay_not_found") {
     return sequenceCreateFailure(replay);
   }
@@ -151,14 +179,49 @@ export async function POST(request: NextRequest) {
   }
 
   const result = await createPublicBookingSequence(createArgs);
-  if (result.ok) return finishSequenceCreate(result, intent);
+  if (result.ok) {
+    return finishSequenceCreate(result, intent, request, {
+      cardSourceId,
+      cardVerificationToken,
+      noShowConsent,
+    });
+  }
   return sequenceCreateFailure(result);
 }
 
-function finishSequenceCreate(
+async function finishSequenceCreate(
   result: Extract<BookingSequenceCreateResult, { ok: true }>,
   intent: SequenceBookingIntent,
+  request: NextRequest,
+  cardInput: {
+    cardSourceId: string | null;
+    cardVerificationToken: string | null;
+    noShowConsent: boolean;
+  },
 ) {
+  const requestOrigin = new URL(request.url).origin;
+  const internalFetcher: typeof fetch = (input, init) => {
+    const target = new URL(String(input), requestOrigin);
+    const headers = new Headers(init?.headers);
+    headers.set("Origin", requestOrigin);
+    return fetch(target, { ...init, headers });
+  };
+  // The DB receipt above is already canonical. Card-on-file is a bounded,
+  // post-commit continuation: failures and unknown provider outcomes are
+  // surfaced as pending and must never change this booking to a false failure.
+  const cardManagement = await settleCommittedBookingCardManagement(
+    {
+      customerPaymentGatewayEnabled: v1AllowsNoShowCardOnFile(),
+      salonId: intent.salonId,
+      bookingId: result.bookingId,
+      createIdempotencyKey: intent.requestId,
+      pricingFingerprint: result.quote.pricingFingerprint,
+      cardSourceId: cardInput.cardSourceId,
+      cardVerificationToken: cardInput.cardVerificationToken,
+      consent: cardInput.noShowConsent,
+    },
+    internalFetcher,
+  );
   after(async () => {
     try {
       const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
@@ -193,7 +256,7 @@ function finishSequenceCreate(
       }),
     );
   }
-  return json(result, 200);
+  return json({ ...result, ...cardManagement }, 200);
 }
 
 function sequenceCreateFailure(

@@ -408,8 +408,15 @@ describe("sequence DB/app contract adversarial acceptance", () => {
     expect(readinessSql).toContain("multi_service_booking_qa_salon_id");
     expect(readinessSql).toContain("qa_allowlisted");
     expect(readinessSql).toContain("payment_policy_ready");
-    expect(readinessSql).toMatch(
-      /coalesce\(s\.noshow_protection_enabled, false\) IS FALSE[\s\S]{0,180}?nullif\(trim\(s\.payment_provider\), ''\) IS NULL/,
+    expect(readinessSql).toContain("booking_sequence_payment_policy_ready");
+    expect(migrationSql).toMatch(
+      /booking_sequence_payment_policy_ready[\s\S]{0,1800}?deposit_enabled[\s\S]{0,300}?access_token[\s\S]{0,300}?application_id/,
+    );
+    expect(migrationSql).toContain(
+      "pg_catalog.jsonb_typeof(s.cancellation_policy) = 'object'",
+    );
+    expect(migrationSql).toContain(
+      "(s.cancellation_policy ->> 'en') !~ '\\[[^]]+\\]'",
     );
     expect(readinessSql).toMatch(
       /'ready',\s*v_platform AND coalesce\(v_salon, false\)[\s\S]{0,120}?coalesce\(v_qa_allowlisted, false\)[\s\S]{0,120}?coalesce\(v_catalog, false\) AND coalesce\(v_capacity, false\)[\s\S]{0,120}?coalesce\(v_payment_policy, false\)/,
