@@ -13,6 +13,8 @@ const waitlist = readFileSync(resolve(root,
   "supabase/migrations/20260820143000_add_action_scoped_waitlist_claim_capabilities.sql"), "utf8");
 const workflow = readFileSync(resolve(root, ".github/workflows/migration-history-rehearsal.yml"), "utf8");
 const parity = readFileSync(resolve(root, "scripts/check-schema-parity.ts"), "utf8");
+const rehearsal = readFileSync(resolve(root,
+  "scripts/security/rehearse-booking-management-capabilities.sql"), "utf8");
 
 describe("MQA-0099 database capability boundary", () => {
   it("keeps booking actions separate, service-only, replay-bound, and side-effect explicit", () => {
@@ -83,10 +85,16 @@ describe("MQA-0099 database capability boundary", () => {
       "rehearse-booking-management-capabilities-concurrency.mjs",
       "rehearse-waitlist-claim-capabilities.sql",
       "rehearse-waitlist-claim-capabilities-concurrency.mjs"]) expect(workflow).toContain(proof);
-    expect(parity).toContain("tables: 183");
-    expect(parity).toContain("columns: 2736");
-    expect(parity).toContain("functions: 402");
-    expect(parity).toContain("indexes: 673");
-    expect(parity).toContain("service_role: 176");
+    expect(parity).toContain("tables: 186");
+    expect(parity).toContain("columns: 2802");
+    expect(parity).toContain("functions: 411");
+    expect(parity).toContain("indexes: 691");
+    expect(parity).toContain("service_role: 179");
+  });
+
+  it("keeps the freed-slot auto-book fixture inside salon hours at every wall-clock time", () => {
+    expect(rehearsal).toContain("interval '3 days 12 hours'");
+    expect(rehearsal).toContain("interval '3 days 12 hours 30 minutes'");
+    expect(rehearsal).not.toContain("transaction_timestamp()+interval '3 days 30 minutes'");
   });
 });

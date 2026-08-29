@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   getDashboardWriteClient: vi.fn(),
   isReleaseFeatureVisible: vi.fn(),
   loadNoShowDashboard: vi.fn(),
+  loadNoShowFeeReviewQueue: vi.fn(),
   redirect: vi.fn(),
 }));
 
@@ -21,6 +22,9 @@ vi.mock("@/shared/lib/supabase/serviceRole", () => ({
 }));
 vi.mock("@/shared/noshow/noShowDashboardActions", () => ({
   loadNoShowDashboard: mocks.loadNoShowDashboard,
+}));
+vi.mock("@/shared/noshow/noShowFeeApprovalActions", () => ({
+  loadNoShowFeeReviewQueue: mocks.loadNoShowFeeReviewQueue,
 }));
 vi.mock("@/shared/features/platformFeatureFlags", () => ({
   isReleaseFeatureVisible: mocks.isReleaseFeatureVisible,
@@ -89,6 +93,7 @@ describe("No-Show Protection page deep-link boundary", () => {
       waitlist: [],
       uncollectedFees: [],
     });
+    mocks.loadNoShowFeeReviewQueue.mockResolvedValue([]);
     mocks.isReleaseFeatureVisible.mockResolvedValue(false);
   });
 

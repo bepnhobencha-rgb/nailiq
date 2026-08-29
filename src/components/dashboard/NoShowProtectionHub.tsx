@@ -23,6 +23,11 @@ import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
 import { StripeConnectCard } from "@/components/dashboard/StripeConnectCard";
+import { evaluatePolicyReadiness } from "@/shared/lib/cancellationPolicy";
+import {
+  type NoShowFeeReviewQueueItem,
+} from "@/shared/noshow/noShowFeeApprovalActions";
+import { NoShowFeeApprovalQueue } from "@/components/dashboard/NoShowFeeApprovalQueue";
 
 type Props = {
   slug: string;
@@ -77,6 +82,7 @@ type Props = {
   waitlist: WaitlistOpportunity[];
   /** Historical provider fee records, read-only in V1. */
   uncollectedFees: UncollectedFee[];
+  feeReviewQueue: NoShowFeeReviewQueueItem[];
 };
 
 function formatTime(isoUtc: string): string {
@@ -386,6 +392,7 @@ function NoShowHistorySection({ slug, language }: { slug: string; language: "en"
 
 export function NoShowProtectionHub({
   slug,
+  salonId,
   isOwner,
   autoBookEnabled: initialAutoBook,
   remindersEnabled: initialReminders,
@@ -423,6 +430,7 @@ export function NoShowProtectionHub({
   unconfirmed,
   waitlist,
   uncollectedFees,
+  feeReviewQueue,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -469,16 +477,16 @@ export function NoShowProtectionHub({
     initialSelfCancelPct == null ? "" : String(initialSelfCancelPct),
   );
   const [cardSaveMsg, setCardSaveMsg] = useState<string | null>(null);
+  const policyReady = evaluatePolicyReadiness({ en: policyEn, vi: policyVi }).ready;
 
   function saveCardSettings() {
     startTransition(async () => {
       const r = await updateNoShowCardSettings(slug, {
         payment_provider: provider,
         noshow_protection_enabled: noshowEnabled,
-        // Phase-2 money settings remain unchanged and are not editable in V1.
-        noshow_fee_percent: initialNoshowPct,
+        noshow_fee_percent: parseInt(noshowPct, 10) || 0,
         noshow_risk_threshold: parseInt(noshowThreshold, 10) || 0,
-        noshow_group_whole_party: initialWholeParty,
+        noshow_group_whole_party: wholeParty,
         noshow_require_new_customer: reqNew,
         noshow_require_prior_noshow: reqPrior,
         noshow_min_noshow_count: parseInt(minCount, 10) || 1,
@@ -488,7 +496,13 @@ export function NoShowProtectionHub({
         self_cancel_window_hours: initialSelfCancelWindow,
         self_cancel_fee_percent: initialSelfCancelPct,
       });
-      setCardSaveMsg(r.ok ? "Đã lưu" : (r.error ?? "Lỗi"));
+      setCardSaveMsg(
+        r.ok
+          ? "Đã lưu"
+          : r.error === "no_show_policy_not_ready"
+            ? "Chưa thể bật: cần chính sách Anh/Vi hoàn chỉnh, không còn chỗ [điền]."
+            : (r.error ?? "Lỗi"),
+      );
       setTimeout(() => setCardSaveMsg(null), 3000);
       router.refresh();
     });
@@ -514,7 +528,7 @@ export function NoShowProtectionHub({
   function saveSettings() {
     startTransition(async () => {
       const cents = Math.round(parseFloat(threshold) * 100);
-      await updateReminderSettings(slug, {
+      const r = await updateReminderSettings(slug, {
         reminder_24h_enabled: reminder24h,
         reminder_3h_enabled: reminder3h,
         sms_reminders_enabled: smsReminders,
@@ -528,7 +542,13 @@ export function NoShowProtectionHub({
         cancellation_policy: { en: policyEn, vi: policyVi },
         health_ack_required: healthAck,
       });
-      setSaveMsg("Settings saved");
+      setSaveMsg(
+        r.ok
+          ? "Settings saved"
+          : r.error === "no_show_policy_not_ready"
+            ? "Cần hoàn tất chính sách Anh/Vi trước khi lưu."
+            : (r.error ?? "Could not save settings"),
+      );
       setTimeout(() => setSaveMsg(null), 3000);
       router.refresh();
     });
@@ -596,6 +616,12 @@ export function NoShowProtectionHub({
           language={language}
         />
 
+        <NoShowFeeApprovalQueue
+          slug={slug}
+          salonId={salonId}
+          items={feeReviewQueue}
+        />
+
         {/* Summary cards */}
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
           <StatCard label="Unconfirmed (48h)" value={summary.unconfirmedCount} />
@@ -627,6 +653,31 @@ export function NoShowProtectionHub({
                 ? "Có thể mời khách mới hoặc booking rủi ro lưu thẻ. Lưu thẻ không phải là thu tiền."
                 : "New customers or higher-risk bookings may be asked to save a card. Saving a card is not a charge."}
             </p>
+
+            <div
+              data-testid="no-show-policy-readiness"
+              className={`mt-4 rounded-xl border p-3 ${
+                policyReady
+                  ? "border-emerald-400/30 bg-emerald-400/10"
+                  : "border-amber-400/40 bg-amber-400/10"
+              }`}
+            >
+              <p className="text-xs font-semibold text-nq-text">
+                {policyReady
+                  ? language === "vi" ? "✓ Chính sách sẵn sàng" : "✓ Policy ready"
+                  : language === "vi" ? "Cần hoàn tất chính sách trước khi bật" : "Finish the policy before enabling"}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-nq-muted">
+                {language === "vi"
+                  ? "Cần đủ tiếng Anh + tiếng Việt và xoá mọi chỗ giữ dạng [24 giờ] hoặc [X%]. Thay đổi nội dung, mức phí, tiền tệ hay phạm vi nhóm sẽ yêu cầu khách đồng ý lại."
+                  : "Both languages are required and every bracketed placeholder must be replaced. Changing text, fee, currency, or group scope requires fresh customer consent."}
+              </p>
+              {!policyReady ? (
+                <a href="#cancellation-policy-editor" className="mt-2 inline-block text-xs font-semibold text-nq-primary underline">
+                  {language === "vi" ? "Hoàn tất chính sách" : "Complete policy"}
+                </a>
+              ) : null}
+            </div>
 
             <label className="mt-4 block text-xs font-medium text-nq-muted">
               Cổng thanh toán
@@ -760,8 +811,37 @@ export function NoShowProtectionHub({
               />
             </div>
 
-            {/* Phase-2 policy controls remain source-compatible but are not
-                exposed or persisted by V1. */}
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="block text-xs text-nq-muted">
+                {language === "vi" ? "Phí no-show tối đa theo dịch vụ (%)" : "No-show fee by service (%)"}
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={noshowPct}
+                  onChange={(e) => setNoshowPct(e.target.value)}
+                  data-testid="noshow-fee-percent-visible"
+                  className="mt-1 block w-24 rounded-lg border border-nq-border/50 bg-nq-bg px-2 py-1 text-sm text-nq-text"
+                />
+              </label>
+              <label className="flex items-start gap-2 text-xs text-nq-muted">
+                <input
+                  type="checkbox"
+                  checked={wholeParty}
+                  onChange={(e) => setWholeParty(e.target.checked)}
+                  data-testid="noshow-whole-party-visible"
+                  className="mt-0.5 h-4 w-4 accent-nq-primary"
+                />
+                <span>
+                  {language === "vi"
+                    ? "Thẻ người tổ chức áp dụng cho toàn nhóm; số tiền chính xác vẫn phải được Owner duyệt."
+                    : "Organizer card covers the whole party; the exact amount still needs owner approval."}
+                </span>
+              </label>
+            </div>
+
+            {/* Remaining legacy Phase-2 controls stay source-compatible but are
+                not exposed or persisted by this release. */}
             <div className="hidden" aria-hidden="true">
             {noshowEnabled ? (
               <>
@@ -942,7 +1022,7 @@ export function NoShowProtectionHub({
 
             <button
               onClick={saveCardSettings}
-              disabled={isPending}
+              disabled={isPending || (noshowEnabled && !policyReady)}
               className="mt-4 rounded-xl bg-nq-primary px-4 py-2 text-xs font-semibold text-black transition hover:bg-nq-primary/90 disabled:opacity-50"
             >
               {isPending ? "Đang lưu…" : "Lưu"}
@@ -1148,7 +1228,7 @@ export function NoShowProtectionHub({
                 {/* Cancellation / No-Show / Deposit policy — admin-editable,
                     bilingual, shown to customers + linked from the confirmation
                     email. De-hardcoded: blank → a built-in default is used. */}
-                <div className="mt-4 rounded-xl border border-nq-border/30 p-3">
+                <div id="cancellation-policy-editor" className="mt-4 rounded-xl border border-nq-border/30 p-3">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-nq-text">
                       Chính sách huỷ / vắng mặt / cọc · Cancellation policy
@@ -1163,7 +1243,7 @@ export function NoShowProtectionHub({
                     </a>
                   </div>
                   <p className="mt-1 text-xs text-nq-muted">
-                    Khách thấy ở trang chính sách + email + lúc đồng ý. Để trống = dùng mẫu mặc định.
+                    Khách thấy ở trang chính sách + email + lúc đồng ý. Mẫu mặc định chỉ để soạn thảo và không thể bật thu phí.
                   </p>
                   <label className="mt-2 block text-xs text-nq-muted">English</label>
                   <textarea

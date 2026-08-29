@@ -3,14 +3,21 @@
 Branch: `feat/drc-lateness-noshow-ux` · Surface: Receptionist Center (`/dashboard/[slug]/center`)
 Ngày: 2026-06-14
 
+> **Current truth (2026-08-29):** tài liệu này mô tả thiết kế cũ và không còn
+> là hợp đồng vận hành. No-show hiện có cửa sổ hoàn tác tối thiểu **60 giây**;
+> booking chỉ chuyển terminal sau commit. Attendance, quyết định phí và trạng
+> thái thanh toán là ba state riêng. Timeline không được hiển thị “bấm để thu”
+> khi không có action. Mọi charge cần receipt Owner/Admin bất biến; provider
+> dispatch vẫn default-off và phải qua release gate + salon allowlist.
+
 ## 1. Mục tiêu
 Trên grid lễ tân: (a) block khách **đến trễ / chưa bắt đầu** phải đổi màu leo thang nhắc bấm *Bắt đầu dịch vụ*; (b) block **no-show** hiện màu báo động thay vì biến mất; (c) sửa 2 lỗ hổng tiền bạc đã phát hiện. Triết lý: màu sắc **gắn với hệ quả tiền** + nút 1-chạm, không phải màu câm.
 
 ## 2. Hai lỗ hổng logic đang sửa (đã verify trong code)
 | Lỗ hổng | Hiện trạng | Quyết định của Huy |
 |---|---|---|
-| **A. Auto-mark không thu phí** | cron `auto_mark_no_shows()` (SQL) chỉ đổi status + bump no_show_count; KHÔNG gọi `chargeNoShowFee()` | Giữ KHÔNG auto-thu; gắn cờ **"Chưa thu — bấm để thu"** cho lễ tân duyệt |
-| **B. Manual luôn tự thu** | `markNoShowBooking()` luôn best-effort `chargeNoShowFee()`, không cho chọn | Bật popup **"Thu $X / Miễn phí"** khi bấm (chỉ khi có thẻ + phí>0) |
+| **A. Auto-mark không thu phí** | No-show candidate/commit không gọi provider | Giữ KHÔNG auto-thu; chuyển sang phiếu Owner/Admin duyệt |
+| **B. Attendance và tiền từng bị nhập chung** | Thiết kế cũ cho phép mark kéo theo charge | Đã tách attendance → fee review → immutable approval → gated dispatch |
 
 ## 3. Tính năng cốt lõi
 ### M1 — Lateness escalation trên block (`confirmed`/`pending` quá `start_time`)
@@ -23,14 +30,14 @@ Tier tính từ `minutesLate` so với ngưỡng salon `auto_no_show_minutes` (n
 
 ### M2 — No-show "bia mộ ghost" trên grid
 - Bỏ lọc `no_show` khỏi grid; render **vạch đỏ mỏng** ép mép slot, **dock lane phụ** nếu walk-in đã lấp chỗ (không che booking sống — vì `no_show` không giữ slot qua GIST).
-- Badge: 💳 *"Đã thu $X"* / ⏳ *"Chưa thu $X — bấm để thu"* / *"Miễn"* / không thẻ = chỉ nhãn No-show.
-- Nút 1-chạm: **Hoàn tác** (undo có sẵn) + **Thu phí** (nếu chưa thu) / **Miễn**.
+- Badge: 💳 *"Đã thu $X"* / ⏳ *"Phí $X cần Owner duyệt"* / *"Miễn"* / không thẻ = chỉ nhãn No-show.
+- Cửa sổ attendance có **Hoàn tác 60 giây**. Thu/Miễn nằm trong phiếu duyệt riêng, không nằm trong cùng thao tác mark no-show.
 
-### M3 — Backend: lựa chọn thu/miễn + thu tay
-- `markNoShowBooking(slug, {…, chargeFee?: boolean})`: `true`→charge ngay; `false`→set `noshow_charge_status='waived'`; bỏ trống (auto-mark path không đổi) → giữ 'saved'.
-- Action mới `chargeNoShowFeeManual(slug,{salonId,bookingId})` — role gate + `chargeNoShowFee()` cho bia mộ "chưa thu".
-- Action mới `waiveNoShowFee(slug,{…})` — set `'waived'`, audit-log.
-- `noshow_charge_status` vocab thêm `'waived'` (cột text, không CHECK enum → an toàn). Auto-mark giữ `'saved'` = "chưa thu".
+### M3 — Backend: fee approval truth
+- `booking_no_show_fee_reviews` giữ snapshot số tiền, currency, thẻ, consent và policy version.
+- `booking_no_show_fee_approval_receipts` là receipt bất biến; chỉ Owner/Admin quyết định Charge/Waive.
+- Duyệt Charge không tự gọi provider. Dispatch là action riêng, yêu cầu server release gate, salon allowlist và authoritative payment ledger.
+- Square `payment.created`/`payment.updated` được signature-check, tenant/account/location-bound, dedupe và xử lý out-of-order trước khi cập nhật trạng thái tiền.
 
 ## 4. Failure modes & mitigations
 | Failure mode | Mitigation |

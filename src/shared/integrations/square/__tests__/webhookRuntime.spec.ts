@@ -9,6 +9,7 @@ import {
   readSquareWebhookBody,
   resolveSquareWebhookProfile,
   sanitizeSquareOptionalEvent,
+  sanitizeSquarePaymentEvent,
   sanitizeSquareRefundEvent,
   verifySquareWebhookSignature,
 } from "../webhookRuntime";
@@ -91,6 +92,73 @@ describe("Square webhook runtime boundary", () => {
       updatedAt: "2026-08-23T17:00:00.123Z",
     });
     expect(JSON.stringify(sanitizeSquareRefundEvent(event!))).not.toMatch(/16045550199|secret|reason/);
+  });
+
+  it("projects payment truth without retaining customer or card data", () => {
+    const event = parseSquareEvent(JSON.stringify({
+      merchant_id: "merchant-1",
+      type: "payment.updated",
+      event_id: "payment-event-1",
+      created_at: "2026-08-29T04:10:01Z",
+      data: {
+        id: "payment-1",
+        object: {
+          payment: {
+            id: "payment-1",
+            location_id: "location-1",
+            status: "COMPLETED",
+            amount_money: { amount: 2_500, currency: "CAD" },
+            updated_at: "2026-08-29T04:10:00.123Z",
+            reference_id: "booking:11111111-1111-4111-8111-111111111111",
+            customer_id: "customer-secret",
+            card_details: { card: { last_4: "4242" } },
+          },
+        },
+      },
+    }));
+    expect(event).not.toBeNull();
+    expect(sanitizeSquarePaymentEvent(event!)).toEqual({
+      paymentId: "payment-1",
+      locationId: "location-1",
+      status: "COMPLETED",
+      amountCents: 2_500,
+      currency: "CAD",
+      updatedAt: "2026-08-29T04:10:00.123Z",
+      referenceId: "booking:11111111-1111-4111-8111-111111111111",
+    });
+    expect(JSON.stringify(sanitizeSquarePaymentEvent(event!))).not.toMatch(/customer-secret|4242/);
+  });
+
+  it.each([
+    ["wrong data id", { dataId: "other" }],
+    ["missing location", { location_id: undefined }],
+    ["unsupported status", { status: "UNKNOWN" }],
+    ["zero amount", { amount_money: { amount: 0, currency: "CAD" } }],
+    ["bad currency", { amount_money: { amount: 100, currency: "cad" } }],
+    ["bad revision time", { updated_at: "today" }],
+  ])("rejects payment material with %s", (_name, override) => {
+    const { dataId = "payment-1", ...paymentOverride } = override as Record<string, unknown>;
+    const event = parseSquareEvent(JSON.stringify({
+      merchant_id: "merchant-1",
+      type: "payment.created",
+      event_id: "payment-event-1",
+      created_at: "2026-08-29T04:10:01Z",
+      data: {
+        id: dataId,
+        object: {
+          payment: {
+            id: "payment-1",
+            location_id: "location-1",
+            status: "PENDING",
+            amount_money: { amount: 100, currency: "CAD" },
+            updated_at: "2026-08-29T04:10:00Z",
+            ...paymentOverride,
+          },
+        },
+      },
+    }));
+    expect(event).not.toBeNull();
+    expect(sanitizeSquarePaymentEvent(event!)).toBeNull();
   });
 
   it.each([

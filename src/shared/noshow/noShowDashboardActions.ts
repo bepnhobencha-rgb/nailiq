@@ -4,6 +4,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { attributeRecentAudit } from "@/shared/dashboard/attributeAudit";
 import { isOwner, isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
+import { evaluatePolicyReadiness } from "@/shared/lib/cancellationPolicy";
 import {
   chargeNoShowFeeManual as chargeNoShowFeeOperational,
   sendNoShowFeeLink as sendNoShowFeeLinkOperational,
@@ -403,9 +404,23 @@ export async function updateReminderSettings(
       en: typeof cp.en === "string" ? cp.en.slice(0, 8000) : "",
       vi: typeof cp.vi === "string" ? cp.vi.slice(0, 8000) : "",
     };
+
+    const { data: existingPolicyState } = await createServiceRoleClient()
+      .from("salons" as never)
+      .select("noshow_protection_enabled" as never)
+      .eq("id" as never, ctx.salon.id)
+      .maybeSingle();
+    if (
+      (existingPolicyState as { noshow_protection_enabled?: boolean } | null)
+        ?.noshow_protection_enabled === true &&
+      !evaluatePolicyReadiness(patch.cancellation_policy as { en?: string; vi?: string }).ready
+    ) {
+      return { ok: false, error: "no_show_policy_not_ready" };
+    }
   }
 
   const supabase = createServiceRoleClient();
+
   const { error } = await supabase
     .from("salons" as never)
     .update(patch as never)
@@ -563,6 +578,19 @@ export async function updateNoShowCardSettings(
   if (Object.keys(patch).length === 0) return { ok: true };
 
   const supabase = createServiceRoleClient();
+  if (settings.noshow_protection_enabled === true) {
+    const { data: salonPolicy, error: policyError } = await supabase
+      .from("salons" as never)
+      .select("cancellation_policy" as never)
+      .eq("id" as never, ctx.salon.id)
+      .maybeSingle();
+    if (policyError) return { ok: false, error: "no_show_policy_unavailable" };
+    const stored = (salonPolicy as { cancellation_policy?: unknown } | null)
+      ?.cancellation_policy;
+    if (!evaluatePolicyReadiness(stored as { en?: string; vi?: string } | null).ready) {
+      return { ok: false, error: "no_show_policy_not_ready" };
+    }
+  }
   const { error } = await supabase
     .from("salons" as never)
     .update(patch as never)

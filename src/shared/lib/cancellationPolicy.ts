@@ -10,6 +10,36 @@ export type PolicyLang = "en" | "vi";
 
 export type StoredPolicy = { en?: string; vi?: string } | null | undefined;
 
+const POLICY_PLACEHOLDER = /\[[^\]]+\]/;
+
+export type PolicyReadiness = {
+  ready: boolean;
+  reasons: Array<
+    | "missing_english"
+    | "missing_vietnamese"
+    | "english_placeholder"
+    | "vietnamese_placeholder"
+  >;
+};
+
+/**
+ * A salon may display the built-in template while setting up, but the template
+ * is not charge-ready.  Money-related protection can only be enabled after the
+ * salon has supplied both language versions and removed every bracketed
+ * placeholder.  This is deliberately deterministic so UI and server gates can
+ * explain the same result.
+ */
+export function evaluatePolicyReadiness(stored: StoredPolicy): PolicyReadiness {
+  const en = stored && typeof stored === "object" ? stored.en?.trim() ?? "" : "";
+  const vi = stored && typeof stored === "object" ? stored.vi?.trim() ?? "" : "";
+  const reasons: PolicyReadiness["reasons"] = [];
+  if (!en) reasons.push("missing_english");
+  if (!vi) reasons.push("missing_vietnamese");
+  if (en && POLICY_PLACEHOLDER.test(en)) reasons.push("english_placeholder");
+  if (vi && POLICY_PLACEHOLDER.test(vi)) reasons.push("vietnamese_placeholder");
+  return { ready: reasons.length === 0, reasons };
+}
+
 /** A sensible bilingual default. Kept plain text (rendered with line breaks) so
  *  a non-technical salon owner can edit it. */
 export function defaultPolicy(lang: PolicyLang, salonName: string): string {

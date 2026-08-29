@@ -53,6 +53,8 @@ export function GuidedBookingPolicySetup({
         setMessage(
           result.error === "policy_languages_required"
             ? "Cần nhập cả English và Tiếng Việt / Both languages are required."
+            : result.error === "policy_placeholders_remaining"
+              ? "Cần thay mọi mục [24 giờ] / [X%] trước khi lưu. / Replace every bracketed placeholder."
             : "Không lưu được / Could not save.",
         );
         return;

@@ -1908,10 +1908,14 @@ function NoShowTombstone({
     chargeStatus !== "charged" &&
     chargeStatus !== "waived"
   ) {
-    statusLabel = vi
-      ? `Chưa thu ${amountStr} — bấm để thu`
-      : `Unpaid ${amountStr} — tap to charge`;
-    statusClass = "text-nq-error";
+    statusLabel = onCharge
+      ? vi
+        ? `Chờ duyệt ${amountStr} — bấm để xem`
+        : `${amountStr} review pending — tap to view`
+      : vi
+        ? `Phí ${amountStr} cần Owner duyệt`
+        : `${amountStr} fee needs owner review`;
+    statusClass = "text-nq-warning";
   } else {
     statusLabel = vi ? "Vắng mặt" : "No-show";
     statusClass = "text-nq-muted";
