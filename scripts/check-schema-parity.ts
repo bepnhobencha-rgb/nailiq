@@ -100,13 +100,16 @@ import { execFileSync } from "node:child_process";
  * The 20260829174542 multi-service card-policy migration adds one
  * service-role-only payment-policy readiness function and replaces the
  * existing sequence readiness/resolver/create definitions in place.
+ * The 20260829183626 controlled rollout migration adds one private rollout
+ * table, one restrictive policy, one authorization helper, and one atomic
+ * service-role-only per-salon control RPC.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
  */
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
-  tables: 186,
+  tables: 187,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -148,7 +151,8 @@ const PRODUCTION = {
   // +28 no-show decision, undo, commit and effect-lease columns.
   // +66 no-show fee review, immutable approval receipt and Square payment
   // webhook truth columns.
-  columns: 2802,
+  // +6 private per-salon multi-service rollout authorization columns.
+  columns: 2808,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -157,7 +161,8 @@ const PRODUCTION = {
   // +2 restrictive browser-deny policies on delivery truth tables.
   // +2 restrictive browser-deny policies on booking-OTP delivery truth.
   // +1 restrictive direct-access deny policy on no-show decisions.
-  policies: 206,
+  // +1 restrictive direct-access deny policy on multi-service rollouts.
+  policies: 207,
   /**
    * APP functions only — refreshed after the rehearsed forward migrations.
    *
@@ -186,7 +191,8 @@ const PRODUCTION = {
   // webhook reconciliation functions.
   // +1 no-show fee queue decision projection.
   // +1 multi-service booking payment-policy readiness function.
-  functions: 412,
+  // +2 multi-service rollout authorization/control functions.
+  functions: 414,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -207,7 +213,8 @@ const PRODUCTION = {
   // +10 booking-OTP attempt/event/correlation indexes.
   // +5 no-show decision primary, request, booking-state, due and effect indexes.
   // +18 no-show fee review/receipt/webhook primary, unique, lookup and FK indexes.
-  indexes: 691,
+  // +1 multi-service rollout primary key.
+  indexes: 692,
 } as const;
 
 /**
@@ -228,6 +235,7 @@ const CRITICAL_TABLES = [
   "client_profiles",
   "salon_members",
   "owner_booking_notification_outbox",
+  "multi_service_booking_rollouts",
   "superadmins",
   "superadmin_audit_logs",
   "ai_execution_jobs",
@@ -493,6 +501,8 @@ const CRITICAL_FUNCTIONS = [
   "load_booking_sequence_receipt",
   "inspect_booking_management_capability_with_sequence",
   "configure_multi_service_booking_qa_salon",
+  "multi_service_booking_rollout_authorized",
+  "configure_multi_service_booking_rollout",
   "square_feature_contract",
   "resolve_square_feature_operation_material",
   "claim_square_feature_operation",
