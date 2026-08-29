@@ -244,11 +244,15 @@ async function dispatch(
       const result = await deps.sendSms(envelope);
       if (!result.ok && (
         result.error === "sms_policy_unavailable" ||
-        result.error === "sms_consent_unavailable"
+        result.error === "sms_consent_unavailable" ||
+        result.error === "sms_delivery_truth_unavailable" ||
+        result.error === "status_callback_unavailable"
       )) {
         const reason = result.error === "sms_policy_unavailable"
           ? "sms_policy_unavailable_pre_acceptance"
-          : "consent_unavailable_pre_acceptance";
+          : result.error === "sms_consent_unavailable"
+            ? "consent_unavailable_pre_acceptance"
+            : "sms_delivery_truth_unavailable_pre_acceptance";
         return {
           outcome: "rejected", reason, status: "failed",
           providerMessageId: null, errorCode: reason,
@@ -589,6 +593,7 @@ const defaultDeps: BookingConfirmationRetryDeliveryDeps = {
       statusCallbackUrl: envelope.statusCallbackUrl,
       salonIsTest: envelope.salonIsTest,
       lang: envelope.lang,
+      notificationType: "booking_confirmation",
     });
   },
   async sendEmail(envelope, context) {

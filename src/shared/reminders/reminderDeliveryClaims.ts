@@ -12,6 +12,7 @@ export type ReminderDeliveryStatus =
 
 type ProviderResult = {
   ok: boolean;
+  outcome?: "accepted" | "suppressed" | "rejected" | "unknown";
   messageId?: string;
   messageSid?: string;
   error?: string;
@@ -69,6 +70,22 @@ export function classifyReminderProviderResult(
   errorCode: string | null;
 } {
   const providerMessageId = (result.messageId ?? result.messageSid ?? "").trim();
+  if (result.outcome === "suppressed") {
+    return {
+      status: "suppressed",
+      providerMessageId: null,
+      errorCode: result.suppressionReason
+        ? `delivery_suppressed:${result.suppressionReason}`
+        : "delivery_suppressed",
+    };
+  }
+  if (result.outcome === "unknown") {
+    return {
+      status: "unknown",
+      providerMessageId: null,
+      errorCode: "provider_outcome_unknown",
+    };
+  }
   if (result.ok) {
     if (result.suppressed === true) {
       return {
@@ -104,6 +121,8 @@ export function classifyReminderProviderResult(
   const knownPreflightFailure =
     error === "invalid_phone" ||
     error === "sms_consent_unavailable" ||
+    error === "sms_delivery_truth_unavailable" ||
+    error === "status_callback_unavailable" ||
     error === "twilio_not_configured" ||
     error === "resend_not_configured" ||
     /^twilio_4\d\d$/u.test(error) ||

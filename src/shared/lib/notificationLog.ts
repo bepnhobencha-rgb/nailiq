@@ -52,6 +52,9 @@ export interface LogNotificationParams {
   bodyPreview?: string | null;
   /** Pass false when the send failed before a SID was returned. */
   ok: boolean;
+  /** Provider-aware status. Prefer this for SMS so suppression and ambiguous
+   * transport outcomes are never flattened into sent/failed. */
+  deliveryStatus?: NotificationFinalStatus;
   errorMessage?: string | null;
 }
 
@@ -61,18 +64,21 @@ export async function logNotification(
 ): Promise<string | null> {
   const supabase = createServiceRoleClient();
   const now = new Date().toISOString();
+  const status = params.deliveryStatus ?? (params.ok ? "sent" : "failed");
+  const accepted = status === "sent";
+  const failed = status === "failed";
 
   const row = {
     booking_id: params.bookingId,
     salon_id: params.salonId,
     notification_type: params.notificationType,
     channel: params.channel,
-    status: params.ok ? "sent" : "failed",
+    status,
     client_phone: params.clientPhone ?? null,
     twilio_message_sid: params.messageSid ?? null,
     body_preview: params.bodyPreview ? params.bodyPreview.slice(0, 120) : null,
-    sent_at: params.ok ? now : null,
-    failed_at: params.ok ? null : now,
+    sent_at: accepted ? now : null,
+    failed_at: failed ? now : null,
     error_message: params.errorMessage ?? null,
   };
 

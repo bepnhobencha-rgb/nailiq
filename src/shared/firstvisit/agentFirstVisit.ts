@@ -139,8 +139,14 @@ Rules: 1-2 sentences. Warm, zero pressure. Say you'd love to see them again and 
 // ─── Send helpers ─────────────────────────────────────────────────────────────
 
 async function sendSms(salonId: string, phone: string, text: string, lang: "en" | "vi"): Promise<boolean> {
-  const r = await sendSmsReminder(phone, text, { salonId, lang });
-  return r.ok;
+  const r = await sendSmsReminder(phone, text, {
+    salonId,
+    lang,
+    notificationType: "first_visit_followup",
+  });
+  // A durable suppression is terminal for this nurture step and must not be
+  // retried forever. It is still not reported as a delivered SMS.
+  return r.outcome === "accepted" || r.outcome === "suppressed";
 }
 
 async function sendEmail(

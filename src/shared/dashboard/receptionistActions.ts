@@ -1303,6 +1303,7 @@ export async function cancelDeskBooking(
  *  missing phone or a Twilio failure so the desk can fall back to the QR. */
 async function sendDepositSms(args: {
   salonId: string;
+  bookingId: string;
   phone: string;
   salonName: string;
   amountCents: number;
@@ -1323,6 +1324,8 @@ async function sendDepositSms(args: {
     const res = await sendSmsReminder(phone, body, {
       salonId: args.salonId,
       lang: args.language === "en" ? "en" : "vi",
+      bookingId: args.bookingId,
+      notificationType: "deposit_link",
     });
     return res.ok;
   } catch {
@@ -1410,6 +1413,7 @@ export async function requestDepositLink(
     if (input.sendSms) {
       smsSent = await sendDepositSms({
         salonId: ctx.salon.id,
+        bookingId,
         phone: String((bk as { client_phone?: string }).client_phone ?? ""),
         salonName: ctx.salon.name,
         amountCents: r.amountCents ?? 0,
@@ -1535,6 +1539,8 @@ export async function sendNoShowFeeLink(
             await sendSmsReminder(phone, body, {
               salonId: ctx.salon.id,
               lang: en ? "en" : "vi",
+              bookingId,
+              notificationType: "noshow_fee_link",
             })
           ).ok;
         } catch {

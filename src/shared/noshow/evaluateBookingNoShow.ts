@@ -276,7 +276,12 @@ async function sendEscalationDepositLink(
       await sendSmsReminder(
         phone,
         `${salon}: A ${amount} deposit is required to confirm your appointment. Please pay here to hold your spot: ${url}`,
-        { salonId: String(b.salon_id ?? ""), lang: "en" },
+        {
+          salonId: String(b.salon_id ?? ""),
+          lang: "en",
+          bookingId,
+          notificationType: "deposit_link",
+        },
       );
     } catch (e) {
       console.error("[sendEscalationDepositLink] sms", e);

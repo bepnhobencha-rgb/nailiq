@@ -126,7 +126,11 @@ export async function sendSaveCardLink(
 
     if (phone) {
       try {
-        const r = await sendSmsReminder(phone, smsBody, { salonId: ctx.salon.id });
+        const r = await sendSmsReminder(phone, smsBody, {
+          salonId: ctx.salon.id,
+          bookingId,
+          notificationType: "save_card_link",
+        });
         smsSent = r.ok;
       } catch {
         smsSent = false;
