@@ -46,7 +46,7 @@ describe("Voice session quota and renewal boundary", () => {
     expect(migration).toMatch(
       /revoke all on function public\.release_voice_session_reservation\(uuid\)[\s\S]*from public, anon, authenticated/i,
     );
-    expect(parity).toContain("functions: 397");
+    expect(parity).toContain("functions: 402");
     expect(parity).toContain('"release_voice_session_reservation"');
   });
 
