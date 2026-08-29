@@ -12,6 +12,9 @@ const migration = read(
 const accessMigration = read(
   "supabase/migrations/20260829033000_deny_direct_no_show_decision_access.sql",
 );
+const cleanupMigration = read(
+  "supabase/migrations/20260829043000_cascade_no_show_decision_tenant_cleanup.sql",
+);
 const actions = read("src/shared/dashboard/receptionistActions.ts");
 const receptionist = read("src/components/receptionist/ReceptionistCenter.tsx");
 const protectionHub = read("src/components/dashboard/NoShowProtectionHub.tsx");
@@ -61,6 +64,12 @@ describe("V1 no-show safety boundary", () => {
     expect(accessMigration).toContain("AS RESTRICTIVE");
     expect(accessMigration).toContain("USING (false)");
     expect(accessMigration).toContain("WITH CHECK (false)");
+    expect(cleanupMigration).toMatch(
+      /booking_no_show_decisions_salon_id_fkey[\s\S]*?ON DELETE CASCADE/i,
+    );
+    expect(cleanupMigration).toMatch(
+      /booking_no_show_decisions_booking_id_fkey[\s\S]*?ON DELETE CASCADE/i,
+    );
   });
 
   it("does not mutate booking, history, waitlist, notification, or money before commit", () => {
@@ -108,6 +117,9 @@ describe("V1 no-show safety boundary", () => {
     expect(receptionist).toContain("secondsRemaining");
     expect(receptionist).toContain("scope is one booking member only");
     expect(receptionist).not.toMatch(/chargeNoShowFeeManual|waiveNoShowFee|noShowChargeModal/);
+    expect(read("src/components/receptionist/StaffTimelineGrid.tsx")).toContain(
+      "canCharge && onTombstoneCharge",
+    );
     expect(protectionHub).not.toMatch(
       /chargeNoShowFeeFromProtection|waiveNoShowFeeFromProtection|sendNoShowFeeLinkFromProtection/,
     );
