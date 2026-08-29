@@ -222,6 +222,7 @@ describe("query grammar injection inventory", () => {
       "20260823037000_close_staff_deactivation_assignment_races.sql",
       "20260823124500_record_twilio_status_receipts_atomically.sql",
       "20260829174542_enable_card_safe_booking_sequences.sql",
+      "20260829183626_add_multi_service_controlled_rollout.sql",
     ]);
 
     const sequenceCardPolicy = fs.readFileSync(
@@ -237,6 +238,18 @@ describe("query grammar injection inventory", () => {
       "'public.create_public_booking_sequence(jsonb)'::regprocedure",
     );
     expect(sequenceCardPolicy).not.toMatch(/\bexecute\s+format\s*\(/i);
+
+    const controlledRollout = fs.readFileSync(
+      path.join(
+        migrationRoot,
+        "20260829183626_add_multi_service_controlled_rollout.sql",
+      ),
+      "utf8",
+    );
+    expect(controlledRollout).toContain("pg_catalog.pg_get_functiondef(");
+    expect(controlledRollout).toContain("EXECUTE v_definition");
+    expect(controlledRollout).not.toMatch(/\bexecute\s+format\s*\(/i);
+    expect(controlledRollout).not.toMatch(/\bexecute\b[^;]*\|\|/i);
 
     const twilioReceipts = fs.readFileSync(
       path.join(
