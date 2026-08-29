@@ -83,6 +83,9 @@ describe("Phase D SMS delivery truth acceptance", () => {
     const migration = source(
       "supabase/migrations/20260828234427_add_sms_delivery_attempt_truth.sql",
     );
+    const restrictedGrants = source(
+      "supabase/migrations/20260829001812_restrict_sms_delivery_attempt_table_grants.sql",
+    );
     expect(migration).toContain("create table if not exists public.sms_delivery_attempts");
     expect(migration).toContain("alter table public.sms_delivery_attempts enable row level security");
     expect(migration).toContain("create or replace function public.claim_sms_delivery_attempt");
@@ -91,5 +94,8 @@ describe("Phase D SMS delivery truth acceptance", () => {
     expect(migration).toContain("if v_row.status in ('delivered', 'undelivered', 'failed')");
     expect(migration).toMatch(/revoke execute[\s\S]+from public, anon, authenticated/iu);
     expect(migration).toMatch(/grant execute[\s\S]+to service_role/iu);
+    expect(restrictedGrants).toContain(
+      "revoke all on table public.sms_delivery_attempts from service_role",
+    );
   });
 });

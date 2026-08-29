@@ -88,13 +88,16 @@ import { execFileSync } from "node:child_process";
  * The 20260828172258 booking-OTP delivery-truth migration adds two private
  * PII-free attempt/event tables, one email-code correlation column, four
  * service-only RPCs, two restrictive deny policies and ten indexes.
+ * The 20260828234427/20260829001812 SMS delivery-truth migrations add one
+ * PII-free, RPC-only attempt ledger, three service-only state-machine RPCs,
+ * and four indexes without increasing direct service-role table reachability.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
  */
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
-  tables: 182,
+  tables: 183,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -133,7 +136,8 @@ const PRODUCTION = {
   // +21 owner-booking notification outbox columns.
   // +27 owner-delivery truth, event and suppression columns.
   // +29 booking-OTP delivery attempt/event and email-code correlation columns.
-  columns: 2708,
+  // +17 universal SMS delivery-attempt truth columns.
+  columns: 2725,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -165,7 +169,8 @@ const PRODUCTION = {
   // +3 delivery-event reconciliation, recorder, and correlation-trigger functions.
   // +1 deferred desk-cancel owner-notification compatibility handshake.
   // +4 booking-OTP attempt, completion, verification and receipt RPCs.
-  functions: 397,
+  // +3 universal SMS attempt claim, completion and receipt RPCs.
+  functions: 400,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -183,7 +188,8 @@ const PRODUCTION = {
   // +4 owner-alert outbox primary, occurrence-unique, due, and salon indexes.
   // +6 delivery truth provider, inbox, pending, salon and suppression indexes.
   // +10 booking-OTP attempt/event/correlation indexes.
-  indexes: 668,
+  // +4 universal SMS delivery-attempt indexes.
+  indexes: 672,
 } as const;
 
 /**
@@ -231,6 +237,7 @@ const CRITICAL_TABLES = [
   "customer_email_delivery_suppressions",
   "booking_otp_delivery_attempts",
   "resend_booking_otp_delivery_events",
+  "sms_delivery_attempts",
   "booking_notification_delivery_events",
   "booking_confirmation_dispatch_envelopes",
   "customer_booking_transition_email_outbox",
@@ -357,6 +364,9 @@ const CRITICAL_FUNCTIONS = [
   "complete_booking_otp_delivery_attempt",
   "mark_booking_otp_delivery_verified",
   "record_resend_booking_otp_delivery_event",
+  "claim_sms_delivery_attempt",
+  "complete_sms_delivery_attempt",
+  "record_sms_delivery_attempt_receipt",
   "resolve_group_booking_pricing",
   "quote_group_booking",
   "create_group_bookings",
