@@ -12,8 +12,10 @@ describe("booking orchestrator", () => {
   it.each([
     ["online", "individual", "commit", "online", "canonical_individual"],
     ["online", "group", "quote", "online", "canonical_group"],
+    ["online", "group_sequence", "quote", "online", "canonical_group_sequence"],
     ["desk", "individual", "commit", "desk", "canonical_individual"],
     ["desk", "group", "commit", "desk", "canonical_group"],
+    ["desk", "group_sequence", "quote", "desk", "canonical_group_sequence"],
     ["voice", "individual", "commit", "voice", "canonical_individual"],
     ["voice", "group", "commit", "voice", "canonical_group"],
     ["walkin", "operational_arrival", "commit", "walkin", "operational_queue"],
@@ -59,6 +61,8 @@ describe("booking orchestrator", () => {
     { gateway: "square", intent: "external_import", operation: "commit" },
     { gateway: "walkin", intent: "operational_arrival", operation: "quote" },
     { gateway: "online", intent: "individual", operation: "assist" },
+    { gateway: "voice", intent: "group_sequence", operation: "commit" },
+    { gateway: "online", intent: "group_sequence", operation: "commit" },
   ] as const)("rejects an invalid route: $gateway/$intent/$operation", (request) => {
     expect(() => resolveBookingOrchestratorRoute(request)).toThrow(
       BookingOrchestratorPolicyError,

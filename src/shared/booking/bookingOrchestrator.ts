@@ -14,11 +14,11 @@
 export const BOOKING_GATEWAY_POLICY = {
   online: {
     channel: "online",
-    intents: ["individual", "group"],
+    intents: ["individual", "group", "group_sequence"],
   },
   desk: {
     channel: "desk",
-    intents: ["individual", "group"],
+    intents: ["individual", "group", "group_sequence"],
   },
   voice: {
     channel: "voice",
@@ -46,6 +46,7 @@ export type BookingGateway = keyof typeof BOOKING_GATEWAY_POLICY;
 export type BookingIntent =
   | "individual"
   | "group"
+  | "group_sequence"
   | "operational_arrival"
   | "external_import"
   | "assist";
@@ -66,6 +67,7 @@ type GatewayBookingChannel<Gateway extends PersistedBookingGateway> = Exclude<
 export type BookingEngine =
   | "canonical_individual"
   | "canonical_group"
+  | "canonical_group_sequence"
   | "operational_queue"
   | "provider_reconciliation"
   | "assist_only";
@@ -84,6 +86,7 @@ export type BookingOrchestratorRoute = BookingOrchestratorRequest & {
 const ENGINE_BY_INTENT: Record<BookingIntent, BookingEngine> = {
   individual: "canonical_individual",
   group: "canonical_group",
+  group_sequence: "canonical_group_sequence",
   operational_arrival: "operational_queue",
   external_import: "provider_reconciliation",
   assist: "assist_only",
@@ -94,6 +97,9 @@ function operationAllowed(
   operation: BookingOrchestratorOperation,
 ): boolean {
   if (intent === "assist") return operation === "assist";
+  // Quote-only until one database transaction can commit every guest and
+  // service segment. Never let an adapter emulate this with partial creates.
+  if (intent === "group_sequence") return operation === "quote";
   if (operation === "assist") return false;
   if (operation === "quote") {
     return intent === "individual" || intent === "group";

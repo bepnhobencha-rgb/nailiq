@@ -5,6 +5,42 @@ Newest entries on top.
 
 ---
 
+## 2026-08-29 — Group multi-service requires one atomic party-sequence commit
+
+**Status.** Local Phase 2A quote foundation approved by the Product Owner in
+chat. Runtime creation and salon rollout remain unavailable until the database
+commit path is implemented and verified in QA.
+
+**Decision.** “One guest, many services” and “many guests” remain distinct
+canonical engines, but a combined party sequence enters through a dedicated
+`canonical_group_sequence` route. Online and Desk may prepare that intent;
+Voice fails closed until it has an explicit contract and review flow.
+
+- Every member has one idempotent sequence identity and one or more ordered
+  service segments.
+- A whole-party proof checks cross-member staff and resource overlap. Separate
+  valid member quotes are not sufficient evidence that the group is feasible.
+- “Sit together” is never inferred from resource names or simultaneous starts;
+  salon-owned adjacency topology must prove it.
+- Runtime stays OFF unless group booking, multi-service booking, multi-service
+  readiness, and one atomic group-sequence commit boundary are all ready.
+- No adapter may create members one-by-one. Partial success would violate the
+  canonical receipt and retry guarantees in the Product Constitution.
+
+**Current boundary.** Phase 2A adds the runtime-neutral contract/validator,
+route declaration, default-OFF platform and per-salon gates, optional
+salon-owned resource adjacency labels, and a service-role-only authoritative
+whole-party quote RPC.
+The quote reuses the canonical per-member sequence resolver, then rejects
+cross-member staff/resource collisions and unproven sit-together claims. A
+local disposable Postgres rehearsal proves the RPC returns a whole-party quote
+without creating bookings, profiles, or OTP rows. Readiness deliberately
+returns `atomic_commit_ready=false` and `ready=false`; there is still no public
+or Desk UI, create RPC, notification, payment call, QA/production migration,
+feature activation, or production change.
+
+---
+
 ## 2026-08-27 — Owner booking alerts use a transactional occurrence outbox
 
 **Status.** Approved by the Product Owner after live salons reported missing
