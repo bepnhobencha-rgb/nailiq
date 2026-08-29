@@ -97,6 +97,9 @@ import { execFileSync } from "node:child_process";
  * grant direct table access to anon or authenticated.
  * The 20260829063203 queue projection migration adds one service-role-only
  * committed-decision projection without reopening the decision table.
+ * The 20260829120000 multi-service card-policy migration adds one
+ * service-role-only payment-policy readiness function and replaces the
+ * existing sequence readiness/resolver/create definitions in place.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -182,7 +185,8 @@ const PRODUCTION = {
   // +8 no-show fee material guards, approval/dispatch RPCs and Square payment
   // webhook reconciliation functions.
   // +1 no-show fee queue decision projection.
-  functions: 411,
+  // +1 multi-service booking payment-policy readiness function.
+  functions: 412,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -474,6 +478,7 @@ const CRITICAL_FUNCTIONS = [
   "issue_public_square_deposit_capability",
   "claim_public_square_deposit_completion",
   "resolve_square_customer_identity",
+  "booking_sequence_payment_policy_ready",
   "resolve_booking_sequence_pricing_and_schedule",
   "quote_public_booking_sequence",
   "create_public_booking_sequence",
