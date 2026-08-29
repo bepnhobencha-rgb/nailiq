@@ -14,6 +14,7 @@ export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { SQUARE_OPTIONAL_API_VERSION } from "@/shared/integrations/square/optionalCapabilities";
+import { allowsSquarePaymentWebhookIngestion } from "@/shared/release/v1IntegrationScope";
 import {
   isSquareOptionalWebhookEvent,
   parseSquareEvent,
@@ -458,6 +459,13 @@ export async function POST(request: Request) {
     && !DISPUTE_EVENT_TYPES.has(event.eventType)
   ) {
     return json({ ok: true, code: "event_ignored" });
+  }
+
+  if (
+    (event.eventType === "payment.created" || event.eventType === "payment.updated")
+    && !allowsSquarePaymentWebhookIngestion()
+  ) {
+    return json({ ok: true, code: "payment_event_ignored_release_disabled" });
   }
 
   // The service-role boundary is intentionally constructed only after a valid

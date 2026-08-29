@@ -65,6 +65,28 @@ function refundBody(overrides: Record<string, unknown> = {}) {
   });
 }
 
+function paymentBody(overrides: Record<string, unknown> = {}) {
+  return body({
+    type: "payment.updated",
+    event_id: "payment-event-1",
+    created_at: "2026-08-29T04:10:01Z",
+    data: {
+      id: "payment-1",
+      object: {
+        payment: {
+          id: "payment-1",
+          location_id: "location-1",
+          status: "COMPLETED",
+          amount_money: { amount: 2_500, currency: "CAD" },
+          updated_at: "2026-08-29T04:10:00Z",
+          reference_id: "booking:11111111-1111-4111-8111-111111111111",
+          ...overrides,
+        },
+      },
+    },
+  });
+}
+
 function request(raw: string, signature?: string) {
   const valid = createHmac("sha256", signatureKey).update(url).update(raw).digest("base64");
   return new Request(url, {
@@ -319,6 +341,51 @@ describe("Square webhook route", () => {
       ok: false,
       code: "webhook_store_unavailable",
     });
+  });
+
+  it("keeps payment webhook ingestion off before the durable schema rollout", async () => {
+    const response = await POST(request(paymentBody()));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      code: "payment_event_ignored_release_disabled",
+    });
+    expect(mocks.createService).not.toHaveBeenCalled();
+  });
+
+  it("ingests a payment revision only after the dedicated release gate is enabled", async () => {
+    vi.stubEnv("NAILIQ_SQUARE_PAYMENT_WEBHOOK_INGESTION", "true");
+    mocks.rpc.mockResolvedValue({
+      data: {
+        success: true,
+        code: "payment_applied",
+        event_id: "payment-event-1",
+      },
+      error: null,
+    });
+
+    const response = await POST(request(paymentBody()));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      code: "payment_applied",
+      eventId: "payment-event-1",
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "record_square_payment_webhook_event",
+      expect.objectContaining({
+        p_salon_id: salonId,
+        p_event_id: "payment-event-1",
+        p_provider_payment_id: "payment-1",
+        p_location_id: "location-1",
+        p_provider_status: "COMPLETED",
+        p_amount_cents: 2_500,
+        p_currency: "CAD",
+        p_reference_id: "booking:11111111-1111-4111-8111-111111111111",
+      }),
+    );
   });
 
   it("accepts Square's current dispute state event", async () => {

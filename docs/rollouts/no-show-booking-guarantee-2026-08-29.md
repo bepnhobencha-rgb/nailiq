@@ -22,7 +22,7 @@ authoritative payment operation, and provider reconciliation.
 | Separate fee review and immutable Owner/Admin receipt | Implemented; local disposable DB rehearsal | This change |
 | Deterministic AI-assist recommendation with reason codes | Implemented; local only | This change; recommendation never authorizes payment |
 | Approved no-show charge dispatch | Implemented behind two default-off gates; not invoked | Environment gate plus per-salon allowlist |
-| Square payment webhook delivery truth | Implemented; local disposable DB rehearsal | Signed route projection plus durable inbox/RPC |
+| Square payment webhook delivery truth | Implemented behind a default-off ingestion gate; local disposable DB rehearsal | Signed route projection plus durable inbox/RPC |
 | Customer no-show notice and appeal workflow | Not implemented | Future phase; no message is sent by this change |
 | Real Square sandbox charge | NOT_PROVEN | Requires separate provider-call approval |
 | Production money movement | Disabled and NOT_PROVEN | Requires separate release certification and approval |
@@ -60,25 +60,33 @@ authoritative payment operation, and provider reconciliation.
   bound to exact provider account/location/environment/amount/currency, and
   reconciled in timestamp order.
 - Failed or uncertain operations are not blindly retried.
+- Payment-event ingestion separately requires
+  `NAILIQ_SQUARE_PAYMENT_WEBHOOK_INGESTION=true`, preventing an app-first
+  rollout from calling a not-yet-installed database RPC.
 
 ## Required rollout sequence
 
-1. Merge only after CI, review, and Preview are green.
-2. Apply the migration to a disposable Supabase QA project and rerun the SQL
+1. Apply the migration to a disposable Supabase QA project and rerun the SQL
    transaction rehearsal. No Square call is needed.
-3. Verify Preview UI with synthetic QA data for receptionist request, Owner
+2. Verify a branch-scoped QA Preview with synthetic data for receptionist request, Owner
    approve, Owner waive, replay, guided setup, and group-member scope.
-4. Keep both dispatch gates OFF. Observe fee review creation and webhook
-   ingestion without money movement for at least 48 hours.
-5. Obtain Canadian legal/policy review of fee disclosure, card consent,
+3. Merge only after CI, independent review, and the QA Preview verification are
+   green. Keep charge dispatch and payment-webhook ingestion gates OFF during
+   the automatic application deploy.
+4. Apply the production migration, verify all new tables/RPCs, FORCE RLS,
+   service-role-only grants, zero salon allowlist, and zero new rows. Only then
+   enable payment-webhook ingestion; charge dispatch remains OFF.
+5. Observe fee review creation and webhook ingestion without money movement
+   for at least 48 hours.
+6. Obtain Canadian legal/policy review of fee disclosure, card consent,
    cancellation terms, accessibility, and charge dispute/appeal wording.
-6. With separate approval, enable Square **sandbox** for one QA salon and one
+7. With separate approval, enable Square **sandbox** for one QA salon and one
    synthetic card. Prove success, decline, timeout/unknown, duplicate click,
    out-of-order webhook, refund/dispute handoff, and kill switch.
-7. With a new production approval, allowlist one salon while the environment
+8. With a new production approval, allowlist one salon while the environment
    gate remains controllable as the global kill switch. Start with Owner manual
    approval only and monitor receipts/ledger/provider equality for 72 hours.
-8. Expand gradually only if charge attempts, final outcomes, disputes,
+9. Expand gradually only if charge attempts, final outcomes, disputes,
    complaints, and reconciliation gaps stay within the agreed thresholds.
 
 ## Production stop conditions

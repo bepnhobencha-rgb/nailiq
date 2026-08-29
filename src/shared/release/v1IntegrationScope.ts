@@ -50,6 +50,16 @@ export function allowsApprovedNoShowChargeDispatch(): boolean {
 }
 
 /**
+ * Payment webhooks are deployed independently from their durable database
+ * inbox. Keep ingestion off until release operations has verified the schema
+ * and provider subscription, so an application-first rollout cannot turn
+ * previously ignored Square payment events into a retrying 503 storm.
+ */
+export function allowsSquarePaymentWebhookIngestion(): boolean {
+  return process.env.NAILIQ_SQUARE_PAYMENT_WEBHOOK_INGESTION === "true";
+}
+
+/**
  * V1 subscription collection is coordinated manually by NailIQ. The in-app
  * Stripe Checkout, Customer Portal and subscription-webhook state machine stay
  * unavailable until their durable idempotency/replay contract ships in Phase 2.

@@ -61,5 +61,6 @@ describe("Square payment webhook truth", () => {
     expect(migration).toContain("stale_event_ignored");
     expect(migration).toContain("revision_conflict");
     expect(migration).toMatch(/operation_kind = 'noshow_charge'/);
+    expect(release).toContain("NAILIQ_SQUARE_PAYMENT_WEBHOOK_INGESTION");
   });
 });
