@@ -20,6 +20,7 @@ import {
   readSquareWebhookBody,
   resolveSquareWebhookProfile,
   sanitizeSquareOptionalEvent,
+  sanitizeSquarePaymentEvent,
   sanitizeSquareRefundEvent,
   squareWebhookPayloadFingerprint,
   verifySquareWebhookSignature,
@@ -84,6 +85,8 @@ function squareWebhookLocationId(
 ): string | null {
   const refund = sanitizeSquareRefundEvent(event);
   if (refund) return refund.locationId;
+  const payment = sanitizeSquarePaymentEvent(event);
+  if (payment) return payment.locationId;
 
   if (isSquareOptionalWebhookEvent(event.eventType)) {
     const sanitized = sanitizeSquareOptionalEvent(event);
@@ -316,6 +319,63 @@ async function recordRefundEvent(input: {
   return json({ ok: false, code: "webhook_store_unavailable" }, 503);
 }
 
+async function recordPaymentEvent(input: {
+  db: ReturnType<typeof createServiceRoleClient>;
+  integration: IntegrationRow;
+  profile: { applicationId: string; environment: "sandbox" | "production" };
+  event: NonNullable<ReturnType<typeof parseSquareEvent>>;
+  payloadFingerprint: string;
+}) {
+  const payment = sanitizeSquarePaymentEvent(input.event);
+  if (!payment) return json({ ok: false, code: "invalid_payment_event" }, 400);
+  if (payment.locationId !== input.integration.location_id) {
+    return json({ ok: false, code: "provider_context_mismatch" }, 409);
+  }
+  const { data, error } = await input.db.rpc(
+    "record_square_payment_webhook_event" as never,
+    {
+      p_salon_id: input.integration.salon_id,
+      p_event_id: input.event.eventId,
+      p_event_type: input.event.eventType,
+      p_occurred_at: input.event.occurredAt,
+      p_payload_fingerprint: input.payloadFingerprint,
+      p_provider_payment_id: payment.paymentId,
+      p_location_id: payment.locationId,
+      p_provider_status: payment.status,
+      p_amount_cents: payment.amountCents,
+      p_currency: payment.currency,
+      p_payment_updated_at: payment.updatedAt,
+      p_reference_id: payment.referenceId,
+      p_merchant_id: input.event.merchantId,
+      p_application_id: input.profile.applicationId,
+      p_environment: input.profile.environment,
+    } as never,
+  );
+  if (error || !data || typeof data !== "object") {
+    return json({ ok: false, code: "webhook_store_unavailable" }, 503);
+  }
+  const recorded = data as unknown as { success?: boolean; code?: string; event_id?: string };
+  if (recorded.success === true && recorded.event_id === input.event.eventId && [
+    "payment_applied", "payment_pending", "payment_failed",
+    "stale_event_ignored", "event_replay",
+  ].includes(recorded.code ?? "")) {
+    return json({ ok: true, code: recorded.code, eventId: input.event.eventId });
+  }
+  if (recorded.code === "operation_not_found") {
+    return json({ ok: false, code: "operation_not_found" }, 503);
+  }
+  if ([
+    "event_conflict", "provider_context_mismatch", "provider_binding_mismatch",
+    "terminal_state_conflict", "revision_conflict",
+  ].includes(recorded.code ?? "")) {
+    return json({ ok: false, code: recorded.code ?? "payment_event_rejected" }, 409);
+  }
+  if (recorded.code === "invalid_payment_event") {
+    return json({ ok: false, code: "invalid_payment_event" }, 400);
+  }
+  return json({ ok: false, code: "webhook_store_unavailable" }, 503);
+}
+
 async function recordDispute(input: {
   db: ReturnType<typeof createServiceRoleClient>;
   integration: IntegrationRow;
@@ -392,6 +452,8 @@ export async function POST(request: Request) {
   if (!event) return json({ ok: false, code: "invalid_event" }, 400);
   if (
     event.eventType !== "refund.updated"
+    && event.eventType !== "payment.created"
+    && event.eventType !== "payment.updated"
     && !isSquareOptionalWebhookEvent(event.eventType)
     && !DISPUTE_EVENT_TYPES.has(event.eventType)
   ) {
@@ -423,6 +485,15 @@ export async function POST(request: Request) {
   }
   if (event.eventType === "refund.updated") {
     return recordRefundEvent({
+      db,
+      integration,
+      profile,
+      event,
+      payloadFingerprint: squareWebhookPayloadFingerprint(body.bytes),
+    });
+  }
+  if (event.eventType === "payment.created" || event.eventType === "payment.updated") {
+    return recordPaymentEvent({
       db,
       integration,
       profile,

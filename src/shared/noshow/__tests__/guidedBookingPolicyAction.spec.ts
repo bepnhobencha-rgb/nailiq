@@ -146,6 +146,12 @@ describe("saveGuidedBookingPolicy", () => {
     ).resolves.toEqual({ ok: false, error: "policy_languages_required" });
     await expect(
       saveGuidedBookingPolicy("qa-salon", {
+        en: "Cancel before [24 hours]",
+        vi: "Huỷ trước 24 giờ",
+      }),
+    ).resolves.toEqual({ ok: false, error: "policy_placeholders_remaining" });
+    await expect(
+      saveGuidedBookingPolicy("qa-salon", {
         en: "English",
         vi: "Tiếng Việt",
         groupTogetherThresholdMinutes: 121,

@@ -18,6 +18,7 @@ vi.mock("@/shared/noshow/promoteAndDeliverWaitlistOffer", () => ({
 }));
 
 import {
+  finalizeAndProcessNoShowDecision,
   finalizeDueNoShowDecisions,
   runNoShowDecisionEffects,
 } from "../noShowSafetyBoundary";
@@ -33,16 +34,18 @@ describe("no-show durable finalizer", () => {
   });
 
   it("returns a validated commit receipt without creating another client", async () => {
-    const rpc = vi.fn().mockResolvedValue({
-      data: [{
-        success: true,
-        code: "decision_committed",
-        decision_id: DECISION_ID,
-        booking_id: BOOKING_ID,
-        salon_id: SALON_ID,
-      }],
-      error: null,
-    });
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({
+        data: [{
+          success: true,
+          code: "decision_committed",
+          decision_id: DECISION_ID,
+          booking_id: BOOKING_ID,
+          salon_id: SALON_ID,
+        }],
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: { success: true }, error: null });
 
     const result = await finalizeDueNoShowDecisions({
       decisionId: DECISION_ID,
@@ -57,11 +60,51 @@ describe("no-show durable finalizer", () => {
       bookingId: BOOKING_ID,
       salonId: SALON_ID,
     }]);
-    expect(rpc).toHaveBeenCalledWith(
+    expect(rpc).toHaveBeenNthCalledWith(
+      1,
       "finalize_due_booking_no_shows_v1",
       { p_decision_id: DECISION_ID, p_limit: 25, p_salon_id: SALON_ID },
     );
+    expect(rpc).toHaveBeenNthCalledWith(2, "ensure_booking_no_show_fee_review", {
+      p_decision_id: DECISION_ID,
+      p_salon_id: SALON_ID,
+    });
     expect(mocks.serviceRole).not.toHaveBeenCalled();
+  });
+
+  it("creates the owner fee review after commit without making it part of attendance success", async () => {
+    const finalizeRpc = vi.fn()
+      .mockResolvedValueOnce({
+        data: [{
+          success: true,
+          code: "decision_committed",
+          decision_id: DECISION_ID,
+          booking_id: BOOKING_ID,
+          salon_id: SALON_ID,
+        }],
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { success: false, code: "consent_not_charge_ready" },
+        error: null,
+      });
+    const effectsRpc = vi.fn().mockResolvedValue({ data: [], error: null });
+    mocks.serviceRole
+      .mockReturnValueOnce({ rpc: finalizeRpc })
+      .mockReturnValueOnce({ rpc: effectsRpc });
+
+    const result = await finalizeAndProcessNoShowDecision(DECISION_ID, SALON_ID);
+
+    expect(result).toMatchObject({ ok: true, code: "decision_committed" });
+    expect(finalizeRpc).toHaveBeenCalledWith("ensure_booking_no_show_fee_review", {
+      p_decision_id: DECISION_ID,
+      p_salon_id: SALON_ID,
+    });
+    expect(effectsRpc).toHaveBeenCalledWith("claim_booking_no_show_effects_v1", {
+      p_decision_id: DECISION_ID,
+      p_limit: 1,
+      p_salon_id: SALON_ID,
+    });
   });
 
   it("uses the decision id as the owner-notification occurrence key and completes the lease", async () => {

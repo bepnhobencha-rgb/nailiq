@@ -139,9 +139,28 @@ export async function finalizeDueNoShowDecisions(input?: {
       salonId: null,
     }];
   }
-  return rpcRows(data)
+  const receipts = rpcRows(data)
     .map(parseFinalizeReceipt)
     .filter((row): row is FinalizeReceipt => row !== null);
+  await Promise.all(receipts.map(async (receipt) => {
+    if (
+      !receipt.ok ||
+      !receipt.decisionId ||
+      !receipt.salonId ||
+      (receipt.code !== "decision_committed" && receipt.code !== "commit_replay")
+    ) return;
+    // Best effort only: attendance truth is already committed and must never
+    // be rolled back because a fee review is ineligible or unavailable.
+    try {
+      await client.rpc("ensure_booking_no_show_fee_review" as never, {
+        p_decision_id: receipt.decisionId,
+        p_salon_id: receipt.salonId,
+      } as never);
+    } catch {
+      // The owner queue can reconcile/create the review later.
+    }
+  }));
+  return receipts;
 }
 
 export async function runNoShowDecisionEffects(input?: {

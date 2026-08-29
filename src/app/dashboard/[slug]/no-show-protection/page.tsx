@@ -6,7 +6,7 @@ import { GuidedBookingPolicySetup } from "@/components/dashboard/GuidedBookingPo
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
-import type { StoredPolicy } from "@/shared/lib/cancellationPolicy";
+import { evaluatePolicyReadiness, type StoredPolicy } from "@/shared/lib/cancellationPolicy";
 import { loadSalonOwnerAdminSettingsForDashboardContext } from "@/shared/dashboard/salonOwnerAdminSettings";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -29,7 +29,10 @@ export default async function NoShowProtectionPage({ params }: Props) {
     "guided_admin_setup",
   );
   if (guidedSetupEnabled) {
-    const loaded = await loadSalonOwnerAdminSettingsForDashboardContext(ctx);
+    const [loaded, { loadNoShowFeeReviewQueue }] = await Promise.all([
+      loadSalonOwnerAdminSettingsForDashboardContext(ctx),
+      import("@/shared/noshow/noShowFeeApprovalActions"),
+    ]);
     if (!loaded.ok) {
       redirect(`/dashboard/${encodeURIComponent(slug)}`);
     }
@@ -50,11 +53,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
       en: typeof rawPolicy.en === "string" ? rawPolicy.en : undefined,
       vi: typeof rawPolicy.vi === "string" ? rawPolicy.vi : undefined,
     };
-    const policySaved =
-      typeof rawPolicy.en === "string" &&
-      rawPolicy.en.trim().length > 0 &&
-      typeof rawPolicy.vi === "string" &&
-      rawPolicy.vi.trim().length > 0;
+    const policySaved = evaluatePolicyReadiness(storedPolicy).ready;
     const groupBookingEnabled = isReleaseFeatureEnabled(
       { feature_flags: policyRow.feature_flags },
       "group_booking",
@@ -75,6 +74,10 @@ export default async function NoShowProtectionPage({ params }: Props) {
         rawGroupWindow <= 120 &&
         typeof policyRow.noshow_group_whole_party === "boolean");
     const { resolvePolicy } = await import("@/shared/lib/cancellationPolicy");
+    const { NoShowFeeApprovalQueue } = await import(
+      "@/components/dashboard/NoShowFeeApprovalQueue"
+    );
+    const feeReviewQueue = await loadNoShowFeeReviewQueue(slug);
     const salonName = ctx.salon.name.trim() || slug;
 
     return (
@@ -101,6 +104,11 @@ export default async function NoShowProtectionPage({ params }: Props) {
               ? policyRow.noshow_group_whole_party
               : true
           }
+        />
+        <NoShowFeeApprovalQueue
+          slug={slug}
+          salonId={ctx.salon.id}
+          items={feeReviewQueue}
         />
       </div>
     );
@@ -183,6 +191,10 @@ export default async function NoShowProtectionPage({ params }: Props) {
   );
   const result = await loadNoShowDashboard(slug);
   if (!result.ok) redirect(`/dashboard/${slug}`);
+  const { loadNoShowFeeReviewQueue } = await import(
+    "@/shared/noshow/noShowFeeApprovalActions"
+  );
+  const feeReviewQueue = await loadNoShowFeeReviewQueue(slug);
   const groupBookingEnabled = isReleaseFeatureEnabled(
     { feature_flags: row?.feature_flags },
     "group_booking",
@@ -236,6 +248,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
       unconfirmed={result.unconfirmed!}
       waitlist={result.waitlist!}
       uncollectedFees={result.uncollectedFees ?? []}
+      feeReviewQueue={feeReviewQueue}
     />
     <SquareSyncCard
       slug={slug}

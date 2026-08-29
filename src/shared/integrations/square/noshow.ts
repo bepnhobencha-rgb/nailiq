@@ -27,6 +27,10 @@ import {
 } from "@/shared/payments/executeBookingPaymentOperation";
 import { stableBookingPaymentRequestId } from "@/shared/payments/paymentRequestId";
 import { v1AllowsCustomerPaymentGateway } from "@/shared/release/v1IntegrationScope";
+import {
+  buildNoShowConsentPolicy,
+  consentMetaMatchesPolicy,
+} from "@/shared/noshow/noShowConsentPolicy";
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
@@ -133,7 +137,13 @@ async function supersedeDepositWithCard(db: Db, bookingId: string): Promise<void
 export async function noShowCardDecision(
   bookingId: string,
   options?: { strict?: boolean },
-): Promise<{ required: boolean; feeCents: number; reason: string; partySize?: number }> {
+): Promise<{
+  required: boolean;
+  feeCents: number;
+  reason: string;
+  partySize?: number;
+  scope?: "booking_member" | "whole_party";
+}> {
   const db = looseServiceClient();
   const { data, error } = await db
     .from("bookings")
@@ -196,6 +206,9 @@ export async function noShowCardDecision(
       feeCents,
       reason: "booking policy requires card",
       partySize,
+      scope: policy.wholeParty && Boolean(str(b.group_id))
+        ? "whole_party"
+        : "booking_member",
     };
   }
   const highRisk = risk >= policy.threshold;
@@ -222,6 +235,9 @@ export async function noShowCardDecision(
     feeCents,
     reason: isNew ? "new customer" : hadNoShow ? "prior no-show" : `risk ${risk} ≥ ${policy.threshold}`,
     partySize,
+    scope: policy.wholeParty && Boolean(str(b.group_id))
+      ? "whole_party"
+      : "booking_member",
   };
 }
 
@@ -279,6 +295,23 @@ export async function saveNoShowCardForBooking(
   const decision = await noShowCardDecision(bookingId);
   if (!decision.required) return { ok: false, reason: decision.reason };
 
+  const { data: salonRow } = await db
+    .from("salons")
+    .select("currency_code, name, cancellation_policy")
+    .eq("id", str(b.salon_id))
+    .maybeSingle();
+  const sr = salonRow as Row | null;
+  const consentPolicy = buildNoShowConsentPolicy({
+    storedPolicy: sr?.cancellation_policy as { en?: string; vi?: string } | null,
+    salonName: String(sr?.name || ""),
+    feeCents: decision.feeCents,
+    currency: String(sr?.currency_code || "USD"),
+    scope: decision.scope ?? "booking_member",
+  });
+  if (!consentPolicy.ready || !consentPolicy.version) {
+    return { ok: false, reason: "no-show policy not ready" };
+  }
+
   const provider = await resolvePaymentProvider(str(b.salon_id), { purpose: "card_on_file" });
   if (!provider) return { ok: false, reason: "payment provider not configured" };
   const saved = await provider.saveCardOnFile({
@@ -299,13 +332,7 @@ export async function saveNoShowCardForBooking(
   // Server-authored consent evidence: the exact terms the customer agreed to,
   // captured at save time (amount + currency + plain-English policy). Stored as
   // proof for a chargeback dispute — never trust the client to supply this.
-  const { data: salonRow } = await db
-    .from("salons")
-    .select("currency_code, name, cancellation_policy")
-    .eq("id", str(b.salon_id))
-    .maybeSingle();
-  const sr = salonRow as Row | null;
-  const currency = String(sr?.currency_code || "USD").trim().toUpperCase() || "USD";
+  const currency = consentPolicy.currency;
   const feeStr = `${(decision.feeCents / 100).toFixed(2)} ${currency}`;
   // When the organizer's card covers a whole party, say so explicitly in the
   // consent — the fee is for the group, not one person (chargeback evidence).
@@ -318,6 +345,8 @@ export async function saveNoShowCardForBooking(
     policyText: `Cardholder authorized this salon to keep this card on file and to charge a no-show fee of ${feeStr}${partyClause} only if they do not show up for this appointment. No charge is made at booking. The cardholder may remove the card at any time.`,
     feeCents: decision.feeCents,
     currency,
+    scope: consentPolicy.scope,
+    policyVersion: consentPolicy.version,
     cardBrand: saved.brand,
     cardLast4: saved.last4,
     // Snapshot of the salon's full cancellation policy the customer agreed to —
@@ -374,6 +403,23 @@ export async function reuseNoShowCardForBooking(
   const decision = await noShowCardDecision(bookingId);
   if (!decision.required) return { ok: false, reason: decision.reason };
 
+  const { data: salonRow } = await db
+    .from("salons")
+    .select("currency_code, name, cancellation_policy")
+    .eq("id", str(b.salon_id))
+    .maybeSingle();
+  const sr = salonRow as Row | null;
+  const consentPolicy = buildNoShowConsentPolicy({
+    storedPolicy: sr?.cancellation_policy as { en?: string; vi?: string } | null,
+    salonName: String(sr?.name || ""),
+    feeCents: decision.feeCents,
+    currency: String(sr?.currency_code || "USD"),
+    scope: decision.scope ?? "booking_member",
+  });
+  if (!consentPolicy.ready || !consentPolicy.version) {
+    return { ok: false, reason: "no-show policy not ready" };
+  }
+
   // OTP gate: session must exist, match THIS salon, be unconsumed + unexpired,
   // and its verified phone must equal the booking's phone.
   const sb = createServiceRoleClient();
@@ -403,17 +449,14 @@ export async function reuseNoShowCardForBooking(
   const customerId = card.customerId;
 
   // Server-authored consent evidence (mirrors the save path) + a reused flag.
-  const { data: salonRow } = await db
-    .from("salons")
-    .select("currency_code")
-    .eq("id", str(b.salon_id))
-    .maybeSingle();
-  const currency = String((salonRow as Row | null)?.currency_code || "USD").trim().toUpperCase() || "USD";
+  const currency = consentPolicy.currency;
   const feeStr = `${(decision.feeCents / 100).toFixed(2)} ${currency}`;
   const consentMeta = {
     policyText: `Cardholder authorized this salon to charge a no-show fee of ${feeStr} to their card on file (${card.brand} ending ${card.last4}) only if they do not show up for this appointment. No charge is made at booking. The cardholder may remove the card at any time.`,
     feeCents: decision.feeCents,
     currency,
+    scope: consentPolicy.scope,
+    policyVersion: consentPolicy.version,
     cardBrand: card.brand,
     cardLast4: card.last4,
     reused: true,
@@ -441,7 +484,8 @@ export async function reuseNoShowCardForBooking(
 
 /**
  * Carry a returning customer's existing card-on-file FORWARD onto a fresh
- * booking — automatically, no re-entry and no OTP. The no-show card is stored
+ * booking — no re-entry when prior consent matches the exact current terms.
+ * The no-show card is stored
  * per-booking (`noshow_card_id`), so without this a customer who left a card on
  * visit #1 had NO card on visit #2 (returning + clean → never re-asked), leaving
  * every repeat visit unprotected. This closes that gap with zero added friction.
@@ -495,14 +539,6 @@ export async function autoAttachReturningCard(
     const policy = await loadPolicy(db, str(b.salon_id));
     if (!policy.enabled) return { attached: false, reason: "no-show protection off" };
 
-    const provider = await resolvePaymentProvider(str(b.salon_id), { purpose: "card_on_file" });
-    if (!provider) return { attached: false, reason: "no payment provider connected" };
-
-    // Only CARRY FORWARD a card the customer already authorized — never enroll a
-    // new card here. No saved card → leave it to the new-customer capture flow.
-    const card = await provider.findSavedCardByPhone(phone);
-    if (!card || !card.cardId) return { attached: false, reason: "no saved card on file" };
-
     // Whole-party: a returning organizer's carried-forward card also covers the
     // group total (keeps it consistent with the new-card path).
     const { baseCents } = await noShowBaseCents(db, b, policy.wholeParty);
@@ -515,14 +551,56 @@ export async function autoAttachReturningCard(
       .eq("id", str(b.salon_id))
       .maybeSingle();
     const sr = salonRow as Row | null;
-    const currency =
-      String(sr?.currency_code || "USD").trim().toUpperCase() || "USD";
+    const consentPolicy = buildNoShowConsentPolicy({
+      storedPolicy: sr?.cancellation_policy as { en?: string; vi?: string } | null,
+      salonName: String(sr?.name || ""),
+      feeCents,
+      currency: String(sr?.currency_code || "USD"),
+      scope: policy.wholeParty && str(b.group_id)
+        ? "whole_party"
+        : "booking_member",
+    });
+    if (!consentPolicy.ready || !consentPolicy.version) {
+      return { attached: false, reason: "no-show policy not ready" };
+    }
+
+    // Reuse is valid only when an earlier booking contains explicit consent to
+    // these exact terms. A changed fee, currency, policy text, or group scope
+    // requires a fresh customer checkbox instead of silently carrying a card.
+    const { data: priorConsentRows } = await db
+      .from("bookings")
+      .select("noshow_consent_meta")
+      .eq("salon_id", str(b.salon_id))
+      .eq("client_phone", str(b.client_phone))
+      .not("id", "eq", bookingId)
+      .not("noshow_card_id", "is", null)
+      .order("noshow_consent_at", { ascending: false })
+      .limit(10);
+    const reusableConsent = ((priorConsentRows as Row[] | null) ?? []).some((row) =>
+      consentMetaMatchesPolicy(row.noshow_consent_meta, consentPolicy)
+    );
+    if (!reusableConsent) {
+      return { attached: false, reason: "fresh consent required" };
+    }
+
+    const provider = await resolvePaymentProvider(str(b.salon_id), { purpose: "card_on_file" });
+    if (!provider) return { attached: false, reason: "no payment provider connected" };
+
+    // Only after the local consent preflight succeeds do we ask the provider for
+    // the already-authorized card. Missing provider state leaves the booking
+    // unprotected and routes the customer through fresh capture.
+    const card = await provider.findSavedCardByPhone(phone);
+    if (!card || !card.cardId) return { attached: false, reason: "no saved card on file" };
+
+    const currency = consentPolicy.currency;
     const feeStr = `${(feeCents / 100).toFixed(2)} ${currency}`;
     const { policyEvidence } = await import("@/shared/lib/cancellationPolicy");
     const consentMeta = {
       policyText: `Cardholder previously authorized this salon to keep this card (${card.brand} ending ${card.last4}) on file for their visits, and to charge a no-show fee of ${feeStr} only if they do not show up. The card on file is carried forward to this appointment. No charge is made at booking. The cardholder may remove the card at any time.`,
       feeCents,
       currency,
+      scope: consentPolicy.scope,
+      policyVersion: consentPolicy.version,
       cardBrand: card.brand,
       cardLast4: card.last4,
       reused: true,

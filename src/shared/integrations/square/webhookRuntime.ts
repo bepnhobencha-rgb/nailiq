@@ -33,6 +33,16 @@ export type SanitizedSquareRefundEvent = {
   updatedAt: string;
 };
 
+export type SanitizedSquarePaymentEvent = {
+  paymentId: string;
+  locationId: string;
+  status: "APPROVED" | "PENDING" | "COMPLETED" | "CANCELED" | "FAILED";
+  amountCents: number;
+  currency: string;
+  updatedAt: string;
+  referenceId: string | null;
+};
+
 const OPTIONAL_EVENTS = new Set<string>([
   ...SQUARE_OPTIONAL_CAPABILITY_LIMITS.loyalty.reconciliationEvents,
   ...SQUARE_OPTIONAL_CAPABILITY_LIMITS.gift_cards.reconciliationEvents,
@@ -251,6 +261,46 @@ export function sanitizeSquareRefundEvent(
     amountCents: amountMoney.amount,
     currency: amountMoney.currency,
     updatedAt,
+  };
+}
+
+export function sanitizeSquarePaymentEvent(
+  event: ParsedSquareEvent,
+): SanitizedSquarePaymentEvent | null {
+  if (event.eventType !== "payment.created" && event.eventType !== "payment.updated") {
+    return null;
+  }
+  const payment = asRecord(event.object.payment);
+  const paymentId = providerIdentifier(payment?.id);
+  const locationId = providerIdentifier(payment?.location_id);
+  const status = payment?.status;
+  const amountMoney = money(payment?.amount_money);
+  const updatedAt = typeof payment?.updated_at === "string"
+    && RFC3339_RE.test(payment.updated_at)
+    && Number.isFinite(Date.parse(payment.updated_at))
+    ? payment.updated_at
+    : null;
+  const referenceId = payment?.reference_id == null
+    ? null
+    : providerIdentifier(payment.reference_id);
+  if (
+    !payment || !paymentId || event.dataId !== paymentId || !locationId
+    || !["APPROVED", "PENDING", "COMPLETED", "CANCELED", "FAILED"].includes(
+      typeof status === "string" ? status : "",
+    )
+    || !amountMoney || amountMoney.amount <= 0 || amountMoney.amount > 2_147_483_647
+    || !updatedAt || (payment.reference_id != null && !referenceId)
+  ) {
+    return null;
+  }
+  return {
+    paymentId,
+    locationId,
+    status: status as SanitizedSquarePaymentEvent["status"],
+    amountCents: amountMoney.amount,
+    currency: amountMoney.currency,
+    updatedAt,
+    referenceId,
   };
 }
 

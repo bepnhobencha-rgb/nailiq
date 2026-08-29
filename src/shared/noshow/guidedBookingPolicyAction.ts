@@ -3,6 +3,7 @@
 import { attributeRecentAudit } from "@/shared/dashboard/attributeAudit";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
+import { evaluatePolicyReadiness } from "@/shared/lib/cancellationPolicy";
 
 type GuidedBookingPolicyInput = {
   en: string;
@@ -23,6 +24,9 @@ export async function saveGuidedBookingPolicy(
   const en = typeof input.en === "string" ? input.en.trim().slice(0, 8000) : "";
   const vi = typeof input.vi === "string" ? input.vi.trim().slice(0, 8000) : "";
   if (!en || !vi) return { ok: false, error: "policy_languages_required" };
+  if (!evaluatePolicyReadiness({ en, vi }).ready) {
+    return { ok: false, error: "policy_placeholders_remaining" };
+  }
 
   const hasGroupThreshold = input.groupTogetherThresholdMinutes !== undefined;
   const hasWholePartyRule = input.noShowGroupWholeParty !== undefined;

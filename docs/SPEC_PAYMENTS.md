@@ -2,6 +2,13 @@
 
 > Status: approved by Huy 2026-06-14. Đợt 1 = Square end-to-end; Đợt 2 = Stripe Connect.
 
+> **Current truth (2026-08-29):** phần no-show charge bên dưới là thiết kế lịch
+> sử. Hợp đồng hiện tại dùng undo **60 giây**, tách attendance / fee approval /
+> payment truth, chỉ Owner/Admin được Charge hoặc Waive, và receipt phê duyệt là
+> bất biến. Approval không tự gọi provider; dispatch mặc định OFF, cần release
+> gate + salon allowlist. Consent chỉ được tái dùng khi policy version, mức phí,
+> currency và group scope khớp hoàn toàn.
+
 ## 1. Mục tiêu & người dùng
 Khi khách đặt **online**, **khách mới** (và khách **rủi ro no-show cao**) **bắt buộc lưu thẻ** (card-on-file, **KHÔNG trừ tiền lúc đặt**). Nếu sau này khách **no-show**, **nhân viên có quyền tick "thu / không thu"** phí. Mỗi salon **tự chọn 1 provider** (Square hoặc Stripe) **lúc set up tiệm** bằng **1-bấm OAuth**; provider đã chọn được dùng cho **mọi giao dịch tiền**.
 
@@ -16,7 +23,7 @@ Khi khách đặt **online**, **khách mới** (và khách **rủi ro no-show ca
 - **Online card-on-file (bắt buộc)** cho: khách **mới** (chưa từng có booking hoàn tất ở tiệm) **HOẶC** `no_show_risk_score ≥ ngưỡng`. Lưu thẻ off-session, **không charge**. Khách quen sạch lịch sử → **không bị hỏi** (ít ma sát).
 - **Apple Pay / Google Pay 1-chạm** (Square Web Payments SDK / Stripe Payment Element) + ô nhập thẻ thường (fallback desktop).
 - **Consent**: checkbox đồng ý chính sách no-show + cho phép lưu thẻ; lưu `noshow_consent_at` (bắt buộc để charge hợp pháp + chống chargeback).
-- **No-show charge do nhân viên quyết**: đánh dấu no-show → thẻ "Thu phí $X? [Thu] / [Bỏ qua]" + **hoàn tác 8 giây** rồi mới charge off-session. Idempotent. Có refund.
+- **No-show fee do Owner/Admin quyết**: đánh dấu no-show → **hoàn tác 60 giây** → commit attendance → tạo phiếu duyệt riêng `[Duyệt thu] / [Miễn]`. Duyệt thu chưa phải provider dispatch; charge dùng ledger/idempotency + webhook reconciliation.
 - **Cấu hình phí**: % giá hoặc số tiền cố định; ngưỡng rủi ro; bật/tắt yêu cầu-lưu-thẻ-online. Trong Settings.
 
 ## 3. Baseline tự bake
@@ -54,7 +61,7 @@ Khi khách đặt **online**, **khách mới** (và khách **rủi ro no-show ca
 1. **Gate mới**: thêm điều kiện *khách mới* vào `noShowCardDecision` (new OR high-risk). [nhỏ, làm trước]
 2. **Bắt buộc + consent**: card-capture là bước **bắt buộc** trong luồng online cho new/high-risk; thêm checkbox consent + lưu `noshow_consent_at`.
 3. **Apple/Google Pay**: bật wallet trong `NoShowCardCapture` (Web Payments SDK đã load).
-4. **No-show charge UI**: thẻ "Thu/Bỏ qua" + undo 8s khi mark no-show (thay cho charge tự động hiện tại).
+4. **No-show charge UI**: phiếu duyệt Owner/Admin sau khi undo 60s đã commit; timeline chỉ báo “cần duyệt”, không hứa hành động chưa có.
 5. **Square OAuth connect UI** trong Settings (thay cho nhập token tay): "Connect with Square" + Test + badge. `salons.payment_provider='square'`.
 6. **Cấu hình phí** trong Settings (percent/fixed, threshold, on/off).
 
@@ -67,5 +74,5 @@ Next.js 16 + Supabase (đã có) + Square Web Payments SDK + Square OAuth; Đợ
 
 ## 8. Test plan
 - Unit: `noShowCardDecision` (new vs returning vs high-risk vs card-đã-lưu vs feature-off).
-- E2E: online booking khách mới → buộc lưu thẻ (wallet + card) + consent → confirm; mark no-show → Thu/Bỏ qua + undo; refund.
+- E2E: online booking khách mới → lưu thẻ + exact-version consent → confirm; mark no-show → undo 60s → committed attendance → request review → Owner/Admin Charge/Waive → sandbox dispatch/reconcile/refund trước production.
 - Prod smoke: 1 thẻ thật lưu + 1 charge thật + refund (sandbox trước).

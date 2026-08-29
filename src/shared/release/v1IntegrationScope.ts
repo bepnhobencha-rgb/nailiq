@@ -40,6 +40,16 @@ export function v1AllowsNoShowCardOnFile(): boolean {
 }
 
 /**
+ * Narrow Phase-2 exception. This is intentionally independent from the broad
+ * customer-payment gate: only a DB-approved no-show fee may use it, and callers
+ * must additionally enforce a salon allowlist. It is OFF in every environment
+ * unless release operations explicitly supplies the server-only switch.
+ */
+export function allowsApprovedNoShowChargeDispatch(): boolean {
+  return process.env.NAILIQ_APPROVED_NO_SHOW_CHARGE_DISPATCH === "true";
+}
+
+/**
  * V1 subscription collection is coordinated manually by NailIQ. The in-app
  * Stripe Checkout, Customer Portal and subscription-webhook state machine stay
  * unavailable until their durable idempotency/replay contract ships in Phase 2.
