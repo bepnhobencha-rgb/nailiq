@@ -87,7 +87,12 @@ async function completeGroupFlow(
   // STEP 5 — contact + submit
   await page.getByTestId("group-step-confirm-panel").waitFor({ state: "visible" });
   await page.getByTestId("group-primary-phone").fill("+16045551234");
-  await page.getByTestId("group-sms-consent").check();
+  // The phone-first gate normally captures SMS consent. The confirm-step
+  // checkbox is a fallback only, so it is intentionally absent in that case.
+  const groupSmsConsent = page.getByTestId("group-sms-consent");
+  if (await groupSmsConsent.isVisible()) {
+    await groupSmsConsent.check();
+  }
   await page.getByTestId("group-confirm").click();
 
   // Wait for success
