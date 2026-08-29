@@ -267,6 +267,7 @@ async function deliverChannel(input: {
       const result = await sendSmsReminder(snapshot.recipient, textBody, {
         salonId: snapshot.salonId,
         lang: snapshot.locale,
+        notificationType: "waitlist_offer",
       });
       if (result.suppressed) {
         await complete({

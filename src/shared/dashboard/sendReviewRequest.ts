@@ -241,6 +241,8 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
       const smsResult = await sendSmsReminder(toE164, smsBody, {
         salonId: salon.id,
         statusCallbackUrl: callbackUrl.toString(),
+        bookingId,
+        notificationType: "review_request",
       });
       if (!smsResult.ok) {
         console.error("[sendReviewRequest] SMS failed", smsResult.error);

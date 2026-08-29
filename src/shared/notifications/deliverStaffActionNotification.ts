@@ -16,6 +16,8 @@ import {
 import type { StaffNotifyEvent } from "@/shared/dashboard/staffNotificationSettings";
 import { buildEmailBrandHeader } from "@/shared/booking/emailBranding";
 
+const SMS_ATTEMPT_TYPE = "staff_action";
+
 /**
  * Deliver a staff-action customer notification (create/reschedule/cancel) on
  * the requested channels, in the resolved locale. Pure delivery — best-effort,
@@ -126,6 +128,8 @@ export async function deliverStaffActionNotification(
         const r = await sendSmsReminder(row.client_phone, body, {
           salonId: input.salonId,
           lang: locale === "en" ? "en" : "vi",
+          bookingId: input.bookingId,
+          notificationType: SMS_ATTEMPT_TYPE,
         });
         smsSent = r.ok;
         void logNotification({
@@ -137,6 +141,13 @@ export async function deliverStaffActionNotification(
           messageSid: r.messageSid,
           bodyPreview: body,
           ok: r.ok,
+          deliveryStatus: r.outcome === "accepted"
+            ? "sent"
+            : r.outcome === "suppressed"
+              ? "suppressed"
+              : r.outcome === "unknown"
+                ? "unknown"
+                : "failed",
           errorMessage: r.error,
         });
       } catch (e) {

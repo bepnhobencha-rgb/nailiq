@@ -76,6 +76,8 @@ export async function handleLateDecline(
       salonId,
       salonIsTest,
       lang: "vi",
+      bookingId: payload.booking_id,
+      notificationType: "late_decline_replacement",
     });
     outcomes.push(res.ok ? `sms_suggested:ok` : `sms_suggested:fail`);
   }
@@ -124,6 +126,7 @@ async function notifyTopWaitlist(
     salonId,
     salonIsTest,
     lang: "vi",
+    notificationType: "waitlist_invite",
   });
 
   // Mark as notified so the next dedup pass skips this entry
