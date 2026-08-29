@@ -2242,6 +2242,17 @@ export type UserMessages = {
       waive: string;
       cancel: string;
     };
+    /** Reversible attendance decision. Money is outside NailIQ V1. */
+    noShowSafety: {
+      title: string;
+      desc: (name: string) => string;
+      groupOnly: string;
+      confirm: string;
+      keep: string;
+      pending: string;
+      pendingDetail: string;
+      finalizeFailed: string;
+    };
     /** Grid lateness/tombstone labels. */
     latenessGrid: {
       /** Inline Start button aria-label and visible label. */
@@ -4734,6 +4745,19 @@ export const userEn: UserMessages = {
         "The appointment was marked no-show, but the card was not charged. Check the no-show record before contacting the guest.",
       waive: "Waive fee",
       cancel: "Cancel (mark no-show, decide later)",
+    },
+    noShowSafety: {
+      title: "Confirm no-show",
+      desc: (name: string) =>
+        `Confirm ${name} did not arrive. The booking will remain unchanged for 60 seconds.`,
+      groupOnly: "This affects only this guest, not the rest of the group.",
+      confirm: "Start 60-second review",
+      keep: "Keep booking",
+      pending: "No-show pending — booking still holds the slot",
+      pendingDetail:
+        "Undo within 60 seconds. No history, waitlist, notification, or fee runs before commit.",
+      finalizeFailed:
+        "The no-show was not committed. The booking remains the source of truth; refresh and review it.",
     },
     latenessGrid: {
       startShort: "Start",

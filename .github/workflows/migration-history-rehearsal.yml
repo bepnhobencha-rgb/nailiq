@@ -18,6 +18,7 @@ on:
       - "scripts/security/rehearse-resend-owner-delivery-truth.sql"
       - "scripts/security/rehearse-resend-customer-delivery-truth.sql"
       - "scripts/security/rehearse-booking-otp-delivery-truth.sql"
+      - "scripts/security/rehearse-no-show-safety-boundary.sql"
       - "scripts/security/rehearse-staff-offboarding-durable.sql"
       - "scripts/security/rehearse-staff-offboarding-durable-sequence.sql"
       - "scripts/security/rehearse-staff-offboarding-durable-concurrency.mjs"
@@ -239,6 +240,8 @@ jobs:
             -f scripts/security/rehearse-resend-customer-delivery-truth.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-booking-otp-delivery-truth.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-no-show-safety-boundary.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-staff-offboarding-durable.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \

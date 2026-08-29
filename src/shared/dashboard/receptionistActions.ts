@@ -77,6 +77,7 @@ import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { handleBookingProtection } from "@/shared/noshow/handleBookingProtection";
+import { finalizeAndProcessNoShowDecision } from "@/shared/noshow/noShowSafetyBoundary";
 import {
   createDepositForBooking,
 } from "@/shared/integrations/square/deposits";
@@ -271,7 +272,7 @@ async function transitionBookingToTerminalV1(
   ctx: NonNullable<Awaited<ReturnType<typeof getDashboardWriteClient>>>,
   input: {
     bookingId: string;
-    reason: "walkin_removed" | "desk_cancel" | "wix_decline" | "desk_no_show";
+    reason: "walkin_removed" | "desk_cancel" | "wix_decline";
     notificationRequestId?: string | null;
     notifySms?: boolean;
     notifyEmail?: boolean;
@@ -2143,31 +2144,29 @@ export async function declineWixBooking(
 }
 
 /**
- * Mark a confirmed / in-progress booking as a no-show (customer didn't attend). Terminal:
- * frees the slot and increments the client's lifetime no_show_count, which feeds the no-show
- * risk engine (and the Wix smart auto-approve). Owner/senior only.
+ * Begin a reversible no-show decision. The booking and its slot stay unchanged
+ * for at least 60 seconds; history, waitlist and owner notification remain
+ * dormant until the database finalizer commits the exact decision once.
  */
 export async function markNoShowBooking(
   slug: string,
   input: {
     salonId: string;
     bookingId: string;
-    /**
-     * Per-mark fee decision (decision B — the desk chooses, we never silently
-     * auto-bill):
-     *   true      → charge the saved Square card-on-file now (idempotent).
-     *   false     → waive: stamp 'waived' so the no-show tombstone shows the
-     *               fee was intentionally skipped.
-     *   undefined → leave the saved card untouched ('saved') so the desk can
-     *               still collect later from the tombstone ("Chưa thu — bấm để
-     *               thu"). The 1-tap overdue path lands here.
-     */
-    chargeFee?: boolean;
+    requestId: string;
   },
 ): Promise<
   | {
       ok: true;
-      charge?: { attempted: true; charged: boolean; reason: string };
+      decision: {
+        id: string;
+        state: "pending";
+        commitAfter: string;
+        scope: "booking_member";
+        bookingStatus: "confirmed" | "in_progress";
+        assistMode: "assist";
+        assistReasonCode: "scheduler_candidate" | "desk_observation";
+      };
     }
   | { ok: false; error: string }
 > {
@@ -2178,153 +2177,68 @@ export async function markNoShowBooking(
     return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
+  const requestId = String(input.requestId ?? "").trim();
+  if (!isUuidLike(requestId)) return fail("invalid_request");
 
-  const transition = await transitionBookingToTerminalV1(ctx, {
-    bookingId,
-    reason: "desk_no_show",
-  });
-  if (!transition.ok) return transition;
-  const { data: service } = await ctx.supabase
-    .from("services")
-    .select("name")
-    .eq("id", transition.booking.service_id)
-    .eq("salon_id", ctx.salon.id)
-    .maybeSingle();
-  const updated = {
-    ...transition.booking,
-    services: service ? { name: service.name } : null,
-  };
-
-  // Owner/admin "no-show" alert (opt-in, fire-and-forget).
-  after(() =>
-    sendOwnerBookingNotification({
-      salonId: ctx.salon.id,
-      bookingId,
-      event: "no_show",
-    }),
+  const { data, error } = await createServiceRoleClient().rpc(
+    "begin_booking_no_show_v1" as never,
+    {
+      p_request_id: requestId,
+      p_booking_id: bookingId,
+      p_salon_id: ctx.salon.id,
+      p_actor_user_id: ctxActorUserId(ctx),
+      p_actor_role: ctxActorRole(ctx),
+    } as never,
   );
-
-  // These two RPCs are SECURITY DEFINER + revoked from anon/authenticated, so
-  // they're invoked with the service-role client AFTER the role/salon auth above
-  // (never directly callable by an untrusted user).
-  const svc = createServiceRoleClient();
-
-  // Feed the no-show risk engine — best-effort, never fail the desk action on this.
-  if (updated.client_phone) {
-    const { error: bumpErr } = await svc.rpc("bump_client_no_show", {
-      p_phone: updated.client_phone,
-    });
-    if (bumpErr) console.error("[markNoShowBooking] bump", bumpErr);
-  }
-
-  // Canonical replay-safe slot recovery for this exact no-show occurrence.
-  try {
-    const { promoteAndDeliverWaitlistForBooking } =
-      await import("@/shared/noshow/promoteAndDeliverWaitlistOffer");
-    const promoted = await promoteAndDeliverWaitlistForBooking(bookingId);
-    if (!promoted.ok) console.error("[markNoShowBooking] canonical waitlist", promoted.code);
-  } catch (e) {
-    console.error("[markNoShowBooking] waitlist", e);
-  }
-
-  // No-show fee — the desk decides per-mark whether to collect (decision B).
-  // Idempotent (stable idempotency key) + best-effort; never fail the desk action.
-  let chargeResult:
-    { attempted: true; charged: boolean; reason: string } | undefined;
-  if (input.chargeFee === true) {
-    try {
-      const { chargeNoShowFee } =
-        await import("@/shared/integrations/square/noshow");
-      const result = await chargeNoShowFee(bookingId);
-      chargeResult = {
-        attempted: true,
-        charged: result.charged,
-        reason: result.reason,
-      };
-    } catch (e) {
-      console.error("[markNoShowBooking] noshow-fee", e);
-      chargeResult = {
-        attempted: true,
-        charged: false,
-        reason: "charge_failed",
-      };
-    }
-  } else if (input.chargeFee === false) {
-    // Waive — stamp 'waived' when a card is on file and nothing's been charged
-    // yet, so the tombstone reads as a deliberate skip (not an unbilled debt).
-    const { error: waiveErr } = await ctx.supabase
-      .from("bookings")
-      .update({ noshow_charge_status: "waived" } as never)
-      .eq("id", bookingId)
-      .eq("salon_id", ctx.salon.id)
-      .not("noshow_card_id", "is", null)
-      .neq("noshow_charge_status", "charged");
-    if (waiveErr) console.error("[markNoShowBooking] waive", waiveErr);
-  }
-
-  // Win-back — a friendly "we missed you, rebook" email (retention over
-  // penalty). Opt-out via salons.winback_enabled. Best-effort, off the response
-  // path; never fails the desk action.
-  const winbackEmail = (updated as { client_email?: string | null })
-    .client_email;
-  if (winbackEmail && winbackEmail.trim()) {
-    const clientName = String(
-      (updated as { client_name?: string | null }).client_name ?? "",
+  const raw = Array.isArray(data) ? data[0] : data;
+  const result = raw && typeof raw === "object"
+    ? (raw as Record<string, unknown>)
+    : null;
+  const decisionId = String(result?.decision_id ?? "");
+  const commitAfter = String(result?.commit_after ?? "");
+  const bookingStatus = result?.booking_status;
+  const assistReasonCode = result?.assist_reason_code;
+  if (
+    error ||
+    result?.success !== true ||
+    !isUuidLike(decisionId) ||
+    !Number.isFinite(Date.parse(commitAfter)) ||
+    result.state !== "pending" ||
+    result.scope !== "booking_member" ||
+    result.assist_mode !== "assist" ||
+    (bookingStatus !== "confirmed" && bookingStatus !== "in_progress") ||
+    (assistReasonCode !== "scheduler_candidate" &&
+      assistReasonCode !== "desk_observation")
+  ) {
+    const code = typeof result?.code === "string" ? result.code : "server_error";
+    return fail(
+      ["invalid_state", "booking_not_due", "request_conflict"].includes(code)
+        ? code
+        : "server_error",
     );
-    const svcName = String(
-      (updated as { services?: { name?: string | null } | null }).services
-        ?.name ?? "",
-    );
-    after(async () => {
-      try {
-        const s = ctx.salon;
-        if (s.winback_enabled === false || !s.slug) return;
-        const { sendWinBackEmail } =
-          await import("@/shared/noshow/sendWinBackEmail");
-        await sendWinBackEmail({
-          clientName,
-          clientEmail: winbackEmail,
-          salonName: String(s.name ?? ""),
-          salonSlug: String(s.slug),
-          serviceName: svcName,
-        });
-      } catch (e) {
-        console.error("[markNoShowBooking] winback", e);
-      }
-    });
   }
-
-  void logBookingEvent({
-    bookingId,
-    salonId: ctx.salon.id,
-    actorUserId: ctxActorUserId(ctx),
-    actorRole: ctxActorRole(ctx),
-    eventType: "booking_status_changed",
-    payload: {
-      to: "no_show",
-      reason: "desk_no_show",
-      fee:
-        input.chargeFee === true
-          ? chargeResult?.charged
-            ? "charged"
-            : "failed"
-          : input.chargeFee === false
-            ? "waived"
-            : "deferred",
+  return {
+    ok: true,
+    decision: {
+      id: decisionId,
+      state: "pending",
+      commitAfter,
+      scope: "booking_member",
+      bookingStatus,
+      assistMode: "assist",
+      assistReasonCode,
     },
-  });
-  return { ok: true, ...(chargeResult ? { charge: chargeResult } : {}) };
+  };
 }
 
 /**
- * Undo a no-show — the customer was just running late after all. Reverts
- * `no_show` → `confirmed` and decrements the client's no_show_count (so a
- * wrongly-marked guest isn't penalised). Same
- * front-desk roles as marking.
+ * Undo only a pending no-show decision. The booking never left its original
+ * state, so no compensating history, waitlist, notification or money action is
+ * required.
  */
 export async function undoNoShowBooking(
   slug: string,
-  input: { salonId: string; bookingId: string },
+  input: { salonId: string; bookingId: string; decisionId: string },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
@@ -2333,16 +2247,57 @@ export async function undoNoShowBooking(
     return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
-  return fail("phase_2_not_available");
+  const decisionId = String(input.decisionId ?? "").trim();
+  if (!isUuidLike(decisionId)) return fail("invalid_request");
+  const { data, error } = await createServiceRoleClient().rpc(
+    "undo_booking_no_show_v1" as never,
+    {
+      p_decision_id: decisionId,
+      p_salon_id: ctx.salon.id,
+      p_actor_user_id: ctxActorUserId(ctx),
+      p_actor_role: ctxActorRole(ctx),
+    } as never,
+  );
+  const raw = Array.isArray(data) ? data[0] : data;
+  const result = raw && typeof raw === "object"
+    ? (raw as Record<string, unknown>)
+    : null;
+  if (
+    error ||
+    result?.success !== true ||
+    result.booking_id !== bookingId
+  ) {
+    const code = typeof result?.code === "string" ? result.code : "server_error";
+    return fail(code === "undo_window_expired" ? code : "server_error");
+  }
+  return { ok: true };
 }
 
-/**
- * Collect the saved no-show fee on demand — for a booking already marked
- * `no_show` whose card was left uncharged because the desk deferred the fee
- * decision. Idempotent: `chargeNoShowFee` guards a
- * stable Square idempotency key + a 'charged' status check, so double-taps and
- * retries never double-bill. Front-desk roles only; audit-logged.
- */
+/** Commit one due no-show receipt. Membership is re-checked here and again in
+ * the database; provider-free post-commit effects use durable leases. */
+export async function finalizeNoShowBooking(
+  slug: string,
+  input: { salonId: string; bookingId: string; decisionId: string },
+): Promise<{ ok: true; code: string } | { ok: false; error: string }> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return fail("unauthorized");
+  if (!canMarkNoShow(ctx.role)) return fail("unauthorized");
+  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+  const bookingId = String(input.bookingId ?? "").trim();
+  const decisionId = String(input.decisionId ?? "").trim();
+  if (!isUuidLike(bookingId) || !isUuidLike(decisionId)) return fail("invalid_request");
+  const result = await finalizeAndProcessNoShowDecision(decisionId, ctx.salon.id);
+  if (!result.ok || result.bookingId !== bookingId || result.salonId !== ctx.salon.id) {
+    return fail(
+      result.code === "decision_not_due" || result.code === "booking_state_changed"
+        ? result.code
+        : "server_error",
+    );
+  }
+  return { ok: true, code: result.code };
+}
+
+/** V1 records attendance only. Money continues to be handled in Square. */
 export async function chargeNoShowFeeManual(
   slug: string,
   input: { salonId: string; bookingId: string },
@@ -2356,44 +2311,7 @@ export async function chargeNoShowFeeManual(
     return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
-
-  // Gate on the row first — only a no_show booking in THIS salon is chargeable
-  // here. chargeNoShowFee itself is salon-agnostic + idempotent, so the row
-  // check is what scopes the action to the authenticated desk.
-  const { data: row } = await ctx.supabase
-    .from("bookings")
-    .select("id, status, noshow_charge_status")
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .maybeSingle();
-  if (!row?.id) return fail("invalid_booking");
-  if ((row as { status?: string }).status !== "no_show")
-    return fail("invalid_state");
-
-  try {
-    const { chargeNoShowFee } =
-      await import("@/shared/integrations/square/noshow");
-    // The DB-owned lifetime operation decides whether this is a replay,
-    // definitive failure, or reconciliation. The desk never rotates a provider
-    // key and cannot accidentally create a second charge.
-    const res = await chargeNoShowFee(bookingId);
-    void logBookingEvent({
-      bookingId,
-      salonId: ctx.salon.id,
-      actorUserId: ctxActorUserId(ctx),
-      actorRole: ctxActorRole(ctx),
-      eventType: "booking_status_changed",
-      payload: {
-        reason: "desk_charge_noshow_fee",
-        charged: res.charged,
-        detail: res.reason,
-      },
-    });
-    return { ok: true, charged: res.charged, reason: res.reason };
-  } catch (e) {
-    console.error("[chargeNoShowFeeManual]", e);
-    return fail("server_error");
-  }
+  return fail("phase_2_not_available");
 }
 
 /**
@@ -2413,31 +2331,7 @@ export async function waiveNoShowFee(
     return fail("salon_mismatch");
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
-
-  const { data: updated, error: upErr } = await ctx.supabase
-    .from("bookings")
-    .update({ noshow_charge_status: "waived" } as never)
-    .eq("id", bookingId)
-    .eq("salon_id", ctx.salon.id)
-    .eq("status", "no_show")
-    .neq("noshow_charge_status", "charged")
-    .select("id")
-    .maybeSingle();
-  if (upErr) {
-    console.error("[waiveNoShowFee]", upErr);
-    return fail("server_error");
-  }
-  if (!updated?.id) return fail("invalid_state");
-
-  void logBookingEvent({
-    bookingId,
-    salonId: ctx.salon.id,
-    actorUserId: ctxActorUserId(ctx),
-    actorRole: ctxActorRole(ctx),
-    eventType: "booking_status_changed",
-    payload: { reason: "desk_waive_noshow_fee" },
-  });
-  return { ok: true };
+  return fail("phase_2_not_available");
 }
 
 /**

@@ -9,9 +9,6 @@ import {
   updateWaitlistAutoBook,
   waiveBookingDeposit,
   loadNoShowHistory,
-  chargeNoShowFeeFromProtection,
-  waiveNoShowFeeFromProtection,
-  sendNoShowFeeLinkFromProtection,
 } from "@/shared/noshow/noShowDashboardActions";
 import type {
   NoShowSummary,
@@ -58,7 +55,7 @@ type Props = {
   noshowProtectionEnabled: boolean;
   /** Whether the optional public/desk group-booking release is enabled. */
   groupBookingEnabled: boolean;
-  /** Group organizer's card covers the whole party's no-show fee. */
+  /** Legacy Phase-2 group fee setting; V1 does not expose or execute it. */
   noshowGroupWholeParty: boolean;
   /** "Who is asked for a card" rules. */
   noshowRequireNewCustomer: boolean;
@@ -69,7 +66,7 @@ type Props = {
   noshowDepositEscalationThreshold: number | null;
   noshowFeePercent: number;
   noshowRiskThreshold: number;
-  /** Charge the no-show fee % when a customer self-cancels late (opt-in). */
+  /** Legacy Phase-2 late-cancel fee setting; V1 preserves but does not expose it. */
   selfCancelFeeEnabled: boolean;
   /** Hours before start that a self-cancel counts as "late" (fee-eligible). */
   selfCancelWindowHours: number;
@@ -78,7 +75,7 @@ type Props = {
   summary: NoShowSummary;
   unconfirmed: UnconfirmedBooking[];
   waitlist: WaitlistOpportunity[];
-  /** No-show fees the saved-card charge failed on — desk can retry / waive. */
+  /** Historical provider fee records, read-only in V1. */
   uncollectedFees: UncollectedFee[];
 };
 
@@ -119,96 +116,22 @@ function StatCard({ label, value, color = "text-white" }: { label: string; value
   );
 }
 
-/**
- * Uncollected no-show fees — the saved-card charge failed (declined / no funds).
- * Turns a dead "failed" log into recoverable revenue: the desk can RETRY the
- * charge (the card may now have funds — a retry uses a fresh idempotency key so
- * Square re-attempts) or WAIVE it. A recovered/waived row drops off the list.
- */
 function UncollectedFeesCard({
-  slug,
-  salonId,
   fees,
   language,
 }: {
-  slug: string;
-  salonId: string;
   fees: UncollectedFee[];
   language: "en" | "vi";
 }) {
-  const [rows, setRows] = useState(fees);
-  const [busy, setBusy] = useState<Record<string, "retry" | "waive" | "link" | null>>({});
-  const [note, setNote] = useState<Record<string, string>>({});
   const vi = language === "vi";
-
-  if (rows.length === 0) return null;
-  const totalCents = rows.reduce((s, f) => s + f.feeCents, 0);
-
-  async function retry(id: string) {
-    setBusy((b) => ({ ...b, [id]: "retry" }));
-    setNote((n) => ({ ...n, [id]: "" }));
-    try {
-      const r = await chargeNoShowFeeFromProtection(slug, { salonId, bookingId: id });
-      if (r.ok && r.charged) {
-        setRows((rs) => rs.filter((f) => f.id !== id));
-      } else {
-        setNote((n) => ({
-          ...n,
-          [id]: vi ? "Vẫn chưa thu được — thẻ bị từ chối" : "Still declined",
-        }));
-      }
-    } catch {
-      setNote((n) => ({ ...n, [id]: vi ? "Lỗi, thử lại" : "Error, try again" }));
-    } finally {
-      setBusy((b) => ({ ...b, [id]: null }));
-    }
-  }
-
-  async function waive(id: string) {
-    setBusy((b) => ({ ...b, [id]: "waive" }));
-    try {
-      const r = await waiveNoShowFeeFromProtection(slug, { salonId, bookingId: id });
-      if (r.ok) setRows((rs) => rs.filter((f) => f.id !== id));
-    } catch {
-      /* leave the row; desk can retry the action */
-    } finally {
-      setBusy((b) => ({ ...b, [id]: null }));
-    }
-  }
-
-  async function sendLink(id: string) {
-    setBusy((b) => ({ ...b, [id]: "link" }));
-    setNote((n) => ({ ...n, [id]: "" }));
-    try {
-      const r = await sendNoShowFeeLinkFromProtection(slug, {
-        salonId,
-        bookingId: id,
-        sendSms: true,
-        language,
-      });
-      if (r.ok) {
-        setNote((n) => ({
-          ...n,
-          [id]:
-            r.smsSent || r.emailSent
-              ? vi ? "✓ Đã gửi link cho khách" : "✓ Link sent to customer"
-              : vi ? "✓ Đã tạo link (khách không có SĐT/email)" : "✓ Link created (no phone/email)",
-        }));
-      } else {
-        setNote((n) => ({ ...n, [id]: vi ? "Không tạo được link" : "Couldn't create link" }));
-      }
-    } catch {
-      setNote((n) => ({ ...n, [id]: vi ? "Lỗi, thử lại" : "Error, try again" }));
-    } finally {
-      setBusy((b) => ({ ...b, [id]: null }));
-    }
-  }
+  if (fees.length === 0) return null;
+  const totalCents = fees.reduce((sum, fee) => sum + fee.feeCents, 0);
 
   return (
     <div className="mt-4 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4">
       <div className="flex items-baseline justify-between gap-2">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-300/80">
-          💸 {vi ? "Phí no-show chưa thu được" : "Uncollected no-show fees"}
+          {vi ? "Bản ghi phí cũ cần đối chiếu" : "Legacy fee records to reconcile"}
         </p>
         <p className="text-sm font-bold tabular-nums text-amber-300">
           ${(totalCents / 100).toFixed(2)}
@@ -216,13 +139,11 @@ function UncollectedFeesCard({
       </div>
       <p className="mt-1 text-xs text-amber-200/70">
         {vi
-          ? "Charge thẻ đã lưu bị từ chối. Thử thu lại (thẻ có thể đã có tiền) hoặc bỏ qua."
-          : "The saved-card charge was declined. Retry (the card may now have funds) or waive."}
+          ? "NailIQ V1 không tự thu, thử lại hoặc gửi link thanh toán. Hãy kiểm tra receipt và xử lý trực tiếp trong Square."
+          : "NailIQ V1 does not charge, retry, or send payment links. Verify the receipt and handle this directly in Square."}
       </p>
       <ul className="mt-3 space-y-2">
-        {rows.map((f) => {
-          const b = busy[f.id] ?? null;
-          return (
+        {fees.map((f) => (
             <li
               key={f.id}
               data-testid={`uncollected-fee-${f.id}`}
@@ -243,47 +164,11 @@ function UncollectedFeesCard({
                   ${(f.feeCents / 100).toFixed(2)}
                 </p>
               </div>
-              {note[f.id] ? (
-                <p className="mt-1 text-[11px] text-red-400">{note[f.id]}</p>
-              ) : null}
-              <div className="mt-2 flex gap-2">
-                <button
-                  type="button"
-                  disabled={b !== null}
-                  onClick={() => void retry(f.id)}
-                  data-testid={`uncollected-fee-retry-${f.id}`}
-                  className="flex-1 rounded-md bg-amber-400/20 py-1.5 text-[11px] font-semibold text-amber-300 transition-colors hover:bg-amber-400/30 disabled:opacity-50"
-                >
-                  {b === "retry"
-                    ? vi ? "Đang thu…" : "Charging…"
-                    : vi ? "Thử thu lại" : "Retry charge"}
-                </button>
-                <button
-                  type="button"
-                  disabled={b !== null}
-                  onClick={() => void sendLink(f.id)}
-                  data-testid={`uncollected-fee-link-${f.id}`}
-                  className="flex-1 rounded-md border border-nq-primary/40 py-1.5 text-[11px] font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:opacity-50"
-                >
-                  {b === "link"
-                    ? vi ? "Đang gửi…" : "Sending…"
-                    : vi ? "Gửi link khách trả" : "Send pay link"}
-                </button>
-                <button
-                  type="button"
-                  disabled={b !== null}
-                  onClick={() => void waive(f.id)}
-                  data-testid={`uncollected-fee-waive-${f.id}`}
-                  className="flex-1 rounded-md border border-nq-border/50 py-1.5 text-[11px] font-semibold text-nq-muted transition-colors hover:text-nq-foreground disabled:opacity-50"
-                >
-                  {b === "waive"
-                    ? vi ? "Đang bỏ…" : "Waiving…"
-                    : vi ? "Bỏ qua" : "Waive"}
-                </button>
-              </div>
+              <p className="mt-2 text-xs font-medium text-nq-primary">
+                {vi ? "Xử lý trong Square — NailIQ chỉ hiển thị lịch sử." : "Handle in Square — NailIQ shows history only."}
+              </p>
             </li>
-          );
-        })}
+          ))}
       </ul>
     </div>
   );
@@ -324,7 +209,7 @@ function ChargeStatusBadge({ status, error }: { status: string | null; error: st
   );
 }
 
-function NoShowHistorySection({ slug, salonId, language }: { slug: string; salonId: string; language: "en" | "vi" }) {
+function NoShowHistorySection({ slug, language }: { slug: string; language: "en" | "vi" }) {
   const vi = language === "vi";
   const [items, setItems] = useState<NoShowHistoryItem[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -332,8 +217,6 @@ function NoShowHistorySection({ slug, salonId, language }: { slug: string; salon
   const [loadingMore, setLoadingMore] = useState(false);
   const [days, setDays] = useState<number | null>(30);
   const [statusFilter, setStatusFilter] = useState("all");
-  const [actionBusy, setActionBusy] = useState<Record<string, string | null>>({});
-  const [actionNote, setActionNote] = useState<Record<string, string>>({});
   const PAGE = 20;
 
   const salonSlug = slug;
@@ -375,54 +258,6 @@ function NoShowHistorySection({ slug, salonId, language }: { slug: string; salon
     setItems([]);
     setLoading(true);
     void fetchPage(days, s, 0, false);
-  }
-
-  async function retryCharge(id: string) {
-    setActionBusy((b) => ({ ...b, [id]: "retry" }));
-    setActionNote((n) => ({ ...n, [id]: "" }));
-    try {
-      const r = await chargeNoShowFeeFromProtection(salonSlug, { salonId, bookingId: id });
-      if (r.ok && r.charged) {
-        setItems((prev) => prev.map((x) => x.id === id ? { ...x, chargeStatus: "charged", chargeError: null } : x));
-        setActionNote((n) => ({ ...n, [id]: vi ? "✓ Đã thu thành công" : "✓ Charged successfully" }));
-      } else {
-        setActionNote((n) => ({ ...n, [id]: vi ? "Vẫn bị từ chối" : "Still declined" }));
-      }
-    } catch {
-      setActionNote((n) => ({ ...n, [id]: vi ? "Lỗi, thử lại" : "Error, try again" }));
-    } finally {
-      setActionBusy((b) => ({ ...b, [id]: null }));
-    }
-  }
-
-  async function waive(id: string) {
-    setActionBusy((b) => ({ ...b, [id]: "waive" }));
-    try {
-      const r = await waiveNoShowFeeFromProtection(salonSlug, { salonId, bookingId: id });
-      if (r.ok) {
-        setItems((prev) => prev.map((x) => x.id === id ? { ...x, chargeStatus: "waived" } : x));
-      }
-    } finally {
-      setActionBusy((b) => ({ ...b, [id]: null }));
-    }
-  }
-
-  async function sendLink(id: string) {
-    setActionBusy((b) => ({ ...b, [id]: "link" }));
-    setActionNote((n) => ({ ...n, [id]: "" }));
-    try {
-      const r = await sendNoShowFeeLinkFromProtection(salonSlug, { salonId, bookingId: id, sendSms: true, language });
-      setActionNote((n) => ({
-        ...n,
-        [id]: r.ok
-          ? (r.smsSent || r.emailSent ? (vi ? "✓ Đã gửi link" : "✓ Link sent") : (vi ? "✓ Đã tạo link" : "✓ Link created"))
-          : (vi ? "Không tạo được link" : "Couldn't create link"),
-      }));
-    } catch {
-      setActionNote((n) => ({ ...n, [id]: vi ? "Lỗi, thử lại" : "Error, try again" }));
-    } finally {
-      setActionBusy((b) => ({ ...b, [id]: null }));
-    }
   }
 
   return (
@@ -482,7 +317,6 @@ function NoShowHistorySection({ slug, salonId, language }: { slug: string; salon
         ) : (
           <ul className="space-y-2">
             {items.map((item) => {
-              const busy = actionBusy[item.id] ?? null;
               const isFailed = item.chargeStatus === "failed";
               return (
                 <li
@@ -519,37 +353,12 @@ function NoShowHistorySection({ slug, salonId, language }: { slug: string; salon
                     </div>
                   </div>
 
-                  {actionNote[item.id] && (
-                    <p className="mt-1.5 text-[11px] text-nq-primary">{actionNote[item.id]}</p>
-                  )}
-
                   {isFailed && (
-                    <div className="mt-2 flex gap-1.5">
-                      <button
-                        type="button"
-                        disabled={busy !== null}
-                        onClick={() => void retryCharge(item.id)}
-                        className="flex-1 rounded-md bg-red-500/15 py-1.5 text-[11px] font-semibold text-red-300 transition-colors hover:bg-red-500/25 disabled:opacity-50"
-                      >
-                        {busy === "retry" ? (vi ? "Đang thu…" : "Charging…") : (vi ? "Thử thu lại" : "Retry")}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy !== null}
-                        onClick={() => void sendLink(item.id)}
-                        className="flex-1 rounded-md border border-nq-primary/40 py-1.5 text-[11px] font-semibold text-nq-primary transition-colors hover:bg-nq-primary/10 disabled:opacity-50"
-                      >
-                        {busy === "link" ? (vi ? "Đang gửi…" : "Sending…") : (vi ? "Gửi link" : "Send link")}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy !== null}
-                        onClick={() => void waive(item.id)}
-                        className="flex-1 rounded-md border border-nq-border/50 py-1.5 text-[11px] font-semibold text-nq-muted transition-colors hover:text-nq-foreground disabled:opacity-50"
-                      >
-                        {busy === "waive" ? (vi ? "Đang bỏ…" : "Waiving…") : (vi ? "Bỏ qua" : "Waive")}
-                      </button>
-                    </div>
+                    <p className="mt-2 text-xs font-medium text-nq-primary">
+                      {vi
+                        ? "Xử lý trong Square — NailIQ V1 không thử thu, bỏ phí hoặc gửi link thanh toán."
+                        : "Handle in Square — NailIQ V1 does not retry, waive, or send payment links."}
+                    </p>
                   )}
                 </li>
               );
@@ -577,7 +386,6 @@ function NoShowHistorySection({ slug, salonId, language }: { slug: string; salon
 
 export function NoShowProtectionHub({
   slug,
-  salonId,
   isOwner,
   autoBookEnabled: initialAutoBook,
   remindersEnabled: initialReminders,
@@ -649,7 +457,6 @@ export function NoShowProtectionHub({
   const [reqPrior, setReqPrior] = useState(initialReqPrior);
   const [minCount, setMinCount] = useState(String(initialMinCount));
   const [reqRisk, setReqRisk] = useState(initialReqRisk);
-  // Escalation: ON when a threshold is set. The number input holds the count.
   const [escalationOn, setEscalationOn] = useState(initialEscalation != null);
   const [escalationThreshold, setEscalationThreshold] = useState(
     String(initialEscalation ?? 2),
@@ -668,20 +475,18 @@ export function NoShowProtectionHub({
       const r = await updateNoShowCardSettings(slug, {
         payment_provider: provider,
         noshow_protection_enabled: noshowEnabled,
-        noshow_fee_percent: parseInt(noshowPct, 10) || 0,
+        // Phase-2 money settings remain unchanged and are not editable in V1.
+        noshow_fee_percent: initialNoshowPct,
         noshow_risk_threshold: parseInt(noshowThreshold, 10) || 0,
-        noshow_group_whole_party: wholeParty,
+        noshow_group_whole_party: initialWholeParty,
         noshow_require_new_customer: reqNew,
         noshow_require_prior_noshow: reqPrior,
         noshow_min_noshow_count: parseInt(minCount, 10) || 1,
         noshow_require_high_risk: reqRisk,
-        noshow_deposit_escalation_threshold: escalationOn
-          ? parseInt(escalationThreshold, 10) || 2
-          : null,
-        self_cancel_fee_enabled: selfCancelFee,
-        self_cancel_window_hours: parseInt(selfCancelWindow, 10) || 24,
-        self_cancel_fee_percent:
-          selfCancelPct.trim() === "" ? null : parseInt(selfCancelPct, 10) || 0,
+        noshow_deposit_escalation_threshold: initialEscalation,
+        self_cancel_fee_enabled: initialSelfCancelFee,
+        self_cancel_window_hours: initialSelfCancelWindow,
+        self_cancel_fee_percent: initialSelfCancelPct,
       });
       setCardSaveMsg(r.ok ? "Đã lưu" : (r.error ?? "Lỗi"));
       setTimeout(() => setCardSaveMsg(null), 3000);
@@ -770,24 +575,23 @@ export function NoShowProtectionHub({
           </ul>
         </section>
 
-        {/* Revenue recovered — the payoff of card-on-file protection. */}
+        {/* Historical provider records only. NailIQ V1 never moves money. */}
         <div className="mt-4 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-4">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-300/80">
-            💰 No-show fees recovered / Phí no-show đã thu
+            {language === "vi" ? "Phí lịch sử do cổng thanh toán ghi nhận" : "Historical provider-recorded fees"}
           </p>
           <p className="mt-1 text-3xl font-bold tabular-nums text-emerald-300">
             ${(summary.noShowFeesRecoveredCents / 100).toFixed(2)}
           </p>
           <p className="mt-1 text-xs text-emerald-200/70">
-            {summary.noShowFeesChargedCount} charged · {summary.noShowFeesWaivedCount} waived ·{" "}
-            {summary.cardsOnFileCount} card{summary.cardsOnFileCount === 1 ? "" : "s"} on file protecting upcoming bookings
+            {language === "vi"
+              ? `${summary.noShowFeesChargedCount} đã ghi nhận · ${summary.noShowFeesWaivedCount} đã bỏ · NailIQ V1 không tự thu tiền`
+              : `${summary.noShowFeesChargedCount} recorded · ${summary.noShowFeesWaivedCount} waived · NailIQ V1 never charges automatically`}
           </p>
         </div>
 
-        {/* Uncollected fees — failed charges the salon can recover. */}
+        {/* Legacy failed charge records are read-only in NailIQ V1. */}
         <UncollectedFeesCard
-          slug={slug}
-          salonId={salonId}
           fees={uncollectedFees}
           language={language}
         />
@@ -819,8 +623,9 @@ export function NoShowProtectionHub({
               Lưu thẻ khi đặt (chống no-show)
             </h2>
             <p className="mt-1 text-xs text-nq-muted">
-              Khách lần đầu &amp; khách rủi ro cao phải lưu thẻ (không trừ tiền).
-              No-show thì nhân viên chọn thu hay bỏ qua.
+              {language === "vi"
+                ? "Có thể mời khách mới hoặc booking rủi ro lưu thẻ. Lưu thẻ không phải là thu tiền."
+                : "New customers or higher-risk bookings may be asked to save a card. Saving a card is not a charge."}
             </p>
 
             <label className="mt-4 block text-xs font-medium text-nq-muted">
@@ -856,9 +661,9 @@ export function NoShowProtectionHub({
               {noshowEnabled ? (
                 <>
                   <span className="font-medium text-nq-text">Đang BẬT:</span> khách rủi ro
-                  được mời lưu thẻ khi đặt. <span className="text-nq-text">Không thu tiền
-                  trước</span> — chỉ trừ phí no-show nếu khách không đến. Đây là cách bảo vệ
-                  ít cản trở nhất.
+                  được mời lưu thẻ khi đặt. <span className="text-nq-text">NailIQ V1 không
+                  tự trừ tiền</span>; thẻ chỉ được ghi nhận để salon xử lý riêng trong
+                  provider khi có quyết định hợp lệ.
                 </>
               ) : (
                 <>
@@ -925,6 +730,39 @@ export function NoShowProtectionHub({
               </div>
             ) : null}
 
+            <div
+              data-testid="v1-no-show-money-boundary"
+              className="mt-4 rounded-xl border border-nq-primary/30 bg-nq-primary/5 p-3"
+            >
+              <p className="text-sm font-semibold text-nq-text">
+                {language === "vi" ? "Ranh giới tiền V1" : "V1 money boundary"}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-nq-muted">
+                {language === "vi"
+                  ? "NailIQ chỉ lưu trạng thái thẻ và no-show. NailIQ không tự thu, thử thu lại, miễn hoặc hoàn phí. Mọi xử lý tiền thực hiện trong Square/Stripe với quyết định của người có quyền."
+                  : "NailIQ records card and no-show status only. It never charges, retries, waives, or refunds a fee automatically. Money is handled in Square/Stripe by an authorized person."}
+              </p>
+            </div>
+
+            <div className="mt-3">
+              <label className="block text-xs text-nq-muted">
+                {language === "vi"
+                  ? "Ngưỡng rủi ro để mời lưu thẻ"
+                  : "Risk threshold for requesting a saved card"}
+              </label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={noshowThreshold}
+                onChange={(e) => setNoshowThreshold(e.target.value)}
+                className="mt-1 w-24 rounded-lg border border-nq-border/50 bg-nq-bg px-2 py-1 text-sm text-nq-text"
+              />
+            </div>
+
+            {/* Phase-2 policy controls remain source-compatible but are not
+                exposed or persisted by V1. */}
+            <div className="hidden" aria-hidden="true">
             {noshowEnabled ? (
               <>
                 <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm text-nq-text">
@@ -1099,6 +937,7 @@ export function NoShowProtectionHub({
                   </>
                 )}
               </p>
+            </div>
             </div>
 
             <button
@@ -1456,7 +1295,7 @@ export function NoShowProtectionHub({
         )}
 
         {/* No-show history — always visible, self-loads */}
-        <NoShowHistorySection slug={slug} salonId={salonId} language={language} />
+        <NoShowHistorySection slug={slug} language={language} />
       </MobileStack>
     </ResponsiveShell>
   );

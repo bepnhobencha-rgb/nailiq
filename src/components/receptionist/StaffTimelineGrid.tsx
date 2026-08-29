@@ -1729,12 +1729,12 @@ function StaffTimelineGridImpl({
                                 : undefined
                             }
                             onCharge={
-                              canCharge
+                              canCharge && onTombstoneCharge
                                 ? () => onTombstoneCharge?.(t.id)
                                 : undefined
                             }
                             onWaive={
-                              canCharge
+                              canCharge && onTombstoneWaive
                                 ? () => onTombstoneWaive?.(t.id)
                                 : undefined
                             }

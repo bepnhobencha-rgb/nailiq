@@ -17,6 +17,13 @@ const center = readFileSync(
   resolve(process.cwd(), "src/components/receptionist/ReceptionistCenter.tsx"),
   "utf8",
 );
+const noShowSafetyMigration = readFileSync(
+  resolve(
+    process.cwd(),
+    "supabase/migrations/20260829024500_add_no_show_safety_boundary.sql",
+  ),
+  "utf8",
+);
 
 describe("V1 terminal booking correction policy", () => {
   it("hard-offs linked archived recovery in the database", () => {
@@ -86,22 +93,22 @@ describe("V1 terminal booking correction policy", () => {
   });
 
   it("routes terminal writes through the service-only transaction", () => {
-    for (const reason of [
-      "walkin_removed",
-      "desk_cancel",
-      "wix_decline",
-      "desk_no_show",
-    ]) {
+    for (const reason of ["walkin_removed", "desk_cancel", "wix_decline"]) {
       expect(actions).toContain(`reason: "${reason}"`);
     }
     expect(actions).toContain('"transition_booking_to_terminal_v1" as never');
     expect(actions).toContain('"undo_recent_cancelled_booking_v1" as never');
+    expect(actions).not.toContain('reason: "desk_no_show"');
+    expect(actions).toContain('"begin_booking_no_show_v1" as never');
+    expect(actions).toContain("finalizeAndProcessNoShowDecision");
   });
 
-  it("hard-offs long-lived restore and no-show undo in server and client", () => {
+  it("hard-offs long-lived restore while allowing only pending no-show undo", () => {
     expect(actions).toMatch(
-      /undoNoShowBooking[\s\S]*return fail\("phase_2_not_available"\)/u,
+      /undoNoShowBooking[\s\S]*"undo_booking_no_show_v1" as never/u,
     );
+    expect(noShowSafetyMigration).toContain("clock_timestamp() >= v_decision.commit_after");
+    expect(noShowSafetyMigration).toContain("'undo_window_expired'");
     expect(actions).toMatch(
       /restoreCancelledBooking[\s\S]*return fail\("phase_2_not_available"\)/u,
     );
@@ -109,8 +116,7 @@ describe("V1 terminal booking correction policy", () => {
     expect(center).toMatch(
       /drawerRestoreAction\s*=[\s\S]*v1AllowsLongLivedTerminalCorrection[\s\S]*!archivedBookingRecoveryEnabled/u,
     );
-    expect(center).toMatch(
-      /onUndoNoShow=[\s\S]*v1AllowsLongLivedTerminalCorrection[\s\S]*!archivedBookingRecoveryEnabled/u,
-    );
+    expect(center).toContain("onUndoNoShow={undefined}");
+    expect(center).toContain('type: "assign" | "cancel" | "no_show"');
   });
 });

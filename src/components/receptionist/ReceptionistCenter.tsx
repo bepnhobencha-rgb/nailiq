@@ -99,12 +99,11 @@ import {
   declineWixBooking,
   markNoShowBooking,
   undoNoShowBooking,
+  finalizeNoShowBooking,
   setBookingFinalPrice,
   undoCancelBooking,
   cancelWaitingWalkin,
   undoWalkinAssignment,
-  chargeNoShowFeeManual,
-  waiveNoShowFee,
   deskClaimPartySlotAction,
 } from "@/shared/dashboard/receptionistActions";
 import { lookupClientByPhone } from "@/shared/dashboard/lookupClientByPhoneAction";
@@ -417,11 +416,12 @@ function walkinEffectiveSpanMinutes(
 
 type UndoToastState = {
   bookingId: string;
+  decisionId?: string;
   headline: string;
   detailLine: string;
   secondsRemaining: number;
-  /** "assign" = undo walkin assignment; "cancel" = undo booking cancel */
-  type: "assign" | "cancel";
+  /** "no_show" undoes only the pending decision; the booking is unchanged. */
+  type: "assign" | "cancel" | "no_show";
 };
 
 function ReceptionistGateError({
@@ -853,6 +853,8 @@ function ReceptionistCenterInner({
 
   const [undoState, setUndoState] = useState<UndoToastState | null>(null);
   const undoTimerRef = useRef<number | null>(null);
+  const noShowRequestIdsRef = useRef<Map<string, string>>(new Map());
+  const noShowFinalizeTimersRef = useRef<Map<string, number>>(new Map());
 
   const undoVisible = undoState !== null;
 
@@ -900,9 +902,14 @@ function ReceptionistCenterInner({
   const [calendarRefreshNonce, setCalendarRefreshNonce] = useState(0);
 
   useEffect(() => {
+    const noShowTimers = noShowFinalizeTimersRef.current;
     return () => {
       if (undoTimerRef.current !== null)
         window.clearInterval(undoTimerRef.current);
+      for (const timer of noShowTimers.values()) {
+        window.clearTimeout(timer);
+      }
+      noShowTimers.clear();
     };
   }, []);
 
@@ -962,12 +969,12 @@ function ReceptionistCenterInner({
   // so re-clicking the tab while already on the page did nothing.
 
   const [drawerBusy, setDrawerBusy] = useState(false);
-  // No-show fee charge/waive modal — shown when a no-show'd booking has a Square
-  // card on file (declared here, above the TV-mode early return, so the hook
-  // order is stable). The charge/waive decision is wired in `triggerMarkNoShow`.
-  const [noShowChargeModal, setNoShowChargeModal] = useState<{
+  // Human confirmation precedes a durable 60-second no-show decision window.
+  // This is deliberately independent of card/provider state.
+  const [noShowConfirmModal, setNoShowConfirmModal] = useState<{
     bookingId: string;
-    feeCents: number;
+    clientName: string;
+    isGroupMember: boolean;
   } | null>(null);
   // Pending desk-cancel that hit a paid deposit → ask refund-or-keep first.
   const [depositCancel, setDepositCancel] = useState<{
@@ -1656,8 +1663,29 @@ function ReceptionistCenterInner({
     router.refresh();
   };
 
-  const onUndoToastUndo =
-    undoState?.type === "cancel" ? undoCancel : undoAssign;
+  const undoPendingNoShow = async () => {
+    if (!undoState || undoState.type !== "no_show" || !undoState.decisionId) return;
+    const timer = noShowFinalizeTimersRef.current.get(undoState.decisionId);
+    if (timer !== undefined) window.clearTimeout(timer);
+    noShowFinalizeTimersRef.current.delete(undoState.decisionId);
+    const res = await undoNoShowBooking(slug, {
+      salonId: data.salon.id,
+      bookingId: undoState.bookingId,
+      decisionId: undoState.decisionId,
+    });
+    if (!res.ok) {
+      setShakeMessage(mutationMessage(messages.receptionist, res.error));
+      await reloadCurrentDay();
+      router.refresh();
+    }
+    setUndoState(null);
+  };
+
+  const onUndoToastUndo = undoState?.type === "cancel"
+    ? undoCancel
+    : undoState?.type === "no_show"
+      ? undoPendingNoShow
+      : undoAssign;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2253,7 +2281,9 @@ function ReceptionistCenterInner({
       setDateOffset(next);
       setDayLoading(true);
       setAssigningWalkinId(null);
-      setUndoState(null);
+      setUndoState((current) =>
+        current?.type === "no_show" ? current : null,
+      );
       const ymd = salonDateOffset(timezone, next, nowIso || undefined);
       const res = await loadReceptionistCenterDataAction(slug, ymd);
       setDayLoading(false);
@@ -3097,51 +3127,92 @@ function ReceptionistCenterInner({
       }
     : undefined;
 
-  const handleMarkNoShow = async (id: string, chargeFee?: boolean) => {
+  const scheduleNoShowFinalization = (
+    bookingId: string,
+    decisionId: string,
+    commitAfter: string,
+  ) => {
+    const existing = noShowFinalizeTimersRef.current.get(decisionId);
+    if (existing !== undefined) window.clearTimeout(existing);
+    const delayMs = Math.max(
+      0,
+      Date.parse(commitAfter) - new Date().getTime() + 250,
+    );
+    const timer = window.setTimeout(async () => {
+      noShowFinalizeTimersRef.current.delete(decisionId);
+      const result = await finalizeNoShowBooking(slug, {
+        salonId: data.salon.id,
+        bookingId,
+        decisionId,
+      });
+      if (!result.ok && result.error === "decision_not_due") {
+        scheduleNoShowFinalization(
+          bookingId,
+          decisionId,
+          new Date(Date.now() + 1_000).toISOString(),
+        );
+        return;
+      }
+      setUndoState((current) =>
+        current?.type === "no_show" && current.decisionId === decisionId
+          ? null
+          : current,
+      );
+      if (!result.ok) {
+        setShakeMessage(rcMessages.noShowSafety.finalizeFailed);
+      }
+      await reloadCurrentDay();
+      router.refresh();
+    }, delayMs);
+    noShowFinalizeTimersRef.current.set(decisionId, timer);
+  };
+
+  const handleMarkNoShow = async (id: string) => {
     if (!id) return;
     setDrawerBusy(true);
+    const requestId =
+      noShowRequestIdsRef.current.get(id) ?? crypto.randomUUID();
+    noShowRequestIdsRef.current.set(id, requestId);
     try {
       const r = await markNoShowBooking(slug, {
         salonId: data.salon.id,
         bookingId: id,
-        ...(chargeFee !== undefined ? { chargeFee } : {}),
+        requestId,
       });
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
       } else {
-        if (r.charge?.attempted && !r.charge.charged) {
-          // Attendance and payment are separate outcomes. Never let the desk
-          // tell a customer they were charged when the provider declined.
-          setShakeMessage(rcMessages.noShowFeeModal.chargeFailed);
-        }
+        noShowRequestIdsRef.current.delete(id);
+        const secondsRemaining = Math.max(
+          1,
+          Math.ceil((Date.parse(r.decision.commitAfter) - Date.now()) / 1_000),
+        );
+        setUndoState({
+          bookingId: id,
+          decisionId: r.decision.id,
+          headline: rcMessages.noShowSafety.pending,
+          detailLine: rcMessages.noShowSafety.pendingDetail,
+          secondsRemaining,
+          type: "no_show",
+        });
+        scheduleNoShowFinalization(id, r.decision.id, r.decision.commitAfter);
         closeBookingDrawer();
-        await reloadCurrentDay();
-        router.refresh();
       }
     } finally {
       setDrawerBusy(false);
     }
   };
 
-  // Check if booking has a card + fee before marking no-show; show the
-  // charge/waive modal if so. Plain functions (NOT hooks) — they live after the
-  // component's early `return` for TV mode, where calling useState/useCallback
-  // would violate the rules of hooks. `noShowChargeModal` state is declared up
-  // with the other useState hooks above the early return.
+  // A no-show always gets the same explicit confirmation, regardless of saved
+  // card state. Group scope is one booking member only.
   const triggerMarkNoShow = (id: string) => {
     const b = data.bookingsForDay.find((x) => x.id === id);
-    if (
-      b &&
-      b.noshow_card_id &&
-      b.noshow_fee_cents &&
-      b.noshow_fee_cents > 0 &&
-      b.noshow_charge_status !== "charged" &&
-      b.noshow_charge_status !== "waived"
-    ) {
-      setNoShowChargeModal({ bookingId: id, feeCents: b.noshow_fee_cents });
-    } else {
-      void handleMarkNoShow(id);
-    }
+    if (!b) return;
+    setNoShowConfirmModal({
+      bookingId: id,
+      clientName: displayCustomerName(b.client_name, attentionRemovedLabel),
+      isGroupMember: Boolean(b.group_id),
+    });
   };
 
   const onDrawerMarkNoShow = () =>
@@ -3158,65 +3229,6 @@ function ReceptionistCenterInner({
     }
     await reloadCurrentDay();
     router.refresh();
-  };
-
-  // Tombstone handlers — undo / charge / waive from the grid ribbon popover.
-  const handleTombstoneUndo = async (bookingId: string) => {
-    if (!bookingId) return;
-    setDrawerBusy(true);
-    try {
-      const r = await undoNoShowBooking(slug, {
-        salonId: data.salon.id,
-        bookingId,
-      });
-      if (!r.ok) {
-        setShakeMessage(mutationMessage(messages.receptionist, r.error));
-      } else {
-        closeBookingDrawer();
-        await reloadCurrentDay();
-        router.refresh();
-      }
-    } finally {
-      setDrawerBusy(false);
-    }
-  };
-
-  const handleTombstoneCharge = async (bookingId: string) => {
-    setDrawerBusy(true);
-    try {
-      const r = await chargeNoShowFeeManual(slug, {
-        salonId: data.salon.id,
-        bookingId,
-      });
-      if (!r.ok) setShakeMessage(messages.receptionist.actionErrorFallback);
-      else if (!r.charged) {
-        setShakeMessage(rcMessages.noShowFeeModal.chargeFailed);
-        await reloadCurrentDay();
-        router.refresh();
-      } else {
-        await reloadCurrentDay();
-        router.refresh();
-      }
-    } finally {
-      setDrawerBusy(false);
-    }
-  };
-
-  const handleTombstoneWaive = async (bookingId: string) => {
-    setDrawerBusy(true);
-    try {
-      const r = await waiveNoShowFee(slug, {
-        salonId: data.salon.id,
-        bookingId,
-      });
-      if (!r.ok) setShakeMessage(messages.receptionist.actionErrorFallback);
-      else {
-        await reloadCurrentDay();
-        router.refresh();
-      }
-    } finally {
-      setDrawerBusy(false);
-    }
   };
 
   // No-show: only for a confirmed / in-progress booking whose start time has passed
@@ -3278,29 +3290,6 @@ function ReceptionistCenterInner({
               ? d.restorePast
               : mutationMessage(messages.receptionist, r.error);
         setShakeMessage(msg);
-      } else {
-        closeBookingDrawer();
-        await reloadCurrentDay();
-        router.refresh();
-      }
-    } finally {
-      setDrawerBusy(false);
-    }
-  };
-
-  // Undo a no-show (the guest was just running late). Reverts to confirmed +
-  // decrements their no-show history so they aren't wrongly penalised. Shared by
-  // the drawer action and the "needs attention" strip.
-  const handleUndoNoShow = async (id: string) => {
-    if (!id) return;
-    setDrawerBusy(true);
-    try {
-      const r = await undoNoShowBooking(slug, {
-        salonId: data.salon.id,
-        bookingId: id,
-      });
-      if (!r.ok) {
-        setShakeMessage(mutationMessage(messages.receptionist, r.error));
       } else {
         closeBookingDrawer();
         await reloadCurrentDay();
@@ -3404,12 +3393,7 @@ function ReceptionistCenterInner({
       displayName={displayCustomerName}
       onOpenBooking={(id) => openBookingDrawer(id)}
       onMarkNoShow={(id) => void triggerMarkNoShow(id)}
-      onUndoNoShow={
-        v1AllowsLongLivedTerminalCorrection &&
-        !archivedBookingRecoveryEnabled
-          ? (id) => void handleUndoNoShow(id)
-          : undefined
-      }
+      onUndoNoShow={undefined}
       onOpenWaitlist={handleOpenWaitlistAttention}
       embedded={embedded}
     />
@@ -4636,14 +4620,9 @@ function ReceptionistCenterInner({
                       ? (id) => void handleStartBooking(id)
                       : undefined
                   }
-                  onTombstoneUndo={
-                    v1AllowsLongLivedTerminalCorrection &&
-                    !archivedBookingRecoveryEnabled
-                      ? (id) => void handleTombstoneUndo(id)
-                      : undefined
-                  }
-                  onTombstoneCharge={(id) => void handleTombstoneCharge(id)}
-                  onTombstoneWaive={(id) => void handleTombstoneWaive(id)}
+                  onTombstoneUndo={undefined}
+                  onTombstoneCharge={undefined}
+                  onTombstoneWaive={undefined}
                   assigning={assignedSlot}
                   onAssignSlot={(staffId, slotStartUtc) =>
                     void onWalkinAssignSlot(staffId, slotStartUtc)
@@ -4779,14 +4758,9 @@ function ReceptionistCenterInner({
                     : undefined
                 }
                 language={language === "vi" ? "vi" : "en"}
-                onTombstoneUndo={
-                  v1AllowsLongLivedTerminalCorrection &&
-                  !archivedBookingRecoveryEnabled
-                    ? (id) => void handleTombstoneUndo(id)
-                    : undefined
-                }
-                onTombstoneCharge={(id) => void handleTombstoneCharge(id)}
-                onTombstoneWaive={(id) => void handleTombstoneWaive(id)}
+                onTombstoneUndo={undefined}
+                onTombstoneCharge={undefined}
+                onTombstoneWaive={undefined}
               />
               )}
             </section>
@@ -5427,49 +5401,39 @@ function ReceptionistCenterInner({
           })()
         : null}
 
-      {/* No-show fee charge/waive modal — shown when the booking has a Square card on file. */}
-      {noShowChargeModal ? (
+      {/* No-show stays reversible and side-effect free for 60 seconds. */}
+      {noShowConfirmModal ? (
         <Modal
-          isOpen={!!noShowChargeModal}
-          onClose={() => setNoShowChargeModal(null)}
+          isOpen={!!noShowConfirmModal}
+          onClose={() => setNoShowConfirmModal(null)}
           size="sm"
-          title={rcMessages.noShowFeeModal.title}
-          description={rcMessages.noShowFeeModal.desc(
-            formatCurrency(noShowChargeModal.feeCents, data.salon.currencyCode) ?? "",
-          )}
+          title={rcMessages.noShowSafety.title}
+          description={rcMessages.noShowSafety.desc(noShowConfirmModal.clientName)}
           footer={
             <div className="flex flex-col gap-2">
-              <button
+              <Button
                 type="button"
-                className="w-full rounded-xl bg-nq-warning/90 px-4 py-3 text-sm font-semibold text-white transition-all hover:bg-nq-warning active:scale-[0.98]"
+                variant="danger"
                 onClick={() => {
-                  const id = noShowChargeModal.bookingId;
-                  setNoShowChargeModal(null);
-                  void handleMarkNoShow(id, true);
+                  const id = noShowConfirmModal.bookingId;
+                  setNoShowConfirmModal(null);
+                  void handleMarkNoShow(id);
                 }}
               >
-                {rcMessages.noShowFeeModal.charge(
-                  formatCurrency(noShowChargeModal.feeCents, data.salon.currencyCode) ?? "",
-                )}
-              </button>
-              <button
+                {rcMessages.noShowSafety.confirm}
+              </Button>
+              {noShowConfirmModal.isGroupMember ? (
+                <p className="text-center text-xs text-nq-muted">
+                  {rcMessages.noShowSafety.groupOnly}
+                </p>
+              ) : null}
+              <Button
                 type="button"
-                className="w-full rounded-xl border border-nq-border px-4 py-3 text-sm font-medium text-nq-muted transition-colors hover:bg-nq-surface/60"
-                onClick={() => {
-                  const id = noShowChargeModal.bookingId;
-                  setNoShowChargeModal(null);
-                  void handleMarkNoShow(id, false);
-                }}
+                variant="secondary"
+                onClick={() => setNoShowConfirmModal(null)}
               >
-                {rcMessages.noShowFeeModal.waive}
-              </button>
-              <button
-                type="button"
-                className="w-full px-4 py-2 text-sm text-nq-muted transition-colors hover:text-nq-foreground"
-                onClick={() => setNoShowChargeModal(null)}
-              >
-                {rcMessages.noShowFeeModal.cancel}
-              </button>
+                {rcMessages.noShowSafety.keep}
+              </Button>
             </div>
           }
           showCloseButton={false}

@@ -315,7 +315,7 @@ test.describe("DRC no-show tombstone + fee decision", () => {
     await expect(page.getByRole("button", { name: /undo no-show/i })).toHaveCount(0);
   });
 
-  test("tombstone Waive sets the fee to 'waived' (no charge)", async ({ page }) => {
+  test("tombstone keeps legacy saved-card state read-only in V1", async ({ page }) => {
     const id = await seedNoShow({ withCard: true });
     await gotoReceptionistCenter(page, fx.slug);
 
@@ -323,22 +323,12 @@ test.describe("DRC no-show tombstone + fee decision", () => {
     const tomb = page.getByTestId(`noshow-tombstone-${id}`);
     await tomb.evaluate((el: HTMLElement) => el.click());
 
-    const waive = page.getByRole("button", { name: /waive fee/i });
-    await expect(waive).toBeVisible();
-    // This test verifies the server mutation, not popover positioning. A late
-    // tombstone can sit beneath the fixed desktop sidebar after the timeline
-    // auto-scrolls to "now", so Playwright's pointer-actionability check sees
-    // the sidebar intercepting the click even though the popover/button is
-    // rendered. Use the same synthetic click convention as the drawer test
-    // below and the tombstone opener above.
-    await waive.evaluate((el: HTMLElement) => el.click());
-
-    await expect
-      .poll(() => readChargeStatus(id), { timeout: 15_000 })
-      .toBe("waived");
+    await expect(page.getByRole("button", { name: /waive fee/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^charge /i })).toHaveCount(0);
+    expect(await readChargeStatus(id)).toBe("saved");
   });
 
-  test("marking no-show with a card on file opens the Charge/Waive modal (not an instant mark)", async ({ page }) => {
+  test("marking no-show with a card starts the reversible V1 review without fee mutation", async ({ page }) => {
     skipIfLatenessCrossesUtcDay(13);
     const id = await seedLate(13);
     await attachCard(id);
@@ -347,7 +337,8 @@ test.describe("DRC no-show tombstone + fee decision", () => {
     await page.getByTestId(`booking-block-${id}`).evaluate((el: HTMLElement) => el.click());
     await expect(page.getByTestId("booking-detail-drawer")).toBeVisible();
 
-    // Drawer "No-show" action → fee modal intercepts before marking.
+    // Drawer "No-show" action always opens the same V1 safety confirmation;
+    // saved-card state never changes the flow into a money decision.
     // evaluate-click (not .click()) — the drawer-footer button fails Playwright's
     // visible/enabled/stable actionability gate under the open animation (the
     // repo's helpers use the same synthetic-click trick for drawer/sidebar UI).
@@ -355,19 +346,22 @@ test.describe("DRC no-show tombstone + fee decision", () => {
       .getByTestId("drawer-no-show")
       .evaluate((el: HTMLElement) => el.click());
 
-    // The modal title is unique ("No-show fee"); avoid getByRole("dialog")
-    // since the drawer is also a dialog.
-    await expect(page.getByText(/^no-show fee$/i)).toBeVisible();
-    // Still confirmed — the modal gates the decision, nothing marked yet.
+    await expect(page.getByText(/^confirm no-show$/i)).toBeVisible();
     expect((await getBookingRow(fx.salonId, id))?.status).toBe("confirmed");
 
-    // Choose Waive → booking becomes no_show + fee 'waived'.
+    // Starting the review records only a pending decision. The booking remains
+    // authoritative for 60 seconds and the saved fee state is untouched.
     await page
-      .getByRole("button", { name: /^waive fee$/i })
+      .getByRole("button", { name: /^start 60-second review$/i })
       .evaluate((el: HTMLElement) => el.click());
-    await expect
-      .poll(async () => (await getBookingRow(fx.salonId, id))?.status, { timeout: 15_000 })
-      .toBe("no_show");
-    await expect.poll(() => readChargeStatus(id), { timeout: 15_000 }).toBe("waived");
+    await expect(page.getByTestId("undo-toast")).toBeVisible();
+    expect((await getBookingRow(fx.salonId, id))?.status).toBe("confirmed");
+    expect(await readChargeStatus(id)).toBe("saved");
+    await expect(page.getByRole("button", { name: /waive fee/i })).toHaveCount(0);
+
+    await page.getByTestId("undo-toast-undo").click();
+    await expect(page.getByTestId("undo-toast")).toHaveAttribute("aria-hidden", "true");
+    expect((await getBookingRow(fx.salonId, id))?.status).toBe("confirmed");
+    expect(await readChargeStatus(id)).toBe("saved");
   });
 });
