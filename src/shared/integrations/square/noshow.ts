@@ -580,6 +580,13 @@ export async function chargeNoShowFee(
   reason: string;
   paymentId?: string;
 }> {
+  if (!v1AllowsCustomerPaymentGateway()) {
+    return {
+      charged: false,
+      status: "not_applicable",
+      reason: "phase_2_not_available",
+    };
+  }
   const db = createServiceRoleClient();
   const { data, error } = await db
     .from("bookings")
@@ -644,6 +651,9 @@ export async function refundNoShowFee(
   bookingId: string,
   opts?: { reason?: string; amountCents?: number; requestId?: string },
 ): Promise<{ refunded: boolean; reason: string }> {
+  if (!v1AllowsCustomerPaymentGateway()) {
+    return { refunded: false, reason: "phase_2_not_available" };
+  }
   const db = createServiceRoleClient();
   const { data, error } = await db
     .from("bookings")
@@ -693,6 +703,9 @@ export async function refundRefilledLateCancels(): Promise<{
   checked: number;
   refunded: number;
 }> {
+  if (!v1AllowsCustomerPaymentGateway()) {
+    return { checked: 0, refunded: 0 };
+  }
   // Dedicated contract: load_late_cancel_refund_material →
   // claim_late_cancel_refund → dispatchClaimedBookingPaymentOperation.
   const db = looseServiceClient();

@@ -16,6 +16,7 @@ import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
 import { runTrackedCron } from "@/shared/security/cronRunHistory";
 import { reconcileBookingCardSaveOperations } from "@/shared/booking/reconcileBookingCardSaveOperations";
 import { reconcileBookingCardContinuations } from "@/shared/booking/reconcileBookingCardContinuations";
+import { v1AllowsCustomerPaymentGateway } from "@/shared/release/v1IntegrationScope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -284,6 +285,21 @@ export async function GET(request: NextRequest) {
         "deposit_charge", "noshow_charge", "late_cancel_charge",
         "deposit_refund", "noshow_refund", "late_cancel_refund",
       ].includes(operationKind)) {
+        unresolved += 1;
+        continue;
+      }
+      if (
+        !v1AllowsCustomerPaymentGateway() &&
+        [
+          "noshow_charge",
+          "late_cancel_charge",
+          "noshow_refund",
+          "late_cancel_refund",
+        ].includes(operationKind)
+      ) {
+        // A reconciliation worker must not become a back door around the V1
+        // money boundary. Preserve the unresolved ledger row for a future,
+        // separately certified Phase 2 release without touching a provider.
         unresolved += 1;
         continue;
       }

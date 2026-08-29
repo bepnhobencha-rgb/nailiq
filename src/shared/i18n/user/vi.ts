@@ -2353,6 +2353,19 @@ export const userVi: UserMessages = {
       waive: "Bỏ qua phí",
       cancel: "Huỷ (đánh dấu vắng, quyết định sau)",
     },
+    noShowSafety: {
+      title: "Xác nhận khách không đến",
+      desc: (name: string) =>
+        `Xác nhận ${name} chưa đến. Booking sẽ giữ nguyên trong 60 giây.`,
+      groupOnly: "Chỉ áp dụng cho khách này, không ảnh hưởng những người còn lại trong nhóm.",
+      confirm: "Bắt đầu xem lại 60 giây",
+      keep: "Giữ booking",
+      pending: "Đang chờ xác nhận no-show — booking vẫn giữ chỗ",
+      pendingDetail:
+        "Có thể hoàn tác trong 60 giây. Chưa ghi lịch sử, gọi waitlist, gửi thông báo hoặc xử lý phí.",
+      finalizeFailed:
+        "No-show chưa được commit. Booking vẫn là dữ liệu chuẩn; hãy tải lại và kiểm tra.",
+    },
     latenessGrid: {
       startShort: "Bắt đầu",
       autoNoShowAt: (time: string) => `Cần xem xét vắng lúc ${time}`,

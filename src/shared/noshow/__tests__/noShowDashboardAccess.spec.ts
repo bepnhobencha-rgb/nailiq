@@ -171,15 +171,16 @@ describe("No-Show Protection owner/admin boundary", () => {
     expect(mocks.attributeRecentAudit).not.toHaveBeenCalled();
   });
 
-  it("keeps Step 5 on management wrappers while Receptionist Center retains operational actions", () => {
+  it("keeps legacy fee history visible without exposing V1 money actions", () => {
     const source = readFileSync(
       resolve(process.cwd(), "src/components/dashboard/NoShowProtectionHub.tsx"),
       "utf8",
     );
 
     expect(source).not.toContain("@/shared/dashboard/receptionistActions");
-    expect(source).toContain("chargeNoShowFeeFromProtection");
-    expect(source).toContain("waiveNoShowFeeFromProtection");
-    expect(source).toContain("sendNoShowFeeLinkFromProtection");
+    expect(source).not.toContain("chargeNoShowFeeFromProtection");
+    expect(source).not.toContain("waiveNoShowFeeFromProtection");
+    expect(source).not.toContain("sendNoShowFeeLinkFromProtection");
+    expect(source).toContain("NailIQ V1 does not charge, retry, or send payment links");
   });
 });

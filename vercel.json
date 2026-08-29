@@ -38,7 +38,7 @@
     },
     {
       "path": "/api/cron/noshow-charge-retry",
-      "schedule": "0 17 * * *"
+      "schedule": "*/1 * * * *"
     },
     {
       "path": "/api/cron/noshow-card-nudge",
