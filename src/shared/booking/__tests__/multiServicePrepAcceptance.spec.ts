@@ -393,22 +393,26 @@ describe("sequence DB/app contract adversarial acceptance", () => {
     expect(new Set(allocations)).toEqual(new Set([0]));
   });
 
-  it("requires platform, salon, catalog, and capacity readiness together", () => {
-    const readinessStart = migrationSql.indexOf(
+  it("requires platform, salon, catalog, capacity, and payment-policy readiness together", () => {
+    const readinessStart = migrationSql.lastIndexOf(
       "CREATE OR REPLACE FUNCTION public.load_public_booking_sequence_readiness",
     );
-    const receiptStart = migrationSql.indexOf(
-      "CREATE OR REPLACE FUNCTION public.load_booking_sequence_receipt",
+    const readinessEnd = migrationSql.indexOf(
+      "REVOKE ALL ON FUNCTION public.load_public_booking_sequence_readiness",
       readinessStart,
     );
-    const readinessSql = migrationSql.slice(readinessStart, receiptStart);
+    const readinessSql = migrationSql.slice(readinessStart, readinessEnd + 300);
     expect(readinessStart).toBeGreaterThan(-1);
     expect(readinessSql).toContain("feature_multi_service_booking");
     expect(readinessSql).toContain("multi_service_booking_enabled");
     expect(readinessSql).toContain("multi_service_booking_qa_salon_id");
     expect(readinessSql).toContain("qa_allowlisted");
+    expect(readinessSql).toContain("payment_policy_ready");
     expect(readinessSql).toMatch(
-      /'ready',\s*v_platform AND coalesce\(v_salon, false\)[\s\S]{0,120}?coalesce\(v_qa_allowlisted, false\)[\s\S]{0,120}?coalesce\(v_catalog, false\) AND coalesce\(v_capacity, false\)/,
+      /coalesce\(s\.noshow_protection_enabled, false\) IS FALSE[\s\S]{0,180}?nullif\(trim\(s\.payment_provider\), ''\) IS NULL/,
+    );
+    expect(readinessSql).toMatch(
+      /'ready',\s*v_platform AND coalesce\(v_salon, false\)[\s\S]{0,120}?coalesce\(v_qa_allowlisted, false\)[\s\S]{0,120}?coalesce\(v_catalog, false\) AND coalesce\(v_capacity, false\)[\s\S]{0,120}?coalesce\(v_payment_policy, false\)/,
     );
     expect(readinessSql).toMatch(
       /REVOKE ALL ON FUNCTION public\.load_public_booking_sequence_readiness\(uuid\)[\s\S]{0,120}?FROM PUBLIC, anon, authenticated/,

@@ -13,6 +13,7 @@ export type BookingSequenceReadiness = {
   qaAllowlisted: boolean;
   catalogReady: boolean;
   capacityContractReady: boolean;
+  paymentPolicyReady: boolean;
   ready: boolean;
 };
 
@@ -35,6 +36,7 @@ export function parseBookingSequenceReadiness(
     "qa_allowlisted",
     "catalog_ready",
     "capacity_contract_ready",
+    "payment_policy_ready",
     "ready",
   ]);
   if (
@@ -48,16 +50,22 @@ export function parseBookingSequenceReadiness(
     typeof raw.qa_allowlisted !== "boolean" ||
     typeof raw.catalog_ready !== "boolean" ||
     typeof raw.capacity_contract_ready !== "boolean" ||
+    (raw.payment_policy_ready !== undefined &&
+      typeof raw.payment_policy_ready !== "boolean") ||
     typeof raw.ready !== "boolean"
   ) {
     return null;
   }
+  // Additive compatibility lets the app ship before the database migration.
+  // Once the field is present it becomes part of the fail-closed proof.
+  const paymentPolicyReady = raw.payment_policy_ready ?? true;
   const derivedReady =
     raw.platform_enabled &&
     raw.salon_enabled &&
     raw.qa_allowlisted &&
     raw.catalog_ready &&
-    raw.capacity_contract_ready;
+    raw.capacity_contract_ready &&
+    paymentPolicyReady;
   if (raw.ready !== derivedReady) return null;
   return {
     contractVersion: 1,
@@ -67,6 +75,7 @@ export function parseBookingSequenceReadiness(
     qaAllowlisted: raw.qa_allowlisted,
     catalogReady: raw.catalog_ready,
     capacityContractReady: raw.capacity_contract_ready,
+    paymentPolicyReady,
     ready: raw.ready,
   };
 }

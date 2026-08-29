@@ -782,6 +782,8 @@ export async function loadGoLiveReadiness(
             catalogReady: multiServiceSequenceReadiness?.catalogReady ?? false,
             capacityContractReady:
               multiServiceSequenceReadiness?.capacityContractReady ?? false,
+            paymentPolicyReady:
+              multiServiceSequenceReadiness?.paymentPolicyReady ?? false,
             ready: multiServiceSequenceReadiness?.ready ?? false,
             services: activeServices.map((service) => ({
               serviceId: service.id,

@@ -123,6 +123,7 @@ describe("multi-service runtime contract acceptance", () => {
     expect(readiness).toMatch(/contract_version|contractVersion/);
     expect(readiness).toMatch(/capacity_contract_ready|capacityContractReady/);
     expect(readiness).toMatch(/catalog_ready|catalogReady/);
+    expect(readiness).toMatch(/payment_policy_ready|paymentPolicyReady/);
     expect(readiness).toMatch(/platform_enabled|platformEnabled/);
     expect(readiness).toMatch(/salon_enabled|salonEnabled/);
     expect(readiness).toMatch(/qa_allowlisted|qaAllowlisted/);

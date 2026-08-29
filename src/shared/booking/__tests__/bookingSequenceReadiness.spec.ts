@@ -23,6 +23,7 @@ const ready = {
   qa_allowlisted: true,
   catalog_ready: true,
   capacity_contract_ready: true,
+  payment_policy_ready: true,
   ready: true,
 };
 
@@ -32,9 +33,25 @@ describe("booking sequence readiness", () => {
   it("accepts only a self-consistent v1 readiness proof", () => {
     expect(parseBookingSequenceReadiness(ready)).toMatchObject({ ready: true });
     expect(
+      parseBookingSequenceReadiness({
+        ...ready,
+        payment_policy_ready: false,
+        ready: false,
+      }),
+    ).toMatchObject({ ready: false, paymentPolicyReady: false });
+    expect(
       parseBookingSequenceReadiness({ ...ready, salon_enabled: false }),
     ).toBeNull();
     expect(parseBookingSequenceReadiness({ ...ready, extra: true })).toBeNull();
+  });
+
+  it("accepts the pre-migration v1 proof during an app-first rollout", () => {
+    const legacyReady = { ...ready } as Partial<typeof ready>;
+    delete legacyReady.payment_policy_ready;
+    expect(parseBookingSequenceReadiness(legacyReady)).toMatchObject({
+      ready: true,
+      paymentPolicyReady: true,
+    });
   });
 
   it("calls the service-only loader and returns ready only for exact proof", async () => {
