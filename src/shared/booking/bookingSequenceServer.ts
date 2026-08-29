@@ -213,6 +213,7 @@ export function parseBookingSequenceQuote(
     readiness.qa_allowlisted !== true ||
     readiness.catalog_ready !== true ||
     readiness.capacity_contract_ready !== true ||
+    readiness.payment_policy_ready !== true ||
     readiness.ready !== true ||
     !timing ||
     !Array.isArray(row.segments) ||

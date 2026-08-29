@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   from: vi.fn(),
   after: vi.fn(),
+  settleCard: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
@@ -32,6 +33,9 @@ vi.mock("@/shared/lib/supabase/serviceRole", () => ({
 }));
 vi.mock("@/shared/booking/sendBookingConfirmationEmail", () => ({
   sendBookingConfirmationEmail: vi.fn(),
+}));
+vi.mock("@/shared/booking/settleCommittedBookingCardManagement", () => ({
+  settleCommittedBookingCardManagement: mocks.settleCard,
 }));
 
 import { POST } from "@/app/api/booking/sequence-create/route";
@@ -100,6 +104,10 @@ describe("sequence create atomic OTP and health boundary", () => {
       }),
     });
     mocks.after.mockImplementation(() => undefined);
+    mocks.settleCard.mockResolvedValue({
+      cardManagementToken: null,
+      cardManagementPending: false,
+    });
   });
 
   it("rejects cross-origin requests before replay, meters, or create", async () => {
@@ -184,6 +192,72 @@ describe("sequence create atomic OTP and health boundary", () => {
       "validate_phone_otp_session",
       expect.anything(),
     );
+    expect(mocks.settleCard).toHaveBeenCalledTimes(2);
+    expect(mocks.settleCard).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        bookingId: ids.booking,
+        createIdempotencyKey: ids.request,
+        cardSourceId: null,
+      }),
+      expect.any(Function),
+    );
+  });
+
+  it("keeps the committed sequence successful when card management is pending", async () => {
+    const value = {
+      ...body(),
+      cardSourceId: "square-source",
+      cardVerificationToken: "square-verification",
+      noShowConsent: true,
+    };
+    mocks.create.mockResolvedValueOnce({
+      ok: true,
+      bookingId: ids.booking,
+      segmentIds: [],
+      idempotent: false,
+      quote: { lines: [], pricingFingerprint: "a".repeat(64) },
+      salonSlug: "qa-sequence",
+      smsConsent: true,
+      language: "en",
+    });
+    mocks.settleCard.mockResolvedValueOnce({
+      cardManagementToken: null,
+      cardManagementPending: true,
+    });
+
+    const response = await POST(request(value) as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toMatchObject({
+      ok: true,
+      bookingId: ids.booking,
+      cardManagementPending: true,
+    });
+    expect(mocks.settleCard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bookingId: ids.booking,
+        createIdempotencyKey: ids.request,
+        pricingFingerprint: "a".repeat(64),
+        cardSourceId: "square-source",
+        cardVerificationToken: "square-verification",
+        consent: true,
+      }),
+      expect.any(Function),
+    );
+  });
+
+  it("rejects a card source without explicit no-show consent before replay", async () => {
+    const response = await POST(request({
+      ...body(),
+      cardSourceId: "square-source",
+      noShowConsent: false,
+    }) as never);
+
+    expect(response.status).toBe(400);
+    expect(mocks.replay).not.toHaveBeenCalled();
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.settleCard).not.toHaveBeenCalled();
   });
 
   it("rejects missing durable health material before canonical create", async () => {

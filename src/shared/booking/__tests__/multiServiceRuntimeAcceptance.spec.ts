@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -19,9 +19,12 @@ const confirmationDelivery = read(
   "src/shared/booking/bookingConfirmationRetryDelivery.ts",
 );
 const capability = read("src/shared/booking/bookingManagementCapabilities.ts");
-const sequenceMigration = read(
-  "supabase/migrations/20260820180036_add_authoritative_booking_service_sequences.sql",
-);
+const migrationDir = resolve(root, "supabase/migrations");
+const sequenceMigration = readdirSync(migrationDir)
+  .filter((name) => name.endsWith(".sql"))
+  .sort()
+  .map((name) => readFileSync(resolve(migrationDir, name), "utf8"))
+  .join("\n");
 const statusRoute = read("src/app/api/booking/status/route.ts");
 const confirmRoute = read("src/app/api/booking/confirm-action/route.ts");
 
@@ -68,7 +71,7 @@ describe("multi-service runtime contract acceptance", () => {
     expect(createRoute).toMatch(/phone[\s\S]{0,300}?rate/i);
   });
 
-  it("lets the DB replay first, then atomically rejects configured payment policy before a fresh write", () => {
+  it("lets the DB replay first, then atomically requires a supported card-only policy before a fresh write", () => {
     expect(sequenceServer, "sequence server helper is not implemented").not.toBe("");
     const appRunnerStart = sequenceServer.indexOf(
       "async function runPublicBookingSequenceCreateRpc",
@@ -111,11 +114,15 @@ describe("multi-service runtime contract acceptance", () => {
     expect(replayReturn).toBeGreaterThan(replayRead);
     expect(policyRead).toBeGreaterThan(replayReturn);
     expect(freshInsert).toBeGreaterThan(policyRead);
-    expect(dbCreate).toMatch(
-      /v_locked_noshow_protection_enabled OR v_locked_payment_provider IS NOT NULL[\s\S]{0,180}?'payment_not_supported'/,
+    expect(sequenceMigration).toMatch(
+      /booking_sequence_payment_policy_ready\(v_salon_id, true\)[\s\S]{0,180}?'payment_not_supported'/,
+    );
+    expect(sequenceMigration).toMatch(
+      /booking_sequence_payment_policy_ready[\s\S]{0,2000}?deposit_enabled[\s\S]{0,350}?access_token/,
     );
     expect(sequenceServer).not.toMatch(/getStripeClient|getSquareConfig|chargeCard|paymentIntents/);
-    expect(createRoute).not.toMatch(/ensureNoShowCardRequirement|saveCard|deposit/);
+    expect(createRoute).toContain("settleCommittedBookingCardManagement");
+    expect(createRoute).not.toMatch(/chargeCard|paymentIntents|createDeposit/);
   });
 
   it("projects authoritative sequence readiness into Go-Live without trusting clicks", () => {

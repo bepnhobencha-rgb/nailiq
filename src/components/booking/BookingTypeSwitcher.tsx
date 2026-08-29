@@ -954,6 +954,7 @@ export function BookingTypeSwitcher({
         />
       ) : mode === "sequence" ? (
         <BookingSequenceFlow
+          t={t}
           services={services}
           addOns={addOns}
           staff={staff}

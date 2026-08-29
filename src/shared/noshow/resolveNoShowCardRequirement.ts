@@ -5,9 +5,12 @@ import { parseCardGateRules, cardRequiredByHistory } from "@/shared/noshow/cardG
 import { resolvePaymentProvider } from "@/shared/integrations/payments";
 import { getSquareConfig } from "@/shared/integrations/square/client";
 import { v1AllowsNoShowCardOnFile } from "@/shared/release/v1IntegrationScope";
+import { quotePublicBookingSequence } from "@/shared/booking/bookingSequenceServer";
 
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
 const str = (v: unknown): string => (v == null ? "" : String(v));
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type NoShowCardRequirement =
   | { required: false }
@@ -41,6 +44,11 @@ export async function resolveNoShowCardRequirement(args: {
    *  whole-party protection is on, the displayed fee covers the whole group so
    *  it matches what the server saves on the organizer's card. */
   groupServiceIds?: string[];
+  /** A sequence fee must be derived from a fresh authoritative quote, never
+   *  from browser totals or de-duplicated catalog ids. Both fields are required
+   *  together and the exact fingerprint must still match. */
+  sequenceIntent?: unknown;
+  sequencePricingFingerprint?: string;
 }): Promise<NoShowCardRequirement> {
   // Product-level V1 boundary: do not make the browser wait on a database or
   // provider capability that cannot be used in this release. Keep this guard
@@ -73,18 +81,50 @@ export async function resolveNoShowCardRequirement(args: {
 
     // Fee base: the whole party's services (group + whole-party on) or just this
     // service. Sum prices in one query so the gate stays fast.
-    const ids =
-      wholeParty && args.groupServiceIds && args.groupServiceIds.length > 1
-        ? Array.from(new Set(args.groupServiceIds))
-        : [args.serviceId];
-    const { data: svcRows } = await db
-      .from("services")
-      .select("price_cents")
-      .in("id", ids);
-    const priceCents = ((svcRows as Row[] | null) ?? []).reduce(
-      (sum, r) => sum + num(r.price_cents),
-      0,
-    );
+    let priceCents: number;
+    if (args.sequenceIntent != null || args.sequencePricingFingerprint != null) {
+      if (
+        args.sequenceIntent == null ||
+        typeof args.sequencePricingFingerprint !== "string" ||
+        !/^[0-9a-f]{64}$/.test(args.sequencePricingFingerprint)
+      ) return { required: false };
+      const sequenceQuote = await quotePublicBookingSequence(args.sequenceIntent);
+      if (
+        !sequenceQuote.ok ||
+        sequenceQuote.quote.pricingFingerprint !== args.sequencePricingFingerprint
+      ) return { required: false };
+      // create_public_booking_sequence persists the sum of servicePriceCents as
+      // bookings.price_cents; strict post-commit no-show policy uses that same
+      // base. This keeps displayed consent and saved evidence cent-for-cent.
+      priceCents = sequenceQuote.quote.lines.reduce(
+        (sum, line) => sum + line.servicePriceCents,
+        0,
+      );
+    } else {
+      const requestedIds =
+        wholeParty && args.groupServiceIds && args.groupServiceIds.length > 1
+          ? args.groupServiceIds
+          : [args.serviceId];
+      if (
+        requestedIds.length > 20 ||
+        requestedIds.some((id) => typeof id !== "string" || !UUID_RE.test(id))
+      ) {
+        return { required: false };
+      }
+      const ids = Array.from(new Set(requestedIds));
+      const { data: svcRows } = await db
+        .from("services")
+        .select("id, price_cents")
+        .in("id", ids);
+      const prices = new Map(
+        ((svcRows as Row[] | null) ?? []).map((row) => [str(row.id), num(row.price_cents)]),
+      );
+      if (ids.some((id) => !prices.has(id))) return { required: false };
+      priceCents = requestedIds.reduce(
+        (sum, id) => sum + (prices.get(id) ?? 0),
+        0,
+      );
+    }
     const feeCents = Math.round((priceCents * percent) / 100);
     if (feeCents <= 0) return { required: false };
 
