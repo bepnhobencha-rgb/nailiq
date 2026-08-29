@@ -221,13 +221,13 @@ describe("query grammar injection inventory", () => {
       "20260823035000_fix_staff_offboarding_deferred_constraint.sql",
       "20260823037000_close_staff_deactivation_assignment_races.sql",
       "20260823124500_record_twilio_status_receipts_atomically.sql",
-      "20260829120000_enable_card_safe_booking_sequences.sql",
+      "20260829174542_enable_card_safe_booking_sequences.sql",
     ]);
 
     const sequenceCardPolicy = fs.readFileSync(
       path.join(
         migrationRoot,
-        "20260829120000_enable_card_safe_booking_sequences.sql",
+        "20260829174542_enable_card_safe_booking_sequences.sql",
       ),
       "utf8",
     );

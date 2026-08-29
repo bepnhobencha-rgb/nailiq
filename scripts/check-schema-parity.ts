@@ -97,7 +97,7 @@ import { execFileSync } from "node:child_process";
  * grant direct table access to anon or authenticated.
  * The 20260829063203 queue projection migration adds one service-role-only
  * committed-decision projection without reopening the decision table.
- * The 20260829120000 multi-service card-policy migration adds one
+ * The 20260829174542 multi-service card-policy migration adds one
  * service-role-only payment-policy readiness function and replaces the
  * existing sequence readiness/resolver/create definitions in place.
  * Refresh these
