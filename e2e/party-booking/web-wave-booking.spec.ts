@@ -101,7 +101,12 @@ test("web group too large shows a wave option, confirms, and saves wave_number",
   const phone = "+16045553344";
   await page.getByTestId("group-step-confirm-panel").waitFor({ state: "visible" });
   await page.getByTestId("group-primary-phone").fill(phone);
-  await page.getByTestId("group-sms-consent").check();
+  // The phone-first gate normally captures SMS consent. The confirm-step
+  // checkbox is a fallback only, so it is intentionally absent in that case.
+  const groupSmsConsent = page.getByTestId("group-sms-consent");
+  if (await groupSmsConsent.isVisible()) {
+    await groupSmsConsent.check();
+  }
   await page.getByTestId("group-confirm").click();
 
   await expect(page.getByTestId("booking-group-success")).toBeVisible({ timeout: 20_000 });
