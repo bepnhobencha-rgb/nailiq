@@ -376,7 +376,7 @@ jobs:
             -f scripts/security/rehearse-v1-terminal-booking-policy.sql
 
           test "$(psql "$DB_URL" -tAc 'select count(*) from public.service_categories')" -eq 13
-          test "$(psql "$DB_URL" -tAc 'select count(*) from public.platform_flags')" -eq 5
+          test "$(psql "$DB_URL" -tAc 'select count(*) from public.platform_flags')" -eq 6
           bucket_count="$(psql "$DB_URL" -tAc "select count(*) from storage.buckets where id = 'nail-tryon' and public = false")"
           test "$bucket_count" -eq 1
 
