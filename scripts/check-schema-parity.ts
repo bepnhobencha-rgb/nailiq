@@ -91,13 +91,17 @@ import { execFileSync } from "node:child_process";
  * The 20260829024500/20260829033000 V1 no-show safety migrations add one
  * private decision/effect ledger, five service-only RPCs, one restrictive
  * direct-access deny policy and five indexes.
+ * The 20260829050000/20260829050100 no-show fee approval migrations add three
+ * service-only approval/payment-truth tables, eight private/service-only
+ * functions, two immutable-ledger triggers and eighteen indexes. They do not
+ * grant direct table access to anon or authenticated.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
  */
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
-  tables: 183,
+  tables: 186,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -137,7 +141,9 @@ const PRODUCTION = {
   // +27 owner-delivery truth, event and suppression columns.
   // +29 booking-OTP delivery attempt/event and email-code correlation columns.
   // +28 no-show decision, undo, commit and effect-lease columns.
-  columns: 2736,
+  // +66 no-show fee review, immutable approval receipt and Square payment
+  // webhook truth columns.
+  columns: 2802,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -171,7 +177,9 @@ const PRODUCTION = {
   // +1 deferred desk-cancel owner-notification compatibility handshake.
   // +4 booking-OTP attempt, completion, verification and receipt RPCs.
   // +5 no-show begin, undo, finalize, effect-claim and effect-completion RPCs.
-  functions: 402,
+  // +8 no-show fee material guards, approval/dispatch RPCs and Square payment
+  // webhook reconciliation functions.
+  functions: 410,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -179,7 +187,8 @@ const PRODUCTION = {
   // +2 individual/group canonical-create continuation arm triggers.
   // +1 canonical booking owner-alert occurrence trigger.
   // +1 provider-message correlation trigger.
-  triggers: 93,
+  // +2 no-show fee review/approval immutable-material triggers.
+  triggers: 95,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -190,7 +199,8 @@ const PRODUCTION = {
   // +6 delivery truth provider, inbox, pending, salon and suppression indexes.
   // +10 booking-OTP attempt/event/correlation indexes.
   // +5 no-show decision primary, request, booking-state, due and effect indexes.
-  indexes: 673,
+  // +18 no-show fee review/receipt/webhook primary, unique, lookup and FK indexes.
+  indexes: 691,
 } as const;
 
 /**
@@ -300,6 +310,15 @@ const CRITICAL_TABLES = [
   "reactivation_campaign_deliveries",
   "reactivation_campaign_dispatch_authorizations",
   "reactivation_campaign_delivery_receipts",
+  "booking_no_show_fee_reviews",
+  "booking_no_show_fee_approval_receipts",
+  "square_payment_webhook_inbox",
+] as const;
+
+const NO_SHOW_FEE_SERVICE_ONLY_TABLES = [
+  "booking_no_show_fee_reviews",
+  "booking_no_show_fee_approval_receipts",
+  "square_payment_webhook_inbox",
 ] as const;
 
 /** Booking cannot work without these; a missing RPC fails at runtime, not at apply time. */
@@ -566,6 +585,14 @@ const CRITICAL_FUNCTIONS = [
   "resolve_owner_booking_notification_occurrence",
   "claim_owner_booking_notification_outbox_batch",
   "complete_owner_booking_notification_outbox",
+  "prevent_no_show_fee_receipt_mutation",
+  "prevent_no_show_fee_review_material_mutation",
+  "request_booking_no_show_fee_review",
+  "ensure_booking_no_show_fee_review",
+  "decide_booking_no_show_fee_review",
+  "authorize_approved_no_show_fee_dispatch",
+  "record_approved_no_show_fee_dispatch_outcome",
+  "record_square_payment_webhook_event",
 ] as const;
 
 const dbUrl = process.env.DB_URL;
@@ -659,7 +686,7 @@ function main() {
   // the delivery-event audit table is service-role-only.
   // The customer identity map is service-role read-only; the refund inbox is
   // mutation-through-RPC only and intentionally grants no table reachability.
-  const GRANTS = { anon: 56, authenticated: 77, service_role: 176 } as const;
+  const GRANTS = { anon: 56, authenticated: 77, service_role: 179 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
@@ -681,6 +708,46 @@ function main() {
             : got > want
               ? "   ← MORE permissive than production. The security specs would lie."
               : "   ← fewer than production; requests will die at permission denied"),
+    );
+  }
+
+  console.log("\n── No-show fee service-only boundary ──\n");
+  for (const table of NO_SHOW_FEE_SERVICE_ONLY_TABLES) {
+    const browserReachable = num(
+      `select count(*) from (
+         select grantee from information_schema.role_table_grants
+          where table_schema='public' and table_name='${table}'
+            and grantee in ('anon', 'authenticated')
+         union
+         select grantee from information_schema.role_column_grants
+          where table_schema='public' and table_name='${table}'
+            and grantee in ('anon', 'authenticated')
+       ) browser_grants`,
+    );
+    const serviceReachable = num(
+      `select count(*) from (
+         select grantee from information_schema.role_table_grants
+          where table_schema='public' and table_name='${table}'
+            and grantee='service_role'
+         union
+         select grantee from information_schema.role_column_grants
+          where table_schema='public' and table_name='${table}'
+            and grantee='service_role'
+       ) service_grants`,
+    );
+    const forcedRls = num(
+      `select count(*) from pg_class c
+         join pg_namespace n on n.oid=c.relnamespace
+        where n.nspname='public' and c.relname='${table}'
+          and c.relrowsecurity and c.relforcerowsecurity`,
+    );
+    const ok = browserReachable === 0 && serviceReachable === 1 && forcedRls === 1;
+    if (!ok) failed = true;
+    console.log(
+      `  ${ok ? "✓" : "✗"} ${table}` +
+        (ok
+          ? ""
+          : `   ← browser=${browserReachable}, service_role=${serviceReachable}, force_rls=${forcedRls}`),
     );
   }
 
