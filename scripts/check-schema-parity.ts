@@ -88,6 +88,9 @@ import { execFileSync } from "node:child_process";
  * The 20260828172258 booking-OTP delivery-truth migration adds two private
  * PII-free attempt/event tables, one email-code correlation column, four
  * service-only RPCs, two restrictive deny policies and ten indexes.
+ * The 20260828234427/20260829001812 SMS delivery-truth migrations add one
+ * PII-free, RPC-only attempt ledger, three service-only state-machine RPCs,
+ * and four indexes without increasing direct service-role table reachability.
  * The 20260829024500/20260829033000 V1 no-show safety migrations add one
  * private decision/effect ledger, five service-only RPCs, one restrictive
  * direct-access deny policy and five indexes.
@@ -121,7 +124,7 @@ import { execFileSync } from "node:child_process";
  */
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
-  tables: 188,
+  tables: 189,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -160,6 +163,7 @@ const PRODUCTION = {
   // +21 owner-booking notification outbox columns.
   // +27 owner-delivery truth, event and suppression columns.
   // +29 booking-OTP delivery attempt/event and email-code correlation columns.
+  // +17 universal SMS delivery-attempt truth columns.
   // +28 no-show decision, undo, commit and effect-lease columns.
   // +66 no-show fee review, immutable approval receipt and Square payment
   // webhook truth columns.
@@ -167,7 +171,7 @@ const PRODUCTION = {
   // +1 salon-owned resource adjacency topology label.
   // +2 Smart Wave strategy columns: salons plus public_salon_profiles.
   // +9 parallel service policy/resource certification columns.
-  columns: 2820,
+  columns: 2837,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -202,6 +206,7 @@ const PRODUCTION = {
   // +3 delivery-event reconciliation, recorder, and correlation-trigger functions.
   // +1 deferred desk-cancel owner-notification compatibility handshake.
   // +4 booking-OTP attempt, completion, verification and receipt RPCs.
+  // +3 universal SMS attempt claim, completion and receipt RPCs.
   // +5 no-show begin, undo, finalize, effect-claim and effect-completion RPCs.
   // +8 no-show fee material guards, approval/dispatch RPCs and Square payment
   // webhook reconciliation functions.
@@ -211,7 +216,7 @@ const PRODUCTION = {
   // +3 group-sequence readiness, authoritative quote resolver, and public
   // service-role quote wrapper functions.
   // +2 tenant and same-booking overlap enforcement trigger functions.
-  functions: 421,
+  functions: 424,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -231,11 +236,12 @@ const PRODUCTION = {
   // +4 owner-alert outbox primary, occurrence-unique, due, and salon indexes.
   // +6 delivery truth provider, inbox, pending, salon and suppression indexes.
   // +10 booking-OTP attempt/event/correlation indexes.
+  // +4 universal SMS delivery-attempt indexes.
   // +5 no-show decision primary, request, booking-state, due and effect indexes.
   // +18 no-show fee review/receipt/webhook primary, unique, lookup and FK indexes.
   // +1 multi-service rollout primary key.
   // +4 parallel-policy primary, unique, and service lookup indexes.
-  indexes: 696,
+  indexes: 700,
 } as const;
 
 /**
@@ -284,6 +290,7 @@ const CRITICAL_TABLES = [
   "customer_email_delivery_suppressions",
   "booking_otp_delivery_attempts",
   "resend_booking_otp_delivery_events",
+  "sms_delivery_attempts",
   "booking_no_show_decisions",
   "booking_notification_delivery_events",
   "booking_confirmation_dispatch_envelopes",
@@ -421,6 +428,9 @@ const CRITICAL_FUNCTIONS = [
   "complete_booking_otp_delivery_attempt",
   "mark_booking_otp_delivery_verified",
   "record_resend_booking_otp_delivery_event",
+  "claim_sms_delivery_attempt",
+  "complete_sms_delivery_attempt",
+  "record_sms_delivery_attempt_receipt",
   "begin_booking_no_show_v1",
   "undo_booking_no_show_v1",
   "finalize_due_booking_no_shows_v1",
