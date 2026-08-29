@@ -7,6 +7,10 @@ const migration = readFileSync(resolve(
   root,
   "supabase/migrations/20260829050000_add_no_show_fee_approval_truth.sql",
 ), "utf8");
+const queueProjectionMigration = readFileSync(resolve(
+  root,
+  "supabase/migrations/20260829063203_add_no_show_fee_queue_projection.sql",
+), "utf8");
 const actions = readFileSync(resolve(
   root,
   "src/shared/noshow/noShowFeeApprovalActions.ts",
@@ -36,6 +40,30 @@ describe("no-show fee approval boundary", () => {
     expect(migration).toMatch(/sm\.role IN \('owner', 'admin'\)/);
     expect(migration).toMatch(/REVOKE ALL ON TABLE public\.booking_no_show_fee_reviews,[\s\S]*?FROM PUBLIC, anon, authenticated/);
     expect(migration).toMatch(/GRANT EXECUTE ON FUNCTION[\s\S]*?TO service_role/);
+  });
+
+  it("loads only a minimal salon-scoped decision projection without granting table reads", () => {
+    expect(actions).toContain(
+      'db.rpc("list_booking_no_show_fee_queue_decisions"',
+    );
+    expect(actions).not.toMatch(
+      /from\("booking_no_show_decisions"[\s\S]*?select\("id, booking_id"/,
+    );
+    expect(queueProjectionMigration).toContain(
+      "CREATE OR REPLACE FUNCTION public.list_booking_no_show_fee_queue_decisions",
+    );
+    expect(queueProjectionMigration).toContain("p_salon_id uuid");
+    expect(queueProjectionMigration).toContain("d.salon_id = p_salon_id");
+    expect(queueProjectionMigration).toContain("d.state = 'committed'");
+    expect(queueProjectionMigration).toMatch(
+      /REVOKE ALL ON FUNCTION public\.list_booking_no_show_fee_queue_decisions\(uuid\)[\s\S]*?FROM PUBLIC, anon, authenticated/,
+    );
+    expect(queueProjectionMigration).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.list_booking_no_show_fee_queue_decisions\(uuid\)[\s\S]*?TO service_role/,
+    );
+    expect(queueProjectionMigration).not.toMatch(
+      /GRANT SELECT ON (?:TABLE )?public\.booking_no_show_decisions/i,
+    );
   });
 
   it("requires an environment switch, salon allowlist, and SQL receipt before provider dispatch", () => {

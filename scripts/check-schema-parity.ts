@@ -95,6 +95,8 @@ import { execFileSync } from "node:child_process";
  * service-only approval/payment-truth tables, eight private/service-only
  * functions, two immutable-ledger triggers and eighteen indexes. They do not
  * grant direct table access to anon or authenticated.
+ * The 20260829063203 queue projection migration adds one service-role-only
+ * committed-decision projection without reopening the decision table.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -179,7 +181,8 @@ const PRODUCTION = {
   // +5 no-show begin, undo, finalize, effect-claim and effect-completion RPCs.
   // +8 no-show fee material guards, approval/dispatch RPCs and Square payment
   // webhook reconciliation functions.
-  functions: 410,
+  // +1 no-show fee queue decision projection.
+  functions: 411,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -590,6 +593,7 @@ const CRITICAL_FUNCTIONS = [
   "request_booking_no_show_fee_review",
   "ensure_booking_no_show_fee_review",
   "decide_booking_no_show_fee_review",
+  "list_booking_no_show_fee_queue_decisions",
   "authorize_approved_no_show_fee_dispatch",
   "record_approved_no_show_fee_dispatch_outcome",
   "record_square_payment_webhook_event",

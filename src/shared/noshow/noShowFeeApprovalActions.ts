@@ -249,12 +249,9 @@ export async function loadNoShowFeeReviewQueue(slug: string): Promise<NoShowFeeR
   if (!ctx || !isOwnerOrAdmin(ctx.role)) return [];
   const db = createServiceRoleClient();
   const [{ data: decisions }, { data: reviews }] = await Promise.all([
-    db.from("booking_no_show_decisions" as never)
-      .select("id, booking_id" as never)
-      .eq("salon_id" as never, ctx.salon.id)
-      .eq("state" as never, "committed")
-      .order("committed_at" as never, { ascending: false })
-      .limit(100),
+    db.rpc("list_booking_no_show_fee_queue_decisions" as never, {
+      p_salon_id: ctx.salon.id,
+    } as never),
     db.from("booking_no_show_fee_reviews" as never)
       .select("id, booking_id, no_show_decision_id, state, amount_cents, currency, card_brand, card_last4, payment_status, ai_recommendation, ai_reason_codes, consent_policy_version" as never)
       .eq("salon_id" as never, ctx.salon.id)
