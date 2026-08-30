@@ -103,6 +103,9 @@ import { execFileSync } from "node:child_process";
  * The 20260829183626 controlled rollout migration adds one private rollout
  * table, one restrictive policy, one authorization helper, and one atomic
  * service-role-only per-salon control RPC.
+ * The 20260829231142 group-sequence quote migration adds one resource-topology
+ * column and three service-role-only quote/readiness functions. It remains
+ * default-off and deliberately adds no booking commit function.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -152,7 +155,8 @@ const PRODUCTION = {
   // +66 no-show fee review, immutable approval receipt and Square payment
   // webhook truth columns.
   // +6 private per-salon multi-service rollout authorization columns.
-  columns: 2808,
+  // +1 salon-owned resource adjacency topology label.
+  columns: 2809,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -192,7 +196,9 @@ const PRODUCTION = {
   // +1 no-show fee queue decision projection.
   // +1 multi-service booking payment-policy readiness function.
   // +2 multi-service rollout authorization/control functions.
-  functions: 414,
+  // +3 group-sequence readiness, authoritative quote resolver, and public
+  // service-role quote wrapper functions.
+  functions: 417,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -612,6 +618,9 @@ const CRITICAL_FUNCTIONS = [
   "authorize_approved_no_show_fee_dispatch",
   "record_approved_no_show_fee_dispatch_outcome",
   "record_square_payment_webhook_event",
+  "load_public_group_sequence_readiness",
+  "resolve_public_group_sequence_quote",
+  "quote_public_group_booking_sequences",
 ] as const;
 
 const dbUrl = process.env.DB_URL;

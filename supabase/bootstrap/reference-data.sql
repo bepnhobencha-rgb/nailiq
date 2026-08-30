@@ -41,7 +41,7 @@ INSERT INTO public.service_categories (slug, name_en, name_vi, sort_order) VALUE
   ('other',      'Other',             'Khác',             99)
 ON CONFLICT (slug) DO NOTHING;
 
--- ── platform_flags (5 rows) ─────────────────────────────────────────────────
+-- ── platform_flags (5 baseline rows; forward migrations may add more) ───────
 -- Platform-wide switches. Values match production, so the suite exercises the
 -- same defaults the product ships with — and note that sms_enabled is false
 -- there too, which is one more reason a test can never text a real person.

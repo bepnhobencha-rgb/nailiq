@@ -60,7 +60,10 @@ try{
  assert.equal([bind,comp].filter((x)=>["parent_payment_already_bound","deposit_compensation_already_claimed"].includes(x.code)).length,1,JSON.stringify({bind,comp}));
 
  const atomicOp="15160000-0000-4000-8000-000000000500",atomicRequest="15160000-0000-4000-8000-000000000501",atomicIntent="15160000-0000-4000-8000-000000000502";
- const atomicStart=new Date(Date.now()+6*86400e3).toISOString().replace(/\.\d{3}Z$/,"Z");
+ // Anchor the quote at noon UTC. Adding six days to the current instant made
+ // this fixture cross the salon's 23:59 closing boundary when CI ran late.
+ const atomicDate=new Date(Date.now()+6*86400e3);atomicDate.setUTCHours(12,0,0,0);
+ const atomicStart=atomicDate.toISOString().replace(/\.\d{3}Z$/,"Z");
  const atomicEnd=new Date(Date.parse(atomicStart)+40*60e3).toISOString();
  const atomicPhone="+16045551604";
  const atomicQuote=json(await sql(`begin;set local role service_role;select set_config('request.jwt.claim.role','service_role',true);select public.quote_public_booking('${salon}','${service}','${staff}','${atomicStart}','${atomicEnd}',array[]::uuid[],null,null,'${atomicPhone}',null,false)::text;commit;`));
