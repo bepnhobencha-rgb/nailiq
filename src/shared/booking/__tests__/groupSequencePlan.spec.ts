@@ -205,6 +205,7 @@ describe("group sequence plan", () => {
         multiServiceBookingEnabled: true,
         multiServiceReady: true,
         atomicGroupSequenceCommitReady: false,
+        groupSequenceManagementReady: false,
       }),
     ).toEqual({ ready: false, reason: "atomic_commit_not_ready" });
     expect(
@@ -213,6 +214,16 @@ describe("group sequence plan", () => {
         multiServiceBookingEnabled: true,
         multiServiceReady: true,
         atomicGroupSequenceCommitReady: true,
+        groupSequenceManagementReady: false,
+      }),
+    ).toEqual({ ready: false, reason: "management_lifecycle_not_ready" });
+    expect(
+      resolveGroupSequenceAvailability({
+        groupBookingEnabled: true,
+        multiServiceBookingEnabled: true,
+        multiServiceReady: true,
+        atomicGroupSequenceCommitReady: true,
+        groupSequenceManagementReady: true,
       }),
     ).toEqual({ ready: true });
   });

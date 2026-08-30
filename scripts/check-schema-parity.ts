@@ -106,6 +106,9 @@ import { execFileSync } from "node:child_process";
  * The 20260829231142 group-sequence quote migration adds one resource-topology
  * column and three service-role-only quote/readiness functions. It remains
  * default-off and deliberately adds no booking commit function.
+ * The 20260830005555 atomic group-sequence commit migration adds two
+ * service-role-only whole-party commit/replay functions. The management
+ * lifecycle and runtime readiness remain false.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -198,7 +201,7 @@ const PRODUCTION = {
   // +2 multi-service rollout authorization/control functions.
   // +3 group-sequence readiness, authoritative quote resolver, and public
   // service-role quote wrapper functions.
-  functions: 417,
+  functions: 419,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.

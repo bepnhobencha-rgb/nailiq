@@ -39,6 +39,16 @@ returns `atomic_commit_ready=false` and `ready=false`; there is still no public
 or Desk UI, create RPC, notification, payment call, QA/production migration,
 feature activation, or production change.
 
+**Phase 2B1 local boundary.** The next additive migration introduces one
+service-role-only whole-party create RPC and one read-only replay RPC. The
+create path re-quotes and locks the full party, writes every booking, segment,
+add-on, profile claim and organizer OTP binding in one transaction, and returns
+the committed receipt on an exact retry before fresh availability checks. Guest
+identity is never copied from the organizer, and only the organizer booking is
+bound to the OTP. Runtime readiness remains false because the existing legacy
+group reschedule path changes only parent booking rows and is not safe for
+`segments_v1`; an atomic group-sequence management lifecycle is Phase 2B2.
+
 ---
 
 ## 2026-08-27 — Owner booking alerts use a transactional occurrence outbox

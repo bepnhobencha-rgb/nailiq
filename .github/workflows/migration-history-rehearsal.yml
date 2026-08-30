@@ -18,6 +18,8 @@ on:
       - "scripts/security/rehearse-resend-owner-delivery-truth.sql"
       - "scripts/security/rehearse-resend-customer-delivery-truth.sql"
       - "scripts/security/rehearse-booking-otp-delivery-truth.sql"
+      - "scripts/security/rehearse-group-booking-sequence-quote.sql"
+      - "scripts/security/rehearse-group-booking-sequence-commit.sql"
       - "scripts/security/rehearse-no-show-safety-boundary.sql"
       - "scripts/security/rehearse-staff-offboarding-durable.sql"
       - "scripts/security/rehearse-staff-offboarding-durable-sequence.sql"
@@ -298,6 +300,10 @@ jobs:
             node scripts/security/rehearse-booking-service-sequence-concurrency.mjs
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-booking-service-sequence-rollback.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-group-booking-sequence-quote.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-group-booking-sequence-commit.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/preflight-authoritative-financial-report-rollout.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
