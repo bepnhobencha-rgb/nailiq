@@ -121,6 +121,32 @@ describe("rolling-capacity group scheduler", () => {
     ]);
   });
 
+  it("skips a blocked release and waits for the next usable capacity event", () => {
+    const staffList = staff(2);
+    const staffById = new Map(staffList.map((row) => [row.id, row]));
+    const existing: ExistingBooking[] = [
+      { staffId: "S01", startMs: 50 * MINUTE_MS, endMs: 180 * MINUTE_MS },
+      { staffId: "S02", startMs: 50 * MINUTE_MS, endMs: 180 * MINUTE_MS },
+    ];
+
+    const result = tryWaveArrangement(
+      0,
+      members([50, 50, 50, 50]),
+      staffList,
+      staffById,
+      null,
+      existing,
+      DAY_CLOSE_MS,
+      { strategy: "maximize_revenue" },
+    );
+
+    expect(result).not.toBeNull();
+    expect(startsByWave(result!)).toEqual([
+      { waveNumber: 1, memberCount: 2, startMinute: 0 },
+      { waveNumber: 2, memberCount: 2, startMinute: 180 },
+    ]);
+  });
+
   it("applies the salon cadence to each rolling release", () => {
     const staffList = staff(3);
     const staffById = new Map(staffList.map((row) => [row.id, row]));
