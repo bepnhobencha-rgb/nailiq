@@ -66,6 +66,12 @@ export type WaveTimingAssignment = {
   endMs: number;
 };
 
+export type WaveCapacityReady = {
+  waveNumber: number;
+  /** Safe instant after the relevant capacity release and explicit gap. */
+  capacityReadyMs: number;
+};
+
 const MINUTE_MS = 60_000;
 
 export function resolveGroupWavePolicy(
@@ -92,17 +98,17 @@ export function ceilTimestampToCadence(
 }
 
 /**
- * Return the next policy-aligned start after the previous wave is fully safe.
+ * Return the next policy-aligned start after a relevant staff lane is safe.
  * `explicitGapMinutes` is a deliberate salon policy and is separate from the
  * per-service buffer already included in every assignment block.
  */
 export function selectNextWaveStartMs(
-  previousWaveEndMs: number,
+  capacityReleaseMs: number,
   policy: GroupWavePolicy,
   explicitGapMinutes = 0,
 ): number {
   const capacityReadyMs =
-    previousWaveEndMs + Math.max(0, explicitGapMinutes) * MINUTE_MS;
+    capacityReleaseMs + Math.max(0, explicitGapMinutes) * MINUTE_MS;
   return ceilTimestampToCadence(capacityReadyMs, policy.cadenceMinutes);
 }
 
@@ -111,11 +117,15 @@ export function buildGroupWaveOptimization(
   assignments: readonly WaveTimingAssignment[],
   policy: GroupWavePolicy,
   explicitGapMinutes = 0,
+  capacityReadyByWave: readonly WaveCapacityReady[] = [],
 ): GroupWaveOptimization {
   const waveNumbers = [...new Set(assignments.map((a) => a.waveNumber))].sort(
     (a, b) => a - b,
   );
   const decisions: GroupWaveDecision[] = [];
+  const explicitCapacityReady = new Map(
+    capacityReadyByWave.map((entry) => [entry.waveNumber, entry.capacityReadyMs]),
+  );
 
   for (let index = 1; index < waveNumbers.length; index++) {
     const previousWaveNumber = waveNumbers[index - 1];
@@ -130,6 +140,7 @@ export function buildGroupWaveOptimization(
 
     const previousWaveEndMs = Math.max(...previous.map((a) => a.endMs));
     const capacityReadyMs =
+      explicitCapacityReady.get(waveNumber) ??
       previousWaveEndMs + Math.max(0, explicitGapMinutes) * MINUTE_MS;
     const scheduledStartMs = Math.min(...current.map((a) => a.startMs));
     const baselineGridStartMs = ceilTimestampToCadence(capacityReadyMs, 15);

@@ -22,6 +22,7 @@ import {
   type GroupWaveOptimization,
   type GroupWavePolicy,
   type GroupWaveStrategy,
+  type WaveCapacityReady,
 } from "@/shared/booking/groupWaveOptimizer";
 
 // ─── Shared types ────────────────────────────────────────────────
@@ -143,8 +144,9 @@ export const SLOT_STEP_MIN = 15;
  *  constant for callers that pass an explicit `opts.waveBufferMin` stagger. */
 export const WAVE_BUFFER_MIN = 15;
 
-/** Safety ceiling on wave count so a pathological input can't loop forever. */
-export const MAX_WAVES = 6;
+/** Safety ceiling aligned with the supported maximum group size. Every
+ * successful rolling wave must seat at least one guest. */
+export const MAX_WAVES = 20;
 
 /** Pha 1 — "togetherness" threshold. A group whose members start within this
  *  many minutes of each other still counts as arriving *together* (gentle
@@ -489,28 +491,68 @@ export type WaveRawArrangement = {
   assignments: WaveRawAssignment[];
   policy: GroupWavePolicy;
   explicitWaveBufferMin: number;
+  /** Capacity-release evidence for each wave after wave 1. */
+  capacityReadyByWave: WaveCapacityReady[];
 };
+
+function staffCanServeAnyRemainingMember(
+  staffId: string,
+  remaining: readonly ResolvedMember[],
+  capability: StaffCapabilityMap,
+): boolean {
+  return remaining.some((member) =>
+    isStaffCapableForService(capability, staffId, member.serviceId),
+  );
+}
+
+/** Return the next relevant staff-capacity release after `afterMs`. */
+function findNextCapacityReleaseMs(
+  afterMs: number,
+  remaining: readonly ResolvedMember[],
+  staffById: ReadonlyMap<string, StaffRow>,
+  capability: StaffCapabilityMap,
+  occupancy: readonly ExistingBooking[],
+): number | null {
+  let nextReleaseMs = Number.POSITIVE_INFINITY;
+
+  for (const interval of occupancy) {
+    if (interval.endMs <= afterMs || interval.endMs >= nextReleaseMs) continue;
+    if (!staffById.has(interval.staffId)) continue;
+    if (
+      !staffCanServeAnyRemainingMember(
+        interval.staffId,
+        remaining,
+        capability,
+      )
+    ) {
+      continue;
+    }
+    nextReleaseMs = interval.endMs;
+  }
+
+  return Number.isFinite(nextReleaseMs) ? nextReleaseMs : null;
+}
 
 /**
  * Wave fallback for sync_start large groups. Call this ONLY after
  * `tryAlignedArrangement` returns null (the whole group can't start at once
  * because capacity is exceeded) — never as a replacement for it.
  *
- * Greedy fill: wave 1 starts at `anchorMs` and seats as many members as there
- * are capable, free staff. Whoever is left forms wave 2, starting at wave 1's
- * latest block end; repeat until everyone is seated.
+ * Greedy rolling fill: wave 1 starts at `anchorMs` and seats as many members as
+ * there are capable, free staff. Later waves start whenever the next relevant
+ * staff lane becomes free, so the group does not wait for the slowest member
+ * of the prior wave before using safe capacity.
  *
  * The default `maximize_revenue` policy keeps waves FLUSH: each booking block
  * already includes the per-service buffer (`totalMinutes` = duration + buffer),
- * so the next wave can start when the previous wave's blocks end. `balanced`
+ * so the next wave can start when a relevant staff lane's block ends. `balanced`
  * and `on_time` may round that safe instant forward to a 5- or 15-minute
  * customer cadence. An explicit `opts.waveBufferMin` still inserts a deliberate
  * inter-wave stagger before cadence alignment.
  *
  * Each wave reuses the existing capability + `staffIsFree` checks. Earlier waves
  * are appended to a private occupancy copy so the same staff is never
- * double-booked — and because later waves start at/after earlier ones' block
- * ends, their intervals never overlap.
+ * double-booked. A result is returned only after every member is seated.
  *
  * Returns null when the group can't be served even across waves (a service no
  * active staff can do, or it can't fit before close).
@@ -533,10 +575,12 @@ export function tryWaveArrangement(
   // Private occupancy copy — earlier waves get appended so later waves see them.
   const occupancy: ExistingBooking[] = existing.slice();
   const out: WaveRawAssignment[] = [];
+  const capacityReadyByWave: WaveCapacityReady[] = [];
 
   let remaining = members.slice();
   let waveNumber = 1;
   let waveStartMs = anchorMs;
+  let capacityReadyMs = anchorMs;
 
   while (remaining.length > 0) {
     if (waveNumber > maxWaves) return null;
@@ -554,7 +598,6 @@ export function tryWaveArrangement(
     const soft = new Map<string, Array<{ startMs: number; endMs: number }>>();
     const thisWave: Array<{ staffId: string; startMs: number; endMs: number }> = [];
     const stillRemaining: ResolvedMember[] = [];
-    let waveMaxEndMs = waveStartMs;
 
     for (const m of order) {
       const startMs = waveStartMs;
@@ -599,27 +642,59 @@ export function tryWaveArrangement(
       soft.set(picked, bucket);
       out.push({ memberIdx: m.index, staffId: picked, startMs, endMs, waveNumber });
       thisWave.push({ staffId: picked, startMs, endMs });
-      if (endMs > waveMaxEndMs) waveMaxEndMs = endMs;
     }
 
-    // No member could be seated this wave → unservable (prevents infinite loop).
-    if (thisWave.length === 0) return null;
+    if (thisWave.length === 0) {
+      // Preserve the outer 15-minute anchor scan: if nobody fits at wave 1,
+      // this anchor is not a valid rolling arrangement.
+      if (waveNumber === 1) return null;
+
+      // Cadence rounding can land before another booking. Advance to the next
+      // relevant release without exposing or counting an empty wave.
+      const nextReleaseMs = findNextCapacityReleaseMs(
+        waveStartMs,
+        remaining,
+        staffById,
+        capability,
+        occupancy,
+      );
+      if (nextReleaseMs === null) return null;
+      capacityReadyMs =
+        nextReleaseMs + normalizedWaveBufferMin * 60_000;
+      waveStartMs = selectNextWaveStartMs(
+        nextReleaseMs,
+        policy,
+        normalizedWaveBufferMin,
+      );
+      if (waveStartMs >= dayCloseMs) return null;
+      continue;
+    }
 
     // Commit this wave so later waves never reuse a busy interval.
     for (const a of thisWave) occupancy.push({ staffId: a.staffId, startMs: a.startMs, endMs: a.endMs });
 
+    if (waveNumber > 1) {
+      capacityReadyByWave.push({ waveNumber, capacityReadyMs });
+    }
+
     remaining = stillRemaining;
     if (remaining.length === 0) break;
 
-    // Capacity is safe at waveMaxEndMs because each booking block already
-    // includes its per-service buffer. The default policy stays flush; the
-    // calmer policies may round forward, and an explicit gap is applied once
-    // before that rounding. We never derive another gap from bufferMinutes.
+    const nextReleaseMs = findNextCapacityReleaseMs(
+      waveStartMs,
+      remaining,
+      staffById,
+      capability,
+      occupancy,
+    );
+    if (nextReleaseMs === null) return null;
+    capacityReadyMs = nextReleaseMs + normalizedWaveBufferMin * 60_000;
     waveStartMs = selectNextWaveStartMs(
-      waveMaxEndMs,
+      nextReleaseMs,
       policy,
       normalizedWaveBufferMin,
     );
+    if (waveStartMs >= dayCloseMs) return null;
     waveNumber++;
   }
 
@@ -628,6 +703,7 @@ export function tryWaveArrangement(
     assignments: out,
     policy,
     explicitWaveBufferMin: normalizedWaveBufferMin,
+    capacityReadyByWave,
   };
 }
 
@@ -766,6 +842,7 @@ export function buildWaveArrangement(
     raw.assignments,
     raw.policy,
     raw.explicitWaveBufferMin,
+    raw.capacityReadyByWave,
   );
 
   return {
