@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import {
   decideNoShowFeeReview,
+  dispatchApprovedNoShowFee,
   requestNoShowFeeReview,
   type NoShowFeeReviewQueueItem,
 } from "@/shared/noshow/noShowFeeApprovalActions";
@@ -84,6 +85,25 @@ function NoShowFeeApprovalQueueContent({
     if (result.ok) router.refresh();
   }
 
+  async function dispatch(item: NoShowFeeReviewQueueItem, amount: string) {
+    if (!item.reviewId) return;
+    const confirmed = window.confirm(vi
+      ? `Xác nhận thu ${amount} từ ${item.cardBrand} •••• ${item.cardLast4}. Square sẽ xử lý tiền thật. Thao tác này chống thu trùng.`
+      : `Confirm a real ${amount} charge to ${item.cardBrand} •••• ${item.cardLast4}. Square will process real money. Duplicate charges are blocked.`);
+    if (!confirmed) return;
+    setPendingId(item.reviewId);
+    setMessage(null);
+    const result = await dispatchApprovedNoShowFee(slug, {
+      salonId,
+      reviewId: item.reviewId,
+    });
+    setPendingId(null);
+    setMessage(result.ok
+      ? vi ? `Đã thu thành công ${amount}; đã lưu biên nhận Square.` : `${amount} collected; Square receipt recorded.`
+      : result.error);
+    router.refresh();
+  }
+
   return (
     <section data-testid="no-show-fee-approval-queue" className="mt-4 rounded-2xl border border-nq-primary/30 bg-nq-surface p-4">
       <h2 className="text-sm font-semibold text-nq-text">
@@ -91,8 +111,8 @@ function NoShowFeeApprovalQueueContent({
       </h2>
       <p className="mt-1 text-xs leading-5 text-nq-muted">
         {vi
-          ? "No-show đã được xác nhận riêng. AI chỉ gợi ý; Owner/Admin quyết định Thu hoặc Miễn. Duyệt Thu hiện không tự gọi Square."
-          : "Attendance is already confirmed separately. AI only recommends; Owner/Admin chooses Charge or Waive. Charge approval does not call Square."}
+          ? "No-show đã được xác nhận riêng. AI chỉ gợi ý; Owner/Admin quyết định Thu hoặc Miễn. Duyệt Thu chưa chuyển tiền — bước Thu ngay mới gọi Square."
+          : "Attendance is confirmed separately. AI only recommends; Owner/Admin chooses Charge or Waive. Approval does not move money — Collect now is the separate Square action."}
       </p>
       <div className="mt-3 space-y-3">
         {items.map((item) => {
@@ -131,6 +151,19 @@ function NoShowFeeApprovalQueueContent({
                       {vi ? "Miễn phí" : "Waive"}
                     </button>
                   </>
+                ) : item.state === "approved_charge" && item.paymentStatus === "dispatch_blocked" ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void dispatch(item, amount)}
+                    className="min-h-11 rounded-lg bg-nq-warning px-3 py-1.5 text-xs font-bold text-black disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {vi ? `Thu ngay ${amount}` : `Collect ${amount} now`}
+                  </button>
+                ) : item.state === "approved_charge" && ["dispatching", "pending_provider", "unknown"].includes(item.paymentStatus) ? (
+                  <button type="button" disabled className="min-h-11 rounded-lg border border-nq-border px-3 py-1.5 text-xs font-semibold text-nq-muted opacity-70">
+                    {vi ? "Đang đối soát — không thử lại" : "Reconciling — do not retry"}
+                  </button>
                 ) : item.state !== "ready_to_request" ? (
                   <span className="rounded-full border border-nq-border px-2 py-1 text-xs text-nq-muted">
                     {item.state} · {item.paymentStatus}
