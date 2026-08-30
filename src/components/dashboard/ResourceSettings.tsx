@@ -2,13 +2,17 @@
 
 import { useEffect, useState, useTransition } from "react";
 import {
-  listResources,
+  listResourceSettings,
   createResource,
   updateResource,
   deleteResource,
+  saveParallelServicePolicy,
+  deleteParallelServicePolicy,
   setResourcesMode,
   applyResourcePreset,
   type ResourceRow,
+  type ParallelServiceOption,
+  type ParallelServicePolicyRow,
 } from "@/shared/dashboard/resourceActions";
 import { resolveVertical } from "@/shared/verticals/registry";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -34,6 +38,11 @@ export function ResourceSettings({ slug, initialEnabled, initialAxis, vertical }
   const [enabled, setEnabled] = useState(initialEnabled);
   const [axis, setAxis] = useState<"staff" | "resource">(initialAxis);
   const [rows, setRows] = useState<ResourceRow[]>([]);
+  const [services, setServices] = useState<ParallelServiceOption[]>([]);
+  const [policies, setPolicies] = useState<ParallelServicePolicyRow[]>([]);
+  const [serviceAId, setServiceAId] = useState("");
+  const [serviceBId, setServiceBId] = useState("");
+  const [resourceMode, setResourceMode] = useState<"shared" | "distinct" | "either">("shared");
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -42,8 +51,13 @@ export function ResourceSettings({ slug, initialEnabled, initialAxis, vertical }
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const r = await listResources(slug);
-      if (alive && r.ok) setRows(r.resources);
+      const r = await listResourceSettings(slug);
+      if (alive && r.ok) {
+        setRows(r.resources);
+        setServices(r.services);
+        setPolicies(r.policies);
+      }
+      if (alive && !r.ok) setError(r.error);
       if (alive) setLoading(false);
     })();
     return () => {
@@ -74,7 +88,14 @@ export function ResourceSettings({ slug, initialEnabled, initialAxis, vertical }
     startTransition(async () => {
       const r = await createResource(slug, { name, kind: preset?.kind });
       if (r.ok) {
-        setRows((prev) => [...prev, { id: r.id, name, kind: preset?.kind ?? "station", display_order: prev.length, status: "active" }]);
+        setRows((prev) => [...prev, {
+          id: r.id,
+          name,
+          kind: preset?.kind ?? "station",
+          display_order: prev.length,
+          status: "active",
+          same_guest_parallel_capacity: 1,
+        }]);
         setNewName("");
       } else setError(r.error);
     });
@@ -94,6 +115,64 @@ export function ResourceSettings({ slug, initialEnabled, initialAxis, vertical }
     });
   }
 
+  function setParallelCapacity(id: string, capacity: 1 | 2) {
+    const previous = rows.find((row) => row.id === id)?.same_guest_parallel_capacity ?? 1;
+    setRows((current) => current.map((row) =>
+      row.id === id ? { ...row, same_guest_parallel_capacity: capacity } : row
+    ));
+    setError(null);
+    startTransition(async () => {
+      const result = await updateResource(slug, {
+        id,
+        sameGuestParallelCapacity: capacity,
+      });
+      if (!result.ok) {
+        setRows((current) => current.map((row) =>
+          row.id === id ? { ...row, same_guest_parallel_capacity: previous } : row
+        ));
+        setError(result.error);
+      }
+    });
+  }
+
+  function saveParallelPolicy() {
+    if (!serviceAId || !serviceBId || serviceAId === serviceBId) return;
+    setError(null);
+    startTransition(async () => {
+      const result = await saveParallelServicePolicy(slug, {
+        serviceAId,
+        serviceBId,
+        resourceMode,
+      });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setPolicies((current) => [
+        ...current.filter((policy) => policy.id !== result.policy.id && !(
+          policy.service_a_id === result.policy.service_a_id &&
+          policy.service_b_id === result.policy.service_b_id
+        )),
+        result.policy,
+      ]);
+      setServiceAId("");
+      setServiceBId("");
+    });
+  }
+
+  function removeParallelPolicy(id: string) {
+    const previous = policies;
+    setPolicies((current) => current.filter((policy) => policy.id !== id));
+    setError(null);
+    startTransition(async () => {
+      const result = await deleteParallelServicePolicy(slug, id);
+      if (!result.ok) {
+        setPolicies(previous);
+        setError(result.error);
+      }
+    });
+  }
+
   function remove(id: string) {
     setRows((prev) => prev.filter((x) => x.id !== id));
     startTransition(async () => {
@@ -109,8 +188,12 @@ export function ResourceSettings({ slug, initialEnabled, initialAxis, vertical }
         setError(r.error);
         return;
       }
-      const fresh = await listResources(slug);
-      if (fresh.ok) setRows(fresh.resources);
+      const fresh = await listResourceSettings(slug);
+      if (fresh.ok) {
+        setRows(fresh.resources);
+        setServices(fresh.services);
+        setPolicies(fresh.policies);
+      }
       setEnabled(true);
       if (preset) setAxis(preset.gridAxis);
     });
@@ -196,7 +279,7 @@ export function ResourceSettings({ slug, initialEnabled, initialAxis, vertical }
             ) : (
               <ul className="mt-2 space-y-1.5">
                 {rows.map((r) => (
-                  <li key={r.id} className="flex items-center gap-2">
+                  <li key={r.id} className="grid gap-2 rounded-xl border border-nq-border/20 p-2 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-center">
                     <input
                       defaultValue={r.name}
                       disabled={pending}
@@ -206,6 +289,22 @@ export function ResourceSettings({ slug, initialEnabled, initialAxis, vertical }
                       }}
                       className={`min-w-0 flex-1 rounded-lg border border-nq-border/30 bg-nq-surface px-2.5 py-1.5 text-sm text-nq-foreground ${r.status === "inactive" ? "opacity-50 line-through" : ""}`}
                     />
+                    <label className="flex items-center gap-2 text-xs text-nq-muted">
+                      <span>{vi ? "Cùng khách" : "Same guest"}</span>
+                      <select
+                        aria-label={vi ? `Số dịch vụ cùng lúc trên ${r.name}` : `Parallel services on ${r.name}`}
+                        value={r.same_guest_parallel_capacity}
+                        disabled={pending || r.status !== "active"}
+                        onChange={(event) => setParallelCapacity(
+                          r.id,
+                          event.target.value === "2" ? 2 : 1,
+                        )}
+                        className="rounded-lg border border-nq-border/30 bg-nq-surface px-2 py-1.5 text-xs text-nq-foreground disabled:opacity-50"
+                      >
+                        <option value={1}>{vi ? "1 dịch vụ" : "1 service"}</option>
+                        <option value={2}>{vi ? "2 cùng lúc" : "2 at once"}</option>
+                      </select>
+                    </label>
                     <button
                       type="button"
                       disabled={pending}
@@ -250,6 +349,101 @@ export function ResourceSettings({ slug, initialEnabled, initialAxis, vertical }
                 {vi ? "Thêm" : "Add"}
               </button>
             </div>
+          </div>
+
+          <div className="rounded-xl border border-nq-border/25 bg-nq-surface/50 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-nq-muted">
+              {vi ? "Cặp dịch vụ được làm cùng lúc" : "Services allowed in parallel"}
+            </p>
+            <p className="mt-1 text-xs text-nq-muted">
+              {vi
+                ? "Không có trong danh sách = luôn làm nối tiếp. Dùng chung chỉ hoạt động trên ghế/giường đã chọn “2 cùng lúc”."
+                : "Missing pairs always stay sequential. Shared mode only works on a chair/bed set to “2 at once”."}
+            </p>
+
+            {policies.length > 0 ? (
+              <ul className="mt-3 space-y-2">
+                {policies.map((policy) => {
+                  const first = services.find((service) => service.id === policy.service_a_id)?.name ?? policy.service_a_id;
+                  const second = services.find((service) => service.id === policy.service_b_id)?.name ?? policy.service_b_id;
+                  const modeLabel = policy.resource_mode === "shared"
+                    ? (vi ? "chung một ghế/giường" : "one shared resource")
+                    : policy.resource_mode === "distinct"
+                      ? (vi ? "hai chỗ riêng" : "two distinct resources")
+                      : (vi ? "NailIQ tự chọn" : "NailIQ chooses");
+                  return (
+                    <li key={policy.id} className="flex items-center justify-between gap-3 rounded-lg border border-nq-border/20 px-3 py-2 text-sm">
+                      <span className="min-w-0 text-nq-foreground">
+                        <span className="font-medium">{first} + {second}</span>
+                        <span className="block text-xs text-nq-muted">{modeLabel}</span>
+                      </span>
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() => removeParallelPolicy(policy.id)}
+                        className="rounded-lg border border-nq-error/40 px-2 py-1 text-xs text-nq-error disabled:opacity-50"
+                      >
+                        {vi ? "Xoá" : "Remove"}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+
+            {services.length >= 2 ? (
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                <select
+                  aria-label={vi ? "Dịch vụ thứ nhất" : "First service"}
+                  value={serviceAId}
+                  disabled={pending}
+                  onChange={(event) => setServiceAId(event.target.value)}
+                  className="rounded-lg border border-nq-border/30 bg-nq-surface px-2.5 py-2 text-sm text-nq-foreground"
+                >
+                  <option value="">{vi ? "Dịch vụ 1" : "Service 1"}</option>
+                  {services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}
+                </select>
+                <select
+                  aria-label={vi ? "Dịch vụ thứ hai" : "Second service"}
+                  value={serviceBId}
+                  disabled={pending}
+                  onChange={(event) => setServiceBId(event.target.value)}
+                  className="rounded-lg border border-nq-border/30 bg-nq-surface px-2.5 py-2 text-sm text-nq-foreground"
+                >
+                  <option value="">{vi ? "Dịch vụ 2" : "Service 2"}</option>
+                  {services.filter((service) => service.id !== serviceAId).map((service) => (
+                    <option key={service.id} value={service.id}>{service.name}</option>
+                  ))}
+                </select>
+                <select
+                  aria-label={vi ? "Cách dùng ghế hoặc giường" : "Resource arrangement"}
+                  value={resourceMode}
+                  disabled={pending}
+                  onChange={(event) => setResourceMode(
+                    event.target.value === "distinct" || event.target.value === "either"
+                      ? event.target.value
+                      : "shared",
+                  )}
+                  className="rounded-lg border border-nq-border/30 bg-nq-surface px-2.5 py-2 text-sm text-nq-foreground"
+                >
+                  <option value="shared">{vi ? "Chung một ghế/giường" : "One shared resource"}</option>
+                  <option value="distinct">{vi ? "Hai chỗ riêng" : "Two distinct resources"}</option>
+                  <option value="either">{vi ? "NailIQ tự chọn" : "NailIQ chooses"}</option>
+                </select>
+                <button
+                  type="button"
+                  disabled={pending || !serviceAId || !serviceBId || serviceAId === serviceBId}
+                  onClick={saveParallelPolicy}
+                  className="rounded-lg border border-nq-primary/50 bg-nq-primary/10 px-3 py-2 text-sm font-medium text-nq-foreground disabled:opacity-50 sm:col-span-3"
+                >
+                  {vi ? "Cho phép cặp này làm cùng lúc" : "Allow this pair in parallel"}
+                </button>
+              </div>
+            ) : (
+              <p className="mt-3 text-xs text-nq-muted">
+                {vi ? "Cần ít nhất 2 dịch vụ chính để cấu hình." : "Add at least two main services to configure this."}
+              </p>
+            )}
           </div>
         </div>
       ) : null}

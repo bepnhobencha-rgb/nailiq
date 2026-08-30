@@ -71,5 +71,12 @@ export async function POST(request: NextRequest) {
   const result = await quotePublicBookingSequence(intent);
   return result.ok
     ? json(result, 200)
-    : json(result, result.code === "invalid_request" ? 400 : 503);
+    : json(
+        result,
+        result.code === "invalid_request"
+          ? 400
+          : result.code === "quote_unavailable"
+            ? 503
+            : 409,
+      );
 }

@@ -15,6 +15,7 @@ import {
   bookingSequenceQuoteMatchesIntent,
   createPublicBookingSequence,
   parseBookingSequenceQuote,
+  quotePublicBookingSequence,
   replayPublicBookingSequence,
 } from "@/shared/booking/bookingSequenceServer";
 
@@ -304,5 +305,87 @@ describe("createPublicBookingSequence replay material", () => {
         }),
       }),
     );
+  });
+});
+
+describe("quotePublicBookingSequence safe availability errors", () => {
+  it("preserves a fail-closed parallel policy reason for customer guidance", async () => {
+    serviceRole.rpc.mockReset();
+    serviceRole.rpc.mockResolvedValueOnce({
+      data: { success: false, code: "parallel_pair_not_allowed" },
+      error: null,
+    });
+    const result = await quotePublicBookingSequence({
+      salonId: ids.salon,
+      requestId: ids.request,
+      requestedStartTimeUtc: "2026-08-20T18:00:00.000Z",
+      lines: [{
+        lineId: ids.line,
+        position: 0,
+        serviceId: ids.service,
+        staffPreference: "any",
+        preferredResourceId: null,
+        addOnServiceIds: [],
+        timingPreference: "sequential",
+      }],
+      sameStaffForAll: false,
+      voucherCode: null,
+      applyEmailDiscount: false,
+      customer: { name: "QA", phone: "+16045550199", email: null },
+    });
+    expect(result).toEqual({ ok: false, code: "parallel_pair_not_allowed" });
+  });
+
+  it("surfaces reused parallel staff instead of a generic quote failure", async () => {
+    const raw = quote();
+    (raw.timing_segments as Array<Record<string, unknown>>).push({
+      ...raw.timing_segments[0],
+      line_id: "77777777-7777-4777-8777-777777777771",
+      position: 1,
+      service_id: "77777777-7777-4777-8777-777777777772",
+      requested_timing_preference: "parallel",
+      resolved_timing_mode: "parallel",
+      service_start_utc: "2026-08-20T18:30:00.000Z",
+      service_end_utc: "2026-08-20T19:00:00.000Z",
+      occupied_start_utc: "2026-08-20T18:30:00.000Z",
+      occupied_end_utc: "2026-08-20T19:05:00.000Z",
+    });
+    serviceRole.rpc.mockReset();
+    serviceRole.rpc.mockResolvedValueOnce({ data: raw, error: null });
+
+    const result = await quotePublicBookingSequence({
+      salonId: ids.salon,
+      requestId: ids.request,
+      requestedStartTimeUtc: "2026-08-20T18:00:00.000Z",
+      lines: [
+        {
+          lineId: ids.line,
+          position: 0,
+          serviceId: ids.service,
+          staffPreference: ids.staff,
+          preferredResourceId: null,
+          addOnServiceIds: [],
+          timingPreference: "sequential",
+        },
+        {
+          lineId: "77777777-7777-4777-8777-777777777771",
+          position: 1,
+          serviceId: "77777777-7777-4777-8777-777777777772",
+          staffPreference: ids.staff,
+          preferredResourceId: null,
+          addOnServiceIds: [],
+          timingPreference: "parallel",
+        },
+      ],
+      sameStaffForAll: false,
+      voucherCode: null,
+      applyEmailDiscount: false,
+      customer: { name: "QA", phone: "+16045550199", email: null },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      code: "parallel_requires_distinct_staff",
+    });
   });
 });

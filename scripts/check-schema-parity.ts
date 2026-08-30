@@ -112,13 +112,16 @@ import { execFileSync } from "node:child_process";
  * The 20260830023823 Smart Wave strategy migration adds one salon policy
  * column and exposes the same non-sensitive value through the hardened
  * public_salon_profiles view, adding two information_schema-visible columns.
+ * The 20260830100409 parallel multi-service resource-policy migration adds
+ * one owner-managed policy table, one fail-closed resource-capacity column,
+ * two enforcement functions, three triggers, one RLS policy, and four indexes.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
  */
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
-  tables: 187,
+  tables: 188,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -163,7 +166,8 @@ const PRODUCTION = {
   // +6 private per-salon multi-service rollout authorization columns.
   // +1 salon-owned resource adjacency topology label.
   // +2 Smart Wave strategy columns: salons plus public_salon_profiles.
-  columns: 2811,
+  // +9 parallel service policy/resource certification columns.
+  columns: 2820,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -173,7 +177,8 @@ const PRODUCTION = {
   // +2 restrictive browser-deny policies on booking-OTP delivery truth.
   // +1 restrictive direct-access deny policy on no-show decisions.
   // +1 restrictive direct-access deny policy on multi-service rollouts.
-  policies: 207,
+  // +1 owner/admin tenant-scoped parallel service policy.
+  policies: 208,
   /**
    * APP functions only — refreshed after the rehearsed forward migrations.
    *
@@ -205,7 +210,8 @@ const PRODUCTION = {
   // +2 multi-service rollout authorization/control functions.
   // +3 group-sequence readiness, authoritative quote resolver, and public
   // service-role quote wrapper functions.
-  functions: 419,
+  // +2 tenant and same-booking overlap enforcement trigger functions.
+  functions: 421,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -214,7 +220,8 @@ const PRODUCTION = {
   // +1 canonical booking owner-alert occurrence trigger.
   // +1 provider-message correlation trigger.
   // +2 no-show fee review/approval immutable-material triggers.
-  triggers: 95,
+  // +3 policy tenant/update and segment overlap enforcement triggers.
+  triggers: 98,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -227,7 +234,8 @@ const PRODUCTION = {
   // +5 no-show decision primary, request, booking-state, due and effect indexes.
   // +18 no-show fee review/receipt/webhook primary, unique, lookup and FK indexes.
   // +1 multi-service rollout primary key.
-  indexes: 692,
+  // +4 parallel-policy primary, unique, and service lookup indexes.
+  indexes: 696,
 } as const;
 
 /**
@@ -297,6 +305,7 @@ const CRITICAL_TABLES = [
   "booking_cancel_deposit_refund_sagas",
   "square_refund_webhook_inbox",
   "booking_service_segments",
+  "service_parallel_policies",
   "square_feature_operations",
   "square_webhook_inbox",
   "square_sync_cursors",
@@ -501,6 +510,8 @@ const CRITICAL_FUNCTIONS = [
   "resolve_square_customer_identity",
   "booking_sequence_payment_policy_ready",
   "resolve_booking_sequence_pricing_and_schedule",
+  "enforce_service_parallel_policy_tenant",
+  "enforce_parallel_segment_policy",
   "quote_public_booking_sequence",
   "create_public_booking_sequence",
   "replay_public_booking_sequence",
@@ -721,7 +732,7 @@ function main() {
   // the delivery-event audit table is service-role-only.
   // The customer identity map is service-role read-only; the refund inbox is
   // mutation-through-RPC only and intentionally grants no table reachability.
-  const GRANTS = { anon: 56, authenticated: 77, service_role: 179 } as const;
+  const GRANTS = { anon: 56, authenticated: 78, service_role: 180 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (

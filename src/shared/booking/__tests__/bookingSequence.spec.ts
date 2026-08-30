@@ -113,6 +113,26 @@ describe("parseSequenceBookingIntent", () => {
     expect(parseSequenceBookingIntent(raw)).toBeNull();
   });
 
+  it("accepts one explicit two-staff parallel pair and fails closed beyond two lines", () => {
+    const raw = intent() as ReturnType<typeof intent> & {
+      lines: Array<ReturnType<typeof intent>["lines"][number] & {
+        timingPreference?: "sequential" | "parallel";
+      }>;
+    };
+    raw.lines[1] = { ...raw.lines[1], timingPreference: "parallel" };
+    expect(parseSequenceBookingIntent(raw)?.lines[1]?.timingPreference).toBe(
+      "parallel",
+    );
+
+    const third = {
+      ...raw.lines[1],
+      lineId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      position: 2,
+      timingPreference: "parallel",
+    };
+    expect(parseSequenceBookingIntent({ ...raw, lines: [...raw.lines, third] })).toBeNull();
+  });
+
   it("rejects caller-controlled monetary or derived timing keys", () => {
     expect(parseSequenceBookingIntent({ ...intent(), totalCents: 1 })).toBeNull();
     const raw = intent();
@@ -175,6 +195,29 @@ describe("parseSequenceTimingSegments", () => {
 
   it("accepts exact prep/duration/buffer equations and ordered customer work", () => {
     expect(parseSequenceTimingSegments(valid)).toHaveLength(2);
+  });
+
+  it("accepts a same-start parallel pair only with different staff", () => {
+    const parallel = valid.map((line, index) => ({
+      ...line,
+      requested_timing_preference: index === 0 ? "sequential" : "parallel",
+      resolved_timing_mode: index === 0 ? "sequential" : "parallel",
+      ...(index === 1
+        ? {
+            occupied_start_utc: "2026-08-20T17:55:00.000Z",
+            service_start_utc: "2026-08-20T18:00:00.000Z",
+            service_end_utc: "2026-08-20T18:45:00.000Z",
+            occupied_end_utc: "2026-08-20T18:55:00.000Z",
+          }
+        : {}),
+    }));
+    expect(parseSequenceTimingSegments(parallel)).toHaveLength(2);
+    expect(
+      parseSequenceTimingSegments([
+        parallel[0],
+        { ...parallel[1], resolved_staff_id: ids.staff1 },
+      ]),
+    ).toBeNull();
   });
 
   it("accepts PostgreSQL offset timestamps and canonicalizes every derived instant", () => {

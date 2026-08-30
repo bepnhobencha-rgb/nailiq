@@ -16,6 +16,20 @@ export type ResourceRow = {
   kind: string;
   display_order: number;
   status: string;
+  same_guest_parallel_capacity: 1 | 2;
+};
+
+export type ParallelServiceOption = {
+  id: string;
+  name: string;
+};
+
+export type ParallelServicePolicyRow = {
+  id: string;
+  service_a_id: string;
+  service_b_id: string;
+  resource_mode: "shared" | "distinct" | "either";
+  active: boolean;
 };
 
 type Result<T = unknown> = ({ ok: true } & T) | { ok: false; error: string };
@@ -35,12 +49,57 @@ export async function listResources(slug: string): Promise<Result<{ resources: R
   if (!ctx) return { ok: false, error: err };
   const { data, error } = await ctx.supabase
     .from("salon_resources" as never)
-    .select("id, name, kind, display_order, status")
+    .select("id, name, kind, display_order, status, same_guest_parallel_capacity")
     .eq("salon_id" as never, ctx.salon.id as never)
     .is("deleted_at" as never, null)
     .order("display_order" as never, { ascending: true });
   if (error) return { ok: false, error: error.message };
   return { ok: true, resources: (data as unknown as ResourceRow[]) ?? [] };
+}
+
+export async function listResourceSettings(
+  slug: string,
+): Promise<
+  Result<{
+    resources: ResourceRow[];
+    services: ParallelServiceOption[];
+    policies: ParallelServicePolicyRow[];
+  }>
+> {
+  const { ctx, err } = await ownerCtx(slug);
+  if (!ctx) return { ok: false, error: err };
+
+  const [resourcesResult, servicesResult, policiesResult] = await Promise.all([
+    ctx.supabase
+      .from("salon_resources" as never)
+      .select("id, name, kind, display_order, status, same_guest_parallel_capacity")
+      .eq("salon_id" as never, ctx.salon.id as never)
+      .is("deleted_at" as never, null)
+      .order("display_order" as never, { ascending: true }),
+    ctx.supabase
+      .from("services")
+      .select("id, name")
+      .eq("salon_id", ctx.salon.id)
+      .eq("is_addon", false)
+      .is("deleted_at" as never, null)
+      .order("name", { ascending: true }),
+    ctx.supabase
+      .from("service_parallel_policies" as never)
+      .select("id, service_a_id, service_b_id, resource_mode, active")
+      .eq("salon_id" as never, ctx.salon.id as never)
+      .order("created_at" as never, { ascending: true }),
+  ]);
+
+  if (resourcesResult.error) return { ok: false, error: resourcesResult.error.message };
+  if (servicesResult.error) return { ok: false, error: servicesResult.error.message };
+  if (policiesResult.error) return { ok: false, error: policiesResult.error.message };
+  return {
+    ok: true,
+    resources: (resourcesResult.data as unknown as ResourceRow[] | null) ?? [],
+    services: (servicesResult.data as ParallelServiceOption[] | null) ?? [],
+    policies:
+      (policiesResult.data as unknown as ParallelServicePolicyRow[] | null) ?? [],
+  };
 }
 
 export async function createResource(
@@ -75,7 +134,13 @@ export async function createResource(
 
 export async function updateResource(
   slug: string,
-  input: { id: string; name?: string; kind?: string; status?: "active" | "inactive" },
+  input: {
+    id: string;
+    name?: string;
+    kind?: string;
+    status?: "active" | "inactive";
+    sameGuestParallelCapacity?: 1 | 2;
+  },
 ): Promise<Result> {
   const { ctx, err } = await ownerCtx(slug);
   if (!ctx) return { ok: false, error: err };
@@ -89,12 +154,77 @@ export async function updateResource(
   }
   if (input.kind !== undefined) patch.kind = KINDS.has(input.kind) ? input.kind : "station";
   if (input.status !== undefined) patch.status = input.status === "inactive" ? "inactive" : "active";
+  if (input.sameGuestParallelCapacity !== undefined) {
+    if (input.sameGuestParallelCapacity !== 1 && input.sameGuestParallelCapacity !== 2) {
+      return { ok: false, error: "invalid_parallel_capacity" };
+    }
+    patch.same_guest_parallel_capacity = input.sameGuestParallelCapacity;
+  }
   if (Object.keys(patch).length === 0) return { ok: true };
 
   const { error } = await ctx.supabase
     .from("salon_resources" as never)
     .update(patch as never)
     .eq("id" as never, input.id as never)
+    .eq("salon_id" as never, ctx.salon.id as never);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function saveParallelServicePolicy(
+  slug: string,
+  input: {
+    serviceAId: string;
+    serviceBId: string;
+    resourceMode: "shared" | "distinct" | "either";
+  },
+): Promise<Result<{ policy: ParallelServicePolicyRow }>> {
+  const { ctx, err } = await ownerCtx(slug);
+  if (!ctx) return { ok: false, error: err };
+  if (
+    !UUID_RE.test(input.serviceAId) ||
+    !UUID_RE.test(input.serviceBId) ||
+    input.serviceAId === input.serviceBId ||
+    !["shared", "distinct", "either"].includes(input.resourceMode)
+  ) {
+    return { ok: false, error: "invalid_parallel_policy" };
+  }
+
+  const [serviceAId, serviceBId] = [input.serviceAId, input.serviceBId]
+    .map((id) => id.toLowerCase())
+    .sort();
+  const { data, error } = await ctx.supabase
+    .from("service_parallel_policies" as never)
+    .upsert(
+      {
+        salon_id: ctx.salon.id,
+        service_a_id: serviceAId,
+        service_b_id: serviceBId,
+        resource_mode: input.resourceMode,
+        active: true,
+      } as never,
+      { onConflict: "salon_id,service_a_id,service_b_id" },
+    )
+    .select("id, service_a_id, service_b_id, resource_mode, active")
+    .single();
+  if (error) return { ok: false, error: error.message };
+  return {
+    ok: true,
+    policy: data as unknown as ParallelServicePolicyRow,
+  };
+}
+
+export async function deleteParallelServicePolicy(
+  slug: string,
+  id: string,
+): Promise<Result> {
+  const { ctx, err } = await ownerCtx(slug);
+  if (!ctx) return { ok: false, error: err };
+  if (!UUID_RE.test(id)) return { ok: false, error: "invalid_id" };
+  const { error } = await ctx.supabase
+    .from("service_parallel_policies" as never)
+    .delete()
+    .eq("id" as never, id as never)
     .eq("salon_id" as never, ctx.salon.id as never);
   if (error) return { ok: false, error: error.message };
   return { ok: true };

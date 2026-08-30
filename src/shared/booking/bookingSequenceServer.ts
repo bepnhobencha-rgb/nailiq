@@ -20,6 +20,22 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA256_RE = /^[0-9a-f]{64}$/;
 
+function rawQuoteReusesStaffForParallelLine(value: unknown): boolean {
+  const row = record(value);
+  if (!row || row.success !== true || !Array.isArray(row.timing_segments)) {
+    return false;
+  }
+  const segments = row.timing_segments.map(record);
+  return segments.some((segment, position) => {
+    if (!segment || position === 0 || segment.resolved_timing_mode !== "parallel") {
+      return false;
+    }
+    const prior = segments[position - 1];
+    const staffId = uuid(segment.resolved_staff_id);
+    return Boolean(prior && staffId && staffId === uuid(prior.resolved_staff_id));
+  });
+}
+
 type TaxLine = { name: string; rate: number; amountCents: number };
 type AddonLine = {
   serviceId: string;
@@ -359,8 +375,12 @@ export function parseBookingSequenceQuote(
         tax.amountCents
     ) ||
     lines.some((line) => line.taxBreakdown.length !== taxBreakdown.length) ||
-    parentStartTimeUtc !== timing[0].serviceStartUtc ||
-    parentEndTimeUtc !== timing[timing.length - 1].serviceEndUtc ||
+    parentStartTimeUtc !== new Date(Math.min(
+      ...timing.map((line) => Date.parse(line.serviceStartUtc)),
+    )).toISOString() ||
+    parentEndTimeUtc !== new Date(Math.max(
+      ...timing.map((line) => Date.parse(line.serviceEndUtc)),
+    )).toISOString() ||
     requestedStartTimeUtc !== timing[0].serviceStartUtc
   ) return null;
 
@@ -411,6 +431,8 @@ export function bookingSequenceQuoteMatchesIntent(
           requested.staffPreference === line.resolvedStaffId) &&
         (requested.preferredResourceId == null ||
           requested.preferredResourceId === line.resolvedResourceId) &&
+        (requested.timingPreference ?? "sequential") === line.requestedTimingPreference &&
+        (requested.timingPreference ?? "sequential") === line.resolvedTimingMode &&
         requested.addOnServiceIds.length === line.addonLines.length &&
         requested.addOnServiceIds.every(
           (addonId, addonIndex) => addonId === line.addonLines[addonIndex]?.serviceId,
@@ -418,11 +440,32 @@ export function bookingSequenceQuoteMatchesIntent(
     });
 }
 
+export type BookingSequenceQuoteFailureCode =
+  | "invalid_request"
+  | "parallel_pair_not_allowed"
+  | "parallel_resource_unproven"
+  | "parallel_requires_distinct_staff"
+  | "no_shared_parallel_resource"
+  | "no_staff_available"
+  | "no_resource_available"
+  | "slot_conflict"
+  | "quote_unavailable";
+
+const SAFE_QUOTE_FAILURE_CODES = new Set<BookingSequenceQuoteFailureCode>([
+  "parallel_pair_not_allowed",
+  "parallel_resource_unproven",
+  "parallel_requires_distinct_staff",
+  "no_shared_parallel_resource",
+  "no_staff_available",
+  "no_resource_available",
+  "slot_conflict",
+]);
+
 export async function quotePublicBookingSequence(
   input: unknown,
 ): Promise<
   | { ok: true; quote: BookingSequenceQuote }
-  | { ok: false; code: "invalid_request" | "quote_unavailable" }
+  | { ok: false; code: BookingSequenceQuoteFailureCode }
 > {
   const intent = parseSequenceBookingIntent(input);
   if (!intent) return { ok: false, code: "invalid_request" };
@@ -432,10 +475,21 @@ export async function quotePublicBookingSequence(
       { p_request: serializeSequenceBookingIntent(intent) } as never,
     );
     if (error || data == null) return { ok: false, code: "quote_unavailable" };
+    if (rawQuoteReusesStaffForParallelLine(data)) {
+      return { ok: false, code: "parallel_requires_distinct_staff" };
+    }
     const quote = parseBookingSequenceQuote(data);
-    return quote && bookingSequenceQuoteMatchesIntent(quote, intent)
-      ? { ok: true, quote }
-      : { ok: false, code: "quote_unavailable" };
+    if (quote && bookingSequenceQuoteMatchesIntent(quote, intent)) {
+      return { ok: true, quote };
+    }
+    const failure = record(data)?.code;
+    if (
+      typeof failure === "string" &&
+      SAFE_QUOTE_FAILURE_CODES.has(failure as BookingSequenceQuoteFailureCode)
+    ) {
+      return { ok: false, code: failure as BookingSequenceQuoteFailureCode };
+    }
+    return { ok: false, code: "quote_unavailable" };
   } catch {
     return { ok: false, code: "quote_unavailable" };
   }
