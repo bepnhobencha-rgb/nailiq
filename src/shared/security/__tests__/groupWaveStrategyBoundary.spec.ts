@@ -13,6 +13,13 @@ const parity = readFileSync(
   resolve(process.cwd(), "scripts/check-schema-parity.ts"),
   "utf8",
 );
+const publicViewRollback = readFileSync(
+  resolve(
+    process.cwd(),
+    "scripts/security/rehearse-public-view-invoker-rollback.sql",
+  ),
+  "utf8",
+);
 
 describe("group wave strategy database boundary", () => {
   it("defaults existing salons to the backward-compatible exact policy", () => {
@@ -47,5 +54,11 @@ describe("group wave strategy database boundary", () => {
   it("advances the blank-database schema tripwire for the base and view columns", () => {
     expect(parity).toContain("20260830023823 Smart Wave strategy migration");
     expect(parity).toContain("columns: 2811");
+  });
+
+  it("keeps the emergency public-view rollback complete", () => {
+    expect(publicViewRollback).toContain(
+      "closure_notice, group_wave_strategy",
+    );
   });
 });
