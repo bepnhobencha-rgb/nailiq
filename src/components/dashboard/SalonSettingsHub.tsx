@@ -76,6 +76,7 @@ import type { SubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { MobileAccountCard } from "@/components/dashboard/MobileAccountCard";
 import type { OwnerSalonSummary } from "@/shared/dashboard/salonOwnerActions";
+import type { GroupWaveStrategy } from "@/shared/booking/groupWaveOptimizer";
 
 export function SalonSettingsHub({
   slug,
@@ -108,6 +109,7 @@ export function SalonSettingsHub({
   staffSelectionEnabled,
   bookingLeadMinutes,
   groupTogetherThresholdMin,
+  groupWaveStrategy,
   referenceImageEnabled,
   autoNoShowMinutes,
   winBackEnabled,
@@ -158,6 +160,7 @@ export function SalonSettingsHub({
   staffSelectionEnabled: boolean;
   bookingLeadMinutes: number;
   groupTogetherThresholdMin: number;
+  groupWaveStrategy: GroupWaveStrategy;
   referenceImageEnabled: boolean;
   autoNoShowMinutes: number;
   winBackEnabled: boolean;
@@ -1025,10 +1028,11 @@ export function SalonSettingsHub({
             ) : null}
 
             {/* ── Group booking "togetherness" threshold ──────────── */}
-            {canEditDashboardModules ? (
+            {canManageSalonSettings ? (
               <GroupTogetherSettings
                 slug={slug}
                 initialMinutes={groupTogetherThresholdMin}
+                initialStrategy={groupWaveStrategy}
               />
             ) : null}
 

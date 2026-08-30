@@ -48,6 +48,10 @@ import {
   loadSalonMemberOperationalProfile,
   loadSalonOwnerAdminSettings,
 } from "@/shared/dashboard/salonOwnerAdminSettings";
+import {
+  isGroupWaveStrategy,
+  type GroupWaveStrategy,
+} from "@/shared/booking/groupWaveOptimizer";
 
 /** Single source of truth for the salon row shape every dashboard
  *  surface needs. Adding `timezone` + dashboard config fields here
@@ -1405,6 +1409,44 @@ export async function updateGroupTogetherThreshold(
     return { ok: false, error: "server_error" };
   }
   return { ok: true, minutes: m };
+}
+
+export type UpdateGroupWaveStrategyResult =
+  | { ok: true; strategy: GroupWaveStrategy }
+  | {
+      ok: false;
+      error: "unauthorized" | "forbidden" | "invalid" | "server_error";
+    };
+
+/**
+ * Owner/admin: chooses how later waves are aligned after staff/resources are
+ * safely available. This changes scheduling policy, never an existing booking.
+ */
+export async function updateGroupWaveStrategy(
+  slug: string,
+  strategy: GroupWaveStrategy,
+): Promise<UpdateGroupWaveStrategyResult> {
+  if (!isGroupWaveStrategy(strategy)) {
+    return { ok: false, error: "invalid" };
+  }
+
+  const { getDashboardWriteClient } = await import(
+    "@/shared/dashboard/setupActions"
+  );
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!isOwnerOrAdmin(ctx.role)) return { ok: false, error: "forbidden" };
+
+  const { error } = await ctx.supabase
+    .from("salons")
+    .update({ group_wave_strategy: strategy } as never)
+    .eq("id", ctx.salon.id);
+
+  if (error) {
+    console.error("[updateGroupWaveStrategy]", error.code);
+    return { ok: false, error: "server_error" };
+  }
+  return { ok: true, strategy };
 }
 
 /* ───────────── Reference-image upload toggle ───────────── */
