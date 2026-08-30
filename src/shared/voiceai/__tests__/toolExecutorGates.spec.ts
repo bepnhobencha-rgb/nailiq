@@ -423,7 +423,7 @@ describe("toolExecutor — late-cancellation payment consent", () => {
     expect(body.success).toBeUndefined();
   });
 
-  it("charges only after explicit acknowledgement and reports success truthfully", async () => {
+  it("cancels after explicit acknowledgement and leaves the fee for Owner/Admin review", async () => {
     managementMocks.mint.mockClear();
     managementMocks.cancel.mockClear();
     paymentMocks.charge.mockClear();
@@ -455,8 +455,10 @@ describe("toolExecutor — late-cancellation payment consent", () => {
     );
 
     expect(body.success).toBe(true);
-    expect(body.feeCharged).toBe(true);
+    expect(body.feeCharged).toBe(false);
     expect(body.feeCents).toBe(1700);
+    expect(body.feeStatus).toBe("approval_required");
+    expect(body.paymentPending).toBe(false);
     expect(body.feeFailed).toBe(false);
     expect(managementMocks.mint).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -473,16 +475,11 @@ describe("toolExecutor — late-cancellation payment consent", () => {
       }),
       expect.anything(),
     );
-    expect(paymentMocks.charge).toHaveBeenCalledWith(BOOKING_ID, {
-      note: "Late cancellation fee",
-      amountCentsOverride: 1700,
-      operationKind: "late_cancel_charge",
-      occurrenceVersion: 7,
-    });
+    expect(paymentMocks.charge).not.toHaveBeenCalled();
     vi.unstubAllEnvs();
   });
 
-  it("replays the same canonical cancel request and committed charge occurrence", async () => {
+  it("replays the same canonical cancel request without dispatching a fee", async () => {
     managementMocks.cancel.mockClear();
     paymentMocks.charge.mockClear();
     vi.stubEnv("VOICE_BRIDGE_SECRET", "late-fee-test-secret");
@@ -527,16 +524,9 @@ describe("toolExecutor — late-cancellation payment consent", () => {
     const cancelRequests = cancelCalls.map(([input]) => input.requestId);
     expect(cancelRequests).toHaveLength(2);
     expect(new Set(cancelRequests).size).toBe(1);
-    expect(paymentMocks.charge).toHaveBeenCalledTimes(2);
-    const chargeCalls = paymentMocks.charge.mock.calls as unknown as Array<[
-      string,
-      { operationKind: string; occurrenceVersion: number },
-    ]>;
-    expect(chargeCalls[0]).toEqual(chargeCalls[1]);
-    expect(chargeCalls[0]?.[1]).toMatchObject({
-      operationKind: "late_cancel_charge",
-      occurrenceVersion: 7,
-    });
+    expect(first.feeStatus).toBe("approval_required");
+    expect(replay.feeStatus).toBe("approval_required");
+    expect(paymentMocks.charge).not.toHaveBeenCalled();
     vi.unstubAllEnvs();
   });
 
@@ -577,45 +567,6 @@ describe("toolExecutor — late-cancellation payment consent", () => {
     expect(body.paymentPending).toBe(false);
     expect(paymentMocks.charge).not.toHaveBeenCalled();
   });
-
-  it.each(["pending_provider", "unknown"] as const)(
-    "reports a %s late-cancel charge truthfully without marking it failed",
-    async (status) => {
-      paymentMocks.charge.mockClear();
-      paymentMocks.charge.mockResolvedValueOnce({ charged: false, status } as never);
-      vi.stubEnv("VOICE_BRIDGE_SECRET", "late-fee-test-secret");
-      const challenge = await call(
-        "cancel_booking",
-        { booking_id: BOOKING_ID },
-        { salons: chargeableSalon, bookings: chargeableBooking },
-        {
-          callerVerifiedPhone: OWNER_PHONE,
-          trustedUserUtterance: "I need to cancel",
-        },
-      );
-
-      const body = await call(
-        "cancel_booking",
-        {
-          booking_id: BOOKING_ID,
-          late_fee_acknowledged: true,
-          late_fee_confirmation_token: challenge.late_fee_confirmation_token,
-        },
-        { salons: chargeableSalon, bookings: chargeableBooking },
-        {
-          callerVerifiedPhone: OWNER_PHONE,
-          trustedUserUtterance: "Yes",
-        },
-      );
-
-      expect(body.success).toBe(true);
-      expect(body.feeStatus).toBe(status);
-      expect(body.paymentPending).toBe(true);
-      expect(body.feeFailed).toBe(false);
-      expect(body.feeCharged).toBe(false);
-      vi.unstubAllEnvs();
-    },
-  );
 
   it("does not trust a model-set acknowledgement without a trusted customer yes", async () => {
     const body = await call(

@@ -7,7 +7,6 @@ import {
 import { consumeBookingManagementRateLimit } from "@/shared/booking/bookingManagementRateLimit";
 import { reconcilePublicBookingManagementAudit } from "@/shared/dashboard/reconcilePublicBookingManagementAudit";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
-import { chargeNoShowFee } from "@/shared/integrations/square/noshow";
 import { deliverPromotedWaitlistOffer } from "@/shared/noshow/deliverPromotedWaitlistOffer";
 import { deliverCustomerBookingTransitionEmail } from "@/shared/notifications/customerBookingTransitionEmail";
 import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
@@ -109,29 +108,13 @@ export async function POST(request: Request) {
     return json({ ok: false, code: "invalid_management_response" }, 503);
   }
 
-  // Charge helper re-reads saved-card/consent state and is idempotent, so exact
-  // response-loss replay can safely reconcile a missing post-commit charge.
-  let feeCharged = false;
-  let feeCents = 0;
-  let feeStatus: "succeeded" | "pending_provider" | "unknown" | "definite_failure" | "not_applicable" =
-    "not_applicable";
-  if (!isRsvpDecline && preview.willCharge && preview.feeCents > 0) {
-    try {
-      const charged = await chargeNoShowFee(committed.bookingId, {
-        note: "Late cancellation fee",
-        amountCentsOverride: preview.feeCents,
-        operationKind: "late_cancel_charge",
-        occurrenceVersion: committed.transitionVersion ?? undefined,
-      });
-      feeStatus = charged.status;
-      feeCharged = charged.status === "succeeded";
-      feeCents = preview.feeCents;
-    } catch (error) {
-      console.error("[cancel-action] late-cancel charge failed", error);
-      feeStatus = "unknown";
-      feeCents = preview.feeCents;
-    }
-  }
+  // Cancellation is the committed customer outcome. A fee policy match is a
+  // separate reviewable intent: it never reaches a provider from this public
+  // route and must never turn a successful cancellation into an error/retry.
+  const feeStatus = !isRsvpDecline && preview.willCharge && preview.feeCents > 0
+    ? "approval_required" as const
+    : "not_applicable" as const;
+  const feeCents = feeStatus === "approval_required" ? preview.feeCents : 0;
 
   await reconcilePublicBookingManagementAudit({
     bookingId: committed.bookingId,
@@ -172,29 +155,6 @@ export async function POST(request: Request) {
     }
   });
 
-  if (feeStatus === "pending_provider" || feeStatus === "unknown") {
-    return json({
-      ok: false,
-      code: "payment_reconciliation_required",
-      bookingCommitted: true,
-      feeStatus,
-      feeCents,
-      currency: preview.currency,
-      idempotent: committed.idempotent,
-    }, 503);
-  }
-  if (preview.willCharge && !isRsvpDecline && feeStatus === "not_applicable") {
-    return json({
-      ok: false,
-      code: "payment_unavailable",
-      bookingCommitted: true,
-      feeStatus,
-      feeCents,
-      currency: preview.currency,
-      idempotent: committed.idempotent,
-    }, 503);
-  }
-
   return json({
     ok: true,
     code: isRsvpDecline ? "declined" : committed.code,
@@ -209,7 +169,8 @@ export async function POST(request: Request) {
       salonName: committed.salonName,
       salonTimezone: committed.salonTimezone,
     },
-    feeCharged,
+    bookingCommitted: true,
+    feeCharged: false,
     feeStatus,
     feeCents,
     currency: preview.currency,

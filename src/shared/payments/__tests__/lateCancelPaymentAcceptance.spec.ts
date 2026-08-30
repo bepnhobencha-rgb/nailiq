@@ -28,6 +28,10 @@ const paymentExecutor = readFileSync(
   resolve(root, "src/shared/payments/executeBookingPaymentOperation.ts"),
   "utf8",
 );
+const approvalMigration = readFileSync(
+  resolve(root, "supabase/migrations/20260830210000_enforce_no_show_payment_approval.sql"),
+  "utf8",
+);
 const cancelRuntime = `${cancelRoute}\n${paymentExecutor}`;
 
 function requirePattern(source: string, pattern: RegExp, message: string) {
@@ -48,34 +52,34 @@ function sqlFunction(name: string) {
 }
 
 describe("late-cancellation authoritative payment acceptance", () => {
-  it("uses dedicated late-cancel charge/refund kinds rather than no-show financial semantics", () => {
+  it("models late-cancel money separately but never dispatches it from customer cancellation", () => {
     requirePattern(migration, /'late_cancel_charge'/, "ledger must model late-cancel charge separately");
     requirePattern(migration, /'late_cancel_refund'/, "ledger must model late-cancel refund separately");
     requirePattern(paymentParser, /late_cancel_charge/, "strict app parser must recognize the locked charge kind");
     requirePattern(paymentParser, /late_cancel_refund/, "strict app parser must recognize the locked refund kind");
-    requirePattern(cancelRoute, /operationKind:\s*"late_cancel_charge"/, "customer cancellation must explicitly select the dedicated ledger kind");
+    forbidPattern(cancelRoute, /chargeNoShowFee|operationKind:\s*"late_cancel_charge"/, "customer cancellation must not reach the provider ledger");
     forbidPattern(cancelRoute, /operationKind:\s*"noshow_charge"/, "customer cancellation must never select no-show financial identity");
+    requirePattern(cancelRoute, /feeStatus[\s\S]{0,220}?"approval_required"/, "customer cancellation must expose review-required fee truth");
   });
 
-  it("binds charge material to the exact persisted cancel occurrence and policy preview", () => {
+  it("fails closed at both application and database boundaries until late-cancel approval exists", () => {
     requirePattern(migration, /late_cancel_charge[\s\S]*?(?:transition_version|action_epoch|occurrence)/i, "charge material must bind the exact cancel transition occurrence");
     requirePattern(migration, /late_cancel_charge[\s\S]*?(?:cancel_preview|fee_cents|policy)/i, "charge material must bind the committed policy/fee snapshot");
-    requirePattern(cancelRoute, /transitionVersion|actionEpoch/, "route must pass the DB-owned cancel occurrence, not derive it from browser time");
-    requirePattern(cancelRoute, /const preview = committed\.cancelPreview[\s\S]{0,1200}?amountCentsOverride:\s*preview\.feeCents[\s\S]{0,180}?operationKind:\s*"late_cancel_charge"[\s\S]{0,180}?occurrenceVersion:\s*committed\.transitionVersion/, "route must pass the committed fee snapshot and occurrence into the dedicated path");
-    requirePattern(paymentExecutor, /load_booking_payment_operation_material[\s\S]{0,600}?parseBookingPaymentOperationMaterial[\s\S]{0,600}?claim_booking_payment_operation[\s\S]{0,300}?p_expected_material_fingerprint:\s*material\.materialFingerprint/, "runtime must load then claim the exact DB-owned occurrence and preview fingerprint");
+    requirePattern(paymentExecutor, /operationKind === "late_cancel_charge"[\s\S]{0,260}?fee_approval_required/, "application executor must reject late-cancel dispatch before DB work");
+    requirePattern(approvalMigration, /NEW\.operation_kind = 'late_cancel_charge'[\s\S]{0,260}?NI009/, "database ledger must reject late-cancel dispatch");
   });
 
   it("keeps RSVP member/organizer decline as attendance-only with zero provider work", () => {
-    requirePattern(cancelRoute, /let feeCents\s*=\s*0[\s\S]{0,180}?if \(!isRsvpDecline/, "RSVP decline must retain the zero-charge default and skip dispatch");
-    requirePattern(cancelRoute, /if \(!isRsvpDecline[\s\S]{0,300}?willCharge/, "provider dispatch must be unreachable for RSVP decline");
+    requirePattern(cancelRoute, /const feeCents = feeStatus === "approval_required" \? preview\.feeCents : 0/, "RSVP decline must retain the zero-fee result");
+    forbidPattern(cancelRoute, /chargeNoShowFee/, "provider dispatch must be unreachable for RSVP decline");
     requirePattern(cancelRoute, /fee_decision:[\s\S]{0,120}?rsvp_no_charge/, "audit must preserve explicit no-charge semantics");
   });
 
-  it("replays response loss with one provider attempt and never rotates an unknown key", () => {
+  it("keeps generic provider reconciliation idempotent behind the approval boundary", () => {
     requirePattern(cancelRuntime, /claim_booking_payment_operation/, "runtime must durably claim before late-cancel provider dispatch");
     requirePattern(cancelRuntime, /complete_booking_payment_operation/, "runtime must persist accepted/failed/unknown provider truth");
-    requirePattern(cancelRuntime, /operation_replay/, "exact response-loss replay must return the existing terminal result");
-    requirePattern(cancelRuntime, /reconciliation_required/, "unknown provider outcome must not be blindly retried");
+    requirePattern(paymentExecutor, /operation_replay/, "exact response-loss replay must return the existing terminal result");
+    requirePattern(paymentExecutor, /reconciliation_required/, "unknown provider outcome must not be blindly retried");
     requirePattern(migration, /provider_idempotency_key[\s\S]{0,180}'nq:'\|\|v_id::text/, "late-cancel provider identity must derive from the durable operation id");
     forbidPattern(cancelRuntime, /idempotencySuffix|randomUUID\(\)[\s\S]{0,120}?(?:charge|provider)/, "retry must never rotate provider identity");
   });
@@ -146,8 +150,7 @@ describe("late-cancellation authoritative payment acceptance", () => {
     expect(result).toMatchObject({ ok: false, status: "unknown" });
   });
 
-  it("creates a new occurrence after undo then cancel while exact retry still dedupes", () => {
-    requirePattern(cancelRoute, /transitionVersion|actionEpoch/, "operation material must use the persisted transition occurrence");
+  it("keeps distinct late-cancel occurrence identities available for a future approved workflow", () => {
     forbidPattern(cancelRoute, /(?:late.?cancel|cancel):\$?\{?committed\.bookingId\}?["'`]?\s*[,;}]/i, "booking id alone cannot identify repeated cancel transitions");
     requirePattern(migration, /request_id[\s\S]{0,160}?operation_kind[\s\S]{0,300}?(?:transition_version|occurrence|action_epoch)/i, "ledger uniqueness/material must distinguish undo then re-cancel from exact retry");
 

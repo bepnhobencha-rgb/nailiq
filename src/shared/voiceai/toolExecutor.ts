@@ -67,7 +67,6 @@ import {
   SUPPORTED_LANGUAGES,
   type SupportedLanguage,
 } from "@/shared/voiceai/config";
-import { chargeNoShowFee } from "@/shared/integrations/square/noshow";
 import {
   buildLateCancellationLockPatch,
   evaluateLateCancellationPolicy,
@@ -1729,18 +1728,8 @@ async function handleCancelBooking(
   const committed = cancelled.result;
   const chargeableCommitted = committed.scopeKind === "booking_own" &&
     committed.rsvpSemantic === null && committed.cancelPreview?.willCharge === true;
-  let feeStatus: "succeeded" | "pending_provider" | "unknown" | "definite_failure" | "not_applicable" =
-    "not_applicable";
-  if (chargeableCommitted) {
-    const charge = await chargeNoShowFee(bookingId!, {
-      note: "Late cancellation fee",
-      amountCentsOverride: committed.cancelPreview!.feeCents,
-      operationKind: "late_cancel_charge",
-      occurrenceVersion: committed.transitionVersion ?? undefined,
-    });
-    feeStatus = charge.status;
-  }
-  const feeCharged = feeStatus === "succeeded";
+  const feeStatus = chargeableCommitted ? "approval_required" as const : "not_applicable" as const;
+  const feeCharged = false;
 
   void logBookingEvent({
     bookingId: bookingId!,
@@ -1793,14 +1782,10 @@ async function handleCancelBooking(
     feeCents: chargeableCommitted ? committed.cancelPreview!.feeCents : 0,
     currency,
     feeStatus,
-    feeFailed: chargeableCommitted && feeStatus === "definite_failure",
-    paymentPending: feeStatus === "pending_provider" || feeStatus === "unknown",
+    feeFailed: false,
+    paymentPending: false,
     message: chargeableCommitted
-      ? feeCharged
-        ? "Lịch hẹn đã được hủy và phí hủy trễ đã được thu thành công."
-        : feeStatus === "definite_failure"
-          ? "Lịch hẹn đã được hủy nhưng thu phí bị từ chối. Nhân viên cần kiểm tra."
-          : "Lịch hẹn đã được hủy; trạng thái phí đang được đối soát. Không thu lại."
+      ? "Lịch hẹn đã được hủy thành công. Phí hủy trễ chưa được thu và đang chờ Owner/Admin của salon duyệt."
       : "Lịch hẹn đã được hủy thành công.",
   });
 }
