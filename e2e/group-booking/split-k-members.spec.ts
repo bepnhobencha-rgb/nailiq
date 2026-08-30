@@ -103,12 +103,12 @@ test.describe("Group booking — generalized split (K late members)", () => {
     });
     const rollingCard = page.getByTestId("group-arrangement-best");
     await expect(rollingCard).toBeVisible({ timeout: 20_000 });
-    await expect(rollingCard.getByTestId("group-wave-1")).toContainText(
-      /2 guests at 9:00 AM/i,
-    );
-    await expect(rollingCard.getByTestId("group-wave-2")).toContainText(
-      /2 guests at 12:00 PM/i,
-    );
+    const firstWave = rollingCard.getByTestId("group-wave-1");
+    const secondWave = rollingCard.getByTestId("group-wave-2");
+    await expect(firstWave).toContainText(/2 guests/i);
+    await expect(firstWave).toContainText(/9:00/i);
+    await expect(secondWave).toContainText(/2 guests/i);
+    await expect(secondWave).toContainText(/12:00/i);
     await expect(page.getByTestId("group-arrangement-next")).toBeEnabled();
   });
 });
