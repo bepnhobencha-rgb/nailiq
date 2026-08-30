@@ -183,30 +183,24 @@ test("missing or false salon outbound state always suppresses", () => {
   );
 });
 
-// ── Suppressed sends must return a UNIQUE fake SID ──────────────────
-// Callers persist messageSid into booking_notifications, whose
-// twilio_message_sid column is UNIQUE. A constant SUPPRESSED_<reason> collided
-// on the 2nd suppressed send, silently dropping every notification log after
-// the first (E2E/dev, and 555 seed numbers in prod). Guard uniqueness.
-async function testSuppressedSidUnique() {
+// ── Suppression is terminal no-send, never provider acceptance ──────
+async function testSuppressedTruth() {
   const prev = process.env.DISABLE_OUTBOUND_SMS;
   process.env.DISABLE_OUTBOUND_SMS = "1";
   try {
     const a = await sendSmsReminder("+16045551234", "hi", { salonId: "11111111-1111-4111-8111-111111111111" });
     const b = await sendSmsReminder("+16045551234", "hi", { salonId: "11111111-1111-4111-8111-111111111111" });
-    test("suppressed send is reported ok + suppressed", () => {
-      assertEqual(a.ok, true);
+    test("suppressed send is not reported as provider success", () => {
+      assertEqual(a.ok, false);
+      assertEqual(a.outcome, "suppressed");
       assertEqual(a.suppressed, true);
     });
-    test("suppressed fake SID keeps the SUPPRESSED_<reason> prefix", () => {
-      if (!a.messageSid?.startsWith("SUPPRESSED_disabled_by_env")) {
-        throw new Error(`unexpected sid: ${a.messageSid}`);
-      }
+    test("suppressed send has no fake provider SID", () => {
+      assertEqual(a.messageSid, undefined);
     });
-    test("two suppressed sends return DISTINCT SIDs (no unique-index collision)", () => {
-      if (a.messageSid === b.messageSid) {
-        throw new Error(`SIDs collided: ${a.messageSid}`);
-      }
+    test("repeated suppression remains explicit and provider-free", () => {
+      assertEqual(b.outcome, "suppressed");
+      assertEqual(b.messageSid, undefined);
     });
   } finally {
     if (prev === undefined) delete process.env.DISABLE_OUTBOUND_SMS;
@@ -251,7 +245,7 @@ async function testDeliveryStatusRead() {
   }
 }
 
-void testSuppressedSidUnique().then(testDeliveryStatusRead).finally(() => {
+void testSuppressedTruth().then(testDeliveryStatusRead).finally(() => {
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail > 0) process.exit(1);
 });

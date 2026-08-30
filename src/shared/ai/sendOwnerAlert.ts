@@ -129,7 +129,10 @@ export async function sendOwnerAlert(
         // SMS body: keep under 160 chars if possible; no opt-out line needed
         // for owner-directed operational messages, but sendSmsReminder appends it.
         const smsBody = bodyText.slice(0, 1400); // Twilio max 1600 chars
-        await sendSmsReminder(salon.owner_phone.trim(), smsBody, { salonId });
+        await sendSmsReminder(salon.owner_phone.trim(), smsBody, {
+          salonId,
+          notificationType: "owner_alert",
+        });
       } catch (e) {
         console.error("[sendOwnerAlert] sms", e);
       }

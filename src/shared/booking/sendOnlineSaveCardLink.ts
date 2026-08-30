@@ -107,7 +107,12 @@ export async function sendOnlineSaveCardLink(bookingId: string): Promise<void> {
 
     if (phone) {
       try {
-        await sendSmsReminder(phone, smsBody, { salonId, lang });
+        await sendSmsReminder(phone, smsBody, {
+          salonId,
+          lang,
+          bookingId,
+          notificationType: "save_card_link",
+        });
       } catch (e) {
         console.error("[sendOnlineSaveCardLink] sms", e);
       }

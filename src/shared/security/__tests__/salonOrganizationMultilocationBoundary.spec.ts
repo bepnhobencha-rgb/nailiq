@@ -85,12 +85,12 @@ describe("salon organization multi-location boundary", () => {
 
   it("updates the full candidate schema parity tripwire", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("tables: 188");
-    expect(parity).toContain("columns: 2820");
-    expect(parity).toContain("policies: 208");
-    expect(parity).toContain("functions: 421");
-    expect(parity).toContain("triggers: 98");
-    expect(parity).toContain("indexes: 696");
+    expect(parity).toContain("tables: 190");
+    expect(parity).toContain("columns: 2852");
+    expect(parity).toContain("policies: 209");
+    expect(parity).toContain("functions: 428");
+    expect(parity).toContain("triggers: 99");
+    expect(parity).toContain("indexes: 704");
     expect(parity).toContain(
       "const GRANTS = { anon: 56, authenticated: 78, service_role: 180 }",
     );

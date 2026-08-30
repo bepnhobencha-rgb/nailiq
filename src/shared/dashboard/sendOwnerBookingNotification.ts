@@ -484,6 +484,9 @@ async function sendToEachRecipientDetailed(
     bookingId?: string | null;
     event: string;
     eventOccurrenceKey?: string | null;
+    /** Stable outbox identity for provider idempotency on non-booking
+     * waitlist notifications. It contains no customer data. */
+    waitlistDeliveryId?: string | null;
   },
 ): Promise<RecipientDispatchSummary> {
   const from = getResendFrom();
@@ -565,6 +568,13 @@ async function sendToEachRecipientDetailed(
       }
 
       try {
+        const waitlistIdempotencyKey =
+          meta.event === "waitlist" && meta.waitlistDeliveryId
+            ? `owner-waitlist-${meta.waitlistDeliveryId}-${createHash("sha256")
+                .update(to)
+                .digest("hex")
+                .slice(0, 16)}`
+            : null;
         const res = claimId
           ? await resend.emails.send(
               {
@@ -578,7 +588,20 @@ async function sendToEachRecipientDetailed(
               },
               { idempotencyKey: `owner-booking-${claimId}` },
             )
-          : await resend.emails.send({ from, to, ...payload });
+          : waitlistIdempotencyKey
+            ? await resend.emails.send(
+                {
+                  from,
+                  to,
+                  ...payload,
+                  tags: [
+                    { name: "nailiq_flow", value: "owner_waitlist" },
+                    { name: "nailiq_delivery", value: meta.waitlistDeliveryId! },
+                  ],
+                },
+                { idempotencyKey: waitlistIdempotencyKey },
+              )
+            : await resend.emails.send({ from, to, ...payload });
         if (res.error) {
           const providerError = sanitizeProviderError(res.error);
           console.error(
@@ -720,6 +743,7 @@ export async function sendToEachRecipient(
     bookingId?: string | null;
     event: string;
     eventOccurrenceKey?: string | null;
+    waitlistDeliveryId?: string | null;
   },
 ): Promise<{ sent: number; failed: number }> {
   const result = await sendToEachRecipientDetailed(
@@ -808,21 +832,29 @@ export async function sendOwnerNotificationTest(
 
 /**
  * Notify owner/admins that a customer joined the online waitlist (their preferred
- * slot was full). Best-effort — never throws, never blocks the join. Honours the
- * same owner_notification_settings.enabled toggle + recipient resolution as
- * booking alerts.
+ * slot was full). Delivery is invoked only by the leased waitlist outbox worker;
+ * the join itself never waits on Resend. A stable delivery id becomes the
+ * provider idempotency key so response-loss retries cannot duplicate email.
  */
 export async function sendOwnerWaitlistNotification(
   salonId: string,
   waitlistId: string,
-): Promise<void> {
+  deliveryId: string,
+): Promise<OwnerNotificationDispatchResult> {
   try {
-    if (!salonId || !waitlistId) return;
+    if (!salonId || !waitlistId || !deliveryId) {
+      return { outcome: "suppressed", reason: "invalid_input", sent: 0, failed: 0 };
+    }
     let admin: ReturnType<typeof createServiceRoleClient>;
     try {
       admin = createServiceRoleClient();
     } catch {
-      return;
+      return {
+        outcome: "retryable_failure",
+        reason: "service_role_unavailable",
+        sent: 0,
+        failed: 1,
+      };
     }
 
     const { data: salonRow } = await admin
@@ -835,10 +867,14 @@ export async function sendOwnerWaitlistNotification(
       timezone?: string | null;
       owner_notification_settings?: unknown;
     } | null;
-    if (!salon) return;
+    if (!salon) {
+      return { outcome: "suppressed", reason: "salon_not_found", sent: 0, failed: 0 };
+    }
 
     const settings = parseOwnerNotificationSettings(salon.owner_notification_settings);
-    if (!settings.enabled) return;
+    if (!settings.enabled) {
+      return { outcome: "suppressed", reason: "notifications_disabled", sent: 0, failed: 0 };
+    }
 
     const { data: entryRow } = await admin
       .from("booking_waitlist_entries" as never)
@@ -855,7 +891,9 @@ export async function sendOwnerWaitlistNotification(
       service?: { name?: string | null } | null;
       staff?: { name?: string | null } | null;
     } | null;
-    if (!entry) return;
+    if (!entry) {
+      return { outcome: "suppressed", reason: "waitlist_entry_not_found", sent: 0, failed: 0 };
+    }
 
     // How many are now waiting for this exact slot (salon + service + date).
     let waitingCount = 1;
@@ -876,10 +914,14 @@ export async function sendOwnerWaitlistNotification(
       settings.notifyMembers,
       settings.customEmails,
     );
-    if (recipients.length === 0) return;
+    if (recipients.length === 0) {
+      return { outcome: "suppressed", reason: "no_recipients", sent: 0, failed: 0 };
+    }
 
     const resend = getResendClient();
-    if (!resend) return;
+    if (!resend) {
+      return { outcome: "suppressed", reason: "no_resend", sent: 0, failed: 0 };
+    }
 
     const salonName = salon.name?.trim() || "NailIQ";
     const serviceName = entry.service?.name?.trim() || "a service";
@@ -892,7 +934,7 @@ export async function sendOwnerWaitlistNotification(
     const staffVi = staffName ? ` với ${staffName}` : "";
     const client = entry.client_name?.trim() || "A customer";
 
-    await sendToEachRecipient(
+    const delivery = await sendToEachRecipientDetailed(
       admin,
       resend,
       recipients,
@@ -906,13 +948,51 @@ export async function sendOwnerWaitlistNotification(
 </div>`,
         text: `New waitlist request / Khách vào danh sách chờ — ${client}: ${serviceName} ${dateStr} ${timeEn}${staffEn} (${waitingCount} waiting) — ${salonName}`,
       },
-      { salonId, event: "waitlist" },
+      { salonId, event: "waitlist", waitlistDeliveryId: deliveryId },
     );
+    const failed =
+      delivery.retryableFailures + delivery.unknown + delivery.suppressed;
+    if (delivery.unknown > 0) {
+      return {
+        outcome: "unknown",
+        reason: "provider_outcome_unknown",
+        sent: delivery.sent + delivery.alreadySent,
+        failed,
+      };
+    }
+    if (delivery.retryableFailures > 0) {
+      return {
+        outcome: "retryable_failure",
+        reason: "provider_rejected_pre_acceptance",
+        sent: delivery.sent + delivery.alreadySent,
+        failed,
+      };
+    }
+    if (delivery.sent + delivery.alreadySent > 0) {
+      return {
+        outcome: "sent",
+        reason: "provider_accepted",
+        sent: delivery.sent + delivery.alreadySent,
+        failed,
+      };
+    }
+    return {
+      outcome: "suppressed",
+      reason: "all_recipients_suppressed",
+      sent: 0,
+      failed,
+    };
   } catch (e) {
     console.error(
       "[sendOwnerWaitlistNotification]",
       sanitizeProviderError(e),
     );
+    return {
+      outcome: "retryable_failure",
+      reason: "dispatch_exception",
+      sent: 0,
+      failed: 1,
+    };
   }
 }
 

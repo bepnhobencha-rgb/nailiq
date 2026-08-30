@@ -12,6 +12,7 @@ import { runCustomerBookingTransitionEmailWorker } from "@/shared/notifications/
 import { runBookingConfirmationRetryWorker } from "@/shared/booking/bookingConfirmationRetryDelivery";
 import { runStaffActionNotificationWorker } from "@/shared/notifications/staffActionNotificationWorker";
 import { runOwnerBookingNotificationWorker } from "@/shared/notifications/ownerBookingNotificationWorker";
+import { runOwnerWaitlistNotificationWorker } from "@/shared/notifications/ownerWaitlistNotificationWorker";
 
 export const runtime = "nodejs";
 export const maxDuration = 55;
@@ -21,6 +22,7 @@ const BOOKING_CONFIRMATION_RETRY_BATCH = 10;
 const CUSTOMER_TRANSITION_BATCH = 10;
 const STAFF_ACTION_DELIVERY_BATCH = 10;
 const OWNER_BOOKING_NOTIFICATION_BATCH = 10;
+const OWNER_WAITLIST_NOTIFICATION_BATCH = 10;
 
 export async function GET(req: NextRequest) {
   const authorizationError = requireCronAuthorization(req);
@@ -40,6 +42,12 @@ export async function GET(req: NextRequest) {
   // request finishes before its best-effort inline sender runs.
   const ownerBookingNotifications =
     await runOwnerBookingNotificationWorker(OWNER_BOOKING_NOTIFICATION_BATCH);
+
+  // Public waitlist joins are captured atomically by their own outbox trigger.
+  // Drain them separately so a booking-email backlog cannot starve waitlist
+  // attention and so no public request ever calls Resend inline.
+  const ownerWaitlistNotifications =
+    await runOwnerWaitlistNotificationWorker(OWNER_WAITLIST_NOTIFICATION_BATCH);
 
   // Confirmation retries have a strict 30-minute window. Drain their small,
   // independently leased batch before the legacy 100-row sequential queue so
@@ -78,6 +86,7 @@ export async function GET(req: NextRequest) {
       legacyStaffActionPending,
       staffActionNotifications,
       ownerBookingNotifications,
+      ownerWaitlistNotifications,
       platformNotices,
       bookingConfirmationRetries,
       customerTransitionEmails,

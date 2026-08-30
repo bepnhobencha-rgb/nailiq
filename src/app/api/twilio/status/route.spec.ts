@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   getToken: vi.fn(),
   validate: vi.fn(),
   updateBySid: vi.fn(),
+  recordAttemptReceipt: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
@@ -19,6 +20,9 @@ vi.mock("@/shared/lib/twilioSignature", () => ({
 }));
 vi.mock("@/shared/lib/notificationLog", () => ({
   updateNotificationBySid: mocks.updateBySid,
+}));
+vi.mock("@/shared/lib/smsDeliveryTruth", () => ({
+  recordSmsDeliveryAttemptReceipt: mocks.recordAttemptReceipt,
 }));
 
 import { POST } from "./route";
@@ -51,6 +55,7 @@ describe("Twilio outbound status callback", () => {
     mocks.getToken.mockResolvedValue("auth-token");
     mocks.validate.mockReturnValue(true);
     mocks.updateBySid.mockResolvedValue({ ok: true, code: "applied" });
+    mocks.recordAttemptReceipt.mockResolvedValue({ ok: true, code: "applied" });
   });
 
   it.each([
@@ -183,6 +188,52 @@ describe("Twilio outbound status callback", () => {
     ));
 
     expect(response.status).toBe(422);
+    expect(mocks.updateBySid).not.toHaveBeenCalled();
+  });
+
+  it("binds a Phase D callback to its attempt without inventing a domain row", async () => {
+    const attemptId = "20200000-0000-4000-8000-000000000006";
+    const callbackUrl =
+      `https://nailiq.test/api/twilio/status?sms_attempt_id=${attemptId}`;
+
+    const response = await POST(request(undefined, {}, callbackUrl));
+
+    expect(response.status).toBe(200);
+    expect(mocks.recordAttemptReceipt).toHaveBeenCalledWith({
+      attemptId,
+      messageSid,
+      status: "delivered",
+      errorCode: null,
+    });
+    expect(mocks.updateBySid).not.toHaveBeenCalled();
+  });
+
+  it("updates both Phase D and an existing durable domain correlation", async () => {
+    const attemptId = "20200000-0000-4000-8000-000000000006";
+    const callbackUrl =
+      `https://nailiq.test/api/twilio/status?sms_attempt_id=${attemptId}&sms_domain_callback=1`;
+
+    const response = await POST(request(undefined, {}, callbackUrl));
+
+    expect(response.status).toBe(200);
+    expect(mocks.recordAttemptReceipt).toHaveBeenCalledTimes(1);
+    expect(mocks.updateBySid).toHaveBeenCalledWith(messageSid, "delivered", null);
+  });
+
+  it("fails closed when a Phase D attempt receipt cannot be persisted", async () => {
+    mocks.recordAttemptReceipt.mockResolvedValueOnce({
+      ok: false,
+      code: "database_error",
+    });
+    const attemptId = "20200000-0000-4000-8000-000000000006";
+
+    const response = await POST(request(
+      undefined,
+      {},
+      `https://nailiq.test/api/twilio/status?sms_attempt_id=${attemptId}`,
+    ));
+
+    expect(response.status).toBe(503);
     expect(mocks.updateBySid).not.toHaveBeenCalled();
   });
 

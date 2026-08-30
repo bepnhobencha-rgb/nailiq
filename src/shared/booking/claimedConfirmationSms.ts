@@ -119,6 +119,8 @@ function isDefinitiveRejection(error: string | undefined): boolean {
   return (
     error === "invalid_phone" ||
     error === "twilio_not_configured" ||
+    error === "sms_delivery_truth_unavailable" ||
+    error === "status_callback_unavailable" ||
     /^twilio_[1-5][0-9]{2}$/.test(error ?? "")
   );
 }
@@ -285,7 +287,12 @@ export async function sendClaimedBookingConfirmationSms(
   } catch {
     // A thrown transport error can happen after the provider accepted the
     // request. Preserve the claim and refuse an automatic replay.
-    providerResult = { ok: false, error: "provider_exception" };
+    providerResult = {
+      ok: false,
+      outcome: "unknown",
+      error: "provider_exception",
+      deliveryTruthPersisted: false,
+    };
   }
 
   const classified = classifyProviderResult(providerResult);

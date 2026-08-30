@@ -9,6 +9,11 @@
 
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isUsPhone } from "@/shared/lib/phoneRegion";
+import {
+  bindSmsAttemptToStatusCallback,
+  claimSmsDeliveryAttempt,
+  completeSmsDeliveryAttempt,
+} from "@/shared/lib/smsDeliveryTruth";
 
 async function getTwilioSmsCreds(): Promise<{
   accountSid: string;
@@ -298,6 +303,19 @@ function withOptOut(body: string, lang?: "en" | "vi"): string {
   return `${body.trimEnd()}\n${line}`;
 }
 
+export type SmsDispatchResult = {
+  /** Compatibility flag with a narrower meaning: true only after Twilio
+   * returned a valid provider SID. Suppression is never success. */
+  ok: boolean;
+  outcome: "accepted" | "suppressed" | "rejected" | "unknown";
+  messageSid?: string;
+  error?: string;
+  suppressed?: boolean;
+  suppressionReason?: string;
+  attemptId?: string;
+  deliveryTruthPersisted: boolean;
+};
+
 export async function sendSmsReminder(
   toE164: string,
   body: string,
@@ -308,14 +326,10 @@ export async function sendSmsReminder(
     statusCallbackUrl?: string;
     salonIsTest?: boolean;
     lang?: "en" | "vi";
+    bookingId?: string | null;
+    notificationType?: string;
   },
-): Promise<{
-  ok: boolean;
-  messageSid?: string;
-  error?: string;
-  suppressed?: boolean;
-  suppressionReason?: string;
-}> {
+): Promise<SmsDispatchResult> {
   // Guarantee an opt-out on every customer SMS (idempotent — see withOptOut).
   body = withOptOut(body, opts.lang);
 
@@ -325,8 +339,36 @@ export async function sendSmsReminder(
   if (!recipient) {
     // Don't log the full number (PII) — only that normalisation failed.
     console.error("[sendSmsReminder] invalid recipient phone, cannot send (not E.164-normalisable)");
-    return { ok: false, error: "invalid_phone" };
+    const invalidAttempt = await claimSmsDeliveryAttempt({
+      salonId: opts.salonId,
+      bookingId: opts.bookingId,
+      notificationType: opts.notificationType,
+      recipientE164: toE164.trim(),
+      body,
+    });
+    const persisted = invalidAttempt
+      ? await completeSmsDeliveryAttempt({
+          ...invalidAttempt,
+          status: "failed",
+          errorCode: "invalid_phone",
+        })
+      : false;
+    return {
+      ok: false,
+      outcome: "rejected",
+      error: "invalid_phone",
+      attemptId: invalidAttempt?.attemptId,
+      deliveryTruthPersisted: persisted,
+    };
   }
+
+  const attempt = await claimSmsDeliveryAttempt({
+    salonId: opts.salonId,
+    bookingId: opts.bookingId,
+    notificationType: opts.notificationType,
+    recipientE164: recipient,
+    body,
+  });
 
   // ── KILL-SWITCH ─────────────────────────────────────────────────────
   // Suppress (log + fake SID, never bill Twilio) for disabled-env / non-prod /
@@ -335,22 +377,66 @@ export async function sendSmsReminder(
   // numbers, while real customers are never affected. See smsSuppressReason.
   const suppressReason = smsSuppressReason(recipient, { salonIsTest: opts.salonIsTest });
   if (suppressReason) {
-    // Unique suffix: callers persist this SID into booking_notifications, whose
-    // `twilio_message_sid` column is UNIQUE. A constant `SUPPRESSED_<reason>`
-    // collided on the SECOND suppressed send, so every notification log after
-    // the first silently failed its insert (in E2E/dev, and for 555 seed
-    // numbers even in prod). The random suffix keeps the SID greppable while
-    // guaranteeing uniqueness. A suppressed send has no real Twilio SID and
-    // never receives a status webhook, so the value is otherwise opaque.
-    const fakeSid = `SUPPRESSED_${suppressReason}_${crypto.randomUUID()}`;
+    const persisted = attempt
+      ? await completeSmsDeliveryAttempt({
+          ...attempt,
+          status: "suppressed",
+          suppressionReason: suppressReason,
+        })
+      : false;
     console.warn(`[sendSmsReminder] SUPPRESSED outbound SMS (${suppressReason}) — no real Twilio call`);
     return {
-      ok: true,
-      messageSid: fakeSid,
+      ok: false,
+      outcome: "suppressed",
       suppressed: true,
       suppressionReason: suppressReason,
+      attemptId: attempt?.attemptId,
+      deliveryTruthPersisted: persisted,
     };
   }
+
+  // Every send that could approach the provider first acquires a durable
+  // attempt row. If that truth ledger is unavailable, fail closed: sending
+  // without a correlatable attempt would recreate the exact false-success gap
+  // Phase D closes.
+  if (!attempt) {
+    return {
+      ok: false,
+      outcome: "rejected",
+      error: "sms_delivery_truth_unavailable",
+      deliveryTruthPersisted: false,
+    };
+  }
+
+  const rejectBeforeProvider = async (error: string): Promise<SmsDispatchResult> => {
+    const persisted = await completeSmsDeliveryAttempt({
+      ...attempt,
+      status: "failed",
+      errorCode: error,
+    });
+    return {
+      ok: false,
+      outcome: "rejected",
+      error,
+      attemptId: attempt.attemptId,
+      deliveryTruthPersisted: persisted,
+    };
+  };
+  const suppressBeforeProvider = async (reason: string): Promise<SmsDispatchResult> => {
+    const persisted = await completeSmsDeliveryAttempt({
+      ...attempt,
+      status: "suppressed",
+      suppressionReason: reason,
+    });
+    return {
+      ok: false,
+      outcome: "suppressed",
+      suppressed: true,
+      suppressionReason: reason,
+      attemptId: attempt.attemptId,
+      deliveryTruthPersisted: persisted,
+    };
+  };
 
   // Tenant/A2P truth is enforced again at the single provider boundary. Route
   // preflights improve customer-facing truth, but only this check protects
@@ -358,15 +444,9 @@ export async function sendSmsReminder(
   const salonPolicy = await loadSmsSalonDispatchPolicy(opts.salonId, recipient);
   if (!salonPolicy.allowed) {
     if (salonPolicy.disposition === "unknown") {
-      return { ok: false, error: salonPolicy.reason };
+      return rejectBeforeProvider(salonPolicy.reason);
     }
-    const fakeSid = `SUPPRESSED_${salonPolicy.reason}_${crypto.randomUUID()}`;
-    return {
-      ok: true,
-      messageSid: fakeSid,
-      suppressed: true,
-      suppressionReason: salonPolicy.reason,
-    };
+    return suppressBeforeProvider(salonPolicy.reason);
   }
 
   // Durable NailIQ-side STOP/START state is checked immediately before the
@@ -384,20 +464,22 @@ export async function sendSmsReminder(
     if (consent.reason === "consent_unavailable") {
       // This is a pre-provider infrastructure outage, not an affirmative STOP
       // or policy suppression. Keep it retryable through the durable worker.
-      return { ok: false, error: "sms_consent_unavailable" };
+      return rejectBeforeProvider("sms_consent_unavailable");
     }
-    const fakeSid = `SUPPRESSED_${consent.reason}_${crypto.randomUUID()}`;
-    return {
-      ok: true,
-      messageSid: fakeSid,
-      suppressed: true,
-      suppressionReason: consent.reason,
-    };
+    return suppressBeforeProvider(consent.reason);
   }
 
   const creds = await getTwilioSmsCreds();
   if (!creds) {
-    return { ok: false, error: "twilio_not_configured" };
+    return rejectBeforeProvider("twilio_not_configured");
+  }
+
+  const statusCallbackUrl = bindSmsAttemptToStatusCallback(
+    opts.statusCallbackUrl,
+    attempt.attemptId,
+  );
+  if (!statusCallbackUrl) {
+    return rejectBeforeProvider("status_callback_unavailable");
   }
 
   const auth = `Basic ${Buffer.from(
@@ -410,9 +492,7 @@ export async function sendSmsReminder(
     To:   recipient,
     Body: body,
   };
-  if (opts.statusCallbackUrl) {
-    params.StatusCallback = opts.statusCallbackUrl;
-  }
+  params.StatusCallback = statusCallbackUrl;
 
   try {
     const res = await fetch(url, {
@@ -427,13 +507,65 @@ export async function sendSmsReminder(
     if (!res.ok) {
       const text = await res.text();
       console.error("[sendSmsReminder] Twilio error", res.status, text.slice(0, 300));
-      return { ok: false, error: `twilio_${res.status}` };
+      const error = `twilio_${res.status}`;
+      if (res.status >= 500) {
+        const persisted = await completeSmsDeliveryAttempt({
+          ...attempt,
+          status: "unknown",
+          errorCode: error,
+        });
+        return {
+          ok: false,
+          outcome: "unknown",
+          error,
+          attemptId: attempt.attemptId,
+          deliveryTruthPersisted: persisted,
+        };
+      }
+      return rejectBeforeProvider(error);
     }
 
     const json = await res.json() as { sid?: string };
-    return { ok: true, messageSid: json.sid };
+    const messageSid = json.sid?.trim() ?? "";
+    if (!TWILIO_MESSAGE_SID_RE.test(messageSid)) {
+      const persisted = await completeSmsDeliveryAttempt({
+        ...attempt,
+        status: "unknown",
+        errorCode: "invalid_provider_receipt",
+      });
+      return {
+        ok: false,
+        outcome: "unknown",
+        error: "invalid_provider_receipt",
+        attemptId: attempt.attemptId,
+        deliveryTruthPersisted: persisted,
+      };
+    }
+    const persisted = await completeSmsDeliveryAttempt({
+      ...attempt,
+      status: "accepted",
+      providerMessageSid: messageSid,
+    });
+    return {
+      ok: true,
+      outcome: "accepted",
+      messageSid,
+      attemptId: attempt.attemptId,
+      deliveryTruthPersisted: persisted,
+    };
   } catch (e) {
     console.error("[sendSmsReminder]", e);
-    return { ok: false, error: String(e) };
+    const persisted = await completeSmsDeliveryAttempt({
+      ...attempt,
+      status: "unknown",
+      errorCode: "provider_exception",
+    });
+    return {
+      ok: false,
+      outcome: "unknown",
+      error: "provider_exception",
+      attemptId: attempt.attemptId,
+      deliveryTruthPersisted: persisted,
+    };
   }
 }

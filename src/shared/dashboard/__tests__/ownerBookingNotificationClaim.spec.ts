@@ -300,6 +300,40 @@ describe("owner booking notification durable recipient claim", () => {
     });
   });
 
+  it("binds leased waitlist delivery to a PII-free provider idempotency key", async () => {
+    const h = makeHarness();
+    h.send.mockResolvedValue({ data: { id: "waitlist-provider-id" }, error: null });
+    const deliveryId = "33333333-3333-4333-8333-333333333333";
+
+    await expect(
+      sendToEachRecipient(
+        h.admin,
+        h.resend,
+        ["owner@example.com"],
+        payload,
+        { salonId: meta.salonId, event: "waitlist", waitlistDeliveryId: deliveryId },
+      ),
+    ).resolves.toEqual({ sent: 1, failed: 0 });
+
+    expect(h.rpc).not.toHaveBeenCalled();
+    expect(h.send).toHaveBeenCalledWith(
+      {
+        from: "NailIQ <noreply@nailiq.ca>",
+        to: "owner@example.com",
+        ...payload,
+        tags: [
+          { name: "nailiq_flow", value: "owner_waitlist" },
+          { name: "nailiq_delivery", value: deliveryId },
+        ],
+      },
+      {
+        idempotencyKey: expect.stringMatching(
+          new RegExp(`^owner-waitlist-${deliveryId}-[0-9a-f]{16}$`),
+        ),
+      },
+    );
+  });
+
   it("derives bounded deterministic occurrence keys from authoritative booking timestamps", () => {
     expect(
       ownerNotificationOccurrenceKey("new", {

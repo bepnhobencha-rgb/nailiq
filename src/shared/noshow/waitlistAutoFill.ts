@@ -172,6 +172,7 @@ export async function notifyWaitlistForSlot(params: {
     const smsResult = await sendSmsReminder(phone, body, {
       salonId: params.salonId,
       lang,
+      notificationType: "waitlist_invite",
     });
     smsOk = smsResult.ok;
 
@@ -187,6 +188,13 @@ export async function notifyWaitlistForSlot(params: {
         messageSid: smsResult.messageSid ?? null,
         bodyPreview: body,
         ok: smsResult.ok,
+        deliveryStatus: smsResult.outcome === "accepted"
+          ? "sent"
+          : smsResult.outcome === "suppressed"
+            ? "suppressed"
+            : smsResult.outcome === "unknown"
+              ? "unknown"
+              : "failed",
         errorMessage: smsResult.ok ? null : (smsResult.error ?? null),
       });
     } catch (e) {
