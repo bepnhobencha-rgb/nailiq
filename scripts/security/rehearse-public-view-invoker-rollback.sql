@@ -25,7 +25,7 @@ REVOKE SELECT (
   booking_lead_minutes, group_together_threshold_minutes,
   reference_image_enabled, health_ack_required, email_links_enabled,
   resources_enabled, primary_grid_axis, tax_lines, privacy_url, terms_url,
-  default_language, logo_url, archived_at, closure_notice
+  default_language, logo_url, archived_at, closure_notice, group_wave_strategy
 ) ON public.salons FROM anon;
 
 REVOKE SELECT (

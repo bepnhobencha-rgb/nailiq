@@ -109,6 +109,9 @@ import { execFileSync } from "node:child_process";
  * The 20260830005555 atomic group-sequence commit migration adds two
  * service-role-only whole-party commit/replay functions. The management
  * lifecycle and runtime readiness remain false.
+ * The 20260830023823 Smart Wave strategy migration adds one salon policy
+ * column and exposes the same non-sensitive value through the hardened
+ * public_salon_profiles view, adding two information_schema-visible columns.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -159,7 +162,8 @@ const PRODUCTION = {
   // webhook truth columns.
   // +6 private per-salon multi-service rollout authorization columns.
   // +1 salon-owned resource adjacency topology label.
-  columns: 2809,
+  // +2 Smart Wave strategy columns: salons plus public_salon_profiles.
+  columns: 2811,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the

@@ -199,6 +199,103 @@ test("opts.waveBufferMin adds an explicit inter-wave stagger", () => {
   assertEqual(wave2Start, T0 + DUR * MIN + 20 * MIN, "explicit stagger applied");
 });
 
+// ── Smart Wave Optimizer policy timing ───────────────────────────────
+test("maximize_revenue keeps the exact safe 10:10 start for a 7/3 group", () => {
+  const staff7: StaffRow[] = Array.from({ length: 7 }, (_, i) => ({
+    id: `W${i + 1}`,
+    name: `Staff ${i + 1}`,
+  }));
+  const staffById7 = new Map(staff7.map((staff) => [staff.id, staff]));
+  const classicWithBuffer = members(10).map((member) => ({
+    ...member,
+    totalMinutes: 70,
+    bufferMinutes: 10,
+  }));
+  const nineAm = 9 * 60 * MIN;
+
+  const raw = tryWaveArrangement(
+    nineAm,
+    classicWithBuffer,
+    staff7,
+    staffById7,
+    null,
+    [],
+    DAY_CLOSE,
+    { strategy: "maximize_revenue" },
+  )!;
+  const wave2Start = raw.assignments.find((a) => a.waveNumber === 2)!.startMs;
+
+  assertEqual(raw.assignments.filter((a) => a.waveNumber === 1).length, 7);
+  assertEqual(raw.assignments.filter((a) => a.waveNumber === 2).length, 3);
+  assertEqual(wave2Start, nineAm + 70 * MIN, "wave 2 starts exactly at 10:10");
+});
+
+test("balanced rounds later waves to a calm 5-minute cadence", () => {
+  const oddDuration = members(7).map((member) => ({
+    ...member,
+    totalMinutes: 67,
+  }));
+  const raw = tryWaveArrangement(
+    T0,
+    oddDuration,
+    staff3,
+    staffById3,
+    null,
+    [],
+    DAY_CLOSE,
+    { strategy: "balanced" },
+  )!;
+  const wave2Start = raw.assignments.find((a) => a.waveNumber === 2)!.startMs;
+
+  assertEqual(wave2Start, 70 * MIN, "67 minutes rounds to the next 5-minute mark");
+});
+
+test("on_time rounds later waves to the customer-facing 15-minute grid", () => {
+  const oddDuration = members(7).map((member) => ({
+    ...member,
+    totalMinutes: 67,
+  }));
+  const raw = tryWaveArrangement(
+    T0,
+    oddDuration,
+    staff3,
+    staffById3,
+    null,
+    [],
+    DAY_CLOSE,
+    { strategy: "on_time" },
+  )!;
+  const wave2Start = raw.assignments.find((a) => a.waveNumber === 2)!.startMs;
+
+  assertEqual(wave2Start, 75 * MIN, "67 minutes rounds to the next quarter-hour");
+});
+
+test("optimizer reports capacity recovered without calling it collected revenue", () => {
+  const oddDuration = members(7).map((member) => ({
+    ...member,
+    totalMinutes: 67,
+  }));
+  const raw = tryWaveArrangement(
+    T0,
+    oddDuration,
+    staff3,
+    staffById3,
+    null,
+    [],
+    DAY_CLOSE,
+    { strategy: "balanced" },
+  )!;
+  const arrangement = buildWaveArrangement(raw, oddDuration, staffById3, TZ);
+  const optimization = arrangement.waveOptimization!;
+
+  assertEqual(optimization.strategy, "balanced");
+  assertEqual(optimization.recoveredClockMinutes, 15);
+  // Wave 2 recovers 5 min × 3 people; wave 3 recovers 10 min × 1 person.
+  assertEqual(optimization.recoveredCapacityMinutes, 25);
+  assertEqual(optimization.addedIdleMinutes, 6);
+  assertEqual(optimization.decisions.map((d) => d.memberCount), [3, 1]);
+});
+
 // ── Forward-scan: a busy anchor must roll forward to the first fittable time ──
 // Regression for the Hi-Lite "group of 12 says no slots today despite a free
 // afternoon" bug: tryWaveArrangement dead-ends on a fully-booked anchor, while

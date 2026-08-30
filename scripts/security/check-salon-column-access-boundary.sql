@@ -133,9 +133,10 @@ BEGIN
      OR position('jsonb_object_agg(flag.key' IN v_member_def) = 0
      OR position('pg_catalog.length(coalesce' IN v_member_def) = 0
      OR position('current_auth_session_is_active()' IN v_owner_def) = 0
-     OR position('FOR SHARE' IN v_owner_def) = 0
+     OR position('for share' IN pg_catalog.lower(v_owner_def)) = 0
      OR position(
-       'v_role NOT IN (''owner'', ''admin'')' IN v_owner_def
+       'v_role not in (''owner'', ''admin'')'
+       IN pg_catalog.lower(v_owner_def)
      ) = 0
      OR position('to_jsonb(s)' IN pg_catalog.lower(v_owner_def)) <> 0
   THEN

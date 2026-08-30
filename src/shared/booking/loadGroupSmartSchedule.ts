@@ -89,6 +89,7 @@ import {
   type ResolvedMember,
   type StaffRow,
 } from "@/shared/booking/groupSchedulerCore";
+import { normalizeGroupWaveStrategy } from "@/shared/booking/groupWaveOptimizer";
 
 // Re-export types that callers import from this file (backward-compat).
 export type {
@@ -434,7 +435,7 @@ export async function loadGroupSmartSchedule(
   // 1. Salon ---------------------------------------------------------
   const { data: salonRaw, error: salonErr } = await supabase
     .from("public_salon_profiles" as never)
-    .select("id, profile_complete, opening_hours, timezone, booking_closed_dates, booking_lead_minutes")
+    .select("id, profile_complete, opening_hours, timezone, booking_closed_dates, booking_lead_minutes, group_wave_strategy")
     .eq("slug", params.shopSlug)
     .maybeSingle();
   if (salonErr || !salonRaw) return { ok: false, reason: "salon_not_found" };
@@ -445,7 +446,11 @@ export async function loadGroupSmartSchedule(
     timezone?: unknown;
     booking_closed_dates?: unknown;
     booking_lead_minutes?: unknown;
+    group_wave_strategy?: unknown;
   };
+  const groupWaveStrategy = normalizeGroupWaveStrategy(
+    salonRow.group_wave_strategy,
+  );
   // Minimum same-day advance notice (mirrors the individual slot grid). Used
   // below to floor arrangement start times so we never suggest a past slot
   // (e.g. a 9:00 group arrangement when it's already 10:00).
@@ -794,7 +799,14 @@ export async function loadGroupSmartSchedule(
       // day is fully booked, find the earliest later anchor where the whole group
       // still fits in waves (instead of dead-ending on a busy window start).
       const waveRaw = findEarliestWaveArrangement(
-        waveAnchorMs, resolvedMembers, staffList, staffById, capability, existing, waveCloseMs,
+        waveAnchorMs,
+        resolvedMembers,
+        staffList,
+        staffById,
+        capability,
+        existing,
+        waveCloseMs,
+        { strategy: groupWaveStrategy },
       );
       if (waveRaw && waveRaw.assignments.length === resolvedMembers.length) {
         const waveArr = buildWaveArrangement(waveRaw, resolvedMembers, staffById, timezone);

@@ -18,7 +18,7 @@ const OPERATIONAL_COLUMNS = new Set(
    currency_code description phone_otp_enabled voice_ai_enabled
    basic_mode_forced walkin_auto_assign queue_display_mode vertical
    public_sections_enabled booking_images staff_selection_enabled
-   booking_lead_minutes group_together_threshold_minutes
+   booking_lead_minutes group_together_threshold_minutes group_wave_strategy
    reference_image_enabled auto_no_show_minutes noshow_protection_enabled
    winback_enabled default_notification_locale health_ack_required
    email_links_enabled resources_enabled primary_grid_axis tax_lines

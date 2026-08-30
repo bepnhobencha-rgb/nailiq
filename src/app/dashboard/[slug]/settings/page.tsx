@@ -19,6 +19,7 @@ import { resolveVertical } from "@/shared/verticals/registry";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 import { loadSalonOwnerAdminSettingsForDashboardContext } from "@/shared/dashboard/salonOwnerAdminSettings";
+import { normalizeGroupWaveStrategy } from "@/shared/booking/groupWaveOptimizer";
 
 type Props = {
   params: Promise<{ slug: string }>;
@@ -90,6 +91,7 @@ export default async function SalonSettingsPage({
     staff_selection_enabled?: unknown;
     booking_lead_minutes?: unknown;
     group_together_threshold_minutes?: unknown;
+    group_wave_strategy?: unknown;
     reference_image_enabled?: unknown;
     auto_no_show_minutes?: unknown;
     winback_enabled?: unknown;
@@ -182,6 +184,9 @@ export default async function SalonSettingsPage({
     const v = Number(row?.group_together_threshold_minutes);
     return Number.isFinite(v) && v >= 0 ? Math.round(v) : 30;
   })();
+  const groupWaveStrategy = normalizeGroupWaveStrategy(
+    row?.group_wave_strategy,
+  );
   // Effective reference-image setting: explicit override, else vertical default.
   const referenceImageEnabled =
     row?.reference_image_enabled === true ||
@@ -272,6 +277,7 @@ export default async function SalonSettingsPage({
         staffSelectionEnabled={staffSelectionEnabled}
         bookingLeadMinutes={bookingLeadMinutes}
         groupTogetherThresholdMin={groupTogetherThresholdMin}
+        groupWaveStrategy={groupWaveStrategy}
         referenceImageEnabled={referenceImageEnabled}
         autoNoShowMinutes={autoNoShowMinutes}
         winBackEnabled={winBackEnabled}

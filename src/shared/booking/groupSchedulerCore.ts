@@ -15,6 +15,14 @@ import {
   type StaffCapabilityMap,
 } from "@/shared/booking/staffCapability";
 import { formatInSalonTz } from "@/shared/lib/salonTime";
+import {
+  buildGroupWaveOptimization,
+  resolveGroupWavePolicy,
+  selectNextWaveStartMs,
+  type GroupWaveOptimization,
+  type GroupWavePolicy,
+  type GroupWaveStrategy,
+} from "@/shared/booking/groupWaveOptimizer";
 
 // ─── Shared types ────────────────────────────────────────────────
 
@@ -77,6 +85,9 @@ export type GroupArrangement = {
   /** Plain-English one-liner for UI / voice, e.g.
    *  "Split into 2 waves: 6 guests at 2:00 PM and 4 guests at 3:15 PM." */
   summary: string;
+  /** Deterministic utilization evidence for owner/reception surfaces. Money is
+   * intentionally excluded because earlier capacity is not collected revenue. */
+  waveOptimization?: GroupWaveOptimization;
 };
 
 // ─── Internal types ──────────────────────────────────────────────
@@ -467,6 +478,19 @@ export type WaveRawAssignment = {
   waveNumber: number;
 };
 
+export type WaveSchedulerOptions = {
+  waveBufferMin?: number;
+  maxWaves?: number;
+  /** Defaults to the legacy exact/flush behavior for backward compatibility. */
+  strategy?: GroupWaveStrategy;
+};
+
+export type WaveRawArrangement = {
+  assignments: WaveRawAssignment[];
+  policy: GroupWavePolicy;
+  explicitWaveBufferMin: number;
+};
+
 /**
  * Wave fallback for sync_start large groups. Call this ONLY after
  * `tryAlignedArrangement` returns null (the whole group can't start at once
@@ -476,11 +500,12 @@ export type WaveRawAssignment = {
  * are capable, free staff. Whoever is left forms wave 2, starting at wave 1's
  * latest block end; repeat until everyone is seated.
  *
- * Waves are FLUSH: each booking block already includes the per-service buffer
- * (`totalMinutes` = duration + buffer), so the next wave starts the instant the
- * previous wave's blocks end — one buffer of reset, exactly like back-to-back
- * appointments. (Deriving an extra gap from the buffer double-counted it.) An
- * explicit `opts.waveBufferMin` still inserts a deliberate inter-wave stagger.
+ * The default `maximize_revenue` policy keeps waves FLUSH: each booking block
+ * already includes the per-service buffer (`totalMinutes` = duration + buffer),
+ * so the next wave can start when the previous wave's blocks end. `balanced`
+ * and `on_time` may round that safe instant forward to a 5- or 15-minute
+ * customer cadence. An explicit `opts.waveBufferMin` still inserts a deliberate
+ * inter-wave stagger before cadence alignment.
  *
  * Each wave reuses the existing capability + `staffIsFree` checks. Earlier waves
  * are appended to a private occupancy copy so the same staff is never
@@ -498,10 +523,12 @@ export function tryWaveArrangement(
   capability: StaffCapabilityMap,
   existing: ExistingBooking[],
   dayCloseMs: number,
-  opts?: { waveBufferMin?: number; maxWaves?: number },
-): { assignments: WaveRawAssignment[] } | null {
+  opts?: WaveSchedulerOptions,
+): WaveRawArrangement | null {
   const explicitWaveBufferMin = opts?.waveBufferMin;
   const maxWaves = opts?.maxWaves ?? MAX_WAVES;
+  const policy = resolveGroupWavePolicy(opts?.strategy);
+  const normalizedWaveBufferMin = Math.max(0, explicitWaveBufferMin ?? 0);
 
   // Private occupancy copy — earlier waves get appended so later waves see them.
   const occupancy: ExistingBooking[] = existing.slice();
@@ -584,20 +611,24 @@ export function tryWaveArrangement(
     remaining = stillRemaining;
     if (remaining.length === 0) break;
 
-    // Waves are FLUSH by default: each booking block already includes the
-    // per-service buffer (totalMinutes = duration + buffer), so wave N+1 starts
-    // the instant wave N's blocks end — exactly like two back-to-back
-    // appointments (one buffer of breathing room, not two). Deriving the gap
-    // from the buffer again double-counted it (5-min back-to-back vs 10-min
-    // between waves). An explicit `opts.waveBufferMin` still adds a deliberate
-    // inter-wave stagger for callers that want one.
-    const gapMin = explicitWaveBufferMin ?? 0;
-    waveStartMs = waveMaxEndMs + gapMin * 60_000;
+    // Capacity is safe at waveMaxEndMs because each booking block already
+    // includes its per-service buffer. The default policy stays flush; the
+    // calmer policies may round forward, and an explicit gap is applied once
+    // before that rounding. We never derive another gap from bufferMinutes.
+    waveStartMs = selectNextWaveStartMs(
+      waveMaxEndMs,
+      policy,
+      normalizedWaveBufferMin,
+    );
     waveNumber++;
   }
 
   out.sort((a, b) => a.waveNumber - b.waveNumber || a.memberIdx - b.memberIdx);
-  return { assignments: out };
+  return {
+    assignments: out,
+    policy,
+    explicitWaveBufferMin: normalizedWaveBufferMin,
+  };
 }
 
 /**
@@ -622,8 +653,8 @@ export function findEarliestWaveArrangement(
   capability: StaffCapabilityMap,
   existing: ExistingBooking[],
   dayCloseMs: number,
-  opts?: { waveBufferMin?: number; maxWaves?: number },
-): { assignments: WaveRawAssignment[] } | null {
+  opts?: WaveSchedulerOptions,
+): WaveRawArrangement | null {
   const stepMs = SLOT_STEP_MIN * 60_000;
   for (let anchor = fromMs; anchor < dayCloseMs; anchor += stepMs) {
     const raw = tryWaveArrangement(
@@ -655,7 +686,7 @@ function joinWavePhrases(parts: string[]): string {
  * whenever there is more than one wave.
  */
 export function buildWaveArrangement(
-  raw: { assignments: WaveRawAssignment[] },
+  raw: WaveRawArrangement,
   members: ResolvedMember[],
   staffById: Map<string, StaffRow>,
   timezone: string,
@@ -731,6 +762,12 @@ export function buildWaveArrangement(
       )}.`
     : `${assignments.length} ${assignments.length === 1 ? "guest" : "guests"} at ${groupStartDisplay}.`;
 
+  const waveOptimization = buildGroupWaveOptimization(
+    raw.assignments,
+    raw.policy,
+    raw.explicitWaveBufferMin,
+  );
+
   return {
     kind: "best",
     groupStartMs,
@@ -744,6 +781,7 @@ export function buildWaveArrangement(
     waveCount,
     waves,
     summary,
+    waveOptimization,
   };
 }
 

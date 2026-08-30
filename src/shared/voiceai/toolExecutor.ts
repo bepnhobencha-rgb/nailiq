@@ -49,6 +49,10 @@ import {
   type ExistingBooking,
 } from "@/shared/booking/groupSchedulerCore";
 import {
+  normalizeGroupWaveStrategy,
+  type GroupWaveStrategy,
+} from "@/shared/booking/groupWaveOptimizer";
+import {
   buildCapabilityMap,
   type StaffCapabilityMap,
 } from "@/shared/booking/staffCapability";
@@ -2231,6 +2235,7 @@ type GroupCtx = {
   capability:      StaffCapabilityMap;
   existing:        ExistingBooking[];
   serviceById:     Map<string, ServiceInfo>;
+  groupWaveStrategy: GroupWaveStrategy;
 };
 
 /**
@@ -2247,7 +2252,7 @@ async function loadGroupCtx(
   // 1. Salon
   const { data: salonRaw } = await supabase
     .from("salons")
-    .select("id, timezone, opening_hours, booking_closed_dates")
+    .select("id, timezone, opening_hours, booking_closed_dates, group_wave_strategy")
     .eq("slug", salonSlug)
     .single();
   if (!salonRaw) return { error: "salon_not_found", status: 404 };
@@ -2256,6 +2261,7 @@ async function loadGroupCtx(
     timezone?: string;
     opening_hours?: unknown;
     booking_closed_dates?: unknown;
+    group_wave_strategy?: unknown;
   };
   const timezone = (typeof salon.timezone === "string" && salon.timezone.trim())
     ? salon.timezone.trim()
@@ -2391,6 +2397,9 @@ async function loadGroupCtx(
     capability,
     existing,
     serviceById,
+    groupWaveStrategy: normalizeGroupWaveStrategy(
+      salon.group_wave_strategy,
+    ),
   };
 }
 
@@ -2499,6 +2508,7 @@ async function handleGetGroupAvailableSlots(
     const waveRaw = findEarliestWaveArrangement(
       anchorMs, ctx.resolvedMembers, ctx.staffList, ctx.staffById,
       ctx.capability, ctx.existing, dayCloseMs,
+      { strategy: ctx.groupWaveStrategy },
     );
     if (waveRaw && waveRaw.assignments.length === ctx.resolvedMembers.length) {
       const waveArr = buildWaveArrangement(waveRaw, ctx.resolvedMembers, ctx.staffById, ctx.timezone);
@@ -3054,6 +3064,7 @@ async function handleConfirmGroupBooking(
       const waveRaw = tryWaveArrangement(
         anchorMs, ctx.resolvedMembers, ctx.staffList, ctx.staffById,
         ctx.capability, ctx.existing, dayCloseMs,
+        { strategy: ctx.groupWaveStrategy },
       );
       if (waveRaw && waveRaw.assignments.length === ctx.resolvedMembers.length) {
         finalArrangement = buildWaveArrangement(waveRaw, ctx.resolvedMembers, ctx.staffById, ctx.timezone);

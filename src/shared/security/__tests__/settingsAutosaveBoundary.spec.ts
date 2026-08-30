@@ -42,4 +42,17 @@ describe("safe Settings autosave boundary", () => {
     expect(action).toContain("if (!isOwnerOrAdmin(ctx.role))");
     expect(action).not.toContain('ctx.role !== "owner"');
   });
+
+  it("keeps the wave policy aligned with owner/admin booking-settings access", () => {
+    const start = actions.indexOf(
+      "export async function updateGroupWaveStrategy(",
+    );
+    const next = actions.indexOf("\nexport async function ", start + 1);
+    const action = actions.slice(start, next < 0 ? undefined : next);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(action).toContain("if (!isOwnerOrAdmin(ctx.role))");
+    expect(action).toContain("isGroupWaveStrategy(strategy)");
+    expect(action).toContain('.eq("id", ctx.salon.id)');
+  });
 });
