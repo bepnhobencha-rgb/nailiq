@@ -118,13 +118,17 @@ import { execFileSync } from "node:child_process";
  * The 20260830210000 payment-approval enforcement migration adds one ledger
  * gate function and two triggers. It replaces the approval dispatch/outcome
  * functions in place and adds no table, column, policy, or index.
+ * The 20260830221517/20260830223819 group-cancellation decision-truth
+ * migrations add two private service-role-only review/receipt tables, 33
+ * columns, two deny policies, four functions, one immutable-receipt trigger,
+ * and ten indexes (including the four supporting foreign-key indexes).
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
  */
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
-  tables: 188,
+  tables: 190,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -170,7 +174,8 @@ const PRODUCTION = {
   // +1 salon-owned resource adjacency topology label.
   // +2 Smart Wave strategy columns: salons plus public_salon_profiles.
   // +9 parallel service policy/resource certification columns.
-  columns: 2820,
+  // +33 group-cancellation fee review and immutable approval-receipt columns.
+  columns: 2853,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -181,7 +186,8 @@ const PRODUCTION = {
   // +1 restrictive direct-access deny policy on no-show decisions.
   // +1 restrictive direct-access deny policy on multi-service rollouts.
   // +1 owner/admin tenant-scoped parallel service policy.
-  policies: 208,
+  // +2 restrictive browser-deny policies on group-cancellation fee truth.
+  policies: 210,
   /**
    * APP functions only — refreshed after the rehearsed forward migrations.
    *
@@ -215,7 +221,9 @@ const PRODUCTION = {
   // service-role quote wrapper functions.
   // +2 tenant and same-booking overlap enforcement trigger functions.
   // +1 no-show/late-cancel provider-ledger approval gate function.
-  functions: 422,
+  // +4 group-cancellation preview, atomic cancel, owner decision and immutable
+  // receipt guard functions.
+  functions: 426,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -226,7 +234,8 @@ const PRODUCTION = {
   // +2 no-show fee review/approval immutable-material triggers.
   // +3 policy tenant/update and segment overlap enforcement triggers.
   // +2 no-show/late-cancel provider-ledger insert/reconcile approval gates.
-  triggers: 100,
+  // +1 immutable group-cancellation fee approval-receipt trigger.
+  triggers: 101,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -240,7 +249,8 @@ const PRODUCTION = {
   // +18 no-show fee review/receipt/webhook primary, unique, lookup and FK indexes.
   // +1 multi-service rollout primary key.
   // +4 parallel-policy primary, unique, and service lookup indexes.
-  indexes: 696,
+  // +10 group-cancellation review/receipt identity, lookup and FK indexes.
+  indexes: 706,
 } as const;
 
 /**
@@ -354,12 +364,16 @@ const CRITICAL_TABLES = [
   "reactivation_campaign_delivery_receipts",
   "booking_no_show_fee_reviews",
   "booking_no_show_fee_approval_receipts",
+  "booking_group_cancellation_fee_reviews",
+  "booking_group_cancellation_fee_approval_receipts",
   "square_payment_webhook_inbox",
 ] as const;
 
 const NO_SHOW_FEE_SERVICE_ONLY_TABLES = [
   "booking_no_show_fee_reviews",
   "booking_no_show_fee_approval_receipts",
+  "booking_group_cancellation_fee_reviews",
+  "booking_group_cancellation_fee_approval_receipts",
   "square_payment_webhook_inbox",
 ] as const;
 
@@ -640,6 +654,9 @@ const CRITICAL_FUNCTIONS = [
   "list_booking_no_show_fee_queue_decisions",
   "authorize_approved_no_show_fee_dispatch",
   "record_approved_no_show_fee_dispatch_outcome",
+  "preview_booking_group_cancellation_for_desk",
+  "cancel_booking_group_for_desk_with_decision_truth",
+  "decide_group_cancellation_fee_review",
   "record_square_payment_webhook_event",
   "load_public_group_sequence_readiness",
   "resolve_public_group_sequence_quote",
@@ -737,7 +754,7 @@ function main() {
   // the delivery-event audit table is service-role-only.
   // The customer identity map is service-role read-only; the refund inbox is
   // mutation-through-RPC only and intentionally grants no table reachability.
-  const GRANTS = { anon: 56, authenticated: 78, service_role: 180 } as const;
+  const GRANTS = { anon: 56, authenticated: 78, service_role: 182 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
