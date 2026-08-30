@@ -9,11 +9,17 @@ let suppressionResult: {
 } = { data: null, error: null };
 
 const maybeSingle = vi.fn(async () => suppressionResult);
+let providerSuppressionResult: {
+  data: string | null;
+  error: { message: string } | null;
+} = { data: null, error: null };
+const rpc = vi.fn(async () => providerSuppressionResult);
 
 vi.mock("@/shared/lib/supabase/serviceRole", () => ({
   createServiceRoleClient: () => {
     if (throwOnClientCreation) throw new Error("service role unavailable");
     return {
+      rpc,
       from: () => ({
         select: () => ({
           eq: () => ({ maybeSingle }),
@@ -23,13 +29,17 @@ vi.mock("@/shared/lib/supabase/serviceRole", () => ({
   },
 }));
 
-import { isEmailSuppressed } from "../emailCompliance";
+import {
+  isEmailSuppressed,
+  transactionalEmailSuppressionReason,
+} from "../emailCompliance";
 
 describe("isEmailSuppressed", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     throwOnClientCreation = false;
     suppressionResult = { data: null, error: null };
+    providerSuppressionResult = { data: null, error: null };
   });
 
   it("does not query or suppress a blank address", async () => {
@@ -71,5 +81,53 @@ describe("isEmailSuppressed", () => {
     await expect(
       isEmailSuppressed("client@example.com"),
     ).resolves.toBe(true);
+  });
+});
+
+describe("transactionalEmailSuppressionReason", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    throwOnClientCreation = false;
+    providerSuppressionResult = { data: null, error: null };
+  });
+
+  it("uses provider delivery truth instead of the marketing opt-out table", async () => {
+    await expect(
+      transactionalEmailSuppressionReason(
+        "11111111-1111-4111-8111-111111111111",
+        " CLIENT@example.com ",
+      ),
+    ).resolves.toBeNull();
+    expect(maybeSingle).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith(
+      "customer_email_delivery_suppression_reason",
+      expect.objectContaining({
+        p_salon_id: "11111111-1111-4111-8111-111111111111",
+        p_recipient_fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
+      }),
+    );
+  });
+
+  it("blocks a provider-suppressed transactional recipient", async () => {
+    providerSuppressionResult = { data: "complained", error: null };
+    await expect(
+      transactionalEmailSuppressionReason(
+        "11111111-1111-4111-8111-111111111111",
+        "client@example.com",
+      ),
+    ).resolves.toBe("complained");
+  });
+
+  it("throws when provider suppression truth is unavailable", async () => {
+    providerSuppressionResult = {
+      data: null,
+      error: { message: "database unavailable" },
+    };
+    await expect(
+      transactionalEmailSuppressionReason(
+        "11111111-1111-4111-8111-111111111111",
+        "client@example.com",
+      ),
+    ).rejects.toEqual({ message: "database unavailable" });
   });
 });

@@ -1,0 +1,9 @@
+CREATE INDEX booking_group_cancel_fee_reviews_organizer_booking_idx
+  ON public.booking_group_cancellation_fee_reviews (organizer_booking_id);
+CREATE INDEX booking_group_cancel_fee_reviews_requested_by_idx
+  ON public.booking_group_cancellation_fee_reviews (requested_by_user_id);
+CREATE INDEX booking_group_cancel_fee_reviews_decided_by_idx
+  ON public.booking_group_cancellation_fee_reviews (decided_by_user_id)
+  WHERE decided_by_user_id IS NOT NULL;
+CREATE INDEX booking_group_cancel_fee_receipts_actor_idx
+  ON public.booking_group_cancellation_fee_approval_receipts (actor_user_id);

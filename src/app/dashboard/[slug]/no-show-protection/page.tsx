@@ -29,9 +29,10 @@ export default async function NoShowProtectionPage({ params }: Props) {
     "guided_admin_setup",
   );
   if (guidedSetupEnabled) {
-    const [loaded, { loadNoShowFeeReviewQueue }] = await Promise.all([
+    const [loaded, { loadNoShowFeeReviewQueue }, { loadGroupCancellationFeeReviewQueue }] = await Promise.all([
       loadSalonOwnerAdminSettingsForDashboardContext(ctx),
       import("@/shared/noshow/noShowFeeApprovalActions"),
+      import("@/shared/noshow/groupCancellationFeeApprovalActions"),
     ]);
     if (!loaded.ok) {
       redirect(`/dashboard/${encodeURIComponent(slug)}`);
@@ -78,6 +79,10 @@ export default async function NoShowProtectionPage({ params }: Props) {
       "@/components/dashboard/NoShowFeeApprovalQueue"
     );
     const feeReviewQueue = await loadNoShowFeeReviewQueue(slug);
+    const groupCancellationFeeReviewQueue = await loadGroupCancellationFeeReviewQueue(slug);
+    const { GroupCancellationFeeApprovalQueue } = await import(
+      "@/components/dashboard/GroupCancellationFeeApprovalQueue"
+    );
     const salonName = ctx.salon.name.trim() || slug;
 
     return (
@@ -109,6 +114,11 @@ export default async function NoShowProtectionPage({ params }: Props) {
           slug={slug}
           salonId={ctx.salon.id}
           items={feeReviewQueue}
+        />
+        <GroupCancellationFeeApprovalQueue
+          slug={slug}
+          salonId={ctx.salon.id}
+          items={groupCancellationFeeReviewQueue}
         />
       </div>
     );
@@ -195,6 +205,13 @@ export default async function NoShowProtectionPage({ params }: Props) {
     "@/shared/noshow/noShowFeeApprovalActions"
   );
   const feeReviewQueue = await loadNoShowFeeReviewQueue(slug);
+  const { loadGroupCancellationFeeReviewQueue } = await import(
+    "@/shared/noshow/groupCancellationFeeApprovalActions"
+  );
+  const groupCancellationFeeReviewQueue = await loadGroupCancellationFeeReviewQueue(slug);
+  const { GroupCancellationFeeApprovalQueue } = await import(
+    "@/components/dashboard/GroupCancellationFeeApprovalQueue"
+  );
   const groupBookingEnabled = isReleaseFeatureEnabled(
     { feature_flags: row?.feature_flags },
     "group_booking",
@@ -266,6 +283,11 @@ export default async function NoShowProtectionPage({ params }: Props) {
         sync_push_update: sq?.sync_push_update === true,
         sync_push_cancel: sq?.sync_push_cancel === true,
       }}
+    />
+    <GroupCancellationFeeApprovalQueue
+      slug={slug}
+      salonId={ctx.salon.id}
+      items={groupCancellationFeeReviewQueue}
     />
     </div>
   );

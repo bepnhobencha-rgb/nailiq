@@ -73,6 +73,7 @@ test.describe("PartyCardPanel — cancel whole group", () => {
 
     // Step 2: confirm → bulk cancel runs, strip refreshes, card disappears.
     await page.getByTestId(`party-card-cancel-yes-${party.groupId}`).click();
+    await expect(page.getByTestId("party-card-cancel-success")).toBeVisible();
     await expect(card).toBeHidden();
 
     // Every booking in the group is now cancelled.

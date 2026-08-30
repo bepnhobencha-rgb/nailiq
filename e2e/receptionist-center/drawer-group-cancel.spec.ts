@@ -83,6 +83,7 @@ test.describe("Drawer cancel — group-aware scope", () => {
     await page
       .getByTestId("notify-cancel-confirm")
       .evaluate((el: HTMLElement) => el.click());
+    await expect(page.getByTestId("desk-status-success")).toBeVisible();
 
     await expect
       .poll(

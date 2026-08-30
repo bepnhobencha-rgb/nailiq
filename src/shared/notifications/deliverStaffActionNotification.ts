@@ -3,7 +3,11 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
-import { listUnsubscribeHeaders, complianceFooterHtml, isEmailSuppressed } from "@/shared/lib/emailCompliance";
+import {
+  listUnsubscribeHeaders,
+  complianceFooterHtml,
+  transactionalEmailSuppressionReason,
+} from "@/shared/lib/emailCompliance";
 import { logNotification } from "@/shared/lib/notificationLog";
 import {
   resolveCustomerLocale,
@@ -153,7 +157,12 @@ export async function deliverStaffActionNotification(
       const to = row.client_email;
       // Booking change notifications are transactional — no opt-out gate — but
       // do skip suppressed addresses (hard bounces / spam complaints).
-      const suppressed = await isEmailSuppressed(to).catch(() => true);
+      const suppressed = await transactionalEmailSuppressionReason(
+        input.salonId,
+        to,
+      )
+        .then(Boolean)
+        .catch(() => true);
       if (!suppressed) {
         const esc = (s: string) =>
           s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

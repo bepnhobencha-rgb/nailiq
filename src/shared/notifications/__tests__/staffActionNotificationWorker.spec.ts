@@ -9,6 +9,7 @@ vi.mock("@/shared/lib/emailCompliance", () => ({
   listUnsubscribeHeaders: () => ({ "List-Unsubscribe": "<https://nailiq.test/unsubscribe>" }),
   complianceFooterHtml: () => "<footer>Transactional notice</footer>",
   isEmailSuppressed: vi.fn().mockResolvedValue(false),
+  transactionalEmailSuppressionReason: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("@/shared/lib/supabase/serviceRole", () => ({
   createServiceRoleClient: () => { throw new Error("inject client in tests"); },

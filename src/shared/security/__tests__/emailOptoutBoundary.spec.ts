@@ -74,16 +74,15 @@ describe("client_email_optouts boundary", () => {
     );
     expect(vipCare).toContain('delivery_mode: "draft_only_human_send_required"');
     expect(vipCare).not.toContain("resend.emails.send");
-    expect(staffAction).toContain(
-      "isEmailSuppressed(to).catch(() => true)",
-    );
+    expect(staffAction).toContain("transactionalEmailSuppressionReason(");
+    expect(staffAction).not.toContain("isEmailSuppressed(to)");
   });
 
   it("updates blank-database parity tripwires", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("policies: 208");
+    expect(parity).toContain("policies: 210");
     expect(parity).toContain(
-      "const GRANTS = { anon: 56, authenticated: 78, service_role: 180 }",
+      "const GRANTS = { anon: 56, authenticated: 78, service_role: 182 }",
     );
   });
 });

@@ -62,7 +62,7 @@ describe("MQA-0063..0075 remaining Sellable-V1 payment gaps", () => {
     expect.soft(
       receptionistActions,
       "the authorized action must require the client-held cancellation/refund request UUID",
-    ).toMatch(/cancelDeskBooking[\s\S]{0,500}?(?:requestId|refundRequestId):\s*string/);
+    ).toMatch(/export async function cancelDeskBooking[\s\S]{0,900}?(?:requestId|refundRequestId):\s*string/);
 
     expect.soft(
       deskCancelRefundSaga,

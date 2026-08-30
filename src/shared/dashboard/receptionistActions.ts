@@ -1921,6 +1921,116 @@ export async function createDeskGroup(
  * Wix write-back, just fanned out across the group. Safe to call repeatedly —
  * the `status` guard makes it a no-op once everything is already cancelled.
  */
+export type DeskGroupCancellationFeeDecision =
+  | "review"
+  | "waive"
+  | "not_applicable";
+
+export type DeskGroupCancellationPreview = {
+  groupId: string;
+  organizerBookingId: string;
+  groupSize: number;
+  earliestStartTimeUtc: string;
+  noticeMinutes: number;
+  windowHours: number;
+  bookedValueCents: number;
+  feeCents: number;
+  feeSnapshotCents: number;
+  currency: string;
+  hasChargeableCard: boolean;
+  decisionRequired: boolean;
+  canWaive: boolean;
+  reason: string;
+};
+
+export async function previewDeskGroupCancellation(
+  slug: string,
+  input: { salonId: string; groupId: string },
+): Promise<
+  { ok: true; preview: DeskGroupCancellationPreview } |
+  { ok: false; error: string }
+> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx || !canCancelBooking(ctx.role)) return fail("unauthorized");
+  if (ctx.salon.id !== String(input.salonId).trim()) return fail("salon_mismatch");
+  const groupId = String(input.groupId ?? "").trim();
+  if (!isUuidLike(groupId)) return fail("invalid_group");
+
+  if (ctx.kind !== "member" || !isUuidLike(ctx.userId ?? "")) {
+    const { data } = await ctx.supabase
+      .from("bookings")
+      .select("id, is_group_organizer, start_time_utc")
+      .eq("salon_id", ctx.salon.id)
+      .eq("group_id", groupId)
+      .in("status", ["pending", "confirmed", "in_progress"]);
+    const rows = data ?? [];
+    const organizer = rows.find((row) => row.is_group_organizer === true);
+    if (!organizer || rows.length < 1) return fail("invalid_state");
+    return {
+      ok: true,
+      preview: {
+        groupId,
+        organizerBookingId: String(organizer.id),
+        groupSize: rows.length,
+        earliestStartTimeUtc: String(organizer.start_time_utc),
+        noticeMinutes: 0,
+        windowHours: 24,
+        bookedValueCents: 0,
+        feeCents: 0,
+        feeSnapshotCents: 0,
+        currency: "CAD",
+        hasChargeableCard: false,
+        decisionRequired: false,
+        canWaive: false,
+        reason: "demo_mode",
+      },
+    };
+  }
+
+  const { data, error } = await createServiceRoleClient().rpc(
+    "preview_booking_group_cancellation_for_desk" as never,
+    {
+      p_salon_id: ctx.salon.id,
+      p_group_id: groupId,
+      p_actor_user_id: ctx.userId,
+    } as never,
+  );
+  const raw = Array.isArray(data) ? data[0] : data;
+  const row = raw && typeof raw === "object"
+    ? raw as Record<string, unknown>
+    : null;
+  if (error || row?.success !== true || row.code !== "preview_ready") {
+    const code = typeof row?.code === "string" ? row.code : "server_error";
+    return fail(code === "group_not_found" || code === "group_not_cancellable"
+      ? "invalid_state"
+      : code);
+  }
+  const organizerBookingId = String(row.organizer_booking_id ?? "");
+  const groupSize = Number(row.group_size);
+  if (!isUuidLike(organizerBookingId) || !Number.isSafeInteger(groupSize) || groupSize < 1) {
+    return fail("server_error");
+  }
+  return {
+    ok: true,
+    preview: {
+      groupId,
+      organizerBookingId,
+      groupSize,
+      earliestStartTimeUtc: String(row.earliest_start_time_utc ?? ""),
+      noticeMinutes: Number(row.notice_minutes ?? 0),
+      windowHours: Number(row.window_hours ?? 24),
+      bookedValueCents: Number(row.booked_value_cents ?? 0),
+      feeCents: Number(row.fee_cents ?? 0),
+      feeSnapshotCents: Number(row.fee_snapshot_cents ?? 0),
+      currency: String(row.currency ?? "CAD"),
+      hasChargeableCard: row.has_chargeable_card === true,
+      decisionRequired: row.decision_required === true,
+      canWaive: row.can_waive === true,
+      reason: String(row.reason ?? "unknown"),
+    },
+  };
+}
+
 export async function cancelDeskGroup(
   slug: string,
   input: {
@@ -1929,13 +2039,24 @@ export async function cancelDeskGroup(
     /** One stable UUID for this whole-party cancellation occurrence. Retain
      * it across response loss so the atomic cancel/outbox wrapper can replay. */
     requestId: string;
+    feeDecision: DeskGroupCancellationFeeDecision;
     /** Channels to notify the organizer on. Only the organizer row (member 0)
      *  carries contact info, so we enqueue ONE cancel notification for it —
      *  mirrors cancelDeskBooking. Omitted/empty → no customer notification. */
     notify?: { sms?: boolean; email?: boolean };
   },
 ): Promise<
-  { ok: true; cancelledCount: number } | { ok: false; error: string }
+  | {
+      ok: true;
+      cancelledCount: number;
+      fee: { state: string; amountCents: number; currency: string };
+      customerNotification: {
+        sms: "queued" | "not_requested";
+        email: "queued" | "not_requested";
+      };
+      ownerNotification: "queued" | "not_requested";
+    }
+  | { ok: false; error: string }
 > {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
@@ -1952,6 +2073,9 @@ export async function cancelDeskGroup(
   if (!groupId || !isUuidLike(groupId)) return fail("invalid_group");
   const requestId = String(input.requestId ?? "").trim();
   if (!isUuidLike(requestId)) return fail("invalid_request");
+  const feeDecision = input.feeDecision;
+  if (feeDecision !== "review" && feeDecision !== "waive" &&
+      feeDecision !== "not_applicable") return fail("invalid_fee_decision");
 
   const memberActorId = ctx.kind === "member" && isUuidLike(ctx.userId ?? "")
     ? String(ctx.userId)
@@ -1964,16 +2088,20 @@ export async function cancelDeskGroup(
   let ids: string[];
   let organizerBookingId: string;
   let idempotent = false;
+  let feeState = "not_applicable";
+  let feeCents = 0;
+  let feeCurrency = "CAD";
 
   if (memberActorId) {
     const serviceDb = createServiceRoleClient();
     const { data, error } = await serviceDb.rpc(
-      "cancel_booking_group_for_desk_with_staff_notification" as never,
+      "cancel_booking_group_for_desk_with_decision_truth" as never,
       {
         p_salon_id: ctx.salon.id,
         p_group_id: groupId,
         p_request_id: requestId,
         p_actor_user_id: memberActorId,
+        p_fee_decision: feeDecision,
         p_notify_email: notifyEmail,
         p_notify_sms: notifySms,
         p_notification_delay_seconds: 20,
@@ -2009,11 +2137,16 @@ export async function cancelDeskGroup(
           ? "invalid_state"
           : code === "idempotency_mismatch"
             ? "idempotency_conflict"
-            : "server_error",
+            : code === "fee_decision_required" || code === "fee_waive_forbidden"
+              ? code
+              : "server_error",
       );
     }
     ids = cancelledIds;
     idempotent = row.idempotent === true;
+    feeState = String(row.fee_state ?? "not_applicable");
+    feeCents = Number(row.fee_cents ?? 0);
+    feeCurrency = String(row.fee_currency ?? "CAD");
   } else {
     const { data: cancelled, error: upErr } = await ctx.supabase
       .from("bookings")
@@ -2047,24 +2180,21 @@ export async function cancelDeskGroup(
     });
   }
 
-  // Owner/manager alert — group cancellation (best-effort, fire-and-forget,
-  // independent of the customer notify flags below). One email for the whole
-  // party, using the lead booking id.
-  if (!idempotent) after(() =>
-    sendOwnerBookingNotification({
-      salonId: ctx.salon.id,
-      bookingId: organizerBookingId,
-      event: "cancel",
-      groupSize: ids.length,
-    }),
-  );
-
   // Wix write-back per row — best-effort, after the response is flushed.
   if (!idempotent) {
     after(() => Promise.all(ids.map((id) => pushWixCancel(ctx.salon.id, id))));
   }
 
-  return { ok: true, cancelledCount: ids.length };
+  return {
+    ok: true,
+    cancelledCount: ids.length,
+    fee: { state: feeState, amountCents: feeCents, currency: feeCurrency },
+    customerNotification: {
+      sms: notifySms ? "queued" : "not_requested",
+      email: notifyEmail ? "queued" : "not_requested",
+    },
+    ownerNotification: memberActorId ? "queued" : "not_requested",
+  };
 }
 
 /**

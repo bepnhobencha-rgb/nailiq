@@ -66,9 +66,9 @@ describe("booking_addons boundary", () => {
 
   it("updates blank-database parity tripwires", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("policies: 208");
+    expect(parity).toContain("policies: 210");
     expect(parity).toContain(
-      "const GRANTS = { anon: 56, authenticated: 78, service_role: 180 }",
+      "const GRANTS = { anon: 56, authenticated: 78, service_role: 182 }",
     );
   });
 });

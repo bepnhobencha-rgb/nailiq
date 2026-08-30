@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isEmailSuppressed } from "@/shared/lib/emailCompliance";
+import { transactionalEmailSuppressionReason } from "@/shared/lib/emailCompliance";
 import { getResendClient } from "@/shared/lib/resend";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
@@ -81,18 +81,21 @@ async function sendSms(envelope: StaffActionSmsEnvelope) {
 }
 
 async function sendEmail(envelope: StaffActionEmailEnvelope) {
-  let suppressed: boolean;
+  let suppressionReason: "suppressed" | "bounced" | "complained" | null;
   try {
-    suppressed = await isEmailSuppressed(envelope.to);
+    suppressionReason = await transactionalEmailSuppressionReason(
+      envelope.salonId,
+      envelope.to,
+    );
   } catch {
     return { data: null, error: { code: "suppression_unavailable", statusCode: 503 } };
   }
-  if (suppressed) {
+  if (suppressionReason) {
     return {
       data: null,
       error: null,
       suppressed: true,
-      suppressionReason: "consent_revoked",
+      suppressionReason: `provider_${suppressionReason}`,
     };
   }
   let client: ReturnType<typeof getResendClient>;

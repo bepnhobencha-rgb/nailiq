@@ -353,14 +353,17 @@ async function dispatch(
 
   try {
     const result = await deps.sendEmail(envelope);
-    if (result.suppressed) return {
-      outcome: "suppressed",
-      reason: result.suppressionReason ?? "consent_revoked",
-      status: "suppressed",
-      providerMessageId: null,
-      errorCode: "consent_revoked",
-      failureDisposition: "permanent",
-    };
+    if (result.suppressed) {
+      const reason = result.suppressionReason ?? "provider_suppressed";
+      return {
+        outcome: "suppressed",
+        reason,
+        status: "suppressed",
+        providerMessageId: null,
+        errorCode: reason,
+        failureDisposition: "permanent",
+      };
+    }
     const receipt = providerReceipt(result.data?.id);
     if (!result.error && receipt) return {
       outcome: "accepted", reason: "provider_accepted", status: "sent",
