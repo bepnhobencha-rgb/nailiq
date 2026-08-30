@@ -65,6 +65,7 @@ export type GroupSequenceReadiness = {
   multiServiceBookingEnabled: boolean;
   multiServiceReady: boolean;
   atomicGroupSequenceCommitReady: boolean;
+  groupSequenceManagementReady: boolean;
 };
 
 export type GroupSequenceAvailability =
@@ -75,7 +76,8 @@ export type GroupSequenceAvailability =
         | "group_booking_disabled"
         | "multi_service_booking_disabled"
         | "multi_service_not_ready"
-        | "atomic_commit_not_ready";
+        | "atomic_commit_not_ready"
+        | "management_lifecycle_not_ready";
     };
 
 type OccupiedClaim = {
@@ -169,6 +171,9 @@ export function resolveGroupSequenceAvailability(
   }
   if (!readiness.atomicGroupSequenceCommitReady) {
     return { ready: false, reason: "atomic_commit_not_ready" };
+  }
+  if (!readiness.groupSequenceManagementReady) {
+    return { ready: false, reason: "management_lifecycle_not_ready" };
   }
   return { ready: true };
 }

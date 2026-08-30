@@ -1,7 +1,6 @@
 \set ON_ERROR_STOP on
 
 BEGIN;
-\ir ../../supabase/migrations/20260829231142_add_atomic_group_booking_sequences.sql
 SELECT pg_catalog.set_config('request.jwt.claim.role', 'service_role', true);
 
 DO $group_sequence_quote_rehearsal$
@@ -62,7 +61,10 @@ BEGIN
   IF coalesce((v_readiness->>'success')::boolean, false) IS NOT TRUE
      OR coalesce((v_readiness->>'platform_enabled')::boolean, true) IS TRUE
      OR coalesce((v_readiness->>'quote_ready')::boolean, true) IS TRUE
-     OR coalesce((v_readiness->>'atomic_commit_ready')::boolean, true) IS TRUE
+     OR coalesce((v_readiness->>'atomic_commit_ready')::boolean, false)
+        IS NOT TRUE
+     OR coalesce((v_readiness->>'management_lifecycle_ready')::boolean, true)
+        IS TRUE
      OR coalesce((v_readiness->>'ready')::boolean, true) IS TRUE THEN
     RAISE EXCEPTION 'default-off readiness failed: %', v_readiness;
   END IF;
@@ -79,7 +81,10 @@ BEGIN
 
   v_readiness := public.load_public_group_sequence_readiness(v_salon);
   IF coalesce((v_readiness->>'quote_ready')::boolean, false) IS NOT TRUE
-     OR coalesce((v_readiness->>'atomic_commit_ready')::boolean, true) IS TRUE
+     OR coalesce((v_readiness->>'atomic_commit_ready')::boolean, false)
+        IS NOT TRUE
+     OR coalesce((v_readiness->>'management_lifecycle_ready')::boolean, true)
+        IS TRUE
      OR coalesce((v_readiness->>'ready')::boolean, true) IS TRUE
      OR coalesce((v_readiness->>'resource_topology_supported')::boolean, false)
         IS NOT TRUE THEN

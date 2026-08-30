@@ -223,6 +223,7 @@ describe("query grammar injection inventory", () => {
       "20260823124500_record_twilio_status_receipts_atomically.sql",
       "20260829174542_enable_card_safe_booking_sequences.sql",
       "20260829183626_add_multi_service_controlled_rollout.sql",
+      "20260830005555_add_atomic_group_sequence_commit.sql",
     ]);
 
     const sequenceCardPolicy = fs.readFileSync(
@@ -250,6 +251,26 @@ describe("query grammar injection inventory", () => {
     expect(controlledRollout).toContain("EXECUTE v_definition");
     expect(controlledRollout).not.toMatch(/\bexecute\s+format\s*\(/i);
     expect(controlledRollout).not.toMatch(/\bexecute\b[^;]*\|\|/i);
+
+    const atomicGroupSequenceCommit = fs.readFileSync(
+      path.join(
+        migrationRoot,
+        "20260830005555_add_atomic_group_sequence_commit.sql",
+      ),
+      "utf8",
+    );
+    expect(atomicGroupSequenceCommit).toContain(
+      "pg_catalog.pg_get_functiondef(",
+    );
+    expect(atomicGroupSequenceCommit).toContain(
+      "EXECUTE pg_catalog.replace(v_definition, v_old, v_new)",
+    );
+    expect(atomicGroupSequenceCommit).not.toMatch(
+      /\bexecute\s+format\s*\(/i,
+    );
+    expect(atomicGroupSequenceCommit).not.toMatch(
+      /\bexecute\b[^;]*\|\|/i,
+    );
 
     const twilioReceipts = fs.readFileSync(
       path.join(
