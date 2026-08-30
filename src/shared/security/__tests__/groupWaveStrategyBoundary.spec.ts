@@ -20,6 +20,13 @@ const publicViewRollback = readFileSync(
   ),
   "utf8",
 );
+const salonColumnBoundary = readFileSync(
+  resolve(
+    process.cwd(),
+    "scripts/security/check-salon-column-access-boundary.sql",
+  ),
+  "utf8",
+);
 
 describe("group wave strategy database boundary", () => {
   it("defaults existing salons to the backward-compatible exact policy", () => {
@@ -59,6 +66,18 @@ describe("group wave strategy database boundary", () => {
   it("keeps the emergency public-view rollback complete", () => {
     expect(publicViewRollback).toContain(
       "closure_notice, group_wave_strategy",
+    );
+  });
+
+  it("keeps owner authorization proof semantic across function formatting", () => {
+    expect(salonColumnBoundary).toContain(
+      "'for share' IN pg_catalog.lower(v_owner_def)",
+    );
+    expect(salonColumnBoundary).toContain(
+      "'v_role not in (''owner'', ''admin'')'",
+    );
+    expect(salonColumnBoundary).toContain(
+      "'current_auth_session_is_active()' IN v_owner_def",
     );
   });
 });
