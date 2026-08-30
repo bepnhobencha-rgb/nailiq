@@ -19,11 +19,10 @@ import {
  *   - staff[0] + staff[1] blocked 09:50–12:00 → the morning can host exactly
  *     ONE wave; the afternoon is wide open.
  *
- * A 4-person group asking for the morning therefore cannot fit (the 2nd wave
- * has no morning chair) → no_slots. The split option must seat the largest
- * prefix that fits (2 at 09:00) and place BOTH remaining members later
- * (≈12:00), i.e. lateCount === 2 — the behaviour the old single-late split
- * could never produce.
+ * A 4-person group asking for the morning can use rolling capacity: seat the
+ * largest prefix that fits (2 at 09:00), skip the blocked 09:50 release, and
+ * place BOTH remaining members when capacity returns at 12:00. The scheduler
+ * must return that complete plan directly instead of presenting no_slots.
  */
 const SLUG = "e2e-group-split-k";
 const PT = "-07:00"; // PDT — the test day is in June, always PDT.
@@ -75,7 +74,7 @@ test.describe("Group booking — generalized split (K late members)", () => {
     await cleanupTestSalon(SLUG);
   });
 
-  test("4-person morning group → split seats 2 now + 2 later (lateCount === 2)", async ({
+  test("4-person morning group → rolling plan seats 2 now + 2 at the next usable release", async ({
     page,
   }) => {
     await gotoGroupFlow(page, SLUG);
@@ -94,32 +93,22 @@ test.describe("Group booking — generalized split (K late members)", () => {
     await page.getByTestId("group-arrival-morning").click();
     await page.getByTestId("group-date-next").click();
 
-    // Step 4 — the scheduler returns no_slots for the morning and surfaces
-    // the alternatives, including the split.
+    // Step 4 — the scheduler returns one complete rolling plan directly.
     await page
       .getByTestId("group-step-arrangement-panel")
       .waitFor({ state: "visible" });
 
-    const splitCard = page.getByTestId("group-alt-split");
-    await expect(splitCard).toBeVisible({ timeout: 20_000 });
-
-    // The headline must report 2 members spilling to a later slot —
-    // "{2} together at …, {2} more by …" — which the old 1-member split
-    // could never show.
-    await expect(splitCard).toContainText(/2 more/i);
-    await expect(splitCard).toContainText(/2 together/i);
-
-    // Pha 1.3 — the explicit "everyone together" escape hatch is offered
-    // (an all-together afternoon exists), and tapping it jumps straight to a
-    // real all-together arrangement, leaving the no-slots alternatives behind.
-    // Pha 1.3 — the explicit "everyone together" escape hatch is offered
-    // (an all-together alternative exists) and, when tapped, leaves the
-    // partial/split behind by jumping to an all-together window.
-    const preferTogether = page.getByTestId("group-alt-prefer-together");
-    await expect(preferTogether).toBeVisible();
-    await preferTogether.click();
     await expect(page.getByTestId("group-alt-split")).toHaveCount(0, {
       timeout: 20_000,
     });
+    const rollingCard = page.getByTestId("group-arrangement-best");
+    await expect(rollingCard).toBeVisible({ timeout: 20_000 });
+    const firstWave = rollingCard.getByTestId("group-wave-1");
+    const secondWave = rollingCard.getByTestId("group-wave-2");
+    await expect(firstWave).toContainText(/2 guests/i);
+    await expect(firstWave).toContainText(/9:00/i);
+    await expect(secondWave).toContainText(/2 guests/i);
+    await expect(secondWave).toContainText(/12:00/i);
+    await expect(page.getByTestId("group-arrangement-next")).toBeEnabled();
   });
 });
