@@ -158,8 +158,11 @@ BEGIN
     WHERE seg.booking_id = NEW.booking_id
       AND seg.id IS DISTINCT FROM NEW.id
       AND seg.reservation_status NOT IN ('cancelled', 'no_show', 'completed')
-      AND pg_catalog.tstzrange(seg.occupied_start_utc, seg.occupied_end_utc, '[)')
-        && pg_catalog.tstzrange(NEW.occupied_start_utc, NEW.occupied_end_utc, '[)')
+      -- Prep/trailing buffers may overlap inside an otherwise sequential
+      -- booking. Parallel policy applies only when guest-facing service time
+      -- overlaps; occupancy conflicts remain protected by the exclusions.
+      AND pg_catalog.tstzrange(seg.customer_start_utc, seg.customer_end_utc, '[)')
+        && pg_catalog.tstzrange(NEW.customer_start_utc, NEW.customer_end_utc, '[)')
     ORDER BY seg.position, seg.id
   LOOP
     IF v_prior.staff_id = NEW.staff_id THEN
@@ -204,8 +207,8 @@ BEGIN
         AND seg.id IS DISTINCT FROM NEW.id
         AND seg.resource_id = NEW.resource_id
         AND seg.reservation_status NOT IN ('cancelled', 'no_show', 'completed')
-        AND pg_catalog.tstzrange(seg.occupied_start_utc, seg.occupied_end_utc, '[)')
-          && pg_catalog.tstzrange(NEW.occupied_start_utc, NEW.occupied_end_utc, '[)');
+        AND pg_catalog.tstzrange(seg.customer_start_utc, seg.customer_end_utc, '[)')
+          && pg_catalog.tstzrange(NEW.customer_start_utc, NEW.customer_end_utc, '[)');
 
       IF v_resource_capacity IS NULL
          OR v_same_resource_overlap_count > v_resource_capacity THEN

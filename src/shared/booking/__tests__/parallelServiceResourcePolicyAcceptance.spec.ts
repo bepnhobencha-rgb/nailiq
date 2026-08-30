@@ -8,6 +8,10 @@ const migration = readFileSync(
   resolve(root, "supabase/migrations/20260830100409_add_parallel_multi_service_resource_policy.sql"),
   "utf8",
 );
+const overlapFix = readFileSync(
+  resolve(root, "supabase/migrations/20260830105409_fix_parallel_policy_customer_overlap.sql"),
+  "utf8",
+);
 const actions = readFileSync(
   resolve(root, "src/shared/dashboard/resourceActions.ts"),
   "utf8",
@@ -44,6 +48,18 @@ describe("parallel multi-service resource policy acceptance", () => {
     expect(migration).toContain("CREATE TRIGGER enforce_parallel_segment_policy");
     expect(migration).toMatch(/v_prior\.staff_id = NEW\.staff_id/i);
     expect(migration).toMatch(/v_same_resource_overlap_count > v_resource_capacity/i);
+  });
+
+  it("does not classify sequential prep or trailing buffers as parallel service time", () => {
+    expect(migration).toMatch(
+      /tstzrange\(seg\.customer_start_utc, seg\.customer_end_utc, '\[\)'\)/i,
+    );
+    expect(overlapFix).toContain(
+      "tstzrange(seg.customer_start_utc, seg.customer_end_utc, '[)')",
+    );
+    expect(overlapFix).not.toContain(
+      "tstzrange(seg.occupied_start_utc, seg.occupied_end_utc, '[)')",
+    );
   });
 
   it("exposes owner configuration but keeps tenant ownership enforced", () => {
