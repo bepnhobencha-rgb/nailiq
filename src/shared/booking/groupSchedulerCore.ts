@@ -138,6 +138,30 @@ export type FinishArrangementsCtx = {
 
 export const SLOT_STEP_MIN = 15;
 
+/**
+ * Move a UTC instant forward onto the customer-facing slot grid.
+ *
+ * Same-day scheduling floors availability at `Date.now() + lead`, which can
+ * contain seconds and milliseconds.  Wave search advances from its supplied
+ * anchor, so passing that raw floor through would preserve the hidden
+ * sub-minute offset in every assignment.  The review UI intentionally submits
+ * salon-local `HH:MM`; keeping the scheduler on this grid makes the quoted and
+ * submitted instants identical without weakening exact pricing validation.
+ */
+export function ceilToSlotGridMs(
+  valueMs: number,
+  originMs: number,
+  stepMinutes = SLOT_STEP_MIN,
+): number {
+  if (!Number.isFinite(valueMs) || !Number.isFinite(originMs)) {
+    return Number.NaN;
+  }
+  const normalizedStepMinutes = Math.max(1, Math.floor(stepMinutes));
+  const stepMs = normalizedStepMinutes * 60_000;
+  if (valueMs <= originMs) return originMs;
+  return originMs + Math.ceil((valueMs - originMs) / stepMs) * stepMs;
+}
+
 /** Legacy default inter-wave gap (minutes). No longer applied automatically —
  *  waves are flush by default because each booking block already carries the
  *  per-service buffer (see `tryWaveArrangement`). Retained only as a named

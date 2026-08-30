@@ -383,6 +383,10 @@ export const bookingVi: BookingMessages = {
       "Giờ của Người {n} không hợp lệ. Vui lòng chọn lại ở bước trước.",
     invalidDateForMember:
       "Ngày của Người {n} không hợp lệ. Vui lòng chọn lại ở bước trước.",
+    pricingRefreshRequired:
+      "Lịch hoặc giá vừa thay đổi. NailIQ đã làm mới tổng tiền — vui lòng xem lại rồi xác nhận lần nữa.",
+    pricingRefreshFailed:
+      "Không làm mới được tổng tiền. Vui lòng làm mới lịch và thử lại.",
     contactInvalidPhone:
       "Số điện thoại không hợp lệ. Ví dụ: +1 (604) 555-1234 hoặc +84 90 123 4567.",
     contactInvalidEmail:
