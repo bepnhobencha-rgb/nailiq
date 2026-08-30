@@ -287,7 +287,7 @@ Checkpoint điều hành: 30/08/2026.
 Không dùng `PASS_LOCAL`, `PASS_CI`, Preview hoặc HTTP 200 để tuyên bố một luồng
 đã hoạt động trên production.
 
-### Batch đang hoạt động — P0 Delivery Truth
+### Batch đã hoàn thành — P0 Delivery Truth
 
 Mục tiêu: mọi booking đã commit phải hiện thành công; SMS, email và Waitlist phải
 có trạng thái giao nhận bền vững, có thể retry/reconcile mà không tạo booking
@@ -309,21 +309,49 @@ trùng hoặc gửi trùng.
 Điều kiện hoàn thành: `PASS_QA` và `PASS_CI`; không gửi SMS/email thật, không tạo
 booking thật và không đổi flag salon production trong batch này.
 
+Kết quả ngày 30/08/2026: `PASS_LOCAL + PASS_CI + PASS_QA`. PR #1291 là đường
+review duy nhất; Preview synthetic đã chứng minh app đọc đúng Supabase QA, không
+tạo booking/Waitlist/SMS attempt/outbox ngoài ý muốn. Dữ liệu synthetic và branch
+QA disposable đã được xóa sau khi lưu bằng chứng. Chưa merge hoặc deploy
+Production; vì vậy trạng thái production của capability này vẫn là `NOT_PROVEN`.
+
+### Batch đang hoạt động — P0 No-show/Late-cancel/Payment Truth
+
+Mục tiêu: tách rõ và hiển thị đúng năm sự thật độc lập: `card_on_file`,
+`fee_approved`, `provider_dispatched`, `provider_receipt` và `reconciled`. Booking
+hoặc thao tác no-show không được báo “đã thu” chỉ vì có thẻ hay có approval.
+
+1. Audit read-only toàn bộ đường card-on-file, late-cancel, no-show, charge,
+   refund, webhook và reconciliation trên `main` hiện tại.
+2. Chuẩn hóa một ledger/idempotency contract; cùng một business event không thể
+   tạo hai payment attempts và trạng thái `succeeded` bắt buộc có receipt Square
+   khớp tenant/location/account.
+3. V1 giữ human approval: không auto-charge. Mọi charge/refund/no-show fee phải
+   fail closed khi thiếu quyền, policy snapshot, customer consent/card proof,
+   provider mapping hoặc kill switch.
+4. Booking/late-cancel/no-show UI hiển thị ngôn ngữ thật: “cần phê duyệt”, “đang
+   gửi”, “đã thu”, “thất bại”, “không rõ — cần đối soát”; không suy diễn từ HTTP
+   200 hoặc trạng thái nội bộ.
+5. Kiểm chứng bằng focused tests, typecheck/lint, migration rehearsal, Supabase QA
+   disposable, Preview synthetic và CI; không gọi Square, không thu/refund tiền,
+   không gửi thông báo và không dùng dữ liệu salon thật.
+
+Điều kiện hoàn thành: `PASS_QA + PASS_CI`, có bằng chứng duplicate prevention,
+receipt gating, tenant/account isolation, reconciliation và rollback/cleanup.
+Production vẫn `NOT_PROVEN` cho đến một rollout riêng được phê duyệt.
+
 ### Hàng đợi tiếp theo — chỉ làm từng batch
 
-1. **P0 No-show/Late-cancel/Payment Truth:** tách rõ card-on-file, approved fee,
-   provider dispatch, receipt và reconciliation; V1 không auto-charge. Mọi charge,
-   refund và no-show fee cần người có quyền phê duyệt và receipt của Square.
-2. **P1 Universal Booking:** một orchestration contract cho cá nhân, nhóm, nhiều
+1. **P1 Universal Booking:** một orchestration contract cho cá nhân, nhóm, nhiều
    dịch vụ, add-on, wave, nhân viên, giường/ghế/resource; hỗ trợ mục tiêu đến cùng
    lúc, về cùng lúc, sớm nhất và tối đa công suất; commit nguyên tử, không trùng.
-3. **P1 Booking Hub + Receptionist Center:** khách tự xem, đổi giờ, hủy và yêu cầu
+2. **P1 Booking Hub + Receptionist Center:** khách tự xem, đổi giờ, hủy và yêu cầu
    thay đổi trong giới hạn chính sách; nhóm có organizer link; tiếp tân/Admin iPhone
    nhận một Action Center thống nhất cho booking, Waitlist, delivery và payment.
-4. **V1.5 AI Brain:** `Assist` cho đề xuất, `Approve` cho hành động trung bình,
+3. **V1.5 AI Brain:** `Assist` cho đề xuất, `Approve` cho hành động trung bình,
    `Autopilot` chỉ cho hành động rủi ro thấp; mọi đề xuất có lý do, độ tin cậy,
    audit, receipt và rollback khi có thể.
-5. **Pilot có kiểm soát:** QA matrix đầy đủ rồi rollout theo từng salon/capability;
+4. **Pilot có kiểm soát:** QA matrix đầy đủ rồi rollout theo từng salon/capability;
    đo booking success, duplicate rate, delivery success, recovery time, thời gian
    thao tác của tiếp tân và mức sử dụng self-service.
 
