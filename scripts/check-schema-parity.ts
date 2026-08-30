@@ -91,6 +91,11 @@ import { execFileSync } from "node:child_process";
  * The 20260828234427/20260829001812 SMS delivery-truth migrations add one
  * PII-free, RPC-only attempt ledger, three service-only state-machine RPCs,
  * and four indexes without increasing direct service-role table reachability.
+ * The 20260830192628 waitlist-owner notification migration adds one private,
+ * RPC-only outbox, three state-machine/trigger functions, one restrictive
+ * policy, one trigger and four indexes.
+ * The 20260830193523 delivery rescue migration adds one service-role-only,
+ * tenant-scoped, PII-free dashboard projection function.
  * The 20260829024500/20260829033000 V1 no-show safety migrations add one
  * private decision/effect ledger, five service-only RPCs, one restrictive
  * direct-access deny policy and five indexes.
@@ -124,7 +129,7 @@ import { execFileSync } from "node:child_process";
  */
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
-  tables: 189,
+  tables: 190,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -164,6 +169,7 @@ const PRODUCTION = {
   // +27 owner-delivery truth, event and suppression columns.
   // +29 booking-OTP delivery attempt/event and email-code correlation columns.
   // +17 universal SMS delivery-attempt truth columns.
+  // +15 durable waitlist-owner notification outbox columns.
   // +28 no-show decision, undo, commit and effect-lease columns.
   // +66 no-show fee review, immutable approval receipt and Square payment
   // webhook truth columns.
@@ -171,7 +177,7 @@ const PRODUCTION = {
   // +1 salon-owned resource adjacency topology label.
   // +2 Smart Wave strategy columns: salons plus public_salon_profiles.
   // +9 parallel service policy/resource certification columns.
-  columns: 2837,
+  columns: 2852,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -182,7 +188,8 @@ const PRODUCTION = {
   // +1 restrictive direct-access deny policy on no-show decisions.
   // +1 restrictive direct-access deny policy on multi-service rollouts.
   // +1 owner/admin tenant-scoped parallel service policy.
-  policies: 208,
+  // +1 restrictive browser-deny policy on the waitlist-owner outbox.
+  policies: 209,
   /**
    * APP functions only — refreshed after the rehearsed forward migrations.
    *
@@ -207,6 +214,7 @@ const PRODUCTION = {
   // +1 deferred desk-cancel owner-notification compatibility handshake.
   // +4 booking-OTP attempt, completion, verification and receipt RPCs.
   // +3 universal SMS attempt claim, completion and receipt RPCs.
+  // +3 waitlist-owner occurrence, claim and completion functions.
   // +5 no-show begin, undo, finalize, effect-claim and effect-completion RPCs.
   // +8 no-show fee material guards, approval/dispatch RPCs and Square payment
   // webhook reconciliation functions.
@@ -216,7 +224,7 @@ const PRODUCTION = {
   // +3 group-sequence readiness, authoritative quote resolver, and public
   // service-role quote wrapper functions.
   // +2 tenant and same-booking overlap enforcement trigger functions.
-  functions: 424,
+  functions: 428,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -226,7 +234,8 @@ const PRODUCTION = {
   // +1 provider-message correlation trigger.
   // +2 no-show fee review/approval immutable-material triggers.
   // +3 policy tenant/update and segment overlap enforcement triggers.
-  triggers: 98,
+  // +1 atomic waitlist-owner occurrence trigger.
+  triggers: 99,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -237,11 +246,12 @@ const PRODUCTION = {
   // +6 delivery truth provider, inbox, pending, salon and suppression indexes.
   // +10 booking-OTP attempt/event/correlation indexes.
   // +4 universal SMS delivery-attempt indexes.
+  // +4 waitlist-owner outbox primary, unique, due and salon indexes.
   // +5 no-show decision primary, request, booking-state, due and effect indexes.
   // +18 no-show fee review/receipt/webhook primary, unique, lookup and FK indexes.
   // +1 multi-service rollout primary key.
   // +4 parallel-policy primary, unique, and service lookup indexes.
-  indexes: 700,
+  indexes: 704,
 } as const;
 
 /**
@@ -291,6 +301,7 @@ const CRITICAL_TABLES = [
   "booking_otp_delivery_attempts",
   "resend_booking_otp_delivery_events",
   "sms_delivery_attempts",
+  "owner_waitlist_notification_outbox",
   "booking_no_show_decisions",
   "booking_notification_delivery_events",
   "booking_confirmation_dispatch_envelopes",
@@ -431,6 +442,10 @@ const CRITICAL_FUNCTIONS = [
   "claim_sms_delivery_attempt",
   "complete_sms_delivery_attempt",
   "record_sms_delivery_attempt_receipt",
+  "track_owner_waitlist_notification_occurrence",
+  "claim_owner_waitlist_notification_outbox_batch",
+  "complete_owner_waitlist_notification_outbox",
+  "load_notification_delivery_rescue_summary",
   "begin_booking_no_show_v1",
   "undo_booking_no_show_v1",
   "finalize_due_booking_no_shows_v1",

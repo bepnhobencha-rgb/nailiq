@@ -98,21 +98,5 @@ export async function submitPublicWaitlistEntry(
 
   if (!wid) throw new Error("waitlist_empty");
 
-  // Best-effort: notify the owner/admins that a customer joined the waitlist.
-  // Never block or fail the join on this.
-  try {
-    const base =
-      typeof window !== "undefined"
-        ? ""
-        : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
-    void fetch(`${base}/api/waitlist/notify-owner`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ waitlistId: wid }),
-    }).catch(() => {});
-  } catch {
-    /* ignore */
-  }
-
   return { waitlistId: wid };
 }

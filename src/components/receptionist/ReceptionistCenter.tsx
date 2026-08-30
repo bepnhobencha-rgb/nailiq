@@ -178,6 +178,7 @@ import {
 } from "@/shared/lib/drcTheme";
 import { DrcThemePicker } from "@/components/receptionist/DrcThemePicker";
 import { BookingLimitBanner } from "@/components/dashboard/BookingLimitBanner";
+import { NotificationDeliveryRescueCard } from "./NotificationDeliveryRescueCard";
 import { PartyCardPanel } from "@/components/receptionist/PartyCardPanel";
 import { AttentionChipBar } from "@/components/receptionist/AttentionChipBar";
 import { NailiqSuggestionBar } from "@/components/receptionist/NailiqSuggestionBar";
@@ -1548,6 +1549,17 @@ function ReceptionistCenterInner({
       });
     }
   }, [slug, messages.receptionist, markSynced]);
+
+  const [deliveryRescueRefreshing, setDeliveryRescueRefreshing] = useState(false);
+  const refreshDeliveryRescue = useCallback(async () => {
+    if (deliveryRescueRefreshing) return;
+    setDeliveryRescueRefreshing(true);
+    try {
+      await reloadCurrentDay();
+    } finally {
+      setDeliveryRescueRefreshing(false);
+    }
+  }, [deliveryRescueRefreshing, reloadCurrentDay]);
 
   /**
    * Called when a booking chip is clicked from Week or Month view.
@@ -3453,6 +3465,13 @@ function ReceptionistCenterInner({
             </div>
           </div>
         ) : null}
+        <NotificationDeliveryRescueCard
+          slug={slug}
+          language={language === "vi" ? "vi" : "en"}
+          summary={data.salon.notificationDeliveryRescue}
+          refreshing={deliveryRescueRefreshing}
+          onRefresh={() => void refreshDeliveryRescue()}
+        />
         {previewInterface ? (
           <AppleDeskHeader
             slug={slug}
