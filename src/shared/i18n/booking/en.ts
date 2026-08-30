@@ -493,6 +493,10 @@ export const bookingEn = {
       "Person {n}'s time is invalid. Please pick again on the previous step.",
     invalidDateForMember:
       "Person {n}'s date is invalid. Please pick again on the previous step.",
+    pricingRefreshRequired:
+      "Availability or pricing changed. We refreshed the party total — review it, then confirm again.",
+    pricingRefreshFailed:
+      "We couldn't refresh the party total. Please refresh the schedule and try again.",
     /** Same six errors but for client-side step 5 contact validation,
      *  before we even hit the server. Phone is the primary contact
      *  for the whole group so there's no member number. */

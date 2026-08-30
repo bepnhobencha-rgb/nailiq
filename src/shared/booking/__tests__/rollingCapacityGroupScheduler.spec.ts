@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import { groupBookingInstantMatches } from "@/shared/booking/groupBookingPricing";
 import {
   buildWaveArrangement,
+  ceilToSlotGridMs,
+  findEarliestWaveArrangement,
   tryWaveArrangement,
   type ExistingBooking,
   type ResolvedMember,
@@ -60,6 +63,49 @@ function startsByWave(
 }
 
 describe("rolling-capacity group scheduler", () => {
+  it("snaps a same-day lead floor to the visible slot grid before quoting waves", () => {
+    const gridOriginMs = Date.parse("2026-08-30T16:00:00.000Z");
+    const leadFloorMs = Date.parse("2026-08-30T17:43:00.725Z");
+    const waveAnchorMs = ceilToSlotGridMs(leadFloorMs, gridOriginMs);
+    const staffList = staff(7);
+    const staffById = new Map(staffList.map((row) => [row.id, row]));
+
+    expect(new Date(waveAnchorMs).toISOString()).toBe(
+      "2026-08-30T17:45:00.000Z",
+    );
+
+    const result = findEarliestWaveArrangement(
+      waveAnchorMs,
+      members(Array(12).fill(70)),
+      staffList,
+      staffById,
+      null,
+      [],
+      Date.parse("2026-08-31T02:00:00.000Z"),
+      { strategy: "maximize_revenue" },
+    );
+
+    expect(result).not.toBeNull();
+    expect(
+      result?.assignments.every(
+        (assignment) =>
+          assignment.startMs % MINUTE_MS === 0 &&
+          assignment.endMs % MINUTE_MS === 0,
+      ),
+    ).toBe(true);
+    const quotedStartIso = new Date(
+      result?.assignments[0].startMs ?? Number.NaN,
+    ).toISOString();
+    const minuteOnlySubmitIso = new Date(quotedStartIso);
+    minuteOnlySubmitIso.setUTCSeconds(0, 0);
+    expect(
+      groupBookingInstantMatches(
+        quotedStartIso,
+        minuteOnlySubmitIso.toISOString(),
+      ),
+    ).toBe(true);
+  });
+
   it("keeps three guests at the requested time and fills every later release", () => {
     const staffList = staff(10);
     const staffById = new Map(staffList.map((row) => [row.id, row]));

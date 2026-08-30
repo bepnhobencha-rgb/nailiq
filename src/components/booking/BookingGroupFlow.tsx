@@ -1357,6 +1357,33 @@ export function BookingGroupFlow({
         setErrorMessage("The party total changed. Review the updated receipt, then confirm again.");
         return;
       }
+      if (
+        res.reason === "pricing_required" ||
+        res.reason === "pricing_invalid"
+      ) {
+        const request = buildPricingRequest(voucherCode);
+        if (!request) {
+          setPricingQuote(null);
+          setPricingQuoteKey(null);
+          setErrorMessage(groupCopy.pricingRefreshFailed);
+          return;
+        }
+        setPricingLoading(true);
+        const refreshed = await requestPricingQuote(request);
+        setPricingLoading(false);
+        if (!refreshed.quote) {
+          setPricingQuote(null);
+          setPricingQuoteKey(null);
+          setPricingError(refreshed.error);
+          setErrorMessage(groupCopy.pricingRefreshFailed);
+          return;
+        }
+        setPricingQuote(refreshed.quote);
+        setPricingQuoteKey(groupBookingPricingIntentKey(request));
+        setPricingError(null);
+        setErrorMessage(groupCopy.pricingRefreshRequired);
+        return;
+      }
       if (res.reason === "otp_required" || res.reason === "otp_invalid") {
         // Salon requires phone OTP (anti-sabotage). Open the verify panel for
         // the organizer's number; on success we re-submit with the session id.
@@ -1994,6 +2021,13 @@ export function BookingGroupFlow({
           showStaleArrangement={arrangementStale && !staleAcknowledged}
           onStaleAcknowledge={() => setStaleAcknowledged(true)}
           onStaleRefresh={() => {
+            cardTokenRef.current = null;
+            cardVerificationRef.current = null;
+            setNoShowConsent(false);
+            setPricingQuote(null);
+            setPricingQuoteKey(null);
+            setPricingError(null);
+            setErrorMessage(null);
             setScheduleResult(null);
             setArrangementSelectedAt(null);
             setArrangementStale(false);

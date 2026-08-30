@@ -74,6 +74,7 @@ import {
 import {
   buildArrangement,
   buildWaveArrangement,
+  ceilToSlotGridMs,
   findEarliestWaveArrangement,
   findFinishArrangementsInWindow,
   MAX_WAVES,
@@ -790,9 +791,12 @@ export async function loadGroupSmartSchedule(
     // instead of dead-ending. Reuses the Phase 6 wave scheduler unchanged.
     if (!isSyncFinish && window) {
       const closeMinForWave = hmToMinutes(dayHours.close) ?? 0;
-      const waveAnchorMs = Math.max(
-        Date.parse(salonWallTimeToUtcIso(params.date, window.startMin, timezone)),
-        earliestAllowedMs,
+      const waveGridOriginMs = Date.parse(
+        salonWallTimeToUtcIso(params.date, window.startMin, timezone),
+      );
+      const waveAnchorMs = ceilToSlotGridMs(
+        Math.max(waveGridOriginMs, earliestAllowedMs),
+        waveGridOriginMs,
       );
       const waveCloseMs  = Date.parse(salonWallTimeToUtcIso(params.date, closeMinForWave, timezone));
       // Forward-scan from the requested window start: when the early part of the
