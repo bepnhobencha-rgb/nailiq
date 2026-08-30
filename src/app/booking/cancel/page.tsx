@@ -31,7 +31,7 @@ type CancelResponse = {
   feeCents?: number;
   currency?: string;
   bookingCommitted?: boolean;
-  feeStatus?: "pending_provider" | "unknown" | "succeeded" | "definite_failure" | "not_applicable";
+  feeStatus?: "approval_required" | "pending_provider" | "unknown" | "succeeded" | "definite_failure" | "not_applicable";
 };
 
 function fmtMoney(cents: number, currency: string): string {
@@ -55,6 +55,7 @@ export default function CancelBookingPage() {
   const [salonSlug, setSalonSlug] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [feeCharged, setFeeCharged] = useState<{ cents: number; currency: string } | null>(null);
+  const [feeApprovalRequired, setFeeApprovalRequired] = useState<{ cents: number; currency: string } | null>(null);
   const [pendingFee, setPendingFee] = useState<{ cents: number; currency: string; status: string } | null>(null);
   const applyCommittedPaymentPending = useCallback((json: CancelResponse): void => {
     setPendingFee({
@@ -68,6 +69,9 @@ export default function CancelBookingPage() {
     if (json.salonSlug) setSalonSlug(json.salonSlug);
     if (json.feeCharged && typeof json.feeCents === "number") {
       setFeeCharged({ cents: json.feeCents, currency: json.currency ?? "USD" });
+    }
+    if (json.feeStatus === "approval_required" && typeof json.feeCents === "number") {
+      setFeeApprovalRequired({ cents: json.feeCents, currency: json.currency ?? "USD" });
     }
     setState("done");
   }, []);
@@ -193,6 +197,19 @@ export default function CancelBookingPage() {
               <span className="mt-1 block text-emerald-300/90">
                 💚 If we rebook your spot, we&apos;ll refund this automatically. ·
                 Nếu chúng tôi lấp được chỗ, phí sẽ được hoàn lại tự động.
+              </span>
+            </p>
+          )}
+          {feeApprovalRequired && (
+            <p className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+              No fee was charged today. A possible late-cancellation fee of{" "}
+              <b>{fmtMoney(feeApprovalRequired.cents, feeApprovalRequired.currency)}</b>{" "}
+              requires salon Owner/Admin review.
+              <br />
+              <span className="text-amber-300/80">
+                Hôm nay chưa thu phí. Phí huỷ trễ có thể áp dụng{" "}
+                {fmtMoney(feeApprovalRequired.cents, feeApprovalRequired.currency)} và phải được
+                Owner/Admin của salon duyệt.
               </span>
             </p>
           )}

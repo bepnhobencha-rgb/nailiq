@@ -171,12 +171,12 @@ describe("MQA-0099 fixed local boundaries", () => {
     requirePattern(slotsRoute, /expectedAction:\s*["']reschedule["']/, "slot read accepts wrong action");
   });
 
-  it("PASS_LOCAL: cancellation replay uses persisted policy and reports an existing charge truthfully", () => {
-    forbidPattern(cancelRoute, /if\s*\(preview\?\.willCharge/, "consumed-token replay silently skips the late-cancel charge");
-    requirePattern(cancelRoute, /committed\.cancelPreview[\s\S]*chargeNoShowFee/, "durable cancellation result lacks fee reconciliation material");
-    requirePattern(cancelRoute, /feeStatus\s*=\s*charged\.status/, "authoritative payment status is discarded");
-    requirePattern(cancelRoute, /feeCharged\s*=\s*charged\.status\s*===\s*["']succeeded["']/, "a succeeded first attempt or exact replay is misreported as uncharged");
-    requirePattern(cancelRoute, /feeStatus\s*===\s*["']pending_provider["'][\s\S]*feeStatus\s*===\s*["']unknown["']/, "ambiguous provider truth is collapsed into a definite result");
+  it("PASS_LOCAL: cancellation replay uses persisted policy and separates fee approval truth", () => {
+    requirePattern(cancelRoute, /const preview = committed\.cancelPreview/, "durable cancellation result lacks its policy snapshot");
+    requirePattern(cancelRoute, /feeStatus[\s\S]{0,220}?["']approval_required["']/, "reviewable fee truth is missing");
+    requirePattern(cancelRoute, /bookingCommitted:\s*true[\s\S]{0,120}?feeCharged:\s*false/, "committed cancellation is not returned as a truthful success");
+    forbidPattern(cancelRoute, /chargeNoShowFee|late_cancel_charge/, "public cancellation must never dispatch a provider charge");
+    forbidPattern(cancelRoute, /payment_reconciliation_required|payment_unavailable/, "a committed cancellation must never become a payment error");
   });
 
   it("PASS_LOCAL: promoted waitlist sends are claimed per offer/channel and exact receipts are enforced", () => {

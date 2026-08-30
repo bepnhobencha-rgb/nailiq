@@ -167,6 +167,10 @@ describe("MQA-0152 Square API outage acceptance", () => {
       requestId,
       operationKind: "noshow_charge",
       provider: squareProvider(chargeSavedCard),
+      paymentAuthorization: {
+        kind: "approved_no_show_fee",
+        reviewId: "77777777-7777-4777-8777-777777777777",
+      },
     });
 
     expect(chargeSavedCard).not.toHaveBeenCalled();
@@ -232,6 +236,10 @@ describe("MQA-0152 Square API outage acceptance", () => {
       requestId,
       operationKind: "noshow_charge",
       provider: squareProvider(chargeSavedCard),
+      paymentAuthorization: {
+        kind: "approved_no_show_fee",
+        reviewId: "77777777-7777-4777-8777-777777777777",
+      },
     });
 
     expect(chargeSavedCard).toHaveBeenCalledTimes(1);

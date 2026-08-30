@@ -202,6 +202,10 @@ export async function dispatchApprovedNoShowFee(
     amountCents,
     note: "Approved no-show fee",
     referenceId: `booking:${bookingId}`,
+    paymentAuthorization: {
+      kind: "approved_no_show_fee",
+      reviewId: input.reviewId,
+    },
   });
   if (!outcome.operationId) {
     return {

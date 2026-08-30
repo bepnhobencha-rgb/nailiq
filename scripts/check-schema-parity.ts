@@ -115,6 +115,9 @@ import { execFileSync } from "node:child_process";
  * The 20260830100409 parallel multi-service resource-policy migration adds
  * one owner-managed policy table, one fail-closed resource-capacity column,
  * two enforcement functions, three triggers, one RLS policy, and four indexes.
+ * The 20260830210000 payment-approval enforcement migration adds one ledger
+ * gate function and two triggers. It replaces the approval dispatch/outcome
+ * functions in place and adds no table, column, policy, or index.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -211,7 +214,8 @@ const PRODUCTION = {
   // +3 group-sequence readiness, authoritative quote resolver, and public
   // service-role quote wrapper functions.
   // +2 tenant and same-booking overlap enforcement trigger functions.
-  functions: 421,
+  // +1 no-show/late-cancel provider-ledger approval gate function.
+  functions: 422,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -221,7 +225,8 @@ const PRODUCTION = {
   // +1 provider-message correlation trigger.
   // +2 no-show fee review/approval immutable-material triggers.
   // +3 policy tenant/update and segment overlap enforcement triggers.
-  triggers: 98,
+  // +2 no-show/late-cancel provider-ledger insert/reconcile approval gates.
+  triggers: 100,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.

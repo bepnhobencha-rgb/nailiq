@@ -259,6 +259,35 @@ Thời gian: 30 ngày đầu
 - Tùy chỉnh hiếm dùng.
 - Tích hợp chưa có khách yêu cầu.
 
+## EXECUTION QUEUE — 30/08/2026
+
+### P0 — No-show / Late-cancel / Payment Truth
+
+Trạng thái: `PASS_LOCAL + PASS_QA`; Production `NOT_PROVEN`.
+
+- [x] Hủy lịch đã commit luôn trả success; khách không bị thúc đẩy retry vì bước phí.
+- [x] Public web và Voice AI không gọi payment provider sau khi hủy.
+- [x] Phí trễ hiển thị trung thực là `approval_required`: chưa thu, chờ Owner/Admin duyệt.
+- [x] No-show charge chỉ được vào payment ledger khi khớp exact immutable approval receipt.
+- [x] Service role không được ghi trực tiếp review/receipt; chỉ đi qua RPC có kiểm soát.
+- [x] Không chấp nhận trạng thái `succeeded` nếu ledger chưa succeeded hoặc thiếu provider receipt.
+- [x] Late-cancel charge fail-closed cho đến khi có workflow approval receipt riêng.
+- [x] Full unit, typecheck, focused lint, production build và Supabase QA synthetic đều PASS.
+- [ ] CI Preview PASS.
+- [ ] Review/merge có phê duyệt.
+- [ ] Migration Production + Production verification có phê duyệt riêng.
+
+### Thứ tự tiếp theo sau P0
+
+1. Universal Booking Truth: individual, group, wave, multi-service tuần tự/song song,
+   resource/staff/bed/time và card policy dùng cùng orchestrator contract.
+2. Customer Booking Hub: xem, đổi lịch, hủy, RSVP và waitlist bằng capability link;
+   mọi committed action luôn có trạng thái rõ ràng.
+3. AI Revenue & Rescue: AI chỉ đề xuất/chuẩn bị; hành động có tiền, gửi thông báo hoặc
+   thay đổi lịch phải qua policy, idempotency, approval và delivery truth.
+4. Pilot certification: synthetic trước, sau đó salon allowlist; tách rõ
+   `implemented`, `tested`, `production-proven` và `not proven`.
+
 ## AI CHỊU TRÁCH NHIỆM VIỆC GÌ
 
 AI có thể rà soát và sửa mã nguồn; thiết kế lại UX/UI; chuẩn bị migration; tạo

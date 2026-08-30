@@ -21,11 +21,11 @@ const cancelRefundMaterialRepair = read(
 );
 
 describe("MQA-0063..0075 remaining Sellable-V1 payment gaps", () => {
-  it("Voice cancellation consumes a canonical occurrence after an explicit fee challenge and exact replay", () => {
+  it("Voice cancellation consumes a canonical occurrence but never dispatches the reviewable fee", () => {
     expect(voiceExecutor).toMatch(/late_fee_confirmation_required/);
     expect(voiceExecutor).toMatch(/validateLateFeeChallenge\(/);
     expect(voiceExecutor).toMatch(/isExplicitFeeAcknowledgement\(input\.currentUtterance\)/);
-    expect(voiceExecutor).toMatch(/operationKind:\s*"late_cancel_charge"/);
+    expect(voiceExecutor).toMatch(/feeStatus = chargeableCommitted \? "approval_required"/);
 
     expect.soft(
       voiceExecutor,
@@ -33,8 +33,8 @@ describe("MQA-0063..0075 remaining Sellable-V1 payment gaps", () => {
     ).toMatch(/cancelBookingWithManagementCapability|cancel_booking_with_management_capability/);
     expect.soft(
       voiceExecutor,
-      "late-cancel charge must use the immutable transition version returned by the committed canonical cancellation",
-    ).toMatch(/chargeNoShowFee\([\s\S]{0,500}?occurrenceVersion:\s*(?:committed\.)?(?:transitionVersion|customerTransitionVersion)/);
+      "Voice cancellation must not convert the committed cancellation into provider work",
+    ).not.toMatch(/chargeNoShowFee\(|operationKind:\s*"late_cancel_charge"/);
   });
 
   it("an authorized desk surface can reserve a bounded partial refund and replay the same request after response loss", () => {

@@ -257,7 +257,36 @@ export async function runAuthoritativeBookingPaymentOperation(args: {
   note?: string;
   referenceId?: string;
   reason?: string;
+  paymentAuthorization?: {
+    kind: "approved_no_show_fee";
+    reviewId: string;
+  };
 }): Promise<BookingPaymentRunOutcome> {
+  // Attendance and cancellation never authorize money movement. No-show fees
+  // may enter the provider ledger only through the owner/admin approval flow,
+  // whose immutable receipt is rechecked by SQL. Late-cancel charging has no
+  // equivalent approval receipt yet and therefore remains fail-closed.
+  if (args.operationKind === "late_cancel_charge") {
+    return {
+      ok: false,
+      status: "not_claimed",
+      operationId: null,
+      reason: "fee_approval_required",
+    };
+  }
+  if (
+    args.operationKind === "noshow_charge" &&
+    (args.paymentAuthorization?.kind !== "approved_no_show_fee" ||
+      !args.paymentAuthorization.reviewId)
+  ) {
+    return {
+      ok: false,
+      status: "not_claimed",
+      operationId: null,
+      reason: "fee_approval_required",
+    };
+  }
+
   // Exact response-loss replay must win before reading mutable booking state.
   // This is especially important for cancellation/no-show lifecycle changes:
   // a committed operation remains recoverable by its stable logical request.

@@ -173,6 +173,10 @@ describe("dispatchClaimedBookingPaymentOperation", () => {
       requestId: "55555555-5555-4555-8555-555555555555",
       operationKind: "noshow_charge",
       provider: paymentProvider,
+      paymentAuthorization: {
+        kind: "approved_no_show_fee",
+        reviewId: "77777777-7777-4777-8777-777777777777",
+      },
     });
     expect(result).toMatchObject({
       ok: false,
@@ -180,6 +184,45 @@ describe("dispatchClaimedBookingPaymentOperation", () => {
       operationId,
       reason: "reconcile_not_due",
     });
+    expect(paymentProvider.chargeSavedCard).not.toHaveBeenCalled();
+  });
+});
+
+describe("runAuthoritativeBookingPaymentOperation fee approval boundary", () => {
+  it("rejects a no-show charge without an approved-review marker before database or provider work", async () => {
+    const rpc = vi.fn();
+    const paymentProvider = provider();
+    const result = await runAuthoritativeBookingPaymentOperation({
+      db: { rpc },
+      salonId: claim.material.salonId,
+      bookingId: claim.material.bookingId!,
+      requestId: "55555555-5555-4555-8555-555555555555",
+      operationKind: "noshow_charge",
+      provider: paymentProvider,
+    });
+    expect(result).toEqual({
+      ok: false,
+      status: "not_claimed",
+      operationId: null,
+      reason: "fee_approval_required",
+    });
+    expect(rpc).not.toHaveBeenCalled();
+    expect(paymentProvider.chargeSavedCard).not.toHaveBeenCalled();
+  });
+
+  it("rejects a late-cancel charge before database or provider work", async () => {
+    const rpc = vi.fn();
+    const paymentProvider = provider();
+    const result = await runAuthoritativeBookingPaymentOperation({
+      db: { rpc },
+      salonId: claim.material.salonId,
+      bookingId: claim.material.bookingId!,
+      requestId: "66666666-6666-4666-8666-666666666666",
+      operationKind: "late_cancel_charge",
+      provider: paymentProvider,
+    });
+    expect(result).toMatchObject({ ok: false, reason: "fee_approval_required" });
+    expect(rpc).not.toHaveBeenCalled();
     expect(paymentProvider.chargeSavedCard).not.toHaveBeenCalled();
   });
 });

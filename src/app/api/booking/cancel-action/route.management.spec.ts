@@ -7,7 +7,6 @@ const mocks = vi.hoisted(() => ({
   inspect: vi.fn(),
   cancel: vi.fn(),
   rate: vi.fn(),
-  charge: vi.fn(),
   audit: vi.fn(),
   transition: vi.fn(),
   owner: vi.fn(),
@@ -25,7 +24,6 @@ vi.mock("@/shared/booking/bookingManagementCapabilities", () => ({
 vi.mock("@/shared/booking/bookingManagementRateLimit", () => ({
   consumeBookingManagementRateLimit: mocks.rate,
 }));
-vi.mock("@/shared/integrations/square/noshow", () => ({ chargeNoShowFee: mocks.charge }));
 vi.mock("@/shared/dashboard/reconcilePublicBookingManagementAudit", () => ({
   reconcilePublicBookingManagementAudit: mocks.audit,
 }));
@@ -101,7 +99,6 @@ describe("cancel management runtime behavior", () => {
     mocks.rate.mockResolvedValue("allowed");
     mocks.inspect.mockResolvedValue(inspection);
     mocks.cancel.mockResolvedValue({ ok: true, result: committed });
-    mocks.charge.mockResolvedValue({ status: "succeeded", paymentId: "pay-1" });
     mocks.audit.mockResolvedValue(undefined);
   });
 
@@ -111,7 +108,6 @@ describe("cancel management runtime behavior", () => {
     expect(await response.json()).toMatchObject({ ok: true, feeCents: 2500, salonSlug: "qa-salon" });
     expect(mocks.inspect).toHaveBeenCalledWith({ tokenId: TOKEN, expectedAction: "cancel" });
     expect(mocks.cancel).not.toHaveBeenCalled();
-    expect(mocks.charge).not.toHaveBeenCalled();
     expect(mocks.after).not.toHaveBeenCalled();
   });
 
@@ -120,65 +116,59 @@ describe("cancel management runtime behavior", () => {
     expect(response.status).toBe(403);
     expect(mocks.inspect).not.toHaveBeenCalled();
     expect(mocks.cancel).not.toHaveBeenCalled();
-    expect(mocks.charge).not.toHaveBeenCalled();
   });
 
-  it("recovers response loss with the same request and reports an existing charge truthfully", async () => {
+  it("recovers response loss with the same request and keeps the fee awaiting approval", async () => {
     const first = await POST(postRequest());
     expect(first.status).toBe(200);
-    expect(await first.json()).toMatchObject({ ok: true, feeCharged: true, feeCents: 2500 });
+    expect(await first.json()).toMatchObject({
+      ok: true,
+      bookingCommitted: true,
+      feeCharged: false,
+      feeStatus: "approval_required",
+      feeCents: 2500,
+    });
 
     mocks.inspect.mockResolvedValueOnce({ ok: false, code: "token_consumed" });
     mocks.cancel.mockResolvedValueOnce({ ok: true, result: { ...committed, idempotent: true } });
-    mocks.charge.mockResolvedValueOnce({ status: "succeeded", paymentId: "pay-1" });
     const replay = await POST(postRequest());
     expect(replay.status).toBe(200);
     expect(await replay.json()).toMatchObject({
       ok: true,
-      feeCharged: true,
+      bookingCommitted: true,
+      feeCharged: false,
+      feeStatus: "approval_required",
       feeCents: 2500,
       idempotent: true,
     });
     expect(mocks.cancel).toHaveBeenNthCalledWith(1, { tokenId: TOKEN, requestId: REQUEST_ID });
     expect(mocks.cancel).toHaveBeenNthCalledWith(2, { tokenId: TOKEN, requestId: REQUEST_ID });
-    expect(mocks.charge).toHaveBeenCalledTimes(2);
   });
 
-  it.each(["pending_provider", "unknown"] as const)(
-    "reports a committed cancellation with %s fee truth as reconciliation-required",
-    async (feeStatus) => {
-      mocks.charge.mockResolvedValueOnce({
-        status: feeStatus,
-        paymentId: null,
-        reason: feeStatus === "unknown" ? "provider_outcome_unknown" : "provider_pending",
-      });
-
-      const response = await POST(postRequest());
-
-      expect(response.status).toBe(503);
-      expect(await response.json()).toMatchObject({
-        ok: false,
-        code: "payment_reconciliation_required",
-        bookingCommitted: true,
-        feeStatus,
-        feeCents: 2500,
-        currency: "CAD",
-      });
-      expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({
-        payload: expect.objectContaining({
-          fee_decision: feeStatus,
-          fee_cents: 2500,
-        }),
-      }));
-    },
-  );
+  it("never turns a committed cancellation into a payment error or provider call", async () => {
+    const response = await POST(postRequest());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      bookingCommitted: true,
+      feeCharged: false,
+      feeStatus: "approval_required",
+      feeCents: 2500,
+      currency: "CAD",
+    });
+    expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({
+      payload: expect.objectContaining({
+        fee_decision: "approval_required",
+        fee_cents: 2500,
+      }),
+    }));
+  });
 
   it("fails closed when the durable cancellation receipt lacks its fee snapshot", async () => {
     mocks.cancel.mockResolvedValueOnce({ ok: true, result: { ...committed, cancelPreview: null } });
     const response = await POST(postRequest());
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ ok: false, code: "invalid_management_response" });
-    expect(mocks.charge).not.toHaveBeenCalled();
     expect(mocks.audit).not.toHaveBeenCalled();
     expect(mocks.after).not.toHaveBeenCalled();
   });
@@ -206,7 +196,6 @@ describe("cancel management runtime behavior", () => {
       feeCharged: false,
       feeCents: 0,
     });
-    expect(mocks.charge).not.toHaveBeenCalled();
     expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({
       bookingId: committed.bookingId,
       payload: expect.objectContaining({
@@ -240,7 +229,6 @@ describe("cancel management runtime behavior", () => {
       feeCharged: false,
       feeCents: 0,
     });
-    expect(mocks.charge).not.toHaveBeenCalled();
     expect(mocks.cancel).toHaveBeenCalledTimes(1);
     expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({
       action: "rsvp_decline",

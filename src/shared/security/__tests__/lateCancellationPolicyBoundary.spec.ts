@@ -57,7 +57,7 @@ describe("late-cancellation policy boundary", () => {
     expect(voiceReschedule).toContain('reason: "voice_reschedule"');
   });
 
-  it("requires explicit customer agreement before a voice fee can be charged", () => {
+  it("requires explicit customer agreement before cancellation while keeping fee dispatch separate", () => {
     expect(voiceTools).toContain("late_fee_acknowledged");
     expect(voiceExecutor).toContain("late_fee_confirmation_required");
     expect(voiceExecutor).toContain("late_fee_confirmation_not_verified");
@@ -66,9 +66,8 @@ describe("late-cancellation policy boundary", () => {
     expect(voiceExecutor).toContain("timingSafeEqual");
     expect(voiceTools).toContain("late_fee_confirmation_token");
     expect(voiceExecutor).toContain("!lateFeeAcknowledged");
-    expect(voiceExecutor).toContain(
-      "amountCentsOverride: committed.cancelPreview!.feeCents",
-    );
+    expect(voiceExecutor).toContain('feeStatus = chargeableCommitted ? "approval_required"');
+    expect(voiceExecutor).not.toContain("chargeNoShowFee(bookingId!");
   });
 
   it("fails closed for group cancellation with card charges", () => {
