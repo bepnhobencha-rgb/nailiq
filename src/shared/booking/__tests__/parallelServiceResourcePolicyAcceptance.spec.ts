@@ -12,6 +12,10 @@ const overlapFix = readFileSync(
   resolve(root, "supabase/migrations/20260830105409_fix_parallel_policy_customer_overlap.sql"),
   "utf8",
 );
+const commitGuard = readFileSync(
+  resolve(root, "supabase/migrations/20260830120000_fix_parallel_sequence_commit_guard.sql"),
+  "utf8",
+);
 const actions = readFileSync(
   resolve(root, "src/shared/dashboard/resourceActions.ts"),
   "utf8",
@@ -59,6 +63,19 @@ describe("parallel multi-service resource policy acceptance", () => {
     );
     expect(overlapFix).not.toContain(
       "tstzrange(seg.occupied_start_utc, seg.occupied_end_utc, '[)')",
+    );
+  });
+
+  it("allows certified parallel commits without weakening deferred shape truth", () => {
+    expect(commitGuard).toContain(
+      "CREATE OR REPLACE FUNCTION public.check_booking_service_sequence_shape()",
+    );
+    expect(commitGuard).not.toContain("sequence customer-work intervals overlap");
+    expect(commitGuard).toContain("sequence parallel overlap violates certified policy");
+    expect(commitGuard).toContain("sequence persisted timing does not match quote");
+    expect(commitGuard).toContain("max(seg.customer_end_utc)");
+    expect(commitGuard).toMatch(
+      /UPDATE OF booking_id, salon_id, service_id, staff_id,[\s\S]*?customer_start_utc, customer_end_utc/i,
     );
   });
 

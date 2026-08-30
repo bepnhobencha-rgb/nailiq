@@ -20,6 +20,22 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA256_RE = /^[0-9a-f]{64}$/;
 
+function rawQuoteReusesStaffForParallelLine(value: unknown): boolean {
+  const row = record(value);
+  if (!row || row.success !== true || !Array.isArray(row.timing_segments)) {
+    return false;
+  }
+  const segments = row.timing_segments.map(record);
+  return segments.some((segment, position) => {
+    if (!segment || position === 0 || segment.resolved_timing_mode !== "parallel") {
+      return false;
+    }
+    const prior = segments[position - 1];
+    const staffId = uuid(segment.resolved_staff_id);
+    return Boolean(prior && staffId && staffId === uuid(prior.resolved_staff_id));
+  });
+}
+
 type TaxLine = { name: string; rate: number; amountCents: number };
 type AddonLine = {
   serviceId: string;
@@ -459,6 +475,9 @@ export async function quotePublicBookingSequence(
       { p_request: serializeSequenceBookingIntent(intent) } as never,
     );
     if (error || data == null) return { ok: false, code: "quote_unavailable" };
+    if (rawQuoteReusesStaffForParallelLine(data)) {
+      return { ok: false, code: "parallel_requires_distinct_staff" };
+    }
     const quote = parseBookingSequenceQuote(data);
     if (quote && bookingSequenceQuoteMatchesIntent(quote, intent)) {
       return { ok: true, quote };
