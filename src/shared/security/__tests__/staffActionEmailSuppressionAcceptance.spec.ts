@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  isEmailSuppressed: vi.fn(),
+  transactionalEmailSuppressionReason: vi.fn(),
   getResendClient: vi.fn(),
   providerSend: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/shared/lib/emailCompliance", () => ({
-  isEmailSuppressed: mocks.isEmailSuppressed,
+  transactionalEmailSuppressionReason: mocks.transactionalEmailSuppressionReason,
   listUnsubscribeHeaders: () => ({
     "List-Unsubscribe": "<https://nailiq.test/unsubscribe>",
   }),
@@ -140,7 +140,7 @@ function client() {
 
 describe("staff-action email suppression acceptance", () => {
   it("does not call Resend for a known suppressed recipient and completes permanently suppressed", async () => {
-    mocks.isEmailSuppressed.mockResolvedValueOnce(true);
+    mocks.transactionalEmailSuppressionReason.mockResolvedValueOnce("bounced");
     const db = client();
 
     const result = await runStaffActionNotificationWorker(10, {
@@ -148,18 +148,21 @@ describe("staff-action email suppression acceptance", () => {
       siteUrl: "https://nailiq.test",
     });
 
-    expect(mocks.isEmailSuppressed).toHaveBeenCalledWith("mai@example.com");
+    expect(mocks.transactionalEmailSuppressionReason).toHaveBeenCalledWith(
+      ids.salon,
+      "mai@example.com",
+    );
     expect(mocks.providerSend).not.toHaveBeenCalled();
     expect(db.completion()).toMatchObject({
       p_status: "suppressed",
-      p_error_code: "consent_revoked",
+      p_error_code: "provider_bounced",
       p_failure_disposition: "permanent",
     });
     expect(result).toMatchObject({ ok: true, suppressed: 1, claimed: 1 });
   });
 
   it("fails closed before Resend and schedules only a definite pre-acceptance retry when suppression truth is unavailable", async () => {
-    mocks.isEmailSuppressed.mockRejectedValueOnce(new Error("lookup unavailable"));
+    mocks.transactionalEmailSuppressionReason.mockRejectedValueOnce(new Error("lookup unavailable"));
     const db = client();
 
     const result = await runStaffActionNotificationWorker(10, {
@@ -177,7 +180,7 @@ describe("staff-action email suppression acceptance", () => {
   });
 
   it("does not retry a permanent Resend configuration failure", async () => {
-    mocks.isEmailSuppressed.mockResolvedValueOnce(false);
+    mocks.transactionalEmailSuppressionReason.mockResolvedValueOnce(null);
     mocks.getResendClient.mockReturnValueOnce(null);
     const db = client();
 

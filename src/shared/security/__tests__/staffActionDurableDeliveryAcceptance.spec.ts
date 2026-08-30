@@ -164,7 +164,7 @@ describe("durable scheduled staff-action notification acceptance", () => {
       "create_public_booking_for_desk_with_staff_notification",
     );
     expect(desk).toContain(
-      "cancel_booking_group_for_desk_with_staff_notification",
+      "cancel_booking_group_for_desk_with_decision_truth",
     );
     expect(refund).toContain(
       "cancel_booking_with_deposit_refund_saga_for_desk",
@@ -200,7 +200,7 @@ describe("durable scheduled staff-action notification acceptance", () => {
       desk.indexOf("export async function approveWixBooking"),
     );
     expect(groupCancel).toMatch(
-      /cancel_booking_group_for_desk_with_staff_notification[\s\S]{0,1800}p_request_id:\s*requestId/,
+      /cancel_booking_group_for_desk_with_decision_truth[\s\S]{0,1800}p_request_id:\s*requestId/,
     );
     expect(groupCancel).toMatch(
       /p_actor_user_id:\s*(?:ctxActorUserId\(ctx\)|memberActorId)/,

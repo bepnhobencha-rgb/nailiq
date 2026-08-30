@@ -8,6 +8,7 @@ vi.mock("@/shared/lib/emailCompliance", () => ({
   listUnsubscribeHeaders: () => ({ "List-Unsubscribe": "<https://nailiq.test/unsubscribe>" }),
   complianceFooterHtml: () => "<footer>Transactional notice</footer>",
   isEmailSuppressed: vi.fn().mockResolvedValue(false),
+  transactionalEmailSuppressionReason: vi.fn().mockResolvedValue(null),
 }));
 
 import {

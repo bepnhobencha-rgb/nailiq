@@ -1,5 +1,5 @@
 import "server-only";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 /**
@@ -102,6 +102,34 @@ export async function isEmailSuppressed(email: string): Promise<boolean> {
   } catch {
     return true;
   }
+}
+
+/**
+ * Provider-level suppression for transactional booking mail. Marketing opt-out
+ * is intentionally excluded: a customer who declined promotions must still
+ * receive booking cancellations and reschedules. Throws when delivery truth
+ * cannot be read so workers can retry before provider acceptance.
+ */
+export async function transactionalEmailSuppressionReason(
+  salonId: string,
+  email: string,
+): Promise<"suppressed" | "bounced" | "complained" | null> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return null;
+  const fingerprint = createHash("sha256")
+    .update(normalized, "utf8")
+    .digest("hex");
+  const { data, error } = await createServiceRoleClient().rpc(
+    "customer_email_delivery_suppression_reason" as never,
+    {
+      p_salon_id: salonId,
+      p_recipient_fingerprint: fingerprint,
+    } as never,
+  );
+  if (error) throw error;
+  return data === "suppressed" || data === "bounced" || data === "complained"
+    ? data
+    : null;
 }
 
 function esc(s: string): string {

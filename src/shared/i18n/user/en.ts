@@ -1411,6 +1411,17 @@ export type UserMessages = {
       notifyLabel: string;
       notifySms: string;
       notifyEmail: string;
+      cancelFeeLoading: string;
+      cancelFeeDecision: (amount: string) => string;
+      cancelFeeNoCharge: string;
+      cancelFeeReview: string;
+      cancelFeeWaive: string;
+      cancelFeeNotApplicable: string;
+      cancelSmsDisabled: string;
+      cancelFeeQueued: (amount: string) => string;
+      cancelFeeWaivedSuccess: string;
+      cancelNotificationQueued: (sms: boolean, email: boolean) => string;
+      cancelSuccess: (n: number, fee: string, notification: string) => string;
     };
     /** Role-adaptive top-bar labels. */
     roleBadge: {
@@ -1704,6 +1715,19 @@ export type UserMessages = {
       cancelThisOne: string;
       cancelWholeParty: (n: number) => string;
       confirmCancelGroup: (n: number) => string;
+      groupFeeLoading: string;
+      groupFeeLoadFailed: string;
+      groupFeeRetry: string;
+      groupFeeDecisionRequired: (amount: string) => string;
+      groupFeeNoChargeToday: string;
+      groupFeeReview: string;
+      groupFeeWaive: string;
+      groupFeeQueuedForReview: (amount: string) => string;
+      groupFeeWaived: string;
+      groupFeeNotApplicable: string;
+      groupSmsDisabledWarning: string;
+      groupNotificationQueued: (sms: boolean, email: boolean) => string;
+      groupCancelSuccess: (n: number, fee: string, notification: string) => string;
     };
     drawer: {
       title: string;
@@ -4007,6 +4031,23 @@ export const userEn: UserMessages = {
       notifyLabel: "Notify the organizer",
       notifySms: "SMS",
       notifyEmail: "Email",
+      cancelFeeLoading: "Checking cancellation policy…",
+      cancelFeeDecision: (amount) => `${amount} requires owner/admin review.`,
+      cancelFeeNoCharge: "This action will not collect money.",
+      cancelFeeReview: "Cancel and send for review",
+      cancelFeeWaive: "Cancel and waive fee",
+      cancelFeeNotApplicable: "No cancellation fee applies.",
+      cancelSmsDisabled: "SMS is OFF. The organizer will not receive a text.",
+      cancelFeeQueued: (amount) => `${amount} queued for owner/admin review; not charged.`,
+      cancelFeeWaivedSuccess: "Fee waived; no charge.",
+      cancelNotificationQueued: (sms, email) => {
+        const channels = [sms ? "SMS" : null, email ? "email" : null].filter(Boolean);
+        return channels.length > 0
+          ? `${channels.join(" + ")} queued (delivery not yet confirmed).`
+          : "No organizer notification requested.";
+      },
+      cancelSuccess: (n, fee, notification) =>
+        `Cancelled ${n} appointments. ${fee} ${notification}`,
     },
     roleBadge: {
       ownerView: "Owner view",
@@ -4240,6 +4281,25 @@ export const userEn: UserMessages = {
       cancelThisOne: "Just this person",
       cancelWholeParty: (n) => `Whole party (${n})`,
       confirmCancelGroup: (n) => `Cancel whole party (${n})`,
+      groupFeeLoading: "Checking the cancellation policy…",
+      groupFeeLoadFailed: "The fee decision could not be loaded. Nothing has been cancelled.",
+      groupFeeRetry: "Try again",
+      groupFeeDecisionRequired: (amount) => `${amount} requires an owner/admin decision.`,
+      groupFeeNoChargeToday: "No payment will be collected by this cancellation.",
+      groupFeeReview: "Cancel and send for review",
+      groupFeeWaive: "Cancel and waive fee",
+      groupFeeQueuedForReview: (amount) => `${amount} queued for owner/admin review; not charged.`,
+      groupFeeWaived: "Fee waived; no charge.",
+      groupFeeNotApplicable: "No cancellation fee applies.",
+      groupSmsDisabledWarning: "SMS is OFF for this salon. The customer will not receive a text unless SMS is enabled before this action.",
+      groupNotificationQueued: (sms, email) => {
+        const channels = [sms ? "SMS" : null, email ? "email" : null].filter(Boolean);
+        return channels.length > 0
+          ? `${channels.join(" + ")} queued (delivery not yet confirmed).`
+          : "No customer notification requested.";
+      },
+      groupCancelSuccess: (n, fee, notification) =>
+        `Cancelled ${n} appointments. ${fee} ${notification}`,
     },
     drawer: {
       title: "Booking",

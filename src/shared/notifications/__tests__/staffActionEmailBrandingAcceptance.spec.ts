@@ -14,6 +14,7 @@ vi.mock("@/shared/lib/emailCompliance", () => ({
   listUnsubscribeHeaders: () => ({}),
   complianceFooterHtml: ({ lang }: { lang?: string }) => `<footer data-lang="${lang ?? "en"}">footer</footer>`,
   isEmailSuppressed: vi.fn(async () => false),
+  transactionalEmailSuppressionReason: vi.fn(async () => null),
 }));
 vi.mock("@/shared/lib/notificationLog", () => ({
   logNotification: vi.fn(async () => undefined),

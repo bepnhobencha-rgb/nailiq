@@ -17,7 +17,12 @@
 
 import { useRef, useState, useTransition } from "react";
 import { loadPartyCardsAction, type PartyCard, type PartyCardSlot } from "@/shared/dashboard/loadPartyCardsAction";
-import { cancelDeskGroup } from "@/shared/dashboard/receptionistActions";
+import {
+  cancelDeskGroup,
+  previewDeskGroupCancellation,
+  type DeskGroupCancellationFeeDecision,
+  type DeskGroupCancellationPreview,
+} from "@/shared/dashboard/receptionistActions";
 import type { Currency } from "@/shared/lib/currencyFormat";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { cn } from "@/shared/lib/cn";
@@ -34,22 +39,26 @@ interface Props {
   salonId: string;
   currencyCode: Currency;
   labels: PartyCardLabels;
-  /** Owner/senior only — gates the "Cancel party" action (server re-checks). */
+  /** Operational roles only — gates the action; the server re-checks role. */
   canCancel: boolean;
+  notificationAvailability: { sms: boolean; email: boolean };
   /** Receptionist quick-claim: called when staff fills in a guest name on behalf. */
   onDeskClaim?: (claimId: string, token: string, memberName: string, memberPhone?: string) => Promise<{ ok: boolean }>;
 }
 
 /** Per-card lifecycle for the cancel-whole-group flow. */
-type CancelState = "idle" | "confirm" | "cancelling" | "error";
+type CancelState = "idle" | "loading" | "confirm" | "cancelling" | "error";
 
-export function PartyCardPanel({ initialCards, slug, salonId, currencyCode, labels, canCancel, onDeskClaim }: Props) {
+export function PartyCardPanel({ initialCards, slug, salonId, currencyCode, labels, canCancel, notificationAvailability, onDeskClaim }: Props) {
   const [cards, setCards] = useState<PartyCard[]>(initialCards);
   const [open, setOpen] = useState(initialCards.length > 0);
   const [isPending, startTransition] = useTransition();
   const [, startCancelTransition] = useTransition();
   const [copyStates, setCopyStates] = useState<Record<string, "idle" | "copied">>({});
   const [cancelStates, setCancelStates] = useState<Record<string, CancelState>>({});
+  const [cancelPreviews, setCancelPreviews] = useState<Record<string, DeskGroupCancellationPreview | null>>({});
+  const [feeDecisions, setFeeDecisions] = useState<Record<string, DeskGroupCancellationFeeDecision>>({});
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
   const cancelRequestIdsRef = useRef<Map<string, string>>(new Map());
 
   const todayCount = cards.filter((c) => !c.expired).length;
@@ -65,7 +74,29 @@ export function PartyCardPanel({ initialCards, slug, salonId, currencyCode, labe
     setCancelStates((prev) => ({ ...prev, [groupId]: state }));
   }
 
-  function handleCancelGroup(card: PartyCard, notify: { sms: boolean; email: boolean }) {
+  function handleCancelClick(card: PartyCard) {
+    setCancelPreviews((current) => ({ ...current, [card.groupId]: null }));
+    setCancelState(card.groupId, "loading");
+    startCancelTransition(async () => {
+      const result = await previewDeskGroupCancellation(slug, {
+        salonId,
+        groupId: card.groupId,
+      });
+      if (!result.ok) {
+        setCancelState(card.groupId, "error");
+        return;
+      }
+      setCancelPreviews((current) => ({ ...current, [card.groupId]: result.preview }));
+      setFeeDecisions((current) => ({ ...current, [card.groupId]: "review" }));
+      setCancelState(card.groupId, "confirm");
+    });
+  }
+
+  function handleCancelGroup(
+    card: PartyCard,
+    feeDecision: DeskGroupCancellationFeeDecision,
+    notify: { sms: boolean; email: boolean },
+  ) {
     setCancelState(card.groupId, "cancelling");
     startCancelTransition(async () => {
       const requestId = cancelRequestIdsRef.current.get(card.groupId) ?? crypto.randomUUID();
@@ -74,10 +105,29 @@ export function PartyCardPanel({ initialCards, slug, salonId, currencyCode, labe
         salonId,
         groupId: card.groupId,
         requestId,
-        notify,
+        feeDecision,
+        notify: {
+          sms: notify.sms && notificationAvailability.sms,
+          email: notify.email && notificationAvailability.email,
+        },
       });
       if (result.ok) {
         cancelRequestIdsRef.current.delete(card.groupId);
+        const amount = result.fee.amountCents > 0
+          ? formatCurrency(result.fee.amountCents, result.fee.currency as Currency) ?? ""
+          : "";
+        const feeTruth = result.fee.state === "pending_review"
+          ? labels.cancelFeeQueued(amount)
+          : result.fee.state === "waived"
+            ? labels.cancelFeeWaivedSuccess
+            : labels.cancelFeeNotApplicable;
+        const notificationTruth = labels.cancelNotificationQueued(
+          result.customerNotification.sms === "queued",
+          result.customerNotification.email === "queued",
+        );
+        setActionMessage(
+          labels.cancelSuccess(result.cancelledCount, feeTruth, notificationTruth),
+        );
         // Refresh from the server so the cancelled party drops off the strip.
         const refreshed = await loadPartyCardsAction(slug);
         if (refreshed.ok) setCards(refreshed.cards);
@@ -160,6 +210,15 @@ export function PartyCardPanel({ initialCards, slug, salonId, currencyCode, labe
       </div>
 
       {/* ── Card list ────────────────────────────────────────────── */}
+      {actionMessage ? (
+        <p
+          className="mx-3 mb-2 rounded-lg border border-nq-success/40 bg-nq-success/10 p-2 text-xs text-nq-foreground md:mx-6"
+          data-testid="party-card-cancel-success"
+          role="status"
+        >
+          {actionMessage}
+        </p>
+      ) : null}
       {open && (
         <div
           className={cn(
@@ -189,9 +248,15 @@ export function PartyCardPanel({ initialCards, slug, salonId, currencyCode, labe
                     }}
                     canCancel={canCancel && !card.expired}
                     cancelState={cancelStates[card.groupId] ?? "idle"}
-                    onCancelClick={() => setCancelState(card.groupId, "confirm")}
+                    onCancelClick={() => handleCancelClick(card)}
                     onCancelDismiss={() => setCancelState(card.groupId, "idle")}
-                    onCancelConfirm={(notify) => handleCancelGroup(card, notify)}
+                    cancellationPreview={cancelPreviews[card.groupId] ?? null}
+                    feeDecision={feeDecisions[card.groupId] ?? "review"}
+                    notificationAvailability={notificationAvailability}
+                    onFeeDecisionChange={(decision) =>
+                      setFeeDecisions((current) => ({ ...current, [card.groupId]: decision }))
+                    }
+                    onCancelConfirm={(decision, notify) => handleCancelGroup(card, decision, notify)}
                     onDeskClaim={onDeskClaim ? (claimId, name, phone) =>
                       onDeskClaim(claimId, card.token, name, phone).then((res) => {
                         if (res.ok) void handleRefresh();
@@ -221,6 +286,10 @@ function PartyCardItem({
   onCancelClick,
   onCancelDismiss,
   onCancelConfirm,
+  cancellationPreview,
+  feeDecision,
+  notificationAvailability,
+  onFeeDecisionChange,
   onDeskClaim,
 }: {
   card: PartyCard;
@@ -232,7 +301,14 @@ function PartyCardItem({
   cancelState: CancelState;
   onCancelClick: () => void;
   onCancelDismiss: () => void;
-  onCancelConfirm: (notify: { sms: boolean; email: boolean }) => void;
+  cancellationPreview: DeskGroupCancellationPreview | null;
+  feeDecision: DeskGroupCancellationFeeDecision;
+  notificationAvailability: { sms: boolean; email: boolean };
+  onFeeDecisionChange: (decision: DeskGroupCancellationFeeDecision) => void;
+  onCancelConfirm: (
+    decision: DeskGroupCancellationFeeDecision,
+    notify: { sms: boolean; email: boolean },
+  ) => void;
   onDeskClaim?: (claimId: string, memberName: string, memberPhone?: string) => Promise<{ ok: boolean }>;
 }) {
   // Auto-expand slots when today's group has unclaimed members so reception
@@ -387,6 +463,10 @@ function PartyCardItem({
             onCancelClick={onCancelClick}
             onCancelDismiss={onCancelDismiss}
             onCancelConfirm={onCancelConfirm}
+            cancellationPreview={cancellationPreview}
+            feeDecision={feeDecision}
+            notificationAvailability={notificationAvailability}
+            onFeeDecisionChange={onFeeDecisionChange}
           />
         )}
       </div>
@@ -404,19 +484,38 @@ function PartyCancelControl({
   onCancelClick,
   onCancelDismiss,
   onCancelConfirm,
+  cancellationPreview,
+  feeDecision,
+  notificationAvailability,
+  onFeeDecisionChange,
 }: {
   card: PartyCard;
   labels: PartyCardLabels;
   cancelState: CancelState;
   onCancelClick: () => void;
   onCancelDismiss: () => void;
-  onCancelConfirm: (notify: { sms: boolean; email: boolean }) => void;
+  cancellationPreview: DeskGroupCancellationPreview | null;
+  feeDecision: DeskGroupCancellationFeeDecision;
+  notificationAvailability: { sms: boolean; email: boolean };
+  onFeeDecisionChange: (decision: DeskGroupCancellationFeeDecision) => void;
+  onCancelConfirm: (
+    decision: DeskGroupCancellationFeeDecision,
+    notify: { sms: boolean; email: boolean },
+  ) => void;
 }) {
   // Notify-the-organizer intent, captured alongside the cancel confirm. Both
   // default ON (the common case — let the party know it's off). The server only
   // sends on channels the organizer actually has contact for.
   const [notifySms, setNotifySms] = useState(true);
   const [notifyEmail, setNotifyEmail] = useState(true);
+
+  if (cancelState === "loading") {
+    return (
+      <div className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-950">
+        {labels.cancelFeeLoading}
+      </div>
+    );
+  }
 
   if (cancelState === "confirm" || cancelState === "cancelling" || cancelState === "error") {
     const busy = cancelState === "cancelling";
@@ -428,14 +527,53 @@ function PartyCancelControl({
         <p className="text-[11px] font-medium text-nq-foreground">
           {labels.cancelConfirm(card.totalSlots)}
         </p>
+        {cancellationPreview ? (
+          <div className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-950">
+            {cancellationPreview.decisionRequired ? (
+              <>
+                <p className="font-semibold">
+                  {labels.cancelFeeDecision(
+                    formatCurrency(cancellationPreview.feeCents, cancellationPreview.currency as Currency) ?? "",
+                  )}
+                </p>
+                <p>{labels.cancelFeeNoCharge}</p>
+                <div className="mt-2 flex flex-col gap-1.5">
+                  <button
+                    type="button"
+                    aria-pressed={feeDecision === "review"}
+                    onClick={() => onFeeDecisionChange("review")}
+                    className={cn("min-h-11 rounded border px-2 font-semibold", feeDecision === "review" && "border-nq-primary bg-nq-primary/10")}
+                  >
+                    {labels.cancelFeeReview}
+                  </button>
+                  {cancellationPreview.canWaive ? (
+                    <button
+                      type="button"
+                      aria-pressed={feeDecision === "waive"}
+                      onClick={() => onFeeDecisionChange("waive")}
+                      className={cn("min-h-11 rounded border px-2 font-semibold", feeDecision === "waive" && "border-nq-primary bg-nq-primary/10")}
+                    >
+                      {labels.cancelFeeWaive}
+                    </button>
+                  ) : null}
+                </div>
+              </>
+            ) : labels.cancelFeeNotApplicable}
+          </div>
+        ) : null}
+        {!notificationAvailability.sms ? (
+          <p className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-[11px] font-semibold text-red-900">
+            {labels.cancelSmsDisabled}
+          </p>
+        ) : null}
         {/* Notify-the-organizer toggles */}
         <div className="mt-2 flex items-center gap-3 text-[11px] text-nq-muted">
           <span>{labels.notifyLabel}</span>
           <label className="flex cursor-pointer items-center gap-1">
             <input
               type="checkbox"
-              checked={notifySms}
-              disabled={busy}
+              checked={notifySms && notificationAvailability.sms}
+              disabled={busy || !notificationAvailability.sms}
               onChange={(e) => setNotifySms(e.target.checked)}
               data-testid={`party-card-notify-sms-${card.groupId}`}
               className="h-3.5 w-3.5 accent-nq-primary"
@@ -445,8 +583,8 @@ function PartyCancelControl({
           <label className="flex cursor-pointer items-center gap-1">
             <input
               type="checkbox"
-              checked={notifyEmail}
-              disabled={busy}
+              checked={notifyEmail && notificationAvailability.email}
+              disabled={busy || !notificationAvailability.email}
               onChange={(e) => setNotifyEmail(e.target.checked)}
               data-testid={`party-card-notify-email-${card.groupId}`}
               className="h-3.5 w-3.5 accent-nq-primary"
@@ -460,14 +598,17 @@ function PartyCancelControl({
         <div className="mt-2 flex gap-2">
           <button
             type="button"
-            disabled={busy}
-            onClick={() => onCancelConfirm({ sms: notifySms, email: notifyEmail })}
+            onClick={() => onCancelConfirm(
+              cancellationPreview?.decisionRequired ? feeDecision : "not_applicable",
+              { sms: notifySms, email: notifyEmail },
+            )}
             data-testid={`party-card-cancel-yes-${card.groupId}`}
             className={cn(
               "flex-1 rounded-md py-1.5 text-[11px] font-semibold transition-colors",
               "bg-nq-error/15 text-nq-error hover:bg-nq-error/25",
-              busy && "opacity-60",
+              (busy || !cancellationPreview) && "opacity-60",
             )}
+            disabled={busy || !cancellationPreview}
           >
             {busy ? labels.cancelling : labels.cancelConfirmYes}
           </button>

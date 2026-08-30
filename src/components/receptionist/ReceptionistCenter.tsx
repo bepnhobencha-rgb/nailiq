@@ -94,6 +94,9 @@ import {
   assignWalkinToSlot,
   cancelDeskBooking,
   cancelDeskGroup,
+  previewDeskGroupCancellation,
+  type DeskGroupCancellationPreview,
+  type DeskGroupCancellationFeeDecision,
   restoreCancelledBooking,
   approveWixBooking,
   declineWixBooking,
@@ -1001,6 +1004,14 @@ function ReceptionistCenterInner({
       sms: false,
       email: false,
     });
+  const [groupCancellationPreview, setGroupCancellationPreview] = useState<{
+    groupId: string;
+    loading: boolean;
+    value: DeskGroupCancellationPreview | null;
+    error: string | null;
+  } | null>(null);
+  const [groupCancellationFeeDecision, setGroupCancellationFeeDecision] =
+    useState<DeskGroupCancellationFeeDecision>("review");
 
   // Realtime connection-state machine. Default 'connected' — assume
   // online until the Supabase channel subscribe-callback flips us to
@@ -2443,10 +2454,30 @@ function ReceptionistCenterInner({
   // Cancel EVERY active member of a party in one go (group-aware cancel). Mirrors
   // the single-booking path but hits cancelDeskGroup; no 8s undo (a bulk restore
   // isn't offered — same as the PartyCardPanel group cancel).
+  const loadGroupCancellationPreview = async (groupId: string) => {
+    setGroupCancellationPreview({
+      groupId,
+      loading: true,
+      value: null,
+      error: null,
+    });
+    const result = await previewDeskGroupCancellation(slug, {
+      salonId: data.salon.id,
+      groupId,
+    });
+    setGroupCancellationPreview((current) => {
+      if (!current || current.groupId !== groupId) return current;
+      return result.ok
+        ? { groupId, loading: false, value: result.preview, error: null }
+        : { groupId, loading: false, value: null, error: result.error };
+    });
+  };
+
   const doCancelGroup = async (
     groupId: string,
+    feeDecision: DeskGroupCancellationFeeDecision,
     notifyChannels?: NotifyChannels,
-  ) => {
+  ): Promise<boolean> => {
     const notifyChannelsResolved =
       notifyChannels ??
       (defaultNotifyOn(data.salon.staffNotificationSettings, "cancel")
@@ -2461,17 +2492,39 @@ function ReceptionistCenterInner({
         salonId: data.salon.id,
         groupId,
         requestId,
+        feeDecision,
         notify: notifyChannelsResolved,
       });
       if (!r.ok) {
         setShakeMessage(mutationMessage(messages.receptionist, r.error));
+        return false;
       } else {
         groupCancelRequestIdsRef.current.delete(groupId);
+        const feeLabel = r.fee.amountCents > 0
+          ? formatCurrency(r.fee.amountCents, r.fee.currency) ?? ""
+          : "";
+        const feeTruth = r.fee.state === "pending_review"
+          ? rcMessages.notify.groupFeeQueuedForReview(feeLabel)
+          : r.fee.state === "waived"
+            ? rcMessages.notify.groupFeeWaived
+            : rcMessages.notify.groupFeeNotApplicable;
+        const notificationTruth = rcMessages.notify.groupNotificationQueued(
+          r.customerNotification.sms === "queued",
+          r.customerNotification.email === "queued",
+        );
+        setStatusSuccessMessage(
+          rcMessages.notify.groupCancelSuccess(
+            r.cancelledCount,
+            feeTruth,
+            notificationTruth,
+          ),
+        );
         // Whole party cancelled — close the drawer and reload; the grid visibly
         // empties every member's slot, which is its own confirmation.
         closeBookingDrawer();
         await reloadCurrentDay();
         router.refresh();
+        return true;
       }
     } finally {
       setDrawerBusy(false);
@@ -2610,6 +2663,8 @@ function ReceptionistCenterInner({
       email: on && data.salon.staffNotificationChannelAvailability.email,
     });
     setCancelScope("this");
+    setGroupCancellationPreview(null);
+    setGroupCancellationFeeDecision("review");
     setNotifyCancel({ id });
   };
 
@@ -3372,6 +3427,7 @@ function ReceptionistCenterInner({
             currencyCode={data.salon.currencyCode}
             labels={rcMessages.partyCard}
             canCancel={canCancelBooking(viewerRole)}
+            notificationAvailability={data.salon.staffNotificationChannelAvailability}
           />
         ) : null
       }
@@ -4356,6 +4412,7 @@ function ReceptionistCenterInner({
               currencyCode={data.salon.currencyCode}
               labels={rcMessages.partyCard}
               canCancel={canCancelBooking(viewerRole)}
+              notificationAvailability={data.salon.staffNotificationChannelAvailability}
               onDeskClaim={(claimId, token, memberName, memberPhone) =>
                 deskClaimPartySlotAction(slug, claimId, token, memberName, memberPhone)
               }
@@ -5283,7 +5340,11 @@ function ReceptionistCenterInner({
             return (
               <Modal
                 isOpen
-                onClose={() => setNotifyCancel(null)}
+                onClose={() => {
+                  setNotifyCancel(null);
+                  setGroupCancellationPreview(null);
+                  setGroupCancellationFeeDecision("review");
+                }}
                 size="sm"
                 title={n.cancelTitle}
                 description={n.cancelDesc}
@@ -5302,7 +5363,11 @@ function ReceptionistCenterInner({
                           type="button"
                           data-testid="cancel-scope-this"
                           aria-pressed={cancelScope === "this"}
-                          onClick={() => setCancelScope("this")}
+                          onClick={() => {
+                            setCancelScope("this");
+                            setGroupCancellationPreview(null);
+                            setGroupCancellationFeeDecision("review");
+                          }}
                           className={cn(
                             "rounded-md px-2 py-1.5 text-[12px] font-semibold transition-colors",
                             cancelScope === "this"
@@ -5316,7 +5381,11 @@ function ReceptionistCenterInner({
                           type="button"
                           data-testid="cancel-scope-whole"
                           aria-pressed={cancelScope === "whole"}
-                          onClick={() => setCancelScope("whole")}
+                          onClick={() => {
+                            setCancelScope("whole");
+                            setGroupCancellationFeeDecision("review");
+                            void loadGroupCancellationPreview(groupId);
+                          }}
                           className={cn(
                             "rounded-md px-2 py-1.5 text-[12px] font-semibold transition-colors",
                             cancelScope === "whole"
@@ -5328,6 +5397,72 @@ function ReceptionistCenterInner({
                         </button>
                       </div>
                     </div>
+                  ) : null}
+                  {cancelWhole ? (
+                    <div
+                      className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"
+                      data-testid="group-cancel-fee-panel"
+                    >
+                      {groupCancellationPreview?.groupId !== groupId ||
+                      groupCancellationPreview.loading ? (
+                        <p>{n.groupFeeLoading}</p>
+                      ) : groupCancellationPreview.error ||
+                        !groupCancellationPreview.value ? (
+                        <div className="flex flex-col gap-2">
+                          <p>{n.groupFeeLoadFailed}</p>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => void loadGroupCancellationPreview(groupId)}
+                          >
+                            {n.groupFeeRetry}
+                          </Button>
+                        </div>
+                      ) : groupCancellationPreview.value.decisionRequired ? (
+                        <div className="flex flex-col gap-2">
+                          <p className="font-semibold">
+                            {n.groupFeeDecisionRequired(
+                              formatCurrency(
+                                groupCancellationPreview.value.feeCents,
+                                groupCancellationPreview.value.currency,
+                              ) ?? "",
+                            )}
+                          </p>
+                          <p>{n.groupFeeNoChargeToday}</p>
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            <Button
+                              type="button"
+                              variant={groupCancellationFeeDecision === "review" ? "primary" : "secondary"}
+                              aria-pressed={groupCancellationFeeDecision === "review"}
+                              onClick={() => setGroupCancellationFeeDecision("review")}
+                            >
+                              {n.groupFeeReview}
+                            </Button>
+                            {groupCancellationPreview.value.canWaive ? (
+                              <Button
+                                type="button"
+                                variant={groupCancellationFeeDecision === "waive" ? "primary" : "secondary"}
+                                aria-pressed={groupCancellationFeeDecision === "waive"}
+                                onClick={() => setGroupCancellationFeeDecision("waive")}
+                              >
+                                {n.groupFeeWaive}
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : (
+                        <p>{n.groupFeeNotApplicable}</p>
+                      )}
+                    </div>
+                  ) : null}
+                  {cancelWhole && hasPhone &&
+                  !data.salon.staffNotificationChannelAvailability.sms ? (
+                    <p
+                      className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm font-semibold text-red-900"
+                      data-testid="group-cancel-sms-disabled-warning"
+                    >
+                      {n.groupSmsDisabledWarning}
+                    </p>
                   ) : null}
                   <NotifyCustomerPanel
                     value={notifyCancelChannels}
@@ -5355,8 +5490,14 @@ function ReceptionistCenterInner({
                       type="button"
                       variant="danger"
                       loading={drawerBusy}
+                      disabled={
+                        cancelWhole &&
+                        (groupCancellationPreview?.groupId !== groupId ||
+                          groupCancellationPreview.loading ||
+                          !groupCancellationPreview.value)
+                      }
                       data-testid="notify-cancel-confirm"
-                      onClick={() => {
+                      onClick={async () => {
                         const id = notifyCancel.id;
                         const ch = {
                           sms:
@@ -5368,10 +5509,25 @@ function ReceptionistCenterInner({
                             hasEmail &&
                             data.salon.staffNotificationChannelAvailability.email,
                         };
-                        setNotifyCancel(null);
                         if (cancelWhole && groupId) {
-                          void doCancelGroup(groupId, ch);
+                          const preview = groupCancellationPreview?.groupId === groupId
+                            ? groupCancellationPreview.value
+                            : null;
+                          if (!preview) return;
+                          const acknowledged = await doCancelGroup(
+                            groupId,
+                            preview.decisionRequired
+                              ? groupCancellationFeeDecision
+                              : "not_applicable",
+                            ch,
+                          );
+                          if (acknowledged) {
+                            setNotifyCancel(null);
+                            setGroupCancellationPreview(null);
+                            setGroupCancellationFeeDecision("review");
+                          }
                         } else {
+                          setNotifyCancel(null);
                           void doCancelBooking(
                             id,
                             false,
@@ -5390,7 +5546,11 @@ function ReceptionistCenterInner({
                       type="button"
                       variant="secondary"
                       data-testid="notify-cancel-keep"
-                      onClick={() => setNotifyCancel(null)}
+                      onClick={() => {
+                        setNotifyCancel(null);
+                        setGroupCancellationPreview(null);
+                        setGroupCancellationFeeDecision("review");
+                      }}
                     >
                       {n.keep}
                     </Button>

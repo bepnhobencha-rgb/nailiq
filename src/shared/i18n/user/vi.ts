@@ -1623,6 +1623,23 @@ export const userVi: UserMessages = {
       notifyLabel: "Báo cho người tổ chức",
       notifySms: "SMS",
       notifyEmail: "Email",
+      cancelFeeLoading: "Đang kiểm tra chính sách huỷ…",
+      cancelFeeDecision: (amount) => `${amount} cần chủ/admin duyệt.`,
+      cancelFeeNoCharge: "Thao tác này không thu tiền.",
+      cancelFeeReview: "Huỷ và gửi duyệt phí",
+      cancelFeeWaive: "Huỷ và miễn phí",
+      cancelFeeNotApplicable: "Không áp dụng phí huỷ.",
+      cancelSmsDisabled: "SMS đang OFF. Người tổ chức sẽ không nhận tin nhắn.",
+      cancelFeeQueued: (amount) => `${amount} đã xếp hàng chờ chủ/admin duyệt; chưa thu tiền.`,
+      cancelFeeWaivedSuccess: "Đã miễn phí; không thu tiền.",
+      cancelNotificationQueued: (sms, email) => {
+        const channels = [sms ? "SMS" : null, email ? "email" : null].filter(Boolean);
+        return channels.length > 0
+          ? `${channels.join(" + ")} đã xếp hàng gửi (chưa xác nhận đã nhận).`
+          : "Không yêu cầu báo cho người tổ chức.";
+      },
+      cancelSuccess: (n, fee, notification) =>
+        `Đã huỷ ${n} lịch. ${fee} ${notification}`,
     },
     roleBadge: {
       ownerView: "Chủ tiệm",
@@ -1853,6 +1870,25 @@ export const userVi: UserMessages = {
       cancelThisOne: "Chỉ người này",
       cancelWholeParty: (n) => `Cả nhóm (${n})`,
       confirmCancelGroup: (n) => `Huỷ cả nhóm (${n})`,
+      groupFeeLoading: "Đang kiểm tra chính sách huỷ…",
+      groupFeeLoadFailed: "Không tải được quyết định phí. Chưa có lịch nào bị huỷ.",
+      groupFeeRetry: "Thử lại",
+      groupFeeDecisionRequired: (amount) => `${amount} cần chủ/admin quyết định.`,
+      groupFeeNoChargeToday: "Thao tác huỷ này không thu tiền ngay.",
+      groupFeeReview: "Huỷ và gửi duyệt phí",
+      groupFeeWaive: "Huỷ và miễn phí",
+      groupFeeQueuedForReview: (amount) => `${amount} đã xếp hàng chờ chủ/admin duyệt; chưa thu tiền.`,
+      groupFeeWaived: "Đã miễn phí; không thu tiền.",
+      groupFeeNotApplicable: "Không áp dụng phí huỷ.",
+      groupSmsDisabledWarning: "SMS của salon đang OFF. Khách sẽ không nhận tin nhắn nếu chưa bật SMS trước thao tác này.",
+      groupNotificationQueued: (sms, email) => {
+        const channels = [sms ? "SMS" : null, email ? "email" : null].filter(Boolean);
+        return channels.length > 0
+          ? `${channels.join(" + ")} đã xếp hàng gửi (chưa xác nhận đã nhận).`
+          : "Không yêu cầu gửi thông báo cho khách.";
+      },
+      groupCancelSuccess: (n, fee, notification) =>
+        `Đã huỷ ${n} lịch. ${fee} ${notification}`,
     },
     drawer: {
       title: "Lịch hẹn",
