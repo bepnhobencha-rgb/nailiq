@@ -120,6 +120,11 @@ BEGIN
       'subtotal_cents',2000,'tax_cents',100,'total_cents',2100)
   );
 
+  -- Historical report fixtures may contain pre-gate in-flight no-show rows.
+  -- Bypass only the synthetic INSERT trigger while seeding that legacy state;
+  -- the approval gate is re-enabled before the report is queried.
+  ALTER TABLE public.booking_payment_operations
+    DISABLE TRIGGER booking_payment_operations_no_show_approval_insert;
   INSERT INTO public.booking_payment_operations(
     id,salon_id,booking_id,request_id,operation_kind,provider,
     provider_account_fingerprint,amount_cents,currency,material_fingerprint,
@@ -141,6 +146,8 @@ BEGIN
     '{}'::jsonb,'{}'::jsonb,NULL,'nq:financial-after','sending',NULL,
     '2026-08-21 12:00Z',NULL
   );
+  ALTER TABLE public.booking_payment_operations
+    ENABLE TRIGGER booking_payment_operations_no_show_approval_insert;
   INSERT INTO public.booking_payment_operations(
     id,salon_id,booking_id,request_id,operation_kind,provider,
     provider_account_fingerprint,amount_cents,currency,material_fingerprint,
