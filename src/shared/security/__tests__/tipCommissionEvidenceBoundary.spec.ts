@@ -55,7 +55,7 @@ describe("MQA-0116/MQA-0118 tip and commission evidence boundary", () => {
     expect(parity).toContain("tables: 187");
     expect(parity).toContain("columns: 2809");
     expect(parity).toContain("policies: 207");
-    expect(parity).toContain("functions: 417");
+    expect(parity).toContain("functions: 419");
     expect(parity).toContain("triggers: 95");
     expect(parity).toContain("indexes: 692");
     expect(parity).toContain("service_role: 179");
