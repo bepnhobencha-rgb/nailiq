@@ -15,6 +15,7 @@ import {
   bookingSequenceQuoteMatchesIntent,
   createPublicBookingSequence,
   parseBookingSequenceQuote,
+  quotePublicBookingSequence,
   replayPublicBookingSequence,
 } from "@/shared/booking/bookingSequenceServer";
 
@@ -304,5 +305,34 @@ describe("createPublicBookingSequence replay material", () => {
         }),
       }),
     );
+  });
+});
+
+describe("quotePublicBookingSequence safe availability errors", () => {
+  it("preserves a fail-closed parallel policy reason for customer guidance", async () => {
+    serviceRole.rpc.mockReset();
+    serviceRole.rpc.mockResolvedValueOnce({
+      data: { success: false, code: "parallel_pair_not_allowed" },
+      error: null,
+    });
+    const result = await quotePublicBookingSequence({
+      salonId: ids.salon,
+      requestId: ids.request,
+      requestedStartTimeUtc: "2026-08-20T18:00:00.000Z",
+      lines: [{
+        lineId: ids.line,
+        position: 0,
+        serviceId: ids.service,
+        staffPreference: "any",
+        preferredResourceId: null,
+        addOnServiceIds: [],
+        timingPreference: "sequential",
+      }],
+      sameStaffForAll: false,
+      voucherCode: null,
+      applyEmailDiscount: false,
+      customer: { name: "QA", phone: "+16045550199", email: null },
+    });
+    expect(result).toEqual({ ok: false, code: "parallel_pair_not_allowed" });
   });
 });

@@ -32,9 +32,20 @@ type EditableLine = {
   serviceId: string;
   staffPreference: "any" | string;
   addOnServiceIds: string[];
+  timingPreference: "sequential" | "parallel";
 };
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function normalizeEditableLineTiming(lines: EditableLine[]): EditableLine[] {
+  return lines.map((line, index) => ({
+    ...line,
+    timingPreference:
+      index === 1 && line.timingPreference === "parallel"
+        ? "parallel"
+        : "sequential",
+  }));
+}
 
 function newId(): string {
   return crypto.randomUUID();
@@ -65,7 +76,7 @@ export function BookingSequenceFlow({
 }) {
   const vi = language === "vi";
   const [lines, setLines] = useState<EditableLine[]>([
-    { lineId: newId(), serviceId: "", staffPreference: "any", addOnServiceIds: [] },
+    { lineId: newId(), serviceId: "", staffPreference: "any", addOnServiceIds: [], timingPreference: "sequential" },
   ]);
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
@@ -123,13 +134,15 @@ export function BookingSequenceFlow({
         Array.isArray(saved.lines) &&
         saved.lines.length >= 1 &&
         saved.lines.length <= 5 &&
-        saved.lines.every((line) =>
+        saved.lines.every((line, index) =>
           typeof line.lineId === "string" && UUID_RE.test(line.lineId) &&
           services.some((service) => service.id === line.serviceId) &&
           (line.staffPreference === "any" || staff.some((person) => person.id === line.staffPreference)) &&
           Array.isArray(line.addOnServiceIds) &&
           line.addOnServiceIds.length <= 8 &&
-          line.addOnServiceIds.every((id) => addOns.some((addOn) => addOn.id === id))
+          line.addOnServiceIds.every((id) => addOns.some((addOn) => addOn.id === id)) &&
+          (line.timingPreference == null || line.timingPreference === "sequential" ||
+            (line.timingPreference === "parallel" && index === 1))
         ) &&
         typeof saved.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(saved.date) &&
         typeof saved.time === "string" && /^\d{2}:\d{2}$/.test(saved.time) &&
@@ -138,7 +151,10 @@ export function BookingSequenceFlow({
         (saved.applyEmailDiscount == null || typeof saved.applyEmailDiscount === "boolean") &&
         typeof saved.requestId === "string" && UUID_RE.test(saved.requestId)
       ) {
-        setLines(saved.lines);
+        setLines(saved.lines.map((line) => ({
+          ...line,
+          timingPreference: line.timingPreference ?? "sequential",
+        })));
         setDate(saved.date);
         setTime(saved.time);
         setSameStaffForAll(saved.sameStaffForAll);
@@ -193,6 +209,7 @@ export function BookingSequenceFlow({
         staffPreference: line.staffPreference,
         preferredResourceId: null,
         addOnServiceIds: line.addOnServiceIds,
+        timingPreference: line.timingPreference,
       })),
       sameStaffForAll,
       voucherCode: voucherCode.trim() || null,
@@ -311,9 +328,37 @@ export function BookingSequenceFlow({
       });
       const result = await response.json() as {
         ok?: boolean;
+        code?: string;
         quote?: BookingSequenceQuote;
       };
-      if (!response.ok || result.ok !== true || !result.quote) throw new Error("quote");
+      if (!response.ok || result.ok !== true || !result.quote) {
+        const parallelError = result.code === "parallel_pair_not_allowed"
+          ? (vi
+              ? "Hai dịch vụ này chưa được salon xác nhận là có thể làm cùng lúc. Vui lòng chọn nối tiếp."
+              : "The salon has not approved these services to run together. Choose sequential timing.")
+          : result.code === "no_shared_parallel_resource"
+            ? (vi
+                ? "Hiện chưa có ghế/giường phù hợp để làm hai dịch vụ này cùng lúc. Hãy chọn nối tiếp hoặc giờ khác."
+                : "No certified shared chair/bed is available for these services. Choose sequential timing or another time.")
+            : result.code === "parallel_resource_unproven"
+              ? (vi
+                  ? "Salon chưa bật quản lý ghế/giường cho lịch song song. Vui lòng chọn nối tiếp."
+                  : "The salon has not enabled chair/bed management for parallel services. Choose sequential timing.")
+              : result.code === "parallel_requires_distinct_staff"
+                ? (vi
+                    ? "Làm cùng lúc cần hai nhân viên khác nhau."
+                    : "Parallel services require two different staff members.")
+                : result.code === "no_staff_available"
+                  ? (vi ? "Chưa có đủ hai nhân viên vào giờ này." : "Two staff members are not available at this time.")
+                  : result.code === "no_resource_available" || result.code === "slot_conflict"
+                    ? (vi ? "Giờ này vừa hết chỗ. Vui lòng chọn giờ khác." : "This time just became unavailable. Choose another time.")
+                    : null;
+        if (parallelError) {
+          setError(parallelError);
+          return;
+        }
+        throw new Error("quote");
+      }
       setQuote(result.quote);
       setReconfirmRequired(false);
       setStage("review");
@@ -414,7 +459,13 @@ export function BookingSequenceFlow({
               <p className="text-xs text-[var(--booking-text-muted)]">
                 {vi ? "Chuẩn bị" : "Prep"}: {line.prepMinutes} min · {vi ? "Thời gian khách" : "Customer time"}: {line.durationMinutes} min · {vi ? "Đệm" : "Buffer"}: {line.bufferMinutes} min
               </p>
-              {index > 0 ? <p className="text-xs text-[var(--booking-text-muted)]">{vi ? "Khoảng chờ trước dịch vụ" : "Gap before service"}: {Math.max(0, Math.round((Date.parse(line.serviceStartUtc) - Date.parse(quote.lines[index - 1].serviceEndUtc)) / 60_000))} min</p> : null}
+              {index > 0 ? (
+                <p className="text-xs text-[var(--booking-text-muted)]">
+                  {line.resolvedTimingMode === "parallel"
+                    ? (vi ? "✓ Làm cùng lúc — 2 nhân viên" : "✓ At the same time — 2 staff")
+                    : `${vi ? "Khoảng chờ trước dịch vụ" : "Gap before service"}: ${Math.max(0, Math.round((Date.parse(line.serviceStartUtc) - Date.parse(quote.lines[index - 1].serviceEndUtc)) / 60_000))} min`}
+                </p>
+              ) : null}
               {line.addonLines.map((addOn) => <p key={addOn.serviceId} className="text-xs">+ {addOn.name}: {formatCurrency(addOn.priceCents, quote.currency)}</p>)}
               {line.promoDiscountCents > 0 ? <p className="text-xs">− {vi ? "Khuyến mãi" : "Promotion"}: {formatCurrency(line.promoDiscountCents, quote.currency)}</p> : null}
               {line.emailDiscountCents > 0 ? <p className="text-xs">− {vi ? "Ưu đãi email" : "Email incentive"}: {formatCurrency(line.emailDiscountCents, quote.currency)}</p> : null}
@@ -460,10 +511,10 @@ export function BookingSequenceFlow({
           <div className="flex items-center justify-between">
             <p className="font-semibold">{vi ? "Dịch vụ" : "Service"} {index + 1}</p>
             <div className="flex gap-3 text-sm">
-              <button type="button" disabled={index === 0} onClick={() => { setLines((current) => { const next = [...current]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; return next; }); beginNewIntent(); }} className="underline disabled:opacity-30">↑</button>
-              <button type="button" disabled={index === lines.length - 1} onClick={() => { setLines((current) => { const next = [...current]; [next[index], next[index + 1]] = [next[index + 1], next[index]]; return next; }); beginNewIntent(); }} className="underline disabled:opacity-30">↓</button>
+              <button type="button" disabled={index === 0} onClick={() => { setLines((current) => { const next = [...current]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; return normalizeEditableLineTiming(next); }); beginNewIntent(); }} className="underline disabled:opacity-30">↑</button>
+              <button type="button" disabled={index === lines.length - 1} onClick={() => { setLines((current) => { const next = [...current]; [next[index], next[index + 1]] = [next[index + 1], next[index]]; return normalizeEditableLineTiming(next); }); beginNewIntent(); }} className="underline disabled:opacity-30">↓</button>
               {lines.length > 1 ? (
-                <button type="button" onClick={() => { setLines((current) => current.filter((_, i) => i !== index)); beginNewIntent(); }} className="underline">
+                <button type="button" onClick={() => { setLines((current) => normalizeEditableLineTiming(current.filter((_, i) => i !== index))); beginNewIntent(); }} className="underline">
                   {vi ? "Xoá" : "Remove"}
                 </button>
               ) : null}
@@ -483,6 +534,32 @@ export function BookingSequenceFlow({
               )
             ).map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
           </select>
+          {index > 0 ? (
+            <label className="block text-sm">
+              <span className="mb-1 block text-[var(--booking-text-muted)]">
+                {vi ? "Cách bắt đầu dịch vụ này" : "How this service starts"}
+              </span>
+              <select
+                value={line.timingPreference}
+                onChange={(event) => {
+                  const timingPreference = event.target.value === "parallel" ? "parallel" : "sequential";
+                  updateLine(index, { timingPreference });
+                  if (timingPreference === "parallel") setSameStaffForAll(false);
+                }}
+                className="nq-booking-field w-full"
+              >
+                <option value="sequential">{vi ? "Nối tiếp dịch vụ trước" : "After the previous service"}</option>
+                <option value="parallel">{vi ? "Làm cùng lúc với dịch vụ trước" : "At the same time as the previous service"}</option>
+              </select>
+              {line.timingPreference === "parallel" ? (
+                <span className="mt-1 block text-xs text-[var(--booking-text-muted)]">
+                  {vi
+                    ? "NailIQ chỉ xác nhận khi có 2 thợ và cặp dịch vụ/resource đã được salon cho phép."
+                    : "NailIQ confirms only when two staff and a salon-approved service/resource pairing are available."}
+                </span>
+              ) : null}
+            </label>
+          ) : null}
           {addOns.length > 0 ? (
             <div className="flex flex-wrap gap-2">
               {addOns.map((addOn) => {
@@ -509,7 +586,7 @@ export function BookingSequenceFlow({
       ))}
 
       {lines.length < 5 ? (
-        <button type="button" onClick={() => { setLines((current) => [...current, { lineId: newId(), serviceId: "", staffPreference: "any", addOnServiceIds: [] }]); beginNewIntent(); }} className="nq-booking-btn-ghost w-full">
+        <button type="button" onClick={() => { setLines((current) => [...current, { lineId: newId(), serviceId: "", staffPreference: "any", addOnServiceIds: [], timingPreference: "sequential" }]); beginNewIntent(); }} className="nq-booking-btn-ghost w-full">
           {vi ? "+ Thêm dịch vụ" : "+ Add service"}
         </button>
       ) : null}
@@ -519,7 +596,7 @@ export function BookingSequenceFlow({
         <input type="time" value={time} onChange={(event) => { setTime(event.target.value); beginNewIntent(); }} className="nq-booking-field" />
       </div>
       <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={sameStaffForAll} onChange={(event) => { setSameStaffForAll(event.target.checked); beginNewIntent(); }} />
+        <input type="checkbox" checked={sameStaffForAll} disabled={lines.some((line) => line.timingPreference === "parallel")} onChange={(event) => { setSameStaffForAll(event.target.checked); beginNewIntent(); }} />
         {vi ? "Cùng một nhân viên cho mọi dịch vụ" : "Same staff for every service"}
       </label>
       <input
@@ -555,7 +632,13 @@ export function BookingSequenceFlow({
                 <div className="flex justify-between gap-3 font-medium"><span>{line.position + 1}. {line.serviceName} · {line.staffName}</span><span>{formatCurrency(line.totalCents, quote.currency)}</span></div>
                 <p className="text-xs text-[var(--booking-text-muted)]">{new Intl.DateTimeFormat(vi ? "vi-VN" : "en-CA", { timeZone: salon.timezone, dateStyle: "medium", timeStyle: "short" }).format(new Date(line.serviceStartUtc))}</p>
                 <p className="text-xs text-[var(--booking-text-muted)]">{vi ? "Chuẩn bị" : "Prep"} {line.prepMinutes} min · {vi ? "Khách" : "Customer"} {line.durationMinutes} min · {vi ? "Đệm" : "Buffer"} {line.bufferMinutes} min</p>
-                {index > 0 ? <p className="text-xs text-[var(--booking-text-muted)]">{vi ? "Khoảng chờ" : "Gap"} {Math.max(0, Math.round((Date.parse(line.serviceStartUtc) - Date.parse(quote.lines[index - 1].serviceEndUtc)) / 60_000))} min</p> : null}
+                {index > 0 ? (
+                  <p className="text-xs text-[var(--booking-text-muted)]">
+                    {line.resolvedTimingMode === "parallel"
+                      ? (vi ? "✓ Làm cùng lúc — 2 nhân viên" : "✓ At the same time — 2 staff")
+                      : `${vi ? "Khoảng chờ" : "Gap"} ${Math.max(0, Math.round((Date.parse(line.serviceStartUtc) - Date.parse(quote.lines[index - 1].serviceEndUtc)) / 60_000))} min`}
+                  </p>
+                ) : null}
                 {line.addonLines.map((addOn) => <p key={addOn.serviceId} className="text-xs">+ {addOn.name}: {formatCurrency(addOn.priceCents, quote.currency)}</p>)}
                 {line.promoDiscountCents > 0 ? <p className="text-xs">− {vi ? "Khuyến mãi" : "Promotion"}: {formatCurrency(line.promoDiscountCents, quote.currency)}</p> : null}
                 {line.emailDiscountCents > 0 ? <p className="text-xs">− {vi ? "Ưu đãi email" : "Email incentive"}: {formatCurrency(line.emailDiscountCents, quote.currency)}</p> : null}

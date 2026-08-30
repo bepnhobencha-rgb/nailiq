@@ -18,6 +18,7 @@ const UTC_INSTANT_RE =
 const FORBIDDEN_CUSTOMER_NAME_RE = /[<>{}=&;]/;
 
 export type SequenceStaffPreference = "any" | string;
+export type SequenceTimingPreference = "sequential" | "parallel";
 
 export type SequenceLineIntent = {
   lineId: string;
@@ -26,6 +27,7 @@ export type SequenceLineIntent = {
   staffPreference: SequenceStaffPreference;
   preferredResourceId: string | null;
   addOnServiceIds: string[];
+  timingPreference?: SequenceTimingPreference;
 };
 
 export type SequenceBookingIntent = {
@@ -49,6 +51,8 @@ export type SequenceTimingSegment = {
   serviceId: string;
   resolvedStaffId: string;
   resolvedResourceId: string | null;
+  requestedTimingPreference: SequenceTimingPreference;
+  resolvedTimingMode: SequenceTimingPreference;
   prepMinutes: number;
   durationMinutes: number;
   bufferMinutes: number;
@@ -105,7 +109,7 @@ function parseLine(raw: unknown, expectedPosition: number): SequenceLineIntent |
     !exactKeys(
       raw,
       ["lineId", "position", "serviceId", "staffPreference", "addOnServiceIds"],
-      ["preferredResourceId"],
+      ["preferredResourceId", "timingPreference"],
     )
   ) {
     return null;
@@ -116,6 +120,7 @@ function parseLine(raw: unknown, expectedPosition: number): SequenceLineIntent |
     raw.staffPreference === "any" ? "any" : uuid(raw.staffPreference);
   const preferredResourceId =
     raw.preferredResourceId == null ? null : uuid(raw.preferredResourceId);
+  const timingPreference = raw.timingPreference ?? "sequential";
   if (
     !lineId ||
     !serviceId ||
@@ -124,6 +129,9 @@ function parseLine(raw: unknown, expectedPosition: number): SequenceLineIntent |
     raw.position !== expectedPosition ||
     !Array.isArray(raw.addOnServiceIds) ||
     raw.addOnServiceIds.length > BOOKING_SEQUENCE_MAX_ADDONS_PER_LINE ||
+    (timingPreference !== "sequential" && timingPreference !== "parallel") ||
+    (expectedPosition === 0 && timingPreference !== "sequential") ||
+    (expectedPosition > 1 && timingPreference === "parallel") ||
     (raw.preferredResourceId != null && !preferredResourceId)
   ) {
     return null;
@@ -142,6 +150,7 @@ function parseLine(raw: unknown, expectedPosition: number): SequenceLineIntent |
     staffPreference,
     preferredResourceId,
     addOnServiceIds: addOnServiceIds as string[],
+    timingPreference,
   };
 }
 
@@ -242,6 +251,7 @@ export function serializeSequenceBookingIntent(intent: SequenceBookingIntent) {
       staff_preference: line.staffPreference,
       preferred_resource_id: line.preferredResourceId,
       addon_service_ids: [...line.addOnServiceIds],
+      timing_preference: line.timingPreference ?? "sequential",
     })),
   };
 }
@@ -294,7 +304,7 @@ export function parseSequenceTimingSegments(value: unknown): SequenceTimingSegme
         "service_start_utc",
         "service_end_utc",
         "occupied_end_utc",
-      ])
+      ], ["requested_timing_preference", "resolved_timing_mode"])
     ) {
       return null;
     }
@@ -303,6 +313,9 @@ export function parseSequenceTimingSegments(value: unknown): SequenceTimingSegme
     const resolvedStaffId = uuid(raw.resolved_staff_id);
     const resolvedResourceId =
       raw.resolved_resource_id == null ? null : uuid(raw.resolved_resource_id);
+    const requestedTimingPreference =
+      raw.requested_timing_preference ?? "sequential";
+    const resolvedTimingMode = raw.resolved_timing_mode ?? "sequential";
     const prepMinutes = minutes(raw.prep_minutes, 0, 180);
     const durationMinutes = minutes(raw.duration_minutes, 1, 1440);
     const bufferMinutes = minutes(
@@ -320,6 +333,11 @@ export function parseSequenceTimingSegments(value: unknown): SequenceTimingSegme
       !serviceId ||
       !resolvedStaffId ||
       (raw.resolved_resource_id != null && !resolvedResourceId) ||
+      (requestedTimingPreference !== "sequential" &&
+        requestedTimingPreference !== "parallel") ||
+      (resolvedTimingMode !== "sequential" && resolvedTimingMode !== "parallel") ||
+      (position === 0 && resolvedTimingMode !== "sequential") ||
+      (position > 1 && resolvedTimingMode === "parallel") ||
       prepMinutes == null ||
       durationMinutes == null ||
       bufferMinutes == null ||
@@ -330,8 +348,14 @@ export function parseSequenceTimingSegments(value: unknown): SequenceTimingSegme
       addMinutes(serviceStartUtc, -prepMinutes) !== Date.parse(occupiedStartUtc) ||
       addMinutes(serviceStartUtc, durationMinutes) !== Date.parse(serviceEndUtc) ||
       addMinutes(serviceEndUtc, bufferMinutes) !== Date.parse(occupiedEndUtc) ||
-      (position > 0 &&
-        Date.parse(serviceStartUtc) < Date.parse(segments[position - 1].serviceEndUtc))
+      (position > 0 && resolvedTimingMode === "sequential" &&
+        Date.parse(serviceStartUtc) < Math.max(
+          ...segments.map((segment) => Date.parse(segment.serviceEndUtc)),
+        )) ||
+      (position > 0 && resolvedTimingMode === "parallel" && (
+        serviceStartUtc !== segments[position - 1].serviceStartUtc ||
+        resolvedStaffId === segments[position - 1].resolvedStaffId
+      ))
     ) {
       return null;
     }
@@ -341,6 +365,8 @@ export function parseSequenceTimingSegments(value: unknown): SequenceTimingSegme
       serviceId,
       resolvedStaffId,
       resolvedResourceId,
+      requestedTimingPreference,
+      resolvedTimingMode,
       prepMinutes,
       durationMinutes,
       bufferMinutes,
