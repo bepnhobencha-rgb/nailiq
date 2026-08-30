@@ -263,8 +263,7 @@ DECLARE
   v_booking uuid := '15150000-0000-4000-8000-000000000701';
   v_cap uuid := '15150000-0000-4000-8000-000000000702';
   v_request uuid := '15150000-0000-4000-8000-000000000703';
-  v_loaded jsonb; v_result jsonb; v_attempt uuid; v_charge uuid;
-  v_refund_loaded jsonb; v_refund jsonb;
+  v_loaded jsonb; v_result jsonb;
 BEGIN
   UPDATE public.salons SET payment_provider='stripe',
     stripe_connect_account_id='acct_payment_rehearsal',
@@ -307,114 +306,23 @@ BEGIN
      OR (v_loaded->>'operation_occurrence_version')::bigint<>1 THEN
     RAISE EXCEPTION 'late cancel material failed: %',v_loaded;
   END IF;
-  v_result:=public.claim_booking_payment_operation(
-    v_salon,v_booking,v_request,'late_cancel_charge',1500,v_loaded->>'material_fingerprint'
-  );
-  IF v_result->>'code'<>'claimed' THEN RAISE EXCEPTION 'late cancel claim failed: %',v_result; END IF;
-  v_charge:=(v_result->>'operation_id')::uuid; v_attempt:=(v_result->>'attempt_token')::uuid;
-  v_result:=public.complete_booking_payment_operation(
-    v_charge,v_attempt,'succeeded','succeeded','pi_late_cancel_rehearsal',NULL,NULL
-  );
-  IF v_result->>'code'<>'succeeded'
-     OR v_result->'result'->>'late_cancel_charge_status'<>'charged'
-     OR (v_result->'result'->>'operation_occurrence_version')::bigint<>1 THEN
-    RAISE EXCEPTION 'late cancel completion failed: %',v_result;
-  END IF;
-  v_result:=public.claim_booking_payment_operation(
-    v_salon,v_booking,v_request,'late_cancel_charge',1500,v_loaded->>'material_fingerprint'
-  );
-  IF v_result->>'code'<>'operation_replay' THEN RAISE EXCEPTION 'late cancel replay failed: %',v_result; END IF;
-
-  -- Fair-cancel refund is tied to the exact late-cancel parent operation.
-  v_result:=public.load_booking_payment_operation_material(
-    v_salon,v_booking,'late_cancel_refund',600
-  );
-  IF v_result->>'code'<>'invalid_input' THEN RAISE EXCEPTION 'generic late refund loader accepted: %',v_result; END IF;
-  v_result:=public.claim_booking_payment_operation(
-    v_salon,v_booking,gen_random_uuid(),'late_cancel_refund',600,repeat('a',64)
-  );
-  IF v_result->>'code'<>'dedicated_late_cancel_refund_required' THEN
-    RAISE EXCEPTION 'generic late refund claim accepted: %',v_result;
-  END IF;
-  v_refund_loaded:=public.load_late_cancel_refund_material(v_charge,600);
-  v_refund:=public.claim_late_cancel_refund(
-    v_charge,'15150000-0000-4000-8000-000000000704',600,
-    v_refund_loaded->>'material_fingerprint'
-  );
-  v_result:=public.complete_booking_payment_operation(
-    (v_refund->>'operation_id')::uuid,(v_refund->>'attempt_token')::uuid,
-    'succeeded','succeeded',NULL,'re_late_cancel_partial_qa',NULL
-  );
-  IF v_result->'result'->>'late_cancel_refund_status'<>'partial' THEN
-    RAISE EXCEPTION 'late cancel partial refund failed: %',v_result;
-  END IF;
-
-  -- Undo then cancel again has a new DB-owned transition version.  An unknown
-  -- provider outcome reserves only that occurrence and cannot create another.
-  v_result:=public.undo_recent_cancelled_booking_v1(
-    v_booking,v_salon,'15150000-0000-4000-8000-000000000004','owner'
-  );
-  IF v_result->>'code'<>'cancel_undone' THEN
-    RAISE EXCEPTION 'V1 immediate cancel undo failed: %',v_result;
-  END IF;
-  UPDATE public.bookings SET status='cancelled' WHERE id=v_booking;
-  INSERT INTO public.booking_management_capabilities(
-    salon_id,booking_id,action,scope_kind,epoch,booking_version,expires_at,
-    consumed_at,revoke_reason,request_id,payload_fingerprint,result_json,result_fingerprint
-  ) VALUES (
-    v_salon,v_booking,'cancel','booking_own',2,2,now()+interval '1 day',now(),
-    'action_consumed',gen_random_uuid(),repeat('3',64),
-    jsonb_build_object('ok',true,'status','cancelled','scope_kind','booking_own',
-      'rsvp_semantic',NULL,'customer_transition_version',3,
-      'cancel_preview',jsonb_build_object('will_charge',true,'has_chargeable_card',true,
-        'within_window',true,'fee_cents',1500,'currency','CAD')),
-    repeat('4',64)
-  );
-  v_loaded:=public.load_booking_payment_operation_material(v_salon,v_booking,'late_cancel_charge',1500);
-  IF (v_loaded->>'operation_occurrence_version')::bigint<>3 THEN
-    RAISE EXCEPTION 'new cancel occurrence not resolved: %',v_loaded;
-  END IF;
-  v_result:=public.claim_booking_payment_operation(
-    v_salon,v_booking,'15150000-0000-4000-8000-000000000705',
-    'late_cancel_charge',1500,v_loaded->>'material_fingerprint'
-  );
-  v_result:=public.complete_booking_payment_operation(
-    (v_result->>'operation_id')::uuid,(v_result->>'attempt_token')::uuid,
-    'unknown','timeout',NULL,NULL,'provider_timeout'
-  );
-  IF v_result->>'code'<>'provider_outcome_unknown' THEN RAISE EXCEPTION 'ambiguous cancel not reserved: %',v_result; END IF;
-  v_result:=public.claim_booking_payment_operation(
-    v_salon,v_booking,'15150000-0000-4000-8000-000000000706',
-    'late_cancel_charge',1500,v_loaded->>'material_fingerprint'
-  );
-  IF v_result->>'code'<>'reconciliation_required' THEN
-    RAISE EXCEPTION 'same cancel occurrence duplicated after unknown: %',v_result;
-  END IF;
-
-  -- Group member/organizer RSVP decline can never authorize a fee charge.
-  v_result:=public.undo_recent_cancelled_booking_v1(
-    v_booking,v_salon,'15150000-0000-4000-8000-000000000004','owner'
-  );
-  IF v_result->>'code'<>'cancel_undone' THEN
-    RAISE EXCEPTION 'V1 immediate cancel undo failed: %',v_result;
-  END IF;
-  UPDATE public.bookings SET group_id=gen_random_uuid() WHERE id=v_booking;
-  UPDATE public.bookings SET status='cancelled' WHERE id=v_booking;
-  INSERT INTO public.booking_management_capabilities(
-    salon_id,booking_id,action,scope_kind,epoch,booking_version,expires_at,
-    consumed_at,revoke_reason,request_id,payload_fingerprint,result_json,result_fingerprint
-  ) VALUES (
-    v_salon,v_booking,'cancel','member_own',3,3,now()+interval '1 day',now(),
-    'action_consumed',gen_random_uuid(),repeat('5',64),
-    jsonb_build_object('ok',true,'status','cancelled','scope_kind','member_own',
-      'rsvp_semantic','decline','customer_transition_version',4,
-      'cancel_preview',jsonb_build_object('will_charge',true,'has_chargeable_card',true,
-        'fee_cents',1500,'currency','CAD')),
-    repeat('6',64)
-  );
-  v_result:=public.load_booking_payment_operation_material(v_salon,v_booking,'late_cancel_charge',1500);
-  IF v_result->>'code'<>'late_cancel_occurrence_not_authorized' THEN
-    RAISE EXCEPTION 'RSVP decline authorized a charge: %',v_result;
+  -- The generic ledger models late-cancel material, but provider entry is
+  -- fail-closed until a dedicated approval receipt workflow exists.
+  BEGIN
+    PERFORM public.claim_booking_payment_operation(
+      v_salon,v_booking,v_request,'late_cancel_charge',1500,
+      v_loaded->>'material_fingerprint'
+    );
+    RAISE EXCEPTION 'late-cancel claim bypassed the approval gate';
+  EXCEPTION
+    WHEN SQLSTATE 'NI009' THEN NULL;
+  END;
+  IF EXISTS (
+    SELECT 1 FROM public.booking_payment_operations
+    WHERE salon_id=v_salon AND booking_id=v_booking
+      AND operation_kind='late_cancel_charge'
+  ) THEN
+    RAISE EXCEPTION 'late-cancel approval rejection left a ledger row';
   END IF;
 END
 $late_cancel$;
