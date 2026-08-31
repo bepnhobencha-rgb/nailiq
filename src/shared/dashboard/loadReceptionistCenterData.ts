@@ -172,7 +172,7 @@ export interface ReceptionistCenterData {
    * next to the walk-in queue so staff can invite a waiting customer in one
    * tap (sends them the claim link via SMS). Scoped to this salon, from the
    * salon-timezone "today" (`selectedDate`) onward, FIFO by `created_at`.
-   * Surfaces `waiting` / `notified` entries (staff invite them) AND
+   * Surfaces `waiting` / `review_required` / `notified` entries AND
    * recently-`claimed` entries (claimed_at within the last 24h, regardless of
    * booking_date) so staff convert a grabbed slot into a real appointment.
    */
@@ -184,7 +184,10 @@ export interface ReceptionistCenterData {
     bookingDate: string; // YYYY-MM-DD
     preferredSlotLabel: string | null;
     phone: string;
-    status: string; // 'waiting' | 'notified' | 'claimed'
+    status: string; // 'waiting' | 'review_required' | 'notified' | 'claimed'
+    requestKind: "individual" | "sequence" | "group";
+    partySize: number;
+    serviceCount: number;
     /** When the customer claimed the slot (status='claimed'); null otherwise. */
     claimedAt: string | null;
     /** Staff the freed slot was offered to (`offered_staff_id`), when a concrete
@@ -1272,6 +1275,9 @@ export async function loadReceptionistCenterData(
         client_name: string | null;
         client_phone: string | null;
         status: string | null;
+        request_kind: string | null;
+        party_size: number | null;
+        intent_json: unknown;
         claimed_at: string | null;
         offered_staff_id: string | null;
         created_at: string | null;
@@ -1283,6 +1289,16 @@ export async function loadReceptionistCenterData(
           r.preferred_slot_label.trim().length > 0
             ? r.preferred_slot_label.trim()
             : null;
+        const requestKind =
+          r.request_kind === "sequence" || r.request_kind === "group"
+            ? r.request_kind
+            : "individual";
+        const rawIntent = r.intent_json && typeof r.intent_json === "object"
+          ? r.intent_json as Record<string, unknown>
+          : null;
+        const serviceCount = Array.isArray(rawIntent?.serviceIds)
+          ? Math.max(1, rawIntent.serviceIds.length)
+          : 1;
         onlineWaitlist.push({
           id: String(r.id),
           clientName: String(r.client_name ?? ""),
@@ -1292,13 +1308,18 @@ export async function loadReceptionistCenterData(
           preferredSlotLabel: slot,
           phone: String(r.client_phone ?? ""),
           status: String(r.status ?? "waiting"),
+          requestKind,
+          partySize: typeof r.party_size === "number" && r.party_size > 0
+            ? Math.floor(r.party_size)
+            : 1,
+          serviceCount,
           claimedAt: r.claimed_at ? String(r.claimed_at) : null,
           offeredStaffId: r.offered_staff_id ? String(r.offered_staff_id) : null,
           createdAt: String(r.created_at ?? ""),
         });
       };
       const WL_SELECT =
-        "id, service_id, booking_date, preferred_slot_label, client_name, client_phone, status, claimed_at, offered_staff_id, created_at";
+        "id, service_id, booking_date, preferred_slot_label, client_name, client_phone, status, request_kind, party_size, intent_json, claimed_at, offered_staff_id, created_at";
       try {
         const svc = createServiceRoleClient();
         // Actionable (waiting / notified) — from selected day onward, FIFO.
@@ -1306,7 +1327,7 @@ export async function loadReceptionistCenterData(
           .from("booking_waitlist_entries")
           .select(WL_SELECT)
           .eq("salon_id", ctx.salon.id)
-          .in("status", ["waiting", "notified"])
+          .in("status", ["waiting", "review_required", "notified"])
           .gte("booking_date", dateYmd)
           .order("created_at", { ascending: true })
           .limit(50);

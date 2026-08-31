@@ -25,7 +25,7 @@ export interface OnlineWaitlistPanelProps {
   onCreateBooking?: (entry: WaitlistEntry) => void;
 }
 
-type RowStatus = "waiting" | "notified" | "claimed";
+type RowStatus = "waiting" | "review_required" | "notified" | "claimed";
 
 type ToastState = { kind: "success" | "info" | "error"; text: string } | null;
 
@@ -101,6 +101,7 @@ export function OnlineWaitlistPanel({
     if (entry.status === "claimed") return "claimed";
     const override = statusById[entry.id];
     if (override) return override;
+    if (entry.status === "review_required") return "review_required";
     return entry.status === "notified" ? "notified" : "waiting";
   }
 
@@ -126,16 +127,23 @@ export function OnlineWaitlistPanel({
             const status = effectiveStatus(entry);
             const isNotified = status === "notified";
             const isClaimed = status === "claimed";
+            const isReviewRequired = status === "review_required";
             const isPending = pendingId === entry.id;
             const name = displayCustomerName(entry.clientName, removedGuest);
             const waitingMinutes =
-              attentionEnabled && status === "waiting" && observedAtIso
+              attentionEnabled &&
+              (status === "waiting" || status === "review_required") &&
+              observedAtIso
                 ? waitlistAgeMinutes(entry.createdAt, observedAtIso)
                 : null;
-            const subline =
-              entry.preferredSlotLabel && entry.preferredSlotLabel.trim()
-                ? `${entry.serviceName} · ${entry.bookingDate} · ${entry.preferredSlotLabel}`
-                : `${entry.serviceName} · ${entry.bookingDate}`;
+            const requestSummary = entry.requestKind === "group"
+              ? t.groupRequest(entry.partySize, entry.serviceCount)
+              : entry.requestKind === "sequence"
+                ? t.sequenceRequest(entry.serviceCount)
+                : entry.serviceName;
+            const subline = entry.preferredSlotLabel?.trim()
+              ? `${requestSummary} · ${entry.bookingDate} · ${entry.preferredSlotLabel}`
+              : `${requestSummary} · ${entry.bookingDate}`;
             return (
               <li
                 key={entry.id}
@@ -169,6 +177,8 @@ export function OnlineWaitlistPanel({
                           "shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium",
                           isClaimed
                             ? "border-nq-success/40 bg-nq-success/10 text-nq-success"
+                            : isReviewRequired
+                              ? "border-nq-warning/40 bg-nq-warning/10 text-nq-warning"
                             : isNotified
                               ? "border-nq-primary/30 bg-nq-primary/10 text-nq-primary"
                               : "border-nq-border/40 text-nq-muted",
@@ -176,6 +186,8 @@ export function OnlineWaitlistPanel({
                       >
                         {isClaimed
                           ? t.claimed
+                          : isReviewRequired
+                            ? t.needsPlan
                           : isNotified
                             ? t.invited
                             : t.statusWaiting}
@@ -192,8 +204,8 @@ export function OnlineWaitlistPanel({
                         {t.waitingMinutes(waitingMinutes)}
                       </p>
                     ) : null}
-                    {/* Staff need the phone to follow up on a claimed slot. */}
-                    {isClaimed && entry.phone.trim() ? (
+                    {/* Staff need the phone to follow up on a claimed or complex request. */}
+                    {(isClaimed || isReviewRequired) && entry.phone.trim() ? (
                       <p className="mt-0.5 truncate font-mono text-xs text-nq-muted">
                         {entry.phone}
                       </p>
@@ -207,6 +219,14 @@ export function OnlineWaitlistPanel({
                       >
                         {t.createBooking}
                       </button>
+                    ) : isReviewRequired ? (
+                      <a
+                        href={`tel:${entry.phone.replace(/[^+\d]/g, "")}`}
+                        data-testid={`waitlist-arrange-${entry.id}`}
+                        className="mt-2 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-nq-warning/40 bg-nq-warning/10 px-3 text-sm font-semibold text-nq-warning transition-opacity hover:opacity-95"
+                      >
+                        {t.callToArrange}
+                      </a>
                     ) : (
                       <button
                         type="button"

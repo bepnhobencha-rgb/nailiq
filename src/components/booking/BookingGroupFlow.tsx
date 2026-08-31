@@ -31,6 +31,7 @@ import {
 } from "@/shared/booking/staffCapability";
 import { BookingCalendarGrid } from "@/components/booking/BookingCalendarGrid";
 import { BookingFlowOtpPanel } from "@/components/booking/BookingFlowOtpPanel";
+import { CapacityRescueOptIn } from "@/components/booking/CapacityRescueOptIn";
 import { BOOKING_STEP_EASE } from "@/components/booking/bookingMotion";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { GROUP_TOGETHER_THRESHOLD_MIN } from "@/shared/booking/groupSchedulerCore";
@@ -58,6 +59,7 @@ import {
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { formatPhoneInputProgressive } from "@/shared/lib/phoneFormat";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+import { submitCapacityRescueRequest } from "@/shared/booking/submitCapacityRescueRequest";
 import { formatInSalonTz, salonDateOffset } from "@/shared/lib/salonTime";
 import {
   GROUP_ARRANGEMENT_STALE_MS,
@@ -433,6 +435,13 @@ export function BookingGroupFlow({
   // immediately. Reset only on error so the user can retry; not
   // reset on success (which transitions to a different step).
   const submittingRef = useRef<boolean>(false);
+  const capacityRescueRequestRef = useRef({
+    intentKey: "",
+    requestId: crypto.randomUUID(),
+  });
+  const [capacityRescueJoinedKey, setCapacityRescueJoinedKey] = useState<string | null>(null);
+  const [capacityRescueSubmittingKey, setCapacityRescueSubmittingKey] = useState<string | null>(null);
+  const [capacityRescueErrorKey, setCapacityRescueErrorKey] = useState<string | null>(null);
 
   // FIX 03 (Task #04-A) — track when the user picked the
   // arrangement they're about to confirm. Step 5 banner uses this
@@ -754,6 +763,21 @@ export function BookingGroupFlow({
     }
     return { kind: arrivalKind };
   }, [arrivalKind, specificTime]);
+
+  const capacityRescueIntentKey = useMemo(() => JSON.stringify({
+    date,
+    size,
+    syncMode,
+    finishTime: syncMode === "sync_finish" ? finishTime : null,
+    arrivalKind,
+    specificTime: arrivalKind === "specific" ? specificTime : null,
+    seatTogether,
+    members: members.map((member) => ({
+      serviceId: member.serviceId,
+      preferredStaffId: member.preferredStaffId,
+      addonServiceIds: member.addonServiceIds,
+    })),
+  }), [arrivalKind, date, finishTime, members, seatTogether, size, specificTime, syncMode]);
 
   // ── Organizer recognition (debounced phone lookup) ─────────────
   // Mirrors the individual flow's returning-customer lookup. On a
@@ -1101,6 +1125,65 @@ export function BookingGroupFlow({
       setScheduleResult({ ok: false, reason: "server_error" });
     } finally {
       setScheduling(false);
+    }
+  }
+
+  async function joinGroupCapacityRescue(email: string) {
+    const phone = validateGuestPhone(primaryPhone.trim());
+    const primaryServiceId = members[0]?.serviceId;
+    const clientName = members[0]?.name.trim() || organizer?.name?.trim() || "";
+    if (!phone.ok || !primaryServiceId || !clientName || !date) {
+      setCapacityRescueErrorKey(capacityRescueIntentKey);
+      return;
+    }
+    if (capacityRescueRequestRef.current.intentKey !== capacityRescueIntentKey) {
+      capacityRescueRequestRef.current = {
+        intentKey: capacityRescueIntentKey,
+        requestId: crypto.randomUUID(),
+      };
+    }
+
+    setCapacityRescueSubmittingKey(capacityRescueIntentKey);
+    setCapacityRescueErrorKey(null);
+    try {
+      const serviceIds = Array.from(new Set(members.map((member) => member.serviceId).filter(Boolean)));
+      await submitCapacityRescueRequest({
+        salonId: salon.id,
+        requestId: capacityRescueRequestRef.current.requestId,
+        requestKind: "group",
+        primaryServiceId,
+        staffId: members.find((member) => member.preferredStaffId)?.preferredStaffId ?? null,
+        bookingDateYmd: date,
+        preferredSlotLabel: syncMode === "sync_finish"
+          ? `finish:${finishTime}`
+          : arrivalKind === "specific" ? specificTime : arrivalKind,
+        partySize: size,
+        clientName,
+        clientPhone: phone.digits,
+        clientEmail: email,
+        clientLocale: language,
+        intent: {
+          serviceIds,
+          syncMode,
+          finishTime: syncMode === "sync_finish" ? finishTime : null,
+          arrivalPreference: {
+            kind: arrivalKind,
+            time: arrivalKind === "specific" ? specificTime : null,
+          },
+          seatTogether,
+          members: members.map((member, position) => ({
+            position,
+            serviceId: member.serviceId,
+            staffPreference: member.preferredStaffId ?? "any",
+            addOnServiceIds: member.addonServiceIds,
+          })),
+        },
+      });
+      setCapacityRescueJoinedKey(capacityRescueIntentKey);
+    } catch {
+      setCapacityRescueErrorKey(capacityRescueIntentKey);
+    } finally {
+      setCapacityRescueSubmittingKey(null);
     }
   }
 
@@ -1949,6 +2032,19 @@ export function BookingGroupFlow({
             goToStep(5);
           }}
         />
+      ) : null}
+
+      {step === 4 && scheduleResult && !scheduleResult.ok && scheduleResult.reason === "no_slots" ? (
+        <div className="mt-4">
+          <CapacityRescueOptIn
+            t={t}
+            initialEmail={primaryEmail}
+            joined={capacityRescueJoinedKey === capacityRescueIntentKey}
+            submitting={capacityRescueSubmittingKey === capacityRescueIntentKey}
+            error={capacityRescueErrorKey === capacityRescueIntentKey ? t.capacityRescueError : null}
+            onSubmit={(email) => void joinGroupCapacityRescue(email)}
+          />
+        </div>
       ) : null}
 
       {step === 5 && otpPanelOpen ? (

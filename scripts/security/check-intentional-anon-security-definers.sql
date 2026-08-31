@@ -20,9 +20,9 @@ BEGIN
     AND p.prosecdef
     AND has_function_privilege('anon', p.oid, 'EXECUTE');
 
-  IF v_actual_count <> 10 THEN
+  IF v_actual_count <> 11 THEN
     RAISE EXCEPTION
-      'anonymous SECURITY DEFINER allowlist drift: expected 10, found %',
+      'anonymous SECURITY DEFINER allowlist drift: expected 11, found %',
       v_actual_count;
   END IF;
 
@@ -82,6 +82,18 @@ BEGIN
             'invalid_waitlist_source',
             'invalid_service_for_salon',
             'invalid_staff_for_salon'
+          ]::text[]
+        ),
+        (
+          'public.create_public_capacity_rescue_request(uuid,uuid,text,uuid,uuid,date,text,integer,text,text,text,text,jsonb)',
+          'v',
+          'RETURNS TABLE(id uuid, status text, created_new boolean)',
+          ARRAY[
+            'v_role NOT IN (''anon'', ''authenticated'', ''service_role'')',
+            'invalid_intent_keys',
+            'invalid_service_for_salon',
+            'invalid_staff_for_salon',
+            'request_id_conflict'
           ]::text[]
         ),
         (
@@ -169,10 +181,7 @@ BEGIN
          SELECT 1
          FROM unnest((SELECT proconfig FROM pg_proc WHERE oid = v_oid)) setting
          WHERE setting LIKE 'search_path=public%'
-            OR (
-              v_target.signature LIKE 'public.create_public_booking(%'
-              AND setting = 'search_path=""'
-            )
+            OR setting = 'search_path=""'
        )
        OR v_public_execute
        OR NOT has_function_privilege('anon', v_oid, 'EXECUTE')

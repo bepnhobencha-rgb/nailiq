@@ -1638,6 +1638,11 @@ export type UserMessages = {
       invited: string;
       /** Status pill — still waiting. */
       statusWaiting: string;
+      /** Complex group/sequence demand that needs a complete capacity plan. */
+      needsPlan: string;
+      groupRequest: (partySize: number, serviceCount: number) => string;
+      sequenceRequest: (serviceCount: number) => string;
+      callToArrange: string;
       /** Persistent elapsed time for an unresolved online lead. */
       waitingMinutes: (minutes: number) => string;
       /** Status pill — customer grabbed the freed slot. */
@@ -4211,6 +4216,12 @@ export const userEn: UserMessages = {
       inviteAgain: "Invite again",
       invited: "Invited",
       statusWaiting: "Waiting",
+      needsPlan: "Needs plan",
+      groupRequest: (partySize, serviceCount) =>
+        `${partySize} guests · ${serviceCount} services`,
+      sequenceRequest: (serviceCount) =>
+        `${serviceCount} service${serviceCount === 1 ? "" : "s"} in sequence`,
+      callToArrange: "Call to arrange",
       waitingMinutes: (minutes) =>
         minutes === 0 ? "Waiting now" : `Waiting ${minutes} min`,
       claimed: "✅ Claimed",
