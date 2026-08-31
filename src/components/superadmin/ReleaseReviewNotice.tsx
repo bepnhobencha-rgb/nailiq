@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import type { ReleaseReviewContext } from "@/shared/superadmin/releaseReviewContext";
+import {
+  isReleaseReviewDecisionPath,
+  presentReleaseReview,
+} from "@/shared/superadmin/releaseReviewPresentation";
 
 const REVIEWED_KEY_PREFIX = "nailiq:release-review:handled:";
 const REVIEW_HANDLED_EVENT = "nailiq-release-review-handled";
@@ -30,6 +34,7 @@ export function ReleaseReviewNotice({
   review: ReleaseReviewContext | null;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { language } = useUserLanguage();
   const vi = language === "vi";
   const [visible, setVisible] = useState(false);
@@ -60,8 +65,19 @@ export function ReleaseReviewNotice({
     };
   }, [review]);
 
-  if (!review || !visible) return null;
+  if (
+    !review ||
+    !visible ||
+    isReleaseReviewDecisionPath(pathname)
+  ) {
+    return null;
+  }
   const activeReview = review;
+  const presentation = presentReleaseReview({
+    deploymentId: activeReview.deploymentId,
+    changeSummary: activeReview.changeSummary,
+    language,
+  });
 
   function openReview() {
     if (activeReview.reviewId) {
@@ -96,11 +112,11 @@ export function ReleaseReviewNotice({
       <div className="min-w-0">
         <p className="text-sm font-semibold text-nq-foreground">
           {vi
-            ? "Có thay đổi mới — bạn có muốn thông báo cho salon?"
-            : "New change — should salon owners be notified?"}
+            ? `Có thay đổi mới ${presentation.releaseLabel} — bạn có muốn thông báo cho salon?`
+            : `New change ${presentation.releaseLabel} — should salon owners be notified?`}
         </p>
         <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-nq-muted">
-          {activeReview.changeSummary}
+          {presentation.changeTitle}
         </p>
         <p className="mt-1 text-xs text-nq-muted">
           {vi

@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { notFound, redirect } from "next/navigation";
 import {
   clearInactiveServerSession,
@@ -68,7 +68,9 @@ export default async function SuperadminShellLayout({
       {/* Mobile-only top bar with wordmark + sign-out; hidden at md+ where sidebar handles it */}
       <SuperadminTopBar />
       <div className="md:pl-60 pb-14 md:pb-0">
-        <ReleaseReviewNotice review={releaseReview} />
+        <Suspense fallback={null}>
+          <ReleaseReviewNotice review={releaseReview} />
+        </Suspense>
         {children}
       </div>
     </div>

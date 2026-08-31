@@ -18,10 +18,19 @@ describe("release review approval boundary", () => {
       ),
       "utf8",
     );
+    const noticeSource = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        "src/components/superadmin/ReleaseReviewNotice.tsx",
+      ),
+      "utf8",
+    );
     expect(emailSource).toContain("/superadmin/operations/release-reviews/");
     expect(emailSource).not.toContain("/api/ai/approve");
     expect(pageSource).not.toMatch(/\.update\(|\.insert\(|\.delete\(/);
     expect(pageSource).toContain("<form action={action}");
+    expect(pageSource).not.toContain("{review.changeSummary}");
+    expect(noticeSource).toContain("isReleaseReviewDecisionPath(pathname)");
   });
 
   it("requires cron auth and a second authenticated audited decision", () => {

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { requireActiveSuperAdminSession } from "@/shared/auth/requireActiveSuperAdminSession";
 import { resolveUserLanguage } from "@/shared/i18n/user/resolveUserLanguage";
 import { confirmReleaseReviewDecision } from "@/shared/superadmin/releaseReviewActions";
+import { presentReleaseReview } from "@/shared/superadmin/releaseReviewPresentation";
 import { loadReleaseReviewById } from "@/shared/superadmin/releaseReviewStore";
 import type { ReleaseReviewDecision } from "@/shared/superadmin/releaseReviewTypes";
 
@@ -41,12 +42,19 @@ export default async function ReleaseReviewDecisionPage({
   const approving = decision === "approved";
   const action = confirmReleaseReviewDecision.bind(null, review.id, decision);
   const vi = language === "vi";
+  const presentation = presentReleaseReview({
+    deploymentId: review.deploymentId,
+    changeSummary: review.changeSummary,
+    language,
+  });
 
   return (
     <main className="mx-auto w-full max-w-2xl px-5 py-10 md:px-8">
       <section className="rounded-2xl border border-nq-border/45 bg-nq-surface/50 p-6 md:p-8">
         <p className="text-xs font-semibold tracking-[0.18em] text-nq-muted uppercase">
-          {vi ? "Superadmin · Xem trước thông báo" : "Superadmin · Notice preview"}
+          {vi
+            ? `Superadmin · Xem trước thông báo · ${presentation.releaseLabel}`
+            : `Superadmin · Notice preview · ${presentation.releaseLabel}`}
         </p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-nq-foreground">
           {done || alreadyDecided
@@ -64,11 +72,29 @@ export default async function ReleaseReviewDecisionPage({
         </p>
 
         <div className="mt-5 rounded-xl border border-nq-border/40 bg-nq-bg/55 p-4">
-          <p className="text-xs text-nq-muted">
-            {vi ? "Ghi chú nội bộ về thay đổi" : "Internal change note"}
+          <p className="text-xs font-semibold text-nq-muted">
+            {vi ? "Thay đổi gì" : "What changed"}
           </p>
-          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-nq-foreground">
-            {review.changeSummary}
+          <p className="mt-2 text-sm font-semibold leading-relaxed text-nq-foreground">
+            {presentation.changeTitle}
+          </p>
+          <p className="mt-4 text-xs font-semibold text-nq-muted">
+            {vi ? "Ảnh hưởng" : "Impact"}
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-nq-foreground">
+            {presentation.impact}
+          </p>
+          <p className="mt-4 text-xs font-semibold text-nq-muted">
+            {vi ? "Salon cần làm gì" : "What salons need to do"}
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-nq-foreground">
+            {presentation.salonAction}
+          </p>
+          <p className="mt-4 text-xs font-semibold text-nq-muted">
+            {vi ? "Đề xuất của NailIQ" : "NailIQ recommendation"}
+          </p>
+          <p className="mt-2 text-sm font-semibold leading-relaxed text-nq-foreground">
+            {presentation.recommendation}
           </p>
         </div>
 

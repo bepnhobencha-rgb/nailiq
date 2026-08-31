@@ -35,21 +35,32 @@ describe("release review email", () => {
     expect(email.html).toContain("intent=declined");
     expect(email.html).not.toContain("/api/ai/approve");
     expect(email.text).toContain("Nothing has been sent to salons");
+    expect(email.subject).toContain("abcdef12");
+    expect(email.html).toContain("What changed");
+    expect(email.html).toContain("What salons need to do");
+    expect(email.html).toContain("NailIQ recommendation");
   });
 
   it("renders a standalone Vietnamese version for Vietnamese accounts", () => {
     const email = buildReleaseReviewEmail({
       reviewId: "1f6d9624-52df-48e8-8e1e-2d3aac94ba16",
       deploymentId: "abcdef1234567890",
-      changeSummary: "Cải thiện thông báo cập nhật.",
+      changeSummary:
+        "fix(receptionist): clarify reschedule notification times (#1204)\n\nCo-authored-by: Someone <person@example.com>",
       language: "vi",
     });
 
     expect(email.subject).toContain("Có cần thông báo");
+    expect(email.subject).toContain("#1204");
     expect(email.html).toContain(">Có, tạo thông báo</a>");
     expect(email.html).toContain(">Không cần thông báo</a>");
     expect(email.html).toContain("Bản cập nhật đã hoạt động");
     expect(email.html).not.toContain("production");
+    expect(email.html).toContain("Email đổi lịch hiển thị rõ giờ cũ và giờ mới");
+    expect(email.html).toContain("Salon không cần làm gì");
+    expect(email.html).not.toContain("fix(receptionist)");
+    expect(email.html).not.toContain("Co-authored-by");
+    expect(email.text).not.toContain("person@example.com");
   });
 
   it("escapes release text before rendering it into HTML", () => {
@@ -60,6 +71,8 @@ describe("release review email", () => {
     });
     expect(email.html).not.toContain("<img");
     expect(email.html).toContain("&lt;img");
+    expect(email.html).toContain("&quot;alert(1)&quot;");
+    expect(email.html).toContain("Manual review is required");
   });
 
   it("uses the canonical production URL when no override exists", () => {
