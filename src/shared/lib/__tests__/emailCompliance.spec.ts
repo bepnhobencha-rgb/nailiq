@@ -49,6 +49,30 @@ describe("complianceFooterHtml", () => {
     expect(html).toContain("Important appointment updates may still be sent");
     expect(html).not.toContain(">Unsubscribe<");
   });
+
+  it("does not claim a waitlist recipient already has an appointment", () => {
+    const html = complianceFooterHtml({
+      email: "client@example.com",
+      salonName: "Hi-Lite Head Spa",
+      lang: "en",
+      context: "waitlist",
+    });
+    expect(html).toContain("asked <strong>Hi-Lite Head Spa</strong> to notify you");
+    expect(html).not.toContain("because you have an appointment");
+  });
+
+  it("describes requested security mail without appointment language", () => {
+    const html = complianceFooterHtml({
+      email: "client@example.com",
+      salonName: "Hi-Lite Head Spa",
+      lang: "en",
+      transactional: true,
+      context: "security",
+    });
+    expect(html).toContain("You requested a secure verification step");
+    expect(html).toContain("Security emails you request may still be sent");
+    expect(html).not.toContain("Important appointment updates");
+  });
 });
 
 describe("isEmailSuppressed", () => {

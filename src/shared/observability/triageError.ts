@@ -3,6 +3,7 @@ import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProvid
 import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
+import { emailExperienceTags } from "@/shared/lib/emailExperienceRegistry";
 import {
   assessErrorEvidence,
   evidenceConflictSummary,
@@ -171,6 +172,7 @@ export async function sendErrorAlert(id: string): Promise<boolean> {
       to,
       subject: `🚨 NailIQ ${e.level}: ${e.message.slice(0, 80)}`,
       html,
+      tags: emailExperienceTags("incident_alert"),
     });
     return !error;
   } catch (err) {

@@ -65,6 +65,19 @@ function otpPayload() {
   return JSON.stringify(parsed);
 }
 
+function registeredPayload(overrides: Record<string, string> = {}) {
+  const parsed = JSON.parse(payload()) as {
+    data: { to: string[]; tags: Record<string, string> };
+  };
+  parsed.data.to = ["Second@Example.COM", "First@Example.COM"];
+  parsed.data.tags = {
+    nailiq_email: "ai_digest",
+    nailiq_audience: "owner",
+    ...overrides,
+  };
+  return JSON.stringify(parsed);
+}
+
 function request(raw: string, headers: Record<string, string> = {}) {
   return new Request(url, {
     method: "POST",
@@ -179,6 +192,57 @@ describe("Resend owner delivery webhook", () => {
       p_payload_fingerprint: createHash("sha256").update(raw).digest("hex"),
     });
     expect(JSON.stringify(mocks.rpc.mock.calls)).not.toContain("OtpGuest@Example.COM");
+  });
+
+  it("records a PII-free receipt for a registered non-booking email purpose", async () => {
+    const raw = registeredPayload();
+    const response = await POST(request(raw));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true, code: "event_applied" });
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "record_resend_registered_email_delivery_event",
+      {
+        p_provider_event_id: "evt_test_1",
+        p_provider_message_id: "resend-message-1",
+        p_email_key: "ai_digest",
+        p_audience: "owner",
+        p_event_type: "email.delivered",
+        p_recipient_fingerprint: createHash("sha256")
+          .update("first@example.com\nsecond@example.com")
+          .digest("hex"),
+        p_recipient_count: 2,
+        p_occurred_at: occurredAt,
+        p_payload_fingerprint: createHash("sha256").update(raw).digest("hex"),
+      },
+    );
+    expect(JSON.stringify(mocks.rpc.mock.calls)).not.toContain("First@Example.COM");
+    expect(JSON.stringify(mocks.rpc.mock.calls)).not.toContain("Second@Example.COM");
+  });
+
+  it("records shared truth and the stronger owner claim when both tags exist", async () => {
+    const parsed = JSON.parse(payload()) as {
+      data: { tags: Record<string, string> };
+    };
+    parsed.data.tags.nailiq_email = "owner_booking_alert";
+    parsed.data.tags.nailiq_audience = "owner";
+    const response = await POST(request(JSON.stringify(parsed)));
+    expect(response.status).toBe(200);
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+    expect(mocks.rpc.mock.calls[0]?.[0]).toBe(
+      "record_resend_registered_email_delivery_event",
+    );
+    expect(mocks.rpc.mock.calls[1]?.[0]).toBe("record_resend_owner_delivery_event");
+  });
+
+  it("rejects an unknown purpose or audience mismatch before database access", async () => {
+    for (const raw of [
+      registeredPayload({ nailiq_email: "unknown_purpose" }),
+      registeredPayload({ nailiq_audience: "customer" }),
+    ]) {
+      const response = await POST(request(raw));
+      expect(response.status).toBe(400);
+    }
+    expect(mocks.createService).not.toHaveBeenCalled();
   });
 
   it("acknowledges signed non-delivery events without touching the database", async () => {

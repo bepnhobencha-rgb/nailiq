@@ -1,11 +1,8 @@
 import "server-only";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
-import {
-  complianceFooterHtml,
-  listUnsubscribeHeaders,
-  isEmailSuppressed,
-} from "@/shared/lib/emailCompliance";
+import { isEmailSuppressed } from "@/shared/lib/emailCompliance";
+import { buildEmailExperience } from "@/shared/lib/emailExperience";
 
 type Lang = "en" | "vi";
 type Role = "referrer" | "referee";
@@ -88,28 +85,35 @@ export async function sendReferralRewardEmail(input: {
           : `Thanks for visiting ${salonName} on a friend's referral!`;
     const line =
       lang === "vi"
-        ? `Dùng mã <strong>${code}</strong> để được <strong>giảm ${percent}%</strong> cho lần đặt kế tiếp. Mã có hiệu lực 30 ngày.`
-        : `Use code <strong>${code}</strong> for <strong>${percent}% off</strong> your next booking. Valid for 30 days.`;
-
-    const html =
-      `<!doctype html><html><body style="margin:0;background:#faf8f2">` +
-      `<div style="font-family:system-ui,-apple-system,sans-serif;max-width:480px;margin:0 auto;padding:28px;color:#1a1a1a">` +
-      `<h1 style="font-size:20px;margin:0 0 12px">🎁 ${lang === "vi" ? "Phần thưởng giới thiệu" : "Referral reward"}</h1>` +
-      `<p style="font-size:14px;line-height:1.6;margin:0 0 14px">${intro}</p>` +
-      `<p style="font-size:14px;line-height:1.6;margin:0 0 18px">${line}</p>` +
-      `<div style="font-family:monospace;font-size:22px;font-weight:700;letter-spacing:2px;padding:14px;text-align:center;background:#f1ead9;border-radius:10px">${code}</div>` +
-      `</div></body></html>`;
-    const withFooter = html.replace(
-      "</body>",
-      `${complianceFooterHtml({ email: to, salonName, lang })}</body>`,
-    );
+        ? `Dùng mã này để được giảm ${percent}% cho lần đặt kế tiếp. Mã có hiệu lực 30 ngày.`
+        : `Use this code for ${percent}% off your next booking. Valid for 30 days.`;
+    const experience = buildEmailExperience({
+      key: "referral_reward",
+      locale: lang,
+      subject,
+      preheader: line,
+      salonName,
+      recipientEmail: to,
+      badge: lang === "vi" ? "PHẦN THƯỞNG GIỚI THIỆU" : "REFERRAL REWARD",
+      heading: lang === "vi" ? `Bạn nhận ${percent}% giảm giá` : `You earned ${percent}% off`,
+      paragraphs: [intro, line],
+      code,
+      callout: {
+        title: lang === "vi" ? "Phần thưởng đã được xác nhận" : "Reward confirmed",
+        body: lang === "vi"
+          ? "Mã và mức giảm trong email này lấy từ reward record đã hoàn tất; NailIQ không tự suy đoán ưu đãi."
+          : "The code and discount in this email come from the completed reward record; NailIQ does not invent offers.",
+      },
+    });
 
     const res = await resend!.emails.send({
       from: getResendFrom(),
       to,
       subject,
-      html: withFooter,
-      headers: listUnsubscribeHeaders(to),
+      html: experience.html,
+      text: experience.text,
+      headers: experience.headers,
+      tags: experience.tags,
     });
     if (res.error) console.error("[sendReferralRewardEmail]", role, res.error);
   }

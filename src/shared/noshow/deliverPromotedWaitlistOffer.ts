@@ -1,10 +1,10 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
-import { escapeEmailHtml } from "@/shared/booking/emailBranding";
 import { isBookingManagementToken } from "@/shared/booking/bookingManagementCapabilities";
 import { isValidIanaTimeZone } from "@/shared/booking/bookingManagementTime";
 import { isEmailSuppressed } from "@/shared/lib/emailCompliance";
+import { buildEmailExperience } from "@/shared/lib/emailExperience";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
@@ -220,7 +220,47 @@ async function deliverChannel(input: {
   const subject = snapshot.locale === "vi"
     ? `Có chỗ trống tại ${snapshot.salonName}`
     : `An appointment opened at ${snapshot.salonName}`;
-  const html = `<p>${escapeEmailHtml(textBody)}</p><p><a href="${escapeEmailHtml(claimUrl)}">${snapshot.locale === "vi" ? "Giữ chỗ" : "Claim this time"}</a></p>`;
+  const emailExperience = input.channel === "email"
+    ? buildEmailExperience({
+      key: "waitlist_offer",
+      locale: snapshot.locale,
+      subject,
+      preheader: snapshot.locale === "vi"
+        ? "Giữ chỗ trong 20 phút."
+        : "Claim this opening within 20 minutes.",
+      salonName: snapshot.salonName,
+      salonLogoUrl: snapshot.salonLogoUrl,
+      recipientEmail: snapshot.recipient,
+      badge: snapshot.locale === "vi" ? "CHỖ TRỐNG VỪA MỞ" : "OPENING AVAILABLE",
+      greeting: snapshot.locale === "vi"
+        ? `Chào ${snapshot.clientName},`
+        : `Hi ${snapshot.clientName},`,
+      heading: snapshot.locale === "vi"
+        ? "Giờ bạn muốn đã sẵn sàng"
+        : "A time you wanted is ready",
+      paragraphs: [snapshot.locale === "vi"
+        ? "NailIQ đã đối chiếu chỗ trống này với lịch hiện tại của tiệm."
+        : "NailIQ matched this opening against the salon's current schedule."],
+      details: [
+        { label: snapshot.locale === "vi" ? "Dịch vụ" : "Service", value: snapshot.serviceName },
+        { label: snapshot.locale === "vi" ? "Ngày & giờ" : "Date & time", value: detail || snapshot.bookingDate },
+      ],
+      callout: {
+        title: snapshot.locale === "vi" ? "Chưa phải là booking" : "Not booked yet",
+        body: snapshot.locale === "vi"
+          ? "Chỗ này chỉ được giữ sau khi bạn bấm xác nhận thành công. Người xác nhận trước sẽ nhận chỗ."
+          : "This time is held only after a successful confirmation. The first confirmed claim receives it.",
+      },
+      actions: [{
+        label: snapshot.locale === "vi" ? "Giữ chỗ" : "Claim this time",
+        url: claimUrl,
+      }],
+      note: snapshot.locale === "vi"
+        ? "Liên kết an toàn hết hạn sau 20 phút."
+        : "This secure link expires in 20 minutes.",
+    })
+    : null;
+  const html = emailExperience?.html ?? "";
   const payloadFingerprint = sha256(JSON.stringify({
     v: 1,
     channel: input.channel,
@@ -299,6 +339,12 @@ async function deliverChannel(input: {
       subject,
       text: textBody,
       html,
+      headers: emailExperience?.headers,
+      tags: [
+        ...(emailExperience?.tags ?? []),
+        { name: "nailiq_flow", value: "waitlist_offer" },
+        { name: "nailiq_claim", value: outboxId },
+      ],
     });
     const receipt = result.data?.id?.trim() ?? "";
     if (result.error) {

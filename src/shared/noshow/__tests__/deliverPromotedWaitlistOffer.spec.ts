@@ -18,7 +18,11 @@ vi.mock("@/shared/lib/resend", () => ({
   getResendClient: () => ({ emails: { send: mocks.email } }),
   getResendFrom: () => "NailIQ <test@nailiq.test>",
 }));
-vi.mock("@/shared/lib/emailCompliance", () => ({ isEmailSuppressed: mocks.suppressed }));
+vi.mock("@/shared/lib/emailCompliance", () => ({
+  isEmailSuppressed: mocks.suppressed,
+  complianceFooterHtml: () => "<footer>email preferences</footer>",
+  listUnsubscribeHeaders: () => ({ "List-Unsubscribe": "<https://example.test/unsubscribe>" }),
+}));
 
 import { deliverPromotedWaitlistOffer } from "../deliverPromotedWaitlistOffer";
 

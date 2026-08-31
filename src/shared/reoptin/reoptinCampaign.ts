@@ -1,5 +1,6 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
+import { buildEmailBrandHeader } from "@/shared/booking/emailBranding";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
@@ -8,6 +9,7 @@ import {
   listUnsubscribeHeaders,
   isEmailSuppressed,
 } from "@/shared/lib/emailCompliance";
+import { emailExperienceTags } from "@/shared/lib/emailExperienceRegistry";
 
 /**
  * Re-opt-in campaign for Square-imported customers.
@@ -272,9 +274,8 @@ export function renderEmail(opts: {
 
   const html = `<div style="background:#f4efe6;padding:28px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
   <div style="max-width:560px;margin:0 auto;background:#fffdf8;border:1px solid #e7dfcd;border-radius:4px;overflow:hidden;">
-    <div style="padding:32px 36px 20px;text-align:center;">
-      <div style="font-family:Georgia,'Times New Roman',serif;letter-spacing:.14em;text-indent:.14em;text-transform:uppercase;font-size:22px;line-height:1.25;color:#1f3d38;">${salonName}</div>
-      <div style="width:44px;height:2px;background:#b8935a;margin:14px auto 0;border-radius:2px;"></div>
+    <div style="padding:24px 28px;text-align:center;background:#0B0C10;">
+      ${buildEmailBrandHeader({ salonName: opts.salon.name, subtitle: "NAILIQ SALON CONCIERGE" })}
     </div>
     <div style="padding:4px 36px 8px;color:#3d3a33;">
       <h1 style="font-family:Georgia,'Times New Roman',serif;font-size:25px;line-height:1.25;font-weight:500;color:#1f3d38;text-align:center;margin:10px 0 20px;">Let's stay in touch.</h1>
@@ -378,6 +379,7 @@ async function sendOne(
     text,
     ...(salon.email ? { replyTo: salon.email } : {}),
     headers: listUnsubscribeHeaders(client.email),
+    tags: emailExperienceTags("reoptin_campaign"),
   });
 
   if (error) {

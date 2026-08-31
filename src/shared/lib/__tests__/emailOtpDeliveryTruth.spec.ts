@@ -104,6 +104,8 @@ describe("email booking OTP delivery truth", () => {
       expect.objectContaining({
         to: "guest@example.com",
         tags: [
+          { name: "nailiq_email", value: "booking_otp" },
+          { name: "nailiq_audience", value: "security" },
           { name: "nailiq_flow", value: "booking_otp" },
           { name: "nailiq_claim", value: attemptId },
         ],

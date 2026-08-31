@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { complianceFooterHtml, listUnsubscribeHeaders, isEmailSuppressed } from "@/shared/lib/emailCompliance";
+import { isEmailSuppressed } from "@/shared/lib/emailCompliance";
+import { buildEmailExperience } from "@/shared/lib/emailExperience";
 import {
   getEffectivePlanLimits,
   type PlanCheckSalon,
@@ -160,22 +161,26 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
       if (await isEmailSuppressed(email)) {
         // Review request is marketing → respect unsubscribe (skip email channel).
       } else {
-      const reviewHtml = buildEmailHtml({
+      const subject = lang === "vi"
+        ? `Cảm ơn bạn — đánh giá dịch vụ tại ${salonName}`
+        : `How was your visit at ${salonName}?`;
+      const reviewEmail = buildReviewEmail({
+        email,
         salonName,
         serviceName,
         staffName,
         reviewUrl,
         googleReviewUrl,
         lang,
-      }).replace("</body>", `${complianceFooterHtml({ email, salonName, lang })}</body>`);
+      });
       const res = await resend.emails.send({
         from: getResendFrom(),
         to: email,
-        subject: lang === "vi"
-          ? `Cảm ơn bạn — đánh giá dịch vụ tại ${salonName}`
-          : `How was your visit at ${salonName}?`,
-        html: reviewHtml,
-        headers: listUnsubscribeHeaders(email),
+        subject,
+        html: reviewEmail.html,
+        text: reviewEmail.text,
+        headers: reviewEmail.headers,
+        tags: reviewEmail.tags,
       });
       // Audit the email send too (the owner's Notifications widget showed only
       // the SMS channel for review requests before this).
@@ -261,40 +266,19 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
   }
 }
 
-function buildEmailHtml(input: {
+function buildReviewEmail(input: {
+  email: string;
   salonName: string;
   serviceName: string;
   staffName: string;
   reviewUrl: string;
   googleReviewUrl?: string;
   lang?: "en" | "vi";
-}): string {
+}) {
   const { salonName, serviceName, staffName, reviewUrl, googleReviewUrl } = input;
   const vi = input.lang === "vi";
 
-  const serviceLine = serviceName
-    ? `<p style="margin: 0 0 8px 0;">${vi ? "Dịch vụ" : "Service"}: <strong>${escapeHtml(serviceName)}</strong></p>`
-    : "";
-  const staffLine = staffName
-    ? `<p style="margin: 0 0 8px 0;">${vi ? "Thợ" : "Technician"}: <strong>${escapeHtml(staffName)}</strong></p>`
-    : "";
-
-  const ctaBlock = googleReviewUrl
-    ? `
-      <p style="margin: 24px 0 12px 0;">
-        <a href="${googleReviewUrl}" style="display: inline-block; background: #d4af37; color: #111; padding: 12px 24px; border-radius: 999px; text-decoration: none; font-weight: 600;">⭐ ${vi ? "Đánh giá 5 sao trên Google" : "Leave a Google Review"}</a>
-      </p>
-      <p style="margin: 0 0 0 0;">
-        <a href="${reviewUrl}" style="display: inline-block; background: transparent; color: #555; border: 1px solid #ccc; padding: 10px 20px; border-radius: 999px; text-decoration: none; font-size: 13px;">${vi ? "Đánh giá trên NailIQ" : "Rate on NailIQ"}</a>
-      </p>
-    `
-    : `
-      <p style="margin: 24px 0;">
-        <a href="${reviewUrl}" style="display: inline-block; background: #d4af37; color: #111; padding: 12px 24px; border-radius: 999px; text-decoration: none; font-weight: 600;">${vi ? "Đánh giá dịch vụ" : "Leave a Review"}</a>
-      </p>
-    `;
-
-  const headline = vi ? `Cảm ơn bạn đã ghé ${escapeHtml(salonName)}!` : `Thank you for visiting ${escapeHtml(salonName)}!`;
+  const headline = vi ? `Cảm ơn bạn đã ghé ${salonName}!` : `Thank you for visiting ${salonName}!`;
   const body = vi
     ? "Chúng tôi rất vui được phục vụ bạn. Nếu bạn có vài phút, vui lòng chia sẻ trải nghiệm."
     : "We loved having you! If you have a minute, we'd love to hear how it went.";
@@ -302,24 +286,34 @@ function buildEmailHtml(input: {
     ? "Link NailIQ chỉ dành cho bạn — vui lòng không chia sẻ. Hết hạn sau 30 ngày."
     : "This link is just for you — please don't share. Expires in 30 days.";
 
-  return `
-    <!doctype html>
-    <html><body style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #111;">
-      <h1 style="font-size: 20px; margin: 0 0 16px 0;">${headline}</h1>
-      <p style="margin: 0 0 16px 0;">${body}</p>
-      ${serviceLine}
-      ${staffLine}
-      ${ctaBlock}
-      <p style="font-size: 12px; color: #666; margin: 24px 0 0 0;">${linkNote}</p>
-    </body></html>
-  `.trim();
-}
-
-function escapeHtml(input: string): string {
-  return input
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+  return buildEmailExperience({
+    key: "review_request",
+    locale: vi ? "vi" : "en",
+    subject: vi
+      ? `Cảm ơn bạn — đánh giá dịch vụ tại ${salonName}`
+      : `How was your visit at ${salonName}?`,
+    preheader: body,
+    salonName,
+    recipientEmail: input.email,
+    badge: vi ? "TRẢI NGHIỆM CỦA BẠN" : "YOUR EXPERIENCE",
+    heading: headline,
+    paragraphs: [body],
+    details: [
+      serviceName ? { label: vi ? "Dịch vụ" : "Service", value: serviceName } : null,
+      staffName ? { label: vi ? "Thợ" : "Technician", value: staffName } : null,
+    ].filter((detail): detail is { label: string; value: string } => detail !== null),
+    callout: {
+      title: vi ? "30 giây là đủ" : "30 seconds is enough",
+      body: vi
+        ? "Phản hồi giúp tiệm chăm sóc khách tốt hơn. NailIQ không tự viết hoặc sửa đánh giá của bạn."
+        : "Your feedback helps the salon improve. NailIQ does not write or alter your review.",
+    },
+    actions: googleReviewUrl
+      ? [
+        { label: vi ? "Đánh giá trên Google" : "Review on Google", url: googleReviewUrl },
+        { label: vi ? "Đánh giá trên NailIQ" : "Rate on NailIQ", url: reviewUrl, kind: "secondary" },
+      ]
+      : [{ label: vi ? "Đánh giá dịch vụ" : "Leave a review", url: reviewUrl }],
+    note: linkNote,
+  });
 }

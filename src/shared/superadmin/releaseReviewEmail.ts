@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
+import { emailExperienceTags } from "@/shared/lib/emailExperienceRegistry";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import type { UserLanguage } from "@/shared/i18n/user/types";
 import type { ReleaseReviewContext } from "@/shared/superadmin/releaseReviewContext";
@@ -229,6 +230,7 @@ export async function ensureReleaseReviewEmail(
         subject: email.subject,
         html: email.html,
         text: email.text,
+        tags: emailExperienceTags("release_review"),
       },
       { idempotencyKey: `nailiq-release-review-${row.deployment_id}` },
     );

@@ -1,9 +1,6 @@
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
-import {
-  complianceFooterHtml,
-  listUnsubscribeHeaders,
-} from "@/shared/lib/emailCompliance";
+import { buildEmailExperience } from "@/shared/lib/emailExperience";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { logNotification } from "@/shared/lib/notificationLog";
 
@@ -227,54 +224,39 @@ async function sendWaitlistEmail(input: {
   const resend = getResendClient();
   if (!resend) return false;
 
-  const claimUrl = `${SITE_URL}/booking/waitlist-claim?token=${input.claimToken}`;
+  const claimUrl = `${SITE_URL}/booking/waitlist-claim?token=${encodeURIComponent(input.claimToken)}`;
   const from = getResendFrom();
-
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"></head>
-<body style="margin:0;padding:0;background:#0a0a0a;font-family:Georgia,serif;">
-  <table width="100%" cellpadding="0" cellspacing="0">
-    <tr><td align="center" style="padding:32px 16px;">
-      <table width="520" cellpadding="0" cellspacing="0" style="background:#111;border:1px solid #2a2a2a;border-radius:12px;overflow:hidden;max-width:100%;">
-        <tr>
-          <td style="background:#1a1a1a;padding:24px 32px;border-bottom:1px solid #2a2a2a;">
-            <p style="margin:0;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:#c9a96e;">Spot Available</p>
-            <h1 style="margin:8px 0 0;font-size:22px;color:#fff;font-weight:normal;">${input.salonName}</h1>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:28px 32px;">
-            <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#d1d1d1;">
-              Good news, ${input.clientName}! A spot just opened up for <strong>${input.serviceName}</strong> on ${input.bookingDateYmd}. Claim it before someone else does — this link expires in 20 minutes.
-            </p>
-            <a href="${claimUrl}" style="display:block;background:#c9a96e;color:#000;text-align:center;padding:14px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:bold;letter-spacing:1px;">
-              Claim My Spot →
-            </a>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:16px 32px;border-top:1px solid #2a2a2a;">
-            <p style="margin:0;font-size:11px;color:#555;text-align:center;">First to claim wins · <a href="${SITE_URL}" style="color:#555;">nailiq.ca</a></p>
-          </td>
-        </tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
-
-  const htmlC = html.replace(
-    "</body>",
-    `${complianceFooterHtml({ email: input.clientEmail, salonName: input.salonName })}</body>`,
-  );
+  const experience = buildEmailExperience({
+    key: "waitlist_offer_legacy",
+    locale: "en",
+    subject: `Spot opened: ${input.serviceName} at ${input.salonName}`,
+    preheader: "A requested time opened. Claim it within 20 minutes.",
+    salonName: input.salonName,
+    recipientEmail: input.clientEmail,
+    badge: "SPOT AVAILABLE",
+    greeting: `Good news, ${input.clientName}!`,
+    heading: "A time you wanted just opened",
+    paragraphs: ["NailIQ matched this opening against the salon's current schedule."],
+    details: [
+      { label: "Service", value: input.serviceName },
+      { label: "Date", value: input.bookingDateYmd },
+    ],
+    callout: {
+      title: "First confirmed claim wins",
+      body: "This is an invitation, not a booking. Your appointment exists only after the claim is confirmed.",
+    },
+    actions: [{ label: "Claim my spot", url: claimUrl }],
+    note: "This secure link expires in 20 minutes.",
+  });
   try {
     const { error } = await resend.emails.send({
       from,
       to: input.clientEmail,
       subject: `Spot opened: ${input.serviceName} at ${input.salonName}`,
-      html: htmlC,
-      headers: listUnsubscribeHeaders(input.clientEmail),
+      html: experience.html,
+      text: experience.text,
+      headers: experience.headers,
+      tags: experience.tags,
     });
     if (error) {
       console.error("[waitlistAutoFill] Email send failed", error);

@@ -2,6 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import { getResendClient } from "@/shared/lib/resend";
+import { emailExperienceTags } from "@/shared/lib/emailExperienceRegistry";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { customerEmailDeliverySuppressionReason } from "@/shared/notifications/customerEmailDeliverySuppression";
@@ -603,6 +604,7 @@ const defaultDeps: BookingConfirmationRetryDeliveryDeps = {
       ...(envelope.replyTo ? { replyTo: envelope.replyTo } : {}),
       ...(envelope.attachments.length ? { attachments: envelope.attachments } : {}),
       tags: [
+        ...emailExperienceTags("booking_confirmation"),
         { name: "nailiq_flow", value: "customer_booking" },
         { name: "nailiq_claim_kind", value: "confirmation" },
         { name: "nailiq_claim", value: context.claimId },

@@ -3,6 +3,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
+import { emailExperienceTags } from "@/shared/lib/emailExperienceRegistry";
 import {
   listUnsubscribeHeaders,
   transactionalEmailSuppressionReason,
@@ -191,6 +192,7 @@ export async function deliverStaffActionNotification(
             html: email.html,
             text: email.text,
             headers: listUnsubscribeHeaders(to),
+            tags: emailExperienceTags("staff_booking_action_legacy"),
           });
           emailSent = !res.error;
           void logNotification({

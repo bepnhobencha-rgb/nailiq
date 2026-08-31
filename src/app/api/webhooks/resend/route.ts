@@ -1,5 +1,5 @@
 /**
- * Signed Resend delivery receipts for owner booking notifications.
+ * Signed Resend delivery receipts for every registered NailIQ email.
  *
  * The raw body is bounded and verified before any database access. Only
  * provider/event IDs, timestamps, and irreversible fingerprints cross the
@@ -14,6 +14,7 @@ import {
   parseResendCustomerDeliveryMaterial,
   parseResendBookingOtpDeliveryMaterial,
   parseResendOwnerDeliveryMaterial,
+  parseResendRegisteredEmailDeliveryMaterial,
   readResendWebhookBody,
   resendWebhookPayloadFingerprint,
   resolveResendWebhookSecret,
@@ -24,6 +25,31 @@ const PRIVATE_HEADERS = { "Cache-Control": "private, no-store, max-age=0" } as c
 
 function json(body: Record<string, unknown>, status = 200) {
   return NextResponse.json(body, { status, headers: PRIVATE_HEADERS });
+}
+
+type RpcResult = { success?: boolean; code?: string };
+
+function classifyRpcResult(value: unknown):
+  | { ok: true; code: string }
+  | { ok: false; code: string; status: number } {
+  if (!value || typeof value !== "object") {
+    return { ok: false, code: "webhook_store_unavailable", status: 503 };
+  }
+  const result = value as RpcResult;
+  if (result.success === true && [
+    "event_applied", "event_replay", "event_rejected",
+  ].includes(result.code ?? "")) {
+    return { ok: true, code: result.code as string };
+  }
+  if (result.success === true && [
+    "event_pending_match", "event_replay_pending",
+  ].includes(result.code ?? "")) {
+    return { ok: false, code: "event_pending_match", status: 503 };
+  }
+  if (result.code === "event_conflict") {
+    return { ok: false, code: "event_conflict", status: 409 };
+  }
+  return { ok: false, code: result.code ?? "event_rejected", status: 400 };
 }
 
 export async function POST(request: Request) {
@@ -48,6 +74,7 @@ export async function POST(request: Request) {
   });
   if (!event) return json({ ok: false, code: "invalid_signature" }, 401);
 
+  const registeredMaterial = parseResendRegisteredEmailDeliveryMaterial(event);
   const ownerMaterial = parseResendOwnerDeliveryMaterial(event);
   const customerMaterial = ownerMaterial === "ignored"
     ? parseResendCustomerDeliveryMaterial(event)
@@ -57,11 +84,14 @@ export async function POST(request: Request) {
     : "ignored";
   if (
     ownerMaterial === "ignored" && customerMaterial === "ignored" &&
-    otpMaterial === "ignored"
+    otpMaterial === "ignored" && registeredMaterial === "ignored"
   ) {
     return json({ ok: true, code: "event_ignored" });
   }
-  if (ownerMaterial === null || customerMaterial === null || otpMaterial === null) {
+  if (
+    ownerMaterial === null || customerMaterial === null || otpMaterial === null ||
+    registeredMaterial === null
+  ) {
     return json({ ok: false, code: "invalid_event" }, 400);
   }
 
@@ -71,12 +101,38 @@ export async function POST(request: Request) {
   } catch {
     return json({ ok: false, code: "webhook_store_unavailable" }, 503);
   }
+
+  const payloadFingerprint = resendWebhookPayloadFingerprint(body.bytes);
+  let registeredCode: string | null = null;
+  if (registeredMaterial !== "ignored") {
+    const { data, error } = await db.rpc(
+      "record_resend_registered_email_delivery_event" as never,
+      {
+        p_provider_event_id: providerEventId,
+        p_provider_message_id: registeredMaterial.providerMessageId,
+        p_email_key: registeredMaterial.emailKey,
+        p_audience: registeredMaterial.audience,
+        p_event_type: registeredMaterial.eventType,
+        p_recipient_fingerprint: registeredMaterial.recipientFingerprint,
+        p_recipient_count: registeredMaterial.recipientCount,
+        p_occurred_at: registeredMaterial.occurredAt,
+        p_payload_fingerprint: payloadFingerprint,
+      } as never,
+    );
+    if (error) return json({ ok: false, code: "webhook_store_unavailable" }, 503);
+    const classified = classifyRpcResult(data);
+    if (!classified.ok) return json({ ok: false, code: classified.code }, classified.status);
+    registeredCode = classified.code;
+  }
+
   const material = ownerMaterial !== "ignored"
     ? ownerMaterial
     : customerMaterial !== "ignored"
       ? customerMaterial
       : otpMaterial;
-  if (material === "ignored") return json({ ok: true, code: "event_ignored" });
+  if (material === "ignored") {
+    return json({ ok: true, code: registeredCode ?? "event_ignored" });
+  }
   const isOtp = ownerMaterial === "ignored" && customerMaterial === "ignored";
   const rpcName = isOtp
     ? "record_resend_booking_otp_delivery_event"
@@ -95,26 +151,14 @@ export async function POST(request: Request) {
     p_event_type: material.eventType,
     p_recipient_fingerprint: material.recipientFingerprint,
     p_occurred_at: material.occurredAt,
-    p_payload_fingerprint: resendWebhookPayloadFingerprint(body.bytes),
+    p_payload_fingerprint: payloadFingerprint,
   };
   const { data, error } = await db.rpc(rpcName as never, params as never);
-  if (error || !data || typeof data !== "object") {
+  if (error) {
     return json({ ok: false, code: "webhook_store_unavailable" }, 503);
   }
-
-  const result = data as unknown as { success?: boolean; code?: string };
-  if (result.success === true && [
-    "event_applied", "event_replay", "event_rejected",
-  ].includes(result.code ?? "")) {
-    return json({ ok: true, code: result.code });
-  }
-  if (result.success === true && [
-    "event_pending_match", "event_replay_pending",
-  ].includes(result.code ?? "")) {
-    return json({ ok: false, code: "event_pending_match" }, 503);
-  }
-  if (result.code === "event_conflict") {
-    return json({ ok: false, code: "event_conflict" }, 409);
-  }
-  return json({ ok: false, code: result.code ?? "event_rejected" }, 400);
+  const classified = classifyRpcResult(data);
+  return classified.ok
+    ? json({ ok: true, code: classified.code })
+    : json({ ok: false, code: classified.code }, classified.status);
 }

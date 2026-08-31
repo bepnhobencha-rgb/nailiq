@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { transactionalEmailSuppressionReason } from "@/shared/lib/emailCompliance";
+import { emailExperienceTags } from "@/shared/lib/emailExperienceRegistry";
 import { getResendClient } from "@/shared/lib/resend";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
@@ -114,6 +115,7 @@ async function sendEmail(envelope: StaffActionEmailEnvelope) {
     html: envelope.html,
     text: envelope.text,
     headers: envelope.headers,
+    tags: emailExperienceTags("staff_booking_action"),
     ...(envelope.replyTo ? { replyTo: envelope.replyTo } : {}),
   });
 }

@@ -131,6 +131,8 @@ describe("owner booking notification durable recipient claim", () => {
         to: "owner@example.com",
         ...payload,
         tags: [
+          { name: "nailiq_email", value: "owner_booking_alert" },
+          { name: "nailiq_audience", value: "owner" },
           { name: "nailiq_flow", value: "owner_booking" },
           {
             name: "nailiq_claim",
@@ -297,6 +299,10 @@ describe("owner booking notification durable recipient claim", () => {
       from: "NailIQ <noreply@nailiq.ca>",
       to: "owner@example.com",
       ...payload,
+      tags: [
+        { name: "nailiq_email", value: "owner_booking_alert" },
+        { name: "nailiq_audience", value: "owner" },
+      ],
     });
   });
 

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { emailExperienceTags } from "@/shared/lib/emailExperienceRegistry";
 import type { SuperAdminRole } from "@/shared/lib/superadmin";
 import { requireActiveSuperAdminSession } from "@/shared/auth/requireActiveSuperAdminSession";
 import { writeAuditLog } from "@/shared/superadmin/audit";
@@ -1573,6 +1574,7 @@ export async function testResendConnection(
       to: toEmail.trim(),
       subject: "NailIQ — Resend connection test",
       html: "<p>Resend is connected to NailIQ. This is a test email from SuperAdmin.</p>",
+      tags: emailExperienceTags("provider_connection_test"),
     });
     if (res.error) {
       return { ok: false, error: String(res.error.message ?? res.error) };

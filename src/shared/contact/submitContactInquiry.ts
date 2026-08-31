@@ -9,6 +9,7 @@ import {
   isOverRateLimit,
 } from "@/shared/lib/inAppRateLimit";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
+import { emailExperienceTags } from "@/shared/lib/emailExperienceRegistry";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 
 const NAME_MAX = 100;
@@ -239,6 +240,7 @@ export async function submitContactInquiry(input: {
       subject,
       text,
       html,
+      tags: emailExperienceTags("contact_inquiry"),
     });
     if (res.error) {
       ErrorReporter.captureMessage("[contact] Resend send error", {
