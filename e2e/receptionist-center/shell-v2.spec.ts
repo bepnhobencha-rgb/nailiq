@@ -117,6 +117,39 @@ test.describe("Receptionist option-B shell", () => {
     await expectCalmShell(page, 390, 844);
   });
 
+  test("mobile calendar menu stays inside the viewport and exposes every view", async ({
+    page,
+  }) => {
+    const viewportWidth = 390;
+    await page.setViewportSize({ width: viewportWidth, height: 844 });
+    await gotoReceptionistCenter(page, fx.slug, {
+      expectWalkinQueue: false,
+      shellV2: true,
+    });
+
+    await page.getByTestId("shell-v2-calendar-view-menu-trigger").click();
+
+    const menu = page.getByTestId("shell-v2-calendar-view-menu");
+    await expect(menu).toBeVisible();
+    await expect(page.getByTestId("shell-v2-calendar-menu-day")).toHaveText(
+      "Day",
+    );
+    await expect(page.getByTestId("shell-v2-calendar-menu-week")).toHaveText(
+      "Week",
+    );
+    await expect(page.getByTestId("shell-v2-calendar-menu-month")).toHaveText(
+      "Month",
+    );
+
+    const menuBox = await menu.boundingBox();
+    expect(menuBox).not.toBeNull();
+    expect(menuBox!.x).toBeGreaterThanOrEqual(0);
+    expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(viewportWidth);
+
+    await page.getByTestId("shell-v2-calendar-menu-week").click();
+    await expect(page.getByTestId("week-view")).toBeVisible();
+  });
+
   test("desktop exposes day, week, and month without display settings", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await gotoReceptionistCenter(page, fx.slug, {
