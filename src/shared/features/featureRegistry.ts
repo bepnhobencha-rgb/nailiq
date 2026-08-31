@@ -70,7 +70,8 @@ export type BetaFeatureKey =
   | "guided_admin_setup"
   | "nail_tryon"
   | "archived_booking_recovery"
-  | "multi_service_booking";
+  | "multi_service_booking"
+  | "smart_checkout";
 
 export type ReleaseFeatureKey = BaseFeatureKey | BetaFeatureKey;
 
@@ -411,6 +412,16 @@ export const RELEASE_FEATURES: Record<
     description:
       "QA-only ordered 1–5 service sequence with authoritative prep, staff, schedule, and receipt.",
   },
+  smart_checkout: {
+    key: "smart_checkout",
+    label: "Smart Checkout",
+    group: "operations",
+    phase: "beta",
+    defaultOn: false,
+    source: { kind: "jsonb", flagKey: "smart_checkout_enabled" },
+    description:
+      "Approval-gated Square/Stripe in-person checkout with exact-once reconciliation.",
+  },
 };
 
 /**
@@ -420,7 +431,11 @@ export const RELEASE_FEATURES: Record<
  * boundary exists, the safe state is read-only/default-OFF.
  */
 export const CONTROLLED_ROLLOUT_RELEASE_FLAG_KEYS: ReadonlySet<string> =
-  new Set(["guided_admin_setup_enabled", "multi_service_booking_enabled"]);
+  new Set([
+    "guided_admin_setup_enabled",
+    "multi_service_booking_enabled",
+    "smart_checkout_enabled",
+  ]);
 
 export function containsControlledRolloutFlagMutation(
   featureFlags: unknown,

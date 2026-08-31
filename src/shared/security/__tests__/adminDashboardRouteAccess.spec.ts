@@ -311,6 +311,7 @@ describe("dashboard route authorization inventory", () => {
       "settings/page.tsx",
       "settings/readiness/page.tsx",
       "settings/staff/page.tsx",
+      "smart-checkout/page.tsx",
       "setup/address/page.tsx",
       "setup/ai-prefill/page.tsx",
       "setup/hours/page.tsx",

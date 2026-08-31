@@ -128,6 +128,7 @@ export function SalonSettingsHub({
   primaryGridAxis,
   smsOutboundEnabled,
   emailOutboundEnabled,
+  smartCheckoutEnabled,
   guidedFocusSection = null,
 }: {
   slug: string;
@@ -181,6 +182,8 @@ export function SalonSettingsHub({
   smsOutboundEnabled: boolean;
   /** Operator-level email kill-switch (default ON). */
   emailOutboundEnabled: boolean;
+  /** Controlled pilot gate; the linked lab remains simulation-only. */
+  smartCheckoutEnabled: boolean;
   /** Guided onboarding exposes only the current settings job on every viewport. */
   guidedFocusSection?: "notifications" | "integrations" | null;
 }) {
@@ -1155,6 +1158,38 @@ export function SalonSettingsHub({
             mobileBackHref={settingsHomeHref}
             mobileBackLabel={vi ? "Cài đặt" : "Settings"}
           >
+            <section
+              data-testid="settings-smart-checkout-card"
+              className="mb-6 rounded-2xl border border-nq-primary/30 bg-nq-primary/5 px-4 py-4"
+            >
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold text-nq-foreground">
+                      Smart Checkout
+                    </p>
+                    <Badge variant={smartCheckoutEnabled ? "info" : "neutral"}>
+                      {smartCheckoutEnabled ? "PILOT ON" : "PILOT OFF"}
+                    </Badge>
+                    <Badge variant="warning">
+                      {vi ? "Mô phỏng an toàn" : "Safe simulation"}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 max-w-2xl text-xs leading-5 text-nq-muted">
+                    {vi
+                      ? "Xem trước quy trình thu tiền Square Terminal, Stripe Terminal hoặc Tap to Pay. Lab không gọi provider và không thể thu tiền thật."
+                      : "Preview Square Terminal, Stripe Terminal, or Tap to Pay. The lab makes no provider calls and cannot collect real money."}
+                  </p>
+                </div>
+                <Link
+                  href={`/dashboard/${encodeURIComponent(slug)}/smart-checkout`}
+                  className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-full bg-nq-primary px-5 text-sm font-semibold text-nq-bg outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-nq-primary/50"
+                >
+                  {vi ? "Mở Smart Checkout Lab" : "Open Smart Checkout Lab"}
+                </Link>
+              </div>
+            </section>
+
             {/* ── Custom domain ───────────────────────────────────── */}
             {canManageSalonSettings ? (
               <DomainSettings slug={slug} initial={domainInfo} />

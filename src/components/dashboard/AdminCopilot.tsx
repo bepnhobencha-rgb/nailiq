@@ -236,6 +236,9 @@ export function AdminCopilot({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const compactOnCenter =
     compactFab && pathname.startsWith(`/dashboard/${encodeURIComponent(slug)}/center`);
+  const compactOnSmartCheckout = pathname.startsWith(
+    `/dashboard/${encodeURIComponent(slug)}/smart-checkout`,
+  );
 
   const nav = useCallback(
     (href: string) => {
@@ -393,12 +396,23 @@ export function AdminCopilot({
             "fixed bottom-20 right-5 z-50 flex min-h-11 items-center justify-center gap-2 rounded-full bg-nq-primary text-nq-bg shadow-nq-card transition-opacity hover:opacity-90 xl:bottom-5",
             compactOnCenter
               ? "min-w-11 px-3 xl:right-[21rem]"
-              : "pl-3.5 pr-4",
+              : compactOnSmartCheckout
+                ? "min-w-11 px-3 sm:pl-3.5 sm:pr-4"
+                : "pl-3.5 pr-4",
           )}
           aria-label={COPY.fab[lang]}
         >
           <Sparkles className="w-5 h-5" />
-          <span className={cn("text-sm font-semibold", compactOnCenter && "sr-only")}>
+          <span
+            className={cn(
+              "text-sm font-semibold",
+              compactOnCenter
+                ? "sr-only"
+                : compactOnSmartCheckout
+                  ? "sr-only sm:not-sr-only"
+                  : undefined,
+            )}
+          >
             {COPY.fab[lang]}
           </span>
         </button>

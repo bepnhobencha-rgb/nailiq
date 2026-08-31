@@ -99,7 +99,7 @@ describe("nail-tryon state boundary", () => {
     const parity = read("scripts/check-schema-parity.ts");
     expect(parity).toContain("policies: 213");
     expect(parity).toContain(
-      "const GRANTS = { anon: 56, authenticated: 78, service_role: 185 }",
+      "const GRANTS = { anon: 56, authenticated: 78, service_role: 188 }",
     );
   });
 });

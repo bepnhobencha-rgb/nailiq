@@ -135,13 +135,17 @@ import { execFileSync } from "node:child_process";
  * columns, three service-only functions, and five indexes.
  * The 20260831071731 SMS pre-acceptance retry migration extends the existing
  * private completion classifier in place and adds no schema shape.
+ * The 20260831161048 Smart Checkout foundation adds three service-only tables,
+ * 62 columns, and 21 primary/unique/lookup indexes for device identity,
+ * approval-gated checkout truth, immutable cart lines, and tenant-safe foreign
+ * keys. It adds no browser grants, policy, function, or trigger.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
  */
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
-  tables: 195,
+  tables: 198,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -191,7 +195,8 @@ const PRODUCTION = {
   // +38 late-cancellation review/receipt and payment outcome columns.
   // +12 registered-email signed delivery event columns.
   // +21 universal SMS attempt and salon template-settings columns.
-  columns: 2924,
+  // +62 Smart Checkout device/session/immutable-line columns.
+  columns: 2986,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -276,7 +281,8 @@ const PRODUCTION = {
   // +11 late-cancellation review/receipt identity, queue and FK indexes.
   // +4 registered email primary, event identity, timeline and operations indexes.
   // +5 SMS attempt and salon template-settings primary/lookup indexes.
-  indexes: 726,
+  // +21 Smart Checkout PK, tenant-FK, dedupe, and reconciliation indexes.
+  indexes: 747,
 } as const;
 
 /**
@@ -298,6 +304,9 @@ const CRITICAL_TABLES = [
   "salon_members",
   "owner_booking_notification_outbox",
   "multi_service_booking_rollouts",
+  "smart_checkout_devices",
+  "smart_checkout_sessions",
+  "smart_checkout_lines",
   "superadmins",
   "superadmin_audit_logs",
   "ai_execution_jobs",
@@ -799,7 +808,7 @@ function main() {
   // the delivery-event audit table is service-role-only.
   // The customer identity map is service-role read-only; the refund inbox is
   // mutation-through-RPC only and intentionally grants no table reachability.
-  const GRANTS = { anon: 56, authenticated: 78, service_role: 185 } as const;
+  const GRANTS = { anon: 56, authenticated: 78, service_role: 188 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
