@@ -136,7 +136,7 @@ import { execFileSync } from "node:child_process";
  * The 20260831071731 SMS pre-acceptance retry migration extends the existing
  * private completion classifier in place and adds no schema shape.
  * The 20260831092541 Smart Checkout foundation adds three service-only tables,
- * 62 columns, and 17 primary/unique/lookup indexes for device identity,
+ * 62 columns, and 21 primary/unique/lookup indexes for device identity,
  * approval-gated checkout truth, immutable cart lines, and tenant-safe foreign
  * keys. It adds no browser grants, policy, function, or trigger.
  * Refresh these
@@ -281,8 +281,8 @@ const PRODUCTION = {
   // +11 late-cancellation review/receipt identity, queue and FK indexes.
   // +4 registered email primary, event identity, timeline and operations indexes.
   // +5 SMS attempt and salon template-settings primary/lookup indexes.
-  // +17 Smart Checkout PK, tenant-FK, dedupe, and reconciliation indexes.
-  indexes: 743,
+  // +21 Smart Checkout PK, tenant-FK, dedupe, and reconciliation indexes.
+  indexes: 747,
 } as const;
 
 /**

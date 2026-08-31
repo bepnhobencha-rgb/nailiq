@@ -177,6 +177,17 @@ CREATE UNIQUE INDEX smart_checkout_sessions_provider_payment_once
 CREATE INDEX smart_checkout_sessions_booking_history
   ON public.smart_checkout_sessions (salon_id, booking_id, created_at DESC);
 
+CREATE INDEX smart_checkout_sessions_device_reference
+  ON public.smart_checkout_sessions (device_id, salon_id, provider)
+  WHERE device_id IS NOT NULL;
+
+CREATE INDEX smart_checkout_sessions_requested_by
+  ON public.smart_checkout_sessions (requested_by, created_at DESC);
+
+CREATE INDEX smart_checkout_sessions_approved_by
+  ON public.smart_checkout_sessions (approved_by, approved_at DESC)
+  WHERE approved_by IS NOT NULL;
+
 CREATE INDEX smart_checkout_sessions_reconcile_due
   ON public.smart_checkout_sessions (next_reconcile_at, created_at)
   WHERE status IN ('pending_provider', 'outcome_unknown');
@@ -212,6 +223,9 @@ CREATE TABLE public.smart_checkout_lines (
 
 CREATE INDEX smart_checkout_lines_session
   ON public.smart_checkout_lines (session_id, position);
+
+CREATE INDEX smart_checkout_lines_salon
+  ON public.smart_checkout_lines (salon_id, created_at DESC);
 
 ALTER TABLE public.smart_checkout_lines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.smart_checkout_lines FORCE ROW LEVEL SECURITY;
