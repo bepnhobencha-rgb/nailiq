@@ -393,12 +393,17 @@ export function AdminCopilot({
             "fixed bottom-20 right-5 z-50 flex min-h-11 items-center justify-center gap-2 rounded-full bg-nq-primary text-nq-bg shadow-nq-card transition-opacity hover:opacity-90 xl:bottom-5",
             compactOnCenter
               ? "min-w-11 px-3 xl:right-[21rem]"
-              : "pl-3.5 pr-4",
+              : "min-w-11 px-3 sm:pl-3.5 sm:pr-4",
           )}
           aria-label={COPY.fab[lang]}
         >
           <Sparkles className="w-5 h-5" />
-          <span className={cn("text-sm font-semibold", compactOnCenter && "sr-only")}>
+          <span
+            className={cn(
+              "text-sm font-semibold",
+              compactOnCenter ? "sr-only" : "sr-only sm:not-sr-only",
+            )}
+          >
             {COPY.fab[lang]}
           </span>
         </button>
