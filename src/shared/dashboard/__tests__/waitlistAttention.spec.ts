@@ -28,14 +28,19 @@ describe("waitlist attention", () => {
             status: "notified",
             createdAt: "2026-08-11T17:30:00.000Z",
           },
+          {
+            status: "review_required",
+            createdAt: "2026-08-11T17:55:00.000Z",
+          },
         ],
         observedAt,
       ),
     ).toEqual({
-      total: 4,
-      waiting: 2,
+      total: 5,
+      waiting: 3,
+      reviewRequired: 1,
       claimed: 1,
-      oldestWaitingMinutes: 11,
+      oldestWaitingMinutes: 15,
     });
   });
 
@@ -49,6 +54,7 @@ describe("waitlist attention", () => {
     ).toEqual({
       total: 1,
       waiting: 1,
+      reviewRequired: 0,
       claimed: 0,
       oldestWaitingMinutes: null,
     });

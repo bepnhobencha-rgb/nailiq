@@ -6,6 +6,7 @@ export type WaitlistAttentionEntry = {
 export type WaitlistAttentionSummary = {
   total: number;
   waiting: number;
+  reviewRequired: number;
   claimed: number;
   oldestWaitingMinutes: number | null;
 };
@@ -38,12 +39,14 @@ export function summarizeWaitlistAttention(
   observedAtIso: string,
 ): WaitlistAttentionSummary {
   let waiting = 0;
+  let reviewRequired = 0;
   let claimed = 0;
   let oldestWaitingMinutes: number | null = null;
 
   for (const entry of entries) {
     if (entry.status === "claimed") claimed += 1;
-    if (entry.status !== "waiting") continue;
+    if (entry.status === "review_required") reviewRequired += 1;
+    if (entry.status !== "waiting" && entry.status !== "review_required") continue;
     waiting += 1;
     const age = waitlistAgeMinutes(entry.createdAt, observedAtIso);
     if (age === null) continue;
@@ -54,6 +57,7 @@ export function summarizeWaitlistAttention(
   return {
     total: entries.length,
     waiting,
+    reviewRequired,
     claimed,
     oldestWaitingMinutes,
   };

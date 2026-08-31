@@ -2965,7 +2965,9 @@ function ReceptionistCenterInner({
   // rather than the anonymous "Guest 2 hasn't confirmed" which gives no context.
   const pendingPartyOrganizerName = pendingPartyCard?.organizerName ?? null;
   const unresolvedOnlineWaitlist = waitlistAttentionEnabled
-    ? data.onlineWaitlist.filter((entry) => entry.status === "waiting")
+    ? data.onlineWaitlist.filter(
+        (entry) => entry.status === "waiting" || entry.status === "review_required",
+      )
     : [];
   const oldestOnlineWaitlistMinutes = waitlistAttentionEnabled
     ? waitlistAttentionSummary.oldestWaitingMinutes

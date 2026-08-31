@@ -400,6 +400,10 @@ export function useBookingFlowState(
   const [smsConsent, setSmsConsent] = useState(initialSmsConsent);
   const [marketingConsent, setMarketingConsent] = useState(initialMarketingConsent);
   const [waitlistSlotJoined, setWaitlistSlotJoined] = useState(false);
+  const waitlistRequestRef = useRef({
+    intentKey: "",
+    requestId: crypto.randomUUID(),
+  });
   const [error, setError] = useState<string | null>(null);
   const [infoNameError, setInfoNameError] = useState<string | null>(null);
   const [infoPhoneError, setInfoPhoneError] = useState<string | null>(null);
@@ -2101,16 +2105,36 @@ export function useBookingFlowState(
     setWaitlistSubmitting(true);
     setError(null);
     try {
+      const bookingDateYmd = bookingDateYmdFromLocalDate(selectedDate);
+      const preferredSlotLabel = waitlistPreferredTime.trim() || null;
+      const waitlistIntentKey = JSON.stringify({
+        salonId: salon.id,
+        serviceId,
+        staffId,
+        bookingDateYmd,
+        preferredSlotLabel,
+        clientName: name,
+        clientPhone: phone,
+        clientEmail: email,
+      });
+      if (waitlistRequestRef.current.intentKey !== waitlistIntentKey) {
+        waitlistRequestRef.current = {
+          intentKey: waitlistIntentKey,
+          requestId: crypto.randomUUID(),
+        };
+      }
       await submitPublicWaitlistEntry({
         shopSlug,
         serviceId,
         staffId,
-        bookingDateYmd: bookingDateYmdFromLocalDate(selectedDate),
-        preferredSlotLabel: waitlistPreferredTime.trim() || null,
+        bookingDateYmd,
+        preferredSlotLabel,
         clientName: name,
         clientPhone: phone,
         clientEmail: email,
         source: "slot_unavailable",
+        requestId: waitlistRequestRef.current.requestId,
+        clientLocale: language,
       });
       setWaitlistSlotJoined(true);
     } catch (e) {
@@ -2133,8 +2157,10 @@ export function useBookingFlowState(
     waitlistPreferredTime,
     selectedDate,
     serviceId,
+    salon.id,
     shopSlug,
     staffId,
+    language,
     t.bookingErrors.nameRequired,
     t.bookingErrors.nameTooLong,
     t.bookingErrors.invalidNameChars,

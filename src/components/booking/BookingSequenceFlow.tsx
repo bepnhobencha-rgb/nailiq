@@ -6,6 +6,7 @@ import {
   ConfirmStepCardCapture,
   type ConfirmStepCardHandle,
 } from "@/components/booking/ConfirmStepCardCapture";
+import { CapacityRescueOptIn } from "@/components/booking/CapacityRescueOptIn";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
 import type {
   BookingSalonMeta,
@@ -17,6 +18,7 @@ import type {
 import { salonToday, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { bookingSequenceDraftStorageKey } from "@/shared/booking/bookingSequenceDraft";
+import { submitCapacityRescueRequest } from "@/shared/booking/submitCapacityRescueRequest";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import {
   resolveNoShowCardRequirement,
@@ -107,6 +109,10 @@ export function BookingSequenceFlow({
   const [cardSourceId, setCardSourceId] = useState<string | null>(null);
   const [cardVerificationToken, setCardVerificationToken] = useState<string | null>(null);
   const [cardManagementPending, setCardManagementPending] = useState(false);
+  const [capacityRescueEligible, setCapacityRescueEligible] = useState(false);
+  const [capacityRescueJoined, setCapacityRescueJoined] = useState(false);
+  const [capacityRescueSubmitting, setCapacityRescueSubmitting] = useState(false);
+  const [capacityRescueError, setCapacityRescueError] = useState<string | null>(null);
   const cardRef = useRef<ConfirmStepCardHandle>(null);
 
   useEffect(() => {
@@ -304,6 +310,9 @@ export function BookingSequenceFlow({
     setCardSourceId(null);
     setCardVerificationToken(null);
     setCardManagementPending(false);
+    setCapacityRescueEligible(false);
+    setCapacityRescueJoined(false);
+    setCapacityRescueError(null);
   }
 
   function updateLine(index: number, patch: Partial<EditableLine>) {
@@ -320,6 +329,7 @@ export function BookingSequenceFlow({
     }
     setBusy(true);
     setError(null);
+    setCapacityRescueEligible(false);
     try {
       const response = await fetch("/api/booking/sequence-quote", {
         method: "POST",
@@ -355,6 +365,12 @@ export function BookingSequenceFlow({
                     : null;
         if (parallelError) {
           setError(parallelError);
+          setCapacityRescueEligible(
+            result.code === "no_shared_parallel_resource" ||
+              result.code === "no_staff_available" ||
+              result.code === "no_resource_available" ||
+              result.code === "slot_conflict",
+          );
           return;
         }
         throw new Error("quote");
@@ -366,6 +382,49 @@ export function BookingSequenceFlow({
       setError(vi ? "Chưa thể kiểm tra chuỗi dịch vụ. Vui lòng thử lại." : "We could not verify this sequence. Please retry.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function joinCapacityRescue(email: string) {
+    if (!currentIntent || !date || lines.length < 1 || !lines[0].serviceId) {
+      setCapacityRescueError(t.capacityRescueError);
+      return;
+    }
+    setCapacityRescueSubmitting(true);
+    setCapacityRescueError(null);
+    try {
+      const serviceIds = Array.from(new Set(lines.map((line) => line.serviceId)));
+      await submitCapacityRescueRequest({
+        salonId: salon.id,
+        requestId,
+        requestKind: "sequence",
+        primaryServiceId: lines[0].serviceId,
+        staffId: lines[0].staffPreference === "any" ? null : lines[0].staffPreference,
+        bookingDateYmd: date,
+        preferredSlotLabel: time || null,
+        partySize: 1,
+        clientName: customer.name,
+        clientPhone: customer.phone,
+        clientEmail: email,
+        clientLocale: language,
+        intent: {
+          serviceIds,
+          requestedStartTimeUtc: currentIntent.requestedStartTimeUtc,
+          sameStaffForAll,
+          lines: lines.map((line, position) => ({
+            position,
+            serviceId: line.serviceId,
+            staffPreference: line.staffPreference,
+            addOnServiceIds: line.addOnServiceIds,
+            timingPreference: line.timingPreference,
+          })),
+        },
+      });
+      setCapacityRescueJoined(true);
+    } catch {
+      setCapacityRescueError(t.capacityRescueError);
+    } finally {
+      setCapacityRescueSubmitting(false);
     }
   }
 
@@ -727,6 +786,16 @@ export function BookingSequenceFlow({
         </div>
       ) : null}
       {error ? <p role="alert" className="text-sm text-red-500">{error}</p> : null}
+      {capacityRescueEligible && currentIntent && stage === "build" ? (
+        <CapacityRescueOptIn
+          t={t}
+          initialEmail={customer.email ?? ""}
+          joined={capacityRescueJoined}
+          submitting={capacityRescueSubmitting}
+          error={capacityRescueError}
+          onSubmit={(email) => void joinCapacityRescue(email)}
+        />
+      ) : null}
       {stage === "review" ? (
         <button type="button" onClick={() => { setStage("build"); setQuote(null); setReconfirmRequired(false); }} className="nq-booking-btn-ghost w-full">
           {vi ? "Quay lại chỉnh sửa" : "Back to edit"}

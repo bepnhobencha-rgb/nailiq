@@ -236,6 +236,14 @@ export const bookingEn = {
     "You're on the list. We'll email you if a matching spot opens.",
   waitlistError: "Couldn't save your request. Try again.",
   waitlistEmailLabel: "Email *",
+  capacityRescueTitle: "Keep this exact plan",
+  capacityRescueDescription:
+    "We’ll watch for a complete fit and let the salon arrange it without losing your services or group preferences.",
+  capacityRescueJoinCta: "Save my plan",
+  capacityRescueSubmitting: "Saving…",
+  capacityRescueJoined:
+    "Plan saved. The salon can now review the complete request — no partial booking was created.",
+  capacityRescueError: "We couldn't save this plan. Please try again.",
   waitlistEmailHint:
     "Required — we’ll email your secure 20-minute claim link here.",
   waitlistEmailRequired:

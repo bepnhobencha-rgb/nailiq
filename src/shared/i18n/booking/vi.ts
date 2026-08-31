@@ -216,6 +216,14 @@ export const bookingVi: BookingMessages = {
     "Đã ghi nhận. Chúng tôi sẽ gửi email khi có chỗ trống phù hợp.",
   waitlistError: "Không lưu được. Vui lòng thử lại.",
   waitlistEmailLabel: "Email *",
+  capacityRescueTitle: "Giữ nguyên phương án này",
+  capacityRescueDescription:
+    "NailIQ sẽ theo dõi khi đủ toàn bộ chỗ và giúp tiệm sắp lịch mà không làm mất dịch vụ hoặc lựa chọn của nhóm.",
+  capacityRescueJoinCta: "Lưu phương án của tôi",
+  capacityRescueSubmitting: "Đang lưu…",
+  capacityRescueJoined:
+    "Đã lưu đầy đủ yêu cầu. Tiệm sẽ xem toàn bộ phương án — chưa tạo lịch thiếu người hoặc thiếu dịch vụ.",
+  capacityRescueError: "Chưa lưu được phương án. Vui lòng thử lại.",
   waitlistEmailHint:
     "Bắt buộc — link giữ chỗ an toàn trong 20 phút sẽ được gửi vào email này.",
   waitlistEmailRequired:

@@ -1802,6 +1802,12 @@ export const userVi: UserMessages = {
       inviteAgain: "Mời lại",
       invited: "Đã mời",
       statusWaiting: "Đang chờ",
+      needsPlan: "Cần xếp phương án",
+      groupRequest: (partySize, serviceCount) =>
+        `${partySize} khách · ${serviceCount} dịch vụ`,
+      sequenceRequest: (serviceCount) =>
+        `${serviceCount} dịch vụ trong một chuỗi`,
+      callToArrange: "Gọi để sắp lịch",
       waitingMinutes: (minutes) =>
         minutes === 0 ? "Vừa vào danh sách chờ" : `Đã chờ ${minutes} phút`,
       claimed: "✅ Đã giành chỗ",
