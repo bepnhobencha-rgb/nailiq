@@ -126,16 +126,26 @@ export async function dispatchClaimedBookingPaymentOperation(args: {
   db: RpcClient;
   claim: ClaimedBookingPaymentOperation;
   provider?: PaymentProvider;
+  providerPurpose?: "approved_no_show_charge";
   note?: string;
   referenceId?: string;
   reason?: string;
 }): Promise<PaymentDispatchOutcome> {
   const { claim } = args;
+  if (args.providerPurpose === "approved_no_show_charge" &&
+      claim.material.operationKind !== "noshow_charge") {
+    return {
+      ok: false,
+      status: "unknown",
+      operationId: claim.operationId,
+      reason: "provider_purpose_mismatch",
+    };
+  }
   let provider: PaymentProvider;
   try {
     provider = args.provider ?? await resolvePaymentProvider(
       claim.material.salonId,
-      { strict: true },
+      { strict: true, purpose: args.providerPurpose },
     ) as PaymentProvider;
   } catch {
     const completion: Completion = {

@@ -16,7 +16,10 @@ import { requireCronAuthorization } from "@/shared/security/cronAuthorization";
 import { runTrackedCron } from "@/shared/security/cronRunHistory";
 import { reconcileBookingCardSaveOperations } from "@/shared/booking/reconcileBookingCardSaveOperations";
 import { reconcileBookingCardContinuations } from "@/shared/booking/reconcileBookingCardContinuations";
-import { v1AllowsCustomerPaymentGateway } from "@/shared/release/v1IntegrationScope";
+import {
+  allowsApprovedNoShowChargeDispatch,
+  v1AllowsCustomerPaymentGateway,
+} from "@/shared/release/v1IntegrationScope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -288,15 +291,14 @@ export async function GET(request: NextRequest) {
         unresolved += 1;
         continue;
       }
-      if (
-        !v1AllowsCustomerPaymentGateway() &&
-        [
-          "noshow_charge",
-          "late_cancel_charge",
-          "noshow_refund",
-          "late_cancel_refund",
-        ].includes(operationKind)
-      ) {
+      const approvedNoShowReconciliation = operationKind === "noshow_charge" &&
+        allowsApprovedNoShowChargeDispatch();
+      if (!v1AllowsCustomerPaymentGateway() && !approvedNoShowReconciliation && [
+        "noshow_charge",
+        "late_cancel_charge",
+        "noshow_refund",
+        "late_cancel_refund",
+      ].includes(operationKind)) {
         // A reconciliation worker must not become a back door around the V1
         // money boundary. Preserve the unresolved ledger row for a future,
         // separately certified Phase 2 release without touching a provider.
@@ -316,7 +318,13 @@ export async function GET(request: NextRequest) {
         unresolved += 1;
         continue;
       }
-      const result = await dispatchClaimedBookingPaymentOperation({ db: db as never, claim });
+      const result = await dispatchClaimedBookingPaymentOperation({
+        db: db as never,
+        claim,
+        ...(approvedNoShowReconciliation
+          ? { providerPurpose: "approved_no_show_charge" as const }
+          : {}),
+      });
       if (result.ok) succeeded += 1;
       else unresolved += 1;
     }

@@ -4,6 +4,7 @@ import { getSquareConfig } from "@/shared/integrations/square/client";
 import { SquareProvider } from "./square";
 import type { PaymentProvider, PaymentProviderKind } from "./types";
 import {
+  allowsApprovedNoShowChargeDispatch,
   v1AllowsCustomerPaymentGateway,
   v1AllowsNoShowCardOnFile,
 } from "@/shared/release/v1IntegrationScope";
@@ -18,11 +19,16 @@ export type { PaymentProvider } from "./types";
  */
 export async function resolvePaymentProvider(
   salonId: string,
-  options?: { strict?: boolean; purpose?: "payment" | "card_on_file" },
+  options?: {
+    strict?: boolean;
+    purpose?: "payment" | "card_on_file" | "approved_no_show_charge";
+  },
 ): Promise<PaymentProvider | null> {
   const allowed = options?.purpose === "card_on_file"
     ? v1AllowsNoShowCardOnFile()
-    : v1AllowsCustomerPaymentGateway();
+    : options?.purpose === "approved_no_show_charge"
+      ? allowsApprovedNoShowChargeDispatch()
+      : v1AllowsCustomerPaymentGateway();
   if (!allowed) {
     if (options?.strict) throw new Error("v1_customer_payment_gateway_disabled");
     return null;
@@ -31,10 +37,18 @@ export async function resolvePaymentProvider(
 
   const { data: salonRow, error: salonError } = await db
     .from("salons")
-    .select("payment_provider")
+    .select("payment_provider, feature_flags")
     .eq("id", salonId)
     .maybeSingle();
   if (options?.strict && (salonError || !salonRow)) throw new Error("payment_provider_config_unavailable");
+  if (options?.purpose === "approved_no_show_charge") {
+    const flags = (salonRow as Row | null)?.feature_flags;
+    if (!flags || typeof flags !== "object" || Array.isArray(flags) ||
+        (flags as Record<string, unknown>).approved_no_show_charge_dispatch !== true) {
+      if (options?.strict) throw new Error("salon_not_allowlisted");
+      return null;
+    }
+  }
   let kind =
     ((salonRow as Row | null)?.payment_provider as PaymentProviderKind | null) ??
     null;

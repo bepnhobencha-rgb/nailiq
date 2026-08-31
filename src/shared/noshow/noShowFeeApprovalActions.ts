@@ -8,6 +8,7 @@ import {
   isOwnerOrAdmin,
 } from "@/shared/lib/salonMemberRole";
 import { allowsApprovedNoShowChargeDispatch } from "@/shared/release/v1IntegrationScope";
+import { resolvePaymentProvider } from "@/shared/integrations/payments";
 import { runAuthoritativeBookingPaymentOperation } from "@/shared/payments/executeBookingPaymentOperation";
 
 type Result = { ok: true; code: string; reviewId: string; paymentStatus?: string } |
@@ -169,6 +170,17 @@ export async function dispatchApprovedNoShowFee(
     return { ok: false, error: "salon_not_allowlisted" };
   }
 
+  // Resolve the configured tenant provider before changing the durable review
+  // to dispatching. This is a local configuration read only; it makes a
+  // missing or mismatched salon connection fail without stranding the review.
+  const provider = await resolvePaymentProvider(ctx.salon.id, {
+    strict: true,
+    purpose: "approved_no_show_charge",
+  }).catch(() => null);
+  if (!provider) {
+    return { ok: false, error: "provider_configuration_unavailable" };
+  }
+
   const { data: authorized, error: authError } = await db.rpc(
     "authorize_approved_no_show_fee_dispatch" as never,
     {
@@ -200,6 +212,7 @@ export async function dispatchApprovedNoShowFee(
     requestId,
     operationKind: "noshow_charge",
     amountCents,
+    provider,
     note: "Approved no-show fee",
     referenceId: `booking:${bookingId}`,
     paymentAuthorization: {
