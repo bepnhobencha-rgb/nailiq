@@ -10,7 +10,7 @@ const migration = readFileSync(
 const aclMigration = readFileSync(
   join(
     process.cwd(),
-    "supabase/migrations/20260831161710_restrict_smart_checkout_service_role_acl.sql",
+    "supabase/migrations/20260831162305_restrict_smart_checkout_service_role_acl.sql",
   ),
   "utf8",
 );
