@@ -458,7 +458,11 @@ export async function POST(req: Request) {
   if (outcome === "accepted" || outcome === "rejected" || outcome === "unknown") {
     const trackingPatch =
       outcome === "accepted"
-        ? { sms_confirmation_sent_at: new Date().toISOString() }
+        ? {
+            sms_confirmation_sent_at: new Date().toISOString(),
+            sms_confirmation_failed_at: null,
+            sms_confirmation_error: null,
+          }
         : outcome === "rejected"
           ? {
               sms_confirmation_failed_at: new Date().toISOString(),

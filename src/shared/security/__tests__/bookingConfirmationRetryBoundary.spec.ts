@@ -16,6 +16,10 @@ const workflow = readFileSync(
   "utf8",
 );
 const parity = readFileSync(resolve(root, "scripts/check-schema-parity.ts"), "utf8");
+const smsConfirmRoute = readFileSync(
+  resolve(root, "src/app/api/booking/sms-confirm/route.ts"),
+  "utf8",
+);
 
 describe("booking confirmation retry DB boundary", () => {
   it("keeps every tokenized RPC service-role only with an empty search path", () => {
@@ -58,6 +62,25 @@ describe("booking confirmation retry DB boundary", () => {
     );
     expect(smsPreacceptanceHotfix).toContain("retryable_pre_acceptance");
     expect(smsPreacceptanceHotfix).toContain("unclassified_provider_outcome");
+  });
+
+  it("clears stale booking failure truth when a retry is accepted", () => {
+    const trackingStart = smsConfirmRoute.indexOf("const trackingPatch");
+    const acceptedStart = smsConfirmRoute.indexOf(
+      'outcome === "accepted"',
+      trackingStart,
+    );
+    const rejectedStart = smsConfirmRoute.indexOf(
+      'outcome === "rejected"',
+      acceptedStart,
+    );
+    const acceptedPatch = smsConfirmRoute.slice(acceptedStart, rejectedStart);
+    expect(trackingStart).toBeGreaterThan(-1);
+    expect(acceptedStart).toBeGreaterThan(trackingStart);
+    expect(rejectedStart).toBeGreaterThan(acceptedStart);
+    expect(acceptedPatch).toContain("sms_confirmation_sent_at");
+    expect(acceptedPatch).toContain("sms_confirmation_failed_at: null");
+    expect(acceptedPatch).toContain("sms_confirmation_error: null");
   });
 
   it("uses attempt CAS, exact material binding, and skip-locked workers", () => {
