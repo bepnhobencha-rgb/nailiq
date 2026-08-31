@@ -51,6 +51,9 @@ BEGIN
     'public.complete_booking_confirmation_delivery_unserialized(uuid,uuid,text,text,text,text)'::regprocedure
   ) INTO v_def;
   IF position('sms_rate_limited_pre_acceptance' IN v_def) = 0
+     OR position('sms_policy_unavailable_pre_acceptance' IN v_def) = 0
+     OR position('consent_unavailable_pre_acceptance' IN v_def) = 0
+     OR position('sms_delivery_truth_unavailable_pre_acceptance' IN v_def) = 0
      OR position('email_rate_limited_pre_acceptance' IN v_def) = 0
      OR position('unclassified_provider_outcome' IN v_def) = 0
      OR position('make_interval(secs => v_jitter_seconds)' IN v_def) = 0

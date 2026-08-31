@@ -7,11 +7,19 @@ const migration = readFileSync(
   resolve(root, "supabase/migrations/20260820123000_add_booking_confirmation_retry_contract.sql"),
   "utf8",
 );
+const smsPreacceptanceHotfix = readFileSync(
+  resolve(root, "supabase/migrations/20260831071731_allow_sms_preacceptance_retry_codes.sql"),
+  "utf8",
+);
 const workflow = readFileSync(
   resolve(root, ".github/workflows/migration-history-rehearsal.yml"),
   "utf8",
 );
 const parity = readFileSync(resolve(root, "scripts/check-schema-parity.ts"), "utf8");
+const smsConfirmRoute = readFileSync(
+  resolve(root, "src/app/api/booking/sms-confirm/route.ts"),
+  "utf8",
+);
 
 describe("booking confirmation retry DB boundary", () => {
   it("keeps every tokenized RPC service-role only with an empty search path", () => {
@@ -38,6 +46,41 @@ describe("booking confirmation retry DB boundary", () => {
     expect(migration).toContain("email_unavailable_pre_acceptance");
     expect(migration).toContain("unclassified_provider_outcome");
     expect(migration).not.toMatch(/next_attempt_at\s*=\s*p_/i);
+  });
+
+  it("keeps every dispatcher-proven SMS pre-acceptance failure retryable", () => {
+    for (const code of [
+      "sms_policy_unavailable_pre_acceptance",
+      "consent_unavailable_pre_acceptance",
+      "sms_delivery_truth_unavailable_pre_acceptance",
+    ]) expect(smsPreacceptanceHotfix).toContain(code);
+    expect(smsPreacceptanceHotfix).toContain(
+      "complete_booking_confirmation_delivery_unserialized",
+    );
+    expect(smsPreacceptanceHotfix).toMatch(
+      /revoke all on function public\.complete_booking_confirmation_delivery_unserialized[\s\S]*from public, anon, authenticated, service_role/i,
+    );
+    expect(smsPreacceptanceHotfix).toContain("retryable_pre_acceptance");
+    expect(smsPreacceptanceHotfix).toContain("unclassified_provider_outcome");
+  });
+
+  it("clears stale booking failure truth when a retry is accepted", () => {
+    const trackingStart = smsConfirmRoute.indexOf("const trackingPatch");
+    const acceptedStart = smsConfirmRoute.indexOf(
+      'outcome === "accepted"',
+      trackingStart,
+    );
+    const rejectedStart = smsConfirmRoute.indexOf(
+      'outcome === "rejected"',
+      acceptedStart,
+    );
+    const acceptedPatch = smsConfirmRoute.slice(acceptedStart, rejectedStart);
+    expect(trackingStart).toBeGreaterThan(-1);
+    expect(acceptedStart).toBeGreaterThan(trackingStart);
+    expect(rejectedStart).toBeGreaterThan(acceptedStart);
+    expect(acceptedPatch).toContain("sms_confirmation_sent_at");
+    expect(acceptedPatch).toContain("sms_confirmation_failed_at: null");
+    expect(acceptedPatch).toContain("sms_confirmation_error: null");
   });
 
   it("uses attempt CAS, exact material binding, and skip-locked workers", () => {
