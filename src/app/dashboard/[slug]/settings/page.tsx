@@ -20,6 +20,7 @@ import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 import { loadSalonOwnerAdminSettingsForDashboardContext } from "@/shared/dashboard/salonOwnerAdminSettings";
 import { normalizeGroupWaveStrategy } from "@/shared/booking/groupWaveOptimizer";
+import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 
 type Props = {
   params: Promise<{ slug: string }>;
@@ -233,6 +234,10 @@ export default async function SalonSettingsPage({
     { feature_flags: row?.feature_flags },
     "guided_admin_setup",
   );
+  const smartCheckoutEnabled = isReleaseFeatureEnabled(
+    { feature_flags: row?.feature_flags },
+    "smart_checkout",
+  );
 
   return (
     <div className="space-y-5">
@@ -295,6 +300,7 @@ export default async function SalonSettingsPage({
         primaryGridAxis={primaryGridAxis}
         smsOutboundEnabled={smsOutboundEnabled}
         emailOutboundEnabled={emailOutboundEnabled}
+        smartCheckoutEnabled={smartCheckoutEnabled}
       />
     </div>
   );

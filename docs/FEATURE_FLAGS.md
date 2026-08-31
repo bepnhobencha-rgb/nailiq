@@ -71,6 +71,8 @@ from `defaultOn` (Base → ON, Beta → OFF).
 | `guided_admin_setup` | One-next-step onboarding driven by Go-Live Readiness | `feature_flags.guided_admin_setup_enabled` |
 | `nail_tryon` | Scan bàn tay + xem trước mẫu nail | `feature_flags.nail_tryon_enabled` |
 | `archived_booking_recovery` | Linked replacement for cancelled/no-show history | `feature_flags.archived_booking_recovery_enabled` |
+| `multi_service_booking` | Ordered multi-service booking | `feature_flags.multi_service_booking_enabled` |
+| `smart_checkout` | Approval-gated Square/Stripe checkout | `feature_flags.smart_checkout_enabled` |
 
 **No key duplication.** Where a per-salon toggle already exists, the registry
 maps to it rather than minting a new one:
