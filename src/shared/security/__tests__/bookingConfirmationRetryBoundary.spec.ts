@@ -7,6 +7,10 @@ const migration = readFileSync(
   resolve(root, "supabase/migrations/20260820123000_add_booking_confirmation_retry_contract.sql"),
   "utf8",
 );
+const smsPreacceptanceHotfix = readFileSync(
+  resolve(root, "supabase/migrations/20260831071731_allow_sms_preacceptance_retry_codes.sql"),
+  "utf8",
+);
 const workflow = readFileSync(
   resolve(root, ".github/workflows/migration-history-rehearsal.yml"),
   "utf8",
@@ -38,6 +42,22 @@ describe("booking confirmation retry DB boundary", () => {
     expect(migration).toContain("email_unavailable_pre_acceptance");
     expect(migration).toContain("unclassified_provider_outcome");
     expect(migration).not.toMatch(/next_attempt_at\s*=\s*p_/i);
+  });
+
+  it("keeps every dispatcher-proven SMS pre-acceptance failure retryable", () => {
+    for (const code of [
+      "sms_policy_unavailable_pre_acceptance",
+      "consent_unavailable_pre_acceptance",
+      "sms_delivery_truth_unavailable_pre_acceptance",
+    ]) expect(smsPreacceptanceHotfix).toContain(code);
+    expect(smsPreacceptanceHotfix).toContain(
+      "complete_booking_confirmation_delivery_unserialized",
+    );
+    expect(smsPreacceptanceHotfix).toMatch(
+      /revoke all on function public\.complete_booking_confirmation_delivery_unserialized[\s\S]*from public, anon, authenticated, service_role/i,
+    );
+    expect(smsPreacceptanceHotfix).toContain("retryable_pre_acceptance");
+    expect(smsPreacceptanceHotfix).toContain("unclassified_provider_outcome");
   });
 
   it("uses attempt CAS, exact material binding, and skip-locked workers", () => {

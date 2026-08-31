@@ -133,6 +133,8 @@ import { execFileSync } from "node:child_process";
  * The 20260831052212 SMS delivery-truth migration adds one PII-free RPC-only
  * attempt ledger, one service-role-only salon template-settings table, 21
  * columns, three service-only functions, and five indexes.
+ * The 20260831071731 SMS pre-acceptance retry migration extends the existing
+ * private completion classifier in place and adds no schema shape.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.

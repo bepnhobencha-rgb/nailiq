@@ -45,6 +45,9 @@ DECLARE
   v_claim_id uuid;
   v_token uuid;
   v_count integer;
+  v_error text;
+  v_booking_id uuid;
+  v_suffix integer := 16;
 BEGIN
   PERFORM set_config('request.jwt.claim.role', 'service_role', true);
 
@@ -219,6 +222,43 @@ BEGIN
     encode(extensions.digest(convert_to(v_phone,'UTF8'),'sha256'),'hex'), v_sms
   );
   IF v_result->>'code' <> 'booking_not_found' THEN RAISE EXCEPTION 'cross-tenant accepted: %',v_result; END IF;
+
+  -- Every failure that the shared SMS dispatcher proves before claiming the
+  -- Twilio attempt ledger must retain the exact envelope for one bounded retry.
+  v_sms := jsonb_set(v_sms::jsonb, '{salonId}', to_jsonb(v_salon::text))::text;
+  FOREACH v_error IN ARRAY ARRAY[
+    'sms_policy_unavailable_pre_acceptance',
+    'consent_unavailable_pre_acceptance',
+    'sms_delivery_truth_unavailable_pre_acceptance'
+  ] LOOP
+    v_booking_id := ('c5100000-0000-4000-8000-' || lpad(v_suffix::text, 12, '0'))::uuid;
+    v_payload := encode(extensions.digest(convert_to(v_sms,'UTF8'),'sha256'),'hex');
+    v_recipient := encode(extensions.digest(convert_to(v_phone,'UTF8'),'sha256'),'hex');
+    v_claim := public.claim_booking_confirmation_delivery(
+      v_salon, v_booking_id, 'sms', v_payload, v_recipient, v_sms
+    );
+    IF v_claim->>'code' <> 'claimed' THEN
+      RAISE EXCEPTION 'pre-acceptance claim failed for %: %', v_error, v_claim;
+    END IF;
+    v_claim_id := (v_claim->>'claim_id')::uuid;
+    v_token := (v_claim->>'attempt_token')::uuid;
+    v_result := public.complete_booking_confirmation_delivery(
+      v_claim_id, v_token, 'failed', NULL, v_error, 'retryable_pre_acceptance'
+    );
+    IF v_result->>'retry_scheduled' IS DISTINCT FROM 'true'
+       OR v_result->>'failure_disposition' IS DISTINCT FROM 'retryable_pre_acceptance'
+       OR NOT EXISTS (
+         SELECT 1 FROM public.booking_confirmation_dispatch_envelopes
+         WHERE claim_id=v_claim_id
+       )
+       OR NOT EXISTS (
+         SELECT 1 FROM public.booking_notifications
+         WHERE id=v_claim_id AND status='failed' AND error_code=v_error
+       ) THEN
+      RAISE EXCEPTION 'pre-acceptance retry contract failed for %: %', v_error, v_result;
+    END IF;
+    v_suffix := v_suffix + 1;
+  END LOOP;
 END;
 $behavior$;
 
