@@ -115,6 +115,20 @@ describe("booking confirmation tokenized retry delivery", () => {
     expect(d.sendEmail).not.toHaveBeenCalled();
   });
 
+  it("binds both initial and leased SMS attempts to the authoritative booking", async () => {
+    const d = deps();
+
+    await deliverBookingConfirmation({
+      bookingId: BOOKING_ID,
+      salonId: SALON_ID,
+      envelope: sms,
+    }, d);
+    await deliverLeasedBookingConfirmationRetry(lease(sms), d);
+
+    expect(d.sendSms).toHaveBeenNthCalledWith(1, sms, { bookingId: BOOKING_ID });
+    expect(d.sendSms).toHaveBeenNthCalledWith(2, sms, { bookingId: BOOKING_ID });
+  });
+
   it("completes a provider-suppressed email claim without crossing Resend", async () => {
     const d = deps({
       emailSuppressionReason: vi.fn().mockResolvedValue("bounced"),
