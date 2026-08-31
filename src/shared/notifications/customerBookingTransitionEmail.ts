@@ -2,6 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import { listUnsubscribeHeaders } from "@/shared/lib/emailCompliance";
+import { emailExperienceTags } from "@/shared/lib/emailExperienceRegistry";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { buildStaffActionEmailSubject, buildStaffActionSms } from "./staffActionMessages";
@@ -457,6 +458,7 @@ async function sendClaimedTransition(
         html: payload.html,
         headers: listUnsubscribeHeaders(payload.to),
         tags: [
+          ...emailExperienceTags("booking_transition"),
           { name: "nailiq_flow", value: "customer_booking" },
           { name: "nailiq_claim_kind", value: "transition" },
           { name: "nailiq_claim", value: material.outboxId },

@@ -1,5 +1,6 @@
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
-import { complianceFooterHtml, listUnsubscribeHeaders, isEmailSuppressed } from "@/shared/lib/emailCompliance";
+import { isEmailSuppressed } from "@/shared/lib/emailCompliance";
+import { buildEmailExperience } from "@/shared/lib/emailExperience";
 
 const SITE_URL =
   (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
@@ -37,55 +38,42 @@ export async function sendWinBackEmail(
   const name = input.clientName.trim() || "there";
   const salon = input.salonName.trim() || "us";
 
-  const html = buildHtml({
-    name,
-    salon,
-    serviceName: input.serviceName.trim(),
-    rebookUrl,
-  }).replace("</body>", `${complianceFooterHtml({ email, salonName: salon })}</body>`);
+  const serviceName = input.serviceName.trim();
+  const experience = buildEmailExperience({
+    key: "winback",
+    locale: "en",
+    subject: `We missed you at ${salon} — rebook anytime`,
+    preheader: `Your next visit at ${salon} is one tap away.`,
+    salonName: salon,
+    recipientEmail: email,
+    badge: "WELCOME BACK",
+    greeting: `Hi ${name},`,
+    heading: "We missed you 💛",
+    paragraphs: [
+      serviceName
+        ? `We had your ${serviceName} on the books and missed seeing you.`
+        : "We missed seeing you at your recent appointment.",
+      "Life happens. Whenever you're ready, you can choose a new time in one tap.",
+    ],
+    callout: {
+      title: "No pressure",
+      body: "This email does not create a booking or charge a fee. You stay in control until you confirm a new appointment.",
+    },
+    actions: [{ label: "Rebook now", url: rebookUrl }],
+  });
 
   try {
     const { error } = await resend.emails.send({
       from: getResendFrom(),
       to: email,
       subject: `We missed you at ${salon} — rebook anytime`,
-      html,
-      headers: listUnsubscribeHeaders(email),
+      html: experience.html,
+      text: experience.text,
+      headers: experience.headers,
+      tags: experience.tags,
     });
     return { ok: !error };
   } catch {
     return { ok: false };
   }
-}
-
-function buildHtml(p: {
-  name: string;
-  salon: string;
-  serviceName: string;
-  rebookUrl: string;
-}): string {
-  const svcLine = p.serviceName
-    ? `We had your ${escapeHtml(p.serviceName)} on the books and missed seeing you.`
-    : `We missed seeing you at your recent appointment.`;
-  return `
-  <div style="max-width:480px;margin:0 auto;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1a1a1a;">
-    <h2 style="font-size:18px;margin:0 0 12px;">Hi ${escapeHtml(p.name)}, we missed you 💛</h2>
-    <p style="font-size:14px;line-height:1.6;margin:0 0 16px;color:#444;">
-      ${svcLine} Life happens — whenever you're ready, your spot at
-      <strong>${escapeHtml(p.salon)}</strong> is one tap away.
-    </p>
-    <a href="${p.rebookUrl}"
-       style="display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:14px;">
-      Rebook now
-    </a>
-    <p style="font-size:12px;color:#999;margin:20px 0 0;">${escapeHtml(p.salon)}</p>
-  </div>`;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }

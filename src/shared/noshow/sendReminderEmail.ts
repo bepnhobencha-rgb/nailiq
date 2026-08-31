@@ -1,6 +1,7 @@
 import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProviderPolicy";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { complianceFooterHtml, listUnsubscribeHeaders, isEmailSuppressed } from "@/shared/lib/emailCompliance";
+import { emailExperienceTags } from "@/shared/lib/emailExperienceRegistry";
 import {
   isProviderTimeoutError,
   trackAnthropicMessage,
@@ -385,14 +386,15 @@ export async function sendGroupReminderEmail(
       subject: buildGroupReminderEmailSubject(input),
       html,
       headers: listUnsubscribeHeaders(input.organizerEmail),
-      ...(input.salonContactEmail ? { replyTo: input.salonContactEmail } : {}),
-      ...(input.deliveryClaimId ? {
-        tags: [
+      tags: [
+        ...emailExperienceTags("booking_reminder"),
+        ...(input.deliveryClaimId ? [
           { name: "nailiq_flow", value: "customer_booking" },
           { name: "nailiq_claim_kind", value: "reminder" },
           { name: "nailiq_claim", value: input.deliveryClaimId },
-        ],
-      } : {}),
+        ] : []),
+      ],
+      ...(input.salonContactEmail ? { replyTo: input.salonContactEmail } : {}),
     });
     if (error) {
       console.error("[sendGroupReminderEmail] Resend error", error);
@@ -451,14 +453,15 @@ export async function sendReminderEmail(
       subject: buildReminderEmailSubject(input),
       html,
       headers: listUnsubscribeHeaders(input.clientEmail),
-      ...(input.salonContactEmail ? { replyTo: input.salonContactEmail } : {}),
-      ...(input.deliveryClaimId ? {
-        tags: [
+      tags: [
+        ...emailExperienceTags("booking_reminder"),
+        ...(input.deliveryClaimId ? [
           { name: "nailiq_flow", value: "customer_booking" },
           { name: "nailiq_claim_kind", value: "reminder" },
           { name: "nailiq_claim", value: input.deliveryClaimId },
-        ],
-      } : {}),
+        ] : []),
+      ],
+      ...(input.salonContactEmail ? { replyTo: input.salonContactEmail } : {}),
     });
 
     if (error) {

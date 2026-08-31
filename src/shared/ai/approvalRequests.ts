@@ -30,6 +30,7 @@ import "server-only";
 
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
+import { emailExperienceTags } from "@/shared/lib/emailExperienceRegistry";
 import type { ExecutionJobStatus } from "@/shared/ai/executionPolicy";
 import { refreshOwnerProposalPreference } from "@/shared/ai/ownerPreference";
 import {
@@ -620,6 +621,7 @@ export async function sendApprovalEmail(requestId: string): Promise<boolean> {
     subject,
     html,
     text: textBody,
+    tags: emailExperienceTags("ai_approval"),
   };
   if (salon.email) {
     sendParams.replyTo = salon.email;
@@ -893,6 +895,7 @@ async function sendReminderEmail(req: ApprovalRow): Promise<boolean> {
     subject,
     html,
     text: textBody,
+    tags: emailExperienceTags("ai_approval"),
   };
   if (salon.email) sendParams.replyTo = salon.email;
 

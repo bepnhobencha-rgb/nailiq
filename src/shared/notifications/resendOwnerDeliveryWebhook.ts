@@ -2,6 +2,12 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import { Resend, type WebhookEventPayload } from "resend";
+import {
+  emailExperienceDefinition,
+  isEmailExperienceKey,
+  type EmailAudience,
+  type EmailExperienceKey,
+} from "@/shared/lib/emailExperienceRegistry";
 
 export const MAX_RESEND_WEBHOOK_BYTES = 256 * 1024;
 
@@ -52,6 +58,36 @@ export type ResendBookingOtpDeliveryMaterial = {
   recipientFingerprint: string;
   occurredAt: string;
 };
+
+export type ResendRegisteredEmailDeliveryMaterial = {
+  emailKey: EmailExperienceKey;
+  audience: EmailAudience;
+  providerMessageId: string;
+  eventType: ResendOwnerDeliveryMaterial["eventType"];
+  recipientFingerprint: string;
+  recipientCount: number;
+  occurredAt: string;
+};
+
+function parseRecipientFingerprint(value: unknown): {
+  fingerprint: string;
+  count: number;
+} | null {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 100) return null;
+  const recipients: string[] = [];
+  for (const candidate of value) {
+    if (typeof candidate !== "string" || candidate.length > 320) return null;
+    const normalized = candidate.trim().toLowerCase();
+    if (!normalized || /[\u0000-\u001f\u007f]/.test(normalized)) return null;
+    recipients.push(normalized);
+  }
+  const unique = [...new Set(recipients)].sort();
+  if (unique.length !== recipients.length) return null;
+  return {
+    fingerprint: createHash("sha256").update(unique.join("\n"), "utf8").digest("hex"),
+    count: unique.length,
+  };
+}
 
 export async function readResendWebhookBody(
   request: Request,
@@ -239,6 +275,51 @@ export function parseResendBookingOtpDeliveryMaterial(
     providerMessageId,
     eventType: event.type as ResendBookingOtpDeliveryMaterial["eventType"],
     recipientFingerprint: createHash("sha256").update(recipient, "utf8").digest("hex"),
+    occurredAt,
+  };
+}
+
+/**
+ * Parses the shared purpose/audience tags attached to every registered NailIQ
+ * email. This is additive to the stronger booking, owner and OTP correlations:
+ * those flows continue to write their domain ledgers as well.
+ */
+export function parseResendRegisteredEmailDeliveryMaterial(
+  event: WebhookEventPayload,
+): ResendRegisteredEmailDeliveryMaterial | "ignored" | null {
+  if (!DELIVERY_EVENTS.has(event.type)) return "ignored";
+  if (!("email_id" in event.data) || !("to" in event.data)) return null;
+
+  const tags = "tags" in event.data ? event.data.tags : undefined;
+  const emailKey = tags?.nailiq_email;
+  const audience = tags?.nailiq_audience;
+  if (emailKey === undefined && audience === undefined) return "ignored";
+  if (
+    typeof emailKey !== "string" || !isEmailExperienceKey(emailKey) ||
+    typeof audience !== "string" ||
+    emailExperienceDefinition(emailKey).audience !== audience
+  ) {
+    return null;
+  }
+
+  const providerMessageId = event.data.email_id;
+  const occurredAt = event.created_at;
+  const recipients = parseRecipientFingerprint(event.data.to);
+  if (
+    typeof providerMessageId !== "string" || !PROVIDER_ID_RE.test(providerMessageId) ||
+    typeof occurredAt !== "string" || !RFC3339_RE.test(occurredAt) ||
+    !Number.isFinite(Date.parse(occurredAt)) || recipients === null
+  ) {
+    return null;
+  }
+
+  return {
+    emailKey,
+    audience: audience as EmailAudience,
+    providerMessageId,
+    eventType: event.type as ResendOwnerDeliveryMaterial["eventType"],
+    recipientFingerprint: recipients.fingerprint,
+    recipientCount: recipients.count,
     occurredAt,
   };
 }

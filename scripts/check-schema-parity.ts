@@ -127,13 +127,16 @@ import { execFileSync } from "node:child_process";
  * immutable-receipt tables, 38 columns, two deny policies, seven functions,
  * four triggers, and eleven indexes. Provider dispatch remains environment-
  * and salon-gated and defaults off.
+ * The 20260831042615 registered-email delivery-truth migration adds one
+ * PII-free RPC-only event table, twelve columns, one restrictive deny policy,
+ * two service-role-only functions, and four indexes.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
  */
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
-  tables: 192,
+  tables: 193,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -181,7 +184,8 @@ const PRODUCTION = {
   // +9 parallel service policy/resource certification columns.
   // +33 group-cancellation fee review and immutable approval-receipt columns.
   // +38 late-cancellation review/receipt and payment outcome columns.
-  columns: 2891,
+  // +12 registered-email signed delivery event columns.
+  columns: 2903,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -194,7 +198,8 @@ const PRODUCTION = {
   // +1 owner/admin tenant-scoped parallel service policy.
   // +2 restrictive browser-deny policies on group-cancellation fee truth.
   // +2 restrictive browser-deny policies on late-cancellation fee truth.
-  policies: 212,
+  // +1 restrictive direct-access deny policy on registered email truth.
+  policies: 213,
   /**
    * APP functions only — refreshed after the rehearsed forward migrations.
    *
@@ -232,7 +237,8 @@ const PRODUCTION = {
   // receipt guard functions.
   // +7 late-cancellation snapshot, lock/capture/decision/receipt guards and
   // approved cancellation-fee claim/outcome functions.
-  functions: 433,
+  // +2 registered email receipt recorder and PII-free operational reader.
+  functions: 435,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -261,7 +267,8 @@ const PRODUCTION = {
   // +4 parallel-policy primary, unique, and service lookup indexes.
   // +10 group-cancellation review/receipt identity, lookup and FK indexes.
   // +11 late-cancellation review/receipt identity, queue and FK indexes.
-  indexes: 717,
+  // +4 registered email primary, event identity, timeline and operations indexes.
+  indexes: 721,
 } as const;
 
 /**
@@ -310,6 +317,7 @@ const CRITICAL_TABLES = [
   "customer_email_delivery_suppressions",
   "booking_otp_delivery_attempts",
   "resend_booking_otp_delivery_events",
+  "registered_email_delivery_events",
   "booking_no_show_decisions",
   "booking_notification_delivery_events",
   "booking_confirmation_dispatch_envelopes",
@@ -455,6 +463,8 @@ const CRITICAL_FUNCTIONS = [
   "complete_booking_otp_delivery_attempt",
   "mark_booking_otp_delivery_verified",
   "record_resend_booking_otp_delivery_event",
+  "record_resend_registered_email_delivery_event",
+  "load_registered_email_delivery_truth",
   "begin_booking_no_show_v1",
   "undo_booking_no_show_v1",
   "finalize_due_booking_no_shows_v1",

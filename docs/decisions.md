@@ -5,6 +5,44 @@ Newest entries on top.
 
 ---
 
+## 2026-08-30 — Every outbound email declares its purpose and evidence boundary
+
+**Status.** Implemented locally for review; no provider call, customer send,
+database migration, or production change has been performed.
+
+**Decision.** Every production module capable of dispatching email is listed in
+one `EMAIL_EXPERIENCE_REGISTRY`. Each entry declares its audience, consent class,
+source modules, and the strongest delivery evidence NailIQ actually owns. Every
+Resend request is tagged with a bounded purpose and audience so provider logs can
+be filtered without exposing recipient data or message content.
+
+- Customer lifecycle emails use one mobile-safe salon concierge shell with
+  escaped content, safe HTTPS actions, text fallback, salon identity, accurate
+  opt-out context, and a deterministic "NailIQ Booking Check" explanation.
+- Booking confirmations, group confirmations, reminders, and staff/customer
+  transitions keep their already-certified specialized renderers but share the
+  same brand identity and registry contract.
+- OTP and account recovery use a security identity. Owner, operator, incident,
+  approval, and system mail remain purpose-specific rather than masquerading as
+  customer marketing.
+- A provider-accepted send is never described as inbox delivery. Registered
+  email uses signed delivery receipts; durable domain outboxes are declared
+  separately; booking, owner-alert, and OTP retain their stronger ledgers.
+- A source-boundary test fails when a new Resend dispatcher is added without a
+  registry entry and purpose tags.
+- A signed webhook writes each tagged delivery event to one private, PII-free,
+  replay-safe registry ledger. Provider acceptance, delay, delivery, bounce,
+  complaint, suppression, and failure remain distinct. Booking, owner-alert,
+  and OTP events are dual-written to their stronger domain ledgers; the shared
+  ledger supplements rather than replaces their authoritative evidence.
+
+**Why.** A single visual template for every audience would make security and
+operator mail confusing, while separate unregistered senders previously made it
+impossible to answer which emails shared branding, consent, or delivery truth.
+The registry unifies governance; the audience-specific shells unify experience.
+
+---
+
 ## 2026-08-29 — Group multi-service requires one atomic party-sequence commit
 
 **Status.** Local Phase 2A quote foundation approved by the Product Owner in

@@ -368,6 +368,10 @@ async function sendCompletionEmail(
       from: RESEND_FROM,
       to: salonEmail,
       subject: `Your NailIQ page is ready — ${salonName}`,
+      tags: [
+        { name: "nailiq_email", value: "website_import_complete" },
+        { name: "nailiq_audience", value: "owner" },
+      ],
       html: `<p>Hi,</p>
 <p>We finished importing your website into NailIQ. Here's what was set up:</p>
 <ul>

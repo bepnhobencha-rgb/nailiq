@@ -1,5 +1,6 @@
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { buildEmailExperience } from "@/shared/lib/emailExperience";
 
 /**
  * Create a verification token for `(salonId, email)` and send the
@@ -28,38 +29,6 @@ function buildVerifyUrl(token: string): string {
   return `${origin.replace(/\/$/, "")}/api/verify-email?token=${encodeURIComponent(
     token,
   )}`;
-}
-
-function buildHtml(salonName: string, verifyUrl: string): string {
-  // Plain HTML, no template engine. Keep it minimal — most clients
-  // strip styles aggressively. The verify link is the operative
-  // element; the rest is courtesy framing.
-  return `<!doctype html>
-<html><body style="font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color: #111;">
-  <h2 style="margin: 0 0 12px;">Verify your NailIQ email</h2>
-  <p style="margin: 0 0 12px;">Hi! Please confirm this is the recovery email for <strong>${escapeHtml(
-    salonName,
-  )}</strong> on NailIQ.</p>
-  <p style="margin: 0 0 16px;">
-    <a href="${verifyUrl}" style="display: inline-block; padding: 10px 16px; background: #D4AF37; color: #0B0C10; text-decoration: none; border-radius: 6px; font-weight: 600;">Verify email</a>
-  </p>
-  <p style="margin: 0 0 12px; color: #666; font-size: 13px;">
-    Or copy this link into your browser:<br>
-    <a href="${verifyUrl}" style="color: #666;">${verifyUrl}</a>
-  </p>
-  <p style="margin: 24px 0 0; color: #999; font-size: 12px;">
-    This link expires in 24 hours. If you didn't request it, ignore this message.
-  </p>
-</body></html>`;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 export async function sendEmailVerification(input: {
@@ -95,13 +64,33 @@ export async function sendEmailVerification(input: {
 
   const token = String((inserted as { token: string }).token);
   const verifyUrl = buildVerifyUrl(token);
+  const experience = buildEmailExperience({
+    key: "email_verification",
+    locale: "en",
+    subject: "Verify your NailIQ email",
+    preheader: "Confirm your recovery email. This link expires in 24 hours.",
+    salonName: input.salonName,
+    recipientEmail: input.email,
+    badge: "SECURE RECOVERY",
+    heading: "Verify your NailIQ email",
+    paragraphs: [`Please confirm this is the recovery email for ${input.salonName} on NailIQ.`],
+    callout: {
+      title: "Account protection",
+      body: "Opening this email changes nothing. The recovery address is verified only after you use the secure button.",
+    },
+    actions: [{ label: "Verify email", url: verifyUrl }],
+    note: "This link expires in 24 hours. If you didn't request it, ignore this message.",
+  });
 
   try {
     const res = await resend.emails.send({
       from: getResendFrom(),
       to: input.email,
       subject: "Verify your NailIQ email",
-      html: buildHtml(input.salonName, verifyUrl),
+      html: experience.html,
+      text: experience.text,
+      headers: experience.headers,
+      tags: experience.tags,
     });
     if (res.error) {
       console.error("[sendEmailVerification] resend send", res.error);

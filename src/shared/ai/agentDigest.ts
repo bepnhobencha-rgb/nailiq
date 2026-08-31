@@ -9,6 +9,7 @@ import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { salonToday, salonDayRangeUtc } from "@/shared/lib/salonTime";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
+import { emailExperienceTags } from "@/shared/lib/emailExperienceRegistry";
 import { parseOwnerNotificationSettings } from "@/shared/dashboard/ownerNotificationSettings";
 import { getOutcomeStats } from "@/shared/ai/agentOutcomeTracker";
 import { loadUnclosedBookings } from "@/shared/dashboard/loadUnclosedBookings";
@@ -515,6 +516,7 @@ ${unclosed!.items.map((b) => `
       to: recipients,
       subject: `${salonName} · Tổng kết ${todayYmd}`,
       html,
+      tags: emailExperienceTags("ai_digest"),
       text:
         body +
         ((unclosed?.count ?? 0) > 0

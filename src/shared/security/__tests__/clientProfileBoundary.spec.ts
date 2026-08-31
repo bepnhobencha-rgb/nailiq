@@ -81,7 +81,7 @@ describe("client_profiles boundary", () => {
 
   it("updates the blank-database parity tripwire", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("policies: 212");
+    expect(parity).toContain("policies: 213");
     expect(parity).toContain(
       "const GRANTS = { anon: 56, authenticated: 78, service_role: 184 }",
     );

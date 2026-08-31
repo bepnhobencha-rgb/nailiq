@@ -6,7 +6,8 @@ import { isAiAgentPermissionEnabled } from "@/shared/ai/agentPermissionFence";
 import { looseServiceClient, type Row } from "@/shared/integrations/square/looseDb";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
-import { listUnsubscribeHeaders, complianceFooterHtml, isEmailSuppressed } from "@/shared/lib/emailCompliance";
+import { isEmailSuppressed } from "@/shared/lib/emailCompliance";
+import { buildEmailExperience } from "@/shared/lib/emailExperience";
 import { resolveCustomerChannel, type CustomerChannelMode } from "@/shared/lib/channelResolver";
 import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
 import {
@@ -156,26 +157,31 @@ async function sendEmail(
   // First-visit nurture is a marketing sequence — honour suppression list.
   const suppressed = await isEmailSuppressed(to).catch(() => true);
   if (suppressed) return false;
-  const esc = (s: string) =>
-    s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] ?? c));
-  const bookingBtn = bookingUrl
-    ? `<p style="margin:0 0 22px;"><a href="${bookingUrl}" style="display:inline-block;padding:13px 26px;background:#0a0a0a;color:#fff;text-decoration:none;border-radius:10px;font-weight:600;font-size:15px;">Book again</a></p>`
-    : "";
-  const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#faf9f7;">
-  <div style="max-width:480px;margin:0 auto;padding:28px 22px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#2a2a2a;">
-    <p style="margin:0 0 8px;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#888;">${esc(salonName)}</p>
-    <p style="margin:0 0 20px;font-size:15px;line-height:1.6;">${esc(text)}</p>
-    ${bookingBtn}
-  </div>
-${complianceFooterHtml({ email: to, salonName, lang: "en" })}
-</body></html>`;
+  const experience = buildEmailExperience({
+    key: "first_visit_follow_up",
+    locale: "en",
+    subject: `${salonName} — thank you for visiting`,
+    preheader: `A personal follow-up from ${salonName}.`,
+    salonName,
+    recipientEmail: to,
+    badge: "THANK YOU",
+    greeting: clientName.trim() ? `Hi ${clientName.trim()},` : "Hi there,",
+    heading: "It was lovely having you",
+    paragraphs: [text],
+    callout: {
+      title: "A thoughtful follow-up",
+      body: "This message may be personalized with NailIQ assistance from salon-approved information. It does not create a booking until you confirm a time.",
+    },
+    actions: bookingUrl ? [{ label: "Book again", url: bookingUrl }] : [],
+  });
   const { error } = await resend.emails.send({
     from: getResendFrom(),
     to,
     subject: `${salonName} — thank you for visiting`,
-    html,
-    text: bookingUrl ? `${text}\n\n${bookingUrl}` : text,
-    headers: listUnsubscribeHeaders(to),
+    html: experience.html,
+    text: experience.text,
+    headers: experience.headers,
+    tags: experience.tags,
     ...(replyTo ? { replyTo } : {}),
   });
   return !error;

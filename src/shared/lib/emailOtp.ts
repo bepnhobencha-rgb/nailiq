@@ -7,9 +7,8 @@ import {
   createBookingOtpDeliveryAttempt,
 } from "@/shared/booking/otpDeliveryTruth";
 import {
-  complianceFooterHtml,
-  listUnsubscribeHeaders,
-} from "@/shared/lib/emailCompliance";
+  buildEmailExperience,
+} from "@/shared/lib/emailExperience";
 
 /**
  * Self-contained EMAIL fallback for the booking phone-OTP.
@@ -286,27 +285,31 @@ async function sendOtpCodeEmail(input: {
     ? `Your verification code: ${input.code} · ${input.salonName}`
     : `Mã xác thực của bạn: ${input.code} · ${input.salonName}`;
   const lead = en
-    ? `Enter this code to confirm your booking at ${esc(input.salonName)}. It expires in 10 minutes.`
-    : `Nhập mã này để xác nhận lịch hẹn tại ${esc(input.salonName)}. Mã hết hạn sau 10 phút.`;
+    ? `Enter this code to confirm your booking at ${input.salonName}. It expires in 10 minutes.`
+    : `Nhập mã này để xác nhận lịch hẹn tại ${input.salonName}. Mã hết hạn sau 10 phút.`;
   const ignore = en
     ? "If you didn't request this, you can ignore this email."
     : "Nếu bạn không yêu cầu mã này, có thể bỏ qua email.";
-
-  const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#faf9f7;">
-  <div style="max-width:440px;margin:0 auto;padding:30px 22px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#2a2a2a;text-align:center;">
-    <p style="margin:0 0 16px;font-size:15px;line-height:1.55;">${lead}</p>
-    <div style="font-size:34px;font-weight:700;letter-spacing:10px;background:#0a0a0a;color:#fff;border-radius:12px;padding:16px 0;margin:0 0 16px;">${esc(input.code)}</div>
-    <p style="margin:0;font-size:12px;color:#999;">${ignore}</p>
-  </div>
-</body></html>`.replace(
-    "</body>",
-    `${complianceFooterHtml({
-      email: input.email,
-      salonName: input.salonName,
-      salonAddress: input.salonAddress,
-      lang: input.lang,
-    })}</body>`,
-  );
+  const experience = buildEmailExperience({
+    key: "booking_otp",
+    locale: input.lang,
+    subject,
+    preheader: en ? "Your secure code expires in 10 minutes." : "Mã an toàn hết hạn sau 10 phút.",
+    salonName: input.salonName,
+    salonAddress: input.salonAddress,
+    recipientEmail: input.email,
+    badge: en ? "ONE-TIME CODE" : "MÃ DÙNG MỘT LẦN",
+    heading: en ? "Confirm it is you" : "Xác nhận đúng là bạn",
+    paragraphs: [lead],
+    code: input.code,
+    callout: {
+      title: en ? "Security check" : "Kiểm tra an toàn",
+      body: en
+        ? "NailIQ will never ask you to read this code over a phone call."
+        : "NailIQ sẽ không bao giờ yêu cầu bạn đọc mã này qua cuộc gọi.",
+    },
+    note: ignore,
+  });
 
   try {
     const { data, error } = await resend.emails.send(
@@ -314,9 +317,11 @@ async function sendOtpCodeEmail(input: {
         from: getResendFrom(),
         to: input.email,
         subject,
-        html,
-        headers: listUnsubscribeHeaders(input.email),
+        html: experience.html,
+        text: experience.text,
+        headers: experience.headers,
         tags: [
+          ...experience.tags,
           { name: "nailiq_flow", value: "booking_otp" },
           { name: "nailiq_claim", value: input.deliveryAttemptId },
         ],
@@ -336,12 +341,4 @@ async function sendOtpCodeEmail(input: {
     console.error("[emailOtp] resend threw", e);
     return { ok: false, error: "provider_response_unknown", outcome: "unknown" };
   }
-}
-
-function esc(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }

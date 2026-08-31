@@ -1,10 +1,7 @@
 import "server-only";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
-import {
-  complianceFooterHtml,
-  listUnsubscribeHeaders,
-  isEmailSuppressed,
-} from "@/shared/lib/emailCompliance";
+import { isEmailSuppressed } from "@/shared/lib/emailCompliance";
+import { buildEmailExperience } from "@/shared/lib/emailExperience";
 
 /**
  * Send a single "here is your link" email to a customer — the EMAIL half of the
@@ -55,44 +52,42 @@ export async function sendCustomerLinkEmail(input: {
   const lang = input.lang === "en" ? "en" : "vi";
   const greeting = input.clientName?.trim()
     ? lang === "en"
-      ? `Hi ${esc(input.clientName.trim())},`
-      : `Chào ${esc(input.clientName.trim())},`
+      ? `Hi ${input.clientName.trim()},`
+      : `Chào ${input.clientName.trim()},`
     : "";
-  const heading = esc(input.heading?.trim() || input.subject);
-  const orCopy =
-    lang === "en"
-      ? "Or open this link:"
-      : "Hoặc mở liên kết này:";
-
-  const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#faf9f7;">
-  <div style="max-width:480px;margin:0 auto;padding:28px 22px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#2a2a2a;">
-    <h1 style="font-size:19px;margin:0 0 14px;color:#1a1a1a;">${heading}</h1>
-    ${greeting ? `<p style="margin:0 0 10px;font-size:15px;">${greeting}</p>` : ""}
-    <p style="margin:0 0 20px;font-size:15px;line-height:1.55;">${esc(input.bodyText)}</p>
-    <p style="margin:0 0 22px;">
-      <a href="${escAttr(input.url)}" style="display:inline-block;padding:13px 26px;background:#0a0a0a;color:#fff;text-decoration:none;border-radius:10px;font-weight:600;font-size:15px;">${esc(input.ctaLabel)}</a>
-    </p>
-    <p style="margin:0;font-size:12px;color:#888;">${orCopy}<br/>
-      <a href="${escAttr(input.url)}" style="color:#666;word-break:break-all;">${esc(input.url)}</a>
-    </p>
-  </div>
-</body></html>`.replace(
-    "</body>",
-    `${complianceFooterHtml({
-      email,
-      salonName: input.salonName,
-      salonAddress: input.salonAddress,
-      lang,
-    })}</body>`,
-  );
+  const experience = buildEmailExperience({
+    key: "customer_link",
+    locale: lang,
+    subject: input.subject,
+    preheader: input.bodyText,
+    salonName: input.salonName,
+    salonAddress: input.salonAddress,
+    recipientEmail: email,
+    badge: lang === "vi" ? "LIÊN KẾT AN TOÀN" : "SECURE BOOKING LINK",
+    greeting,
+    heading: input.heading?.trim() || input.subject,
+    paragraphs: [input.bodyText],
+    callout: {
+      title: "NailIQ Booking Check",
+      body: lang === "vi"
+        ? "Liên kết này được tạo cho yêu cầu hiện tại. Chỉ mở email sẽ không tự đổi lịch hoặc thu tiền."
+        : "This link was created for your current request. Opening the email alone does not change your appointment or collect payment.",
+    },
+    actions: [{ label: input.ctaLabel, url: input.url }],
+    note: lang === "vi"
+      ? "Nếu nút không mở, hãy liên hệ trực tiếp với tiệm."
+      : "If the button does not open, contact the salon directly.",
+  });
 
   try {
     const { error } = await resend.emails.send({
       from: getResendFrom(),
       to: email,
       subject: input.subject,
-      html,
-      headers: listUnsubscribeHeaders(email),
+      html: experience.html,
+      text: experience.text,
+      headers: experience.headers,
+      tags: experience.tags,
     });
     if (error) {
       console.error("[sendCustomerLinkEmail] resend error", error);
@@ -103,15 +98,4 @@ export async function sendCustomerLinkEmail(input: {
     console.error("[sendCustomerLinkEmail] threw", e);
     return { ok: false, error: String(e) };
   }
-}
-
-function esc(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-function escAttr(s: string): string {
-  return esc(s).replace(/'/g, "&#39;");
 }

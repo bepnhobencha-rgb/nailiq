@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
+import { emailExperienceTags } from "@/shared/lib/emailExperienceRegistry";
 import type { UserLanguage } from "@/shared/i18n/user/types";
 
 const CLAIM_LEASE_MS = 10 * 60 * 1_000;
@@ -198,6 +199,7 @@ export async function deliverPendingPlatformAnnouncementEmails(
           subject: message.subject,
           text: message.text,
           html: message.html,
+          tags: emailExperienceTags("platform_announcement"),
         },
         { idempotencyKey: `nailiq-platform-notice-${row.announcement_id}-${row.user_id}` },
       );

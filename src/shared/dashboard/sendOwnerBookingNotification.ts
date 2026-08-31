@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
+import { emailExperienceTags } from "@/shared/lib/emailExperienceRegistry";
 import { formatInSalonTz } from "@/shared/lib/salonTime";
 import { displayCustomerName } from "@/shared/lib/customerDisplayName";
 import {
@@ -572,13 +573,19 @@ async function sendToEachRecipientDetailed(
                 to,
                 ...payload,
                 tags: [
+                  ...emailExperienceTags("owner_booking_alert"),
                   { name: "nailiq_flow", value: "owner_booking" },
                   { name: "nailiq_claim", value: claimId },
                 ],
               },
               { idempotencyKey: `owner-booking-${claimId}` },
             )
-          : await resend.emails.send({ from, to, ...payload });
+          : await resend.emails.send({
+              from,
+              to,
+              ...payload,
+              tags: emailExperienceTags("owner_booking_alert"),
+            });
         if (res.error) {
           const providerError = sanitizeProviderError(res.error);
           console.error(

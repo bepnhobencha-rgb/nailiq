@@ -78,7 +78,7 @@ describe("integration credential boundary", () => {
   it("updates the blank-database parity tripwire for the forward migration", () => {
     const parity = read("scripts/check-schema-parity.ts");
 
-    expect(parity).toContain("policies: 212");
+    expect(parity).toContain("policies: 213");
     expect(parity).toContain(
       "const GRANTS = { anon: 56, authenticated: 78, service_role: 184 }",
     );

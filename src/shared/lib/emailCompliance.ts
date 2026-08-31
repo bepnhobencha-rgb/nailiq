@@ -66,11 +66,25 @@ export function complianceFooterHtml(opts: {
   lang?: "en" | "vi";
   /** Transactional appointment notices still send after optional-email opt-out. */
   transactional?: boolean;
+  /** Why this recipient is receiving the message; keeps non-booking mail honest. */
+  context?: "appointment" | "waitlist" | "marketing" | "security";
 }): string {
   const vi = opts.lang === "vi";
   const url = unsubscribeUrl(opts.email);
   const addr = (opts.salonAddress ?? "").trim();
-  const why = opts.transactional
+  const why = opts.context === "waitlist"
+    ? vi
+      ? `Bạn nhận email này vì đã yêu cầu <strong>${esc(opts.salonName)}</strong> báo khi có chỗ trống.`
+      : `You're receiving this because you asked <strong>${esc(opts.salonName)}</strong> to notify you when a time opens.`
+    : opts.context === "marketing"
+      ? vi
+        ? `Bạn nhận cập nhật không bắt buộc từ <strong>${esc(opts.salonName)}</strong>.`
+        : `You're receiving an optional update from <strong>${esc(opts.salonName)}</strong>.`
+      : opts.context === "security"
+        ? vi
+          ? `Bạn đã yêu cầu bước xác minh an toàn cho <strong>${esc(opts.salonName)}</strong>.`
+          : `You requested a secure verification step for <strong>${esc(opts.salonName)}</strong>.`
+        : opts.transactional
     ? vi
       ? `Đây là thông báo quan trọng về lịch hẹn của bạn với <strong>${esc(opts.salonName)}</strong>.`
       : `This is an important appointment update from <strong>${esc(opts.salonName)}</strong>.`
@@ -82,8 +96,8 @@ export function complianceFooterHtml(opts: {
     : `<div style="margin:4px 0;">${esc(opts.salonName)}</div>`;
   const unsub = opts.transactional
     ? vi
-      ? `<a href="${url}" style="color:#888;text-decoration:underline;">Quản lý email không bắt buộc</a><div>Thông báo quan trọng về lịch hẹn vẫn có thể được gửi.</div>`
-      : `<a href="${url}" style="color:#888;text-decoration:underline;">Manage optional emails</a><div>Important appointment updates may still be sent.</div>`
+      ? `<a href="${url}" style="color:#888;text-decoration:underline;">Quản lý email không bắt buộc</a><div>${opts.context === "security" ? "Email bảo mật bạn yêu cầu vẫn có thể được gửi." : "Thông báo quan trọng về lịch hẹn vẫn có thể được gửi."}</div>`
+      : `<a href="${url}" style="color:#888;text-decoration:underline;">Manage optional emails</a><div>${opts.context === "security" ? "Security emails you request may still be sent." : "Important appointment updates may still be sent."}</div>`
     : vi
       ? `<a href="${url}" style="color:#888;text-decoration:underline;">Ngừng nhận email</a>`
       : `<a href="${url}" style="color:#888;text-decoration:underline;">Unsubscribe</a>`;

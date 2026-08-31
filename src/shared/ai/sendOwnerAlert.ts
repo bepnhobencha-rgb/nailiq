@@ -3,6 +3,7 @@ import "server-only";
 
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
+import { emailExperienceTags } from "@/shared/lib/emailExperienceRegistry";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { parseOwnerNotificationSettings } from "@/shared/dashboard/ownerNotificationSettings";
 
@@ -112,6 +113,7 @@ export async function sendOwnerAlert(
               subject,
               html: bodyHtml,
               text: bodyText,
+              tags: emailExperienceTags("owner_alert"),
             });
             if (res.error) {
               console.error("[sendOwnerAlert] resend", res.error);
