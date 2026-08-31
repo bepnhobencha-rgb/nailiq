@@ -58,7 +58,7 @@ describe("payment_disputes boundary", () => {
     expect(parity).toContain("through 20260820105820");
     expect(parity).toContain("policies: 213");
     expect(parity).toContain(
-      "const GRANTS = { anon: 56, authenticated: 78, service_role: 185 }",
+      "const GRANTS = { anon: 56, authenticated: 78, service_role: 188 }",
     );
   });
 });
