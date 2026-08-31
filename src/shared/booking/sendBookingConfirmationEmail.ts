@@ -640,7 +640,7 @@ export async function sendBookingConfirmationEmail(
     const to = input.clientEmail.trim();
     const htmlWithFooter = html.replace(
       "</body>",
-      `${complianceFooterHtml({ email: to, salonName, salonAddress: address, lang: clientLocale })}</body>`,
+      `${complianceFooterHtml({ email: to, salonName, salonAddress: address, lang: clientLocale, transactional: true })}</body>`,
     );
 
     const result = await deliverBookingConfirmation({

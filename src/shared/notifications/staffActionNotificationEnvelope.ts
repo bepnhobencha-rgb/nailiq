@@ -1,15 +1,9 @@
 import "server-only";
 
 import { canonicalizeStrictRfc3339Instant } from "@/shared/lib/strictRfc3339Instant";
-import {
-  buildEmailBrandHeader,
-  escapeEmailHtml,
-} from "@/shared/booking/emailBranding";
-import {
-  complianceFooterHtml,
-  listUnsubscribeHeaders,
-} from "@/shared/lib/emailCompliance";
+import { listUnsubscribeHeaders } from "@/shared/lib/emailCompliance";
 import { getResendFrom } from "@/shared/lib/resend";
+import { buildCustomerAppointmentEmail } from "@/shared/notifications/staffActionEmailTemplate";
 import {
   buildStaffActionEmailSubject,
   buildStaffActionSms,
@@ -218,25 +212,6 @@ export function parseStaffActionNotificationMaterial(
   };
 }
 
-function subtitle(eventType: StaffActionNotificationEvent, locale: "en" | "vi"): string {
-  if (locale === "vi") {
-    return eventType === "staff_change"
-      ? "Nhân viên phục vụ đã được cập nhật"
-      : eventType === "reschedule"
-      ? "Lịch hẹn đã được dời"
-      : eventType === "cancel"
-        ? "Lịch hẹn đã huỷ"
-        : "Lịch hẹn đã xác nhận";
-  }
-  return eventType === "staff_change"
-    ? "Appointment Provider Updated"
-    : eventType === "reschedule"
-    ? "Appointment Rescheduled"
-    : eventType === "cancel"
-      ? "Appointment Cancelled"
-      : "Appointment Confirmed";
-}
-
 export function buildStaffActionNotificationEnvelope(
   material: StaffActionNotificationMaterial,
   input: { siteUrl: string },
@@ -300,24 +275,30 @@ export function buildStaffActionNotificationEnvelope(
     if (!snapshot.clientEmail || !snapshot.emailOutboundEnabled) return null;
     const subject = buildStaffActionEmailSubject(material.event, snapshot.locale, snapshot.salonName);
     if (!subject) return null;
-    const html = `<!DOCTYPE html><html lang="${snapshot.locale}"><body style="margin:0;padding:0;background:#faf9f7;">
-  <main style="max-width:480px;margin:0 auto;padding:28px 22px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#2a2a2a;">
-    <div style="padding:16px;background:#0B0C10;text-align:center;border-radius:8px;margin:0 0 18px;">
-      ${buildEmailBrandHeader({ salonName: snapshot.salonName, logoUrl: snapshot.salonLogoUrl, subtitle: subtitle(material.event, snapshot.locale) })}
-    </div>
-    <h1 style="margin:0 0 18px;font-size:18px;font-weight:600;color:#1a1a1a;">${escapeEmailHtml(subject)}</h1>
-    <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#333;">${escapeEmailHtml(message)}</p>
-  </main>
-  ${complianceFooterHtml({ email: snapshot.clientEmail, salonName: snapshot.salonName, lang: snapshot.locale })}
-</body></html>`;
+    const email = buildCustomerAppointmentEmail({
+      event: material.event,
+      locale: snapshot.locale,
+      subject,
+      recipientEmail: snapshot.clientEmail,
+      clientName: snapshot.clientName,
+      salonName: snapshot.salonName,
+      salonSlug: snapshot.salonSlug,
+      salonLogoUrl: snapshot.salonLogoUrl,
+      salonPhone: snapshot.salonPhone,
+      serviceName: snapshot.serviceName,
+      staffName: snapshot.staffName,
+      whenLabel,
+      siteUrl: siteUrl.toString(),
+    });
+    if (!email) return null;
     envelope = {
       ...base,
       channel: "email",
       to: snapshot.clientEmail,
       from: getResendFrom(),
       subject,
-      html,
-      text: message,
+      html: email.html,
+      text: email.text,
       headers: listUnsubscribeHeaders(snapshot.clientEmail),
       replyTo: null,
     };

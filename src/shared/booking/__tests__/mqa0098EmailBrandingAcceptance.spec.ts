@@ -448,12 +448,19 @@ describe("MQA-0098 channel wiring and bilingual contract", () => {
       "src/shared/booking/sendBookingConfirmationEmail.ts",
       "src/shared/booking/sendGroupBookingConfirmationEmail.ts",
       "src/shared/noshow/sendReminderEmail.ts",
-      "src/shared/notifications/customerBookingTransitionEmail.ts",
-      "src/shared/notifications/deliverStaffActionNotification.ts",
     ]) {
       const contents = source(file);
       expect(contents, file).toContain("buildEmailBrandHeader");
     }
+    for (const file of [
+      "src/shared/notifications/customerBookingTransitionEmail.ts",
+      "src/shared/notifications/deliverStaffActionNotification.ts",
+      "src/shared/notifications/staffActionNotificationEnvelope.ts",
+    ]) {
+      expect(source(file), file).toContain("buildCustomerAppointmentEmail");
+    }
+    expect(source("src/shared/notifications/staffActionEmailTemplate.ts"))
+      .toContain("buildEmailBrandHeader");
     expect(source("src/shared/noshow/sendReminderEmail.ts").match(/buildEmailBrandHeader\(/g))
       .toHaveLength(2);
   });

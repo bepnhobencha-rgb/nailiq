@@ -66,6 +66,10 @@ const envelope = readFileSync(
   resolve(root, "src/shared/notifications/staffActionNotificationEnvelope.ts"),
   "utf8",
 );
+const emailTemplate = readFileSync(
+  resolve(root, "src/shared/notifications/staffActionEmailTemplate.ts"),
+  "utf8",
+);
 
 describe("MQA-0225 durable staff-change offboarding boundary", () => {
   it("widens the existing event constraint through a validated strict superset", () => {
@@ -138,7 +142,8 @@ describe("MQA-0225 durable staff-change offboarding boundary", () => {
     expect(complete).not.toContain("deliverStaffActionNotification");
     expect(delivery).toContain('value === "staff_change"');
     expect(envelope).toContain('value === "staff_change"');
-    expect(envelope).toContain("Appointment Provider Updated");
+    expect(envelope).toContain("buildCustomerAppointmentEmail");
+    expect(emailTemplate).toContain("Appointment Provider Updated");
     expect(drawer).toContain("no provider attempt was recorded at this action boundary");
     expect(drawer).not.toContain("liên hệ khách thủ công");
   });
