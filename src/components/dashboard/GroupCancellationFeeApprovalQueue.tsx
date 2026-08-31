@@ -7,6 +7,7 @@ import {
   decideGroupCancellationFeeReview,
   type GroupCancellationFeeReviewQueueItem,
 } from "@/shared/noshow/groupCancellationFeeApprovalActions";
+import { dispatchApprovedCancellationFee } from "@/shared/noshow/cancellationFeeDispatchActions";
 
 function formatUtcMinute(iso: string): string {
   const date = new Date(iso);
@@ -48,6 +49,25 @@ export function GroupCancellationFeeApprovalQueue({
     if (result.ok) router.refresh();
   }
 
+  async function collect(item: GroupCancellationFeeReviewQueueItem, amount: string) {
+    const confirmed = window.confirm(vi
+      ? `Thu đúng ${amount} từ thẻ người tổ chức •••• ${item.cardLast4}? Hành động này có thể chuyển tiền thật.`
+      : `Collect exactly ${amount} from organizer card •••• ${item.cardLast4}? This may move real money.`);
+    if (!confirmed) return;
+    setPendingId(item.reviewId);
+    setMessage(null);
+    const result = await dispatchApprovedCancellationFee(slug, {
+      salonId,
+      reviewId: item.reviewId,
+      reviewKind: "group",
+    });
+    setPendingId(null);
+    setMessage(result.ok
+      ? vi ? "Đã thu phí và nhận biên nhận nhà cung cấp." : "Fee collected with a provider receipt."
+      : result.error);
+    router.refresh();
+  }
+
   return (
     <section data-testid="group-cancellation-fee-approval-queue" className="mt-4 rounded-2xl border border-amber-300/60 bg-nq-surface p-4">
       <h2 className="text-sm font-semibold text-nq-text">
@@ -85,6 +105,10 @@ export function GroupCancellationFeeApprovalQueue({
                       {vi ? "Miễn phí" : "Waive"}
                     </button>
                   </>
+                ) : item.state === "approved_charge" && item.paymentStatus === "dispatch_blocked" ? (
+                  <button type="button" disabled={busy} onClick={() => void collect(item, amount)} className="min-h-11 rounded-lg border border-nq-warning/50 px-3 py-1.5 text-xs font-semibold text-nq-warning disabled:opacity-50">
+                    {vi ? `Thu ${amount}` : `Collect ${amount}`}
+                  </button>
                 ) : (
                   <span className="rounded-full border border-nq-border px-2 py-1 text-xs text-nq-muted">{item.state} · {item.paymentStatus}</span>
                 )}

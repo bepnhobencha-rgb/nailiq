@@ -126,7 +126,7 @@ export async function dispatchClaimedBookingPaymentOperation(args: {
   db: RpcClient;
   claim: ClaimedBookingPaymentOperation;
   provider?: PaymentProvider;
-  providerPurpose?: "approved_no_show_charge";
+  providerPurpose?: "approved_no_show_charge" | "approved_cancellation_fee";
   note?: string;
   referenceId?: string;
   reason?: string;
@@ -134,6 +134,15 @@ export async function dispatchClaimedBookingPaymentOperation(args: {
   const { claim } = args;
   if (args.providerPurpose === "approved_no_show_charge" &&
       claim.material.operationKind !== "noshow_charge") {
+    return {
+      ok: false,
+      status: "unknown",
+      operationId: claim.operationId,
+      reason: "provider_purpose_mismatch",
+    };
+  }
+  if (args.providerPurpose === "approved_cancellation_fee" &&
+      claim.material.operationKind !== "late_cancel_charge") {
     return {
       ok: false,
       status: "unknown",
@@ -506,6 +515,149 @@ export async function runAuthoritativeBookingPaymentOperation(args: {
       operationId,
       reason: code,
     };
+  }
+  return { ok: false, status: "not_claimed", operationId, reason: code };
+}
+
+/**
+ * Claims and dispatches one immutable Owner/Admin-approved late/group
+ * cancellation fee. SQL owns the exact amount, card, tenant provider account,
+ * approval receipt and stable request id; the caller supplies no money data.
+ */
+export async function runApprovedCancellationFeePayment(args: {
+  db: RpcClient;
+  salonId: string;
+  reviewId: string;
+  reviewKind: "late" | "group";
+  actorUserId: string;
+  actorRole: "owner" | "admin";
+  provider?: PaymentProvider;
+}): Promise<BookingPaymentRunOutcome> {
+  let claimed: { data: unknown; error: unknown };
+  try {
+    claimed = await args.db.rpc("claim_approved_cancellation_fee_payment", {
+      p_review_kind: args.reviewKind,
+      p_review_id: args.reviewId,
+      p_salon_id: args.salonId,
+      p_actor_user_id: args.actorUserId,
+      p_actor_role: args.actorRole,
+    });
+  } catch {
+    return {
+      ok: false,
+      status: "not_claimed",
+      operationId: null,
+      reason: "payment_claim_unavailable",
+    };
+  }
+  if (claimed.error) {
+    return {
+      ok: false,
+      status: "not_claimed",
+      operationId: null,
+      reason: "payment_claim_unavailable",
+    };
+  }
+  const claim = parseClaimedBookingPaymentOperation(
+    claimed.data,
+    "late_cancel_charge",
+  );
+  if (claim) {
+    return dispatchClaimedBookingPaymentOperation({
+      db: args.db,
+      claim,
+      provider: args.provider,
+      providerPurpose: "approved_cancellation_fee",
+      note: args.reviewKind === "group"
+        ? "Approved group cancellation fee"
+        : "Approved late cancellation fee",
+      referenceId: `booking:${claim.material.bookingId}`,
+    });
+  }
+
+  const raw = Array.isArray(claimed.data) ? claimed.data[0] : claimed.data;
+  const row = raw && typeof raw === "object"
+    ? raw as Record<string, unknown>
+    : null;
+  const operationId = typeof row?.operation_id === "string"
+    ? row.operation_id
+    : null;
+  const code = typeof row?.code === "string" ? row.code : "payment_not_claimed";
+  if (row?.success === true && code === "operation_replay" &&
+      row.status === "succeeded" && operationId) {
+    const result = row.result && typeof row.result === "object"
+      ? row.result as Record<string, unknown>
+      : null;
+    const receipt = typeof result?.provider_payment_id === "string"
+      ? result.provider_payment_id
+      : null;
+    return receipt
+      ? { ok: true, status: "succeeded", operationId, providerReceipt: receipt }
+      : {
+          ok: false,
+          status: "unknown",
+          operationId,
+          reason: "payment_replay_receipt_invalid",
+        };
+  }
+  if (code === "operation_failed" && operationId) {
+    return {
+      ok: false,
+      status: "definite_failure",
+      operationId,
+      reason: typeof row?.error_code === "string"
+        ? row.error_code
+        : "operation_failed",
+    };
+  }
+  if (code === "reconciliation_required" && operationId &&
+      typeof row?.material_fingerprint === "string" &&
+      typeof row?.request_id === "string") {
+    let reconciled: { data: unknown; error: unknown };
+    try {
+      reconciled = await args.db.rpc(
+        "claim_booking_payment_operation_reconciliation",
+        {
+          p_operation_id: operationId,
+          p_request_id: row.request_id,
+          p_expected_material_fingerprint: row.material_fingerprint,
+        },
+      );
+    } catch {
+      return {
+        ok: false,
+        status: "unknown",
+        operationId,
+        reason: "payment_reconciliation_unavailable",
+      };
+    }
+    if (reconciled.error) {
+      return {
+        ok: false,
+        status: "unknown",
+        operationId,
+        reason: "payment_reconciliation_unavailable",
+      };
+    }
+    const retry = parseClaimedBookingPaymentOperation(
+      reconciled.data,
+      "late_cancel_charge",
+    );
+    if (retry) {
+      return dispatchClaimedBookingPaymentOperation({
+        db: args.db,
+        claim: retry,
+        provider: args.provider,
+        providerPurpose: "approved_cancellation_fee",
+        note: args.reviewKind === "group"
+          ? "Approved group cancellation fee"
+          : "Approved late cancellation fee",
+        referenceId: `booking:${retry.material.bookingId}`,
+      });
+    }
+  }
+  if (code === "reconciliation_required" && operationId) {
+    return { ok: false, status: "unknown", operationId, reason: code };
   }
   return { ok: false, status: "not_claimed", operationId, reason: code };
 }

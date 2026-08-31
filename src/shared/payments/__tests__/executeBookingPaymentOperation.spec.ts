@@ -4,6 +4,7 @@ vi.mock("server-only", () => ({}));
 
 import {
   dispatchClaimedBookingPaymentOperation,
+  runApprovedCancellationFeePayment,
   runAuthoritativeBookingPaymentOperation,
 } from "../executeBookingPaymentOperation";
 import type { ClaimedBookingPaymentOperation } from "../bookingPaymentOperations";
@@ -223,6 +224,113 @@ describe("runAuthoritativeBookingPaymentOperation fee approval boundary", () => 
     });
     expect(result).toMatchObject({ ok: false, reason: "fee_approval_required" });
     expect(rpc).not.toHaveBeenCalled();
+    expect(paymentProvider.chargeSavedCard).not.toHaveBeenCalled();
+  });
+});
+
+describe("runApprovedCancellationFeePayment", () => {
+  const reviewId = "77777777-7777-4777-8777-777777777777";
+  const actorUserId = "88888888-8888-4888-8888-888888888888";
+  const lateMaterial = {
+    salon_id: claim.material.salonId,
+    booking_id: claim.material.bookingId,
+    operation_kind: "late_cancel_charge",
+    provider: "stripe",
+    provider_account_fingerprint: claim.material.providerAccountFingerprint,
+    amount_cents: 2_500,
+    currency: "CAD",
+    parent_payment_id: null,
+    parent_operation_id: null,
+    operation_occurrence_version: 1,
+    cancel_preview: {
+      will_charge: true,
+      has_chargeable_card: true,
+      fee_cents: 2_500,
+      currency: "CAD",
+    },
+    scope_kind: "booking_own",
+    rsvp_semantic: "",
+    captured_cents: 2_500,
+    refunded_cents: 0,
+    reserved_cents: 0,
+    remaining_refundable_cents: 0,
+    provider_material: {
+      provider_account_id: "acct_1",
+      provider_location_id: null,
+      provider_environment: null,
+      currency: "CAD",
+      saved_card_id: "pm_1",
+      customer_id: "cus_1",
+      parent_payment_id: null,
+    },
+  };
+
+  it("dispatches only DB-claimed exact material after the second Owner action", async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          code: "claimed",
+          status: "sending",
+          operation_id: operationId,
+          attempt_token: claim.attemptToken,
+          provider_idempotency_key: `nq:${operationId}`,
+          lease_expires_at: claim.leaseExpiresAt,
+          attempt_count: 1,
+          material_fingerprint: "c".repeat(64),
+          material: lateMaterial,
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { success: true, code: "succeeded" },
+        error: null,
+      });
+    const paymentProvider = provider();
+    const result = await runApprovedCancellationFeePayment({
+      db: { rpc },
+      salonId: claim.material.salonId,
+      reviewId,
+      reviewKind: "group",
+      actorUserId,
+      actorRole: "owner",
+      provider: paymentProvider,
+    });
+    expect(rpc).toHaveBeenNthCalledWith(1,
+      "claim_approved_cancellation_fee_payment",
+      expect.objectContaining({
+        p_review_kind: "group",
+        p_review_id: reviewId,
+        p_actor_user_id: actorUserId,
+      }),
+    );
+    expect(paymentProvider.chargeSavedCard).toHaveBeenCalledTimes(1);
+    expect(paymentProvider.chargeSavedCard).toHaveBeenCalledWith(
+      expect.objectContaining({ amountCents: 2_500 }),
+    );
+    expect(result).toMatchObject({ ok: true, status: "succeeded" });
+  });
+
+  it("never calls a provider when SQL cannot prove the approval receipt", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { success: false, code: "approval_receipt_mismatch" },
+      error: null,
+    });
+    const paymentProvider = provider();
+    const result = await runApprovedCancellationFeePayment({
+      db: { rpc },
+      salonId: claim.material.salonId,
+      reviewId,
+      reviewKind: "late",
+      actorUserId,
+      actorRole: "admin",
+      provider: paymentProvider,
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      status: "not_claimed",
+      reason: "approval_receipt_mismatch",
+    });
     expect(paymentProvider.chargeSavedCard).not.toHaveBeenCalled();
   });
 });

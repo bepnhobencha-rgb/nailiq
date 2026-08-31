@@ -29,10 +29,11 @@ export default async function NoShowProtectionPage({ params }: Props) {
     "guided_admin_setup",
   );
   if (guidedSetupEnabled) {
-    const [loaded, { loadNoShowFeeReviewQueue }, { loadGroupCancellationFeeReviewQueue }] = await Promise.all([
+    const [loaded, { loadNoShowFeeReviewQueue }, { loadGroupCancellationFeeReviewQueue }, { loadLateCancellationFeeReviewQueue }] = await Promise.all([
       loadSalonOwnerAdminSettingsForDashboardContext(ctx),
       import("@/shared/noshow/noShowFeeApprovalActions"),
       import("@/shared/noshow/groupCancellationFeeApprovalActions"),
+      import("@/shared/noshow/lateCancellationFeeApprovalActions"),
     ]);
     if (!loaded.ok) {
       redirect(`/dashboard/${encodeURIComponent(slug)}`);
@@ -75,14 +76,21 @@ export default async function NoShowProtectionPage({ params }: Props) {
         rawGroupWindow <= 120 &&
         typeof policyRow.noshow_group_whole_party === "boolean");
     const { resolvePolicy } = await import("@/shared/lib/cancellationPolicy");
-    const { NoShowFeeApprovalQueue } = await import(
-      "@/components/dashboard/NoShowFeeApprovalQueue"
-    );
-    const feeReviewQueue = await loadNoShowFeeReviewQueue(slug);
-    const groupCancellationFeeReviewQueue = await loadGroupCancellationFeeReviewQueue(slug);
-    const { GroupCancellationFeeApprovalQueue } = await import(
-      "@/components/dashboard/GroupCancellationFeeApprovalQueue"
-    );
+    const [
+      { NoShowFeeApprovalQueue },
+      { GroupCancellationFeeApprovalQueue },
+      { LateCancellationFeeApprovalQueue },
+      feeReviewQueue,
+      groupCancellationFeeReviewQueue,
+      lateCancellationFeeReviewQueue,
+    ] = await Promise.all([
+      import("@/components/dashboard/NoShowFeeApprovalQueue"),
+      import("@/components/dashboard/GroupCancellationFeeApprovalQueue"),
+      import("@/components/dashboard/LateCancellationFeeApprovalQueue"),
+      loadNoShowFeeReviewQueue(slug),
+      loadGroupCancellationFeeReviewQueue(slug),
+      loadLateCancellationFeeReviewQueue(slug),
+    ]);
     const salonName = ctx.salon.name.trim() || slug;
 
     return (
@@ -119,6 +127,11 @@ export default async function NoShowProtectionPage({ params }: Props) {
           slug={slug}
           salonId={ctx.salon.id}
           items={groupCancellationFeeReviewQueue}
+        />
+        <LateCancellationFeeApprovalQueue
+          slug={slug}
+          salonId={ctx.salon.id}
+          items={lateCancellationFeeReviewQueue}
         />
       </div>
     );
@@ -196,22 +209,28 @@ export default async function NoShowProtectionPage({ params }: Props) {
   const { healthAckRequired } = await import("@/shared/lib/healthAck");
   const healthAckEff = healthAckRequired(row?.health_ack_required, row?.vertical);
 
-  const { loadNoShowDashboard } = await import(
-    "@/shared/noshow/noShowDashboardActions"
-  );
-  const result = await loadNoShowDashboard(slug);
+  const [
+    { loadNoShowDashboard },
+    { loadNoShowFeeReviewQueue },
+    { loadGroupCancellationFeeReviewQueue },
+    { loadLateCancellationFeeReviewQueue },
+    { GroupCancellationFeeApprovalQueue },
+    { LateCancellationFeeApprovalQueue },
+  ] = await Promise.all([
+    import("@/shared/noshow/noShowDashboardActions"),
+    import("@/shared/noshow/noShowFeeApprovalActions"),
+    import("@/shared/noshow/groupCancellationFeeApprovalActions"),
+    import("@/shared/noshow/lateCancellationFeeApprovalActions"),
+    import("@/components/dashboard/GroupCancellationFeeApprovalQueue"),
+    import("@/components/dashboard/LateCancellationFeeApprovalQueue"),
+  ]);
+  const [result, feeReviewQueue, groupCancellationFeeReviewQueue, lateCancellationFeeReviewQueue] = await Promise.all([
+    loadNoShowDashboard(slug),
+    loadNoShowFeeReviewQueue(slug),
+    loadGroupCancellationFeeReviewQueue(slug),
+    loadLateCancellationFeeReviewQueue(slug),
+  ]);
   if (!result.ok) redirect(`/dashboard/${slug}`);
-  const { loadNoShowFeeReviewQueue } = await import(
-    "@/shared/noshow/noShowFeeApprovalActions"
-  );
-  const feeReviewQueue = await loadNoShowFeeReviewQueue(slug);
-  const { loadGroupCancellationFeeReviewQueue } = await import(
-    "@/shared/noshow/groupCancellationFeeApprovalActions"
-  );
-  const groupCancellationFeeReviewQueue = await loadGroupCancellationFeeReviewQueue(slug);
-  const { GroupCancellationFeeApprovalQueue } = await import(
-    "@/components/dashboard/GroupCancellationFeeApprovalQueue"
-  );
   const groupBookingEnabled = isReleaseFeatureEnabled(
     { feature_flags: row?.feature_flags },
     "group_booking",
@@ -288,6 +307,11 @@ export default async function NoShowProtectionPage({ params }: Props) {
       slug={slug}
       salonId={ctx.salon.id}
       items={groupCancellationFeeReviewQueue}
+    />
+    <LateCancellationFeeApprovalQueue
+      slug={slug}
+      salonId={ctx.salon.id}
+      items={lateCancellationFeeReviewQueue}
     />
     </div>
   );

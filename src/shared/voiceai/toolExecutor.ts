@@ -1187,6 +1187,7 @@ type VoiceCancelSalon = {
 };
 
 type VoiceCancelBooking = {
+  created_at: string;
   start_time_utc: string;
   noshow_card_id?: string | null;
   noshow_consent_at?: string | null;
@@ -1209,6 +1210,7 @@ function voiceBookingLatePolicy(
   booking: VoiceCancelBooking,
 ): LateCancellationBookingPolicy {
   return {
+    createdAt: booking.created_at,
     startTimeUtc: booking.start_time_utc,
     noShowFeeCents: booking.noshow_fee_cents ?? null,
     noShowCardId: booking.noshow_card_id ?? null,
@@ -1407,7 +1409,7 @@ async function handleCancelBooking(
     // already cancelled (e.g. the organizer dropped out first).
     const { data: groupRows, error: grpErr } = await supabase
       .from("bookings")
-      .select("id, status, client_phone, is_group_organizer, start_time_utc, noshow_card_id, noshow_consent_at, noshow_fee_cents, noshow_charge_status, self_cancel_fee_locked_at, self_cancel_fee_locked_cents")
+      .select("id, status, client_phone, is_group_organizer, created_at, start_time_utc, noshow_card_id, noshow_consent_at, noshow_fee_cents, noshow_charge_status, self_cancel_fee_locked_at, self_cancel_fee_locked_cents")
       .eq("salon_id", salon.id)
       .eq("group_id", groupIdArg);
 
@@ -1522,7 +1524,7 @@ async function handleCancelBooking(
     // Include staff join so AI can read individual member slots for partial cancellation.
     const { data: phoneRows } = await supabase
       .from("bookings")
-      .select("id, group_id, client_name, start_time_utc, status, noshow_card_id, noshow_consent_at, noshow_fee_cents, noshow_charge_status, self_cancel_fee_locked_at, self_cancel_fee_locked_cents, services!bookings_service_id_fkey(name), staff!bookings_staff_id_fkey(name)")
+      .select("id, group_id, client_name, created_at, start_time_utc, status, noshow_card_id, noshow_consent_at, noshow_fee_cents, noshow_charge_status, self_cancel_fee_locked_at, self_cancel_fee_locked_cents, services!bookings_service_id_fkey(name), staff!bookings_staff_id_fkey(name)")
       .eq("salon_id", salon.id)
       .ilike("client_phone", `%${last9}`)
       .gte("start_time_utc", now)
@@ -1618,7 +1620,7 @@ async function handleCancelBooking(
   // ── Path C: booking_id provided → cancel that one booking ───────────────────
   const { data: booking } = await supabase
     .from("bookings")
-    .select("id, salon_id, status, client_name, client_phone, group_id, start_time_utc, noshow_card_id, noshow_consent_at, noshow_fee_cents, noshow_charge_status, self_cancel_fee_locked_at, self_cancel_fee_locked_cents, services!bookings_service_id_fkey(name)")
+    .select("id, salon_id, status, client_name, client_phone, group_id, created_at, start_time_utc, noshow_card_id, noshow_consent_at, noshow_fee_cents, noshow_charge_status, self_cancel_fee_locked_at, self_cancel_fee_locked_cents, services!bookings_service_id_fkey(name)")
     .eq("id", bookingId!)
     .eq("salon_id", salon.id)
     .single();
@@ -1629,6 +1631,7 @@ async function handleCancelBooking(
   const bk = booking as any as {
     id: string; status: string; client_name: string; client_phone: string;
     group_id: string | null;
+    created_at: string;
     start_time_utc: string;
     noshow_card_id: string | null;
     noshow_consent_at: string | null;
@@ -1885,7 +1888,7 @@ async function handleRescheduleBooking(
   // Load existing booking — verify it belongs to this salon
   const { data: booking } = await supabase
     .from("bookings")
-    .select("id, salon_id, service_id, staff_id, start_time_utc, end_time_utc, status, client_name, client_phone, noshow_fee_cents, self_cancel_fee_locked_at, self_cancel_fee_locked_cents, schedule_model")
+    .select("id, salon_id, service_id, staff_id, created_at, start_time_utc, end_time_utc, status, client_name, client_phone, noshow_fee_cents, self_cancel_fee_locked_at, self_cancel_fee_locked_cents, schedule_model")
     .eq("id", bookingId)
     .eq("salon_id", salon.id)
     .single();
@@ -1970,11 +1973,13 @@ async function handleRescheduleBooking(
   const oldStart = (booking as { start_time_utc: string }).start_time_utc;
   const rescheduleSalon = salon as VoiceCancelSalon;
   const rescheduleBooking = booking as {
+    created_at: string;
     noshow_fee_cents?: number | null;
     self_cancel_fee_locked_at?: string | null;
     self_cancel_fee_locked_cents?: number | null;
   };
   const lateCancelLockPatch = buildLateCancellationLockPatch({
+    bookingCreatedAt: rescheduleBooking.created_at,
     previousStartTimeUtc: oldStart,
     noShowFeeCents: rescheduleBooking.noshow_fee_cents ?? null,
     existingLockedAt: rescheduleBooking.self_cancel_fee_locked_at ?? null,

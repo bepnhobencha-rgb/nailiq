@@ -136,10 +136,16 @@ BEGIN
     'd6000000-0000-4000-8000-000000000001','d6000000-0000-4000-8000-000000000012',
     'cancel',transaction_timestamp()+interval '1 hour')->>'token_id')::uuid;
   v_result:=public.inspect_booking_management_capability(v_fee_cap,'cancel');
-  IF v_result->'cancel_preview'->>'fee_cents'<>'500'
-     OR v_result->'cancel_preview'->>'will_charge'<>'true'
-     OR v_result->'cancel_preview'->>'has_chargeable_card'<>'true' THEN
-    RAISE EXCEPTION 'late-cancel preview parity failed: %',v_result;
+  IF v_result->'cancel_preview'->>'fee_cents'<>'200'
+     OR v_result->'cancel_preview'->>'fee_percent'<>'20'
+     OR v_result->'cancel_preview'->>'max_fee_percent'<>'20'
+     OR v_result->'cancel_preview'->>'short_notice_booking'<>'true'
+     OR v_result->'cancel_preview'->>'grace_active'<>'true'
+     OR v_result->'cancel_preview'->>'current_within_window'<>'true'
+     OR v_result->'cancel_preview'->>'within_window'<>'false'
+     OR v_result->'cancel_preview'->>'will_charge'<>'false'
+     OR v_result->'cancel_preview'->>'has_chargeable_card'<>'false' THEN
+    RAISE EXCEPTION 'short-notice grace/max-fee preview parity failed: %',v_result;
   END IF;
   v_result:=public.mint_booking_management_capability(
     'd6000000-0000-4000-8000-000000000001','d6000000-0000-4000-8000-000000000013',

@@ -23,8 +23,8 @@ export const V1_INTEGRATION_SCOPE = Object.freeze({
 /**
  * V1 never asks NailIQ to charge or refund customer money. Salons continue
  * checkout directly in Square; this fail-closed predicate is the shared server
- * boundary for deposits, charges and refunds. The narrower no-show card-on-file
- * exception below carries no money movement.
+ * boundary for general deposits, charges and refunds. The narrow exceptions
+ * below cover card vaulting and separately released, human-approved fee flows.
  */
 export function v1AllowsCustomerPaymentGateway(): boolean {
   return false;
@@ -47,6 +47,16 @@ export function v1AllowsNoShowCardOnFile(): boolean {
  */
 export function allowsApprovedNoShowChargeDispatch(): boolean {
   return process.env.NAILIQ_APPROVED_NO_SHOW_CHARGE_DISPATCH === "true";
+}
+
+/**
+ * Manual late/group cancellation collection is a separate release unit from
+ * no-show collection. It remains off unless release operations enables the
+ * server switch; SQL additionally requires a salon allowlist and an immutable
+ * Owner/Admin approval receipt for the exact amount.
+ */
+export function allowsApprovedCancellationFeeDispatch(): boolean {
+  return process.env.NAILIQ_APPROVED_CANCELLATION_FEE_DISPATCH === "true";
 }
 
 /**

@@ -14,6 +14,7 @@ const salon = {
 
 function booking(overrides: Partial<Parameters<typeof evaluateLateCancellationPolicy>[0]["booking"]> = {}) {
   return {
+    createdAt: "2026-08-01T12:00:00.000Z",
     startTimeUtc: "2026-08-09T12:00:00.000Z",
     noShowFeeCents: 4_000,
     noShowCardId: "card_test",
@@ -84,6 +85,7 @@ describe("late cancellation policy", () => {
 
   it("builds one immutable lock only for a customer-controlled late reschedule", () => {
     const patch = buildLateCancellationLockPatch({
+      bookingCreatedAt: "2026-08-01T12:00:00.000Z",
       previousStartTimeUtc: "2026-08-08T11:00:00.000Z",
       noShowFeeCents: 4_000,
       salon,
@@ -98,6 +100,7 @@ describe("late cancellation policy", () => {
     });
     expect(
       buildLateCancellationLockPatch({
+        bookingCreatedAt: "2026-08-01T12:00:00.000Z",
         previousStartTimeUtc: "2026-08-08T11:00:00.000Z",
         noShowFeeCents: 4_000,
         existingLockedAt: "2026-08-07T11:00:00.000Z",
@@ -107,6 +110,69 @@ describe("late cancellation policy", () => {
         nowMs: NOW,
       }),
     ).toBeNull();
+  });
+
+  it("waives a short-notice booking for the first 15 minutes", () => {
+    const result = evaluateLateCancellationPolicy({
+      booking: booking({
+        createdAt: "2026-08-07T11:50:00.000Z",
+        startTimeUtc: "2026-08-07T18:00:00.000Z",
+      }),
+      salon,
+      nowMs: NOW,
+    });
+
+    expect(result.shortNoticeBooking).toBe(true);
+    expect(result.graceActive).toBe(true);
+    expect(result.graceEndsAt).toBe("2026-08-07T12:05:00.000Z");
+    expect(result.withinWindow).toBe(false);
+    expect(result.willCharge).toBe(false);
+  });
+
+  it("applies the fee after the short-notice grace expires", () => {
+    const result = evaluateLateCancellationPolicy({
+      booking: booking({
+        createdAt: "2026-08-07T11:40:00.000Z",
+        startTimeUtc: "2026-08-07T18:00:00.000Z",
+      }),
+      salon,
+      nowMs: NOW,
+    });
+
+    expect(result.shortNoticeBooking).toBe(true);
+    expect(result.graceActive).toBe(false);
+    expect(result.withinWindow).toBe(true);
+    expect(result.willCharge).toBe(true);
+  });
+
+  it("caps late cancellation policy at 20 percent", () => {
+    const result = evaluateLateCancellationPolicy({
+      booking: booking({
+        startTimeUtc: "2026-08-08T11:00:00.000Z",
+        noShowFeeCents: 6_000,
+      }),
+      salon: {
+        ...salon,
+        selfCancelFeePercent: 35,
+        noShowFeePercent: 30,
+      },
+      nowMs: NOW,
+    });
+
+    expect(result.feeCents).toBe(4_000);
+  });
+
+  it("does not lock a fee during the short-notice grace", () => {
+    const patch = buildLateCancellationLockPatch({
+      bookingCreatedAt: "2026-08-07T11:50:00.000Z",
+      previousStartTimeUtc: "2026-08-07T18:00:00.000Z",
+      noShowFeeCents: 4_000,
+      salon,
+      reason: "voice_reschedule",
+      nowMs: NOW,
+    });
+
+    expect(patch).toBeNull();
   });
 
   it("honours an emergency salon policy disable even when a booking is locked", () => {
