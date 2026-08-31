@@ -45,6 +45,17 @@ import {
 
 type DashboardSupabaseClient = SupabaseClient<Database>;
 
+export type NotificationDeliveryRescueSummary = {
+  available: boolean;
+  smsOutboundEnabled: boolean;
+  emailOutboundEnabled: boolean;
+  smsA2pRegistered: boolean;
+  smsAttentionCount: number;
+  smsSuppressedCount: number;
+  emailAttentionCount: number;
+  waitlistAttentionCount: number;
+};
+
 export interface ReceptionistCenterData {
   /**
    * Server-owned wall-clock snapshot for the first render. The receptionist
@@ -91,6 +102,8 @@ export interface ReceptionistCenterData {
      * per-channel notification settings are applied. The desk must never offer
      * a channel that the delivery worker will deterministically suppress. */
     staffNotificationChannelAvailability: StaffNotificationChannelAvailability;
+    /** PII-free 24-hour delivery health for the receptionist Rescue Card. */
+    notificationDeliveryRescue: NotificationDeliveryRescueSummary;
     /**
      * `salons.auto_no_show_minutes` — minutes past start after which the cron
      * flags a never-started booking for human no-show review (0/null = off).
@@ -744,9 +757,20 @@ export async function loadReceptionistCenterData(
   let depositsEnabled = false;
   let smsOutboundEnabled = false;
   let emailOutboundEnabled = false;
+  let notificationDeliveryRescue: NotificationDeliveryRescueSummary = {
+    available: false,
+    smsOutboundEnabled: false,
+    emailOutboundEnabled: false,
+    smsA2pRegistered: false,
+    smsAttentionCount: 0,
+    smsSuppressedCount: 0,
+    emailAttentionCount: 0,
+    waitlistAttentionCount: 0,
+  };
   try {
     const admin = createServiceRoleClient();
-    const [{ data: sqRow }, { data: channelRow }] = await Promise.all([
+    const [{ data: sqRow }, { data: channelRow }, rescueResult] =
+      await Promise.all([
       admin
         .from("square_integrations")
         .select("deposit_enabled")
@@ -757,6 +781,13 @@ export async function loadReceptionistCenterData(
         .select("sms_outbound_enabled, email_outbound_enabled")
         .eq("id", ctx.salon.id)
         .maybeSingle(),
+      admin.rpc(
+        "load_notification_delivery_rescue_summary" as never,
+        {
+          p_salon_id: ctx.salon.id,
+          p_since: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+        } as never,
+      ),
     ]);
     depositsEnabled =
       (sqRow as { deposit_enabled?: boolean } | null)?.deposit_enabled === true;
@@ -766,6 +797,34 @@ export async function loadReceptionistCenterData(
     emailOutboundEnabled =
       (channelRow as { email_outbound_enabled?: boolean } | null)
         ?.email_outbound_enabled === true;
+    const rescue = rescueResult.data as {
+      success?: unknown;
+      sms_outbound_enabled?: unknown;
+      email_outbound_enabled?: unknown;
+      sms_a2p_registered?: unknown;
+      sms_attention_count?: unknown;
+      sms_suppressed_count?: unknown;
+      email_attention_count?: unknown;
+      waitlist_attention_count?: unknown;
+    } | null;
+    const safeCount = (value: unknown): number =>
+      typeof value === "number" &&
+      Number.isSafeInteger(value) &&
+      value >= 0
+        ? value
+        : 0;
+    if (!rescueResult.error && rescue?.success === true) {
+      notificationDeliveryRescue = {
+        available: true,
+        smsOutboundEnabled: rescue.sms_outbound_enabled === true,
+        emailOutboundEnabled: rescue.email_outbound_enabled === true,
+        smsA2pRegistered: rescue.sms_a2p_registered === true,
+        smsAttentionCount: safeCount(rescue.sms_attention_count),
+        smsSuppressedCount: safeCount(rescue.sms_suppressed_count),
+        emailAttentionCount: safeCount(rescue.email_attention_count),
+        waitlistAttentionCount: safeCount(rescue.waitlist_attention_count),
+      };
+    }
   } catch {
     /* Fail closed: don't offer a payment or notification channel whose
        operational switch could not be proven. */
@@ -794,6 +853,7 @@ export async function loadReceptionistCenterData(
     ...openingHoursForDay(salonData.opening_hours, dateYmd),
     staffNotificationSettings,
     staffNotificationChannelAvailability,
+    notificationDeliveryRescue,
     autoNoShowMinutes: (() => {
       const v = salonData.auto_no_show_minutes;
       if (v == null) return null;

@@ -99,21 +99,9 @@ export async function submitPublicWaitlistEntry(
   });
   const wid = receipt.requestId;
 
-  // Best-effort: notify the owner/admins that a customer joined the waitlist.
-  // Never block or fail the join on this.
-  try {
-    const base =
-      typeof window !== "undefined"
-        ? ""
-        : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
-    void fetch(`${base}/api/waitlist/notify-owner`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ waitlistId: wid }),
-    }).catch(() => {});
-  } catch {
-    /* ignore */
-  }
+  // The database records the owner-notification intent atomically with the
+  // Waitlist row. Provider delivery happens later through the leased worker;
+  // the customer never waits for email and retries cannot duplicate it.
 
   return { waitlistId: wid };
 }
