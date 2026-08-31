@@ -60,7 +60,7 @@ describe("group wave strategy database boundary", () => {
 
   it("advances the blank-database schema tripwire for the base and view columns", () => {
     expect(parity).toContain("20260830023823 Smart Wave strategy migration");
-    expect(parity).toContain("columns: 2903");
+    expect(parity).toContain("columns: 2924");
   });
 
   it("keeps the emergency public-view rollback complete", () => {

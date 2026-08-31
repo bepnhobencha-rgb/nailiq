@@ -2,6 +2,7 @@ import "server-only";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { generateReminderToken } from "@/shared/noshow/generateReminderToken";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
+import { buildSaveCardSms } from "@/shared/lib/smsTemplateRegistry";
 import { sendCustomerLinkEmail } from "@/shared/lib/sendCustomerLinkEmail";
 
 const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
@@ -79,15 +80,13 @@ export async function sendOnlineSaveCardLink(bookingId: string): Promise<void> {
     const en = lang === "en";
 
     // Fixed templates (fail-safe), then AI personalisation on top.
-    let smsBody = en
-      ? `${salonName}: Save a card to hold your appointment — you're only charged if you no-show: ${url}`
-      : `${salonName}: Lưu thẻ để giữ lịch hẹn — chỉ bị tính phí nếu bạn không đến: ${url}`;
+    const smsBody = buildSaveCardSms({ lang, salonName, url });
     let emailBody = en
       ? "Save a card to hold your appointment — there's no upfront charge. You're only charged the no-show fee if you don't show up."
       : "Lưu thẻ để giữ lịch hẹn — không thu phí trước. Bạn chỉ bị tính phí vắng mặt nếu không đến.";
 
     try {
-      const { draftSaveCardMessages, guardSmsLine } = await import(
+      const { draftSaveCardMessages } = await import(
         "@/shared/noshow/agentNoShowPolicy"
       );
       const drafted = await draftSaveCardMessages({
@@ -97,8 +96,6 @@ export async function sendOnlineSaveCardLink(bookingId: string): Promise<void> {
         clientName: String(b.client_name ?? "") || null,
       });
       if (drafted) {
-        const guardedSms = drafted.sms ? guardSmsLine(drafted.sms, salonName, url) : null;
-        if (guardedSms) smsBody = guardedSms;
         if (drafted.email && drafted.email.length <= 600) emailBody = drafted.email;
       }
     } catch {
@@ -107,7 +104,12 @@ export async function sendOnlineSaveCardLink(bookingId: string): Promise<void> {
 
     if (phone) {
       try {
-        await sendSmsReminder(phone, smsBody, { salonId, lang });
+        await sendSmsReminder(phone, smsBody, {
+          salonId,
+          lang,
+          bookingId,
+          notificationType: "save_card_link",
+        });
       } catch (e) {
         console.error("[sendOnlineSaveCardLink] sms", e);
       }

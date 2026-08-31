@@ -4,6 +4,7 @@ import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { isFrontDeskRole } from "@/shared/lib/salonMemberRole";
 import { generateReminderToken } from "@/shared/noshow/generateReminderToken";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
+import { buildSaveCardSms } from "@/shared/lib/smsTemplateRegistry";
 import { sendCustomerLinkEmail } from "@/shared/lib/sendCustomerLinkEmail";
 
 /**
@@ -81,9 +82,11 @@ export async function sendSaveCardLink(
 
   // Default (fixed) templates — used when the salon hasn't opted into the AI
   // policy agent, or the AI draft is unavailable/unsafe (fail-safe).
-  let smsBody = en
-    ? `${salonName}: Save a card to hold your appointment — you're only charged if you no-show: ${url}`
-    : `${salonName}: Lưu thẻ để giữ lịch hẹn — chỉ bị tính phí nếu bạn không đến: ${url}`;
+  const smsBody = buildSaveCardSms({
+    lang: en ? "en" : "vi",
+    salonName,
+    url,
+  });
   let emailBody = en
     ? "Save a card to hold your appointment — there's no upfront charge. You're only charged the no-show fee if you don't show up."
     : "Lưu thẻ để giữ lịch hẹn — không thu phí trước. Bạn chỉ bị tính phí vắng mặt nếu không đến.";
@@ -98,7 +101,7 @@ export async function sendSaveCardLink(
     flags?.ai_noshow_policy_live === true || flags?.ai_noshow_policy_shadow === true;
   if (aiOptedIn) {
     try {
-      const { draftSaveCardMessages, guardSmsLine } = await import(
+      const { draftSaveCardMessages } = await import(
         "@/shared/noshow/agentNoShowPolicy"
       );
       const drafted = await draftSaveCardMessages({
@@ -108,8 +111,6 @@ export async function sendSaveCardLink(
         clientName: (bk as { client_name?: string }).client_name ?? null,
       });
       if (drafted) {
-        const guardedSms = drafted.sms ? guardSmsLine(drafted.sms, salonName, url) : null;
-        if (guardedSms) smsBody = guardedSms;
         if (drafted.email && drafted.email.length <= 600) emailBody = drafted.email;
       }
     } catch {
@@ -126,7 +127,11 @@ export async function sendSaveCardLink(
 
     if (phone) {
       try {
-        const r = await sendSmsReminder(phone, smsBody, { salonId: ctx.salon.id });
+        const r = await sendSmsReminder(phone, smsBody, {
+          salonId: ctx.salon.id,
+          bookingId,
+          notificationType: "save_card_link",
+        });
         smsSent = r.ok;
       } catch {
         smsSent = false;

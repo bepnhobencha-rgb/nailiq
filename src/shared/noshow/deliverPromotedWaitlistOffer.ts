@@ -8,6 +8,7 @@ import { buildEmailExperience } from "@/shared/lib/emailExperience";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
+import { buildWaitlistSms } from "@/shared/lib/smsTemplateRegistry";
 
 export type PromotedWaitlistOffer = {
   waitlistEntryId: string;
@@ -214,9 +215,13 @@ async function deliverChannel(input: {
       }).format(new Date(snapshot.offeredStartUtc))
     : null;
   const detail = [snapshot.bookingDate, offeredTime, snapshot.staffName].filter(Boolean).join(" · ");
-  const textBody = snapshot.locale === "vi"
-    ? `${snapshot.salonName}: Có chỗ trống cho ${snapshot.serviceName}${detail ? ` (${detail})` : ""}. Giữ chỗ trong 20 phút: ${claimUrl}`
-    : `${snapshot.salonName}: A ${snapshot.serviceName} opening is available${detail ? ` (${detail})` : ""}. Claim it within 20 minutes: ${claimUrl}`;
+  const textBody = buildWaitlistSms({
+    lang: snapshot.locale,
+    salonName: snapshot.salonName,
+    serviceName: snapshot.serviceName,
+    detail,
+    claimUrl,
+  });
   const subject = snapshot.locale === "vi"
     ? `Có chỗ trống tại ${snapshot.salonName}`
     : `An appointment opened at ${snapshot.salonName}`;
@@ -307,6 +312,7 @@ async function deliverChannel(input: {
       const result = await sendSmsReminder(snapshot.recipient, textBody, {
         salonId: snapshot.salonId,
         lang: snapshot.locale,
+        notificationType: "waitlist_offer",
       });
       if (result.suppressed) {
         await complete({

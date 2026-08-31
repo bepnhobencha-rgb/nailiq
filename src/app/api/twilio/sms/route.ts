@@ -192,7 +192,11 @@ export async function POST(req: NextRequest) {
   }
 
   // Send the reply (compliant sender: kill-switch in non-prod + opt-out line).
-  await sendSmsReminder(from, reply, { salonId: salon.id, lang });
+  await sendSmsReminder(from, reply, {
+    salonId: salon.id,
+    lang,
+    notificationType: "sms_agent_reply",
+  });
 
   // Persist the trimmed conversation for the next inbound text.
   const nextMessages = trimHistory([...history, ...turns], SMS_MAX_HISTORY);

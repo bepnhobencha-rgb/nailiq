@@ -10,6 +10,7 @@
 
 import type { SupportedLocale } from "./resolveCustomerLocale";
 import type { StaffNotifyEvent } from "@/shared/dashboard/staffNotificationSettings";
+import { buildBookingChangeSms } from "@/shared/lib/smsTemplateRegistry";
 
 export interface StaffActionMessageVars {
   /** Customer first name (already display-safe). Empty string is fine. */
@@ -25,18 +26,6 @@ export interface StaffActionMessageVars {
   staffName?: string | null;
 }
 
-function greet(name: string, locale: SupportedLocale): string {
-  const n = name.trim();
-  if (locale === "vi") return n ? `Chào ${n}, ` : "";
-  return n ? `Hi ${n}, ` : "";
-}
-
-function callLine(phone: string | null | undefined, locale: SupportedLocale): string {
-  const p = (phone ?? "").trim();
-  if (!p) return "";
-  return locale === "vi" ? ` Cần đổi? Gọi ${p}.` : ` Questions? Call ${p}.`;
-}
-
 /**
  * Build the SMS body for a staff-initiated action in the given locale.
  * `event` "no_show" has no customer SMS (handled by win-back elsewhere) and
@@ -47,38 +36,16 @@ export function buildStaffActionSms(
   locale: SupportedLocale,
   v: StaffActionMessageVars,
 ): string | null {
-  const salon = v.salonName.trim() || "NailIQ";
-  const svc = v.serviceName.trim();
-  const g = greet(v.customerName, locale);
-  const call = callLine(v.salonPhone, locale);
-
-  if (locale === "vi") {
-    switch (event) {
-      case "create":
-        return `${g}lịch hẹn ${svc} của bạn tại ${salon} đã được đặt: ${v.whenLabel}.${call}`.trim();
-      case "reschedule":
-        return `${g}lịch hẹn ${svc} của bạn tại ${salon} đã được dời sang: ${v.whenLabel}.${call}`.trim();
-      case "cancel":
-        return `${g}lịch hẹn ${svc} của bạn tại ${salon} (${v.whenLabel}) đã được huỷ.${call}`.trim();
-      case "no_show":
-        return null;
-      case "staff_change":
-        return `${g}lịch hẹn ${svc} của bạn tại ${salon} vẫn giữ nguyên vào ${v.whenLabel} và sẽ do ${v.staffName?.trim() || "một nhân viên khác"} phục vụ.${call}`.trim();
-    }
-  }
-
-  switch (event) {
-    case "create":
-      return `${g}your ${svc} appointment at ${salon} is booked for ${v.whenLabel}.${call}`.trim();
-    case "reschedule":
-      return `${g}your ${svc} appointment at ${salon} has been moved to ${v.whenLabel}.${call}`.trim();
-    case "cancel":
-      return `${g}your ${svc} appointment at ${salon} (${v.whenLabel}) has been cancelled.${call}`.trim();
-    case "no_show":
-      return null;
-    case "staff_change":
-      return `${g}your ${svc} appointment at ${salon} remains scheduled for ${v.whenLabel} and will be with ${v.staffName?.trim() || "another team member"}.${call}`.trim();
-  }
+  return buildBookingChangeSms({
+    event,
+    lang: locale,
+    salonName: v.salonName,
+    serviceName: v.serviceName,
+    whenLabel: v.whenLabel,
+    customerName: v.customerName,
+    staffName: v.staffName,
+    salonPhone: v.salonPhone,
+  });
 }
 
 /** Short subject line for the email channel. */

@@ -6,6 +6,8 @@
 // (see publicBookingSideEffects / submitGroupBooking), so a VI customer gets a
 // VI reminder and everyone else gets EN (the safe default).
 
+import { buildReminderSms } from "@/shared/lib/smsTemplateRegistry";
+
 export type ReminderLang = "en" | "vi";
 
 /** Resolve the reminder language from a booking's stored client_locale.
@@ -33,17 +35,5 @@ export type ReminderSmsInput = {
  * the carrier-required opt-out line, in the customer's language.
  */
 export function buildReminderSmsBody(input: ReminderSmsInput): string {
-  const { lang, reminderType, salonName, timeLabel, confirmUrl, rescheduleUrl, aiLead } = input;
-
-  if (lang === "vi") {
-    const service = input.serviceName?.trim() || "lịch hẹn";
-    const when = reminderType === "24h" ? "vào ngày mai" : "trong 3 giờ nữa";
-    const lead = aiLead || `Nhắc lịch: ${service} tại ${salonName} ${when} lúc ${timeLabel}.`;
-    return `${lead}\nXác nhận: ${confirmUrl}\nĐổi lịch: ${rescheduleUrl}\nNhắn STOP để huỷ nhận tin.`;
-  }
-
-  const service = input.serviceName?.trim() || "appointment";
-  const when = reminderType === "24h" ? "tomorrow" : "in 3 hours";
-  const lead = aiLead || `Reminder: Your ${service} at ${salonName} is ${when} at ${timeLabel}.`;
-  return `${lead}\nConfirm: ${confirmUrl}\nReschedule: ${rescheduleUrl}\nReply STOP to opt out.`;
+  return buildReminderSms(input);
 }

@@ -11,6 +11,11 @@
 
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
+import {
+  buildGroupReplacementSms,
+  buildWaitlistSms,
+  type SmsLocale,
+} from "@/shared/lib/smsTemplateRegistry";
 
 const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "https://nailiq.ca").trim();
 
@@ -48,41 +53,56 @@ export async function handleLateDecline(
   // 3. Load salon info for slug + timezone + isTest guard
   const { data: salon } = await db
     .from("salons" as never)
-    .select("name, slug, timezone")
+    .select("name, slug, timezone, default_notification_locale")
     .eq("id", salonId)
     .maybeSingle();
 
-  const s = salon as { name: string; slug: string; timezone: string } | null;
+  const s = salon as {
+    name: string;
+    slug: string;
+    timezone: string;
+    default_notification_locale?: string | null;
+  } | null;
   if (!s) return;
 
   const salonIsTest = /^e2e[-_]/i.test(s.slug) || /^e2e\b/i.test(s.name ?? "");
   const bookingUrl = `${SITE_URL}/${s.slug}`;
 
   // Format date in salon timezone (short, ASCII-safe for SMS)
-  const dateStr = formatDate(payload.start_at, s.timezone);
-  const service = payload.service_name ?? "dịch vụ";
+  const lang: SmsLocale = String(s.default_notification_locale ?? "")
+    .toLowerCase()
+    .startsWith("vi")
+    ? "vi"
+    : "en";
+  const dateStr = formatDate(payload.start_at, s.timezone, lang);
+  const service = payload.service_name ?? (lang === "vi" ? "dịch vụ" : "service");
 
   const outcomes: string[] = [];
 
   // 4. SMS suggested replacement first (highest intent — someone specific was named)
   if (payload.suggested_phone) {
-    const msg = [
-      `${payload.suggested_name ? payload.suggested_name + ", b" : "B"}ạn được đề xuất thay thế một slot nhóm tại ${s.name} · ${dateStr}.`,
-      `Dịch vụ: ${service}.`,
-      `Đặt lịch ngay (first-come): ${bookingUrl}`,
-    ].join(" ");
+    const msg = buildGroupReplacementSms({
+      lang,
+      recipientName: payload.suggested_name,
+      salonName: s.name,
+      dateLabel: dateStr,
+      serviceName: service,
+      bookingUrl,
+    });
 
     const res = await sendSmsReminder(payload.suggested_phone, msg, {
       salonId,
       salonIsTest,
-      lang: "vi",
+      lang,
+      bookingId: payload.booking_id,
+      notificationType: "late_decline_replacement",
     });
     outcomes.push(res.ok ? `sms_suggested:ok` : `sms_suggested:fail`);
   }
 
   // 5. Notify top waitlisted person for this salon + date
   const localDate = toLocalDate(payload.start_at, s.timezone);
-  const waitlistNotified = await notifyTopWaitlist(db, salonId, localDate, s, dateStr, service, salonIsTest);
+  const waitlistNotified = await notifyTopWaitlist(db, salonId, localDate, s, dateStr, service, salonIsTest, lang);
   outcomes.push(waitlistNotified ? "sms_waitlist:ok" : "sms_waitlist:none");
 
   // 6. Log outcome
@@ -99,6 +119,7 @@ async function notifyTopWaitlist(
   dateStr: string,
   service: string,
   salonIsTest: boolean,
+  lang: SmsLocale,
 ): Promise<boolean> {
   // Find top pending waitlist entry for this salon + date
   const { data: entries } = await db
@@ -113,17 +134,19 @@ async function notifyTopWaitlist(
   const top = (entries as Array<{ id: string; client_name: string; client_phone: string }> | null)?.[0];
   if (!top?.client_phone) return false;
 
-  const name = top.client_name ?? "";
-  const msg = [
-    `${name ? name + ", c" : "C"}ó một slot vừa mở tại ${salon.name} · ${dateStr}.`,
-    `Dịch vụ: ${service}.`,
-    `Đặt ngay (first-come): ${SITE_URL}/${salon.slug}`,
-  ].join(" ");
+  const msg = buildWaitlistSms({
+    lang,
+    salonName: salon.name,
+    serviceName: service,
+    detail: dateStr,
+    claimUrl: `${SITE_URL}/${salon.slug}`,
+  });
 
   const res = await sendSmsReminder(top.client_phone, msg, {
     salonId,
     salonIsTest,
-    lang: "vi",
+    lang,
+    notificationType: "waitlist_invite",
   });
 
   // Mark as notified so the next dedup pass skips this entry
@@ -154,9 +177,9 @@ async function logHandled(
   } as never);
 }
 
-function formatDate(isoUtc: string, timezone: string): string {
+function formatDate(isoUtc: string, timezone: string, lang: SmsLocale): string {
   try {
-    return new Date(isoUtc).toLocaleString("vi-VN", {
+    return new Date(isoUtc).toLocaleString(lang === "vi" ? "vi-VN" : "en-CA", {
       weekday: "short",
       month: "numeric",
       day: "numeric",

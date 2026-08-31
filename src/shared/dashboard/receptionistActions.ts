@@ -14,6 +14,7 @@ import {
   runBookingOrchestrator,
 } from "@/shared/booking/bookingOrchestrator";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { buildPaymentRequestSms } from "@/shared/lib/smsTemplateRegistry";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import {
@@ -1303,6 +1304,7 @@ export async function cancelDeskBooking(
  *  missing phone or a Twilio failure so the desk can fall back to the QR. */
 async function sendDepositSms(args: {
   salonId: string;
+  bookingId: string;
   phone: string;
   salonName: string;
   amountCents: number;
@@ -1315,14 +1317,19 @@ async function sendDepositSms(args: {
   const amount = formatDepositNotificationAmount(args.amountCents, args.currency);
   if (!amount) return false;
   const salon = args.salonName.trim() || "NailIQ";
-  const body =
-    args.language === "en"
-      ? `${salon}: Please pay your ${amount} deposit to hold your appointment: ${args.url}`
-      : `${salon}: Vui lòng đặt cọc ${amount} để giữ lịch hẹn của bạn: ${args.url}`;
+  const body = buildPaymentRequestSms({
+    kind: "deposit",
+    lang: args.language === "en" ? "en" : "vi",
+    salonName: salon,
+    amount,
+    url: args.url,
+  });
   try {
     const res = await sendSmsReminder(phone, body, {
       salonId: args.salonId,
       lang: args.language === "en" ? "en" : "vi",
+      bookingId: args.bookingId,
+      notificationType: "deposit_link",
     });
     return res.ok;
   } catch {
@@ -1410,6 +1417,7 @@ export async function requestDepositLink(
     if (input.sendSms) {
       smsSent = await sendDepositSms({
         salonId: ctx.salon.id,
+        bookingId,
         phone: String((bk as { client_phone?: string }).client_phone ?? ""),
         salonName: ctx.salon.name,
         amountCents: r.amountCents ?? 0,
@@ -1527,14 +1535,20 @@ export async function sendNoShowFeeLink(
         (bk as { client_phone?: string }).client_phone ?? "",
       ).trim();
       if (phone) {
-        const body = en
-          ? `${salon}: Please pay your ${amount} no-show fee: ${r.url}`
-          : `${salon}: Vui lòng thanh toán phí no-show ${amount}: ${r.url}`;
+        const body = buildPaymentRequestSms({
+          kind: "noshow_fee",
+          lang: en ? "en" : "vi",
+          salonName: salon,
+          amount,
+          url: r.url,
+        });
         try {
           smsSent = (
             await sendSmsReminder(phone, body, {
               salonId: ctx.salon.id,
               lang: en ? "en" : "vi",
+              bookingId,
+              notificationType: "noshow_fee_link",
             })
           ).ok;
         } catch {

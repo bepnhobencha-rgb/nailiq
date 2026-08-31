@@ -31,9 +31,11 @@ describe("MQA-0180 smart reminder boundary", () => {
 
   it("keeps deterministic links, opt-out, consent and kill-switches at the send boundary", () => {
     const body = read("src/shared/reminders/reminderSmsBody.ts");
+    const registry = read("src/shared/lib/smsTemplateRegistry.ts");
     const sender = read("src/shared/lib/twilioSms.ts");
-    expect(body).toContain("Reply STOP to opt out.");
-    expect(body).toContain("Nhắn STOP để huỷ nhận tin.");
+    expect(body).toContain("return buildReminderSms(input)");
+    expect(registry).toContain("Reply STOP to opt out.");
+    expect(registry).toContain("Nhắn STOP để ngừng nhận tin.");
     expect(sender).toContain("smsSuppressReason(recipient");
     expect(sender).toContain("loadSmsOutboundSuppression");
     expect(sender.indexOf("loadSmsOutboundSuppression")).toBeLessThan(

@@ -78,6 +78,7 @@ async function sendSms(envelope: StaffActionSmsEnvelope) {
     statusCallbackUrl: envelope.statusCallbackUrl,
     salonIsTest: envelope.salonIsTest,
     lang: envelope.lang,
+    notificationType: "staff_action",
   });
 }
 
