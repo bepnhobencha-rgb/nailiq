@@ -39,7 +39,8 @@ describe("Smart Capacity Rescue acceptance boundary", () => {
     expect(migration).toContain(
       ") FROM PUBLIC, anon, authenticated, service_role;",
     );
-    expect(migration).toContain(") TO anon, authenticated, service_role;");
+    expect(migration).toContain(") TO anon, service_role;");
+    expect(migration).not.toContain(") TO anon, authenticated, service_role;");
     expect(migration).toContain("service.salon_id = p_salon_id");
     expect(migration).toContain("person.salon_id = p_salon_id");
   });

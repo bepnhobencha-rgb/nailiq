@@ -380,4 +380,4 @@ REVOKE ALL ON FUNCTION public.create_public_capacity_rescue_request(
 GRANT EXECUTE ON FUNCTION public.create_public_capacity_rescue_request(
   uuid, uuid, text, uuid, uuid, date, text, integer,
   text, text, text, text, jsonb
-) TO anon, authenticated, service_role;
+) TO anon, service_role;

@@ -16,6 +16,7 @@ const intentionalDefiners = [
   "add_booking_addons",
   "check_group_slots_available",
   "create_public_booking",
+  "create_public_capacity_rescue_request",
   "create_public_waitlist_entry",
   "finalize_public_booking_profile",
   "get_booking_client_snapshot",
@@ -26,7 +27,7 @@ const intentionalDefiners = [
 
 describe("intentional anonymous SECURITY DEFINER boundary", () => {
   it("keeps the production allowlist exact and documented", () => {
-    expect(proof).toContain("IF v_actual_count <> 10");
+    expect(proof).toContain("IF v_actual_count <> 11");
 
     for (const functionName of intentionalDefiners) {
       expect(proof).toContain(`public.${functionName}`);
@@ -55,6 +56,8 @@ describe("intentional anonymous SECURITY DEFINER boundary", () => {
       "conflicting_members",
       "public-booking:phone:",
       "invalid_service_for_salon",
+      "invalid_intent_keys",
+      "request_id_conflict",
       "v_booking.otp_session_id = s.id",
       "b.created_at >= now() - interval ''10 minutes''",
       "RETURNS TABLE(staff_id uuid",
