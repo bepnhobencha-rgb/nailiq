@@ -139,13 +139,16 @@ import { execFileSync } from "node:child_process";
  * 62 columns, and 21 primary/unique/lookup indexes for device identity,
  * approval-gated checkout truth, immutable cart lines, and tenant-safe foreign
  * keys. It adds no browser grants, policy, function, or trigger.
+ * The 20260831170756 Smart Checkout Phase B migration adds two service-only
+ * pairing/webhook tables, 63 columns across those tables and the foundation,
+ * six narrow service RPCs, and nine pairing/webhook/device indexes.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
  */
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
-  tables: 198,
+  tables: 200,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -196,7 +199,8 @@ const PRODUCTION = {
   // +12 registered-email signed delivery event columns.
   // +21 universal SMS attempt and salon template-settings columns.
   // +62 Smart Checkout device/session/immutable-line columns.
-  columns: 2986,
+  // +63 Smart Checkout Phase B pairing, webhook, lease and receipt columns.
+  columns: 3049,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -250,7 +254,8 @@ const PRODUCTION = {
   // approved cancellation-fee claim/outcome functions.
   // +2 registered email receipt recorder and PII-free operational reader.
   // +3 universal SMS attempt claim, completion, and receipt functions.
-  functions: 438,
+  // +6 Smart Checkout pairing, webhook and reconciliation RPCs.
+  functions: 444,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -282,7 +287,8 @@ const PRODUCTION = {
   // +4 registered email primary, event identity, timeline and operations indexes.
   // +5 SMS attempt and salon template-settings primary/lookup indexes.
   // +21 Smart Checkout PK, tenant-FK, dedupe, and reconciliation indexes.
-  indexes: 747,
+  // +9 Smart Checkout Phase B pairing/webhook/device indexes.
+  indexes: 756,
 } as const;
 
 /**
@@ -307,6 +313,8 @@ const CRITICAL_TABLES = [
   "smart_checkout_devices",
   "smart_checkout_sessions",
   "smart_checkout_lines",
+  "smart_checkout_pairing_attempts",
+  "smart_checkout_webhook_inbox",
   "superadmins",
   "superadmin_audit_logs",
   "ai_execution_jobs",

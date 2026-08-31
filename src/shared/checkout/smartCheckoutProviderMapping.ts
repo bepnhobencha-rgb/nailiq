@@ -1,6 +1,6 @@
 import type { SmartCheckoutDispatchInput } from "@/shared/checkout/smartCheckoutAdapter";
 
-type SquareTerminalCheckoutRequest = {
+export type SquareTerminalCheckoutRequest = {
   idempotency_key: string;
   checkout: {
     amount_money: { amount: number; currency: string };
@@ -10,7 +10,7 @@ type SquareTerminalCheckoutRequest = {
   };
 };
 
-type StripeTerminalPaymentIntentRequest = {
+export type StripeTerminalPaymentIntentRequest = {
   amount: number;
   currency: string;
   payment_method_types: ["card_present"];
