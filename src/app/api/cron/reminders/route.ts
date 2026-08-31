@@ -670,6 +670,8 @@ export async function GET(req: Request) {
           const result = await sendSmsReminder(toE164, body, {
             salonId: booking.salon_id,
             statusCallbackUrl,
+            bookingId: booking.id,
+            notificationType: reminderType === "24h" ? "reminder_24h" : "reminder_3h",
           });
           const delivery = await persistReminderProviderResult(
             smsClaim.claimId,

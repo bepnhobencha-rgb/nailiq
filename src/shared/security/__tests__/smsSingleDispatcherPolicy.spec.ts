@@ -21,7 +21,23 @@ function salonPolicyDb(result: { data: unknown; error: unknown }) {
   };
   builder.select.mockReturnValue(builder);
   builder.eq.mockReturnValue(builder);
-  return { from: vi.fn(() => builder) };
+  return {
+    from: vi.fn(() => builder),
+    rpc: vi.fn(async (name: string) => {
+      if (name === "claim_sms_delivery_attempt") {
+        return {
+          data: {
+            success: true,
+            code: "claimed",
+            attempt_id: "22222222-2222-4222-8222-222222222222",
+            attempt_token: ["7f4c5d6e", "8a9b", "4c1d", "b2e3", "4f5a6b7c8d9e"].join("-"),
+          },
+          error: null,
+        };
+      }
+      return { data: { success: true, code: "completed" }, error: null };
+    }),
+  };
 }
 
 describe("SMS single dispatcher salon/A2P boundary", () => {
@@ -51,11 +67,13 @@ describe("SMS single dispatcher salon/A2P boundary", () => {
     const result = await sendSmsReminder("+17145101234", "Booking confirmed", { salonId });
 
     expect(result).toMatchObject({
-      ok: true,
+      ok: false,
+      outcome: "suppressed",
       suppressed: true,
       suppressionReason: "a2p_not_registered",
+      deliveryTruthPersisted: true,
     });
-    expect(result.messageSid).toMatch(/^SUPPRESSED_a2p_not_registered_/);
+    expect(result.messageSid).toBeUndefined();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -71,7 +89,12 @@ describe("SMS single dispatcher salon/A2P boundary", () => {
 
     const result = await sendSmsReminder("+17145101234", "Booking confirmed", { salonId });
 
-    expect(result).toEqual({ ok: false, error: "sms_policy_unavailable" });
+    expect(result).toMatchObject({
+      ok: false,
+      outcome: "rejected",
+      error: "sms_policy_unavailable",
+      deliveryTruthPersisted: true,
+    });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

@@ -15,6 +15,10 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { generateReminderToken } from "@/shared/noshow/generateReminderToken";
 import { clientIp } from "@/shared/lib/inAppRateLimit";
 import { isUsPhone } from "@/shared/lib/phoneRegion";
+import {
+  buildBookingConfirmationSms,
+  buildGroupMemberInviteSms,
+} from "@/shared/lib/smsTemplateRegistry";
 import { consumeDurableRateLimitBuckets } from "@/shared/security/publicServerActionRateLimit";
 
 export const dynamic = "force-dynamic";
@@ -394,22 +398,7 @@ export async function POST(req: Request) {
         ? `${new Set(sequenceReceipt.segments.map((segment) => segment.resolvedStaffId)).size} staff`
         : `${new Set(sequenceReceipt.segments.map((segment) => segment.resolvedStaffId)).size} nhân viên`
       : null;
-  const staff = boundedStaffName ? ` with ${boundedStaffName}` : "";
-
-  const baseMessage = isGroup
-    ? lang === "en"
-      ? `✅ Group of ${partySize} booked at ${salonName} · ${dateStr}. Reply STOP to opt out.`
-      : `✅ Đã đặt lịch nhóm ${partySize} người tại ${salonName} · ${dateStr}. Nhắn STOP để huỷ nhận tin.`
-    : lang === "en"
-      ? `✅ Booked! ${boundedSequenceServiceName}${staff} at ${salonName} · ${dateStr}. Reply STOP to opt out.`
-      : `✅ Đã đặt lịch! ${boundedSequenceServiceName} tại ${salonName} · ${dateStr}. Nhắn STOP để huỷ nhận tin.`;
-
-  // Append the salon ADDRESS as plain text (not a long Google Maps URL): phones
-  // auto-link a street address → tap opens the user's default maps app, and it's
-  // far shorter than an encoded maps URL (saves an SMS segment). The full
-  // "Get directions" Google button stays in the confirmation EMAIL.
   const salonAddress = (salon as { address?: string | null }).address?.trim() || "";
-  const addrLine = salonAddress ? `\n📍 ${salonAddress}` : "";
 
   const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
   const smsOutboundEnabled =
@@ -423,17 +412,26 @@ export async function POST(req: Request) {
       : undefined;
   // Status links are capability-scoped. Never expose a naked booking UUID in a
   // customer message or mint stronger reschedule/cancel rights from that UUID.
-  let manageLink = "";
+  let manageUrl = "";
   if (!smsPolicySuppressionReason && salonSlug && bookingId && !isGroup) {
     const statusCapability = await generateReminderToken(bookingId, salonId, {
       action: "status",
       expiresAt: new Date(Date.parse(startTimeUtc) + 2 * 60 * 60 * 1000).toISOString(),
     });
     if (statusCapability) {
-      manageLink = `\nStatus: ${SITE_URL}/booking/status?token=${statusCapability.id}`;
+      manageUrl = `${SITE_URL}/booking/status?token=${statusCapability.id}`;
     }
   }
-  const message = baseMessage + addrLine + manageLink;
+  const message = buildBookingConfirmationSms({
+    lang,
+    salonName,
+    dateLabel: dateStr,
+    serviceName: boundedSequenceServiceName,
+    staffName: boundedStaffName,
+    partySize,
+    address: salonAddress,
+    manageUrl,
+  });
   const statusCallbackUrl = `${SITE_URL}/api/twilio/status`;
   // The salon-level switch is a hard operational kill-switch. Keep consent
   // evidence above, but do not call Twilio, stamp the booking as sent, or fan
@@ -721,22 +719,16 @@ async function sendGroupMemberSms(opts: {
     const dateStr = formatConfirmDate(m.start_time_utc, salonTimezone);
     const serviceName = m.service?.name?.trim() || null;
     const staffName = m.staff?.name?.trim() || null;
-    const staffPart = staffName ? ` · ${staffName}` : "";
     const rsvpUrl = `${SITE_URL}/booking/group-rsvp?confirmToken=${encodeURIComponent(confirmCapability.id)}&cancelToken=${encodeURIComponent(cancelCapability.id)}&lang=${lang}`;
-
-    const msg = (lang === "en"
-      ? [
-          `${organizerName || "Your group"} booked an appointment for you at ${salonName} · ${dateStr}.`,
-          serviceName ? `Service: ${serviceName}${staffPart}.` : null,
-          `Confirm you're coming: ${rsvpUrl}`,
-        ]
-      : [
-          `${organizerName || "Nhóm"} đã đặt lịch cho bạn tại ${salonName} · ${dateStr}.`,
-          serviceName ? `Dịch vụ: ${serviceName}${staffPart}.` : null,
-          `Xác nhận tham dự: ${rsvpUrl}`,
-        ])
-      .filter(Boolean)
-      .join(" ");
+    const msg = buildGroupMemberInviteSms({
+      lang,
+      organizerName,
+      salonName,
+      dateLabel: dateStr,
+      serviceName,
+      staffName,
+      rsvpUrl,
+    });
 
     let memberDispatch: Awaited<
       ReturnType<typeof sendClaimedBookingConfirmationSms>

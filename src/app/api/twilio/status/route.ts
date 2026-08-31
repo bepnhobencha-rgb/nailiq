@@ -11,6 +11,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { updateNotificationBySid } from "@/shared/lib/notificationLog";
+import { recordSmsDeliveryAttemptReceipt } from "@/shared/lib/smsDeliveryTruth";
 import {
   getTwilioAuthToken,
   validateTwilioSignature,
@@ -75,11 +76,15 @@ export async function POST(req: NextRequest) {
   const errorCode = params.ErrorCode?.trim() || null;
   const notificationIdRaw = req.nextUrl.searchParams.get("notification_id");
   const notificationId = notificationIdRaw?.trim() || undefined;
+  const smsAttemptIdRaw = req.nextUrl.searchParams.get("sms_attempt_id");
+  const smsAttemptId = smsAttemptIdRaw?.trim() || undefined;
+  const domainCallback = req.nextUrl.searchParams.get("sms_domain_callback") === "1";
 
   if (
     !MESSAGE_SID_RE.test(messageSid) ||
     !KNOWN_MESSAGE_STATUSES.has(messageStatus) ||
-    (notificationId !== undefined && !UUID_RE.test(notificationId))
+    (notificationId !== undefined && !UUID_RE.test(notificationId)) ||
+    (smsAttemptId !== undefined && !UUID_RE.test(smsAttemptId))
   ) {
     return new NextResponse("Invalid receipt", { status: 422 });
   }
@@ -93,14 +98,37 @@ export async function POST(req: NextRequest) {
   ) {
     return new NextResponse("Invalid receipt", { status: 422 });
   }
-  const updated = notificationId
-    ? await updateNotificationBySid(
+  // Phase D callbacks always bind directly to the universal attempt. Legacy
+  // callbacks without sms_attempt_id remain accepted during rollout.
+  if (smsAttemptId) {
+    const attemptUpdated = await recordSmsDeliveryAttemptReceipt({
+      attemptId: smsAttemptId,
+      messageSid,
+      status: messageStatus as "delivered" | "undelivered" | "failed",
+      errorCode,
+    });
+    if (!attemptUpdated.ok) {
+      if (attemptUpdated.code === "invalid_receipt") {
+        return new NextResponse("Invalid receipt", { status: 422 });
+      }
+      if (attemptUpdated.code === "terminal_conflict") {
+        return new NextResponse("Receipt conflict", { status: 409 });
+      }
+      return new NextResponse("Service unavailable", { status: 503 });
+    }
+  }
+
+  const needsDomainUpdate = !smsAttemptId || domainCallback || notificationId;
+  const updated = !needsDomainUpdate
+    ? { ok: true as const, code: "applied" as const }
+    : notificationId
+      ? await updateNotificationBySid(
         messageSid,
         messageStatus as "delivered" | "undelivered" | "failed",
         errorCode,
         notificationId,
       )
-    : await updateNotificationBySid(
+      : await updateNotificationBySid(
         messageSid,
         messageStatus as "delivered" | "undelivered" | "failed",
         errorCode,

@@ -76,7 +76,11 @@ export async function sendClientMessage(
   // ── Send via the shared kill-switch chokepoint ────────────────────────────
   // sendSmsReminder already applies smsSuppressReason (env flag / NODE_ENV /
   // 555 seed numbers / salonIsTest). We NEVER call Twilio directly here.
-  const result = await sendSmsReminder(phone, body, { salonId: ctx.salon.id, salonIsTest });
+  const result = await sendSmsReminder(phone, body, {
+    salonId: ctx.salon.id,
+    salonIsTest,
+    notificationType: kind === "rebook_invite" ? "rebook_invite" : "client_message",
+  });
 
   // ── Log to booking_notifications ─────────────────────────────────────────
   // Keep desk messages away from the one-per-booking confirmation state
@@ -93,12 +97,22 @@ export async function sendClientMessage(
     messageSid: result.messageSid,
     bodyPreview: body.slice(0, 80),
     ok: result.ok,
+    deliveryStatus: result.outcome === "accepted"
+      ? "sent"
+      : result.outcome === "suppressed"
+        ? "suppressed"
+        : result.outcome === "unknown"
+          ? "unknown"
+          : "failed",
     errorMessage: result.ok ? null : (result.error ?? null),
   });
 
   // ── Return ────────────────────────────────────────────────────────────────
-  if (!result.ok) {
+  if (result.outcome === "suppressed") {
+    return { ok: true, suppressed: true };
+  }
+  if (result.outcome !== "accepted") {
     return { ok: false, error: result.error ?? "send_failed" };
   }
-  return { ok: true, ...(result.suppressed ? { suppressed: true } : {}) };
+  return { ok: true };
 }

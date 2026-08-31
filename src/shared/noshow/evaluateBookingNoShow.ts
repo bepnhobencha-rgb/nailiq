@@ -5,6 +5,7 @@ import { isProviderTimeoutError } from "@/shared/ai/usageLedger";
 import { evaluateDeposit } from "@/shared/noshow/evaluateDeposit";
 import { scoreNoShowRisk } from "@/shared/noshow/scoreNoShowRisk";
 import { resolveVertical } from "@/shared/verticals/registry";
+import { buildPaymentRequestSms } from "@/shared/lib/smsTemplateRegistry";
 
 export type EvaluateBookingNoShowInput = {
   bookingId: string;
@@ -246,9 +247,7 @@ export async function evaluateBookingNoShow(
   }
 }
 
-/** Text + email the pay-to-confirm deposit link to an escalated customer. The
- *  customer's locale isn't on `body`; default to the salon's site language is
- *  out of scope here, so we send EN (the link page itself is bilingual). */
+/** Text + email the pay-to-confirm deposit link in the customer's stored locale. */
 async function sendEscalationDepositLink(
   supabase: ReturnType<typeof createServiceRoleClient>,
   bookingId: string,
@@ -258,7 +257,7 @@ async function sendEscalationDepositLink(
 ): Promise<void> {
   const { data } = await supabase
     .from("bookings" as never)
-    .select("salon_id, client_phone, client_email, client_name")
+    .select("salon_id, client_phone, client_email, client_name, client_locale")
     .eq("id", bookingId)
     .maybeSingle();
   const b = (data ?? {}) as {
@@ -266,17 +265,34 @@ async function sendEscalationDepositLink(
     client_phone?: string | null;
     client_email?: string | null;
     client_name?: string | null;
+    client_locale?: string | null;
   };
   const salon = salonName.trim() || "NailIQ";
   const amount = `$${(amountCents / 100).toFixed(2)}`;
+  const lang: "en" | "vi" = String(b.client_locale ?? "")
+    .toLowerCase()
+    .startsWith("vi")
+    ? "vi"
+    : "en";
   const phone = String(b.client_phone ?? "").trim();
   if (phone) {
     try {
       const { sendSmsReminder } = await import("@/shared/lib/twilioSms");
       await sendSmsReminder(
         phone,
-        `${salon}: A ${amount} deposit is required to confirm your appointment. Please pay here to hold your spot: ${url}`,
-        { salonId: String(b.salon_id ?? ""), lang: "en" },
+        buildPaymentRequestSms({
+          kind: "deposit",
+          lang,
+          salonName: salon,
+          amount,
+          url,
+        }),
+        {
+          salonId: String(b.salon_id ?? ""),
+          lang,
+          bookingId,
+          notificationType: "deposit_link",
+        },
       );
     } catch (e) {
       console.error("[sendEscalationDepositLink] sms", e);

@@ -130,13 +130,16 @@ import { execFileSync } from "node:child_process";
  * The 20260831042615 registered-email delivery-truth migration adds one
  * PII-free RPC-only event table, twelve columns, one restrictive deny policy,
  * two service-role-only functions, and four indexes.
+ * The 20260831052212 SMS delivery-truth migration adds one PII-free RPC-only
+ * attempt ledger, one service-role-only salon template-settings table, 21
+ * columns, three service-only functions, and five indexes.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
  */
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
-  tables: 193,
+  tables: 195,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -185,7 +188,8 @@ const PRODUCTION = {
   // +33 group-cancellation fee review and immutable approval-receipt columns.
   // +38 late-cancellation review/receipt and payment outcome columns.
   // +12 registered-email signed delivery event columns.
-  columns: 2903,
+  // +21 universal SMS attempt and salon template-settings columns.
+  columns: 2924,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -238,7 +242,8 @@ const PRODUCTION = {
   // +7 late-cancellation snapshot, lock/capture/decision/receipt guards and
   // approved cancellation-fee claim/outcome functions.
   // +2 registered email receipt recorder and PII-free operational reader.
-  functions: 435,
+  // +3 universal SMS attempt claim, completion, and receipt functions.
+  functions: 438,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -268,7 +273,8 @@ const PRODUCTION = {
   // +10 group-cancellation review/receipt identity, lookup and FK indexes.
   // +11 late-cancellation review/receipt identity, queue and FK indexes.
   // +4 registered email primary, event identity, timeline and operations indexes.
-  indexes: 721,
+  // +5 SMS attempt and salon template-settings primary/lookup indexes.
+  indexes: 726,
 } as const;
 
 /**
@@ -318,6 +324,8 @@ const CRITICAL_TABLES = [
   "booking_otp_delivery_attempts",
   "resend_booking_otp_delivery_events",
   "registered_email_delivery_events",
+  "sms_delivery_attempts",
+  "salon_sms_template_settings",
   "booking_no_show_decisions",
   "booking_notification_delivery_events",
   "booking_confirmation_dispatch_envelopes",
@@ -465,6 +473,9 @@ const CRITICAL_FUNCTIONS = [
   "record_resend_booking_otp_delivery_event",
   "record_resend_registered_email_delivery_event",
   "load_registered_email_delivery_truth",
+  "claim_sms_delivery_attempt",
+  "complete_sms_delivery_attempt",
+  "record_sms_delivery_attempt_receipt",
   "begin_booking_no_show_v1",
   "undo_booking_no_show_v1",
   "finalize_due_booking_no_shows_v1",
@@ -786,7 +797,7 @@ function main() {
   // the delivery-event audit table is service-role-only.
   // The customer identity map is service-role read-only; the refund inbox is
   // mutation-through-RPC only and intentionally grants no table reachability.
-  const GRANTS = { anon: 56, authenticated: 78, service_role: 184 } as const;
+  const GRANTS = { anon: 56, authenticated: 78, service_role: 185 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (

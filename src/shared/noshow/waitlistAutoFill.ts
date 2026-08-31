@@ -3,6 +3,7 @@ import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { buildEmailExperience } from "@/shared/lib/emailExperience";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { logNotification } from "@/shared/lib/notificationLog";
+import { buildWaitlistSms } from "@/shared/lib/smsTemplateRegistry";
 
 const SITE_URL =
   (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
@@ -162,13 +163,21 @@ export async function notifyWaitlistForSlot(params: {
       row.offered_staff_id,
       row.offered_start_utc,
     );
-    const body = offered
-      ? `${params.salonName}: Co cho trong ${params.serviceName} ngay ${params.bookingDateYmd} luc ${offered.time} voi ${offered.staffName}. Giu cho trong 20 phut: ${claimUrl}`
-      : `${params.salonName}: Co cho trong ${params.serviceName} ngay ${params.bookingDateYmd}. Giu cho trong 20 phut: ${claimUrl}`;
     const lang = await resolveSalonLang(supabase, params.salonId);
+    const detail = offered
+      ? `${params.bookingDateYmd} · ${offered.time} · ${offered.staffName}`
+      : params.bookingDateYmd;
+    const body = buildWaitlistSms({
+      lang,
+      salonName: params.salonName,
+      serviceName: params.serviceName,
+      detail,
+      claimUrl,
+    });
     const smsResult = await sendSmsReminder(phone, body, {
       salonId: params.salonId,
       lang,
+      notificationType: "waitlist_invite",
     });
     smsOk = smsResult.ok;
 
@@ -184,6 +193,13 @@ export async function notifyWaitlistForSlot(params: {
         messageSid: smsResult.messageSid ?? null,
         bodyPreview: body,
         ok: smsResult.ok,
+        deliveryStatus: smsResult.outcome === "accepted"
+          ? "sent"
+          : smsResult.outcome === "suppressed"
+            ? "suppressed"
+            : smsResult.outcome === "unknown"
+              ? "unknown"
+              : "failed",
         errorMessage: smsResult.ok ? null : (smsResult.error ?? null),
       });
     } catch (e) {

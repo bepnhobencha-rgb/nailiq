@@ -8,6 +8,7 @@ import {
   type PlanCheckSalon,
 } from "@/shared/lib/subscriptionPlans";
 import { isUsPhone } from "@/shared/lib/phoneRegion";
+import { buildReviewRequestSms } from "@/shared/lib/smsTemplateRegistry";
 
 /**
  * Auto review request — Pro+ tier "Tự động xin đánh giá".
@@ -215,9 +216,11 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
       const toE164 = clientPhone.startsWith("+")
         ? clientPhone
         : `+${clientPhone}`;
-      const smsBody = lang === "vi"
-        ? `Cảm ơn bạn đã ghé ${salonName}! Đánh giá dịch vụ (30 giây): ${reviewUrl} · Reply STOP to opt out.`
-        : `Thanks for visiting ${salonName}! Share your feedback (30 sec): ${reviewUrl} · Reply STOP to opt out.`;
+      const smsBody = buildReviewRequestSms({
+        lang,
+        salonName,
+        reviewUrl,
+      });
       const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca";
       const { sendSmsReminder } = await import("@/shared/lib/twilioSms");
       const {
@@ -246,6 +249,9 @@ export async function sendReviewRequest(bookingId: string): Promise<void> {
       const smsResult = await sendSmsReminder(toE164, smsBody, {
         salonId: salon.id,
         statusCallbackUrl: callbackUrl.toString(),
+        lang,
+        bookingId,
+        notificationType: "review_request",
       });
       if (!smsResult.ok) {
         console.error("[sendReviewRequest] SMS failed", smsResult.error);

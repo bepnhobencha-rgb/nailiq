@@ -80,7 +80,7 @@ describe("integration credential boundary", () => {
 
     expect(parity).toContain("policies: 213");
     expect(parity).toContain(
-      "const GRANTS = { anon: 56, authenticated: 78, service_role: 184 }",
+      "const GRANTS = { anon: 56, authenticated: 78, service_role: 185 }",
     );
   });
 });

@@ -68,6 +68,7 @@ import { getUserMessages } from "@/shared/i18n/user";
 import { OwnerNotificationCard } from "@/components/dashboard/OwnerNotificationCard";
 import { StaffNotificationCard } from "@/components/dashboard/StaffNotificationCard";
 import { CustomerChannelCard } from "@/components/dashboard/CustomerChannelCard";
+import { SmsTemplateExperienceCard } from "@/components/dashboard/SmsTemplateExperienceCard";
 import { AIReportCard } from "@/components/dashboard/AIReportCard";
 import { GooglePlaceIdCard } from "@/components/dashboard/GooglePlaceIdCard";
 import { YelpBusinessIdCard } from "@/components/dashboard/YelpBusinessIdCard";
@@ -962,6 +963,10 @@ export function SalonSettingsHub({
             {/* ── Customer channel (SMS / email / A2P status) ─────── */}
             {canManageSalonSettings ? (
               <CustomerChannelCard slug={slug} />
+            ) : null}
+
+            {canManageSalonSettings ? (
+              <SmsTemplateExperienceCard slug={slug} />
             ) : null}
 
             {/* ── Manager + staff notification cards ──────────────── */}
