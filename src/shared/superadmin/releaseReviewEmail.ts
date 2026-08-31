@@ -5,6 +5,7 @@ import { emailExperienceTags } from "@/shared/lib/emailExperienceRegistry";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import type { UserLanguage } from "@/shared/i18n/user/types";
 import type { ReleaseReviewContext } from "@/shared/superadmin/releaseReviewContext";
+import { ownerFriendlyReleaseSummary } from "@/shared/superadmin/releaseReviewPresentation";
 
 const RELEASE_REVIEW_RECIPIENT = "thehuytgvn@gmail.com";
 const CLAIM_LEASE_MS = 10 * 60 * 1_000;
@@ -52,30 +53,42 @@ export function buildReleaseReviewEmail(input: {
   const declineUrl = releaseReviewDecisionUrl(input.reviewId, "declined");
   const language = input.language === "vi" ? "vi" : "en";
   const isVietnamese = language === "vi";
+  const friendlySummary = ownerFriendlyReleaseSummary(
+    input.changeSummary,
+    language,
+  );
   const copy = isVietnamese
     ? {
-        subject: "NailIQ: Có cần thông báo thay đổi này cho salon không?",
-        eyebrow: "NailIQ · Xem trước thông báo",
-        heading: "Bạn có muốn thông báo thay đổi này cho chủ salon?",
+        subject: "NailIQ: Có cần soạn thông báo cho chủ salon không?",
+        eyebrow: "NailIQ · Duyệt thông báo cho salon",
+        heading: "Bạn có muốn NailIQ soạn thông báo cho chủ salon?",
         intro:
-          "Bản cập nhật đã hoạt động. Lựa chọn dưới đây chỉ quyết định NailIQ có chuẩn bị nội dung thông báo cho salon hay không.",
-        summaryLabel: "Ghi chú nội bộ về thay đổi",
-        approve: "Có, tạo thông báo",
-        decline: "Không cần thông báo",
+          "Một bản cập nhật NailIQ vừa được kích hoạt. Chưa có thông báo nào được gửi đến salon hoặc khách hàng.",
+        summaryLabel: "Thay đổi gì?",
+        statusLabel: "Trạng thái thông báo",
+        statusValue: "Chưa gửi",
+        actionLabel: "Bạn cần làm gì?",
+        actionValue: "Chọn có soạn bản nháp để duyệt hay không.",
+        approve: "Soạn bản nháp Anh & Việt để tôi duyệt",
+        decline: "Không thông báo cho salon",
         safety:
-          "NailIQ chưa gửi gì cho salon. Chọn “Có” sẽ mở bản nháp để bạn đọc và chỉnh sửa bằng tiếng Anh và tiếng Việt trước khi gửi.",
+          "Bấm “Soạn bản nháp” chỉ mở nội dung để bạn đọc và chỉnh sửa. NailIQ sẽ không gửi nếu chưa có phê duyệt cuối cùng của bạn.",
       }
     : {
-        subject: "NailIQ: Should salon owners be notified about this change?",
-        eyebrow: "NailIQ · Notice preview",
-        heading: "Would you like to notify salon owners about this change?",
+        subject: "NailIQ: Should we prepare a salon-owner announcement?",
+        eyebrow: "NailIQ · Salon communication review",
+        heading: "Would you like NailIQ to prepare a salon-owner announcement?",
         intro:
-          "The update is already active. Your choice below only decides whether NailIQ should prepare a notice for salon owners.",
-        summaryLabel: "Internal change note",
-        approve: "Yes, prepare a notice",
-        decline: "No notice needed",
+          "A NailIQ update is now active. No announcement has been sent to salons or customers.",
+        summaryLabel: "What changed?",
+        statusLabel: "Notification status",
+        statusValue: "Not sent",
+        actionLabel: "What do you need to do?",
+        actionValue: "Choose whether NailIQ should prepare drafts for review.",
+        approve: "Prepare English & Vietnamese drafts",
+        decline: "Do not notify salons",
         safety:
-          "Nothing has been sent to salons. Choosing “Yes” opens English and Vietnamese drafts for your review and editing before anything is sent.",
+          "Preparing drafts only opens content for your review and editing. NailIQ will not send anything without your final approval.",
       };
   const subject = copy.subject;
   const html = `<div style="max-width:560px;margin:0 auto;padding:24px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;color:#171717">
@@ -84,7 +97,13 @@ export function buildReleaseReviewEmail(input: {
   <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#404040">${esc(copy.intro)}</p>
   <div style="margin:0 0 22px;padding:16px;border:1px solid #e5e5e5;border-radius:12px;background:#fafafa">
     <p style="margin:0 0 6px;font-size:12px;color:#737373">${esc(copy.summaryLabel)}</p>
-    <p style="margin:0;font-size:15px;line-height:1.55">${esc(input.changeSummary)}</p>
+    <p style="margin:0;font-size:15px;line-height:1.55">${esc(friendlySummary)}</p>
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid #e5e5e5">
+      <p style="margin:0 0 4px;font-size:12px;color:#737373">${esc(copy.statusLabel)}</p>
+      <p style="margin:0 0 12px;font-size:14px;font-weight:700">${esc(copy.statusValue)}</p>
+      <p style="margin:0 0 4px;font-size:12px;color:#737373">${esc(copy.actionLabel)}</p>
+      <p style="margin:0;font-size:14px;line-height:1.5">${esc(copy.actionValue)}</p>
+    </div>
   </div>
   <div style="margin:0 0 20px">
     <a href="${esc(approveUrl)}" style="display:inline-block;margin:0 8px 8px 0;padding:12px 20px;border-radius:999px;background:#171717;color:#fff;text-decoration:none;font-size:14px;font-weight:700">${esc(copy.approve)}</a>
@@ -92,7 +111,7 @@ export function buildReleaseReviewEmail(input: {
   </div>
   <p style="margin:0;font-size:12px;line-height:1.55;color:#737373">${esc(copy.safety)}</p>
 </div>`;
-  const text = `${copy.heading}\n\n${copy.intro}\n\n${copy.summaryLabel}:\n${input.changeSummary}\n\n${copy.approve}: ${approveUrl}\n${copy.decline}: ${declineUrl}\n\n${copy.safety}`;
+  const text = `${copy.heading}\n\n${copy.intro}\n\n${copy.summaryLabel}\n${friendlySummary}\n\n${copy.statusLabel}: ${copy.statusValue}\n${copy.actionLabel}: ${copy.actionValue}\n\n${copy.approve}: ${approveUrl}\n${copy.decline}: ${declineUrl}\n\n${copy.safety}`;
   return { subject, html, text };
 }
 

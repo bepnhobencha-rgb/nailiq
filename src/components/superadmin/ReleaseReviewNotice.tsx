@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import type { ReleaseReviewContext } from "@/shared/superadmin/releaseReviewContext";
+import { ownerFriendlyReleaseSummary } from "@/shared/superadmin/releaseReviewPresentation";
 
 const REVIEWED_KEY_PREFIX = "nailiq:release-review:handled:";
 const REVIEW_HANDLED_EVENT = "nailiq-release-review-handled";
@@ -62,6 +63,10 @@ export function ReleaseReviewNotice({
 
   if (!review || !visible) return null;
   const activeReview = review;
+  const friendlySummary = ownerFriendlyReleaseSummary(
+    activeReview.changeSummary,
+    language,
+  );
 
   function openReview() {
     if (activeReview.reviewId) {
@@ -96,11 +101,11 @@ export function ReleaseReviewNotice({
       <div className="min-w-0">
         <p className="text-sm font-semibold text-nq-foreground">
           {vi
-            ? "Có thay đổi mới — bạn có muốn thông báo cho salon?"
-            : "New change — should salon owners be notified?"}
+            ? "Có cập nhật mới — soạn thông báo cho chủ salon?"
+            : "New update — prepare a salon-owner announcement?"}
         </p>
         <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-nq-muted">
-          {activeReview.changeSummary}
+          {friendlySummary}
         </p>
         <p className="mt-1 text-xs text-nq-muted">
           {vi
@@ -110,10 +115,10 @@ export function ReleaseReviewNotice({
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         <Button type="button" variant="ghost" size="md" onClick={dismissReview}>
-          {vi ? "Không cần thông báo" : "No notice needed"}
+          {vi ? "Không thông báo cho salon" : "Do not notify salons"}
         </Button>
         <Button type="button" variant="primary" size="md" onClick={openReview}>
-          {vi ? "Có, tạo thông báo" : "Yes, prepare a notice"}
+          {vi ? "Soạn bản nháp để tôi duyệt" : "Prepare drafts for review"}
         </Button>
       </div>
     </section>

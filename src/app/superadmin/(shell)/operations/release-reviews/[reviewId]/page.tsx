@@ -6,6 +6,7 @@ import { resolveUserLanguage } from "@/shared/i18n/user/resolveUserLanguage";
 import { confirmReleaseReviewDecision } from "@/shared/superadmin/releaseReviewActions";
 import { loadReleaseReviewById } from "@/shared/superadmin/releaseReviewStore";
 import type { ReleaseReviewDecision } from "@/shared/superadmin/releaseReviewTypes";
+import { ownerFriendlyReleaseSummary } from "@/shared/superadmin/releaseReviewPresentation";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,10 @@ export default async function ReleaseReviewDecisionPage({
   const approving = decision === "approved";
   const action = confirmReleaseReviewDecision.bind(null, review.id, decision);
   const vi = language === "vi";
+  const friendlySummary = ownerFriendlyReleaseSummary(
+    review.changeSummary,
+    language,
+  );
 
   return (
     <main className="mx-auto w-full max-w-2xl px-5 py-10 md:px-8">
@@ -54,22 +59,40 @@ export default async function ReleaseReviewDecisionPage({
               ? vi ? "Đã chọn không thông báo" : "No notice will be prepared"
               : vi ? "Sẵn sàng chuẩn bị thông báo" : "Ready to prepare the notice"
             : approving
-              ? vi ? "Tạo nội dung thông báo cho salon?" : "Prepare a notice for salon owners?"
-              : vi ? "Không cần thông báo cho salon?" : "No salon notice needed?"}
+              ? vi ? "Soạn thông báo cho chủ salon?" : "Prepare a salon-owner announcement?"
+              : vi ? "Không thông báo cho salon?" : "Do not notify salons?"}
         </h1>
         <p className="mt-3 text-sm leading-relaxed text-nq-muted">
           {vi
-            ? "Bản cập nhật đã hoạt động. Lựa chọn này chỉ quyết định có tạo nội dung thông báo cho salon hay không."
-            : "The update is already active. This choice only decides whether NailIQ prepares a salon notice."}
+            ? "Bản cập nhật đã hoạt động. Chưa có thông báo nào được gửi đến salon hoặc khách hàng."
+            : "The update is active. No announcement has been sent to salons or customers."}
         </p>
 
         <div className="mt-5 rounded-xl border border-nq-border/40 bg-nq-bg/55 p-4">
           <p className="text-xs text-nq-muted">
-            {vi ? "Ghi chú nội bộ về thay đổi" : "Internal change note"}
+            {vi ? "Thay đổi gì?" : "What changed?"}
           </p>
           <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-nq-foreground">
-            {review.changeSummary}
+            {friendlySummary}
           </p>
+          <dl className="mt-4 grid gap-3 border-t border-nq-border/40 pt-4 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-nq-muted">
+                {vi ? "Trạng thái thông báo" : "Notification status"}
+              </dt>
+              <dd className="mt-1 font-semibold text-nq-foreground">
+                {vi ? "Chưa gửi" : "Not sent"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-nq-muted">
+                {vi ? "Bước tiếp theo" : "Next step"}
+              </dt>
+              <dd className="mt-1 text-nq-foreground">
+                {vi ? "Chỉ soạn bản nháp để bạn duyệt." : "Prepare drafts for your review only."}
+              </dd>
+            </div>
+          </dl>
         </div>
 
         {error ? (
@@ -92,8 +115,8 @@ export default async function ReleaseReviewDecisionPage({
               fullWidth
             >
               {approving
-                ? vi ? "Có, tạo nội dung để tôi xem" : "Yes, prepare content for review"
-                : vi ? "Không cần thông báo" : "No notice needed"}
+                ? vi ? "Soạn bản nháp Anh & Việt để tôi duyệt" : "Prepare English & Vietnamese drafts"
+                : vi ? "Không thông báo cho salon" : "Do not notify salons"}
             </Button>
           </form>
         ) : (
