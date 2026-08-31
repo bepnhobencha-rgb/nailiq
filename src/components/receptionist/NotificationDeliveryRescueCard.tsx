@@ -70,7 +70,7 @@ export function NotificationDeliveryRescueCard({
       data-testid="notification-delivery-rescue-card"
       role="status"
       aria-live="polite"
-      className="shrink-0 border-b border-amber-500/40 bg-amber-50 px-[var(--pad-nq-section-mobile)] py-3 text-amber-950 md:px-6"
+      className="shrink-0 border-b border-amber-500/40 bg-amber-50 px-[var(--pad-nq-section-mobile)] pb-3 pt-14 text-amber-950 sm:py-3 md:px-6 lg:pr-36"
     >
       <div className="mx-auto flex w-full max-w-[var(--max-nq-desktop)] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-start gap-3">

@@ -47,6 +47,8 @@ describe("NotificationDeliveryRescueCard", () => {
     );
 
     expect(html).toContain("notification-delivery-rescue-card");
+    expect(html).toContain("pt-14");
+    expect(html).toContain("lg:pr-36");
     expect(html).toContain("SMS đang tắt");
     expect(html).toContain("2 SMS cần kiểm tra");
     expect(html).toContain("1 thông báo Waitlist cần xử lý");
