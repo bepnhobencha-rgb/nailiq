@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { sendOwnerWaitlistNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Fire-and-forget from the public waitlist-join flow: emails the salon owner/
- * admins that a customer joined the waitlist. salon_id is derived from the entry
- * (not trusted from the client), and the notification is gated by the salon's
- * owner_notification_settings.enabled toggle.
+ * Compatibility acknowledgement for clients deployed before the durable
+ * Waitlist-owner outbox. The database trigger already queued the notification
+ * in the same transaction as the Waitlist INSERT. This route must never call a
+ * provider or create a second delivery intent.
  */
 export async function POST(req: Request) {
   const { waitlistId } = await req.json().catch(() => ({}));
@@ -26,6 +25,5 @@ export async function POST(req: Request) {
   const salonId = (data as { salon_id?: string } | null)?.salon_id;
   if (!salonId) return NextResponse.json({ ok: false }, { status: 404 });
 
-  await sendOwnerWaitlistNotification(salonId, waitlistId);
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, queued: true });
 }

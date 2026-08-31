@@ -146,13 +146,16 @@ import { execFileSync } from "node:child_process";
  * waitlist ledger with six intent/idempotency columns, one narrow public
  * request RPC, and three dedupe/review indexes. It adds no table, policy, or
  * trigger and preserves direct-table RLS boundaries.
+ * The 20260831215857 Waitlist delivery-rescue migration adds one private,
+ * RPC-only owner-notification outbox, fifteen columns, four service-only or
+ * trigger functions, one restrictive policy, one trigger and four indexes.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
  */
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
-  tables: 200,
+  tables: 201,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -205,7 +208,8 @@ const PRODUCTION = {
   // +62 Smart Checkout device/session/immutable-line columns.
   // +63 Smart Checkout Phase B pairing, webhook, lease and receipt columns.
   // +6 Smart Capacity Rescue intent, locale and idempotency columns.
-  columns: 3055,
+  // +15 durable Waitlist-owner notification outbox columns.
+  columns: 3070,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -219,7 +223,8 @@ const PRODUCTION = {
   // +2 restrictive browser-deny policies on group-cancellation fee truth.
   // +2 restrictive browser-deny policies on late-cancellation fee truth.
   // +1 restrictive direct-access deny policy on registered email truth.
-  policies: 213,
+  // +1 restrictive browser-deny policy on the Waitlist-owner outbox.
+  policies: 214,
   /**
    * APP functions only — refreshed after the rehearsed forward migrations.
    *
@@ -261,7 +266,8 @@ const PRODUCTION = {
   // +3 universal SMS attempt claim, completion, and receipt functions.
   // +6 Smart Checkout pairing, webhook and reconciliation RPCs.
   // +1 validated public Smart Capacity Rescue request RPC.
-  functions: 445,
+  // +4 Waitlist-owner occurrence, claim, completion and rescue-summary functions.
+  functions: 449,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -274,7 +280,8 @@ const PRODUCTION = {
   // +2 no-show/late-cancel provider-ledger insert/reconcile approval gates.
   // +1 immutable group-cancellation fee approval-receipt trigger.
   // +4 late-cancellation lock/capture/receipt and payment-outcome triggers.
-  triggers: 105,
+  // +1 atomic Waitlist-owner occurrence trigger.
+  triggers: 106,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -295,7 +302,8 @@ const PRODUCTION = {
   // +21 Smart Checkout PK, tenant-FK, dedupe, and reconciliation indexes.
   // +9 Smart Checkout Phase B pairing/webhook/device indexes.
   // +3 Smart Capacity Rescue request, intent and review-queue indexes.
-  indexes: 759,
+  // +4 Waitlist-owner outbox primary, unique, due and salon indexes.
+  indexes: 763,
 } as const;
 
 /**
@@ -317,6 +325,7 @@ const CRITICAL_TABLES = [
   "client_profiles",
   "salon_members",
   "owner_booking_notification_outbox",
+  "owner_waitlist_notification_outbox",
   "multi_service_booking_rollouts",
   "smart_checkout_devices",
   "smart_checkout_sessions",
@@ -504,6 +513,10 @@ const CRITICAL_FUNCTIONS = [
   "claim_sms_delivery_attempt",
   "complete_sms_delivery_attempt",
   "record_sms_delivery_attempt_receipt",
+  "track_owner_waitlist_notification_occurrence",
+  "claim_owner_waitlist_notification_outbox_batch",
+  "complete_owner_waitlist_notification_outbox",
+  "load_notification_delivery_rescue_summary",
   "begin_booking_no_show_v1",
   "undo_booking_no_show_v1",
   "finalize_due_booking_no_shows_v1",
