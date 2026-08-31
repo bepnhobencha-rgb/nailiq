@@ -26,15 +26,17 @@ describe("release review email", () => {
       language: "en",
     });
 
-    expect(email.html).toContain(">Yes, prepare a notice</a>");
-    expect(email.html).toContain(">No notice needed</a>");
-    expect(email.html).toContain("The update is already active");
+    expect(email.html).toContain(">Prepare English &amp; Vietnamese drafts</a>");
+    expect(email.html).toContain(">Do not notify salons</a>");
+    expect(email.html).toContain("A NailIQ update is now active");
+    expect(email.html).toContain("Notification status");
+    expect(email.html).toContain("Not sent");
     expect(email.html).not.toContain("Commit abcdef12");
     expect(email.html).not.toContain("Release Review");
     expect(email.html).toContain("intent=approved");
     expect(email.html).toContain("intent=declined");
     expect(email.html).not.toContain("/api/ai/approve");
-    expect(email.text).toContain("Nothing has been sent to salons");
+    expect(email.text).toContain("will not send anything without your final approval");
   });
 
   it("renders a standalone Vietnamese version for Vietnamese accounts", () => {
@@ -45,11 +47,27 @@ describe("release review email", () => {
       language: "vi",
     });
 
-    expect(email.subject).toContain("Có cần thông báo");
-    expect(email.html).toContain(">Có, tạo thông báo</a>");
-    expect(email.html).toContain(">Không cần thông báo</a>");
-    expect(email.html).toContain("Bản cập nhật đã hoạt động");
+    expect(email.subject).toContain("Có cần soạn thông báo");
+    expect(email.html).toContain(">Soạn bản nháp Anh &amp; Việt để tôi duyệt</a>");
+    expect(email.html).toContain(">Không thông báo cho salon</a>");
+    expect(email.html).toContain("Một bản cập nhật NailIQ vừa được kích hoạt");
     expect(email.html).not.toContain("production");
+  });
+
+  it("replaces pull-request metadata with plain owner language", () => {
+    const email = buildReleaseReviewEmail({
+      reviewId: "1f6d9624-52df-48e8-8e1e-2d3aac94ba16",
+      deploymentId: "abcdef1234567890",
+      changeSummary:
+        "Merge pull request #1302 from bepnhobencha-rgb/feat/smart-checkout-foundation-20260831\n\nfeat: Smart Checkout safe foundation and simulator",
+      language: "en",
+    });
+
+    expect(email.html).toContain("preparing a safer checkout experience");
+    expect(email.html).toContain("does not enable live payment collection");
+    expect(email.html).not.toContain("Merge pull request");
+    expect(email.html).not.toContain("bepnhobencha-rgb");
+    expect(email.text).not.toContain("#1302");
   });
 
   it("escapes release text before rendering it into HTML", () => {
