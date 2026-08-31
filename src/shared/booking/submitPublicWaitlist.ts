@@ -28,6 +28,10 @@ export type SubmitPublicWaitlistParams = {
   clientLocale?: "en" | "vi";
 };
 
+export function createPublicWaitlistRequestId(): string {
+  return crypto.randomUUID();
+}
+
 export async function submitPublicWaitlistEntry(
   params: SubmitPublicWaitlistParams,
 ): Promise<{ waitlistId: string }> {
@@ -76,7 +80,7 @@ export async function submitPublicWaitlistEntry(
 
   const receipt = await submitCapacityRescueRequest({
     salonId: salon.id,
-    requestId: params.requestId ?? crypto.randomUUID(),
+    requestId: params.requestId ?? createPublicWaitlistRequestId(),
     requestKind: "individual",
     primaryServiceId: serviceId,
     staffId: staffUuid,

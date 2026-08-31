@@ -142,6 +142,10 @@ import { execFileSync } from "node:child_process";
  * The 20260831170756 Smart Checkout Phase B migration adds two service-only
  * pairing/webhook tables, 63 columns across those tables and the foundation,
  * six narrow service RPCs, and nine pairing/webhook/device indexes.
+ * The 20260831193000 Smart Capacity Rescue migration extends the existing
+ * waitlist ledger with six intent/idempotency columns, one narrow public
+ * request RPC, and three dedupe/review indexes. It adds no table, policy, or
+ * trigger and preserves direct-table RLS boundaries.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -200,7 +204,8 @@ const PRODUCTION = {
   // +21 universal SMS attempt and salon template-settings columns.
   // +62 Smart Checkout device/session/immutable-line columns.
   // +63 Smart Checkout Phase B pairing, webhook, lease and receipt columns.
-  columns: 3049,
+  // +6 Smart Capacity Rescue intent, locale and idempotency columns.
+  columns: 3055,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -255,7 +260,8 @@ const PRODUCTION = {
   // +2 registered email receipt recorder and PII-free operational reader.
   // +3 universal SMS attempt claim, completion, and receipt functions.
   // +6 Smart Checkout pairing, webhook and reconciliation RPCs.
-  functions: 444,
+  // +1 validated public Smart Capacity Rescue request RPC.
+  functions: 445,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -288,7 +294,8 @@ const PRODUCTION = {
   // +5 SMS attempt and salon template-settings primary/lookup indexes.
   // +21 Smart Checkout PK, tenant-FK, dedupe, and reconciliation indexes.
   // +9 Smart Checkout Phase B pairing/webhook/device indexes.
-  indexes: 756,
+  // +3 Smart Capacity Rescue request, intent and review-queue indexes.
+  indexes: 759,
 } as const;
 
 /**
@@ -306,6 +313,7 @@ const CRITICAL_TABLES = [
   "bookings",
   "staff",
   "services",
+  "booking_waitlist_entries",
   "client_profiles",
   "salon_members",
   "owner_booking_notification_outbox",
@@ -429,6 +437,7 @@ const NO_SHOW_FEE_SERVICE_ONLY_TABLES = [
 
 /** Booking cannot work without these; a missing RPC fails at runtime, not at apply time. */
 const CRITICAL_FUNCTIONS = [
+  "create_public_capacity_rescue_request",
   "compute_no_show_risk",
   "claim_ai_execution_jobs",
   "cancel_ineligible_ai_execution_jobs",

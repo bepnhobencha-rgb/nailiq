@@ -17,7 +17,10 @@ import {
   buildPublicBookingPricingQuoteKey,
   type PublicBookingPricingQuote,
 } from "@/shared/booking/publicBookingPricing";
-import { submitPublicWaitlistEntry } from "@/shared/booking/submitPublicWaitlist";
+import {
+  createPublicWaitlistRequestId,
+  submitPublicWaitlistEntry,
+} from "@/shared/booking/submitPublicWaitlist";
 import {
   resolveNoShowCardRequirement,
   type NoShowCardRequirement,
@@ -402,7 +405,7 @@ export function useBookingFlowState(
   const [waitlistSlotJoined, setWaitlistSlotJoined] = useState(false);
   const waitlistRequestRef = useRef({
     intentKey: "",
-    requestId: crypto.randomUUID(),
+    requestId: createPublicWaitlistRequestId(),
   });
   const [error, setError] = useState<string | null>(null);
   const [infoNameError, setInfoNameError] = useState<string | null>(null);
@@ -2120,7 +2123,7 @@ export function useBookingFlowState(
       if (waitlistRequestRef.current.intentKey !== waitlistIntentKey) {
         waitlistRequestRef.current = {
           intentKey: waitlistIntentKey,
-          requestId: crypto.randomUUID(),
+          requestId: createPublicWaitlistRequestId(),
         };
       }
       await submitPublicWaitlistEntry({
