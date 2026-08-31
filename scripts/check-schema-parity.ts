@@ -135,7 +135,7 @@ import { execFileSync } from "node:child_process";
  * columns, three service-only functions, and five indexes.
  * The 20260831071731 SMS pre-acceptance retry migration extends the existing
  * private completion classifier in place and adds no schema shape.
- * The 20260831092541 Smart Checkout foundation adds three service-only tables,
+ * The 20260831161048 Smart Checkout foundation adds three service-only tables,
  * 62 columns, and 21 primary/unique/lookup indexes for device identity,
  * approval-gated checkout truth, immutable cart lines, and tenant-safe foreign
  * keys. It adds no browser grants, policy, function, or trigger.

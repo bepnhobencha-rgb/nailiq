@@ -3,7 +3,15 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const migration = readFileSync(
-  join(process.cwd(), "supabase/migrations/20260831092541_add_smart_checkout_foundation.sql"),
+  join(process.cwd(), "supabase/migrations/20260831161048_add_smart_checkout_foundation.sql"),
+  "utf8",
+);
+
+const aclMigration = readFileSync(
+  join(
+    process.cwd(),
+    "supabase/migrations/20260831161710_restrict_smart_checkout_service_role_acl.sql",
+  ),
   "utf8",
 );
 
@@ -18,6 +26,19 @@ describe("Smart Checkout database boundary", () => {
       expect(migration).toContain(`ALTER TABLE public.${table} FORCE ROW LEVEL SECURITY`);
       expect(migration).toContain(`REVOKE ALL ON TABLE public.${table} FROM PUBLIC, anon, authenticated`);
     }
+
+    expect(aclMigration).toMatch(
+      /REVOKE ALL PRIVILEGES ON TABLE[\s\S]*?smart_checkout_devices[\s\S]*?smart_checkout_sessions[\s\S]*?smart_checkout_lines[\s\S]*?FROM PUBLIC, anon, authenticated, service_role/,
+    );
+    expect(aclMigration).toMatch(
+      /GRANT SELECT, INSERT, UPDATE ON TABLE[\s\S]*?smart_checkout_devices[\s\S]*?smart_checkout_sessions[\s\S]*?TO service_role/,
+    );
+    expect(aclMigration).toMatch(
+      /GRANT SELECT, INSERT ON TABLE[\s\S]*?smart_checkout_lines[\s\S]*?TO service_role/,
+    );
+    expect(aclMigration).not.toMatch(
+      /GRANT[^;]*(?:UPDATE|DELETE|TRUNCATE)[^;]*smart_checkout_lines/i,
+    );
   });
 
   it("requires human approval before provider dispatch and a receipt before paid", () => {
