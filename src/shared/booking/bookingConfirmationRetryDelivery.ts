@@ -71,7 +71,10 @@ export type BookingConfirmationRetryDeliveryDeps = {
     errorCode: string | null;
     failureDisposition: "none" | "retryable_pre_acceptance" | "permanent";
   }): Promise<Completion>;
-  sendSms(envelope: BookingConfirmationSmsEnvelope): Promise<{
+  sendSms(
+    envelope: BookingConfirmationSmsEnvelope,
+    context: { bookingId: string },
+  ): Promise<{
     ok: boolean;
     messageSid?: string;
     error?: string;
@@ -239,10 +242,11 @@ async function dispatch(
   envelope: BookingConfirmationDispatchEnvelope,
   deps: BookingConfirmationRetryDeliveryDeps,
   claimId: string,
+  bookingId: string,
 ): Promise<Classified> {
   if (envelope.channel === "sms") {
     try {
-      const result = await deps.sendSms(envelope);
+      const result = await deps.sendSms(envelope, { bookingId });
       if (!result.ok && (
         result.error === "sms_policy_unavailable" ||
         result.error === "sms_consent_unavailable" ||
@@ -365,6 +369,7 @@ async function dispatchClaimed(
   envelope: BookingConfirmationDispatchEnvelope,
   claimId: string,
   attemptToken: string,
+  bookingId: string,
   deps: BookingConfirmationRetryDeliveryDeps,
   suppressionReason?: string,
 ): Promise<BookingConfirmationDeliveryResult> {
@@ -392,7 +397,7 @@ async function dispatchClaimed(
           outcome: "suppressed", reason: resolvedSuppressionReason, status: "suppressed",
           providerMessageId: null, errorCode: "channel_disabled", failureDisposition: "permanent",
         }
-      : await dispatch(envelope, deps, claimId);
+      : await dispatch(envelope, deps, claimId, bookingId);
   let completion: Completion = { success: false, code: "completion_unavailable" };
   try {
     completion = await deps.complete({
@@ -462,7 +467,14 @@ export async function deliverBookingConfirmation(
       providerMessageId: null, finalized: false,
     };
   }
-  return dispatchClaimed(input.envelope, claim.claimId, claim.attemptToken, deps, input.suppressionReason);
+  return dispatchClaimed(
+    input.envelope,
+    claim.claimId,
+    claim.attemptToken,
+    input.bookingId,
+    deps,
+    input.suppressionReason,
+  );
 }
 
 function parseLease(value: unknown): Lease | null {
@@ -516,7 +528,13 @@ export async function deliverLeasedBookingConfirmationRetry(
       finalized,
     };
   }
-  return dispatchClaimed(envelope, lease.claimId, lease.attemptToken, deps);
+  return dispatchClaimed(
+    envelope,
+    lease.claimId,
+    lease.attemptToken,
+    lease.bookingId,
+    deps,
+  );
 }
 
 export type BookingConfirmationRetryWorkerDeps = {
@@ -588,9 +606,10 @@ const defaultDeps: BookingConfirmationRetryDeliveryDeps = {
     if (error || !record(data)) return { success: false, code: "completion_unavailable" };
     return { success: data.success === true, code: boundedText(data.code, 100) ?? "completion_unavailable" };
   },
-  sendSms(envelope) {
+  sendSms(envelope, context) {
     return sendSmsReminder(envelope.to, envelope.body, {
       salonId: envelope.salonId,
+      bookingId: context.bookingId,
       statusCallbackUrl: envelope.statusCallbackUrl,
       salonIsTest: envelope.salonIsTest,
       lang: envelope.lang,
