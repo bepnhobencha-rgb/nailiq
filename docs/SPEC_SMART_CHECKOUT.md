@@ -1,6 +1,6 @@
 # NailIQ Smart Checkout
 
-Status: **Foundation / Preview only**  
+Status: **Phase B implemented locally; QA database/provider proof pending**
 Live money: **OFF**  
 Providers: Square Terminal, Stripe Terminal, Stripe Tap to Pay
 
@@ -26,6 +26,31 @@ card data, or treat a browser success animation as proof of payment.
 - Service-only database ACL/RLS; no browser or authenticated-role table access.
 - Owner/admin Smart Checkout Lab with no network/provider/payment action.
 - Default-OFF per-salon flag plus explicit platform-ON requirement.
+
+## Phase B safety layer
+
+- Injectable Square Terminal and Stripe Terminal sandbox adapters. Provider
+  access fails closed unless the runtime is explicitly sandbox-gated.
+- Device-pairing adapters for Square device codes and Stripe reader
+  registration. Raw Stripe registration codes are one-use memory only; the
+  database stores at most a one-way pairing-code fingerprint.
+- Dedicated, sandbox-only Square and Stripe webhook endpoints. Signatures are
+  checked against the raw request body before any normalized event is stored.
+- PII-free webhook inbox with provider event dedupe and exact
+  salon/account/location/device/session binding.
+- Leased reconciliation claims with bounded exponential backoff. The worker
+  can only retrieve the existing checkout; it contains no checkout-dispatch
+  path.
+- `paid` requires an authoritative payment/receipt ID and exact account,
+  checkout, device, location, amount, currency, and provider timestamp.
+- Any binding or one-cent mismatch moves to manual review. A signed webhook
+  schedules reconciliation but can never mark a checkout paid by itself.
+- All Phase B tables remain FORCE RLS/service-only, with mutations limited to
+  six narrow `SECURITY DEFINER` RPCs.
+
+Phase B remains inert in every environment unless its separate sandbox flags
+are enabled. The migration has not been applied to QA or Production, the
+provider transports have not been called, and no salon is pilot-enabled.
 
 ## Checkout experience
 
@@ -105,16 +130,23 @@ Live dispatch remains unavailable until all gates pass for one pilot salon:
 | Square Terminal request | Pure payload test only |
 | Stripe Terminal request | Pure payload test only |
 | Real terminal collection | NOT_PROVEN |
-| Webhook reconciliation | NOT_IMPLEMENTED in this foundation |
+| Sandbox adapter state mapping | Local automated tests; no provider call |
+| Signed webhook normalization/routing | Local automated tests; real delivery NOT_PROVEN |
+| Reconciliation worker truth/duplicate guard | Local automated tests; scheduled provider read NOT_PROVEN |
+| Device pairing contract | Local automated tests; physical reader NOT_PROVEN |
+| Phase B database lease/ACL | Static boundary tests; QA SQL apply NOT_PROVEN |
 | Refund/partial tender | NOT_IMPLEMENTED in this foundation |
 | Production money | OFF / NOT_PROVEN |
 
 ## Next implementation slices
 
-1. Provider sandbox adapters and signed webhook inbox.
-2. Exact-once reconciliation worker with backoff and operator review queue.
-3. Device onboarding/pairing and health checks.
-4. Booking-detail launch point and server-authoritative cart loader.
-5. Split/partial tender and refund workflows.
-6. One-salon hardware pilot, then allowlisted rollout based on evidence.
-
+1. Apply the Phase B migration to disposable QA and run the SQL boundary test.
+2. Configure dedicated provider sandbox credentials and signed webhook URLs.
+3. Exercise pairing and the response-loss/replay matrix with provider sandbox
+   hardware/simulated readers; keep dispatch and every salon OFF.
+4. Wire the certified sandbox transports into the existing reconciliation
+   cron behind a separate read-only gate and add the operator review queue.
+5. Add the booking-detail launch point and server-authoritative cart loader.
+6. Implement split/partial tender and refund workflows.
+7. Run one allowlisted salon hardware pilot only after every readiness gate is
+   evidence-backed.

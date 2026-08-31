@@ -23,10 +23,34 @@ export type SmartCheckoutProviderReceipt = {
   checkoutId: string;
   paymentId: string | null;
   providerStatus: string;
+  evidence: {
+    amountCents: number | null;
+    currency: string | null;
+    providerAccountId: string | null;
+    providerLocationId: string | null;
+    providerDeviceId: string | null;
+    /** Provider-authored receipt/update time, never browser or worker time. */
+    occurredAt: string | null;
+  };
   status: Extract<
     SmartCheckoutStatus,
-    "awaiting_customer" | "pending_provider" | "outcome_unknown" | "paid" | "failed"
+    | "awaiting_customer"
+    | "pending_provider"
+    | "outcome_unknown"
+    | "paid"
+    | "failed"
+    | "cancelled"
   >;
+};
+
+export type SmartCheckoutRetrieveInput = {
+  checkoutId: string;
+  providerAccountId: string;
+  providerLocationId: string | null;
+};
+
+export type SmartCheckoutCancelInput = SmartCheckoutRetrieveInput & {
+  idempotencyKey: string;
 };
 
 /**
@@ -37,16 +61,6 @@ export type SmartCheckoutProviderReceipt = {
 export interface SmartCheckoutAdapter {
   readonly provider: SmartCheckoutProvider;
   createCheckout(input: SmartCheckoutDispatchInput): Promise<SmartCheckoutProviderReceipt>;
-  retrieveCheckout(input: {
-    checkoutId: string;
-    providerAccountId: string;
-    providerLocationId: string | null;
-  }): Promise<SmartCheckoutProviderReceipt>;
-  cancelCheckout(input: {
-    checkoutId: string;
-    providerAccountId: string;
-    providerLocationId: string | null;
-    idempotencyKey: string;
-  }): Promise<SmartCheckoutProviderReceipt>;
+  retrieveCheckout(input: SmartCheckoutRetrieveInput): Promise<SmartCheckoutProviderReceipt>;
+  cancelCheckout(input: SmartCheckoutCancelInput): Promise<SmartCheckoutProviderReceipt>;
 }
-
