@@ -4,6 +4,7 @@ import { getSquareConfig } from "@/shared/integrations/square/client";
 import { SquareProvider } from "./square";
 import type { PaymentProvider, PaymentProviderKind } from "./types";
 import {
+  allowsApprovedCancellationFeeDispatch,
   allowsApprovedNoShowChargeDispatch,
   v1AllowsCustomerPaymentGateway,
   v1AllowsNoShowCardOnFile,
@@ -21,13 +22,16 @@ export async function resolvePaymentProvider(
   salonId: string,
   options?: {
     strict?: boolean;
-    purpose?: "payment" | "card_on_file" | "approved_no_show_charge";
+    purpose?: "payment" | "card_on_file" | "approved_no_show_charge" |
+      "approved_cancellation_fee";
   },
 ): Promise<PaymentProvider | null> {
   const allowed = options?.purpose === "card_on_file"
     ? v1AllowsNoShowCardOnFile()
     : options?.purpose === "approved_no_show_charge"
       ? allowsApprovedNoShowChargeDispatch()
+      : options?.purpose === "approved_cancellation_fee"
+        ? allowsApprovedCancellationFeeDispatch()
       : v1AllowsCustomerPaymentGateway();
   if (!allowed) {
     if (options?.strict) throw new Error("v1_customer_payment_gateway_disabled");
@@ -41,10 +45,14 @@ export async function resolvePaymentProvider(
     .eq("id", salonId)
     .maybeSingle();
   if (options?.strict && (salonError || !salonRow)) throw new Error("payment_provider_config_unavailable");
-  if (options?.purpose === "approved_no_show_charge") {
+  if (options?.purpose === "approved_no_show_charge" ||
+      options?.purpose === "approved_cancellation_fee") {
     const flags = (salonRow as Row | null)?.feature_flags;
+    const allowlistKey = options.purpose === "approved_no_show_charge"
+      ? "approved_no_show_charge_dispatch"
+      : "approved_cancellation_fee_dispatch";
     if (!flags || typeof flags !== "object" || Array.isArray(flags) ||
-        (flags as Record<string, unknown>).approved_no_show_charge_dispatch !== true) {
+        (flags as Record<string, unknown>)[allowlistKey] !== true) {
       if (options?.strict) throw new Error("salon_not_allowlisted");
       return null;
     }

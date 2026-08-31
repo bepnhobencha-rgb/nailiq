@@ -1933,6 +1933,9 @@ export type DeskGroupCancellationPreview = {
   earliestStartTimeUtc: string;
   noticeMinutes: number;
   windowHours: number;
+  shortNoticeBooking: boolean;
+  graceActive: boolean;
+  graceEndsAt: string | null;
   bookedValueCents: number;
   feeCents: number;
   feeSnapshotCents: number;
@@ -1975,6 +1978,9 @@ export async function previewDeskGroupCancellation(
         earliestStartTimeUtc: String(organizer.start_time_utc),
         noticeMinutes: 0,
         windowHours: 24,
+        shortNoticeBooking: false,
+        graceActive: false,
+        graceEndsAt: null,
         bookedValueCents: 0,
         feeCents: 0,
         feeSnapshotCents: 0,
@@ -2019,6 +2025,11 @@ export async function previewDeskGroupCancellation(
       earliestStartTimeUtc: String(row.earliest_start_time_utc ?? ""),
       noticeMinutes: Number(row.notice_minutes ?? 0),
       windowHours: Number(row.window_hours ?? 24),
+      shortNoticeBooking: row.short_notice_booking === true,
+      graceActive: row.grace_active === true,
+      graceEndsAt: typeof row.grace_ends_at === "string"
+        ? row.grace_ends_at
+        : null,
       bookedValueCents: Number(row.booked_value_cents ?? 0),
       feeCents: Number(row.fee_cents ?? 0),
       feeSnapshotCents: Number(row.fee_snapshot_cents ?? 0),

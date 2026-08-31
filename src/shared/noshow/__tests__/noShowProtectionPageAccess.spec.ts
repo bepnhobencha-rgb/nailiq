@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   loadNoShowDashboard: vi.fn(),
   loadNoShowFeeReviewQueue: vi.fn(),
   loadGroupCancellationFeeReviewQueue: vi.fn(),
+  loadLateCancellationFeeReviewQueue: vi.fn(),
   redirect: vi.fn(),
 }));
 
@@ -31,6 +32,10 @@ vi.mock("@/shared/noshow/groupCancellationFeeApprovalActions", () => ({
   loadGroupCancellationFeeReviewQueue:
     mocks.loadGroupCancellationFeeReviewQueue,
 }));
+vi.mock("@/shared/noshow/lateCancellationFeeApprovalActions", () => ({
+  loadLateCancellationFeeReviewQueue:
+    mocks.loadLateCancellationFeeReviewQueue,
+}));
 vi.mock("@/shared/features/platformFeatureFlags", () => ({
   isReleaseFeatureVisible: mocks.isReleaseFeatureVisible,
 }));
@@ -42,6 +47,9 @@ vi.mock("@/components/dashboard/SquareSyncCard", () => ({
 }));
 vi.mock("@/components/dashboard/GroupCancellationFeeApprovalQueue", () => ({
   GroupCancellationFeeApprovalQueue: () => "GROUP_CANCEL_FEE_QUEUE",
+}));
+vi.mock("@/components/dashboard/LateCancellationFeeApprovalQueue", () => ({
+  LateCancellationFeeApprovalQueue: () => "LATE_CANCEL_FEE_QUEUE",
 }));
 vi.mock("@/components/dashboard/GuidedSetupReturnCard", () => ({
   GuidedSetupReturnCard: () => "GUIDED_SETUP_RETURN",
@@ -103,6 +111,7 @@ describe("No-Show Protection page deep-link boundary", () => {
     });
     mocks.loadNoShowFeeReviewQueue.mockResolvedValue([]);
     mocks.loadGroupCancellationFeeReviewQueue.mockResolvedValue([]);
+    mocks.loadLateCancellationFeeReviewQueue.mockResolvedValue([]);
     mocks.isReleaseFeatureVisible.mockResolvedValue(false);
   });
 

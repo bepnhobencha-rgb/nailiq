@@ -17,6 +17,9 @@ describe("late-cancellation policy boundary", () => {
   const capabilityMigration = read(
     "supabase/migrations/20260820140000_add_action_scoped_booking_management_capabilities.sql",
   );
+  const graceMigration = read(
+    "supabase/migrations/20260831013000_add_late_cancel_group_fee_safety.sql",
+  );
   const voiceExecutor = read("src/shared/voiceai/toolExecutor.ts");
   const voiceTools = read("src/shared/voiceai/realtimeTools.ts");
 
@@ -55,6 +58,9 @@ describe("late-cancellation policy boundary", () => {
     expect(voiceReschedule).toContain("self_cancel_window_hours");
     expect(voiceReschedule).toContain("noshow_fee_cents");
     expect(voiceReschedule).toContain('reason: "voice_reschedule"');
+    expect(voiceReschedule).toContain("bookingCreatedAt");
+    expect(graceMigration).toContain("booking_management_cancel_preview");
+    expect(graceMigration).toContain("preview_booking_group_cancellation_for_desk");
   });
 
   it("requires explicit customer agreement before cancellation while keeping fee dispatch separate", () => {

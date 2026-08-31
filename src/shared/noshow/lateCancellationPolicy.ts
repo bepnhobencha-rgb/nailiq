@@ -1,4 +1,5 @@
 export type LateCancellationBookingPolicy = {
+  createdAt: string;
   startTimeUtc: string;
   noShowFeeCents: number | null;
   noShowCardId: string | null;
@@ -18,6 +19,9 @@ export type LateCancellationSalonPolicy = {
 export type LateCancellationEvaluation = {
   startPast: boolean;
   currentWithinWindow: boolean;
+  shortNoticeBooking: boolean;
+  graceActive: boolean;
+  graceEndsAt: string | null;
   policyLockedByReschedule: boolean;
   withinWindow: boolean;
   feeCents: number;
@@ -32,7 +36,10 @@ export type LateCancellationLockPatch = {
 };
 
 const DEFAULT_WINDOW_HOURS = 24;
+const SHORT_NOTICE_GRACE_MINUTES = 15;
+const MAX_LATE_CANCELLATION_PERCENT = 20;
 const HOUR_MS = 3_600_000;
+const MINUTE_MS = 60_000;
 
 function positiveInteger(value: number | null | undefined): number {
   return Number.isFinite(value) && Number(value) > 0
@@ -57,12 +64,21 @@ export function calculateLateCancellationFeeCents(
 ): number {
   const snapshotCents = positiveInteger(noShowFeeCents);
   const noShowPercent = positiveInteger(policy.noShowFeePercent);
-  const selfCancelPercent = nonNegativeInteger(policy.selfCancelFeePercent);
+  const configuredSelfCancelPercent = nonNegativeInteger(
+    policy.selfCancelFeePercent,
+  );
+  const selfCancelPercent = Math.min(
+    configuredSelfCancelPercent ?? noShowPercent,
+    MAX_LATE_CANCELLATION_PERCENT,
+  );
 
-  if (selfCancelPercent !== null && noShowPercent > 0) {
+  if (noShowPercent > 0) {
     return Math.round((snapshotCents * selfCancelPercent) / noShowPercent);
   }
-  return snapshotCents;
+  // Without the percentage that produced the saved fee snapshot there is no
+  // authoritative way to prove the 20% ceiling. Fail closed instead of
+  // treating an opaque amount as chargeable.
+  return 0;
 }
 
 /**
@@ -78,7 +94,19 @@ export function evaluateLateCancellationPolicy(input: {
   const { booking, salon } = input;
   const nowMs = input.nowMs ?? Date.now();
   const startMs = Date.parse(booking.startTimeUtc);
+  const createdMs = Date.parse(booking.createdAt);
   const startPast = !Number.isFinite(startMs) || startMs <= nowMs;
+  const shortNoticeBooking = Number.isFinite(startMs) &&
+    Number.isFinite(createdMs) &&
+    startMs > createdMs &&
+    startMs - createdMs <= windowHours(salon) * HOUR_MS;
+  const graceEndsMs = shortNoticeBooking
+    ? createdMs + SHORT_NOTICE_GRACE_MINUTES * MINUTE_MS
+    : Number.NaN;
+  const graceActive = shortNoticeBooking && nowMs <= graceEndsMs;
+  const graceEndsAt = Number.isFinite(graceEndsMs)
+    ? new Date(graceEndsMs).toISOString()
+    : null;
   const currentWithinWindow =
     !startPast && (startMs - nowMs) / HOUR_MS < windowHours(salon);
 
@@ -87,7 +115,8 @@ export function evaluateLateCancellationPolicy(input: {
     : Number.NaN;
   const policyLockedByReschedule = Number.isFinite(lockedAtMs);
   const withinWindow =
-    !startPast && (currentWithinWindow || policyLockedByReschedule);
+    !startPast && !graceActive &&
+    (currentWithinWindow || policyLockedByReschedule);
 
   const lockedCents = positiveInteger(booking.selfCancelFeeLockedCents);
   const feeCents =
@@ -106,6 +135,9 @@ export function evaluateLateCancellationPolicy(input: {
   return {
     startPast,
     currentWithinWindow,
+    shortNoticeBooking,
+    graceActive,
+    graceEndsAt,
     policyLockedByReschedule,
     withinWindow,
     feeCents,
@@ -120,6 +152,7 @@ export function evaluateLateCancellationPolicy(input: {
  * are immutable; repeated reschedules cannot reset the amount or timestamp.
  */
 export function buildLateCancellationLockPatch(input: {
+  bookingCreatedAt: string;
   previousStartTimeUtc: string;
   noShowFeeCents: number | null;
   existingLockedAt?: string | null;
@@ -134,6 +167,13 @@ export function buildLateCancellationLockPatch(input: {
 
   const nowMs = input.nowMs ?? Date.now();
   const previousStartMs = Date.parse(input.previousStartTimeUtc);
+  const createdMs = Date.parse(input.bookingCreatedAt);
+  const shortNoticeGraceActive = Number.isFinite(previousStartMs) &&
+    Number.isFinite(createdMs) &&
+    previousStartMs > createdMs &&
+    previousStartMs - createdMs <= windowHours(input.salon) * HOUR_MS &&
+    nowMs <= createdMs + SHORT_NOTICE_GRACE_MINUTES * MINUTE_MS;
+  if (shortNoticeGraceActive) return null;
   const insideWindow =
     Number.isFinite(previousStartMs) &&
     previousStartMs > nowMs &&
