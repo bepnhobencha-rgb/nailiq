@@ -30,9 +30,26 @@ vi.mock("@/shared/lib/supabase/serviceRole", () => ({
 }));
 
 import {
+  complianceFooterHtml,
   isEmailSuppressed,
   transactionalEmailSuppressionReason,
 } from "../emailCompliance";
+
+describe("complianceFooterHtml", () => {
+  it("labels appointment opt-out as optional-email preferences", () => {
+    const html = complianceFooterHtml({
+      email: "client@example.com",
+      salonName: "Hi-Lite Head Spa",
+      salonAddress: "123 Main St",
+      lang: "en",
+      transactional: true,
+    });
+    expect(html).toContain("important appointment update");
+    expect(html).toContain("Manage optional emails");
+    expect(html).toContain("Important appointment updates may still be sent");
+    expect(html).not.toContain(">Unsubscribe<");
+  });
+});
 
 describe("isEmailSuppressed", () => {
   beforeEach(() => {

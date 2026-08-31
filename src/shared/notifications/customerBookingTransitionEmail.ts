@@ -1,12 +1,15 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
-import { buildEmailBrandHeader, escapeEmailHtml } from "@/shared/booking/emailBranding";
-import { complianceFooterHtml, listUnsubscribeHeaders } from "@/shared/lib/emailCompliance";
+import { listUnsubscribeHeaders } from "@/shared/lib/emailCompliance";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { buildStaffActionEmailSubject, buildStaffActionSms } from "./staffActionMessages";
 import { customerEmailDeliverySuppressionReason } from "./customerEmailDeliverySuppression";
+import {
+  buildCustomerAppointmentEmail,
+  customerEmailSiteUrl,
+} from "./staffActionEmailTemplate";
 
 export type CustomerBookingTransitionKind = "cancel" | "reschedule";
 
@@ -310,19 +313,23 @@ export function buildCustomerBookingTransitionEmailPayload(
       : `${greeting}your ${snapshot.serviceName} appointment at ${snapshot.salonName} has been moved from ${oldWhen} to ${messageVars.whenLabel}.${callLine}`
     : buildStaffActionSms(event, snapshot.locale, messageVars);
   if (!subject || !body) return null;
-  const subtitle = snapshot.locale === "vi"
-    ? kind === "reschedule" ? "Lịch hẹn đã được dời" : "Lịch hẹn đã huỷ"
-    : kind === "reschedule" ? "Appointment Rescheduled" : "Appointment Cancelled";
-  const html = `<!doctype html><html lang="${snapshot.locale}"><body style="margin:0;padding:0;background:#faf9f7;">
-  <main style="max-width:480px;margin:0 auto;padding:28px 22px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#2a2a2a;">
-    <div style="padding:16px;background:#0B0C10;text-align:center;border-radius:8px;margin:0 0 18px;">
-      ${buildEmailBrandHeader({ salonName: snapshot.salonName, logoUrl: snapshot.salonLogoUrl, subtitle })}
-    </div>
-    <h1 style="margin:0 0 18px;font-size:18px;font-weight:600;color:#1a1a1a;">${escapeEmailHtml(subject)}</h1>
-    <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#333;">${escapeEmailHtml(body)}</p>
-  </main>
-  ${complianceFooterHtml({ email: snapshot.recipientEmail, salonName: snapshot.salonName, lang: snapshot.locale })}
-</body></html>`;
+  const email = buildCustomerAppointmentEmail({
+    event,
+    locale: snapshot.locale,
+    subject,
+    recipientEmail: snapshot.recipientEmail,
+    clientName: snapshot.clientName,
+    salonName: snapshot.salonName,
+    salonSlug: snapshot.salonSlug,
+    salonLogoUrl: snapshot.salonLogoUrl,
+    salonPhone: snapshot.salonPhone,
+    serviceName: snapshot.serviceName,
+    staffName: snapshot.staffName,
+    whenLabel: messageVars.whenLabel,
+    previousWhenLabel: kind === "reschedule" ? oldWhen : null,
+    siteUrl: customerEmailSiteUrl(),
+  });
+  if (!email) return null;
   return {
     v: 1,
     eventType: material.eventType,
@@ -330,8 +337,8 @@ export function buildCustomerBookingTransitionEmailPayload(
     to: snapshot.recipientEmail,
     locale: snapshot.locale,
     subject,
-    text: body,
-    html,
+    text: email.text,
+    html: email.html,
   };
 }
 

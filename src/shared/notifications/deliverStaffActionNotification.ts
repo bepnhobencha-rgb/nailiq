@@ -5,7 +5,6 @@ import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import {
   listUnsubscribeHeaders,
-  complianceFooterHtml,
   transactionalEmailSuppressionReason,
 } from "@/shared/lib/emailCompliance";
 import { logNotification } from "@/shared/lib/notificationLog";
@@ -18,7 +17,10 @@ import {
   buildStaffActionEmailSubject,
 } from "./staffActionMessages";
 import type { StaffNotifyEvent } from "@/shared/dashboard/staffNotificationSettings";
-import { buildEmailBrandHeader } from "@/shared/booking/emailBranding";
+import {
+  buildCustomerAppointmentEmail,
+  customerEmailSiteUrl,
+} from "@/shared/notifications/staffActionEmailTemplate";
 
 /**
  * Deliver a staff-action customer notification (create/reschedule/cancel) on
@@ -71,11 +73,12 @@ export async function deliverStaffActionNotification(
 
   const { data: salonRow } = await supabase
     .from("salons")
-    .select("name, phone, timezone, default_notification_locale, email_outbound_enabled, logo_url")
+    .select("name, slug, phone, timezone, default_notification_locale, email_outbound_enabled, logo_url")
     .eq("id", input.salonId)
     .maybeSingle();
   const salon = (salonRow ?? {}) as {
     name?: string | null;
+    slug?: string | null;
     phone?: string | null;
     timezone?: string | null;
     default_notification_locale?: string | null;
@@ -164,36 +167,29 @@ export async function deliverStaffActionNotification(
         .then(Boolean)
         .catch(() => true);
       if (!suppressed) {
-        const esc = (s: string) =>
-          s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-        const subtitle = locale === "vi"
-          ? input.event === "reschedule"
-            ? "Lịch hẹn đã được dời"
-            : input.event === "cancel"
-              ? "Lịch hẹn đã huỷ"
-              : "Lịch hẹn đã xác nhận"
-          : input.event === "reschedule"
-            ? "Appointment Rescheduled"
-            : input.event === "cancel"
-              ? "Appointment Cancelled"
-              : "Appointment Confirmed";
-        const html = `<!DOCTYPE html><html lang="${locale}"><body style="margin:0;padding:0;background:#faf9f7;">
-  <div style="max-width:480px;margin:0 auto;padding:28px 22px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#2a2a2a;">
-    <div style="padding:16px;background:#0B0C10;text-align:center;border-radius:8px;margin:0 0 18px;">
-      ${buildEmailBrandHeader({ salonName: vars.salonName, logoUrl: salon.logo_url, subtitle })}
-    </div>
-    <h1 style="margin:0 0 18px;font-size:18px;font-weight:600;color:#1a1a1a;">${esc(subject)}</h1>
-    <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#333;">${esc(body)}</p>
-  </div>
-${complianceFooterHtml({ email: to, salonName: vars.salonName, lang: locale })}
-</body></html>`;
+        const email = buildCustomerAppointmentEmail({
+          event: input.event,
+          locale,
+          subject,
+          recipientEmail: to,
+          clientName: vars.customerName,
+          salonName: vars.salonName,
+          salonSlug: salon.slug,
+          salonLogoUrl: salon.logo_url,
+          salonPhone: salon.phone,
+          serviceName: vars.serviceName,
+          staffName: vars.staffName,
+          whenLabel,
+          siteUrl: customerEmailSiteUrl(),
+        });
+        if (!email) return { smsSent, emailSent, locale };
         try {
           const res = await client.emails.send({
             from: getResendFrom(),
             to,
             subject,
-            html,
-            text: body,
+            html: email.html,
+            text: email.text,
             headers: listUnsubscribeHeaders(to),
           });
           emailSent = !res.error;

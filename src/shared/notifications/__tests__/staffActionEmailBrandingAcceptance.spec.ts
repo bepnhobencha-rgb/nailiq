@@ -50,6 +50,7 @@ function db(defaultLocale: "en" | "vi") {
   };
   const salon = {
     name: "Tiệm Mai & Linh",
+    slug: "tiem-mai-linh",
     phone: "+16045550101",
     timezone: "America/Vancouver",
     default_notification_locale: defaultLocale,
@@ -88,6 +89,9 @@ describe("MQA-0098 staff-action customer email branding", () => {
     expect(payload.html).toContain("Mai &lt;Admin&gt;");
     expect(payload.html).toContain("Gel &lt;script&gt;");
     expect(payload.html).not.toContain("<script>");
+    expect(payload.html).toContain("APPOINTMENT DETAILS");
+    expect(payload.html).toContain("NailIQ Booking Check");
+    expect(payload.html).toContain("/tiem-mai-linh/booking-terms");
   });
 
   it("renders a Vietnamese document and Vietnamese brand subtitle for a Vietnamese customer", async () => {

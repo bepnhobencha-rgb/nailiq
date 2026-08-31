@@ -64,19 +64,29 @@ export function complianceFooterHtml(opts: {
   salonName: string;
   salonAddress?: string | null;
   lang?: "en" | "vi";
+  /** Transactional appointment notices still send after optional-email opt-out. */
+  transactional?: boolean;
 }): string {
   const vi = opts.lang === "vi";
   const url = unsubscribeUrl(opts.email);
   const addr = (opts.salonAddress ?? "").trim();
-  const why = vi
-    ? `Bạn nhận email này vì có lịch hẹn với <strong>${esc(opts.salonName)}</strong>.`
-    : `You're receiving this because you have an appointment with <strong>${esc(opts.salonName)}</strong>.`;
+  const why = opts.transactional
+    ? vi
+      ? `Đây là thông báo quan trọng về lịch hẹn của bạn với <strong>${esc(opts.salonName)}</strong>.`
+      : `This is an important appointment update from <strong>${esc(opts.salonName)}</strong>.`
+    : vi
+      ? `Bạn nhận email này vì có lịch hẹn với <strong>${esc(opts.salonName)}</strong>.`
+      : `You're receiving this because you have an appointment with <strong>${esc(opts.salonName)}</strong>.`;
   const addrLine = addr
     ? `<div style="margin:4px 0;">${esc(opts.salonName)} · ${esc(addr)}</div>`
     : `<div style="margin:4px 0;">${esc(opts.salonName)}</div>`;
-  const unsub = vi
-    ? `<a href="${url}" style="color:#888;text-decoration:underline;">Ngừng nhận email</a>`
-    : `<a href="${url}" style="color:#888;text-decoration:underline;">Unsubscribe</a>`;
+  const unsub = opts.transactional
+    ? vi
+      ? `<a href="${url}" style="color:#888;text-decoration:underline;">Quản lý email không bắt buộc</a><div>Thông báo quan trọng về lịch hẹn vẫn có thể được gửi.</div>`
+      : `<a href="${url}" style="color:#888;text-decoration:underline;">Manage optional emails</a><div>Important appointment updates may still be sent.</div>`
+    : vi
+      ? `<a href="${url}" style="color:#888;text-decoration:underline;">Ngừng nhận email</a>`
+      : `<a href="${url}" style="color:#888;text-decoration:underline;">Unsubscribe</a>`;
   return `<div style="margin:18px 0 0;padding-top:12px;border-top:1px solid #eee;font-size:11px;line-height:1.5;color:#999;text-align:center;">
     <div>${why}</div>
     ${addrLine}
