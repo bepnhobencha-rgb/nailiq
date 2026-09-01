@@ -20,7 +20,11 @@ import { ActivityBell } from "@/components/layout/ActivityBell";
 
 const VERSION_POLL_MS = 90 * 1000;
 
-export function DashboardViewControls() {
+export function DashboardViewControls({
+  productNoticeCount = 0,
+}: {
+  productNoticeCount?: number;
+}) {
   const { language } = useUserLanguage();
   const vi = language === "vi";
   const router = useRouter();
@@ -141,7 +145,7 @@ export function DashboardViewControls() {
       data-testid="dashboard-view-controls"
       className="fixed right-2 top-2 z-40 flex items-center gap-1 rounded-full border border-nq-border/60 bg-nq-surface/80 p-1 shadow-sm backdrop-blur md:right-3 md:top-3"
     >
-      <ActivityBell />
+      <ActivityBell productNoticeCount={productNoticeCount} />
       <button
         type="button"
         onClick={onRefresh}

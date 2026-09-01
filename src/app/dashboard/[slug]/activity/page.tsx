@@ -3,8 +3,14 @@ import { redirect } from "next/navigation";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { loadActivityFeed } from "@/shared/dashboard/loadActivityFeedAction";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
+import { PlatformAnnouncementCenter } from "@/components/dashboard/PlatformAnnouncementCenter";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { isArchivedBookingFeatureAvailable } from "@/shared/dashboard/archivedBookingFeatureAccess";
+import {
+  loadDashboardAnnouncements,
+  loadPlatformNotificationPreference,
+} from "@/shared/dashboard/platformAnnouncements";
+import { resolveUserLanguage } from "@/shared/i18n/user/resolveUserLanguage";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -19,7 +25,12 @@ export default async function ActivityPage({ params }: Props) {
   if (!ctx) redirect("/register");
   if (!isOwnerOrAdmin(ctx.role)) redirect(`/dashboard/${slug}`);
 
-  const res = await loadActivityFeed(slug);
+  const [res, productAnnouncements, userLanguage, productNotificationPreference] = await Promise.all([
+    loadActivityFeed(slug),
+    loadDashboardAnnouncements(ctx.role),
+    resolveUserLanguage(),
+    loadPlatformNotificationPreference(),
+  ]);
   const items = res.ok ? res.items : [];
   // The central member-profile RPC already returned an allowlisted flag map.
   const archivedBookingFeatureEnabled =
@@ -31,6 +42,13 @@ export default async function ActivityPage({ params }: Props) {
 
   return (
     <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
+      <PlatformAnnouncementCenter
+        slug={slug}
+        language={userLanguage}
+        announcements={productAnnouncements}
+        autoManageRoutine={productNotificationPreference.autoManageRoutine}
+        nowIso={initialNowIso}
+      />
       <ActivityFeed
         slug={slug}
         items={items}

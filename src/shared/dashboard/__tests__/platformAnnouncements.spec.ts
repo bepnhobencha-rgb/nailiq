@@ -4,6 +4,14 @@ import {
   isActiveAnnouncement,
 } from "@/shared/dashboard/platformAnnouncements";
 import {
+  isPlatformAnnouncementSnoozed,
+  platformAnnouncementDecisionState,
+  platformAnnouncementPriority,
+  shouldAutoCollapsePlatformAnnouncement,
+  shouldCountPlatformAnnouncement,
+  shouldShowPlatformAnnouncementBanner,
+} from "@/shared/dashboard/platformAnnouncementPresentation";
+import {
   localizedAnnouncementContent,
   type PlatformAnnouncement,
 } from "@/shared/superadmin/announcementsTypes";
@@ -64,5 +72,82 @@ describe("platform dashboard announcements", () => {
     expect(localizedAnnouncementContent(announcement, "fr").title).toBe(
       "English title",
     );
+  });
+
+  it("auto-collapses routine updates but keeps important and urgent notices visible", () => {
+    expect(
+      shouldAutoCollapsePlatformAnnouncement({
+        severity: "info",
+        notificationMode: "in_app",
+      }),
+    ).toBe(true);
+    expect(
+      shouldAutoCollapsePlatformAnnouncement({
+        severity: "info",
+        notificationMode: "important",
+      }),
+    ).toBe(false);
+    expect(
+      shouldAutoCollapsePlatformAnnouncement({
+        severity: "urgent",
+        notificationMode: "in_app",
+      }),
+    ).toBe(false);
+    expect(
+      shouldShowPlatformAnnouncementBanner({
+        severity: "info",
+        notificationMode: "in_app",
+        seenAt: "2026-09-01T08:00:00Z",
+      }),
+    ).toBe(false);
+    expect(
+      shouldShowPlatformAnnouncementBanner({
+        severity: "urgent",
+        notificationMode: "important",
+        seenAt: "2026-09-01T08:00:00Z",
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps the bell focused on decisions and respects a cross-device snooze", () => {
+    const routine = {
+      severity: "info" as const,
+      notificationMode: "in_app" as const,
+      seenAt: null,
+      snoozedUntil: null,
+    };
+    const urgent = {
+      severity: "urgent" as const,
+      notificationMode: "important" as const,
+      seenAt: null,
+      snoozedUntil: null,
+    };
+    expect(platformAnnouncementDecisionState(routine)).toBe("new");
+    expect(platformAnnouncementDecisionState(urgent)).toBe("needs_action");
+    expect(platformAnnouncementPriority(urgent)).toBeLessThan(
+      platformAnnouncementPriority(routine),
+    );
+    expect(
+      shouldCountPlatformAnnouncement(routine, { autoManageRoutine: true }),
+    ).toBe(false);
+    expect(
+      shouldCountPlatformAnnouncement(urgent, { autoManageRoutine: true }),
+    ).toBe(true);
+
+    const snoozedUrgent = {
+      ...urgent,
+      snoozedUntil: "2026-09-01T10:00:00.000Z",
+    };
+    expect(
+      isPlatformAnnouncementSnoozed(
+        snoozedUrgent,
+        "2026-09-01T09:00:00.000Z",
+      ),
+    ).toBe(true);
+    expect(
+      shouldCountPlatformAnnouncement(snoozedUrgent, {
+        nowIso: "2026-09-01T09:00:00.000Z",
+      }),
+    ).toBe(false);
   });
 });

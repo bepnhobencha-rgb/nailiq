@@ -12,7 +12,7 @@ import { createClient } from "@/shared/lib/supabase/client";
  * rest (audit/event rows aren't browser-readable under RLS, so the count comes
  * from an owner-gated server action). Owner-only — hidden for other roles.
  */
-export function ActivityBell() {
+export function ActivityBell({ productNoticeCount = 0 }: { productNoticeCount?: number }) {
   const pathname = usePathname();
   const router = useRouter();
   const slug = pathname?.match(/^\/dashboard\/([^/]+)/)?.[1] ?? null;
@@ -88,23 +88,25 @@ export function ActivityBell() {
     router.push(`/dashboard/${slug}/activity`);
   }, [slug, router]);
 
-  if (!visible || !slug) return null;
+  if ((!visible && productNoticeCount === 0) || !slug) return null;
+
+  const totalCount = count + productNoticeCount;
 
   return (
     <button
       type="button"
       onClick={open}
-      aria-label={count > 0 ? `Nhật ký — ${count} mục mới` : "Nhật ký hoạt động"}
-      title={count > 0 ? `${count} hoạt động mới` : "Nhật ký hoạt động"}
+      aria-label={totalCount > 0 ? `Nhật ký — ${totalCount} mục cần xem` : "Nhật ký hoạt động"}
+      title={totalCount > 0 ? `${totalCount} mục cần xem` : "Nhật ký hoạt động"}
       data-testid="activity-bell"
       className="relative flex h-9 w-9 items-center justify-center rounded-full text-nq-foreground/75 transition-colors hover:text-nq-primary"
     >
       <svg viewBox="0 0 24 24" width={17} height={17} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
         <path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" />
       </svg>
-      {count > 0 ? (
+      {totalCount > 0 ? (
         <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-nq-error px-1 text-[9px] font-bold text-white">
-          {count > 99 ? "99+" : count}
+          {totalCount > 99 ? "99+" : totalCount}
         </span>
       ) : null}
     </button>

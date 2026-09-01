@@ -49,6 +49,8 @@ type Props = {
   salonId?: string | null;
   /** Focus the shell for Guided Setup and its first post-setup Action Center. */
   guidedSetupStage?: GuidedSetupStage;
+  /** Active product notices collapsed into the existing Activity bell. */
+  productNoticeCount?: number;
 };
 
 /**
@@ -79,6 +81,7 @@ export function DashboardShell({
   userEmail,
   salonId,
   guidedSetupStage = "disabled",
+  productNoticeCount = 0,
 }: Props) {
   // Single hook instance owns the collapse state. We pass both the
   // value AND the toggle to DashboardSidebar so its toggle button
@@ -137,7 +140,9 @@ export function DashboardShell({
             on every page. Fullscreen now targets the whole document so the
             sidebar/nav + portaled drawers all stay usable. */}
         <div id="nq-dashboard-content">
-          {!guidedFocusMode ? <DashboardViewControls /> : null}
+          {!guidedFocusMode ? (
+            <DashboardViewControls productNoticeCount={productNoticeCount} />
+          ) : null}
           {children}
         </div>
       </main>
