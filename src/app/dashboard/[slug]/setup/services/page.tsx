@@ -15,6 +15,10 @@ import { getEffectivePlanLimits } from "@/shared/lib/subscriptionPlans";
 import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 import { isCocoSetupExperienceVisible } from "@/shared/dashboard/cocoSetupActivation";
 import { loadPublicBookingSequenceReadiness } from "@/shared/booking/bookingSequenceReadiness";
+import {
+  SERVICE_RESOURCE_KINDS,
+  type ServiceResourceKind,
+} from "@/shared/booking/serviceResourceRequirement";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -37,23 +41,40 @@ export default async function SetupServicesPage({ params }: Props) {
     redirect(`/dashboard/${encodeURIComponent(slug)}`);
   }
 
-  const { data: rows, error } = await ctx.supabase
-    .from("services")
-    // `category`, `description`, `is_popular`, `is_featured` were added
-    // by migrations 20260511500000 + 20260511600000; `price_type` and
-    // `price_max_cents` by the variable-pricing migration. Some columns
-    // are not yet in the auto-generated DB types so the SELECT is cast.
-    .select(
-      "id, name, price_cents, price_type, price_max_cents, duration_minutes, prep_minutes, buffer_minutes, category, description, is_popular, is_featured, is_addon, addon_timing" as never,
-    )
-    .eq("salon_id", ctx.salon.id)
-    .is("deleted_at" as never, null)
-    .order("name", { ascending: true });
+  const [serviceResult, resourceResult] = await Promise.all([
+    ctx.supabase
+      .from("services")
+      .select(
+        "id, name, price_cents, price_type, price_max_cents, duration_minutes, prep_minutes, buffer_minutes, category, description, is_popular, is_featured, is_addon, addon_timing, resource_requirement_mode, required_resource_kinds" as never,
+      )
+      .eq("salon_id", ctx.salon.id)
+      .is("deleted_at" as never, null)
+      .order("name", { ascending: true }),
+    ctx.supabase
+      .from("salon_resources" as never)
+      .select("kind")
+      .eq("salon_id" as never, ctx.salon.id as never)
+      .eq("status" as never, "active" as never)
+      .is("deleted_at" as never, null),
+  ]);
+  const { data: rows, error } = serviceResult;
 
   if (error) {
     console.error("[setup/services]", error);
     redirect("/register");
   }
+  if (resourceResult.error) {
+    console.error("[setup/services] resources", resourceResult.error);
+  }
+  const resourceKinds = [...new Set(
+    ((resourceResult.data ?? []) as unknown as { kind?: unknown }[])
+      .map((row) => row.kind)
+      .filter(
+        (kind): kind is ServiceResourceKind =>
+          typeof kind === "string" &&
+          SERVICE_RESOURCE_KINDS.includes(kind as ServiceResourceKind),
+      ),
+  )];
 
   // The central member-profile RPC supplies allowlisted plan/flag inputs.
   const planForLimits = ctx.salon;
@@ -94,6 +115,8 @@ export default async function SetupServicesPage({ params }: Props) {
           currency={currency}
           categories={categories}
           multiServiceEditorEnabled={multiServiceEditorEnabled}
+          resourcesEnabled={(ctx.salon as { resources_enabled?: unknown }).resources_enabled === true}
+          availableResourceKinds={resourceKinds}
           initialRows={(rows ?? []).map((r) => {
             const row = r as unknown as {
               id: string;
@@ -110,6 +133,8 @@ export default async function SetupServicesPage({ params }: Props) {
               is_featured?: unknown;
               is_addon?: unknown;
               addon_timing?: unknown;
+              resource_requirement_mode?: unknown;
+              required_resource_kinds?: unknown;
             };
             const descRaw = row.description;
             const priceMaxRaw = row.price_max_cents;
@@ -140,6 +165,18 @@ export default async function SetupServicesPage({ params }: Props) {
               is_addon: row.is_addon === true,
               addon_timing:
                 row.addon_timing === "concurrent" ? "concurrent" : "sequential",
+              resource_requirement_mode:
+                row.resource_requirement_mode === "none" ||
+                row.resource_requirement_mode === "specific"
+                  ? row.resource_requirement_mode
+                  : "salon_default",
+              required_resource_kinds: Array.isArray(row.required_resource_kinds)
+                ? row.required_resource_kinds.filter(
+                    (kind): kind is ServiceResourceKind =>
+                      typeof kind === "string" &&
+                      SERVICE_RESOURCE_KINDS.includes(kind as ServiceResourceKind),
+                  )
+                : [],
             };
           })}
         />

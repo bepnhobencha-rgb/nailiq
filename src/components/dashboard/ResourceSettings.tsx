@@ -45,6 +45,9 @@ export function ResourceSettings({ slug, initialEnabled, initialAxis, vertical }
   const [resourceMode, setResourceMode] = useState<"shared" | "distinct" | "either">("shared");
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
+  const [newKind, setNewKind] = useState<string>(
+    preset?.kind ?? "station",
+  );
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -86,12 +89,12 @@ export function ResourceSettings({ slug, initialEnabled, initialAxis, vertical }
     if (!name) return;
     setError(null);
     startTransition(async () => {
-      const r = await createResource(slug, { name, kind: preset?.kind });
+      const r = await createResource(slug, { name, kind: newKind });
       if (r.ok) {
         setRows((prev) => [...prev, {
           id: r.id,
           name,
-          kind: preset?.kind ?? "station",
+          kind: newKind,
           display_order: prev.length,
           status: "active",
           same_guest_parallel_capacity: 1,
@@ -104,6 +107,22 @@ export function ResourceSettings({ slug, initialEnabled, initialAxis, vertical }
   function commitRename(id: string, name: string) {
     startTransition(async () => {
       await updateResource(slug, { id, name });
+    });
+  }
+
+  function commitKind(id: string, kind: string) {
+    const previous = rows.find((row) => row.id === id)?.kind ?? "station";
+    setRows((current) => current.map((row) =>
+      row.id === id ? { ...row, kind } : row
+    ));
+    startTransition(async () => {
+      const result = await updateResource(slug, { id, kind });
+      if (!result.ok) {
+        setRows((current) => current.map((row) =>
+          row.id === id ? { ...row, kind: previous } : row
+        ));
+        setError(result.error);
+      }
     });
   }
 
@@ -279,7 +298,7 @@ export function ResourceSettings({ slug, initialEnabled, initialAxis, vertical }
             ) : (
               <ul className="mt-2 space-y-1.5">
                 {rows.map((r) => (
-                  <li key={r.id} className="grid gap-2 rounded-xl border border-nq-border/20 p-2 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-center">
+                  <li key={r.id} className="grid gap-2 rounded-xl border border-nq-border/20 p-2 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto_auto] sm:items-center">
                     <input
                       defaultValue={r.name}
                       disabled={pending}
@@ -289,6 +308,20 @@ export function ResourceSettings({ slug, initialEnabled, initialAxis, vertical }
                       }}
                       className={`min-w-0 flex-1 rounded-lg border border-nq-border/30 bg-nq-surface px-2.5 py-1.5 text-sm text-nq-foreground ${r.status === "inactive" ? "opacity-50 line-through" : ""}`}
                     />
+                    <select
+                      aria-label={vi ? `Loại tài nguyên của ${r.name}` : `Resource type for ${r.name}`}
+                      value={r.kind}
+                      disabled={pending}
+                      onChange={(event) => commitKind(r.id, event.target.value)}
+                      className="rounded-lg border border-nq-border/30 bg-nq-surface px-2 py-1.5 text-xs text-nq-foreground disabled:opacity-50"
+                    >
+                      <option value="station">{vi ? "Bàn làm việc" : "Station"}</option>
+                      <option value="chair">{vi ? "Ghế" : "Chair"}</option>
+                      <option value="bed">{vi ? "Giường" : "Bed"}</option>
+                      <option value="backwash">{vi ? "Ghế gội" : "Backwash"}</option>
+                      <option value="room">{vi ? "Phòng" : "Room"}</option>
+                      <option value="other">{vi ? "Khác" : "Other"}</option>
+                    </select>
                     <label className="flex items-center gap-2 text-xs text-nq-muted">
                       <span>{vi ? "Cùng khách" : "Same guest"}</span>
                       <select
@@ -329,7 +362,7 @@ export function ResourceSettings({ slug, initialEnabled, initialAxis, vertical }
             )}
 
             {/* Add new */}
-            <div className="mt-2 flex gap-2">
+            <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
               <input
                 value={newName}
                 disabled={pending}
@@ -340,6 +373,20 @@ export function ResourceSettings({ slug, initialEnabled, initialAxis, vertical }
                 }}
                 className="min-w-0 flex-1 rounded-lg border border-nq-border/30 bg-nq-surface px-2.5 py-1.5 text-sm text-nq-foreground"
               />
+              <select
+                aria-label={vi ? "Loại tài nguyên mới" : "New resource type"}
+                value={newKind}
+                disabled={pending}
+                onChange={(event) => setNewKind(event.target.value)}
+                className="rounded-lg border border-nq-border/30 bg-nq-surface px-2.5 py-1.5 text-sm text-nq-foreground"
+              >
+                <option value="station">{vi ? "Bàn làm việc" : "Station"}</option>
+                <option value="chair">{vi ? "Ghế" : "Chair"}</option>
+                <option value="bed">{vi ? "Giường" : "Bed"}</option>
+                <option value="backwash">{vi ? "Ghế gội" : "Backwash"}</option>
+                <option value="room">{vi ? "Phòng" : "Room"}</option>
+                <option value="other">{vi ? "Khác" : "Other"}</option>
+              </select>
               <button
                 type="button"
                 disabled={pending || !newName.trim()}

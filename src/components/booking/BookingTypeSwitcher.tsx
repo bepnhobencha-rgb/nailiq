@@ -17,6 +17,7 @@ import type { BookingComboItem, BookingServiceItem } from "@/shared/booking/cata
 import type { ServiceCategorySummary } from "@/shared/booking/loadServiceCategories";
 import type {
   BookingSalonMeta,
+  BookingResourceItem,
   BookingStaffItem,
 } from "@/shared/booking/loadBookingServices";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
@@ -394,6 +395,7 @@ export function BookingTypeSwitcher({
   combos,
   staff,
   salon,
+  resources = [],
   capabilityRows,
   categories,
   language = "en",
@@ -408,6 +410,7 @@ export function BookingTypeSwitcher({
   combos: readonly BookingComboItem[];
   staff: readonly BookingStaffItem[];
   salon: BookingSalonMeta;
+  resources?: readonly BookingResourceItem[];
   capabilityRows: { staff_id: string; service_id: string }[] | null;
   categories: readonly ServiceCategorySummary[];
   language?: "en" | "vi";
@@ -849,6 +852,7 @@ export function BookingTypeSwitcher({
     combos,
     staff,
     salon,
+    resources,
     capabilityRows,
     categories,
     language,

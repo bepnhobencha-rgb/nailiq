@@ -18,6 +18,10 @@ import { getUserMessages, type UserMessages } from "@/shared/i18n/user";
 import { formatServicePrice, type Currency } from "@/shared/lib/currencyFormat";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { cn } from "@/shared/lib/cn";
+import type {
+  ServiceResourceKind,
+  ServiceResourceRequirementMode,
+} from "@/shared/booking/serviceResourceRequirement";
 
 // ── ServiceDrawer — built in parallel, imported by interface contract ─────────
 import { ServiceDrawer } from "@/components/dashboard/ServiceDrawer";
@@ -39,6 +43,8 @@ export type SetupServiceRow = {
   is_featured: boolean;
   is_addon: boolean;
   addon_timing: "concurrent" | "sequential";
+  resource_requirement_mode: ServiceResourceRequirementMode;
+  required_resource_kinds: ServiceResourceKind[];
 };
 
 type ServiceFormLabels = UserMessages["serviceForm"];
@@ -426,6 +432,8 @@ export function ServicesSetupPanel({
   currency,
   categories,
   multiServiceEditorEnabled,
+  resourcesEnabled = false,
+  availableResourceKinds = [],
 }: {
   slug: string;
   initialRows: SetupServiceRow[];
@@ -439,6 +447,10 @@ export function ServicesSetupPanel({
   categories: readonly ServiceCategorySummary[];
   /** Effective platform+salon gate. Readiness joins this before rollout. */
   multiServiceEditorEnabled: boolean;
+  /** Resource guidance is only actionable when the salon enabled resources. */
+  resourcesEnabled?: boolean;
+  /** Active resource kinds owned by this exact salon. */
+  availableResourceKinds?: readonly ServiceResourceKind[];
 }) {
   const { language } = useUserLanguage();
   const messages = getUserMessages(language);
@@ -978,6 +990,9 @@ export function ServicesSetupPanel({
         canDelete={rows.length > 1}
         atServiceLimit={atServiceLimit}
         multiServiceEditorEnabled={multiServiceEditorEnabled}
+        resourcesEnabled={resourcesEnabled}
+        availableResourceKinds={availableResourceKinds}
+        peerServices={rows}
       />
     </div>
   );

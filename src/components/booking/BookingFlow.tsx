@@ -8,6 +8,7 @@ import type { BookingComboItem, BookingServiceItem } from "@/shared/booking/cata
 import type { ServiceCategorySummary } from "@/shared/booking/loadServiceCategories";
 import type {
   BookingSalonMeta,
+  BookingResourceItem,
   BookingStaffItem,
 } from "@/shared/booking/loadBookingServices";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
@@ -47,6 +48,7 @@ type BookingFlowProps = {
   combos: readonly BookingComboItem[];
   staff: readonly BookingStaffItem[];
   salon: BookingSalonMeta;
+  resources?: readonly BookingResourceItem[];
   capabilityRows: { staff_id: string; service_id: string }[] | null;
   categories: readonly ServiceCategorySummary[];
   language?: "en" | "vi";
@@ -82,6 +84,7 @@ export function BookingFlow({
   combos,
   staff,
   salon,
+  resources = [],
   capabilityRows,
   categories,
   language = "en",
@@ -120,6 +123,7 @@ export function BookingFlow({
     initialSmsConsent,
     initialMarketingConsent,
     initialOtpSessionId,
+    resources,
   );
   const applyWebVoiceBookingHandoff = flow.applyWebVoiceBookingHandoff;
 

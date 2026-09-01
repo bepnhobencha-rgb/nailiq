@@ -1,7 +1,7 @@
 "use client";
 
 import * as ErrorReporter from "@/shared/observability/errorReporter";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Drawer } from "@/components/ui/Drawer";
 import { SaveButton, type SaveButtonStatus } from "@/components/ui/SaveButton";
@@ -25,6 +25,11 @@ import {
 } from "@/shared/lib/currencyFormat";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import type { SetupServiceRow } from "./ServicesSetupPanel";
+import {
+  buildServiceSetupGuidance,
+  type ServiceResourceKind,
+  type ServiceResourceRequirementMode,
+} from "@/shared/booking/serviceResourceRequirement";
 
 /**
  * The variable-pricing columns (`price_type` / `price_max_cents`) live on the
@@ -84,6 +89,9 @@ export type ServiceDrawerProps = {
   atServiceLimit: boolean;
   /** Keeps prep editing absent for every flag-off salon. */
   multiServiceEditorEnabled: boolean;
+  resourcesEnabled?: boolean;
+  availableResourceKinds?: readonly ServiceResourceKind[];
+  peerServices?: readonly SetupServiceRow[];
   /** Delete button calls this with the service id then closes the drawer.
    *  Actual deletion + undo toast lives in the parent (ServicesSetupPanel). */
   onRequestDelete?: (id: string) => void;
@@ -194,6 +202,9 @@ export function ServiceDrawer({
   canDelete,
   atServiceLimit,
   multiServiceEditorEnabled,
+  resourcesEnabled = false,
+  availableResourceKinds = [],
+  peerServices = [],
   onRequestDelete,
 }: ServiceDrawerProps) {
   const { language } = useUserLanguage();
@@ -244,6 +255,13 @@ export function ServiceDrawer({
   const [addonTiming, setAddonTiming] = useState<"concurrent" | "sequential">(
     service?.addon_timing ?? "sequential",
   );
+  const [resourceRequirementMode, setResourceRequirementMode] =
+    useState<ServiceResourceRequirementMode>(
+      service?.resource_requirement_mode ?? "salon_default",
+    );
+  const [requiredResourceKinds, setRequiredResourceKinds] = useState<
+    ServiceResourceKind[]
+  >(service?.required_resource_kinds ?? []);
   // Declared before the reset effect below (which resets them) so they aren't
   // referenced before initialization.
   const [saveStatus, setSaveStatus] = useState<SaveButtonStatus>("idle");
@@ -266,9 +284,25 @@ export function ServiceDrawer({
     setIsPopular(service?.is_popular ?? false);
     setIsAddon(service?.is_addon ?? false);
     setAddonTiming(service?.addon_timing ?? "sequential");
+    setResourceRequirementMode(
+      service?.resource_requirement_mode ?? "salon_default",
+    );
+    setRequiredResourceKinds(service?.required_resource_kinds ?? []);
     setSaveStatus("idle");
     setFieldError(null);
   }, [service]);
+
+  const guidance = useMemo(
+    () =>
+      buildServiceSetupGuidance({
+        serviceId: service?.id,
+        category,
+        currentPriceCents: centsFromDollarsString(price),
+        peers: peerServices,
+        availableResourceKinds,
+      }),
+    [availableResourceKinds, category, peerServices, price, service?.id],
+  );
 
   // ── save state ────────────────────────────────────────────────────────────
 
@@ -306,6 +340,8 @@ export function ServiceDrawer({
         | "is_popular"
         | "is_addon"
         | "addon_timing"
+        | "resource_requirement_mode"
+        | "required_resource_kinds"
       >
     > & {
       price_type?: ServicePriceType;
@@ -338,6 +374,19 @@ export function ServiceDrawer({
     // Timing only matters for add-ons; persist when it changed.
     if (isAddon && addonTiming !== service.addon_timing)
       patch.addon_timing = addonTiming;
+    if (resourceRequirementMode !== service.resource_requirement_mode) {
+      patch.resource_requirement_mode = resourceRequirementMode;
+    }
+    const normalizedKinds =
+      resourceRequirementMode === "specific" ? requiredResourceKinds : [];
+    if (
+      normalizedKinds.length !== service.required_resource_kinds.length ||
+      normalizedKinds.some(
+        (kind, index) => kind !== service.required_resource_kinds[index],
+      )
+    ) {
+      patch.required_resource_kinds = normalizedKinds;
+    }
     // Pricing model: send price_type + price_max_cents together whenever the
     // model or the max changed. The server re-validates (clamps max > base,
     // downgrades range→from when max is missing/invalid).
@@ -350,7 +399,7 @@ export function ServiceDrawer({
       patch.price_max_cents = nextMaxCents;
     }
     return patch;
-  }, [addonTiming, buf, category, description, dur, isAddon, isPopular, multiServiceEditorEnabled, name, prep, price, priceMax, priceType, service]);
+  }, [addonTiming, buf, category, description, dur, isAddon, isPopular, multiServiceEditorEnabled, name, prep, price, priceMax, priceType, requiredResourceKinds, resourceRequirementMode, service]);
 
   const patch = buildDirtyPatch();
   const isDirty = Object.keys(patch).length > 0;
@@ -380,6 +429,15 @@ export function ServiceDrawer({
           ? "Thời gian chuẩn bị phải từ 0 đến 180 phút."
           : "Prep time must be between 0 and 180 minutes.";
       }
+    }
+    if (
+      resourcesEnabled &&
+      resourceRequirementMode === "specific" &&
+      requiredResourceKinds.length === 0
+    ) {
+      return language === "vi"
+        ? "Chọn ít nhất một loại ghế, giường hoặc phòng phù hợp."
+        : "Choose at least one compatible resource type.";
     }
     if (description.trim().length > SERVICE_DESCRIPTION_MAX_LEN)
       return formLabels.descriptionTooLong;
@@ -444,6 +502,12 @@ export function ServiceDrawer({
         ...(patch.is_popular !== undefined ? { is_popular: patch.is_popular } : {}),
         ...(patch.is_addon !== undefined ? { is_addon: patch.is_addon } : {}),
         ...(patch.addon_timing !== undefined ? { addon_timing: patch.addon_timing } : {}),
+        ...(patch.resource_requirement_mode !== undefined
+          ? { resource_requirement_mode: patch.resource_requirement_mode }
+          : {}),
+        ...(patch.required_resource_kinds !== undefined
+          ? { required_resource_kinds: patch.required_resource_kinds }
+          : {}),
         // Mirror the pricing model the server normalized to, so the parent's
         // in-memory row stays in sync. Spread as a structural view since
         // SetupServiceRow may not declare these columns yet.
@@ -476,6 +540,13 @@ export function ServiceDrawer({
           is_popular: isPopular,
           is_addon: isAddon,
           addon_timing: isAddon ? addonTiming : "sequential",
+          resource_requirement_mode: resourcesEnabled
+            ? resourceRequirementMode
+            : "salon_default",
+          required_resource_kinds:
+            resourcesEnabled && resourceRequirementMode === "specific"
+              ? requiredResourceKinds
+              : [],
           price_type: priceType,
           price_max_cents:
             priceType === "range" ? centsFromDollarsString(priceMax) : null,
@@ -533,6 +604,9 @@ export function ServiceDrawer({
     price,
     priceMax,
     priceType,
+    requiredResourceKinds,
+    resourceRequirementMode,
+    resourcesEnabled,
     multiServiceEditorEnabled,
     service,
     setupErrors.serviceLimitReached,
@@ -588,6 +662,29 @@ export function ServiceDrawer({
     priceMaxCents: previewMaxCents,
     fromLabel,
   });
+  const guidancePriceAnchor = formatServicePrice(
+    guidance.priceAnchorCents,
+    currency,
+    { priceType: "fixed", priceMaxCents: null },
+  );
+  const resourceKindLabels: Record<ServiceResourceKind, { en: string; vi: string }> = {
+    station: { en: "Station", vi: "Bàn làm việc" },
+    chair: { en: "Chair", vi: "Ghế" },
+    bed: { en: "Bed", vi: "Giường" },
+    backwash: { en: "Backwash", vi: "Ghế gội" },
+    room: { en: "Room", vi: "Phòng" },
+    other: { en: "Other", vi: "Khác" },
+  };
+
+  function applyCocoTimingGuidance() {
+    setDur(String(guidance.durationMinutes));
+    setBuf(String(guidance.bufferMinutes));
+    if (multiServiceEditorEnabled) setPrep(String(guidance.prepMinutes));
+    if (resourcesEnabled && guidance.suggestedResourceKinds.length > 0) {
+      setResourceRequirementMode("specific");
+      setRequiredResourceKinds(guidance.suggestedResourceKinds);
+    }
+  }
 
   const footer = (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -670,6 +767,60 @@ export function ServiceDrawer({
         ) : null}
 
         <div className="flex flex-col gap-3">
+          <section
+            className="rounded-2xl border border-nq-primary/35 bg-nq-primary/10 p-3"
+            data-testid="service-coco-guidance"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-nq-foreground">
+                  ✨ {language === "vi" ? "Coco gợi ý thiết lập" : "Coco setup guidance"}
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-nq-muted">
+                  {guidance.basis === "salon_menu"
+                    ? language === "vi"
+                      ? "Dựa trên các dịch vụ cùng loại trong menu của chính salon."
+                      : "Based on comparable services in this salon's own menu."
+                    : language === "vi"
+                      ? "Mốc khởi đầu an toàn; chủ salon xem lại trước khi lưu."
+                      : "A safe starting point; the owner reviews before saving."}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={applyCocoTimingGuidance}
+                className="min-h-10 shrink-0 rounded-xl border border-nq-primary/45 bg-nq-bg/70 px-3 text-xs font-semibold text-nq-foreground disabled:opacity-50"
+                data-testid="service-coco-apply-timing"
+              >
+                {language === "vi" ? "Áp dụng thời gian" : "Apply timing"}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-nq-foreground">
+              {guidance.durationMinutes} {language === "vi" ? "phút làm" : "min service"}
+              {` · ${guidance.prepMinutes} ${language === "vi" ? "phút chuẩn bị" : "min prep"}`}
+              {` · ${guidance.bufferMinutes} ${language === "vi" ? "phút dọn" : "min cleanup"}`}
+            </p>
+            {guidancePriceAnchor ? (
+              <p className="mt-1 text-xs text-nq-muted" data-testid="service-coco-price-anchor">
+                {language === "vi"
+                  ? `Giá giữa của dịch vụ cùng loại trong salon: ${guidancePriceAnchor}. Coco không tự đổi giá.`
+                  : `Salon-menu median: ${guidancePriceAnchor}. Coco never changes the price automatically.`}
+              </p>
+            ) : null}
+            {guidance.priceWarning ? (
+              <p className="mt-1 text-xs font-semibold text-nq-warning" role="status">
+                {language === "vi"
+                  ? guidance.priceWarning === "unusually_low"
+                    ? "Giá này thấp hơn nhiều so với dịch vụ cùng loại. Hãy kiểm tra trước khi lưu."
+                    : "Giá này cao hơn nhiều so với dịch vụ cùng loại. Hãy kiểm tra trước khi lưu."
+                  : guidance.priceWarning === "unusually_low"
+                    ? "This price is much lower than comparable services. Review before saving."
+                    : "This price is much higher than comparable services. Review before saving."}
+              </p>
+            ) : null}
+          </section>
+
           {/* Name */}
           <label className="block text-sm font-medium text-nq-muted">
             {tLabels.name}
@@ -824,6 +975,90 @@ export function ServiceDrawer({
                 ))}
               </select>
             </label>
+
+            {resourcesEnabled ? (
+              <fieldset className="block rounded-xl border border-nq-border/40 bg-nq-bg/40 p-3 sm:col-span-2">
+                <legend className="px-1 text-sm font-semibold text-nq-foreground">
+                  {language === "vi" ? "Ghế, giường hoặc phòng cần dùng" : "Required chair, bed, or room"}
+                </legend>
+                <p className="mb-2 text-xs text-nq-muted">
+                  {language === "vi"
+                    ? "Khách không phải chọn chỗ. NailIQ tự tìm chỗ phù hợp và chỉ hiện giờ còn đủ tài nguyên."
+                    : "Customers never choose a resource. NailIQ assigns a compatible one and only shows times with capacity."}
+                </p>
+                <div className="grid gap-2 sm:grid-cols-3" role="radiogroup">
+                  {([
+                    ["salon_default", language === "vi" ? "Salon tự chọn" : "Salon default"],
+                    ["none", language === "vi" ? "Không cần chỗ" : "No resource"],
+                    ["specific", language === "vi" ? "Chỉ loại phù hợp" : "Specific types"],
+                  ] as const).map(([mode, label]) => (
+                    <label
+                      key={mode}
+                      className={`flex min-h-10 cursor-pointer items-center justify-center rounded-lg border px-2 text-center text-xs font-semibold ${
+                        resourceRequirementMode === mode
+                          ? "border-nq-primary bg-nq-primary/15 text-nq-foreground"
+                          : "border-nq-border/30 text-nq-muted"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="service-resource-requirement"
+                        value={mode}
+                        checked={resourceRequirementMode === mode}
+                        disabled={isSaving}
+                        onChange={() => setResourceRequirementMode(mode)}
+                        className="sr-only"
+                        data-testid={`service-resource-mode-${mode}`}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                {resourceRequirementMode === "specific" ? (
+                  availableResourceKinds.length > 0 ? (
+                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {availableResourceKinds.map((kind) => {
+                        const checked = requiredResourceKinds.includes(kind);
+                        return (
+                          <label
+                            key={kind}
+                            className="flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border border-nq-border/30 px-3 text-xs text-nq-foreground"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={isSaving}
+                              onChange={(event) =>
+                                setRequiredResourceKinds((current) =>
+                                  event.target.checked
+                                    ? [...current, kind]
+                                    : current.filter((value) => value !== kind),
+                                )
+                              }
+                              className="h-4 w-4 accent-nq-primary"
+                              data-testid={`service-resource-kind-${kind}`}
+                            />
+                            {resourceKindLabels[kind][language]}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-3 rounded-lg border border-nq-warning/30 bg-nq-warning/10 p-2 text-xs text-nq-warning">
+                      {language === "vi"
+                        ? "Salon chưa có resource đang hoạt động. Hãy tạo ghế/giường/phòng trước."
+                        : "This salon has no active resource types. Add a chair, bed, or room first."}
+                    </p>
+                  )
+                ) : null}
+              </fieldset>
+            ) : (
+              <div className="rounded-xl border border-nq-border/30 bg-nq-bg/40 p-3 text-xs text-nq-muted sm:col-span-2">
+                {language === "vi"
+                  ? "Quản lý ghế/giường đang tắt. NailIQ hiện xếp lịch theo thợ; bật Resource Settings để tránh xếp quá số ghế hoặc giường."
+                  : "Resource management is off. NailIQ currently schedules by staff; enable Resource Settings to prevent chair/bed overbooking."}
+              </div>
+            )}
           </div>
 
           {/* Description */}

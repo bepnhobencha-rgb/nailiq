@@ -767,5 +767,52 @@ test("any staff remains available when another capable staff is not on break", (
   }
 });
 
+test("resource-aware slots close only when every eligible chair is occupied", () => {
+  const slots = computeTimeSlots({
+    openingHoursRaw: HOURS_9_TO_19,
+    selectedDate: FUTURE_DATE,
+    staffId: "s1",
+    staffList: STAFF,
+    serviceDurationMinutes: 30,
+    occupancy: [
+      {
+        staff_id: "another-staff",
+        resource_id: "chair-1",
+        start_time_utc: new Date(FUTURE_DATE.getFullYear(), FUTURE_DATE.getMonth(), FUTURE_DATE.getDate(), 10, 0).toISOString(),
+        end_time_utc: new Date(FUTURE_DATE.getFullYear(), FUTURE_DATE.getMonth(), FUTURE_DATE.getDate(), 11, 0).toISOString(),
+      },
+    ],
+    nowMs: NOW_MS,
+    requiresResource: true,
+    eligibleResourceIds: ["chair-1"],
+  });
+
+  const byLabel = new Map(slots.map((slot) => [slot.label, slot.available]));
+  if (byLabel.get("10:00 AM") !== false) {
+    throw new Error("10:00 AM must close while the only eligible chair is busy");
+  }
+  if (byLabel.get("11:00 AM") !== true) {
+    throw new Error("11:00 AM must reopen when the eligible chair is free");
+  }
+});
+
+test("resource-required service has no available slots without matching inventory", () => {
+  const slots = computeTimeSlots({
+    openingHoursRaw: HOURS_9_TO_19,
+    selectedDate: FUTURE_DATE,
+    staffId: "s1",
+    staffList: STAFF,
+    serviceDurationMinutes: 30,
+    occupancy: [],
+    nowMs: NOW_MS,
+    requiresResource: true,
+    eligibleResourceIds: [],
+  });
+
+  if (slots.some((slot) => slot.available)) {
+    throw new Error("specific resource requirement must fail closed without inventory");
+  }
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);

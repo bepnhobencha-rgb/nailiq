@@ -81,6 +81,7 @@ export function minutesToLabel(mins: number): string {
 
 type OccupancyRow = {
   staff_id: string;
+  resource_id?: string | null;
   start_time_utc: string;
   end_time_utc: string;
 };
@@ -112,6 +113,10 @@ function isStrictOccupancyRow(value: unknown): value is OccupancyRow {
   const row = value as Record<string, unknown>;
   if (
     !isNonEmptyId(row.staff_id) ||
+    !(
+      row.resource_id == null ||
+      isNonEmptyId(row.resource_id)
+    ) ||
     typeof row.start_time_utc !== "string" ||
     typeof row.end_time_utc !== "string"
   ) {
@@ -193,6 +198,10 @@ export type GetAvailableTimeSlotsParams = {
   /** A staff member who explicitly consented to after-hours work may exceed
    * their configured shift end. This does not ignore one-off unavailability. */
   allowBeyondStaffShiftEnd?: boolean;
+  /** True when this service consumes a physical salon resource. */
+  requiresResource?: boolean;
+  /** Exact eligible active resource IDs after service-kind filtering. */
+  eligibleResourceIds?: readonly string[];
 };
 
 /**
@@ -270,6 +279,8 @@ export function computeTimeSlots(args: {
   staffUnavailableIds?: ReadonlySet<string>;
   closingExtensionMinutes?: number;
   allowBeyondStaffShiftEnd?: boolean;
+  requiresResource?: boolean;
+  eligibleResourceIds?: readonly string[];
 }): TimeSlot[] {
   const {
     openingHoursRaw,
@@ -288,6 +299,8 @@ export function computeTimeSlots(args: {
     staffUnavailableIds,
     closingExtensionMinutes = 0,
     allowBeyondStaffShiftEnd = false,
+    requiresResource = false,
+    eligibleResourceIds = [],
   } = args;
 
   const durationMin = Math.max(1, Math.round(Number(serviceDurationMinutes) || 1));
@@ -327,6 +340,7 @@ export function computeTimeSlots(args: {
 
   const occIntervals = occupancy.map((row) => ({
     staffId: String(row.staff_id),
+    resourceId: row.resource_id ? String(row.resource_id) : null,
     startMs: new Date(row.start_time_utc).getTime(),
     endMs: new Date(row.end_time_utc).getTime(),
   }));
@@ -343,6 +357,26 @@ export function computeTimeSlots(args: {
       }
     }
     return true;
+  }
+
+  function hasFreeEligibleResource(
+    slotStartMs: number,
+    slotEndMs: number,
+  ): boolean {
+    if (!requiresResource) return true;
+    if (eligibleResourceIds.length === 0) return false;
+    return eligibleResourceIds.some((resourceId) =>
+      occIntervals.every(
+        (occupied) =>
+          occupied.resourceId !== resourceId ||
+          !intervalsOverlapMs(
+            slotStartMs,
+            slotEndMs,
+            occupied.startMs,
+            occupied.endMs,
+          ),
+      ),
+    );
   }
 
   // Returns true when the given slot falls within the staff member's shift
@@ -369,6 +403,7 @@ export function computeTimeSlots(args: {
     slotStartMin: number,
     slotEndMin: number,
   ): boolean {
+    if (!hasFreeEligibleResource(slotStartMs, slotEndMs)) return false;
     if (staffId !== BOOKING_ANY_STAFF_ID) {
       if (staffUnavailableIds?.has(staffId)) return false;
       if (!isWithinShift(staffId, slotStartMin, slotEndMin)) return false;
@@ -593,6 +628,8 @@ async function getAvailableTimeSlotsInternal(
     timezone,
     closingExtensionMinutes,
     allowBeyondStaffShiftEnd,
+    requiresResource,
+    eligibleResourceIds,
   } = params;
 
   const week = parseOpeningHours(openingHoursRaw);
@@ -621,7 +658,9 @@ async function getAvailableTimeSlotsInternal(
   let occupancy: OccupancyRow[] = [];
 
   const { data: occData, error: occErr } = await supabase.rpc(
-    "public_booking_occupancy_for_range",
+    requiresResource
+      ? "public_booking_capacity_for_range"
+      : "public_booking_occupancy_for_range",
     {
       p_salon_id: salonId,
       p_start: startIso,
@@ -729,6 +768,8 @@ async function getAvailableTimeSlotsInternal(
     staffUnavailableIds,
     closingExtensionMinutes,
     allowBeyondStaffShiftEnd,
+    requiresResource,
+    eligibleResourceIds,
   });
 }
 

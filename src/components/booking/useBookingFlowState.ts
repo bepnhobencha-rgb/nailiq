@@ -43,6 +43,7 @@ import {
 import { computeBookingTiming } from "@/shared/booking/bookingTiming";
 import type {
   BookingSalonMeta,
+  BookingResourceItem,
   BookingStaffItem,
 } from "@/shared/booking/loadBookingServices";
 import { formatNailiqBookingRef } from "@/shared/lib/formatNailiqBookingRef";
@@ -193,6 +194,8 @@ export function useBookingFlowState(
   /** OTP session verified at the phone gate (Option B). When set, the flow
    *  skips its own OTP step — the gate already verified the phone. */
   initialOtpSessionId: string | null = null,
+  /** Active physical resources. Optional at the tail for legacy callers. */
+  resources: readonly BookingResourceItem[] = [],
 ) {
   const capability = useMemo(
     () => buildCapabilityMap(capabilityRows),
@@ -520,6 +523,23 @@ export function useBookingFlowState(
         : baseService,
     [baseService, selectedCombo],
   );
+  const resourceCapacity = useMemo(() => {
+    if (!salon.resourcesEnabled || !service) {
+      return { requiresResource: false, eligibleResourceIds: [] as string[] };
+    }
+    if (service.resourceRequirementMode === "none") {
+      return { requiresResource: false, eligibleResourceIds: [] as string[] };
+    }
+    const requiredKinds = new Set(service.requiredResourceKinds ?? []);
+    const eligible =
+      service.resourceRequirementMode === "specific"
+        ? resources.filter((resource) => requiredKinds.has(resource.kind))
+        : resources;
+    return {
+      requiresResource: true,
+      eligibleResourceIds: eligible.map((resource) => resource.id),
+    };
+  }, [resources, salon.resourcesEnabled, service]);
 
   const slotBookingTiming = useMemo(() => {
     if (!service) {
@@ -858,6 +878,8 @@ export function useBookingFlowState(
       shortestServiceMinutes,
       leadMinutes: salon.bookingLeadMinutes,
       timezone: salon.timezone,
+      requiresResource: resourceCapacity.requiresResource,
+      eligibleResourceIds: resourceCapacity.eligibleResourceIds,
     }).then((slots) => {
       if (cancelled) return;
       setTimeSlots(slots);
@@ -893,6 +915,7 @@ export function useBookingFlowState(
     slotBookingTiming,
     slotTrailingBufferMinutes,
     availabilityRevision,
+    resourceCapacity,
     t.bookingErrors.slotJustTaken,
   ]);
 
@@ -1915,6 +1938,8 @@ export function useBookingFlowState(
             shortestServiceMinutes,
             leadMinutes: salon.bookingLeadMinutes,
             timezone: salon.timezone,
+            requiresResource: resourceCapacity.requiresResource,
+            eligibleResourceIds: resourceCapacity.eligibleResourceIds,
           }).then((slots) => {
             setTimeSlots(slots);
             setSlotsLoading(false);
@@ -2049,6 +2074,7 @@ export function useBookingFlowState(
     slotBookingTiming.blockMinutes,
     slotTrailingBufferMinutes,
     shortestServiceMinutes,
+    resourceCapacity,
     smsConsent,
     verificationAction,
     otpSessionId,
