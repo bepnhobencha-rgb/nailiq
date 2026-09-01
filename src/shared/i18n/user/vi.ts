@@ -1803,6 +1803,22 @@ export const userVi: UserMessages = {
       invited: "Đang mời",
       statusWaiting: "Đang chờ",
       needsPlan: "Cần xếp phương án",
+      autonomy: {
+        autoSafe: "NailIQ tự xử lý",
+        approvalRequired: "Duyệt một chạm",
+        humanException: "Ngoại lệ cần nhân viên",
+        watchingForExactSlot:
+          "NailIQ đang canh đúng chỗ phù hợp và sẽ tự mời khách qua luồng giữ chỗ an toàn.",
+        customerResponsePending:
+          "Chỗ cụ thể đã được mời. NailIQ đang chờ khách phản hồi và theo dõi từng kênh gửi.",
+        exactPlanRequired:
+          "NailIQ phải chứng minh đủ thợ, tài nguyên, thời gian và đúng chính sách trước khi cho phép duyệt.",
+        bookingCommitPending:
+          "Khách đã nhận chỗ. Hãy xác nhận lịch cuối cùng để không mất chỗ hoặc tạo trùng.",
+        unsafeStateCombination:
+          "Yêu cầu này nằm ngoài phạm vi tự động an toàn và cần nhân viên kiểm tra.",
+        approvalLocked: "Chỉ mở duyệt khi đã có phương án thực thi đầy đủ.",
+      },
       groupRequest: (partySize, serviceCount) =>
         `${partySize} khách · ${serviceCount} dịch vụ`,
       sequenceRequest: (serviceCount) =>

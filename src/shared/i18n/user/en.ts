@@ -1640,6 +1640,17 @@ export type UserMessages = {
       statusWaiting: string;
       /** Complex group/sequence demand that needs a complete capacity plan. */
       needsPlan: string;
+      autonomy: {
+        autoSafe: string;
+        approvalRequired: string;
+        humanException: string;
+        watchingForExactSlot: string;
+        customerResponsePending: string;
+        exactPlanRequired: string;
+        bookingCommitPending: string;
+        unsafeStateCombination: string;
+        approvalLocked: string;
+      };
       groupRequest: (partySize: number, serviceCount: number) => string;
       sequenceRequest: (serviceCount: number) => string;
       callToArrange: string;
@@ -4237,6 +4248,22 @@ export const userEn: UserMessages = {
       invited: "Invitation open",
       statusWaiting: "Waiting",
       needsPlan: "Needs plan",
+      autonomy: {
+        autoSafe: "NailIQ autopilot",
+        approvalRequired: "One-tap approval",
+        humanException: "Staff exception",
+        watchingForExactSlot:
+          "NailIQ is watching for a matching opening and will invite the customer through the protected offer flow.",
+        customerResponsePending:
+          "The exact offer is open. NailIQ is waiting for the customer and tracking delivery by channel.",
+        exactPlanRequired:
+          "NailIQ must prove staff, resource, timing and policy fit before approval becomes available.",
+        bookingCommitPending:
+          "The customer claimed the opening. Confirm the final appointment so the slot cannot be lost or duplicated.",
+        unsafeStateCombination:
+          "This request is outside the safe automation contract and needs staff review.",
+        approvalLocked: "Approval unlocks only after an executable plan is ready.",
+      },
       groupRequest: (partySize, serviceCount) =>
         `${partySize} guests · ${serviceCount} services`,
       sequenceRequest: (serviceCount) =>

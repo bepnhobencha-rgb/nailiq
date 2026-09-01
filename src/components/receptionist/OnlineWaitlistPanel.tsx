@@ -10,6 +10,7 @@ import { getUserMessages } from "@/shared/i18n/user";
 import { inviteWaitlistEntry } from "@/shared/dashboard/receptionistActions";
 import type { ReceptionistCenterData } from "@/shared/dashboard/loadReceptionistCenterData";
 import { waitlistAgeMinutes } from "@/shared/dashboard/waitlistAttention";
+import { classifyCapacityRescueAutonomy } from "@/shared/booking/capacityRescueAutonomy";
 import { Badge, type BadgeVariant } from "@/components/ui/Badge";
 import type {
   WaitlistChannelDeliveryTruth,
@@ -207,6 +208,27 @@ export function OnlineWaitlistPanel({
             const isClaimed = status === "claimed";
             const isReviewRequired = status === "review_required";
             const isPending = pendingId === entry.id;
+            const autonomy = classifyCapacityRescueAutonomy({
+              requestKind: entry.requestKind,
+              status,
+            });
+            const autonomyCopy = t.autonomy;
+            const autonomyLabel = autonomy.lane === "auto_safe"
+              ? autonomyCopy.autoSafe
+              : autonomy.lane === "approval_required"
+                ? autonomyCopy.approvalRequired
+                : autonomyCopy.humanException;
+            const autonomyDescription = autonomy.reason === "watching_for_exact_slot"
+              ? autonomyCopy.watchingForExactSlot
+              : autonomy.reason === "customer_response_pending"
+                ? autonomyCopy.customerResponsePending
+                : autonomy.reason === "exact_plan_required"
+                  ? autonomyCopy.exactPlanRequired
+                  : autonomy.reason === "booking_commit_pending"
+                    ? autonomyCopy.bookingCommitPending
+                    : autonomyCopy.unsafeStateCombination;
+            const requiresStaffReview =
+              !isClaimed && autonomy.lane !== "auto_safe";
             const name = displayCustomerName(entry.clientName, removedGuest);
             const waitingMinutes =
               attentionEnabled &&
@@ -274,6 +296,38 @@ export function OnlineWaitlistPanel({
                     <p className="mt-0.5 truncate text-xs text-nq-muted">
                       {subline}
                     </p>
+                    <div
+                      data-testid={`waitlist-autonomy-${entry.id}`}
+                      data-autonomy-lane={autonomy.lane}
+                      className={cn(
+                        "mt-2 rounded-lg border px-2.5 py-2",
+                        autonomy.lane === "auto_safe"
+                          ? "border-nq-success/30 bg-nq-success/5"
+                          : autonomy.lane === "approval_required"
+                            ? "border-nq-warning/30 bg-nq-warning/5"
+                            : "border-nq-border/50 bg-nq-surface",
+                      )}
+                    >
+                      <p className={cn(
+                        "text-xs font-semibold",
+                        autonomy.lane === "auto_safe"
+                          ? "text-nq-success"
+                          : autonomy.lane === "approval_required"
+                            ? "text-nq-warning"
+                            : "text-nq-foreground",
+                      )}>
+                        {autonomyLabel}
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-nq-muted">
+                        {autonomyDescription}
+                      </p>
+                      {autonomy.lane === "approval_required" &&
+                      !autonomy.canShowApprovalAction ? (
+                        <p className="mt-1 text-xs font-medium text-nq-warning">
+                          {autonomyCopy.approvalLocked}
+                        </p>
+                      ) : null}
+                    </div>
                     {waitingMinutes !== null ? (
                       <p
                         data-testid={`waitlist-age-${entry.id}`}
@@ -307,7 +361,7 @@ export function OnlineWaitlistPanel({
                       >
                         {t.createBooking}
                       </button>
-                    ) : isReviewRequired ? (
+                    ) : requiresStaffReview ? (
                       <a
                         href={`tel:${entry.phone.replace(/[^+\d]/g, "")}`}
                         data-testid={`waitlist-arrange-${entry.id}`}
