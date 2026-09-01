@@ -47,6 +47,32 @@ import type { WaitlistDeliveryTruth } from "@/shared/noshow/waitlistDeliveryTrut
 
 type DashboardSupabaseClient = SupabaseClient<Database>;
 
+export type NotificationDeliveryIssue = {
+  issueKey: string;
+  channel: "sms" | "email";
+  destination: "booking" | "waitlist";
+  bookingId: string | null;
+  waitlistEntryId: string | null;
+  notificationKind: string;
+  status:
+    | "pending"
+    | "sending"
+    | "accepted"
+    | "failed"
+    | "undelivered"
+    | "unknown";
+  resolution:
+    | "auto_retry_scheduled"
+    | "reconcile_required"
+    | "manual_follow_up";
+  reasonCode:
+    | "retry_scheduled"
+    | "outcome_not_confirmed"
+    | "delivery_failed";
+  occurredAt: string;
+  bookingDate: string | null;
+};
+
 export type NotificationDeliveryRescueSummary = {
   available: boolean;
   smsOutboundEnabled: boolean;
@@ -56,7 +82,128 @@ export type NotificationDeliveryRescueSummary = {
   smsSuppressedCount: number;
   emailAttentionCount: number;
   waitlistAttentionCount: number;
+  /** Bounded, PII-free operational cases; never a provider resend command. */
+  issues: NotificationDeliveryIssue[];
 };
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const YMD_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const SAFE_KIND_PATTERN = /^[a-z][a-z0-9_]{0,79}$/;
+
+function parseNotificationDeliveryIssues(
+  value: unknown,
+  salonTimezone: string,
+): NotificationDeliveryIssue[] {
+  if (!Array.isArray(value)) return [];
+
+  const statuses = new Set<NotificationDeliveryIssue["status"]>([
+    "pending",
+    "sending",
+    "accepted",
+    "failed",
+    "undelivered",
+    "unknown",
+  ]);
+  const resolutions = new Set<NotificationDeliveryIssue["resolution"]>([
+    "auto_retry_scheduled",
+    "reconcile_required",
+    "manual_follow_up",
+  ]);
+  const reasons = new Set<NotificationDeliveryIssue["reasonCode"]>([
+    "retry_scheduled",
+    "outcome_not_confirmed",
+    "delivery_failed",
+  ]);
+
+  const issues: NotificationDeliveryIssue[] = [];
+  for (const candidate of value.slice(0, 10)) {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+      continue;
+    }
+    const raw = candidate as Record<string, unknown>;
+    const issueKey = typeof raw.issue_key === "string" ? raw.issue_key : "";
+    const channel = raw.channel === "sms" || raw.channel === "email"
+      ? raw.channel
+      : null;
+    const destination = raw.destination === "booking" || raw.destination === "waitlist"
+      ? raw.destination
+      : null;
+    const bookingId =
+      typeof raw.booking_id === "string" && UUID_PATTERN.test(raw.booking_id)
+        ? raw.booking_id
+        : null;
+    const waitlistEntryId =
+      typeof raw.waitlist_entry_id === "string" &&
+      UUID_PATTERN.test(raw.waitlist_entry_id)
+        ? raw.waitlist_entry_id
+        : null;
+    const notificationKind =
+      typeof raw.notification_kind === "string" &&
+      SAFE_KIND_PATTERN.test(raw.notification_kind)
+        ? raw.notification_kind
+        : "notification";
+    const status = statuses.has(raw.status as NotificationDeliveryIssue["status"])
+      ? (raw.status as NotificationDeliveryIssue["status"])
+      : null;
+    const resolution = resolutions.has(
+      raw.resolution as NotificationDeliveryIssue["resolution"],
+    )
+      ? (raw.resolution as NotificationDeliveryIssue["resolution"])
+      : null;
+    const reasonCode = reasons.has(raw.reason_code as NotificationDeliveryIssue["reasonCode"])
+      ? (raw.reason_code as NotificationDeliveryIssue["reasonCode"])
+      : null;
+    const occurredAt =
+      typeof raw.occurred_at === "string" &&
+      !Number.isNaN(Date.parse(raw.occurred_at))
+        ? raw.occurred_at
+        : null;
+
+    if (
+      !issueKey ||
+      issueKey.length > 120 ||
+      !channel ||
+      !destination ||
+      !status ||
+      !resolution ||
+      !reasonCode ||
+      !occurredAt ||
+      (destination === "booking" && !bookingId) ||
+      (destination === "waitlist" && !waitlistEntryId)
+    ) {
+      continue;
+    }
+
+    let bookingDate: string | null = null;
+    if (
+      typeof raw.waitlist_booking_date === "string" &&
+      YMD_PATTERN.test(raw.waitlist_booking_date)
+    ) {
+      bookingDate = raw.waitlist_booking_date;
+    } else if (
+      typeof raw.booking_start_time_utc === "string" &&
+      !Number.isNaN(Date.parse(raw.booking_start_time_utc))
+    ) {
+      bookingDate = salonYmdOfUtc(raw.booking_start_time_utc, salonTimezone);
+    }
+
+    issues.push({
+      issueKey,
+      channel,
+      destination,
+      bookingId,
+      waitlistEntryId,
+      notificationKind,
+      status,
+      resolution,
+      reasonCode,
+      occurredAt,
+      bookingDate,
+    });
+  }
+  return issues;
+}
 
 export interface ReceptionistCenterData {
   /**
@@ -770,6 +917,7 @@ export async function loadReceptionistCenterData(
     smsSuppressedCount: 0,
     emailAttentionCount: 0,
     waitlistAttentionCount: 0,
+    issues: [],
   };
   try {
     const admin = createServiceRoleClient();
@@ -810,6 +958,7 @@ export async function loadReceptionistCenterData(
       sms_suppressed_count?: unknown;
       email_attention_count?: unknown;
       waitlist_attention_count?: unknown;
+      issues?: unknown;
     } | null;
     const safeCount = (value: unknown): number =>
       typeof value === "number" &&
@@ -827,6 +976,10 @@ export async function loadReceptionistCenterData(
         smsSuppressedCount: safeCount(rescue.sms_suppressed_count),
         emailAttentionCount: safeCount(rescue.email_attention_count),
         waitlistAttentionCount: safeCount(rescue.waitlist_attention_count),
+        issues: parseNotificationDeliveryIssues(
+          rescue.issues,
+          salonData.timezone,
+        ),
       };
     }
   } catch {
