@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { GuidedAdminActionCenter } from "@/components/dashboard/GuidedAdminActionCenter";
 import { GuidedSetupHub } from "@/components/dashboard/GuidedSetupHub";
+import { CocoSetupUnavailable } from "@/components/dashboard/CocoSetupUnavailable";
 import type {
   GoLiveReadiness,
   GoLiveReadinessState,
@@ -58,6 +59,19 @@ function readiness(
 }
 
 describe("Guided Setup rendered experience", () => {
+  it("explains a safe pause instead of silently redirecting to services", () => {
+    const html = renderToStaticMarkup(
+      createElement(CocoSetupUnavailable, {
+        slug: "qa salon",
+        salonName: "QA Salon",
+      }),
+    );
+
+    expect(html).toContain("Coco đang tạm dừng an toàn");
+    expect(html).toContain("Coco không thay đổi cài đặt");
+    expect(html).toContain('href="/dashboard/qa%20salon/setup/services"');
+  });
+
   it("shows one actionable next step while every other row stays inert", () => {
     const html = renderToStaticMarkup(
       createElement(GuidedSetupHub, {

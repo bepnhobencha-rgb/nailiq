@@ -34,6 +34,14 @@ const decisionAction = readFileSync(
   ),
   "utf8",
 );
+const salonOwnerActions = readFileSync(
+  resolve(process.cwd(), "src/shared/dashboard/salonOwnerActions.ts"),
+  "utf8",
+);
+const setupPage = readFileSync(
+  resolve(process.cwd(), "src/app/dashboard/[slug]/setup/page.tsx"),
+  "utf8",
+);
 
 describe("Coco Setup activation database boundary", () => {
   it("activates only the new-owner insert and resumes directly in Coco Setup", () => {
@@ -45,6 +53,13 @@ describe("Coco Setup activation database boundary", () => {
     );
     expect(registrationSuccess).toContain(
       "`/dashboard/${encodeURIComponent(slug)}/setup`",
+    );
+    expect(salonOwnerActions).toContain(
+      "withAuthorizedCocoSetupReceipt(\n        row.feature_flags,\n        privileged?.feature_flags",
+    );
+    expect(setupPage).toContain("<CocoSetupUnavailable");
+    expect(setupPage).not.toContain(
+      "redirect(`/dashboard/${encodeURIComponent(slug)}/setup/services`)",
     );
   });
 

@@ -581,11 +581,12 @@ export async function completeSalonRegistration(
       phone: phoneForSalon,
       timezone: wizardTimezone,
       setup_wizard_completed_at: new Date().toISOString(),
-      // New salons start with all reminder channels on.
-      reminders_enabled: true,
-      reminder_24h_enabled: true,
-      reminder_3h_enabled: true,
-      sms_reminders_enabled: true,
+      // Fail safe: Coco asks the Owner to verify contact details, consent,
+      // channel/provider readiness and message policy before reminders run.
+      reminders_enabled: false,
+      reminder_24h_enabled: false,
+      reminder_3h_enabled: false,
+      sms_reminders_enabled: false,
       subscription_plan: "free",
       subscription_status: "trialing",
       trial_started_at: trial.trialStartedAt,

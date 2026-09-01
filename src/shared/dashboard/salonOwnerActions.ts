@@ -52,6 +52,7 @@ import {
   isGroupWaveStrategy,
   type GroupWaveStrategy,
 } from "@/shared/booking/groupWaveOptimizer";
+import { withAuthorizedCocoSetupReceipt } from "@/shared/dashboard/cocoSetupActivation";
 
 /** Single source of truth for the salon row shape every dashboard
  *  surface needs. Adding `timezone` + dashboard config fields here
@@ -438,7 +439,13 @@ async function getSalonIfMember(
       // Release feature-flag inputs (PR1: carried in context, not yet enforced).
       subscription_plan: row.subscription_plan ?? null,
       plan_override: row.plan_override ?? null,
-      feature_flags: row.feature_flags ?? null,
+      // The operational RPC deliberately exposes only bounded boolean flags.
+      // New-owner Coco activation is a numeric receipt, so copy only that
+      // exact authorized value from the Owner/Admin settings projection.
+      feature_flags: withAuthorizedCocoSetupReceipt(
+        row.feature_flags,
+        privileged?.feature_flags,
+      ),
       voice_ai_enabled:
         typeof row.voice_ai_enabled === "boolean"
           ? row.voice_ai_enabled

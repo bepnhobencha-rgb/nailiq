@@ -18,6 +18,30 @@ function featureFlags(value: unknown): Record<string, unknown> {
 }
 
 /**
+ * The member operational profile intentionally strips non-boolean feature
+ * flags. Coco's versioned activation receipt is a number, so Owner/Admin
+ * dashboard contexts must copy only that one bounded value from the already
+ * authorized management projection. Never merge the full management JSON
+ * into the operational context.
+ */
+export function withAuthorizedCocoSetupReceipt(
+  operationalFlags: unknown,
+  managementFlags: unknown,
+): Record<string, unknown> | null {
+  const operational = featureFlags(operationalFlags);
+  const activation = featureFlags(managementFlags)[COCO_SETUP_ACTIVATION_FLAG];
+
+  if (activation !== COCO_SETUP_ACTIVATION_VERSION) {
+    return Object.keys(operational).length > 0 ? operational : null;
+  }
+
+  return {
+    ...operational,
+    [COCO_SETUP_ACTIVATION_FLAG]: COCO_SETUP_ACTIVATION_VERSION,
+  };
+}
+
+/**
  * New-owner activation is separate from the legacy single-salon Guided Setup
  * QA allowlist. Existing salons remain unchanged; only registration can stamp
  * the versioned marker.
