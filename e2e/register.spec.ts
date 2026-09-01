@@ -97,7 +97,7 @@ test.describe("Registration flow", () => {
 
       await page
         .getByRole("button", {
-          name: /go to dashboard|vào bảng điều khiển/i,
+          name: /start coco setup|bắt đầu coco setup|go to dashboard|vào bảng điều khiển/i,
         })
         .click();
 

@@ -324,7 +324,7 @@ test.describe("Guided Admin Setup", () => {
 
       await page
         .getByRole("button", {
-          name: /go to dashboard|vào bảng điều khiển/i,
+          name: /start coco setup|bắt đầu coco setup|go to dashboard|vào bảng điều khiển/i,
         })
         .click();
       await expect(page).toHaveURL(
@@ -338,7 +338,9 @@ test.describe("Guided Admin Setup", () => {
         /Salon information|Thông tin salon/i,
       );
       const progressBefore = await page
-        .getByRole("progressbar")
+        .getByRole("progressbar", {
+          name: /setup progress|tiến độ thiết lập/i,
+        })
         .getAttribute("aria-valuenow");
 
       await clearAppSessionCookies(page);
@@ -349,10 +351,11 @@ test.describe("Guided Admin Setup", () => {
       await expect(page.getByTestId("guided-setup-next-title")).toContainText(
         /Salon information|Thông tin salon/i,
       );
-      await expect(page.getByRole("progressbar")).toHaveAttribute(
-        "aria-valuenow",
-        progressBefore ?? "",
-      );
+      await expect(
+        page.getByRole("progressbar", {
+          name: /setup progress|tiến độ thiết lập/i,
+        }),
+      ).toHaveAttribute("aria-valuenow", progressBefore ?? "");
     } finally {
       await cleanupTestUser(owner.userId);
     }
@@ -376,10 +379,11 @@ test.describe("Guided Admin Setup", () => {
     await expect(
       page.getByTestId("guided-setup-step-salon-profile"),
     ).toBeVisible();
-    await expect(page.getByRole("progressbar")).toHaveAttribute(
-      "aria-valuenow",
-      "25",
-    );
+    await expect(
+      page.getByRole("progressbar", {
+        name: /setup progress|tiến độ thiết lập/i,
+      }),
+    ).toHaveAttribute("aria-valuenow", "25");
 
     await page.getByTestId("guided-setup-next").click();
     await expect(page).toHaveURL(
@@ -429,7 +433,11 @@ test.describe("Guided Admin Setup", () => {
     await expect(page).toHaveURL(
       new RegExp(`/dashboard/${RESUME_SLUG}/setup$`),
     );
-    await expect(page.getByRole("progressbar")).toHaveAttribute(
+    await expect(
+      page.getByRole("progressbar", {
+        name: /setup progress|tiến độ thiết lập/i,
+      }),
+    ).toHaveAttribute(
       "aria-valuenow",
       // 3/8 required steps: identity + the pre-seeded staff and catalog.
       // profile_complete makes public-booking PASS, but Preview remains
@@ -453,10 +461,11 @@ test.describe("Guided Admin Setup", () => {
     await expect(page).toHaveURL(
       new RegExp(`/dashboard/${RESUME_SLUG}/setup$`),
     );
-    await expect(page.getByRole("progressbar")).toHaveAttribute(
-      "aria-valuenow",
-      "50",
-    );
+    await expect(
+      page.getByRole("progressbar", {
+        name: /setup progress|tiến độ thiết lập/i,
+      }),
+    ).toHaveAttribute("aria-valuenow", "50");
     await expect(page.getByTestId("guided-setup-next-title")).toContainText(
       /Booking and cancellation rules|Quy định đặt và huỷ lịch/i,
     );
@@ -467,10 +476,11 @@ test.describe("Guided Admin Setup", () => {
     await expect(page).toHaveURL(
       new RegExp(`/dashboard/${RESUME_SLUG}/setup$`),
     );
-    await expect(page.getByRole("progressbar")).toHaveAttribute(
-      "aria-valuenow",
-      "50",
-    );
+    await expect(
+      page.getByRole("progressbar", {
+        name: /setup progress|tiến độ thiết lập/i,
+      }),
+    ).toHaveAttribute("aria-valuenow", "50");
     await expect(page.getByTestId("guided-setup-next-title")).toContainText(
       /Booking and cancellation rules|Quy định đặt và huỷ lịch/i,
     );
@@ -673,7 +683,9 @@ test.describe("Guided Admin Setup", () => {
       page.getByTestId("guided-setup-step-integrations"),
     ).toContainText(/Skipped(?: for now)?|Đã bỏ qua/i);
     const progressBefore = await page
-      .getByRole("progressbar")
+      .getByRole("progressbar", {
+        name: /setup progress|tiến độ thiết lập/i,
+      })
       .getAttribute("aria-valuenow");
 
     await gotoAfterSignIn(page, `/dashboard/${SURFACES_SLUG}/setup/hours`);
@@ -833,9 +845,10 @@ test.describe("Guided Admin Setup", () => {
     await expect(page.getByTestId("guided-preview-continue")).toHaveCount(0);
 
     await gotoAfterSignIn(page, `/dashboard/${SURFACES_SLUG}/setup`);
-    await expect(page.getByRole("progressbar")).toHaveAttribute(
-      "aria-valuenow",
-      progressBefore ?? "",
-    );
+    await expect(
+      page.getByRole("progressbar", {
+        name: /setup progress|tiến độ thiết lập/i,
+      }),
+    ).toHaveAttribute("aria-valuenow", progressBefore ?? "");
   });
 });
