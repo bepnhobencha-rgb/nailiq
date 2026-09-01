@@ -846,7 +846,9 @@ function main() {
   // the delivery-event audit table is service-role-only.
   // The customer identity map is service-role read-only; the refund inbox is
   // mutation-through-RPC only and intentionally grants no table reachability.
-  const GRANTS = { anon: 56, authenticated: 78, service_role: 188 } as const;
+  // Smart Notification Center adds two user-owned tables. Both are reachable
+  // only by authenticated users through own-row RLS, plus service_role.
+  const GRANTS = { anon: 56, authenticated: 80, service_role: 190 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (

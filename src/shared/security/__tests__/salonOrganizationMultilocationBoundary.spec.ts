@@ -92,7 +92,7 @@ describe("salon organization multi-location boundary", () => {
     expect(parity).toContain("triggers: 107");
     expect(parity).toContain("indexes: 763");
     expect(parity).toContain(
-      "const GRANTS = { anon: 56, authenticated: 78, service_role: 188 }",
+      "const GRANTS = { anon: 56, authenticated: 80, service_role: 190 }",
     );
   });
 });

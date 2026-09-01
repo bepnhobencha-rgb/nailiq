@@ -89,7 +89,7 @@ describe("MQA-0099 database capability boundary", () => {
     expect(parity).toContain("columns: 3070");
     expect(parity).toContain("functions: 451");
     expect(parity).toContain("indexes: 763");
-    expect(parity).toContain("service_role: 188");
+    expect(parity).toContain("service_role: 190");
   });
 
   it("keeps the freed-slot auto-book fixture inside salon hours at every wall-clock time", () => {

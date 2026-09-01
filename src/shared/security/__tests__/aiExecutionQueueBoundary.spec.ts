@@ -85,7 +85,7 @@ describe("AI execution queue boundary", () => {
     expect(parity).toContain('"ai_execution_jobs"');
     expect(parity).toContain('"decide_ai_approval_request"');
     expect(parity).toContain(
-      "const GRANTS = { anon: 56, authenticated: 78, service_role: 188 }",
+      "const GRANTS = { anon: 56, authenticated: 80, service_role: 190 }",
     );
   });
 });
