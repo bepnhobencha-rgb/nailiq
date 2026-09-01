@@ -94,7 +94,7 @@ describe("observability-state boundary", () => {
 
   it("updates the blank-database parity tripwire", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("policies: 214");
+    expect(parity).toContain("policies: 220");
     expect(parity).toContain(
       "const GRANTS = { anon: 56, authenticated: 80, service_role: 190 }",
     );
