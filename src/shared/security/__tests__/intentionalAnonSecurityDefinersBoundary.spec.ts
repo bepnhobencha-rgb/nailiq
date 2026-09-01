@@ -11,6 +11,9 @@ const proof = read(
 const rationale = read(
   "docs/audit/INTENTIONAL-ANON-SECURITY-DEFINERS.md",
 );
+const capacityAcl = read(
+  "supabase/migrations/20260901204200_restrict_service_resource_capacity_authenticated_execute.sql",
+);
 
 const intentionalDefiners = [
   "add_booking_addons",
@@ -20,6 +23,7 @@ const intentionalDefiners = [
   "create_public_waitlist_entry",
   "finalize_public_booking_profile",
   "get_booking_client_snapshot",
+  "public_booking_capacity_for_range",
   "public_booking_occupancy_for_range",
   "public_resolve_domain",
   "validate_phone_otp_session",
@@ -27,12 +31,15 @@ const intentionalDefiners = [
 
 describe("intentional anonymous SECURITY DEFINER boundary", () => {
   it("keeps the production allowlist exact and documented", () => {
-    expect(proof).toContain("IF v_actual_count <> 11");
+    expect(proof).toContain("IF v_actual_count <> 12");
 
     for (const functionName of intentionalDefiners) {
       expect(proof).toContain(`public.${functionName}`);
       expect(rationale).toContain(`\`${functionName}\``);
     }
+
+    expect(capacityAcl).toContain("FROM PUBLIC, authenticated");
+    expect(capacityAcl).toContain("TO anon, service_role");
   });
 
   it("proves ownership, search path, and least-privilege execution", () => {
@@ -60,6 +67,7 @@ describe("intentional anonymous SECURITY DEFINER boundary", () => {
       "request_id_conflict",
       "v_booking.otp_session_id = s.id",
       "b.created_at >= now() - interval ''10 minutes''",
+      "RETURNS TABLE(staff_id uuid, resource_id uuid",
       "RETURNS TABLE(staff_id uuid",
       "d.domain = lower(p_host)",
       "s.expires_at > now()",
