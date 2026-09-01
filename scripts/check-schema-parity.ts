@@ -149,6 +149,9 @@ import { execFileSync } from "node:child_process";
  * The 20260831215857 Waitlist delivery-rescue migration adds one private,
  * RPC-only owner-notification outbox, fifteen columns, four service-only or
  * trigger functions, one restrictive policy, one trigger and four indexes.
+ * The 20260901013550 Smart Rescue autonomy guard adds one fail-closed trigger
+ * function and one trigger so group/sequence requests cannot enter the legacy
+ * individual one-slot offer lifecycle without an executable plan.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -267,7 +270,8 @@ const PRODUCTION = {
   // +6 Smart Checkout pairing, webhook and reconciliation RPCs.
   // +1 validated public Smart Capacity Rescue request RPC.
   // +4 Waitlist-owner occurrence, claim, completion and rescue-summary functions.
-  functions: 449,
+  // +1 fail-closed complex-request rescue guard function.
+  functions: 450,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -281,7 +285,8 @@ const PRODUCTION = {
   // +1 immutable group-cancellation fee approval-receipt trigger.
   // +4 late-cancellation lock/capture/receipt and payment-outcome triggers.
   // +1 atomic Waitlist-owner occurrence trigger.
-  triggers: 106,
+  // +1 fail-closed complex-request rescue guard trigger.
+  triggers: 107,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -447,6 +452,7 @@ const NO_SHOW_FEE_SERVICE_ONLY_TABLES = [
 /** Booking cannot work without these; a missing RPC fails at runtime, not at apply time. */
 const CRITICAL_FUNCTIONS = [
   "create_public_capacity_rescue_request",
+  "guard_complex_capacity_rescue_autonomy",
   "compute_no_show_risk",
   "claim_ai_execution_jobs",
   "cancel_ineligible_ai_execution_jobs",

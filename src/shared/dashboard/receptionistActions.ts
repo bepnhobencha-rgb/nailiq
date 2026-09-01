@@ -4249,6 +4249,28 @@ export async function inviteWaitlistEntry(
   if (!ctx || !canCancelBooking(ctx.role)) return { ok: false, error: "forbidden" };
   const id = String(entryId ?? "").trim();
   if (!id || !isUuidLike(id)) return { ok: false, error: "not_found" };
+  // Defense in depth: public creation normally puts group/sequence requests
+  // straight into review_required. Never trust that invariant at this server
+  // boundary, because a legacy or manually repaired row could otherwise enter
+  // the individual one-slot invitation worker and produce a misleading offer.
+  const svc = createServiceRoleClient();
+  const { data: entry, error: entryError } = await svc
+    .from("booking_waitlist_entries")
+    .select("request_kind, status")
+    .eq("salon_id", ctx.salon.id)
+    .eq("id", id)
+    .maybeSingle();
+  if (entryError || !entry) return { ok: false, error: "not_found" };
+  const requestKind = String(
+    (entry as { request_kind?: unknown }).request_kind ?? "individual",
+  );
+  const entryStatus = String((entry as { status?: unknown }).status ?? "");
+  if (
+    requestKind !== "individual" ||
+    (entryStatus !== "waiting" && entryStatus !== "notified")
+  ) {
+    return { ok: false, error: "waitlist_plan_required" };
+  }
   const { promoteAndDeliverSpecificWaitlistEntry } =
     await import("@/shared/noshow/promoteAndDeliverWaitlistOffer");
   const promoted = await promoteAndDeliverSpecificWaitlistEntry({
