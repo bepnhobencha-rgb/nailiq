@@ -31,7 +31,8 @@ REVOKE SELECT (
 REVOKE SELECT (
   id, salon_id, name, price_cents, duration_minutes, buffer_minutes,
   category, description, is_popular, is_featured, price_type,
-  price_max_cents, is_addon, addon_timing, prep_minutes, deleted_at
+  price_max_cents, is_addon, addon_timing, prep_minutes, deleted_at,
+  resource_requirement_mode, required_resource_kinds
 ) ON public.services FROM anon;
 
 REVOKE SELECT (id, salon_id, name, job_role, status, deleted_at)
