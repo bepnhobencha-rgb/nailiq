@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { GuidedSetupHub } from "@/components/dashboard/GuidedSetupHub";
+import { CocoSetupUnavailable } from "@/components/dashboard/CocoSetupUnavailable";
 import { MobileStack } from "@/components/layout/MobileStack";
 import { ResponsiveShell } from "@/components/layout/ResponsiveShell";
 import { loadGoLiveReadiness } from "@/shared/dashboard/loadGoLiveReadiness";
@@ -20,20 +21,18 @@ export default async function SetupIndexPage({ params }: Props) {
     redirect(`/dashboard/${encodeURIComponent(slug)}`);
   }
 
-  if (result.ok && !result.guidedSetupEnabled) {
-    redirect(`/dashboard/${encodeURIComponent(slug)}/setup/services`);
-  }
-
   return (
     <ResponsiveShell>
       <MobileStack className="min-h-[100dvh] w-full max-w-[var(--max-nq-mobile)] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-6">
-        {result.ok ? (
+        {result.ok && result.guidedSetupEnabled ? (
           <GuidedSetupHub
             slug={slug}
             salonName={result.salonName}
             readiness={result.readiness}
             setupCoverage={result.setupCoverage}
           />
+        ) : result.ok ? (
+          <CocoSetupUnavailable slug={slug} salonName={result.salonName} />
         ) : (
           <section
             role="alert"

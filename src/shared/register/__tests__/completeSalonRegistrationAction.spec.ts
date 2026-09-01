@@ -155,7 +155,16 @@ describe("completeSalonRegistration existing-owner authorization", () => {
       "nailiq-preview-qa",
     );
     expect(admin.salonInsert).toHaveBeenCalledWith(
-      expect.objectContaining({ slug: "nailiq-preview-qa" }),
+      expect.objectContaining({
+        slug: "nailiq-preview-qa",
+        reminders_enabled: false,
+        reminder_24h_enabled: false,
+        reminder_3h_enabled: false,
+        sms_reminders_enabled: false,
+        feature_flags: expect.objectContaining({
+          coco_setup_activation_version: 1,
+        }),
+      }),
     );
   });
 
