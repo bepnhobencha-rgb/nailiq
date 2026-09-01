@@ -1573,6 +1573,16 @@ function ReceptionistCenterInner({
     }
   }, [deliveryRescueRefreshing, reloadCurrentDay]);
 
+  const openDeliveryRescueWaitlist = useCallback(() => {
+    setQueuePanelOpen(true);
+    window.requestAnimationFrame(() => {
+      document.getElementById("waitlist")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }, [setQueuePanelOpen]);
+
   /**
    * Called when a booking chip is clicked from Week or Month view.
    * Loads that day's data (so the drawer's `openDrawerBooking` lookup
@@ -3530,6 +3540,10 @@ function ReceptionistCenterInner({
           summary={data.salon.notificationDeliveryRescue}
           refreshing={deliveryRescueRefreshing}
           onRefresh={() => void refreshDeliveryRescue()}
+          onOpenBooking={(bookingId, bookingDate) =>
+            void onBookingClickFromCalendar(bookingId, bookingDate)
+          }
+          onOpenWaitlist={openDeliveryRescueWaitlist}
         />
         {previewInterface ? (
           <AppleDeskHeader
