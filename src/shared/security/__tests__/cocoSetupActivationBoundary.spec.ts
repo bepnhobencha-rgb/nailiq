@@ -9,6 +9,13 @@ const migration = readFileSync(
   ),
   "utf8",
 );
+const invokerMigration = readFileSync(
+  resolve(
+    process.cwd(),
+    "supabase/migrations/20260901072612_secure_coco_setup_decision_invoker.sql",
+  ),
+  "utf8",
+);
 const registrationAction = readFileSync(
   resolve(
     process.cwd(),
@@ -78,15 +85,30 @@ describe("Coco Setup activation database boundary", () => {
 
   it("records only bounded safe decisions with a tenant membership check", () => {
     expect(migration).toContain("save_coco_setup_decision");
+    expect(migration).toContain("security invoker");
+    expect(migration).toContain("v_request_role <> 'service_role'");
     expect(migration).toContain("sm.salon_id = p_salon_id");
-    expect(migration).toContain("sm.user_id = v_user_id");
+    expect(migration).toContain("sm.user_id = p_actor_user_id");
     expect(migration).toContain("sm.role in ('owner', 'admin')");
     expect(migration).toContain("p_decision not in ('configured_off', 'not_using')");
     expect(migration).toMatch(
-      /grant execute on function public\.save_coco_setup_decision\(uuid, text, text\)[\s\S]*to authenticated/i,
+      /grant execute on function public\.save_coco_setup_decision\(uuid, uuid, text, text\)[\s\S]*to service_role/i,
+    );
+    expect(migration).not.toMatch(
+      /grant execute on function public\.save_coco_setup_decision[\s\S]*to authenticated/i,
     );
     expect(decisionAction).toContain("isOwnerOrAdmin(ctx.role)");
+    expect(decisionAction).toContain("!ctx.userId");
     expect(decisionAction).toContain("isCocoSetupExperienceVisible(ctx.salon)");
+    expect(decisionAction).toContain("createServiceRoleClient().rpc(");
     expect(decisionAction).toContain('"save_coco_setup_decision" as never');
+    expect(decisionAction).toContain("p_actor_user_id: ctx.userId");
+    expect(invokerMigration).toContain(
+      "drop function if exists public.save_coco_setup_decision(uuid, text, text)",
+    );
+    expect(invokerMigration).toContain("security invoker");
+    expect(invokerMigration).toMatch(
+      /grant execute on function public\.save_coco_setup_decision\(uuid, uuid, text, text\)[\s\S]*to service_role/i,
+    );
   });
 });

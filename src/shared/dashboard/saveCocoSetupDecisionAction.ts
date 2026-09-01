@@ -7,6 +7,7 @@ import type { CocoSetupDecisionState } from "@/shared/dashboard/cocoSetupCoverag
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import type { SetupCapabilityId } from "@/shared/dashboard/setupCoverageManifest";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
+import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 const DECISION_CAPABILITIES = new Set<SetupCapabilityId>([
   "resource_capacity",
@@ -31,7 +32,7 @@ export async function saveCocoSetupDecision(
 ): Promise<void> {
   const setupPath = `/dashboard/${encodeURIComponent(slug)}/setup`;
   const ctx = await getDashboardWriteClient(slug);
-  if (!ctx || !isOwnerOrAdmin(ctx.role)) redirect("/register");
+  if (!ctx || !ctx.userId || !isOwnerOrAdmin(ctx.role)) redirect("/register");
 
   if (
     !DECISION_CAPABILITIES.has(capability) ||
@@ -41,10 +42,11 @@ export async function saveCocoSetupDecision(
     redirect(`${setupPath}?coco_decision_error=invalid`);
   }
 
-  const { data, error } = (await ctx.supabase.rpc(
+  const { data, error } = (await createServiceRoleClient().rpc(
     "save_coco_setup_decision" as never,
     {
       p_salon_id: ctx.salon.id,
+      p_actor_user_id: ctx.userId,
       p_capability: capability,
       p_decision: decision,
     } as never,

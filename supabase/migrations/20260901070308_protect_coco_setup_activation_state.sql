@@ -106,20 +106,25 @@ revoke all on function public.protect_guided_admin_setup_rollout_flag()
 
 create or replace function public.save_coco_setup_decision(
   p_salon_id uuid,
+  p_actor_user_id uuid,
   p_capability text,
   p_decision text
 )
 returns jsonb
 language plpgsql
-security definer
+security invoker
 set search_path = ''
 as $save_coco_setup_decision$
 declare
-  v_user_id uuid := (select auth.uid());
+  v_request_role text := coalesce(
+    nullif(current_setting('request.jwt.claim.role', true), ''),
+    nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role',
+    ''
+  );
   v_flags jsonb;
   v_decisions jsonb;
 begin
-  if v_user_id is null then
+  if v_request_role <> 'service_role' or p_actor_user_id is null then
     return pg_catalog.jsonb_build_object('success', false, 'code', 'unauthorized');
   end if;
 
@@ -140,7 +145,7 @@ begin
     select 1
     from public.salon_members as sm
     where sm.salon_id = p_salon_id
-      and sm.user_id = v_user_id
+      and sm.user_id = p_actor_user_id
       and sm.role in ('owner', 'admin')
   ) then
     return pg_catalog.jsonb_build_object('success', false, 'code', 'forbidden');
@@ -187,10 +192,10 @@ begin
 end;
 $save_coco_setup_decision$;
 
-comment on function public.save_coco_setup_decision(uuid, text, text) is
-  'Atomically records a reversible Owner/Admin use-or-skip decision for an activated Coco Setup salon.';
+comment on function public.save_coco_setup_decision(uuid, uuid, text, text) is
+  'Service-role-only atomic recorder for a bounded Owner/Admin use-or-skip decision on an activated Coco Setup salon.';
 
-revoke all on function public.save_coco_setup_decision(uuid, text, text)
+revoke all on function public.save_coco_setup_decision(uuid, uuid, text, text)
   from public, anon, authenticated;
-grant execute on function public.save_coco_setup_decision(uuid, text, text)
-  to authenticated;
+grant execute on function public.save_coco_setup_decision(uuid, uuid, text, text)
+  to service_role;
