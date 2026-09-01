@@ -152,6 +152,9 @@ import { execFileSync } from "node:child_process";
  * The 20260901013550 Smart Rescue autonomy guard adds one fail-closed trigger
  * function and one trigger so group/sequence requests cannot enter the legacy
  * individual one-slot offer lifecycle without an executable plan.
+ * The 20260901194059 service-resource migration adds two service columns plus
+ * two view-visible columns, one public capacity RPC, one commit-time guard
+ * function, and one booking trigger.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -212,7 +215,8 @@ const PRODUCTION = {
   // +63 Smart Checkout Phase B pairing, webhook, lease and receipt columns.
   // +6 Smart Capacity Rescue intent, locale and idempotency columns.
   // +15 durable Waitlist-owner notification outbox columns.
-  columns: 3070,
+  // +4 service-resource requirement columns across base/public catalog shape.
+  columns: 3074,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -272,7 +276,8 @@ const PRODUCTION = {
   // +4 Waitlist-owner occurrence, claim, completion and rescue-summary functions.
   // +1 fail-closed complex-request rescue guard function.
   // +1 bounded Owner/Admin Coco Setup decision recorder.
-  functions: 451,
+  // +2 public capacity and commit-time service-resource guard functions.
+  functions: 453,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -287,7 +292,8 @@ const PRODUCTION = {
   // +4 late-cancellation lock/capture/receipt and payment-outcome triggers.
   // +1 atomic Waitlist-owner occurrence trigger.
   // +1 fail-closed complex-request rescue guard trigger.
-  triggers: 107,
+  // +1 booking service-resource requirement trigger.
+  triggers: 108,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
