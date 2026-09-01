@@ -79,6 +79,11 @@ import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { handleBookingProtection } from "@/shared/noshow/handleBookingProtection";
 import { finalizeAndProcessNoShowDecision } from "@/shared/noshow/noShowSafetyBoundary";
+import { loadWaitlistDeliveryTruth } from "@/shared/noshow/loadWaitlistDeliveryTruth";
+import {
+  emptyWaitlistDeliveryTruth,
+  type WaitlistDeliveryTruth,
+} from "@/shared/noshow/waitlistDeliveryTruth";
 import {
   createDepositForBooking,
 } from "@/shared/integrations/square/deposits";
@@ -4236,7 +4241,10 @@ export async function addDeskAppointment(
 export async function inviteWaitlistEntry(
   slug: string,
   entryId: string,
-): Promise<{ ok: boolean; suppressed?: boolean; error?: string }> {
+): Promise<
+  | { ok: true; delivery: WaitlistDeliveryTruth }
+  | { ok: false; error: string }
+> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx || !canCancelBooking(ctx.role)) return { ok: false, error: "forbidden" };
   const id = String(entryId ?? "").trim();
@@ -4250,7 +4258,17 @@ export async function inviteWaitlistEntry(
   });
   if (!promoted.ok) return { ok: false, error: promoted.code };
   if (promoted.code !== "promoted") return { ok: false, error: "waitlist_invite_unavailable" };
-  return { ok: true };
+  const deliveryLoad = await loadWaitlistDeliveryTruth({
+    salonId: ctx.salon.id,
+    entryIds: [id],
+    knownEpochs: new Map([[id, promoted.offer.offerEpoch]]),
+  });
+  return {
+    ok: true,
+    delivery:
+      deliveryLoad.truthByEntry.get(id) ??
+      emptyWaitlistDeliveryTruth(promoted.offer.offerEpoch),
+  };
 }
 // ─── deskClaimPartySlotAction ──────────────────────────────────────
 
