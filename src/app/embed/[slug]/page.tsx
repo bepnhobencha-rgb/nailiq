@@ -99,6 +99,7 @@ export default async function EmbedBookingPage({
             combos={load.combos}
             staff={load.staff}
             salon={load.salon}
+            resources={load.resources}
             capabilityRows={load.capabilityRows}
             categories={await loadServiceCategories()}
             language={lang}

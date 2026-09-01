@@ -13,11 +13,22 @@ import {
   parseCurrency,
   type Currency,
 } from "@/shared/lib/currencyFormat";
+import {
+  normalizeServiceResourceRequirement,
+  type ServiceResourceKind,
+} from "@/shared/booking/serviceResourceRequirement";
 
 export type BookingStaffItem = {
   id: string;
   name: string;
   job_role: string;
+};
+
+export type BookingResourceItem = {
+  id: string;
+  name: string;
+  kind: ServiceResourceKind;
+  displayOrder: number;
 };
 
 export type BookingSalonMeta = {
@@ -127,7 +138,7 @@ export type BookingLoadData = {
   capabilityRows: { staff_id: string; service_id: string }[] | null;
   salon: BookingSalonMeta;
   /** Active beds/chairs/stations for resource-mode salons. Empty otherwise. */
-  resources: { id: string; name: string; displayOrder: number }[];
+  resources: BookingResourceItem[];
   /** True only when every catalog/capability/promo/combo/resource read used to
    * build this payload completed without an error. Existing public callers
    * keep their legacy fallback behavior; proof-grade consumers must require
@@ -283,7 +294,7 @@ export async function loadBookingServicesForSalonSlug(
     // in migrations 20260511500000 and 20260511600000; `price_type` and
     // `price_max_cents` by the variable-pricing migration.
     .select(
-      "id, name, duration_minutes, prep_minutes, buffer_minutes, price_cents, price_type, price_max_cents, category, description, is_popular, is_featured, is_addon, addon_timing" as never,
+      "id, name, duration_minutes, prep_minutes, buffer_minutes, price_cents, price_type, price_max_cents, category, description, is_popular, is_featured, is_addon, addon_timing, resource_requirement_mode, required_resource_kinds" as never,
     )
     .eq("salon_id", salonId)
     .order("name", { ascending: true });
@@ -309,7 +320,7 @@ export async function loadBookingServicesForSalonSlug(
   const resourcesQuery = salonResourcesEnabled
     ? client
         .from("salon_resources" as never)
-        .select("id, name, display_order")
+        .select("id, name, kind, display_order")
         .eq("salon_id" as never, salonId)
         .eq("status" as never, "active")
         .is("deleted_at" as never, null)
@@ -434,6 +445,8 @@ export async function loadBookingServicesForSalonSlug(
       is_popular?: unknown;
       is_featured?: unknown;
       addon_timing?: unknown;
+      resource_requirement_mode?: unknown;
+      required_resource_kinds?: unknown;
     };
     const duration = Number(row.duration_minutes) || 0;
     const prepRaw = Math.round(Number(row.prep_minutes));
@@ -470,6 +483,11 @@ export async function loadBookingServicesForSalonSlug(
       ? formatServicePrice(promoData.promoPriceCents, salonCurrency, { priceType: "fixed", priceMaxCents: null })
       : null;
 
+    const resourceRequirement = normalizeServiceResourceRequirement({
+      mode: row.resource_requirement_mode,
+      kinds: row.required_resource_kinds,
+    }) ?? { mode: "salon_default" as const, kinds: [] };
+
     return {
       id: row.id,
       name: row.name,
@@ -493,6 +511,8 @@ export async function loadBookingServicesForSalonSlug(
       promoPriceDisplay,
       promoId: promoData.promoId,
       promoName: promoData.promoName,
+      resourceRequirementMode: resourceRequirement.mode,
+      requiredResourceKinds: resourceRequirement.kinds,
     };
   };
 
@@ -588,12 +608,21 @@ export async function loadBookingServicesForSalonSlug(
   const resources = ((resourceRows ?? []) as {
     id: string;
     name: string;
+    kind?: unknown;
     display_order: number;
-  }[]).map((r) => ({
-    id: r.id,
-    name: r.name,
-    displayOrder: r.display_order,
-  }));
+  }[]).flatMap((r) => {
+    const normalized = normalizeServiceResourceRequirement({
+      mode: "specific",
+      kinds: [r.kind],
+    });
+    if (!normalized) return [];
+    return [{
+      id: r.id,
+      name: r.name,
+      kind: normalized.kinds[0]!,
+      displayOrder: r.display_order,
+    }];
+  });
 
   return {
     canonicalSlug,

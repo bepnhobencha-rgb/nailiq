@@ -2,6 +2,10 @@
  * Types and helpers for the public booking service list (loaded server-side from Supabase).
  */
 import type { ServiceCategory } from "@/shared/booking/serviceCategory";
+import type {
+  ServiceResourceKind,
+  ServiceResourceRequirementMode,
+} from "@/shared/booking/serviceResourceRequirement";
 
 export type BookingServiceItem = {
   id: string;
@@ -43,6 +47,9 @@ export type BookingServiceItem = {
   promoId: string | null;
   /** Human-readable campaign name shown as badge on the booking page. */
   promoName: string | null;
+  /** Physical-capacity contract. Customers never select a resource directly. */
+  resourceRequirementMode?: ServiceResourceRequirementMode;
+  requiredResourceKinds?: ServiceResourceKind[];
 };
 
 export type BookingComboItem = {

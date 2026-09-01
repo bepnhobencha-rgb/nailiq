@@ -20,9 +20,9 @@ BEGIN
     AND p.prosecdef
     AND has_function_privilege('anon', p.oid, 'EXECUTE');
 
-  IF v_actual_count <> 11 THEN
+  IF v_actual_count <> 12 THEN
     RAISE EXCEPTION
-      'anonymous SECURITY DEFINER allowlist drift: expected 11, found %',
+      'anonymous SECURITY DEFINER allowlist drift: expected 12, found %',
       v_actual_count;
   END IF;
 
@@ -118,6 +118,18 @@ BEGIN
             'b.salon_id = p_salon_id',
             'b.created_at >= now() - interval ''10 minutes''',
             'canonical_phone(p_phone)'
+          ]::text[]
+        ),
+        (
+          'public.public_booking_capacity_for_range(uuid,timestamp with time zone,timestamp with time zone)',
+          's',
+          'RETURNS TABLE(staff_id uuid, resource_id uuid, start_time_utc timestamp with time zone, end_time_utc timestamp with time zone)',
+          ARRAY[
+            'SELECT b.staff_id, b.resource_id',
+            'b.salon_id = p_salon_id',
+            'b.status NOT IN (''cancelled'', ''waiting'', ''no_show'', ''completed'')',
+            'seg.salon_id = p_salon_id',
+            'seg.reservation_status NOT IN (''cancelled'', ''no_show'', ''completed'')'
           ]::text[]
         ),
         (

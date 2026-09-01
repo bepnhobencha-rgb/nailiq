@@ -338,6 +338,7 @@ async function PublicBookingRouteBody({
                 combos={load.combos}
                 staff={load.staff}
                 salon={load.salon}
+                resources={load.resources}
                 capabilityRows={load.capabilityRows}
                 categories={serviceCategories}
                 language={lang}

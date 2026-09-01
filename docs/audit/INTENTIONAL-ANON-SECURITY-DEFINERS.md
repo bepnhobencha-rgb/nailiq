@@ -1,9 +1,9 @@
 # Intentional anonymous `SECURITY DEFINER` boundaries
 
-Audited against the 2026-08-31 Smart Capacity Rescue candidate.
+Audited against the 2026-09-01 service-resource capacity candidate.
 
-The release candidate contains eleven anonymous-executable `SECURITY DEFINER`
-signatures (ten function names; `create_public_booking` has old/new rollout
+The release candidate contains twelve anonymous-executable `SECURITY DEFINER`
+signatures (eleven function names; `create_public_booking` has old/new rollout
 overloads). They are not unreviewed exceptions: they are
 the complete allowlist of public booking RPCs that must cross RLS without
 granting anonymous users direct access to customer, booking, OTP, or salon
@@ -29,6 +29,7 @@ Every entry is required to satisfy the executable proof in
 | `create_public_waitlist_entry` | Public waitlist submission needs a controlled insert while direct table access remains RLS-blocked. | Allowlisted source plus same-salon service/staff validation. |
 | `finalize_public_booking_profile` | A newly committed booking must atomically persist OTP trust and explicit marketing consent without reopening direct profile writes. | Recent booking capability; durable profile link; exact OTP salon, phone, expiry, and single-use state. |
 | `get_booking_client_snapshot` | A just-created booking may request a small returning-client snapshot without exposing client profiles. | Booking ID, salon, canonical phone, and ten-minute freshness must all match. |
+| `public_booking_capacity_for_range` | Resource-aware public scheduling needs staff and physical-resource conflicts but must not read booking, segment, or customer records. | Returns only staff/resource IDs and occupied start/end timestamps for the requested salon and range; terminal states are excluded. |
 | `public_booking_occupancy_for_range` | Public scheduling needs occupied intervals but must not read booking/customer records. | Returns only staff ID and start/end timestamps. |
 | `public_resolve_domain` | Middleware maps a hostname to a slug; invoker mode would fail because anonymous direct `salons` reads are revoked. | Returns one slug for an exact normalized host. |
 | `validate_phone_otp_session` | Booking flows must validate an OTP session without exposing OTP rows. | Boolean only; session, salon, phone, expiry, and consumption state must match. |

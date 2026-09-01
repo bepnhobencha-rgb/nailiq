@@ -60,6 +60,11 @@ import {
 import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 import { parseServicePrepMinutes } from "@/shared/booking/bookingSequence";
 import { loadPublicBookingSequenceReadiness } from "@/shared/booking/bookingSequenceReadiness";
+import {
+  normalizeServiceResourceRequirement,
+  type ServiceResourceKind,
+  type ServiceResourceRequirementMode,
+} from "@/shared/booking/serviceResourceRequirement";
 
 export type StaffJobRole = "owner" | "senior" | "nail_tech";
 
@@ -508,6 +513,8 @@ export async function addService(
     is_addon?: boolean;
     /** Add-on scheduling: 'concurrent' (+0 time) | 'sequential' (adds time). */
     addon_timing?: string | null;
+    resource_requirement_mode?: ServiceResourceRequirementMode | string;
+    required_resource_kinds?: ServiceResourceKind[] | string[];
   },
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
@@ -581,6 +588,11 @@ export async function addService(
     input.addon_timing === "concurrent" || input.addon_timing === "sequential"
       ? input.addon_timing
       : undefined;
+  const resourceRequirement = normalizeServiceResourceRequirement({
+    mode: input.resource_requirement_mode,
+    kinds: input.required_resource_kinds,
+  });
+  if (!resourceRequirement) return fail("invalid_resource_requirement");
 
   const supabase = await writableSupabase(slug, r.kind);
 
@@ -617,6 +629,8 @@ export async function addService(
     ...(isFeatured !== undefined ? { is_featured: isFeatured } : {}),
     ...(isAddon !== undefined ? { is_addon: isAddon } : {}),
     ...(addonTiming !== undefined ? { addon_timing: addonTiming } : {}),
+    resource_requirement_mode: resourceRequirement.mode,
+    required_resource_kinds: resourceRequirement.kinds,
   } as never;
   const { data: insertedSvc, error } = await supabase
     .from("services")
@@ -705,6 +719,8 @@ export async function updateService(
     price_max_cents: number | null;
     is_addon: boolean;
     addon_timing: string | null;
+    resource_requirement_mode: ServiceResourceRequirementMode | string;
+    required_resource_kinds: ServiceResourceKind[] | string[];
   }>,
 ): Promise<Ok | Fail> {
   const r = await resolveSalonForDashboard(slug);
@@ -783,6 +799,31 @@ export async function updateService(
   if (data.addon_timing !== undefined) {
     patch.addon_timing =
       data.addon_timing === "concurrent" ? "concurrent" : "sequential";
+  }
+  if (
+    data.resource_requirement_mode !== undefined ||
+    data.required_resource_kinds !== undefined
+  ) {
+    const { data: current, error: currentError } = await supabase
+      .from("services")
+      .select("resource_requirement_mode, required_resource_kinds" as never)
+      .eq("id", serviceId)
+      .eq("salon_id", r.salon.id)
+      .is("deleted_at" as never, null)
+      .maybeSingle();
+    if (currentError || !current) return fail("not_found");
+    const row = current as unknown as {
+      resource_requirement_mode?: unknown;
+      required_resource_kinds?: unknown;
+    };
+    const normalized = normalizeServiceResourceRequirement({
+      mode:
+        data.resource_requirement_mode ?? row.resource_requirement_mode,
+      kinds: data.required_resource_kinds ?? row.required_resource_kinds,
+    });
+    if (!normalized) return fail("invalid_resource_requirement");
+    patch.resource_requirement_mode = normalized.mode;
+    patch.required_resource_kinds = normalized.kinds;
   }
   if (data.price_type !== undefined || data.price_max_cents !== undefined) {
     // Normalise against the EFFECTIVE base price (the new one if also being
