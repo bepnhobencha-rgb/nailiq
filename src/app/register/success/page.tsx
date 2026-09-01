@@ -52,7 +52,7 @@ function RegisterSuccessInner() {
           </p>
         </div>
 
-        {/* Go to Dashboard — primary CTA */}
+        {/* Start Coco Setup — primary CTA */}
         <div className="rounded-2xl border border-nq-primary/35 bg-nq-primary/[0.08] px-4 py-4 text-center">
           <p className="text-xs font-medium uppercase tracking-wide text-nq-muted">
             {t.salonOwnerLabel}
@@ -63,7 +63,7 @@ function RegisterSuccessInner() {
             variant="primary"
             className="mt-3 w-full min-h-[48px]"
             onClick={() =>
-              router.push(`/dashboard/${encodeURIComponent(slug)}`)
+              router.push(`/dashboard/${encodeURIComponent(slug)}/setup`)
             }
           >
             {t.goToDashboard}

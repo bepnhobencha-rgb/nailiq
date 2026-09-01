@@ -7,6 +7,7 @@ import type {
   GoLiveReadiness,
   GoLiveReadinessState,
 } from "@/shared/dashboard/goLiveReadiness";
+import { deriveSetupCoverageManifest } from "@/shared/dashboard/setupCoverageManifest";
 
 vi.mock("@/shared/lib/useUserLanguage", () => ({
   useUserLanguage: () => ({ language: "vi" as const }),
@@ -14,6 +15,11 @@ vi.mock("@/shared/lib/useUserLanguage", () => ({
 vi.mock("@/shared/dashboard/skipGuidedSetupIntegrationsAction", () => ({
   skipGuidedSetupIntegrations: vi.fn(),
 }));
+vi.mock("@/shared/dashboard/saveCocoSetupDecisionAction", () => ({
+  saveCocoSetupDecision: vi.fn(),
+}));
+
+const setupCoverage = deriveSetupCoverageManifest([]);
 
 const CHECK_IDS = [
   "identity",
@@ -58,6 +64,7 @@ describe("Guided Setup rendered experience", () => {
         slug: "qa salon",
         salonName: "QA Salon",
         readiness: readiness({ identity: "pass" }),
+        setupCoverage,
       }),
     );
 
@@ -83,6 +90,7 @@ describe("Guided Setup rendered experience", () => {
           "fallback-channel": "pass",
           "notification-language": "pass",
         }),
+        setupCoverage,
       }),
     );
 

@@ -36,7 +36,7 @@ describe("Guided booking preview security boundary", () => {
     expect(loader).toContain('ctx.kind !== "member"');
     expect(loader).toContain("isOwnerOrAdmin(ctx.role)");
     expect(loader).toContain(
-      'isReleaseFeatureVisible(ctx.salon, "guided_admin_setup")',
+      "isCocoSetupExperienceVisible(ctx.salon)",
     );
     expect(loader).toContain(
       "String(resolved.load.salon.id) !== String(ctx.salon.id)",

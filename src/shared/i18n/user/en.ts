@@ -2539,10 +2539,10 @@ export const userEn: UserMessages = {
       slugAdjusted:
         "Your first-choice URL was taken, so we reserved {slug} for you.",
       callout:
-        "3 quick steps on your dashboard: add services, staff, and address — then your booking link goes live.",
+        "Coco asks one clear question at a time, checks all 15 capabilities, and shows only the next action.",
       salonOwnerLabel: "Salon owner",
-      goToDashboard: "Go to Dashboard →",
-      dashboardHint: "Your booking link will appear once setup is complete.",
+      goToDashboard: "Start Coco Setup →",
+      dashboardHint: "You can leave anytime; Coco resumes at the right step when you return.",
       bookingLinkLabel: "Public booking link",
       copyLink: "Copy link",
       copied: "Copied",

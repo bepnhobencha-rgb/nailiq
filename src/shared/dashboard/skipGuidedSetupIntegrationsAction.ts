@@ -2,14 +2,14 @@
 
 import { redirect } from "next/navigation";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
-import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
+import { isCocoSetupExperienceVisible } from "@/shared/dashboard/cocoSetupActivation";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 export async function skipGuidedSetupIntegrations(slug: string): Promise<void> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx || !isOwnerOrAdmin(ctx.role)) redirect("/register");
-  if (!(await isReleaseFeatureVisible(ctx.salon, "guided_admin_setup"))) {
+  if (!(await isCocoSetupExperienceVisible(ctx.salon))) {
     redirect(`/dashboard/${encodeURIComponent(slug)}`);
   }
 

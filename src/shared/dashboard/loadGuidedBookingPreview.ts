@@ -3,7 +3,7 @@ import "server-only";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { resolvePublicBookingPage } from "@/shared/booking/resolvePublicBookingPage";
 import { normalizeBookingClosedDateList } from "@/shared/booking/parseBookingClosedDates";
-import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
+import { isCocoSetupExperienceVisible } from "@/shared/dashboard/cocoSetupActivation";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { salonDateOffset, salonToday } from "@/shared/lib/salonTime";
 
@@ -72,7 +72,7 @@ export async function loadGuidedBookingPreview(
     ) {
       return { ok: false, reason: "unauthorized" };
     }
-    if (!(await isReleaseFeatureVisible(ctx.salon, "guided_admin_setup"))) {
+    if (!(await isCocoSetupExperienceVisible(ctx.salon))) {
       return { ok: false, reason: "disabled" };
     }
 

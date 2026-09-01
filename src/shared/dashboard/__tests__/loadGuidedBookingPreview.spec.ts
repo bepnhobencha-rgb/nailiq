@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getDashboardWriteClient: vi.fn(),
-  isReleaseFeatureVisible: vi.fn(),
+  isCocoSetupExperienceVisible: vi.fn(),
   resolvePublicBookingPage: vi.fn(),
   salonToday: vi.fn(),
   salonDateOffset: vi.fn(),
@@ -12,8 +12,8 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/shared/dashboard/setupActions", () => ({
   getDashboardWriteClient: mocks.getDashboardWriteClient,
 }));
-vi.mock("@/shared/features/platformFeatureFlags", () => ({
-  isReleaseFeatureVisible: mocks.isReleaseFeatureVisible,
+vi.mock("@/shared/dashboard/cocoSetupActivation", () => ({
+  isCocoSetupExperienceVisible: mocks.isCocoSetupExperienceVisible,
 }));
 vi.mock("@/shared/booking/resolvePublicBookingPage", () => ({
   resolvePublicBookingPage: mocks.resolvePublicBookingPage,
@@ -93,7 +93,7 @@ describe("loadGuidedBookingPreview", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getDashboardWriteClient.mockResolvedValue(member("owner"));
-    mocks.isReleaseFeatureVisible.mockResolvedValue(true);
+    mocks.isCocoSetupExperienceVisible.mockResolvedValue(true);
     mocks.resolvePublicBookingPage.mockResolvedValue(publicPayload());
     mocks.salonToday.mockReturnValue("2026-09-01");
     mocks.salonDateOffset.mockReturnValue("2026-10-30");
@@ -117,7 +117,7 @@ describe("loadGuidedBookingPreview", () => {
         ok: false,
         reason: "unauthorized",
       });
-      expect(mocks.isReleaseFeatureVisible).not.toHaveBeenCalled();
+      expect(mocks.isCocoSetupExperienceVisible).not.toHaveBeenCalled();
       expect(mocks.resolvePublicBookingPage).not.toHaveBeenCalled();
     },
   );
@@ -143,7 +143,7 @@ describe("loadGuidedBookingPreview", () => {
   });
 
   it("fails closed when the effective platform plus tenant flag is disabled", async () => {
-    mocks.isReleaseFeatureVisible.mockResolvedValue(false);
+    mocks.isCocoSetupExperienceVisible.mockResolvedValue(false);
 
     await expect(loadGuidedBookingPreview("qa-salon")).resolves.toEqual({
       ok: false,
@@ -153,7 +153,7 @@ describe("loadGuidedBookingPreview", () => {
   });
 
   it("fails closed when the effective flag resolver throws", async () => {
-    mocks.isReleaseFeatureVisible.mockRejectedValue(
+    mocks.isCocoSetupExperienceVisible.mockRejectedValue(
       new Error("platform state unavailable"),
     );
 
@@ -358,9 +358,8 @@ describe("loadGuidedBookingPreview", () => {
           ],
         },
       });
-      expect(mocks.isReleaseFeatureVisible).toHaveBeenCalledWith(
+      expect(mocks.isCocoSetupExperienceVisible).toHaveBeenCalledWith(
         expect.objectContaining({ id: "salon-1" }),
-        "guided_admin_setup",
       );
       expect(mocks.resolvePublicBookingPage).toHaveBeenCalledWith("qa-salon");
       const todayNowIso = mocks.salonToday.mock.calls[0]?.[1];

@@ -129,6 +129,7 @@ export function SalonSettingsHub({
   smsOutboundEnabled,
   emailOutboundEnabled,
   smartCheckoutEnabled,
+  cocoSetupEnabled = false,
   guidedFocusSection = null,
 }: {
   slug: string;
@@ -184,6 +185,8 @@ export function SalonSettingsHub({
   emailOutboundEnabled: boolean;
   /** Controlled pilot gate; the linked lab remains simulation-only. */
   smartCheckoutEnabled: boolean;
+  /** New-owner or controlled-QA Coco Setup experience is active. */
+  cocoSetupEnabled?: boolean;
   /** Guided onboarding exposes only the current settings job on every viewport. */
   guidedFocusSection?: "notifications" | "integrations" | null;
 }) {
@@ -391,6 +394,14 @@ export function SalonSettingsHub({
       icon: SlidersHorizontal,
       iconClassName: "bg-slate-500",
       links: [
+        ...(cocoSetupEnabled
+          ? [
+              {
+                href: base,
+                label: vi ? "Coco Setup & thay đổi" : "Coco Setup & changes",
+              },
+            ]
+          : []),
         {
           href: `/dashboard/${encodeURIComponent(slug)}/settings/readiness`,
           label: vi ? "Kiểm tra sẵn sàng go-live" : "Go-live readiness",

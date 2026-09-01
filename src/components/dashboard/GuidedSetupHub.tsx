@@ -7,26 +7,66 @@ import type { GoLiveReadiness } from "@/shared/dashboard/goLiveReadiness";
 import { deriveGuidedSetupProgress } from "@/shared/dashboard/guidedSetup";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { skipGuidedSetupIntegrations } from "@/shared/dashboard/skipGuidedSetupIntegrationsAction";
+import type {
+  SetupCapabilityId,
+  SetupCoverageManifest,
+} from "@/shared/dashboard/setupCoverageManifest";
+import { saveCocoSetupDecision } from "@/shared/dashboard/saveCocoSetupDecisionAction";
+
+function capabilityHref(slug: string, id: SetupCapabilityId): string {
+  const dashboard = `/dashboard/${encodeURIComponent(slug)}`;
+  const setup = `${dashboard}/setup`;
+  switch (id) {
+    case "salon_profile":
+      return `${setup}/address`;
+    case "business_hours":
+      return `${setup}/hours`;
+    case "staff_access":
+      return `${setup}/staff`;
+    case "service_catalog":
+    case "multi_service":
+      return `${setup}/services`;
+    case "booking_policies":
+      return `${dashboard}/no-show-protection`;
+    case "communications":
+    case "customer_identity_otp":
+      return `${dashboard}/settings?section=notifications`;
+    case "payments_checkout":
+      return `${dashboard}/settings?section=integrations`;
+    case "ai_automation":
+      return `${dashboard}/settings?section=ai-manager`;
+    case "safe_preview_go_live":
+      return `${setup}/preview`;
+    case "resource_capacity":
+    case "group_booking":
+    case "waitlist_walkin":
+    case "reporting_alerts":
+      return `${dashboard}/settings?section=booking`;
+  }
+}
 
 export function GuidedSetupHub({
   slug,
   salonName,
   readiness,
+  setupCoverage,
 }: {
   slug: string;
   salonName: string;
   readiness: GoLiveReadiness;
+  setupCoverage: SetupCoverageManifest;
 }) {
   const { language } = useUserLanguage();
   const vi = language === "vi";
   const progress = deriveGuidedSetupProgress(slug, readiness);
   const next = progress.nextStep;
+  const coverageNext = setupCoverage.nextCapability;
 
   return (
     <div className="flex flex-col gap-6">
       <header>
         <p className="text-sm font-semibold text-nq-primary">
-          {vi ? "Thiết lập NailIQ" : "Set up NailIQ"}
+          {vi ? "Coco Setup" : "Coco Setup"}
         </p>
         <h1 className="mt-2 text-2xl font-bold tracking-tight text-nq-foreground">
           {progress.complete
@@ -43,8 +83,8 @@ export function GuidedSetupHub({
               ? "Mọi bước bắt buộc đã được kiểm tra và phê duyệt."
               : "Every required step has been checked and approved."
             : vi
-              ? "NailIQ sẽ chỉ hiển thị một việc cần làm tiếp theo. Bạn có thể rời đi và quay lại bất cứ lúc nào."
-              : "NailIQ shows one next action at a time. You can leave and continue later."}
+              ? "Coco sẽ chỉ hiển thị một việc cần làm tiếp theo. Bạn có thể rời đi và quay lại bất cứ lúc nào."
+              : "Coco shows one next action at a time. You can leave and continue later."}
         </p>
       </header>
 
@@ -75,6 +115,37 @@ export function GuidedSetupHub({
             ? `${progress.completedCount}/${progress.requiredCount} bước bắt buộc đã đạt theo dữ liệu đã lưu`
             : `${progress.completedCount}/${progress.requiredCount} required steps pass from saved data`}
         </p>
+      </Card>
+
+      <Card variant="bordered" padding="lg">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-nq-foreground">
+              {vi ? "Coco kiểm tra đủ 15 chức năng" : "Coco checks all 15 capabilities"}
+            </p>
+            <p className="mt-1 text-sm leading-5 text-nq-muted">
+              {vi
+                ? `${setupCoverage.resolvedCount}/${setupCoverage.totalCount} mục đã có cấu hình hoặc lựa chọn rõ ràng.`
+                : `${setupCoverage.resolvedCount}/${setupCoverage.totalCount} have verified setup or an explicit decision.`}
+            </p>
+          </div>
+          <p className="shrink-0 text-sm tabular-nums text-nq-muted">
+            {setupCoverage.percent}%
+          </p>
+        </div>
+        <div
+          className="mt-3 h-2 overflow-hidden rounded-full bg-nq-bg"
+          role="progressbar"
+          aria-label={vi ? "Độ phủ Coco Setup" : "Coco Setup coverage"}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={setupCoverage.percent}
+        >
+          <div
+            className="h-full rounded-full bg-nq-primary"
+            style={{ width: `${setupCoverage.percent}%` }}
+          />
+        </div>
       </Card>
 
       {next ? (
@@ -142,6 +213,51 @@ export function GuidedSetupHub({
             {vi
               ? "Tiến độ được tính lại từ dữ liệu salon đã lưu mỗi khi bạn quay lại — không dựa vào việc đã bấm nút."
               : "Progress is recalculated from saved salon data whenever you return — never from button clicks."}
+          </p>
+        </Card>
+      ) : coverageNext ? (
+        <Card variant="bordered" padding="lg" className="border-nq-primary/55">
+          <p className="text-sm font-semibold text-nq-primary">
+            {vi ? "Coco cần một lựa chọn" : "Coco needs one decision"}
+          </p>
+          <h2 className="mt-2 text-xl font-semibold text-nq-foreground">
+            {vi ? coverageNext.titleVi : coverageNext.titleEn}
+          </h2>
+          <p className="mt-2 text-base leading-6 text-nq-muted">
+            {vi ? coverageNext.detailVi : coverageNext.detailEn}
+          </p>
+          <div className="mt-5 grid gap-3">
+            <Link
+              href={capabilityHref(slug, coverageNext.id)}
+              className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-2 rounded-full bg-nq-primary px-4 text-base font-semibold text-nq-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary"
+              data-testid="coco-setup-configure-next"
+            >
+              {vi ? "Thiết lập chức năng này" : "Configure this capability"}
+              <ChevronRight className="h-5 w-5" aria-hidden />
+            </Link>
+            {coverageNext.requirement === "explicit_decision" ? (
+              <form
+                action={saveCocoSetupDecision.bind(
+                  null,
+                  slug,
+                  coverageNext.id,
+                  "not_using",
+                )}
+              >
+                <button
+                  type="submit"
+                  className="inline-flex min-h-11 w-full touch-manipulation items-center justify-center rounded-full border border-nq-border px-4 text-base font-semibold text-nq-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary"
+                  data-testid="coco-setup-not-using"
+                >
+                  {vi ? "Chưa sử dụng lúc này" : "Not using this now"}
+                </button>
+              </form>
+            ) : null}
+          </div>
+          <p className="mt-3 text-center text-xs leading-5 text-nq-muted">
+            {vi
+              ? "Coco chỉ tự lưu lựa chọn an toàn. Tiền, policy và Go-Live vẫn cần Owner duyệt."
+              : "Coco auto-saves only safe decisions. Money, policy, and Go-Live still require Owner approval."}
           </p>
         </Card>
       ) : (
@@ -241,6 +357,33 @@ export function GuidedSetupHub({
           })}
         </ol>
       </section>
+
+      <details className="rounded-2xl border border-nq-border/45 bg-nq-surface/25 px-4 py-3">
+        <summary className="cursor-pointer text-sm font-semibold text-nq-foreground">
+          {vi ? "Xem trạng thái đủ 15 chức năng" : "View all 15 capability states"}
+        </summary>
+        <ol className="mt-3 flex flex-col gap-2">
+          {setupCoverage.items.map((item, index) => (
+            <li
+              key={item.id}
+              className="flex items-start gap-3 border-t border-nq-border/25 py-3 first:border-t-0"
+              data-testid={`coco-setup-capability-${item.id}`}
+            >
+              <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-nq-border text-sm text-nq-muted">
+                {item.resolved ? <Check className="h-4 w-4" aria-hidden /> : index + 1}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium text-nq-foreground">
+                  {vi ? item.titleVi : item.titleEn}
+                </span>
+                <span className="mt-0.5 block text-xs leading-5 text-nq-muted">
+                  {vi ? item.detailVi : item.detailEn}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ol>
+      </details>
     </div>
   );
 }

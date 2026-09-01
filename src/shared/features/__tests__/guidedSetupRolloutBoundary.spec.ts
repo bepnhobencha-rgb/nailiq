@@ -161,17 +161,32 @@ const effectiveGateFiles = [
 
 describe("Guided Setup server entry points", () => {
   it.each(effectiveGateFiles)(
-    "uses the platform-and-tenant resolver in %s",
+    "uses the centralized platform-and-activation resolver in %s",
     (file) => {
       const source = readFileSync(resolve(process.cwd(), file), "utf8");
       expect(source).toContain(
-        'from "@/shared/features/platformFeatureFlags"',
+        'from "@/shared/dashboard/cocoSetupActivation"',
       );
-      expect(source).toMatch(
-        /isReleaseFeatureVisible\([\s\S]*?"guided_admin_setup"/,
-      );
+      expect(source).toMatch(/isCocoSetupExperienceVisible\(/);
     },
   );
+
+  it("keeps the centralized resolver behind the platform kill switch and legacy tenant gate", () => {
+    const source = readFileSync(
+      resolve(
+        process.cwd(),
+        "src/shared/dashboard/cocoSetupActivation.ts",
+      ),
+      "utf8",
+    );
+
+    expect(source).toContain(
+      'isReleaseFeatureVisible(salon, "guided_admin_setup")',
+    );
+    expect(source).toContain(
+      'isFeaturePlatformDisabled("guided_admin_setup")',
+    );
+  });
 
   it("keeps the preview page on the authenticated authoritative loader", () => {
     const page = readFileSync(
@@ -191,11 +206,9 @@ describe("Guided Setup server entry points", () => {
 
     expect(page).toContain("loadGuidedBookingPreview(slug)");
     expect(loader).toContain(
-      'from "@/shared/features/platformFeatureFlags"',
+      'from "@/shared/dashboard/cocoSetupActivation"',
     );
-    expect(loader).toMatch(
-      /await isReleaseFeatureVisible\([\s\S]*?"guided_admin_setup"/,
-    );
+    expect(loader).toMatch(/await isCocoSetupExperienceVisible\(/);
   });
 
   it("keeps indirect setup, readiness, shell, and action surfaces on authoritative results", () => {

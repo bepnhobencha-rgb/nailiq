@@ -32,6 +32,7 @@ export default async function SetupIndexPage({ params }: Props) {
             slug={slug}
             salonName={result.salonName}
             readiness={result.readiness}
+            setupCoverage={result.setupCoverage}
           />
         ) : (
           <section

@@ -12,7 +12,7 @@ import {
   deriveGuidedSetupProgress,
   resolveGuidedDashboardRoot,
 } from "@/shared/dashboard/guidedSetup";
-import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
+import { isCocoSetupExperienceVisible } from "@/shared/dashboard/cocoSetupActivation";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -51,10 +51,7 @@ export default async function SalonDashboardPage({ params }: Props) {
   if (
     initialResult.ok &&
     !initialResult.demoMode &&
-    (await isReleaseFeatureVisible(
-      initialResult.salon,
-      "guided_admin_setup",
-    ))
+    (await isCocoSetupExperienceVisible(initialResult.salon))
   ) {
     guidedSetupEnabled = true;
     const setupResult = await loadGoLiveReadiness(slug);
