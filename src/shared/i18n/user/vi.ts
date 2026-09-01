@@ -1800,7 +1800,7 @@ export const userVi: UserMessages = {
       title: "Khách chờ chỗ",
       inviteNow: "Mời ngay",
       inviteAgain: "Mời lại",
-      invited: "Đã mời",
+      invited: "Đang mời",
       statusWaiting: "Đang chờ",
       needsPlan: "Cần xếp phương án",
       groupRequest: (partySize, serviceCount) =>
@@ -1808,6 +1808,27 @@ export const userVi: UserMessages = {
       sequenceRequest: (serviceCount) =>
         `${serviceCount} dịch vụ trong một chuỗi`,
       callToArrange: "Gọi để sắp lịch",
+      deliveryHeading: "Trạng thái thông báo",
+      smsChannel: "SMS",
+      emailChannel: "Email",
+      deliveryStatus: {
+        sent: "Đã gửi",
+        sending: "Đang gửi",
+        failed: "Gửi thất bại",
+        unknown: "Chưa xác minh",
+        channelDisabled: "Đang tắt",
+        recipientMissing: "Thiếu liên hệ",
+        recipientSuppressed: "Khách đã từ chối",
+        unavailable: "Chưa có dữ liệu",
+      },
+      deliveryResultToast: (name, deliveredBy, needsAttention) =>
+        needsAttention
+          ? `Đã mời ${name} qua ${deliveredBy}. Hãy kiểm tra kênh còn lại bên dưới.`
+          : `Đã mời ${name} qua ${deliveredBy}.`,
+      deliveryPendingToast: (name) =>
+        `Đã mở chỗ cho ${name}. NailIQ vẫn đang xác minh việc gửi thông báo.`,
+      deliveryFailedToast: (name) =>
+        `Đã mở chỗ cho ${name}, nhưng chưa gửi được thông báo.`,
       waitingMinutes: (minutes) =>
         minutes === 0 ? "Vừa vào danh sách chờ" : `Đã chờ ${minutes} phút`,
       claimed: "✅ Đã giành chỗ",

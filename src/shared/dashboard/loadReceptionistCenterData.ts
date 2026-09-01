@@ -42,6 +42,8 @@ import {
   type StaffNotificationChannelAvailability,
   type StaffNotificationSettings,
 } from "@/shared/dashboard/staffNotificationSettings";
+import { loadWaitlistDeliveryTruth } from "@/shared/noshow/loadWaitlistDeliveryTruth";
+import type { WaitlistDeliveryTruth } from "@/shared/noshow/waitlistDeliveryTruth";
 
 type DashboardSupabaseClient = SupabaseClient<Database>;
 
@@ -207,6 +209,8 @@ export interface ReceptionistCenterData {
      *  slot was freed; null otherwise. Lets "Tạo lịch" prefill the freed tech so
      *  the manual path matches what auto-book would have done. */
     offeredStaffId: string | null;
+    /** Durable provider delivery outcome for the current invitation epoch. */
+    delivery: WaitlistDeliveryTruth;
     createdAt: string;
   }>;
   /**
@@ -1342,7 +1346,7 @@ export async function loadReceptionistCenterData(
         offered_staff_id: string | null;
         created_at: string | null;
       };
-      const pushWlRow = (r: WlRow) => {
+      const pushWlRow = (r: WlRow, delivery: WaitlistDeliveryTruth) => {
         const serviceId = r.service_id != null ? String(r.service_id) : "";
         const slot =
           typeof r.preferred_slot_label === "string" &&
@@ -1375,6 +1379,7 @@ export async function loadReceptionistCenterData(
           serviceCount,
           claimedAt: r.claimed_at ? String(r.claimed_at) : null,
           offeredStaffId: r.offered_staff_id ? String(r.offered_staff_id) : null,
+          delivery,
           createdAt: String(r.created_at ?? ""),
         });
       };
@@ -1382,6 +1387,7 @@ export async function loadReceptionistCenterData(
         "id, service_id, booking_date, preferred_slot_label, client_name, client_phone, status, request_kind, party_size, intent_json, claimed_at, offered_staff_id, created_at";
       try {
         const svc = createServiceRoleClient();
+        const loadedRows: WlRow[] = [];
         // Actionable (waiting / notified) — from selected day onward, FIFO.
         const { data: wlRows, error: wlErr } = await svc
           .from("booking_waitlist_entries")
@@ -1394,7 +1400,7 @@ export async function loadReceptionistCenterData(
         if (wlErr) {
           console.error("[loadReceptionistCenterData] online_waitlist", wlErr);
         } else {
-          for (const r of (wlRows ?? []) as unknown as WlRow[]) pushWlRow(r);
+          loadedRows.push(...((wlRows ?? []) as unknown as WlRow[]));
         }
 
         // Recently claimed (last 24h, any booking_date) — staff must convert
@@ -1418,9 +1424,17 @@ export async function loadReceptionistCenterData(
             claimedErr,
           );
         } else {
-          for (const r of (claimedRows ?? []) as unknown as WlRow[]) {
-            pushWlRow(r);
-          }
+          loadedRows.push(...((claimedRows ?? []) as unknown as WlRow[]));
+        }
+
+        const deliveryLoad = await loadWaitlistDeliveryTruth({
+          salonId: ctx.salon.id,
+          entryIds: loadedRows.map((row) => String(row.id)),
+        });
+        for (const row of loadedRows) {
+          const entryId = String(row.id);
+          const delivery = deliveryLoad.truthByEntry.get(entryId);
+          if (delivery) pushWlRow(row, delivery);
         }
       } catch (e) {
         console.error("[loadReceptionistCenterData] online_waitlist", e);

@@ -10,6 +10,11 @@ import { getUserMessages } from "@/shared/i18n/user";
 import { inviteWaitlistEntry } from "@/shared/dashboard/receptionistActions";
 import type { ReceptionistCenterData } from "@/shared/dashboard/loadReceptionistCenterData";
 import { waitlistAgeMinutes } from "@/shared/dashboard/waitlistAttention";
+import { Badge, type BadgeVariant } from "@/components/ui/Badge";
+import type {
+  WaitlistChannelDeliveryTruth,
+  WaitlistDeliveryTruth,
+} from "@/shared/noshow/waitlistDeliveryTruth";
 
 type WaitlistEntry = ReceptionistCenterData["onlineWaitlist"][number];
 
@@ -28,6 +33,11 @@ export interface OnlineWaitlistPanelProps {
 type RowStatus = "waiting" | "review_required" | "notified" | "claimed";
 
 type ToastState = { kind: "success" | "info" | "error"; text: string } | null;
+
+type InvitationOverride = {
+  status: "notified";
+  delivery: WaitlistDeliveryTruth;
+};
 
 function initialOf(name: string): string {
   const c = name.trim().charAt(0);
@@ -55,7 +65,9 @@ export function OnlineWaitlistPanel({
 
   // Local optimistic status overrides (entryId → 'notified') so a freshly
   // invited row flips its pill before router.refresh() re-runs the loader.
-  const [statusById, setStatusById] = useState<Record<string, RowStatus>>({});
+  const [invitationById, setInvitationById] = useState<
+    Record<string, InvitationOverride>
+  >({});
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
   const toastTimer = useRef<number | null>(null);
@@ -78,12 +90,38 @@ export function OnlineWaitlistPanel({
     try {
       const res = await inviteWaitlistEntry(slug, entry.id);
       if (res.ok) {
-        // Optimistically flip the pill, then re-run the loader for the truth.
-        setStatusById((prev) => ({ ...prev, [entry.id]: "notified" }));
-        if (res.suppressed) {
-          flashToast({ kind: "info", text: t.suppressedToast(name) });
+        // Render only the durable delivery result returned by the server. The
+        // offer can be open while both customer channels still need attention.
+        setInvitationById((prev) => ({
+          ...prev,
+          [entry.id]: { status: "notified", delivery: res.delivery },
+        }));
+        const sentChannels = [
+          res.delivery.sms.status === "sent" ? t.smsChannel : null,
+          res.delivery.email.status === "sent" ? t.emailChannel : null,
+        ].filter((channel): channel is string => channel !== null);
+        const channels = [res.delivery.sms, res.delivery.email];
+        const needsAttention = channels.some((channel) =>
+          ["failed", "unknown", "suppressed", "unavailable"].includes(
+            channel.status,
+          ),
+        );
+        const stillSending = channels.some((channel) =>
+          channel.status === "pending" || channel.status === "sending",
+        );
+        if (sentChannels.length > 0) {
+          flashToast({
+            kind: needsAttention ? "info" : "success",
+            text: t.deliveryResultToast(
+              name,
+              sentChannels.join(" + "),
+              needsAttention,
+            ),
+          });
+        } else if (stillSending) {
+          flashToast({ kind: "info", text: t.deliveryPendingToast(name) });
         } else {
-          flashToast({ kind: "success", text: t.invitedToast(name) });
+          flashToast({ kind: "error", text: t.deliveryFailedToast(name) });
         }
         router.refresh();
       } else {
@@ -99,10 +137,49 @@ export function OnlineWaitlistPanel({
   function effectiveStatus(entry: WaitlistEntry): RowStatus {
     // A claimed row is terminal for this panel (no optimistic override applies).
     if (entry.status === "claimed") return "claimed";
-    const override = statusById[entry.id];
-    if (override) return override;
+    const override = invitationById[entry.id];
+    if (override) return override.status;
     if (entry.status === "review_required") return "review_required";
     return entry.status === "notified" ? "notified" : "waiting";
+  }
+
+  function effectiveDelivery(entry: WaitlistEntry): WaitlistDeliveryTruth {
+    return invitationById[entry.id]?.delivery ?? entry.delivery;
+  }
+
+  function deliveryBadge(
+    channelLabel: string,
+    delivery: WaitlistChannelDeliveryTruth,
+  ) {
+    let label = t.deliveryStatus.unavailable;
+    let variant: BadgeVariant = "neutral";
+    if (delivery.status === "sent") {
+      label = t.deliveryStatus.sent;
+      variant = "success";
+    } else if (delivery.status === "pending" || delivery.status === "sending") {
+      label = t.deliveryStatus.sending;
+      variant = "info";
+    } else if (delivery.status === "failed") {
+      label = t.deliveryStatus.failed;
+      variant = "danger";
+    } else if (delivery.status === "unknown") {
+      label = t.deliveryStatus.unknown;
+      variant = "warning";
+    } else if (delivery.status === "suppressed") {
+      variant = "warning";
+      label = delivery.reason === "channel_disabled"
+        ? t.deliveryStatus.channelDisabled
+        : delivery.reason === "recipient_missing"
+          ? t.deliveryStatus.recipientMissing
+          : delivery.reason === "recipient_suppressed"
+            ? t.deliveryStatus.recipientSuppressed
+            : t.deliveryStatus.unknown;
+    }
+    return (
+      <Badge variant={variant} state="subtle" size="md" dot>
+        {channelLabel} · {label}
+      </Badge>
+    );
   }
 
   return (
@@ -125,6 +202,7 @@ export function OnlineWaitlistPanel({
         <ul className="space-y-2">
           {entries.map((entry) => {
             const status = effectiveStatus(entry);
+            const delivery = effectiveDelivery(entry);
             const isNotified = status === "notified";
             const isClaimed = status === "claimed";
             const isReviewRequired = status === "review_required";
@@ -209,6 +287,16 @@ export function OnlineWaitlistPanel({
                       <p className="mt-0.5 truncate font-mono text-xs text-nq-muted">
                         {entry.phone}
                       </p>
+                    ) : null}
+                    {(isNotified || isClaimed) ? (
+                      <div
+                        className="mt-2 flex flex-wrap gap-2"
+                        aria-label={t.deliveryHeading}
+                        data-testid={`waitlist-delivery-${entry.id}`}
+                      >
+                        {deliveryBadge(t.smsChannel, delivery.sms)}
+                        {deliveryBadge(t.emailChannel, delivery.email)}
+                      </div>
                     ) : null}
                     {isClaimed ? (
                       <button

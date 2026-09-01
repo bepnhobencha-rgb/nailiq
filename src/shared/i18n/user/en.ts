@@ -1643,6 +1643,26 @@ export type UserMessages = {
       groupRequest: (partySize: number, serviceCount: number) => string;
       sequenceRequest: (serviceCount: number) => string;
       callToArrange: string;
+      deliveryHeading: string;
+      smsChannel: string;
+      emailChannel: string;
+      deliveryStatus: {
+        sent: string;
+        sending: string;
+        failed: string;
+        unknown: string;
+        channelDisabled: string;
+        recipientMissing: string;
+        recipientSuppressed: string;
+        unavailable: string;
+      };
+      deliveryResultToast: (
+        name: string,
+        deliveredBy: string,
+        needsAttention: boolean,
+      ) => string;
+      deliveryPendingToast: (name: string) => string;
+      deliveryFailedToast: (name: string) => string;
       /** Persistent elapsed time for an unresolved online lead. */
       waitingMinutes: (minutes: number) => string;
       /** Status pill — customer grabbed the freed slot. */
@@ -4214,7 +4234,7 @@ export const userEn: UserMessages = {
       title: "Waitlist",
       inviteNow: "Invite now",
       inviteAgain: "Invite again",
-      invited: "Invited",
+      invited: "Invitation open",
       statusWaiting: "Waiting",
       needsPlan: "Needs plan",
       groupRequest: (partySize, serviceCount) =>
@@ -4222,6 +4242,27 @@ export const userEn: UserMessages = {
       sequenceRequest: (serviceCount) =>
         `${serviceCount} service${serviceCount === 1 ? "" : "s"} in sequence`,
       callToArrange: "Call to arrange",
+      deliveryHeading: "Notification status",
+      smsChannel: "SMS",
+      emailChannel: "Email",
+      deliveryStatus: {
+        sent: "Sent",
+        sending: "Sending",
+        failed: "Failed",
+        unknown: "Not verified",
+        channelDisabled: "Turned off",
+        recipientMissing: "Contact missing",
+        recipientSuppressed: "Customer opted out",
+        unavailable: "Unavailable",
+      },
+      deliveryResultToast: (name, deliveredBy, needsAttention) =>
+        needsAttention
+          ? `Invited ${name} by ${deliveredBy}. Check the other channel below.`
+          : `Invited ${name} by ${deliveredBy}.`,
+      deliveryPendingToast: (name) =>
+        `Opened the spot for ${name}. Notification delivery is still being verified.`,
+      deliveryFailedToast: (name) =>
+        `Opened the spot for ${name}, but no notification was delivered.`,
       waitingMinutes: (minutes) =>
         minutes === 0 ? "Waiting now" : `Waiting ${minutes} min`,
       claimed: "✅ Claimed",
