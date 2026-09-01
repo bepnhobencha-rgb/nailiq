@@ -52,12 +52,12 @@ describe("MQA-0116/MQA-0118 tip and commission evidence boundary", () => {
 
   it("keeps the exact schema/grant tripwire current", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("tables: 201");
-    expect(parity).toContain("columns: 3070");
-    expect(parity).toContain("policies: 214");
+    expect(parity).toContain("tables: 203");
+    expect(parity).toContain("columns: 3081");
+    expect(parity).toContain("policies: 220");
     expect(parity).toContain("functions: 451");
-    expect(parity).toContain("triggers: 107");
-    expect(parity).toContain("indexes: 763");
-    expect(parity).toContain("service_role: 188");
+    expect(parity).toContain("triggers: 109");
+    expect(parity).toContain("indexes: 767");
+    expect(parity).toContain("service_role: 190");
   });
 });

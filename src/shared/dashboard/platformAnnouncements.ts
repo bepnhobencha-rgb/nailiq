@@ -34,6 +34,26 @@ type AnnouncementRow = {
   updated_at: string;
 };
 
+type AnnouncementReceiptRow = {
+  announcement_id: string;
+  seen_at: string | null;
+  snoozed_until: string | null;
+  dismissed_at: string | null;
+};
+
+export type DashboardPlatformAnnouncement = PlatformAnnouncement & {
+  seenAt: string | null;
+  snoozedUntil: string | null;
+};
+
+export type PlatformNotificationPreference = {
+  autoManageRoutine: boolean;
+};
+
+export const DEFAULT_PLATFORM_NOTIFICATION_PREFERENCE: PlatformNotificationPreference = {
+  autoManageRoutine: false,
+};
+
 export function announcementTargetsForRole(
   role: SalonMemberRole,
 ): Array<"all" | "owners" | "staff"> {
@@ -108,7 +128,7 @@ function mapAnnouncement(row: AnnouncementRow): PlatformAnnouncement | null {
 export async function loadDashboardAnnouncements(
   role: SalonMemberRole,
   now = new Date(),
-): Promise<PlatformAnnouncement[]> {
+): Promise<DashboardPlatformAnnouncement[]> {
   try {
     const supabase = await createClient();
     const { data, error } = (await supabase
@@ -129,7 +149,7 @@ export async function loadDashboardAnnouncements(
       return [];
     }
 
-    return (data ?? [])
+    const active = (data ?? [])
       .filter((row) => isActiveAnnouncement(row, now))
       .filter((row) =>
         audienceIncludesMemberRole(
@@ -141,9 +161,66 @@ export async function loadDashboardAnnouncements(
       )
       .map(mapAnnouncement)
       .filter((row): row is PlatformAnnouncement => row !== null)
-      .slice(0, 3);
+      .filter((row) => row.notificationMode !== "silent");
+
+    if (active.length === 0) return [];
+    const receiptResult = (await supabase
+      .from("platform_announcement_receipts" as never)
+      .select("announcement_id, seen_at, snoozed_until, dismissed_at" as never)
+      .in(
+        "announcement_id" as never,
+        active.map((announcement) => announcement.id),
+      )) as {
+      data: AnnouncementReceiptRow[] | null;
+      error: { code?: string } | null;
+    };
+    if (receiptResult.error) {
+      console.error("[platform-announcements/dashboard] receipts failed", {
+        code: receiptResult.error.code,
+      });
+    }
+    const receipts = new Map(
+      (receiptResult.data ?? []).map((receipt) => [
+        receipt.announcement_id,
+        receipt,
+      ]),
+    );
+
+    return active
+      .filter((announcement) => !receipts.get(announcement.id)?.dismissed_at)
+      .map((announcement) => ({
+        ...announcement,
+        seenAt: receipts.get(announcement.id)?.seen_at ?? null,
+        snoozedUntil: receipts.get(announcement.id)?.snoozed_until ?? null,
+      }))
+      .slice(0, 20);
   } catch (error) {
     console.error("[platform-announcements/dashboard] unexpected", error);
     return [];
+  }
+}
+
+export async function loadPlatformNotificationPreference(): Promise<PlatformNotificationPreference> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = (await supabase
+      .from("platform_notification_preferences" as never)
+      .select("auto_manage_routine" as never)
+      .maybeSingle()) as {
+        data: { auto_manage_routine: boolean } | null;
+        error: { code?: string } | null;
+      };
+    if (error) {
+      console.error("[platform-announcements/dashboard] preference failed", {
+        code: error.code,
+      });
+      return DEFAULT_PLATFORM_NOTIFICATION_PREFERENCE;
+    }
+    return {
+      autoManageRoutine: data?.auto_manage_routine === true,
+    };
+  } catch (error) {
+    console.error("[platform-announcements/dashboard] preference unexpected", error);
+    return DEFAULT_PLATFORM_NOTIFICATION_PREFERENCE;
   }
 }

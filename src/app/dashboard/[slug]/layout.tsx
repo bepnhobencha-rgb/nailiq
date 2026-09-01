@@ -1,7 +1,6 @@
 import { type ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { getSalonPwaInfo } from "@/shared/dashboard/salonPwaInfo";
 import { ImpersonationBanner } from "@/components/impersonation/ImpersonationBanner";
@@ -18,14 +17,20 @@ import { getPendingApprovals } from "@/shared/ai/approvalRequests";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { SubscriptionDeadlineNotice } from "@/components/dashboard/SubscriptionDeadlineNotice";
 import { getPrivateOfferBySalonId } from "@/shared/sales/privateOffers";
-import { loadDashboardAnnouncements } from "@/shared/dashboard/platformAnnouncements";
+import {
+  loadDashboardAnnouncements,
+  loadPlatformNotificationPreference,
+} from "@/shared/dashboard/platformAnnouncements";
+import { shouldCountPlatformAnnouncement } from "@/shared/dashboard/platformAnnouncementPresentation";
 import { PlatformAnnouncementBanner } from "@/components/dashboard/PlatformAnnouncementBanner";
+import { TrialSetupProgressBanner } from "@/components/dashboard/TrialSetupProgressBanner";
 import { GuidedFocusVisibility } from "@/components/dashboard/GuidedFocusVisibility";
 import { loadGoLiveReadiness } from "@/shared/dashboard/loadGoLiveReadiness";
 import { loadDashboardShellProjection } from "@/shared/dashboard/loadDashboardShellProjection";
 import {
   deriveGuidedSetupProgress,
   resolveGuidedSetupStage,
+  type GuidedSetupProgress,
   type GuidedSetupStage,
 } from "@/shared/dashboard/guidedSetup";
 import { isCocoSetupActivated } from "@/shared/dashboard/cocoSetupActivation";
@@ -283,10 +288,18 @@ export default async function DashboardSlugLayout({ children, params }: Props) {
   };
   const subscriptionPlan = parseSubscriptionPlan(flagSalon.subscription_plan);
   const daysLeftInTrial = trialDaysRemaining(flagSalon.trial_ends_at);
-  const [userLanguage, platformAnnouncements] = await Promise.all([
+  const [userLanguage, platformAnnouncements, platformNotificationPreference] = await Promise.all([
     resolveUserLanguage(),
     loadDashboardAnnouncements(ctx.role),
+    loadPlatformNotificationPreference(),
   ]);
+  const platformNoticeNowIso = new Date().toISOString();
+  const productNoticeCount = platformAnnouncements.filter((announcement) =>
+    shouldCountPlatformAnnouncement(announcement, {
+      autoManageRoutine: platformNotificationPreference.autoManageRoutine,
+      nowIso: platformNoticeNowIso,
+    }),
+  ).length;
   const isTrial =
     flagSalon.subscription_status === "trialing" && daysLeftInTrial != null;
 
@@ -300,13 +313,15 @@ export default async function DashboardSlugLayout({ children, params }: Props) {
     isCocoSetupActivated(flagSalon) &&
     !platformDisabled.has("guided_admin_setup");
   let guidedSetupStage: GuidedSetupStage = "disabled";
+  let guidedSetupProgress: GuidedSetupProgress | null = null;
   if (releaseFeatures.guided_admin_setup || cocoSetupVisible) {
     const setupResult = await loadGoLiveReadiness(slug);
+    guidedSetupProgress = setupResult.ok
+      ? deriveGuidedSetupProgress(slug, setupResult.readiness)
+      : null;
     guidedSetupStage = resolveGuidedSetupStage(
       true,
-      setupResult.ok
-        ? deriveGuidedSetupProgress(slug, setupResult.readiness).complete
-        : null,
+      guidedSetupProgress?.complete ?? null,
     );
   }
 
@@ -327,58 +342,25 @@ export default async function DashboardSlugLayout({ children, params }: Props) {
         userEmail={userEmail}
         salonId={ctx.salon.id}
         guidedSetupStage={guidedSetupStage}
+        productNoticeCount={productNoticeCount}
       >
         <GuidedFocusVisibility stage={guidedSetupStage}>
           <PlatformAnnouncementBanner
             announcements={platformAnnouncements}
             language={userLanguage}
+            slug={slug}
+            autoManageRoutine={platformNotificationPreference.autoManageRoutine}
+            nowIso={platformNoticeNowIso}
           />
           {isTrial ? (
-            <div
-              className={`mx-4 mt-3 flex items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 text-sm sm:mx-6 sm:mt-4 sm:py-3 ${
-                daysLeftInTrial === 0
-                  ? "border-nq-error/40 bg-nq-error/10 text-nq-foreground"
-                  : "border-nq-primary/35 bg-nq-primary/10 text-nq-foreground"
-              }`}
-              role="status"
-            >
-              <p className="min-w-0 leading-snug">
-                {daysLeftInTrial === 0 ? (
-                  userLanguage === "vi" ? (
-                    "Thời gian dùng thử 14 ngày đã kết thúc. Chọn gói để tiếp tục dùng các tính năng trả phí."
-                  ) : (
-                    "Your 14-day trial has ended. Choose a plan to keep using paid features."
-                  )
-                ) : userLanguage === "vi" ? (
-                  <>
-                    <span className="sm:hidden">
-                      Còn {daysLeftInTrial} ngày dùng thử
-                    </span>
-                    <span className="hidden sm:inline">
-                      Bạn còn {daysLeftInTrial} ngày dùng thử miễn phí. Chưa có
-                      khoản phí nào được tính.
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span className="sm:hidden">
-                      {daysLeftInTrial} trial day
-                      {daysLeftInTrial === 1 ? "" : "s"} left
-                    </span>
-                    <span className="hidden sm:inline">
-                      {daysLeftInTrial} day{daysLeftInTrial === 1 ? "" : "s"}{" "}
-                      left in your free trial. No credit card has been charged.
-                    </span>
-                  </>
-                )}
-              </p>
-              <Link
-                href={`/dashboard/${encodeURIComponent(slug)}/settings#cat-plan`}
-                className="shrink-0 text-xs font-semibold text-nq-primary-soft underline-offset-4 hover:underline sm:text-sm"
-              >
-                {userLanguage === "vi" ? "Xem các gói" : "View plans"}
-              </Link>
-            </div>
+            <TrialSetupProgressBanner
+              slug={slug}
+              language={userLanguage}
+              daysLeft={daysLeftInTrial}
+              completedCount={guidedSetupProgress?.completedCount ?? 0}
+              requiredCount={guidedSetupProgress?.requiredCount ?? 0}
+              percent={guidedSetupProgress?.percent ?? 0}
+            />
           ) : null}
         </GuidedFocusVisibility>
         {children}

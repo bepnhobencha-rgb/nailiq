@@ -152,13 +152,16 @@ import { execFileSync } from "node:child_process";
  * The 20260901013550 Smart Rescue autonomy guard adds one fail-closed trigger
  * function and one trigger so group/sequence requests cannot enter the legacy
  * individual one-slot offer lifecycle without an executable plan.
- * Refresh these
- * with each schema-changing forward migration — they
- * are a tripwire, not a spec.
+ * The 20260901170032 Smart Notification Center migration adds two user-owned
+ * tables, eleven columns, six own-row RLS policies, two updated-at triggers,
+ * and four primary/lookup indexes. It grants authenticated users only
+ * SELECT/INSERT/UPDATE behind those policies and grants no anon access.
+ * Refresh these with each schema-changing forward migration — they are a
+ * tripwire, not a spec.
  */
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
-  tables: 201,
+  tables: 203,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -212,7 +215,8 @@ const PRODUCTION = {
   // +63 Smart Checkout Phase B pairing, webhook, lease and receipt columns.
   // +6 Smart Capacity Rescue intent, locale and idempotency columns.
   // +15 durable Waitlist-owner notification outbox columns.
-  columns: 3070,
+  // +11 Smart Notification Center receipt/preference columns.
+  columns: 3081,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -227,7 +231,8 @@ const PRODUCTION = {
   // +2 restrictive browser-deny policies on late-cancellation fee truth.
   // +1 restrictive direct-access deny policy on registered email truth.
   // +1 restrictive browser-deny policy on the Waitlist-owner outbox.
-  policies: 214,
+  // +6 Smart Notification Center own-row select/insert/update policies.
+  policies: 220,
   /**
    * APP functions only — refreshed after the rehearsed forward migrations.
    *
@@ -287,7 +292,8 @@ const PRODUCTION = {
   // +4 late-cancellation lock/capture/receipt and payment-outcome triggers.
   // +1 atomic Waitlist-owner occurrence trigger.
   // +1 fail-closed complex-request rescue guard trigger.
-  triggers: 107,
+  // +2 Smart Notification Center updated-at triggers.
+  triggers: 109,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -309,7 +315,8 @@ const PRODUCTION = {
   // +9 Smart Checkout Phase B pairing/webhook/device indexes.
   // +3 Smart Capacity Rescue request, intent and review-queue indexes.
   // +4 Waitlist-owner outbox primary, unique, due and salon indexes.
-  indexes: 763,
+  // +4 Smart Notification Center primary and user-state lookup indexes.
+  indexes: 767,
 } as const;
 
 /**
@@ -846,7 +853,9 @@ function main() {
   // the delivery-event audit table is service-role-only.
   // The customer identity map is service-role read-only; the refund inbox is
   // mutation-through-RPC only and intentionally grants no table reachability.
-  const GRANTS = { anon: 56, authenticated: 78, service_role: 188 } as const;
+  // Smart Notification Center adds two user-owned tables. Both are reachable
+  // only by authenticated users through own-row RLS, plus service_role.
+  const GRANTS = { anon: 56, authenticated: 80, service_role: 190 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
