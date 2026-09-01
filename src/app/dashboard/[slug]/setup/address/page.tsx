@@ -6,7 +6,7 @@ import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
 import { GuidedSetupReturnCard } from "@/components/dashboard/GuidedSetupReturnCard";
 import { AddressSetupPanel } from "@/components/dashboard/AddressSetupPanel";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
-import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
+import { isCocoSetupExperienceVisible } from "@/shared/dashboard/cocoSetupActivation";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -58,10 +58,7 @@ export default async function SetupAddressPage({ params }: Props) {
     extraData.timezone.trim().length > 0
       ? extraData.timezone
       : "";
-  const guidedSetupEnabled = await isReleaseFeatureVisible(
-    ctx.salon,
-    "guided_admin_setup",
-  );
+  const guidedSetupEnabled = await isCocoSetupExperienceVisible(ctx.salon);
 
   return (
     <ResponsiveShell>

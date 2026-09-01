@@ -16,8 +16,8 @@ vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/shared/dashboard/setupActions", () => ({
   getDashboardWriteClient: mocks.getContext,
 }));
-vi.mock("@/shared/features/platformFeatureFlags", () => ({
-  isReleaseFeatureVisible: mocks.visible,
+vi.mock("@/shared/dashboard/cocoSetupActivation", () => ({
+  isCocoSetupExperienceVisible: mocks.visible,
 }));
 vi.mock("@/shared/lib/supabase/serviceRole", () => ({
   createServiceRoleClient: () => ({

@@ -17,7 +17,7 @@ import { parseSubscriptionPlan } from "@/shared/lib/subscriptionPlans";
 import { getLookPresetsForVertical } from "@/shared/verticals/lookPresets";
 import { resolveVertical } from "@/shared/verticals/registry";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
-import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
+import { isCocoSetupExperienceVisible } from "@/shared/dashboard/cocoSetupActivation";
 import { loadSalonOwnerAdminSettingsForDashboardContext } from "@/shared/dashboard/salonOwnerAdminSettings";
 import { normalizeGroupWaveStrategy } from "@/shared/booking/groupWaveOptimizer";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
@@ -230,10 +230,9 @@ export default async function SalonSettingsPage({
   // Messaging & Email settings — default ON when column is null (pre-migration safety).
   const smsOutboundEnabled = row?.sms_outbound_enabled !== false;
   const emailOutboundEnabled = row?.email_outbound_enabled !== false;
-  const guidedSetupEnabled = await isReleaseFeatureVisible(
-    { feature_flags: row?.feature_flags },
-    "guided_admin_setup",
-  );
+  const guidedSetupEnabled = await isCocoSetupExperienceVisible({
+    feature_flags: row?.feature_flags,
+  });
   const smartCheckoutEnabled = isReleaseFeatureEnabled(
     { feature_flags: row?.feature_flags },
     "smart_checkout",
@@ -245,6 +244,7 @@ export default async function SalonSettingsPage({
         <GuidedSetupReturnCard slug={slug} currentStep={guidedStep} />
       ) : null}
       <SalonSettingsHub
+        cocoSetupEnabled={guidedSetupEnabled}
         guidedFocusSection={
           guidedSetupEnabled
             ? guidedStep === "integrations"

@@ -28,6 +28,7 @@ import {
   resolveGuidedSetupStage,
   type GuidedSetupStage,
 } from "@/shared/dashboard/guidedSetup";
+import { isCocoSetupActivated } from "@/shared/dashboard/cocoSetupActivation";
 
 type Props = {
   children: ReactNode;
@@ -295,8 +296,11 @@ export default async function DashboardSlugLayout({ children, params }: Props) {
   // visible only when it's not platform-disabled AND enabled for this salon.
   const platformDisabled = await loadPlatformDisabledFeatures();
   const releaseFeatures = resolveFeatureVisibility(flagSalon, platformDisabled);
+  const cocoSetupVisible =
+    isCocoSetupActivated(flagSalon) &&
+    !platformDisabled.has("guided_admin_setup");
   let guidedSetupStage: GuidedSetupStage = "disabled";
-  if (releaseFeatures.guided_admin_setup) {
+  if (releaseFeatures.guided_admin_setup || cocoSetupVisible) {
     const setupResult = await loadGoLiveReadiness(slug);
     guidedSetupStage = resolveGuidedSetupStage(
       true,

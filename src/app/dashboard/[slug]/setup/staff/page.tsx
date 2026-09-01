@@ -16,7 +16,7 @@ import {
   type StaffAccessInfo,
 } from "@/shared/dashboard/staffAccess";
 import { getEffectivePlanLimits } from "@/shared/lib/subscriptionPlans";
-import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
+import { isCocoSetupExperienceVisible } from "@/shared/dashboard/cocoSetupActivation";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -112,10 +112,7 @@ export default async function SetupStaffPage({ params }: Props) {
   const maxStaff = Number.isFinite(planLimits.maxStaff)
     ? planLimits.maxStaff
     : Number.POSITIVE_INFINITY;
-  const guidedSetupEnabled = await isReleaseFeatureVisible(
-    ctx.salon,
-    "guided_admin_setup",
-  );
+  const guidedSetupEnabled = await isCocoSetupExperienceVisible(ctx.salon);
 
   // PII-bearing login/permission details are loaded through a self-authorizing
   // Server Function. It accepts only this route's slug and derives both the

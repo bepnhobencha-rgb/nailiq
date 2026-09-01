@@ -6,7 +6,7 @@ import {
 } from "@/shared/dashboard/goLiveReadiness";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
-import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
+import { isCocoSetupExperienceVisible } from "@/shared/dashboard/cocoSetupActivation";
 import {
   deriveGoLiveAttestationState,
   GO_LIVE_ATTESTATION_KEYS,
@@ -26,6 +26,10 @@ import { parseCurrency } from "@/shared/lib/currencyFormat";
 import { loadPublicBookingSequenceReadiness } from "@/shared/booking/bookingSequenceReadiness";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { resolveReadinessStaffAccess } from "@/shared/dashboard/goLiveStaffAccess";
+import {
+  deriveCocoSetupCoverage,
+} from "@/shared/dashboard/cocoSetupCoverage";
+import type { SetupCoverageManifest } from "@/shared/dashboard/setupCoverageManifest";
 
 export type LoadGoLiveReadinessResult =
   | {
@@ -39,6 +43,7 @@ export type LoadGoLiveReadinessResult =
       attestationEvents: GoLiveAttestationEvent[];
       latestAttestationEvents: GoLiveAttestationEvent[];
       guidedSetupEnabled: boolean;
+      setupCoverage: SetupCoverageManifest;
     }
   | { ok: false; reason: "unauthorized" | "unavailable" };
 
@@ -180,9 +185,8 @@ export async function loadGoLiveReadiness(
 
   if (!row) return { ok: false, reason: "unavailable" };
 
-  const guidedSetupEnabled = await isReleaseFeatureVisible(
+  const guidedSetupEnabled = await isCocoSetupExperienceVisible(
     ctx.salon,
-    "guided_admin_setup",
   );
   const multiServiceBookingEnabled = isReleaseFeatureEnabled(
     { feature_flags: row.feature_flags },
@@ -807,6 +811,20 @@ export async function loadGoLiveReadiness(
     technicalSnapshotHash,
     snapshotHash,
   );
+  const readiness = evaluateGoLiveReadiness({
+    ...readinessInput,
+    humanAttestations: attestationState,
+  });
+  const setupCoverage = deriveCocoSetupCoverage({
+    readiness,
+    featureFlags: row.feature_flags,
+    resourcesEnabled,
+    phoneOtpEnabled: readinessInput.phoneOtpEnabled,
+    paymentProvider: row.payment_provider,
+    voiceAiEnabled: row.voice_ai_enabled === true,
+    optionalIntegrationsSkipped:
+      typeof row.guided_setup_integrations_skipped_at === "string",
+  });
 
   return {
     ok: true,
@@ -818,9 +836,7 @@ export async function loadGoLiveReadiness(
     attestationEvents,
     latestAttestationEvents,
     guidedSetupEnabled,
-    readiness: evaluateGoLiveReadiness({
-      ...readinessInput,
-      humanAttestations: attestationState,
-    }),
+    readiness,
+    setupCoverage,
   };
 }

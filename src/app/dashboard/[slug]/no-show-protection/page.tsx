@@ -5,7 +5,7 @@ import { GuidedSetupReturnCard } from "@/components/dashboard/GuidedSetupReturnC
 import { GuidedBookingPolicySetup } from "@/components/dashboard/GuidedBookingPolicySetup";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
-import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
+import { isCocoSetupExperienceVisible } from "@/shared/dashboard/cocoSetupActivation";
 import { evaluatePolicyReadiness, type StoredPolicy } from "@/shared/lib/cancellationPolicy";
 import { loadSalonOwnerAdminSettingsForDashboardContext } from "@/shared/dashboard/salonOwnerAdminSettings";
 
@@ -24,10 +24,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
     redirect(`/dashboard/${encodeURIComponent(slug)}`);
   }
 
-  const guidedSetupEnabled = await isReleaseFeatureVisible(
-    ctx.salon,
-    "guided_admin_setup",
-  );
+  const guidedSetupEnabled = await isCocoSetupExperienceVisible(ctx.salon);
   if (guidedSetupEnabled) {
     const [loaded, { loadNoShowFeeReviewQueue }, { loadGroupCancellationFeeReviewQueue }, { loadLateCancellationFeeReviewQueue }] = await Promise.all([
       loadSalonOwnerAdminSettingsForDashboardContext(ctx),

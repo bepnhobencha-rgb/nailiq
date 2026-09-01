@@ -271,7 +271,8 @@ const PRODUCTION = {
   // +1 validated public Smart Capacity Rescue request RPC.
   // +4 Waitlist-owner occurrence, claim, completion and rescue-summary functions.
   // +1 fail-closed complex-request rescue guard function.
-  functions: 450,
+  // +1 bounded Owner/Admin Coco Setup decision recorder.
+  functions: 451,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -497,6 +498,7 @@ const CRITICAL_FUNCTIONS = [
   "protect_archived_booking_recovery_flag",
   "protect_guided_admin_setup_rollout_flag",
   "configure_guided_admin_setup_qa_salon",
+  "save_coco_setup_decision",
   "insert_controlled_after_hours_group_bookings",
   "queue_platform_announcement_deliveries",
   "resolve_public_booking_pricing",

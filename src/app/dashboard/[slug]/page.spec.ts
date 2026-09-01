@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   loadSalonOwnerDashboard: vi.fn(),
   loadOwnerHomeDashboard: vi.fn(),
   loadGoLiveReadiness: vi.fn(),
-  isReleaseFeatureVisible: vi.fn(),
+  isCocoSetupExperienceVisible: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
@@ -34,8 +34,8 @@ vi.mock("@/shared/dashboard/guidedSetup", () => ({
   deriveGuidedSetupProgress: vi.fn(),
   resolveGuidedDashboardRoot: vi.fn(() => "dashboard"),
 }));
-vi.mock("@/shared/features/platformFeatureFlags", () => ({
-  isReleaseFeatureVisible: mocks.isReleaseFeatureVisible,
+vi.mock("@/shared/dashboard/cocoSetupActivation", () => ({
+  isCocoSetupExperienceVisible: mocks.isCocoSetupExperienceVisible,
 }));
 
 import SalonDashboardPage from "./page";
@@ -47,7 +47,7 @@ describe("SalonDashboardPage redirect-loop guard", () => {
       ok: false,
       error: "server_error",
     });
-    mocks.isReleaseFeatureVisible.mockResolvedValue(false);
+    mocks.isCocoSetupExperienceVisible.mockResolvedValue(false);
   });
 
   it("renders the fail-closed retry state instead of redirecting an authorization miss to /register", async () => {

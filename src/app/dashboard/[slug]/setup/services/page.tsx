@@ -13,6 +13,7 @@ import { resolveUserLanguage } from "@/shared/i18n/user/resolveUserLanguage";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
 import { getEffectivePlanLimits } from "@/shared/lib/subscriptionPlans";
 import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
+import { isCocoSetupExperienceVisible } from "@/shared/dashboard/cocoSetupActivation";
 import { loadPublicBookingSequenceReadiness } from "@/shared/booking/bookingSequenceReadiness";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -65,7 +66,7 @@ export default async function SetupServicesPage({ params }: Props) {
   const language = await resolveUserLanguage();
   const t = getUserMessages(language);
   const [guidedSetupEnabled, multiServiceTenantVisible, sequenceReadiness] = await Promise.all([
-    isReleaseFeatureVisible(ctx.salon, "guided_admin_setup"),
+    isCocoSetupExperienceVisible(ctx.salon),
     isReleaseFeatureVisible(ctx.salon, "multi_service_booking"),
     loadPublicBookingSequenceReadiness(ctx.salon.id),
   ]);

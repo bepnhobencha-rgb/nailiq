@@ -110,10 +110,10 @@ export const userVi: UserMessages = {
       slugAdjusted:
         "Đường dẫn bạn chọn đã có người dùng, nên chúng tôi giữ {slug} cho bạn.",
       callout:
-        "3 bước nhanh trên dashboard: thêm dịch vụ, nhân viên, địa chỉ — rồi link đặt lịch sẽ mở.",
+        "Coco sẽ hỏi từng bước dễ hiểu, kiểm tra đủ 15 chức năng và chỉ đưa việc cần làm tiếp theo.",
       salonOwnerLabel: "Chủ tiệm",
-      goToDashboard: "Vào bảng điều khiển →",
-      dashboardHint: "Link đặt lịch sẽ hiện sau khi bạn hoàn thành thiết lập.",
+      goToDashboard: "Bắt đầu Coco Setup →",
+      dashboardHint: "Bạn có thể rời đi; Coco sẽ tự tiếp tục đúng bước khi quay lại.",
       bookingLinkLabel: "Link đặt lịch công khai",
       copyLink: "Sao chép link",
       copied: "Đã chép",

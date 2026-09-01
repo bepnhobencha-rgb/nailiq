@@ -6,7 +6,7 @@ import { SetupBackNav } from "@/components/dashboard/SetupBackNav";
 import { GuidedSetupReturnCard } from "@/components/dashboard/GuidedSetupReturnCard";
 import { HoursSetupPanel } from "@/components/dashboard/HoursSetupPanel";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
-import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
+import { isCocoSetupExperienceVisible } from "@/shared/dashboard/cocoSetupActivation";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -30,10 +30,7 @@ export default async function SetupHoursPage({ params }: Props) {
   }
 
   const rawHours = ctx.salon.opening_hours;
-  const guidedSetupEnabled = await isReleaseFeatureVisible(
-    ctx.salon,
-    "guided_admin_setup",
-  );
+  const guidedSetupEnabled = await isCocoSetupExperienceVisible(ctx.salon);
 
   return (
     <ResponsiveShell>
