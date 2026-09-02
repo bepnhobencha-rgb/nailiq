@@ -92,6 +92,11 @@ function actionError(code: string, vi: boolean): string {
   if (code === "feature_disabled") {
     return vi ? "TurnIQ đang tắt cho salon này." : "TurnIQ is off for this salon.";
   }
+  if (code === "rollout_stage_blocked") {
+    return vi
+      ? "TurnIQ đang ở chế độ quan sát. Chưa thể xác nhận nhóm."
+      : "TurnIQ is in observation mode. Party confirmation is not available yet.";
+  }
   if (code === "forbidden") {
     return vi
       ? "Tài khoản này không có quyền xếp nhóm."

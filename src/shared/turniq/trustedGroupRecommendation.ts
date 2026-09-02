@@ -22,6 +22,7 @@ import {
 } from "@/shared/turniq/groupReadModels";
 import { simulateTurnIqGroupTiming } from "@/shared/turniq/groupTimingSimulationEngine";
 import { resolveTurnIqContext } from "@/shared/turniq/serverDal";
+import { turnIqStageAllowsOnlineMutation } from "@/shared/turniq/rolloutStage";
 import type {
   TurnIqGroupCommandActionResult,
   TurnIqGroupConfirmationActionInput,
@@ -875,6 +876,9 @@ export async function confirmTrustedTurnIqStaggeredGroupPlan(
     const context = await resolveTurnIqContext(input.slug);
     if (!context) return { ok: false, code: "unauthorized" };
     if (!context.featureEnabled) return { ok: false, code: "feature_disabled" };
+    if (!turnIqStageAllowsOnlineMutation(context.rolloutStage)) {
+      return { ok: false, code: "rollout_stage_blocked" };
+    }
     if (!canUseTurnIqLiveBoard(context.role)) {
       return { ok: false, code: "forbidden" };
     }
@@ -952,6 +956,9 @@ export async function confirmTrustedTurnIqGroup(
     const context = await resolveTurnIqContext(input.slug);
     if (!context) return { ok: false, code: "unauthorized" };
     if (!context.featureEnabled) return { ok: false, code: "feature_disabled" };
+    if (!turnIqStageAllowsOnlineMutation(context.rolloutStage)) {
+      return { ok: false, code: "rollout_stage_blocked" };
+    }
     if (!canUseTurnIqLiveBoard(context.role)) {
       return { ok: false, code: "forbidden" };
     }

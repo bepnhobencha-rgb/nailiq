@@ -18,12 +18,17 @@ import {
 } from "@/shared/lib/salonTime";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
-import { loadPlatformDisabledFeatures } from "@/shared/features/platformFeatureFlags";
+import {
+  isReleaseFeatureVisible,
+  loadPlatformDisabledFeatures,
+} from "@/shared/features/platformFeatureFlags";
 import {
   loadTurnIqExceptionInbox,
   loadTurnIqLiveBoard,
+  loadTurnIqRolloutStage,
   loadTurnIqStaffView,
 } from "@/shared/turniq/serverDal";
+import { turnIqStageAllowsRead } from "@/shared/turniq/rolloutStage";
 import { loadTrustedTurnIqGroupQueue } from "@/shared/turniq/trustedGroupRecommendation";
 
 export const dynamic = "force-dynamic";
@@ -130,7 +135,10 @@ export default async function ReceptionistCenterPage({
   const receptionistShellV2Enabled =
     featureVisible("receptionist_shell_v2") || receptionistShellPreview;
   const waitlistAttentionEnabled = featureVisible("waitlist_attention");
-  const turnIqEnabled = featureVisible("turniq_trust_engine");
+  const turnIqRolloutStage = await loadTurnIqRolloutStage(ctx.salon.id);
+  const turnIqEnabled =
+    (await isReleaseFeatureVisible(flagSalon, "turniq_trust_engine")) &&
+    turnIqStageAllowsRead(turnIqRolloutStage);
   const [turnIqBoardResult, turnIqStaffViewResult, turnIqExceptionInboxResult, turnIqGroupQueueResult] =
     turnIqEnabled
       ? await Promise.all([
@@ -293,6 +301,7 @@ export default async function ReceptionistCenterPage({
         waitlistAttentionEnabled={waitlistAttentionEnabled}
         recoveryPrefill={recoveryPrefill}
         turnIqEnabled={turnIqEnabled}
+        turnIqRolloutStage={turnIqRolloutStage}
         initialTurnIqBoard={
           turnIqBoardResult?.ok ? turnIqBoardResult.data : null
         }

@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 
 import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 import { resolvePublicBookingPage } from "@/shared/booking/resolvePublicBookingPage";
+import { loadTurnIqRolloutStage } from "@/shared/turniq/serverDal";
+import { turnIqStageAllowsOnlineMutation } from "@/shared/turniq/rolloutStage";
 
 import { TurnIqPublicCheckInClient } from "./TurnIqPublicCheckInClient";
 
@@ -54,6 +56,9 @@ export default async function TurnIqCustomerCheckInPage({
   }, "turniq_trust_engine"))) {
     notFound();
   }
+  if (!turnIqStageAllowsOnlineMutation(
+    await loadTurnIqRolloutStage(resolved.load.salon.id),
+  )) notFound();
   const services = resolved.load.services
     .filter((service) => visitKind === "walkin" || service.id === serviceId)
     .map((service) => ({ id: service.id, name: service.name }));

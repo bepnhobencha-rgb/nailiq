@@ -77,7 +77,8 @@ describe("TurnIQ M3C trusted snapshot boundary", () => {
   });
 
   it("mounts the Live Board only through the default-off release flag", () => {
-    expect(page).toContain('featureVisible("turniq_trust_engine")');
+    expect(page).toContain('isReleaseFeatureVisible(flagSalon, "turniq_trust_engine")');
+    expect(page).toContain("turnIqStageAllowsRead(turnIqRolloutStage)");
     expect(page).toContain("turnIqEnabled={turnIqEnabled}");
     expect(page).toContain("turnIqBoardResult?.ok");
   });

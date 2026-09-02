@@ -303,6 +303,7 @@ export type TurnIqServerActionErrorCode =
   | "unauthorized"
   | "forbidden"
   | "feature_disabled"
+  | "rollout_stage_blocked"
   | "not_found"
   | "owner_confirmation_required"
   | "policy_configuration_required"

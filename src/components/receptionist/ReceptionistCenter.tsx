@@ -181,6 +181,10 @@ import type {
   TurnIqLiveBoardView,
   TurnIqStaffView,
 } from "@/shared/turniq/readModels";
+import {
+  turnIqStageAllowsOnlineMutation,
+  type TurnIqRolloutStage,
+} from "@/shared/turniq/rolloutStage";
 import type { TurnIqGroupQueueView } from "@/shared/turniq/groupReadModels";
 import {
   applyTurnIqAssignmentCommandAction,
@@ -344,6 +348,7 @@ export type ReceptionistCenterProps = {
   recoveryPrefill?: ReceptionistRecoveryPrefill | null;
   /** Default-OFF TurnIQ projection. It contains no customer PII or peer money. */
   turnIqEnabled?: boolean;
+  turnIqRolloutStage?: TurnIqRolloutStage;
   initialTurnIqBoard?: TurnIqLiveBoardView | null;
   turnIqBoardError?: string | null;
   initialTurnIqStaffView?: TurnIqStaffView | null;
@@ -516,6 +521,7 @@ function ReceptionistCenterInner({
   waitlistAttentionEnabled,
   recoveryPrefill,
   turnIqEnabled,
+  turnIqRolloutStage,
   initialTurnIqBoard,
   turnIqBoardError,
   initialTurnIqStaffView,
@@ -542,6 +548,7 @@ function ReceptionistCenterInner({
   waitlistAttentionEnabled: boolean;
   recoveryPrefill: ReceptionistRecoveryPrefill | null;
   turnIqEnabled: boolean;
+  turnIqRolloutStage: TurnIqRolloutStage;
   initialTurnIqBoard: TurnIqLiveBoardView | null;
   turnIqBoardError: string | null;
   initialTurnIqStaffView: TurnIqStaffView | null;
@@ -551,6 +558,7 @@ function ReceptionistCenterInner({
   initialTurnIqGroupQueue: TurnIqGroupQueueView | null;
   turnIqGroupQueueError: string | null;
 }) {
+  const turnIqCanMutate = turnIqStageAllowsOnlineMutation(turnIqRolloutStage);
   const router = useRouter();
   const searchParams = useSearchParams();
   const { language, setLanguage } = useUserLanguage();
@@ -4494,7 +4502,7 @@ function ReceptionistCenterInner({
                 language={language === "vi" ? "vi" : "en"}
                 timezone={timezone}
                 slug={slug}
-                canManage
+                canManage={turnIqCanMutate}
                 offline={isOffline}
                 onRecommend={recommendTurnIqGroupAction}
                 onConfirm={confirmTurnIqGroupAction}
@@ -4510,7 +4518,10 @@ function ReceptionistCenterInner({
               salonId={data.salon.id}
               language={language === "vi" ? "vi" : "en"}
               offline={isOffline}
-              canPair={viewerRole === "owner" || viewerRole === "admin"}
+              canPair={
+                turnIqRolloutStage === "live" &&
+                (viewerRole === "owner" || viewerRole === "admin")
+              }
               board={turnIqBoard}
               staffView={turnIqStaffView}
               services={turnIqOfflineServices}
@@ -4526,7 +4537,8 @@ function ReceptionistCenterInner({
                       errorCode={turnIqError}
                       language={language === "vi" ? "vi" : "en"}
                       slug={slug}
-                      canManage
+                      canManage={turnIqCanMutate}
+                      rolloutStage={turnIqRolloutStage}
                       onRefresh={reloadCurrentDay}
                       onApplyCommand={offlineRuntime.applyAssignment}
                       onLoadReceipt={loadTurnIqFairnessReceiptAction}
@@ -5867,6 +5879,7 @@ export function ReceptionistCenter({
   waitlistAttentionEnabled = false,
   recoveryPrefill = null,
   turnIqEnabled = false,
+  turnIqRolloutStage = "off",
   initialTurnIqBoard = null,
   turnIqBoardError = null,
   initialTurnIqStaffView = null,
@@ -5896,6 +5909,7 @@ export function ReceptionistCenter({
       waitlistAttentionEnabled={waitlistAttentionEnabled}
       recoveryPrefill={recoveryPrefill}
       turnIqEnabled={turnIqEnabled}
+      turnIqRolloutStage={turnIqRolloutStage}
       initialTurnIqBoard={initialTurnIqBoard}
       turnIqBoardError={turnIqBoardError}
       initialTurnIqStaffView={initialTurnIqStaffView}

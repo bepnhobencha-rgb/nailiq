@@ -25,7 +25,9 @@ describe("TurnIQ M3B server boundary", () => {
     expect(dal).toContain("getDashboardWriteClient(slug)");
     expect(dal).toContain('ctx.kind !== "member"');
     expect(dal).toContain('"turniq_trust_engine"');
-    expect(dal).toContain("isReleaseFeatureEnabled");
+    expect(dal).toContain("isReleaseFeatureVisible");
+    expect(dal).toContain("loadTurnIqRolloutStage");
+    expect(dal).toContain("turnIqStageAllowsRead");
   });
 
   it("does not export recommendation persistence as a browser-callable Server Action", () => {

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
-import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
+import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 import type { SalonMemberRole } from "@/shared/lib/salonMemberRole";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { salonDayRangeUtc, salonYmdOfUtc } from "@/shared/lib/salonTime";
@@ -49,6 +49,11 @@ import { canonicalTurnIqJson, sha256TurnIqHex } from "@/shared/turniq/fingerprin
 import { decideSingleCustomer } from "@/shared/turniq/singleCustomerEngine";
 import type { TurnIqTrustedConfirmationSnapshot } from "@/shared/turniq/trustedSnapshot";
 import type { TurnIqServerActionErrorCode } from "@/shared/turniq/serverContracts";
+import {
+  parseTurnIqRolloutStage,
+  turnIqStageAllowsRead,
+  type TurnIqRolloutStage,
+} from "@/shared/turniq/rolloutStage";
 
 type TurnIqReadResult<T> =
   | { ok: true; data: T }
@@ -151,29 +156,46 @@ export async function resolveTurnIqContext(
 ): Promise<AuthorizedReadContext | null> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx || ctx.kind !== "member" || !ctx.userId) return null;
-  const featureEnabled = isReleaseFeatureEnabled(
-    ctx.salon,
-    "turniq_trust_engine",
-  );
   const admin = createServiceRoleClient();
-  const { data, error } = await admin
-    .from("staff")
-    .select("id")
-    .eq("salon_id", ctx.salon.id)
-    .eq("user_id", ctx.userId)
-    .eq("status", "active")
-    .is("deleted_at", null)
-    .limit(1)
-    .maybeSingle();
-  if (error) throw gatewayErrorFromDatabase(error);
+  const [featureVisible, staffResult, rolloutStage] = await Promise.all([
+    isReleaseFeatureVisible(ctx.salon, "turniq_trust_engine"),
+    admin
+      .from("staff")
+      .select("id")
+      .eq("salon_id", ctx.salon.id)
+      .eq("user_id", ctx.userId)
+      .eq("status", "active")
+      .is("deleted_at", null)
+      .limit(1)
+      .maybeSingle(),
+    loadTurnIqRolloutStage(ctx.salon.id, admin),
+  ]);
+  if (staffResult.error) throw gatewayErrorFromDatabase(staffResult.error);
+  const featureEnabled = featureVisible && turnIqStageAllowsRead(rolloutStage);
   return {
     salonId: ctx.salon.id,
     actorUserId: ctx.userId,
     actorRole: ctx.role,
-    actorStaffId: data?.id ? String(data.id) : null,
+    actorStaffId: staffResult.data?.id ? String(staffResult.data.id) : null,
     featureEnabled,
+    rolloutStage,
     role: ctx.role,
   };
+}
+
+export async function loadTurnIqRolloutStage(
+  salonId: string,
+  client = createServiceRoleClient(),
+): Promise<TurnIqRolloutStage> {
+  const { data, error } = await client
+    .from("turniq_rollout_controls" as never)
+    .select("stage" as never)
+    .eq("salon_id" as never, salonId)
+    .maybeSingle();
+  if (error || !data) return "off";
+  return parseTurnIqRolloutStage(
+    (data as unknown as { stage?: unknown }).stage,
+  );
 }
 
 export const turnIqActionGateway: TurnIqActionGateway = {

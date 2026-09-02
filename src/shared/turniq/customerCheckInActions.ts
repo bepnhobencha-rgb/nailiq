@@ -7,6 +7,8 @@ import {
   issueTurnIqCustomerCheckInCapability,
   revokeTurnIqCustomerCheckInCapability,
 } from "@/shared/turniq/customerCheckInServer";
+import { loadTurnIqRolloutStage } from "@/shared/turniq/serverDal";
+import { turnIqStageAllowsOnlineMutation } from "@/shared/turniq/rolloutStage";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -14,6 +16,7 @@ export type TurnIqCheckInLinkError =
   | "unauthorized"
   | "forbidden"
   | "feature_disabled"
+  | "rollout_stage_blocked"
   | "preview_only"
   | "invalid_request"
   | "not_found"
@@ -73,6 +76,10 @@ async function authorizedContext(slug: string) {
   }
   if (!(await isReleaseFeatureVisible(ctx.salon, "turniq_trust_engine"))) {
     return { ok: false as const, error: "feature_disabled" as const };
+  }
+  const rolloutStage = await loadTurnIqRolloutStage(ctx.salon.id);
+  if (!turnIqStageAllowsOnlineMutation(rolloutStage)) {
+    return { ok: false as const, error: "rollout_stage_blocked" as const };
   }
   return { ok: true as const, ctx, cleanSlug, actorUserId: ctx.userId };
 }

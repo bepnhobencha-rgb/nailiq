@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   issue: vi.fn(),
   revoke: vi.fn(),
   booking: vi.fn(),
+  stage: vi.fn(),
 }));
 
 vi.mock("@/shared/dashboard/setupActions", () => ({
@@ -17,6 +18,9 @@ vi.mock("@/shared/features/platformFeatureFlags", () => ({
 vi.mock("@/shared/turniq/customerCheckInServer", () => ({
   issueTurnIqCustomerCheckInCapability: mocks.issue,
   revokeTurnIqCustomerCheckInCapability: mocks.revoke,
+}));
+vi.mock("@/shared/turniq/serverDal", () => ({
+  loadTurnIqRolloutStage: mocks.stage,
 }));
 
 import {
@@ -44,6 +48,7 @@ describe("TurnIQ customer check-in link actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.visible.mockResolvedValue(true);
+    mocks.stage.mockResolvedValue("supervised");
     mocks.booking.mockResolvedValue({
       data: {
         id: BOOKING_ID,
@@ -123,6 +128,14 @@ describe("TurnIQ customer check-in link actions", () => {
     mocks.visible.mockResolvedValueOnce(false);
     await expect(issueTurnIqCustomerCheckInLink("qa-salon", { kind: "walkin_kiosk" }))
       .resolves.toEqual({ ok: false, error: "feature_disabled" });
+    expect(mocks.issue).not.toHaveBeenCalled();
+  });
+
+  it("does not open customer check-in while TurnIQ is shadow-only", async () => {
+    mocks.stage.mockResolvedValueOnce("shadow");
+    await expect(
+      issueTurnIqCustomerCheckInLink("qa-salon", { kind: "walkin_kiosk" }),
+    ).resolves.toEqual({ ok: false, error: "rollout_stage_blocked" });
     expect(mocks.issue).not.toHaveBeenCalled();
   });
 

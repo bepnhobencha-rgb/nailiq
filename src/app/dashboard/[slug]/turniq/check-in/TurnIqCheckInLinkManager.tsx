@@ -28,6 +28,7 @@ type ActiveLink = {
 function errorCopy(code: string): string {
   if (code === "preview_only") return "Customer check-in is limited to Preview/local verification / Check-in khách hiện chỉ dùng ở Preview/local.";
   if (code === "feature_disabled") return "TurnIQ is off for this salon or platform / TurnIQ đang tắt cho salon hoặc hệ thống.";
+  if (code === "rollout_stage_blocked") return "TurnIQ must reach Supervised before customer check-in is opened / TurnIQ phải đến chế độ Giám sát trước khi mở check-in khách.";
   if (code === "not_found") return "This appointment can no longer receive a QR / Lịch hẹn này không còn đủ điều kiện nhận QR.";
   if (code === "forbidden" || code === "unauthorized") return "This account cannot issue check-in links / Tài khoản này không có quyền tạo link check-in.";
   return "The secure link was not created / Chưa tạo được link an toàn. Nothing changed; please retry.";

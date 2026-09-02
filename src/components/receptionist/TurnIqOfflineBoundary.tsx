@@ -241,7 +241,7 @@ export function TurnIqOfflineBoundary({
             await store.update({
               ...record,
               status: "conflict",
-              conflictCode: result.code === "invalid_input" || result.code === "unauthorized" || result.code === "forbidden" || result.code === "feature_disabled" ? "domain_conflict" : result.code,
+              conflictCode: result.code === "invalid_input" || result.code === "unauthorized" || result.code === "forbidden" || result.code === "feature_disabled" || result.code === "rollout_stage_blocked" ? "domain_conflict" : result.code,
               ...(conflictId ? { conflictId } : {}),
             });
           }

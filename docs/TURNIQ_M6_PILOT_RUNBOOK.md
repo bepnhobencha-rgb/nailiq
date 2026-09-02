@@ -16,26 +16,38 @@ Never substitute one label for another.
 
 ## Pilot sequence and rollback boundary
 
-1. **Baseline:** TurnIQ flag OFF. Record normal assignment latency, wait range,
+1. **Baseline / OFF:** platform flag OFF, salon flag OFF, or rollout stage
+   absent/`off`. Record normal assignment latency, wait range,
    walk-aways, owner interventions and disputes for at least representative busy
    shifts. Rollback is a no-op because TurnIQ does not control assignments.
-2. **Shadow:** flag enables read-only recommendation/replay only. Compare the
+2. **SHADOW:** both feature flags must be ON and the authoritative stage is
+   `shadow`. Only read/recommend/replay is available; every turn mutation and
+   every offline operation is rejected server-side. Compare the
    recommendation to actual staff choices. Rollback by disabling the salon flag;
    preserve every decision and comparison receipt.
-3. **Supervised:** authorized staff see recommendations and explicitly confirm.
+3. **SUPERVISED:** authorized staff see recommendations and explicitly confirm.
+   Online atomic commands are permitted; offline mutations remain blocked.
    Owner handles only Exception Inbox items. Rollback by disabling the salon
    flag and returning to the existing Receptionist Center workflow.
-4. **Live pilot:** only after the gates below pass and the Owner explicitly
+4. **LIVE pilot:** only after the gates below pass and the Owner explicitly
    approves the exact salon. Rollback immediately on any duplicate assignment,
    lost offline command, tenant/role leak, unexplained money mismatch or unsafe
    appointment/resource conflict.
 
-Never drop TurnIQ policies, events, command receipts, Fairness Receipts,
+Forward promotion cannot skip a stage. Every transition uses the private
+`configure_turniq_rollout_stage_v1` boundary with an exact confirmation phrase,
+Owner/Admin actor, reason, command ID and fingerprint. A rollback may move
+directly to a safer stage and creates a new immutable event. It never rewrites
+history. Missing, malformed or unreadable stage state resolves to OFF.
+
+Never drop TurnIQ policies, rollout/turn events, command receipts, Fairness Receipts,
 offline reconciliation rows or disputes during rollback.
 
 ## Preflight gates
 
-- Per-salon `turniq_trust_engine_enabled` remains default OFF and is absent/false
+- Platform `feature_turniq_trust_engine`, per-salon
+  `turniq_trust_engine_enabled`, and authoritative rollout stage must all allow
+  the requested mode. The per-salon flag remains default OFF and is absent/false
   for every non-pilot salon.
 - Migrations apply cleanly to a blank/disposable database and pass metadata,
   ACL/RLS and security-advisor checks.
@@ -91,8 +103,9 @@ approval of the exact salon and effective business date.
 
 ## Incident recovery
 
-1. Stop new TurnIQ control by setting the one pilot salon flag OFF through the
-   approved release-control path.
+1. Stop new TurnIQ control by moving the pilot salon stage to OFF through the
+   audited stage-transition boundary, then use the platform or per-salon flag
+   as a second kill switch if needed.
 2. Revoke its Primary Offline Device lease. Do not delete its outbox or evidence.
 3. Use current Receptionist Center booking/resource truth as operational truth.
 4. Export the Owner trust summary plus open reconciliation/Exception Inbox items.

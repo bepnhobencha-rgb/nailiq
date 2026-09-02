@@ -34,6 +34,10 @@ import {
   type TurnIqShiftActionInput,
   type TurnIqSwapActionInput,
 } from "@/shared/turniq/serverContracts";
+import {
+  turnIqStageAllowsOnlineMutation,
+  type TurnIqRolloutStage,
+} from "@/shared/turniq/rolloutStage";
 
 export type TurnIqAuthorizedContext = {
   salonId: string;
@@ -41,6 +45,7 @@ export type TurnIqAuthorizedContext = {
   actorRole: SalonMemberRole;
   actorStaffId: string | null;
   featureEnabled: boolean;
+  rolloutStage: TurnIqRolloutStage;
 };
 
 export type TurnIqRpcOutcome = {
@@ -230,6 +235,14 @@ function failure(code: TurnIqServerActionErrorCode): TurnIqCommandActionResult {
   return { ok: false, code };
 }
 
+function stageFailure(context: TurnIqAuthorizedContext): TurnIqCommandActionResult | null {
+  if (!context.featureEnabled) return failure("feature_disabled");
+  if (!turnIqStageAllowsOnlineMutation(context.rolloutStage)) {
+    return failure("rollout_stage_blocked");
+  }
+  return null;
+}
+
 function safeRpcResult(outcome: TurnIqRpcOutcome): TurnIqCommandActionResult {
   if (!outcome.ok) {
     if (
@@ -285,7 +298,8 @@ export async function createTurnIqDisputeCore(
     const input = parsed.data;
     const context = await gateway.resolveContext(input.slug);
     if (!context) return failure("unauthorized");
-    if (!context.featureEnabled) return failure("feature_disabled");
+    const blocked = stageFailure(context);
+    if (blocked) return blocked;
     if (!canCreateTurnIqDispute(context.actorStaffId)) return failure("forbidden");
     const requestFingerprint = await fingerprint({
       kind: "turniq_dispute_command_v1",
@@ -330,7 +344,8 @@ export async function createTurnIqSkipDisputeCore(
     const input = parsed.data;
     const context = await gateway.resolveContext(input.slug);
     if (!context) return failure("unauthorized");
-    if (!context.featureEnabled) return failure("feature_disabled");
+    const blocked = stageFailure(context);
+    if (blocked) return blocked;
     if (!canCreateTurnIqDispute(context.actorStaffId)) return failure("forbidden");
     const requestFingerprint = await fingerprint({
       kind: "turniq_skip_dispute_command_v1",
@@ -376,7 +391,8 @@ export async function resolveTurnIqDisputeCore(
     const input = parsed.data;
     const context = await gateway.resolveContext(input.slug);
     if (!context) return failure("unauthorized");
-    if (!context.featureEnabled) return failure("feature_disabled");
+    const blocked = stageFailure(context);
+    if (blocked) return blocked;
     if (!canResolveTurnIqTrustItem(context.actorRole)) return failure("forbidden");
     const requestFingerprint = await fingerprint({
       kind: "turniq_resolve_dispute_command_v1",
@@ -421,7 +437,8 @@ export async function applyTurnIqExceptionCommandCore(
     const input = parsed.data;
     const context = await gateway.resolveContext(input.slug);
     if (!context) return failure("unauthorized");
-    if (!context.featureEnabled) return failure("feature_disabled");
+    const blocked = stageFailure(context);
+    if (blocked) return blocked;
     if (!canResolveTurnIqTrustItem(context.actorRole)) return failure("forbidden");
     const requestFingerprint = await fingerprint({
       kind: "turniq_exception_command_v1",
@@ -478,7 +495,8 @@ export async function applyTurnIqShiftCommandCore(
     const input = parsed.data;
     const context = await gateway.resolveContext(input.slug);
     if (!context) return failure("unauthorized");
-    if (!context.featureEnabled) return failure("feature_disabled");
+    const blocked = stageFailure(context);
+    if (blocked) return blocked;
     if (
       !canIssueTurnIqShiftCommand(
         context.actorRole,
@@ -533,7 +551,8 @@ export async function applyTurnIqAssignmentCommandCore(
     const input = parsed.data;
     const context = await gateway.resolveContext(input.slug);
     if (!context) return failure("unauthorized");
-    if (!context.featureEnabled) return failure("feature_disabled");
+    const blocked = stageFailure(context);
+    if (blocked) return blocked;
     const assignment = await gateway.loadAssignment(
       context.salonId,
       input.assignmentId,
@@ -597,7 +616,8 @@ export async function applyTurnIqRefusalCommandCore(
     const input = parsed.data;
     const context = await gateway.resolveContext(input.slug);
     if (!context) return failure("unauthorized");
-    if (!context.featureEnabled) return failure("feature_disabled");
+    const blocked = stageFailure(context);
+    if (blocked) return blocked;
     if (!canIssueTurnIqRefusalCommand(context.actorRole)) {
       return failure("forbidden");
     }
@@ -644,7 +664,8 @@ export async function applyTurnIqRedoCommandCore(
     const input = parsed.data;
     const context = await gateway.resolveContext(input.slug);
     if (!context) return failure("unauthorized");
-    if (!context.featureEnabled) return failure("feature_disabled");
+    const blocked = stageFailure(context);
+    if (blocked) return blocked;
     if (!canIssueTurnIqRedoCommand(context.actorRole)) {
       return failure("forbidden");
     }
@@ -692,7 +713,8 @@ export async function applyTurnIqSwapCommandCore(
     const input = parsed.data;
     const context = await gateway.resolveContext(input.slug);
     if (!context) return failure("unauthorized");
-    if (!context.featureEnabled) return failure("feature_disabled");
+    const blocked = stageFailure(context);
+    if (blocked) return blocked;
     if (!canIssueTurnIqSwapCommand({
       role: context.actorRole,
       actorStaffId: context.actorStaffId,
@@ -738,7 +760,8 @@ export async function applyTurnIqCorrectionCommandCore(
     const input = parsed.data;
     const context = await gateway.resolveContext(input.slug);
     if (!context) return failure("unauthorized");
-    if (!context.featureEnabled) return failure("feature_disabled");
+    const blocked = stageFailure(context);
+    if (blocked) return blocked;
     if (!canIssueTurnIqCorrectionCommand(context.actorRole)) {
       return failure("forbidden");
     }

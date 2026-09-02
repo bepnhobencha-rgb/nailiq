@@ -4,6 +4,8 @@ import { notFound, redirect } from "next/navigation";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 import { isFrontDeskRole } from "@/shared/lib/salonMemberRole";
+import { loadTurnIqRolloutStage } from "@/shared/turniq/serverDal";
+import { turnIqStageAllowsOnlineMutation } from "@/shared/turniq/rolloutStage";
 
 import { TurnIqCheckInLinkManager } from "./TurnIqCheckInLinkManager";
 
@@ -40,6 +42,9 @@ export default async function TurnIqCheckInManagerPage({
   if (!ctx) redirect("/register");
   if (ctx.kind !== "member" || !isFrontDeskRole(ctx.role)) notFound();
   if (!(await isReleaseFeatureVisible(ctx.salon, "turniq_trust_engine"))) notFound();
+  if (!turnIqStageAllowsOnlineMutation(await loadTurnIqRolloutStage(ctx.salon.id))) {
+    notFound();
+  }
 
   const [{ data: bookingRows }, { data: serviceRows }] = await Promise.all([
     ctx.supabase

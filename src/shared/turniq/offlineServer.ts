@@ -20,6 +20,7 @@ function offlineConflictCode(value: string | null): TurnIqOfflineConflictCode {
     : "domain_conflict";
 }
 import { resolveTurnIqContext } from "@/shared/turniq/serverDal";
+import { turnIqStageAllowsOfflineMutation } from "@/shared/turniq/rolloutStage";
 
 type RpcJson = Record<string, unknown> | null;
 
@@ -62,6 +63,9 @@ async function contextFor(slug: string) {
   const context = await resolveTurnIqContext(slug);
   if (!context) return { ok: false as const, code: "unauthorized" as const };
   if (!context.featureEnabled) return { ok: false as const, code: "feature_disabled" as const };
+  if (!turnIqStageAllowsOfflineMutation(context.rolloutStage)) {
+    return { ok: false as const, code: "rollout_stage_blocked" as const };
+  }
   return { ok: true as const, context };
 }
 

@@ -175,7 +175,7 @@ export const turnIqOfflineReconcileActionSchema = turnIqOfflineDeviceActionSchem
 
 export type TurnIqOfflineReconcileActionResult =
   | { ok: true; conflictId: string; status: "resolved" }
-  | { ok: false; code: "invalid_input" | "unauthorized" | "forbidden" | "feature_disabled" | "not_found" | "server_error" };
+  | { ok: false; code: "invalid_input" | "unauthorized" | "forbidden" | "feature_disabled" | "rollout_stage_blocked" | "not_found" | "server_error" };
 
 export type TurnIqOfflineDeviceActionResult =
   | { ok: true; lease: TurnIqOfflineLease }
@@ -186,6 +186,7 @@ export type TurnIqOfflineDeviceActionResult =
         | "unauthorized"
         | "forbidden"
         | "feature_disabled"
+        | "rollout_stage_blocked"
         | "not_found"
         | TurnIqOfflineConflictCode
         | "server_error";
@@ -206,7 +207,7 @@ export type TurnIqOfflineReplayActionResult =
     }
   | {
       ok: false;
-      code: TurnIqOfflineConflictCode | "invalid_input" | "unauthorized" | "forbidden" | "feature_disabled" | "server_error";
+      code: TurnIqOfflineConflictCode | "invalid_input" | "unauthorized" | "forbidden" | "feature_disabled" | "rollout_stage_blocked" | "server_error";
       conflictId?: string;
     };
 

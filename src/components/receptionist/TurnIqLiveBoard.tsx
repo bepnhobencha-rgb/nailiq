@@ -20,6 +20,7 @@ import type {
   TurnIqCommandActionResult,
   TurnIqServerActionErrorCode,
 } from "@/shared/turniq/serverContracts";
+import type { TurnIqRolloutStage } from "@/shared/turniq/rolloutStage";
 
 type TurnIqLiveBoardProps = {
   board: TurnIqLiveBoardView | null;
@@ -27,6 +28,7 @@ type TurnIqLiveBoardProps = {
   language: "en" | "vi";
   slug?: string;
   canManage?: boolean;
+  rolloutStage?: TurnIqRolloutStage;
   onRefresh?: () => Promise<void>;
   onApplyCommand?: (
     input: TurnIqAssignmentActionInput,
@@ -84,6 +86,7 @@ export function TurnIqLiveBoard({
   language,
   slug,
   canManage = false,
+  rolloutStage = "off",
   onRefresh,
   onApplyCommand,
   onLoadReceipt,
@@ -143,6 +146,11 @@ export function TurnIqLiveBoard({
     }
     if (code === "feature_disabled") {
       return vi ? "TurnIQ đang tắt cho salon này." : "TurnIQ is off for this salon.";
+    }
+    if (code === "rollout_stage_blocked") {
+      return vi
+        ? "TurnIQ đang ở chế độ quan sát. Chưa thể thay đổi lượt."
+        : "TurnIQ is in observation mode. Turn changes are not available yet.";
     }
     if (code === "forbidden") {
       return vi
@@ -257,7 +265,11 @@ export function TurnIqLiveBoard({
           <Scale aria-hidden="true" className="size-5 text-nq-gold" />
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-nq-gold">
-              TurnIQ Live
+              {rolloutStage === "shadow"
+                ? "TurnIQ Shadow"
+                : rolloutStage === "supervised"
+                  ? "TurnIQ Supervised"
+                  : "TurnIQ Live"}
             </p>
             <h2 className="text-lg font-semibold text-nq-text">
               {vi ? "Lượt tiếp theo" : "Next turn"}

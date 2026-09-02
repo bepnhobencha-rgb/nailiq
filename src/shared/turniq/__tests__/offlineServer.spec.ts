@@ -50,6 +50,7 @@ describe("TurnIQ offline server boundary", () => {
       actorUserId: IDS.actor,
       actorRole: "owner",
       featureEnabled: true,
+      rolloutStage: "live",
     });
   });
 
@@ -73,6 +74,24 @@ describe("TurnIQ offline server boundary", () => {
       p_actor_user_id: IDS.actor,
       p_actor_role: "owner",
     }));
+  });
+
+  it("keeps offline writes blocked until the rollout reaches live", async () => {
+    mocks.context.mockResolvedValueOnce({
+      salonId: IDS.salon,
+      actorUserId: IDS.actor,
+      actorRole: "owner",
+      featureEnabled: true,
+      rolloutStage: "supervised",
+    });
+    await expect(
+      pairTurnIqOfflineDevice({
+        slug: "qa-salon",
+        deviceId: IDS.device,
+        label: "QA tablet",
+      }),
+    ).resolves.toEqual({ ok: false, code: "rollout_stage_blocked" });
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
   it("rejects a command from another salon or actor before RPC", async () => {
@@ -193,6 +212,7 @@ describe("TurnIQ offline server boundary", () => {
       actorUserId: IDS.actor,
       actorRole: "receptionist",
       featureEnabled: true,
+      rolloutStage: "live",
     });
     await expect(resolveTurnIqOfflineReconciliation({
       slug: "qa-salon",

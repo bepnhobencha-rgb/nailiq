@@ -38,6 +38,7 @@ function context(
     actorRole: "receptionist",
     actorStaffId: null,
     featureEnabled: true,
+    rolloutStage: "supervised",
     ...overrides,
   };
 }
@@ -177,6 +178,30 @@ describe("TurnIQ M3B server action core", () => {
       ),
     ).toEqual({ ok: false, code: "feature_disabled" });
     expect(disabled.applyShift).not.toHaveBeenCalled();
+  });
+
+  it("keeps shadow mode read-only and permits supervised commands", async () => {
+    const shadow = gateway({
+      resolveContext: vi.fn(async () => context({ rolloutStage: "shadow" })),
+    });
+    await expect(
+      applyTurnIqShiftCommandCore(
+        shiftInput,
+        shadow,
+        () => "2026-09-02T18:00:00.000Z",
+      ),
+    ).resolves.toEqual({ ok: false, code: "rollout_stage_blocked" });
+    expect(shadow.applyShift).not.toHaveBeenCalled();
+
+    const supervised = gateway();
+    await expect(
+      applyTurnIqShiftCommandCore(
+        shiftInput,
+        supervised,
+        () => "2026-09-02T18:00:00.000Z",
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    expect(supervised.applyShift).toHaveBeenCalledTimes(1);
   });
 
   it("allows a nail tech to mutate only their own shift", async () => {
