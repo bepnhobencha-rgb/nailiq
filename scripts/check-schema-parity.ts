@@ -155,13 +155,20 @@ import { execFileSync } from "node:child_process";
  * The 20260901194059 service-resource migration adds two service columns plus
  * two view-visible columns, one public capacity RPC, one commit-time guard
  * function, and one booking trigger.
+ * The 20260901-02 TurnIQ M1-M4P migrations add twenty private, salon-scoped
+ * policy/ledger/check-in tables, 357 columns, 35 atomic or projection
+ * functions, 32 integrity triggers, 138 primary/unique/lookup indexes, and
+ * service-role reachability for those twenty tables. Browser roles receive no
+ * direct table grants; the bounded operational projection remains
+ * authenticated-only.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
  */
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
-  tables: 201,
+  // +20 private TurnIQ policy, ledger, replay, group, and check-in tables.
+  tables: 221,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -216,7 +223,8 @@ const PRODUCTION = {
   // +6 Smart Capacity Rescue intent, locale and idempotency columns.
   // +15 durable Waitlist-owner notification outbox columns.
   // +4 service-resource requirement columns across base/public catalog shape.
-  columns: 3074,
+  // +357 private TurnIQ policy, ledger, replay, group, and check-in columns.
+  columns: 3431,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -277,7 +285,8 @@ const PRODUCTION = {
   // +1 fail-closed complex-request rescue guard function.
   // +1 bounded Owner/Admin Coco Setup decision recorder.
   // +2 public capacity and commit-time service-resource guard functions.
-  functions: 453,
+  // +35 TurnIQ atomic command, integrity, replay, and projection functions.
+  functions: 488,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -293,7 +302,8 @@ const PRODUCTION = {
   // +1 atomic Waitlist-owner occurrence trigger.
   // +1 fail-closed complex-request rescue guard trigger.
   // +1 booking service-resource requirement trigger.
-  triggers: 108,
+  // +32 TurnIQ integrity and append-only ledger triggers.
+  triggers: 140,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -315,7 +325,8 @@ const PRODUCTION = {
   // +9 Smart Checkout Phase B pairing/webhook/device indexes.
   // +3 Smart Capacity Rescue request, intent and review-queue indexes.
   // +4 Waitlist-owner outbox primary, unique, due and salon indexes.
-  indexes: 763,
+  // +138 TurnIQ primary, unique, tenant, state, and reconciliation indexes.
+  indexes: 901,
 } as const;
 
 /**
@@ -333,6 +344,26 @@ const CRITICAL_TABLES = [
   "bookings",
   "staff",
   "services",
+  "turniq_policy_versions",
+  "turniq_shift_sessions",
+  "turniq_assignments",
+  "turniq_command_receipts",
+  "turniq_events",
+  "turniq_fairness_receipts",
+  "turniq_exceptions",
+  "turniq_disputes",
+  "turniq_shadow_decisions",
+  "turniq_shadow_comparisons",
+  "turniq_replay_runs",
+  "turniq_replay_cases",
+  "turniq_policy_redo_rules",
+  "turniq_assignment_swaps",
+  "turniq_swap_consents",
+  "turniq_assignment_corrections",
+  "turniq_group_plans",
+  "turniq_group_plan_items",
+  "turniq_customer_checkin_capabilities",
+  "turniq_customer_checkin_receipts",
   "booking_waitlist_entries",
   "client_profiles",
   "salon_members",
@@ -852,7 +883,9 @@ function main() {
   // the delivery-event audit table is service-role-only.
   // The customer identity map is service-role read-only; the refund inbox is
   // mutation-through-RPC only and intentionally grants no table reachability.
-  const GRANTS = { anon: 56, authenticated: 78, service_role: 188 } as const;
+  // TurnIQ adds twenty private tables reachable only by service_role. Neither
+  // browser role gains direct table reachability.
+  const GRANTS = { anon: 56, authenticated: 78, service_role: 208 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
