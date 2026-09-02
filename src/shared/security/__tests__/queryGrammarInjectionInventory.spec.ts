@@ -224,6 +224,7 @@ describe("query grammar injection inventory", () => {
       "20260829174542_enable_card_safe_booking_sequences.sql",
       "20260829183626_add_multi_service_controlled_rollout.sql",
       "20260830005555_add_atomic_group_sequence_commit.sql",
+      "20260902225916_harden_turniq_rollout_command_idempotency.sql",
     ]);
 
     const sequenceCardPolicy = fs.readFileSync(
