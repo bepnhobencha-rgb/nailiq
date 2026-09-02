@@ -1,8 +1,8 @@
 # TurnIQ M4P — Disposable QA preflight
 
-Status: disposable QA database verification complete on 2026-09-02. The
-ordered 13-migration TurnIQ chain was applied only to QA. No Preview was
-created, no salon was enabled, and Production/providers were not touched.
+Status: disposable QA database and branch Preview verification complete on
+2026-09-02. The ordered 13-migration TurnIQ chain was applied only to QA. No
+salon was enabled, and Production/providers were not touched.
 
 ## Exact target
 
@@ -92,9 +92,24 @@ Post-migration checks:
 7. PASS — zero QA salons have `turniq_trust_engine_enabled = true`; platform and
    salon flags remain OFF.
 
-Database verification is complete. Vercel Preview configuration remains a
-separate authorization boundary and must keep outbound SMS/email/call plus all
-payment/provider dispatch disabled.
+## Vercel Preview result
+
+- PASS — branch `feat/turniq-m0-contracts` has a Vercel Preview at the stable
+  branch alias:
+  `https://nailiq-git-feat-turniq-m0-contracts-bepnhobencha-2588s-projects.vercel.app`.
+- PASS — 26 branch-scoped environment variables are stored as sensitive. The
+  runtime points to disposable QA `osdqutwunokiielbairj`.
+- PASS — outbound SMS, email and calls are disabled. Payment workers, approved
+  fee dispatch, Square payment webhook ingestion, Smart Checkout webhook
+  ingestion and all QA Square recovery triggers are disabled.
+- PASS — `/api/health` and `/api/ready` return HTTP 200; database schema and
+  cron authentication checks both pass.
+- PASS — a capability-free `/turniq/check-in` request returns the expected
+  fail-closed 404 without creating a customer check-in or any other data.
+- PASS — the branch working tree is clean after the evidence commit.
+
+This is deployed to QA Preview only. It is not merged, Production-deployed,
+enabled for a salon, or pilot-proven.
 
 ## Rollback boundary
 

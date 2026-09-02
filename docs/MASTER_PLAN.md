@@ -474,4 +474,6 @@ Không bắt đầu quảng cáo hoặc nhận nhiều salon trước khi hoàn 
 - [x] Verify 20/20 tables use RLS + FORCE RLS and browser table/RPC grants stay denied
 - [x] Diff advisors: zero new TurnIQ WARN/ERROR; only private-table/index INFO notices
 - [x] Keep platform and every QA salon TurnIQ flag OFF
-- [ ] Configure and verify Vercel Preview with all outbound/provider switches OFF
+- [x] Configure and verify Vercel Preview with all outbound/provider switches OFF
+- [ ] Create/review a PR and run authenticated synthetic TurnIQ UI scenarios
+- [ ] Merge, Production migration, or live-salon enablement (explicit approval only)
