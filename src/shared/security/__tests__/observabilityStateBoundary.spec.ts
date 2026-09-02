@@ -96,7 +96,7 @@ describe("observability-state boundary", () => {
     const parity = read("scripts/check-schema-parity.ts");
     expect(parity).toContain("policies: 214");
     expect(parity).toContain(
-      "const GRANTS = { anon: 56, authenticated: 78, service_role: 208 }",
+      "const GRANTS = { anon: 56, authenticated: 78, service_role: 211 }",
     );
   });
 });

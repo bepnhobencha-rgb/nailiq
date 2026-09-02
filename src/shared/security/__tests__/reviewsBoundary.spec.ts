@@ -64,7 +64,7 @@ describe("reviews boundary", () => {
     expect(parity).toContain("through 20260820105820");
     expect(parity).toContain("policies: 214");
     expect(parity).toContain(
-      "const GRANTS = { anon: 56, authenticated: 78, service_role: 208 }",
+      "const GRANTS = { anon: 56, authenticated: 78, service_role: 211 }",
     );
   });
 });
