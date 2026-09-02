@@ -71,7 +71,8 @@ export type BetaFeatureKey =
   | "nail_tryon"
   | "archived_booking_recovery"
   | "multi_service_booking"
-  | "smart_checkout";
+  | "smart_checkout"
+  | "turniq_trust_engine";
 
 export type ReleaseFeatureKey = BaseFeatureKey | BetaFeatureKey;
 
@@ -422,6 +423,16 @@ export const RELEASE_FEATURES: Record<
     description:
       "Approval-gated Square/Stripe in-person checkout with exact-once reconciliation.",
   },
+  turniq_trust_engine: {
+    key: "turniq_trust_engine",
+    label: "TurnIQ Trust Engine",
+    group: "operations",
+    phase: "beta",
+    defaultOn: false,
+    source: { kind: "jsonb", flagKey: "turniq_trust_engine_enabled" },
+    description:
+      "Explainable, salon-scoped staff-turn recommendations backed by a private trust ledger.",
+  },
 };
 
 /**
@@ -435,6 +446,7 @@ export const CONTROLLED_ROLLOUT_RELEASE_FLAG_KEYS: ReadonlySet<string> =
     "guided_admin_setup_enabled",
     "multi_service_booking_enabled",
     "smart_checkout_enabled",
+    "turniq_trust_engine_enabled",
   ]);
 
 export function containsControlledRolloutFlagMutation(

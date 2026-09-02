@@ -67,6 +67,9 @@ import { ShellV2DateNavigator } from "./ShellV2DateNavigator";
 import { DensitySlider } from "./DensitySlider";
 import { KPIBar } from "./KPIBar";
 import { BasicCockpit } from "./BasicCockpit";
+import { TurnIqLiveBoard } from "./TurnIqLiveBoard";
+import { TurnIqOperationsPanel } from "./TurnIqOperationsPanel";
+import { TurnIqGroupPlanCard } from "./TurnIqGroupPlanCard";
 import { useBasicMode } from "@/shared/dashboard/useBasicMode";
 import type {
   CockpitInputs,
@@ -172,6 +175,35 @@ import {
   type DensityLevel,
 } from "@/shared/dashboard/dashboardDensity";
 import type { BookingStatus } from "@/shared/types";
+import type {
+  TurnIqExceptionInboxView,
+  TurnIqLiveBoardView,
+  TurnIqStaffView,
+} from "@/shared/turniq/readModels";
+import type { TurnIqGroupQueueView } from "@/shared/turniq/groupReadModels";
+import {
+  applyTurnIqAssignmentCommandAction,
+  applyTurnIqCorrectionCommandAction,
+  applyTurnIqExceptionCommandAction,
+  applyTurnIqRefusalCommandAction,
+  applyTurnIqRedoCommandAction,
+  applyTurnIqShiftCommandAction,
+  applyTurnIqSwapCommandAction,
+  createTurnIqDisputeAction,
+  createTurnIqSkipDisputeAction,
+  loadTurnIqExceptionInboxAction,
+  loadTurnIqFairnessReceiptAction,
+  loadTurnIqGroupPlanAction,
+  loadTurnIqGroupQueueAction,
+  compareTurnIqGroupTimingAction,
+  recordTurnIqStaggeredGroupPlanAction,
+  confirmTurnIqStaggeredGroupPlanAction,
+  loadTurnIqLiveBoardAction,
+  loadTurnIqStaffViewAction,
+  resolveTurnIqDisputeAction,
+  recommendTurnIqGroupAction,
+  confirmTurnIqGroupAction,
+} from "@/shared/turniq/serverActions";
 import {
   DEFAULT_DRC_ACCENT,
   DEFAULT_DRC_BG,
@@ -309,6 +341,16 @@ export type ReceptionistCenterProps = {
   waitlistAttentionEnabled?: boolean;
   /** Server-authorized, same-salon source data. URL parameters contain IDs only. */
   recoveryPrefill?: ReceptionistRecoveryPrefill | null;
+  /** Default-OFF TurnIQ projection. It contains no customer PII or peer money. */
+  turnIqEnabled?: boolean;
+  initialTurnIqBoard?: TurnIqLiveBoardView | null;
+  turnIqBoardError?: string | null;
+  initialTurnIqStaffView?: TurnIqStaffView | null;
+  turnIqStaffViewError?: string | null;
+  initialTurnIqExceptionInbox?: TurnIqExceptionInboxView | null;
+  turnIqExceptionInboxError?: string | null;
+  initialTurnIqGroupQueue?: TurnIqGroupQueueView | null;
+  turnIqGroupQueueError?: string | null;
 };
 
 function loadErrorCopy(
@@ -472,6 +514,15 @@ function ReceptionistCenterInner({
   receptionistShellV2Enabled,
   waitlistAttentionEnabled,
   recoveryPrefill,
+  turnIqEnabled,
+  initialTurnIqBoard,
+  turnIqBoardError,
+  initialTurnIqStaffView,
+  turnIqStaffViewError,
+  initialTurnIqExceptionInbox,
+  turnIqExceptionInboxError,
+  initialTurnIqGroupQueue,
+  turnIqGroupQueueError,
 }: {
   slug: string;
   initialOk: ReceptionistCenterData;
@@ -489,6 +540,15 @@ function ReceptionistCenterInner({
   receptionistShellV2Enabled: boolean;
   waitlistAttentionEnabled: boolean;
   recoveryPrefill: ReceptionistRecoveryPrefill | null;
+  turnIqEnabled: boolean;
+  initialTurnIqBoard: TurnIqLiveBoardView | null;
+  turnIqBoardError: string | null;
+  initialTurnIqStaffView: TurnIqStaffView | null;
+  turnIqStaffViewError: string | null;
+  initialTurnIqExceptionInbox: TurnIqExceptionInboxView | null;
+  turnIqExceptionInboxError: string | null;
+  initialTurnIqGroupQueue: TurnIqGroupQueueView | null;
+  turnIqGroupQueueError: string | null;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -544,6 +604,27 @@ function ReceptionistCenterInner({
     selectedDate: initialOk.selectedDate,
     dashboardModules: initialOk.dashboardModules,
   }));
+  const [turnIqBoard, setTurnIqBoard] = useState<TurnIqLiveBoardView | null>(
+    initialTurnIqBoard,
+  );
+  const [turnIqError, setTurnIqError] = useState<string | null>(
+    turnIqBoardError,
+  );
+  const [turnIqStaffView, setTurnIqStaffView] = useState<TurnIqStaffView | null>(
+    initialTurnIqStaffView,
+  );
+  const [turnIqStaffViewCurrentError, setTurnIqStaffViewCurrentError] = useState<
+    string | null
+  >(turnIqStaffViewError);
+  const [turnIqExceptionInbox, setTurnIqExceptionInbox] = useState<
+    TurnIqExceptionInboxView | null
+  >(initialTurnIqExceptionInbox);
+  const [turnIqExceptionInboxCurrentError, setTurnIqExceptionInboxCurrentError] =
+    useState<string | null>(turnIqExceptionInboxError);
+  const [turnIqGroupQueue, setTurnIqGroupQueue] =
+    useState<TurnIqGroupQueueView | null>(initialTurnIqGroupQueue);
+  const [turnIqGroupQueueCurrentError, setTurnIqGroupQueueCurrentError] =
+    useState<string | null>(turnIqGroupQueueError);
 
   const minimumServiceMinutesByStaff = useMemo(
     () =>
@@ -1526,19 +1607,61 @@ function ReceptionistCenterInner({
     setData((d) => ({ ...d, dashboardDensity: next }));
   }, []);
 
-  // eslint-disable-next-line react-hooks/preserve-manual-memoization -- ARCHITECTURE_LOCK: memoization could not be preserved; used by handlers declared earlier in component scope
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization -- stable callback is consumed by realtime and mutation handlers declared across this component
   const reloadCurrentDay = useCallback(async () => {
     // Reload the day the user is actually viewing — NOT one derived from
     // dateOffset (which only spans yesterday/today/tomorrow, so a date-picked
     // day or any offset drift would reload the wrong day, snapping to today).
     const ymd = viewedYmdRef.current;
     try {
-      const res = await loadReceptionistCenterDataAction(slug, ymd);
+      const [res, turnIqResult, turnIqStaffResult, turnIqExceptionResult, turnIqGroupQueueResult] = await Promise.all([
+        loadReceptionistCenterDataAction(slug, ymd),
+        turnIqEnabled && viewerRole !== "nail_tech"
+          ? loadTurnIqLiveBoardAction({ slug })
+          : Promise.resolve(null),
+        turnIqEnabled
+          ? loadTurnIqStaffViewAction({ slug })
+          : Promise.resolve(null),
+        turnIqEnabled && (viewerRole === "owner" || viewerRole === "admin")
+          ? loadTurnIqExceptionInboxAction({ slug })
+          : Promise.resolve(null),
+        turnIqEnabled && viewerRole !== "nail_tech"
+          ? loadTurnIqGroupQueueAction({ slug })
+          : Promise.resolve(null),
+      ]);
       if (res.ok) {
         setData(res.data);
         markSynced();
       } else {
         setShakeMessage(loadErrorCopy(messages.receptionist, res.error));
+      }
+      if (turnIqResult?.ok) {
+        setTurnIqBoard(turnIqResult.data);
+        setTurnIqError(null);
+      } else if (turnIqResult && !turnIqResult.ok) {
+        setTurnIqBoard(null);
+        setTurnIqError(turnIqResult.code);
+      }
+      if (turnIqStaffResult?.ok) {
+        setTurnIqStaffView(turnIqStaffResult.data);
+        setTurnIqStaffViewCurrentError(null);
+      } else if (turnIqStaffResult && !turnIqStaffResult.ok) {
+        setTurnIqStaffView(null);
+        setTurnIqStaffViewCurrentError(turnIqStaffResult.code);
+      }
+      if (turnIqExceptionResult?.ok) {
+        setTurnIqExceptionInbox(turnIqExceptionResult.data);
+        setTurnIqExceptionInboxCurrentError(null);
+      } else if (turnIqExceptionResult && !turnIqExceptionResult.ok) {
+        setTurnIqExceptionInbox(null);
+        setTurnIqExceptionInboxCurrentError(turnIqExceptionResult.code);
+      }
+      if (turnIqGroupQueueResult?.ok) {
+        setTurnIqGroupQueue(turnIqGroupQueueResult.data);
+        setTurnIqGroupQueueCurrentError(null);
+      } else if (turnIqGroupQueueResult && !turnIqGroupQueueResult.ok) {
+        setTurnIqGroupQueue(null);
+        setTurnIqGroupQueueCurrentError(turnIqGroupQueueResult.code);
       }
       // Keep Week/Month views in sync with this mutation (QA #5).
       setCalendarRefreshNonce((n) => n + 1);
@@ -1559,7 +1682,7 @@ function ReceptionistCenterInner({
         extra: { slug, dateYmd: ymd },
       });
     }
-  }, [slug, messages.receptionist, markSynced]);
+  }, [slug, messages.receptionist, markSynced, turnIqEnabled, viewerRole]);
 
   const [deliveryRescueRefreshing, setDeliveryRescueRefreshing] =
     useState(false);
@@ -4352,6 +4475,67 @@ function ReceptionistCenterInner({
           />
         ) : null}
 
+        {turnIqEnabled && isViewingToday && viewMode === "day" ? (
+          <div className="space-y-4">
+            {viewerRole !== "nail_tech" ? (
+              <>
+                <TurnIqGroupPlanCard
+                  queue={turnIqGroupQueue}
+                  errorCode={turnIqGroupQueueCurrentError}
+                  language={language === "vi" ? "vi" : "en"}
+                  timezone={timezone}
+                  slug={slug}
+                  canManage
+                  offline={isOffline}
+                  onRecommend={recommendTurnIqGroupAction}
+                  onConfirm={confirmTurnIqGroupAction}
+                  onLoadPlan={loadTurnIqGroupPlanAction}
+                  onCompareTiming={compareTurnIqGroupTimingAction}
+                  onRecordTimingPlan={recordTurnIqStaggeredGroupPlanAction}
+                  onConfirmStaggered={confirmTurnIqStaggeredGroupPlanAction}
+                  onRefresh={reloadCurrentDay}
+                />
+                <TurnIqLiveBoard
+                  board={turnIqBoard}
+                  errorCode={turnIqError}
+                  language={language === "vi" ? "vi" : "en"}
+                  slug={slug}
+                  canManage
+                  onRefresh={reloadCurrentDay}
+                  onApplyCommand={applyTurnIqAssignmentCommandAction}
+                  onLoadReceipt={loadTurnIqFairnessReceiptAction}
+                />
+              </>
+            ) : null}
+            <TurnIqOperationsPanel
+              board={turnIqBoard}
+              staffView={turnIqStaffView}
+              exceptionInbox={turnIqExceptionInbox}
+              language={language === "vi" ? "vi" : "en"}
+              slug={slug}
+              canManageTeam={viewerRole !== "nail_tech"}
+              canSeeExceptionInbox={viewerRole === "owner" || viewerRole === "admin"}
+              canCorrectRecords={viewerRole === "owner" || viewerRole === "admin"}
+              onApplyShiftCommand={applyTurnIqShiftCommandAction}
+              onApplyAssignmentCommand={applyTurnIqAssignmentCommandAction}
+              onApplyRefusalCommand={applyTurnIqRefusalCommandAction}
+              onApplyRedoCommand={applyTurnIqRedoCommandAction}
+              onApplySwapCommand={applyTurnIqSwapCommandAction}
+              onApplyCorrectionCommand={applyTurnIqCorrectionCommandAction}
+              onCreateDispute={createTurnIqDisputeAction}
+              onCreateSkipDispute={createTurnIqSkipDisputeAction}
+              onResolveDispute={resolveTurnIqDisputeAction}
+              onApplyExceptionCommand={applyTurnIqExceptionCommandAction}
+              onRefresh={reloadCurrentDay}
+            />
+            {turnIqStaffViewCurrentError || turnIqExceptionInboxCurrentError ? (
+              <span className="sr-only">
+                {turnIqStaffViewCurrentError ?? turnIqExceptionInboxCurrentError}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
         {!previewInterface &&
         !basicModeActive &&
         isViewingToday &&
@@ -5654,6 +5838,15 @@ export function ReceptionistCenter({
   receptionistShellV2Enabled = false,
   waitlistAttentionEnabled = false,
   recoveryPrefill = null,
+  turnIqEnabled = false,
+  initialTurnIqBoard = null,
+  turnIqBoardError = null,
+  initialTurnIqStaffView = null,
+  turnIqStaffViewError = null,
+  initialTurnIqExceptionInbox = null,
+  turnIqExceptionInboxError = null,
+  initialTurnIqGroupQueue = null,
+  turnIqGroupQueueError = null,
 }: ReceptionistCenterProps) {
   if (!initialResult.ok) {
     return <ReceptionistGateError code={initialResult.error} />;
@@ -5674,6 +5867,15 @@ export function ReceptionistCenter({
       receptionistShellV2Enabled={receptionistShellV2Enabled}
       waitlistAttentionEnabled={waitlistAttentionEnabled}
       recoveryPrefill={recoveryPrefill}
+      turnIqEnabled={turnIqEnabled}
+      initialTurnIqBoard={initialTurnIqBoard}
+      turnIqBoardError={turnIqBoardError}
+      initialTurnIqStaffView={initialTurnIqStaffView}
+      turnIqStaffViewError={turnIqStaffViewError}
+      initialTurnIqExceptionInbox={initialTurnIqExceptionInbox}
+      turnIqExceptionInboxError={turnIqExceptionInboxError}
+      initialTurnIqGroupQueue={initialTurnIqGroupQueue}
+      turnIqGroupQueueError={turnIqGroupQueueError}
     />
   );
 }

@@ -28,12 +28,14 @@ const FAIL_CLOSED_WHEN_PLATFORM_UNAVAILABLE = new Set<ReleaseFeatureKey>([
   "multi_service_booking",
   "smart_checkout",
   "loyalty",
+  "turniq_trust_engine",
 ]);
 /** New high-risk rollouts are OFF until an explicit platform row says ON. */
 const PLATFORM_EXPLICIT_ON_REQUIRED = new Set<ReleaseFeatureKey>([
   "multi_service_booking",
   "smart_checkout",
   "loyalty",
+  "turniq_trust_engine",
 ]);
 
 type PlatformFeatureControlState =

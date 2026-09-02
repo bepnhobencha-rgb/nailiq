@@ -86,6 +86,9 @@ export type BookingSalonMeta = {
   groupBookingEnabled: boolean;
   /** Tenant half only. Public UI also requires service-role readiness proof. */
   multiServiceBookingEnabled: boolean;
+  /** Tenant-side TurnIQ flag. Public check-in also requires the explicit
+   * platform flag before the page renders. */
+  turnIqEnabled: boolean;
   /** QA-first presentation flag. Groups the existing time slots into a short,
    *  customer-friendly period picker without changing availability logic. */
   bookingTimePeriodsEnabled: boolean;
@@ -741,6 +744,10 @@ export async function loadBookingServicesForSalonSlug(
           feature_flags?: unknown;
         },
         "multi_service_booking",
+      ),
+      turnIqEnabled: isReleaseFeatureEnabled(
+        salon as { feature_flags?: unknown },
+        "turniq_trust_engine",
       ),
       bookingTimePeriodsEnabled:
         ((salon as { feature_flags?: Record<string, unknown> | null }).feature_flags

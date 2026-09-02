@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { inspectBookingManagementCapability } from "@/shared/booking/bookingManagementCapabilities";
 import { consumeBookingManagementRateLimit } from "@/shared/booking/bookingManagementRateLimit";
+import { loadTurnIqCustomerStatusEta } from "@/shared/turniq/customerStatusEtaLoader";
 
 const PRIVATE_HEADERS = {
   "Cache-Control": "private, no-store, max-age=0",
@@ -38,7 +39,21 @@ export async function GET(request: Request): Promise<NextResponse> {
   if (!inspected.ok) {
     return NextResponse.json(inspected, { status: statusFor(inspected.code), headers: PRIVATE_HEADERS });
   }
-  return NextResponse.json({ ok: true, code: "valid", booking: inspected.inspection.booking }, {
+  const { booking, context } = inspected.inspection;
+  const turnIqEta = await loadTurnIqCustomerStatusEta({
+    salonId: context.salonId,
+    bookingId: context.bookingId,
+    groupId: context.groupId,
+    bookingStatus: booking.status,
+    currentStartTimeUtc: context.currentStartTimeUtc,
+    durationMinutes: context.durationMinutes,
+  });
+  return NextResponse.json({
+    ok: true,
+    code: "valid",
+    booking: inspected.inspection.booking,
+    turnIqEta,
+  }, {
     headers: PRIVATE_HEADERS,
   });
 }
