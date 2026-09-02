@@ -303,14 +303,9 @@ export default function VerticalDayView({
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
-      {/* Swipe affordance hint — fades in after 400 ms so it doesn't fight
-          the page load, then settles at low opacity as a persistent cue. */}
-      <motion.div
-        className="flex items-center justify-between px-3 pb-2 pt-1"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.4, duration: 0.5 }}
-      >
+      {/* Keep date navigation immediately readable; motion on the individual
+          controls still provides touch feedback without reducing contrast. */}
+      <div className="flex items-center justify-between px-3 pb-2 pt-1">
         <motion.button
           className="flex min-h-11 items-center gap-1 px-2 text-sm text-white/60 active:text-white/80"
           whileTap={{ x: -4 }}
@@ -334,7 +329,7 @@ export default function VerticalDayView({
           <span className="tracking-wide">{nextLabel}</span>
           <ChevronRight size={14} strokeWidth={2} />
         </motion.button>
-      </motion.div>
+      </div>
 
       {assignMode ? (
         <div
@@ -699,7 +694,7 @@ function BookingCard({
                 className={cn(
                   "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
                   latenessTier === "critical"
-                    ? "bg-nq-error/20 text-nq-error"
+                    ? "bg-nq-error/25 text-red-200"
                     : "bg-nq-warning/20 text-nq-warning",
                 )}
               >
@@ -715,7 +710,7 @@ function BookingCard({
               {booking.no_show_candidate_at ? (
                 <span
                   data-testid={`booking-block-no-show-candidate-${booking.id}`}
-                  className="inline-flex items-center gap-1 rounded-full bg-nq-error/20 px-2 py-0.5 text-[10px] font-semibold text-nq-error"
+                  className="inline-flex items-center gap-1 rounded-full bg-nq-error/25 px-2 py-0.5 text-[10px] font-semibold text-red-200"
                 >
                   <AlertTriangle size={11} aria-hidden />
                   {language === "vi"
@@ -745,8 +740,11 @@ function BookingCard({
             </span>
             <span
               data-testid={`booking-block-staff-${booking.id}`}
-              className="flex-shrink-0 rounded-md px-2 py-1 text-base font-medium"
-              style={{ backgroundColor: color + "28", color }}
+              className="flex-shrink-0 rounded-md border px-2 py-1 text-base font-medium text-white/90"
+              style={{
+                backgroundColor: color + "28",
+                borderColor: color + "80",
+              }}
             >
               {staffName}
             </span>
