@@ -304,6 +304,14 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next({ request });
   }
 
+  // Generic TurnIQ offline shell contains no tenant/customer data. It must be
+  // fetchable while online so the dashboard service worker can cache it before
+  // an outage; the client unlocks actions only with an encrypted, valid Primary
+  // Device snapshot from IndexedDB.
+  if (methodEarly === "GET" && pathnameEarly === "/turniq/offline") {
+    return NextResponse.next({ request });
+  }
+
   // ── Custom-domain → tenant rewrite ──────────────────────────────────────
   // A salon can serve its public booking page on its own domain. Only runs
   // for NON-platform hosts, so nailiq.ca / *.vercel.app / localhost traffic is

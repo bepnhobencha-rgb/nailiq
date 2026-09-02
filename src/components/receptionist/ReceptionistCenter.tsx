@@ -70,6 +70,7 @@ import { BasicCockpit } from "./BasicCockpit";
 import { TurnIqLiveBoard } from "./TurnIqLiveBoard";
 import { TurnIqOperationsPanel } from "./TurnIqOperationsPanel";
 import { TurnIqGroupPlanCard } from "./TurnIqGroupPlanCard";
+import { TurnIqOfflineBoundary } from "./TurnIqOfflineBoundary";
 import { useBasicMode } from "@/shared/dashboard/useBasicMode";
 import type {
   CockpitInputs,
@@ -642,6 +643,15 @@ function ReceptionistCenterInner({
           })) ?? null,
       }),
     [data.staff, data.services, data.capabilityRows],
+  );
+  const turnIqOfflineServices = useMemo(
+    () => data.services.map((service) => ({
+      id: service.id,
+      name: service.name,
+      durationMinutes: service.duration_minutes,
+      isAddon: service.is_addon === true,
+    })),
+    [data.services],
   );
 
   // Wall-clock of the last successful server sync (initial SSR load, then
@@ -4478,56 +4488,74 @@ function ReceptionistCenterInner({
         {turnIqEnabled && isViewingToday && viewMode === "day" ? (
           <div className="space-y-4">
             {viewerRole !== "nail_tech" ? (
-              <>
-                <TurnIqGroupPlanCard
-                  queue={turnIqGroupQueue}
-                  errorCode={turnIqGroupQueueCurrentError}
-                  language={language === "vi" ? "vi" : "en"}
-                  timezone={timezone}
-                  slug={slug}
-                  canManage
-                  offline={isOffline}
-                  onRecommend={recommendTurnIqGroupAction}
-                  onConfirm={confirmTurnIqGroupAction}
-                  onLoadPlan={loadTurnIqGroupPlanAction}
-                  onCompareTiming={compareTurnIqGroupTimingAction}
-                  onRecordTimingPlan={recordTurnIqStaggeredGroupPlanAction}
-                  onConfirmStaggered={confirmTurnIqStaggeredGroupPlanAction}
-                  onRefresh={reloadCurrentDay}
-                />
-                <TurnIqLiveBoard
-                  board={turnIqBoard}
-                  errorCode={turnIqError}
-                  language={language === "vi" ? "vi" : "en"}
-                  slug={slug}
-                  canManage
-                  onRefresh={reloadCurrentDay}
-                  onApplyCommand={applyTurnIqAssignmentCommandAction}
-                  onLoadReceipt={loadTurnIqFairnessReceiptAction}
-                />
-              </>
+              <TurnIqGroupPlanCard
+                queue={turnIqGroupQueue}
+                errorCode={turnIqGroupQueueCurrentError}
+                language={language === "vi" ? "vi" : "en"}
+                timezone={timezone}
+                slug={slug}
+                canManage
+                offline={isOffline}
+                onRecommend={recommendTurnIqGroupAction}
+                onConfirm={confirmTurnIqGroupAction}
+                onLoadPlan={loadTurnIqGroupPlanAction}
+                onCompareTiming={compareTurnIqGroupTimingAction}
+                onRecordTimingPlan={recordTurnIqStaggeredGroupPlanAction}
+                onConfirmStaggered={confirmTurnIqStaggeredGroupPlanAction}
+                onRefresh={reloadCurrentDay}
+              />
             ) : null}
-            <TurnIqOperationsPanel
+            <TurnIqOfflineBoundary
+              slug={slug}
+              salonId={data.salon.id}
+              language={language === "vi" ? "vi" : "en"}
+              offline={isOffline}
+              canPair={viewerRole === "owner" || viewerRole === "admin"}
               board={turnIqBoard}
               staffView={turnIqStaffView}
-              exceptionInbox={turnIqExceptionInbox}
-              language={language === "vi" ? "vi" : "en"}
-              slug={slug}
-              canManageTeam={viewerRole !== "nail_tech"}
-              canSeeExceptionInbox={viewerRole === "owner" || viewerRole === "admin"}
-              canCorrectRecords={viewerRole === "owner" || viewerRole === "admin"}
-              onApplyShiftCommand={applyTurnIqShiftCommandAction}
-              onApplyAssignmentCommand={applyTurnIqAssignmentCommandAction}
-              onApplyRefusalCommand={applyTurnIqRefusalCommandAction}
-              onApplyRedoCommand={applyTurnIqRedoCommandAction}
-              onApplySwapCommand={applyTurnIqSwapCommandAction}
-              onApplyCorrectionCommand={applyTurnIqCorrectionCommandAction}
-              onCreateDispute={createTurnIqDisputeAction}
-              onCreateSkipDispute={createTurnIqSkipDisputeAction}
-              onResolveDispute={resolveTurnIqDisputeAction}
-              onApplyExceptionCommand={applyTurnIqExceptionCommandAction}
+              services={turnIqOfflineServices}
+              applyShiftOnline={applyTurnIqShiftCommandAction}
+              applyAssignmentOnline={applyTurnIqAssignmentCommandAction}
               onRefresh={reloadCurrentDay}
-            />
+            >
+              {(offlineRuntime) => (
+                <>
+                  {viewerRole !== "nail_tech" ? (
+                    <TurnIqLiveBoard
+                      board={offlineRuntime.board}
+                      errorCode={turnIqError}
+                      language={language === "vi" ? "vi" : "en"}
+                      slug={slug}
+                      canManage
+                      onRefresh={reloadCurrentDay}
+                      onApplyCommand={offlineRuntime.applyAssignment}
+                      onLoadReceipt={loadTurnIqFairnessReceiptAction}
+                    />
+                  ) : null}
+                  <TurnIqOperationsPanel
+                    board={offlineRuntime.board}
+                    staffView={offlineRuntime.staffView}
+                    exceptionInbox={turnIqExceptionInbox}
+                    language={language === "vi" ? "vi" : "en"}
+                    slug={slug}
+                    canManageTeam={viewerRole !== "nail_tech"}
+                    canSeeExceptionInbox={viewerRole === "owner" || viewerRole === "admin"}
+                    canCorrectRecords={viewerRole === "owner" || viewerRole === "admin"}
+                    onApplyShiftCommand={offlineRuntime.applyShift}
+                    onApplyAssignmentCommand={offlineRuntime.applyAssignment}
+                    onApplyRefusalCommand={applyTurnIqRefusalCommandAction}
+                    onApplyRedoCommand={applyTurnIqRedoCommandAction}
+                    onApplySwapCommand={applyTurnIqSwapCommandAction}
+                    onApplyCorrectionCommand={applyTurnIqCorrectionCommandAction}
+                    onCreateDispute={createTurnIqDisputeAction}
+                    onCreateSkipDispute={createTurnIqSkipDisputeAction}
+                    onResolveDispute={resolveTurnIqDisputeAction}
+                    onApplyExceptionCommand={applyTurnIqExceptionCommandAction}
+                    onRefresh={reloadCurrentDay}
+                  />
+                </>
+              )}
+            </TurnIqOfflineBoundary>
             {turnIqStaffViewCurrentError || turnIqExceptionInboxCurrentError ? (
               <span className="sr-only">
                 {turnIqStaffViewCurrentError ?? turnIqExceptionInboxCurrentError}

@@ -149,6 +149,16 @@ export function TurnIqLiveBoard({
         ? "Tài khoản này không có quyền xác nhận lượt."
         : "This account cannot confirm turns.";
     }
+    if (code === "offline_read_only") {
+      return vi
+        ? "Offline chỉ xem: chỉ Thiết bị Offline Chính đã đồng bộ mới được thao tác."
+        : "Offline is read-only: only the synchronized Primary Offline Device may act.";
+    }
+    if (code === "offline_storage_failed") {
+      return vi
+        ? "Không thể lưu an toàn trên máy. TurnIQ đã khóa thao tác; chưa có gì thay đổi."
+        : "TurnIQ could not persist safely on this device. The action was blocked.";
+    }
     return vi
       ? "Chưa thể xác nhận. Không có thay đổi nào được lưu; bạn có thể thử lại."
       : "Confirmation did not finish. Nothing changed; you can retry.";
@@ -175,6 +185,14 @@ export function TurnIqLiveBoard({
           setOverrideReason("");
           setOverrideStaffId("");
           const receiptId = result.result.fairnessReceiptId;
+          if (result.result.status === "queued_offline") {
+            setMessage(
+              vi
+                ? "Đã lưu an toàn trên máy. Chưa đồng bộ cloud và chưa tạo Fairness Receipt."
+                : "Saved safely on this device. Cloud sync and the Fairness Receipt are still pending.",
+            );
+            return;
+          }
           setMessage(
             vi
               ? "Đã xác nhận an toàn. Fairness Receipt đã được lưu."

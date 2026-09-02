@@ -307,6 +307,8 @@ export type TurnIqServerActionErrorCode =
   | "owner_confirmation_required"
   | "policy_configuration_required"
   | "idempotency_conflict"
+  | "offline_read_only"
+  | "offline_storage_failed"
   | "stale_state"
   | "server_error";
 

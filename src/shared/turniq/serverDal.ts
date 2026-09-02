@@ -31,6 +31,7 @@ import {
   type TurnIqFairnessReceiptReadRow,
   type TurnIqFairnessReceiptView,
   type TurnIqLiveBoardView,
+  type TurnIqPilotEvidenceView,
   type TurnIqServiceDirectoryEntry,
   type TurnIqShiftReadRow,
   type TurnIqStaffDirectoryEntry,
@@ -63,6 +64,72 @@ function rowId(value: unknown): string | null {
   if (!value || typeof value !== "object") return null;
   const id = (value as Record<string, unknown>).id;
   return typeof id === "string" ? id : null;
+}
+
+function pilotInteger(row: Record<string, unknown>, key: string): number {
+  const value = row[key];
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+
+function pilotNullableInteger(row: Record<string, unknown>, key: string): number | null {
+  return row[key] === null ? null : pilotInteger(row, key);
+}
+
+function mapPilotEvidence(value: unknown): TurnIqPilotEvidenceView | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  if (
+    typeof row.business_date !== "string" ||
+    row.targets_are_hypotheses !== true ||
+    row.walkaway_rate_is_proxy !== true ||
+    row.offline_loss_evidence_complete !== false
+  ) return null;
+  const rawSources = row.request_source_counts;
+  const requestSourceCounts = rawSources && typeof rawSources === "object" && !Array.isArray(rawSources)
+    ? Object.fromEntries(Object.entries(rawSources as Record<string, unknown>)
+        .flatMap(([key, count]) => typeof count === "number" && Number.isSafeInteger(count) && count >= 0 ? [[key, count]] : []))
+    : {};
+  const opportunityDistribution = Array.isArray(row.opportunity_distribution)
+    ? row.opportunity_distribution.flatMap((entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+        const item = entry as Record<string, unknown>;
+        if (typeof item.staff_id !== "string") return [];
+        return [{
+          staffId: item.staff_id,
+          opportunityCreditCents: pilotInteger(item, "opportunity_credit_cents"),
+          turns: pilotInteger(item, "turns"),
+        }];
+      })
+    : [];
+  return {
+    businessDate: row.business_date,
+    targetsAreHypotheses: true,
+    recommendations: pilotInteger(row, "recommendations"),
+    completedCustomers: pilotInteger(row, "completed_customers"),
+    confirmedAssignments: pilotInteger(row, "confirmed_assignments"),
+    recommendationAcceptanceBasisPoints: pilotNullableInteger(row, "recommendation_acceptance_basis_points"),
+    overrides: pilotInteger(row, "overrides"),
+    medianAssignmentSeconds: pilotNullableInteger(row, "median_assignment_seconds"),
+    waitP50Minutes: pilotNullableInteger(row, "wait_p50_minutes"),
+    waitP90Minutes: pilotNullableInteger(row, "wait_p90_minutes"),
+    walkinsJoined: pilotInteger(row, "walkins_joined"),
+    walkaways: pilotInteger(row, "walkaways"),
+    walkawayRateBasisPoints: pilotNullableInteger(row, "walkaway_rate_basis_points"),
+    walkawayRateIsProxy: true,
+    fairnessReceipts: pilotInteger(row, "fairness_receipts"),
+    normalTurnsWithoutOwnerBasisPoints: pilotNullableInteger(row, "normal_turns_without_owner_basis_points"),
+    exceptions: pilotInteger(row, "exceptions"),
+    unresolvedExceptions: pilotInteger(row, "unresolved_exceptions"),
+    disputes: pilotInteger(row, "disputes"),
+    unresolvedDisputes: pilotInteger(row, "unresolved_disputes"),
+    unresolvedOfflineConflicts: pilotInteger(row, "unresolved_offline_conflicts"),
+    duplicateCommandConflicts: pilotInteger(row, "duplicate_command_conflicts"),
+    ownerDecisionSecondsObserved: pilotInteger(row, "owner_decision_seconds_observed"),
+    offlineLossEvidenceComplete: false,
+    requestSourceCounts,
+    opportunityDistribution,
+    opportunitySpreadCents: pilotInteger(row, "opportunity_spread_cents"),
+  };
 }
 
 function gatewayErrorFromDatabase(error: DatabaseError): TurnIqGatewayError {
@@ -771,28 +838,38 @@ export async function loadTurnIqLiveBoard(
       string,
       unknown
     >[];
+    const pilotResult = canSeeTurnIqOwnerFinancialTruth(context.role)
+      ? await db.rpc("get_turniq_pilot_evidence_v1" as never, {
+          p_salon_id: context.salonId,
+          p_business_date: businessDate,
+          p_actor_user_id: context.actorUserId,
+          p_actor_role: context.actorRole,
+        } as never)
+      : { data: null, error: null };
+    if (pilotResult.error) throw gatewayErrorFromDatabase(pilotResult.error);
+    const projected = projectTurnIqLiveBoard({
+      businessDate,
+      activePolicyVersionId: rowId(policyResult.data),
+      shifts: ((shiftResult.data ?? []) as unknown as Record<string, unknown>[]).map(mapShift),
+      assignments: ((assignmentResult.data ?? []) as unknown as Record<string, unknown>[]).map(mapAssignment),
+      redoCandidates: ((redoCandidateResult.data ?? []) as unknown as Record<string, unknown>[]).map(mapAssignment),
+      staff: names.staff,
+      services: names.services,
+      openExceptionCount: exceptionResult.data?.length ?? 0,
+      blockedAssignmentIds: ((exceptionResult.data ?? []) as unknown as Record<string, unknown>[])
+        .flatMap((row) =>
+          typeof row.assignment_id === "string" ? [row.assignment_id] : [],
+        ),
+      swaps: ((swapResult.data ?? []) as unknown as Record<string, unknown>[])
+        .map((row) => mapSwap(row, consentRows)),
+      corrections: ((correctionResult.data ?? []) as unknown as Record<
+        string,
+        unknown
+      >[]).map(mapCorrection),
+    });
     return {
       ok: true,
-      data: projectTurnIqLiveBoard({
-        businessDate,
-        activePolicyVersionId: rowId(policyResult.data),
-        shifts: ((shiftResult.data ?? []) as unknown as Record<string, unknown>[]).map(mapShift),
-        assignments: ((assignmentResult.data ?? []) as unknown as Record<string, unknown>[]).map(mapAssignment),
-        redoCandidates: ((redoCandidateResult.data ?? []) as unknown as Record<string, unknown>[]).map(mapAssignment),
-        staff: names.staff,
-        services: names.services,
-        openExceptionCount: exceptionResult.data?.length ?? 0,
-        blockedAssignmentIds: ((exceptionResult.data ?? []) as unknown as Record<string, unknown>[])
-          .flatMap((row) =>
-            typeof row.assignment_id === "string" ? [row.assignment_id] : [],
-          ),
-        swaps: ((swapResult.data ?? []) as unknown as Record<string, unknown>[])
-          .map((row) => mapSwap(row, consentRows)),
-        corrections: ((correctionResult.data ?? []) as unknown as Record<
-          string,
-          unknown
-        >[]).map(mapCorrection),
-      }),
+      data: { ...projected, pilotEvidence: mapPilotEvidence(pilotResult.data) },
     };
   } catch (error) {
     return { ok: false, code: error instanceof TurnIqGatewayError ? error.code : "server_error" };

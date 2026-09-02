@@ -172,12 +172,47 @@ export type TurnIqStaffShiftState =
   | TurnIqShiftReadRow["state"]
   | "not_checked_in";
 
+export type TurnIqPilotEvidenceView = {
+  businessDate: string;
+  targetsAreHypotheses: true;
+  recommendations: number;
+  completedCustomers: number;
+  confirmedAssignments: number;
+  recommendationAcceptanceBasisPoints: number | null;
+  overrides: number;
+  medianAssignmentSeconds: number | null;
+  waitP50Minutes: number | null;
+  waitP90Minutes: number | null;
+  walkinsJoined: number;
+  walkaways: number;
+  walkawayRateBasisPoints: number | null;
+  walkawayRateIsProxy: true;
+  fairnessReceipts: number;
+  normalTurnsWithoutOwnerBasisPoints: number | null;
+  exceptions: number;
+  unresolvedExceptions: number;
+  disputes: number;
+  unresolvedDisputes: number;
+  unresolvedOfflineConflicts: number;
+  duplicateCommandConflicts: number;
+  ownerDecisionSecondsObserved: number;
+  offlineLossEvidenceComplete: boolean;
+  requestSourceCounts: Readonly<Record<string, number>>;
+  opportunityDistribution: readonly {
+    staffId: string;
+    opportunityCreditCents: number;
+    turns: number;
+  }[];
+  opportunitySpreadCents: number;
+};
+
 export type TurnIqLiveBoardView = {
   businessDate: string | null;
   activePolicyVersionId: string | null;
   ownerActionRequired: boolean;
   ownerFreedomMessage: string;
   openExceptionCount: number;
+  pilotEvidence?: TurnIqPilotEvidenceView | null;
   nextRecommendation: {
     assignmentId: string;
     policyVersionId: string;
@@ -243,6 +278,7 @@ export type TurnIqLiveBoardView = {
     policyVersionId: string;
     bookingId: string | null;
     status: TurnIqAssignmentReadRow["status"];
+    serviceId?: string | null;
     serviceName: string | null;
     assignedStaffId: string | null;
     recommendedStaffName: string | null;
@@ -528,6 +564,7 @@ export function projectTurnIqLiveBoard(input: {
       policyVersionId: assignment.policyVersionId,
       bookingId: assignment.bookingId,
       status: assignment.status,
+      serviceId: assignment.serviceId,
       serviceName: assignment.serviceId
         ? services.get(assignment.serviceId)?.name ?? null
         : null,

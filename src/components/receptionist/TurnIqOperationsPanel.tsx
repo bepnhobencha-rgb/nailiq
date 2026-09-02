@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ArrowRightLeft,
   Coffee,
+  Download,
   LogIn,
   Play,
   QrCode,
@@ -147,6 +148,16 @@ function actionError(code: string, vi: boolean): string {
     return vi
       ? "Tài khoản này không có quyền thực hiện thao tác."
       : "This account cannot perform that action.";
+  }
+  if (code === "offline_read_only") {
+    return vi
+      ? "Offline chỉ xem: chỉ Thiết bị Offline Chính đã đồng bộ mới được thao tác."
+      : "Offline is read-only: only the synchronized Primary Offline Device may act.";
+  }
+  if (code === "offline_storage_failed") {
+    return vi
+      ? "Không thể lưu an toàn trên máy. TurnIQ đã khóa thao tác; chưa có gì thay đổi."
+      : "TurnIQ could not persist safely on this device. The action was blocked.";
   }
   return vi
     ? "Chưa thể hoàn tất. Không có thay đổi mới nào được lưu; bạn có thể thử lại."
@@ -616,11 +627,15 @@ export function TurnIqOperationsPanel({
           setCorrectionAssignmentId("");
           setCorrectionActualStaffId("");
           setCorrectionReason("");
-          setMessage(
-            vi
-              ? "Đã lưu an toàn. Bảng lượt đang được làm mới."
-              : "Saved safely. The turn board is refreshing.",
-          );
+          if (result.result.status === "queued_offline") {
+            setMessage(
+              vi
+                ? "Đã lưu an toàn trên máy. Đang chờ đồng bộ; chưa báo đã gửi hoặc hoàn tất trên cloud."
+                : "Saved safely on this device. Sync is pending; no cloud action is claimed complete.",
+            );
+            return;
+          }
+          setMessage(vi ? "Đã lưu an toàn. Bảng lượt đang được làm mới." : "Saved safely. The turn board is refreshing.");
           try {
             await onRefresh();
           } catch {
@@ -707,8 +722,62 @@ export function TurnIqOperationsPanel({
     (assignment) => assignment.assignmentId === correctionAssignmentId,
   );
 
+  function downloadPilotEvidence() {
+    if (!board?.pilotEvidence) return;
+    const blob = new Blob([JSON.stringify(board.pilotEvidence, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `turniq-trust-summary-${board.pilotEvidence.businessDate}.json`;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  const percent = (basisPoints: number | null) =>
+    basisPoints === null ? "—" : `${(basisPoints / 100).toFixed(0)}%`;
+
   return (
     <section aria-label="TurnIQ operations" className="space-y-4">
+      {board?.pilotEvidence ? (
+        <Card variant="bordered" padding="md">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-nq-gold">
+                {vi ? "Tổng kết tin cậy cuối ca" : "End-of-shift trust summary"}
+              </p>
+              <h3 className="mt-1 text-lg font-semibold text-nq-text">
+                {board.pilotEvidence.businessDate}
+              </h3>
+              <p className="mt-1 text-sm text-nq-muted">
+                {vi ? "Số liệu quan sát; mục tiêu pilot vẫn là giả thuyết cho đến khi thử tại salon thật." : "Observed evidence; pilot targets remain hypotheses until a real salon trial."}
+              </p>
+            </div>
+            <Button size="sm" variant="secondary" onClick={downloadPilotEvidence} leftIcon={<Download className="size-4" />}>
+              {vi ? "Xuất bằng chứng" : "Export evidence"}
+            </Button>
+          </div>
+          <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-2xl border border-nq-border/70 p-3"><dt className="text-xs text-nq-muted">{vi ? "Khách hoàn tất" : "Completed"}</dt><dd className="mt-1 text-xl font-bold">{board.pilotEvidence.completedCustomers}</dd></div>
+            <div className="rounded-2xl border border-nq-border/70 p-3"><dt className="text-xs text-nq-muted">{vi ? "Nhận đề xuất" : "Acceptance"}</dt><dd className="mt-1 text-xl font-bold">{percent(board.pilotEvidence.recommendationAcceptanceBasisPoints)}</dd></div>
+            <div className="rounded-2xl border border-nq-border/70 p-3"><dt className="text-xs text-nq-muted">{vi ? "Không cần Owner" : "Without Owner"}</dt><dd className="mt-1 text-xl font-bold">{percent(board.pilotEvidence.normalTurnsWithoutOwnerBasisPoints)}</dd></div>
+            <div className="rounded-2xl border border-nq-border/70 p-3"><dt className="text-xs text-nq-muted">{vi ? "Chờ p50 / p90" : "Wait p50 / p90"}</dt><dd className="mt-1 text-xl font-bold">{board.pilotEvidence.waitP50Minutes ?? "—"} / {board.pilotEvidence.waitP90Minutes ?? "—"} min</dd></div>
+          </dl>
+          <p className="mt-3 text-sm text-nq-muted">
+            {vi
+              ? `${board.pilotEvidence.overrides} override · ${percent(board.pilotEvidence.walkawayRateBasisPoints)} walk-away (proxy) · ${Math.ceil(board.pilotEvidence.ownerDecisionSecondsObserved / 60)} phút Owner quan sát được · ${board.pilotEvidence.unresolvedExceptions} ngoại lệ mở · ${board.pilotEvidence.unresolvedDisputes} tranh chấp mở · ${board.pilotEvidence.unresolvedOfflineConflicts} xung đột offline`
+              : `${board.pilotEvidence.overrides} override(s) · ${percent(board.pilotEvidence.walkawayRateBasisPoints)} walk-away proxy · ${Math.ceil(board.pilotEvidence.ownerDecisionSecondsObserved / 60)} observed Owner minute(s) · ${board.pilotEvidence.unresolvedExceptions} open exception(s) · ${board.pilotEvidence.unresolvedDisputes} open dispute(s) · ${board.pilotEvidence.unresolvedOfflineConflicts} offline conflict(s)`}
+          </p>
+          {!board.pilotEvidence.offlineLossEvidenceComplete ? (
+            <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+              {vi ? "Chưa thể chứng minh không mất lệnh offline chỉ từ dữ liệu máy chủ; phải hoàn tất kiểm tra thiết bị và đối soát pilot." : "Server data alone cannot prove zero lost offline commands; device and pilot reconciliation evidence is still required."}
+            </p>
+          ) : null}
+        </Card>
+      ) : null}
       {canManageTeam ? (
         <Card variant="bordered" padding="md" className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -787,6 +856,11 @@ export function TurnIqOperationsPanel({
                   : vi
                     ? "Chưa vào hàng lượt hôm nay"
                     : "Not in today's turn queue"}
+              </p>
+              <p className="mt-2 text-sm text-nq-muted">
+                {vi
+                  ? `Credit cơ hội của tôi: ${(staffView.ownOpportunityCreditCents / 100).toFixed(2)} · ${staffView.whyNotMe.length} lần bỏ qua có giải thích · ${staffView.recentReceipts.filter((receipt) => receipt.dispute && receipt.dispute.status !== "resolved" && receipt.dispute.status !== "dismissed").length} tranh chấp chưa xong`
+                  : `My opportunity credit: ${(staffView.ownOpportunityCreditCents / 100).toFixed(2)} · ${staffView.whyNotMe.length} explained skip(s) · ${staffView.recentReceipts.filter((receipt) => receipt.dispute && receipt.dispute.status !== "resolved" && receipt.dispute.status !== "dismissed").length} unresolved dispute(s)`}
               </p>
             </div>
             {renderShiftAction({

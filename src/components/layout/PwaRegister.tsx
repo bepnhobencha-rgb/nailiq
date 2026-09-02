@@ -3,10 +3,9 @@
 import { useEffect } from "react";
 
 /**
- * Registers the minimal service worker so the dashboard is installable as a
- * PWA on Android/Chrome (iOS installs via the apple-* meta tags without a
- * SW). Fire-and-forget on mount; failures are non-fatal (the app still works,
- * it just won't show the install prompt).
+ * Registers the PWA service worker and warms the generic TurnIQ offline shell.
+ * Authenticated dashboard HTML and API/Server Action responses are never sent
+ * to the cache. Failures remain non-fatal and offline writes stay fail-closed.
  */
 export function PwaRegister() {
   useEffect(() => {
@@ -14,8 +13,29 @@ export function PwaRegister() {
       return;
     }
     const register = () => {
-      navigator.serviceWorker.register("/nailiq-sw.js").catch(() => {
-        /* install prompt unavailable — non-fatal */
+      void navigator.serviceWorker.register("/nailiq-sw.js", {
+        scope: "/",
+        updateViaCache: "none",
+      }).then(async () => {
+        const registration = await navigator.serviceWorker.ready;
+        const response = await fetch("/turniq/offline", {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const html = await response.text();
+        const document = new DOMParser().parseFromString(html, "text/html");
+        const assets = Array.from(
+          document.querySelectorAll("script[src],link[rel='stylesheet'][href]"),
+        )
+          .map((node) => node.getAttribute("src") ?? node.getAttribute("href"))
+          .filter((url): url is string => Boolean(url));
+        registration.active?.postMessage({
+          type: "WARM_TURNIQ_OFFLINE_SHELL",
+          urls: ["/turniq/offline", ...assets],
+        });
+      }).catch(() => {
+        /* install/offline shell unavailable — mutation stays locked */
       });
     };
     if (document.readyState === "complete") {
