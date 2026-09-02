@@ -303,16 +303,11 @@ export default function VerticalDayView({
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
-      {/* Swipe affordance hint — fades in after 400 ms so it doesn't fight
-          the page load, then settles at low opacity as a persistent cue. */}
-      <motion.div
-        className="flex items-center justify-between px-3 pb-2 pt-1"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.4, duration: 0.5 }}
-      >
+      {/* Keep date navigation immediately readable; motion on the individual
+          controls still provides touch feedback without reducing contrast. */}
+      <div className="flex items-center justify-between px-3 pb-2 pt-1">
         <motion.button
-          className="flex min-h-11 items-center gap-1 px-2 text-sm text-white/40 active:text-white/65"
+          className="flex min-h-11 items-center gap-1 px-2 text-sm text-white/60 active:text-white/80"
           whileTap={{ x: -4 }}
           onClick={() => onNavigateDate(addDaysToYmd(selectedDate, -1))}
           aria-label={prevLabel}
@@ -321,12 +316,12 @@ export default function VerticalDayView({
           <span className="tracking-wide">{prevLabel}</span>
         </motion.button>
 
-        <span className="text-[9px] tracking-widest text-white/15 uppercase">
+        <span className="text-xs tracking-widest text-white/60 uppercase">
           {language === "vi" ? "vuốt để đổi ngày" : "swipe to change day"}
         </span>
 
         <motion.button
-          className="flex min-h-11 items-center gap-1 px-2 text-sm text-white/40 active:text-white/65"
+          className="flex min-h-11 items-center gap-1 px-2 text-sm text-white/60 active:text-white/80"
           whileTap={{ x: 4 }}
           onClick={() => onNavigateDate(addDaysToYmd(selectedDate, 1))}
           aria-label={nextLabel}
@@ -334,7 +329,7 @@ export default function VerticalDayView({
           <span className="tracking-wide">{nextLabel}</span>
           <ChevronRight size={14} strokeWidth={2} />
         </motion.button>
-      </motion.div>
+      </div>
 
       {assignMode ? (
         <div
@@ -344,7 +339,7 @@ export default function VerticalDayView({
           <p className="min-w-0 text-xs font-semibold text-nq-primary">
             {language === "vi" ? "Xếp chỗ cho" : "Assign"}{" "}
             <span className="truncate text-white/90">{assigning.clientName}</span>
-            <span className="ml-1 text-white/45">
+            <span className="ml-1 text-white/60">
               · {assigning.serviceDurationMinutes}m
             </span>
           </p>
@@ -410,7 +405,7 @@ export default function VerticalDayView({
                     {minsToDisplayLabel(slot, language)}
                   </span>
                 ) : (
-                  <span className="text-sm text-white/30">
+                  <span className="text-sm text-white/60">
                     {minsToDisplayLabel(slot, language)}
                   </span>
                 )}
@@ -438,7 +433,7 @@ export default function VerticalDayView({
                         onClick={() => onAssignSlot(staffMember.id, slotUtc)}
                       >
                         <span className="block truncate">{staffMember.name}</span>
-                        <span className="text-[10px] font-normal text-white/40">
+                        <span className="text-sm font-normal text-white/60">
                           {minsToDisplayLabel(slot, language)}
                         </span>
                       </button>
@@ -495,7 +490,7 @@ export default function VerticalDayView({
                   (onEmptySlotClick || onAddBooking) ? (
                   <button
                     data-testid={`mobile-empty-slot-${slotIndex}`}
-                    className="flex min-h-11 w-full items-center gap-1.5 rounded-lg border border-dashed border-white/[0.08] px-3 text-base text-white/30 transition-colors active:border-white/25 active:text-white/50"
+                    className="flex min-h-11 w-full items-center gap-1.5 rounded-lg border border-dashed border-white/40 px-3 text-base text-white/60 transition-colors active:border-white/60 active:text-white/80"
                     onClick={() => {
                       if (onEmptySlotClick && staff.length > 0) {
                         onEmptySlotClick(
@@ -699,7 +694,7 @@ function BookingCard({
                 className={cn(
                   "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
                   latenessTier === "critical"
-                    ? "bg-nq-error/20 text-nq-error"
+                    ? "bg-nq-error/25 text-red-200"
                     : "bg-nq-warning/20 text-nq-warning",
                 )}
               >
@@ -707,7 +702,7 @@ function BookingCard({
                 {latenessLabel}
               </span>
               {autoAtIso ? (
-                <span className="text-[10px] text-white/35">
+                <span className="text-xs text-white/60">
                   {language === "vi" ? "Xem xét vắng lúc" : "Review due at"}{" "}
                   {formatInSalonTz(autoAtIso, timezone, "shortTime")}
                 </span>
@@ -715,7 +710,7 @@ function BookingCard({
               {booking.no_show_candidate_at ? (
                 <span
                   data-testid={`booking-block-no-show-candidate-${booking.id}`}
-                  className="inline-flex items-center gap-1 rounded-full bg-nq-error/20 px-2 py-0.5 text-[10px] font-semibold text-nq-error"
+                  className="inline-flex items-center gap-1 rounded-full bg-nq-error/25 px-2 py-0.5 text-[10px] font-semibold text-red-200"
                 >
                   <AlertTriangle size={11} aria-hidden />
                   {language === "vi"
@@ -739,14 +734,17 @@ function BookingCard({
           <div className="flex items-center justify-between gap-2">
             <span
               data-testid={`booking-block-time-${booking.id}`}
-              className="text-base text-white/50"
+              className="text-base text-white/60"
             >
               {startStr}–{endStr}
             </span>
             <span
               data-testid={`booking-block-staff-${booking.id}`}
-              className="flex-shrink-0 rounded-md px-2 py-1 text-base font-medium"
-              style={{ backgroundColor: color + "28", color }}
+              className="flex-shrink-0 rounded-md border px-2 py-1 text-base font-medium text-white/90"
+              style={{
+                backgroundColor: color + "28",
+                borderColor: color + "80",
+              }}
             >
               {staffName}
             </span>

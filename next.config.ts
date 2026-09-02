@@ -170,6 +170,14 @@ const nextConfig: NextConfig = {
     ];
     return [
       {
+        source: "/nailiq-sw.js",
+        headers: [
+          { key: "Content-Type", value: "application/javascript; charset=utf-8" },
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self'" },
+        ],
+      },
+      {
         // Everything EXCEPT the embeddable booking route stays frame-DENY
         // (anti-clickjacking on dashboard / auth / payments).
         source: "/((?!embed/).*)",

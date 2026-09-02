@@ -48,6 +48,7 @@ import { resolveSupabaseServerUrl } from "@/shared/lib/supabase/serverUrl";
  *  `/superadmin`, `/_next`, etc. — those reserved roots are filtered
  *  out separately so we don't rate-limit ourselves into a corner. */
 const PUBLIC_BOOKING_SLUG_RE = /^\/([a-z0-9][a-z0-9-]{0,63})\/?$/;
+const LOOPBACK_HOST_RE = /^(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i;
 const RESERVED_TOP_LEVEL_SEGMENTS = new Set<string>([
   "api",
   "auth",
@@ -258,6 +259,7 @@ const PUBLIC_API_RATE_LIMIT_PREFIXES = [
   "/api/public/salon-suggestions",
   "/api/quick-rebook",
   "/api/referrals/",
+  "/api/turniq/",
   "/api/trends/click",
   "/api/unsubscribe",
   "/api/upsell",
@@ -290,6 +292,25 @@ function applyCookiesFrom(
 export async function proxy(request: NextRequest) {
   const pathnameEarly = request.nextUrl.pathname;
   const methodEarly = request.method;
+
+  // Local-only UI fixtures deliberately have no Supabase dependency. A test
+  // flag alone is insufficient: non-loopback hosts always continue through
+  // the normal proxy and the page independently returns 404.
+  if (
+    pathnameEarly.startsWith("/e2e-local/") &&
+    isDemoSlugPinBypassed() &&
+    LOOPBACK_HOST_RE.test((request.headers.get("host") ?? "").trim())
+  ) {
+    return NextResponse.next({ request });
+  }
+
+  // Generic TurnIQ offline shell contains no tenant/customer data. It must be
+  // fetchable while online so the dashboard service worker can cache it before
+  // an outage; the client unlocks actions only with an encrypted, valid Primary
+  // Device snapshot from IndexedDB.
+  if (methodEarly === "GET" && pathnameEarly === "/turniq/offline") {
+    return NextResponse.next({ request });
+  }
 
   // ── Custom-domain → tenant rewrite ──────────────────────────────────────
   // A salon can serve its public booking page on its own domain. Only runs

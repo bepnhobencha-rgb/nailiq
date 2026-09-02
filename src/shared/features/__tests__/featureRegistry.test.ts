@@ -168,7 +168,7 @@ test("every key's descriptor.key matches its map key", () => {
 
 test("registry has the expected Base/Beta inventory", () => {
   eq(BASE_FEATURE_KEYS.length, 10, "Base count");
-  eq(BETA_FEATURE_KEYS.length, 20, "Beta count");
+  eq(BETA_FEATURE_KEYS.length, 21, "Beta count");
   assert(
     BASE_FEATURE_KEYS.every((k) => RELEASE_FEATURES[k].defaultOn === true),
     "all Base defaultOn true",
@@ -192,6 +192,7 @@ test("mapped jsonb/column/plan keys match the known existing keys", () => {
     archived_booking_recovery: "jsonb:archived_booking_recovery_enabled",
     multi_service_booking: "jsonb:multi_service_booking_enabled",
     smart_checkout: "jsonb:smart_checkout_enabled",
+    turniq_trust_engine: "jsonb:turniq_trust_engine_enabled",
     ai_voice: "column:voice_ai_enabled",
     photos: "plan:photo_confirmation",
     reviews: "plan:reviews",
@@ -365,6 +366,10 @@ test("generic release editor exposes only non-controlled jsonb features", () => 
     CONTROLLED_ROLLOUT_RELEASE_FLAG_KEYS.has("smart_checkout_enabled"),
     "Smart Checkout flag is controlled",
   );
+  assert(
+    CONTROLLED_ROLLOUT_RELEASE_FLAG_KEYS.has("turniq_trust_engine_enabled"),
+    "TurnIQ flag is controlled",
+  );
 });
 
 test("isReleaseFeatureEditable false for column/plan/registry features", () => {
@@ -462,6 +467,10 @@ test("EDITABLE_RELEASE_FLAG_KEYS contains exactly the mapped jsonb keys", () => 
     !EDITABLE_RELEASE_FLAG_KEYS.has("smart_checkout_enabled"),
     "Smart Checkout is excluded from generic edits",
   );
+  assert(
+    !EDITABLE_RELEASE_FLAG_KEYS.has("turniq_trust_engine_enabled"),
+    "TurnIQ is excluded from generic edits",
+  );
   // A billing/unrelated key is NOT in the whitelist (reset can't strip it).
   assert(
     !EDITABLE_RELEASE_FLAG_KEYS.has("photo_confirmation"),
@@ -504,6 +513,14 @@ test("controlled rollout flag mutation is rejected for set and unset shapes", ()
     ),
     true,
     "Smart Checkout set is controlled",
+  );
+  eq(
+    containsControlledRolloutFlagMutation(
+      { turniq_trust_engine_enabled: true },
+      undefined,
+    ),
+    true,
+    "TurnIQ set is controlled",
   );
 });
 

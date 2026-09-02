@@ -18,7 +18,18 @@ import {
 } from "@/shared/lib/salonTime";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
-import { loadPlatformDisabledFeatures } from "@/shared/features/platformFeatureFlags";
+import {
+  isReleaseFeatureVisible,
+  loadPlatformDisabledFeatures,
+} from "@/shared/features/platformFeatureFlags";
+import {
+  loadTurnIqExceptionInbox,
+  loadTurnIqLiveBoard,
+  loadTurnIqRolloutStage,
+  loadTurnIqStaffView,
+} from "@/shared/turniq/serverDal";
+import { turnIqStageAllowsRead } from "@/shared/turniq/rolloutStage";
+import { loadTrustedTurnIqGroupQueue } from "@/shared/turniq/trustedGroupRecommendation";
 
 export const dynamic = "force-dynamic";
 
@@ -124,6 +135,25 @@ export default async function ReceptionistCenterPage({
   const receptionistShellV2Enabled =
     featureVisible("receptionist_shell_v2") || receptionistShellPreview;
   const waitlistAttentionEnabled = featureVisible("waitlist_attention");
+  const turnIqRolloutStage = await loadTurnIqRolloutStage(ctx.salon.id);
+  const turnIqEnabled =
+    (await isReleaseFeatureVisible(flagSalon, "turniq_trust_engine")) &&
+    turnIqStageAllowsRead(turnIqRolloutStage);
+  const [turnIqBoardResult, turnIqStaffViewResult, turnIqExceptionInboxResult, turnIqGroupQueueResult] =
+    turnIqEnabled
+      ? await Promise.all([
+          ctx.role !== "nail_tech"
+            ? loadTurnIqLiveBoard(slug)
+            : Promise.resolve(null),
+          loadTurnIqStaffView(slug),
+          isOwnerOrAdmin(ctx.role)
+            ? loadTurnIqExceptionInbox(slug)
+            : Promise.resolve(null),
+          ctx.role !== "nail_tech"
+            ? loadTrustedTurnIqGroupQueue(slug)
+            : Promise.resolve(null),
+        ])
+      : [null, null, null, null];
 
   const archivedBookingRecoveryEnabled =
     await isArchivedBookingFeatureAvailable(ctx.salon);
@@ -270,6 +300,42 @@ export default async function ReceptionistCenterPage({
         receptionistShellV2Enabled={receptionistShellV2Enabled}
         waitlistAttentionEnabled={waitlistAttentionEnabled}
         recoveryPrefill={recoveryPrefill}
+        turnIqEnabled={turnIqEnabled}
+        turnIqRolloutStage={turnIqRolloutStage}
+        initialTurnIqBoard={
+          turnIqBoardResult?.ok ? turnIqBoardResult.data : null
+        }
+        turnIqBoardError={
+          turnIqBoardResult && !turnIqBoardResult.ok
+            ? turnIqBoardResult.code
+            : null
+        }
+        initialTurnIqStaffView={
+          turnIqStaffViewResult?.ok ? turnIqStaffViewResult.data : null
+        }
+        turnIqStaffViewError={
+          turnIqStaffViewResult && !turnIqStaffViewResult.ok
+            ? turnIqStaffViewResult.code
+            : null
+        }
+        initialTurnIqExceptionInbox={
+          turnIqExceptionInboxResult?.ok
+            ? turnIqExceptionInboxResult.data
+            : null
+        }
+        turnIqExceptionInboxError={
+          turnIqExceptionInboxResult && !turnIqExceptionInboxResult.ok
+            ? turnIqExceptionInboxResult.code
+            : null
+        }
+        initialTurnIqGroupQueue={
+          turnIqGroupQueueResult?.ok ? turnIqGroupQueueResult.data : null
+        }
+        turnIqGroupQueueError={
+          turnIqGroupQueueResult && !turnIqGroupQueueResult.ok
+            ? turnIqGroupQueueResult.code
+            : null
+        }
       />
     </ReceptionistErrorBoundary>
   );

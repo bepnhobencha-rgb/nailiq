@@ -331,6 +331,7 @@ describe("dashboard route authorization inventory", () => {
       "page.tsx",
       "photos/page.tsx",
       "qr-poster/page.tsx",
+      "turniq/check-in/page.tsx",
     ].sort();
     const discovered = collectPageFiles(root)
       .map((file) => relative(root, file))

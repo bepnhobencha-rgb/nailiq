@@ -47,7 +47,7 @@ export function ViewedDateChip({
             : "border-nq-border/60 bg-nq-surface/60 text-nq-foreground",
         )}
       >
-        <span className="text-[8px] font-semibold uppercase tracking-wide opacity-70">
+        <span className="text-[10px] font-semibold uppercase tracking-wide opacity-90">
           {monthShort}
         </span>
         <span className="text-lg font-bold tabular-nums leading-none">

@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { test, expect } from "@playwright/test";
 
 import { cleanupTestSalon } from "../helpers/db";
@@ -120,6 +121,21 @@ test.describe("Mobile layout", () => {
     if (!formBox || !gridBox) return;
 
     expect(formBox.y).toBeLessThan(gridBox.y);
+  });
+
+  test("mobile day schedule meets WCAG AA color contrast", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await gotoReceptionistCenter(page, fx.slug);
+
+    const results = await new AxeBuilder({ page })
+      .include('[data-testid="vertical-day-view"]')
+      .withRules(["color-contrast"])
+      .analyze();
+
+    expect(
+      results.violations,
+      JSON.stringify(results.violations, null, 2),
+    ).toEqual([]);
   });
 
   test("primary Front Desk actions meet 44px touch and 16px text contracts", async ({
