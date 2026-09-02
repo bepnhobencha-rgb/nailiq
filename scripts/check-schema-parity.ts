@@ -161,14 +161,17 @@ import { execFileSync } from "node:child_process";
  * service-role reachability for those twenty tables. Browser roles receive no
  * direct table grants; the bounded operational projection remains
  * authenticated-only.
+ * TurnIQ M5-M6 add three service-only offline continuity tables, 39 columns,
+ * 14 invoker functions, one command-version trigger, and 14 indexes. They add
+ * no browser-role table reachability.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
  */
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
-  // +20 private TurnIQ policy, ledger, replay, group, and check-in tables.
-  tables: 221,
+  // +23 private TurnIQ policy, ledger, replay, group, check-in, and offline tables.
+  tables: 224,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -224,7 +227,8 @@ const PRODUCTION = {
   // +15 durable Waitlist-owner notification outbox columns.
   // +4 service-resource requirement columns across base/public catalog shape.
   // +357 private TurnIQ policy, ledger, replay, group, and check-in columns.
-  columns: 3431,
+  // +39 TurnIQ primary-device, monotonic state, and reconciliation columns.
+  columns: 3470,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -286,7 +290,8 @@ const PRODUCTION = {
   // +1 bounded Owner/Admin Coco Setup decision recorder.
   // +2 public capacity and commit-time service-resource guard functions.
   // +35 TurnIQ atomic command, integrity, replay, and projection functions.
-  functions: 488,
+  // +14 TurnIQ offline continuity and read-only pilot evidence functions.
+  functions: 502,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -303,7 +308,8 @@ const PRODUCTION = {
   // +1 fail-closed complex-request rescue guard trigger.
   // +1 booking service-resource requirement trigger.
   // +32 TurnIQ integrity and append-only ledger triggers.
-  triggers: 140,
+  // +1 TurnIQ monotonic offline-state trigger.
+  triggers: 141,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -326,7 +332,8 @@ const PRODUCTION = {
   // +3 Smart Capacity Rescue request, intent and review-queue indexes.
   // +4 Waitlist-owner outbox primary, unique, due and salon indexes.
   // +138 TurnIQ primary, unique, tenant, state, and reconciliation indexes.
-  indexes: 901,
+  // +14 TurnIQ offline device, conflict, foreign-key, and lookup indexes.
+  indexes: 915,
 } as const;
 
 /**
@@ -364,6 +371,9 @@ const CRITICAL_TABLES = [
   "turniq_group_plan_items",
   "turniq_customer_checkin_capabilities",
   "turniq_customer_checkin_receipts",
+  "turniq_offline_state",
+  "turniq_offline_devices",
+  "turniq_offline_reconciliations",
   "booking_waitlist_entries",
   "client_profiles",
   "salon_members",
@@ -489,6 +499,20 @@ const NO_SHOW_FEE_SERVICE_ONLY_TABLES = [
 
 /** Booking cannot work without these; a missing RPC fails at runtime, not at apply time. */
 const CRITICAL_FUNCTIONS = [
+  "advance_turniq_offline_state_version",
+  "pair_turniq_primary_offline_device_v1",
+  "revoke_turniq_primary_offline_device_v1",
+  "inspect_turniq_offline_device_v1",
+  "sync_turniq_offline_snapshot_v1",
+  "record_turniq_offline_conflict_v1",
+  "resolve_turniq_offline_reconciliation_v1",
+  "preflight_turniq_offline_command_v1",
+  "ack_turniq_offline_command_v1",
+  "apply_turniq_offline_walkin_command_v1",
+  "apply_turniq_offline_service_update_command_v1",
+  "apply_turniq_offline_shift_command_v1",
+  "apply_turniq_offline_assignment_command_v1",
+  "get_turniq_pilot_evidence_v1",
   "create_public_capacity_rescue_request",
   "guard_complex_capacity_rescue_autonomy",
   "compute_no_show_risk",
@@ -883,9 +907,9 @@ function main() {
   // the delivery-event audit table is service-role-only.
   // The customer identity map is service-role read-only; the refund inbox is
   // mutation-through-RPC only and intentionally grants no table reachability.
-  // TurnIQ adds twenty private tables reachable only by service_role. Neither
+  // TurnIQ adds twenty-three private tables reachable only by service_role. Neither
   // browser role gains direct table reachability.
-  const GRANTS = { anon: 56, authenticated: 78, service_role: 208 } as const;
+  const GRANTS = { anon: 56, authenticated: 78, service_role: 211 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
