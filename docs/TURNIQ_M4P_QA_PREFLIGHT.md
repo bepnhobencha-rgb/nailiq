@@ -1,8 +1,10 @@
 # TurnIQ M4P — Disposable QA preflight
 
 Status: disposable QA database and branch Preview verification complete on
-2026-09-02. The ordered 13-migration TurnIQ chain was applied only to QA. No
-salon was enabled, and Production/providers were not touched.
+2026-09-02. The ordered TurnIQ chain and one bounded operational-projection
+hotfix were applied only to QA. A synthetic salon was enabled temporarily for
+authenticated Preview verification, then removed. Production/providers were
+not touched.
 
 ## Exact target
 
@@ -62,12 +64,16 @@ chain, not one isolated migration:
 11. `20260902034830_turniq_atomic_group_plan_ledger.sql`
 12. `20260902042500_turniq_atomic_staggered_group_plan.sql`
 13. `20260902124728_add_turniq_customer_checkin_shadow_ledger.sql`
+14. `20260902190000_expose_turniq_operational_feature_flag.sql`
 
 ## QA verification result
 
-All 13 migrations above applied sequentially without an error. Remote migration
-history contains exactly 13 new TurnIQ entries; no unrelated migration was
-applied.
+All 14 migrations above applied without an error. The first 13 created the
+TurnIQ QA foundation. The final migration fixed an authenticated dashboard
+contract gap discovered by browser verification: the member operational
+projection now exposes the single bounded boolean
+`turniq_trust_engine_enabled` while continuing to discard provider, owner and
+other management-only feature data. No unrelated migration was applied.
 
 Post-migration checks:
 
@@ -91,6 +97,30 @@ Post-migration checks:
    removing integrity indexes pre-emptively.
 7. PASS — zero QA salons have `turniq_trust_engine_enabled = true`; platform and
    salon flags remain OFF.
+
+## Authenticated synthetic Preview result
+
+- PASS — a synthetic owner session reached the protected branch Preview through
+  short-lived Vercel OIDC; the disposable QA project ref was independently
+  confirmed from the Supabase auth-cookie namespace.
+- PASS — the one-screen Live Board displayed Synthetic Mai as the dominant next
+  recommendation, the privacy-safe reason, Synthetic Lan skipped for skill
+  mismatch, and the no-owner-action state.
+- PASS — one-tap confirmation atomically produced one confirmed booking, one
+  confirmed assignment, one command receipt, one event and exactly one durable
+  Fairness Receipt.
+- PASS — the appointment QR was issued with a visible expiry and then revoked.
+  It created no booking/assignment mutation and no check-in receipt.
+- PASS — Start then Complete committed the booking and assignment as completed,
+  consumed exactly one turn, and credited exactly CAD $50 of fairness
+  opportunity without creating another Fairness Receipt.
+- PASS — responsive semantics remained navigable at a 390 x 844 viewport.
+  Automated WCAG checking reported one serious color-contrast rule affecting
+  16 existing mobile calendar/empty-slot nodes; this is recorded as a remaining
+  UI hardening item rather than misreported as a TurnIQ pass.
+- PASS — the synthetic auth user, salon, booking, staff, active feature flag and
+  all test ledger/capability data were removed after verification. The QA
+  platform flag was restored to its pre-test absent state.
 
 ## Vercel Preview result
 
