@@ -17,6 +17,13 @@ const rollbackHardening = readFileSync(
   ),
   "utf8",
 );
+const headSpaReadinessHardening = readFileSync(
+  resolve(
+    process.cwd(),
+    "supabase/migrations/20260903075954_allow_head_spa_turniq_shadow_readiness.sql",
+  ),
+  "utf8",
+);
 
 describe("TurnIQ controlled SHADOW activation boundary", () => {
   it("is inert by default and cannot enable a salon during migration", () => {
@@ -71,6 +78,22 @@ describe("TurnIQ controlled SHADOW activation boundary", () => {
     expect(migration).toContain("v_missing_resource_kind_count > 0");
     expect(migration).toContain("v_other_non_off_pilot_count > 0");
     expect(migration).toContain("'code', 'readiness_failed'");
+  });
+
+  it("permits an explicitly allowlisted head-spa without treating add-ons as standalone coverage", () => {
+    expect(headSpaReadinessHardening).toContain(
+      "v_salon.vertical NOT IN ('nail_salon', 'head_spa')",
+    );
+    expect(headSpaReadinessHardening).toContain("sv.is_addon IS NOT TRUE");
+    expect(headSpaReadinessHardening).toContain(
+      "TurnIQ uncovered primary service readiness definition drifted",
+    );
+    expect(headSpaReadinessHardening).not.toMatch(
+      /INSERT INTO public\.turniq_shadow_pilot_allowlist/i,
+    );
+    expect(headSpaReadinessHardening).not.toMatch(
+      /UPDATE public\.(?:salons|platform_flags|turniq_rollout_controls)/i,
+    );
   });
 
   it("only permits service-role with exact confirmations and idempotency", () => {
