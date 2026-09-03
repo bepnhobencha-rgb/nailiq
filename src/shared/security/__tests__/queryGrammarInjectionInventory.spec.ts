@@ -225,6 +225,7 @@ describe("query grammar injection inventory", () => {
       "20260829183626_add_multi_service_controlled_rollout.sql",
       "20260830005555_add_atomic_group_sequence_commit.sql",
       "20260902225916_harden_turniq_rollout_command_idempotency.sql",
+      "20260903065811_harden_turniq_shadow_rollback_availability.sql",
     ]);
 
     const sequenceCardPolicy = fs.readFileSync(
@@ -240,6 +241,22 @@ describe("query grammar injection inventory", () => {
       "'public.create_public_booking_sequence(jsonb)'::regprocedure",
     );
     expect(sequenceCardPolicy).not.toMatch(/\bexecute\s+format\s*\(/i);
+
+    const turnIqShadowRollback = fs.readFileSync(
+      path.join(
+        migrationRoot,
+        "20260903065811_harden_turniq_shadow_rollback_availability.sql",
+      ),
+      "utf8",
+    );
+    expect(turnIqShadowRollback).toContain("pg_catalog.pg_get_functiondef(");
+    expect(turnIqShadowRollback).toContain(
+      "pg_catalog.replace(v_definition, v_old, v_new)",
+    );
+    expect(turnIqShadowRollback).toContain(
+      "'public.configure_turniq_controlled_shadow_pilot_v1(uuid,text,uuid,uuid,text,text,text,text)'::regprocedure",
+    );
+    expect(turnIqShadowRollback).not.toMatch(/\bexecute\s+format\s*\(/i);
 
     const controlledRollout = fs.readFileSync(
       path.join(
