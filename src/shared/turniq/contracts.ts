@@ -431,6 +431,136 @@ export type TurnIqGroupTimingSimulationRecord = {
   evaluatedSearchStates: number;
 };
 
+export const TURNIQ_HANDOFF_REASON_CODES = [
+  "HANDOFF_COMPLETE_PLAN",
+  "HANDOFF_NO_COMPLETE_PLAN",
+  "HANDOFF_REQUEST_SATISFIED",
+  "HANDOFF_REQUEST_FALLBACK",
+  "HANDOFF_APPOINTMENT_SAFE",
+  "HANDOFF_SHARED_RESOURCE_VERIFIED",
+  "HANDOFF_MULTI_TECH",
+  "HANDOFF_SINGLE_TECH_CONTINUITY",
+  "HANDOFF_SEARCH_LIMIT_REACHED",
+] as const;
+
+export type TurnIqHandoffReasonCode =
+  (typeof TURNIQ_HANDOFF_REASON_CODES)[number];
+
+/**
+ * A fixed, authoritative booking segment. Scheduling owns these times and the
+ * resource choice; TurnIQ only recommends who should perform each segment.
+ */
+export type TurnIqHandoffSegmentInput = {
+  segmentId: TurnIqId;
+  serviceLines: readonly TurnIqServiceLine[];
+  startsAt: TurnIqIsoTimestamp;
+  releasesAt: TurnIqIsoTimestamp;
+  resourceId: TurnIqId | null;
+  requestedTechnician: TurnIqRequestedTechnician | null;
+};
+
+export type TurnIqHandoffRequest = {
+  requestId: TurnIqId;
+  salonId: TurnIqId;
+  bookingId: TurnIqId;
+  segments: readonly TurnIqHandoffSegmentInput[];
+};
+
+/**
+ * Capacity is server-derived from the salon resource and same-guest parallel
+ * policy. A capacity above one is proof that overlapping segments for this
+ * customer may share the physical chair, bed, or room.
+ */
+export type TurnIqHandoffResourceAvailability = {
+  resourceId: TurnIqId;
+  resourceTypeId: TurnIqId;
+  available: boolean;
+  availableAt: TurnIqIsoTimestamp;
+  sameCustomerParallelCapacity: number;
+  policyFingerprint: string;
+};
+
+export type TurnIqHandoffStaffAvailability = {
+  staffId: TurnIqId;
+  availableAt: TurnIqIsoTimestamp;
+  /** Server-derived occupied intervals outside the active booking. */
+  busyWindows: readonly {
+    startsAt: TurnIqIsoTimestamp;
+    releasesAt: TurnIqIsoTimestamp;
+  }[];
+};
+
+export type TurnIqHandoffDecisionSnapshot = Omit<
+  TurnIqDecisionSnapshot,
+  "resources"
+> & {
+  staffAvailability: readonly TurnIqHandoffStaffAvailability[];
+  resources: readonly TurnIqHandoffResourceAvailability[];
+};
+
+export type TurnIqHandoffDecisionInput = {
+  policy: TurnIqPolicyVersion;
+  request: TurnIqHandoffRequest;
+  snapshot: TurnIqHandoffDecisionSnapshot;
+};
+
+export type TurnIqHandoffSegmentAssignment = {
+  segmentId: TurnIqId;
+  staffId: TurnIqId;
+  startsAt: TurnIqIsoTimestamp;
+  releasesAt: TurnIqIsoTimestamp;
+  resourceId: TurnIqId | null;
+  opportunityCreditCents: TurnIqMoneyCents;
+  requestedTechnicianSatisfied: boolean | null;
+};
+
+export type TurnIqHandoffPerformerCredit = {
+  staffId: TurnIqId;
+  segmentIds: readonly TurnIqId[];
+  opportunityCreditCents: TurnIqMoneyCents;
+  turnsToConsumeOnAttributedWorkCompletion: 1;
+};
+
+export type TurnIqHandoffCandidateTrace = {
+  segmentId: TurnIqId;
+  staffId: TurnIqId;
+  eligible: boolean;
+  reasonCodes: readonly TurnIqReasonCode[];
+  fairnessCreditCents: TurnIqMoneyCents;
+};
+
+export type TurnIqHandoffObjectiveScore = {
+  requestedFallbackCount: number;
+  appointmentSafetyCostMinutes: number;
+  fairnessTierCost: number;
+  queueCost: number;
+  stableTieBreakKey: string;
+};
+
+export type TurnIqHandoffInternalTrace = {
+  objectiveScore: TurnIqHandoffObjectiveScore | null;
+  candidateTraces: readonly TurnIqHandoffCandidateTrace[];
+};
+
+export type TurnIqHandoffDecisionRecord = {
+  decisionId: TurnIqId;
+  salonId: TurnIqId;
+  bookingId: TurnIqId;
+  policyId: TurnIqId;
+  policyVersion: number;
+  snapshotVersion: string;
+  decidedAt: TurnIqIsoTimestamp;
+  fingerprint: string;
+  assignments: readonly TurnIqHandoffSegmentAssignment[];
+  performers: readonly TurnIqHandoffPerformerCredit[];
+  reasonCodes: readonly TurnIqHandoffReasonCode[];
+  privacySafeExplanation: string;
+  ownerActionRequired: boolean;
+  evaluatedSearchStates: number;
+  /** Authorized Owner/Admin projection only; never send to Staff View. */
+  internalTrace: TurnIqHandoffInternalTrace;
+};
+
 export type TurnIqCommandEnvelope = {
   commandId: TurnIqId;
   salonId: TurnIqId;

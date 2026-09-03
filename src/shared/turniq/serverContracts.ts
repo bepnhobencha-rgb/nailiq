@@ -205,6 +205,40 @@ export const turnIqGroupConfirmationActionInputSchema = z.object({
   overrideReason: z.string().trim().min(1).max(500).optional(),
 });
 
+/** Multi-service handoff decisions are rebuilt from committed booking segments. */
+export const turnIqHandoffRecommendationActionInputSchema = z.object({
+  slug: turnIqSlugSchema,
+  bookingId: uuid,
+  commandId: uuid,
+  deviceId: uuid,
+  localSequence: positiveSequence,
+});
+
+export const turnIqHandoffConfirmationActionInputSchema = z.object({
+  slug: turnIqSlugSchema,
+  handoffPlanId: uuid,
+  expectedStateVersion: z.number().int().positive(),
+  commandId: uuid,
+  deviceId: uuid,
+  localSequence: positiveSequence,
+  overrideReason: z.string().trim().min(1).max(500).optional(),
+});
+
+export const turnIqHandoffPerformerActionInputSchema = z.object({
+  slug: turnIqSlugSchema,
+  handoffPlanId: uuid,
+  performerId: uuid,
+  command: z.enum(["start", "complete"]),
+  commandId: uuid,
+  deviceId: uuid,
+  localSequence: positiveSequence,
+});
+
+export const turnIqHandoffPlanReadActionInputSchema = z.object({
+  slug: turnIqSlugSchema,
+  handoffPlanId: uuid,
+});
+
 export const turnIqGroupPlanReadActionInputSchema = z.object({
   slug: turnIqSlugSchema,
   groupPlanId: uuid,
@@ -267,6 +301,15 @@ export type TurnIqGroupRecommendationActionInput = z.infer<
 >;
 export type TurnIqGroupConfirmationActionInput = z.infer<
   typeof turnIqGroupConfirmationActionInputSchema
+>;
+export type TurnIqHandoffRecommendationActionInput = z.infer<
+  typeof turnIqHandoffRecommendationActionInputSchema
+>;
+export type TurnIqHandoffConfirmationActionInput = z.infer<
+  typeof turnIqHandoffConfirmationActionInputSchema
+>;
+export type TurnIqHandoffPerformerActionInput = z.infer<
+  typeof turnIqHandoffPerformerActionInputSchema
 >;
 export type TurnIqGroupTimingComparisonActionInput = z.infer<
   typeof turnIqGroupTimingComparisonActionInputSchema
@@ -368,4 +411,20 @@ export type TurnIqGroupCommandActionResult =
 
 export type TurnIqGroupTimingComparisonActionResult =
   | { ok: true; data: TurnIqGroupTimingComparisonView }
+  | { ok: false; code: TurnIqServerActionErrorCode };
+
+export type TurnIqHandoffCommandActionResult =
+  | {
+      ok: true;
+      result: {
+        commandId: string;
+        replayed: boolean;
+        handoffPlanId: string;
+        bookingId: string;
+        status: string;
+        stateVersion: number;
+        performerIds: readonly string[];
+        fairnessReceiptIds: readonly string[];
+      };
+    }
   | { ok: false; code: TurnIqServerActionErrorCode };

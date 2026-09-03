@@ -29,6 +29,10 @@ import {
   turnIqGroupPlanReadActionInputSchema,
   turnIqGroupRecommendationActionInputSchema,
   turnIqGroupTimingComparisonActionInputSchema,
+  turnIqHandoffConfirmationActionInputSchema,
+  turnIqHandoffPerformerActionInputSchema,
+  turnIqHandoffPlanReadActionInputSchema,
+  turnIqHandoffRecommendationActionInputSchema,
   turnIqStaggeredGroupConfirmationActionInputSchema,
   turnIqStaggeredGroupPlanActionInputSchema,
   turnIqReadActionInputSchema,
@@ -51,6 +55,13 @@ import {
   type TurnIqShiftActionInput,
   type TurnIqSwapActionInput,
 } from "@/shared/turniq/serverContracts";
+import {
+  applyTrustedTurnIqHandoffPerformerCommand,
+  confirmTrustedTurnIqHandoff,
+  loadTrustedTurnIqHandoffPlan,
+  loadTrustedTurnIqHandoffQueue,
+  recommendTrustedTurnIqHandoff,
+} from "@/shared/turniq/trustedHandoffRecommendation";
 import {
   confirmTrustedTurnIqGroup,
   compareTrustedTurnIqGroupTiming,
@@ -204,6 +215,46 @@ export async function confirmTurnIqGroupAction(input: unknown) {
     return { ok: false as const, code: "invalid_input" as const };
   }
   return confirmTrustedTurnIqGroup(parsed.data);
+}
+
+export async function recommendTurnIqHandoffAction(input: unknown) {
+  const parsed = turnIqHandoffRecommendationActionInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false as const, code: "invalid_input" as const };
+  }
+  return recommendTrustedTurnIqHandoff(parsed.data);
+}
+
+export async function confirmTurnIqHandoffAction(input: unknown) {
+  const parsed = turnIqHandoffConfirmationActionInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false as const, code: "invalid_input" as const };
+  }
+  return confirmTrustedTurnIqHandoff(parsed.data);
+}
+
+export async function applyTurnIqHandoffPerformerAction(input: unknown) {
+  const parsed = turnIqHandoffPerformerActionInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false as const, code: "invalid_input" as const };
+  }
+  return applyTrustedTurnIqHandoffPerformerCommand(parsed.data);
+}
+
+export async function loadTurnIqHandoffPlanAction(input: unknown) {
+  const parsed = turnIqHandoffPlanReadActionInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false as const, code: "invalid_input" as const };
+  }
+  return loadTrustedTurnIqHandoffPlan(parsed.data.slug, parsed.data.handoffPlanId);
+}
+
+export async function loadTurnIqHandoffQueueAction(input: unknown) {
+  const parsed = turnIqReadActionInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false as const, code: "invalid_input" as const };
+  }
+  return loadTrustedTurnIqHandoffQueue(parsed.data.slug);
 }
 
 export async function loadTurnIqGroupPlanAction(input: unknown) {

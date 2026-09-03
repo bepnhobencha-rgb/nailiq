@@ -32,6 +32,7 @@ import {
 import { turnIqStageAllowsRead } from "@/shared/turniq/rolloutStage";
 import { captureTurnIqShadowCycle } from "@/shared/turniq/shadowTruthPipeline";
 import { loadTrustedTurnIqGroupQueue } from "@/shared/turniq/trustedGroupRecommendation";
+import { loadTrustedTurnIqHandoffQueue } from "@/shared/turniq/trustedHandoffRecommendation";
 
 export const dynamic = "force-dynamic";
 
@@ -141,7 +142,7 @@ export default async function ReceptionistCenterPage({
   const turnIqEnabled =
     (await isReleaseFeatureVisible(flagSalon, "turniq_trust_engine")) &&
     turnIqStageAllowsRead(turnIqRolloutStage);
-  const [turnIqBoardResult, turnIqStaffViewResult, turnIqExceptionInboxResult, turnIqGroupQueueResult] =
+  const [turnIqBoardResult, turnIqStaffViewResult, turnIqExceptionInboxResult, turnIqGroupQueueResult, turnIqHandoffQueueResult] =
     turnIqEnabled
       ? await Promise.all([
           ctx.role !== "nail_tech"
@@ -154,8 +155,11 @@ export default async function ReceptionistCenterPage({
           ctx.role !== "nail_tech"
             ? loadTrustedTurnIqGroupQueue(slug)
             : Promise.resolve(null),
+          ctx.role !== "nail_tech"
+            ? loadTrustedTurnIqHandoffQueue(slug)
+            : Promise.resolve(null),
         ])
-      : [null, null, null, null];
+      : [null, null, null, null, null];
 
   const archivedBookingRecoveryEnabled =
     await isArchivedBookingFeatureAvailable(ctx.salon);
@@ -359,6 +363,14 @@ export default async function ReceptionistCenterPage({
         turnIqGroupQueueError={
           turnIqGroupQueueResult && !turnIqGroupQueueResult.ok
             ? turnIqGroupQueueResult.code
+            : null
+        }
+        initialTurnIqHandoffQueue={
+          turnIqHandoffQueueResult?.ok ? turnIqHandoffQueueResult.data : null
+        }
+        turnIqHandoffQueueError={
+          turnIqHandoffQueueResult && !turnIqHandoffQueueResult.ok
+            ? turnIqHandoffQueueResult.code
             : null
         }
       />
