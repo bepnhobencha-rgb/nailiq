@@ -80,7 +80,7 @@ describe("AI execution queue boundary", () => {
     expect(parity).toContain("tables: 231");
     expect(parity).toContain("columns: 3562");
     expect(parity).toContain("policies: 218");
-    expect(parity).toContain("indexes: 951");
+    expect(parity).toContain("indexes: 952");
     expect(parity).toContain("functions: 510");
     expect(parity).toContain('"ai_execution_jobs"');
     expect(parity).toContain('"decide_ai_approval_request"');

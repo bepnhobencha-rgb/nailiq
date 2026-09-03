@@ -361,8 +361,8 @@ const PRODUCTION = {
   // +14 TurnIQ offline device, conflict, foreign-key, and lookup indexes.
   // +5 TurnIQ rollout primary, unique, and history indexes.
   // +4 controlled SHADOW allowlist/receipt primary, unique, and history indexes.
-  // +27 TurnIQ handoff primary, unique, tenant, foreign-key, and lookup indexes.
-  indexes: 951,
+  // +28 TurnIQ handoff primary, unique, tenant, foreign-key, and lookup indexes.
+  indexes: 952,
 } as const;
 
 /**

@@ -88,7 +88,7 @@ describe("MQA-0099 database capability boundary", () => {
     expect(parity).toContain("tables: 231");
     expect(parity).toContain("columns: 3562");
     expect(parity).toContain("functions: 510");
-    expect(parity).toContain("indexes: 951");
+    expect(parity).toContain("indexes: 952");
     expect(parity).toContain("service_role: 218");
   });
 

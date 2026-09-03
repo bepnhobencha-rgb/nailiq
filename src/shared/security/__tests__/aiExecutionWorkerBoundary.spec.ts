@@ -71,7 +71,7 @@ describe("AI execution worker boundary", () => {
     expect(parity).toContain("through 20260820105820");
     expect(parity).toContain("columns: 3562");
     expect(parity).toContain("functions: 510");
-    expect(parity).toContain("indexes: 951");
+    expect(parity).toContain("indexes: 952");
     expect(parity).toContain('"claim_ai_execution_jobs"');
     expect(parity).toContain('"finish_ai_execution_job"');
     expect(parity).toContain('"recover_stale_ai_execution_jobs"');
