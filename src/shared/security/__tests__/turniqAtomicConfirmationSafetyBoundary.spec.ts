@@ -8,6 +8,11 @@ const migrationPath = join(
   "supabase/migrations/20260902001545_add_turniq_atomic_assignment_revalidation.sql",
 );
 const sql = readFileSync(migrationPath, "utf8");
+const privilegeFixPath = join(
+  process.cwd(),
+  "supabase/migrations/20260903033617_fix_turniq_booking_trigger_privilege_boundary.sql",
+);
+const privilegeFixSql = readFileSync(privilegeFixPath, "utf8");
 
 describe("TurnIQ M3D atomic confirmation safety boundary", () => {
   it("revalidates only an active recommended TurnIQ assignment", () => {
@@ -52,5 +57,22 @@ describe("TurnIQ M3D atomic confirmation safety boundary", () => {
     );
     expect(sql).not.toMatch(/twilio|resend|square|stripe|fetch\s*\(/i);
     expect(sql).not.toMatch(/INSERT\s+INTO\s+public\.(bookings|scheduled_notifications)/i);
+  });
+
+  it("lets the trigger inspect the private ledger without exposing it", () => {
+    expect(privilegeFixSql).toMatch(
+      /ALTER FUNCTION public\.enforce_turniq_assignment_confirmation_safety\(\)[\s\S]+SECURITY DEFINER/,
+    );
+    expect(privilegeFixSql).toMatch(
+      /REVOKE ALL ON FUNCTION public\.enforce_turniq_assignment_confirmation_safety\(\)[\s\S]+FROM PUBLIC, anon, authenticated/,
+    );
+    expect(privilegeFixSql).toContain("p.prosecdef IS TRUE");
+    expect(privilegeFixSql).toContain("p.proowner");
+    expect(privilegeFixSql).not.toMatch(
+      /GRANT\s+(?:SELECT|ALL)[\s\S]+turniq_assignments[\s\S]+authenticated/i,
+    );
+    expect(privilegeFixSql).not.toMatch(
+      /twilio|resend|square|stripe|fetch\s*\(/i,
+    );
   });
 });
