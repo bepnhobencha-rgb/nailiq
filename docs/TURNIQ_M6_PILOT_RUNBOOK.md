@@ -43,6 +43,31 @@ history. Missing, malformed or unreadable stage state resolves to OFF.
 Never drop TurnIQ policies, rollout/turn events, command receipts, Fairness Receipts,
 offline reconciliation rows or disputes during rollback.
 
+## Controlled SHADOW activation
+
+Never use the generic feature-flag editor to start or stop a TurnIQ pilot. The
+private `configure_turniq_controlled_shadow_pilot_v1` boundary is the only
+approved combined activation path. It is service-role-only and requires:
+
+- an explicit allowlist row for the exact salon ID and slug that has not expired
+  or been revoked;
+- an Owner/Admin actor who belongs to that salon, a reason, command ID,
+  fingerprint and the exact `ACTIVATE_TURNIQ_SHADOW_PILOT` confirmation;
+- an active nail-salon tenant, at least three active technicians, explicit skill
+  coverage for every active technician and service, recurring shift coverage,
+  valid resource coverage when resources are enabled, and no other non-OFF
+  pilot in the environment;
+- creation of a next-salon-business-day policy version, platform and salon
+  gates, the authoritative SHADOW transition and one immutable activation
+  receipt in the same transaction.
+
+Retrying the same command/fingerprint returns the original receipt. Reusing the
+command with different material fails. The paired
+`ROLLBACK_TURNIQ_SHADOW_PILOT` action moves SHADOW to OFF and disables the salon
+flag while preserving policy and event evidence. Fail-safe rollback remains
+available even when the activation allowlist has expired or been revoked. No
+activation migration seeds an allowlist row or names a production salon.
+
 ## Preflight gates
 
 - Platform `feature_turniq_trust_engine`, per-salon
