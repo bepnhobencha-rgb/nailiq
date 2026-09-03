@@ -24,6 +24,13 @@ const headSpaReadinessHardening = readFileSync(
   ),
   "utf8",
 );
+const legacyReadinessFallback = readFileSync(
+  resolve(
+    process.cwd(),
+    "supabase/migrations/20260903083410_honor_turniq_legacy_readiness_fallback.sql",
+  ),
+  "utf8",
+);
 
 describe("TurnIQ controlled SHADOW activation boundary", () => {
   it("is inert by default and cannot enable a salon during migration", () => {
@@ -92,6 +99,28 @@ describe("TurnIQ controlled SHADOW activation boundary", () => {
       /INSERT INTO public\.turniq_shadow_pilot_allowlist/i,
     );
     expect(headSpaReadinessHardening).not.toMatch(
+      /UPDATE public\.(?:salons|platform_flags|turniq_rollout_controls)/i,
+    );
+  });
+
+  it("honors established capability and schedule fallbacks without weakening explicit readiness", () => {
+    expect(legacyReadinessFallback).toContain(
+      "v_salon.staff_capability_mode = 'whitelist'",
+    );
+    expect(legacyReadinessFallback).toContain(
+      "'staff_capability_mode', v_salon.staff_capability_mode",
+    );
+    expect(legacyReadinessFallback).toContain(
+      "'staff_schedule_mode', CASE WHEN EXISTS",
+    );
+    expect(legacyReadinessFallback).toContain("'salon_hours_fallback'");
+    expect(legacyReadinessFallback).toContain(
+      "SELECT 1 FROM public.staff_shifts AS configured",
+    );
+    expect(legacyReadinessFallback).not.toMatch(
+      /INSERT INTO public\.turniq_shadow_pilot_allowlist/i,
+    );
+    expect(legacyReadinessFallback).not.toMatch(
       /UPDATE public\.(?:salons|platform_flags|turniq_rollout_controls)/i,
     );
   });
