@@ -51,15 +51,29 @@ async function replaceServiceMappings(db: ReturnType<typeof createServiceRoleCli
 
 async function loadServiceMenu(db: ReturnType<typeof createServiceRoleClient>, salonId: string) {
   const { data } = await db.from("services" as never)
-    .select("id, name, is_addon, price_cents, duration_minutes")
+    .select("id, name, description, category, is_addon, price_cents, duration_minutes")
     .eq("salon_id", salonId).is("deleted_at", null).order("name");
-  return ((data || []) as unknown as Array<{ id: string; name: string; is_addon: boolean; price_cents: number | null; duration_minutes: number | null }>).map((row): AutoMappingService => ({
+  return ((data || []) as unknown as Array<{ id: string; name: string; description: string | null; category: string | null; is_addon: boolean; price_cents: number | null; duration_minutes: number | null }>).map((row): AutoMappingService => ({
     id: row.id,
     name: row.name,
+    description: row.description,
+    category: row.category,
     isAddon: row.is_addon,
     priceCents: row.price_cents,
     durationMinutes: row.duration_minutes,
   }));
+}
+
+async function saveMappingMetadata(db: ReturnType<typeof createServiceRoleClient>, designId: string, salonId: string, mapping: AutoMappingResult) {
+  const { error } = await db.from("nail_designs" as never).update({
+    mapping_status: mapping.status,
+    mapping_visual_confidence: mapping.visualConfidence,
+    mapping_service_confidence: mapping.serviceConfidence,
+    mapping_reason: mapping.reason,
+    mapping_attributes: mapping.attributes,
+    mapping_required_question: mapping.requiredQuestion,
+  } as never).eq("id", designId).eq("salon_id", salonId);
+  return !error;
 }
 
 async function analyzeAndSave(args: {
@@ -82,6 +96,7 @@ async function analyzeAndSave(args: {
     services: args.services,
   });
   if (!await replaceServiceMappings(args.db, args.design.id, args.salonId, mapping)) throw new Error("mapping_failed");
+  if (!await saveMappingMetadata(args.db, args.design.id, args.salonId, mapping)) throw new Error("mapping_metadata_failed");
   return { designId: args.design.id, ...mapping };
 }
 
@@ -165,5 +180,9 @@ export async function PATCH(request: Request) {
   const { data: design } = await db.from("nail_designs" as never).select("id").eq("id", parsed.data.designId).eq("salon_id", salon.id).is("deleted_at", null).maybeSingle();
   if (!design) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (!await replaceServiceMappings(db, parsed.data.designId, salon.id, mapping)) return NextResponse.json({ error: "update_failed" }, { status: 500 });
+  const { error: statusError } = await db.from("nail_designs" as never)
+    .update({ mapping_status: "ready", mapping_required_question: null } as never)
+    .eq("id", parsed.data.designId).eq("salon_id", salon.id);
+  if (statusError) return NextResponse.json({ error: "update_failed" }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
