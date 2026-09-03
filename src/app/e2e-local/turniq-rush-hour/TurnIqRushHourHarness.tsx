@@ -16,6 +16,18 @@ import type { TurnIqLiveBoardView } from "@/shared/turniq/readModels";
 
 type Phase = "ready" | "walkin_added" | "completed" | "offline" | "reconnected";
 
+type RushHourSnapshotPayload = {
+  board: TurnIqLiveBoardView;
+  staffView: null;
+  services: Array<{
+    id: string;
+    name: string;
+    durationMinutes: number;
+    isAddon: boolean;
+  }>;
+  fairnessReceiptCount: number;
+};
+
 export function TurnIqRushHourHarness() {
   const offlineStore = useMemo(() => new TurnIqOfflineStore(), []);
   const [decision, setDecision] = useState<TurnIqDecisionRecord | null>(null);
@@ -37,8 +49,12 @@ export function TurnIqRushHourHarness() {
   }, []);
 
   useEffect(() => {
-    void offlineStore.list()
-      .then((records) => {
+    void Promise.all([
+      offlineStore.list(),
+      offlineStore.loadSnapshot<RushHourSnapshotPayload>(),
+    ])
+      .then(([records, snapshot]) => {
+        setReceiptCount(snapshot?.payload.fairnessReceiptCount ?? 0);
         if (records.length > 0) setPhase("offline");
       })
       .catch(() => setOfflineStorageSafe(false));
@@ -142,6 +158,7 @@ export function TurnIqRushHourHarness() {
             durationMinutes: 60,
             isAddon: false,
           }],
+          fairnessReceiptCount: Math.max(receiptCount, 1),
         },
       };
       await offlineStore.saveSnapshot(snapshot);

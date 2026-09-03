@@ -29,6 +29,7 @@ test.describe("TurnIQ M6 60-second comprehension and rush-hour demo", () => {
     await expect(page.getByText(/1 encrypted IndexedDB command persisted/)).toBeVisible();
     await page.reload();
     await expect(page.getByText(/1 encrypted IndexedDB command persisted/)).toBeVisible();
+    await expect(page.getByText(/Exactly 1 durable receipt/)).toBeVisible();
     await page.getByRole("button", { name: "Reconnect and sync" }).click();
     await expect(page.getByText(/1 unique command · 0 lost · 0 duplicate/)).toBeVisible();
   });
