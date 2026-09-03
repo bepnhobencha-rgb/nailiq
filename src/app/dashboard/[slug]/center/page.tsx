@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 import {
   ReceptionistCenter,
@@ -29,6 +30,7 @@ import {
   loadTurnIqStaffView,
 } from "@/shared/turniq/serverDal";
 import { turnIqStageAllowsRead } from "@/shared/turniq/rolloutStage";
+import { captureTurnIqShadowCycle } from "@/shared/turniq/shadowTruthPipeline";
 import { loadTrustedTurnIqGroupQueue } from "@/shared/turniq/trustedGroupRecommendation";
 
 export const dynamic = "force-dynamic";
@@ -262,6 +264,29 @@ export default async function ReceptionistCenterPage({
 
   if (!featureVisible("receptionist_center")) {
     redirect(`/dashboard/${encodeURIComponent(slug)}`);
+  }
+
+  if (
+    turnIqEnabled &&
+    turnIqRolloutStage === "shadow" &&
+    ctx.role !== "nail_tech" &&
+    initialResult.ok
+  ) {
+    const shadowObservation = {
+      salonId: ctx.salon.id,
+      businessDate: initialResult.data.selectedDate,
+      capturedAt: initialResult.data.observedAtIso,
+      rolloutStage: turnIqRolloutStage,
+    };
+    after(async () => {
+      const result = await captureTurnIqShadowCycle(shadowObservation);
+      if (result.status === "failed") {
+        console.warn("turniq_shadow_cycle_failed", {
+          salonId: shadowObservation.salonId,
+          businessDate: shadowObservation.businessDate,
+        });
+      }
+    });
   }
 
   // Walk-in queue off → hide the panel + quick-add inside the board too, not
