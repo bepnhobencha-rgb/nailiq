@@ -173,6 +173,10 @@ import { execFileSync } from "node:child_process";
  * service-role-only activation/rollback function, one immutable receipt
  * trigger, and four primary/unique/history indexes. It creates no allowlist
  * row and changes no rollout state.
+ * TurnIQ M4R multi-technician handoff adds three private handoff
+ * plan/performer/item tables, 53 columns, five service-only or private
+ * functions, two immutable-ledger triggers, and 27 primary/unique/lookup
+ * indexes. It grants direct table reachability only to service_role.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -180,7 +184,7 @@ import { execFileSync } from "node:child_process";
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
   // +25 private TurnIQ policy, ledger, replay, group, check-in, offline, and rollout tables.
-  tables: 228,
+  tables: 231,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -239,7 +243,8 @@ const PRODUCTION = {
   // +39 TurnIQ primary-device, monotonic state, and reconciliation columns.
   // +18 TurnIQ rollout control and immutable transition-event columns.
   // +21 TurnIQ controlled SHADOW allowlist and immutable activation-receipt columns.
-  columns: 3509,
+  // +53 TurnIQ multi-technician handoff plan, performer, and item columns.
+  columns: 3562,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -307,7 +312,9 @@ const PRODUCTION = {
   // +1 service-role-only TurnIQ rollout transition function and +1 immutable
   // event mutation guard.
   // +1 service-role-only controlled SHADOW activation/rollback function.
-  functions: 505,
+  // +5 TurnIQ handoff assertion, fingerprint, plan, confirmation, and performer
+  // lifecycle functions.
+  functions: 510,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -327,7 +334,8 @@ const PRODUCTION = {
   // +1 TurnIQ monotonic offline-state trigger.
   // +1 TurnIQ rollout event append-only trigger.
   // +1 controlled SHADOW activation-receipt append-only trigger.
-  triggers: 143,
+  // +2 TurnIQ handoff performer/item immutable-ledger triggers.
+  triggers: 145,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -353,7 +361,8 @@ const PRODUCTION = {
   // +14 TurnIQ offline device, conflict, foreign-key, and lookup indexes.
   // +5 TurnIQ rollout primary, unique, and history indexes.
   // +4 controlled SHADOW allowlist/receipt primary, unique, and history indexes.
-  indexes: 924,
+  // +27 TurnIQ handoff primary, unique, tenant, foreign-key, and lookup indexes.
+  indexes: 951,
 } as const;
 
 /**
@@ -398,6 +407,9 @@ const CRITICAL_TABLES = [
   "turniq_rollout_events",
   "turniq_shadow_pilot_allowlist",
   "turniq_shadow_activation_receipts",
+  "turniq_handoff_plans",
+  "turniq_handoff_performers",
+  "turniq_handoff_plan_items",
   "booking_waitlist_entries",
   "client_profiles",
   "salon_members",
@@ -540,6 +552,11 @@ const CRITICAL_FUNCTIONS = [
   "configure_turniq_rollout_stage_v1",
   "reject_turniq_rollout_event_mutation",
   "configure_turniq_controlled_shadow_pilot_v1",
+  "assert_turniq_supervised_online_v1",
+  "turniq_handoff_segment_fingerprint_v1",
+  "record_turniq_handoff_plan_v1",
+  "confirm_turniq_handoff_plan_v1",
+  "apply_turniq_handoff_performer_command_v1",
   "create_public_capacity_rescue_request",
   "guard_complex_capacity_rescue_autonomy",
   "compute_no_show_risk",
@@ -934,9 +951,9 @@ function main() {
   // the delivery-event audit table is service-role-only.
   // The customer identity map is service-role read-only; the refund inbox is
   // mutation-through-RPC only and intentionally grants no table reachability.
-  // TurnIQ adds twenty-seven private tables reachable only by service_role. Neither
+  // TurnIQ adds thirty private tables reachable only by service_role. Neither
   // browser role gains direct table reachability.
-  const GRANTS = { anon: 56, authenticated: 78, service_role: 215 } as const;
+  const GRANTS = { anon: 56, authenticated: 78, service_role: 218 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
