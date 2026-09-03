@@ -149,8 +149,20 @@ export async function captureTurnIqShadowCycle(input: {
       .order("version" as never, { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (policyResult.error || !policyResult.data) {
+    if (policyResult.error) {
       throw new Error("turniq_shadow_policy_unavailable");
+    }
+    // A controlled rollout may enter SHADOW before the first policy's
+    // next-business-day effective date. That is an intentional quiet waiting
+    // period, not an operational failure and must not create noisy alerts.
+    if (!policyResult.data) {
+      return {
+        status: "skipped",
+        examined: 0,
+        decisionsInserted: 0,
+        comparisonsInserted: 0,
+        unsupported: 0,
+      };
     }
     const policy = policyFromRow(policyResult.data as unknown as Row);
     if (policy.timezone !== timezone) {
