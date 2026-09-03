@@ -411,6 +411,24 @@ dựng. Tài liệu sản phẩm authoritative:
 - `docs/TURNIQ_WOW_RESEARCH.md`
 - `docs/CODEX_TURNIQ_MASTER_REQUEST.md`
 
+### TurnIQ M4Q — multi-technician handoff planner (local only)
+
+- [x] Dùng timeline/resource segment do booking xác nhận; TurnIQ không tự dời lịch
+- [x] Chặn một thợ làm hai segment trùng giờ; cho phép tiếp nối không trùng giờ
+- [x] Kiểm tra skill, ca làm, busy/hold/break/refusal và appointment gap
+- [x] Chỉ cho dùng chung ghế/giường khi có capacity + policy fingerprint
+- [x] Gom đúng một lượt mỗi thợ và đúng opportunity credit của phần việc họ làm
+- [x] Requested-tech provenance, fallback cần Owner và giải thích không lộ tiền đồng nghiệp
+- [x] Exact deterministic search, no partial plan và permutation invariants
+- [x] M4R additive atomic ledger/RPC: một assignment/receipt/turn cho mỗi thợ,
+  immutable segment attribution, exact replay và full-plan revalidation
+- [x] Local PostgreSQL rehearsal: parallel 2 thợ, sequential 1 thợ, lifecycle,
+  credit/turn aggregation, stale staff mismatch, ACL và toàn bộ TurnIQ SQL suite
+- [x] M4S trusted server adapter/action/read-model: browser chỉ gửi ID,
+  snapshot server-owned, exact replay, rollout gate và không ghi đè segment đã commit
+- [x] M4T Receptionist Center supervised handoff UI + synthetic desktop/mobile browser verification
+- [ ] QA/Preview/Production hoặc pilot cho multi-technician handoff
+
 ## AI CHỊU TRÁCH NHIỆM VIỆC GÌ
 
 AI có thể rà soát và sửa mã nguồn; thiết kế lại UX/UI; chuẩn bị migration; tạo

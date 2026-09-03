@@ -69,9 +69,9 @@ describe("AI execution worker boundary", () => {
 
   it("makes every lease RPC a blank-database critical object", () => {
     expect(parity).toContain("through 20260820105820");
-    expect(parity).toContain("columns: 3509");
-    expect(parity).toContain("functions: 505");
-    expect(parity).toContain("indexes: 924");
+    expect(parity).toContain("columns: 3562");
+    expect(parity).toContain("functions: 510");
+    expect(parity).toContain("indexes: 952");
     expect(parity).toContain('"claim_ai_execution_jobs"');
     expect(parity).toContain('"finish_ai_execution_job"');
     expect(parity).toContain('"recover_stale_ai_execution_jobs"');

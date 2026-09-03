@@ -70,6 +70,7 @@ import { BasicCockpit } from "./BasicCockpit";
 import { TurnIqLiveBoard } from "./TurnIqLiveBoard";
 import { TurnIqOperationsPanel } from "./TurnIqOperationsPanel";
 import { TurnIqGroupPlanCard } from "./TurnIqGroupPlanCard";
+import { TurnIqHandoffCard } from "./TurnIqHandoffCard";
 import { TurnIqOfflineBoundary } from "./TurnIqOfflineBoundary";
 import { useBasicMode } from "@/shared/dashboard/useBasicMode";
 import type {
@@ -186,6 +187,7 @@ import {
   type TurnIqRolloutStage,
 } from "@/shared/turniq/rolloutStage";
 import type { TurnIqGroupQueueView } from "@/shared/turniq/groupReadModels";
+import type { TurnIqHandoffQueueView } from "@/shared/turniq/handoffReadModels";
 import {
   applyTurnIqAssignmentCommandAction,
   applyTurnIqCorrectionCommandAction,
@@ -208,6 +210,11 @@ import {
   resolveTurnIqDisputeAction,
   recommendTurnIqGroupAction,
   confirmTurnIqGroupAction,
+  applyTurnIqHandoffPerformerAction,
+  confirmTurnIqHandoffAction,
+  loadTurnIqHandoffPlanAction,
+  loadTurnIqHandoffQueueAction,
+  recommendTurnIqHandoffAction,
 } from "@/shared/turniq/serverActions";
 import {
   DEFAULT_DRC_ACCENT,
@@ -357,6 +364,8 @@ export type ReceptionistCenterProps = {
   turnIqExceptionInboxError?: string | null;
   initialTurnIqGroupQueue?: TurnIqGroupQueueView | null;
   turnIqGroupQueueError?: string | null;
+  initialTurnIqHandoffQueue?: TurnIqHandoffQueueView | null;
+  turnIqHandoffQueueError?: string | null;
 };
 
 function loadErrorCopy(
@@ -530,6 +539,8 @@ function ReceptionistCenterInner({
   turnIqExceptionInboxError,
   initialTurnIqGroupQueue,
   turnIqGroupQueueError,
+  initialTurnIqHandoffQueue,
+  turnIqHandoffQueueError,
 }: {
   slug: string;
   initialOk: ReceptionistCenterData;
@@ -557,6 +568,8 @@ function ReceptionistCenterInner({
   turnIqExceptionInboxError: string | null;
   initialTurnIqGroupQueue: TurnIqGroupQueueView | null;
   turnIqGroupQueueError: string | null;
+  initialTurnIqHandoffQueue: TurnIqHandoffQueueView | null;
+  turnIqHandoffQueueError: string | null;
 }) {
   const turnIqCanMutate = turnIqStageAllowsOnlineMutation(turnIqRolloutStage);
   const router = useRouter();
@@ -634,6 +647,10 @@ function ReceptionistCenterInner({
     useState<TurnIqGroupQueueView | null>(initialTurnIqGroupQueue);
   const [turnIqGroupQueueCurrentError, setTurnIqGroupQueueCurrentError] =
     useState<string | null>(turnIqGroupQueueError);
+  const [turnIqHandoffQueue, setTurnIqHandoffQueue] =
+    useState<TurnIqHandoffQueueView | null>(initialTurnIqHandoffQueue);
+  const [turnIqHandoffQueueCurrentError, setTurnIqHandoffQueueCurrentError] =
+    useState<string | null>(turnIqHandoffQueueError);
 
   const minimumServiceMinutesByStaff = useMemo(
     () =>
@@ -1632,7 +1649,7 @@ function ReceptionistCenterInner({
     // day or any offset drift would reload the wrong day, snapping to today).
     const ymd = viewedYmdRef.current;
     try {
-      const [res, turnIqResult, turnIqStaffResult, turnIqExceptionResult, turnIqGroupQueueResult] = await Promise.all([
+      const [res, turnIqResult, turnIqStaffResult, turnIqExceptionResult, turnIqGroupQueueResult, turnIqHandoffQueueResult] = await Promise.all([
         loadReceptionistCenterDataAction(slug, ymd),
         turnIqEnabled && viewerRole !== "nail_tech"
           ? loadTurnIqLiveBoardAction({ slug })
@@ -1645,6 +1662,9 @@ function ReceptionistCenterInner({
           : Promise.resolve(null),
         turnIqEnabled && viewerRole !== "nail_tech"
           ? loadTurnIqGroupQueueAction({ slug })
+          : Promise.resolve(null),
+        turnIqEnabled && viewerRole !== "nail_tech"
+          ? loadTurnIqHandoffQueueAction({ slug })
           : Promise.resolve(null),
       ]);
       if (res.ok) {
@@ -1680,6 +1700,13 @@ function ReceptionistCenterInner({
       } else if (turnIqGroupQueueResult && !turnIqGroupQueueResult.ok) {
         setTurnIqGroupQueue(null);
         setTurnIqGroupQueueCurrentError(turnIqGroupQueueResult.code);
+      }
+      if (turnIqHandoffQueueResult?.ok) {
+        setTurnIqHandoffQueue(turnIqHandoffQueueResult.data);
+        setTurnIqHandoffQueueCurrentError(null);
+      } else if (turnIqHandoffQueueResult && !turnIqHandoffQueueResult.ok) {
+        setTurnIqHandoffQueue(null);
+        setTurnIqHandoffQueueCurrentError(turnIqHandoffQueueResult.code);
       }
       // Keep Week/Month views in sync with this mutation (QA #5).
       setCalendarRefreshNonce((n) => n + 1);
@@ -4496,22 +4523,38 @@ function ReceptionistCenterInner({
         {turnIqEnabled && isViewingToday && viewMode === "day" ? (
           <div className="space-y-4">
             {viewerRole !== "nail_tech" ? (
-              <TurnIqGroupPlanCard
-                queue={turnIqGroupQueue}
-                errorCode={turnIqGroupQueueCurrentError}
-                language={language === "vi" ? "vi" : "en"}
-                timezone={timezone}
-                slug={slug}
-                canManage={turnIqCanMutate}
-                offline={isOffline}
-                onRecommend={recommendTurnIqGroupAction}
-                onConfirm={confirmTurnIqGroupAction}
-                onLoadPlan={loadTurnIqGroupPlanAction}
-                onCompareTiming={compareTurnIqGroupTimingAction}
-                onRecordTimingPlan={recordTurnIqStaggeredGroupPlanAction}
-                onConfirmStaggered={confirmTurnIqStaggeredGroupPlanAction}
-                onRefresh={reloadCurrentDay}
-              />
+              <>
+                <TurnIqHandoffCard
+                  queue={turnIqHandoffQueue}
+                  errorCode={turnIqHandoffQueueCurrentError}
+                  language={language === "vi" ? "vi" : "en"}
+                  timezone={timezone}
+                  slug={slug}
+                  canManage={turnIqCanMutate}
+                  offline={isOffline}
+                  onRecommend={recommendTurnIqHandoffAction}
+                  onConfirm={confirmTurnIqHandoffAction}
+                  onPerformer={applyTurnIqHandoffPerformerAction}
+                  onLoadPlan={loadTurnIqHandoffPlanAction}
+                  onRefresh={reloadCurrentDay}
+                />
+                <TurnIqGroupPlanCard
+                  queue={turnIqGroupQueue}
+                  errorCode={turnIqGroupQueueCurrentError}
+                  language={language === "vi" ? "vi" : "en"}
+                  timezone={timezone}
+                  slug={slug}
+                  canManage={turnIqCanMutate}
+                  offline={isOffline}
+                  onRecommend={recommendTurnIqGroupAction}
+                  onConfirm={confirmTurnIqGroupAction}
+                  onLoadPlan={loadTurnIqGroupPlanAction}
+                  onCompareTiming={compareTurnIqGroupTimingAction}
+                  onRecordTimingPlan={recordTurnIqStaggeredGroupPlanAction}
+                  onConfirmStaggered={confirmTurnIqStaggeredGroupPlanAction}
+                  onRefresh={reloadCurrentDay}
+                />
+              </>
             ) : null}
             <TurnIqOfflineBoundary
               slug={slug}
@@ -5888,6 +5931,8 @@ export function ReceptionistCenter({
   turnIqExceptionInboxError = null,
   initialTurnIqGroupQueue = null,
   turnIqGroupQueueError = null,
+  initialTurnIqHandoffQueue = null,
+  turnIqHandoffQueueError = null,
 }: ReceptionistCenterProps) {
   if (!initialResult.ok) {
     return <ReceptionistGateError code={initialResult.error} />;
@@ -5918,6 +5963,8 @@ export function ReceptionistCenter({
       turnIqExceptionInboxError={turnIqExceptionInboxError}
       initialTurnIqGroupQueue={initialTurnIqGroupQueue}
       turnIqGroupQueueError={turnIqGroupQueueError}
+      initialTurnIqHandoffQueue={initialTurnIqHandoffQueue}
+      turnIqHandoffQueueError={turnIqHandoffQueueError}
     />
   );
 }
