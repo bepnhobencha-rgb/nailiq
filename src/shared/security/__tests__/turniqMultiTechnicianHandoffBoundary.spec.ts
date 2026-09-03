@@ -11,6 +11,14 @@ const migration = readFileSync(
   "utf8",
 );
 
+const requestedStaffIndexHotfix = readFileSync(
+  resolve(
+    process.cwd(),
+    "supabase/migrations/20260903213426_add_turniq_handoff_requested_staff_index.sql",
+  ),
+  "utf8",
+);
+
 describe("TurnIQ M4R multi-technician handoff boundary", () => {
   it("models one immutable performer assignment across one or more segments", () => {
     expect(migration).toContain("CREATE TABLE public.turniq_handoff_plans");
@@ -96,6 +104,19 @@ describe("TurnIQ M4R multi-technician handoff boundary", () => {
       );
     }
     expect(migration).not.toMatch(/GRANT[^;]*TO anon|GRANT[^;]*TO authenticated/i);
+  });
+
+  it("covers every handoff item foreign-key lookup used during reconciliation", () => {
+    expect(migration).toContain("turniq_handoff_item_segment_fk_idx");
+    expect(migration).toContain("turniq_handoff_item_performer_fk_idx");
+    expect(migration).toContain("turniq_handoff_item_staff_fk_idx");
+    expect(requestedStaffIndexHotfix).toContain(
+      "turniq_handoff_item_requested_staff_fk_idx",
+    );
+    expect(requestedStaffIndexHotfix).toContain(
+      "WHERE requested_staff_id IS NOT NULL",
+    );
+    expect(migration).toContain("turniq_handoff_item_resource_fk_idx");
   });
 
   it("does not call payment or notification providers", () => {
