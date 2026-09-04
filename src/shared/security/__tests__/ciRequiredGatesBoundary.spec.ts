@@ -35,10 +35,12 @@ describe("MQA-0224/0225 required CI gates", () => {
     expect(lint).not.toContain("continue-on-error");
   });
 
-  it("fails the security job on high-severity dependency findings", () => {
+  it("fails the security job on high-severity lockfile dependency findings", () => {
     const audit = step("npm audit (high severity)", "Check for committed secrets");
 
-    expect(audit).toContain("run: npm audit --audit-level=high");
+    expect(audit).toContain(
+      "run: npm audit --package-lock-only --audit-level=high",
+    );
     expect(audit).not.toContain("continue-on-error");
   });
 
