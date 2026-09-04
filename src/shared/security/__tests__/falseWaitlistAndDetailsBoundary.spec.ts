@@ -10,6 +10,9 @@ const availability = read(
 const migration = read(
   "supabase/migrations/20260904230314_guard_public_waitlist_availability.sql",
 );
+const publicRpcGrantCheck = read(
+  "scripts/security/check-public-rpc-role-grants.sql",
+);
 const loader = read("src/shared/dashboard/loadReceptionistCenterData.ts");
 const panel = read("src/components/receptionist/OnlineWaitlistPanel.tsx");
 const drawer = read("src/components/ui/Drawer.tsx");
@@ -40,6 +43,12 @@ describe("False Waitlist and private customer detail boundary", () => {
     expect(migration).toContain("TO service_role");
     expect(migration).toContain("normalize_capacity_rescue_waitlist_source");
     expect(migration).toContain("NEW.source := v_source");
+    expect(publicRpcGrantCheck).toContain(
+      "('public.create_public_capacity_rescue_request(uuid,uuid,text,uuid,uuid,date,text,integer,text,text,text,text,jsonb)', false, false)",
+    );
+    expect(publicRpcGrantCheck).toContain(
+      "('public.create_public_waitlist_entry(uuid,uuid,uuid,date,text,text,text,text,text)', false, false)",
+    );
   });
 
   it("keeps full PII in the authenticated loader and out of the compact row", () => {
