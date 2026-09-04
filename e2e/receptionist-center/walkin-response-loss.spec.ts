@@ -48,12 +48,7 @@ test("a lost create response retries to the same committed walk-in", async ({ pa
   let droppedCommittedResponse = false;
   await page.route(`**/dashboard/${fx.slug}/center**`, async (route) => {
     const request = route.request();
-    const body = request.postData() ?? "";
-    if (
-      droppedCommittedResponse ||
-      request.method() !== "POST" ||
-      !body.includes(clientName)
-    ) {
+    if (droppedCommittedResponse || request.method() !== "POST") {
       await route.continue();
       return;
     }
