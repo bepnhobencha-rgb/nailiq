@@ -59,6 +59,12 @@ Disposable QA evidence on `osdqutwunokiielbairj`:
 - a 12-staff synthetic browser rehearsal preserves exact arrival order on both
   desktop and mobile; an approved break and return keep staff number 5 in queue
   position 5;
+- a disposable-QA transaction checks in 12 synthetic staff in exact positions
+  1–12, preserves staff number 5 at position 5 through approved break/return,
+  verifies 14 PIN receipts and 14 immutable events, and rolls back with zero
+  synthetic rows remaining;
+- ten TurnIQ database lifecycle fixtures pass in self-rolling-back transactions;
+  QA security and performance advisors report no TurnIQ WARNING/ERROR findings;
 - no payment, booking, provider, or notification call was made.
 
 QA evidence is not Production or pilot proof. Preview verification, physical

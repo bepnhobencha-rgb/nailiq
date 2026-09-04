@@ -13,13 +13,13 @@ Evidence labels:
 
 | # | Acceptance scenario | Current evidence boundary | Remaining proof |
 |---:|---|---|---|
-| 1 | 12 staff check in; queue follows arrival | Automated local fixtures plus desktop/mobile browser run with 12 staff in exact arrival order; QA PIN race proves one open shift under concurrent check-in | QA-backed physical 12-person tablet run |
+| 1 | 12 staff check in; queue follows arrival | Automated local fixtures plus desktop/mobile browser run with 12 staff in exact arrival order; disposable-QA transaction checked in 12 synthetic staff with positions 1–12 and rolled back cleanly | Physical 12-person tablet run |
 | 2 | Late staff does not jump from zero credit | Automated local: baseline and fairness invariants | Shadow-day comparison |
 | 3 | Appointment/walk-in/requested service consumes only on completion | Automated local: atomic assignment transitions | QA atomic rollback |
 | 4 | Requested no-show consumes no turn | Automated local: no-show/turn invariant | QA lifecycle |
 | 5 | Skill mismatch skips without penalty | Automated local: single-customer engine | Shadow trace |
 | 6 | Unsafe appointment gap skips without losing place | Automated local: gap safety/invariants | Shadow trace |
-| 7 | Approved break preserves queue position | Automated local shift/PIN transition tests plus desktop/mobile browser break/return preserving queue position; PIN wrapper applied on QA | QA full break/return RPC lifecycle |
+| 7 | Approved break preserves queue position | Automated local shift/PIN transition tests plus desktop/mobile browser break/return; disposable-QA PIN lifecycle preserved staff 5 at queue position 5 across break/return | Physical shared-device usability |
 | 8 | Unapproved departure/refusal moves to end | Automated local: refusal/shift policy boundaries | QA lifecycle |
 | 9 | Two technicians each consume own turn/credit | Automated local: multi-technician handoff engine | QA atomic handoff |
 | 10 | Four-person party gets feasible fair plan | Automated local: constrained group matching | QA group lifecycle |
@@ -65,5 +65,16 @@ gates. Existing live salons remain out of scope until separately approved.
   mandatory physical-device gate.
 - Staff PIN migration plus additive FK-index hotfix: **applied to disposable QA
   only**. RLS/ACL, role denial, five-attempt lockout, rotation, exact retry, and
-  concurrent check-in evidence passed. Production is untouched.
+  concurrent check-in evidence passed. A separate 12-staff QA transaction
+  verified ordered positions 1–12, approved break/return position preservation,
+  14 durable PIN receipts and 14 immutable events, then rolled back with zero
+  test rows remaining. Production is untouched.
+- Ten existing TurnIQ SQL lifecycle fixtures: **PASS on disposable QA inside
+  self-rolling-back transactions**. Coverage includes atomic group and staggered
+  group plans, business-day rollover, consented swaps, customer check-in,
+  dispute/exception commands, multi-technician handoff, redo/repair, refusal
+  safety, and privacy-safe skip reviews.
+- Supabase QA advisors after verification: **zero TurnIQ WARNING/ERROR findings**.
+  Existing TurnIQ advisor entries are INFO-level hardening/performance guidance
+  and are not treated as proof of pilot readiness.
 - Physical device and salon pilot: **not run**.
