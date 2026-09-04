@@ -87,7 +87,7 @@ describe("MQA-0099 database capability boundary", () => {
       "rehearse-waitlist-claim-capabilities-concurrency.mjs"]) expect(workflow).toContain(proof);
     expect(parity).toContain("tables: 234");
     expect(parity).toContain("columns: 3590");
-    expect(parity).toContain("functions: 513");
+    expect(parity).toContain("functions: 514");
     expect(parity).toContain("indexes: 965");
     expect(parity).toContain("service_role: 221");
   });
