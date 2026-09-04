@@ -16,6 +16,8 @@ import {
 
 let fx: ReceptionistCenterFixture;
 
+test.use({ serviceWorkers: "block" });
+
 test.beforeAll(async ({}, testInfo) => {
   fx = await seedReceptionistCenterFixture(rcSlug(testInfo.project.name));
 });
