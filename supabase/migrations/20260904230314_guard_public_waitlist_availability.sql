@@ -38,9 +38,13 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  v_source := NULLIF(
-    pg_catalog.btrim(NEW.intent_json ->> 'source'),
-    ''
+  -- New requests carry source in intent_json so the legacy RPC's hard-coded
+  -- column value cannot erase booking_conflict provenance. Existing trusted
+  -- server callers may not have intent_json.source yet; preserve their valid
+  -- row source during the compatibility window.
+  v_source := COALESCE(
+    NULLIF(pg_catalog.btrim(NEW.intent_json ->> 'source'), ''),
+    NULLIF(pg_catalog.btrim(NEW.source), '')
   );
   IF v_source IS NULL OR v_source NOT IN (
     'slot_unavailable',
