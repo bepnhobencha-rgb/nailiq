@@ -19,12 +19,14 @@ import {
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { TurnIqStaffPinCard } from "@/components/receptionist/TurnIqStaffPinCard";
 import type {
   TurnIqExceptionInboxView,
   TurnIqLiveBoardView,
   TurnIqStaffShiftState,
   TurnIqStaffView,
 } from "@/shared/turniq/readModels";
+import type { TurnIqRolloutStage } from "@/shared/turniq/rolloutStage";
 import type {
   TurnIqAssignmentActionInput,
   TurnIqCommandActionResult,
@@ -36,6 +38,9 @@ import type {
   TurnIqRefusalActionInput,
   TurnIqRedoActionInput,
   TurnIqShiftActionInput,
+  TurnIqConfigureStaffPinActionResult,
+  TurnIqConfigureStaffPinInput,
+  TurnIqPinShiftActionInput,
   TurnIqSwapActionInput,
 } from "@/shared/turniq/serverContracts";
 
@@ -45,11 +50,20 @@ type TurnIqOperationsPanelProps = {
   exceptionInbox: TurnIqExceptionInboxView | null;
   language: "en" | "vi";
   slug: string;
+  rolloutStage: TurnIqRolloutStage;
+  offline: boolean;
   canManageTeam: boolean;
+  canConfigureStaffPin: boolean;
   canSeeExceptionInbox: boolean;
   canCorrectRecords: boolean;
   onApplyShiftCommand: (
     input: TurnIqShiftActionInput,
+  ) => Promise<TurnIqCommandActionResult>;
+  onConfigureStaffPin: (
+    input: TurnIqConfigureStaffPinInput,
+  ) => Promise<TurnIqConfigureStaffPinActionResult>;
+  onApplyPinShiftCommand: (
+    input: TurnIqPinShiftActionInput,
   ) => Promise<TurnIqCommandActionResult>;
   onApplyAssignmentCommand: (
     input: TurnIqAssignmentActionInput,
@@ -178,10 +192,15 @@ export function TurnIqOperationsPanel({
   exceptionInbox,
   language,
   slug,
+  rolloutStage,
+  offline,
   canManageTeam,
+  canConfigureStaffPin,
   canSeeExceptionInbox,
   canCorrectRecords,
   onApplyShiftCommand,
+  onConfigureStaffPin,
+  onApplyPinShiftCommand,
   onApplyAssignmentCommand,
   onApplyRefusalCommand,
   onApplyRedoCommand,
@@ -795,6 +814,20 @@ export function TurnIqOperationsPanel({
             {vi ? "Mở QR" : "Open QR"}
           </Button>
         </Card>
+      ) : null}
+      {canManageTeam && board ? (
+        <TurnIqStaffPinCard
+          slug={slug}
+          language={language}
+          rolloutStage={rolloutStage}
+          offline={offline}
+          activePolicyVersionId={board.activePolicyVersionId}
+          staff={board.staff}
+          canConfigurePin={canConfigureStaffPin}
+          onConfigurePin={onConfigureStaffPin}
+          onApplyPinShift={onApplyPinShiftCommand}
+          onRefresh={onRefresh}
+        />
       ) : null}
       {canManageTeam && board ? (
         <Card variant="bordered" padding="md">

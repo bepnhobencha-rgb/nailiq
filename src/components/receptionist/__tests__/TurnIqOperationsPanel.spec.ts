@@ -155,6 +155,14 @@ const actions = {
     ok: false as const,
     code: "stale_state" as const,
   }),
+  onConfigureStaffPin: async () => ({
+    ok: false as const,
+    code: "stale_state" as const,
+  }),
+  onApplyPinShiftCommand: async () => ({
+    ok: false as const,
+    code: "stale_state" as const,
+  }),
   onApplyRefusalCommand: async () => ({
     ok: false as const,
     code: "stale_state" as const,
@@ -222,13 +230,18 @@ describe("TurnIQ operational surfaces", () => {
         exceptionInbox: inbox,
         language: "vi",
         slug: "salon-a",
+        rolloutStage: "supervised",
+        offline: false,
         canManageTeam: true,
+        canConfigureStaffPin: true,
         canSeeExceptionInbox: true,
         canCorrectRecords: true,
         ...actions,
       }),
     );
     expect(html).toContain("Đội ngũ hôm nay");
+    expect(html).toContain("Check-in bằng PIN thợ");
+    expect(html).toContain("Đặt / đổi PIN");
     expect(html).toContain("Nghỉ");
     expect(html).toContain("Check-in");
     expect(html).toContain("Bắt đầu");
@@ -254,7 +267,10 @@ describe("TurnIQ operational surfaces", () => {
         exceptionInbox: null,
         language: "en",
         slug: "salon-a",
+        rolloutStage: "supervised",
+        offline: false,
         canManageTeam: false,
+        canConfigureStaffPin: false,
         canSeeExceptionInbox: false,
         canCorrectRecords: false,
         ...actions,
