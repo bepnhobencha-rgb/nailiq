@@ -43,6 +43,7 @@ describe("False Waitlist and private customer detail boundary", () => {
     expect(migration).toContain("TO service_role");
     expect(migration).toContain("normalize_capacity_rescue_waitlist_source");
     expect(migration).toContain("NEW.source := v_source");
+    expect(migration).not.toContain("pg_catalog.nullif");
     expect(publicRpcGrantCheck).toContain(
       "('public.create_public_capacity_rescue_request(uuid,uuid,text,uuid,uuid,date,text,integer,text,text,text,text,jsonb)', false, false)",
     );

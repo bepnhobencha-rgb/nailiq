@@ -38,7 +38,7 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  v_source := pg_catalog.nullif(
+  v_source := NULLIF(
     pg_catalog.btrim(NEW.intent_json ->> 'source'),
     ''
   );
