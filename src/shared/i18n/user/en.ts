@@ -1617,6 +1617,9 @@ export type UserMessages = {
         walkinContinueAnyway: string;
         /** Affordance: clears the staff back to Best-Match auto. */
         walkinChooseDifferent: string;
+        walkinSaved: string;
+        walkinSavedAssignmentPending: string;
+        walkinRetrySafe: string;
         relative: {
           justNow: string;
           today: string;
@@ -4232,6 +4235,11 @@ export const userEn: UserMessages = {
         walkinConflictsGroup: "{name} has a group booking at {time}. Continue?",
         walkinContinueAnyway: "Continue anyway",
         walkinChooseDifferent: "Choose different staff",
+        walkinSaved: "Customer added successfully.",
+        walkinSavedAssignmentPending:
+          "Customer saved to the waiting list. The schedule changed before assignment — no need to enter them again.",
+        walkinRetrySafe:
+          "The connection was interrupted. Tap again to check safely — NailIQ will not create a duplicate.",
         relative: {
           justNow: "Just now",
           today: "Today",

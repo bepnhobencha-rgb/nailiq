@@ -162,7 +162,18 @@ function ctxActorUserId(ctx: { userId: string | null }): string | null {
   return ctx.userId;
 }
 
-type OkBooking = { ok: true; bookingId: string };
+type OkBooking = {
+  ok: true;
+  bookingId: string;
+  /** True when the same client-generated request was already committed. */
+  replayed?: boolean;
+  /** Canonical status when an idempotent replay loaded an existing row. */
+  bookingStatus?: string;
+  /** The customer is safely persisted in queue, but immediate assignment did
+   * not commit. The UI must show success and must not invite another create. */
+  assignmentPending?: boolean;
+  assignmentError?: string;
+};
 
 type ArchivedBookingRecoveryKind = "cancelled_rebook" | "no_show_walkin";
 
@@ -487,6 +498,9 @@ export async function addWalkinToQueue(
     walkinPriority?: QueuePriority | null;
     walkinRequestTags?: string[] | null;
     partySize?: number | null;
+    /** Client-generated UUID retained across retries. Prevents a lost response
+     * or failed immediate assignment from creating a second queue row. */
+    requestId: string;
     /** Terminal booking recovery. The source remains immutable; this insert
      * creates the new walk-in and links it for audit/idempotency. */
     recovery?: ArchivedBookingRecoveryInput;
@@ -511,8 +525,15 @@ export async function addWalkinToQueue(
   if (!recoveryResult.ok) return recoveryResult;
   const recovery = recoveryResult.recovery;
   if (recoveryResult.existingBookingId) {
-    return { ok: true, bookingId: recoveryResult.existingBookingId };
+    return {
+      ok: true,
+      bookingId: recoveryResult.existingBookingId,
+      replayed: true,
+    };
   }
+
+  const requestId = String(recovery?.requestId ?? input.requestId ?? "").trim();
+  if (!isUuidLike(requestId)) return fail("invalid_request");
 
   const clientName = String(input.clientName ?? "").trim();
   if (!clientName) return fail("invalid_name");
@@ -542,41 +563,6 @@ export async function addWalkinToQueue(
   }
 
   const supabase = ctx.supabase;
-
-  // Plan-tier cap. ctx.salon doesn't carry plan fields, so we fetch
-  // them here. Cheap: maybeSingle on PK; throws are caught and
-  // surfaced as a recoverable error code.
-  try {
-    await assertBookingLimitAvailable(supabase, {
-      id: ctx.salon.id,
-      subscription_plan: ctx.salon.subscription_plan,
-      plan_override: ctx.salon.plan_override,
-      feature_flags: ctx.salon.feature_flags,
-    });
-  } catch (e) {
-    if (e instanceof Error && e.message === "monthly_booking_limit_reached") {
-      return fail("monthly_booking_limit_reached");
-    }
-    throw e;
-  }
-
-  const { data: svc, error: svcErr } = await supabase
-    .from("services")
-    .select("id, price_cents")
-    .eq("id", serviceId)
-    .eq("salon_id", ctx.salon.id)
-    .is("deleted_at" as never, null)
-    .maybeSingle();
-
-  if (svcErr) {
-    console.error("[addWalkinToQueue] service", svcErr);
-    return fail("server_error");
-  }
-  if (!svc?.id) return fail("service_not_found");
-
-  const joinedAt = new Date().toISOString();
-  const price =
-    svc.price_cents != null ? Math.round(Number(svc.price_cents)) : null;
 
   const walkinSource: QueueSource | null = isQueueSource(input.walkinSource)
     ? input.walkinSource
@@ -614,6 +600,87 @@ export async function addWalkinToQueue(
   const staffRequestedByClient =
     input.staffRequestedByClient === true || note !== null;
 
+  // Lost responses and create-then-assign races must resolve to the canonical
+  // walk-in instead of inserting another customer. This replay check happens
+  // before plan-cap evaluation so an already committed request remains
+  // readable even if the salon reaches its cap immediately afterward.
+  const resolveIdempotentReplay = async (): Promise<
+    OkBooking | { ok: false; error: string } | null
+  > => {
+    const { data: replay, error: replayError } = await supabase
+      .from("bookings")
+      .select(
+        "id, status, source, service_id, client_name, client_phone, staff_request_note, staff_requested_by_client, walkin_source, walkin_priority, walkin_request_tags, party_size",
+      )
+      .eq("salon_id", ctx.salon.id)
+      .eq("idempotency_key", requestId)
+      .maybeSingle();
+    if (replayError) {
+      console.error("[addWalkinToQueue] idempotency replay", replayError);
+      return fail("server_error");
+    }
+    if (!replay?.id) return null;
+    const sameRequest =
+      String(replay.source) === "walkin" &&
+      String(replay.service_id) === serviceId &&
+      String(replay.client_name ?? "") === clientName &&
+      String(replay.client_phone ?? "") === clientPhoneClean &&
+      String(replay.staff_request_note ?? "") === String(note ?? "") &&
+      replay.staff_requested_by_client === staffRequestedByClient &&
+      (replay.walkin_source ?? null) === walkinSource &&
+      (replay.walkin_priority ?? null) === walkinPriority &&
+      JSON.stringify(replay.walkin_request_tags ?? []) ===
+        JSON.stringify(walkinRequestTags) &&
+      (replay.party_size ?? null) === partySize;
+    if (!sameRequest) return fail("idempotency_conflict");
+    return {
+      ok: true,
+      bookingId: String(replay.id),
+      bookingStatus: String(replay.status ?? ""),
+      replayed: true,
+    };
+  };
+
+  if (!recovery) {
+    const replay = await resolveIdempotentReplay();
+    if (replay) return replay;
+  }
+
+  // Plan-tier cap applies only to a genuinely new booking. Idempotent replays
+  // above return the already committed receipt even if the cap was reached
+  // between the first response and a retry.
+  try {
+    await assertBookingLimitAvailable(supabase, {
+      id: ctx.salon.id,
+      subscription_plan: ctx.salon.subscription_plan,
+      plan_override: ctx.salon.plan_override,
+      feature_flags: ctx.salon.feature_flags,
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === "monthly_booking_limit_reached") {
+      return fail("monthly_booking_limit_reached");
+    }
+    throw e;
+  }
+
+  const { data: svc, error: svcErr } = await supabase
+    .from("services")
+    .select("id, price_cents")
+    .eq("id", serviceId)
+    .eq("salon_id", ctx.salon.id)
+    .is("deleted_at" as never, null)
+    .maybeSingle();
+
+  if (svcErr) {
+    console.error("[addWalkinToQueue] service", svcErr);
+    return fail("server_error");
+  }
+  if (!svc?.id) return fail("service_not_found");
+
+  const joinedAt = new Date().toISOString();
+  const price =
+    svc.price_cents != null ? Math.round(Number(svc.price_cents)) : null;
+
   // `walkin_*` / `party_size` / `staff_requested_by_client` columns
   // are not yet in the auto-generated Supabase types; cast the patch
   // object so .insert() accepts the new columns. Will become a plain
@@ -638,6 +705,7 @@ export async function addWalkinToQueue(
     walkin_priority: walkinPriority,
     walkin_request_tags: walkinRequestTags,
     party_size: partySize,
+    idempotency_key: requestId,
     ...(recovery
       ? {
           recovered_from_booking_id: recovery.sourceBookingId,
@@ -655,6 +723,12 @@ export async function addWalkinToQueue(
     .maybeSingle();
 
   if (insErr) {
+    if ((insErr as { code?: string }).code === "23505" && !recovery) {
+      // A concurrent retry won the unique (salon_id, idempotency_key)
+      // insert. Read its canonical receipt without attempting another insert.
+      const replay = await resolveIdempotentReplay();
+      return replay ?? fail("lost_race");
+    }
     if ((insErr as { code?: string }).code === "23505" && recovery) {
       const raced = await loadExistingArchivedBookingRecovery(
         ctx.salon.id,
@@ -738,7 +812,7 @@ export async function addWalkinToQueue(
   // before the request completes), while never blocking the desk.
   if (!recovery) after(() => pushWixCreate(ctx.salon.id, bid));
 
-  return { ok: true, bookingId: bid };
+  return { ok: true, bookingId: bid, bookingStatus: "waiting" };
 }
 
 export async function assignWalkinToSlot(
@@ -2668,9 +2742,12 @@ export async function addWalkinAndAssign(
     /** ISO start time. Falls back to `now()` when omitted. */
     startAtIso?: string;
     staffRequestedByClient?: boolean;
+    staffRequestNote?: string | null;
     walkinSource?: QueueSource | null;
     walkinPriority?: QueuePriority | null;
     walkinRequestTags?: string[] | null;
+    /** Stable client request UUID retained until this create is acknowledged. */
+    requestId: string;
     recovery?: ArchivedBookingRecoveryInput;
   },
 ): Promise<OkBooking | { ok: false; error: string }> {
@@ -2711,6 +2788,7 @@ export async function addWalkinAndAssign(
     clientName: input.clientName,
     clientPhone: input.clientPhone,
     serviceId: input.serviceId,
+    staffRequestNote: input.staffRequestNote ?? null,
     // Default false: "customer requested this staff" is an explicit opt-in
     // (form checkbox defaults off; addWalkinToQueue treats only `=== true` as a
     // request). Defaulting to true here mislabeled auto-assigned walk-ins with a
@@ -2719,6 +2797,7 @@ export async function addWalkinAndAssign(
     walkinSource: input.walkinSource ?? null,
     walkinPriority: input.walkinPriority ?? null,
     walkinRequestTags: input.walkinRequestTags ?? null,
+    requestId: input.requestId,
     recovery: input.recovery,
   });
   if (!created.ok) return created;
@@ -2734,6 +2813,21 @@ export async function addWalkinAndAssign(
     return created;
   }
 
+  // A lost client response may replay after the original assignment already
+  // committed. Return the canonical success instead of trying to assign the
+  // same booking again and turning a completed action into an error.
+  if (created.replayed && created.bookingStatus !== "waiting") {
+    if (
+      created.bookingStatus &&
+      ["confirmed", "in_progress", "completed"].includes(
+        created.bookingStatus,
+      )
+    ) {
+      return created;
+    }
+    return fail("invalid_state");
+  }
+
   const startAt = input.startAtIso?.trim() || new Date().toISOString();
   const assigned = await assignWalkinToSlot(slug, {
     salonId: input.salonId,
@@ -2742,7 +2836,15 @@ export async function addWalkinAndAssign(
     slotStartUtc: startAt,
   });
   if (!assigned.ok) {
-    return { ok: false, error: assigned.error };
+    // The customer row is already durable in `waiting`. Report that truth as a
+    // successful create with assignment pending; the queue card is the safe
+    // reconciliation surface. Returning `ok:false` here kept the form populated
+    // and encouraged a retry that could create a duplicate customer.
+    return {
+      ...created,
+      assignmentPending: true,
+      assignmentError: assigned.error,
+    };
   }
   // Immediate assign at/before "now" means the guest is being served NOW — flip
   // confirmed → in_progress so the cockpit IN SERVICE tile counts them, the
@@ -2757,7 +2859,7 @@ export async function addWalkinAndAssign(
       bookingId: created.bookingId,
     });
   }
-  return created;
+  return { ...created, assignmentPending: false };
 }
 
 /* ───────────────────────── Soft hold (PR #104) ───────────────────────── */

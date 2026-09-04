@@ -1787,6 +1787,11 @@ export const userVi: UserMessages = {
           "{name} có lịch nhóm lúc {time}. Bạn có chắc không?",
         walkinContinueAnyway: "Tiếp tục",
         walkinChooseDifferent: "Chọn thợ khác",
+        walkinSaved: "Đã thêm khách thành công.",
+        walkinSavedAssignmentPending:
+          "Đã lưu khách vào hàng chờ. Lịch vừa thay đổi nên chưa xếp được thợ — không cần nhập lại.",
+        walkinRetrySafe:
+          "Kết nối bị gián đoạn. Bấm lại để kiểm tra an toàn — NailIQ sẽ không tạo trùng.",
         relative: {
           justNow: "Vừa xong",
           today: "Hôm nay",

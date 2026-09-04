@@ -2519,6 +2519,7 @@ function ReceptionistCenterInner({
     walkinSource?: import("@/shared/types").QueueSource | null;
     walkinPriority?: import("@/shared/types").QueuePriority | null;
     walkinRequestTags?: string[];
+    requestId: string;
   }) => {
     const r = await addWalkinToQueue(slug, {
       salonId: data.salon.id,
@@ -2530,6 +2531,7 @@ function ReceptionistCenterInner({
       walkinSource: input.walkinSource ?? null,
       walkinPriority: input.walkinPriority ?? null,
       walkinRequestTags: input.walkinRequestTags ?? null,
+      requestId: input.requestId,
       recovery: walkinPrefill?.recovery,
     });
     if (!r.ok) {
@@ -2551,9 +2553,11 @@ function ReceptionistCenterInner({
     staffId: string;
     startAtIso: string;
     staffRequestedByClient: boolean;
+    staffRequestNote: string | null;
     walkinSource: import("@/shared/types").QueueSource | null;
     walkinPriority: import("@/shared/types").QueuePriority | null;
     walkinRequestTags: string[];
+    requestId: string;
   }) => {
     const r = await addWalkinAndAssign(slug, {
       salonId: data.salon.id,
@@ -2563,9 +2567,11 @@ function ReceptionistCenterInner({
       staffId: input.staffId,
       startAtIso: input.startAtIso,
       staffRequestedByClient: input.staffRequestedByClient,
+      staffRequestNote: input.staffRequestNote,
       walkinSource: input.walkinSource,
       walkinPriority: input.walkinPriority,
       walkinRequestTags: input.walkinRequestTags,
+      requestId: input.requestId,
       recovery: walkinPrefill?.recovery,
     });
     if (!r.ok) {
@@ -2577,7 +2583,10 @@ function ReceptionistCenterInner({
     setWalkinPrefill(null);
     await reloadCurrentDay();
     router.refresh();
-    return { ok: true as const };
+    return {
+      ok: true as const,
+      assignmentPending: r.assignmentPending === true,
+    };
   };
 
   const onCancelWalkin = async (bookingId: string) => {
@@ -5191,6 +5200,7 @@ function ReceptionistCenterInner({
                   id: s.id,
                   name: s.name,
                   duration_minutes: s.duration_minutes,
+                  buffer_minutes: s.buffer_minutes,
                   price_cents: s.price_cents,
                   price_type: s.price_type,
                   price_max_cents: s.price_max_cents,
