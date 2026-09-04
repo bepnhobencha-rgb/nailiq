@@ -85,11 +85,11 @@ describe("MQA-0099 database capability boundary", () => {
       "rehearse-booking-management-capabilities-concurrency.mjs",
       "rehearse-waitlist-claim-capabilities.sql",
       "rehearse-waitlist-claim-capabilities-concurrency.mjs"]) expect(workflow).toContain(proof);
-    expect(parity).toContain("tables: 231");
-    expect(parity).toContain("columns: 3562");
-    expect(parity).toContain("functions: 510");
-    expect(parity).toContain("indexes: 952");
-    expect(parity).toContain("service_role: 218");
+    expect(parity).toContain("tables: 234");
+    expect(parity).toContain("columns: 3590");
+    expect(parity).toContain("functions: 513");
+    expect(parity).toContain("indexes: 965");
+    expect(parity).toContain("service_role: 221");
   });
 
   it("keeps the freed-slot auto-book fixture inside salon hours at every wall-clock time", () => {

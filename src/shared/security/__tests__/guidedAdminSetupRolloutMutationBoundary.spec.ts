@@ -97,8 +97,8 @@ describe("Guided Admin Setup rollout mutation boundary", () => {
     expect(workflow).toContain(
       "scripts/security/rehearse-guided-admin-setup-qa-rollout-rollback.sql",
     );
-    expect(parity).toContain("functions: 510");
-    expect(parity).toContain("triggers: 145");
+    expect(parity).toContain("functions: 513");
+    expect(parity).toContain("triggers: 150");
     expect(parity).toContain('"protect_guided_admin_setup_rollout_flag"');
     expect(parity).toContain('"configure_guided_admin_setup_qa_salon"');
   });
