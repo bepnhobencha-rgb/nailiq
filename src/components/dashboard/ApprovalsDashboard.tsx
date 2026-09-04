@@ -3,6 +3,8 @@
 import { CheckCircle, XCircle, Clock, AlertTriangle } from "lucide-react";
 
 import { ApprovalDecisionButtons } from "@/components/dashboard/ApprovalDecisionButtons";
+import { DeskAfterHoursApprovalButtons } from "@/components/dashboard/DeskAfterHoursApprovalButtons";
+import { DESK_AFTER_HOURS_APPROVAL_ACTION } from "@/shared/dashboard/deskAfterHoursApprovalContract";
 import { PromoCampaignDraftEditor } from "@/components/dashboard/PromoCampaignDraftEditor";
 import { ReactivationCampaignDraftEditor } from "@/components/dashboard/ReactivationCampaignDraftEditor";
 import { ReviewReplyDraftEditor } from "@/components/dashboard/ReviewReplyDraftEditor";
@@ -112,7 +114,9 @@ function PendingCard({
       </div>
 
       <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-nq-muted">
-        {req.action_type.replace(/_/g, " ")}
+        {req.action_type === DESK_AFTER_HOURS_APPROVAL_ACTION
+          ? "Lịch hẹn ngoài giờ"
+          : req.action_type.replace(/_/g, " ")}
       </p>
       <p className="mb-4 text-[15px] leading-relaxed text-nq-foreground">
         {req.summary}
@@ -171,7 +175,17 @@ function PendingCard({
         </div>
       ) : null}
 
-      <ApprovalDecisionButtons slug={slug} approvalId={req.id} />
+      {req.action_type === DESK_AFTER_HOURS_APPROVAL_ACTION ? (
+        <>
+          <p className="mb-3 text-xs leading-relaxed text-nq-muted">
+            NailIQ sẽ kiểm tra lại thợ, giường/phòng và xung đột trước khi tạo.
+            Khách chỉ được báo sau khi lịch đã tạo thành công.
+          </p>
+          <DeskAfterHoursApprovalButtons slug={slug} approvalId={req.id} />
+        </>
+      ) : (
+        <ApprovalDecisionButtons slug={slug} approvalId={req.id} />
+      )}
     </div>
   );
 }
@@ -205,10 +219,12 @@ function DecidedRow({
   req,
   job,
   executionJobsAvailable,
+  slug,
 }: {
   req: ApprovalDisplayRow;
   job: OwnerExecutionJob | undefined;
   executionJobsAvailable: boolean;
+  slug: string;
 }) {
   const provenance = approvalDecisionProvenance(req, "vi");
   const approvedExecutionMissing =
@@ -273,6 +289,15 @@ function DecidedRow({
           Nguồn trạng thái thực thi đang tạm thời không khả dụng. Quyết định này
           không được xem là đã thực hiện cho đến khi NailIQ xác minh lại.
         </p>
+      ) : null}
+      {req.action_type === DESK_AFTER_HOURS_APPROVAL_ACTION &&
+      req.status === "approved" &&
+      job?.status !== "succeeded" ? (
+        <DeskAfterHoursApprovalButtons
+          slug={slug}
+          approvalId={req.id}
+          retryOnly
+        />
       ) : null}
     </div>
   );
@@ -381,6 +406,7 @@ export function ApprovalsDashboard({
                 req={req}
                 job={jobsByApproval.get(req.id)}
                 executionJobsAvailable={executionJobsAvailable}
+                slug={slug}
               />
             ))}
           </div>

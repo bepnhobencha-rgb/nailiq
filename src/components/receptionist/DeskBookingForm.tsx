@@ -76,7 +76,7 @@ type LoadData = Extract<
 /** Optimistic booking row returned by `addDeskAppointment` on success. */
 type DeskCreatedBooking = Extract<
   Awaited<ReturnType<typeof addDeskAppointment>>,
-  { ok: true }
+  { ok: true; bookingId: string }
 >["booking"];
 
 type Props = {
@@ -93,6 +93,9 @@ type Props = {
    * (shaped like one `bookingsForDay` item) so the parent can render it
    * optimistically before the background reload reconciles. */
   onCreated: (booking?: DeskCreatedBooking) => void;
+  /** Called when reception sent an after-hours request for owner/admin
+   * approval. No booking has been created at this point. */
+  onApprovalRequested?: () => void;
   /** Prefill (grid empty-slot click). Staff may be a UUID or the "any" sentinel. */
   initialServiceId?: string;
   initialStaffId?: string;
@@ -154,6 +157,8 @@ const COPY = {
     afterHoursTitle: "After-hours exception",
     afterHoursDescription:
       "Owner/Admin only · selected staff must agree · up to 2 hours after close.",
+    afterHoursRequestDescription:
+      "Confirm staff consent, then send one request to Owner/Admin. The booking is created only after approval.",
     showAfterHours: "Show after-hours times",
     hideAfterHours: "Hide after-hours times",
     specificStaffForAfterHours:
@@ -162,6 +167,7 @@ const COPY = {
       "I confirmed this staff member agreed to work after closing.",
     afterHoursMinutes: (minutes: number) => `${minutes} min after close`,
     afterHoursSubmit: "Accept after-hours booking",
+    afterHoursRequestSubmit: "Send for approval",
     notes: "Notes (optional)",
     submit: "Create appointment",
     submitting: "Creating…",
@@ -216,6 +222,8 @@ const COPY = {
       specific_staff_required: "Choose the staff member who agreed to stay.",
       staff_consent_required: "Confirm the selected staff member agreed.",
       after_hours_limit_exceeded: "After-hours is limited to 2 hours past close.",
+      after_hours_approval_closed:
+        "That approval request is closed. Reopen the form to send a new request.",
       invalid_after_hours_override: "This time is already inside normal hours.",
       already_recovered:
         "A replacement booking was already created from this cancelled appointment.",
@@ -255,6 +263,8 @@ const COPY = {
     afterHoursTitle: "Ngoại lệ ngoài giờ",
     afterHoursDescription:
       "Chỉ Owner/Admin · phải có sự đồng ý của thợ · tối đa 2 giờ sau khi đóng cửa.",
+    afterHoursRequestDescription:
+      "Xác nhận thợ đồng ý rồi gửi chủ duyệt. Chỉ tạo lịch sau khi được duyệt.",
     showAfterHours: "Hiện giờ ngoài giờ",
     hideAfterHours: "Ẩn giờ ngoài giờ",
     specificStaffForAfterHours:
@@ -262,6 +272,7 @@ const COPY = {
     staffConsent: "Tôi xác nhận thợ này đã đồng ý làm sau giờ đóng cửa.",
     afterHoursMinutes: (minutes: number) => `${minutes} phút sau giờ đóng cửa`,
     afterHoursSubmit: "Nhận lịch ngoài giờ",
+    afterHoursRequestSubmit: "Gửi chủ duyệt",
     notes: "Ghi chú (tuỳ chọn)",
     submit: "Tạo lịch hẹn",
     submitting: "Đang tạo lịch…",
@@ -316,6 +327,8 @@ const COPY = {
       specific_staff_required: "Chọn đúng thợ đã đồng ý ở lại.",
       staff_consent_required: "Xác nhận thợ đã đồng ý làm ngoài giờ.",
       after_hours_limit_exceeded: "Chỉ được kéo dài tối đa 2 giờ sau đóng cửa.",
+      after_hours_approval_closed:
+        "Yêu cầu duyệt này đã đóng. Mở lại form để gửi yêu cầu mới.",
       invalid_after_hours_override: "Giờ này vẫn nằm trong giờ làm bình thường.",
       already_recovered:
         "Lịch đã huỷ này đã được dùng để tạo một lịch thay thế.",
@@ -337,6 +350,7 @@ export default function DeskBookingForm({
   language,
   onClose,
   onCreated,
+  onApprovalRequested,
   initialServiceId,
   initialStaffId,
   initialYmd,
@@ -656,7 +670,7 @@ export default function DeskBookingForm({
       timezone: data.salon.timezone,
     };
     const canLoadAfterHours =
-      data.canBookAfterHours &&
+      (data.canBookAfterHours || data.canRequestAfterHours) &&
       staffId !== BOOKING_ANY_STAFF_ID &&
       showAfterHours;
     void Promise.all([
@@ -950,7 +964,11 @@ export default function DeskBookingForm({
     setSubmitting(false);
     if (res.ok) {
       submissionRequestRef.current = null;
-      onCreated(res.booking);
+      if (res.approvalPending) {
+        onApprovalRequested?.();
+      } else {
+        onCreated(res.booking);
+      }
       onClose();
     } else {
       setError(tx.errors[res.error] ?? tx.submitError);
@@ -974,6 +992,7 @@ export default function DeskBookingForm({
     notifyAvailability.email,
     notifyAvailability.sms,
     onCreated,
+    onApprovalRequested,
     onClose,
     tx,
     resourceId,
@@ -1336,7 +1355,10 @@ export default function DeskBookingForm({
               </div>
             ) : null}
 
-            {data.canBookAfterHours && serviceId && staffId && ymd ? (
+            {(data.canBookAfterHours || data.canRequestAfterHours) &&
+            serviceId &&
+            staffId &&
+            ymd ? (
               <div
                 data-testid="desk-after-hours-panel"
                 className="rounded-lg border border-amber-400/40 bg-amber-400/10 p-3"
@@ -1347,7 +1369,9 @@ export default function DeskBookingForm({
                       🌙 {tx.afterHoursTitle}
                     </p>
                     <p className="mt-0.5 text-base leading-relaxed text-nq-muted">
-                      {tx.afterHoursDescription}
+                      {data.canRequestAfterHours
+                        ? tx.afterHoursRequestDescription
+                        : tx.afterHoursDescription}
                     </p>
                   </div>
                   {staffId !== BOOKING_ANY_STAFF_ID ? (
@@ -1545,7 +1569,9 @@ export default function DeskBookingForm({
               {submitting
                 ? tx.submitting
                 : selectedAfterHours
-                  ? tx.afterHoursSubmit
+                  ? data.canRequestAfterHours
+                    ? tx.afterHoursRequestSubmit
+                    : tx.afterHoursSubmit
                   : tx.submit}
             </button>
           </div>

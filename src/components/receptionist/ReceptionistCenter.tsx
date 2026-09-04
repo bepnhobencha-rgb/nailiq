@@ -2522,6 +2522,7 @@ function ReceptionistCenterInner({
     walkinPriority?: import("@/shared/types").QueuePriority | null;
     walkinRequestTags?: string[];
     requestId: string;
+    actualArrivalAtIso: string;
   }) => {
     const r = await addWalkinToQueue(slug, {
       salonId: data.salon.id,
@@ -2534,6 +2535,7 @@ function ReceptionistCenterInner({
       walkinPriority: input.walkinPriority ?? null,
       walkinRequestTags: input.walkinRequestTags ?? null,
       requestId: input.requestId,
+      actualArrivalAtIso: input.actualArrivalAtIso,
       recovery: walkinPrefill?.recovery,
     });
     if (!r.ok) {
@@ -2554,6 +2556,7 @@ function ReceptionistCenterInner({
     serviceId: string;
     staffId: string;
     startAtIso: string;
+    actualArrivalAtIso: string;
     staffRequestedByClient: boolean;
     staffRequestNote: string | null;
     walkinSource: import("@/shared/types").QueueSource | null;
@@ -2568,6 +2571,7 @@ function ReceptionistCenterInner({
       serviceId: input.serviceId,
       staffId: input.staffId,
       startAtIso: input.startAtIso,
+      actualArrivalAtIso: input.actualArrivalAtIso,
       staffRequestedByClient: input.staffRequestedByClient,
       staffRequestNote: input.staffRequestNote,
       walkinSource: input.walkinSource,
@@ -4247,6 +4251,15 @@ function ReceptionistCenterInner({
                       }
                     }
                     void reloadCurrentDay();
+                  }}
+                  onApprovalRequested={() => {
+                    setStatusSuccessMessage(
+                      language === "vi"
+                        ? "Đã gửi chủ duyệt. Chưa tạo lịch và chưa báo khách."
+                        : "Sent for owner approval. No booking or customer notice yet.",
+                    );
+                    void reloadCurrentDay();
+                    router.refresh();
                   }}
                 />
               ) : null}
