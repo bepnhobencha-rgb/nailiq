@@ -40,6 +40,32 @@ describe("desk after-hours approval payload", () => {
     expect(payload.recipient_selection_required).toBe(true);
   });
 
+  it("survives JSONB key reordering before owner approval", () => {
+    const payload = buildDeskAfterHoursApprovalPayload({
+      requestedByUserId: "66666666-6666-4666-8666-666666666666",
+      requestedByRole: "receptionist",
+      booking,
+    });
+    const reorderedBooking = Object.fromEntries(
+      Object.entries(payload.booking).sort(([left], [right]) =>
+        left.localeCompare(right),
+      ),
+    );
+
+    expect(
+      parseDeskAfterHoursApprovalPayload({
+        booking: reorderedBooking,
+        recipient_selection_required: payload.recipient_selection_required,
+        requested_by_user_id: payload.requested_by_user_id,
+        request_fingerprint: payload.request_fingerprint,
+        version: payload.version,
+        requested_by_role: payload.requested_by_role,
+        notification_mode: payload.notification_mode,
+        execution_mode: payload.execution_mode,
+      }),
+    ).not.toBeNull();
+  });
+
   it("rejects tampering with any stored booking intent", () => {
     const payload = buildDeskAfterHoursApprovalPayload({
       requestedByUserId: "66666666-6666-4666-8666-666666666666",

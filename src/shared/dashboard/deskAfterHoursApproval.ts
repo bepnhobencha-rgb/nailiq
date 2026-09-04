@@ -39,7 +39,31 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function fingerprint(input: DeskAfterHoursBookingInput): string {
-  return createHash("sha256").update(JSON.stringify(input)).digest("hex");
+  // JSONB does not preserve the insertion order of object keys. Hash a
+  // product-owned canonical shape so a request written to Postgres verifies
+  // identically when it is read back for owner approval.
+  const canonical = {
+    requestId: input.requestId,
+    salonId: input.salonId,
+    serviceId: input.serviceId,
+    addonServiceIds: input.addonServiceIds,
+    staffId: input.staffId,
+    staffRequestedByClient: input.staffRequestedByClient,
+    bookingDateYmd: input.bookingDateYmd,
+    timeSlot: input.timeSlot,
+    clientName: input.clientName,
+    clientPhone: input.clientPhone,
+    clientEmail: input.clientEmail,
+    clientNotes: input.clientNotes,
+    language: input.language,
+    notify: { sms: input.notify.sms, email: input.notify.email },
+    resourceId: input.resourceId,
+    afterHoursOverride: {
+      staffConsentConfirmed:
+        input.afterHoursOverride.staffConsentConfirmed,
+    },
+  };
+  return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
 
 function objectValue(value: unknown): Record<string, unknown> | null {
