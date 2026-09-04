@@ -59,7 +59,7 @@ jobs:
         run: npm ci
 
       - name: npm audit (high severity)
-        run: npm audit --audit-level=high
+        run: npm audit --package-lock-only --audit-level=high
 
       - name: Check for committed secrets
         run: |
