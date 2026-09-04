@@ -87,8 +87,9 @@ test.describe("TurnIQ M6 60-second comprehension and rush-hour demo", () => {
     await page.getByRole("button", { name: "Lose Internet and continue" }).click();
     await page.waitForFunction(async () => {
       await navigator.serviceWorker.ready;
-      return (await caches.keys()).includes("nailiq-turniq-offline-shell-v1") &&
-        Boolean(await caches.match("/turniq/offline"));
+      const cache = await caches.open("nailiq-turniq-offline-shell-v1");
+      return Boolean(navigator.serviceWorker.controller) &&
+        Boolean(await cache.match("/turniq/offline"));
     });
     await context.setOffline(true);
     try {

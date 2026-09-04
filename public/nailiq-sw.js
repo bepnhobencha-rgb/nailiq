@@ -23,18 +23,44 @@ self.addEventListener("message", (event) => {
   const urls = Array.isArray(event.data.urls) ? event.data.urls : [];
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
+    const assetUrls = [];
+    let offlineUrl = null;
     for (const raw of urls) {
       try {
         const url = new URL(raw, self.location.origin);
         const allowed = url.origin === self.location.origin &&
           (url.pathname === OFFLINE_PATH || url.pathname.startsWith("/_next/static/"));
         if (!allowed) continue;
-        const response = await fetch(url.href, { credentials: "same-origin" });
-        if (response.ok) await cache.put(url.href, response);
+        if (url.pathname === OFFLINE_PATH) offlineUrl = url;
+        else assetUrls.push(url);
       } catch {
-        // Warming is best-effort; the UI reports whether a valid encrypted
-        // snapshot exists before allowing any offline mutation.
+        // Invalid and cross-origin URLs never enter the shell cache.
       }
+    }
+
+    // The HTML is the readiness barrier. Cache every executable/style asset
+    // first, then cache the document last. If connectivity drops mid-warm, a
+    // navigation must fail closed instead of showing non-hydrated HTML that
+    // looks available but cannot unlock the encrypted IndexedDB snapshot.
+    let allAssetsCached = assetUrls.length > 0;
+    for (const url of assetUrls) {
+      try {
+        const response = await fetch(url.href, { credentials: "same-origin" });
+        if (!response.ok) {
+          allAssetsCached = false;
+          continue;
+        }
+        await cache.put(url.href, response);
+      } catch {
+        allAssetsCached = false;
+      }
+    }
+    if (!allAssetsCached || !offlineUrl) return;
+    try {
+      const response = await fetch(offlineUrl.href, { credentials: "same-origin" });
+      if (response.ok) await cache.put(offlineUrl.href, response);
+    } catch {
+      // Keep the shell unavailable until a complete warm succeeds.
     }
   })());
 });
