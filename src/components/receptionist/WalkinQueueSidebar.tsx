@@ -426,6 +426,8 @@ export function WalkinQueueSidebar({
           <WalkinAddForm
             services={services}
             currency={currency}
+            nowIso={nowIso}
+            timezone={timezone}
             labels={labels.addForm}
             onSubmit={onAddWalkin}
             onAddAndAssign={onAddAndAssign}

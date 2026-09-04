@@ -1534,6 +1534,9 @@ export type UserMessages = {
         moreServices: string;
         submitting: string;
         errorRequired: string;
+        actualTimeLabel: string;
+        actualTimeHint: string;
+        actualTimeInvalid: string;
         sourceLabel: string;
         sourceOptions: {
           online: string;
@@ -1861,6 +1864,9 @@ export type UserMessages = {
       not_found: string;
       invalid_staff: string;
       invalid_time: string;
+      invalid_actual_time: string;
+      actual_time_too_old: string;
+      actual_time_in_future: string;
       staff_not_found: string;
       staff_cannot_perform_service: string;
       invalid_duration: string;
@@ -4174,6 +4180,9 @@ export const userEn: UserMessages = {
         moreServices: "More services",
         submitting: "Adding…",
         errorRequired: "Pick a service to continue.",
+        actualTimeLabel: "Customer arrived at",
+        actualTimeHint: "Now by default · adjust back up to 30 minutes",
+        actualTimeInvalid: "Choose now or a time within the last 30 minutes.",
         sourceLabel: "Source",
         sourceOptions: {
           online: "Online",
@@ -4467,6 +4476,9 @@ export const userEn: UserMessages = {
       not_found: "That booking could not be found.",
       invalid_staff: "Staff not valid.",
       invalid_time: "Time is invalid.",
+      invalid_actual_time: "Choose a valid arrival time.",
+      actual_time_too_old: "Arrival time can be adjusted back up to 30 minutes.",
+      actual_time_in_future: "Arrival time cannot be in the future.",
       staff_not_found: "Staff not found.",
       staff_cannot_perform_service:
         "This staff member is not set up to perform that service.",

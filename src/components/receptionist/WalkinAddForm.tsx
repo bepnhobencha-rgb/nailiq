@@ -40,6 +40,10 @@ import type {
 } from "@/shared/dashboard/availabilityEngine";
 import { selectWalkinGapSafeRecommendation } from "@/shared/dashboard/walkinGapSafety";
 import { maskPhonePartial } from "@/shared/lib/maskPhone";
+import {
+  resolveWalkinActualTime,
+  walkinActualTimeHm,
+} from "@/shared/dashboard/walkinActualTime";
 
 export interface WalkinAddFormProps {
   services: Array<{
@@ -54,6 +58,10 @@ export interface WalkinAddFormProps {
   /** P0.2 — salon's configured currency. Drives the per-service
    * price labels on the tile grid and the VIP profile summary. */
   currency: Currency;
+  /** Current observed instant and salon timezone for the compact actual-time
+   * correction. The server independently enforces the 30-minute boundary. */
+  nowIso: string;
+  timezone: string;
   /** Salon setup incomplete — block walk-in intake until catalog is ready */
   disabled?: boolean;
   /**
@@ -80,6 +88,9 @@ export interface WalkinAddFormProps {
     nameRequired: string;
     nameTooLong: string;
     invalidNameChars: string;
+    actualTimeLabel: string;
+    actualTimeHint: string;
+    actualTimeInvalid: string;
     sourceLabel: string;
     sourceOptions: Record<QueueSource, string>;
     priorityLabel: string;
@@ -198,6 +209,7 @@ export interface WalkinAddFormProps {
     walkinPriority: QueuePriority | null;
     walkinRequestTags: QueueRequestTag[];
     requestId: string;
+    actualArrivalAtIso: string;
   }) => Promise<{
     ok: boolean;
     error?: string;
@@ -241,6 +253,7 @@ export interface WalkinAddFormProps {
     /** Caller's "now" — keeps form and server in agreement on the
      * start time even with small clock skew. */
     startAtIso: string;
+    actualArrivalAtIso: string;
     staffRequestedByClient: boolean;
     staffRequestNote: string | null;
     walkinSource: QueueSource | null;
@@ -337,6 +350,8 @@ function formatRelativeShort(
 export function WalkinAddForm({
   services,
   currency,
+  nowIso,
+  timezone,
   labels,
   onSubmit,
   onPhoneLookup,
@@ -362,6 +377,7 @@ export function WalkinAddForm({
   const sourceId = useId();
   const priorityId = useId();
   const tagInputId = useId();
+  const actualTimeId = useId();
   const nameRef = useRef<HTMLInputElement>(null);
   const phoneRef = useRef<HTMLInputElement>(null);
   const submitRef = useRef<HTMLButtonElement>(null);
@@ -379,15 +395,6 @@ export function WalkinAddForm({
     fingerprint: string;
   } | null>(null);
 
-  // Move focus to the name field when the parent signals an explicit
-  // "+ Walk-in" open (focusNonce bumps). Guarded so the initial
-  // undefined → no-op; only deliberate opens steal focus.
-  useEffect(() => {
-    if (!focusNonce) return;
-    const raf = requestAnimationFrame(() => nameRef.current?.focus());
-    return () => cancelAnimationFrame(raf);
-  }, [focusNonce]);
-
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(
@@ -402,6 +409,23 @@ export function WalkinAddForm({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [actualTimeHm, setActualTimeHm] = useState(() =>
+    walkinActualTimeHm(timezone, nowIso),
+  );
+  const [actualTimeError, setActualTimeError] = useState<string | null>(null);
+
+  // Move focus to the name field when the parent signals an explicit
+  // "+ Walk-in" open (focusNonce bumps). Guarded so the initial
+  // undefined → no-op; only deliberate opens steal focus.
+  useEffect(() => {
+    if (!focusNonce) return;
+    const raf = requestAnimationFrame(() => {
+      setActualTimeHm(walkinActualTimeHm(timezone, new Date().toISOString()));
+      setActualTimeError(null);
+      nameRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [focusNonce, timezone]);
   // P1.2 — per-field touched gate. We only surface validation errors
   // after the user has interacted with a field (typed into it OR
   // clicked submit). Avoids the "open form → focus moves away →
@@ -454,6 +478,8 @@ export function WalkinAddForm({
     setErrorMessage(null);
     setNameError(null);
     setPhoneError(null);
+    setActualTimeHm(walkinActualTimeHm(timezone, new Date().toISOString()));
+    setActualTimeError(null);
     setLookup({ kind: "idle" });
     lookupRequestSeqRef.current += 1;
     nameTouchedRef.current = false;
@@ -470,6 +496,7 @@ export function WalkinAddForm({
     initialServiceId,
     prefillKey,
     services,
+    timezone,
   ]);
 
   // Offline locks every interactive control except read-only fields,
@@ -618,6 +645,8 @@ export function WalkinAddForm({
     setErrorMessage(null);
     setNameError(null);
     setPhoneError(null);
+    setActualTimeHm(walkinActualTimeHm(timezone, new Date().toISOString()));
+    setActualTimeError(null);
     nameTouchedRef.current = false;
     phoneTouchedRef.current = false;
     setWalkinSource("");
@@ -638,7 +667,7 @@ export function WalkinAddForm({
     availabilityRequestSeqRef.current += 1;
     requestIdentityRef.current = null;
     queueMicrotask(() => nameRef.current?.focus());
-  }, []);
+  }, [timezone]);
 
   const addTag = useCallback(() => {
     const t = tagDraft.trim();
@@ -758,6 +787,15 @@ export function WalkinAddForm({
         setErrorMessage(labels.errorRequired);
         return;
       }
+      const actualTime = resolveWalkinActualTime(
+        actualTimeHm,
+        timezone,
+        new Date().toISOString(),
+      );
+      if (!actualTime.ok) {
+        setActualTimeError(labels.actualTimeInvalid);
+        return;
+      }
 
       // P0.5 — Auto-pick + no available staff (e.g. after hours).
       // Without this guard the form silently falls through to the
@@ -782,6 +820,7 @@ export function WalkinAddForm({
       setSuccessMessage(null);
       setNameError(null);
       setPhoneError(null);
+      setActualTimeError(null);
 
       const normalizedNote = staffRequestNote.trim() || null;
       const requestFingerprint = JSON.stringify({
@@ -793,6 +832,7 @@ export function WalkinAddForm({
         walkinSource: walkinSource || null,
         walkinPriority: walkinPriority || null,
         walkinRequestTags: requestTags,
+        actualArrivalAtIso: actualTime.actualTimeIso,
       });
       if (requestIdentityRef.current?.fingerprint !== requestFingerprint) {
         requestIdentityRef.current = {
@@ -822,9 +862,8 @@ export function WalkinAddForm({
             serviceId: selectedServiceId,
             staffId: recommendedAvailability.staffId,
             startAtIso:
-              availability.kind === "ready"
-                ? availability.nowIso
-                : new Date().toISOString(),
+              actualTime.actualTimeIso,
+            actualArrivalAtIso: actualTime.actualTimeIso,
             // Honor the actual checkbox (auto-set true for returning customers
             // with a usual tech via the lookup). Hardcoding true here flagged
             // EVERY immediately-assigned walk-in as a ❤️ staff request the guest
@@ -848,6 +887,7 @@ export function WalkinAddForm({
             walkinPriority: walkinPriority === "" ? null : walkinPriority,
             walkinRequestTags: requestTags,
             requestId,
+            actualArrivalAtIso: actualTime.actualTimeIso,
           });
         }
 
@@ -879,6 +919,7 @@ export function WalkinAddForm({
       labels.invalidNameChars,
       labels.invalidPhone,
       labels.phoneRequired,
+      labels.actualTimeInvalid,
       labels.autoPickNoStaffAvailable,
       labels.walkinSaved,
       labels.walkinSavedAssignmentPending,
@@ -897,6 +938,8 @@ export function WalkinAddForm({
       walkinSource,
       walkinPriority,
       requestTags,
+      actualTimeHm,
+      timezone,
       disabled,
     ],
   );
@@ -1157,6 +1200,45 @@ export function WalkinAddForm({
             currency={currency}
           />
         ) : null}
+
+        <div>
+          <label
+            htmlFor={actualTimeId}
+            className="mb-1 block text-base font-medium text-nq-muted"
+          >
+            {labels.actualTimeLabel}
+          </label>
+          <input
+            id={actualTimeId}
+            type="time"
+            step={60}
+            data-testid="walkin-actual-time"
+            disabled={formLocked}
+            value={actualTimeHm}
+            onChange={(event) => {
+              setActualTimeHm(event.target.value);
+              setActualTimeError(null);
+            }}
+            aria-invalid={Boolean(actualTimeError)}
+            className={cn(
+              "h-11 w-full rounded-lg border bg-nq-bg px-3 text-base text-nq-foreground focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
+              actualTimeError
+                ? "border-nq-error/50 focus:border-nq-error/60"
+                : "border-nq-muted/35 focus:border-nq-primary",
+              formLocked && "opacity-60",
+            )}
+          />
+          <p className="mt-1 text-sm text-nq-muted">{labels.actualTimeHint}</p>
+          {actualTimeError ? (
+            <p
+              role="alert"
+              data-testid="walkin-actual-time-error"
+              className="mt-1 text-base text-nq-error"
+            >
+              {actualTimeError}
+            </p>
+          ) : null}
+        </div>
       </div>
 
       {popularServices.length > 0 ? (

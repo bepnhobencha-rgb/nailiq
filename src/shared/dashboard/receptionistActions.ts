@@ -76,6 +76,15 @@ import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import {
+  sameWalkinActualInstant,
+  validateWalkinActualTime,
+} from "@/shared/dashboard/walkinActualTime";
+import {
+  createDeskAfterHoursApproval,
+  replayDeskAfterHoursApproval,
+  type DeskAfterHoursBookingInput,
+} from "@/shared/dashboard/deskAfterHoursApproval";
 import { sendOwnerBookingNotification } from "@/shared/dashboard/sendOwnerBookingNotification";
 import { handleBookingProtection } from "@/shared/noshow/handleBookingProtection";
 import { finalizeAndProcessNoShowDecision } from "@/shared/noshow/noShowSafetyBoundary";
@@ -473,8 +482,14 @@ type DeskBookingRow = ReceptionistCenterData["bookingsForDay"][number];
 type OkDeskBooking = {
   ok: true;
   bookingId: string;
+  approvalPending?: false;
   /** Omitted on an idempotent replay; the client reloads canonical day data. */
   booking?: DeskBookingRow;
+};
+type PendingDeskBookingApproval = {
+  ok: true;
+  approvalPending: true;
+  approvalId: string;
 };
 
 /**
@@ -501,6 +516,9 @@ export async function addWalkinToQueue(
     /** Client-generated UUID retained across retries. Prevents a lost response
      * or failed immediate assignment from creating a second queue row. */
     requestId: string;
+    /** Actual arrival instant selected by reception. May be backdated by no
+     * more than 30 minutes; omitted callers retain the historical now() path. */
+    actualArrivalAtIso?: string;
     /** Terminal booking recovery. The source remains immutable; this insert
      * creates the new walk-in and links it for audit/idempotency. */
     recovery?: ArchivedBookingRecoveryInput;
@@ -600,6 +618,12 @@ export async function addWalkinToQueue(
   const staffRequestedByClient =
     input.staffRequestedByClient === true || note !== null;
 
+  const actualArrival = input.actualArrivalAtIso
+    ? validateWalkinActualTime(String(input.actualArrivalAtIso))
+    : null;
+  if (actualArrival && !actualArrival.ok) return fail(actualArrival.error);
+  const requestedActualArrivalAt = actualArrival?.actualTimeIso ?? null;
+
   // Lost responses and create-then-assign races must resolve to the canonical
   // walk-in instead of inserting another customer. This replay check happens
   // before plan-cap evaluation so an already committed request remains
@@ -610,7 +634,7 @@ export async function addWalkinToQueue(
     const { data: replay, error: replayError } = await supabase
       .from("bookings")
       .select(
-        "id, status, source, service_id, client_name, client_phone, staff_request_note, staff_requested_by_client, walkin_source, walkin_priority, walkin_request_tags, party_size",
+        "id, status, source, service_id, client_name, client_phone, staff_request_note, staff_requested_by_client, walkin_source, walkin_priority, walkin_request_tags, party_size, joined_queue_at",
       )
       .eq("salon_id", ctx.salon.id)
       .eq("idempotency_key", requestId)
@@ -631,7 +655,12 @@ export async function addWalkinToQueue(
       (replay.walkin_priority ?? null) === walkinPriority &&
       JSON.stringify(replay.walkin_request_tags ?? []) ===
         JSON.stringify(walkinRequestTags) &&
-      (replay.party_size ?? null) === partySize;
+      (replay.party_size ?? null) === partySize &&
+      (requestedActualArrivalAt === null ||
+        sameWalkinActualInstant(
+          replay.joined_queue_at,
+          requestedActualArrivalAt,
+        ));
     if (!sameRequest) return fail("idempotency_conflict");
     return {
       ok: true,
@@ -677,7 +706,7 @@ export async function addWalkinToQueue(
   }
   if (!svc?.id) return fail("service_not_found");
 
-  const joinedAt = new Date().toISOString();
+  const joinedAt = requestedActualArrivalAt ?? new Date().toISOString();
   const price =
     svc.price_cents != null ? Math.round(Number(svc.price_cents)) : null;
 
@@ -1144,7 +1173,7 @@ export async function undoWalkinAssignment(
  */
 export async function markWalkinInProgress(
   slug: string,
-  input: { salonId: string; bookingId: string },
+  input: { salonId: string; bookingId: string; startedAtIso?: string },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
@@ -1157,7 +1186,14 @@ export async function markWalkinInProgress(
   if (!bookingId || !isUuidLike(bookingId)) return fail("invalid_booking");
 
   const supabase = ctx.supabase;
-  const startedAt = new Date().toISOString();
+  const requestedStartedAt = input.startedAtIso
+    ? validateWalkinActualTime(String(input.startedAtIso))
+    : null;
+  if (requestedStartedAt && !requestedStartedAt.ok) {
+    return fail(requestedStartedAt.error);
+  }
+  const startedAt =
+    requestedStartedAt?.actualTimeIso ?? new Date().toISOString();
 
   const { data: updated, error: upErr } = await supabase
     .from("bookings")
@@ -2741,6 +2777,8 @@ export async function addWalkinAndAssign(
     staffId: string;
     /** ISO start time. Falls back to `now()` when omitted. */
     startAtIso?: string;
+    /** Actual guest arrival. Kept separate from when reception entered it. */
+    actualArrivalAtIso?: string;
     staffRequestedByClient?: boolean;
     staffRequestNote?: string | null;
     walkinSource?: QueueSource | null;
@@ -2798,6 +2836,7 @@ export async function addWalkinAndAssign(
     walkinPriority: input.walkinPriority ?? null,
     walkinRequestTags: input.walkinRequestTags ?? null,
     requestId: input.requestId,
+    actualArrivalAtIso: input.actualArrivalAtIso,
     recovery: input.recovery,
   });
   if (!created.ok) return created;
@@ -2857,6 +2896,7 @@ export async function addWalkinAndAssign(
     await markWalkinInProgress(slug, {
       salonId: input.salonId,
       bookingId: created.bookingId,
+      startedAtIso: startAt,
     });
   }
   return { ...created, assignmentPending: false };
@@ -3055,7 +3095,7 @@ export async function getDeskBookingData(slug: string): Promise<
       ok: true;
       data: NonNullable<
         Awaited<ReturnType<typeof loadBookingServicesForSalonSlug>>
-      > & { canBookAfterHours: boolean };
+      > & { canBookAfterHours: boolean; canRequestAfterHours: boolean };
     }
   | { ok: false; error: string }
 > {
@@ -3074,6 +3114,11 @@ export async function getDeskBookingData(slug: string): Promise<
         ctx.kind === "member" &&
         ctx.userId != null &&
         canCreateAfterHoursDeskBooking(ctx.role),
+      canRequestAfterHours:
+        ctx.kind === "member" &&
+        ctx.userId != null &&
+        canCreateDeskBooking(ctx.role) &&
+        !canCreateAfterHoursDeskBooking(ctx.role),
     },
   };
 }
@@ -3207,7 +3252,9 @@ export async function addDeskAppointment(
     /** Creates a new appointment linked to an immutable cancelled source. */
     recovery?: ArchivedBookingRecoveryInput;
   },
-): Promise<OkDeskBooking | { ok: false; error: string }> {
+): Promise<
+  OkDeskBooking | PendingDeskBookingApproval | { ok: false; error: string }
+> {
   await runBookingOrchestrator(
     { gateway: "desk", intent: "individual", operation: "commit" },
     () => undefined,
@@ -3751,11 +3798,12 @@ export async function addDeskAppointment(
     serviceCompletionMinutes,
   });
   let afterHoursMinutes: number | null = null;
+  let afterHoursApprovalRequired = false;
+  let afterHoursApprovalBooking: DeskAfterHoursBookingInput | null = null;
   if (!hoursCheck.ok) {
     if (
       ctx.kind !== "member" ||
-      !ctx.userId ||
-      !canCreateAfterHoursDeskBooking(ctx.role)
+      !ctx.userId
     ) {
       return fail("after_hours_not_allowed");
     }
@@ -3778,6 +3826,42 @@ export async function addDeskAppointment(
       );
     }
     afterHoursMinutes = override.afterHoursMinutes;
+    afterHoursApprovalRequired = !canCreateAfterHoursDeskBooking(ctx.role);
+    if (afterHoursApprovalRequired) {
+      afterHoursApprovalBooking = {
+        requestId,
+        salonId: ctx.salon.id,
+        serviceId,
+        addonServiceIds: addonIds,
+        staffId: rawStaffId,
+        staffRequestedByClient: input.staffRequestedByClient === true,
+        bookingDateYmd: dateYmd,
+        timeSlot: String(input.timeSlot),
+        clientName,
+        clientPhone: canonicalPhone,
+        clientEmail,
+        clientNotes,
+        language: input.language ?? "en",
+        notify: { sms: notifyCreateSms, email: notifyCreateEmail },
+        resourceId: input.resourceId ?? null,
+        afterHoursOverride: { staffConsentConfirmed: true },
+      };
+      const replay = await replayDeskAfterHoursApproval(
+        ctx.salon.id,
+        afterHoursApprovalBooking,
+      );
+      if (replay) {
+        if (!replay.ok) return fail(replay.error);
+        if (replay.status === "declined" || replay.status === "expired") {
+          return fail("after_hours_approval_closed");
+        }
+        return {
+          ok: true,
+          approvalPending: true,
+          approvalId: replay.approvalId,
+        };
+      }
+    }
   } else if (input.afterHoursOverride) {
     // Never stamp a normal booking as after-hours merely because a client sent
     // the optional object.
@@ -3920,6 +4004,25 @@ export async function addDeskAppointment(
     );
     if (!rr.resourceId) return fail("no_resource_available");
     resolvedResourceId = rr.resourceId;
+  }
+
+  if (afterHoursMinutes != null && afterHoursApprovalRequired) {
+    if (!afterHoursApprovalBooking) return fail("server_error");
+    const approval = await createDeskAfterHoursApproval({
+      salonId: ctx.salon.id,
+      requestedByUserId: ctx.userId!,
+      requestedByRole: ctx.role,
+      serviceName: String(svc.name ?? "Service"),
+      staffName,
+      afterHoursMinutes,
+      booking: afterHoursApprovalBooking,
+    });
+    if (!approval.ok) return fail(approval.error);
+    return {
+      ok: true,
+      approvalPending: true,
+      approvalId: approval.approvalId,
+    };
   }
 
   let bookingId: string;

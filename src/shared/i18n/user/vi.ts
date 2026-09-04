@@ -1726,6 +1726,9 @@ export const userVi: UserMessages = {
         moreServices: "Thêm dịch vụ",
         submitting: "Đang thêm…",
         errorRequired: "Chọn một dịch vụ để tiếp tục.",
+        actualTimeLabel: "Khách đến lúc",
+        actualTimeHint: "Mặc định là bây giờ · có thể lùi tối đa 30 phút",
+        actualTimeInvalid: "Chọn giờ hiện tại hoặc trong 30 phút vừa qua.",
         sourceLabel: "Nguồn",
         sourceOptions: {
           online: "Online",
@@ -2014,6 +2017,9 @@ export const userVi: UserMessages = {
       not_found: "Không tìm thấy lịch đó.",
       invalid_staff: "Nhân viên không hợp lệ.",
       invalid_time: "Thời gian không hợp lệ.",
+      invalid_actual_time: "Chọn giờ khách đến hợp lệ.",
+      actual_time_too_old: "Chỉ được chỉnh giờ khách đến lùi tối đa 30 phút.",
+      actual_time_in_future: "Không thể chọn giờ khách đến trong tương lai.",
       staff_not_found: "Không tìm thấy nhân viên.",
       staff_cannot_perform_service:
         "Nhân viên này chưa được gán để làm dịch vụ đó.",
